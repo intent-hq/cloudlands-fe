@@ -6,7 +6,13 @@ import {
   selectWorkspaceTabOrder,
 } from '$store/renderer/slices/tab-state/tab-state-selectors';
 import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
-import { openAndShowWorkspace, showWorkspaceSaga, workspaceRoute } from './show-workspace';
+import {
+  navigateToAppRoute,
+  openAndShowWorkspace,
+  parseWorkspaceRoute,
+  showWorkspaceSaga,
+  workspaceRoute,
+} from './show-workspace';
 
 const mocks = vi.hoisted(() => ({
   route: vi.fn<(route: string, options?: { state?: App.PageState }) => Promise<void>>(),
@@ -26,6 +32,28 @@ describe('workspaceRoute', () => {
 
   it('omits an empty query', () => {
     expect(workspaceRoute('ws-1', {})).toBe('/workspace/ws-1');
+  });
+});
+
+describe('parseWorkspaceRoute', () => {
+  it.each([
+    ['/workspace/ws-1', 'ws-1'],
+    ['/workspace/ws-1/', 'ws-1'],
+    ['/workspace/ws-1?note=n1#top', 'ws-1'],
+    ['/workspace/a%2Fb', 'a/b'],
+  ])('reads the workspace id from %s', (route, workspaceId) => {
+    expect(parseWorkspaceRoute(route)).toBe(workspaceId);
+  });
+
+  it.each([
+    '/',
+    '/settings',
+    '/workspace/new',
+    '/workspace/',
+    '/workspace/ws-1/files',
+    '/workspace/%E0',
+  ])('is null for %s', (route) => {
+    expect(parseWorkspaceRoute(route)).toBeNull();
   });
 });
 
@@ -118,6 +146,53 @@ describe('openAndShowWorkspace', () => {
     expect(dispatch).toHaveBeenCalledWith(openWorkspaceTab('closed-ws', 'req-1'));
     dispatch.mockRestore();
     expect(selectCurrentWorkspaceTabId.select(store.state)).toBe('closed-ws');
+  });
+});
+
+describe('superseded jumps and string routes', () => {
+  let dispose: () => void;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.route.mockResolvedValue(undefined);
+    window.history.replaceState({}, '', '/');
+    dispose = store.init();
+  });
+
+  afterEach(() => {
+    dispose();
+  });
+
+  it('opens only the tab of the latest jump when an earlier navigation resolves late', async () => {
+    let finishFirst: () => void = () => {};
+    mocks.route.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishFirst = resolve;
+        }),
+    );
+
+    const first = openAndShowWorkspace('skipped-ws');
+    await expect(openAndShowWorkspace('landed-ws')).resolves.toBe(true);
+    finishFirst();
+
+    await expect(first).resolves.toBe(false);
+    expect(selectWorkspaceTabOrder.select(store.state)).toEqual(['landed-ws']);
+    expect(selectCurrentWorkspaceTabId.select(store.state)).toBe('landed-ws');
+  });
+
+  it('navigates a workspace route unchanged and opens its tab', async () => {
+    await navigateToAppRoute('/workspace/a%2Fb?panel=terminal');
+
+    expect(mocks.route).toHaveBeenCalledWith('/workspace/a%2Fb?panel=terminal');
+    expect(selectCurrentWorkspaceTabId.select(store.state)).toBe('a/b');
+  });
+
+  it.each(['/settings', '/workspace/new'])('navigates %s without opening a tab', async (route) => {
+    await navigateToAppRoute(route);
+
+    expect(mocks.route).toHaveBeenCalledWith(route);
+    expect(selectWorkspaceTabOrder.select(store.state)).toEqual([]);
   });
 });
 

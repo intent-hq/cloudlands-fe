@@ -10,6 +10,9 @@
  *
  * The tab opens only once navigation resolves, so a failed navigation never
  * leaves a stray focused tab; navigation errors are rethrown to the caller.
+ * A jump superseded by a newer one before its navigation resolved opens no
+ * tab either (SvelteKit resolves the abandoned `goto`), so spinning the
+ * hardware encoder through several workspaces only tabs the one it lands on.
  * The HUD pop-out window never navigates (see `navigateToRoute`), so the
  * helper does nothing there.
  */
@@ -35,6 +38,23 @@ export function workspaceRoute(workspaceId: string, query?: ShowWorkspaceOptions
   return search ? `${path}?${search}` : path;
 }
 
+/**
+ * The decoded workspace id of an in-app workspace page route
+ * (`/workspace/<id>`, optional trailing slash, search and hash), or null for
+ * other routes, sub-routes and the `/workspace/new` creation page.
+ */
+export function parseWorkspaceRoute(route: string): string | null {
+  const match = /^\/workspace\/([^/?#]+)\/?(?:[?#].*)?$/.exec(route);
+  if (!match) return null;
+  let workspaceId: string;
+  try {
+    workspaceId = decodeURIComponent(match[1]);
+  } catch {
+    return null;
+  }
+  return workspaceId === 'new' ? null : workspaceId;
+}
+
 /** Same guard as `navigateToRoute`: the HUD pop-out window never leaves /hud. */
 function isHudWindow(): boolean {
   return typeof window !== 'undefined' && (window.location?.pathname ?? '').startsWith('/hud');
@@ -51,19 +71,32 @@ function navigate(route: string, state: App.PageState | undefined): Promise<void
   return state ? navigateToRoute(route, { state }) : navigateToRoute(route);
 }
 
+/** Counts workspace jumps; a jump whose number is no longer the latest was superseded. */
+let latestJump = 0;
+
+async function showAt(
+  workspaceId: string,
+  route: string,
+  state: App.PageState | undefined,
+): Promise<boolean> {
+  if (!workspaceId || isHudWindow()) return false;
+  const jump = ++latestJump;
+  await navigate(route, state);
+  if (jump !== latestJump) return false;
+  appStore.dispatch(openTabAction(workspaceId, state));
+  return true;
+}
+
 /**
  * Navigate to `workspaceId` and open its tab. Resolves `true` once the
- * navigation resolved and the tab is focused; `false` when nothing happened
- * (empty id or the HUD window).
+ * navigation resolved and the tab is focused; `false` when no tab opened
+ * (empty id, the HUD window, or a newer jump superseded this one).
  */
-export async function openAndShowWorkspace(
+export function openAndShowWorkspace(
   workspaceId: string,
   options: ShowWorkspaceOptions = {},
 ): Promise<boolean> {
-  if (!workspaceId || isHudWindow()) return false;
-  await navigate(workspaceRoute(workspaceId, options.query), options.state);
-  appStore.dispatch(openTabAction(workspaceId, options.state));
-  return true;
+  return showAt(workspaceId, workspaceRoute(workspaceId, options.query), options.state);
 }
 
 /** Saga form of {@link openAndShowWorkspace}: same contract, tab opened with `put`. */
@@ -72,7 +105,20 @@ export function* showWorkspaceSaga(
   options: ShowWorkspaceOptions = {},
 ): SagaGenerator<boolean> {
   if (!workspaceId || isHudWindow()) return false;
+  const jump = ++latestJump;
   yield* call(navigate, workspaceRoute(workspaceId, options.query), options.state);
+  if (jump !== latestJump) return false;
   yield* put(openTabAction(workspaceId, options.state));
   return true;
+}
+
+/**
+ * Navigate to an in-app route that arrives as a string (Electron menu IPC, a
+ * remembered previous path). A workspace page route also opens its tab, like
+ * {@link openAndShowWorkspace}; the route itself is navigated unchanged.
+ */
+export async function navigateToAppRoute(route: string): Promise<void> {
+  const workspaceId = parseWorkspaceRoute(route);
+  if (workspaceId) await showAt(workspaceId, route, undefined);
+  else await navigateToRoute(route);
 }
