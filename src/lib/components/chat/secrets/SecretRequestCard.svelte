@@ -38,7 +38,7 @@
   let value = $state('');
   let revealed = $state(false);
 
-  const answer = $derived($secretRequests$.answers[request.requestId]);
+  const answer = $derived($secretRequests$.answers[request.requestId]?.status);
   const busy = $derived(answer === 'sending');
   const shown = $derived<SecretRequestCardState>(
     answer === 'provided' || answer === 'declined' || answer === 'expired' ? answer : listedState,

@@ -14,8 +14,12 @@ export const secretListRequested = createAction<
   [workspaceId: string, agentId: string, requestIds: string[]]
 >('secretRequests/secretListRequested');
 
+/**
+ * A fetched listing. `answeredBefore` is the answer epoch when the fetch
+ * started: finished local answers up to it are replaced by the listing.
+ */
 export const secretListLoaded = createAction<
-  [agentId: string, listing: SecretListing, requestIds: string[]]
+  [agentId: string, listing: SecretListing, requestIds: string[], answeredBefore: number]
 >('secretRequests/secretListLoaded');
 
 export const secretListFailed = createAction<[agentId: string]>('secretRequests/secretListFailed');
@@ -36,9 +40,16 @@ export const secretAnswerRequested = createAction<
   ]
 >('secretRequests/secretAnswerRequested');
 
-export const secretAnswerUpdated = createAction<[requestId: string, status: SecretAnswerStatus]>(
-  'secretRequests/secretAnswerUpdated',
-);
+export const secretAnswerUpdated = createAction<
+  [requestId: string, status: SecretAnswerStatus, epoch: number]
+>('secretRequests/secretAnswerUpdated');
+
+/** Finished local outcomes that a later authoritative listing replaces. */
+const LISTING_REPLACES: ReadonlySet<SecretAnswerStatus> = new Set([
+  'provided',
+  'declined',
+  'expired',
+]);
 
 /** Hide an expired card for the rest of this session. */
 export const secretRequestHidden = createAction<[requestId: string]>(
@@ -48,11 +59,21 @@ export const secretRequestHidden = createAction<[requestId: string]>(
 export const secretRequestsReducer = createReducer<SecretRequestsState>(initialState);
 secretRequestsReducer.with(
   secretListLoaded,
-  (state, { payload: [agentId, listing, requestIds] }) => {
+  (state, { payload: [agentId, listing, requestIds, answeredBefore] }) => {
     const covered = new Set(state.listings[agentId]?.covered ?? []);
     for (const requestId of requestIds) covered.add(requestId);
+    const known = new Set(covered);
+    for (const entry of listing.pendingRequests) known.add(entry.requestId);
+    for (const entry of listing.answeredRequests) known.add(entry.requestId);
+    const answers = { ...state.answers };
+    for (const requestId of known) {
+      const answer = answers[requestId];
+      if (answer && LISTING_REPLACES.has(answer.status) && answer.epoch <= answeredBefore)
+        delete answers[requestId];
+    }
     return {
       ...state,
+      answers,
       listings: {
         ...state.listings,
         [agentId]: { listing, covered: [...covered], failed: false },
@@ -74,10 +95,13 @@ secretRequestsReducer.with(secretListFailed, (state, { payload: [agentId] }) => 
     },
   };
 });
-secretRequestsReducer.with(secretAnswerUpdated, (state, { payload: [requestId, status] }) => ({
-  ...state,
-  answers: { ...state.answers, [requestId]: status },
-}));
+secretRequestsReducer.with(
+  secretAnswerUpdated,
+  (state, { payload: [requestId, status, epoch] }) => ({
+    ...state,
+    answers: { ...state.answers, [requestId]: { status, epoch } },
+  }),
+);
 secretRequestsReducer.with(secretRequestHidden, (state, { payload: [requestId] }) => ({
   ...state,
   hidden: { ...state.hidden, [requestId]: true },

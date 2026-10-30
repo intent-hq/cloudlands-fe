@@ -1,6 +1,7 @@
-import { call, fork, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { call, fork, put, select, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 import { channel, type Channel } from 'redux-saga';
 import { appClient } from '$lib/client';
+import { selectDaemonConnectionGeneration } from '../../daemon-health/daemon-health-selectors';
 import { takeSecretValue } from '$lib/components/chat/secrets/secret-value-handoff';
 import {
   secretAnswerRequested,
@@ -14,8 +15,15 @@ import {
  * Secret requests (PROTOCOL §5.56). `secret.list` refreshes are single-flight
  * per agent with one trailing refresh; answers read the value from the
  * one-shot handoff, so it never passes through an action or the store.
+ *
+ * Each finished answer bumps an epoch. A listing records the epoch it started
+ * at, so the reducer lets it replace only answers that finished before it (a
+ * daemon restart then shows a provided-but-lost request as expired). A listing
+ * whose connection changed mid-flight is dropped; the reconnect refresh
+ * replaces it.
  */
 export function* secretRequestsSaga(): SagaGenerator<void> {
+  let epoch = 0;
   const inFlight = new Set<string>();
   const trailing = new Map<string, { workspaceId: string; requestIds: Set<string> }>();
   const done: Channel<{ agentId: string }> = yield* call(channel<{ agentId: string }>);
@@ -26,12 +34,17 @@ export function* secretRequestsSaga(): SagaGenerator<void> {
     requestIds: string[],
   ): SagaGenerator<void> {
     try {
+      const answeredBefore = epoch;
+      const generation = yield* select(selectDaemonConnectionGeneration.select);
       const listing = yield* call([appClient.agents, appClient.agents.secretList], {
         workspaceId,
         agentId,
       });
+      if ((yield* select(selectDaemonConnectionGeneration.select)) !== generation) return;
       yield* put(
-        listing ? secretListLoaded(agentId, listing, requestIds) : secretListFailed(agentId),
+        listing
+          ? secretListLoaded(agentId, listing, requestIds, answeredBefore)
+          : secretListFailed(agentId),
       );
     } finally {
       yield* put(done, { agentId });
@@ -68,12 +81,13 @@ export function* secretRequestsSaga(): SagaGenerator<void> {
 
   yield* takeEvery(secretAnswerRequested, function* onAnswer({ payload: [request] }) {
     const { workspaceId, agentId, requestId, outcome } = request;
-    yield* put(secretAnswerUpdated(requestId, 'sending'));
+    yield* put(secretAnswerUpdated(requestId, 'sending', epoch));
     let result;
     if (outcome === 'provided') {
       const value = takeSecretValue(requestId);
       if (value === undefined) {
-        yield* put(secretAnswerUpdated(requestId, 'failed'));
+        epoch += 1;
+        yield* put(secretAnswerUpdated(requestId, 'failed', epoch));
         return;
       }
       result = yield* call([appClient.agents, appClient.agents.secretProvide], {
@@ -87,8 +101,13 @@ export function* secretRequestsSaga(): SagaGenerator<void> {
         requestId,
       });
     }
+    epoch += 1;
     yield* put(
-      secretAnswerUpdated(requestId, result.ok ? outcome : result.expired ? 'expired' : 'failed'),
+      secretAnswerUpdated(
+        requestId,
+        result.ok ? outcome : result.expired ? 'expired' : 'failed',
+        epoch,
+      ),
     );
     yield* put(secretListRequested(workspaceId, agentId, [requestId]));
   });

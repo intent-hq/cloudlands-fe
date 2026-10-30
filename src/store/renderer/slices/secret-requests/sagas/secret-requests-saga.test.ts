@@ -24,7 +24,7 @@ import { secretRequestsSaga } from './secret-requests-saga';
 
 type Action = { type: string; payload?: unknown[] };
 
-function start() {
+function start(getState: () => unknown = () => ({ daemonHealth: { connectionGeneration: 0 } })) {
   const channel = stdChannel();
   const dispatched: Action[] = [];
   const task = runSaga(
@@ -35,7 +35,7 @@ function start() {
         channel.put(action as never);
         return action;
       },
-      getState: () => ({}),
+      getState,
     },
     secretRequestsSaga,
   );
@@ -80,7 +80,10 @@ describe('secretRequestsSaga', () => {
       ]),
     );
     const last = dispatched.filter((a) => a.type === secretAnswerUpdated.type).at(-1);
-    expect(last?.payload).toEqual(['sec-1', 'provided']);
+    expect(last?.payload).toEqual(['sec-1', 'provided', 1]);
+    const loaded = dispatched.find((a) => a.type === secretListLoaded.type);
+    // The refresh after the answer starts at its epoch, so it may replace it.
+    expect(loaded?.payload).toEqual(['a', listing, ['sec-1'], 1]);
     expect(JSON.stringify(dispatched)).not.toContain('hunter2');
     task.cancel();
   });
@@ -109,7 +112,7 @@ describe('secretRequestsSaga', () => {
     expect(client.secretProvide).not.toHaveBeenCalled();
     const statuses = dispatched
       .filter((a) => a.type === secretAnswerUpdated.type)
-      .map((a) => a.payload);
+      .map((a) => a.payload?.slice(0, 2));
     expect(statuses).toContainEqual(['sec-2', 'failed']);
     expect(statuses).toContainEqual(['sec-3', 'expired']);
     task.cancel();
@@ -133,8 +136,8 @@ describe('secretRequestsSaga', () => {
     expect(client.secretList).toHaveBeenLastCalledWith({ workspaceId: 'w', agentId: 'a' });
     const loaded = dispatched.filter((a) => a.type === secretListLoaded.type).map((a) => a.payload);
     expect(loaded).toEqual([
-      ['a', listing, ['sec-1']],
-      ['a', listing, ['sec-2', 'sec-3', 'sec-4']],
+      ['a', listing, ['sec-1'], 0],
+      ['a', listing, ['sec-2', 'sec-3', 'sec-4'], 0],
     ]);
     task.cancel();
   });
@@ -146,6 +149,25 @@ describe('secretRequestsSaga', () => {
     await flush();
     expect(dispatched.map((a) => a.type)).toContain(secretListFailed.type);
     expect(dispatched.map((a) => a.type)).not.toContain(secretListLoaded.type);
+    task.cancel();
+  });
+
+  it('drops a listing whose daemon connection changed while it was in flight', async () => {
+    let generation = 1;
+    let resolveList: (value: unknown) => void = () => {};
+    client.secretList.mockImplementationOnce(
+      () => new Promise((resolve) => (resolveList = resolve)),
+    );
+    const { channel, dispatched, task } = start(() => ({
+      daemonHealth: { connectionGeneration: generation },
+    }));
+    channel.put(secretListRequested('w', 'a', ['sec-1']) as never);
+    await flush();
+    generation = 2;
+    resolveList(listing);
+    await flush();
+    expect(dispatched.map((a) => a.type)).not.toContain(secretListLoaded.type);
+    expect(dispatched.map((a) => a.type)).not.toContain(secretListFailed.type);
     task.cancel();
   });
 });

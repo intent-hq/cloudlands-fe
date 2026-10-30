@@ -57,7 +57,7 @@ describe('SecretRequestCard', () => {
     expect(JSON.stringify(sent)).not.toContain('s3cret');
     expect(JSON.stringify(appStore.state)).not.toContain('s3cret');
     expect(takeSecretValue('sec-card-provide')).toBe('s3cret');
-    appStore.dispatch(secretAnswerUpdated('sec-card-provide', 'provided'));
+    appStore.dispatch(secretAnswerUpdated('sec-card-provide', 'provided', 1));
     await waitFor(() =>
       expect(screen.getByTestId('secret-request-card').dataset.state).toBe('provided'),
     );
@@ -70,7 +70,7 @@ describe('SecretRequestCard', () => {
     await fireEvent.input(input, { target: { value: 'tok-123' } });
     await fireEvent.click(screen.getByTestId('secret-request-provide'));
     expect(takeSecretValue('sec-card-retry')).toBe('tok-123');
-    appStore.dispatch(secretAnswerUpdated('sec-card-retry', 'failed'));
+    appStore.dispatch(secretAnswerUpdated('sec-card-retry', 'failed', 1));
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
     expect(input.value).toBe('tok-123');
     expect(input.disabled).toBe(false);
@@ -115,7 +115,7 @@ describe('SecretRequestCard', () => {
       .find((action) => action.type === secretAnswerRequested.type);
     expect(answer?.payload?.[0]).toMatchObject({ outcome: 'declined' });
     expect(takeSecretValue('sec-card-decline')).toBeUndefined();
-    appStore.dispatch(secretAnswerUpdated('sec-card-decline', 'declined'));
+    appStore.dispatch(secretAnswerUpdated('sec-card-decline', 'declined', 1));
     await waitFor(() =>
       expect(screen.getByTestId('secret-request-card').dataset.state).toBe('declined'),
     );
