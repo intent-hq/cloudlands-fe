@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.256.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.256.1...v2.256.2) (2026-10-30)
+
+
+### 🐛 Bug Fixes
+
+* **backend:** treat a starting daemon as not ready until startup finishes ([#3883](https://github.com/intent-hq/cloudlands-fe/issues/3883)) ([55847cf](https://github.com/intent-hq/cloudlands-fe/commit/55847cf07f33f4d256eab88daf6bb8de359b26fc))
+* bump intentd sidecar to v0.11.83 ([#3892](https://github.com/intent-hq/cloudlands-fe/issues/3892)) ([bb09f09](https://github.com/intent-hq/cloudlands-fe/commit/bb09f09438fed66232d96c5a768dbeb9fdec50b6))
+* keep window shortcuts out of focused code editors ([#3865](https://github.com/intent-hq/cloudlands-fe/issues/3865)) ([5a5149e](https://github.com/intent-hq/cloudlands-fe/commit/5a5149e0b6d9e09bbf63f056735964f15d6f3067))
+* open workspace tabs through one openAndShowWorkspace helper ([#3876](https://github.com/intent-hq/cloudlands-fe/issues/3876)) ([3b6c7f7](https://github.com/intent-hq/cloudlands-fe/commit/3b6c7f760303dbc5d415faa243a44bc2724dc7e8))
+* **pr-monitor:** retry failed monitored-PR loads with backoff ([#3872](https://github.com/intent-hq/cloudlands-fe/issues/3872)) ([bfb3251](https://github.com/intent-hq/cloudlands-fe/commit/bfb325122fe816d3c72c4416be51c4dd466b6a21))
+* **workspace:** keep the specialist menu to a single scroller ([#3882](https://github.com/intent-hq/cloudlands-fe/issues/3882)) ([7f18753](https://github.com/intent-hq/cloudlands-fe/commit/7f187535aac94675533c85e69650f83e287e0e23))
+
 ## [2.256.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.256.0...v2.256.1) (2026-10-30)
 
 
