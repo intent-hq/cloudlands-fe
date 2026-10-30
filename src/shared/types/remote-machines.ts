@@ -20,19 +20,19 @@ const REMOTE_MACHINE_STATES: readonly RemoteMachineState[] = [
   'update-required',
 ];
 
-export interface RemoteMachinePlatform {
+interface RemoteMachinePlatform {
   os: string;
   arch: string;
 }
 
 /** One provider in the machine's last capabilities report (node-link.md). */
-export interface RemoteMachineProvider {
+interface RemoteMachineProvider {
   id: string;
   status: string;
   models: string[];
 }
 
-export interface RemoteMachineCapabilities {
+interface RemoteMachineCapabilities {
   intentdVersion?: string;
   providers: RemoteMachineProvider[];
 }
