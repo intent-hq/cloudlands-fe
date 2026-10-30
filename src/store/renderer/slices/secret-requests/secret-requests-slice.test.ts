@@ -7,8 +7,10 @@ import {
   secretRequestsCollapsed,
   secretRequestsExpanded,
   secretRequestsReducer,
+  secretRequestHidden,
 } from './secret-requests-slice';
 import type { SecretRequestsState } from './secret-requests-types';
+import { principalContextChanged } from '../principal/principal-slice';
 
 const empty: SecretListing = { secrets: [], pendingRequests: [], answeredRequests: [] };
 const provided: SecretListing = {
@@ -79,5 +81,18 @@ describe('secretRequestsReducer', () => {
     expect(state.collapsed.a).toEqual(['sec-1', 'sec-2']);
     state = reduce(state, secretRequestsCollapsed('b', ['sec-9']), secretRequestsExpanded('a'));
     expect(state.collapsed).toEqual({ b: ['sec-9'] });
+    state = reduce(
+      state,
+      secretListLoaded('a', provided, ['sec-1'], 1),
+      secretAnswerUpdated('sec-1', 'provided', 2),
+      secretRequestHidden('sec-1'),
+      principalContextChanged('next-person'),
+    );
+    expect(state, 'caller change must clear secret-request presentation').toEqual({
+      listings: {},
+      answers: {},
+      hidden: {},
+      collapsed: {},
+    });
   });
 });
