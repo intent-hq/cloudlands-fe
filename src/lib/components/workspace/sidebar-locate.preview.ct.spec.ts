@@ -31,7 +31,9 @@ for (const collapsed of [false, true]) {
     const ancestor = component.locator('[data-note-id="sidebar-preview-note-7"]');
     await expect(parent).toHaveCount(0);
     await expect(ancestor.getByRole('button', { name: 'Expand', exact: true })).toBeVisible();
-    await component.locator('[data-sidebar-preview-locate]').click();
+    const initialReveal = component.locator('[data-sidebar-preview-locate]');
+    await initialReveal.focus();
+    await initialReveal.press('Enter');
     await expect(parent).toBeInViewport();
     await parent.hover();
     await parent.getByRole('button', { name: 'Collapse', exact: true }).click();
