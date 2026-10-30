@@ -24,6 +24,16 @@ import type { PrincipalDiscovery } from '$shared/types/principal';
 import { parseProtocolVersion, type ProtocolVersion } from '$shared/protocol-version';
 import { assertScopedFileReadSupport } from '$shared/root-file-read-support';
 import {
+  classifyStartupReply,
+  clampStartupRetryMs,
+  type DaemonStartupState,
+  parseStartupSnapshot,
+  STARTUP_STATUS_METHOD,
+  type StartupReply,
+  type StartupSnapshot,
+  startupErrorShape,
+} from '$shared/daemon-startup';
+import {
   BackendError,
   type BackendErrorPayload,
   type BackendNotification,
@@ -225,6 +235,10 @@ const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
 // Match the desktop handshake bound; legacy/unresponsive daemons must not stall the app.
 const HELLO_HANDSHAKE_TIMEOUT_MS = 5_000;
 
+// A starting daemon answers only `system.startupStatus`, one poll at a time;
+// an unanswered poll falls back to a fresh socket and a new hello.
+const STARTUP_POLL_TIMEOUT_MS = 5_000;
+
 /**
  * `BackendTransport` speaking JSON-RPC 2.0 over a browser WebSocket. One JSON
  * object per text frame (no newline framing — the WebSocket provides message
@@ -281,6 +295,13 @@ export class BrowserWebSocketTransport implements BackendTransport {
   private readonly statusHandlers = new Set<(status: BrowserWsConnectionStatus) => void>();
   /** Last status delivered to statusHandlers, to fire only on transitions. */
   private lastNotifiedStatus: BrowserWsConnectionStatus = 'disconnected';
+  /** The daemon is starting or failed to start (docs/protocol/startup-readiness.md). */
+  private startupState: DaemonStartupState | null = null;
+  /** The socket whose hello was answered with daemon-not-ready, while it is polled. */
+  private startupSocket: BrowserWebSocketLike | null = null;
+  private startupPollTimer: ReturnType<typeof setTimeout> | null = null;
+  private startupPollGeneration = 0;
+  private readonly startupHandlers = new Set<(state: DaemonStartupState | null) => void>();
 
   constructor(options: BrowserWebSocketTransportOptions) {
     this.reviewMonitoringEnabled = supportsReviewMonitoring(options.reviewMonitoring);
@@ -497,6 +518,14 @@ export class BrowserWebSocketTransport implements BackendTransport {
         new BackendError({ code: 'UNAVAILABLE', message: 'Backend transport disposed' }),
       );
     }
+    // A starting daemon rejects every ordinary request; refuse it here with the
+    // same structured error instead of queueing it. Callers recover on
+    // `reconnected`, which fires once the daemon is ready.
+    if (!handshakeSocket && this.startupState) {
+      return Promise.reject(
+        new BackendError(toBackendErrorPayload(startupErrorShape(this.startupState))),
+      );
+    }
     const id = ++this.requestId;
     const override = options?.timeoutMs;
     const timeoutMs =
@@ -661,6 +690,21 @@ export class BrowserWebSocketTransport implements BackendTransport {
     return 'disconnected';
   }
 
+  /**
+   * The daemon's startup posture: `starting` while it answers with
+   * daemon-not-ready (status stays `connecting`), `failed` after
+   * daemon-startup-failed (status is `disconnected`), `null` once ready.
+   */
+  getStartupState(): DaemonStartupState | null {
+    return this.startupState;
+  }
+
+  /** Subscribe to startup posture changes; returns an unsubscriber. */
+  onStartupChange(handler: (state: DaemonStartupState | null) => void): () => void {
+    this.startupHandlers.add(handler);
+    return () => this.startupHandlers.delete(handler);
+  }
+
   /** Subscribe to connection-status transitions; returns an unsubscriber. */
   onConnectionStatusChange(handler: (status: BrowserWsConnectionStatus) => void): () => void {
     this.statusHandlers.add(handler);
@@ -683,6 +727,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
     this.notificationHandlers.clear();
     this.reconnectedHandlers.clear();
     this.statusHandlers.clear();
+    this.startupHandlers.clear();
   }
 
   private ensureConnected(): Promise<BrowserWebSocketLike> {
@@ -767,10 +812,18 @@ export class BrowserWebSocketTransport implements BackendTransport {
       );
     } catch (error) {
       if (this.disposed || this.socket !== socket) return;
+      const startup = classifyStartupReply(error);
+      if (startup) {
+        this.enterStartup(socket, startup);
+        return;
+      }
       // Unrelated RPCs keep their legacy fallback; presence requires a confirmed hello.
       this.helloError = toTransportError(error);
     }
     if (this.disposed || this.socket !== socket) return;
+    this.stopStartupPoll();
+    this.startupSocket = null;
+    if (this.startupState) this.updateStartup(null);
     this.connecting = false;
     this.connected = true;
     this.currentReconnectDelay = this.reconnectDelayMs;
@@ -789,6 +842,15 @@ export class BrowserWebSocketTransport implements BackendTransport {
   private onConnectionFailure(error: Error): void {
     this.clearConnectTimer();
     if (this.disposed) return;
+    // A starting daemon closes its bootstrap sockets once it is ready: reopen
+    // one fresh connection and hello again, still `connecting`.
+    if (this.startupSocket !== null && this.startupSocket === this.socket) {
+      this.startupHandoff();
+      return;
+    }
+    // Any other drop ends the wait: the daemon is gone, not starting. A
+    // startup failure stays latched until a new attempt or a connect.
+    if (this.startupState?.state === 'starting') this.updateStartup(null);
     this.hasConnectionFailed = true;
     this.connected = false;
     this.notifyStatusChange();
@@ -913,6 +975,8 @@ export class BrowserWebSocketTransport implements BackendTransport {
   }
 
   private teardownSocket(): void {
+    this.stopStartupPoll();
+    this.startupSocket = null;
     this.reviewMonitoring = undefined;
     this.clearMonitorRecovery();
     for (const retire of [...this.monitorRetirements]) retire();
@@ -932,6 +996,150 @@ export class BrowserWebSocketTransport implements BackendTransport {
     } catch {
       // ignore teardown errors
     }
+  }
+
+  private updateStartup(next: DaemonStartupState | null): void {
+    this.startupState = next ? Object.freeze({ ...next }) : null;
+    for (const handler of [...this.startupHandlers]) handler(this.startupState);
+  }
+
+  private startupRefusal(): BackendError {
+    return this.startupState
+      ? new BackendError(toBackendErrorPayload(startupErrorShape(this.startupState)))
+      : new BackendError({ code: 'TRANSPORT_ERROR', message: 'WebSocket connection closed' });
+  }
+
+  /** The connect-time hello was answered with the structured startup reply. */
+  private enterStartup(socket: BrowserWebSocketLike, reply: StartupReply): void {
+    // The eventual ready connect is a recovery: consumers whose requests were
+    // refused meanwhile retry on `reconnected`.
+    this.hasConnectionFailed = true;
+    if (reply.kind === 'failed') {
+      this.failStartup(reply.message, reply.snapshot);
+      return;
+    }
+    const previous = this.startupState?.state === 'starting' ? this.startupState.snapshot : null;
+    this.startupSocket = socket;
+    this.updateStartup({
+      state: 'starting',
+      snapshot: reply.snapshot ?? previous,
+      available: reply.snapshot !== null,
+    });
+    this.failWaiters(this.startupRefusal());
+    this.scheduleStartupPoll(reply.retryAfterMs);
+  }
+
+  private scheduleStartupPoll(delayMs: number): void {
+    this.stopStartupPoll();
+    const generation = this.startupPollGeneration;
+    const socket = this.startupSocket;
+    this.startupPollTimer = setTimeout(() => {
+      this.startupPollTimer = null;
+      if (
+        generation !== this.startupPollGeneration ||
+        socket === null ||
+        socket !== this.socket ||
+        this.disposed
+      )
+        return;
+      void this.pollStartup(generation, socket);
+    }, delayMs);
+  }
+
+  private stopStartupPoll(): void {
+    this.startupPollGeneration++;
+    if (this.startupPollTimer) {
+      clearTimeout(this.startupPollTimer);
+      this.startupPollTimer = null;
+    }
+  }
+
+  private async pollStartup(generation: number, socket: BrowserWebSocketLike): Promise<void> {
+    const current = () =>
+      generation === this.startupPollGeneration &&
+      socket === this.startupSocket &&
+      socket === this.socket &&
+      !this.disposed;
+    const previous = this.startupState?.snapshot ?? null;
+    let snapshot: StartupSnapshot | null;
+    try {
+      snapshot = parseStartupSnapshot(
+        await this.requestOnSocket(
+          STARTUP_STATUS_METHOD,
+          undefined,
+          { timeoutMs: STARTUP_POLL_TIMEOUT_MS },
+          socket,
+        ),
+      );
+    } catch (error) {
+      if (!current()) return;
+      const reply = classifyStartupReply(error);
+      if (reply?.kind === 'failed') {
+        this.failStartup(reply.message, reply.snapshot);
+        return;
+      }
+      if (reply?.kind === 'not-ready') {
+        this.updateStartup({
+          state: 'starting',
+          snapshot: reply.snapshot ?? previous,
+          available: reply.snapshot !== null,
+        });
+        this.scheduleStartupPoll(reply.retryAfterMs);
+        return;
+      }
+      // No usable status: hello again on a fresh socket, which re-enters
+      // startup if the daemon is still starting.
+      this.updateStartup({ state: 'starting', snapshot: previous, available: false });
+      this.startupHandoff();
+      return;
+    }
+    if (!current()) return;
+    if (snapshot === null) {
+      this.updateStartup({ state: 'starting', snapshot: previous, available: false });
+      this.startupHandoff();
+      return;
+    }
+    if (snapshot.phase === 'failed') {
+      this.failStartup(snapshot.failure?.message ?? '', snapshot);
+      return;
+    }
+    this.updateStartup({ state: 'starting', snapshot, available: true });
+    if (snapshot.phase === 'ready') {
+      this.startupHandoff();
+      return;
+    }
+    this.scheduleStartupPoll(clampStartupRetryMs(snapshot.retryAfterMs));
+  }
+
+  /**
+   * Leave the bootstrap socket and dial one fresh connection after the base
+   * delay. Status stays `connecting`; the fresh hello either confirms
+   * readiness or re-enters startup.
+   */
+  private startupHandoff(): void {
+    const refusal = this.startupRefusal();
+    this.teardownSocket();
+    this.failPending(refusal);
+    if (this.disposed) return;
+    this.connecting = true;
+    this.notifyStatusChange();
+    this.clearReconnect();
+    this.currentReconnectDelay = this.reconnectDelayMs;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (!this.disposed) this.connect();
+    }, this.reconnectDelayMs);
+  }
+
+  /** The daemon reported a terminal startup failure. */
+  private failStartup(message: string, snapshot: StartupSnapshot | null): void {
+    this.stopStartupPoll();
+    this.startupSocket = null;
+    this.hasConnectionFailed = true;
+    this.updateStartup({ state: 'failed', snapshot, available: snapshot !== null, message });
+    this.connecting = false;
+    // Normal reconnect backoff continues: the sitter may restart or roll back.
+    this.onConnectionFailure(this.startupRefusal());
   }
 
   private failPending(error: Error): void {
