@@ -163,6 +163,7 @@
     value?: string;
     onchange?: (event: CustomEvent<RepoChangeDetail>) => void;
     triggerClass?: string;
+    rowLabel?: string;
     displayValue?: string;
     /** Dimmed suffix rendered after the repo name, e.g. "owner/repo" */
     triggerSuffix?: string;
@@ -185,6 +186,7 @@
     value = '',
     onchange,
     triggerClass,
+    rowLabel,
     displayValue,
     triggerSuffix,
     triggerValueClass = 'text-subtle',
@@ -1413,7 +1415,7 @@
   );
 </script>
 
-<div class="relative">
+<div class="relative min-w-0">
   {#snippet forgePrefix()}
     {#if authenticatedForges.length > 1}
       <Menu.Root>
@@ -1462,11 +1464,15 @@
         <Button
           {...props}
           {variant}
+          wrapContent={!rowLabel}
           class={`w-full ${triggerClass ?? ''}`}
           aria-label={triggerAriaLabel ??
             `${m.workspace_repoSelector_selectRepository_label()}: ${triggerDisplayValue}`}
         >
-          <div class={`flex w-full items-center truncate ${triggerContentClass}`}>
+          <div class={`flex w-full min-w-0 items-center truncate ${triggerContentClass}`}>
+            {#if rowLabel}
+              <span class="w-22 shrink-0 truncate text-left text-muted-foreground">{rowLabel}</span>
+            {/if}
             <!-- {#if isNewRepo}
           <Fa icon={faPlus} size="sm" class="text-ghost" />
         {:else}
@@ -1492,9 +1498,11 @@
                     size={16}
                   />{/snippet}
               </GitHubAvatar>
+            {:else if rowLabel}
+              <GitRepoIcon size={16} class="shrink-0 text-muted-foreground" />
             {/if}
             {#if !triggerIcon && (hasTriggerValue || emptyLabel)}
-              <span class="flex-1 text-left truncate">
+              <span class="min-w-0 flex-1 text-left truncate">
                 {#if hasTriggerValue}
                   <span class={triggerValueClass}>{triggerDisplayValue}</span>
                   {#if isNewRepo && !displayValue && !gitlabSelected}

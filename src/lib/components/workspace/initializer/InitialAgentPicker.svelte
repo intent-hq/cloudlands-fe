@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
   import * as Menu from '$lib/components/ui/menu';
+  import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import SpecialistOptions from '$lib/components/chat/SpecialistOptions.svelte';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
@@ -60,7 +61,6 @@
   import { appClient } from '$lib/client';
   import type { SpecialistDef } from '$lib/client/app-client';
   import { createLogger } from '$lib/utils/client-logger';
-  import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
@@ -69,12 +69,12 @@
   const logger = createLogger('InitialAgentPicker');
   // Unique per mount: the picker can render more than once on a page.
   const uid = $props.id();
-  const modelLabelId = `${uid}-model-label`;
   const agentLabelId = `${uid}-agent-label`;
   const agentValueId = `${uid}-agent-value`;
+  const isMobile = new IsMobile();
   // Matches the form's other settings rows: 40px hit height, body text.
   const SETTINGS_TRIGGER_CLASS =
-    'w-full min-w-0 h-auto min-h-10 justify-start gap-2 px-2.5! pr-2! py-2! text-sm leading-5 font-normal text-foreground';
+    'w-full min-w-0 h-auto min-h-10 justify-start gap-2 px-3! pr-2! py-2! text-sm leading-5 font-normal text-foreground';
   // The menu content is the only scroller: a nested scroll box let the last
   // row's highlight overflow the menu (a second vertical bar) and clipped the
   // separator into a horizontal bar. Capped by the space Bits UI measures.
@@ -799,88 +799,55 @@
 </script>
 
 <div class="agent-settings" data-testid="initial-agent-picker">
-  <span class="agent-settings-label" id={modelLabelId}>
-    {m.workspace_initialAgentPicker_model_label()}
-  </span>
-  <div class="agent-settings-control" aria-labelledby={modelLabelId} role="group">
-    {#key activeDefaultModel}
-      <ModelPicker
-        selectedModel={modelWasOverridden ? selectedModel : undefined}
-        providerId={selectedProvider}
-        onModelChange={handleModelChange}
-        variant="ghost-light"
-        size="sm"
-        fullWidth
-        triggerClass={SETTINGS_TRIGGER_CLASS}
-        description={m.workspace_initialAgentPicker_modelMenu_description()}
-        showReasoning
-        reasoningEffort={displayedReasoningEffort}
-        onReasoningChange={handleReasoningChange}
-        showManageLink={true}
-        defaultModelId={activeDefaultModel}
-        defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
-        fallbackToCatalogDefault
-        fallbackProviderId={selectedProvider}
-        silentFallback
-        portal={false}
-        modalAware={true}
-        collisionBoundary="[data-model-picker-collision-boundary]"
-      />
-    {/key}
-  </div>
-
-  <span class="agent-settings-label" id={agentLabelId}>
-    {m.workspace_initialAgentPicker_agent_label()}
-  </span>
-  <div class="agent-settings-control">
-    <DropdownMenu
-      class="w-full"
-      bind:open={specialistDropdownOpen}
-      align="start"
-      side="bottom"
-      contentClass="p-1 w-80 max-w-[calc(100vw-1rem)]"
-      contentMaxHeight={SPECIALIST_MENU_MAX_HEIGHT}
-    >
-      {#snippet trigger({ props })}
-        <Button
-          {...props}
-          variant="ghost"
-          size="sm"
-          type="button"
-          wrapContent={false}
-          aria-labelledby="{agentLabelId} {agentValueId}"
-          class={SETTINGS_TRIGGER_CLASS}
-        >
-          <AgentAvatar
-            agentId="blank"
-            size={16}
-            specialist={isTeamMode
-              ? orchestratorId
-              : currentSpecialistInfo
-                ? displayedSpecialist
-                : null}
-            icon={isTeamMode ? orchestrator?.icon : currentSpecialistInfo?.icon}
-          />
-          <span class="min-w-0 flex-1 truncate text-left" id={agentValueId}
-            >{agentDisplayLabel}</span
+  <div class="w-full">
+    <Menu.Root bind:open={specialistDropdownOpen}>
+      <Menu.Trigger>
+        {#snippet child({ props })}
+          <Button
+            {...props}
+            variant="ghost"
+            size="sm"
+            type="button"
+            wrapContent={false}
+            active={specialistDropdownOpen}
+            aria-labelledby="{agentLabelId} {agentValueId}"
+            class={SETTINGS_TRIGGER_CLASS}
           >
-          <Fa icon={faChevronDown} class="size-3 shrink-0 text-muted-foreground" />
-        </Button>
-      {/snippet}
-
-      {#snippet content()}
+            <span
+              class="w-[5.5rem] shrink-0 truncate text-left text-muted-foreground"
+              id={agentLabelId}>{m.workspace_initialAgentPicker_agent_label()}</span
+            >
+            <span class="plain-agent-icon flex w-4 shrink-0 text-muted-foreground">
+              <AgentAvatar
+                agentId="blank"
+                variant="compact"
+                specialist={isTeamMode
+                  ? orchestratorId
+                  : currentSpecialistInfo
+                    ? displayedSpecialist
+                    : null}
+                icon={isTeamMode ? orchestrator?.icon : currentSpecialistInfo?.icon}
+              />
+            </span>
+            <span class="min-w-0 flex-1 truncate text-left" id={agentValueId}
+              >{agentDisplayLabel}</span
+            >
+            <Fa icon={faChevronDown} class="size-3 shrink-0 text-muted-foreground" />
+          </Button>
+        {/snippet}
+      </Menu.Trigger>
+      <Menu.Content
+        side={isMobile.current ? 'bottom' : 'left'}
+        sideOffset={isMobile.current ? 4 : 24}
+        align={isMobile.current ? 'end' : 'start'}
+        preventScroll={false}
+        class="p-1 w-[300px] max-w-[calc(100vw-1rem)]"
+        maxHeight={SPECIALIST_MENU_MAX_HEIGHT}
+        aria-label={m.ui_dropdownMenu_ariaLabel()}
+      >
         <p class="type-caption px-2 pt-1.5 pb-1 text-muted-foreground">
           {m.workspace_initialAgentPicker_agentMenu_description()}
         </p>
-        <SpecialistOptions
-          specialists={customSpecialists}
-          value={isTeamMode
-            ? (orchestratorId ?? '')
-            : isTeamRoleId(selectedSpecialist)
-              ? null
-              : selectedSpecialist}
-          onchange={handleAgentSelect}
-        />
         {#if orchestrator}
           <Menu.RadioGroup
             value={isTeamMode ? 'orchestration' : ''}
@@ -889,62 +856,90 @@
             <Menu.RadioItem
               value="orchestration"
               closeOnSelect
-              class="h-auto min-h-(--control-height-medium) gap-2 py-2 whitespace-normal"
+              class="min-h-9 items-center gap-2 py-2 text-sm font-normal data-[state=checked]:bg-sidebar"
               data-specialist-option="orchestration"
               onSelect={handleOrchestrationSelect}
             >
-              <span class="first-line-icon w-5">
-                <AgentAvatar
-                  agentId="blank"
-                  variant="standard"
-                  specialist={orchestrator.id}
-                  icon={orchestrator.icon}
-                />
-              </span>
-              <span class="flex min-w-0 flex-1 flex-col text-left">
-                <span class="type-caption truncate text-foreground">{orchestratorLabel}</span>
-                <span class="type-caption line-clamp-2 text-muted-foreground">
-                  {orchestrator.description ||
-                    m.workspace_initialAgentPicker_teamMode_description()}
-                </span>
-              </span>
+              {#snippet leading()}<span
+                  class="plain-agent-icon flex w-4 shrink-0 text-muted-foreground"
+                >
+                  <AgentAvatar
+                    agentId="blank"
+                    variant="compact"
+                    specialist={orchestrator.id}
+                    icon={orchestrator.icon}
+                  />
+                </span>{/snippet}
+              <span class="min-w-0 flex-1 truncate text-left text-foreground"
+                >{orchestratorLabel}</span
+              >
+              <span class="type-caption shrink-0 text-muted-foreground"
+                >{m.workspace_initialAgentPicker_multiAgent_label()}</span
+              >
             </Menu.RadioItem>
           </Menu.RadioGroup>
+          <Menu.Separator />
         {/if}
+        <SpecialistOptions
+          compact
+          specialists={customSpecialists}
+          value={isTeamMode
+            ? (orchestratorId ?? '')
+            : isTeamRoleId(selectedSpecialist)
+              ? null
+              : selectedSpecialist}
+          onchange={handleAgentSelect}
+        />
         <Menu.Separator />
-        <Menu.Item class="type-caption gap-2" onSelect={openSpecialistSettings}>
+        <Menu.Item class="gap-2" onSelect={openSpecialistSettings}>
           {#snippet leading()}<Fa icon={faPlus} class="opacity-60" />{/snippet}
-          <span class="type-caption"
-            >{m.workspace_initialAgentPicker_manageSpecialists_label()}</span
-          >
+          <span>{m.workspace_initialAgentPicker_manageSpecialists_label()}</span>
         </Menu.Item>
-      {/snippet}
-    </DropdownMenu>
+      </Menu.Content>
+    </Menu.Root>
   </div>
+
+  {#key activeDefaultModel}
+    <ModelPicker
+      selectedModel={modelWasOverridden ? selectedModel : undefined}
+      providerId={selectedProvider}
+      onModelChange={handleModelChange}
+      variant="ghost-light"
+      size="sm"
+      fullWidth
+      rowLabel={m.workspace_initialAgentPicker_model_label()}
+      genericModelIcon
+      triggerClass={SETTINGS_TRIGGER_CLASS}
+      description={m.workspace_initialAgentPicker_modelMenu_description()}
+      showReasoning
+      reasoningEffort={displayedReasoningEffort}
+      onReasoningChange={handleReasoningChange}
+      showManageLink={true}
+      defaultModelId={activeDefaultModel}
+      defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
+      fallbackToCatalogDefault
+      fallbackProviderId={selectedProvider}
+      silentFallback
+      portal={false}
+      modalAware={true}
+      collisionBoundary="[data-model-picker-collision-boundary]"
+    />
+  {/key}
 </div>
 
 <style>
-  /* Shares the form's label column so every settings row aligns. */
+  /* Whole-row triggers stack; each owns its label, value and chevron. */
   .agent-settings {
-    display: grid;
-    grid-template-columns: 5.5rem minmax(0, 1fr);
-    column-gap: 1rem;
-    row-gap: 0.25rem;
-    align-items: center;
-    min-width: 0;
-  }
-
-  .agent-settings-label {
-    font-size: var(--text-sm);
-    line-height: 1.25rem;
-    color: var(--color-muted-foreground);
-  }
-
-  .agent-settings-control {
     display: flex;
-    /* ModelPicker's provider notice wraps onto its own full-width line. */
-    flex-wrap: wrap;
-    align-items: center;
+    flex-direction: column;
+    gap: 0.25rem;
     min-width: 0;
+  }
+
+  /* Outline glyph only: no avatar tile, ink follows the row text. */
+  .plain-agent-icon :global(.agent-avatar) {
+    background: transparent;
+    color: currentColor;
+    padding: 0;
   }
 </style>

@@ -23,6 +23,7 @@
     hasProviderIcon,
   } from '$features/agent/components/AgentProviderIcon.svelte';
   import { faSettings } from '$lib/icons/phosphor-icons';
+  import SparkleIcon from 'phosphor-svelte/lib/SparkleIcon';
   import ModelPickerEmptyState from './ModelPickerEmptyState.svelte';
   import EffortGauge from './EffortGauge.svelte';
   import EffortPicker from './EffortPicker.svelte';
@@ -296,6 +297,10 @@
     fullWidth?: boolean;
     /** Short explanation shown at the top of the open menu. */
     description?: string;
+    /** Field label rendered inside a full-width trigger, before the value. */
+    rowLabel?: string;
+    /** Show a generic model glyph instead of the provider's brand icon. */
+    genericModelIcon?: boolean;
     workspaceId?: string;
     agentId?: string;
     showManageLink?: boolean;
@@ -355,6 +360,8 @@
     size = 'sm',
     fullWidth = false,
     description,
+    rowLabel,
+    genericModelIcon = false,
     workspaceId,
     agentId,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -2512,6 +2519,9 @@
       open: boolean;
       value: string | string[] | undefined;
     })}
+      {#if rowLabel}
+        <span class="w-[5.5rem] shrink-0 truncate text-left text-muted-foreground">{rowLabel}</span>
+      {/if}
       <span
         class={cn(
           'inline-flex items-center gap-2 truncate min-w-0',
@@ -2528,7 +2538,9 @@
           {:else if usingEarlierProfileSettings}
             <Fa icon={faCircleInfo} class="h-3 w-3 text-muted-foreground shrink-0" />
           {/if}
-          {#if hasProviderIcon(triggerProviderId)}
+          {#if genericModelIcon}
+            <SparkleIcon size={16} class="shrink-0 text-muted-foreground" aria-hidden="true" />
+          {:else if hasProviderIcon(triggerProviderId)}
             <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
           {/if}
           <span class="truncate" use:truncatedTitle={triggerTitle ? undefined : triggerLabel}

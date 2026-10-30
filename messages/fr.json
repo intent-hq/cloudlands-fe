@@ -6812,6 +6812,7 @@
   "workspace_initialAgentPicker_manageSpecialists_label": "Créer ou gérer des spécialistes",
   "workspace_initialAgentPicker_modelMenu_description": "Utilisé par le premier agent. Vous pourrez changer de modèle plus tard dans le chat.",
   "workspace_initialAgentPicker_model_label": "Modèle",
+  "workspace_initialAgentPicker_multiAgent_label": "Multi-agents",
   "workspace_initialAgentPicker_teamMode_description": "Un agent coordinateur rédigera une spécification pour votre tâche et gérera le travail pour vous entre différents agents.",
   "workspace_initialAgentPicker_teamMode_label": "Orchestration d'agents",
   "workspace_isolationMode_cowCheckout_label": "Extraction CoW",

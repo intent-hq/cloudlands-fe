@@ -6812,6 +6812,7 @@
   "workspace_initialAgentPicker_manageSpecialists_label": "スペシャリストを新規作成または管理",
   "workspace_initialAgentPicker_modelMenu_description": "最初のエージェントが使用します。モデルは後でチャットから切り替えられます。",
   "workspace_initialAgentPicker_model_label": "モデル",
+  "workspace_initialAgentPicker_multiAgent_label": "マルチエージェント",
   "workspace_initialAgentPicker_teamMode_description": "コーディネーターエージェントがタスクの仕様を作成し、複数のエージェント間で作業を管理します。",
   "workspace_initialAgentPicker_teamMode_label": "エージェントオーケストレーション",
   "workspace_isolationMode_cowCheckout_label": "CoW チェックアウト",

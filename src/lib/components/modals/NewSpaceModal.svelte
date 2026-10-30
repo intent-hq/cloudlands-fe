@@ -112,9 +112,9 @@
       > [data-slot='dialog-header']
       > [data-slot='dialog-title']
   ) {
-    font-size: var(--text-sm);
-    line-height: 1.25rem;
-    font-weight: var(--text-body-weight);
+    font-size: var(--text-base);
+    line-height: 1.5rem;
+    font-weight: var(--text-body-strong-weight);
   }
 
   :global([data-new-space-modal] > .dialog-layout > [data-slot='dialog-body']) {
@@ -123,7 +123,7 @@
   }
 
   :global([data-new-space-modal] > .dialog-close-button) {
-    top: calc(anchor(--dialog-title top, 1.5rem) + 1.25rem / 2);
+    top: calc(anchor(--dialog-title top, 1.5rem) + 1.5rem / 2);
   }
 
   .workspace-form :global(.prompt-pane) {
@@ -131,7 +131,11 @@
   }
 
   .workspace-form :global(.settings-pane) {
-    padding: 0 0 0.5rem 2rem;
+    padding: 0.5rem 0 0.5rem 1rem;
+  }
+
+  .workspace-form :global(.initializer-layout.expanded) {
+    grid-template-columns: minmax(0, 1fr) 20rem;
   }
 
   .workspace-sidebar-surface {
@@ -139,7 +143,7 @@
     position: absolute;
     inset-block: 0;
     inset-inline-end: 0;
-    width: calc(21rem + 1.5rem);
+    width: calc(20rem + 1.5rem);
     pointer-events: none;
     z-index: -1;
     background: var(--color-sidebar);
@@ -163,13 +167,14 @@
     }
 
     .workspace-form :global(.initializer-layout.expanded) {
+      grid-template-columns: minmax(0, 1fr);
       row-gap: 1rem;
     }
 
     .workspace-form :global(.settings-pane) {
       margin-inline: -1.5rem;
       margin-bottom: -1rem;
-      padding: 1rem 1.5rem 1.5rem 2rem;
+      padding: 1rem 1.5rem 1.5rem 0.75rem;
       border-end-start-radius: var(--radius-medium);
       border-end-end-radius: var(--radius-medium);
     }

@@ -4,6 +4,7 @@
   import Fa from 'svelte-fa';
   import { ListRow } from '$lib/components/patterns/collection';
   import { Button } from '$lib/components/ui/button';
+  import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
   import * as Popover from '$lib/components/ui/popover';
   import { useDialogPortalTarget } from '$lib/components/ui/dialog';
   import GitLabPickerList from './GitLabPickerList.svelte';
@@ -15,6 +16,7 @@
     placeholder,
     protectedLabel,
     triggerClass,
+    rowLabel,
     isLoading = false,
     showTriggerChevron = false,
     triggerChevronClass,
@@ -36,8 +38,13 @@
         type="button"
         class={`min-w-0 max-w-full text-muted-foreground ${triggerClass ?? ''}`}
         aria-busy={loading}
+        wrapContent={!rowLabel}
       >
-        <span class="flex min-w-0 items-center gap-0.75 truncate">
+        <span class="flex w-full min-w-0 items-center truncate {rowLabel ? 'gap-2' : 'gap-0.75'}">
+          {#if rowLabel}
+            <span class="w-22 shrink-0 truncate text-left text-muted-foreground">{rowLabel}</span>
+            <GitBranchIcon size={16} class="shrink-0 text-muted-foreground" />
+          {/if}
           {#if !selectedBranch && loading}
             <IntentMarkLoader size={14} class="text-ghost" />
             <span class="sr-only">{list.copy.loadingLabel}</span>

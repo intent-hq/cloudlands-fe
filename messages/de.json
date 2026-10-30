@@ -6812,6 +6812,7 @@
   "workspace_initialAgentPicker_manageSpecialists_label": "Neue Spezialisten erstellen oder verwalten",
   "workspace_initialAgentPicker_modelMenu_description": "Wird vom ersten Agenten verwendet. Du kannst das Modell später im Chat wechseln.",
   "workspace_initialAgentPicker_model_label": "Modell",
+  "workspace_initialAgentPicker_multiAgent_label": "Multi-Agent",
   "workspace_initialAgentPicker_teamMode_description": "Ein Koordinator-Agent schreibt eine Spezifikation für Ihre Aufgabe und verwaltet die Arbeit für Sie über verschiedene Agenten hinweg.",
   "workspace_initialAgentPicker_teamMode_label": "Agenten-Orchestrierung",
   "workspace_isolationMode_cowCheckout_label": "CoW-Checkout",

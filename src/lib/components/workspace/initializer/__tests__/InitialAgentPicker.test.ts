@@ -1771,9 +1771,11 @@ describe('InitialAgentPicker specialist dropdown', () => {
   async function openedOptionIds() {
     await fireEvent.click(specialistTrigger());
     await screen.findByRole('menuitemradio', { name: /General/ });
-    return [...document.querySelectorAll('[data-specialist-option]')].map((el) =>
-      el.getAttribute('data-specialist-option'),
-    );
+    return [
+      ...document.querySelectorAll(
+        '[data-specialist-option]:not([data-specialist-option="orchestration"])',
+      ),
+    ].map((el) => el.getAttribute('data-specialist-option'));
   }
 
   it('lists recently used specialists first, newest first, under General', async () => {
@@ -1787,7 +1789,6 @@ describe('InitialAgentPicker specialist dropdown', () => {
       'reviewer',
       'developer',
       'researcher',
-      'orchestration',
     ]);
   });
 
@@ -1801,7 +1802,6 @@ describe('InitialAgentPicker specialist dropdown', () => {
       'reviewer',
       'researcher',
       'writer',
-      'orchestration',
     ]);
   });
 

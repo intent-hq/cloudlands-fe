@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Separator } from '$lib/components/ui/separator';
+  import { ShortcutChip } from '$lib/components/ui/kbd';
   import {
     selectWorkspaceCreationVisible,
     selectPrincipalActionContext,
@@ -3213,7 +3215,7 @@
 
         {#if isExpanded}
           <div class="prompt-footer" transition:slide={{ axis: 'y', tier: 'moderate' }}>
-            <div class="min-w-0 py-1">
+            <div class="min-w-0 py-1.5">
               <IssueSuggestions
                 onSelect={handleIssueSelect}
                 repositoryOwner={githubRepoInfo?.owner}
@@ -3425,7 +3427,8 @@
           />
         </div>
 
-        <div class="pt-4">
+        <div class="mx-3 my-1"><Separator /></div>
+        <div class="min-w-0">
           <InitialAgentPicker
             bind:selectedSpecialist
             {selectedModel}
@@ -3527,7 +3530,7 @@
           {#snippet createButton(progressLabel?: Snippet)}
             <Button
               variant="primary"
-              class="w-full h-auto min-h-10 justify-between gap-3 py-2 text-sm leading-5 font-medium"
+              class="w-full h-auto min-h-11 justify-between gap-3 py-2 type-body font-medium"
               data-dialog-primary-action
               onclick={handleSubmit}
               disabled={!isValid || isCreating || isEnhancing || isProcessingImages}
@@ -3550,11 +3553,18 @@
                 <!-- Always rendered so the button never resizes when validity flips;
                    `invisible` reserves the space while hiding it (incl. from AT). -->
                 <span
-                  class="shrink-0 text-xs leading-5 font-normal opacity-60"
+                  class="inline-flex shrink-0 items-center gap-1 font-normal"
                   class:invisible={!isValid}
                   aria-hidden={!isValid ? 'true' : undefined}
                 >
-                  {navigator.userAgent?.includes('Mac') ? '⌘' : 'Ctrl'} + ↵
+                  <ShortcutChip
+                    class="flex min-w-6 h-6 items-center justify-center rounded-md bg-primary-foreground/10 px-1.5 text-primary-foreground"
+                    >{navigator.userAgent?.includes('Mac') ? '⌘' : 'Ctrl'}</ShortcutChip
+                  >
+                  <ShortcutChip
+                    class="flex size-6 items-center justify-center rounded-md bg-primary-foreground/10 text-primary-foreground"
+                    >↵</ShortcutChip
+                  >
                 </span>
               {/if}
             </Button>
@@ -3698,7 +3708,7 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: start;
-    min-height: 2.5rem;
+    min-height: 2.75rem;
     margin-inline: -0.5rem;
     column-gap: 0.5rem;
   }
@@ -3707,7 +3717,7 @@
     display: flex;
     align-items: center;
     gap: 0.25rem;
-    min-height: 2.5rem;
+    min-height: 2.75rem;
   }
 
   @container (min-width: 48rem) {

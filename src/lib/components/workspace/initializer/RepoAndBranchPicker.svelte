@@ -2,6 +2,7 @@
   import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { Button } from '$lib/components/ui/button';
   import GitRepoIcon from '$lib/components/icons/GitRepoIcon.svelte';
+  import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
   import Checkbox from '$lib/components/ui/checkbox/checkbox.svelte';
   import { faPlus } from '@fortawesome/free-solid-svg-icons';
@@ -267,68 +268,67 @@
 
 <div class={isFormPresentation ? 'grid min-w-0 gap-1' : pickerClass}>
   {#if isFormPresentation}
-    <div class="grid min-w-0 grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-4">
-      <span class="text-sm text-muted-foreground"
-        >{m.workspace_compactInitializer_repository_label()}</span
-      >
-      <RepoSelector
-        {gitlab}
-        bind:this={repoSelector}
-        variant="ghost"
-        gitlabSelected={repoType === 'gitlab'}
-        value={repoOnlyValue}
-        onchange={handleRepoChange}
-        triggerClass="w-full min-w-0 h-auto min-h-10 px-2.5 pr-2 py-2 text-sm leading-5 font-normal"
-        displayValue={metadataRepoName || undefined}
-        triggerValueClass="text-foreground"
-        triggerContentClass="gap-2"
-        showTriggerChevron
-        triggerChevronClass="ml-auto size-3! shrink-0 text-muted-foreground"
-      />
-    </div>
+    <RepoSelector
+      {gitlab}
+      bind:this={repoSelector}
+      variant="ghost"
+      gitlabSelected={repoType === 'gitlab'}
+      value={repoOnlyValue}
+      onchange={handleRepoChange}
+      rowLabel={m.workspace_compactInitializer_repository_label()}
+      triggerClass="w-full min-w-0 h-auto min-h-10 px-3 pr-2 py-2 text-sm leading-5 font-normal"
+      displayValue={metadataRepoName || undefined}
+      triggerValueClass="text-foreground"
+      triggerContentClass="gap-2"
+      showTriggerChevron
+      triggerChevronClass="ml-auto size-3! shrink-0 text-muted-foreground"
+    />
     {#if !isNewRepo}
-      <div class="grid min-w-0 grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-4">
-        <span class="text-sm text-muted-foreground"
-          >{m.workspace_compactInitializer_branch_label()}</span
-        >
-        <div class="min-w-0">
-          {#if repoType === 'gitlab'}
-            {#if gitlabBranch}
-              <GitLabBranchPicker
-                {...gitlabBranch}
-                triggerClass="w-full min-w-0 h-auto min-h-10 justify-start px-2.5 pr-2 py-2 text-sm leading-5 font-normal text-foreground"
-                showTriggerChevron
-                triggerChevronClass="ml-auto size-3! shrink-0 text-muted-foreground"
-              />
-            {/if}
-          {:else if repoType === 'remote' && remoteSetup}
-            <span class="block truncate px-2.5 py-2 text-sm leading-5 text-foreground"
-              >{remoteSetup.branch || 'main'}<!-- i18n-ignore (git branch name) --></span
-            >
-          {:else}
-            <BranchSelector
-              variant="ghost"
-              triggerClass="w-full min-w-0 h-auto min-h-10 px-2.5 pr-2 py-2 text-sm leading-5 font-normal text-foreground"
-              value={branch}
-              repoPath={branchRepoPath}
-              repoType={repoType as 'local' | 'github'}
-              {githubUrl}
-              {skipIsolation}
-              {suggestedBranch}
-              hasTriggerIcon={false}
-              disabled={!hasRepo}
-              showUncommittedIndicator
+      <div class="min-w-0">
+        {#if repoType === 'gitlab'}
+          {#if gitlabBranch}
+            <GitLabBranchPicker
+              {...gitlabBranch}
+              rowLabel={m.workspace_compactInitializer_branch_label()}
+              triggerClass="w-full min-w-0 h-auto min-h-10 justify-start px-3 pr-2 py-2 text-sm leading-5 font-normal text-foreground"
               showTriggerChevron
               triggerChevronClass="ml-auto size-3! shrink-0 text-muted-foreground"
-              triggerContentClass="w-full gap-2"
-              onSkipIsolationChange={(value) => onSkipIsolationChange?.(value)}
-              onGitHubAuthNeededChange={(value) => onGitHubAuthNeededChange?.(value)}
-              {onBranchStatusChange}
-              {onBranchesLoaded}
-              onchange={handleBranchChange}
             />
           {/if}
-        </div>
+        {:else if repoType === 'remote' && remoteSetup}
+          <div class="flex min-h-10 min-w-0 items-center gap-2 px-3 py-2 text-sm leading-5">
+            <span class="w-22 shrink-0 truncate text-muted-foreground"
+              >{m.workspace_compactInitializer_branch_label()}</span
+            >
+            <GitBranchIcon size={16} class="shrink-0 text-muted-foreground" />
+            <span class="min-w-0 truncate"
+              >{remoteSetup.branch || 'main'}<!-- i18n-ignore (git branch name) --></span
+            >
+          </div>
+        {:else}
+          <BranchSelector
+            variant="ghost"
+            rowLabel={m.workspace_compactInitializer_branch_label()}
+            triggerClass="w-full min-w-0 h-auto min-h-10 px-3 pr-2 py-2 text-sm leading-5 font-normal text-foreground"
+            value={branch}
+            repoPath={branchRepoPath}
+            repoType={repoType as 'local' | 'github'}
+            {githubUrl}
+            {skipIsolation}
+            {suggestedBranch}
+            hasTriggerIcon
+            disabled={!hasRepo}
+            showUncommittedIndicator
+            showTriggerChevron
+            triggerChevronClass="ml-auto size-3! shrink-0 text-muted-foreground"
+            triggerContentClass="w-full gap-2"
+            onSkipIsolationChange={(value) => onSkipIsolationChange?.(value)}
+            onGitHubAuthNeededChange={(value) => onGitHubAuthNeededChange?.(value)}
+            {onBranchStatusChange}
+            {onBranchesLoaded}
+            onchange={handleBranchChange}
+          />
+        {/if}
       </div>
     {/if}
     {#if repoType === 'remote' && remoteSetup}

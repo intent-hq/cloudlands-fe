@@ -365,12 +365,10 @@
   } from './issue-paging';
   import {
     loadLastUsedSource,
-    orderProviders,
     orderSources,
     resolveActiveSource,
     saveLastUsedSource,
     type ContextSource,
-    type ContextSourceProvider,
   } from './context-source-preference';
 
   const logger = createLogger('ContextPicker');
@@ -1725,22 +1723,11 @@
       'github-issues': { label: 'GH Issues', icon: GitHubIcon },
       'github-prs': { label: 'GH PRs', icon: GitHubIcon },
     };
-  const PROVIDER_ICONS: Record<ContextSourceProvider, typeof LinearIcon> = {
-    github: GitHubIcon,
-    linear: LinearIcon,
-    sentry: SentryIcon,
-  };
-  const PROVIDER_ICON_CLASSES: Record<ContextSourceProvider, string> = {
-    github: 'opacity-80',
-    linear: 'opacity-40',
-    sentry: 'opacity-80',
-  };
   const providerConnections = $derived({
     github: isGitHubAuthenticated,
     linear: isLinearAuthenticated,
     sentry: isSentryAuthenticated,
   });
-  const orderedProviders = $derived(orderProviders(providerConnections, lastUsedSource));
   const sources = $derived(
     orderSources(providerConnections, lastUsedSource).map((id) => ({ id, ...SOURCE_TAB_META[id] })),
   );
@@ -1831,15 +1818,6 @@
           : ''}"
       />
       <span>{m.workspace_issueSuggestions_addContext_label()}</span>
-      <!-- Show all provider icons when collapsed -->
-      <!-- {#if !isOpen} -->
-      <div class="flex items-center gap-2 ml-1">
-        {#each orderedProviders as provider (provider)}
-          {@const ProviderIcon = PROVIDER_ICONS[provider]}
-          <ProviderIcon size={12} class={PROVIDER_ICON_CLASSES[provider]} />
-        {/each}
-      </div>
-      <!-- {/if} -->
     </Button>
   {/if}
 

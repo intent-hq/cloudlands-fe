@@ -6812,6 +6812,7 @@
   "workspace_initialAgentPicker_manageSpecialists_label": "创建或管理专家",
   "workspace_initialAgentPicker_modelMenu_description": "由第一个智能体使用。之后可以在聊天中切换模型。",
   "workspace_initialAgentPicker_model_label": "模型",
+  "workspace_initialAgentPicker_multiAgent_label": "多智能体",
   "workspace_initialAgentPicker_teamMode_description": "协调者智能体会为你的任务撰写规范，并在不同智能体之间管理工作。",
   "workspace_initialAgentPicker_teamMode_label": "智能体编排",
   "workspace_isolationMode_cowCheckout_label": "CoW 检出",

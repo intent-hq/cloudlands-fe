@@ -4,6 +4,7 @@
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import Fa from 'svelte-fa';
   import { faChevronRight } from '@fortawesome/free-solid-svg-icons';
+  import Terminal from 'phosphor-svelte/lib/Terminal';
   import { m } from '$shared/paraglide/messages.js';
 
   let {
@@ -22,38 +23,35 @@
   const id = $props.id();
 </script>
 
-<div
-  class={presentation === 'form'
-    ? 'grid min-w-0 grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-4'
-    : 'grid min-w-0 gap-2'}
->
-  <Label
-    for={id}
-    class={presentation === 'form' ? 'text-sm font-normal text-muted-foreground' : undefined}
-    >{presentation === 'form'
-      ? m.workspace_compactInitializer_setup_label()
-      : m.workspace_setupScriptEditor_setupScript_label()}</Label
-  >
+<div class="grid min-w-0 gap-2">
+  {#if presentation !== 'form'}
+    <Label for={id}>{m.workspace_setupScriptEditor_setupScript_label()}</Label>
+  {/if}
   <Button
     {id}
     type="button"
     variant={presentation === 'form' ? 'ghost' : 'outline'}
+    wrapContent={presentation !== 'form'}
     class="w-full min-w-0 gap-2 font-normal {presentation === 'form'
-      ? 'h-auto min-h-10 justify-between px-2.5 pr-2 py-2 text-left text-sm leading-5'
+      ? 'h-auto min-h-10 justify-start px-3 pr-2 py-2 text-left text-sm leading-5'
       : 'justify-between text-left'}"
     aria-label={m.workspace_setupScriptEditor_setupScript_label()}
     aria-haspopup="dialog"
     aria-expanded={expanded}
     onclick={onOpen}
   >
-    <span class="flex min-w-0 items-center gap-2">
+    {#if presentation === 'form'}
+      <span class="w-22 shrink-0 truncate text-muted-foreground"
+        >{m.workspace_compactInitializer_setup_label()}</span
+      >
+      <Terminal size={16} class="shrink-0 text-muted-foreground" aria-hidden="true" />
+    {/if}
+    <span class="flex min-w-0 flex-1 items-center gap-2">
       {#if loading}<IntentMarkLoader size={14} /><span class="truncate"
           >{m.workspace_compactInitializer_detectingSetupScript_label()}</span
         >
       {:else}<span class="truncate">{value}</span>{/if}
     </span>
-    {#if presentation !== 'form'}
-      <Fa icon={faChevronRight} class="size-3 shrink-0 text-muted-foreground" />
-    {/if}
+    <Fa icon={faChevronRight} class="size-3 shrink-0 text-muted-foreground" />
   </Button>
 </div>

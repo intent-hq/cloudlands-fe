@@ -86,6 +86,7 @@
     dropUp?: boolean;
     portal?: boolean;
     triggerClass?: string;
+    rowLabel?: string;
     hasTriggerIcon?: boolean;
     description?: string;
     /** Whether to skip the isolated checkout (worktree or CoW clone) and work directly on current branch */
@@ -118,6 +119,7 @@
     dropUp = false,
     portal = true,
     triggerClass,
+    rowLabel,
     hasTriggerIcon = true,
     description,
     skipIsolation = false,
@@ -1599,9 +1601,14 @@
 
 {#if disabled}
   <!-- Disabled state: show non-interactive display -->
-  <div class="flex items-center gap-2 text-subtle text-sm py-1">
+  <div
+    class="flex min-w-0 items-center gap-2 text-subtle text-sm {rowLabel
+      ? 'min-h-10 px-3 py-2'
+      : 'py-1'}"
+  >
+    {#if rowLabel}<span class="w-22 shrink-0 truncate text-muted-foreground">{rowLabel}</span>{/if}
     {#if hasTriggerIcon}
-      <GitBranchIcon size={12} class="text-ghost" />
+      <GitBranchIcon size={rowLabel ? 16 : 12} class="text-ghost shrink-0" />
     {/if}
     <span class="truncate"
       >{selectedBranch || value || m.workspace_branchSelector_noBranchSelected_label()}</span
@@ -1616,14 +1623,18 @@
             {...props}
             bind:ref={triggerEl}
             variant={variant === 'default' ? 'outline' : variant}
+            wrapContent={!rowLabel}
             aria-label={`${m.workspace_branchSelector_selectBranch_label()}: ${selectedBranch || value}`}
             class={`w-full text-muted-foreground ${triggerClass} ${githubAuthNeeded === 'not-authenticated' ? 'ring-1 ring-orange-400 rounded-sm' : suggestedBranch && suggestedBranch !== internalSelectedBranch ? 'ring-1 ring-primary-ink rounded-sm' : ''}`}
           >
             <div class={`flex items-center truncate min-w-0 ${triggerContentClass}`}>
+              {#if rowLabel}<span class="w-22 shrink-0 truncate text-left text-muted-foreground"
+                  >{rowLabel}</span
+                >{/if}
               {#if githubAuthNeeded === 'not-authenticated'}
                 <Fa icon={faExclamationTriangle} class="text-orange-500" size="xs" />
               {:else if hasTriggerIcon}
-                <GitBranchIcon size={12} class={'text-ghost'} />
+                <GitBranchIcon size={rowLabel ? 16 : 12} class="text-ghost shrink-0" />
               {/if}
               <span class="flex-1 text-left truncate min-w-0">
                 {#if githubAuthNeeded === 'not-authenticated'}
