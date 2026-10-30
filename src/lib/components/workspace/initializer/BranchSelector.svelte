@@ -47,6 +47,7 @@
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { onDestroy, tick } from 'svelte';
   import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
+  import { workspacePickerStyles } from './workspace-picker-styles';
   import { slide } from '$lib/motion';
   import { store as appStore } from '$store/renderer/store';
 
@@ -1564,7 +1565,11 @@
 </script>
 
 {#snippet branchOptionIcon()}
-  <GitBranchIcon size={14} class="text-subtle" />
+  {#if rowLabel}
+    <GitBranchIcon size={16} class={workspacePickerStyles.icon} />
+  {:else}
+    <GitBranchIcon size={14} class="text-subtle" />
+  {/if}
 {/snippet}
 
 {#snippet groupHeading(group: ComboboxGroup)}
@@ -1576,7 +1581,9 @@
     aria-expanded={expanded}
     data-branch-group={group.key}
     aria-label={m.ui_groupedCombobox_toggleGroup_ariaLabel({ group: group.label })}
-    class="w-full justify-start gap-1.5 px-2 text-subtle"
+    class={rowLabel
+      ? `w-full justify-start gap-1.5 ${workspacePickerStyles.group} h-auto`
+      : 'w-full justify-start gap-1.5 px-2 text-subtle'}
     onclick={() => toggleGroup(group)}
   >
     <Fa icon={faChevronDown} class={`size-2.5! shrink-0 ${expanded ? '' : '-rotate-90'}`} />
@@ -1716,10 +1723,10 @@
       >
         <!-- Header -->
         {#if rowLabel}
-          <div class="flex shrink-0 items-start gap-2 pt-3 pr-2 pb-2 pl-4">
+          <div class="{workspacePickerStyles.header} flex items-start gap-2 pr-2">
             <div class="min-w-0 flex-1">
-              <h2 class="type-body font-medium text-foreground">{rowLabel}</h2>
-              <p class="type-caption mt-0.5 text-muted-foreground">
+              <h2 class={workspacePickerStyles.title}>{rowLabel}</h2>
+              <p class={workspacePickerStyles.description}>
                 {description || m.workspace_branchSelector_formMenu_description()}
               </p>
             </div>
@@ -1916,6 +1923,7 @@
               groups={branchGroups}
               groupHeader={groupHeading}
               optionIcon={branchOptionIcon}
+              rowClass={rowLabel ? workspacePickerStyles.row : undefined}
               bind:inputRef={searchInputElement}
               ariaLabel={m.workspace_branchSelector_selectBranch_label()}
               placeholder={m.workspace_branchSelector_search_placeholder()}
@@ -1937,8 +1945,10 @@
                   event.preventDefault();
                 }
               }}
-              class="flex min-h-0 flex-1 flex-col px-2 pb-1"
-              inputClass="shrink-0"
+              class={rowLabel
+                ? 'flex min-h-0 flex-1 flex-col px-2 pb-2'
+                : 'flex min-h-0 flex-1 flex-col px-2 pb-1'}
+              inputClass={rowLabel ? `shrink-0 ${workspacePickerStyles.search}` : 'shrink-0'}
               viewportClass="min-h-0 max-h-none flex-1"
               size="compact"
               contentClass="flex min-h-0 max-h-none flex-col border-0 shadow-none"

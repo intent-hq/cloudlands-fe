@@ -53,6 +53,8 @@
     footer?: Snippet;
     optionDescription?: Snippet<[ComboboxOption]>;
     optionIcon?: Snippet<[ComboboxOption]>;
+    /** Classes for every option row, including a synthesized custom option. */
+    rowClass?: string;
     optionActions?: Snippet<[ComboboxOption]>;
     groupDescription?: Snippet<[ComboboxGroup]>;
     groupAction?: Snippet<[ComboboxGroup]>;
@@ -108,6 +110,7 @@
     footer,
     optionDescription,
     optionIcon,
+    rowClass = '',
     optionActions,
     groupDescription,
     groupAction,
@@ -653,7 +656,7 @@
                         label={option.label}
                         disabled={busy || option.disabled || !optionMatchesQuery(option)}
                         data-menu-item
-                        class={cn(menuItem(), option.class)}
+                        class={cn(menuItem(), rowClass, option.class)}
                         child={optionChild}
                         onHighlight={() => (highlightedOption = option)}
                         onUnhighlight={() => {

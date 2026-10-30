@@ -89,6 +89,10 @@
     fillContentHeight?: boolean;
     /** Custom class for the header */
     headerClass?: string;
+    /** Extra classes for every option row; per-option `class` still applies last. */
+    rowClass?: string;
+    /** Extra classes for the search input. */
+    inputClass?: string;
     /** Called when value changes */
     onchange?: (value: string | string[], event?: MouseEvent) => void;
     /** Called when open state changes */
@@ -136,6 +140,8 @@
     contentMaxHeight,
     fillContentHeight = false,
     headerClass = '',
+    rowClass = '',
+    inputClass = '',
     onchange,
     onopenchange,
     trigger,
@@ -827,9 +833,12 @@
       <Input
         bind:ref={inputRef}
         type="text"
-        class={searchChrome
-          ? 'pl-7'
-          : 'w-full bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground outline-none border-none ring-0 focus:outline-none!'}
+        class={cn(
+          searchChrome
+            ? 'pl-7'
+            : 'w-full bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground outline-none border-none ring-0 focus:outline-none!',
+          inputClass,
+        )}
         {placeholder}
         role="searchbox"
         aria-label={m.ui_dropdown_search_ariaLabel()}
@@ -979,7 +988,7 @@
         data-highlighted={isHighlighted ? 'true' : undefined}
         data-menu-item
         style="scroll-margin-top: var(--control-height-medium)"
-        class={cn(menuItem(), 'h-auto gap-1.5 overflow-hidden', option.class)}
+        class={cn(menuItem(), 'h-auto gap-1.5 overflow-hidden', rowClass, option.class)}
         role={popupRole === 'menu' ? 'menuitem' : 'option'}
         aria-selected={popupRole === 'listbox' ? isSelected(option.value) : undefined}
         aria-haspopup={option.type === 'submenu' ? 'menu' : undefined}

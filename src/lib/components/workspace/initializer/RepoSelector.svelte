@@ -101,6 +101,7 @@
   } from './recent-repo-display';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
+  import { workspacePickerStyles } from './workspace-picker-styles';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 
   const logger = createLogger('RepoSelector');
@@ -1594,6 +1595,7 @@
             showForge
             recent
             selected={isSelected(repo, index)}
+            formStyle={!!rowLabel}
             class="flex-1"
             onclick={() => handleSelectRepo(repo)}
             disabled={repo.type !== 'local' &&
@@ -1763,13 +1765,13 @@
       portal
     >
       {#if rowLabel && formStep === 'browse'}
-        <div class="shrink-0 px-4 pt-2 pb-3">
-          <h2 class="type-body font-medium text-foreground">{rowLabel}</h2>
-          <p class="type-caption mt-0.5 text-muted-foreground">
+        <div class={workspacePickerStyles.header}>
+          <h2 class={workspacePickerStyles.title}>{rowLabel}</h2>
+          <p class={workspacePickerStyles.description}>
             {m.workspace_repoSelector_formMenu_description()}
           </p>
         </div>
-        <div class="shrink-0 px-3 pb-2">
+        <div class="shrink-0 px-2 pt-1">
           <Input
             bind:ref={formSearchElement}
             type="search"
@@ -1781,51 +1783,51 @@
             placeholder={m.workspace_repoSelector_search_placeholder()}
             aria-label={m.workspace_repoSelector_search_placeholder()}
             aria-controls={`${pickerId}-form-repos`}
-            class="bg-sidebar border-none focus-visible:ring-1 focus-visible:ring-ring"
+            class="{workspacePickerStyles.search} bg-sidebar border-none focus-visible:ring-1 focus-visible:ring-ring"
             noFocusStyle
           />
         </div>
         <div
           bind:this={formListElement}
           id={`${pickerId}-form-repos`}
-          class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2"
+          class="min-h-0 flex-1 overflow-y-auto overscroll-contain {workspacePickerStyles.rows} pb-0"
           data-testid="recent-repositories"
           role="group"
           aria-label={m.workspace_repoSelector_recent_label()}
         >
           {#if isLoading && recentRepos.length === 0}
-            <div class="space-y-1 px-2" role="status">
+            <div role="status">
               {#each [1, 2, 3] as { }}
-                <div class="flex items-center gap-2 py-1.5">
+                <div class="flex min-h-10 items-center gap-2 px-3 py-2">
                   <div class="w-4 h-4 bg-muted rounded animate-pulse"></div>
                   <div class="h-4 bg-muted rounded flex-1 animate-pulse"></div>
                 </div>
               {/each}
             </div>
           {:else if formRepos.length === 0}
-            <p class="px-2 py-1.5 text-sm text-muted-foreground" role="status">
+            <p class="type-body px-3 py-2 text-muted-foreground" role="status">
               {m.hud_filter_noRepositories_label()}
             </p>
           {:else}
             {@render recentRepoRows(formRepos, (repo) => isCurrentRepo(repo))}
           {/if}
         </div>
-        <div class="shrink-0 px-2 pt-1 pb-2">
+        <div class="shrink-0 px-2 pb-2">
           <Button
             variant="ghost"
             type="button"
             wrapContent={false}
             data-testid="repo-form-add"
-            class="w-full justify-start gap-2 px-2 text-sm font-normal text-muted-foreground hover:text-foreground"
+            class="w-full {workspacePickerStyles.row} text-muted-foreground hover:text-foreground"
             onclick={openAddStep}
           >
-            <Fa icon={faPlus} class="size-3.5!" />
+            <Fa icon={faPlus} class={workspacePickerStyles.icon} />
             <span>{m.workspace_repoSelector_addRepository_label()}</span>
           </Button>
         </div>
       {:else}
         {#if rowLabel}
-          <div class="flex shrink-0 items-center gap-1 px-2 pt-1 pb-3">
+          <div class="flex shrink-0 items-center gap-1 px-2 pt-2 pb-2">
             <Button
               variant="ghost"
               type="button"
@@ -1838,7 +1840,7 @@
             >
               <Fa icon={faArrowLeft} class="size-3.5!" />
             </Button>
-            <h2 class="type-body min-w-0 truncate font-medium text-foreground">
+            <h2 class="{workspacePickerStyles.title} min-w-0 truncate">
               {m.workspace_repoSelector_addRepository_label()}
             </h2>
           </div>
@@ -1896,6 +1898,7 @@
                 <GitLabProjectPicker
                   {...gitlab}
                   scrollable={!rowLabel}
+                  formStyle={!!rowLabel}
                   prefix={forgePrefix}
                   onSelect={(projectPath, scopeKey) => {
                     gitlab?.onSelect(projectPath, scopeKey);
@@ -1959,6 +1962,7 @@
                   />
                 {:else if canBrowseGithub}
                   <RepositoryPickerList
+                    formStyle={!!rowLabel}
                     id={suggestionsId}
                     items={githubSuggestions}
                     getKey={(repo) => repo.id}

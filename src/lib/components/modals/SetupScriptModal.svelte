@@ -14,6 +14,7 @@
   import { Button, type ButtonProps } from '$lib/components/ui/button';
   import type { ProjectType, SetupScriptNameSource } from '$features/setup-scripts';
   import { m } from '$shared/paraglide/messages.js';
+  import { workspacePickerStyles } from '$lib/components/workspace/initializer/workspace-picker-styles';
 
   interface Props {
     open?: boolean;
@@ -189,9 +190,9 @@
       {escapeKeydownBehavior}
       onfocusin={handleFocusIn}
     >
-      <div class="shrink-0 px-4 pt-4 pb-3">
-        <h2 class="type-body font-medium">{m.workspace_compactInitializer_setup_label()}</h2>
-        <p class="type-caption mt-1 text-muted-foreground">
+      <div class={workspacePickerStyles.header}>
+        <h2 class={workspacePickerStyles.title}>{m.workspace_compactInitializer_setup_label()}</h2>
+        <p class={workspacePickerStyles.description}>
           {m.workspace_setupScriptPicker_description()}
         </p>
       </div>

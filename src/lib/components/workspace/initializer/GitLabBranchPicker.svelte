@@ -10,6 +10,8 @@
   import GitLabPickerList from './GitLabPickerList.svelte';
   import type { GitLabBranchPickerProps } from './gitlab-picker-types';
   import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
+  import { Indicator } from '$lib/components/ui/menu';
+  import { workspacePickerStyles } from './workspace-picker-styles';
 
   let {
     projectPath,
@@ -68,7 +70,7 @@
     role="dialog"
     aria-label={rowLabel ?? list.copy.listLabel}
     class={rowLabel
-      ? 'flex w-[360px] max-w-[calc(100vw-1rem)] min-w-0 max-h-[min(440px,var(--bits-popover-content-available-height,calc(100dvh-1rem)))] flex-col gap-2 overflow-hidden px-3 pt-3 pb-2'
+      ? 'flex w-[360px] max-w-[calc(100vw-1rem)] min-w-0 max-h-[min(440px,var(--bits-popover-content-available-height,calc(100dvh-1rem)))] flex-col overflow-hidden'
       : 'w-80 max-w-[calc(100vw-2rem)] max-h-[min(600px,var(--bits-popover-content-available-height,100dvh))] overflow-y-auto space-y-2 p-3'}
     side={rowLabel ? (isMobile.current ? 'bottom' : 'left') : undefined}
     sideOffset={rowLabel ? (isMobile.current ? 4 : 24) : undefined}
@@ -80,9 +82,9 @@
     }}
   >
     {#if rowLabel}
-      <div class="shrink-0 px-1">
-        <h2 class="type-body font-medium text-foreground">{rowLabel}</h2>
-        <p class="break-all type-caption mt-0.5 text-muted-foreground">{projectPath}</p>
+      <div class={workspacePickerStyles.header}>
+        <h2 class={workspacePickerStyles.title}>{rowLabel}</h2>
+        <p class="{workspacePickerStyles.description} break-all">{projectPath}</p>
       </div>
     {:else}
       <p class="break-all type-caption text-foreground">{projectPath}</p>
@@ -98,11 +100,22 @@
         open = false;
       }}
     >
-      {#snippet row({ item })}
-        <ListRow>
-          {#snippet title()}{item.name}{/snippet}
-          {#snippet meta()}{item.protected ? protectedLabel : ''}{/snippet}
-        </ListRow>
+      {#snippet row({ item, selected })}
+        {#if rowLabel}
+          <div class="flex {workspacePickerStyles.row}">
+            <GitBranchIcon size={16} class={workspacePickerStyles.icon} />
+            <span class="min-w-0 flex-1 truncate">{item.name}</span>
+            {#if item.protected}
+              <span class="type-caption shrink-0 text-muted-foreground">{protectedLabel}</span>
+            {/if}
+            <Indicator state={selected ? 'checked' : 'empty'} class={workspacePickerStyles.check} />
+          </div>
+        {:else}
+          <ListRow>
+            {#snippet title()}{item.name}{/snippet}
+            {#snippet meta()}{item.protected ? protectedLabel : ''}{/snippet}
+          </ListRow>
+        {/if}
       {/snippet}
     </GitLabPickerList>
   </Popover.Content>

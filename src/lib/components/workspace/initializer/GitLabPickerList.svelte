@@ -6,6 +6,7 @@
   import { Input } from '$lib/components/ui/input';
   import { Button } from '$lib/components/ui/button';
   import type { GitLabPickerProps } from './gitlab-picker-types';
+  import { workspacePickerStyles } from './workspace-picker-styles';
 
   let {
     scopeKey,
@@ -49,7 +50,7 @@
 
 <div
   bind:this={panel}
-  class={compact ? 'flex min-h-0 min-w-0 flex-1 flex-col gap-2' : 'min-w-0 space-y-3'}
+  class={compact ? 'flex min-h-0 min-w-0 flex-1 flex-col gap-2 px-2 pb-2' : 'min-w-0 space-y-3'}
   data-testid="gitlab-picker-list"
 >
   {#if instanceBaseUrl && !prefix && !compact}
@@ -80,7 +81,7 @@
         placeholder={copy.searchPlaceholder}
         oninput={(event) => onSearch(event.currentTarget.value, scopeKey)}
         onkeydown={focusResults}
-        class="shrink-0"
+        class="shrink-0 {workspacePickerStyles.search}"
       />
     {:else}
       <FormField label={copy.searchLabel}>
@@ -133,6 +134,7 @@
           onActivate={(item) => onSelect(item, scopeKey)}
           ariaLabel={copy.listLabel}
           class={compact ? 'min-h-0 flex-1' : 'max-h-56'}
+          rowHeight={compact ? 40 : undefined}
           {row}
         >
           {#snippet empty()}

@@ -1,6 +1,8 @@
 <script lang="ts">
   import * as Menu from '$lib/components/ui/menu';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
+  import { workspacePickerStyles } from '$lib/components/workspace/initializer/workspace-picker-styles';
+  import { cn } from '$lib/utils';
   import type { Specialist } from '$lib/constants/specialists';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -34,7 +36,7 @@
 >
   {#each options as option (option.id)}
     {#snippet compactLeading()}
-      <span class="plain-agent-icon flex w-4 shrink-0 text-muted-foreground">
+      <span class={cn('plain-agent-icon flex', workspacePickerStyles.icon)}>
         <AgentAvatar agentId="blank" variant="compact" specialist={option.id} icon={option.icon} />
       </span>
     {/snippet}
@@ -43,13 +45,13 @@
       closeOnSelect
       leading={compact ? compactLeading : undefined}
       class={compact
-        ? 'min-h-10 items-center gap-2 px-3 py-2 text-sm leading-5 font-normal data-[state=checked]:bg-sidebar'
+        ? workspacePickerStyles.row
         : 'h-auto min-h-(--control-height-medium) gap-2 py-2 whitespace-normal'}
       data-specialist-option={option.id ?? 'general'}
       onSelect={() => onchange(option.id)}
     >
       {#if compact}
-        <span class="min-w-0 flex-1 truncate text-left text-foreground">{option.name}</span>
+        <span class="min-w-0 flex-1 truncate">{option.name}</span>
       {:else}
         <span class="first-line-icon w-5">
           <AgentAvatar

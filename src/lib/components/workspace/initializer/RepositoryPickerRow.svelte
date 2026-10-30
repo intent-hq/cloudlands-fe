@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { HTMLButtonAttributes } from 'svelte/elements';
-  import { ActionRow } from '$lib/components/ui/menu';
+  import { ActionRow, Indicator } from '$lib/components/ui/menu';
+  import { cn } from '$lib/utils';
+  import { workspacePickerStyles } from './workspace-picker-styles';
   import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
   import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import { faGithub, faGitlab } from '@fortawesome/free-brands-svg-icons';
@@ -17,6 +19,8 @@
     recent = false,
     option = false,
     selected = false,
+    formStyle = false,
+    checked,
     class: className = '',
     ...button
   }: Omit<HTMLButtonAttributes, 'children' | 'name' | 'title' | 'role'> & {
@@ -30,16 +34,30 @@
     recent?: boolean;
     option?: boolean;
     selected?: boolean;
+    /** New Workspace form menus: shared 40px body rows with a selected check. */
+    formStyle?: boolean;
+    /** Check state when it differs from the highlight (`selected`). */
+    checked?: boolean;
   } = $props();
 
   const forgeLabels = { github: 'GitHub', gitlab: 'GitLab' }; // i18n-ignore (brand names)
 </script>
 
+{#snippet selectedCheck()}
+  <Indicator
+    state={(checked ?? selected) ? 'checked' : 'empty'}
+    class={workspacePickerStyles.check}
+  />
+{/snippet}
+
 <ActionRow
   {...button}
+  trailing={formStyle ? selectedCheck : undefined}
   role={option ? 'option' : undefined}
   {selected}
-  class={`gap-2 py-1.5 cursor-pointer ${className}`}
+  class={formStyle
+    ? cn(workspacePickerStyles.row, 'cursor-pointer', className)
+    : `gap-2 py-1.5 cursor-pointer ${className}`}
 >
   {#snippet leading()}
     {#if avatarUrl}
@@ -53,7 +71,7 @@
     {/if}
   {/snippet}
   {#snippet title()}
-    <span class="flex min-w-0 items-center gap-2 text-sm">
+    <span class="flex min-w-0 items-center gap-2 {formStyle ? '' : 'text-sm'}">
       <span class="truncate" data-recent-repo-label={recent ? '' : undefined}>
         {#if showOwner && owner}<span class="text-subtle mr-1">{owner} /</span>{/if}
         {name}

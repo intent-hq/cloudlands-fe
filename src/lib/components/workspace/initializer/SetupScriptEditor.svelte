@@ -1,12 +1,9 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import {
-    faCheck,
-    faPlus,
-    faTerminal,
-    faWandMagicSparkles,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faPlus, faTerminal, faWandMagicSparkles } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
+  import { ActionRow, Indicator } from '$lib/components/ui/menu';
+  import { workspacePickerStyles } from './workspace-picker-styles';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
   import SetupScriptAgent from './SetupScriptAgent.svelte';
@@ -379,48 +376,39 @@
 </script>
 
 {#snippet pickerChoice(choice: { id: string; name: string })}
-  <Button
-    variant="ghost"
-    wrapContent={false}
-    active={pickerSelection === choice.id}
+  <ActionRow
+    selected={pickerSelection === choice.id}
     aria-pressed={pickerSelection === choice.id}
     data-setup-source={choice.id}
-    class="w-full h-auto min-h-10 items-center justify-start gap-3 px-3 py-2 text-left font-normal"
+    class={workspacePickerStyles.row}
     onclick={() => (choice.id === 'custom' ? chooseCustomScript() : handleScriptSelect(choice.id))}
   >
-    <Fa icon={faTerminal} class="size-4 shrink-0 text-muted-foreground" />
-    <span class="min-w-0 flex-1 truncate text-sm leading-5">{choice.name}</span>
-    <span class="w-4 shrink-0">
-      {#if pickerSelection === choice.id}<Fa icon={faCheck} class="size-4 text-primary-ink" />{/if}
-    </span>
-  </Button>
+    {#snippet leading()}<Fa icon={faTerminal} class={workspacePickerStyles.icon} />{/snippet}
+    {#snippet title()}<span class="block truncate">{choice.name}</span>{/snippet}
+    {#snippet trailing()}
+      <Indicator state={pickerSelection === choice.id ? 'checked' : 'empty'} />
+    {/snippet}
+  </ActionRow>
 {/snippet}
 
 {#snippet pickerContentSnippet()}
-  <div class="min-w-0 px-2 pb-3" bind:this={pickerRoot}>
+  <div class={`${workspacePickerStyles.rows} min-w-0`} bind:this={pickerRoot}>
     {#if !pickerEditorOpen}
-      <div
-        class="space-y-1"
-        role="group"
-        aria-label={m.workspace_setupScriptEditor_setupScript_label()}
-      >
+      <div role="group" aria-label={m.workspace_setupScriptEditor_setupScript_label()}>
         {#each pickerChoices as choice (choice.id)}{@render pickerChoice(choice)}{/each}
       </div>
-      <div class="mt-2 px-1">
-        <Button
-          variant="ghost"
-          size="sm"
-          active={pickerTemplatesOpen}
+      <div class="mt-2 border-t border-border pt-2">
+        <ActionRow
           aria-expanded={pickerTemplatesOpen}
-          class="justify-start gap-2 text-muted-foreground"
+          class={workspacePickerStyles.row}
           onclick={() => (pickerTemplatesOpen = !pickerTemplatesOpen)}
         >
-          <Fa icon={faPlus} class="size-3.5" />
-          {m.workspace_setupScriptEditor_templates_label()}
-        </Button>
+          {#snippet leading()}<Fa icon={faPlus} class={workspacePickerStyles.icon} />{/snippet}
+          {#snippet title()}{m.workspace_setupScriptEditor_templates_label()}{/snippet}
+        </ActionRow>
       </div>
       {#if pickerTemplatesOpen}
-        <div class="mt-1 space-y-1" transition:slide={{ tier: 'moderate' }}>
+        <div transition:slide={{ tier: 'moderate' }}>
           {#each otherTemplates as template (template.id)}
             {@render pickerChoice({
               id: `template-${template.id}`,
@@ -429,29 +417,32 @@
           {/each}
         </div>
       {/if}
-      <div class="mt-3 flex flex-wrap items-center gap-1 px-1">
-        <Button variant="ghost" size="sm" class="gap-2" onclick={() => (pickerEditorOpen = true)}>
-          <Fa icon={faTerminal} class="size-3.5" />
-          {m.workspace_setupScriptPicker_edit_label()}
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          class="gap-2"
+      <div class="mt-2 border-t border-border pt-2">
+        <ActionRow class={workspacePickerStyles.row} onclick={() => (pickerEditorOpen = true)}>
+          {#snippet leading()}<Fa icon={faTerminal} class={workspacePickerStyles.icon} />{/snippet}
+          {#snippet title()}{m.workspace_setupScriptPicker_edit_label()}{/snippet}
+        </ActionRow>
+        <ActionRow
+          class={workspacePickerStyles.row}
           disabled={!repoPath}
           onclick={() => {
             pickerEditorOpen = true;
             showAgentPanel = true;
           }}
         >
-          <Fa icon={faWandMagicSparkles} class="size-3.5" />
-          {m.workspace_setupScriptEditor_autoGenerate_label()}
-        </Button>
+          {#snippet leading()}<Fa
+              icon={faWandMagicSparkles}
+              class={workspacePickerStyles.icon}
+            />{/snippet}
+          {#snippet title()}{m.workspace_setupScriptEditor_autoGenerate_label()}{/snippet}
+        </ActionRow>
       </div>
     {:else}
       <div class="mb-2 flex items-center justify-between gap-3 px-2">
         <div class="min-w-0">
-          <h3 class="text-sm font-medium">{m.workspace_setupScriptPicker_commands_label()}</h3>
+          <h3 class={workspacePickerStyles.title}>
+            {m.workspace_setupScriptPicker_commands_label()}
+          </h3>
           <p class="type-caption truncate text-muted-foreground">{displayLabel}</p>
         </div>
         <Button

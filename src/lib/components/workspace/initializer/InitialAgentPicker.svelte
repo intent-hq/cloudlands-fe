@@ -5,6 +5,8 @@
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import SpecialistOptions from '$lib/components/chat/SpecialistOptions.svelte';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
+  import { workspacePickerStyles } from './workspace-picker-styles';
+  import { cn } from '$lib/utils';
 
   import {
     selectSpecialists,
@@ -840,68 +842,65 @@
         sideOffset={isMobile.current ? 4 : 24}
         align={isMobile.current ? 'end' : 'start'}
         preventScroll={false}
-        class="p-2 w-[360px] max-w-[calc(100vw-1rem)]"
+        class="p-0 w-[360px] max-w-[calc(100vw-1rem)]"
         maxHeight={SPECIALIST_MENU_MAX_HEIGHT}
         aria-label={m.ui_dropdownMenu_ariaLabel()}
       >
-        <div class="px-3 pt-2 pb-2">
-          <p class="type-body font-medium text-foreground">
+        <div class={workspacePickerStyles.header}>
+          <p class={workspacePickerStyles.title}>
             {m.workspace_initialAgentPicker_agent_label()}
           </p>
-          <p class="type-caption text-muted-foreground">
+          <p class={workspacePickerStyles.description}>
             {m.workspace_initialAgentPicker_agentMenu_description()}
           </p>
         </div>
-        {#if orchestrator}
-          <Menu.RadioGroup
-            value={isTeamMode ? 'orchestration' : ''}
-            aria-label={m.workspace_initialAgentPicker_teamMode_label()}
-          >
-            <Menu.RadioItem
-              value="orchestration"
-              closeOnSelect
-              class="min-h-10 items-center gap-2 px-3 py-2 text-sm leading-5 font-normal data-[state=checked]:bg-sidebar"
-              data-specialist-option="orchestration"
-              onSelect={handleOrchestrationSelect}
+        <div class={workspacePickerStyles.rows}>
+          {#if orchestrator}
+            <Menu.RadioGroup
+              value={isTeamMode ? 'orchestration' : ''}
+              aria-label={m.workspace_initialAgentPicker_teamMode_label()}
             >
-              {#snippet leading()}<span
-                  class="plain-agent-icon flex w-4 shrink-0 text-muted-foreground"
+              <Menu.RadioItem
+                value="orchestration"
+                closeOnSelect
+                class={workspacePickerStyles.row}
+                data-specialist-option="orchestration"
+                onSelect={handleOrchestrationSelect}
+              >
+                {#snippet leading()}<span
+                    class={cn('plain-agent-icon flex', workspacePickerStyles.icon)}
+                  >
+                    <AgentAvatar
+                      agentId="blank"
+                      variant="compact"
+                      specialist={orchestrator.id}
+                      icon={orchestrator.icon}
+                    />
+                  </span>{/snippet}
+                <span class="min-w-0 flex-1 truncate">{orchestratorLabel}</span>
+                <span class="type-caption shrink-0 text-muted-foreground"
+                  >{m.workspace_initialAgentPicker_multiAgent_label()}</span
                 >
-                  <AgentAvatar
-                    agentId="blank"
-                    variant="compact"
-                    specialist={orchestrator.id}
-                    icon={orchestrator.icon}
-                  />
-                </span>{/snippet}
-              <span class="min-w-0 flex-1 truncate text-left text-foreground"
-                >{orchestratorLabel}</span
-              >
-              <span class="type-caption shrink-0 text-muted-foreground"
-                >{m.workspace_initialAgentPicker_multiAgent_label()}</span
-              >
-            </Menu.RadioItem>
-          </Menu.RadioGroup>
+              </Menu.RadioItem>
+            </Menu.RadioGroup>
+            <Menu.Separator class="mx-1 my-2" />
+          {/if}
+          <SpecialistOptions
+            compact
+            specialists={customSpecialists}
+            value={isTeamMode
+              ? (orchestratorId ?? '')
+              : isTeamRoleId(selectedSpecialist)
+                ? null
+                : selectedSpecialist}
+            onchange={handleAgentSelect}
+          />
           <Menu.Separator class="mx-1 my-2" />
-        {/if}
-        <SpecialistOptions
-          compact
-          specialists={customSpecialists}
-          value={isTeamMode
-            ? (orchestratorId ?? '')
-            : isTeamRoleId(selectedSpecialist)
-              ? null
-              : selectedSpecialist}
-          onchange={handleAgentSelect}
-        />
-        <Menu.Separator class="mx-1 my-2" />
-        <Menu.Item
-          class="min-h-10 items-center gap-2 px-3 py-2 text-sm leading-5 font-normal"
-          onSelect={openSpecialistSettings}
-        >
-          {#snippet leading()}<Fa icon={faPlus} class="opacity-60" />{/snippet}
-          <span>{m.workspace_initialAgentPicker_manageSpecialists_label()}</span>
-        </Menu.Item>
+          <Menu.Item class={workspacePickerStyles.row} onSelect={openSpecialistSettings}>
+            {#snippet leading()}<Fa icon={faPlus} class={workspacePickerStyles.icon} />{/snippet}
+            <span>{m.workspace_initialAgentPicker_manageSpecialists_label()}</span>
+          </Menu.Item>
+        </div>
       </Menu.Content>
     </Menu.Root>
   </div>

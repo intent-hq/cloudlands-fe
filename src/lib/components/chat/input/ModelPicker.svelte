@@ -23,6 +23,7 @@
     hasProviderIcon,
   } from '$features/agent/components/AgentProviderIcon.svelte';
   import { faSettings } from '$lib/icons/phosphor-icons';
+  import { workspacePickerStyles } from '$lib/components/workspace/initializer/workspace-picker-styles';
   import SparkleIcon from 'phosphor-svelte/lib/SparkleIcon';
   import ModelPickerEmptyState from './ModelPickerEmptyState.svelte';
   import EffortGauge from './EffortGauge.svelte';
@@ -2384,7 +2385,7 @@
            Form rows always name the provider so the icon rail is never the only cue. -->
       <div
         class={rowLabel
-          ? 'truncate px-2 pt-2 pb-1 text-sm font-medium text-foreground'
+          ? cn('truncate', workspacePickerStyles.group)
           : 'truncate px-2 pt-1.5 pb-0.5 text-xs text-subtle'}
         data-testid="model-picker-profile-group"
       >
@@ -2520,6 +2521,8 @@
       menuMaxHeight === 440 ? 'h-[440px]' : 'h-[360px]',
       pointerInteraction && 'model-picker-pointer',
     )}
+    rowClass={rowLabel ? workspacePickerStyles.row : undefined}
+    inputClass={rowLabel ? workspacePickerStyles.search : undefined}
     contentMaxHeight={menuMaxHeight}
     side={menuSide}
     sideOffset={menuSideOffset}
@@ -2699,10 +2702,12 @@
           {/if}
         </Button>
       {/if}
-      {#if rowLabel}<h2 class="type-body px-3 pr-16 font-medium">{rowLabel}</h2>{/if}
+      {#if rowLabel}<h2 class={cn(workspacePickerStyles.title, 'px-3 pr-16')}>{rowLabel}</h2>{/if}
       {#if description}
         <p
-          class={cn('px-3 pb-2 text-xs text-muted-foreground', rowLabel && 'mt-1')}
+          class={rowLabel
+            ? cn(workspacePickerStyles.description, 'px-3 pb-2')
+            : 'px-3 pb-2 text-xs text-muted-foreground'}
           data-testid="model-picker-description"
         >
           {description}
@@ -2743,9 +2748,9 @@
       {@const providerLoadError = option.data?.providerLoadError as ProviderLoadError | undefined}
       {@const providerLoading = option.data?.providerLoading as boolean | undefined}
 
-      <div class="flex items-center gap-2.5 w-full min-w-0 py-1">
+      <div class={cn('flex items-center w-full min-w-0', rowLabel ? 'gap-2' : 'gap-2.5 py-1')}>
         {#if providerLoading}
-          <div class="flex items-center gap-2 text-muted-foreground text-sm">
+          <div class={cn('flex items-center gap-2 text-muted-foreground', !rowLabel && 'text-sm')}>
             <IntentMarkLoader size={12} />
             <span>{option.label}</span>
           </div>
@@ -2760,7 +2765,8 @@
           <div class="flex-1 min-w-0">
             <span
               class={cn(
-                'block truncate text-sm font-normal',
+                'block truncate font-normal',
+                !rowLabel && 'text-sm',
                 option.value === USE_DEFAULT_VALUE && 'text-muted-foreground',
               )}
             >
@@ -2768,7 +2774,10 @@
             </span>
             {#if option.description}
               <div
-                class="text-xs text-subtle truncate mt-0.5"
+                class={cn(
+                  'truncate mt-0.5',
+                  rowLabel ? 'type-caption text-muted-foreground' : 'text-xs text-subtle',
+                )}
                 use:truncatedTitle={option.description}
               >
                 {option.description}
