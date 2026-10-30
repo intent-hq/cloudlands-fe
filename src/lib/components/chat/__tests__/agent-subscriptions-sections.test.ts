@@ -967,6 +967,8 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     ['textarea', 150],
     ['select', 150],
     ['contenteditable', 150],
+    ['code-editor', 0],
+    ['code-editor', 150],
   ] as const)(
     'preserves %s focus acquired after %dms of watched-agent reveal',
     async (kind, elapsed) => {
@@ -981,11 +983,16 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       await expandWaitingAgents();
       const focusEvents: CustomEvent[] = [];
       const onFocus = (event: Event) => focusEvents.push(event as CustomEvent);
-      const control = document.createElement(kind === 'contenteditable' ? 'div' : kind);
-      if (kind === 'contenteditable') {
-        control.setAttribute('contenteditable', 'true');
-        control.tabIndex = 0;
+      const isDiv = kind === 'contenteditable' || kind === 'code-editor';
+      const control = document.createElement(isDiv ? 'div' : kind);
+      if (kind === 'contenteditable') control.setAttribute('contenteditable', 'true');
+      if (kind === 'code-editor') {
+        // Monaco's EditContext focus target: an ARIA textbox, not contenteditable.
+        control.setAttribute('role', 'textbox');
+        control.setAttribute('aria-multiline', 'true');
+        Object.defineProperty(control, 'editContext', { value: {}, configurable: true });
       }
+      if (isDiv) control.tabIndex = 0;
       document.body.append(control);
       window.addEventListener('panel:focus-content', onFocus);
       vi.useFakeTimers();
