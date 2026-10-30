@@ -1,29 +1,42 @@
+import { readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import * as messages from '$shared/paraglide/messages.js';
 import { repoParaglidePaths } from './paraglide-inputs-hash.mjs';
-import { NATIVE_LOADED_GENERATED_MODULES } from './vitest-native-deps.mjs';
+import { nativeLoadedGeneratedModules } from './vitest-native-deps.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const outdir = repoParaglidePaths(rootDir).outdir;
 const toId = (file: string) => file.split(path.sep).join('/');
-const isNativeLoaded = (id: string) => NATIVE_LOADED_GENERATED_MODULES.some((re) => re.test(id));
+const patterns = nativeLoadedGeneratedModules(rootDir);
+const isNativeLoaded = (id: string) => patterns.some((re) => re.test(id));
 
 describe('generated paraglide modules load natively in unit tests', () => {
-  it('covers every generated paraglide output file', () => {
-    const outdir = toId(repoParaglidePaths(rootDir).outdir);
-    for (const file of ['messages.js', 'runtime.js', 'messages/_index.js', 'messages/en.js']) {
-      expect(isNativeLoaded(`${outdir}/${file}`), file).toBe(true);
+  it('covers every generated paraglide .js file', () => {
+    const generated = readdirSync(outdir, { recursive: true, encoding: 'utf8' }).filter((file) =>
+      file.endsWith('.js'),
+    );
+    expect(generated).toEqual(expect.arrayContaining(['messages.js', 'runtime.js']));
+    expect(generated.length).toBeGreaterThan(9);
+    for (const file of generated) {
+      expect(isNativeLoaded(toId(path.join(outdir, file))), file).toBe(true);
     }
   });
 
-  it('leaves hand-written neighbours to Vitest', () => {
-    for (const file of [
-      'src/shared/errors/localization.ts',
-      'src/shared/paraglide-helpers.ts',
-      'src/lib/i18n/paraglide.ts',
+  it('leaves hand-written neighbours, query imports and other trees to Vitest', () => {
+    const id = (file: string) => toId(path.join(rootDir, file));
+    for (const candidate of [
+      id('src/lib/i18n/locale.ts'),
+      id('src/shared/i18n/formatters.ts'),
+      id('src/main/main-locale.ts'),
+      `${toId(outdir)}/runtime.js?raw`,
+      `${toId(outdir)}/messages.js?url`,
+      `${toId(outdir)}/README.md`,
+      id('node_modules/some-pkg/src/shared/paraglide/messages.js'),
+      `/elsewhere${toId(outdir)}/messages.js`,
     ]) {
-      expect(isNativeLoaded(toId(path.join(rootDir, file))), file).toBe(false);
+      expect(isNativeLoaded(candidate), candidate).toBe(false);
     }
   });
 

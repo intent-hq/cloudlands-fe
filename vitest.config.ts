@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { gitignoreDirExcludes } from './scripts/gitignore-dir-excludes.mjs';
 import { PARAGLIDE_STALE_MESSAGE, ensureRepoParaglide } from './scripts/paraglide-inputs-hash.mjs';
 import { FORK_EXEC_ARGV } from './scripts/vitest-fork-exec-argv.mjs';
-import { NATIVE_LOADED_GENERATED_MODULES } from './scripts/vitest-native-deps.mjs';
+import { nativeLoadedGeneratedModules } from './scripts/vitest-native-deps.mjs';
 import { defaultTestTimeoutMs, isCiEnv } from './scripts/vitest-timeouts.mjs';
 
 // CI-only tuning for shared self-hosted runners (intent-hq/monorepo#3082; the
@@ -113,7 +113,7 @@ export default defineConfig(async () => {
       // modules and then import translated code paid inside a hook or test
       // (cloudlands-fe#3859). Caveats for mocks and locale state: see
       // scripts/vitest-native-deps.mjs.
-      server: { deps: { external: [...NATIVE_LOADED_GENERATED_MODULES] } },
+      server: { deps: { external: nativeLoadedGeneratedModules(__dirname) } },
       exclude: [
         '**/node_modules/**',
         '**/dist/**',
