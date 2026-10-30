@@ -46,12 +46,14 @@
   import Fa from 'svelte-fa';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { onDestroy, tick } from 'svelte';
+  import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
   import { slide } from '$lib/motion';
   import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('BranchSelector');
   const uid = $props.id();
   const dialogPortalTarget = useDialogPortalTarget();
+  const isMobile = new IsMobile();
   const branchByRepo$ = selectWorkspaceInitializerBranchByRepo();
 
   /** Status of the branch relative to its upstream */
@@ -1683,13 +1685,23 @@
       </Popover.Trigger>
       <Popover.Content
         role="dialog"
-        aria-label={m.workspace_branchSelector_whichBranch_label()}
-        class="w-[400px] max-w-[calc(100vw-16px)] min-w-0 max-h-[min(600px,var(--bits-popover-content-available-height,100dvh))] overflow-y-auto flex flex-col"
+        aria-label={rowLabel ?? m.workspace_branchSelector_whichBranch_label()}
+        class={rowLabel
+          ? 'w-[360px] max-w-[calc(100vw-1rem)] min-w-0 max-h-[min(440px,var(--bits-popover-content-available-height,calc(100dvh-1rem)))] overflow-y-auto flex flex-col'
+          : 'w-[400px] max-w-[calc(100vw-16px)] min-w-0 max-h-[min(600px,var(--bits-popover-content-available-height,100dvh))] overflow-y-auto flex flex-col'}
         customAnchor={modeAnchor}
         avoidCollisions={!modeAnchor}
-        side={modeAnchor ? 'bottom' : dropUp ? 'top' : 'bottom'}
-        align={modeAnchor ? 'start' : 'center'}
-        sideOffset={modeAnchor ? 0 : undefined}
+        side={modeAnchor
+          ? 'bottom'
+          : rowLabel
+            ? isMobile.current
+              ? 'bottom'
+              : 'left'
+            : dropUp
+              ? 'top'
+              : 'bottom'}
+        align={modeAnchor ? 'start' : rowLabel ? (isMobile.current ? 'end' : 'start') : 'center'}
+        sideOffset={modeAnchor ? 0 : rowLabel ? (isMobile.current ? 4 : 24) : undefined}
         portalProps={{ to: dialogPortalTarget() }}
         strategy={dialogPortalTarget() ? 'absolute' : 'fixed'}
         onOpenAutoFocus={(event) => {
@@ -1703,21 +1715,52 @@
         {portal}
       >
         <!-- Header -->
-        <div class="shrink-0 px-3 pt-3 pb-2">
-          <h2 class="type-body font-semibold text-foreground">
-            {m.workspace_branchSelector_whichBranch_label()}
-          </h2>
-          <p class="type-caption mt-0.5 text-subtle">
-            {description || m.workspace_branchSelector_whichBranch_description()}
-          </p>
-        </div>
+        {#if rowLabel}
+          <div class="flex shrink-0 items-start gap-2 pt-3 pr-2 pb-2 pl-4">
+            <div class="min-w-0 flex-1">
+              <h2 class="type-body font-medium text-foreground">{rowLabel}</h2>
+              <p class="type-caption mt-0.5 text-muted-foreground">
+                {description || m.workspace_branchSelector_formMenu_description()}
+              </p>
+            </div>
+            {#if !(directMode && currentBranch)}
+              <Button
+                onclick={handleRefresh}
+                variant="ghost"
+                size="icon-sm"
+                class="-mt-1 shrink-0 text-muted-foreground"
+                disabled={isLoading}
+                aria-label={m.workspace_branchSelector_refreshBranches_ariaLabel()}
+              >
+                {#if isLoading}
+                  <IntentMarkLoader size={14} />
+                {:else}
+                  <Fa icon={faRotate} class="size-3.5!" />
+                {/if}
+              </Button>
+            {/if}
+          </div>
+        {:else}
+          <div class="shrink-0 px-3 pt-3 pb-2">
+            <h2 class="type-body font-semibold text-foreground">
+              {m.workspace_branchSelector_whichBranch_label()}
+            </h2>
+            <p class="type-caption mt-0.5 text-subtle">
+              {description || m.workspace_branchSelector_whichBranch_description()}
+            </p>
+          </div>
+        {/if}
 
         {#if repoType === 'local' && typeof onSkipIsolationChange === 'function' && currentBranch}
           <div class="shrink-0 px-2 pb-2">
             <div
               bind:this={isolationControlEl}
-              class={`rounded-(--radius-medium) border px-3 py-2.5 ${
-                directMode ? 'border-warning bg-warning/10' : 'border-border bg-popover'
+              class={`rounded-(--radius-medium) px-3 py-2.5 ${
+                directMode
+                  ? 'border border-warning bg-warning/10'
+                  : rowLabel
+                    ? 'bg-sidebar'
+                    : 'border border-border bg-popover'
               }`}
             >
               <SettingsFieldRow
@@ -1778,7 +1821,9 @@
             <Button
               variant="ghost"
               type="button"
-              class="mx-2 mb-2 px-3 py-2 flex items-center gap-2 text-sm text-left rounded-md bg-primary/10 hover:bg-primary/15 border border-primary/20 transition-colors cursor-pointer"
+              class="mx-2 mb-2 px-3 py-2 flex items-center gap-2 text-sm text-left rounded-md transition-colors cursor-pointer {rowLabel
+                ? 'bg-sidebar hover:bg-hover'
+                : 'bg-primary/10 hover:bg-primary/15 border border-primary/20'}"
               onclick={() => selectBranch(suggestedBranch)}
             >
               <GitBranchIcon size={14} class="text-primary-ink shrink-0" />
@@ -1795,7 +1840,9 @@
               <Button
                 variant="ghost"
                 type="button"
-                class="w-full px-3 py-3 flex items-start gap-3 hover:bg-muted/50 transition-colors cursor-pointer text-left border-l-2 border-primary bg-primary/5"
+                class="px-3 py-3 flex items-start gap-3 hover:bg-muted/50 transition-colors cursor-pointer text-left {rowLabel
+                  ? 'mx-2 rounded-(--radius-medium) bg-sidebar'
+                  : 'w-full border-l-2 border-primary bg-primary/5'}"
                 onclick={handleConnectGitHub}
               >
                 <span class="first-line-icon text-sm">
@@ -1816,7 +1863,11 @@
               </Button>
             {:else if isConnectingGitHub}
               <!-- Connecting to GitHub -->
-              <div class="px-3 py-3 flex items-start gap-3 border-l-2 border-primary bg-primary/5">
+              <div
+                class="px-3 py-3 flex items-start gap-3 {rowLabel
+                  ? 'mx-2 rounded-(--radius-medium) bg-sidebar'
+                  : 'border-l-2 border-primary bg-primary/5'}"
+              >
                 <span class="first-line-icon text-sm"
                   ><IntentMarkLoader size={20} class="text-ghost" /></span
                 >
@@ -1831,7 +1882,11 @@
               </div>
             {:else if githubAuthNeeded === 'no-access'}
               <!-- User is authenticated but doesn't have access -->
-              <div class="px-2 py-2 border-l-2 border-danger bg-danger-background/10">
+              <div
+                class="py-2 bg-danger-background/10 {rowLabel
+                  ? 'mx-2 rounded-(--radius-medium) px-3'
+                  : 'border-l-2 border-danger px-2'}"
+              >
                 <div class="text-sm text-danger">
                   {m.workspace_branchSelector_noAccess_error()}
                 </div>
@@ -1840,7 +1895,12 @@
                 </div>
               </div>
             {:else if error}
-              <div role="alert" class="px-2 py-2 border-l-2 border-danger bg-danger-background/10">
+              <div
+                role="alert"
+                class="py-2 bg-danger-background/10 {rowLabel
+                  ? 'mx-2 rounded-(--radius-medium) px-3'
+                  : 'border-l-2 border-danger px-2'}"
+              >
                 <div class="text-sm text-danger">{error}</div>
                 {#if repoType === 'github'}
                   <div class="text-sm text-subtle mt-1">
@@ -1890,35 +1950,35 @@
             {/if}
           </div>
 
-          <div
-            bind:this={directCheckoutFooterEl}
-            class="flex shrink-0 flex-wrap items-center gap-1 border-t border-border bg-popover px-2 py-1.5"
-          >
-            {#each branchGroups.filter((group) => (group.key === 'workspace' && group.options.length > 0) || group.key === 'remote') as group (group.key)}
-              <Toggle
-                size="sm"
-                pressed={groupExpanded(group)}
-                ariaLabel={group.label}
-                onChange={() => toggleGroup(group)}
-                class="gap-1.5 border-transparent bg-transparent px-2.5 text-subtle data-[state=on]:border-border data-[state=on]:bg-hover data-[state=on]:font-medium data-[state=on]:shadow-none data-[state=on]:hover:bg-muted"
-              >
-                {#if groupExpanded(group)}
-                  <Fa icon={faCheck} class="size-3! text-primary-ink" />
-                {/if}
-                {group.label}
-              </Toggle>
-            {/each}
-            <Button
-              onclick={handleRefresh}
-              variant="ghost"
-              size="icon-sm"
-              class="ml-auto shrink-0"
-              disabled={isLoading}
-              aria-label={m.workspace_branchSelector_refreshBranches_ariaLabel()}
+          {#if !rowLabel}<div
+              bind:this={directCheckoutFooterEl}
+              class="flex shrink-0 flex-wrap items-center gap-1 border-t border-border bg-popover px-2 py-1.5"
             >
-              <Fa icon={faRotate} class="size-3.5!" />
-            </Button>
-          </div>
+              {#each branchGroups.filter((group) => (group.key === 'workspace' && group.options.length > 0) || group.key === 'remote') as group (group.key)}
+                <Toggle
+                  size="sm"
+                  pressed={groupExpanded(group)}
+                  ariaLabel={group.label}
+                  onChange={() => toggleGroup(group)}
+                  class="gap-1.5 border-transparent bg-transparent px-2.5 text-subtle data-[state=on]:border-border data-[state=on]:bg-hover data-[state=on]:font-medium data-[state=on]:shadow-none data-[state=on]:hover:bg-muted"
+                >
+                  {#if groupExpanded(group)}
+                    <Fa icon={faCheck} class="size-3! text-primary-ink" />
+                  {/if}
+                  {group.label}
+                </Toggle>
+              {/each}
+              <Button
+                onclick={handleRefresh}
+                variant="ghost"
+                size="icon-sm"
+                class="ml-auto shrink-0"
+                disabled={isLoading}
+                aria-label={m.workspace_branchSelector_refreshBranches_ariaLabel()}
+              >
+                <Fa icon={faRotate} class="size-3.5!" />
+              </Button>
+            </div>{/if}
         {/if}
       </Popover.Content>
     </Popover.Root>

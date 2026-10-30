@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button } from '$lib/components/ui/button';
+  import { Button, type ButtonProps } from '$lib/components/ui/button';
   import { Label } from '$lib/components/ui/label';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import Fa from 'svelte-fa';
@@ -13,12 +13,14 @@
     expanded = false,
     onOpen,
     presentation = 'default',
+    triggerProps,
   }: {
     value: string;
     loading?: boolean;
     expanded?: boolean;
     onOpen: () => void;
     presentation?: 'default' | 'form';
+    triggerProps?: ButtonProps;
   } = $props();
   const id = $props.id();
 </script>
@@ -28,17 +30,19 @@
     <Label for={id}>{m.workspace_setupScriptEditor_setupScript_label()}</Label>
   {/if}
   <Button
-    {id}
+    {...triggerProps}
+    id={triggerProps?.id ?? id}
     type="button"
     variant={presentation === 'form' ? 'ghost' : 'outline'}
     wrapContent={presentation !== 'form'}
+    active={presentation === 'form' && expanded}
     class="w-full min-w-0 gap-2 font-normal {presentation === 'form'
       ? 'h-auto min-h-10 justify-start px-3 pr-2 py-2 text-left text-sm leading-5'
       : 'justify-between text-left'}"
     aria-label={m.workspace_setupScriptEditor_setupScript_label()}
     aria-haspopup="dialog"
     aria-expanded={expanded}
-    onclick={onOpen}
+    onclick={triggerProps?.onclick ?? onOpen}
   >
     {#if presentation === 'form'}
       <span class="w-22 shrink-0 truncate text-muted-foreground"

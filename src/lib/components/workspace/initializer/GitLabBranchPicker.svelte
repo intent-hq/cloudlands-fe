@@ -9,6 +9,7 @@
   import { useDialogPortalTarget } from '$lib/components/ui/dialog';
   import GitLabPickerList from './GitLabPickerList.svelte';
   import type { GitLabBranchPickerProps } from './gitlab-picker-types';
+  import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
 
   let {
     projectPath,
@@ -26,6 +27,7 @@
   }: GitLabBranchPickerProps = $props();
   let open = $state(false);
   const dialogPortalTarget = useDialogPortalTarget();
+  const isMobile = new IsMobile();
   const loading = $derived(isLoading || list.page.status === 'loading');
 </script>
 
@@ -64,18 +66,30 @@
   </Popover.Trigger>
   <Popover.Content
     role="dialog"
-    aria-label={list.copy.listLabel}
-    class="w-80 max-w-[calc(100vw-2rem)] max-h-[min(600px,var(--bits-popover-content-available-height,100dvh))] overflow-y-auto space-y-2 p-3"
-    align="start"
+    aria-label={rowLabel ?? list.copy.listLabel}
+    class={rowLabel
+      ? 'flex w-[360px] max-w-[calc(100vw-1rem)] min-w-0 max-h-[min(440px,var(--bits-popover-content-available-height,calc(100dvh-1rem)))] flex-col gap-2 overflow-hidden px-3 pt-3 pb-2'
+      : 'w-80 max-w-[calc(100vw-2rem)] max-h-[min(600px,var(--bits-popover-content-available-height,100dvh))] overflow-y-auto space-y-2 p-3'}
+    side={rowLabel ? (isMobile.current ? 'bottom' : 'left') : undefined}
+    sideOffset={rowLabel ? (isMobile.current ? 4 : 24) : undefined}
+    align={rowLabel && isMobile.current ? 'end' : 'start'}
     portalProps={{ to: dialogPortalTarget() }}
     strategy={dialogPortalTarget() ? 'absolute' : 'fixed'}
     onkeydown={(event) => {
       if (event.key === 'Enter') event.stopPropagation();
     }}
   >
-    <p class="break-all type-caption text-foreground">{projectPath}</p>
+    {#if rowLabel}
+      <div class="shrink-0 px-1">
+        <h2 class="type-body font-medium text-foreground">{rowLabel}</h2>
+        <p class="break-all type-caption mt-0.5 text-muted-foreground">{projectPath}</p>
+      </div>
+    {:else}
+      <p class="break-all type-caption text-foreground">{projectPath}</p>
+    {/if}
     <GitLabPickerList
       {...list}
+      compact={Boolean(rowLabel)}
       selectedKey={selectedBranch?.name}
       getKey={(branch) => branch.name}
       getText={(branch) => branch.name}

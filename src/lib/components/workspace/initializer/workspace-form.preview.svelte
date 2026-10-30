@@ -3,7 +3,7 @@
   import { setupWorkspaceFormPreview } from './workspace-form.preview-fixtures';
 
   interface Props {
-    scenario?: 'default' | 'long' | 'empty' | 'config-error' | 'orchestration';
+    scenario?: 'default' | 'long' | 'empty' | 'config-error' | 'orchestration' | 'many-repos';
     modal?: boolean;
   }
 
@@ -24,6 +24,9 @@
         props: { scenario: 'orchestration' },
         setup: () => setupWorkspaceFormPreview('orchestration'),
       },
+      modal: { props: { modal: true } },
+      'modal-long': { props: { modal: true, scenario: 'long' } },
+      history: { props: { modal: true, scenario: 'many-repos' } },
     },
   });
 </script>

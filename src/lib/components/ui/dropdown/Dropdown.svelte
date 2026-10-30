@@ -52,6 +52,13 @@
     collisionBoundary?: string | HTMLElement | null;
     /** Space kept between collision-aware content and its boundary. */
     collisionPadding?: number;
+    /**
+     * Preferred side for positioned content. `left` aligns the panel's top
+     * with the trigger and falls back to vertical placement without room.
+     */
+    side?: 'bottom' | 'left';
+    /** Gap between the trigger and a `left`-side panel. */
+    sideOffset?: number;
     /** Whether search is enabled */
     searchable?: boolean;
     /** Opt into the bordered search-input composition with a leading search icon. */
@@ -112,6 +119,8 @@
     animate = true,
     collisionBoundary = null,
     collisionPadding = 8,
+    side = 'bottom',
+    sideOffset = 4,
     searchable = true,
     searchChrome = false,
     searchValue = $bindable(''),
@@ -155,7 +164,7 @@
   let openedWidth = $state<number | undefined>();
   let inlineContentRef = $state.raw<HTMLDivElement | null>(null);
   let inlineStyle = $state('');
-  let inlineSide = $state<'top' | 'bottom'>('bottom');
+  let inlineSide = $state<'top' | 'bottom' | 'left'>('bottom');
   let containerRef = $state.raw<HTMLDivElement | null>(null);
   let inputRef = $state.raw<HTMLInputElement | null>(null);
   const triggerId = `${uid}-trigger`;
@@ -357,12 +366,31 @@
     const spaceBelow = Math.max(0, bottomBoundary - rect.bottom - 4);
     const spaceAbove = Math.max(0, rect.top - topBoundary - 4);
     const preferredDropdownHeight = contentMaxHeight ?? (portal ? 300 : 360);
+    const contentRef = portal ? portalContentRef : inlineContentRef;
+    if (side === 'left') {
+      const width = contentRef?.offsetWidth || (portal ? 432 : 332);
+      const right = rect.left - sideOffset;
+      if (right - width >= leftBoundary) {
+        // Align tops, then lift the panel only as far as the boundary needs.
+        const maxHeight = Math.min(preferredDropdownHeight, bottomBoundary - topBoundary);
+        const height = Math.min(contentRef?.offsetHeight || maxHeight, maxHeight);
+        const top = Math.max(topBoundary, Math.min(rect.top, bottomBoundary - height));
+        const left = right - width;
+        inlineSide = 'left';
+        if (portal) {
+          portalStyle = `position: fixed; top: ${top}px; left: ${left}px; max-height: ${maxHeight}px;`;
+          return;
+        }
+        const containerRect = containerRef?.getBoundingClientRect() ?? rect;
+        inlineStyle = `position: absolute; top: ${top - containerRect.top}px; bottom: auto; left: ${left - containerRect.left}px; max-height: ${maxHeight}px;`;
+        return;
+      }
+    }
     const opensAbove = spaceBelow < preferredDropdownHeight && spaceAbove > spaceBelow;
     inlineSide = opensAbove ? 'top' : 'bottom';
     const maxHeight = Math.min(preferredDropdownHeight, opensAbove ? spaceAbove : spaceBelow);
 
     // Clamp horizontal position so dropdown doesn't overflow the viewport
-    const contentRef = portal ? portalContentRef : inlineContentRef;
     const availableWidth = Math.max(0, rightBoundary - leftBoundary);
     const dropdownWidth = Math.min(contentRef?.offsetWidth || (portal ? 432 : 332), availableWidth);
     const left = Math.max(leftBoundary, Math.min(rect.left, rightBoundary - dropdownWidth));

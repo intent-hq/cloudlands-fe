@@ -23,6 +23,7 @@
     onSelect,
     selectedKey,
     activeIndex = $bindable(-1),
+    scrollable = true,
   }: {
     id?: string;
     items: readonly T[];
@@ -42,6 +43,7 @@
     onSelect: (item: T) => void;
     selectedKey?: string;
     activeIndex?: number;
+    scrollable?: boolean;
   } = $props();
 
   let list: HTMLDivElement | undefined = $state();
@@ -122,7 +124,7 @@
     {id}
     role="listbox"
     aria-label={label}
-    class="mt-2 max-h-56 overflow-y-auto"
+    class={scrollable ? 'mt-2 max-h-56 overflow-y-auto' : 'mt-2'}
   >
     {#each items as item, index (getKey(item))}
       <RepositoryPickerRow

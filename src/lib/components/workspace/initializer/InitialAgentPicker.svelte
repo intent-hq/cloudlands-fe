@@ -79,7 +79,7 @@
   // row's highlight overflow the menu (a second vertical bar) and clipped the
   // separator into a horizontal bar. Capped by the space Bits UI measures.
   const SPECIALIST_MENU_MAX_HEIGHT =
-    'min(400px, var(--bits-dropdown-menu-content-available-height, calc(100dvh - 1rem)))';
+    'min(520px, var(--bits-dropdown-menu-content-available-height, calc(100dvh - 1rem)))';
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
   const catalogEntries$ = selectProviderCatalogEntries();
   const providerProfiles$ = selectProviderCatalogProfiles();
@@ -840,13 +840,18 @@
         sideOffset={isMobile.current ? 4 : 24}
         align={isMobile.current ? 'end' : 'start'}
         preventScroll={false}
-        class="p-2 w-[320px] max-w-[calc(100vw-1rem)]"
+        class="p-2 w-[360px] max-w-[calc(100vw-1rem)]"
         maxHeight={SPECIALIST_MENU_MAX_HEIGHT}
         aria-label={m.ui_dropdownMenu_ariaLabel()}
       >
-        <p class="type-caption px-3 py-2 text-muted-foreground">
-          {m.workspace_initialAgentPicker_agentMenu_description()}
-        </p>
+        <div class="px-3 pt-2 pb-2">
+          <p class="type-body font-medium text-foreground">
+            {m.workspace_initialAgentPicker_agent_label()}
+          </p>
+          <p class="type-caption text-muted-foreground">
+            {m.workspace_initialAgentPicker_agentMenu_description()}
+          </p>
+        </div>
         {#if orchestrator}
           <Menu.RadioGroup
             value={isTeamMode ? 'orchestration' : ''}
@@ -911,6 +916,9 @@
       fullWidth
       rowLabel={m.workspace_initialAgentPicker_model_label()}
       genericModelIcon
+      menuSide={isMobile.current ? 'bottom' : 'left'}
+      menuSideOffset={24}
+      menuMaxHeight={440}
       triggerClass={SETTINGS_TRIGGER_CLASS}
       description={m.workspace_initialAgentPicker_modelMenu_description()}
       showReasoning
@@ -924,7 +932,7 @@
       silentFallback
       portal={false}
       modalAware={true}
-      collisionBoundary="[data-model-picker-collision-boundary]"
+      collisionBoundary="[data-model-picker-collision-boundary] > .dialog-layout > [data-slot=dialog-body]"
     />
   {/key}
 </div>

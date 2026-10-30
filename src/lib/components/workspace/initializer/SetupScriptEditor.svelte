@@ -1,6 +1,11 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import { faTerminal, faWandMagicSparkles } from '@fortawesome/free-solid-svg-icons';
+  import {
+    faCheck,
+    faPlus,
+    faTerminal,
+    faWandMagicSparkles,
+  } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
@@ -44,6 +49,7 @@
     triggerClass?: string;
     contentOnly?: boolean;
     contentClass?: string;
+    presentation?: 'editor' | 'picker';
     onchange?: (value: string) => void;
   }
 
@@ -62,11 +68,16 @@
     triggerClass = '',
     contentOnly = false,
     contentClass = '',
+    presentation = 'editor',
     onchange,
   }: Props = $props();
 
   // Agent panel state
   let showAgentPanel = $state(false);
+  let pickerEditorOpen = $state(untrack(() => isCustomScript));
+  let pickerTemplatesOpen = $state(false);
+  let pickerVariablesOpen = $state(false);
+  let pickerRoot: HTMLDivElement | undefined = $state();
 
   let codeEditorRef: ReturnType<typeof CodeEditor> | undefined = $state();
   let selectedScriptId = $state('');
@@ -150,7 +161,17 @@
       customNameSource = script.source;
       onchange?.(value);
     }
-    requestAnimationFrame(() => codeEditorRef?.focus());
+    if (presentation === 'picker') {
+      pickerEditorOpen = false;
+      pickerTemplatesOpen = false;
+      requestAnimationFrame(() =>
+        pickerRoot
+          ?.querySelector<HTMLButtonElement>('[data-setup-source][aria-pressed=true]')
+          ?.focus(),
+      );
+    } else {
+      requestAnimationFrame(() => codeEditorRef?.focus());
+    }
   }
 
   function handleEditorChange(newValue: string) {
@@ -173,6 +194,63 @@
     const template = SETUP_SCRIPT_TEMPLATES.find((t) => t.id === 'generic');
     return template ? `template-${template.id}` : '';
   })();
+
+  const pickerSelection = $derived(
+    hasUserEdited || !selectedScriptId ? 'custom' : selectedScriptId,
+  );
+  const pickerChoices = $derived.by(() => {
+    const choices: Array<{ id: string; name: string }> = [];
+    if (repoConfigScript) {
+      choices.push({
+        id: REPO_CONFIG_SCRIPT_ID,
+        name: setupScriptDisplayName(REPO_CONFIG_SCRIPT_NAME, 'repo-config'),
+      });
+    }
+    if (lastUsedScript) {
+      choices.push({
+        id: LAST_USED_SCRIPT_ID,
+        name: m.workspace_setupScriptEditor_lastUsed_label(),
+      });
+    }
+    for (const template of SETUP_SCRIPT_TEMPLATES) {
+      const id = `template-${template.id}`;
+      if (id === COPY_CONFIG_TEMPLATE_ID || id === selectedScriptId) {
+        choices.push({ id, name: template.name });
+      }
+    }
+    choices.push({
+      id: 'custom',
+      name: m.workspace_setupScriptPicker_custom_label(),
+    });
+    return choices;
+  });
+  const otherTemplates = $derived(
+    SETUP_SCRIPT_TEMPLATES.filter(
+      (template) => !pickerChoices.some((choice) => choice.id === `template-${template.id}`),
+    ),
+  );
+
+  function chooseCustomScript() {
+    selectedScriptId = '';
+    hasUserEdited = true;
+    customName = 'Custom'; // i18n-ignore (stored setup-script identity)
+    customNameSource = 'custom';
+    showAgentPanel = false;
+    pickerEditorOpen = true;
+    requestAnimationFrame(() => codeEditorRef?.focus());
+  }
+
+  function handlePickerScriptGenerated(script: { name: string; content: string }) {
+    isProgrammaticChange = true;
+    selectedScriptId = '';
+    value = script.content;
+    customName = script.name;
+    customNameSource = 'named';
+    hasUserEdited = true;
+    onchange?.(value);
+    showAgentPanel = false;
+    requestAnimationFrame(() => codeEditorRef?.focus());
+  }
 
   // Track previous repo path to detect changes
   let previousRepoPath = $state<string | null>(null);
@@ -299,6 +377,145 @@
     isCustomScript = hasUserEdited;
   });
 </script>
+
+{#snippet pickerChoice(choice: { id: string; name: string })}
+  <Button
+    variant="ghost"
+    wrapContent={false}
+    active={pickerSelection === choice.id}
+    aria-pressed={pickerSelection === choice.id}
+    data-setup-source={choice.id}
+    class="w-full h-auto min-h-10 items-center justify-start gap-3 px-3 py-2 text-left font-normal"
+    onclick={() => (choice.id === 'custom' ? chooseCustomScript() : handleScriptSelect(choice.id))}
+  >
+    <Fa icon={faTerminal} class="size-4 shrink-0 text-muted-foreground" />
+    <span class="min-w-0 flex-1 truncate text-sm leading-5">{choice.name}</span>
+    <span class="w-4 shrink-0">
+      {#if pickerSelection === choice.id}<Fa icon={faCheck} class="size-4 text-primary-ink" />{/if}
+    </span>
+  </Button>
+{/snippet}
+
+{#snippet pickerContentSnippet()}
+  <div class="min-w-0 px-2 pb-3" bind:this={pickerRoot}>
+    {#if !pickerEditorOpen}
+      <div
+        class="space-y-1"
+        role="group"
+        aria-label={m.workspace_setupScriptEditor_setupScript_label()}
+      >
+        {#each pickerChoices as choice (choice.id)}{@render pickerChoice(choice)}{/each}
+      </div>
+      <div class="mt-2 px-1">
+        <Button
+          variant="ghost"
+          size="sm"
+          active={pickerTemplatesOpen}
+          aria-expanded={pickerTemplatesOpen}
+          class="justify-start gap-2 text-muted-foreground"
+          onclick={() => (pickerTemplatesOpen = !pickerTemplatesOpen)}
+        >
+          <Fa icon={faPlus} class="size-3.5" />
+          {m.workspace_setupScriptEditor_templates_label()}
+        </Button>
+      </div>
+      {#if pickerTemplatesOpen}
+        <div class="mt-1 space-y-1" transition:slide={{ tier: 'moderate' }}>
+          {#each otherTemplates as template (template.id)}
+            {@render pickerChoice({
+              id: `template-${template.id}`,
+              name: template.name,
+            })}
+          {/each}
+        </div>
+      {/if}
+      <div class="mt-3 flex flex-wrap items-center gap-1 px-1">
+        <Button variant="ghost" size="sm" class="gap-2" onclick={() => (pickerEditorOpen = true)}>
+          <Fa icon={faTerminal} class="size-3.5" />
+          {m.workspace_setupScriptPicker_edit_label()}
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          class="gap-2"
+          disabled={!repoPath}
+          onclick={() => {
+            pickerEditorOpen = true;
+            showAgentPanel = true;
+          }}
+        >
+          <Fa icon={faWandMagicSparkles} class="size-3.5" />
+          {m.workspace_setupScriptEditor_autoGenerate_label()}
+        </Button>
+      </div>
+    {:else}
+      <div class="mb-2 flex items-center justify-between gap-3 px-2">
+        <div class="min-w-0">
+          <h3 class="text-sm font-medium">{m.workspace_setupScriptPicker_commands_label()}</h3>
+          <p class="type-caption truncate text-muted-foreground">{displayLabel}</p>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onclick={() => {
+            pickerEditorOpen = false;
+            showAgentPanel = false;
+          }}
+        >
+          {m.workspace_setupScriptPicker_choose_label()}
+        </Button>
+      </div>
+      {#if showAgentPanel && repoPath}
+        <SetupScriptAgent
+          {repoPath}
+          onScriptGenerated={handlePickerScriptGenerated}
+          onClose={() => (showAgentPanel = false)}
+        />
+      {:else}
+        <div
+          class="h-44 min-w-0 overflow-hidden rounded-(--radius-medium) border border-border bg-background py-2"
+        >
+          <CodeEditor
+            bind:this={codeEditorRef}
+            bind:value
+            language="shell"
+            lineNumbers={false}
+            lineWrapping={wordWrap}
+          />
+        </div>
+        <div class="mt-2 px-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            active={pickerVariablesOpen}
+            aria-expanded={pickerVariablesOpen}
+            onclick={() => (pickerVariablesOpen = !pickerVariablesOpen)}
+          >
+            {m.workspace_setupScriptEditor_variables_label()}
+          </Button>
+          {#if pickerVariablesOpen}
+            <Tooltip.Provider delayDuration={100}>
+              <div class="mt-2 flex flex-wrap gap-2 px-2">
+                {#each SETUP_SCRIPT_VARIABLES as variable (variable.name)}
+                  <Tooltip.Root>
+                    <Tooltip.Trigger
+                      ><code class="type-caption text-muted-foreground">${variable.name}</code
+                      ></Tooltip.Trigger
+                    >
+                    <Tooltip.Content side="top" class="max-w-xs">
+                      <p>{variable.description}</p>
+                      <code class="type-caption">{variable.example}</code>
+                    </Tooltip.Content>
+                  </Tooltip.Root>
+                {/each}
+              </div>
+            </Tooltip.Provider>
+          {/if}
+        </div>
+      {/if}
+    {/if}
+  </div>
+{/snippet}
 
 {#snippet expandedContentSnippet()}
   <!-- Stack sources above the editor on compact screens; both regions scroll independently. -->
@@ -483,12 +700,16 @@
 {#if contentOnly}
   <!-- Content only mode: just render the expanded content -->
   {#if expanded}
-    <div
-      class="{contentClass} flex flex-col gap-3 flex-1 min-h-0 min-w-0"
-      transition:slide={{ tier: 'moderate' }}
-    >
-      {@render expandedContentSnippet()}
-    </div>
+    {#if presentation === 'picker'}
+      <div class="{contentClass} min-w-0">{@render pickerContentSnippet()}</div>
+    {:else}
+      <div
+        class="{contentClass} flex flex-col gap-3 flex-1 min-h-0 min-w-0"
+        transition:slide={{ tier: 'moderate' }}
+      >
+        {@render expandedContentSnippet()}
+      </div>
+    {/if}
   {/if}
 {:else}
   <div class={compact ? '' : 'w-full'}>

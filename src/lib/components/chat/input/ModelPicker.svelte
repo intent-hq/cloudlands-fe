@@ -301,6 +301,12 @@
     rowLabel?: string;
     /** Show a generic model glyph instead of the provider's brand icon. */
     genericModelIcon?: boolean;
+    /** Preferred side for the open menu; `left` falls back to vertical without room. */
+    menuSide?: 'bottom' | 'left';
+    /** Gap between the trigger and a `left`-side menu. */
+    menuSideOffset?: number;
+    /** Open menu height in pixels; the panel still shrinks to the available space. */
+    menuMaxHeight?: 360 | 440;
     workspaceId?: string;
     agentId?: string;
     showManageLink?: boolean;
@@ -362,6 +368,9 @@
     description,
     rowLabel,
     genericModelIcon = false,
+    menuSide = 'bottom',
+    menuSideOffset,
+    menuMaxHeight = 360,
     workspaceId,
     agentId,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -2370,10 +2379,13 @@
         onToggle={toggleGroup}
         onRefresh={handleRefreshProvider}
       />
-    {:else if group.key !== 'default' && baseHasProfiles(group.parentKey ?? group.key)}
-      <!-- Tabs show icons only; name the configuration being browsed (§5.54). -->
+    {:else if group.key !== 'default' && (rowLabel || baseHasProfiles(group.parentKey ?? group.key))}
+      <!-- Tabs show icons only; name the configuration being browsed (§5.54).
+           Form rows always name the provider so the icon rail is never the only cue. -->
       <div
-        class="truncate px-2 pt-1.5 pb-0.5 text-xs text-subtle"
+        class={rowLabel
+          ? 'truncate px-2 pt-2 pb-1 text-sm font-medium text-foreground'
+          : 'truncate px-2 pt-1.5 pb-0.5 text-xs text-subtle'}
         data-testid="model-picker-profile-group"
       >
         {group.label}
@@ -2492,7 +2504,10 @@
     searchChrome
     placeholder={m.ui_dropdown_search_ariaLabel()}
     class={cn('min-w-0 max-w-full', fullWidth && 'w-full')}
-    headerClass={cn('model-picker-header border-b-0!', !hasNoAvailableProvider && 'pt-9')}
+    headerClass={cn(
+      'model-picker-header border-b-0!',
+      rowLabel ? 'pt-3' : !hasNoAvailableProvider && 'pt-9',
+    )}
     triggerClass={cn(
       'max-w-full px-2!',
       (variant === 'outline' || variant === 'default') && 'w-full justify-between border-border!',
@@ -2500,10 +2515,14 @@
       triggerClass,
     )}
     contentClass={cn(
-      'model-picker-panel max-w-[calc(100vw-16px)] bg-popover! text-foreground! w-96 h-[360px] min-h-0 flex flex-col rounded-xl pl-12',
+      'model-picker-panel max-w-[calc(100vw-16px)] bg-popover! text-foreground! w-96 min-h-0 flex flex-col rounded-xl pl-12',
+      rowLabel && 'model-picker-form',
+      menuMaxHeight === 440 ? 'h-[440px]' : 'h-[360px]',
       pointerInteraction && 'model-picker-pointer',
     )}
-    contentMaxHeight={360}
+    contentMaxHeight={menuMaxHeight}
+    side={menuSide}
+    sideOffset={menuSideOffset}
     fillContentHeight
     animate={false}
     {portal}
@@ -2641,7 +2660,7 @@
           variant="ghost"
           size="icon-xs"
           iconOnly
-          class="absolute right-10 top-1.5 z-20"
+          class={cn('absolute right-10 z-20', rowLabel ? 'top-2.5' : 'top-1.5')}
           aria-label={m.chat_modelPicker_clearSearch_ariaLabel()}
           onclick={clearModelSearch}
         >
@@ -2660,7 +2679,8 @@
             group: providerDisplayName(refreshProviderId),
           })}
           class={cn(
-            'absolute right-2 top-1.5 text-subtle hover:bg-muted/40',
+            'absolute right-2 text-subtle hover:bg-muted/40',
+            rowLabel ? 'top-2.5' : 'top-1.5',
             refreshingProviders.has(refreshProviderId) && 'opacity-50!',
           )}
           data-testid="model-provider-refresh-button"
@@ -2679,8 +2699,12 @@
           {/if}
         </Button>
       {/if}
+      {#if rowLabel}<h2 class="type-body px-3 pr-16 font-medium">{rowLabel}</h2>{/if}
       {#if description}
-        <p class="px-3 pb-2 text-xs text-muted-foreground" data-testid="model-picker-description">
+        <p
+          class={cn('px-3 pb-2 text-xs text-muted-foreground', rowLabel && 'mt-1')}
+          data-testid="model-picker-description"
+        >
           {description}
         </p>
       {/if}
@@ -2783,7 +2807,7 @@
 </ContentDialog>
 
 <style>
-  :global(.model-picker-panel > div:has(> input[role='searchbox'])) {
+  :global(.model-picker-panel:not(.model-picker-form) > div:has(> input[role='searchbox'])) {
     position: absolute;
     top: 0.25rem;
     left: 3.5rem;
@@ -2794,10 +2818,10 @@
     background: transparent;
     border-radius: var(--radius-medium);
   }
-  :global(.model-picker-panel > div:has(> input[role='searchbox']) > svg) {
+  :global(.model-picker-panel:not(.model-picker-form) > div:has(> input[role='searchbox']) > svg) {
     display: none;
   }
-  :global(.model-picker-panel input[role='searchbox']) {
+  :global(.model-picker-panel:not(.model-picker-form) input[role='searchbox']) {
     height: 2rem;
     padding: 0 1.75rem 0 0.25rem;
     border: 0;

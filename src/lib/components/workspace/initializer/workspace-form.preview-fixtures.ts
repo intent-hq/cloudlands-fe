@@ -19,7 +19,8 @@ import {
 import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
 
-type WorkspaceFormScenario = 'default' | 'long' | 'empty' | 'config-error' | 'orchestration';
+type WorkspaceFormScenario =
+  'default' | 'long' | 'empty' | 'config-error' | 'orchestration' | 'many-repos';
 
 export function setupWorkspaceFormPreview(scenario: WorkspaceFormScenario) {
   const restores: Array<() => void> = [];
@@ -90,6 +91,25 @@ export function setupWorkspaceFormPreview(scenario: WorkspaceFormScenario) {
       overrideMockIpcHandler(WORKSPACE_CHANNELS.GET_RECENT_REPOSITORIES, () => ({
         success: true,
         data: [],
+      })),
+    );
+  }
+  if (scenario === 'many-repos') {
+    const repositories = Array.from({ length: 12 }, (_, index) => {
+      const name = `history-repo-${String(index + 1).padStart(2, '0')}`;
+      return {
+        path: `fixture-owner/${name}`,
+        name,
+        owner: 'fixture-owner',
+        githubUrl: `https://github.com/fixture-owner/${name}`,
+        addedAt: '2026-09-01T00:00:00Z',
+        lastUsedAt: new Date(Date.UTC(2026, 9, index + 1)).toISOString(),
+      };
+    });
+    restores.push(
+      overrideMockIpcHandler(WORKSPACE_CHANNELS.GET_RECENT_REPOSITORIES, () => ({
+        success: true,
+        data: [...repositories, repositories[5]],
       })),
     );
   }

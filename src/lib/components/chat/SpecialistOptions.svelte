@@ -12,7 +12,7 @@
   }: {
     specialists: readonly Specialist[];
     value?: string | null;
-    /** Single-line rows with plain outline icons and no descriptions. */
+    /** Single-line, body-sized rows with plain outline icons and no descriptions. */
     compact?: boolean;
     onchange: (id: string | null) => void;
   } = $props();

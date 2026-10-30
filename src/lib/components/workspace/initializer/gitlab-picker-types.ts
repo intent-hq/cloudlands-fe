@@ -46,6 +46,8 @@ interface GitLabProjectRow {
 }
 
 export interface GitLabProjectPickerProps extends GitLabPickerProps<GitLabProjectRow> {
+  /** Let the containing settings panel own scrolling. */
+  scrollable?: boolean;
   /** Current configured-root authentication, independent of a pending checkout capture. */
   authenticated?: boolean;
   selectedProjectPath?: string;
