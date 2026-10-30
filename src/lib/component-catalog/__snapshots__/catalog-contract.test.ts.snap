@@ -18216,6 +18216,13 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                               "Rich chat blocks"
                                           <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                                             "Prompt agents to emit rich chat blocks (Mermaid diagrams, CLI commands, code references, navigation links)"
+                                      <div class="[&_.truncate]:whitespace-normal flex gap-3 items-start min-h-0 min-w-0 px-0 py-0" data-density="default" data-enabled="false" data-feature="secretRequests" data-slot="list-row" data-testid="harness-feature-state" role="listitem">
+                                        <div class="flex-1 min-w-0">
+                                          <div class="flex gap-2 items-baseline min-w-0">
+                                            <div class="min-w-0 text-foreground truncate type-caption" data-slot="list-row-title">
+                                              "Secret requests"
+                                          <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
+                                            "Let agents ask you for secrets such as API keys, held in memory only for their commands. Also needs Host command execution"
                                       <div class="[&_.truncate]:whitespace-normal flex gap-3 items-start min-h-0 min-w-0 px-0 py-0" data-density="default" data-enabled="false" data-feature="attentionRequests" data-slot="list-row" data-testid="harness-feature-state" role="listitem">
                                         <div class="flex-1 min-w-0">
                                           <div class="flex gap-2 items-baseline min-w-0">

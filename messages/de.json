@@ -4628,6 +4628,8 @@
   "settings_agentFeatures_saveError": "Agent-Funktionen-Einstellungen konnten nicht gespeichert werden: {error}",
   "settings_agentFeatures_scripts_description": "Agenten können gespeicherte Skripte und Dienste erstellen und ausführen",
   "settings_agentFeatures_scripts_label": "Gespeicherte Skripte",
+  "settings_agentFeatures_secretRequests_description": "Agenten können Geheimnisse wie API-Schlüssel anfordern, die nur im Speicher für ihre Befehle bleiben. Erfordert auch Host-Befehlsausführung",
+  "settings_agentFeatures_secretRequests_label": "Geheimnis-Anfragen",
   "settings_agentFeatures_stateSnapshot_description": "Jedem Agentenzug eine kompakte ws.agent.snapshot()-Statusübersicht voranstellen",
   "settings_agentFeatures_stateSnapshot_label": "Statusübersicht",
   "settings_agentFeatures_structuredQuestions_description": "Agenten können strukturierte Rückfragen mit vorgegebenen Optionen stellen",
