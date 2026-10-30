@@ -10,22 +10,37 @@
     loading = false,
     expanded = false,
     onOpen,
+    presentation = 'default',
   }: {
     value: string;
     loading?: boolean;
     expanded?: boolean;
     onOpen: () => void;
+    presentation?: 'default' | 'form';
   } = $props();
   const id = $props.id();
 </script>
 
-<div class="grid min-w-0 gap-2">
-  <Label for={id}>{m.workspace_setupScriptEditor_setupScript_label()}</Label>
+<div
+  class={presentation === 'form'
+    ? 'grid min-w-0 grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-4'
+    : 'grid min-w-0 gap-2'}
+>
+  <Label
+    for={id}
+    class={presentation === 'form' ? 'text-sm font-normal text-muted-foreground' : undefined}
+    >{presentation === 'form'
+      ? m.workspace_compactInitializer_setup_label()
+      : m.workspace_setupScriptEditor_setupScript_label()}</Label
+  >
   <Button
     {id}
     type="button"
-    variant="outline"
-    class="w-full min-w-0 justify-between gap-2 text-left font-normal"
+    variant={presentation === 'form' ? 'ghost' : 'outline'}
+    class="w-full min-w-0 gap-2 font-normal {presentation === 'form'
+      ? 'h-auto min-h-10 justify-between px-2.5 py-2 text-left'
+      : 'justify-between text-left'}"
+    aria-label={m.workspace_setupScriptEditor_setupScript_label()}
     aria-haspopup="dialog"
     aria-expanded={expanded}
     onclick={onOpen}

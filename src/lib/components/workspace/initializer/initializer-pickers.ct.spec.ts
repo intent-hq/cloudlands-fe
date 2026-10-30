@@ -641,38 +641,6 @@ test('portalled branch menu escapes clipping and paints over panel tabs', async 
   await expect(trigger).toBeFocused();
 });
 
-for (const theme of ['light', 'dark']) {
-  test(`specialist trigger is transparent with matching state radii in ${theme}`, async ({
-    mount,
-    page,
-  }) => {
-    await page.setViewportSize({ width: 360, height: 720 });
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-    await page.evaluate(
-      (value) => document.documentElement.classList.toggle('dark', value === 'dark'),
-      theme,
-    );
-    await mount(InitialAgentPicker, { props: { state: 'populated' } });
-    const trigger = page.locator('.specialist-trigger');
-    const surface = trigger.locator('[data-slot="button-surface"]');
-    await expect(trigger).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
-    await expect(surface).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
-    await expect(trigger).toHaveCSS('border-style', 'solid');
-    await expect(trigger).not.toHaveCSS('border-color', 'rgba(0, 0, 0, 0)');
-    const rect = await trigger.boundingBox();
-    for (const state of ['hover', 'focus', 'open']) {
-      if (state === 'hover') await trigger.hover();
-      if (state === 'focus') await trigger.focus();
-      if (state === 'open') await trigger.press('Enter');
-      const radius = await trigger.evaluate((e) => getComputedStyle(e).borderRadius);
-      await expect(surface).toHaveCSS('border-radius', radius);
-      expect(await trigger.boundingBox()).toEqual(rect);
-    }
-    await page.keyboard.press('Escape');
-    await expect(trigger).toBeFocused();
-  });
-}
-
 // The specialist menu must scroll as one container: a nested scroller let the
 // hover highlight of the last row overflow the menu (second vertical bar) and
 // made the inner box's overflow-x compute to auto (horizontal bar).
@@ -684,7 +652,10 @@ for (const height of [900, 360]) {
     await page.setViewportSize({ width: 1024, height });
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await mount(InitialAgentPicker, { props: { state: 'crowded' } });
-    await page.locator('.specialist-trigger').click();
+    await page
+      .getByTestId('initial-agent-picker')
+      .getByRole('button', { name: /^Agent / })
+      .click();
     const menu = page.locator('[data-slot="menu-content"]');
     await expect(menu).toBeVisible();
     const lastRow = menu.locator('[data-specialist-option]').last();
@@ -759,7 +730,8 @@ const pickerFocusTargets = [
   },
   {
     name: 'specialist trigger',
-    locate: (page: Page) => page.locator('.specialist-trigger'),
+    locate: (page: Page) =>
+      page.getByTestId('initial-agent-picker').getByRole('button', { name: /^Agent / }),
     focusChanges: 'border-top-color' as const,
     focusBackground: null,
   },

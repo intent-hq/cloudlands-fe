@@ -135,7 +135,7 @@ for (const state of ['populated', 'empty', 'compact'] as const) {
     const trigger =
       state === 'compact'
         ? page.getByTestId('specialist-fixture').getByRole('button').first()
-        : page.locator('.specialist-trigger');
+        : page.getByTestId('initial-agent-picker').getByRole('button', { name: /^Agent / });
     await trigger.focus();
     await trigger.press('Enter');
     const menu = page.getByRole('menu');

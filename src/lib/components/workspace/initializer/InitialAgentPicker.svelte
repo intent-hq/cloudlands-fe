@@ -67,6 +67,14 @@
   import { DEFAULT_NEW_WORKSPACE_SPECIALIST_ID } from '$lib/constants/specialists';
 
   const logger = createLogger('InitialAgentPicker');
+  // Unique per mount: the picker can render more than once on a page.
+  const uid = $props.id();
+  const modelLabelId = `${uid}-model-label`;
+  const agentLabelId = `${uid}-agent-label`;
+  const agentValueId = `${uid}-agent-value`;
+  // Matches the form's other settings rows: 40px hit height, body text.
+  const SETTINGS_TRIGGER_CLASS =
+    'w-full min-w-0 min-h-10 justify-start gap-2 px-2.5! py-2! text-sm font-normal';
   // The menu content is the only scroller: a nested scroll box let the last
   // row's highlight overflow the menu (a second vertical bar) and clipped the
   // separator into a horizontal bar. Capped by the space Bits UI measures.
@@ -322,21 +330,7 @@
     ),
   );
 
-  // Avatar row for the team card: the orchestrator's declared teamAgents,
-  // resolved against the specialist set for their `icon` metadata. Unknown
-  // ids still render (AgentAvatar degrades to its fallback design); absent
-  // teamAgents yields an empty row (orchestrator avatar only). Duplicate ids
-  // are collapsed — they would break the keyed each rendering the row.
-  const teamAgentAvatars = $derived(
-    [...new Set(orchestrator?.teamAgents ?? [])].map((id) => ({
-      id,
-      icon: $specialists$.find((s) => s.id === id)?.icon,
-    })),
-  );
-
-  // Whether an id maps to the mode cards rather than a dropdown row:
-  // General (null), the orchestrator (team card), or a role-internal
-  // team specialist.
+  // Treat General, the orchestrator, and internal team specialists separately.
   function isTeamRoleId(id: string | null): boolean {
     if (id === null) return true;
     if (id === orchestratorId) return true;
@@ -654,14 +648,9 @@
   const specialistDisplayLabel = $derived(
     currentSpecialistInfo?.name ?? m.workspace_initialAgentPicker_general_label(),
   );
-  const specialistDisplayDescription = $derived(
-    currentSpecialistInfo?.description ??
-      m.workspace_initialAgentPicker_noSpecializedBehavior_description(),
-  );
-
   function selectTeamMode() {
     if (isTeamMode) return;
-    // Team mode requires an orchestrator; the card is hidden without one.
+    // Orchestration is available only when its specialist is present.
     if (orchestratorId === null) return;
     onSetupPick?.();
     // Save single-agent state
@@ -775,282 +764,186 @@
     onModelChange?.(explicitModel);
   }
 
+  // Agent menu pick. Leaving orchestration first restores the single-agent
+  // snapshot (model, provider, effort), so re-picking the remembered
+  // specialist keeps its model override; another specialist resets it.
+  function handleAgentSelect(specialistId: string | null) {
+    specialistDropdownOpen = false;
+    if (isTeamMode) {
+      selectSingleAgentMode();
+      if (selectedSpecialist === specialistId) return;
+    } else if (selectedSpecialist === specialistId) {
+      return;
+    }
+    handleSpecialistSelect(specialistId);
+  }
+
+  function handleOrchestrationSelect() {
+    specialistDropdownOpen = false;
+    selectTeamMode();
+  }
+
+  // Present the orchestrator by its own name, like any other specialist.
+  const orchestratorLabel = $derived(
+    orchestrator?.name || m.workspace_initialAgentPicker_teamMode_label(),
+  );
+  const agentDisplayLabel = $derived(
+    isTeamMode && orchestrator ? orchestratorLabel : specialistDisplayLabel,
+  );
+  const activeDefaultModel = $derived(isTeamMode ? teamModeModel : singleAgentModel);
+
   async function openSpecialistSettings() {
     specialistDropdownOpen = false;
     await navigateToSettings({ view: 'create-specialist' });
   }
 </script>
 
-<!-- Agent mode cards -->
-<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-  <!-- Single agent card -->
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div
-    class="agent-card min-w-0 {!isTeamMode
-      ? 'border-input bg-accent/60'
-      : 'border-border bg-card hover:bg-muted/50'}"
-    onclick={selectSingleAgentMode}
-    onkeydown={(event) => {
-      if (event.target !== event.currentTarget) return;
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        selectSingleAgentMode();
-      }
-    }}
-    role="button"
-    tabindex="0"
-    aria-pressed={!isTeamMode}
-  >
-    <div class="text-sm font-medium text-foreground">
-      {m.workspace_initialAgentPicker_singleAgent_label()}
-    </div>
-    <!-- Specialist selector dropdown -->
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div
-      class="w-full"
-      onclick={(e) => {
-        if (!isTeamMode) e.stopPropagation();
-      }}
-    >
-      <DropdownMenu
-        class="w-full"
-        bind:open={specialistDropdownOpen}
-        align="start"
-        side="bottom"
-        contentClass="p-1 w-80 max-w-[calc(100vw-1rem)]"
-        contentMaxHeight={SPECIALIST_MENU_MAX_HEIGHT}
-      >
-        {#snippet trigger({ props })}
-          <Button
-            {...isTeamMode ? {} : props}
-            variant="ghost"
-            type="button"
-            tabindex={isTeamMode ? -1 : 0}
-            onclick={(e) => {
-              if (isTeamMode) {
-                // First click selects single-agent mode — let it bubble to the parent card
-                return;
-              }
-              e.stopPropagation();
-              (props.onclick as ((event: MouseEvent) => void) | undefined)?.(e);
-            }}
-            wrapContent={false}
-            class="specialist-trigger"
-          >
-            <span class="first-line-icon type-caption">
-              <AgentAvatar
-                agentId="blank"
-                variant="standard"
-                specialist={currentSpecialistInfo ? displayedSpecialist : null}
-                icon={currentSpecialistInfo?.icon}
-              />
-            </span>
-            <div class="flex flex-col min-w-0 flex-1">
-              <span class="type-caption font-medium! text-foreground truncate"
-                >{specialistDisplayLabel}</span
-              >
-              <span class="type-caption text-subtle truncate">{specialistDisplayDescription}</span>
-            </div>
-            <span class="first-line-icon type-caption"
-              ><Fa icon={faChevronDown} class="text-ghost size-3!" /></span
-            >
-          </Button>
-        {/snippet}
-
-        {#snippet content()}
-          <SpecialistOptions
-            specialists={customSpecialists}
-            value={isTeamRoleId(selectedSpecialist) ? null : selectedSpecialist}
-            onchange={handleSpecialistSelect}
-          />
-          <Menu.Separator />
-          <!-- Create new specialist link -->
-          <Menu.Item class="type-caption gap-2" onSelect={openSpecialistSettings}>
-            {#snippet leading()}<Fa icon={faPlus} class="opacity-60" />{/snippet}
-            <span class="type-caption"
-              >{m.workspace_initialAgentPicker_manageSpecialists_label()}</span
-            >
-          </Menu.Item>
-        {/snippet}
-      </DropdownMenu>
-    </div>
-
-    <p class="text-sm text-subtle leading-snug">
-      {m.workspace_initialAgentPicker_singleAgent_description()}
-    </p>
-
-    <div
-      class="model-picker-row {!isTeamMode ? '' : 'opacity-0 pointer-events-none'}"
-      inert={isTeamMode}
-      onclick={(event) => event.stopPropagation()}
-      onkeydown={(event) => event.stopPropagation()}
-    >
-      <span class="text-sm text-subtle">{m.workspace_initialAgentPicker_using_before()}</span>
-      {#key singleAgentModel}
-        <ModelPicker
-          selectedModel={modelWasOverridden ? selectedModel : undefined}
-          providerId={selectedProvider}
-          onModelChange={handleModelChange}
-          variant="ghost-light"
-          size="xs"
-          showReasoning
-          reasoningEffort={displayedReasoningEffort}
-          onReasoningChange={handleReasoningChange}
-          showManageLink={true}
-          defaultModelId={singleAgentModel}
-          defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
-          fallbackToCatalogDefault
-          fallbackProviderId={selectedProvider}
-          silentFallback
-          portal={false}
-          modalAware={true}
-          collisionBoundary="[data-model-picker-collision-boundary]"
-        />
-      {/key}
-    </div>
+<div class="agent-settings" data-testid="initial-agent-picker">
+  <span class="agent-settings-label" id={modelLabelId}>
+    {m.workspace_initialAgentPicker_model_label()}
+  </span>
+  <div class="agent-settings-control" aria-labelledby={modelLabelId} role="group">
+    {#key activeDefaultModel}
+      <ModelPicker
+        selectedModel={modelWasOverridden ? selectedModel : undefined}
+        providerId={selectedProvider}
+        onModelChange={handleModelChange}
+        variant="ghost-light"
+        size="sm"
+        fullWidth
+        triggerClass={SETTINGS_TRIGGER_CLASS}
+        description={m.workspace_initialAgentPicker_modelMenu_description()}
+        showReasoning
+        reasoningEffort={displayedReasoningEffort}
+        onReasoningChange={handleReasoningChange}
+        showManageLink={true}
+        defaultModelId={activeDefaultModel}
+        defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
+        fallbackToCatalogDefault
+        fallbackProviderId={selectedProvider}
+        silentFallback
+        portal={false}
+        modalAware={true}
+        collisionBoundary="[data-model-picker-collision-boundary]"
+      />
+    {/key}
   </div>
 
-  <!-- Team orchestration card — hidden when the resolved set has no orchestrator -->
-  {#if orchestrator}
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div
-      class="agent-card min-w-0 {isTeamMode
-        ? 'border-input bg-accent/60'
-        : 'border-border bg-card hover:bg-muted/50'}"
-      onclick={selectTeamMode}
-      onkeydown={(event) => {
-        if (event.target !== event.currentTarget) return;
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          selectTeamMode();
-        }
-      }}
-      role="button"
-      tabindex="0"
-      aria-pressed={isTeamMode}
+  <span class="agent-settings-label" id={agentLabelId}>
+    {m.workspace_initialAgentPicker_agent_label()}
+  </span>
+  <div class="agent-settings-control">
+    <DropdownMenu
+      class="w-full"
+      bind:open={specialistDropdownOpen}
+      align="start"
+      side="bottom"
+      contentClass="p-1 w-80 max-w-[calc(100vw-1rem)]"
+      contentMaxHeight={SPECIALIST_MENU_MAX_HEIGHT}
     >
-      <div class="text-sm font-medium text-foreground">
-        {m.workspace_initialAgentPicker_teamMode_label()}
-      </div>
-      <div class="flex items-center gap-1 py-1.5">
-        <AgentAvatar
-          agentId="blank"
-          size={22}
-          specialist={orchestrator.id}
-          icon={orchestrator.icon}
-        />
-        {#if teamAgentAvatars.length > 0}
-          <span class="text-subtle text-xs mx-0.5">→</span>
-          {#each teamAgentAvatars as teamAgent (teamAgent.id)}
-            <AgentAvatar
-              agentId="blank"
-              size={22}
-              specialist={teamAgent.id}
-              icon={teamAgent.icon}
-            />
-          {/each}
-        {/if}
-      </div>
-      <div class="text-sm text-subtle leading-snug">
-        {m.workspace_initialAgentPicker_teamMode_description()}
-      </div>
-      <div
-        class="model-picker-row {isTeamMode ? '' : 'opacity-0 pointer-events-none'}"
-        inert={!isTeamMode}
-        onclick={(event) => event.stopPropagation()}
-        onkeydown={(event) => event.stopPropagation()}
-      >
-        <span class="text-sm text-subtle">{m.workspace_initialAgentPicker_using_before()}</span>
-        {#key teamModeModel}
-          <ModelPicker
-            selectedModel={modelWasOverridden ? selectedModel : undefined}
-            providerId={selectedProvider}
-            onModelChange={handleModelChange}
-            variant="ghost-light"
-            size="xs"
-            showReasoning
-            reasoningEffort={displayedReasoningEffort}
-            onReasoningChange={handleReasoningChange}
-            showManageLink={true}
-            defaultModelId={teamModeModel}
-            defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
-            fallbackToCatalogDefault
-            fallbackProviderId={selectedProvider}
-            silentFallback
-            portal={false}
-            modalAware={true}
-            collisionBoundary="[data-model-picker-collision-boundary]"
+      {#snippet trigger({ props })}
+        <Button
+          {...props}
+          variant="ghost"
+          size="sm"
+          type="button"
+          wrapContent={false}
+          aria-labelledby="{agentLabelId} {agentValueId}"
+          class={SETTINGS_TRIGGER_CLASS}
+        >
+          <AgentAvatar
+            agentId="blank"
+            size={16}
+            specialist={isTeamMode
+              ? orchestratorId
+              : currentSpecialistInfo
+                ? displayedSpecialist
+                : null}
+            icon={isTeamMode ? orchestrator?.icon : currentSpecialistInfo?.icon}
           />
-        {/key}
-      </div>
-    </div>
-  {/if}
+          <span class="min-w-0 flex-1 truncate text-left" id={agentValueId}
+            >{agentDisplayLabel}</span
+          >
+          <Fa icon={faChevronDown} class="size-2 shrink-0 opacity-50" />
+        </Button>
+      {/snippet}
+
+      {#snippet content()}
+        <p class="type-caption px-2 pt-1.5 pb-1 text-muted-foreground">
+          {m.workspace_initialAgentPicker_agentMenu_description()}
+        </p>
+        <SpecialistOptions
+          specialists={customSpecialists}
+          value={isTeamMode
+            ? (orchestratorId ?? '')
+            : isTeamRoleId(selectedSpecialist)
+              ? null
+              : selectedSpecialist}
+          onchange={handleAgentSelect}
+        />
+        {#if orchestrator}
+          <Menu.RadioGroup
+            value={isTeamMode ? 'orchestration' : ''}
+            aria-label={m.workspace_initialAgentPicker_teamMode_label()}
+          >
+            <Menu.RadioItem
+              value="orchestration"
+              closeOnSelect
+              class="h-auto min-h-(--control-height-medium) gap-2 py-2 whitespace-normal"
+              data-specialist-option="orchestration"
+              onSelect={handleOrchestrationSelect}
+            >
+              <span class="first-line-icon w-5">
+                <AgentAvatar
+                  agentId="blank"
+                  variant="standard"
+                  specialist={orchestrator.id}
+                  icon={orchestrator.icon}
+                />
+              </span>
+              <span class="flex min-w-0 flex-1 flex-col text-left">
+                <span class="type-caption truncate text-foreground">{orchestratorLabel}</span>
+                <span class="type-caption line-clamp-2 text-muted-foreground">
+                  {orchestrator.description ||
+                    m.workspace_initialAgentPicker_teamMode_description()}
+                </span>
+              </span>
+            </Menu.RadioItem>
+          </Menu.RadioGroup>
+        {/if}
+        <Menu.Separator />
+        <Menu.Item class="type-caption gap-2" onSelect={openSpecialistSettings}>
+          {#snippet leading()}<Fa icon={faPlus} class="opacity-60" />{/snippet}
+          <span class="type-caption"
+            >{m.workspace_initialAgentPicker_manageSpecialists_label()}</span
+          >
+        </Menu.Item>
+      {/snippet}
+    </DropdownMenu>
+  </div>
 </div>
 
 <style>
-  .agent-card {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.5rem;
-    min-height: 9.75rem;
-    padding: 1rem;
-    border-width: 1px;
-    border-style: solid;
-    border-radius: var(--radius-lg);
-    cursor: pointer;
-    text-align: left;
-    transition:
-      background-color var(--motion-fast),
-      border-color var(--motion-fast),
-      box-shadow var(--motion-fast);
+  /* Shares the form's label column so every settings row aligns. */
+  .agent-settings {
+    display: grid;
+    grid-template-columns: 5.5rem minmax(0, 1fr);
+    column-gap: 1rem;
+    row-gap: 0.25rem;
+    align-items: center;
+    min-width: 0;
   }
 
-  .agent-card:focus-visible {
-    outline: none;
-    border-color: var(--color-foreground);
-    background: color-mix(in srgb, var(--color-accent) 72%, var(--color-card));
+  .agent-settings-label {
+    font-size: var(--text-sm);
+    color: var(--color-muted-foreground);
   }
 
-  .model-picker-row {
+  .agent-settings-control {
     display: flex;
-    /* Wrap so ModelPicker's provider notice lands on its own full-width line
-       below the "using <picker>" row instead of inline next to the trigger. */
+    /* ModelPicker's provider notice wraps onto its own full-width line. */
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.25rem;
-    margin-top: auto;
-    padding-top: 0.375rem;
-    width: 100%;
-  }
-
-  :global(.specialist-trigger) {
-    display: flex;
-    justify-content: flex-start;
-    height: auto;
-    min-height: var(--control-height-medium);
-    align-items: center;
-    gap: 0.75rem;
-    width: 100%;
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-medium);
-    background: transparent;
-    cursor: pointer;
-    text-align: left;
-  }
-
-  :global(.specialist-trigger:focus-visible) {
-    outline: none;
-    border-color: var(--color-foreground);
-  }
-
-  @media (forced-colors: active) {
-    .agent-card:focus-visible,
-    :global(.specialist-trigger:focus-visible) {
-      border-color: Highlight;
-      background: Canvas;
-    }
+    min-width: 0;
   }
 </style>

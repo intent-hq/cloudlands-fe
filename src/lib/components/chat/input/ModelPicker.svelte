@@ -292,6 +292,10 @@
     deferUpdate?: boolean;
     variant?: 'ghost' | 'ghost-light' | 'underline' | 'outline' | 'default';
     size?: 'xs' | 'sm' | 'icon';
+    /** Stretch the trigger to its container with a trailing chevron. */
+    fullWidth?: boolean;
+    /** Short explanation shown at the top of the open menu. */
+    description?: string;
     workspaceId?: string;
     agentId?: string;
     showManageLink?: boolean;
@@ -349,6 +353,8 @@
     deferUpdate = false,
     variant = 'ghost-light',
     size = 'sm',
+    fullWidth = false,
+    description,
     workspaceId,
     agentId,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -2478,11 +2484,12 @@
     searchable={!hasNoAvailableProvider}
     searchChrome
     placeholder={m.ui_dropdown_search_ariaLabel()}
-    class="min-w-0 max-w-full"
+    class={cn('min-w-0 max-w-full', fullWidth && 'w-full')}
     headerClass={cn('model-picker-header border-b-0!', !hasNoAvailableProvider && 'pt-9')}
     triggerClass={cn(
       'max-w-full px-2!',
       (variant === 'outline' || variant === 'default') && 'w-full justify-between border-border!',
+      fullWidth && 'w-full justify-between',
       triggerClass,
     )}
     contentClass={cn(
@@ -2508,7 +2515,7 @@
       <span
         class={cn(
           'inline-flex items-center gap-2 truncate min-w-0',
-          (variant === 'outline' || variant === 'default') && 'flex-1',
+          (variant === 'outline' || variant === 'default' || fullWidth) && 'flex-1',
         )}
         title={isTriggerLabelResolved ? triggerTitle : ''}
         aria-label={isTriggerLabelResolved ? triggerAccessibleLabel : undefined}
@@ -2547,7 +2554,7 @@
           <div class="h-3.5 w-24 bg-muted/50 rounded-sm animate-pulse"></div>
         {/if}
       </span>
-      {#if variant === 'outline' || variant === 'default'}
+      {#if variant === 'outline' || variant === 'default' || fullWidth}
         <Fa icon={faChevronDown} class="h-2 w-2 opacity-50 shrink-0" />
       {/if}
     {/snippet}
@@ -2654,6 +2661,11 @@
             />
           {/if}
         </Button>
+      {/if}
+      {#if description}
+        <p class="px-3 pb-2 text-xs text-muted-foreground" data-testid="model-picker-description">
+          {description}
+        </p>
       {/if}
       {#if showModelWarning && warningMessage}
         <div class="px-3 py-2.5 border-b border-border bg-warning/5">

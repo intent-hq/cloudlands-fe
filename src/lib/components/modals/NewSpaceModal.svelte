@@ -54,7 +54,7 @@
   // The marker is leased per instance so overlapping modals keep it until the
   // last one detaches.
   $effect(() => {
-    if (!contentRef || staticPosition) return;
+    if (!contentRef) return;
     const releaseBody = acquireMarkerAttribute(
       contentRef.ownerDocument.body,
       'data-new-space-modal-open',

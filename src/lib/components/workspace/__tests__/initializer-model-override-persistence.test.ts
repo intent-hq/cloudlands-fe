@@ -308,10 +308,6 @@ vi.mock('$lib/components/chat/input/ModelPicker.svelte', async () => ({
   default: (await import('../initializer/__tests__/mocks/MockModelPicker.svelte')).default,
 }));
 
-vi.mock('$lib/components/ui/dropdown-menu.svelte', async () => ({
-  default: (await import('../initializer/__tests__/mocks/MockDropdownMenu.svelte')).default,
-}));
-
 vi.mock('svelte-fa', async () => ({
   default: (await import('../initializer/__tests__/mocks/MockComponent.svelte')).default,
 }));
@@ -350,7 +346,6 @@ function submittedInitialAgent() {
 warmImport(() => import('./mocks/MockRichTextarea.svelte'));
 warmImport(() => import('../initializer/__tests__/mocks/MockComponent.svelte'));
 warmImport(() => import('../initializer/__tests__/mocks/MockModelPicker.svelte'));
-warmImport(() => import('../initializer/__tests__/mocks/MockDropdownMenu.svelte'));
 
 const SAVED_AGENT_STATE: CompactWorkspaceInitializerFormState = {
   repoPath: '',
@@ -771,13 +766,12 @@ describe('initializer remembers the agent setup per repository', () => {
 
   it('keeps an explicit in-session agent mode pick when the repository changes', async () => {
     const { component } = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
-    // The form opens in team mode (global setup); the user picks single-agent mode.
-    const singleAgentCard = screen
-      .getByText(m.workspace_initialAgentPicker_singleAgent_label())
-      .closest('[aria-pressed]') as HTMLElement;
-    expect(singleAgentCard.getAttribute('aria-pressed')).toBe('false');
-    await fireEvent.click(singleAgentCard);
-    await waitFor(() => expect(singleAgentCard.getAttribute('aria-pressed')).toBe('true'));
+    // The form opens in team mode (global setup); the user picks a single agent.
+    const agentTrigger = screen.getByRole('button', { name: /^Agent\b/ });
+    expect(agentTrigger.textContent).toContain('Coordinator');
+    await fireEvent.click(agentTrigger);
+    await fireEvent.click(await screen.findByRole('menuitemradio', { name: /^General/ }));
+    await waitFor(() => expect(agentTrigger.textContent).toContain('General'));
 
     mocks.agentByRepo = { 'local:/tmp/repo-a': { ...REPO_A, isTeamMode: true } };
     prefill('/tmp/repo-a', true);

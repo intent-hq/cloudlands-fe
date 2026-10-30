@@ -109,6 +109,7 @@
   bind:open
   static={staticPosition}
   title={m.modals_setupScript_title()}
+  description={m.workspace_compactInitializer_setup_description()}
   showCloseButton={false}
   {escapeKeydownBehavior}
   onfocusin={handleFocusIn}

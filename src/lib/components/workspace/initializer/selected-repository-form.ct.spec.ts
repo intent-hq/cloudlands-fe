@@ -35,13 +35,7 @@ for (const width of [420, 1000]) {
       const branch = form.getByRole('button', { name: /trunk/ });
       const createBounds = (await create.boundingBox())!;
       const branchBounds = (await branch.boundingBox())!;
-      if (width === 420) expect(createBounds.y).toBeGreaterThan(branchBounds.y);
-      else
-        expect(
-          Math.abs(
-            createBounds.y + createBounds.height / 2 - branchBounds.y - branchBounds.height / 2,
-          ),
-        ).toBeLessThanOrEqual(1);
+      expect(createBounds.y).toBeGreaterThan(branchBounds.y);
       await page.screenshot({ path: testInfo.outputPath(`${provider}-${width}-ready.png`) });
       await branch.focus();
       await page.keyboard.press('Enter');
