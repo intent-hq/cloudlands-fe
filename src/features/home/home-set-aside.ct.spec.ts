@@ -210,6 +210,16 @@ test('Known attention stays aside until a new request, failure or review appears
   await expect.poll(async () => (await snapshot(page)).asideIds).toContain('aside-review');
   await page.evaluate(() => window.__homeSetAside!.question('aside-review', 'new-question'));
   await expect.poll(async () => (await snapshot(page)).asideIds).not.toContain('aside-review');
+  await page.evaluate(() =>
+    window.__homeSetAside!.blocker('aside-review', new Date(Date.now() - 10_000).toISOString()),
+  );
+  await aside(page, 'aside-review');
+  await page.evaluate(() => window.__homeSetAside!.reloadPreferences());
+  await expect.poll(async () => (await snapshot(page)).asideIds).toContain('aside-review');
+  await page.evaluate(() =>
+    window.__homeSetAside!.blocker('aside-review', new Date().toISOString()),
+  );
+  await expect.poll(async () => (await snapshot(page)).asideIds).not.toContain('aside-review');
   await aside(page, 'aside-idle');
   await page.evaluate(() =>
     window.__homeSetAside!.update('aside-idle', { displayStatus: 'failed' }),

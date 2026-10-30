@@ -27,7 +27,7 @@ export function homeSetAsideAttention(
   for (const request of getHomeAttentionRequests(workspace.id, [...agents])) {
     const parsed = request.timestamp ? Date.parse(request.timestamp) : NaN;
     tokens.push({
-      token: `agent:${request.agentId}:${request.kind}:${request.questionMessageId ?? request.timestamp ?? ''}`,
+      token: `agent:${request.agentId}:${request.kind}:${request.questionMessageId ?? ''}:${request.timestamp ?? ''}`,
       agentId: request.agentId,
       timestamp: Number.isFinite(parsed) ? parsed : undefined,
     });

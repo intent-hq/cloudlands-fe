@@ -194,6 +194,16 @@ export function setupHomeSetAsideFixtures(view: 'list' | 'board') {
         }),
       );
     },
+    blocker(id: string, timestamp: string) {
+      store.dispatch(
+        updateSession(AgentId(`agent-${id}`), {
+          metadataPatch: {
+            attentionRequestKind: { op: 'set', value: 'blocker' },
+            attentionRequestTimestamp: { op: 'set', value: timestamp },
+          },
+        }),
+      );
+    },
     send(id: string) {
       store.dispatch(sendMessage(`agent-${id}`, { wsId: id, text: 'Continue this work.' }));
     },
@@ -275,6 +285,7 @@ declare global {
       };
       update(id: string, changes: Partial<Workspace>): void;
       question(id: string, messageId: string): void;
+      blocker(id: string, timestamp: string): void;
       send(id: string): void;
       remove(id: string): void;
       archive(id: string): void;
