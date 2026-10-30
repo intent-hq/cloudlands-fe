@@ -387,6 +387,29 @@ describe('validateProposalLifecycleEntries', () => {
     ).toEqual({ 'p-1': valid, 'p-2': dismissed });
   });
 
+  it('drops transfer progress saved by older builds', () => {
+    const transfer = {
+      workspaceId: 'ws-1',
+      sourceWorkspacePath: '/repo/ws-1',
+      sourceConnectionId: 'source',
+      destinationConnectionId: 'target',
+      phase: 'transferring',
+    };
+    const restored = validateProposalLifecycleEntries({
+      entries: {
+        p: {
+          status: 'failed',
+          completedAt: 10,
+          lastAction: 'apply',
+          transferProgress: 'relaying',
+          result: { transfer },
+        },
+      },
+    }).p;
+    expect(restored).toMatchObject({ status: 'failed', result: { transfer } });
+    expect(restored).not.toHaveProperty('transferProgress');
+  });
+
   it('returns an empty map for malformed storage payloads', () => {
     expect(validateProposalLifecycleEntries(null)).toEqual({});
     expect(validateProposalLifecycleEntries({ entries: [] })).toEqual({});
@@ -624,6 +647,27 @@ describe('automatic persistence on lifecycle changes', () => {
     await vi.advanceTimersByTimeAsync(300);
 
     expect(mocks.setJSON).toHaveBeenCalledWith(PROPOSAL_LIFECYCLE_STORAGE_KEY, { entries: {} });
+    await store.stop();
+  });
+
+  it('still handles apply and undo requests after starting persistence', async () => {
+    mocks.applySettingsProposalWork.mockResolvedValue({ reverseChanges });
+    const store = await lifecycleStore();
+
+    store.dispatch(
+      applyProposalRequested({
+        proposalId: 'p-1',
+        kind: 'settings-change',
+        detail: settingsDetail,
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mocks.applySettingsProposalWork).toHaveBeenCalledWith(settingsDetail);
+    expect(store.state.proposalLifecycle['p-1']).toMatchObject({ status: 'applied' });
+
+    store.dispatch(undoProposalRequested({ proposalId: 'p-1', kind: 'settings-change' }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.state.proposalLifecycle['p-1']).toMatchObject({ lastAction: 'undo' });
     await store.stop();
   });
 

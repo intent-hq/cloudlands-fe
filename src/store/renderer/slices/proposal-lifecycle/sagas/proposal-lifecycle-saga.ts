@@ -95,17 +95,19 @@ export function validateProposalLifecycleEntries(
     value && typeof value === 'object' ? (value as { entries?: unknown }).entries : undefined;
   if (!entries || typeof entries !== 'object' || Array.isArray(entries)) return {};
   const validEntries: Record<string, ProposalLifecycleEntry> = {};
-  for (const [key, entry] of Object.entries(entries as Record<string, unknown>)) {
-    if (key && isPersistedLifecycleEntry(entry))
-      validEntries[key] =
-        entry.status === 'applying'
-          ? {
-              ...entry,
-              status: 'failed',
-              error: m.chat_transfer_interrupted_error(),
-              lastAction: 'apply',
-            }
-          : entry;
+  for (const [key, value] of Object.entries(entries as Record<string, unknown>)) {
+    if (!key || !isPersistedLifecycleEntry(value)) continue;
+    // Older builds could save live relay progress; never restore it mid-phase.
+    const { transferProgress: _progress, ...entry } = value;
+    validEntries[key] =
+      entry.status === 'applying'
+        ? {
+            ...entry,
+            status: 'failed',
+            error: m.chat_transfer_interrupted_error(),
+            lastAction: 'apply',
+          }
+        : entry;
   }
   return validEntries;
 }
@@ -273,21 +275,17 @@ function* debouncedPersistProposalLifecycleSaga(): SagaGenerator<void> {
   yield* call(persistProposalLifecycleSaga);
 }
 
-/**
- * Saves whenever the lifecycle map changes, whatever action changed it, so a
- * new card-state action can't silently skip persistence (a hand-kept action
- * list once missed `proposalCreateOutcomeReported`, cloudlands-fe#3857).
- * `takeLatest` + the delay debounce bursts into one write; the first emission
- * writes back the pruned hydrated state. Pruning in
- * `persistProposalLifecycleSaga` keeps in-progress and declined cards out.
- */
-function* watchProposalLifecyclePersistenceSaga(): SagaGenerator<void> {
-  yield* takeLatestFromSelector(selectProposalLifecycleMap, debouncedPersistProposalLifecycleSaga);
-}
-
 export function* proposalLifecycleSaga(): SagaGenerator<void> {
   yield* call(hydrateProposalLifecycleSaga);
-  yield* call(watchProposalLifecyclePersistenceSaga);
+  // Save whenever the lifecycle map changes, whatever action changed it, so a
+  // new card-state action can't silently skip persistence (a hand-kept action
+  // list once missed `proposalCreateOutcomeReported`, cloudlands-fe#3857).
+  // `takeLatest` + the delay debounce bursts into one write; the first
+  // emission writes back the pruned hydrated state. What reaches storage is
+  // decided by `persistProposalLifecycleSaga`'s pruning, not by this trigger.
+  // The helper forks itself; wrapping it in `call` would block the takers
+  // below forever.
+  yield* takeLatestFromSelector(selectProposalLifecycleMap, debouncedPersistProposalLifecycleSaga);
   yield* takeEvery(applyProposalRequested, handleApplyProposal);
   yield* takeEvery(undoProposalRequested, handleUndoProposal);
 }
