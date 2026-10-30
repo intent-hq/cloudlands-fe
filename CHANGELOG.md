@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.255.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.255.1...v2.255.2) (2026-10-30)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.81 ([#3869](https://github.com/intent-hq/cloudlands-fe/issues/3869)) ([90387cb](https://github.com/intent-hq/cloudlands-fe/commit/90387cb8f9bc58006b97736a698c7ba22093ec69))
+* **chat:** show a notice for an empty cancelled reply ([#3853](https://github.com/intent-hq/cloudlands-fe/issues/3853)) ([42ff31e](https://github.com/intent-hq/cloudlands-fe/commit/42ff31ee7c273e94259db66cfc77a6847bac1688))
+* let the daemon resolve card-applied workspace proposals ([#3857](https://github.com/intent-hq/cloudlands-fe/issues/3857)) ([abf9f27](https://github.com/intent-hq/cloudlands-fe/commit/abf9f270dc0710b19516ee42b016da24204a0680))
+
 ## [2.255.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.255.0...v2.255.1) (2026-10-30)
 
 
