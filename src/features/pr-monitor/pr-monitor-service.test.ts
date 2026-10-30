@@ -33,6 +33,7 @@ import {
   flushPrMonitor,
   foldPrMonitorEvent,
   listPrMonitors,
+  PR_MONITOR_FAILURE_REPORT_THRESHOLD,
   subscribePrMonitors,
   type PrMonitorRow,
 } from './pr-monitor-service';
@@ -362,6 +363,8 @@ describe('subscribePrMonitors (prMonitor:* events.subscribe + fold)', () => {
   const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
   it('preserves cached rows and does not report a single failed prMonitor.list seed', async () => {
+    // Hold the subscribe ack so its post-ack seed does not mask the failure.
+    mockedSubscribe.mockReturnValueOnce(new Promise(() => {}));
     mockedRequest.mockRejectedValueOnce(new Error('list failed'));
     const seen: ReviewMonitorRow[][] = [];
     const statuses: string[] = [];
@@ -716,18 +719,23 @@ describe('subscribePrMonitors transient-failure retry', () => {
     return { seen, statuses, lease };
   }
 
-  it('retries a failed prMonitor.list on a fresh session and never reports one transient failure', async () => {
+  it('retries a failed prMonitor.list on the same session and never reports one transient failure', async () => {
+    // Hold the subscribe ack so only the backoff retry can re-list.
+    mockedSubscribe.mockReturnValueOnce(new Promise(() => {}));
     mockedRequest
       .mockRejectedValueOnce(new Error('timeout'))
       .mockResolvedValue({ monitors: [makeMonitor()] });
     const { seen, statuses } = subscribe();
     await vi.advanceTimersByTimeAsync(0);
-    expect(seen.at(-1)).not.toEqual([makeMonitor()]);
-    expect(mockedCapture).toHaveBeenCalledTimes(1);
+    expect(seen).toEqual([]);
+    expect(listCalls()).toHaveLength(1);
 
     await vi.advanceTimersByTimeAsync(1_000);
 
-    expect(mockedCapture).toHaveBeenCalledTimes(2);
+    // Re-lists on the same live session: no re-capture, no resubscribe.
+    expect(mockedCapture).toHaveBeenCalledTimes(1);
+    expect(mockedSubscribe).toHaveBeenCalledTimes(1);
+    expect(listCalls().length).toBeGreaterThanOrEqual(2);
     expect(seen.at(-1)).toEqual([makeMonitor()]);
     expect(statuses).toEqual([]);
   });
@@ -747,6 +755,7 @@ describe('subscribePrMonitors transient-failure retry', () => {
   });
 
   it('reports failed only after repeated failures, backs off, and recovers on its own', async () => {
+    expect(PR_MONITOR_FAILURE_REPORT_THRESHOLD).toBe(3);
     const unavailable = new Error('Monitor connection unavailable');
     mockedCapture
       .mockRejectedValueOnce(unavailable)
@@ -774,6 +783,36 @@ describe('subscribePrMonitors transient-failure retry', () => {
 
     expect(mockedCapture).toHaveBeenCalledTimes(4);
     expect(seen.at(-1)).toEqual([makeMonitor()]);
+    expect(statuses).toEqual(['failed']);
+  });
+
+  it('keeps the live session for row actions while a failed list retries', async () => {
+    mockedRequest.mockResolvedValue({ monitors: [makeMonitor()] });
+    const { lease, seen, statuses } = subscribe();
+    await vi.advanceTimersByTimeAsync(0);
+    const row = seen.at(-1)![0]!;
+
+    mockedRequest.mockRejectedValue(new Error('timeout'));
+    lease.refetch();
+    await vi.advanceTimersByTimeAsync(0);
+    // Below the threshold: retained rows stay, nothing is reported or released.
+    expect(seen.at(-1)).toEqual([row]);
+    expect(statuses).toEqual([]);
+    expect(vi.mocked(backendUnsubscribe)).not.toHaveBeenCalled();
+
+    mockedRequest.mockResolvedValue({});
+    await expect(flushPrMonitor('ws-1', row.monitorId, undefined, row.origin)).resolves.toBe(
+      undefined,
+    );
+  });
+
+  it('reports a run of failed lists once, without re-capturing the session', async () => {
+    mockedRequest.mockRejectedValue(new Error('timeout'));
+    const { statuses } = subscribe();
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(mockedCapture).toHaveBeenCalledTimes(1);
+    expect(listCalls().length).toBeGreaterThan(PR_MONITOR_FAILURE_REPORT_THRESHOLD);
     expect(statuses).toEqual(['failed']);
   });
 
