@@ -4630,6 +4630,8 @@
   "settings_agentFeatures_saveError": "Impossible d'enregistrer les paramètres des fonctionnalités de l'agent : {error}",
   "settings_agentFeatures_scripts_description": "Permet aux agents de créer et d'exécuter des scripts et services enregistrés",
   "settings_agentFeatures_scripts_label": "Scripts enregistrés",
+  "settings_agentFeatures_secretRequests_description": "Permet aux agents de premier niveau de vous demander des secrets comme des clés d'API, conservés uniquement en mémoire pour leurs commandes. Nécessite aussi l'exécution de commandes sur l'hôte",
+  "settings_agentFeatures_secretRequests_label": "Demandes de secrets",
   "settings_agentFeatures_stateSnapshot_description": "Ajoute au début de chaque tour de l'agent un résumé d'état compact issu de ws.agent.snapshot()",
   "settings_agentFeatures_stateSnapshot_label": "Instantané d'état",
   "settings_agentFeatures_structuredQuestions_description": "Permet aux agents de poser des questions de clarification structurées avec des options prédéfinies",

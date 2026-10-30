@@ -24,6 +24,7 @@
     active = true,
   }: Props = $props();
   let expanded = $state(Boolean(query));
+  let focusWithin = $state(false);
   let inputRef: Input | null = $state(null);
   let triggerRef = $state<HTMLButtonElement | null>(null);
 
@@ -45,7 +46,7 @@
   }
 
   $effect(() => {
-    if (!expanded || !active) return;
+    if (!expanded || !active || !focusWithin) return;
     return pushEscapeLayer(() => {
       void close(true);
     });
@@ -58,6 +59,12 @@
 </script>
 
 <div
+  onfocusin={() => {
+    focusWithin = true;
+  }}
+  onfocusout={(event) => {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) focusWithin = false;
+  }}
   class:sidebar-search--header={placement === 'header'}
   class="flex min-w-0 items-center {placement === 'toolbar'
     ? 'flex-1'

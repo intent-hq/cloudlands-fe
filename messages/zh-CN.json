@@ -4630,6 +4630,8 @@
   "settings_agentFeatures_saveError": "无法保存智能体功能设置：{error}",
   "settings_agentFeatures_scripts_description": "允许智能体创建并运行已保存的脚本和服务",
   "settings_agentFeatures_scripts_label": "已保存的脚本",
+  "settings_agentFeatures_secretRequests_description": "允许顶级智能体向你请求 API 密钥等机密信息，这些信息仅保存在内存中供其命令使用。还需要开启主机命令执行",
+  "settings_agentFeatures_secretRequests_label": "密钥请求",
   "settings_agentFeatures_stateSnapshot_description": "在每个智能体回合开头附加简洁的 ws.agent.snapshot() 状态摘要",
   "settings_agentFeatures_stateSnapshot_label": "状态快照",
   "settings_agentFeatures_structuredQuestions_description": "允许智能体提出带预定义选项的结构化澄清问题",

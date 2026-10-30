@@ -22,6 +22,7 @@ export const FEATURE_PATHS = [
   'agentFeatures.desktopControl',
   'agentFeatures.richChatBlocks',
   'agentFeatures.structuredQuestions',
+  'agentFeatures.secretRequests',
   'agentFeatures.attentionRequests',
   'agentFeatures.stateSnapshot',
   'agentFeatures.prMonitor',
@@ -85,6 +86,13 @@ export const FEATURES: {
     label: () => m.settings_agentFeatures_structuredQuestions_label(),
     description: () => m.settings_agentFeatures_structuredQuestions_description(),
     defaultValue: true,
+  },
+  {
+    path: 'agentFeatures.secretRequests',
+    label: () => m.settings_agentFeatures_secretRequests_label(),
+    description: () => m.settings_agentFeatures_secretRequests_description(),
+    // Off by default on the daemon; it also needs agentFeatures.hostExec.
+    defaultValue: false,
   },
   {
     path: 'agentFeatures.attentionRequests',

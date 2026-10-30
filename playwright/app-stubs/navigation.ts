@@ -5,13 +5,17 @@
  * CT browser bundle.
  */
 
+/**
+ * Land same-origin routes without loading a page or unmounting the CT component.
+ */
 export const goto = async (
   url: string | URL,
   options: { replaceState?: boolean; state?: App.PageState } = {},
 ): Promise<void> => {
-  // Model a landed route without reloading or unmounting the CT component.
+  const target = new URL(url, window.location.href);
+  if (target.origin !== window.location.origin) return;
   const method = options.replaceState ? 'replaceState' : 'pushState';
-  window.history[method](options.state ?? {}, '', url);
+  window.history[method](options.state ?? {}, '', target);
 };
 export const invalidate = async (): Promise<void> => {};
 export const invalidateAll = async (): Promise<void> => {};

@@ -4630,6 +4630,8 @@
   "settings_agentFeatures_saveError": "Failed to save Agent Features settings: {error}",
   "settings_agentFeatures_scripts_description": "Let agents create and run saved scripts and services",
   "settings_agentFeatures_scripts_label": "Saved scripts",
+  "settings_agentFeatures_secretRequests_description": "Let top-level agents ask you for secrets such as API keys, held in memory only for their commands. Also needs Host command execution",
+  "settings_agentFeatures_secretRequests_label": "Secret requests",
   "settings_agentFeatures_stateSnapshot_description": "Prepend a compact ws.agent.snapshot() state digest to each agent turn",
   "settings_agentFeatures_stateSnapshot_label": "State snapshot",
   "settings_agentFeatures_structuredQuestions_description": "Let agents ask structured clarifying questions with predefined options",
