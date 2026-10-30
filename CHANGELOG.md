@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.257.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.256.5...v2.257.0) (2026-10-30)
+
+
+### 🚀 Features
+
+* select multiple sidebar panes with shift-click ([#3894](https://github.com/intent-hq/cloudlands-fe/issues/3894)) ([f64ab19](https://github.com/intent-hq/cloudlands-fe/commit/f64ab19eaefe0e1075f08c0c27e49b9ff7ee9422))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.86 ([#3908](https://github.com/intent-hq/cloudlands-fe/issues/3908)) ([a2b159f](https://github.com/intent-hq/cloudlands-fe/commit/a2b159f1e9a25fd4990e9a4d17235ddcf14c78a4))
+* fade scrolled chat into the prompt box ([#3897](https://github.com/intent-hq/cloudlands-fe/issues/3897)) ([634654f](https://github.com/intent-hq/cloudlands-fe/commit/634654f2938c760d6a839a49948f25099e7be2a3))
+
 ## [2.256.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.256.4...v2.256.5) (2026-10-30)
 
 
