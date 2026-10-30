@@ -106,14 +106,22 @@ describe('SecretRequestCard', () => {
     expect(input.type).toBe('password');
   });
 
-  it('declines without handing off a value and shows the answered state', async () => {
+  it('dismisses only after confirmation, without handing off a value', async () => {
     const dispatch = vi.spyOn(appStore, 'dispatch');
     renderCard('pending', 'sec-card-decline');
-    await fireEvent.click(screen.getByTestId('secret-request-decline'));
-    const answer = dispatch.mock.calls
-      .map(([action]) => action as { type: string; payload?: unknown[] })
-      .find((action) => action.type === secretAnswerRequested.type);
-    expect(answer?.payload?.[0]).toMatchObject({ outcome: 'declined' });
+    const answers = () =>
+      dispatch.mock.calls
+        .map(([action]) => action as { type: string; payload?: unknown[] })
+        .filter((action) => action.type === secretAnswerRequested.type);
+    await fireEvent.click(screen.getByTestId('secret-request-dismiss'));
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(answers()).toHaveLength(0);
+    await fireEvent.click(screen.getByRole('button', { name: 'Dismiss request' }));
+    expect(answers()).toHaveLength(1);
+    expect(answers()[0]?.payload?.[0]).toMatchObject({
+      requestId: 'sec-card-decline',
+      outcome: 'declined',
+    });
     expect(takeSecretValue('sec-card-decline')).toBeUndefined();
     appStore.dispatch(secretAnswerUpdated('sec-card-decline', 'declined', 1));
     await waitFor(() =>
@@ -122,12 +130,40 @@ describe('SecretRequestCard', () => {
     expect(screen.queryByTestId('secret-request-input')).toBeNull();
   });
 
+  it('cancelling the dismiss confirmation sends nothing', async () => {
+    const dispatch = vi.spyOn(appStore, 'dispatch');
+    renderCard('pending', 'sec-card-cancel');
+    await fireEvent.click(screen.getByTestId('secret-request-dismiss'));
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(
+      dispatch.mock.calls.some(
+        ([action]) => (action as { type: string }).type === secretAnswerRequested.type,
+      ),
+    ).toBe(false);
+  });
+
+  it('Hide asks the stack to collapse', async () => {
+    const onHide = vi.fn();
+    render(SecretRequestCard, {
+      props: {
+        request: { ...request, requestId: 'sec-card-hide' },
+        workspaceId: 'ws-1',
+        agentId: 'agent-a',
+        listedState: 'pending',
+        onHide,
+      },
+    });
+    await fireEvent.click(screen.getByTestId('secret-request-hide'));
+    expect(onHide).toHaveBeenCalledTimes(1);
+  });
+
   it('offers no input for an expired request, only a way to hide it', async () => {
     const dispatch = vi.spyOn(appStore, 'dispatch');
     renderCard('expired', 'sec-card-expired');
     expect(screen.queryByTestId('secret-request-input')).toBeNull();
     expect(screen.queryByTestId('secret-request-provide')).toBeNull();
-    await fireEvent.click(screen.getByTestId('secret-request-hide'));
+    await fireEvent.click(screen.getByTestId('secret-request-clear'));
     const hidden = dispatch.mock.calls
       .map(([action]) => action as { type: string; payload?: unknown[] })
       .find((action) => action.type === secretRequestHidden.type);
