@@ -2,6 +2,6 @@
   "lockVersion": 1,
   "sourceRepository": "intent-hq/intent",
   "sourcePath": "docs/protocol/fixtures/turn-start/turn-start-events.json",
-  "sourceCommit": "a975527235dd28f9abdaa3f9312a9baf51f16f2c",
+  "sourceCommit": "733fe64942fa5072a5c6b2a333a74b663fb1973a",
   "fileSha256": "11b5211ad40eaafa99471d86d8c4cd6b0acaac65b7b670c54e21aa03155577dd"
 }
