@@ -2733,7 +2733,7 @@ describe('SidebarChangesPanel', () => {
       expect(viewText).not.toContain('Create PR');
     });
 
-    it('PR sections follow the dropdown: selected root PRs on top, own PRs under "Other PRs"', async () => {
+    it('keeps the same workspace PRs when switching the selected repository', async () => {
       // Workspace with its own PR + a secondary root on another repo with
       // its own PR (from the root's wire row pullRequests).
       mockWorkspaceStore.findById.mockReturnValue(
@@ -2787,13 +2787,17 @@ describe('SidebarChangesPanel', () => {
         expect(container.querySelector('[data-testid="git-root-selector"]')).toBeTruthy();
       });
 
-      // Primary selected: workspace PR renders, root PR under "Other PRs"
       await waitFor(() => {
         const text = container.textContent || '';
         expect(text).toContain('Workspace PR');
-        expect(text).toContain('Other PRs');
         expect(text).toContain('Subrepo PR');
       });
+      const identities = () =>
+        Array.from(
+          container.querySelectorAll('[data-workspace-pull-requests] [data-pr-identity]'),
+        ).map((row) => row.getAttribute('data-pr-identity'));
+      const beforeSelection = identities();
+      expect(beforeSelection).toHaveLength(2);
 
       // Select the secondary root
       const trigger = container.querySelector(
@@ -2811,18 +2815,10 @@ describe('SidebarChangesPanel', () => {
         expect(container.querySelector('[data-testid="secondary-root-changes-view"]')).toBeTruthy();
       });
 
-      // PR sections stay visible while browsing the secondary root, and
-      // follow the selection: the root's PR on top, the workspace's own PR
-      // relegated under "Other PRs". No mutation affordances (read-only).
       await waitFor(() => {
-        const text = container.textContent || '';
-        expect(text).toContain('Subrepo PR');
-        expect(text).toContain('Other PRs');
-        expect(text).toContain('Workspace PR');
+        expect(identities()).toEqual(beforeSelection);
       });
       const listText = container.textContent || '';
-      expect(listText.indexOf('Subrepo PR')).toBeLessThan(listText.indexOf('Other PRs'));
-      expect(listText.indexOf('Other PRs')).toBeLessThan(listText.indexOf('Workspace PR'));
       expect(listText).not.toContain('Create PR');
       expect(listText).not.toContain('Merge');
     });
@@ -2925,7 +2921,6 @@ describe('SidebarChangesPanel', () => {
       'commit-undo-push-button',
       'pr-push-commits-button',
       'pr-rebase-button',
-      'pr-refresh-button',
       'stage-all-button',
       'unstage-all-button',
       'stage-btn',

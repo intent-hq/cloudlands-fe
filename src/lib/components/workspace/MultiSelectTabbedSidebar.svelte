@@ -58,6 +58,7 @@
     faPlus,
   } from '@fortawesome/free-solid-svg-icons';
   import { buildWorkspacePRPresentationModel } from './sidebar/workspace-pr-presentation';
+  import { selectGitRoots } from '$store/renderer/slices/git-roots/git-roots-selectors';
   import { constructPrUrl, legacyWorkspacePullRequest } from './sidebar/sidebar-changes-utils';
   import { selectReviewMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import { onMount, tick, untrack, type Snippet } from 'svelte';
@@ -247,6 +248,7 @@
   const canCreateDiscussion$ = selectDiscussionCanCreate(workspaceIdStore);
   const activePullRequest$ = selectWorkspaceActivePullRequest(workspaceIdStore);
   const prMonitors$ = selectReviewMonitors(workspaceIdStore);
+  const gitRoots$ = selectGitRoots(workspaceIdStore);
   // Every PR attributable to the workspace (branch PRs, cross-repo entries,
   // agent PR monitors), deduplicated and ordered by status priority.
   const workspacePrRows = $derived.by(() => {
@@ -260,6 +262,7 @@
       workspacePRs: ws.pullRequests,
       activePR: $activePullRequest$ ?? ws.activePullRequest ?? legacyWorkspacePullRequest(ws),
       monitors: $prMonitors$,
+      secondaryRoots: $gitRoots$,
       workspaceRepo,
       buildPrUrl: (prNumber, fallbackUrl) =>
         constructPrUrl(prNumber, ws.repositoryOwner, ws.repositoryName, fallbackUrl),

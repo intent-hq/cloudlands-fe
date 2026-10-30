@@ -65,7 +65,7 @@
     constructPrUrl as constructPrUrlUtil,
     computeTotalStats,
     mapWorkspacePRs,
-    orderPRSectionsForSelection,
+    legacyWorkspacePullRequest,
     sectionPRs,
   } from './sidebar-changes-utils';
   import { selectReviewMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
@@ -82,6 +82,8 @@
   import FileChangesSection from './FileChangesSection.svelte';
   import PostMergeActions from './PostMergeActions.svelte';
   import PRSection from './PRSection.svelte';
+  import WorkspacePullRequests from './WorkspacePullRequests.svelte';
+  import { buildWorkspacePRPresentationModel } from './workspace-pr-presentation';
   import { store as appStore } from '$store/renderer/store';
   import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
 
@@ -226,15 +228,19 @@
   const trunkBranch = $derived($workspace?.baseRef || 'main');
   const hasPushedCommits = $derived(pushedCommits.length > 0);
 
-  // Multi git root browsing (monorepo#2053): while GitRootBrowser has a
-  // secondary root selected this panel hides its primary-root body and the
-  // PR sections reorder to follow the selection.
+  // Repository selection changes the file browser, not the workspace PR list.
   let selectedSecondaryRoot = $state<WorkspaceGitRootEntry | null>(null);
   const isBrowsingSecondaryRoot = $derived(selectedSecondaryRoot !== null);
-  // Visual PR section ordering only — with the primary selected these are
-  // the same sections as recency-sorted copies (newest-updated first).
-  const orderedPRSections = $derived(
-    orderPRSectionsForSelection(sectionedPRs, workspaceRepo, selectedSecondaryRoot),
+  const workspacePRRows = $derived(
+    buildWorkspacePRPresentationModel({
+      workspacePRs: $workspace?.pullRequests,
+      activePR: $activePullRequest$ ?? ($workspace ? legacyWorkspacePullRequest($workspace) : null),
+      monitors: $prMonitors$,
+      workspaceRepo,
+      secondaryRoots: $gitRoots$,
+      buildPrUrl: constructPrUrl,
+      getDisplayTitle: getPRDisplayTitle,
+    }),
   );
 
   // Truncation state - when there are more changes than we can display
@@ -447,8 +453,6 @@
       (aheadOfTrunk !== null && aheadOfTrunk > 0 && !isContentMergedToTrunk),
   );
 
-  // Props shared by both PRSection instances (primary timeline + the
-  // list-only secondary-root view, monorepo#2053).
   const prSectionSharedProps = $derived({
     workspaceId,
     activeFilePath,
@@ -882,6 +886,12 @@
         aria-label={m.workspace_sidebarChanges_fileChanges_ariaLabel()}
         onkeydown={handleChangesKeydown}
       >
+        <WorkspacePullRequests
+          {workspaceId}
+          {active}
+          rows={workspacePRRows}
+          truncated={($workspace?.pullRequestsTotal ?? 0) > ($workspace?.pullRequests?.length ?? 0)}
+        />
         <!-- Git root dropdown + read-only per-root browsing (monorepo#2053) -->
         <GitRootBrowser
           {workspaceId}
@@ -890,24 +900,6 @@
             ? (action) => (secondaryRefreshAction = action)
             : undefined}
         />
-        {#if isBrowsingSecondaryRoot}
-          <!-- PR sections follow the dropdown while browsing a secondary root:
-               the selected root's PRs on top, the workspace's own PRs under
-               "Other PRs". Read-only list — merge gating and post-merge stay
-               keyed to sectionedPRs.own in the primary view (monorepo#2053). -->
-          <div class="relative flex flex-col pb-2 w-full mt-2">
-            <PRSection
-              {...prSectionSharedProps}
-              hasPRs={orderedPRSections.selected.length > 0}
-              pullRequests={orderedPRSections.selected}
-              otherRootPRs={orderedPRSections.others}
-              otherTrackedPRs={orderedPRSections.otherTracked}
-              mergeDrawerOpen={false}
-              onMergeDrawerToggle={() => {}}
-              listOnly
-            />
-          </div>
-        {/if}
 
         {#if !isBrowsingSecondaryRoot}
           <BranchDisplay
@@ -1055,9 +1047,8 @@
             <PRSection
               {...prSectionSharedProps}
               {hasPRs}
-              pullRequests={orderedPRSections.selected}
-              otherRootPRs={orderedPRSections.others}
-              otherTrackedPRs={orderedPRSections.otherTracked}
+              {pullRequests}
+              showPullRequests={false}
               {mergeDrawerOpen}
               onMergeDrawerToggle={(open) => {
                 appStore.dispatch(setMergeDrawerOpen(workspaceId, open));
