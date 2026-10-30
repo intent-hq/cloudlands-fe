@@ -7,7 +7,7 @@
    * the loaded page. Hide collapses the stack to one chip, like the Q&A
    * card; a new request expands it again. Values never pass through here.
    */
-  import { untrack } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import {
     secretAnswerRequested,
@@ -38,9 +38,10 @@
   let { transcript, workspaceId, agentId }: Props = $props();
 
   const secretRequests$ = selectSecretRequestsState();
+  const admissionRevision = $derived($secretRequests$.admissionRevision ?? 0);
   const connectionGeneration$ = selectDaemonConnectionGeneration();
   const principalContext$ = selectPrincipalActionContext();
-  type Owner = { admission: string; dispatch: typeof appStore.dispatch };
+  type Owner = { admission: string; revision: number; dispatch: typeof appStore.dispatch };
   let owner = $state<Owner | null>(null);
 
   function isCurrent(expected: Owner | null): boolean {
@@ -48,6 +49,7 @@
       return (
         !!expected &&
         appStore.dispatch === expected.dispatch &&
+        (appStore.state.secretRequests.admissionRevision ?? 0) === expected.revision &&
         selectPrincipalActionContext.select(appStore.state) === expected.admission
       );
     } catch {
@@ -113,18 +115,35 @@
   $effect(() => {
     const target = focusAfter;
     const root = stackElement;
+    const focusOwner = owner;
     void collapsed;
-    if (!target || !root) return;
-    const element =
-      target === 'chip'
-        ? chipExpandButton
-        : root.querySelector<HTMLElement>(
-            '[data-testid="secret-request-input"]:not([disabled]), [data-testid="secret-request-card"] button',
-          );
-    if (element) {
-      element.focus();
-      focusAfter = null;
-    }
+    if (!target || !root || !isCurrent(focusOwner)) return;
+    const previousFocus = document.activeElement;
+    void tick().then(() => {
+      if (
+        focusAfter !== target ||
+        stackElement !== root ||
+        !root.isConnected ||
+        !isCurrent(focusOwner)
+      )
+        return;
+      if (
+        document.activeElement !== previousFocus &&
+        document.activeElement !== document.body &&
+        !root.contains(document.activeElement)
+      )
+        return;
+      const element =
+        target === 'chip'
+          ? chipExpandButton
+          : root.querySelector<HTMLElement>(
+              '[data-testid="secret-request-input"]:not([disabled]), [data-testid="secret-request-card"] button:not([disabled])',
+            );
+      if (element) {
+        element.focus();
+        if (document.activeElement === element) focusAfter = null;
+      }
+    });
   });
 
   function hide(): void {
@@ -184,13 +203,14 @@
   $effect(() => {
     void $connectionGeneration$;
     const admission = $principalContext$;
+    const revision = admissionRevision;
     const key = requestKey;
     const workspace = workspaceId;
     const agent = agentId;
-    owner = admission ? { admission, dispatch: appStore.dispatch } : null;
+    owner = admission ? { admission, revision, dispatch: appStore.dispatch } : null;
     chipDismissTarget = null;
     focusAfter = null;
-    if (!admission) return;
+    if (!isCurrent(owner)) return;
     untrack(() => {
       appStore.dispatch(secretListRequested(workspace, agent, key ? key.split(',') : []));
     });

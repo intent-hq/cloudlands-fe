@@ -40,8 +40,9 @@
 
   const uid = $props.id();
   const secretRequests$ = selectSecretRequestsState();
+  const admissionRevision = $derived($secretRequests$.admissionRevision ?? 0);
   const principalContext$ = selectPrincipalActionContext();
-  type Owner = { admission: string; dispatch: typeof appStore.dispatch };
+  type Owner = { admission: string; revision: number; dispatch: typeof appStore.dispatch };
   let owner = $state<Owner | null>(null);
   let value = $state('');
   let revealed = $state(false);
@@ -52,6 +53,7 @@
       return (
         !!expected &&
         appStore.dispatch === expected.dispatch &&
+        (appStore.state.secretRequests.admissionRevision ?? 0) === expected.revision &&
         selectPrincipalActionContext.select(appStore.state) === expected.admission
       );
     } catch {
@@ -61,10 +63,11 @@
 
   $effect(() => {
     const admission = $principalContext$;
+    const revision = admissionRevision;
     void workspaceId;
     void agentId;
     void request.requestId;
-    owner = admission ? { admission, dispatch: appStore.dispatch } : null;
+    owner = admission ? { admission, revision, dispatch: appStore.dispatch } : null;
     value = '';
     revealed = false;
     dismissTarget = null;

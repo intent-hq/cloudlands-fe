@@ -72,7 +72,7 @@ export function* secretRequestsSaga(): SagaGenerator<void> {
   let epoch = 0;
   let admissionEpoch = 0;
   let admitted = captureOwner();
-  type Owner = SecretOwner & { epoch: number };
+  type Owner = SecretOwner & { epoch: number; revision: number };
   interface Flight {
     owner: Owner;
     workspaceId: string;
@@ -85,16 +85,28 @@ export function* secretRequestsSaga(): SagaGenerator<void> {
 
   function* admittedOwner(): SagaGenerator<Owner | null> {
     const next = captureOwner();
+    let expectedEpoch = admissionEpoch;
     if (!sameOwner(admitted, next)) {
       admitted = next;
       admissionEpoch += 1;
+      expectedEpoch = admissionEpoch;
       yield* put(secretRequestsReset());
     }
-    return next ? { ...next, epoch: admissionEpoch } : null;
+    return next && expectedEpoch === admissionEpoch && sameOwner(next, captureOwner())
+      ? {
+          ...next,
+          epoch: admissionEpoch,
+          revision: next.store.state.secretRequests?.admissionRevision ?? 0,
+        }
+      : null;
   }
 
   function isCurrent(owner: Owner): boolean {
-    return owner.epoch === admissionEpoch && sameOwner(owner, captureOwner());
+    return (
+      owner.epoch === admissionEpoch &&
+      sameOwner(owner, captureOwner()) &&
+      owner.revision === (owner.store.state.secretRequests?.admissionRevision ?? 0)
+    );
   }
 
   yield* takeEvery(
@@ -156,6 +168,7 @@ export function* secretRequestsSaga(): SagaGenerator<void> {
         current &&
         current.workspaceId === workspaceId &&
         current.owner.epoch === owner.epoch &&
+        current.owner.revision === owner.revision &&
         sameOwner(current.owner, owner)
       ) {
         // Coalesce: the trailing refresh covers every id asked for meanwhile.

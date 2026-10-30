@@ -4,7 +4,17 @@ import type { SecretListing } from '$shared/types/secret-request-resource';
 import type { SecretAnswerStatus, SecretRequestsState } from './secret-requests-types';
 import { principalContextChanged } from '../principal/principal-slice';
 
-const initialState: SecretRequestsState = { listings: {}, answers: {}, hidden: {}, collapsed: {} };
+const initialState: SecretRequestsState = {
+  admissionRevision: 0,
+  listings: {},
+  answers: {},
+  hidden: {},
+  collapsed: {},
+};
+
+function retirePresentation(state: SecretRequestsState): SecretRequestsState {
+  return { ...initialState, admissionRevision: (state.admissionRevision ?? 0) + 1 };
+}
 
 /** Retire caller-relative presentation without changing any daemon request. */
 export const secretRequestsReset = createAction('secretRequests/reset');
@@ -71,8 +81,8 @@ export const secretRequestsExpanded = createAction<[agentId: string]>(
 );
 
 export const secretRequestsReducer = createReducer<SecretRequestsState>(initialState);
-secretRequestsReducer.with(principalContextChanged, () => initialState);
-secretRequestsReducer.with(secretRequestsReset, () => initialState);
+secretRequestsReducer.with(principalContextChanged, retirePresentation);
+secretRequestsReducer.with(secretRequestsReset, retirePresentation);
 secretRequestsReducer.with(
   secretListLoaded,
   (state, { payload: [agentId, listing, requestIds, answeredBefore] }) => {

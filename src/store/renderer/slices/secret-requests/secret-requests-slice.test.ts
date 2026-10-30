@@ -89,6 +89,7 @@ describe('secretRequestsReducer', () => {
       principalContextChanged('next-person'),
     );
     expect(state, 'caller change must clear secret-request presentation').toEqual({
+      admissionRevision: 1,
       listings: {},
       answers: {},
       hidden: {},
