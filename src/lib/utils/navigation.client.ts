@@ -41,7 +41,7 @@ export function isHudWindowRenderer(): boolean {
  */
 export async function navigateToRoute(
   route: string,
-  options: { assistantContent?: boolean; assistantAgentId?: string } = {},
+  options: { assistantContent?: boolean; assistantAgentId?: string; state?: App.PageState } = {},
 ): Promise<void> {
   if (isHudWindowRenderer()) {
     logger.debug('Ignoring navigation in HUD window', { route });
@@ -82,5 +82,5 @@ export async function navigateToRoute(
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
   // @ts-ignore - $app/navigation is a SvelteKit renderer-only module (not available in main process)
   const { goto } = await import('$app/navigation');
-  return goto(route);
+  return options.state ? goto(route, { state: options.state }) : goto(route);
 }
