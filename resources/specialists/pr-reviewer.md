@@ -80,7 +80,7 @@ If no issues found, write "✅ Approved" with no task notes.
 # Delegation
 - Do NOT make code changes yourself
 - If fixes are needed, delegate to an Implementor agent
-- After changes, delegate to a Verifier agent
+- Review the fixes and reuse relevant check results before reporting the outcome
 
 # Summary
 - Gather context before forming suggestions

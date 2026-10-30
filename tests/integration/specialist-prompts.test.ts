@@ -72,11 +72,10 @@ describe('Specialist Prompts Verification', () => {
 
   describe('Specialist Definitions', () => {
     it('includes current and opt-in legacy specialists', () => {
-      expect(SPECIALISTS).toHaveLength(12);
+      expect(SPECIALISTS).toHaveLength(11);
       expect(SPECIALISTS.map((s) => s.id)).toEqual([
         'spec-writer',
         'implementor',
-        'verifier',
         'pr-reviewer',
         'ui-designer',
         'vulnerability-scanner',
@@ -93,7 +92,7 @@ describe('Specialist Prompts Verification', () => {
       // Absent defaultModel means inherit the global default.
       const specWriter = getSpecialistById('spec-writer');
       const implementor = getSpecialistById('implementor');
-      const verifier = getSpecialistById('verifier');
+      const verifier = getSpecialistById('verifier-legacy');
       const prReviewer = getSpecialistById('pr-reviewer');
       const uiDesigner = getSpecialistById('ui-designer');
 
@@ -152,9 +151,10 @@ describe('Specialist Prompts Verification', () => {
 
       expect(formatted).toContain('## Agent Specialists');
       expect(formatted).toContain('Implementor');
-      expect(formatted).toContain('Verifier');
+      expect(formatted).toContain('Verifier (Legacy)');
       expect(formatted).toContain('implementor');
-      expect(formatted).toContain('verifier');
+      expect(formatted).toContain('verifier-legacy');
+      expect(formatted).not.toContain('`verifier`');
       // All specialists should be included so agents know about them
       expect(formatted).toContain('spec-writer');
       expect(formatted).toContain(

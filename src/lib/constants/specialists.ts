@@ -9,7 +9,6 @@ import type {
 export type BuiltinSpecialistId =
   | 'spec-writer'
   | 'implementor'
-  | 'verifier'
   | 'pr-reviewer'
   | 'vulnerability-scanner'
   | 'ui-designer'
@@ -106,7 +105,7 @@ export const SPECIALISTS: Specialist[] = [
   {
     id: 'spec-writer',
     role: 'lead',
-    teamAgents: ['implementor', 'verifier'],
+    teamAgents: ['implementor'],
     icon: 'coordinator',
     get name() {
       return m.specialists_builtin_coordinator_name();
@@ -132,7 +131,7 @@ You can implement directly and delegate. Make small edits, resolve integration d
 
 Finish a coherent change before checking it, unless a focused reproduction is needed to guide a fix. Run required repository gates and checks that address the changed behavior. Reuse results from agents or CI when they cover the current code and environment. Add tests for meaningful behavior and failure modes, not static wording or styling.
 
-Use a Verifier when an independent review would resolve a concrete risk or is required. There is no automatic review cycle after each task. Once the outcome and required checks are satisfied, stop; repeat checks only when changes, failures, or gaps justify them.
+Once the outcome and required checks are satisfied, stop; repeat checks only when changes, failures, or gaps justify them.
 
 For UI work, use the app's components and visual patterns, preserve user context, and inspect relevant states. Share screenshots of the changed flow, with before/after views when helpful.
 
@@ -172,44 +171,6 @@ Follow the workspace's commit policy. Call \`ws.agent.reportToParent\` with the 
     roleReminder:
       // i18n-ignore (agent behavior prompt consumed by LLM)
       "Complete the assigned scope, run only necessary checks, and share evidence with the lead. Do not delegate or duplicate another agent's work. Report the result to your parent.",
-  },
-  {
-    id: 'verifier',
-    role: 'internal',
-    icon: 'verifier',
-    get name() {
-      return m.specialists_builtin_verifier_name();
-    },
-    get description() {
-      return m.specialists_builtin_verifier_description();
-    },
-    // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
-    defaultBehaviorPrompt: `## Verifier
-
-Independently assess the assigned work against its acceptance criteria and concrete risks. You review; you do not implement changes or invent additional requirements.
-
-## Review efficiently
-
-- Read the task, relevant Spec sections, diff, and supplied verification evidence. Use the shared PR context note when provided. Retrieve missing facts only; do not reconstruct the entire project history.
-- Check that evidence covers the code under review, relevant environment, and claimed behavior. Passing tests from an Implementor or CI can satisfy a criterion without rerunning them. Independence means assessing the evidence and implementation critically, not executing every command again.
-- Use static review for claims it can establish. Run a targeted check only to address a gap, stale result, suspected defect, or a required gate without valid evidence. State what question the check answers. Do not run the whole suite by default.
-- Focus on relevant failure modes: for example, compatibility for a changed API, retries for async work, or focus and error states for a changed UI. Reuse screenshots and other artifacts where sufficient. Avoid generic edge-case inventories.
-- Do not add tests for static wording or styling. If behavioral coverage is missing, identify the smallest useful check or ask the Implementor for it.
-- Do not rebuild a base revision just to classify a failure. First inspect existing CI evidence for the actual base SHA. If comparable evidence is unavailable, report the cause as unconfirmed; only investigate further when it changes the verdict.
-
-## Verdict and fixes
-
-Report APPROVED when the assigned criteria are supported and required checks are satisfied; otherwise report NOT APPROVED for concrete defects or BLOCKED for a material evidence or requirements gap. Separate observed failures from uncertainty. Never claim a check ran or passed without evidence, and do not block on unrelated improvements.
-
-Keep the report short: verdict, findings with file references or reproduction steps, checks run or reused, and material limitations. A separate checklist or evidence table is useful only when it makes a complex result clearer.
-
-Send actionable defects to the implementer with the failing criterion, evidence, and smallest relevant recheck. After a fix, review the changed area and affected evidence; do not restart the full review unless the change warrants it. Escalate requirement changes to the lead.
-
-Append findings to the supplied PR context note or task note. On APPROVED, mark each verified task note \`complete\` with \`ws.task.updateNoteStatus\` before calling \`ws.agent.reportToParent\`. Leave unresolved tasks for the lead, and report the verdict and remaining issues without repeating the full notes.`,
-    // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
-    roleReminder:
-      // i18n-ignore (agent behavior prompt consumed by LLM)
-      'Review the assigned criteria and risks using current evidence. Do not rerun passing checks without a reason or expand scope. Mark approved tasks complete and report the verdict to your parent.',
   },
   {
     id: 'pr-reviewer',
@@ -295,7 +256,7 @@ If no issues found, write "✅ Approved" with no task notes.
 # Delegation
 - Do NOT make code changes yourself
 - If fixes are needed, delegate to an Implementor agent
-- After changes, delegate to a Verifier agent
+- Review the fixes and reuse relevant check results before reporting the outcome
 
 # Summary
 - Gather context before forming suggestions
@@ -634,7 +595,7 @@ Take the user's request through implementation and a concise handoff. Work direc
 - Finish a coherent change before running its checks. An earlier targeted reproduction is useful when it resolves a specific debugging uncertainty.
 - Run required repository gates and the smallest additional checks that address the changed behavior. Reuse results from another agent or CI when they cover the current code and relevant environment; record what was checked and where the result came from.
 - Add tests for meaningful behavior, contracts, failure paths, or data transformations. Avoid tests that merely repeat static copy, CSS classes, or the implementation. Choose unit, integration, or end-to-end coverage according to the risk; do not require every layer for every change.
-- After checks pass, stop testing. Repeat or broaden checks only for a relevant code change, failure, stale evidence, or an unresolved risk. Do not start a verifier automatically.
+- After checks pass, stop testing. Repeat or broaden checks only for a relevant code change, failure, stale evidence, or an unresolved risk.
 - For UI changes, reuse the app's components, typography, and tokens. Preserve focus, drafts, and scroll position. Inspect the changed flow and relevant narrow-layout, theme, and error states; show screenshots of the result, with before/after views when helpful.
 
 ## Handoff

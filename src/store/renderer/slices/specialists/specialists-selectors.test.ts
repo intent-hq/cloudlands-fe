@@ -159,7 +159,8 @@ describe('specialists selectors', () => {
       const ids = filterPickableSpecialists(SPECIALISTS, true).map((specialist) => specialist.id);
 
       expect(ids).toContain('implementor');
-      expect(ids).toContain('verifier');
+      expect(ids).not.toContain('verifier');
+      expect(ids).toContain('verifier-legacy');
     });
 
     it('keeps Vulnerability Scanner pickable as a standard specialist', () => {
@@ -189,7 +190,7 @@ describe('specialists selectors', () => {
 
       expect(orchestrator?.id).toBe('spec-writer');
       expect(orchestrator?.role).toBe('lead');
-      expect(orchestrator?.teamAgents).toEqual(['implementor', 'verifier']);
+      expect(orchestrator?.teamAgents).toEqual(['implementor']);
     });
 
     it('keeps Lead as the default with an alphabetically loaded legacy coordinator', () => {
@@ -431,7 +432,8 @@ describe('specialists selectors', () => {
     it('keeps the hardcoded fallback before any source has loaded', () => {
       const ids = selectSpecialists.select(mockState()).map((s) => s.id);
       expect(ids).toContain('implementor');
-      expect(ids).toContain('verifier');
+      expect(ids).not.toContain('verifier');
+      expect(ids).toContain('verifier-legacy');
     });
   });
 
@@ -660,10 +662,10 @@ describe('specialists selectors', () => {
       });
 
       const ids = selectSpecialists.select(state).map((s) => s.id);
-      // Bundled first in original order (spec-writer, implementor, verifier, ...)
+      // Bundled first in catalog order, with GitHub-only specialists filtered out
       expect(ids[0]).toBe('spec-writer');
       expect(ids[1]).toBe('implementor');
-      expect(ids[2]).toBe('verifier');
+      expect(ids[2]).toBe('ui-designer');
       // Custom at the end, sorted alphabetically by name
       const customIds = ids.filter((id) => id === 'alpha-custom' || id === 'zebra-custom');
       expect(customIds).toEqual(['alpha-custom', 'zebra-custom']);
@@ -672,7 +674,7 @@ describe('specialists selectors', () => {
     it('keeps a collapsed built-in override in catalog order without resurrecting omitted ids', () => {
       const bundled = [
         SPECIALISTS.find((specialist) => specialist.id === 'spec-writer')!,
-        SPECIALISTS.find((specialist) => specialist.id === 'verifier')!,
+        SPECIALISTS.find((specialist) => specialist.id === 'verifier-legacy')!,
         {
           ...SPECIALISTS[0],
           id: 'daemon-extra',
@@ -716,7 +718,7 @@ describe('specialists selectors', () => {
       expect(ids).toEqual([
         'spec-writer',
         'implementor',
-        'verifier',
+        'verifier-legacy',
         'daemon-extra',
         'alpha-custom',
         'zebra-custom',

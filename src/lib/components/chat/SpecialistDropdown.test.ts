@@ -86,7 +86,9 @@ describe('SpecialistDropdown ordering', () => {
       mocks.specialists$.set(SPECIALISTS);
       const onchange = vi.fn();
       render(SpecialistDropdown, { props: { value: null, onchange } });
-      expect(await openOptionIds()).toContain(id);
+      const options = await openOptionIds();
+      expect(options).toContain(id);
+      expect(options).not.toContain('verifier');
       await fireEvent.click(document.querySelector(`[data-specialist-option="${id}"]`)!);
       expect(onchange).toHaveBeenCalledExactlyOnceWith(id);
     },

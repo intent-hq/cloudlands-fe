@@ -98,11 +98,12 @@ describe('Specialist Configuration', () => {
       expect(specialist!.name).toBe('Implementor');
     });
 
-    it('should return verifier specialist', () => {
-      const specialist = getSpecialistById('verifier');
+    it('keeps only the legacy verifier in the built-in catalog', () => {
+      expect(getSpecialistById('verifier')).toBeUndefined();
+      const specialist = getSpecialistById('verifier-legacy');
       expect(specialist).toBeDefined();
-      expect(specialist!.id).toBe('verifier');
-      expect(specialist!.name).toBe('Verifier');
+      expect(specialist!.id).toBe('verifier-legacy');
+      expect(specialist!.name).toBe('Verifier (Legacy)');
     });
 
     it('should return undefined for unknown specialist', () => {
@@ -174,7 +175,6 @@ describe('Specialist Configuration', () => {
       const validIds = [
         'spec-writer',
         'implementor',
-        'verifier',
         'pr-reviewer',
         'vulnerability-scanner',
         'ui-designer',
@@ -259,7 +259,8 @@ describe('Specialist Configuration', () => {
       // Other specialists should still be present
       expect(ids).toContain('spec-writer');
       expect(ids).toContain('implementor');
-      expect(ids).toContain('verifier');
+      expect(ids).not.toContain('verifier');
+      expect(ids).toContain('verifier-legacy');
     });
 
     it('should show pr-reviewer when GitHub is authenticated', async () => {
