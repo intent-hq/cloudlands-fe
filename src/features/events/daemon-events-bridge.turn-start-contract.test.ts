@@ -16,8 +16,10 @@
  * - `agent-initiated` (harness-wake): no send exists, so the bridge opens the
  *   turn itself: an in-flight assistant message under `data.messageId`.
  * - `prompt` / `any`: daemon-owned liveness only, the sticky `liveTurnOpen`
- *   stamped with the event's own timestamp. The local-send action
- *   (`chatState/sendStarted`) belongs to the send path and must not fire.
+ *   stamped with the event's own timestamp. The send path's Thinking timer
+ *   (`streamingStartTime`, started by `chatSendStarted`) must stay unset:
+ *   checked on the resulting chat state, so a saga that started it would fail
+ *   too.
  *
  * Runs the production bridge against the real store with every daemon request
  * withheld.
@@ -44,7 +46,7 @@ import {
   clearAllSessions,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { selectAgentIsResponding } from '$store/renderer/slices/agent-session/agent-session-selectors';
-import { chatReset, chatSendStarted } from '$store/renderer/slices/chat-state/chat-state-slice';
+import { chatReset } from '$store/renderer/slices/chat-state/chat-state-slice';
 import {
   clearAllStandingChatSubscriptions,
   markStandingChatSubscription,
@@ -81,7 +83,7 @@ const MECHANISM: Record<TurnKind, 'wake-placeholder' | 'daemon-liveness'> = {
   any: 'daemon-liveness',
 };
 
-const SEND_STARTED = chatSendStarted('agent').type;
+const agentIds = [...new Set(events.map((entry) => entry.event.data.agentId))];
 
 function seedIdleSession(entry: TurnStartEntry): void {
   const { agentId } = entry.event.data;
@@ -107,30 +109,11 @@ function seedIdleSession(entry: TurnStartEntry): void {
 
 const session = (agentId: string) => appStore.state.agentSessions?.byAgentId[agentId];
 
-/** The store's own `dispatch` getter, so the capture below can be undone exactly. */
-function dispatchDescriptor(): PropertyDescriptor {
-  for (let proto = Object.getPrototypeOf(appStore); proto; proto = Object.getPrototypeOf(proto)) {
-    const descriptor = Object.getOwnPropertyDescriptor(proto, 'dispatch');
-    if (descriptor) return descriptor;
-  }
-  throw new Error('store has no dispatch');
-}
-
-/** Record every action type dispatched through the store until `releaseDispatch`. */
-function captureDispatch(into: string[]): void {
-  const realDispatch = dispatchDescriptor().get!.call(appStore);
-  Object.defineProperty(appStore, 'dispatch', {
-    get: () => (action: { type: string }) => {
-      into.push(action.type);
-      return realDispatch(action);
-    },
-    configurable: true,
-  });
-}
-const releaseDispatch = () => Object.defineProperty(appStore, 'dispatch', dispatchDescriptor());
+/** The send path's Thinking timer, which `chatSendStarted` starts. */
+const thinkingTimerStarted = (agentId: string) =>
+  typeof appStore.state.chatState?.byAgentId[agentId]?.streamingStartTime === 'number';
 
 describe('protocol turn-start events (docs/protocol/06-events.md §6.6)', () => {
-  const dispatched: string[] = [];
   let stopStreamSaga: () => void = () => {};
 
   beforeAll(() => {
@@ -138,14 +121,9 @@ describe('protocol turn-start events (docs/protocol/06-events.md §6.6)', () => 
     // Builds the in-flight assistant placeholder from the bridge's stream updates.
     stopStreamSaga = appStore.runSaga(agentStreamSaga);
   });
-  beforeEach(() => {
-    __resetDaemonEventsBridgeForTests();
-    dispatched.length = 0;
-    captureDispatch(dispatched);
-  });
+  beforeEach(() => __resetDaemonEventsBridgeForTests());
   afterEach(() => {
-    releaseDispatch();
-    for (const entry of events) appStore.dispatch(chatReset(entry.event.data.agentId));
+    for (const agentId of agentIds) appStore.dispatch(chatReset(agentId));
     appStore.dispatch(clearAllSessions());
     clearAllStandingChatSubscriptions();
   });
@@ -166,8 +144,9 @@ describe('protocol turn-start events (docs/protocol/06-events.md §6.6)', () => 
     (_id, entry) => {
       const { agentId } = entry.event.data;
       seedIdleSession(entry);
+      expect(MECHANISM[entry.turn], `unmapped turn kind ${entry.turn}`).toBeDefined();
       expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(false);
-      dispatched.length = 0;
+      expect(thinkingTimerStarted(agentId)).toBe(false);
 
       routeDaemonEventsNotification('events.event', { event: structuredClone(entry.event) });
 
@@ -179,13 +158,13 @@ describe('protocol turn-start events (docs/protocol/06-events.md §6.6)', () => 
         expect(placeholder?.isStreaming).toBe(true);
         expect((stored?.messages ?? []).filter((m) => m.role === 'user')).toEqual([]);
         // A wake turn has no send, so the bridge opens the send-path UI itself.
-        // This also proves the capture sees the action the other kinds must avoid.
-        expect(dispatched).toContain(SEND_STARTED);
+        // This also shows the timer check sees what the other kinds must not do.
+        expect(thinkingTimerStarted(agentId)).toBe(true);
       } else {
         expect(stored?.liveTurnOpen).toBe(true);
         expect(stored?.liveTurnOpenedAt).toBe(entry.event.timestamp);
-        expect(dispatched, 'the local-send action belongs to the send path').not.toContain(
-          SEND_STARTED,
+        expect(thinkingTimerStarted(agentId), 'the Thinking timer belongs to the send path').toBe(
+          false,
         );
       }
     },

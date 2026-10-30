@@ -961,6 +961,8 @@ jobs:
           --component cloudlands-fe --component-root .
       - name: Read turn-start events pin
         id: turn-start-events
+        # bash implies pipefail, so a loader error is not hidden by tee.
+        shell: bash
         run: node scripts/turn-start-fixtures.mjs | tee -a "$GITHUB_OUTPUT"
       - name: Checkout pinned turn-start events
         uses: actions/checkout@v7

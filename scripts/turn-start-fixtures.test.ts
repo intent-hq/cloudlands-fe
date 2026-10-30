@@ -1,5 +1,5 @@
 // @vitest-environment node
-// @verify-changed-triggers: scripts/turn-start-fixtures.mjs, tests/fixtures/turn-start-events.json, tests/fixtures/turn-start-events.lock.json, .github/workflows/intent-pr.yml
+// @verify-changed-triggers: scripts/turn-start-fixtures.mjs, tests/fixtures/turn-start-events.json, tests/fixtures/turn-start-events.lock.json, .github/workflows/intent-pr.yml, .github/workflows/nightly-shifted-clock-unit-tests.yml
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
