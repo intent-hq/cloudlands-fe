@@ -1825,3 +1825,146 @@ describe('truncated note reads capability through the browser transport (§5.2)'
     },
   );
 });
+
+describe('daemon startup readiness (docs/protocol/startup-readiness.md)', () => {
+  const preparing = {
+    startupStatus: 1,
+    attemptId: 'boot-a',
+    phase: 'preparing',
+    elapsedMs: 3000,
+    phaseElapsedMs: 1000,
+    progressAgeMs: 0,
+    retryAfterMs: 1000,
+  };
+  const notReady = {
+    code: -32012,
+    message: 'Daemon not ready',
+    data: { code: 'daemon-not-ready', retryable: true, retryAfterMs: 1000, startup: preparing },
+  };
+  const methods = (socket: FakeWebSocket) =>
+    socket.sent.map((frame) => (JSON.parse(frame) as { method?: string }).method);
+
+  /** Start the transport and answer its connect-time hello with `error`. */
+  async function helloAnswered(
+    harness: ReturnType<typeof createHarness>,
+    error: unknown,
+  ): Promise<{ pending: Promise<unknown> }> {
+    const pending = harness.transport.request('workspace.list').catch((e: unknown) => e);
+    const first = harness.socket();
+    first.open();
+    await flush();
+    first.receive({ jsonrpc: '2.0', id: first.lastFrame().id, error });
+    await flush();
+    // Wrapped so callers that do not expect a reply never await it.
+    return { pending };
+  }
+
+  it('holds a starting state, polls, then re-hellos on a fresh socket before connecting', async () => {
+    vi.useFakeTimers();
+    const harness = createHarness({ reconnectDelayMs: 100 });
+    const { transport } = harness;
+    const statuses: string[] = [];
+    transport.onConnectionStatusChange((status) => statuses.push(status));
+    const reconnected = vi.fn();
+    transport.onReconnected(reconnected);
+
+    const { pending } = await helloAnswered(harness, notReady);
+    expect(await pending).toMatchObject({ rpcCode: -32012 });
+    expect(transport.getConnectionStatus()).toBe('connecting');
+    expect(transport.getStartupState()).toMatchObject({ state: 'starting', available: true });
+    await expect(
+      transport.request('note.create', { content: 'do not send' }),
+    ).rejects.toMatchObject({ rpcCode: -32012, data: { code: 'daemon-not-ready' } });
+
+    const first = harness.socket();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(first.lastFrame()).toMatchObject({ method: 'system.startupStatus' });
+    first.receive({
+      jsonrpc: '2.0',
+      id: first.lastFrame().id,
+      result: { ...preparing, phase: 'ready', retryAfterMs: undefined },
+    });
+    await flush();
+    expect(first.closed).toBe(true);
+    expect(transport.getConnectionStatus()).toBe('connecting');
+
+    await vi.advanceTimersByTimeAsync(100);
+    expect(harness.sockets).toHaveLength(2);
+    await connect(harness.socket());
+    expect(transport.getConnectionStatus()).toBe('connected');
+    expect(transport.getStartupState()).toBeNull();
+    expect(reconnected).toHaveBeenCalledTimes(1);
+    expect(statuses).toEqual(['connecting', 'connected']);
+    expect(methods(first)).toEqual(['client.hello', 'system.startupStatus']);
+    transport.dispose();
+  });
+
+  it('reconnects and re-hellos when the starting daemon closes its socket', async () => {
+    vi.useFakeTimers();
+    const harness = createHarness({ reconnectDelayMs: 100 });
+    await helloAnswered(harness, notReady);
+    harness.socket().drop();
+    expect(harness.transport.getConnectionStatus()).toBe('connecting');
+    await vi.advanceTimersByTimeAsync(100);
+    await connect(harness.socket());
+    expect(harness.transport.getConnectionStatus()).toBe('connected');
+    expect(harness.transport.getStartupState()).toBeNull();
+    harness.transport.dispose();
+  });
+
+  it('reports a daemon that fails to start as a failure, not as connected', async () => {
+    vi.useFakeTimers();
+    const harness = createHarness({ reconnectDelayMs: 100 });
+    const failed = {
+      code: -32012,
+      message: 'Daemon startup failed',
+      data: {
+        code: 'daemon-startup-failed',
+        retryable: false,
+        startup: {
+          ...preparing,
+          phase: 'failed',
+          phaseElapsedMs: 0,
+          retryAfterMs: undefined,
+          failure: { code: 'startup-failed', message: 'Daemon startup failed. Check daemon logs.' },
+        },
+      },
+    };
+    const changes: unknown[] = [];
+    harness.transport.onStartupChange((state) => changes.push(state));
+    await helloAnswered(harness, failed);
+    expect(harness.transport.getConnectionStatus()).toBe('disconnected');
+    expect(harness.transport.getStartupState()).toMatchObject({
+      state: 'failed',
+      message: 'Daemon startup failed. Check daemon logs.',
+    });
+    expect(changes).toHaveLength(1);
+    // Reconnects continue and a healthy daemon clears the failure.
+    await vi.advanceTimersByTimeAsync(100);
+    await connect(harness.socket());
+    expect(harness.transport.getConnectionStatus()).toBe('connected');
+    expect(harness.transport.getStartupState()).toBeNull();
+    harness.transport.dispose();
+  });
+
+  it('falls back to a fresh hello when a status poll goes unanswered', async () => {
+    vi.useFakeTimers();
+    const harness = createHarness({ reconnectDelayMs: 100 });
+    await helloAnswered(harness, notReady);
+    const first = harness.socket();
+    await vi.advanceTimersByTimeAsync(1000 + 5000);
+    expect(first.closed).toBe(true);
+    expect(harness.transport.getStartupState()).toMatchObject({ available: false });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(harness.sockets).toHaveLength(2);
+    harness.transport.dispose();
+  });
+
+  it('keeps an ordinary hello error on the legacy connected path', async () => {
+    const harness = createHarness();
+    await helloAnswered(harness, { code: -32601, message: 'Method not found' });
+    expect(harness.transport.getConnectionStatus()).toBe('connected');
+    expect(harness.transport.getStartupState()).toBeNull();
+    harness.transport.dispose();
+  });
+});

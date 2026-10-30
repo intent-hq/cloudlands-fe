@@ -7919,5 +7919,18 @@
   "inlineHtml_preview_remove_label": "Remove",
   "inlineHtml_preview_exporting_label": "Exporting…",
   "inlineHtml_preview_exported_description": "Saved to {path}",
-  "inlineHtml_preview_export_error": "Could not export this configuration."
+  "inlineHtml_preview_export_error": "Could not export this configuration.",
+  "daemonStartup_preparing_label": "Starting intentd",
+  "daemonStartup_indexing_label": "Rebuilding note indexes",
+  "daemonStartup_finalizing_label": "Finishing startup",
+  "daemonStartup_failed_label": "Daemon startup failed",
+  "daemonStartup_unavailable_label": "Startup status unavailable",
+  "daemonStartup_elapsed_label": "Elapsed: {duration}",
+  "daemonStartup_notes_label": "Notes indexed: {completed} of {total}",
+  "daemonStartup_remaining_label": "About {duration} remaining for indexing",
+  "daemonStartup_estimating_label": "Estimating remaining time",
+  "daemonStartup_unchanged_description": "Still indexing; completed-note count unchanged",
+  "daemonStartup_finalizing_description": "Finishing database work and starting services. The app will open automatically when ready.",
+  "daemonStartup_failed_description": "Check the daemon logs for details.",
+  "daemonStartup_unavailable_description": "The latest startup status could not be received. Reconnecting…"
 }

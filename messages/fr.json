@@ -7919,5 +7919,18 @@
   "inlineHtml_preview_remove_label": "Supprimer",
   "inlineHtml_preview_exporting_label": "Exportation…",
   "inlineHtml_preview_exported_description": "Enregistré dans {path}",
-  "inlineHtml_preview_export_error": "Impossible d’exporter cette configuration."
+  "inlineHtml_preview_export_error": "Impossible d’exporter cette configuration.",
+  "daemonStartup_preparing_label": "Démarrage d’intentd",
+  "daemonStartup_indexing_label": "Reconstruction des index de notes",
+  "daemonStartup_finalizing_label": "Finalisation du démarrage",
+  "daemonStartup_failed_label": "Échec du démarrage du daemon",
+  "daemonStartup_unavailable_label": "État du démarrage indisponible",
+  "daemonStartup_elapsed_label": "Temps écoulé : {duration}",
+  "daemonStartup_notes_label": "Notes indexées : {completed} sur {total}",
+  "daemonStartup_remaining_label": "Environ {duration} restantes pour l’indexation",
+  "daemonStartup_estimating_label": "Estimation du temps restant",
+  "daemonStartup_unchanged_description": "Indexation en cours ; nombre de notes terminées inchangé",
+  "daemonStartup_finalizing_description": "Finalisation de la base de données et démarrage des services. L’application s’ouvrira automatiquement une fois prête.",
+  "daemonStartup_failed_description": "Consultez les journaux du daemon pour plus de détails.",
+  "daemonStartup_unavailable_description": "Impossible de recevoir le dernier état du démarrage. Reconnexion…"
 }

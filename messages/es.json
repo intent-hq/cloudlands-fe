@@ -7919,5 +7919,18 @@
   "inlineHtml_preview_remove_label": "Eliminar",
   "inlineHtml_preview_exporting_label": "Exportando…",
   "inlineHtml_preview_exported_description": "Guardado en {path}",
-  "inlineHtml_preview_export_error": "No se pudo exportar esta configuración."
+  "inlineHtml_preview_export_error": "No se pudo exportar esta configuración.",
+  "daemonStartup_preparing_label": "Iniciando intentd",
+  "daemonStartup_indexing_label": "Reconstruyendo los índices de notas",
+  "daemonStartup_finalizing_label": "Finalizando el inicio",
+  "daemonStartup_failed_label": "Error al iniciar el daemon",
+  "daemonStartup_unavailable_label": "Estado de inicio no disponible",
+  "daemonStartup_elapsed_label": "Transcurrido: {duration}",
+  "daemonStartup_notes_label": "Notas indexadas: {completed} de {total}",
+  "daemonStartup_remaining_label": "Quedan unos {duration} de indexación",
+  "daemonStartup_estimating_label": "Estimando el tiempo restante",
+  "daemonStartup_unchanged_description": "La indexación continúa; el número de notas completadas no ha cambiado",
+  "daemonStartup_finalizing_description": "Finalizando la base de datos e iniciando los servicios. La aplicación se abrirá automáticamente cuando esté lista.",
+  "daemonStartup_failed_description": "Consulta los registros del daemon para obtener más información.",
+  "daemonStartup_unavailable_description": "No se pudo recibir el último estado de inicio. Reconectando…"
 }

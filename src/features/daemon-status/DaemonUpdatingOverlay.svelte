@@ -25,12 +25,19 @@
   import {
     selectDaemonHealth,
     selectDaemonUpdateDisconnectedAt,
+    selectDaemonStartup,
   } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import Portal from '$lib/components/ui/Portal.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
   const health$ = selectDaemonHealth();
   const updateDisconnectedAt$ = selectDaemonUpdateDisconnectedAt();
+  // A restarted daemon that reports startup progress shows the startup screen
+  // (DaemonStoppedOverlay) instead of this countdown.
+  const daemonStartup$ = selectDaemonStartup();
+  // Once the startup screen took over this outage it keeps it, even if the
+  // startup state later clears: never stack both connection overlays.
+  let startupShown = $state(false);
 
   const isSandboxPage = $derived(
     $page.url.pathname === '/sandbox' ||
@@ -50,6 +57,11 @@
       tickTimer = null;
     }
   }
+
+  $effect(() => {
+    if ($health$ !== 'down') startupShown = false;
+    else if ($daemonStartup$) startupShown = true;
+  });
 
   $effect(() => {
     const disconnectedAt = $updateDisconnectedAt$;
@@ -75,7 +87,7 @@
   const seconds = $derived(Math.ceil(remainingMs / 1000));
 </script>
 
-{#if visible}
+{#if visible && !$daemonStartup$ && !startupShown}
   <Portal target="body" zIndex="var(--layer-connection-overlay)">
     <div
       class="fixed inset-0 z-[var(--layer-connection-overlay)] flex items-center justify-center bg-black/70 backdrop-blur-md"
