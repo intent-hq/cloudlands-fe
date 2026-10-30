@@ -11,7 +11,6 @@
     selectAllTabs,
     selectFocusedPanelId,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-  import { Button } from '$lib/components/ui/button';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import {
     markNoteRead,
@@ -50,13 +49,6 @@
     openAgentTabRequested,
   } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectPendingLocateInSidebar } from '$store/renderer/slices/app-layout/app-layout-selectors';
-  import {
-    faArrowUpRightFromSquare,
-    faCompressAlt,
-    faExpandAlt,
-    faPencil,
-    faPlus,
-  } from '@fortawesome/free-solid-svg-icons';
   import { buildWorkspacePRPresentationModel } from './sidebar/workspace-pr-presentation';
   import { selectGitRoots } from '$store/renderer/slices/git-roots/git-roots-selectors';
   import { constructPrUrl, legacyWorkspacePullRequest } from './sidebar/sidebar-changes-utils';
@@ -64,7 +56,7 @@
   import { onMount, tick, untrack, type Snippet } from 'svelte';
   import { prefersReducedMotion } from '$lib/utils/reduced-motion';
   import { writable } from 'svelte/store';
-  import Fa from 'svelte-fa';
+  import SidebarActionIcon from './sidebar/SidebarActionIcon.svelte';
   import CreateAgentSection from './CreateAgentSection.svelte';
   import ExpandableFileSearch from './sidebar/ExpandableFileSearch.svelte';
   import { FilesPanel, SidebarChangesPanel, isSpecNote } from './sidebar';
@@ -841,7 +833,7 @@
             <div class="shrink-0 px-5 pt-3 pb-2" data-sidebar-section-header>
               <h6 class="flex min-h-7 items-center gap-2 text-sm font-medium text-foreground">
                 <span class="min-w-0 truncate">{tab.label}</span>
-                <span class="ml-auto flex min-w-0 items-center gap-1">
+                <span class="ml-auto flex min-w-0 items-center gap-0.5">
                   {#if tabId === 'people' && $canCreateDiscussion$}
                     <SidebarHeaderAction
                       icon="plus"
@@ -889,34 +881,22 @@
                       active={active && visibleTabIds.includes('files')}
                       onKeydown={(event) => filesPanelRef?.handleSearchKeyDown(event)}
                     />
-                    <Button
-                      variant="ghost"
-                      size="icon-compact"
-                      class="shrink-0 text-muted-foreground"
-                      tooltip={m.workspace_multiSelectSidebar_newFile_tooltip()}
+                    <SidebarHeaderAction
+                      icon="plus"
+                      label={m.workspace_multiSelectSidebar_newFile_tooltip()}
                       onclick={() => filesPanelRef?.startCreatingFile()}
-                    >
-                      <Fa icon={faPlus} class="size-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-compact"
-                      class="shrink-0 {showOnlyChangedFiles
-                        ? 'bg-selected text-foreground dark:bg-muted'
-                        : 'text-muted-foreground'}"
-                      aria-pressed={showOnlyChangedFiles}
-                      tooltip={showOnlyChangedFiles
+                    />
+                    <SidebarHeaderAction
+                      icon="filter"
+                      pressed={showOnlyChangedFiles}
+                      label={showOnlyChangedFiles
                         ? m.workspace_multiSelectSidebar_showAllFiles_tooltip()
                         : m.workspace_multiSelectSidebar_showOnlyChangedFiles_tooltip()}
                       onclick={() => (showOnlyChangedFiles = !showOnlyChangedFiles)}
-                    >
-                      <Fa icon={faPencil} class="size-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-compact"
-                      class="shrink-0 text-muted-foreground"
-                      tooltip={hasExpandedDirectories
+                    />
+                    <SidebarHeaderAction
+                      icon={hasExpandedDirectories ? 'collapse' : 'expand'}
+                      label={hasExpandedDirectories
                         ? m.workspace_multiSelectSidebar_collapseAll_tooltip()
                         : m.workspace_multiSelectSidebar_expandAll_tooltip()}
                       onclick={async () => {
@@ -927,12 +907,7 @@
                         }
                         filesExpandedTick++;
                       }}
-                    >
-                      <Fa
-                        icon={hasExpandedDirectories ? faCompressAlt : faExpandAlt}
-                        class="size-3.5"
-                      />
-                    </Button>
+                    />
                     {#if $fileExplorerWorkspacePath}
                       <OpenComboButton
                         filePath={$fileExplorerWorkspacePath}
@@ -942,7 +917,7 @@
                         variant="sidebar"
                         iconOnly
                       >
-                        <Fa icon={faArrowUpRightFromSquare} class="size-4" />
+                        <SidebarActionIcon icon="open" />
                         <span class="sr-only">{m.ui_openCombo_openInApp_tooltip()}</span>
                       </OpenComboButton>
                     {/if}
