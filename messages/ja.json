@@ -465,7 +465,7 @@
   "chat_chatMessage_edit_placeholder": "メッセージを編集...",
   "chat_chatMessage_externalLink_fallback": "外部リンク",
   "chat_chatMessage_failedToSend_label": "送信できませんでした",
-  "chat_chatMessage_finishReasonCancelledEmpty_label": "応答が開始前に停止しました — メッセージをもう一度送信してください",
+  "chat_chatMessage_finishReasonCancelledEmpty_label": "応答が開始前に停止しました",
   "chat_chatMessage_finishReasonMaxTokens_label": "応答が停止しました — 最大長に達しました",
   "chat_chatMessage_finishReasonRefusal_label": "応答が停止しました — モデルが続行を拒否しました",
   "chat_chatMessage_githubIssue_fallback": "GitHub Issue",

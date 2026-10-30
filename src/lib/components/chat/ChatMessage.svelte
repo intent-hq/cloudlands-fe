@@ -2016,7 +2016,7 @@
           />
         {/if}
 
-        <!-- Abnormal-finish notice (refusal / token limit, PROTOCOL §7.3) -->
+        <!-- Abnormal-finish notice (refusal / token limit / empty cancel, PROTOCOL §7.3) -->
         {#if finishReasonNoticeLabel}
           <ChatOperationalRow
             leading={finishReasonLeading}

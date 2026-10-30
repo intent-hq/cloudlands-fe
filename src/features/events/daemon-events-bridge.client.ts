@@ -1128,8 +1128,10 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
   const stopReason = typeof data?.stopReason === 'string' ? data.stopReason : undefined;
   // Optional abnormal finish reason (PROTOCOL §7.3): the turn-worker terminal
   // emit carries `finishReason` when the turn completed with a non-`end_turn`
-  // ACP stop reason (`refusal` | `max_tokens` | `max_turn_requests`); absent
-  // on normal completions. The same value is persisted on the assistant row
+  // ACP stop reason (`refusal` | `max_tokens` | `max_turn_requests`, or
+  // `cancelled` when the provider cancelled a turn the daemon never asked to
+  // cancel and its one silent redrive did not recover it); absent on normal
+  // completions. The same value is persisted on the assistant row
   // as `metadata.finishReason`, so stamping it here just makes the notice
   // render live without waiting for a reconcile.
   const finishReason = typeof data?.finishReason === 'string' ? data.finishReason : undefined;

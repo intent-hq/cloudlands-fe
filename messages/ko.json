@@ -465,7 +465,7 @@
   "chat_chatMessage_edit_placeholder": "메시지 편집...",
   "chat_chatMessage_externalLink_fallback": "외부 링크",
   "chat_chatMessage_failedToSend_label": "전송 실패",
-  "chat_chatMessage_finishReasonCancelledEmpty_label": "응답이 시작되기 전에 중지됨 — 메시지를 다시 보내세요",
+  "chat_chatMessage_finishReasonCancelledEmpty_label": "응답이 시작되기 전에 중지됨",
   "chat_chatMessage_finishReasonMaxTokens_label": "응답이 중지됨 — 최대 길이에 도달했습니다",
   "chat_chatMessage_finishReasonRefusal_label": "응답이 중지됨 — 모델이 계속하기를 거부했습니다",
   "chat_chatMessage_githubIssue_fallback": "GitHub 이슈",
