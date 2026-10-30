@@ -13,6 +13,38 @@ interface UpdateStatus {
   };
 }
 
+const STARTUP_RETRY_DEFAULT_MS = 1000;
+const STARTUP_RETRY_MIN_MS = 250;
+const STARTUP_RETRY_MAX_MS = 5000;
+
+type StartupReply = { kind: 'not-ready'; retryAfterMs: number } | { kind: 'failed' };
+
+/**
+ * Recognize the daemon's structured startup reply (`-32012`, see
+ * docs/protocol/startup-readiness.md). A restarted daemon reconnects before it
+ * is ready and answers every request, `system.status` included, with a
+ * retryable `daemon-not-ready`; a terminal `daemon-startup-failed` means the
+ * new version never became ready. Anything else is not a startup reply.
+ */
+function classifyStartupReply(error: unknown): StartupReply | undefined {
+  if (!(error instanceof JsonRpcError) || error.rpcCode !== -32012) return undefined;
+  const data = (error.data ?? {}) as {
+    code?: unknown;
+    retryable?: unknown;
+    retryAfterMs?: unknown;
+  };
+  if (data.code === 'daemon-startup-failed') return { kind: 'failed' };
+  if (data.code !== 'daemon-not-ready' || data.retryable !== true) return undefined;
+  const hint =
+    typeof data.retryAfterMs === 'number' && Number.isFinite(data.retryAfterMs)
+      ? data.retryAfterMs
+      : STARTUP_RETRY_DEFAULT_MS;
+  return {
+    kind: 'not-ready',
+    retryAfterMs: Math.min(STARTUP_RETRY_MAX_MS, Math.max(STARTUP_RETRY_MIN_MS, hint)),
+  };
+}
+
 /** Main supplies the bundle pin. An absent capability never falls back to a channel update. */
 export async function updateDaemonToPin(
   client: Pick<JsonRpcClient, 'request' | 'getStatus'>,
@@ -51,6 +83,16 @@ export async function updateDaemonToPin(
       try {
         current = await client.request<UpdateStatus>('system.status');
       } catch (error) {
+        const startup = classifyStartupReply(error);
+        if (startup?.kind === 'failed') {
+          return { ok: false, reason: 'failed', message: (error as Error).message };
+        }
+        if (startup?.kind === 'not-ready') {
+          // The restarted daemon is reachable but still starting; keep waiting.
+          markPending();
+          await new Promise((resolve) => setTimeout(resolve, startup.retryAfterMs));
+          continue;
+        }
         if (client.getStatus() === 'connected') throw error;
         await new Promise((resolve) => setTimeout(resolve, 1000));
         continue;
