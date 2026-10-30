@@ -92,8 +92,24 @@ export function resolveStoppedIndicatorLabel(message?: AgentMessage): StoppedInd
  * resolver returns a descriptor rather than localized text so ChatMessage owns
  * the Paraglide message calls; unknown future reasons render no notice.
  * `max_turn_requests` (per-turn request cap) shares the limit-reached wording.
+ *
+ * `cancelled` gets a notice only on an output-free row that is not a user
+ * stop: the provider cancelled the turn before it produced anything (e.g. a
+ * late cancel from a preempted turn) and the daemon's one silent redrive did
+ * not recover it. Without the notice the user's message looks silently
+ * ignored. A user stop (`interrupted`) keeps its own Stopped badge, and a
+ * cancelled row with visible content needs no extra notice.
  */
-export type FinishReasonNotice = { kind: 'refusal' } | { kind: 'max-tokens' };
+export type FinishReasonNotice =
+  { kind: 'refusal' } | { kind: 'max-tokens' } | { kind: 'cancelled-empty' };
+
+function hasVisibleContent(blocks: readonly ContentBlock[]): boolean {
+  return parseSuggestedPromptsFromContentBlocks(blocks).contentBlocks.some(
+    (block) =>
+      block.type !== 'text' ||
+      Boolean((block.text || (block as { content?: string }).content || '').trim()),
+  );
+}
 
 export function resolveFinishReasonNotice(message?: AgentMessage): FinishReasonNotice | undefined {
   switch (message?.metadata?.finishReason) {
@@ -102,6 +118,11 @@ export function resolveFinishReasonNotice(message?: AgentMessage): FinishReasonN
     case 'max_tokens':
     case 'max_turn_requests':
       return { kind: 'max-tokens' };
+    case 'cancelled':
+      if (message.metadata?.interrupted === true) return undefined;
+      return hasVisibleContent(message.contentBlocks ?? [])
+        ? undefined
+        : { kind: 'cancelled-empty' };
     default:
       return undefined;
   }

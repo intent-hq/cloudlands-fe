@@ -218,6 +218,35 @@ describe('resolveFinishReasonNotice', () => {
   it('returns undefined for a normal end_turn completion', () => {
     expect(resolveFinishReasonNotice(finished('end_turn'))).toBeUndefined();
   });
+
+  // A provider `cancelled` the daemon did not request (e.g. a late cancel from
+  // a preempted turn) leaves an empty marker row. Without a notice the user's
+  // message looks silently ignored.
+  it('resolves cancelled-empty for an output-free cancelled row', () => {
+    const row = assistant({ contentBlocks: [], metadata: { finishReason: 'cancelled' } });
+    expect(resolveFinishReasonNotice(row)).toEqual({ kind: 'cancelled-empty' });
+  });
+
+  it('treats whitespace-only text as output-free for cancelled rows', () => {
+    const row = assistant({
+      contentBlocks: [{ type: 'text', text: '  ' }],
+      metadata: { finishReason: 'cancelled' },
+    });
+    expect(resolveFinishReasonNotice(row)).toEqual({ kind: 'cancelled-empty' });
+  });
+
+  it('returns undefined for a cancelled row that has visible content', () => {
+    const row = assistant({ metadata: { finishReason: 'cancelled' } });
+    expect(resolveFinishReasonNotice(row)).toBeUndefined();
+  });
+
+  it('returns undefined for a cancelled row the user stopped (Stopped badge owns it)', () => {
+    const row = assistant({
+      contentBlocks: [],
+      metadata: { finishReason: 'cancelled', interrupted: true },
+    });
+    expect(resolveFinishReasonNotice(row)).toBeUndefined();
+  });
 });
 
 // Agent Q&A wizard-only rendering: a turn whose only content is question

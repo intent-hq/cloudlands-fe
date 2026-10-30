@@ -427,6 +427,8 @@
         return m.chat_chatMessage_finishReasonRefusal_label();
       case 'max-tokens':
         return m.chat_chatMessage_finishReasonMaxTokens_label();
+      case 'cancelled-empty':
+        return m.chat_chatMessage_finishReasonCancelledEmpty_label();
       default: {
         // Compile-time exhaustiveness: a new descriptor kind is a type error
         // here; at runtime an unknown kind renders no notice.

@@ -465,6 +465,7 @@
   "chat_chatMessage_edit_placeholder": "Edit your message...",
   "chat_chatMessage_externalLink_fallback": "External Link",
   "chat_chatMessage_failedToSend_label": "Failed to send",
+  "chat_chatMessage_finishReasonCancelledEmpty_label": "Response stopped before it started — send your message again",
   "chat_chatMessage_finishReasonMaxTokens_label": "Response stopped — maximum length reached",
   "chat_chatMessage_finishReasonRefusal_label": "Response stopped — the model refused to continue",
   "chat_chatMessage_githubIssue_fallback": "GitHub Issue",
