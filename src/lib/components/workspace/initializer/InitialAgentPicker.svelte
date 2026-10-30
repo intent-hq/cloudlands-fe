@@ -967,7 +967,7 @@
       fallbackToCatalogDefault
       fallbackProviderId={selectedProvider}
       silentFallback
-      portal={false}
+      portal={true}
       modalAware={true}
       collisionBoundary="viewport"
     />

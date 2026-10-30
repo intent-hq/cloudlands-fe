@@ -1701,7 +1701,7 @@
           : rowLabel
             ? isMobile.current
               ? 'bottom'
-              : 'right'
+              : 'left'
             : dropUp
               ? 'top'
               : 'bottom'}

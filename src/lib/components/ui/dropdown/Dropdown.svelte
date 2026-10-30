@@ -48,7 +48,7 @@
     staticPosition?: boolean;
     /** Disable panel and row transitions for immediate keyboard/filter flows. */
     animate?: boolean;
-    /** Optional containing boundary for collision-aware inline content. */
+    /** Containing selector/element, or "viewport", for collision-aware inline content. */
     collisionBoundary?: string | HTMLElement | null;
     /** Space kept between collision-aware content and its boundary. */
     collisionPadding?: number;
@@ -346,9 +346,11 @@
 
   function resolveCollisionRect(): Pick<DOMRect, 'top' | 'right' | 'bottom' | 'left'> {
     const boundary =
-      typeof collisionBoundary === 'string'
-        ? document.querySelector<HTMLElement>(collisionBoundary)
-        : collisionBoundary;
+      collisionBoundary === 'viewport'
+        ? null
+        : typeof collisionBoundary === 'string'
+          ? document.querySelector<HTMLElement>(collisionBoundary)
+          : collisionBoundary;
     if (boundary) return boundary.getBoundingClientRect();
     return { top: 0, right: window.innerWidth, bottom: window.innerHeight, left: 0 };
   }

@@ -2512,7 +2512,8 @@
       rowLabel ? 'pt-3' : !hasNoAvailableProvider && 'pt-9',
     )}
     triggerClass={cn(
-      'max-w-full px-2!',
+      'px-2!',
+      rowLabel && showRowLabel ? 'max-w-none' : 'max-w-full',
       (variant === 'outline' || variant === 'default') && 'w-full justify-between border-border!',
       fullWidth && 'w-full justify-between',
       triggerClass,
@@ -2562,7 +2563,7 @@
           {:else if usingEarlierProfileSettings}
             <Fa icon={faCircleInfo} class="h-3 w-3 text-muted-foreground shrink-0" />
           {/if}
-          {#if showTriggerIcons && hasProviderIcon(triggerProviderId)}
+          {#if (showTriggerIcons || variant === 'ghost-light') && hasProviderIcon(triggerProviderId)}
             <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
           {/if}
           <span class="truncate" use:truncatedTitle={triggerTitle ? undefined : triggerLabel}

@@ -1756,7 +1756,7 @@
       class={rowLabel
         ? `w-[360px] max-w-[calc(100vw-1rem)] min-w-0 max-h-[min(440px,var(--bits-popover-content-available-height,calc(100dvh-1rem)))] flex flex-col pt-1 ${formStep === 'browse' ? 'overflow-hidden' : 'overflow-y-auto'}`
         : 'w-[400px] max-w-[calc(100vw-16px)] min-w-0 max-h-[min(600px,var(--bits-popover-content-available-height,100dvh))] overflow-y-auto flex flex-col'}
-      side={rowLabel ? (isMobile.current ? 'bottom' : 'right') : undefined}
+      side={rowLabel ? (isMobile.current ? 'bottom' : 'left') : undefined}
       sideOffset={rowLabel ? (isMobile.current ? 4 : 24) : undefined}
       align={rowLabel ? (isMobile.current ? 'end' : 'start') : undefined}
       onkeydown={(event) => {
@@ -1792,7 +1792,7 @@
             placeholder={m.workspace_repoSelector_search_placeholder()}
             aria-label={m.workspace_repoSelector_search_placeholder()}
             aria-controls={`${pickerId}-form-repos`}
-            class="{workspacePickerStyles.search} bg-sidebar border-none focus-visible:ring-1 focus-visible:ring-ring"
+            class="{workspacePickerStyles.search} bg-sidebar border-none"
             noFocusStyle
           />
         </div>
@@ -2046,7 +2046,7 @@
                         handleConfirmNewRepo();
                       }
                     }}
-                    class="bg-sidebar border-none focus-visible:ring-1 focus-visible:ring-ring"
+                    class="bg-sidebar border-none"
                     noFocusStyle
                   />
                 </div>

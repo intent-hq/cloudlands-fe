@@ -279,7 +279,7 @@
       triggerClass={workspacePickerStyles.fieldTrigger}
       displayValue={metadataRepoName || undefined}
       triggerValueClass="text-foreground"
-      triggerContentClass="gap-2"
+      triggerContentClass="gap-1"
     />
     {#if !isNewRepo}
       <div class="min-w-0">

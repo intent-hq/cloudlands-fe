@@ -3769,7 +3769,7 @@
     grid-template-columns: auto minmax(0, 1fr);
     align-items: start;
     min-height: 2.75rem;
-    margin-inline: -0.5rem;
+    margin-inline: 0;
     column-gap: 0.5rem;
   }
 
@@ -3791,6 +3791,7 @@
 
   .prompt-footer :global(.context-picker-trigger) {
     grid-column: 1;
+    padding-inline-start: 0.375rem;
     justify-content: flex-start;
   }
 
