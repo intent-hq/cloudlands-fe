@@ -1,3 +1,5 @@
+import { BrowserMonitorAttachment } from './browser-monitor-attachment';
+import { supportsReviewMonitoring, type PrMonitorSession } from '$shared/types/pr-monitor';
 /**
  * Browser WebSocket implementation of the `BackendTransport` interface.
  *
@@ -18,8 +20,19 @@
  * `window.electronAPI` is absent and the URL is configured. The WebSocket
  * constructor is injectable (`webSocketFactory`) so tests use a fake socket.
  */
+import type { PrincipalDiscovery } from '$shared/types/principal';
 import { parseProtocolVersion, type ProtocolVersion } from '$shared/protocol-version';
 import { assertScopedFileReadSupport } from '$shared/root-file-read-support';
+import {
+  classifyStartupReply,
+  type DaemonStartupState,
+  STARTUP_POLL_TIMEOUT_MS,
+  STARTUP_STATUS_METHOD,
+  StartupPoller,
+  type StartupReply,
+  type StartupSnapshot,
+  startupErrorShape,
+} from '$shared/daemon-startup';
 import {
   BackendError,
   type BackendErrorPayload,
@@ -195,6 +208,8 @@ export interface BrowserWebSocketLike {
 }
 
 export interface BrowserWebSocketTransportOptions {
+  /** Qualified document composition only. Production factories leave this disabled. */
+  reviewMonitoring?: number;
   /** Full `ws(s)://` daemon URL (bearer token via `?token=`, PROTOCOL §2.1). */
   url: string;
   /** WebSocket constructor seam for tests. Defaults to the global `WebSocket`. */
@@ -251,8 +266,16 @@ export class BrowserWebSocketTransport implements BackendTransport {
   }> = [];
   private clientId: string | undefined;
   private helloConfirmed = false;
+  private acknowledgedHello: unknown = null;
   private nodeCapabilities: Readonly<Record<string, number>> | null = null;
   private capabilityHelloGeneration = 0;
+  private reviewMonitoring: unknown;
+  private readonly reviewMonitoringRecipient: number | undefined;
+  private reviewMonitoringEnabled = false;
+  private ordinaryHello = false;
+  private monitorRetry: ReturnType<typeof setTimeout> | null = null;
+  private readonly monitorRetirements = new Set<() => void>();
+  private readonly monitorReady = new Set<() => void>();
   /** This socket's `client.hello` version, parsed once when the hello answers. */
   private protocolVersion: ProtocolVersion | null = null;
   private helloError: Error = new BackendError({
@@ -268,8 +291,33 @@ export class BrowserWebSocketTransport implements BackendTransport {
   private readonly statusHandlers = new Set<(status: BrowserWsConnectionStatus) => void>();
   /** Last status delivered to statusHandlers, to fire only on transitions. */
   private lastNotifiedStatus: BrowserWsConnectionStatus = 'disconnected';
+  /** The daemon is starting or failed to start (docs/protocol/startup-readiness.md). */
+  private startupState: DaemonStartupState | null = null;
+  /** The socket whose hello was answered with daemon-not-ready, while it is polled. */
+  private startupSocket: BrowserWebSocketLike | null = null;
+  /** Polls the bootstrap socket; stopped whenever that socket is torn down. */
+  private readonly startupPoller = new StartupPoller({
+    request: () => {
+      const socket = this.startupSocket;
+      if (!socket) return Promise.reject(this.startupRefusal());
+      return this.requestOnSocket(
+        STARTUP_STATUS_METHOD,
+        undefined,
+        { timeoutMs: STARTUP_POLL_TIMEOUT_MS },
+        socket,
+      );
+    },
+    publish: (state) => this.updateStartup(state),
+    handoff: (ready) => this.startupHandoff(ready),
+    fail: (message, snapshot) => this.failStartup(message, snapshot),
+  });
+  private readonly startupHandlers = new Set<(state: DaemonStartupState | null) => void>();
 
   constructor(options: BrowserWebSocketTransportOptions) {
+    this.reviewMonitoringEnabled = supportsReviewMonitoring(options.reviewMonitoring);
+    this.reviewMonitoringRecipient = supportsReviewMonitoring(options.reviewMonitoring)
+      ? options.reviewMonitoring
+      : undefined;
     this.url = options.url;
     this.webSocketFactory =
       options.webSocketFactory ?? ((url) => new WebSocket(url) as unknown as BrowserWebSocketLike);
@@ -284,6 +332,28 @@ export class BrowserWebSocketTransport implements BackendTransport {
     return !this.disposed;
   }
 
+  async readPrincipal(): Promise<PrincipalDiscovery> {
+    if (this.disposed)
+      throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend transport disposed' });
+    const socket = await this.ensureConnected();
+    const generation = this.capabilityHelloGeneration;
+    const hello = structuredClone(this.acknowledgedHello);
+    const current = () =>
+      !this.disposed &&
+      this.connected &&
+      this.socket === socket &&
+      this.capabilityHelloGeneration === generation &&
+      this.acknowledgedHello !== null;
+    if (!current()) throw this.helloError;
+    const principal = await this.requestOnSocket('principal.me', {}, undefined, socket);
+    if (!current())
+      throw new BackendError({
+        code: 'UNAVAILABLE',
+        message: 'Principal discovery connection changed',
+      });
+    return { hello, principal };
+  }
+
   async observeNodeCapabilities(): Promise<unknown> {
     if (this.disposed)
       throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend transport disposed' });
@@ -291,6 +361,144 @@ export class BrowserWebSocketTransport implements BackendTransport {
     if (this.disposed || !this.connected || this.socket !== socket)
       throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend connection changed' });
     return { server: { capabilities: this.nodeCapabilities } };
+  }
+
+  onMonitorReconnected(handler: () => void): () => void {
+    this.monitorReady.add(handler);
+    const off = this.onReconnected(handler);
+    return () => {
+      this.monitorReady.delete(handler);
+      off();
+    };
+  }
+
+  prMonitorBackendId(): string {
+    return sanitizeWsUrlForDisplay(this.url);
+  }
+
+  async capturePrMonitorSession(workspaceId: string): Promise<PrMonitorSession> {
+    const socket = await this.ensureConnected();
+    const generation = this.capabilityHelloGeneration;
+    const unavailable = () =>
+      new BackendError({
+        code: 'PR_MONITOR_SESSION_RETIRED',
+        message: 'Monitor connection unavailable',
+      });
+    let attachment: BrowserMonitorAttachment | undefined;
+    let retired = false;
+    const listeners = new Set<() => void>();
+    const subscriptions = new Set<string>();
+    const retire = () => {
+      if (retired) return;
+      retired = true;
+      this.monitorRetirements.delete(retire);
+      attachment?.close();
+      for (const listener of listeners) listener();
+      listeners.clear();
+    };
+    const currentSource = () =>
+      !retired &&
+      !this.disposed &&
+      this.connected &&
+      this.helloConfirmed &&
+      this.socket === socket &&
+      generation === this.capabilityHelloGeneration;
+    const current = () => currentSource() && (!attachment || attachment.current());
+    if (!current()) throw unavailable();
+    this.monitorRetirements.add(retire);
+    const advertised = supportsReviewMonitoring(this.reviewMonitoring);
+    let support: PrMonitorSession['support'] = advertised ? 'consumer-pending' : 'unsupported';
+    if (advertised && this.reviewMonitoringEnabled && this.ordinaryHello && this.clientId) {
+      try {
+        attachment = new BrowserMonitorAttachment(
+          this.webSocketFactory(this.url),
+          this.clientId,
+          Math.min(this.reviewMonitoringRecipient!, this.reviewMonitoring as number),
+          currentSource,
+          this.requestTimeoutMs,
+          this.connectTimeoutMs,
+          () => {
+            const recover = currentSource();
+            retire();
+            if (recover) this.scheduleMonitorRecovery(socket, generation);
+          },
+        );
+        await attachment.ready;
+        if (!current()) throw unavailable();
+        support = 'supported';
+      } catch (error) {
+        const recover = currentSource();
+        retire();
+        if (recover) this.scheduleMonitorRecovery(socket, generation);
+        throw error;
+      }
+    }
+    const request = <T>(method: string, params: unknown): Promise<T> =>
+      attachment
+        ? attachment.request<T>(method, params)
+        : this.requestOnSocket<T>(method, params, undefined, socket);
+    return {
+      origin: {
+        backendId: this.prMonitorBackendId(),
+        sessionId: crypto.randomUUID(),
+        workspaceId,
+      },
+      support,
+      onRetired(handler) {
+        if (!current()) {
+          handler();
+          return () => {};
+        }
+        listeners.add(handler);
+        return () => {
+          listeners.delete(handler);
+        };
+      },
+      onNotification: (handler) =>
+        (attachment ?? this).onNotification((notification) => {
+          if (current()) handler(notification);
+        }),
+      request: async <T>(
+        method: Parameters<PrMonitorSession['request']>[0],
+        params: Record<string, unknown>,
+      ): Promise<T> => {
+        if (!current() || support === 'consumer-pending' || params.workspaceId !== workspaceId)
+          throw unavailable();
+        const result = await request<T>(method, params);
+        const subscriptionId =
+          method === 'events.subscribe'
+            ? (result as { subscriptionId?: string })?.subscriptionId
+            : undefined;
+        if (!current()) {
+          if (
+            subscriptionId &&
+            this.socket === socket &&
+            this.connected &&
+            generation === this.capabilityHelloGeneration
+          )
+            void request('events.unsubscribe', { workspaceId, subscriptionId }).catch(() => {});
+          throw unavailable();
+        }
+        if (subscriptionId) subscriptions.add(subscriptionId);
+        if (method === 'events.unsubscribe') subscriptions.delete(String(params.subscriptionId));
+        return result;
+      },
+      release: async () => {
+        const canRelease = current();
+        retire();
+        if (canRelease && !attachment)
+          await Promise.all(
+            [...subscriptions].map((subscriptionId) =>
+              this.requestOnSocket(
+                'events.unsubscribe',
+                { workspaceId, subscriptionId },
+                undefined,
+                socket,
+              ).catch(() => {}),
+            ),
+          );
+      },
+    };
   }
 
   request<T = unknown>(
@@ -318,6 +526,14 @@ export class BrowserWebSocketTransport implements BackendTransport {
     if (this.disposed) {
       return Promise.reject(
         new BackendError({ code: 'UNAVAILABLE', message: 'Backend transport disposed' }),
+      );
+    }
+    // A starting daemon rejects every ordinary request; refuse it here with the
+    // same structured error instead of queueing it. Callers recover on
+    // `reconnected`, which fires once the daemon is ready.
+    if (!handshakeSocket && this.startupState?.state === 'starting') {
+      return Promise.reject(
+        new BackendError(toBackendErrorPayload(startupErrorShape(this.startupState))),
       );
     }
     const id = ++this.requestId;
@@ -365,29 +581,56 @@ export class BrowserWebSocketTransport implements BackendTransport {
           return;
         }
         // A capability probe must not replace the identity established at connect.
-        const wireParams =
+        let wireParams =
           method === 'client.hello' && this.clientId
             ? { clientId: this.clientId, ...(params as Record<string, unknown>) }
             : params;
+        if (method === 'client.hello') {
+          const hello = { ...(wireParams as Record<string, unknown>) };
+          const capabilities = { ...(hello.capabilities as Record<string, unknown>) };
+          if (Object.prototype.hasOwnProperty.call(capabilities, 'reviewMonitoring')) {
+            this.reviewMonitoringEnabled =
+              this.reviewMonitoringRecipient !== undefined &&
+              supportsReviewMonitoring(capabilities.reviewMonitoring);
+          }
+          delete capabilities.reviewMonitoring;
+          delete hello.connectionRole;
+          if (hello.capabilities !== undefined) hello.capabilities = capabilities;
+          wireParams = hello;
+        }
         const payload = JSON.stringify({ jsonrpc: '2.0', id, method, params: wireParams });
         const capabilityGeneration =
           method === 'client.hello' ? ++this.capabilityHelloGeneration : 0;
-        if (method === 'client.hello') this.nodeCapabilities = null;
+        if (method === 'client.hello') {
+          // A replacement generation cannot borrow the preceding hello's confirmation.
+          this.helloConfirmed = false;
+          this.ordinaryHello = false;
+          this.clearMonitorRecovery();
+          this.nodeCapabilities = null;
+          this.reviewMonitoring = undefined;
+          for (const retire of [...this.monitorRetirements]) retire();
+          this.acknowledgedHello = null;
+        }
         this.pending.set(id, {
           method,
           timeout,
           resolve: (result) => {
-            if (method === 'client.hello' && this.socket === socket) {
+            if (
+              method === 'client.hello' &&
+              this.socket === socket &&
+              capabilityGeneration === this.capabilityHelloGeneration
+            ) {
               const clientId = (result as { clientId?: unknown } | null)?.clientId;
-              if (typeof clientId === 'string') this.clientId = clientId;
-              if (
-                typeof clientId === 'string' &&
-                clientId &&
-                capabilityGeneration === this.capabilityHelloGeneration
-              ) {
+              // Only the latest valid acknowledgment can establish identity or notify consumers.
+              if (typeof clientId === 'string' && clientId.length > 0) {
                 const capabilities = (
                   result as { server?: { capabilities?: Record<string, unknown> } }
                 ).server?.capabilities;
+                this.clientId = clientId;
+                this.reviewMonitoring = capabilities?.reviewMonitoring;
+                this.ordinaryHello =
+                  (result as { connectionRole?: unknown }).connectionRole === undefined;
+                this.acknowledgedHello = structuredClone(result);
                 this.nodeCapabilities = Object.freeze({
                   agentNodes: capabilities?.agentNodes === 1 ? 1 : 0,
                   localNodeIsolation: capabilities?.localNodeIsolation === 1 ? 1 : 0,
@@ -396,12 +639,15 @@ export class BrowserWebSocketTransport implements BackendTransport {
                   // Dock evidence placement (strict integer advertisement).
                   rawScreenshotRetention: capabilities?.rawScreenshotRetention === 1 ? 1 : 0,
                   chiefAttachments: capabilities?.chiefAttachments === 1 ? 1 : 0,
+                  // Truncated note reads (§5.2): gates maxContentBytes / baseContentBytes.
+                  noteTruncatedRead: capabilities?.noteTruncatedRead === 1 ? 1 : 0,
                 });
+                this.protocolVersion = parseProtocolVersion(
+                  (result as { protocolVersion?: unknown }).protocolVersion,
+                );
+                this.helloConfirmed = true;
+                if (this.connected) for (const handler of this.monitorReady) handler();
               }
-              this.helloConfirmed = true;
-              this.protocolVersion = parseProtocolVersion(
-                (result as { protocolVersion?: unknown } | null)?.protocolVersion,
-              );
             }
             resolve(result as T);
           },
@@ -457,6 +703,21 @@ export class BrowserWebSocketTransport implements BackendTransport {
     return 'disconnected';
   }
 
+  /**
+   * The daemon's startup posture: `starting` while it answers with
+   * daemon-not-ready (status stays `connecting`), `failed` after
+   * daemon-startup-failed (status is `disconnected`), `null` once ready.
+   */
+  getStartupState(): DaemonStartupState | null {
+    return this.startupState;
+  }
+
+  /** Subscribe to startup posture changes; returns an unsubscriber. */
+  onStartupChange(handler: (state: DaemonStartupState | null) => void): () => void {
+    this.startupHandlers.add(handler);
+    return () => this.startupHandlers.delete(handler);
+  }
+
   /** Subscribe to connection-status transitions; returns an unsubscriber. */
   onConnectionStatusChange(handler: (status: BrowserWsConnectionStatus) => void): () => void {
     this.statusHandlers.add(handler);
@@ -479,6 +740,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
     this.notificationHandlers.clear();
     this.reconnectedHandlers.clear();
     this.statusHandlers.clear();
+    this.startupHandlers.clear();
   }
 
   private ensureConnected(): Promise<BrowserWebSocketLike> {
@@ -563,10 +825,21 @@ export class BrowserWebSocketTransport implements BackendTransport {
       );
     } catch (error) {
       if (this.disposed || this.socket !== socket) return;
+      const startup = classifyStartupReply(error);
+      if (startup) {
+        this.enterStartup(socket, startup);
+        return;
+      }
       // Unrelated RPCs keep their legacy fallback; presence requires a confirmed hello.
       this.helloError = toTransportError(error);
     }
     if (this.disposed || this.socket !== socket) return;
+    this.startupPoller.reset();
+    this.startupSocket = null;
+    // Cleared before the `connected` notification, announced after it, so no
+    // listener sees a `connecting` status without startup state in between.
+    const leftStartup = this.startupState !== null;
+    this.startupState = null;
     this.connecting = false;
     this.connected = true;
     this.currentReconnectDelay = this.reconnectDelayMs;
@@ -574,6 +847,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
     this.hasBeenConnected = true;
     this.hasConnectionFailed = false;
     this.notifyStatusChange();
+    if (leftStartup) for (const handler of [...this.startupHandlers]) handler(null);
     this.flushWaiters(socket);
     // Fire AFTER waiters so queued sends and the resubscribe replay observe a
     // connected transport; see RESUB-1.
@@ -585,6 +859,18 @@ export class BrowserWebSocketTransport implements BackendTransport {
   private onConnectionFailure(error: Error): void {
     this.clearConnectTimer();
     if (this.disposed) return;
+    // A starting daemon closes its bootstrap sockets once it is ready: reopen
+    // one fresh connection and hello again, still `connecting`.
+    if (this.startupSocket !== null && this.startupSocket === this.socket) {
+      this.startupHandoff(true);
+      return;
+    }
+    // Any other drop ends the wait: the daemon is gone, not starting. A
+    // startup failure stays latched until a new attempt or a connect.
+    if (this.startupState?.state === 'starting') {
+      this.startupPoller.reset();
+      this.updateStartup(null);
+    }
     this.hasConnectionFailed = true;
     this.connected = false;
     this.notifyStatusChange();
@@ -689,7 +975,32 @@ export class BrowserWebSocketTransport implements BackendTransport {
     }
   }
 
+  private scheduleMonitorRecovery(socket: BrowserWebSocketLike, generation: number): void {
+    if (this.monitorRetry || this.disposed) return;
+    this.monitorRetry = setTimeout(() => {
+      this.monitorRetry = null;
+      if (
+        !this.disposed &&
+        this.connected &&
+        this.socket === socket &&
+        this.capabilityHelloGeneration === generation
+      )
+        for (const handler of [...this.monitorReady]) handler();
+    }, this.reconnectDelayMs);
+  }
+
+  private clearMonitorRecovery(): void {
+    if (this.monitorRetry) clearTimeout(this.monitorRetry);
+    this.monitorRetry = null;
+  }
+
   private teardownSocket(): void {
+    this.startupPoller.stop();
+    this.startupSocket = null;
+    this.reviewMonitoring = undefined;
+    this.clearMonitorRecovery();
+    for (const retire of [...this.monitorRetirements]) retire();
+    this.acknowledgedHello = null;
     this.nodeCapabilities = null;
     this.capabilityHelloGeneration += 1;
     this.protocolVersion = null;
@@ -705,6 +1016,68 @@ export class BrowserWebSocketTransport implements BackendTransport {
     } catch {
       // ignore teardown errors
     }
+  }
+
+  private updateStartup(next: DaemonStartupState | null): void {
+    this.startupState = next ? Object.freeze({ ...next }) : null;
+    for (const handler of [...this.startupHandlers]) handler(this.startupState);
+  }
+
+  private startupRefusal(): BackendError {
+    return this.startupState
+      ? new BackendError(toBackendErrorPayload(startupErrorShape(this.startupState)))
+      : new BackendError({ code: 'TRANSPORT_ERROR', message: 'WebSocket connection closed' });
+  }
+
+  /** The connect-time hello was answered with the structured startup reply. */
+  private enterStartup(socket: BrowserWebSocketLike, reply: StartupReply): void {
+    // The eventual ready connect is a recovery: consumers whose requests were
+    // refused meanwhile retry on `reconnected`.
+    this.hasConnectionFailed = true;
+    if (reply.kind === 'failed') {
+      this.failStartup(reply.message, reply.snapshot);
+      return;
+    }
+    this.startupSocket = socket;
+    this.startupPoller.start(reply);
+    this.failWaiters(this.startupRefusal());
+  }
+
+  /**
+   * Leave the bootstrap socket and dial one fresh connection. Status stays
+   * `connecting`; the fresh hello either confirms readiness or re-enters
+   * startup. A ready daemon is redialed after the base delay; one whose
+   * status is unusable backs off like any other reconnect.
+   */
+  private startupHandoff(ready: boolean): void {
+    const refusal = this.startupRefusal();
+    this.teardownSocket();
+    this.failPending(refusal);
+    if (this.disposed) return;
+    this.connecting = true;
+    this.notifyStatusChange();
+    this.clearReconnect();
+    let delay = this.reconnectDelayMs;
+    if (ready) this.currentReconnectDelay = this.reconnectDelayMs;
+    else {
+      delay = this.currentReconnectDelay;
+      this.currentReconnectDelay = Math.min(delay * 2, this.maxReconnectDelayMs);
+    }
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (!this.disposed) this.connect();
+    }, delay);
+  }
+
+  /** The daemon reported a terminal startup failure. */
+  private failStartup(message: string, snapshot: StartupSnapshot | null): void {
+    this.startupPoller.stop();
+    this.startupSocket = null;
+    this.hasConnectionFailed = true;
+    this.updateStartup({ state: 'failed', snapshot, available: snapshot !== null, message });
+    this.connecting = false;
+    // Normal reconnect backoff continues: the sitter may restart or roll back.
+    this.onConnectionFailure(this.startupRefusal());
   }
 
   private failPending(error: Error): void {

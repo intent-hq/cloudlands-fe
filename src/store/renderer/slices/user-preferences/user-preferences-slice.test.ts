@@ -23,6 +23,7 @@ import {
   resetShortcutOverride,
   saveActivityLogPreset,
   setChatAuroraEnabled,
+  setCollapseToolRuns,
   setCodeFontFamily,
   setGroupByRepo,
   setGithubLinkDefaultAction,
@@ -31,7 +32,6 @@ import {
   setLabsMultiplayerEnabled,
   setLabsGitLabEnabled,
   setLabsRemoteAgentsEnabled,
-  setLabsProviderProfilesEnabled,
   setLabsSettingsVisible,
   setNotificationEnabled,
   setNoteFontStyle,
@@ -51,10 +51,10 @@ import {
   toggleGroupByRepo,
   toggleHasCompletedProviderSetup,
   toggleChatAurora,
+  toggleCollapseToolRuns,
   toggleLabsMultiplayer,
   toggleLabsGitLab,
   toggleLabsRemoteAgents,
-  toggleLabsProviderProfiles,
   toggleLabsSettingsVisibility,
   toggleReduceMotionOnBattery,
   toggleShowArchived,
@@ -69,6 +69,7 @@ import {
   selectAgentFontStyleLabel,
   selectActivityLogPresets,
   selectChatAuroraEnabled,
+  selectCollapseToolRuns,
   selectCodeFontFamily,
   selectCodeFontFamilyCSS,
   selectCodeFontFamilyLabel,
@@ -81,7 +82,6 @@ import {
   selectLabsMultiplayerEnabled,
   selectLabsGitLabEnabled,
   selectLabsRemoteAgentsEnabled,
-  selectLabsProviderProfilesEnabled,
   selectLabsSettingsVisible,
   selectLanguagePreference,
   selectNoteFontStyle,
@@ -545,6 +545,23 @@ describe('userPreferencesReducer', () => {
       expect(enabled.chatAuroraEnabled).toBe(true);
     });
 
+    it('defaults collapseToolRuns to off, then sets and toggles it', () => {
+      expect(initialState.collapseToolRuns).toBe(false);
+      const enabled = userPreferencesReducer(initialState, setCollapseToolRuns(true));
+      const disabled = userPreferencesReducer(enabled, toggleCollapseToolRuns());
+      expect(enabled.collapseToolRuns).toBe(true);
+      expect(disabled.collapseToolRuns).toBe(false);
+    });
+
+    it('selects collapseToolRuns with an off fallback when the slice is missing', () => {
+      expect(
+        selectCollapseToolRuns.select({
+          userPreferences: { ...initialState, collapseToolRuns: true },
+        } as any),
+      ).toBe(true);
+      expect(selectCollapseToolRuns.select({} as any)).toBe(false);
+    });
+
     it('sets and toggles shellTransparencyEnabled', () => {
       const disabled = userPreferencesReducer(initialState, setShellTransparencyEnabled(false));
       const enabled = userPreferencesReducer(disabled, toggleShellTransparency());
@@ -584,8 +601,8 @@ describe('userPreferencesReducer', () => {
   });
 
   describe('labs preference actions', () => {
-    it('defaults the Multiplayer lab to disabled', () => {
-      expect(initialState.labsMultiplayerEnabled).toBe(false);
+    it('defaults Multiplayer to on: it is no longer an opt-in lab', () => {
+      expect(initialState.labsMultiplayerEnabled).toBe(true);
     });
 
     it('sets and toggles labsMultiplayerEnabled', () => {
@@ -618,16 +635,8 @@ describe('userPreferencesReducer', () => {
       expect(disabled.labsRemoteAgentsEnabled).toBe(false);
     });
 
-    it('defaults the Provider profiles lab to disabled', () => {
-      expect(initialState.labsProviderProfilesEnabled).toBe(false);
-    });
-
-    it('sets and toggles labsProviderProfilesEnabled', () => {
-      const enabled = userPreferencesReducer(initialState, setLabsProviderProfilesEnabled(true));
-      const disabled = userPreferencesReducer(enabled, toggleLabsProviderProfiles());
-      expect(enabled.labsProviderProfilesEnabled).toBe(true);
-      expect(disabled.labsProviderProfilesEnabled).toBe(false);
-      expect(enabled.labsMultiplayerEnabled).toBe(false);
+    it('has no Provider profiles lab preference: profiles are always on', () => {
+      expect(initialState).not.toHaveProperty('labsProviderProfilesEnabled');
     });
   });
 
@@ -716,14 +725,11 @@ describe('userPreferencesReducer', () => {
       expect(selectReduceMotionOnBattery.select({} as any)).toBe(false);
     });
 
-    it('selects labsMultiplayerEnabled (default false, missing slice safe)', () => {
-      expect(selectLabsMultiplayerEnabled.select(state)).toBe(false);
-      expect(
-        selectLabsMultiplayerEnabled.select({
-          userPreferences: { ...initialState, labsMultiplayerEnabled: true },
-        } as any),
-      ).toBe(true);
-      expect(selectLabsMultiplayerEnabled.select({} as any)).toBe(false);
+    it('selects labsMultiplayerEnabled (default true, missing slice safe)', () => {
+      expect(selectLabsMultiplayerEnabled.select({ userPreferences: initialState } as any)).toBe(
+        true,
+      );
+      expect(selectLabsMultiplayerEnabled.select({} as any)).toBe(true);
     });
     it('selects labsGitLabEnabled (default false, missing slice safe)', () => {
       expect(selectLabsGitLabEnabled.select(state)).toBe(false);
@@ -767,27 +773,9 @@ describe('userPreferencesReducer', () => {
       expect(selectLabsRemoteAgentsEnabled.select({ userPreferences: disabled } as any)).toBe(
         false,
       );
-      expect(disabled.labsMultiplayerEnabled).toBe(false);
+      expect(disabled.labsMultiplayerEnabled).toBe(true);
       expect(disabled.labsGitLabEnabled).toBe(false);
     });
-
-    it.each([undefined, null, 'true', 1, {}])(
-      'selects labsProviderProfilesEnabled only for a stored true (got %j), missing slice safe',
-      (value) => {
-        expect(selectLabsProviderProfilesEnabled.select(state)).toBe(false);
-        expect(selectLabsProviderProfilesEnabled.select({} as any)).toBe(false);
-        expect(
-          selectLabsProviderProfilesEnabled.select({
-            userPreferences: { ...initialState, labsProviderProfilesEnabled: value },
-          } as any),
-        ).toBe(false);
-        expect(
-          selectLabsProviderProfilesEnabled.select({
-            userPreferences: { ...initialState, labsProviderProfilesEnabled: true },
-          } as any),
-        ).toBe(true);
-      },
-    );
 
     it('selects font settings from userPreferences', () => {
       expect(selectAgentFontStyle.select(state)).toBe('monospace');

@@ -1,5 +1,5 @@
 import type { Locator, Page, TestInfo } from '@playwright/experimental-ct-svelte';
-import { expect, test } from '../../test/ct-test';
+import { expect, test, wheelUntilScrolled } from '../../test/ct-test';
 import Preview from './home-integrations.preview.svelte';
 
 // Failure contracts: misleading check verdicts, inaccessible disclosures, lost expansion
@@ -168,22 +168,15 @@ for (const theme of ['light', 'dark'] as const) {
     // A wheel sent before the expanded diff's scroller is laid out and committed is
     // routed to the vertical-only pane and dropped on slow runners (intent-hq/intent#7255).
     await waitForStableLayout(codeSurface);
-    await expect(async () => {
-      const box = await codeSurface.boundingBox();
-      expect(box).not.toBeNull();
-      await page.mouse.move(box!.x + 100, Math.min(box!.y + 70, 650));
-      await page.mouse.wheel(450, 0);
-      await expect
-        .poll(() => codeSurface.evaluate((node) => node.scrollLeft), { timeout: 2_000 })
-        .toBeGreaterThan(0);
-    }).toPass({ timeout: 15_000 });
-    const beforeScroll = await body.evaluate((node) => node.scrollTop);
-    await expect(async () => {
-      await page.mouse.wheel(0, 450);
-      await expect
-        .poll(() => body.evaluate((node) => node.scrollTop), { timeout: 2_000 })
-        .toBeGreaterThan(beforeScroll);
-    }).toPass({ timeout: 15_000 });
+    const box = await codeSurface.boundingBox();
+    expect(box).not.toBeNull();
+    // Hovering the locator re-reads its box on every resend, in case the diff moved.
+    await wheelUntilScrolled(codeSurface, {
+      deltaX: 450,
+      position: { x: 100, y: Math.min(70, 650 - box!.y) },
+    });
+    // A vertical wheel over the code surface chains to the pane body.
+    await wheelUntilScrolled(body, { deltaY: 450, pointer: 'current' });
     expect(await diff.evaluate((node) => node.scrollTop)).toBe(0);
     await testInfo.attach(`diff-scroll-${theme}`, {
       body: JSON.stringify(

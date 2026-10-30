@@ -1069,34 +1069,6 @@ describe('WorkspaceTokenUsage', () => {
     expect(visibleText(status)).toBe('Active scope By agent Beta 800 processed');
   });
 
-  it('shows the unknown model bucket in the by-model section', async () => {
-    mocks.state.usage = makeUsage({
-      totals: {
-        inputTokens: 10,
-        outputTokens: 20,
-        cacheReadTokens: 0,
-        cacheCreationTokens: 0,
-      },
-      byModel: {
-        unknown: {
-          inputTokens: 10,
-          outputTokens: 20,
-          cacheReadTokens: 0,
-          cacheCreationTokens: 0,
-        },
-      },
-      lastScanAt: 5000,
-      isStale: false,
-    });
-
-    await renderExpandedTokenUsage();
-
-    const modelSection = screen.getByTestId('token-usage-by-model');
-    expect(modelSection.textContent).toContain('Unknown');
-    expect(modelSection.textContent).not.toContain('unknown');
-    expect(modelSection.querySelector('[title="unknown"]')?.textContent).toBe('Unknown');
-  });
-
   it('omits the by-model section when byModel is empty', async () => {
     mocks.state.usage = makeUsage({
       totals: {
@@ -1318,41 +1290,18 @@ describe('WorkspaceTokenUsage', () => {
     expect(screen.getByTestId('token-usage-by-agent').textContent).toContain('Alpha');
   });
 
-  it.each([2.5, 0])('discloses an all-cost workspace with reported cost %s', async (amount) => {
+  it.each([2.5, 0])('hides zero token usage with reported cost %s', async (amount) => {
     mocks.state.usage = makeUsage({ ...costOnlyUsage(amount), isStale: false });
     await renderTokenUsage();
-    const disclosure = screen.getByRole('button', { name: 'Expand token usage details' });
-    expect(visibleText(disclosure)).toBe('0 0 tokens used');
-    expect(screen.queryByTestId('token-usage-total-cost')).toBeNull();
-
-    await fireEvent.click(disclosure);
-    const details = screen.getByTestId('token-usage-details');
-    expect(visibleText(screen.getByTestId('token-usage-total-cost'))).toBe(
-      `Cost $${amount.toFixed(2)}`,
-    );
-    expect(within(details).queryAllByRole('radiogroup')).toHaveLength(0);
-    expect(
-      details.querySelectorAll('.composition-strip-segment, .breakdown-stack-item'),
-    ).toHaveLength(0);
-    expect(Array.from(details.querySelectorAll('.composition-value')).map(visibleText)).toEqual([
-      '0',
-      '0',
-      '0',
-      '0',
-    ]);
-    expect(visibleText(details.querySelector('.message-composition-label')!)).toBe(
-      '0 human and 0 agent messages',
-    );
-    await fireEvent.click(disclosure);
-    expect(screen.queryByTestId('token-usage-total-cost')).toBeNull();
+    expect(screen.queryByTestId('workspace-token-usage')).toBeNull();
   });
 
-  it('retains cell-reported cost even without a workspace cost', async () => {
+  it('hides zero token usage when only a cell reports cost', async () => {
     const usage = costOnlyUsage(2.5);
     delete usage.totals.cost;
     mocks.state.usage = makeUsage(usage);
-    await renderExpandedTokenUsage();
-    expect(visibleText(screen.getByTestId('token-usage-total-cost'))).toBe('Cost $2.50');
+    await renderTokenUsage();
+    expect(screen.queryByTestId('workspace-token-usage')).toBeNull();
   });
 
   it('does not treat absent cost and all-zero counters as reported zero', async () => {

@@ -312,10 +312,23 @@ export function isWorkspaceAttention(value: unknown): value is WorkspaceAttentio
   );
 }
 
-/** The caller's role in a workspace (PROTOCOL §5.1 membership summary,
- *  multiplayer w1). `collaborator` connections are refused (-32003) on every
- *  owner-only method, so the desktop hides those surfaces up front. */
-export type WorkspaceRole = 'owner' | 'collaborator';
+/** Guest roles retain collaborator as the Participant wire default. Manager
+ * adds scoped agent setup and saved-script operations, never full management. */
+export type WorkspaceGuestRole = 'collaborator' | 'manager';
+export type WorkspaceRole = 'owner' | WorkspaceGuestRole;
+
+/** Every wire role, keyed so adding a role to `WorkspaceRole` fails to compile
+ *  until the runtime guard below accepts it too (intent-hq/intent#7736). */
+const WORKSPACE_ROLES: Record<WorkspaceRole, true> = {
+  owner: true,
+  collaborator: true,
+  manager: true,
+};
+
+/** Runtime guard for BE-sent workspace roles; an unknown value is malformed. */
+export function isWorkspaceRole(value: unknown): value is WorkspaceRole {
+  return typeof value === 'string' && Object.hasOwn(WORKSPACE_ROLES, value);
+}
 
 export interface Workspace {
   id: WorkspaceId;
@@ -342,6 +355,10 @@ export interface Workspace {
    *  content-addressed asset id rendered via `workspace-asset://{id}/{assetId}`;
    *  omitted on the wire until an agent sets one. */
   statusImageAssetId?: string;
+  /** User-chosen workspace label (PROTOCOL §5.1 "Workspace labels"): a trimmed
+   *  1–64 character string, omitted while unset. The reserved value `"pinned"`
+   *  is the built-in Pinned label. Gated on `workspaceLabels: 1`. */
+  label?: string;
   /** BE-derived in-flight agent state (green dot). Read-only; computed from agent runtime. */
   activity?: 'idle' | 'agent_running';
   /** BE-owned current-cycle display status (intent-hq/intentd#600). Precedence is
@@ -360,6 +377,18 @@ export interface Workspace {
    *  wire — omitted when false, so older daemons (which never send it) read
    *  as not waiting. */
   waiting?: boolean;
+  /** BE-derived orthogonal script flag (PROTOCOL §5.1): true while the
+   *  workspace has a command-mode script run in flight (service scripts such
+   *  as dev servers never count). Presence-detected — omitted when false, so
+   *  older daemons read as no running scripts. Live via
+   *  `workspace:scriptsRunning-changed`. */
+  scriptsRunning?: boolean;
+  /** BE-derived orthogonal background-task flag (PROTOCOL §5.1): true while
+   *  an agent of the workspace has a provider background task (§5.5b, e.g. a
+   *  backgrounded shell command) still running. Presence-detected — omitted
+   *  when false, so older daemons read as none. Live via
+   *  `workspace:backgroundTasksRunning-changed`. */
+  backgroundTasksRunning?: boolean;
   /** Membership summary (PROTOCOL §5.1, intent-hq/intentd#1868). `myRole` is
    *  relative to the caller and absent for a non-member; `memberCount` counts
    *  accepted members; `openInviteCount` counts unredeemed invites. All absent
@@ -407,6 +436,8 @@ export interface Workspace {
   environmentConfig?: EnvironmentConfig;
   archived?: boolean;
   archivedAt?: string;
+  /** ISO time the workspace was retired; present only while `status` is `Retired`. */
+  retiredAt?: string;
   /** ISO deadline of an in-memory pending deletion (PROTOCOL §5.1 delete grace
    *  window). Present only while a `workspace.delete { undoDelayMs > 0 }`
    *  grace window is running; cleared by `workspace.cancelDelete` and dropped by
@@ -508,6 +539,8 @@ export enum WorkspaceStatus {
   Active = 'Active',
   Inactive = 'Inactive',
   Archived = 'Archived',
+  /** Folder deleted, database rows kept read-only (PROTOCOL §5.1 Retired workspaces). */
+  Retired = 'Retired',
   Deleted = 'Deleted',
 }
 
@@ -923,6 +956,14 @@ export interface Note {
    */
   contentPreview?: string;
   contentLength?: number;
+  /**
+   * Truncated-read markers (§5.2 "Truncated note reads", `noteTruncatedRead: 1`).
+   * Present only when a `note.get` with `maxContentBytes` returned a prefix of
+   * a larger note: `content` is then that prefix and `contentBytes` the full
+   * UTF-8 size of the stored content. A truncated note is render-only in the app.
+   */
+  contentTruncated?: boolean;
+  contentBytes?: number;
   createdAt: string;
   updatedAt: string;
   is_pinned?: boolean; // Legacy compatibility
@@ -1647,6 +1688,28 @@ export interface ContextLink {
   number: number;
 }
 
+/**
+ * `workspace.create` `origin` (PROTOCOL §5.1): the agent whose message carries
+ * the applied proposal and that proposal's pending key
+ * (`applyToolCallId ?? preview.title`).
+ */
+export interface WorkspaceCreateOrigin {
+  kind: 'proposal';
+  agentId: string;
+  proposalId: string;
+}
+
+/**
+ * `workspace.create` result `proposalOrigin` (PROTOCOL §5.1): what the daemon
+ * did with the request's `origin`. Present only on daemons that handle
+ * `origin`; its presence means the client must not resolve the card itself.
+ */
+export interface WorkspaceCreateProposalOutcome {
+  proposalId: string;
+  /** `dismissed` = an earlier resolution kept; `notResolved` = the daemon declined the origin. */
+  outcome: 'applied' | 'dismissed' | 'notResolved';
+}
+
 export interface CreateWorkspaceRequest {
   repositoryCheckout?: import('./types/repository-checkout').CheckoutSelection;
   idempotencyKey?: string;
@@ -1665,6 +1728,13 @@ export interface CreateWorkspaceRequest {
   skipIsolation?: boolean; // If true, skip the isolated checkout (worktree or CoW clone) and work directly in the repo folder (wire: canonical for the deprecated skipWorktree alias)
   progressId?: string; // FE-minted correlation id echoed on git:clone:progress/done frames emitted during this create (PROTOCOL §5.1)
   contextLinks?: ContextLink[]; // Issue/PR context links persisted on the workspace row (PROTOCOL §5.1); omitted when there are none — older daemons ignore the field
+  /**
+   * The proposal card this create applies (PROTOCOL §5.1 "Proposal origin").
+   * The daemon resolves that pending proposal `applied` after a successful
+   * create, so the proposing agent is notified even when its chat is not open.
+   * Older daemons ignore the field.
+   */
+  origin?: WorkspaceCreateOrigin;
   initialAgent?: {
     placement?: AgentPlacement;
     /**
@@ -1730,6 +1800,8 @@ export interface UpdateWorkspaceRequest {
   baseCommitSha?: string;
   status?: WorkspaceStatus;
   statusMessage?: string;
+  /** Workspace label: missing = untouched, `null` = clear, string = set. */
+  label?: string | null;
   tags?: string[];
   prUrl?: string | null;
   prNumber?: number | null;

@@ -46,20 +46,6 @@ export const COMMAND_PALETTE_COMMANDS = [
     icon: faCommentDots,
   },
   {
-    id: 'enable-experimental-multiplayer',
-    get label() {
-      return m.lib_commandPalette_enableExperimentalMultiplayer_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'disable-experimental-multiplayer',
-    get label() {
-      return m.lib_commandPalette_disableExperimentalMultiplayer_label();
-    },
-    icon: faFlask,
-  },
-  {
     id: 'enable-experimental-gitlab',
     get label() {
       return m.lib_commandPalette_enableExperimentalGitlab_label();
@@ -84,20 +70,6 @@ export const COMMAND_PALETTE_COMMANDS = [
     id: 'disable-experimental-remote-agents',
     get label() {
       return m.lib_commandPalette_disableExperimentalRemoteAgents_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'enable-experimental-provider-profiles',
-    get label() {
-      return m.lib_commandPalette_enableExperimentalProviderProfiles_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'disable-experimental-provider-profiles',
-    get label() {
-      return m.lib_commandPalette_disableExperimentalProviderProfiles_label();
     },
     icon: faFlask,
   },

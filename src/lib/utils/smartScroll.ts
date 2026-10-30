@@ -104,6 +104,8 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   let pointerDistanceFromBottom = 0;
   let pointerMovedTowardBottom = false;
   let userStateFrame: number | null = null;
+  let userStateWheel: WheelEvent | undefined;
+  let pendingWheel: { event: WheelEvent; expiresAt: number } | null = null;
   let lastReportedState: FollowBottomState | null = null;
 
   let mutationObserver: MutationObserver | null = null;
@@ -236,17 +238,28 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     });
   }
 
-  function scheduleUserStateCheck() {
+  function scheduleUserStateCheck(wheel?: WheelEvent) {
+    userStateWheel = wheel;
     if (userStateFrame !== null) return;
     userStateFrame = requestAnimationFrame(() => {
       userStateFrame = null;
+      const wheel = userStateWheel;
+      userStateWheel = undefined;
       if (destroyed || !enabled) return;
+      if (
+        wheel &&
+        (pendingWheel?.event !== wheel ||
+          wheel.defaultPrevented ||
+          performance.now() >= pendingWheel.expiresAt)
+      )
+        return;
       if (checkIfAtBottom()) follower.followAndScroll();
       else reportState();
     });
   }
 
   function setFollowing(value: boolean, notify = true) {
+    pendingWheel = null;
     if (!enabled) {
       isFollowing = value;
       return;
@@ -461,13 +474,34 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     if (e.deltaY < 0) {
       setFollowing(false);
     } else if (e.deltaY > 0) {
-      scheduleUserStateCheck();
+      // Scroll completion normally arrives in the next frame. Bound abandoned
+      // gestures (for example, a descendant consuming the wheel without moving)
+      // so a later unrelated scroll cannot reuse this intent. Repeated wheel
+      // events refresh the window for an ongoing gesture.
+      pendingWheel = { event: e, expiresAt: performance.now() + 1000 };
+      scheduleUserStateCheck(e);
     }
+  }
+
+  function handleScrollEnd(event: Event) {
+    const wheel = pendingWheel;
+    pendingWheel = null;
+    // The native wheel scroll can land after its animation-frame check.
+    // Consume this gesture at completion, even when it stopped above the bottom.
+    if (
+      event.target === container &&
+      wheel &&
+      !wheel.event.defaultPrevented &&
+      performance.now() < wheel.expiresAt &&
+      checkIfAtBottom()
+    )
+      follower.followAndScroll();
   }
 
   // Handle touch events - user is scrolling on touch device
   let touchStartY = 0;
   function handleTouchStart(e: TouchEvent) {
+    pendingWheel = null;
     touchStartY = e.touches[0]?.clientY ?? 0;
   }
 
@@ -488,6 +522,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
 
   // Handle keyboard events for scroll keys
   function handleKeyDown(e: KeyboardEvent) {
+    pendingWheel = null;
     if (['ArrowUp', 'PageUp', 'Home'].includes(e.key)) {
       setFollowing(false);
     } else if (['ArrowDown', 'PageDown', 'End'].includes(e.key)) {
@@ -543,6 +578,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   }
 
   function handlePointerDown(e: PointerEvent) {
+    pendingWheel = null;
     pointerScrolling = isVerticalScrollbarPointer(e);
     pointerMaximum = maximumScrollTop();
     pointerDistanceFromBottom = Math.max(0, pointerMaximum - container.scrollTop);
@@ -611,6 +647,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     if (!enabled || destroyed) return;
     bottomFollowers.set(container, follower);
     container.addEventListener('scroll', handleScroll, { passive: true });
+    container.addEventListener('scrollend', handleScrollEnd, { passive: true, capture: true });
     container.addEventListener('wheel', handleWheel, { passive: true });
     container.addEventListener('touchstart', handleTouchStart, { passive: true });
     container.addEventListener('touchmove', handleTouchMove, { passive: true });
@@ -645,6 +682,8 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   }
 
   function detachLifecycle() {
+    pendingWheel = null;
+    userStateWheel = undefined;
     activeLeases.clear();
     mutationElements.clear();
     pointerScrolling = false;
@@ -661,6 +700,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     teardownObservers();
     teardownNativeBottomAnchor();
     container.removeEventListener('scroll', handleScroll);
+    container.removeEventListener('scrollend', handleScrollEnd, true);
     container.removeEventListener('wheel', handleWheel);
     container.removeEventListener('touchstart', handleTouchStart);
     container.removeEventListener('touchmove', handleTouchMove);
@@ -859,7 +899,7 @@ export interface ScrollAnchor {
   offsetFromViewport: number;
   /** Original scroll position (fallback) */
   scrollTop: number;
-  /** Whether we're near the bottom (skip anchoring if true) */
+  /** Whether the capture was within the bottom proximity threshold. */
   isNearBottom: boolean;
   /**
    * First visible message row, the fallback when `element` is replaced
@@ -881,8 +921,9 @@ export function captureScrollAnchor(
   const containerRect = container.getBoundingClientRect();
   const isNearBottom = isScrollNearBottom(container, 100);
 
-  // Skip anchoring if near bottom - auto-scroll will handle it
-  if (isNearBottom) {
+  // Proximity only delegates to auto-scroll while follow is still enabled.
+  // An upward wheel releases follow immediately, even inside this threshold.
+  if (isNearBottom && bottomFollowers.get(container)?.isFollowing() !== false) {
     return { element: null, offsetFromViewport: 0, scrollTop, isNearBottom };
   }
 
@@ -944,15 +985,10 @@ function resolveScrollAnchorTarget(
 
 /** True when {@link restoreScrollAnchor} has a rendered element to restore against. */
 export function canRestoreScrollAnchor(container: HTMLElement, anchor: ScrollAnchor): boolean {
-  return !anchor.isNearBottom && resolveScrollAnchorTarget(container, anchor) !== null;
+  return resolveScrollAnchorTarget(container, anchor) !== null;
 }
 
 export function restoreScrollAnchor(container: HTMLElement, anchor: ScrollAnchor): void {
-  // Skip if we were near bottom - let auto-scroll handle it
-  if (anchor.isNearBottom) {
-    return;
-  }
-
   // Restore relative to the recorded message row when it is rendered (it
   // survives turn regrouping and index-keyed wrapper reuse), otherwise to the
   // anchor element (e.g. the row is now a LazyTurn placeholder).

@@ -9,7 +9,7 @@ import {
   setComposerContextItems,
 } from '$store/renderer/slices/transient-ui/transient-ui-slice';
 import { selectComposerContextItems } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
-import type { Workspace } from '$shared/types';
+import { WorkspaceStatus, type Workspace } from '$shared/types';
 import { KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
 import { registerGlobalSearchShortcuts } from '$lib/utils/global-search-shortcuts';
 import { resolveShortcut } from '$lib/utils/shortcut-bindings';
@@ -174,12 +174,15 @@ vi.mock('$lib/utils/stream-lifecycle-telemetry', async (importOriginal) => ({
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } =
-    await import('$store/renderer/utils/test-helpers/store-mock');
+  const [{ createAppStoreMockModule }, { chatPanelSliceState }] = await Promise.all([
+    import('$store/renderer/utils/test-helpers/store-mock'),
+    import('./mocks/chat-panel-render-scaffold'),
+  ]);
   // Shallow-dedup emits like the production selector stream, so a test that
   // toggles store state proves the component anchors on the right selector.
   return createAppStoreMockModule({
     state: () => ({
+      ...chatPanelSliceState(),
       git: { byWorkspaceId: {} },
       ...(mocks.storeState as Record<string, unknown>),
       agentSubscriptionUI: { entries: mocks.agentSubscriptionUIEntries },
@@ -211,13 +214,21 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', async ()
 vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', async () =>
   (await import('./mocks/chat-panel-render-scaffold')).agentQueueSelectors(),
 );
-vi.mock('$store/renderer/slices/task-agent-associations/task-agent-associations-selectors', () => ({
-  selectTasksForAgent: mocks.selector([]),
-}));
-vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () => ({
-  selectWorkspaceTasks: mocks.selector([]),
-  selectWorkspaceTasksInitialized: mocks.selector(false),
-}));
+vi.mock(
+  '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors',
+  async (importOriginal) =>
+    (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+      selectTasksForAgent: mocks.selector([]),
+    }),
+);
+vi.mock(
+  '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors',
+  async (importOriginal) =>
+    (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+      selectWorkspaceTasks: mocks.selector([]),
+      selectWorkspaceTasksInitialized: mocks.selector(false),
+    }),
+);
 vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', async () => ({
   ...(await import('./mocks/chat-panel-render-scaffold')).chatStateSelectors(),
   selectChatAgentState: mocks.selector({
@@ -253,20 +264,26 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', async () => ({
     select: () => undefined,
   }),
 }));
-vi.mock('$store/renderer/slices/chat-panel-ui/chat-panel-ui-selectors', () => ({
-  selectUserMessageIndexUi: Object.assign(() => mocks.userMessageIndexUi, {
-    select: () => mocks.userMessageIndexUi.get(),
+vi.mock('$store/renderer/slices/chat-panel-ui/chat-panel-ui-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+    selectUserMessageIndexUi: Object.assign(() => mocks.userMessageIndexUi, {
+      select: () => mocks.userMessageIndexUi.get(),
+    }),
+    selectRetryAgentUi: mocks.selector(undefined),
   }),
-  selectRetryAgentUi: mocks.selector(undefined),
-}));
-vi.mock('$store/renderer/slices/question-ui/question-ui-selectors', () => ({
-  selectQuestionUiConsumer: Object.assign(() => mocks.questionUiConsumer, {
-    select: () => mocks.questionUiConsumer.get(),
+);
+vi.mock('$store/renderer/slices/question-ui/question-ui-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+    selectQuestionUiConsumer: Object.assign(() => mocks.questionUiConsumer, {
+      select: () => mocks.questionUiConsumer.get(),
+    }),
   }),
-}));
-vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
-  selectPermissionRequests: mocks.selector([]),
-}));
+);
+vi.mock('$store/renderer/slices/permission/permission-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+    selectPermissionRequests: mocks.selector([]),
+  }),
+);
 vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', async () => ({
   ...(await import('./mocks/chat-panel-render-scaffold')).unreadTrackingSelectors(),
   selectDividerSession: Object.assign(
@@ -279,40 +296,49 @@ vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', asyn
     { select: () => mocks.dividerSessionValue },
   ),
 }));
-vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
-  selectChatAuroraEnabled: mocks.selector(true),
-  selectIsAgentMonospace: mocks.selector(false),
-}));
-vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
-  selectActiveTab: { select: () => mocks.focusedActiveTab },
-  selectAllTabs: mocks.selector([]),
-  selectPanels: mocks.selector({}),
-  selectHiddenTabs: mocks.selector([]),
-}));
-vi.mock('$store/renderer/slices/browser/browser-selectors', () => ({
-  selectPendingBrowserElementCaptures: () => mocks.pendingBrowserCaptures,
-}));
-vi.mock('$store/renderer/slices/multi-panel-context/multi-panel-context-selectors', () => ({
-  selectCheckedPanels: mocks.selector([]),
-  selectPanels: mocks.selector([]),
-  selectCheckedSelections: mocks.selector([]),
-}));
-vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-selectors', () => ({
-  selectWorkspaceNavigationMainPanel: mocks.selector({ type: 'empty' }),
-}));
-vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
-  selectAgentTypingPeople: mocks.selector([]),
-  selectPresenceOwnPrincipalId: mocks.selector(null),
-}));
-vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', async (importOriginal) => ({
-  ...(await importOriginal<
-    typeof import('$store/renderer/slices/transient-ui/transient-ui-selectors')
-  >()),
-  selectChatDraft: {
-    select: (_state: unknown, workspaceId: string, agentId: string) =>
-      mocks.chatDrafts[`${workspaceId}::${agentId}`] ?? '',
-  },
-}));
+vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+    selectActiveTab: { select: () => mocks.focusedActiveTab },
+    selectAllTabs: mocks.selector([]),
+    selectPanels: mocks.selector({}),
+    selectHiddenTabs: mocks.selector([]),
+  }),
+);
+vi.mock('$store/renderer/slices/browser/browser-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+    selectPendingBrowserElementCaptures: () => mocks.pendingBrowserCaptures,
+  }),
+);
+vi.mock(
+  '$store/renderer/slices/multi-panel-context/multi-panel-context-selectors',
+  async (importOriginal) =>
+    (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+      selectCheckedPanels: mocks.selector([]),
+      selectPanels: mocks.selector([]),
+      selectCheckedSelections: mocks.selector([]),
+    }),
+);
+vi.mock(
+  '$store/renderer/slices/workspace-navigation/workspace-navigation-selectors',
+  async (importOriginal) =>
+    (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+      selectWorkspaceNavigationMainPanel: mocks.selector({ type: 'empty' }),
+    }),
+);
+vi.mock('$store/renderer/slices/presence/presence-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+    selectAgentTypingPeople: mocks.selector([]),
+    selectPresenceOwnPrincipalId: mocks.selector(null),
+  }),
+);
+vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+    selectChatDraft: {
+      select: (_state: unknown, workspaceId: string, agentId: string) =>
+        mocks.chatDrafts[`${workspaceId}::${agentId}`] ?? '',
+    },
+  }),
+);
 vi.mock('$features/layout/panel-layout-adapter', () => ({
   getPanelLayoutManager: () => ({ getPanelIds: () => [], getPanel: () => null }),
 }));
@@ -1266,11 +1292,17 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(reactivatedOverlay.getAttribute('title')).toBe(replacement.metadata.hookName);
     await fireEvent.click(within(reactivatedOverlay).getByRole('button'));
     expect(mocks.animateScrollTo).toHaveBeenCalledOnce();
-    const [getContainer, resolveTarget] = mocks.animateScrollTo.mock.calls[0];
+    const [getContainer, measureTarget] = mocks.animateScrollTo.mock.calls[0];
     expect(getContainer()).toBe(scroll);
-    resolveTarget(scroll);
+    expect(measureTarget).toEqual(expect.any(Function));
+    expect(sourceTurnRect).not.toHaveBeenCalled();
+    const target = measureTarget(scroll);
     expect(sourceTurnRect).toHaveBeenCalledOnce();
+    sourceTurnRect.mockReturnValue({ top: 40, bottom: 460, height: 420 } as DOMRect);
+    expect(measureTarget(scroll)).toBe(target - 40);
     expect(screen.queryByTestId('pinned-user-prompt')).toBeNull();
+    turn.remove();
+    expect(getContainer()).toBeNull();
   });
 
   it('consumes a targeted browser capture and includes its image and context in the next send', async () => {
@@ -4227,9 +4259,15 @@ describe('ChatPanel mounted lifecycle', () => {
     await tick();
     flushFrame();
     await vi.waitFor(() => expect(mocks.animateScrollTo).toHaveBeenCalledOnce());
-    const [getContainer, resolveTarget] = mocks.animateScrollTo.mock.calls[0];
-    resolveTarget(getContainer());
-    expect(replacementBounds).toHaveBeenCalled();
+    const [getContainer, measureTarget] = mocks.animateScrollTo.mock.calls[0];
+    const scroll = screen.getByTestId('chat-transcript-scroll-viewport');
+    expect(getContainer()).toBe(scroll);
+    expect(measureTarget).toEqual(expect.any(Function));
+    expect(replacementBounds).not.toHaveBeenCalled();
+    measureTarget(scroll);
+    expect(replacementBounds).toHaveBeenCalledOnce();
+    messageB.remove();
+    expect(getContainer()).toBeNull();
   });
 
   it('loads a recovered nonresident proposal message before scrolling to its inline card', async () => {
@@ -4382,6 +4420,62 @@ describe('ChatPanel mounted lifecycle', () => {
     mocks.agentSession.set({ id: 'agent-a', retiredAt: '2026-01-02T00:00:00.000Z' });
     await tick();
     expect(screen.queryByTestId('suggested-prompts-surface')).toBeNull();
+  });
+
+  it('sends to a purged (retired) workspace directly, like any archived workspace', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentSession.set({ id: 'agent-a', messages: [] });
+    const purgedWorkspace = { ...workspace('workspace-a'), status: WorkspaceStatus.Retired };
+    render(ChatPanel, {
+      props: { workspace: purgedWorkspace, agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+    expect(screen.getByTestId('mock-rich-input').getAttribute('data-disabled')).toBe('false');
+    const sends = () =>
+      mocks.dispatch.mock.calls.filter(([action]) => action?.type === 'chatState/sendMessage');
+
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'Pick this back up' },
+    });
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    await tick();
+    expect(screen.queryByTestId('retired-send-confirm')).toBeNull();
+    expect(sends()).toHaveLength(1);
+    expect(sends()[0][0].payload.payload).toMatchObject({
+      wsId: 'workspace-a',
+      text: 'Pick this back up',
+    });
+  });
+
+  it('sends a suggested prompt directly in a purged (retired) workspace', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentSession.set({ id: 'agent-a', messages: [] });
+    mocks.agentMessages.set([
+      {
+        id: 'assistant-with-prompts',
+        role: 'assistant',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        contentBlocks: [
+          { type: 'text', text: 'Done.\n\n<!-- suggested-prompts\nRun the tests\n-->' },
+        ],
+      },
+    ]);
+    render(ChatPanel, {
+      props: {
+        workspace: { ...workspace('workspace-a'), status: WorkspaceStatus.Retired },
+        agentId: 'agent-a',
+        isActive: true,
+      },
+    });
+    await tick();
+    const sends = () =>
+      mocks.dispatch.mock.calls.filter(([action]) => action?.type === 'chatState/sendMessage');
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Run the tests' }));
+    await tick();
+    expect(screen.queryByTestId('retired-send-confirm')).toBeNull();
+    expect(sends()).toHaveLength(1);
+    expect(sends()[0][0].payload.payload).toMatchObject({ text: 'Run the tests' });
   });
 
   it('reports true-bottom state to the stable header control', async () => {
@@ -5201,6 +5295,23 @@ describe('ChatPanel mounted lifecycle', () => {
     mocks.agentMessages.set([
       { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
     ]);
+    mocks.agentSubscriptionUIEntries['workspace-a:agent-with-visible-subscription'] = {
+      subscriptions: [
+        {
+          id: 'watch-worker',
+          description: 'Waiting for worker',
+          agentId: 'agent-with-visible-subscription',
+          actorIds: ['worker'],
+          eventTypes: ['agent:idle'],
+          createdAt: '2026-01-01T00:00:00Z',
+        },
+      ],
+      delegationGroups: [],
+      agentStatuses: {},
+      waitingState: 'waiting',
+      wokenUpInfo: null,
+      snapshotStatus: 'ready',
+    };
     const currentWorkspace = workspace('workspace-a');
     const view = render(ChatPanel, {
       props: {
@@ -5609,6 +5720,10 @@ describe.each(['workspace-a', 'workspace-b'])(
       const save = mocks.dispatch.mock.calls
         .map(([action]) => action)
         .find((action) => action.type === 'workspaceAgents/saveAgentSessionRequested');
+      const remembered = mocks.dispatch.mock.calls
+        .map(([action]) => action)
+        .find((action) => action.type === 'workspaceInitializer/rememberRecentSpecialist');
+      expect(remembered.payload).toEqual([c.selection]);
       expect(local.payload).toEqual([
         'agent-a',
         {

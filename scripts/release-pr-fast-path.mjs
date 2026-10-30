@@ -8,8 +8,10 @@
 //
 // Usage: node scripts/release-pr-fast-path.mjs <base-ref-or-sha> [<head-ref-or-sha>]
 //   <head> defaults to HEAD. Pass --release-only to exclude sidecar pin bumps
-//   when authorizing a direct release merge (CI keeps both shapes by default).
-//   Direct release eligibility also requires unchanged regular-file modes.
+//   when authorizing a direct release merge, or --pin-only to accept ONLY the
+//   sidecar pin-bump shape when authorizing a direct pin merge
+//   (auto-pin-merge-route.mjs). CI keeps both shapes by default. Both direct
+//   modes also require unchanged regular-file modes.
 //
 // Output contract (for CI):
 //   - Prints `fast_path=true` and exits 0 when the diff matches the shape.
@@ -92,8 +94,9 @@ export function evaluateFastPath(
   baseRef,
   headRef,
   cwd = process.cwd(),
-  { releaseOnly = false } = {},
+  { releaseOnly = false, pinOnly = false } = {},
 ) {
+  if (releaseOnly && pinOnly) throw new Error('releaseOnly and pinOnly are mutually exclusive');
   const rev = (ref) => {
     try {
       return git(cwd, 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`).trim();
@@ -118,15 +121,26 @@ export function evaluateFastPath(
   if (diff.length === 0) return noMatch('empty diff');
 
   const show = (revision, path) => git(cwd, 'show', `${revision}:${path}`);
+  // name-status M includes chmod and changed symlink targets. Neither
+  // qualifies for bypassing the merge queue in the direct-merge modes.
+  const regularModeUnchanged = (path) => {
+    const baseMode = git(cwd, 'ls-tree', mergeBase, '--', path).split(' ')[0];
+    const headMode = git(cwd, 'ls-tree', head, '--', path).split(' ')[0];
+    return /^100(644|755)$/.test(baseMode) && headMode === baseMode;
+  };
 
   // --- Pin-bump shape: intentd.version alone, pure modification --------------
   const diffPaths = diff.map(([, path]) => path);
   const isPinBumpDiff =
     diffPaths.includes(PIN_FILE) &&
     diffPaths.every((path) => path === PIN_FILE || path === PROTOCOL_VERSION_FILE);
+  if (pinOnly && !isPinBumpDiff) return noMatch('not a sidecar pin-bump diff');
   if (!releaseOnly && isPinBumpDiff) {
     for (const [status, path] of diff) {
       if (status !== 'M') return noMatch(`non-modification change (${status} ${path})`);
+      if (pinOnly && !regularModeUnchanged(path)) {
+        return noMatch(`non-regular file or mode change: ${path}`);
+      }
     }
     const pinBase = show(mergeBase, PIN_FILE);
     const pinHead = show(head, PIN_FILE);
@@ -185,14 +199,8 @@ export function evaluateFastPath(
   for (const [status, path] of diff) {
     if (status !== 'M') return noMatch(`non-modification change (${status} ${path})`);
     if (!ALLOWED_FILES.has(path)) return noMatch(`disallowed file: ${path}`);
-    if (releaseOnly) {
-      // name-status M includes chmod and changed symlink targets. Neither
-      // qualifies as release metadata for bypassing the merge queue.
-      const baseMode = git(cwd, 'ls-tree', mergeBase, '--', path).split(' ')[0];
-      const headMode = git(cwd, 'ls-tree', head, '--', path).split(' ')[0];
-      if (!/^100(644|755)$/.test(baseMode) || headMode !== baseMode) {
-        return noMatch(`non-regular file or mode change: ${path}`);
-      }
+    if (releaseOnly && !regularModeUnchanged(path)) {
+      return noMatch(`non-regular file or mode change: ${path}`);
     }
   }
   const changed = new Set(diff.map(([, path]) => path));
@@ -249,16 +257,20 @@ const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === resolv
 if (isDirectRun) {
   const args = process.argv.slice(2);
   const releaseOnly = args[0] === '--release-only';
-  if (releaseOnly) args.shift();
+  const pinOnly = args[0] === '--pin-only';
+  if (releaseOnly || pinOnly) args.shift();
   if (args.length < 1 || args.length > 2) {
     console.error(
-      'usage: release-pr-fast-path.mjs [--release-only] <base-ref-or-sha> [<head-ref-or-sha>]',
+      'usage: release-pr-fast-path.mjs [--release-only | --pin-only] <base-ref-or-sha> [<head-ref-or-sha>]',
     );
     process.exit(2);
   }
   let result;
   try {
-    result = evaluateFastPath(args[0], args[1] ?? 'HEAD', process.cwd(), { releaseOnly });
+    result = evaluateFastPath(args[0], args[1] ?? 'HEAD', process.cwd(), {
+      releaseOnly,
+      pinOnly,
+    });
   } catch (err) {
     console.error(`error: ${err instanceof Error ? err.message : err}`);
     process.exit(2);

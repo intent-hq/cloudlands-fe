@@ -272,14 +272,36 @@ attribution and lineage details.
 
 ### CI runners
 
-Routed Linux jobs prefer free self-hosted runners and burst to the `gh-linux-8x`
-GitHub larger runner when unavailable or busy. Other checks and automation use
-GitHub-hosted runners (`ubuntu-24.04`, or `gh-linux-8x` for heavier jobs). Linux
-ARM64 builds stay native on `gh-linux-arm64-8x`, Windows builds use
-`gh-windows-16x` (Windows Server 2022, 16 CPUs), and Apple Silicon jobs use
-`macos-26-xlarge`, except signed desktop Mac builds, which stay on `macos-15-xlarge`
-(electron-builder's keychain step fails on macOS 26 images). The larger runners'
-group must allow public repositories.
+Jobs that ask for a free standard GitHub runner (`ubuntu-24.04`, `ubuntu-latest`)
+always run on GitHub: the repository is public, so those runners cost nothing.
+Jobs that ask for a paid size go through `runner-route.yml` (the same probe as
+intent and intentd; `intent-pr.yml`'s route job is an inline copy). GitHub's
+larger runners are off: a paid size runs on a self-hosted slot or WarpBuild,
+never on GitHub.
+
+- Linux `gh-linux-8x` jobs take a free intent-cache slot first, then burst to
+  WarpBuild `warp-ubuntu-2404-x64-8x`; `gh-linux-arm64-8x` takes a self-hosted
+  ARM64 runner first, then `warp-ubuntu-2404-arm64-8x`.
+- Integration Tests and the Playwright (root) and Electron browser suites run
+  on the free `ubuntu-24.04` runner: they use about 2 of 8 CPUs.
+- Component Tests take a free intent-cache slot first, else the `cloud`
+  burst runner for `gh-linux-8x`.
+- Every Mac and Windows build reads the route's `cloud` output: straight to
+  WarpBuild, never a self-hosted runner. Windows builds use
+  `warp-windows-2022-x64-8x` (`gh-windows-8x`: they use about a third of 16
+  CPUs; Server 2022, because node-gyp fails on 2025), Apple
+  Silicon jobs `warp-macos-26-arm64-6x`, and signed desktop Mac builds
+  `warp-macos-15-arm64-6x` (electron-builder's keychain step fails on macOS 26).
+- Build smoke and the manual packaged Mac smoke and isolated-package check need
+  a fresh VM for the job: they run on WarpBuild through `cloud`, and their
+  scripts accept GitHub-hosted or WarpBuild VMs but refuse an intent-cache slot.
+  Only the one-use B76 diagnostics keep their frozen GitHub labels.
+
+A job that falls back because the route job failed uses the WarpBuild label
+(`scripts/test_runner_policy.py` rejects a paid GitHub label in any `runs-on`).
+Fork pull requests run paid sizes on the free standard runner of the same OS
+instead of WarpBuild. A WarpBuild platform with a job queued over 10 minutes is
+reported as a warning; bursts still go to WarpBuild.
 Mac desktop release and manual packaging builds target ARM64 only.
 
 From-source Rust sidecars use the self-hosted sccache without Rust cache actions.

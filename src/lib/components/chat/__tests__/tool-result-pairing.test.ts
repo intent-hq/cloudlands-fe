@@ -18,6 +18,7 @@ import {
   getToolResultPayload,
   getToolResultText,
   isStandaloneToolResult,
+  resolveToolState,
 } from '../tool-result-pairing';
 
 /** Daemon-shaped tool_use block (PROTOCOL §7.1). */
@@ -36,6 +37,46 @@ function toolUse(id: string, toolCallId: string): ContentBlock {
 function toolResult(id: string, toolUseId: string, output: unknown, isError = false): ContentBlock {
   return { type: 'tool_result', id, tool_use_id: toolUseId, output, is_error: isError };
 }
+
+describe('tool completion without output', () => {
+  it.each([
+    ['started', 'running'],
+    ['completed', 'completed'],
+    ['error', 'error'],
+  ] as const)('renders %s metadata during a live response as %s', (status, expected) => {
+    const use = { ...toolUse('msg:0', 'call'), metadata: { status } };
+    expect(resolveToolState(use, undefined, true)).toBe(expected);
+  });
+
+  it('keeps a metadata error when output does not carry an error flag', () => {
+    const use = { ...toolUse('msg:0', 'call'), metadata: { status: 'error' } };
+    expect(resolveToolState(use, toolResult('msg:1', 'call', ''), true)).toBe('error');
+  });
+
+  it('lets a paired result settle a tool whose metadata is still started', () => {
+    const use = { ...toolUse('msg:0', 'call'), metadata: { status: 'started' } };
+    expect(resolveToolState(use, toolResult('msg:1', 'call', 'ok'), true)).toBe('completed');
+    expect(resolveToolState(use, toolResult('msg:1', 'call', 'failed', true), true)).toBe('error');
+  });
+
+  it('preserves payload error detection even when metadata reports completion', () => {
+    const use = toolUse('msg:0', 'call');
+    expect(resolveToolState(use, toolResult('msg:1', 'call', 'Error: failed'), true)).toBe('error');
+    expect(
+      resolveToolState(
+        use,
+        toolResult('msg:1', 'call', [{ type: 'text', text: 'Tool Error: failed' }]),
+        true,
+      ),
+    ).toBe('error');
+  });
+
+  it.each([undefined, 'unknown'])('retains the streaming fallback for %s status', (status) => {
+    const use = { ...toolUse('msg:0', 'call'), metadata: { status } };
+    expect(resolveToolState(use, undefined, true)).toBe('running');
+    expect(resolveToolState(use, undefined, false)).toBe('completed');
+  });
+});
 
 describe('buildToolResultsMap / findToolResult — §7.1 pairing', () => {
   it('pairs a tool_use with its tool_result by toolCallId ↔ tool_use_id', () => {

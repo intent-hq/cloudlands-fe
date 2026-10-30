@@ -1,5 +1,5 @@
 import type { ComponentFixtures } from '@playwright/experimental-ct-svelte';
-import { expect, test } from '../../test/ct-test';
+import { expect, test, wheelUntilScrolled } from '../../test/ct-test';
 import { failOnConsoleErrors } from '../../test/ct-console-errors';
 import Preview from './home.preview.svelte';
 
@@ -142,6 +142,23 @@ for (const { name, width, height, scenario } of cases) {
         transcript.locator('[data-message-id="home-assistant-response-11"]'),
       ).toBeVisible();
     }
+    // Reduced motion still creates short CSS transitions while the editor mounts.
+    // Measure scroll ownership only after the composer's initial layout has settled.
+    await expect(composer.getByRole('textbox', { name: 'Message', exact: true })).toBeVisible();
+    await expect
+      .poll(() =>
+        composer.evaluate(
+          (element) =>
+            element
+              .getAnimations({ subtree: true })
+              .filter(
+                (animation) =>
+                  (animation.pending || animation.playState === 'running') &&
+                  animation.effect?.getComputedTiming().iterations !== Infinity,
+              ).length,
+        ),
+      )
+      .toBe(0);
     await expect.poll(async () => (await measure(host)).pageOverflow).toBeLessThanOrEqual(1);
     const before = await measure(host);
     expect(before.horizontalOverflow).toBeLessThanOrEqual(1);
@@ -151,9 +168,7 @@ for (const { name, width, height, scenario } of cases) {
     expect(before.transcript.bottom).toBeLessThanOrEqual(before.composer.top + 1);
     if (scenario === 'assistant-many') {
       expect(before.sidebarRange).toBeGreaterThan(0);
-      await sidebar.getByRole('listbox').hover();
-      await page.mouse.wheel(0, 1600);
-      await expect.poll(async () => (await measure(host)).sidebarScroll).toBeGreaterThan(0);
+      await wheelUntilScrolled(sidebar.getByRole('listbox'), { deltaY: 1600 });
       const sidebarScrolled = await measure(host);
       expect(sidebarScrolled.header).toEqual(before.header);
       expect(sidebarScrolled.composer).toEqual(before.composer);
@@ -162,10 +177,7 @@ for (const { name, width, height, scenario } of cases) {
 
     if (scenario === 'assistant-long') {
       await expect.poll(async () => (await measure(host)).transcriptScroll).toBeGreaterThan(0);
-      const position = (await measure(host)).transcriptScroll;
-      await transcript.hover();
-      await page.mouse.wheel(0, -600);
-      await expect.poll(async () => (await measure(host)).transcriptScroll).toBeLessThan(position);
+      await wheelUntilScrolled(transcript, { deltaY: -600 });
       const chatScrolled = await measure(host);
       expect(chatScrolled.header).toEqual(before.header);
       expect(chatScrolled.composer).toEqual(before.composer);

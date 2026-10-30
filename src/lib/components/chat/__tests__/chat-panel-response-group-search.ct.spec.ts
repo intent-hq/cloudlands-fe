@@ -79,6 +79,62 @@ test('search treats headingless reasoning as inline content and preserves titled
   await expect(titledDisclosure).toHaveAttribute('aria-expanded', 'true');
 });
 
+test('search reveals collapsed standalone reasoning in match order and restores it (#4336)', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(ChatPanelOperationalGeometryHost, {
+    props: { theme: 'light', zoom: 1, width: 560, reasoningSearchOnly: true },
+  });
+  const standalone = component.locator('[data-message-id="assistant-standalone-search"]');
+  const row = standalone.locator('[data-chat-search-disclosure-id="thinking:b:0"]');
+  const disclosure = row.getByTestId('reasoning-disclosure');
+  const body = row.locator('[data-reasoning-expanded-body]');
+  const finalProse = standalone.getByText('Visible final prose repeats');
+  const currentHighlightInReasoning = () =>
+    page.evaluate(() => {
+      const ranges = [...(CSS.highlights?.get('current-search-result') ?? [])] as Range[];
+      if (ranges.length !== 1) return null;
+      const node = ranges[0].commonAncestorContainer;
+      const element = node instanceof Element ? node : node.parentElement;
+      return !!element?.closest('[data-reasoning-expanded-body]');
+    });
+
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+  await expect(body).toHaveCount(0);
+
+  await finalProse.focus();
+  await page.keyboard.press('ControlOrMeta+f');
+  const findBar = component.getByRole('search', { name: 'Find in panel' });
+  const input = findBar.getByRole('textbox');
+  await input.fill('standalone collapsed probe phrase');
+  await expect(findBar).toContainText('1 / 2');
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+  await expect(body.getByText('Standalone collapsed probe phrase.')).toBeVisible();
+  await expect.poll(currentHighlightInReasoning).toBe(true);
+
+  await findBar.getByRole('button', { name: 'Next match' }).click();
+  await expect(findBar).toContainText('2 / 2');
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+  await expect.poll(currentHighlightInReasoning).toBe(false);
+
+  await findBar.getByRole('button', { name: 'Previous match' }).click();
+  await expect(findBar).toContainText('1 / 2');
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+  await expect.poll(currentHighlightInReasoning).toBe(true);
+
+  await input.press('Escape');
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+
+  await disclosure.click();
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+  await disclosure.press('ControlOrMeta+f');
+  await findBar.getByRole('textbox').fill('standalone collapsed probe phrase');
+  await findBar.getByRole('textbox').press('Escape');
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+});
+
 test('search reveals a grouped orphan result and restores manual disclosure state', async ({
   mount,
   page,

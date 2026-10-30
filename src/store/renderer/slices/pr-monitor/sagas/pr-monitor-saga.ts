@@ -4,11 +4,16 @@ import { all, call, delay, fork, put, take, takeEvery, type SagaGenerator } from
 
 import { createLogger } from '$lib/utils/client-logger';
 import { markWorkspaceSeed } from '../../../utils/switch-timing';
+import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
+import { prMonitorBackendId } from '$lib/client/live/backend-transport';
 import {
   cancelPrMonitorRequested,
   flushPrMonitorRequested,
   prMonitorsActiveWorkspaceChanged,
   prMonitorsSnapshotFailed,
+  prMonitorsConnectionChanged,
+  prMonitorsMarkedStale,
+  prMonitorsSupportUpdated,
   prMonitorsSubscribeRequested,
   prMonitorsUnsubscribeRequested,
   prMonitorsUpdated,
@@ -18,12 +23,17 @@ import {
   cancelPrMonitor,
   flushPrMonitor,
   subscribePrMonitors,
-  type PrMonitorRow,
 } from '$features/pr-monitor/pr-monitor-service';
+
+import type { ReviewMonitorRow, ReviewMonitoringSupport } from '$shared/types/pr-monitor';
+import { selectReviewMonitors } from '../pr-monitor-selectors';
 
 const logger = createLogger('PrMonitorSaga');
 
-type MonitorChannelMessage = { kind: 'rows'; monitors: PrMonitorRow[] } | { kind: 'failed' };
+type MonitorChannelMessage =
+  | { kind: 'rows'; monitors: ReviewMonitorRow[] }
+  | { kind: 'failed' | 'reconnecting' }
+  | { kind: 'support'; support: ReviewMonitoringSupport };
 
 type SubscriptionEntry = {
   count: number;
@@ -37,7 +47,8 @@ function createMonitorChannel(workspaceId: string): EventChannel<MonitorChannelM
     const subscription = subscribePrMonitors(
       workspaceId,
       (monitors) => emit({ kind: 'rows', monitors }),
-      () => emit({ kind: 'failed' }),
+      (status) => emit({ kind: status }),
+      (support) => emit({ kind: 'support', support }),
     );
     return () => subscription.dispose();
   }, buffers.expanding<MonitorChannelMessage>());
@@ -57,12 +68,25 @@ function* forwardMonitorUpdates(
       if (active.get(workspaceId)?.channel !== channel) return;
       if (message.kind === 'rows') {
         yield* put(prMonitorsUpdated(workspaceId, message.monitors));
+      } else if (message.kind === 'reconnecting') {
+        yield* put(prMonitorsConnectionChanged(workspaceId));
+      } else if (message.kind === 'support') {
+        yield* put(prMonitorsSupportUpdated(workspaceId, message.support));
       } else {
         yield* put(prMonitorsSnapshotFailed(workspaceId));
       }
     }
   } finally {
     channel.close();
+  }
+}
+
+/** A host-label lookup failure only loses the warm reopen, never the lease. */
+function transportMonitorBackendId(): string | undefined {
+  try {
+    return prMonitorBackendId();
+  } catch {
+    return undefined;
   }
 }
 
@@ -77,6 +101,17 @@ function* acquireSubscription(
   active.set(workspaceId, entry);
   if (entry.channel) return;
   try {
+    // A released lease may belong to another host even when the workspace ID
+    // repeats: only rows stamped with this window's backend survive, as stale,
+    // so a warm switch-back renders them with the transcript instead of after
+    // the capture + list round-trips. The reducer drops them on a failed read.
+    const retained = yield* selectReviewMonitors.effect(workspaceId);
+    const backendId = transportMonitorBackendId() ?? (yield* selectActiveBackendId());
+    const sameHost =
+      retained.length > 0 && retained.every((row) => row.origin?.backendId === backendId);
+    yield* put(
+      sameHost ? prMonitorsMarkedStale(workspaceId) : prMonitorsConnectionChanged(workspaceId),
+    );
     markWorkspaceSeed(workspaceId, 'prSeedStarted');
     const channel = createMonitorChannel(workspaceId);
     entry.channel = channel;
@@ -125,9 +160,11 @@ function* watchActiveWorkspace(): SagaGenerator<void> {
 export function* flushPrMonitorWorker(
   action: ReturnType<typeof flushPrMonitorRequested>,
 ): SagaGenerator<void> {
-  const [workspaceId, monitorId, check] = action.payload;
+  const [workspaceId, monitorId, check, requestedOrigin] = action.payload;
   try {
-    yield* call(flushPrMonitor, workspaceId, monitorId, check);
+    const rows = yield* selectReviewMonitors.effect(workspaceId);
+    const origin = requestedOrigin ?? rows.find((row) => row.monitorId === monitorId)?.origin;
+    yield* call(flushPrMonitor, workspaceId, monitorId, check, origin);
   } catch (error) {
     logger.error('prMonitor.flush failed', { workspaceId, monitorId, error });
   }
@@ -136,9 +173,11 @@ export function* flushPrMonitorWorker(
 export function* cancelPrMonitorWorker(
   action: ReturnType<typeof cancelPrMonitorRequested>,
 ): SagaGenerator<void> {
-  const [workspaceId, monitorId] = action.payload;
+  const [workspaceId, monitorId, requestedOrigin] = action.payload;
   try {
-    yield* call(cancelPrMonitor, workspaceId, monitorId);
+    const rows = yield* selectReviewMonitors.effect(workspaceId);
+    const origin = requestedOrigin ?? rows.find((row) => row.monitorId === monitorId)?.origin;
+    yield* call(cancelPrMonitor, workspaceId, monitorId, origin);
   } catch (error) {
     logger.error('prMonitor.cancel failed', { workspaceId, monitorId, error });
   }

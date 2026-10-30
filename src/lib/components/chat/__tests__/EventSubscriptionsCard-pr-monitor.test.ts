@@ -1,9 +1,13 @@
+import producer from '../../../../test/fixtures/qualified-monitor-producer.json';
 /** Chief footer regression: real card, selectors, saga and service; fake wire only for PRs. */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('$lib/client/live/backend-transport', () => ({
+  capturePrMonitorSession: vi.fn(),
+  onMonitorReconnected: vi.fn(() => () => {}),
+  prMonitorBackendId: vi.fn(() => undefined),
   backendRequest: vi.fn(),
   backendSubscribe: vi.fn(),
   backendUnsubscribe: vi.fn().mockResolvedValue(undefined),
@@ -18,6 +22,7 @@ vi.mock('../BackgroundHooksRow.svelte', async () => ({
 }));
 
 import {
+  capturePrMonitorSession,
   backendRequest,
   backendSubscribe,
   backendUnsubscribe,
@@ -32,6 +37,7 @@ import {
   openWorkspaceTab,
 } from '$store/renderer/slices/tab-state/tab-state-slice';
 import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
+import type { PrMonitorSession } from '$shared/types/pr-monitor';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { resetAgentSubscriptionsViewStateForTests } from '../agent-subscriptions-view-state';
 import EventSubscriptionsCard from '../EventSubscriptionsCard.svelte';
@@ -76,6 +82,27 @@ beforeEach(() => {
   vi.mocked(backendSubscribe).mockImplementation(async ({ workspaceId }) => ({
     subscriptionId: `pr-sub-${workspaceId}`,
   }));
+  let nextSession = 0;
+  vi.mocked(capturePrMonitorSession).mockImplementation(async (workspaceId) => {
+    let subscriptionId: string | undefined;
+    return {
+      origin: { backendId: 'test-host', sessionId: `session-${++nextSession}`, workspaceId },
+      support: 'unsupported',
+      request: (async (method, params) => {
+        if (method === 'events.subscribe') {
+          const result = await backendSubscribe(params);
+          subscriptionId = result.subscriptionId;
+          return result;
+        }
+        return backendRequest(method, params);
+      }) as PrMonitorSession['request'],
+      onNotification: (handler) => onBackendNotification(handler),
+      onRetired: () => () => {},
+      release: async () => {
+        if (subscriptionId) await backendUnsubscribe(subscriptionId, workspaceId);
+      },
+    };
+  });
   stopSaga = appStore.runSaga(prMonitorSaga);
 });
 afterEach(() => {
@@ -89,8 +116,26 @@ afterEach(() => {
 });
 
 describe('Chief PR-monitor subscription ownership', () => {
+  it('renders mixed same-number rows from the actual producer through the real service and Redux selectors', async () => {
+    const mr = { ...producer, workspaceId: CHIEF_WORKSPACE_ID, agentId: AGENT };
+    const gh = {
+      ...monitor(),
+      repo: producer.repo,
+      prNumber: producer.prNumber,
+      monitorId: 'github-same-number',
+    };
+    vi.mocked(backendRequest).mockResolvedValue({ monitors: [gh, mr] });
+    render(EventSubscriptionsCard, { workspaceId: CHIEF_WORKSPACE_ID, agentId: AGENT });
+    await waitFor(() => expect(screen.getAllByTestId('monitored-pr-summary')).toHaveLength(2));
+    const labels = screen.getAllByTestId('monitored-pr-summary').map((node) => node.textContent);
+    expect(labels.some((label) => label?.includes('!4'))).toBe(true);
+    expect(labels.some((label) => label?.includes('#4'))).toBe(true);
+    expect(backendRequest).toHaveBeenCalledWith('prMonitor.list', {
+      workspaceId: CHIEF_WORKSPACE_ID,
+    });
+  });
   it.each([null, OTHER_WORKSPACE])(
-    'requests Chief without changing selected tab %s and hides a confirmed empty footer',
+    'requests Chief without changing selected tab %s and never shows an empty footer while loading',
     async (selected) => {
       let resolveList!: (value: { monitors: PrMonitorRow[] }) => void;
       const pending = new Promise<{ monitors: PrMonitorRow[] }>((resolve) => {
@@ -110,8 +155,11 @@ describe('Chief PR-monitor subscription ownership', () => {
         eventTypes: ['prMonitor:*'],
         workspaceId: CHIEF_WORKSPACE_ID,
       });
-      expect(screen.getByTestId('pr-monitors-snapshot-status').dataset.snapshotStatus).toBe(
-        'loading',
+      // A pending first read is not evidence of anything to show: the footer stays
+      // hidden instead of flashing "Subscribed to events · Loading" and vanishing.
+      expect(screen.queryByTestId('pr-monitors-snapshot-status')).toBeNull();
+      expect(screen.getByTestId('subscription-utility-area').dataset.hasSubscriptions).toBe(
+        'false',
       );
       resolveList({ monitors: [] });
       await waitFor(() => {
@@ -126,7 +174,14 @@ describe('Chief PR-monitor subscription ownership', () => {
 
   it('preserves real errors rather than treating a failed read as an empty snapshot', async () => {
     vi.mocked(backendRequest).mockRejectedValue(new Error('list unavailable'));
-    render(EventSubscriptionsCard, { workspaceId: CHIEF_WORKSPACE_ID, agentId: AGENT });
+    // The service retries with backoff and reports only a run of failures.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true });
+    try {
+      render(EventSubscriptionsCard, { workspaceId: CHIEF_WORKSPACE_ID, agentId: AGENT });
+      await vi.advanceTimersByTimeAsync(10_000);
+    } finally {
+      vi.useRealTimers();
+    }
     await waitFor(() => {
       expect(screen.getByTestId('pr-monitors-snapshot-status').getAttribute('role')).toBe('alert');
       expect(screen.getByTestId('subscription-utility-area').dataset.hasSubscriptions).toBe('true');

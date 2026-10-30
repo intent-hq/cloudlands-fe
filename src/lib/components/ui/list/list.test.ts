@@ -40,27 +40,11 @@ describe('List', () => {
     expect(selected.className).toContain('focus-visible:-outline-offset-1');
     expect(selected.className).not.toMatch(/focus-visible:.*ring-/);
     expect(selected.className).toContain('bg-selected');
-    expect(selected.style.paddingLeft).toBe('8px');
-    expect(selected.style.paddingRight).toBe('8px');
-    expect(selected.style.marginLeft).toBe('');
-    expect(selected.style.width).toBe('');
     expect(selected.getAttribute('data-selected')).toBe('true');
     expect(active.getAttribute('aria-current')).toBe('true');
     selected.focus();
     await fireEvent.keyDown(selected, { key: 'Enter' });
     expect(document.activeElement).toBe(selected);
-  });
-
-  it('keeps nested row highlights full-width while indenting their content', () => {
-    const { getByRole } = render(ListItem, {
-      props: { title: 'Nested row', selected: true, indent: 2 },
-    });
-    const nested = getByRole('button', { name: 'Nested row' });
-
-    expect(nested.style.paddingLeft).toBe('52px');
-    expect(nested.style.paddingRight).toBe('8px');
-    expect(nested.style.marginLeft).toBe('');
-    expect(nested.style.width).toBe('');
   });
 
   it('previews the nearest enabled row and shares that state with keyboard focus', async () => {

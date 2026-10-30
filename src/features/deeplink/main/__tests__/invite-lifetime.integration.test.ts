@@ -135,6 +135,20 @@ async function load() {
   });
   return { ...renderer, ...(await import('../invite-deep-link')) };
 }
+/** The window reloaded (or is still booting): main holds no published policy for it yet. */
+function unpublish() {
+  state.parent.webContents.emit('did-navigate');
+}
+/** Keep the renderer's automatic readiness acknowledgement pending; optionally hide it from main. */
+function holdPolicy(forward: boolean) {
+  const ack = Promise.withResolvers<{ ok: boolean }>();
+  state.api.invoke = async (channel: string, payload: unknown) => {
+    if (channel !== COLLABORATION_AUTH.POLICY) return invoke(channel, payload);
+    if (forward) await invoke(channel, payload);
+    return ack.promise;
+  };
+  return ack;
+}
 beforeEach(() => {
   installLocalStorageMock();
   vi.resetModules();
@@ -180,12 +194,8 @@ afterEach(async () => {
 });
 
 describe('invitation lifetime across the actual main and renderer modules', () => {
-  it('continues an initially unpublished enabled invitation after original renderer readiness', async () => {
+  it('joins directly when the original window has already published readiness', async () => {
     const flow = await load();
-    const { store } = await import('$store/renderer/store');
-    const { setLabsMultiplayerEnabled } =
-      await import('$store/renderer/slices/user-preferences/user-preferences-slice');
-    store.dispatch(setLabsMultiplayerEnabled(true));
     state.dial.mockReturnValue(never);
     const joining = flow.handleInviteDeepLink(uri('enabled'));
     await flush();
@@ -195,74 +205,37 @@ describe('invitation lifetime across the actual main and renderer modules', () =
     await joining;
   });
 
-  it('direct enable persists true and joins the same invitation exactly once', async () => {
+  it('joins an invite that arrives before window readiness automatically and exactly once', async () => {
     const flow = await load();
-    await policy(false);
+    unpublish();
     const remote = connection();
     state.dial.mockResolvedValue(remote);
-    const joining = flow.handleInviteDeepLink(uri('direct'));
-    await flush();
-    expect(modal?.phase).toBe('admission');
-    await Promise.all([flow.retryInviteProgress(), flow.retryInviteProgress()]);
-    expect(window.localStorage.getItem('labs:multiplayerEnabled')).toBe('true');
-    await joining;
+    await flow.handleInviteDeepLink(uri('direct'));
     expect(state.dial).toHaveBeenCalledOnce();
     expect(remote.prove).toHaveBeenCalledWith('direct', 'private-invite-secret', expect.anything());
     expect(state.open).toHaveBeenCalledOnce();
-  });
-  it('accepts initially late hydrated enabled state without mutating the preference again', async () => {
-    const flow = await load();
-    state.dial.mockReturnValue(never);
-    const joining = flow.handleInviteDeepLink(uri('hydrated'));
-    await flush();
-    expect(modal?.phase).toBe('admission');
-    const { store } = await import('$store/renderer/store');
-    const { setLabsMultiplayerEnabled } =
-      await import('$store/renderer/slices/user-preferences/user-preferences-slice');
-    store.dispatch(setLabsMultiplayerEnabled(true));
-    await policy(true);
-    await flush();
-    expect(state.dial).toHaveBeenCalledOnce();
-    flow.cancelInviteProgress();
-    await joining;
+    expect(window.localStorage.getItem('labs:multiplayerEnabled')).toBeNull();
   });
 
-  it.each(['cancel', 'replacement', 'reload', 'disable', 'publication-failure'] as const)(
-    'does not continue after %s during explicit policy acknowledgement',
+  it.each(['cancel', 'replacement', 'reload', 'publication-failure'] as const)(
+    'does not continue after %s during automatic policy acknowledgement',
     async (reason) => {
       const flow = await load();
-      await policy(false);
+      unpublish();
       state.dial.mockReturnValue(never);
+      const ack = holdPolicy(true);
       const joining = flow.handleInviteDeepLink(uri('pending'));
       await flush();
-      const ack = Promise.withResolvers<{ ok: boolean }>();
-      state.api.invoke = async (channel: string, payload: unknown) => {
-        const result = await invoke(channel, payload);
-        return channel === COLLABORATION_AUTH.POLICY ? ack.promise : result;
-      };
-      const enabling = flow.retryInviteProgress();
-      await flush();
-      expect(window.localStorage.getItem('labs:multiplayerEnabled')).toBe('true');
+      expect(modal?.phase).toBe('admission');
       expect(state.dial).not.toHaveBeenCalled();
       let replacement: Promise<void> | undefined;
       if (reason === 'cancel') flow.cancelInviteProgress();
-      if (reason === 'replacement') {
-        const { store } = await import('$store/renderer/store');
-        const { setLabsMultiplayerEnabled } =
-          await import('$store/renderer/slices/user-preferences/user-preferences-slice');
-        store.dispatch(setLabsMultiplayerEnabled(false));
-        await policy(false);
-        replacement = flow.handleInviteDeepLink(uri('new'));
-      }
+      if (reason === 'replacement') replacement = flow.handleInviteDeepLink(uri('new'));
       if (reason === 'reload') state.parent.webContents.emit('did-navigate');
-      if (reason === 'disable') {
-        await policy(false);
-        await policy(true);
-      }
       ack.resolve({ ok: reason !== 'publication-failure' });
-      await enabling;
       await flush();
-      expect(state.dial).not.toHaveBeenCalled();
+      // A replacement joins on its own; the superseded invitation never does.
+      expect(state.dial).toHaveBeenCalledTimes(reason === 'replacement' ? 1 : 0);
       if (reason === 'publication-failure') {
         expect(modal?.phase).toBe('admission');
         flow.cancelInviteProgress();
@@ -275,24 +248,19 @@ describe('invitation lifetime across the actual main and renderer modules', () =
     },
   );
 
-  it('expires the same recovery while enable acknowledgement is pending', async () => {
+  it('expires the same recovery while the automatic acknowledgement is pending', async () => {
     const flow = await load();
-    await policy(false);
+    unpublish();
+    const ack = holdPolicy(false);
     vi.useFakeTimers();
     try {
       const joining = flow.handleInviteDeepLink(uri('expiring'));
       await flush();
-      const ack = Promise.withResolvers<{ ok: boolean }>();
-      state.api.invoke = async (channel: string, payload: unknown) => {
-        const result = await invoke(channel, payload);
-        return channel === COLLABORATION_AUTH.POLICY ? ack.promise : result;
-      };
-      const enabling = flow.retryInviteProgress();
-      await flush();
+      expect(modal?.phase).toBe('admission');
       await vi.advanceTimersByTimeAsync(5 * 60_000);
       await joining;
       ack.resolve({ ok: true });
-      await enabling;
+      await flush();
       expect(modal).toBeNull();
       expect(state.dial).not.toHaveBeenCalled();
       expect(state.request).not.toHaveBeenCalled();
@@ -301,26 +269,22 @@ describe('invitation lifetime across the actual main and renderer modules', () =
     }
   });
 
-  it('keeps recovery actionable when canonical preference persistence fails', async () => {
+  it('keeps Try again available after a failed automatic acknowledgement, then joins', async () => {
     const flow = await load();
-    await policy(false);
-    const joining = flow.handleInviteDeepLink(uri('write-failed'));
-    await flush();
-    const write = vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {
-      throw new Error('controlled quota failure');
-    });
-    try {
-      await flow.retryInviteProgress();
-      expect(state.dial).not.toHaveBeenCalled();
-      expect(modal?.phase).toBe('admission');
-    } finally {
-      write.mockRestore();
-    }
+    unpublish();
+    const passthrough = state.api.invoke;
+    state.api.invoke = async (channel: string, payload: unknown) =>
+      channel === COLLABORATION_AUTH.POLICY ? { ok: false } : passthrough(channel, payload);
     state.dial.mockReturnValue(never);
+    const joining = flow.handleInviteDeepLink(uri('ack-failed'));
+    await flush();
+    expect(modal?.phase).toBe('admission');
+    expect(state.dial).not.toHaveBeenCalled();
+    state.api.invoke = passthrough;
     await flow.retryInviteProgress();
     await flush();
-    expect(window.localStorage.getItem('labs:multiplayerEnabled')).toBe('true');
     expect(state.dial).toHaveBeenCalledOnce();
+    expect(window.localStorage.getItem('labs:multiplayerEnabled')).toBeNull();
     flow.cancelInviteProgress();
     await joining;
   });
@@ -328,10 +292,7 @@ describe('invitation lifetime across the actual main and renderer modules', () =
   it('continues after late renderer readiness acknowledges an unchanged enabled policy', async () => {
     const flow = await load();
     dispose?.();
-    const { store } = await import('$store/renderer/store');
-    const { setLabsMultiplayerEnabled } =
-      await import('$store/renderer/slices/user-preferences/user-preferences-slice');
-    store.dispatch(setLabsMultiplayerEnabled(true));
+    unpublish();
     state.dial.mockReturnValue(never);
     const joining = flow.handleInviteDeepLink(uri('original'));
     await policy(true);
@@ -356,43 +317,42 @@ describe('invitation lifetime across the actual main and renderer modules', () =
     await joining;
     expect(state.request).not.toHaveBeenCalled();
   });
-  it.each(['disabled', 'unpublished'] as const)(
-    'retains an %s invite for deliberate same-window retry',
-    async (mode) => {
-      const flow = await load();
-      if (mode === 'disabled') await policy(false);
-      const pendingDial = Promise.withResolvers<any>();
-      state.dial.mockReturnValue(pendingDial.promise);
-      const joining = flow.handleInviteDeepLink(uri('original'));
-      await flush();
-      expect(modal?.phase).toBe('admission');
-      expect(state.dial).not.toHaveBeenCalled();
-      expect(state.request).not.toHaveBeenCalled();
-      expect(JSON.stringify(state.parent.webContents.send.mock.calls)).not.toMatch(
-        /private-invite-secret|personal-bearer|intent:\/\/|original/,
-      );
-      const requestId = modal.requestId;
-      await policy(true);
-      await flush();
-      expect(state.dial).not.toHaveBeenCalled();
-      await invoke(PROGRESS.RESPONSE, { requestId, action: 'retry' });
-      await flush();
-      expect(state.dial).toHaveBeenCalledOnce();
-      const remote = connection();
-      pendingDial.resolve(remote);
-      await joining;
-      expect(remote.prove).toHaveBeenCalledWith(
-        'original',
-        'private-invite-secret',
-        expect.anything(),
-      );
-      expect(state.open).toHaveBeenCalledOnce();
-    },
-  );
+  it('retains an unready invite until the same window acknowledges readiness', async () => {
+    const flow = await load();
+    unpublish();
+    holdPolicy(false);
+    const pendingDial = Promise.withResolvers<any>();
+    state.dial.mockReturnValue(pendingDial.promise);
+    const joining = flow.handleInviteDeepLink(uri('original'));
+    await flush();
+    expect(modal?.phase).toBe('admission');
+    expect(state.dial).not.toHaveBeenCalled();
+    expect(state.request).not.toHaveBeenCalled();
+    expect(JSON.stringify(state.parent.webContents.send.mock.calls)).not.toMatch(
+      /private-invite-secret|personal-bearer|intent:\/\/|original/,
+    );
+    const requestId = modal.requestId;
+    await policy(true);
+    await flush();
+    expect(state.dial).not.toHaveBeenCalled();
+    await invoke(PROGRESS.RESPONSE, { requestId, action: 'retry' });
+    await flush();
+    expect(state.dial).toHaveBeenCalledOnce();
+    const remote = connection();
+    pendingDial.resolve(remote);
+    await joining;
+    expect(remote.prove).toHaveBeenCalledWith(
+      'original',
+      'private-invite-secret',
+      expect.anything(),
+    );
+    expect(state.open).toHaveBeenCalledOnce();
+  });
 
   it('keeps recovery in the original window, ignores borrowed authority and retires a changed invite', async () => {
     const flow = await load();
-    await policy(false);
+    unpublish();
+    holdPolicy(false);
     state.dial.mockReturnValue(never);
     const original = state.parent;
     const joiningA = flow.handleInviteDeepLink(uri('A'));
@@ -422,6 +382,8 @@ describe('invitation lifetime across the actual main and renderer modules', () =
 
   it('expires recovery after five minutes without authenticating or opening', async () => {
     const flow = await load();
+    unpublish();
+    holdPolicy(false);
     vi.useFakeTimers();
     try {
       const joining = flow.handleInviteDeepLink(uri('A'));

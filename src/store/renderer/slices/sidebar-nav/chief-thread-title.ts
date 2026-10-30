@@ -3,9 +3,11 @@
  *
  * The single shared derivation of the sidebar-visible chief thread title:
  * a user-set name, then the first user message's text, a non-placeholder
- * session name, or `DEFAULT_CHIEF_THREAD_TITLE`. Used by the sidebar-nav
- * selectors and the chat-send rename trigger — keep it dependency-light per repo
- * convention (no stores, services, or side effects).
+ * session name, or `DEFAULT_CHIEF_THREAD_TITLE`. Display-only: the persisted
+ * name comes from the agent's own first-turn `ws.workspace.setAgentName` (the
+ * daemon's naming instruction), so the first-message text only previews an
+ * unnamed chat. Used by the sidebar-nav selectors — keep it dependency-light
+ * per repo convention (no stores, services, or side effects).
  */
 import { extractAllContent, type AgentSession } from '$shared/types';
 import { DEFAULT_CHIEF_THREAD_TITLE } from './sidebar-nav-types';
@@ -14,9 +16,9 @@ import { DEFAULT_CHIEF_THREAD_TITLE } from './sidebar-nav-types';
  * True when `name` is one of the creation placeholders a chief thread can
  * carry before its first real rename: empty/blank, the ChiefCard placeholder
  * (`DEFAULT_CHIEF_THREAD_TITLE`), a legacy placeholder, or a
- * generated "New thread …" name. Shared by the title derivation below and
- * the chat-send rename trigger's "daemon-side name is still the placeholder"
- * guard (monorepo#745).
+ * generated "New thread …" name. Display-only; the daemon's first-turn
+ * naming check (intentd `is_assistant_chat_placeholder_name`) matches the
+ * exact creation placeholders, not the "New thread …" prefix.
  */
 export function isPlaceholderChiefThreadName(name: string | undefined | null): boolean {
   const trimmed = name?.trim();

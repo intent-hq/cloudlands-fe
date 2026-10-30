@@ -40,6 +40,16 @@ const principal = (role: HostRole = 'member', id = 'person-b') => ({
   hostRole: role,
   hostMembershipRevision: 1,
 });
+const principalHello = {
+  server: {
+    capabilities: {
+      hostMembership: 1,
+      personalPairing: 1,
+      authenticatedDevices: 1,
+      collaborationIdentity: 1,
+    },
+  },
+};
 const uri = 'intent://pair?v=1&host=192.0.2.8&port=5181&fp=AB&token=synthetic-person-b';
 const pairing = (role: HostRole = 'member', id = 'person-b') => ({
   version: 1,
@@ -172,6 +182,11 @@ beforeEach(() => {
       channel: string,
       params: { method: string; params?: unknown; localMachine?: boolean },
     ) => {
+      if (channel === 'backend:read-principal')
+        return {
+          ok: true,
+          result: { hello: principalHello, principal: await rpc('principal.me') },
+        };
       if (channel !== 'backend:request') throw new Error(`Unexpected IPC ${channel}`);
       return { ok: true, result: await rpc(params.method) };
     },
@@ -453,15 +468,14 @@ describe('Devices current-person UI through the actual store and IPC transport',
     expect(qr).not.toHaveBeenCalled();
     expect(screen.queryByRole('dialog')).toBeNull();
   });
-  it('missing preference keeps the personal surface closed despite admitted server capabilities', () => {
+  it('opens the personal surface with no saved preference: Multiplayer is always on', async () => {
     stop();
     store.dispose();
     store.init();
     stop = store.runSaga(personalDevicesSaga);
     admit();
     render(PersonalDevices);
-    expect(screen.queryByRole('button', { name: m.settings_wsApi_showQrCode() })).toBeNull();
-    expect(rpc).not.toHaveBeenCalled();
+    expect(await screen.findByRole('button', { name: m.settings_wsApi_showQrCode() })).toBeTruthy();
   });
   it.each([
     ['rekey', false],
@@ -486,17 +500,6 @@ describe('Devices current-person UI through the actual store and IPC transport',
         ...(change === 'rekey' ? { identity: triple } : {}),
       };
       rpc.mockImplementation(async (method) => {
-        if (method === 'client.hello')
-          return {
-            server: {
-              capabilities: {
-                hostMembership: 1,
-                personalPairing: 1,
-                authenticatedDevices: 1,
-                collaborationIdentity: 1,
-              },
-            },
-          };
         if (method === 'principal.me')
           return changing
             ? revalidation.promise
@@ -574,17 +577,6 @@ describe('Devices current-person UI through the actual store and IPC transport',
   it('unrelated, malformed and foreign-subscription identity events cannot change admitted Devices authority', async () => {
     admit('owner');
     rpc.mockImplementation(async (method) => {
-      if (method === 'client.hello')
-        return {
-          server: {
-            capabilities: {
-              hostMembership: 1,
-              personalPairing: 1,
-              authenticatedDevices: 1,
-              collaborationIdentity: 1,
-            },
-          },
-        };
       if (method === 'principal.me') return principal('owner');
       return method === 'client.list' ? { clients: [] } : pairing('owner');
     });

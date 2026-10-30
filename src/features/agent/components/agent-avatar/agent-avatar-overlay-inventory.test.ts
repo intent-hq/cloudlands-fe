@@ -32,10 +32,8 @@ const consumerFiles = [
   'src/lib/components/notes/primitives/ReferenceBlock.svelte',
   'src/lib/components/settings/AIBehaviorSidebar.svelte',
   'src/lib/components/terminal/TerminalSidebar.svelte',
-  'src/lib/components/tiptap/LineAttributionGutter.svelte',
   'src/lib/components/tiptap/TaskAgentStatus.svelte',
   'src/lib/components/tiptap/comments/AgentPeekCard.svelte',
-  'src/lib/components/workspace/MultiSelectTabbedSidebar.svelte',
   'src/lib/components/workspace/NoteMetadataBar.svelte',
   'src/lib/components/workspace/TaskProgressBar.svelte',
   'src/lib/components/workspace/WorkspaceHoverCard.svelte',
@@ -47,6 +45,7 @@ const consumerFiles = [
   'src/lib/components/workspace/sidebar/NotesPanel.svelte',
   'src/lib/components/workspace/sidebar/SecondaryRootChangesView.svelte',
   'src/lib/components/workspace/sidebar/SidebarActivityPanel.svelte',
+  'src/lib/components/workspace/sidebar/SidebarSectionTabs.svelte',
 ] as const;
 
 const overflowFiles = [
@@ -59,7 +58,6 @@ const canonicalStackConsumers = [
   'src/lib/components/chat/AgentSubscriptions.svelte',
   'src/lib/components/chat/DelegationGroupSection.svelte',
   'src/lib/components/chat/EventWakeupBanner.svelte',
-  'src/lib/components/workspace/MultiSelectTabbedSidebar.svelte',
 ] as const;
 
 function source(path: string): string {
@@ -78,7 +76,7 @@ function productionSvelteFiles(directory = 'src'): string[] {
 
 describe('agent avatar overlay inventory', () => {
   it('keeps every audited consumer on the icon-free canonical avatar surface', () => {
-    expect(consumerFiles).toHaveLength(42);
+    expect(consumerFiles).toHaveLength(41);
     for (const path of consumerFiles) {
       const contents = source(path);
       expect(contents, path).not.toContain('/auggie-avatar/');
@@ -131,17 +129,11 @@ describe('agent avatar overlay inventory', () => {
     }
   });
 
-  it('keeps subscription and sidebar summaries on the same adaptive stack contract', () => {
+  it('keeps subscription summaries on the adaptive stack contract', () => {
     const subscription = source('src/lib/components/chat/AgentSubscriptions.svelte');
-    const sidebar = source('src/lib/components/workspace/MultiSelectTabbedSidebar.svelte');
-    for (const contents of [subscription, sidebar]) {
-      expect(contents).toContain('<AgentAvatarStack');
-      expect(contents).toContain('adaptive');
-      expect(contents).not.toMatch(/-space-x-|margin-inline-start:\s*calc\(-1/);
-    }
-    expect(sidebar).toContain('itemContent={launcherAgentAvatar}');
-    expect(sidebar).toContain('<AgentAvatarWithState');
-    expect(sidebar).not.toContain('data-sidebar-agent-overflow');
+    expect(subscription).toContain('<AgentAvatarStack');
+    expect(subscription).toContain('adaptive');
+    expect(subscription).not.toMatch(/-space-x-|margin-inline-start:\s*calc\(-1/);
   });
 
   it('uses parent-revealing participant cutouts without stack separator colors or icons', () => {
@@ -151,9 +143,6 @@ describe('agent avatar overlay inventory', () => {
     expect(contents).not.toContain('radial-gradient');
     expect(contents).toContain('z-index: ${index + 1}');
     expect(contents).toContain('agent-avatar-stack-item--before-overflow');
-    expect(contents).toContain('min-width: var(--agent-avatar-surface-size)');
-    expect(contents).toContain('font-size: 0.75rem');
-    expect(contents).toContain("x='17' y='-1' width='26' height='26'");
     expect(contents).not.toContain('svelte-fa');
     expect(contents).not.toContain('stack-icon');
     expect(contents).not.toMatch(/agent-avatar-stack-item[\s\S]{0,500}\bborder:/);

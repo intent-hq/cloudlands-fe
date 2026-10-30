@@ -27,6 +27,7 @@ export const dialogMetadata = parseUiComponentMetadata({
     'Root',
     'Title',
     'Trigger',
+    'escapeBelongsToOpenPopup',
     'useDialogPortalTarget',
   ],
   // Minimal composition from the dialog-state-matrix default fixture.

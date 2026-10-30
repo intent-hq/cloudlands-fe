@@ -19,7 +19,29 @@
  */
 
 import { notarize } from '@electron/notarize';
+import { writeFileSync } from 'fs';
 import path from 'path';
+import { runStaplerWithBackoff } from './apple-ticket-retry.mjs';
+
+// @electron/notarize staples once, only after notarization succeeds (its promise-retry
+// wrapper never retries: stapleApp does not call the retry callback). Apple's ticket
+// service drops that connection (stapler exit 68, intent-hq/intent#7614), so that
+// one failure continues with backoff, counting the library's try as attempt 1.
+const STAPLE_CONNECTION_LOST = /^Failed to staple your application with code: 68(?!\d)/;
+
+// Signed CI builds run under scripts/run-until-notarizing.mjs, which stops a build
+// that has not reached notarization within its budget. Creating this file tells it
+// that notarization has started, so Apple's (sometimes hour-long) queue is never cut
+// short. Unset for local builds; a write failure must never block notarization.
+function markNotarizationStarted() {
+  const marker = process.env.INTENT_NOTARIZE_STARTED_FILE;
+  if (!marker) return;
+  try {
+    writeFileSync(marker, `${new Date().toISOString()}\n`);
+  } catch (error) {
+    console.warn('Could not write the notarization-started marker:', error);
+  }
+}
 
 async function notarizing(context) {
   const { electronPlatformName, appOutDir } = context;
@@ -57,6 +79,8 @@ async function notarizing(context) {
     return;
   }
 
+  markNotarizationStarted();
+
   try {
     console.log(`Notarizing with Apple ID: ${appleId}...`);
     await notarize({
@@ -66,11 +90,20 @@ async function notarizing(context) {
       appleIdPassword,
       teamId,
     });
-    console.log('Notarization complete!');
   } catch (error) {
-    console.error('Notarization failed:', error);
-    throw error;
+    if (!STAPLE_CONNECTION_LOST.test(error?.message ?? '')) {
+      console.error('Notarization failed:', error);
+      throw error;
+    }
+    console.warn('Notarized, but stapling lost its connection to Apple; retrying with backoff.');
+    try {
+      await runStaplerWithBackoff('staple', appPath, { afterFailure: true });
+    } catch (stapleError) {
+      console.error('Notarization failed:', stapleError);
+      throw stapleError;
+    }
   }
+  console.log('Notarization complete!');
 }
 
 // Default export for electron-builder afterSign hook

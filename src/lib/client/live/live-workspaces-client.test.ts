@@ -157,6 +157,35 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
     });
   });
 
+  it('create forwards origin and surfaces the daemon proposalOrigin report (intent-hq/intent#8086)', async () => {
+    mockedRequest.mockResolvedValueOnce({
+      workspace: { id: 'ws-origin', title: 'Follow-up', branch: 'b', status: 'Active' },
+      proposalOrigin: { proposalId: 'card-1', outcome: 'applied' },
+    });
+    const client = new LiveWorkspacesClient();
+    const origin = { kind: 'proposal' as const, agentId: 'agent-1', proposalId: 'card-1' };
+
+    const result = await client.create({ title: 'Follow-up', origin } as CreateWorkspaceRequest);
+
+    const [method, params] = mockedRequest.mock.calls[0];
+    expect(method).toBe('workspace.create');
+    expect(CreateWorkspaceRequestSchema.parse(params).origin).toEqual(origin);
+    expect(result.proposalOrigin).toEqual({ proposalId: 'card-1', outcome: 'applied' });
+  });
+
+  it('ignores a malformed proposalOrigin so the client fallback stays on', async () => {
+    const client = new LiveWorkspacesClient();
+    for (const proposalOrigin of [true, {}, 'x', { proposalId: 'card-1', outcome: 'maybe' }]) {
+      mockedRequest.mockResolvedValueOnce({
+        workspace: { id: 'ws-origin', title: 'Follow-up', branch: 'b', status: 'Active' },
+        proposalOrigin,
+      });
+      const result = await client.create({ title: 'Follow-up' } as CreateWorkspaceRequest);
+      expect(result.success).toBe(true);
+      expect(result).not.toHaveProperty('proposalOrigin');
+    }
+  });
+
   it('open sends the exact workspace.get request and unwraps the protocol response', async () => {
     const workspace = {
       id: '77777777-7777-4777-8777-777777777777',
@@ -674,6 +703,68 @@ describe('LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)', () => {
     });
   });
 
+  it('never opts in to retired rows unless includeRetired is passed', async () => {
+    mockedRequest
+      .mockResolvedValueOnce({ workspaces: [] })
+      .mockResolvedValueOnce({ workspaces: [] });
+    const client = new LiveWorkspacesClient();
+
+    await client.list({ includeArchived: true });
+    expect(mockedRequest).toHaveBeenLastCalledWith('workspace.list', { includeArchived: true });
+
+    await client.list({ includeArchived: true, includeRetired: true });
+    expect(mockedRequest).toHaveBeenLastCalledWith('workspace.list', {
+      includeArchived: true,
+      includeRetired: true,
+    });
+  });
+
+  it('never shares an in-flight retired read between callers', async () => {
+    mockedRequest
+      .mockReturnValueOnce(new Promise(() => {}))
+      .mockReturnValueOnce(new Promise(() => {}));
+    const client = new LiveWorkspacesClient();
+
+    void client.list({ includeArchived: true, includeRetired: true });
+    void client.list({ includeArchived: true, includeRetired: true });
+
+    expect(mockedRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps separate single-flight entries per archive/retire scope', async () => {
+    mockedRequest
+      .mockReturnValueOnce(new Promise(() => {}))
+      .mockReturnValueOnce(new Promise(() => {}));
+    const client = new LiveWorkspacesClient();
+
+    void client.list({ includeArchived: true });
+    void client.list({ includeArchived: true, includeRetired: true });
+
+    expect(mockedRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('normalizes the Retired status and keeps retiredAt', async () => {
+    mockedRequest.mockResolvedValueOnce({
+      workspaces: [
+        {
+          id: '44444444-4444-4444-8444-444444444444',
+          title: 'Retired ws',
+          branch: 'intent/retired',
+          status: 'Retired',
+          archived: true,
+          retiredAt: '2026-10-20T00:00:00.000Z',
+          createdAt: '2026-07-01T00:00:00.000Z',
+          updatedAt: '2026-07-01T00:00:00.000Z',
+        },
+      ],
+    });
+    const client = new LiveWorkspacesClient();
+
+    const [row] = await client.list({ includeArchived: true, includeRetired: true });
+
+    expect(row).toMatchObject({ status: 'Retired', retiredAt: '2026-10-20T00:00:00.000Z' });
+  });
+
   it("passes the 'idle' wire value through normalization (intentd#793)", async () => {
     // intentd#793 folds live agent activity into the derivation: a quiet
     // task-stage rollup reaches the wire as `idle`, consumed verbatim.
@@ -927,6 +1018,48 @@ describe('LiveWorkspacesClient update/archive/unarchive (PROTOCOL §5.1, fake tr
 
     expect(await client.unarchive('ws-1')).toEqual({ success: true });
     expect(mockedRequest).toHaveBeenCalledWith('workspace.unarchive', { workspaceId: 'ws-1' });
+  });
+
+  it('retire forwards workspace.retire and surfaces the retired workspace', async () => {
+    mockedRequest.mockResolvedValueOnce({
+      workspace: {
+        id: '55555555-5555-4555-8555-555555555555',
+        title: 'Old work',
+        branch: 'intent/old',
+        status: 'Retired',
+        archived: true,
+        archivedAt: '2026-10-01T00:00:00.000Z',
+        retiredAt: '2026-10-20T00:00:00.000Z',
+      },
+    });
+    const client = new LiveWorkspacesClient();
+
+    const result = await client.retire('55555555-5555-4555-8555-555555555555');
+
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.retire', {
+      workspaceId: '55555555-5555-4555-8555-555555555555',
+    });
+    expect(result.success).toBe(true);
+    expect(result.workspace).toMatchObject({
+      id: '55555555-5555-4555-8555-555555555555',
+      status: 'Retired',
+      retiredAt: '2026-10-20T00:00:00.000Z',
+    });
+  });
+
+  it('retire folds the daemon error code (retire-unsupported) into the result', async () => {
+    mockedRequest.mockRejectedValueOnce(
+      Object.assign(new Error('workspace cannot be retired'), {
+        data: { code: 'retire-unsupported', checkoutMode: 'cow' },
+      }),
+    );
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.retire('ws-1')).toEqual({
+      success: false,
+      error: 'workspace cannot be retired',
+      errorCode: 'retire-unsupported',
+    });
   });
 });
 

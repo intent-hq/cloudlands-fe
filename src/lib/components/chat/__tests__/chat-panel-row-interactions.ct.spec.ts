@@ -1,5 +1,5 @@
 import type { AgentMessage, ContentBlock } from '$shared/types';
-import { expect, test } from '../../../../test/ct-test';
+import { expect, test, wheelUntilScrolled } from '../../../../test/ct-test';
 import ChatPanelOperationalGeometryHost from './ChatPanelOperationalGeometryHost.svelte';
 
 test.setTimeout(60_000);
@@ -668,7 +668,6 @@ for (const motion of ['reduce', 'no-preference'] as const) {
           ),
         )
         .toBe(0);
-      const before = await viewport.evaluate((node) => node.scrollHeight);
       const initialTop = await viewport.evaluate((node) => node.scrollTop);
       await viewport.evaluate((node) => {
         const clip = node.getBoundingClientRect();
@@ -757,11 +756,6 @@ for (const motion of ['reduce', 'no-preference'] as const) {
           Math.max(...samples.map((sample) => Math.abs(sample.anchorDrift!))),
         ).toBeLessThanOrEqual(2);
       }
-      // Deferred tools must reserve their complete natural summaries, even
-      // before they have ever mounted or their tool-entry transition has run.
-      await expect
-        .poll(() => viewport.evaluate((node) => node.scrollHeight))
-        .toBeGreaterThanOrEqual(before + 160 * 28 - 2);
       await expect
         .poll(() =>
           viewport.evaluate(
@@ -780,9 +774,6 @@ for (const motion of ['reduce', 'no-preference'] as const) {
       await expect(host.locator('[data-tool-use-id="batch-159"]')).toBeInViewport();
       await host.update({ props: { liveMessages: [], liveStreaming: true } });
       await host.update({ props: { liveMessages: updated, liveStreaming: true } });
-      await expect
-        .poll(() => viewport.evaluate((node) => node.scrollHeight))
-        .toBeGreaterThanOrEqual(before + 160 * 28 - 2);
       await viewport.evaluate((node) => {
         node.scrollTop = node.scrollHeight;
         node.dispatchEvent(new Event('scroll'));
@@ -942,8 +933,7 @@ for (const kind of ['text', 'thinking', 'completed-thinking'] as const) {
     await expect
       .poll(() => viewport.evaluate((n) => n.scrollHeight - n.clientHeight - n.scrollTop))
       .toBeLessThanOrEqual(2);
-    await viewport.hover();
-    await page.mouse.wheel(0, -100000);
+    await wheelUntilScrolled(viewport, { deltaY: -100_000 });
     await expect.poll(() => viewport.evaluate((n) => n.scrollTop)).toBeLessThan(2);
     await expect(host.getByText('live-search-unique-needle', { exact: true })).toHaveCount(0);
     await viewport.click({ position: { x: 4, y: 4 } });

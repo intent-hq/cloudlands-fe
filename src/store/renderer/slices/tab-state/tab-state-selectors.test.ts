@@ -113,11 +113,17 @@ describe('tab state selectors', () => {
     ): StoreState =>
       ({
         tabState: { ...tabState, hydratedBackendId },
-        connections: { activeId, windowBackendId: activeId },
+        connections: { activeId, windowBackendId: activeId, hasReceivedList: true },
       }) as unknown as StoreState;
 
     it('is false before any hydration settles', () => {
       expect(selectWorkspaceTabsHydrated.select(withHydration(null))).toBe(false);
+    });
+
+    it('waits for the authoritative backend even when the initial local tabs hydrated', () => {
+      const state = withHydration(LOCAL_CONNECTION_ID);
+      state.connections.hasReceivedList = false;
+      expect(selectWorkspaceTabsHydrated.select(state)).toBe(false);
     });
 
     it('is true once hydration settled for the active backend', () => {

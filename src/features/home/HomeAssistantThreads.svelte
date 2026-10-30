@@ -26,7 +26,7 @@
 
   const threads$ = selectChiefThreads();
   const activeAgentId$ = selectChiefActiveAgentId();
-  let selectedKeys = $derived($activeAgentId$ ? [$activeAgentId$] : []);
+  const selectedKeys = $derived($activeAgentId$ ? [$activeAgentId$] : []);
 
   onMount(() => {
     appStore.dispatch(backgroundHooksSubscribeRequested(CHIEF_WORKSPACE_ID));
@@ -40,7 +40,6 @@
   });
 
   function chooseThread(agentId: string) {
-    selectedKeys = [agentId];
     appStore.dispatch(setChiefActiveAgentId(agentId));
     appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, agentId));
   }
@@ -51,7 +50,7 @@
   getKey={(thread) => thread.agentId}
   getText={(thread) => thread.title}
   selectable="single"
-  bind:selectedKeys
+  {selectedKeys}
   onActivate={(thread) => chooseThread(thread.agentId)}
   ariaLabel={m.layout_chiefCard_threadPicker_ariaLabel()}
   virtualize

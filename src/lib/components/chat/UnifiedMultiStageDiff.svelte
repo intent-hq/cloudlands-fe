@@ -120,6 +120,8 @@
 <style>
   .unified-multi-stage-diff {
     width: 100%;
-    overflow: hidden;
+    /* clip, not hidden: hidden makes a scroll container that traps the sticky
+       line-selection toolbar (#5700). */
+    overflow: clip;
   }
 </style>

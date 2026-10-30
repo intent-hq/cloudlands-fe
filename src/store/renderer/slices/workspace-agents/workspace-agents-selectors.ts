@@ -91,6 +91,11 @@ export const selectAgentsLoaded = store.createSelector((state, wsId: string) => 
   return getWorkspaceAgentState(state, wsId).agentsLoaded;
 });
 
+/** Count of full agent-list reads that have finished storing their data. */
+export const selectAgentsReadRevision = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).agentsReadRevision ?? 0;
+});
+
 export const selectIsLoadingAgents = store.createSelector((state, wsId: string) => {
   return getWorkspaceAgentState(state, wsId).isLoadingAgents;
 });

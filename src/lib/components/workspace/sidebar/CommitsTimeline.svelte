@@ -496,7 +496,7 @@
           <!-- Commit header -->
           <div
             role="group"
-            class="relative flex items-center gap-2 py-0.5 group w-full rounded px-1 -mx-1"
+            class="relative flex h-8 min-w-0 items-center gap-2 group w-full rounded-md px-2 hover:bg-muted"
             oncontextmenu={(e) => handleCommitContextMenu(e, commit.hash)}
             onkeydown={(e) => handleCommitContextMenu(e, commit.hash)}
           >
@@ -553,7 +553,7 @@
                 <Button
                   variant="ghost"
                   type="button"
-                  class="relative z-10 flex min-w-0 flex-1 cursor-text items-center gap-2 text-left {commit.isPushed &&
+                  class="relative z-10 flex h-8 min-w-0 flex-1 cursor-text items-center gap-2 px-0 font-normal text-left {commit.isPushed &&
                   !commit.agentId
                     ? 'pr-5'
                     : ''}"
@@ -561,7 +561,9 @@
                   ondblclick={(e) => handleCommitMessageDoubleClick(e, commit, index)}
                 >
                   <span
-                    class="flex-1 truncate text-ui text-subtle {canAmendCommit(index) ? '' : ''}"
+                    class="flex-1 truncate type-caption text-subtle {canAmendCommit(index)
+                      ? ''
+                      : ''}"
                     use:truncatedTitle={commit.message}
                   >
                     {commit.message}
@@ -752,7 +754,7 @@
         <div>
           <div
             role="group"
-            class="relative flex items-center gap-2 py-0.5 group w-full rounded px-1 -mx-1"
+            class="relative flex h-8 min-w-0 items-center gap-2 group w-full rounded-md px-2 hover:bg-muted"
             oncontextmenu={(e) => handleCommitContextMenu(e, commit.hash)}
             onkeydown={(e) => handleCommitContextMenu(e, commit.hash)}
           >
@@ -786,10 +788,13 @@
             <Button
               variant="ghost"
               type="button"
-              class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
+              class="flex h-8 items-center gap-2 flex-1 min-w-0 px-0 font-normal text-left cursor-pointer"
               onclick={() => handleOpenCommitChangeset(commit.hash, commit.message)}
             >
-              <span class="text-ui text-subtle truncate flex-1" use:truncatedTitle={commit.message}>
+              <span
+                class="type-caption text-subtle truncate flex-1"
+                use:truncatedTitle={commit.message}
+              >
                 {commit.message}
               </span>
             </Button>

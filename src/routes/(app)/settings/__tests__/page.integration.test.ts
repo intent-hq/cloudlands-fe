@@ -823,7 +823,7 @@ describe('settings back and footer behavior', () => {
   it('dispatches install when an update is ready', async () => {
     appStore.dispatch(simulateSetState({ status: 'downloaded' }));
     renderSettings('/settings?tab=app-behavior');
-    const update = screen.getByRole('button', { name: 'Update available' });
+    const update = screen.getByRole('button', { name: 'Restart to update' });
     const dispatchSpy = vi.spyOn(appStore, 'dispatch');
     await fireEvent.click(update);
     expect(dispatchSpy).toHaveBeenCalledWith(installUpdate());

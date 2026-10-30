@@ -131,11 +131,12 @@ export const WorkspaceSchema = z.object({
   status: z.nativeEnum(WorkspaceStatus),
   statusMessage: WorkspaceStatusMessageSchema.optional(),
   statusImageAssetId: z.string().optional(), // Agent-authored status screenshot asset id (intent-hq/monorepo#997)
+  label: z.string().min(1).max(64).optional(), // Workspace label (PROTOCOL §5.1 "Workspace labels")
   activity: z.enum(['idle', 'agent_running']).optional(), // BE-derived in-flight agent state
   attention: z.enum(['none', 'unread', 'review_required']).optional(), // BE-owned dismissible attention flag (PROTOCOL §5.1 / §9.9)
   // Membership summary (PROTOCOL §5.1, multiplayer w1); all absent on older daemons.
   ownerPrincipalId: z.string().optional(),
-  myRole: z.enum(['owner', 'collaborator']).optional(),
+  myRole: z.enum(['owner', 'collaborator', 'manager']).optional(),
   memberCount: z.number().int().nonnegative().optional(),
   openInviteCount: z.number().int().nonnegative().optional(),
   createdAt: z.string().datetime(),
@@ -233,6 +234,10 @@ export const CreateWorkspaceRequestSchema = z.object({
   skipIsolation: z.boolean().optional(), // Canonical wire name; the daemon still accepts the deprecated skipWorktree alias
   progressId: z.string().optional(), // FE-minted correlation id echoed on git:clone:progress/done frames (PROTOCOL §5.1)
   contextLinks: z.array(ContextLinkSchema).max(20).optional(), // Issue/PR context links persisted on the workspace row (PROTOCOL §5.1)
+  // The applied proposal card (PROTOCOL §5.1 "Proposal origin").
+  origin: z
+    .object({ kind: z.literal('proposal'), agentId: z.string(), proposalId: z.string() })
+    .optional(),
 });
 
 /**

@@ -5,26 +5,31 @@
   import type { ReasoningHistoryItem } from './reasoning-heading';
   import type { ContentBlock, ToolUseBlock, MessageRole } from '$shared/types';
   import type { TextBlockMedia } from '$shared/types/content-block';
-  import { dedupeAgentVideoContentBlocks, normalizeAgentVideoContentBlocks } from '$shared/types';
   import {
     classifyToolResults,
     findToolResult,
     getStandaloneToolResultPresentation,
     getToolResultPayload,
-    getToolResultText,
+    resolveToolState,
     isStandaloneToolResult,
   } from './tool-result-pairing';
   import { isHydrationPending, mergeHydratedContent } from './block-hydration';
   import { messageBlockHydrationRequested } from '$store/renderer/slices/chat-state/chat-state-slice';
   import { selectHydratedBlocks } from '$store/renderer/slices/chat-state/chat-state-selectors';
+  import { selectCollapseToolRuns } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { groupMessageBlocks } from './operational-run-collapse';
+  import {
+    prepareMessageBlocks,
+    renderedBlockText,
+    rendersReasoningAsText,
+  } from './prepare-message-blocks';
   import { getProposalFromBlock } from '$shared/types/proposal-resource';
-  import { isQuestionResourceBlock } from '$shared/types/question-resource';
-  import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
   import { getContentBlockText } from '$shared/utils/content-block-helpers';
   import type { DiagramPrimitive } from '$shared/types/notes-primitives';
   import ToolCall from './ToolCall.svelte';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
+  import InlineHtmlBlock from '$features/inline-html/InlineHtmlBlock.svelte';
   import AugmentCodeSnippet from '$lib/components/editor/AugmentCodeSnippet.svelte';
   import DigestCard from './DigestCard.svelte';
   import DetectedScriptsCard from './DetectedScriptsCard.svelte';
@@ -48,9 +53,7 @@
   import {
     parseAgentMessage,
     parseSuggestedPrompts,
-    parseSuggestedPromptsFromContentBlocks,
     groupParsedBlocks,
-    groupContentBlocks,
     filterWorkspaceCardsCoveredByIds,
     type RenderBlock,
     type ParsedContent,
@@ -73,7 +76,6 @@
     getResponseGroupChildBoundary,
     isNestedReasoningSectionBoundary,
     isNestedReasoningSectionStart,
-    normalizeResponseGroups,
   } from './response-group-blocks';
   import { chatSearchBlockPath } from './chat-search';
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
@@ -172,11 +174,7 @@
     cleanupFunctions = [];
   });
 
-  /**
-   * Set of block keys that have already been animated.
-   * Prevents the slide-up animation from replaying when Svelte
-   * recreates DOM elements due to reactive content updates.
-   */
+  // Stable keys prevent entrance motion replay during reactive updates.
   const animatedKeys = new Set<string>();
 
   // Existing rows must not replay their entrance when a live transcript mounts.
@@ -213,96 +211,29 @@
     };
   }
 
+  // One shared preparation step (also used by chat search) so search block
+  // paths always address the rendered rows.
   let blocks = $derived.by(() => {
-    // Collapse duplicate §7.1 resource blocks (daemon-attached canonical +
-    // FE-lifted fallback for the same logical resource) so exactly one card
-    // renders per resource, preferring the daemon-canonical variant.
-    // Agent Q&A questions are wizard-only and never render in the transcript.
-    const parsedPromptBlocks = parseSuggestedPromptsFromContentBlocks(hydratedContent, {
+    const prepared = prepareMessageBlocks(hydratedContent, {
+      role,
+      workspaceId,
       isStreaming,
+      hideToolCalls,
+      reasoningAsText: rendersReasoningAsText($mediaAgent$),
     });
-    const rawBlocks = dedupeAgentVideoContentBlocks(
-      normalizeAgentVideoContentBlocks(
-        dedupeResourceBlocks(parsedPromptBlocks.contentBlocks),
-        role,
-        workspaceId,
-      ),
-    ).filter((block) => !isQuestionResourceBlock(block));
-
-    if (isStreaming) {
-      const blockTypes = rawBlocks.map((b) => b.type);
-      const hasToolUse = blockTypes.includes('tool_use');
-      if (hasToolUse) {
-        logger.debug('[StreamingMessageContent] blocks derived - has tool_use', {
-          blockCount: rawBlocks.length,
-          blockTypes,
-          hideToolCalls,
-        });
-      }
-    }
-
-    let filtered: ContentBlock[];
-    if (!isStreaming) {
-      // Filter empty text blocks and optionally hide tool activity.
-      filtered = rawBlocks.filter((block) => {
-        if (hideToolCalls && block.type === 'tool_use') {
-          return false;
-        }
-
-        // Filter out empty text blocks (prevents blank spots in chat history)
-        // Also strip suggested prompts before checking - they're rendered separately in ChatPanel
-        if (block.type === 'text') {
-          const text = block.text || (block as any).content || '';
-          const { cleanedContent } = parseSuggestedPrompts(text);
-          if (!cleanedContent.trim()) {
-            return false;
-          }
-        }
-
-        if (hideToolCalls && block.type === 'tool_result') return false;
-        return true;
-      });
-    } else {
-      // Streaming with content blocks - filter empty text blocks and optionally tool calls
-      filtered = rawBlocks.filter((block) => {
-        if (hideToolCalls && (block.type === 'tool_use' || block.type === 'tool_result')) {
-          return false;
-        }
-        // Filter out empty text blocks during streaming (prevents spacing issues between tool calls)
-        // Also strip suggested prompts before checking - they're rendered separately in ChatPanel
-        if (block.type === 'text') {
-          const text = block.text || (block as any).content || '';
-          const { cleanedContent } = parseSuggestedPrompts(text);
-          if (!cleanedContent.trim()) {
-            return false;
-          }
-        }
-        return true;
+    if (isStreaming && prepared.some((b) => b.type === 'tool_use')) {
+      logger.debug('[StreamingMessageContent] blocks derived - has tool_use', {
+        blockCount: prepared.length,
+        blockTypes: prepared.map((b) => b.type),
+        hideToolCalls,
       });
     }
-
-    // Deduplicate tool_use blocks: if skeleton + follow-up both exist with same ID,
-    // keep only the last one (which has descriptive input parameters).
-    const toolUseLastIndex = new Map<string, number>();
-    for (let i = 0; i < filtered.length; i++) {
-      const block = filtered[i];
-      if (block.type === 'tool_use' && block.id) {
-        toolUseLastIndex.set(block.id, i);
-      }
-    }
-    if (toolUseLastIndex.size === 0) return filtered;
-    return filtered.filter((block, index) => {
-      if (block.type === 'tool_use' && block.id) {
-        return toolUseLastIndex.get(block.id) === index;
-      }
-      return true;
-    });
+    return prepared;
   });
 
   // Group content blocks by <group:Name> tags at the ContentBlock level.
-  let groupedBlocks = $derived(
-    normalizeResponseGroups(groupContentBlocks(blocks, isStreaming), isStreaming),
-  );
+  const collapseToolRuns$ = selectCollapseToolRuns();
+  let groupedBlocks = $derived(groupMessageBlocks(blocks, isStreaming, $collapseToolRuns$));
 
   let toolStates = $state<Map<string, 'running' | 'completed' | 'error'>>(new Map());
 
@@ -315,28 +246,8 @@
     for (const block of blocks) {
       if (block.type === 'tool_use') {
         const toolBlock = block as ToolUseBlock;
-        // If there's a result for this tool, mark as completed/error
-        // If streaming is done but no result, mark as completed (result may have been lost)
-        // Otherwise mark as running. Look up by both the addressable block id
-        // and the provider toolCallId (when present) to align with PROTOCOL.md
-        // tool-call pairing.
         const result = findToolResult(toolResultsMap, toolBlock);
-        if (result) {
-          const isError = result.is_error || result.isError;
-          // Also detect errors from the result payload text (§7.1 `output`,
-          // legacy `content` fallback; e.g., "Error:" prefix or "Tool Error:")
-          // Note: We no longer check for ❌ emoji as it may be used as a visual indicator in content
-          const contentText = getToolResultText(result);
-          const hasErrorInContent =
-            // i18n-ignore (wire-content sniffing of tool result payloads, not rendered)
-            contentText.startsWith('Error:') || contentText.includes('Tool Error:');
-          newToolStates.set(toolBlock.id, isError || hasErrorInContent ? 'error' : 'completed');
-        } else if (!isStreaming) {
-          // Streaming finished but no result - mark as completed anyway
-          newToolStates.set(toolBlock.id, 'completed');
-        } else {
-          newToolStates.set(toolBlock.id, 'running');
-        }
+        newToolStates.set(toolBlock.id, resolveToolState(toolBlock, result, isStreaming));
       }
     }
 
@@ -469,7 +380,7 @@
     const results = new Map<string, ParsedTextResult>();
     groupedBlocks.forEach((block, index) => {
       if (block.type === 'text') {
-        const textContent = (block as ContentBlock).text || (block as any).content || '';
+        const textContent = renderedBlockText(block as ContentBlock);
         if (textContent) {
           const parsed = parseTextBlock(textContent);
           results.set(String(index), {
@@ -563,7 +474,7 @@
     const contentBlock = block as ContentBlock;
     if (isNavLinkBlock(contentBlock)) return true;
     if (contentBlock.type === 'text') {
-      const text = contentBlock.text || (contentBlock as any).content || '';
+      const text = renderedBlockText(contentBlock);
       return parseSuggestedPrompts(text).cleanedContent.trim().length > 0;
     }
     if (contentBlock.type === 'image') {
@@ -629,13 +540,26 @@
   isLastBlock: boolean,
   insetProse = false,
   media: TextBlockMedia | undefined = undefined,
+  contentBlockKey = '',
 )}
   {#if insetProse}
     <div class={OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}>
-      {@render renderParsedContentBlockBody(parsedBlock, isLastBlock, insetProse, media)}
+      {@render renderParsedContentBlockBody(
+        parsedBlock,
+        isLastBlock,
+        insetProse,
+        media,
+        contentBlockKey,
+      )}
     </div>
   {:else}
-    {@render renderParsedContentBlockBody(parsedBlock, isLastBlock, insetProse, media)}
+    {@render renderParsedContentBlockBody(
+      parsedBlock,
+      isLastBlock,
+      insetProse,
+      media,
+      contentBlockKey,
+    )}
   {/if}
 {/snippet}
 
@@ -644,6 +568,7 @@
   isLastBlock: boolean,
   insetProse: boolean,
   media: TextBlockMedia | undefined,
+  contentBlockKey: string,
 )}
   {#if parsedBlock.type === 'augment_code_snippet'}
     <AugmentCodeSnippet
@@ -724,6 +649,15 @@
     <ChatCliBlock command={cliData.command} />
   {:else if parsedBlock.type === 'agent_action' && parsedBlock.metadata?.agentActionData}
     <ChatAgentActionBlock goal={parsedBlock.metadata.agentActionData.goal} />
+  {:else if parsedBlock.type === 'html'}
+    <InlineHtmlBlock
+      block={parsedBlock}
+      {role}
+      {workspaceId}
+      {agentId}
+      {messageId}
+      {contentBlockKey}
+    />
   {:else if parsedBlock.type === 'code'}
     <CodeBlock
       code={parsedBlock.content || ''}
@@ -785,8 +719,8 @@
         {workspaceId}
       />
     </div>
-  {:else if block.type === 'text' && (block.text || (block as any).content)}
-    {@const textContent = block.text || (block as any).content || ''}
+  {:else if block.type === 'text' && renderedBlockText(block)}
+    {@const textContent = renderedBlockText(block)}
     {@const parsedResult = parsedTextBlocks.get(parsedKey) || {
       blocks: [],
       setupScript: null,
@@ -808,6 +742,7 @@
             isLastBlock && parsedBlockIndex === parsedResult.blocks.length - 1,
             !nested,
             block.media,
+            block.id ?? parsedKey,
           )}
         {/each}
       {:else}
@@ -1077,6 +1012,7 @@
         blocks={group.children.filter(isVisibleGroupChild)}
         searchPath={chatSearchBlockPath(blockIndex)}
         reasoningPhase={group.isReasoningPhase}
+        collapsedRun={group.collapsedRun}
         adjacentOperationalRow={isAdjacentOperationalClusterRow(
           groupedBlocks,
           blockIndex,
@@ -1116,7 +1052,7 @@
         : getOperationalClusterSpacingClass(groupedBlocks, blockIndex, isVisibleTopLevelBlock)}"
       data-operational-cluster-row={isOperationalClusterBlock(block) ? block.type : undefined}
       data-message-content-block={block.type}
-      data-chat-search-block-path={block.type === 'text'
+      data-chat-search-block-path={block.type === 'text' || block.type === 'thinking'
         ? chatSearchBlockPath(blockIndex)
         : undefined}
       use:animateIn={{

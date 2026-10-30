@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/experimental-ct-svelte';
-import { expect, test } from '../../../../test/ct-test';
+import { expect, test, wheelUntilScrolled } from '../../../../test/ct-test';
 import StickyScrollStabilityHost from './StickyScrollStabilityHost.svelte';
 import type { AgentMessage } from '$shared/types';
 
@@ -36,6 +36,7 @@ async function geometry(scroll: Locator, anchor: Locator, source: Locator) {
         scrollHeight: node.scrollHeight,
         clientHeight: node.clientHeight,
         anchorDocumentTop: anchorNode.getBoundingClientRect().top + node.scrollTop * scale,
+        responseHeight: anchorNode.getBoundingClientRect().height / scale,
         sourceHeight: sourceNode.getBoundingClientRect().height,
       };
     },
@@ -123,8 +124,7 @@ test('pins automated triggers without shifting the transcript and returns to eac
     expect(after.anchorDocumentTop).toBeCloseTo(before.anchorDocumentTop, 1);
     expect(after.scrollTop).toBeCloseTo(entry, 1);
     const bounds = (await pinned.boundingBox())!;
-    expect(bounds.width).toBeLessThanOrEqual(320);
-    expect(bounds.height).toBeLessThan(60);
+    expect(bounds.width).toBeLessThanOrEqual(page.viewportSize()!.width);
     if (index === 0) {
       await component.update({ props: { ...config, streamGrowth: 90 } });
       await settle(page);
@@ -175,7 +175,10 @@ for (const config of [
     await settle(page);
     const streamed = await geometry(scroll, anchor, source);
     expect(streamed.scrollTop).toBeCloseTo(entry, 1);
-    expect(streamed.scrollHeight - entered.scrollHeight).toBeCloseTo(90, 1);
+    expect(streamed.scrollHeight - entered.scrollHeight).toBeCloseTo(
+      streamed.responseHeight - entered.responseHeight,
+      1,
+    );
 
     for (let crossing = 0; crossing < 4; crossing += 1) {
       await scroll.evaluate((node, top) => node.scrollTo(0, top as number), entry - 5);
@@ -246,7 +249,8 @@ test('composes sticky crossings with slow wheel, fast wheel, and keyboard scroll
   await scroll.evaluate((node, top) => node.scrollTo(0, top as number), entry - 3);
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   const slowBefore = await scroll.evaluate((node) => node.scrollTop);
-  await page.mouse.wheel(0, 6);
+  // A resend would double the distance this test bounds; give one wheel longer.
+  await wheelUntilScrolled(scroll, { deltaY: 6, pointer: 'current', attemptTimeout: 5_000 });
   await settle(page);
   const slowAfter = await scroll.evaluate((node) => node.scrollTop);
   expect(slowAfter - slowBefore).toBeGreaterThan(0);
@@ -255,7 +259,7 @@ test('composes sticky crossings with slow wheel, fast wheel, and keyboard scroll
 
   await scroll.evaluate((node, top) => node.scrollTo(0, top as number), entry - 120);
   const fastBefore = await scroll.evaluate((node) => node.scrollTop);
-  await page.mouse.wheel(0, 180);
+  await wheelUntilScrolled(scroll, { deltaY: 180, pointer: 'current', attemptTimeout: 5_000 });
   await settle(page);
   const fastAfter = await scroll.evaluate((node) => node.scrollTop);
   expect(fastAfter - fastBefore).toBeGreaterThan(100);

@@ -23,6 +23,12 @@ import {
 } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
 import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 
+const navigation = vi.hoisted(() => ({ show: vi.fn(async () => true) }));
+vi.mock('$lib/utils/show-workspace', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/utils/show-workspace')>()),
+  openAndShowWorkspace: navigation.show,
+}));
+
 const workspaceId = 'sub-agent-pane-navigation';
 const agentId = 'navigation-child';
 let stop: () => void;
@@ -183,4 +189,34 @@ describe('sub-agent links in chat panes', () => {
       expect(layout().focusedPanelId).toBe('other');
     },
   );
+
+  it('shows the owning workspace and its tab when a watched agent opens from another workspace', async () => {
+    navigation.show.mockClear();
+    appStore.dispatch(openWorkspaceTab(workspaceId));
+    appStore.dispatch(
+      setSubscriptionSnapshot(workspaceId, 'parent', {
+        subscriptions: [
+          {
+            id: 'watch',
+            agentId: 'parent',
+            actorIds: [agentId],
+            eventTypes: ['agent:idle'],
+            createdAt: '2026-10-02T00:00:00Z',
+            description: 'Watch child',
+          },
+        ],
+        delegationGroups: [],
+        agentStatuses: { [agentId]: 'idle' },
+        waitingState: 'waiting',
+      }),
+    );
+    appStore.dispatch(openWorkspaceTab('elsewhere'));
+    const view = render(AgentSubscriptions, { workspaceId, agentId: 'parent' });
+    view.container.setAttribute('data-panel-id', 'source');
+    const avatar = view.container.querySelector('[data-agent-avatar]')!;
+
+    await fireEvent.click(avatar.querySelector('path') ?? avatar);
+
+    expect(navigation.show).toHaveBeenCalledExactlyOnceWith(workspaceId);
+  });
 });

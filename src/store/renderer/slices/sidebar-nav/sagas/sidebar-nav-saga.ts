@@ -5,16 +5,18 @@ import {
   selectActiveBackendId,
 } from '../../../utils/backend-storage-namespace';
 import { getLocalStorageJSON, setLocalStorageJSON } from '../../../utils/safe-local-storage-saga';
+import { sidebarSectionNavigationSaga } from './sidebar-section-navigation-saga';
 import { connectionsListReceived } from '../../connections/connections-slice';
 import { workspaceMounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   selectChiefActiveAgentId,
   selectMultiSelectSidebarSelectedTabIds,
-  selectPinnedWorkspaceIds,
+  selectLocalPinnedWorkspaceIds,
   selectWorkspaceCollapsedNoteIds,
   selectWorkspaceNoteOrder,
 } from '../sidebar-nav-selectors';
 import {
+  cancelSidebarSectionNavigation,
   CHIEF_ACTIVE_AGENT_ID_KEY,
   hydrateSidebarNav,
   hydrateWorkspaceSidebarUi,
@@ -23,12 +25,19 @@ import {
   PINNED_WORKSPACES_KEY,
   setChiefActiveAgentId,
   setMultiSelectSidebarSelectedTabs,
+  setWorkspaceLabel,
   setWorkspaceNoteOrder,
   togglePinWorkspace,
   toggleWorkspaceCollapsedNote,
   WORKSPACE_COLLAPSED_NOTES_PREFIX,
   WORKSPACE_NOTE_ORDER_PREFIX,
 } from '../sidebar-nav-slice';
+import {
+  setWorkspaceLabelWorker,
+  togglePinWithLabel,
+  watchAuthoritativeWorkspaceLabels,
+  watchPinLabelMigration,
+} from './workspace-label-saga';
 
 function pinnedWorkspacesKey(backendId: string): string {
   return namespaceBackendKey(PINNED_WORKSPACES_KEY, backendId);
@@ -98,11 +107,22 @@ function* persistPinnedWorkspaces(): SagaGenerator<void> {
     yield* call(
       setLocalStorageJSON,
       pinnedWorkspacesKey(yield* selectActiveBackendId()),
-      yield* selectPinnedWorkspaceIds.effect(),
+      yield* selectLocalPinnedWorkspaceIds.effect(),
     );
   } catch {
     // Storage failures are non-fatal and must not terminate the watcher.
   }
+}
+
+function* handleTogglePinWorkspace(
+  action: ReturnType<typeof togglePinWorkspace>,
+): SagaGenerator<void> {
+  try {
+    yield* call(togglePinWithLabel, action);
+  } catch {
+    // A label write failure is surfaced by its own worker; keep persisting local pins.
+  }
+  yield* call(persistPinnedWorkspaces);
 }
 
 function* persistChiefActiveAgentId(): SagaGenerator<void> {
@@ -144,10 +164,11 @@ function* hydrateWorkspaceSidebarUiState(
   }
 }
 
-function* persistWorkspaceSelectedTabs(
+function* handleWorkspaceSelectedTabs(
   action: ReturnType<typeof setMultiSelectSidebarSelectedTabs>,
 ): SagaGenerator<void> {
   const [workspaceId] = action.payload;
+  yield* put(cancelSidebarSectionNavigation(workspaceId));
   try {
     yield* call(
       setLocalStorageJSON,
@@ -227,12 +248,16 @@ function* watchBackendSwitch(): SagaGenerator<void> {
 }
 
 export function* sidebarNavSaga(): SagaGenerator<void> {
+  yield* fork(sidebarSectionNavigationSaga);
   yield* call(hydrateSidebarNavState);
   yield* fork(watchBackendSwitch);
-  yield* takeEvery(togglePinWorkspace, persistPinnedWorkspaces);
+  yield* fork(watchPinLabelMigration);
+  yield* fork(watchAuthoritativeWorkspaceLabels);
+  yield* takeEvery(togglePinWorkspace, handleTogglePinWorkspace);
+  yield* takeEvery(setWorkspaceLabel, setWorkspaceLabelWorker);
   yield* takeEvery(setChiefActiveAgentId, persistChiefActiveAgentId);
   yield* takeEvery(workspaceMounted, hydrateWorkspaceSidebarUiState);
-  yield* takeEvery(setMultiSelectSidebarSelectedTabs, persistWorkspaceSelectedTabs);
+  yield* takeEvery(setMultiSelectSidebarSelectedTabs, handleWorkspaceSelectedTabs);
   yield* takeEvery(setWorkspaceNoteOrder, persistWorkspaceNoteOrder);
   yield* takeEvery(toggleWorkspaceCollapsedNote, persistWorkspaceCollapsedNotes);
 }

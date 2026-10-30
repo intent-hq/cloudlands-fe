@@ -26,29 +26,22 @@
     collapsible = false,
     expanded = true,
     onToggle,
-    active = false,
     subtitle,
-    activeColor = 'bg-primary',
     action,
     children,
   }: Props = $props();
 </script>
 
-<div class="relative pl-4 pb-2">
-  <!-- Timeline node -->
-  <div
-    class="absolute left-[3px] top-[9px] size-1.5 rounded-full bg-border {active
-      ? activeColor
-      : 'bg-border'}"
-  ></div>
-
-  <div class="flex items-center justify-between mb-1">
-    <Header size={5} class="shrink-0 whitespace-nowrap">
+<div class="relative min-w-0 pb-1">
+  <div class="flex h-8 min-w-0 items-center justify-between gap-2 px-2">
+    <Header size={5} class="type-caption min-w-0 flex-1 font-normal text-muted-foreground">
       {#if collapsible}
         <Button
-          variant="plain"
+          variant="ghost"
           size="compact"
-          class="h-auto justify-start gap-1 text-[length:inherit] font-medium"
+          truncateLabel
+          labelClass="text-left"
+          class="h-8 min-w-0 max-w-full justify-start gap-1 rounded-md px-2 -mx-2 type-caption font-normal text-muted-foreground"
           aria-expanded={expanded}
           onclick={onToggle}
           onkeydown={(event) => event.stopPropagation()}
@@ -77,7 +70,7 @@
   </div>
 
   {#if children && (!collapsible || expanded)}
-    <div class="w-full pl-2">
+    <div class="w-full min-w-0">
       {@render children()}
     </div>
   {/if}

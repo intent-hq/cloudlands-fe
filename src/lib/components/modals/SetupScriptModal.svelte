@@ -4,6 +4,7 @@
    * Uses local state so changes only apply on Done, and Cancel discards them.
    */
   import { FormDialog } from '$lib/components/patterns/confirm';
+  import { isTextEntryTarget } from '$lib/utils/text-entry';
   import type { Snippet } from 'svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import type { ProjectType, SetupScriptNameSource } from '$features/setup-scripts';
@@ -96,11 +97,9 @@
 
   function handleFocusIn(event: FocusEvent) {
     const target = event.target;
+    // Monaco widgets (find/replace controls) own Escape even when they are not text entry.
     escapeKeydownBehavior =
-      target instanceof HTMLElement &&
-      (target.tagName === 'INPUT' ||
-        target.tagName === 'TEXTAREA' ||
-        target.closest('.monaco-editor') !== null)
+      isTextEntryTarget(target) || (target instanceof Element && target.closest('.monaco-editor'))
         ? 'ignore'
         : 'close';
   }

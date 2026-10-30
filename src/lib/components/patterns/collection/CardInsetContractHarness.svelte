@@ -3,6 +3,9 @@
   import * as Card from '$lib/components/ui/card';
   import ListRow from './ListRow.svelte';
   import ListView from './ListView.svelte';
+  import type { ListKey } from './types';
+
+  let selectedKeys = $state<ListKey[]>([]);
 </script>
 
 {#snippet emptyMessage()}No archived workspaces yet.{/snippet}
@@ -10,7 +13,12 @@
 <Card.Root aria-label="Workspace activity">
   <Card.Header><Card.Title>Workspace activity</Card.Title></Card.Header>
   <Card.Content flush>
-    <ListView items={['Active workspace']} selectable="single">
+    <ListView
+      items={['Active workspace']}
+      selectable="single"
+      {selectedKeys}
+      onSelectedKeysChange={(keys) => (selectedKeys = keys)}
+    >
       {#snippet row({ item })}
         <ListRow inset>{#snippet title()}{item}{/snippet}</ListRow>
       {/snippet}

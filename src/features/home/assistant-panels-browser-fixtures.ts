@@ -298,18 +298,18 @@ export function setupAssistantPanelsFixture(
       return { ok: true, noteId, newContent: content, rev };
     },
     'comment.list': () => ({ threads: [] }),
-    'note.lineAttribution.load': () => null,
     'principal.me': () => ({ id: 'assistant-preview-owner' }),
     'note.presence.subscribe': () => ({ subscriptionId: 'assistant-preview-presence' }),
     'note.presence.unsubscribe': () => ({ ok: true }),
     'note.presence.update': () => ({ ok: true }),
   });
+  const fixtureBridge = window.electronAPI;
   const stopNotes = startWorkspaceNotesSagaFixture(store);
   return () => {
     for (const stop of stopNotes) stop();
     release();
     delete window.__assistantPanels;
-    window.electronAPI = previousBridge;
+    if (window.electronAPI === fixtureBridge) window.electronAPI = previousBridge;
     fixtureWindow.assistantNoteRequests = previousRequests;
   };
 }

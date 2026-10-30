@@ -9,22 +9,41 @@
  */
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { listPrMonitors, type PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
-import { backendRequest } from '$lib/client/live/backend-transport';
+import { tick } from 'svelte';
+import {
+  listPrMonitors,
+  subscribePrMonitors,
+  type PrMonitorRow,
+} from '$features/pr-monitor/pr-monitor-service';
+import producer from '../../../../test/fixtures/qualified-monitor-producer.json';
 import producerRowsRaw from '$features/pr-monitor/__fixtures__/legacy-monitor-rows.fixture';
+import type { ReviewMonitorRow, PrMonitorSession } from '$shared/types/pr-monitor';
+import { runSaga } from 'redux-saga';
+import {
+  cancelPrMonitorWorker,
+  flushPrMonitorWorker,
+} from '$store/renderer/slices/pr-monitor/sagas/pr-monitor-saga';
 import { resetAgentSubscriptionsViewStateForTests } from '../agent-subscriptions-view-state';
 
 const {
   dispatchMock,
   monitorsState,
+  captureSession,
   snapshotState,
   workspaceState,
   handleLinkMock,
   openLinkInAppMock,
 } = vi.hoisted(() => ({
   dispatchMock: vi.fn(),
-  monitorsState: { monitors: [] as unknown[] },
-  snapshotState: { status: 'ready' as 'loading' | 'ready' | 'failed' },
+  monitorsState: {
+    monitors: [] as ReviewMonitorRow[],
+    listeners: new Set<(rows: ReviewMonitorRow[]) => void>(),
+  },
+  captureSession: vi.fn(),
+  snapshotState: {
+    status: 'ready' as 'loading' | 'stale' | 'ready' | 'failed',
+    listeners: new Set<(value: 'loading' | 'stale' | 'ready' | 'failed') => void>(),
+  },
   workspaceState: {
     workspace: {
       id: 'ws-1',
@@ -39,23 +58,45 @@ const {
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({
+  const { select } = await import('typed-redux-saga');
+  const module = createAppStoreMockModule({
     state: () => ({ theme: { name: 'dark' } }),
     dispatch: dispatchMock,
   });
+  const createSelector = module.store.createSelector;
+  module.store.createSelector = (fn) => {
+    const selector = createSelector(fn);
+    // Component mock readables plus real Redux select effects for control workers.
+    selector.effect = function* (...args) {
+      return yield* select(selector.select, ...args);
+    };
+    return selector;
+  };
+  return module;
 });
 
-vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', () => ({
-  selectAgentPrMonitors: () => ({
+vi.mock('$lib/client/live/backend-transport', () => ({
+  capturePrMonitorSession: captureSession,
+  onMonitorReconnected: () => () => {},
+  prMonitorBackendId: () => undefined,
+}));
+
+vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', async (importOriginal) => ({
+  selectReviewMonitors: (
+    await importOriginal<typeof import('$store/renderer/slices/pr-monitor/pr-monitor-selectors')>()
+  ).selectReviewMonitors,
+  selectAgentReviewMonitors: () => ({
     subscribe: (run: (value: unknown[]) => void) => {
       run(monitorsState.monitors);
-      return () => {};
+      monitorsState.listeners.add(run);
+      return () => monitorsState.listeners.delete(run);
     },
   }),
   selectPrMonitorsSnapshotStatus: () => ({
-    subscribe: (run: (value: 'loading' | 'ready' | 'failed') => void) => {
+    subscribe: (run: (value: 'loading' | 'stale' | 'ready' | 'failed') => void) => {
       run(snapshotState.status);
-      return () => {};
+      snapshotState.listeners.add(run);
+      return () => snapshotState.listeners.delete(run);
     },
   }),
 }));
@@ -74,36 +115,16 @@ vi.mock('$features/navigation/link-handler', () => ({
   openLinkInApp: openLinkInAppMock,
 }));
 
-// Producer fixtures enter at the transport boundary; the service and component
-// remain real so a wire count mismatch cannot be hidden by a hand-built row.
-vi.mock('$lib/client/live/backend-transport', () => ({
-  backendRequest: vi.fn(),
-  backendSubscribe: vi.fn(),
-  backendUnsubscribe: vi.fn(),
-  onBackendNotification: vi.fn(),
-  onBackendReconnected: vi.fn(),
-}));
-
 import MonitoredPrsRow from '../MonitoredPrsRow.svelte';
-import monitoredPrsRowSource from '../MonitoredPrsRow.svelte?raw';
 import {
   cancelPrMonitorRequested,
   flushPrMonitorRequested,
+  prMonitorReducer,
+  prMonitorsUpdated,
 } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
 
-const originalInnerWidth = window.innerWidth;
-const originalDevicePixelRatio = window.devicePixelRatio;
 const producerCases: Array<{ name: string; monitor: PrMonitorRow }> =
   JSON.parse(producerRowsRaw).cases;
-
-function setViewport(width: number, devicePixelRatio = 1) {
-  Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
-  Object.defineProperty(window, 'devicePixelRatio', {
-    configurable: true,
-    value: devicePixelRatio,
-  });
-  window.dispatchEvent(new Event('resize'));
-}
 
 async function openMenu() {
   await fireEvent.click(screen.getByTestId('monitored-pr-chip'));
@@ -113,50 +134,11 @@ async function openMenu() {
   return { menu, content };
 }
 
-// JSDOM does not apply component stylesheets, so the production
-// .monitored-pr-menu-content sizing is read from the component source and
-// modeled against the test viewport. Removing or altering the rule (the
-// menu's only width constraint) fails here instead of staying green.
-function readMenuContentRule() {
-  const rule = /\.monitored-pr-menu-content\)?\s*\{([^}]*)\}/.exec(monitoredPrsRowSource)?.[1];
-  if (!rule) {
-    throw new Error('Expected a .monitored-pr-menu-content rule in MonitoredPrsRow.svelte');
-  }
-  const width = /(?:^|;)\s*width:\s*([0-9]+)px/.exec(rule)?.[1];
-  const viewportInset = /max-width:\s*calc\(100vw\s*-\s*([0-9]+)px\)/.exec(rule)?.[1];
-  if (!width || !viewportInset) {
-    throw new Error(
-      'Expected the .monitored-pr-menu-content rule to set width and a viewport-clamped max-width',
-    );
-  }
-  return { preferredWidth: Number(width), viewportInset: Number(viewportInset) };
-}
-
-function measureRenderedMenu(menu: HTMLElement) {
-  const viewportPadding = Number(menu.dataset.viewportPadding);
-  const { preferredWidth, viewportInset } = readMenuContentRule();
-  expect(viewportInset).toBe(viewportPadding * 2);
-  const width = Math.min(preferredWidth, window.innerWidth - viewportInset);
-  const right = window.innerWidth - viewportPadding;
-  const rect = {
-    x: right - width,
-    y: 0,
-    left: right - width,
-    right,
-    top: 0,
-    bottom: 0,
-    width,
-    height: 0,
-    toJSON: () => ({}),
-  } as DOMRect;
-  menu.getBoundingClientRect = () => rect;
-  return menu.getBoundingClientRect();
-}
-
 function makeMonitor(overrides: Partial<PrMonitorRow> = {}): PrMonitorRow {
   return {
     monitorId: 'mon-1',
     workspaceId: 'ws-1',
+    origin: { backendId: 'A', sessionId: 'current', workspaceId: 'ws-1' },
     agentId: 'agent-1',
     repo: 'acme/widgets',
     prNumber: 42,
@@ -196,20 +178,136 @@ async function openDetails() {
 }
 
 describe('MonitoredPrsRow', () => {
+  it.each(['isDraft', 'hasConflicts', 'isBehind', 'checks', 'approvals'] as const)(
+    'does not turn unknown %s into ready-to-merge',
+    async (fact) => {
+      const row = structuredClone(producer) as ReviewMonitorRow;
+      const snapshot = row.lastSnapshot!;
+      snapshot.isDraft = false;
+      snapshot.hasConflicts = false;
+      snapshot.isBehind = false;
+      snapshot.mergeable = true;
+      snapshot.approvals = { decision: 'approved', have: 1, needed: 1, changesRequested: 0 };
+      snapshot.availability = {
+        policy: 'available',
+        checks: 'available',
+        approvals: 'available',
+        discussions: 'available',
+      };
+      if (fact === 'checks') snapshot.checks.total = null;
+      else if (fact === 'approvals') snapshot.approvals.have = null;
+      else snapshot[fact] = null;
+      monitorsState.monitors = [row];
+      render(MonitoredPrsRow, { workspaceId: row.workspaceId, agentId: row.agentId });
+      await openDetails();
+      expect(screen.getByTestId('monitored-pr-readiness').textContent).toContain(
+        'still being checked',
+      );
+    },
+  );
+  it('renders the actual backend producer without treating restricted null approvals as zero', async () => {
+    monitorsState.monitors = [producer as ReviewMonitorRow];
+    render(MonitoredPrsRow, { workspaceId: producer.workspaceId, agentId: producer.agentId });
+    const details = await openDetails();
+    expect(details.textContent).toContain('Approval status is unknown');
+    expect(details.textContent).not.toContain('Ready to merge');
+    await openMenu();
+    await fireEvent.click(screen.getByTestId('monitored-pr-open-external-item'));
+    expect(handleLinkMock).toHaveBeenCalledWith(
+      producer.url,
+      expect.objectContaining({ forceExternal: true }),
+    );
+  });
+  it.each(['reconnect-required', 'restricted', 'unresolved'] as const)(
+    'keeps %s recovery in the existing status slot',
+    async (state) => {
+      monitorsState.monitors = [
+        {
+          ...producer,
+          monitorAvailability:
+            state === 'unresolved' ? { state, reason: 'missing-provenance' } : { state },
+        } as ReviewMonitorRow,
+      ];
+      render(MonitoredPrsRow, { workspaceId: producer.workspaceId, agentId: producer.agentId });
+      const details = await openDetails();
+      expect(details.textContent).not.toContain('Ready to merge');
+      expect(details.textContent).not.toContain('missing-provenance');
+      await openMenu();
+      expect(screen.getByTestId('monitored-pr-cancel-item').getAttribute('aria-disabled')).not.toBe(
+        'true',
+      );
+    },
+  );
+
+  it('disables both open actions for a qualified MR without a canonical URL', async () => {
+    monitorsState.monitors = [
+      makeMonitor({
+        url: undefined,
+        resource: {
+          repository: {
+            provider: 'gitlab',
+            instanceBaseUrl: 'https://forge.example/gitlab',
+            projectPath: 'acme/widgets',
+          },
+          kind: 'merge-request',
+          number: 42,
+        },
+      }),
+    ];
+    render(MonitoredPrsRow, { workspaceId: 'ws-1', agentId: 'agent-1' });
+    await openMenu();
+    expect(screen.getByTestId('monitored-pr-open-in-app-item').getAttribute('aria-disabled')).toBe(
+      'true',
+    );
+    expect(
+      screen.getByTestId('monitored-pr-open-external-item').getAttribute('aria-disabled'),
+    ).toBe('true');
+    await fireEvent.click(screen.getByTestId('monitored-pr-open-external-item'));
+    expect(handleLinkMock).not.toHaveBeenCalled();
+  });
+
   const defaultWorkspace = workspaceState.workspace;
 
   afterEach(() => {
     cleanup();
-    setViewport(originalInnerWidth, originalDevicePixelRatio);
-    dispatchMock.mockClear();
+    dispatchMock.mockReset();
+    captureSession.mockReset();
+    monitorsState.listeners.clear();
     handleLinkMock.mockClear();
     openLinkInAppMock.mockClear();
     resetAgentSubscriptionsViewStateForTests();
     workspaceState.workspace = defaultWorkspace;
     snapshotState.status = 'ready';
+    snapshotState.listeners.clear();
     monitorsState.monitors = [];
-    vi.mocked(backendRequest).mockReset();
   });
+
+  async function loadProducerMonitor(fixture: (typeof producerCases)[number]) {
+    const origin = {
+      backendId: 'legacy-host',
+      sessionId: 'legacy-session',
+      workspaceId: fixture.monitor.workspaceId,
+    };
+    const request = vi.fn().mockResolvedValue({
+      monitors: [fixture.monitor, { ...fixture.monitor, workspaceId: 'other-workspace' }],
+    });
+    const release = vi.fn();
+    captureSession.mockResolvedValueOnce({
+      origin,
+      support: 'unsupported',
+      request: request as PrMonitorSession['request'],
+      onNotification: () => () => {},
+      onRetired: () => () => {},
+      release,
+    });
+    monitorsState.monitors = await listPrMonitors(fixture.monitor.workspaceId);
+    expect(captureSession).toHaveBeenCalledWith(fixture.monitor.workspaceId);
+    expect(request).toHaveBeenCalledExactlyOnceWith('prMonitor.list', {
+      workspaceId: fixture.monitor.workspaceId,
+    });
+    expect(release).toHaveBeenCalledOnce();
+    expect(monitorsState.monitors).toEqual([{ ...fixture.monitor, origin }]);
+  }
 
   it.each([
     ['empty', /ready to merge/],
@@ -224,11 +322,7 @@ describe('MonitoredPrsRow', () => {
   ])('renders readiness from the unmodified Rust producer row: %s', async (name, readiness) => {
     const fixture = producerCases.find((entry) => entry.name === name)!;
     expect(fixture, `missing producer case ${name}`).toBeDefined();
-    vi.mocked(backendRequest).mockResolvedValueOnce({ monitors: [fixture.monitor] });
-    monitorsState.monitors = await listPrMonitors(fixture.monitor.workspaceId);
-    expect(backendRequest).toHaveBeenCalledWith('prMonitor.list', {
-      workspaceId: fixture.monitor.workspaceId,
-    });
+    await loadProducerMonitor(fixture);
     render(MonitoredPrsRow, {
       props: {
         workspaceId: fixture.monitor.workspaceId,
@@ -244,8 +338,7 @@ describe('MonitoredPrsRow', () => {
     vi.useFakeTimers({ now: new Date('2026-01-02T03:30:00Z'), toFake: ['Date'] });
     try {
       const fixture = producerCases.find((entry) => entry.name === 'paused-missing-baseline')!;
-      vi.mocked(backendRequest).mockResolvedValueOnce({ monitors: [fixture.monitor] });
-      monitorsState.monitors = await listPrMonitors(fixture.monitor.workspaceId);
+      await loadProducerMonitor(fixture);
       render(MonitoredPrsRow, {
         props: {
           workspaceId: fixture.monitor.workspaceId,
@@ -334,18 +427,66 @@ describe('MonitoredPrsRow', () => {
     expect(screen.queryByTestId('monitored-prs-row')).toBeNull();
   });
 
-  it.each([
-    ['loading', 'status'],
-    ['failed', 'alert'],
-  ] as const)('renders its own %s state when the initial list has not settled', (status, role) => {
-    snapshotState.status = status;
+  it('renders nothing while the initial list is still loading', () => {
+    snapshotState.status = 'loading';
     monitorsState.monitors = [];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    const row = screen.getByRole(role);
-    expect(row.getAttribute('data-testid')).toBe('pr-monitors-snapshot-status');
-    expect(row.getAttribute('data-snapshot-status')).toBe(status);
+    expect(screen.queryByTestId('pr-monitors-snapshot-status')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
   });
+
+  it('renders its own failed state when the initial list could not be read', () => {
+    snapshotState.status = 'failed';
+    monitorsState.monitors = [];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const row = screen.getByRole('alert');
+    expect(row.getAttribute('data-testid')).toBe('pr-monitors-snapshot-status');
+    expect(row.getAttribute('data-snapshot-status')).toBe('failed');
+  });
+
+  it.each(['monitored-pr-cancel-item', 'monitored-pr-check-flush-item'])(
+    'renders retained stale rows but disables %s until the list is refreshed',
+    async (item) => {
+      snapshotState.status = 'stale';
+      monitorsState.monitors = [makeMonitor()];
+      render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+      expect(screen.getByTestId('monitored-pr-summary').textContent).toContain('#42');
+      await openMenu();
+      const action = screen.getByTestId(item);
+      expect(action.getAttribute('aria-disabled')).toBe('true');
+      await fireEvent.click(action);
+      expect(dispatchMock).not.toHaveBeenCalled();
+      expect(
+        screen.getByTestId('monitored-pr-open-external-item').getAttribute('aria-disabled'),
+      ).not.toBe('true');
+    },
+  );
+
+  it.each(['monitored-pr-cancel-item', 'monitored-pr-check-flush-item'])(
+    'keeps %s disabled for a menu opened on a stale row after the fresh list lands',
+    async (item) => {
+      snapshotState.status = 'stale';
+      monitorsState.monitors = [makeMonitor()];
+      render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+      await openMenu();
+
+      const fresh = makeMonitor({
+        origin: { backendId: 'A', sessionId: 'reacquired', workspaceId: 'ws-1' },
+      });
+      snapshotState.status = 'ready';
+      for (const listener of snapshotState.listeners) listener('ready');
+      for (const listener of monitorsState.listeners) listener([fresh]);
+      await tick();
+
+      const action = screen.getByTestId(item);
+      expect(action.getAttribute('aria-disabled')).toBe('true');
+      await fireEvent.click(action);
+      expect(dispatchMock).not.toHaveBeenCalled();
+    },
+  );
 
   it('renders 4+ digit PR numbers without digit grouping', () => {
     monitorsState.monitors = [
@@ -595,6 +736,40 @@ describe('MonitoredPrsRow', () => {
     expect(card.textContent).not.toContain('still being checked');
   });
 
+  it('adds the queue position and estimate when the snapshot carries mergeQueue', async () => {
+    monitorsState.monitors = [
+      makeMonitor({
+        lastSnapshot: {
+          ...makeMonitor().lastSnapshot!,
+          isInMergeQueue: true,
+          mergeQueue: { position: 2, queueSize: 2, estimatedTimeToMerge: 2254 },
+        },
+      }),
+    ];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const card = await openDetails();
+    expect(card.textContent).toContain(
+      'Open; queued to merge (#2 of 2 in queue · ~38 min to merge).',
+    );
+  });
+
+  it('shows the position alone while GitHub has no estimate yet', async () => {
+    monitorsState.monitors = [
+      makeMonitor({
+        lastSnapshot: {
+          ...makeMonitor().lastSnapshot!,
+          isInMergeQueue: true,
+          mergeQueue: { position: 1, queueSize: 3 },
+        },
+      }),
+    ];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const card = await openDetails();
+    expect(card.textContent).toContain('Open; queued to merge (#1 of 3 in queue).');
+  });
+
   it('renders the pre-existing readiness statuses when isInMergeQueue is absent', async () => {
     monitorsState.monitors = [makeMonitor()];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
@@ -737,50 +912,153 @@ describe('MonitoredPrsRow', () => {
     ]);
   });
 
-  it('renders the portaled menu at a 260px preferred width with single-line regular labels', async () => {
-    setViewport(1280);
-    monitorsState.monitors = [makeMonitor()];
-    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
-
-    const { menu, content } = await openMenu();
-    expect(content.className).toContain('monitored-pr-menu-content');
-    expect(menu.className).toContain('w-full');
-    expect(menu.className).toContain('min-w-0');
-    expect(menu.getAttribute('style')).toBeNull();
-    const bounds = measureRenderedMenu(menu);
-    expect(bounds.width).toBe(260);
-    expect(bounds.left).toBeGreaterThanOrEqual(12);
-    expect(bounds.right).toBeLessThanOrEqual(window.innerWidth - 12);
-    for (const item of Array.from(menu.querySelectorAll('button'))) {
-      expect(item.className).toContain('min-[284px]:whitespace-nowrap');
-      expect(item.className).not.toContain('truncate');
-    }
-  });
-
-  it.each([
-    ['narrow viewport', 240, 1],
-    ['representative 200% zoom viewport', 240, 2],
-  ])('clamps and cleanly wraps labels at a %s', async (_label, width, devicePixelRatio) => {
-    setViewport(width, devicePixelRatio);
-    monitorsState.monitors = [makeMonitor()];
-    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
-
-    const { menu, content } = await openMenu();
-    expect(content.className).toContain('monitored-pr-menu-content');
-    expect(window.devicePixelRatio).toBe(devicePixelRatio);
-    expect(menu.getAttribute('style')).toBeNull();
-    const bounds = measureRenderedMenu(menu);
-    expect(bounds.width).toBeLessThanOrEqual(window.innerWidth - 24);
-    expect(bounds.left).toBeGreaterThanOrEqual(12);
-    expect(bounds.right).toBeLessThanOrEqual(window.innerWidth - 12);
-    for (const item of Array.from(menu.querySelectorAll('button'))) {
-      expect(item.className).toContain('h-auto');
-      expect(item.className).toContain('whitespace-normal');
-      expect(item.querySelector('[data-slot="button-content"] > span')?.className).toContain(
-        'break-words',
+  describe.each(['current', 'retained-live', 'retained-retired'] as const)(
+    'menu origin %s',
+    (scenario) => {
+      it.each(
+        ['github', 'gitlab'].flatMap(
+          (provider) =>
+            [
+              ['cancel', 'monitored-pr-cancel-item', 'prMonitor.cancel', provider],
+              ['check and flush', 'monitored-pr-check-flush-item', 'prMonitor.flush', provider],
+            ] as const,
+        ),
+      )(
+        'routes real %s menu controls through the captured origin (%s %s %s)',
+        async (kind, item, method, provider) => {
+          const a = makeMonitor({
+            ...(provider === 'gitlab'
+              ? {
+                  resource: {
+                    repository: {
+                      provider: 'gitlab' as const,
+                      instanceBaseUrl: 'https://forge.example/gitlab',
+                      projectPath: 'acme/widgets',
+                    },
+                    kind: 'merge-request' as const,
+                    number: 42,
+                  },
+                  url: 'https://forge.example/gitlab/acme/widgets/-/merge_requests/42',
+                }
+              : {}),
+            origin: { backendId: 'A', sessionId: `A-${scenario}`, workspaceId: 'ws-1' },
+          });
+          const b = makeMonitor({
+            title: 'Replacement host row',
+            origin: { backendId: 'B', sessionId: `B-${scenario}`, workspaceId: 'ws-1' },
+          });
+          const session = (row: PrMonitorRow) => {
+            const request = vi.fn(async (rpc: string) =>
+              rpc === 'prMonitor.list'
+                ? { monitors: [row] }
+                : rpc === 'events.subscribe'
+                  ? { subscriptionId: row.origin!.sessionId }
+                  : {},
+            );
+            return {
+              origin: row.origin!,
+              support: 'unsupported' as const,
+              request: request as PrMonitorSession['request'],
+              onNotification: () => () => {},
+              onRetired: () => () => {},
+              release: async () => {},
+            };
+          };
+          const sessionA = session(a);
+          const sessionB = session(b);
+          captureSession.mockResolvedValueOnce(sessionA);
+          const rowsA = vi.fn();
+          const leaseA = subscribePrMonitors('ws-1', rowsA);
+          let leaseB: ReturnType<typeof subscribePrMonitors> | undefined;
+          const pending: Promise<unknown>[] = [];
+          let state = { prMonitor: prMonitorReducer(undefined, prMonitorsUpdated('ws-1', [a])) };
+          dispatchMock.mockImplementation((action) => {
+            if (action.type === cancelPrMonitorRequested.type)
+              pending.push(
+                runSaga({ getState: () => state }, cancelPrMonitorWorker, action).toPromise(),
+              );
+            if (action.type === flushPrMonitorRequested.type)
+              pending.push(
+                runSaga({ getState: () => state }, flushPrMonitorWorker, action).toPromise(),
+              );
+          });
+          try {
+            await waitFor(() => expect(rowsA).toHaveBeenCalled());
+            monitorsState.monitors = [a];
+            render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+            await openMenu();
+            if (scenario !== 'current') {
+              if (scenario === 'retained-retired') leaseA.dispose();
+              captureSession.mockResolvedValueOnce(sessionB);
+              const rowsB = vi.fn();
+              leaseB = subscribePrMonitors('ws-1', rowsB);
+              await waitFor(() => expect(rowsB).toHaveBeenCalled());
+              state = {
+                prMonitor: prMonitorReducer(state.prMonitor, prMonitorsUpdated('ws-1', [b])),
+              };
+              monitorsState.monitors = [b];
+              for (const listener of monitorsState.listeners) listener([b]);
+              await waitFor(() =>
+                expect(screen.getByTestId('monitored-pr-summary').textContent).toContain(b.title),
+              );
+            }
+            await fireEvent.click(screen.getByTestId(item));
+            await Promise.all(pending);
+            const controlsA = vi
+              .mocked(sessionA.request)
+              .mock.calls.filter(([rpc]) => rpc === method);
+            const controlsB = vi
+              .mocked(sessionB.request)
+              .mock.calls.filter(([rpc]) => rpc === method);
+            expect(controlsB).toEqual([]);
+            expect(dispatchMock).toHaveBeenLastCalledWith(
+              kind === 'cancel'
+                ? cancelPrMonitorRequested('ws-1', 'mon-1', a.origin)
+                : flushPrMonitorRequested('ws-1', 'mon-1', true, a.origin),
+            );
+            expect(controlsA).toEqual(
+              scenario === 'retained-retired'
+                ? []
+                : [
+                    [
+                      method,
+                      {
+                        workspaceId: 'ws-1',
+                        monitorId: 'mon-1',
+                        ...(kind === 'cancel' ? {} : { check: true }),
+                      },
+                    ],
+                  ],
+            );
+          } finally {
+            leaseA.dispose();
+            leaseB?.dispose();
+            cleanup();
+            dispatchMock.mockReset();
+          }
+        },
       );
-    }
-  });
+    },
+  );
+
+  it.each(['monitored-pr-cancel-item', 'monitored-pr-check-flush-item'])(
+    'does not recover a missing captured origin for %s',
+    async (item) => {
+      monitorsState.monitors = [makeMonitor({ origin: undefined })];
+      render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+      await openMenu();
+      const replacement = makeMonitor({
+        title: 'New host',
+        origin: { backendId: 'B', sessionId: 'replacement', workspaceId: 'ws-1' },
+      });
+      for (const listener of monitorsState.listeners) listener([replacement]);
+      await waitFor(() =>
+        expect(screen.getByTestId('monitored-pr-summary').textContent).toContain('New host'),
+      );
+      await fireEvent.click(screen.getByTestId(item));
+      expect(dispatchMock).not.toHaveBeenCalled();
+    },
+  );
 
   it('chip menu Check and Flush dispatches the flush trigger with check: true', async () => {
     monitorsState.monitors = [makeMonitor({ hasPendingChanges: true, pendingChanges: ['x'] })];
@@ -791,7 +1069,9 @@ describe('MonitoredPrsRow', () => {
     await fireEvent.click(flushItem);
 
     expect(dispatchMock).toHaveBeenCalledTimes(1);
-    expect(dispatchMock).toHaveBeenCalledWith(flushPrMonitorRequested('ws-1', 'mon-1', true));
+    expect(dispatchMock).toHaveBeenCalledWith(
+      flushPrMonitorRequested('ws-1', 'mon-1', true, makeMonitor().origin),
+    );
   });
 
   it('chip menu Check and Flush stays enabled when nothing is pending', async () => {
@@ -804,7 +1084,9 @@ describe('MonitoredPrsRow', () => {
 
     await fireEvent.click(flushItem);
     expect(dispatchMock).toHaveBeenCalledTimes(1);
-    expect(dispatchMock).toHaveBeenCalledWith(flushPrMonitorRequested('ws-1', 'mon-1', true));
+    expect(dispatchMock).toHaveBeenCalledWith(
+      flushPrMonitorRequested('ws-1', 'mon-1', true, makeMonitor().origin),
+    );
   });
 
   it('chip menu Cancel monitor dispatches the cancel trigger', async () => {
@@ -816,7 +1098,9 @@ describe('MonitoredPrsRow', () => {
     await fireEvent.click(cancelItem);
 
     expect(dispatchMock).toHaveBeenCalledTimes(1);
-    expect(dispatchMock).toHaveBeenCalledWith(cancelPrMonitorRequested('ws-1', 'mon-1'));
+    expect(dispatchMock).toHaveBeenCalledWith(
+      cancelPrMonitorRequested('ws-1', 'mon-1', makeMonitor().origin),
+    );
   });
 
   it('chip menu Open in App opens the PR URL in the embedded browser panel', async () => {

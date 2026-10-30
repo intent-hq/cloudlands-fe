@@ -189,6 +189,7 @@ function makeContext(state: ActionKeyState, workspaceId: string): ActionKeyConte
     workspaceId,
     dispatch: vi.fn(),
     navigate: vi.fn(() => Promise.resolve()),
+    showWorkspace: vi.fn(() => Promise.resolve(true)),
     focusComposer: vi.fn(),
     showHint: vi.fn(),
   };
@@ -259,7 +260,7 @@ describe('unread-cycle reconciliation (multi-window divergence)', () => {
 
     definition().execute(context);
     expect(context.showHint).not.toHaveBeenCalled();
-    expect(context.navigate).toHaveBeenCalledWith('/workspace/ws-2');
+    expect(context.showWorkspace).toHaveBeenCalledWith('ws-2');
     expect(context.dispatch).toHaveBeenCalledWith(setActiveAgentId('ws-2', 'b-1'));
     // Sole stop: the HUD shows the plain label, not a remaining count.
     expect(context.dispatch).toHaveBeenCalledWith(
@@ -292,7 +293,7 @@ describe('unread-cycle reconciliation (multi-window divergence)', () => {
     const staleState = makeCycleState(run.workspaces(), agents);
     const press1 = makeContext(staleState, 'ws-1');
     definition().execute(press1);
-    expect(press1.navigate).toHaveBeenCalledWith('/workspace/ws-2');
+    expect(press1.showWorkspace).toHaveBeenCalledWith('ws-2');
     expect(press1.dispatch).toHaveBeenCalledWith(
       actionHudShown(m.hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_many({ count: 2 })),
     );
@@ -329,7 +330,7 @@ describe('unread-cycle reconciliation (multi-window divergence)', () => {
     // left over — the plain HUD label, not a pinned "N more to go".
     const press2 = makeContext(state, 'ws-2');
     definition().execute(press2);
-    expect(press2.navigate).toHaveBeenCalledWith('/workspace/ws-4');
+    expect(press2.showWorkspace).toHaveBeenCalledWith('ws-4');
     expect(press2.dispatch).toHaveBeenCalledWith(setActiveAgentId('ws-4', 'd-1'));
     expect(press2.dispatch).toHaveBeenCalledWith(
       actionHudShown(m.hardwareConsole_actionKey_cycleUnreadAgents_label()),

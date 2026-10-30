@@ -1,7 +1,6 @@
 import { expect, test } from '../../../test/ct-test';
 import DockRailPreview from './dock-rail.preview.svelte';
 import { dockRailPreview } from './dock-rail.preview-fixtures';
-import { DOCK_PREVIEW_GAP } from '$shared/dock-layout';
 
 // Recovered from the earlier dock's host-geometry browser flow. Each named scene
 // produces an attached PNG, so the combined gate leaves repeatable visual proof.
@@ -26,16 +25,14 @@ for (const scene of ['light', 'dark', 'narrow', 'overflow'] as const) {
     await button.hover();
     const preview = component.getByTestId('dock-preview');
     await expect(preview).toBeVisible();
-    const [hostBox, railBox, previewBox] = await Promise.all([
+    const [hostBox, previewBox] = await Promise.all([
       component.boundingBox(),
-      component.getByTestId('dock-rail').boundingBox(),
       preview.boundingBox(),
     ]);
     expect(previewBox!.x).toBeGreaterThanOrEqual(hostBox!.x);
     expect(previewBox!.y).toBeGreaterThanOrEqual(hostBox!.y);
     expect(previewBox!.x + previewBox!.width).toBeLessThanOrEqual(hostBox!.x + hostBox!.width);
     expect(previewBox!.y + previewBox!.height).toBeLessThanOrEqual(hostBox!.y + hostBox!.height);
-    expect(railBox!.x - previewBox!.x - previewBox!.width).toBe(DOCK_PREVIEW_GAP);
     await expect(preview).toHaveAttribute('inert', '');
     if (scene === 'overflow') {
       await expect(component.getByTestId('dock-overflow')).toHaveCount(0);

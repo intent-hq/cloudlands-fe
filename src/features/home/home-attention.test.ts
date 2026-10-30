@@ -136,16 +136,46 @@ describe('Home actionable attention', () => {
       'running',
     );
     expect(getHomeStatusCause({ displayStatus: 'idle', attention: 'unread' })).toBe('unread');
+    expect(getHomeStatusCause({ displayStatus: 'idle', scriptsRunning: true })).toBe(
+      'scripts_running',
+    );
+    expect(
+      getHomeStatusCause({
+        displayStatus: 'idle',
+        activity: 'agent_running',
+        scriptsRunning: true,
+      }),
+    ).toBe('running');
+    expect(getHomeStatusCause({ displayStatus: 'pr_ready', scriptsRunning: true })).toBe(
+      'pr_ready',
+    );
+    expect(getHomeStatusCause({ displayStatus: 'complete', backgroundTasksRunning: true })).toBe(
+      'background_tasks_running',
+    );
+    expect(
+      getHomeStatusCause({
+        displayStatus: 'idle',
+        scriptsRunning: true,
+        backgroundTasksRunning: true,
+      }),
+    ).toBe('scripts_running');
+    expect(
+      getHomeStatusCause({
+        displayStatus: 'idle',
+        activity: 'agent_running',
+        backgroundTasksRunning: true,
+      }),
+    ).toBe('running');
   });
 });
 
 describe('Home PR status precedence', () => {
   it.each(['pr_open', 'pr_ready', 'pr_queued'] as const)(
-    'keeps %s distinct without changing its triage group',
+    'keeps %s distinct and groups it by PR stage',
     (displayStatus) => {
       expect(getHomeStatusCause({ displayStatus })).toBe(displayStatus);
       expect(getHomeTriageGroup({ displayStatus })).toBe(
-        displayStatus === 'pr_ready' ? 'needs-you' : 'idle',
+        { pr_open: 'idle', pr_ready: 'needs-you', pr_queued: 'waiting' }[displayStatus],
       );
       expect(getHomeStatusCause({ displayStatus, attention: 'review_required' })).toBe('review');
       expect(getHomeStatusCause({ displayStatus, activity: 'agent_running' })).toBe(

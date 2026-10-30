@@ -746,6 +746,101 @@ function mainHelpers(): MainHelpers {
   ) as MainHelpers;
 }
 describe('actual main finalization fence and original pool', () => {
+  it('discovers the principal without retiring an invitation lease or issuing another hello', async () => {
+    const { pool } = await load();
+    const client = pool.getLocalBackendClient();
+    await connection(client);
+    await settledTurn();
+    const { event } = await localWindow();
+    const original = client.getRepositoryConnection();
+    const inviteLease = pool.captureLocalIdentityConnection();
+    const hellos = edge.writes.filter((entry) => entry.endsWith(':client.hello')).length;
+    const expected = {
+      hello: defaultReply({ id: 0, method: 'client.hello' }),
+      principal: defaultReply({ id: 0, method: 'principal.me' }),
+    };
+    expect(await invoke(IPC_CHANNELS.BACKEND.READ_PRINCIPAL, event, undefined)).toEqual({
+      ok: true,
+      result: expected,
+    });
+    expect(await invoke(IPC_CHANNELS.BACKEND.READ_PRINCIPAL, event, undefined)).toEqual({
+      ok: true,
+      result: expected,
+    });
+    expect(client.getRepositoryConnection()).toBe(original);
+    expect(inviteLease.current()).toBe(true);
+    expect(edge.writes.filter((entry) => entry.endsWith(':client.hello'))).toHaveLength(hellos);
+  });
+
+  it.each(['rehello', 'backend-switch'] as const)(
+    'refuses principal discovery crossing %s',
+    async (transition) => {
+      const { pool } = await load();
+      const client = pool.getLocalBackendClient();
+      await connection(client);
+      await settledTurn();
+      const { event } = await localWindow();
+      const held = deferred<unknown>();
+      const reached = nextFrame('principal.me', 'local');
+      edge.respond = (_socket, frame) =>
+        frame.method === 'principal.me' ? held.promise : defaultReply(frame);
+      const discovery = invoke(IPC_CHANNELS.BACKEND.READ_PRINCIPAL, event, undefined);
+      await reached;
+      if (transition === 'rehello') await client.request('client.hello', {});
+      else {
+        const { stampWindowWithBackend } = await import('../../../../main/window-backend');
+        stampWindowWithBackend(BrowserWindow.fromWebContents(event.sender)!, 'remote-A');
+      }
+      held.resolve(defaultReply({ id: 0, method: 'principal.me' }));
+      expect(await discovery).toMatchObject({
+        ok: false,
+        error: { code: 'TRANSPORT_ERROR', message: 'Principal discovery connection changed' },
+      });
+    },
+  );
+
+  it('joins an admitted principal read through pool retirement and refuses a later read', async () => {
+    const { pool, lifecycle } = await load();
+    await connection(pool.getLocalBackendClient());
+    await settledTurn();
+    const { event } = await localWindow();
+    const held = deferred<unknown>();
+    const reached = nextFrame('principal.me', 'local');
+    edge.respond = (_socket, frame) =>
+      frame.method === 'principal.me' ? held.promise : defaultReply(frame);
+    const discovery = invoke(IPC_CHANNELS.BACKEND.READ_PRINCIPAL, event, undefined);
+    await reached;
+    let joined = false;
+    const retirement = lifecycle.retire(fence()).then((result) => {
+      joined = true;
+      return result;
+    });
+    await settledTurn();
+    expect(joined).toBe(false);
+    held.resolve(defaultReply({ id: 0, method: 'principal.me' }));
+    expect(await discovery).toMatchObject({ ok: true });
+    expect((await retirement).outcome).toBe('clean');
+    const reads = edge.writes.filter((entry) => entry.endsWith(':principal.me')).length;
+    expect(await invoke(IPC_CHANNELS.BACKEND.READ_PRINCIPAL, event, undefined)).toMatchObject({
+      ok: false,
+      error: { code: 'TRANSPORT_ERROR' },
+    });
+    expect(edge.writes.filter((entry) => entry.endsWith(':principal.me'))).toHaveLength(reads);
+  });
+
+  it('preserves a daemon refusal from passive principal discovery', async () => {
+    const { pool } = await load();
+    await connection(pool.getLocalBackendClient());
+    await settledTurn();
+    const { event } = await localWindow();
+    edge.respond = (_socket, frame) =>
+      frame.method === 'principal.me' ? Promise.reject('refused') : defaultReply(frame);
+    expect(await invoke(IPC_CHANNELS.BACKEND.READ_PRINCIPAL, event, undefined)).toMatchObject({
+      ok: false,
+      error: { rpcCode: -32000, message: 'refused' },
+    });
+  });
+
   it('observes current node capabilities through IPC without a replacement hello', async () => {
     edge.respond = (_socket, frame) =>
       frame.method === 'client.hello'
@@ -774,6 +869,7 @@ describe('actual main finalization fence and original pool', () => {
             workspaceMembershipEvents: 0,
             rawScreenshotRetention: 1,
             chiefAttachments: 0,
+            noteTruncatedRead: 0,
           },
         },
       },
@@ -1036,108 +1132,117 @@ describe('pool auxiliary admission at retirement', () => {
     },
   );
 
-  it('retains late auxiliary admission while the original facade close is pending', async () => {
-    const connectionModule = await import('../backend-connection');
-    const held = deferred<Awaited<ReturnType<typeof connectionModule.captureFingerprint>>>();
-    const probe = vi
-      .spyOn(connectionModule, 'captureFingerprint')
-      .mockImplementation(() => held.promise);
-    const { pool, lifecycle } = await load();
-    let invocation: Promise<unknown> | undefined;
-    let retirement: ReturnType<typeof lifecycle.retire> | undefined;
-    let close: Promise<void> | undefined;
-    let socket: ControlledSocket | undefined;
-    const releaseClose = () => {
-      if (socket) socket.holdClose = false;
-      const release = socket?.originalClose;
-      if (release) {
-        socket!.originalClose = undefined;
-        release();
+  it.each(['immediate', 'deferred'] as const)(
+    'retains late auxiliary admission while the original %s facade close is pending',
+    async (closeAdmission) => {
+      const connectionModule = await import('../backend-connection');
+      const held = deferred<Awaited<ReturnType<typeof connectionModule.captureFingerprint>>>();
+      const probe = vi
+        .spyOn(connectionModule, 'captureFingerprint')
+        .mockImplementation(() => held.promise);
+      const { pool, lifecycle } = await load();
+      let invocation: Promise<unknown> | undefined;
+      let retirement: ReturnType<typeof lifecycle.retire> | undefined;
+      let close: Promise<void> | undefined;
+      let socket: ControlledSocket | undefined;
+      const releaseClose = () => {
+        if (socket) socket.holdClose = false;
+        const release = socket?.originalClose;
+        if (release) {
+          socket!.originalClose = undefined;
+          release();
+        }
+      };
+      try {
+        await connection(pool.getLocalBackendClient());
+        await settledTurn();
+        socket = edge.sockets[0]!;
+        socket.holdClose = true;
+        const closeAdmitted = deferred<void>();
+        socket.onDestroy = () => closeAdmitted.resolve();
+        if (closeAdmission === 'deferred') {
+          const originalDestroy = socket._destroy.bind(socket);
+          socket._destroy = (error, done) => {
+            setImmediate(() => setImmediate(() => originalDestroy(error, done)));
+          };
+        }
+        const boundary = fence();
+        retirement = lifecycle.retire(boundary);
+        expect(lifecycle.retire(boundary)).toBe(retirement);
+        await closeAdmitted.promise;
+        expect(socket.originalClose).toBeTypeOf('function');
+        close = new Promise<void>((resolve) => socket!.once('close', resolve));
+        let retired = false;
+        void retirement.then(
+          () => {
+            retired = true;
+          },
+          () => {
+            retired = true;
+          },
+        );
+        const { event } = await localWindow();
+        invocation = invoke(IPC_CHANNELS.CONNECTIONS.CAPTURE_FINGERPRINT, event, {
+          host: 'controlled-fingerprint.test',
+          port: 443,
+          token: 'controlled-not-a-credential',
+        });
+        let handlerSettled = false;
+        const observed = invocation.then(
+          (value) => {
+            handlerSettled = true;
+            return { state: 'fulfilled' as const, value };
+          },
+          (error: unknown) => {
+            handlerSettled = true;
+            return { state: 'rejected' as const, error };
+          },
+        );
+        await settledTurn();
+        expect(retired).toBe(false);
+        // On the parent, the independent probe is still held when the real close completes.
+        releaseClose();
+        await close;
+        const result = await retirement;
+        expect(result.excludedOwners).toContain('connection-probe');
+        expect({
+          outcome: result.outcome,
+          ownersJoined: result.ownersJoined,
+          admissionSealed: result.admissionSealed,
+          probeCalls: probe.mock.calls.length,
+          handlerSettled,
+          closeObserved: result.clients.every((client) =>
+            client.closes.every((row) => row.closeObserved),
+          ),
+        }).toEqual({
+          outcome: 'ownership-fault',
+          ownersJoined: false,
+          admissionSealed: true,
+          probeCalls: 0,
+          handlerSettled: true,
+          closeObserved: true,
+        });
+        expect(probe).not.toHaveBeenCalled();
+        const refused = await observed;
+        expect(refused.state).toBe('rejected');
+        if (refused.state === 'rejected') {
+          expect(refused.error).toEqual(new Error('Auxiliary pool work after admission sealed'));
+          expect(result.failures.some((failure) => failure.error === refused.error)).toBe(true);
+        }
+        expect(result.failures.some((failure) => failure.kind === 'auxiliary')).toBe(true);
+        expect(
+          result.clients.every((client) => client.closes.every((row) => row.closeObserved)),
+        ).toBe(true);
+      } finally {
+        held.resolve({ ok: true, connected: true, fingerprint: 'ab'.repeat(32), tokenValid: true });
+        releaseClose();
+        await Promise.allSettled(
+          [invocation, retirement, close].filter((value) => value !== undefined),
+        );
+        probe.mockRestore();
       }
-    };
-    try {
-      await connection(pool.getLocalBackendClient());
-      await settledTurn();
-      socket = edge.sockets[0]!;
-      socket.holdClose = true;
-      const closeStarted = deferred();
-      socket.onDestroy = () => closeStarted.resolve();
-      const boundary = fence();
-      retirement = lifecycle.retire(boundary);
-      expect(lifecycle.retire(boundary)).toBe(retirement);
-      await closeStarted.promise;
-      expect(socket.originalClose).toBeTypeOf('function');
-      close = new Promise<void>((resolve) => socket!.once('close', resolve));
-      let retired = false;
-      void retirement.then(
-        () => {
-          retired = true;
-        },
-        () => {
-          retired = true;
-        },
-      );
-      const { event } = await localWindow();
-      invocation = invoke(IPC_CHANNELS.CONNECTIONS.CAPTURE_FINGERPRINT, event, {
-        host: 'controlled-fingerprint.test',
-        port: 443,
-        token: 'controlled-not-a-credential',
-      });
-      let handlerSettled = false;
-      const observed = invocation.then(
-        (value) => {
-          handlerSettled = true;
-          return { state: 'fulfilled' as const, value };
-        },
-        (error: unknown) => {
-          handlerSettled = true;
-          return { state: 'rejected' as const, error };
-        },
-      );
-      await settledTurn();
-      expect(retired).toBe(false);
-      // On the parent, the independent probe is still held when the real close completes.
-      releaseClose();
-      await close;
-      const result = await retirement;
-      expect(result.excludedOwners).toContain('connection-probe');
-      expect({
-        outcome: result.outcome,
-        ownersJoined: result.ownersJoined,
-        admissionSealed: result.admissionSealed,
-        probeCalls: probe.mock.calls.length,
-        handlerSettled,
-        closeObserved: result.clients.every((client) =>
-          client.closes.every((row) => row.closeObserved),
-        ),
-      }).toEqual({
-        outcome: 'ownership-fault',
-        ownersJoined: false,
-        admissionSealed: true,
-        probeCalls: 0,
-        handlerSettled: true,
-        closeObserved: true,
-      });
-      expect(probe).not.toHaveBeenCalled();
-      const refused = await observed;
-      expect(refused.state).toBe('rejected');
-      if (refused.state === 'rejected') {
-        expect(refused.error).toEqual(new Error('Auxiliary pool work after admission sealed'));
-        expect(result.failures.some((failure) => failure.error === refused.error)).toBe(true);
-      }
-      expect(result.failures.some((failure) => failure.kind === 'auxiliary')).toBe(true);
-      expect(
-        result.clients.every((client) => client.closes.every((row) => row.closeObserved)),
-      ).toBe(true);
-    } finally {
-      held.resolve({ ok: true, connected: true, fingerprint: 'ab'.repeat(32), tokenValid: true });
-      releaseClose();
-      await Promise.allSettled(
-        [invocation, retirement, close].filter((value) => value !== undefined),
-      );
-      probe.mockRestore();
-    }
-  });
+    },
+  );
 
   it('refuses auxiliary work after a clean terminal retirement without replacing the original receipt', async () => {
     const connectionModule = await import('../backend-connection');

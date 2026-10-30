@@ -2,10 +2,10 @@
   import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
   /* eslint-disable max-lines */
-  import { selectIsHostMember } from '$store/renderer/slices/host-execution/host-execution-selectors';
-  const hostMember$ = selectIsHostMember();
+  import { selectCanAdministerHost } from '$store/renderer/slices/principal/principal-selectors';
+  const canAdministerHost$ = selectCanAdministerHost();
   import { onDestroy, onMount, untrack } from 'svelte';
-  import { writable, derived, get } from 'svelte/store';
+  import { writable, derived } from 'svelte/store';
 
   import { useAgentSession } from '$lib/hooks/useAgentSession.svelte';
   import { selectAgentReasoningEffort } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -75,16 +75,19 @@
     selectContextSelectedModel,
     selectContextProviderWarnings,
     selectContextProviderStaleFlags,
+    selectContextProviderWarningKinds,
     selectContextProviderEntries,
     selectContextModelProviderIds,
     selectContextAvailableProviderIds,
+    selectContextListedProviderIds,
     selectContextEnabledProviders,
     selectWorkspaceCatalogEpoch,
   } from '$store/renderer/slices/provider-catalog/workspace-catalog-selectors';
   import { ensureWorkspaceCatalogRequested } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
-  import { selectProviderCatalogProfiles } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
-  import { selectLabsProviderProfilesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-  import type { ProviderProfileSummary } from '$shared/provider-catalog';
+  import {
+    selectProviderCatalogDefaultNames,
+    selectProviderCatalogProfiles,
+  } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { selectProfileSignInStatuses } from '$store/renderer/slices/provider-settings/provider-profile-status-selectors';
   import { providerProfileSummaryStatusesEnsured } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import {
@@ -109,7 +112,7 @@
 
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import { modelIdForDisplay, resolveModelDisplayName } from '$shared/utils/model-display-name';
-  import { selectIsWorkspaceCollaborator } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectHidesAgentCreationActions } from '$store/renderer/slices/workspace/workspace-selectors';
   import { getAgentProvider } from '$shared/types/agent-session';
   import { formatProviderLoadError, type ProviderLoadError } from './model-picker-provider-errors';
   import { AUGGIE_LEGACY_GROUP_KEY, buildGroupedModelOptions } from './model-picker-groups';
@@ -165,7 +168,7 @@
   }
   // Group/tab label: bare names until a base has offered profiles, then
   // `<Provider> · Default` / `<Provider> · <Profile>` (§5.54). A profile
-  // reference always names its profile, even while the Labs toggle is off.
+  // reference always names its profile.
   function providerDisplayName(providerId: string): string {
     void $providerCatalogEntries$;
     const baseId = normalizeProviderId(providerRefBaseId(providerId));
@@ -174,8 +177,9 @@
     return formatProviderRefLabel(
       isProfile ? providerId : baseId,
       baseName,
-      isProfile ? $allProviderProfiles$ : $providerProfiles$,
+      $providerProfiles$,
       baseId,
+      $providerDefaultNames$,
     );
   }
   function baseProviderDisplayName(providerId: string): string {
@@ -197,7 +201,7 @@
     return $providerProfiles$.some((profile) => profile.baseProviderId === baseId);
   }
   function profileInitial(providerRef: string): string {
-    const name = findProfileByRef($allProviderProfiles$, providerRef)?.name.trim() ?? '';
+    const name = findProfileByRef($providerProfiles$, providerRef)?.name.trim() ?? '';
     return name ? [...name][0].toLocaleUpperCase() : '?';
   }
   function parseCompoundModelId(compoundModelId: string): {
@@ -214,7 +218,7 @@
     // a deleted one needs an explicit replacement, never a substitute.
     if (isProviderProfileRef(providerId)) {
       return (
-        !!findProfileByRef($allProviderProfiles$, providerId) &&
+        !!findProfileByRef($providerProfiles$, providerId) &&
         hasResolvedProvider(providerRefBaseId(providerId))
       );
     }
@@ -330,14 +334,6 @@
     defaultReasoningEffort?: string | null;
     onReasoningChange?: (effort: string | null) => boolean | void | Promise<boolean | void>;
     reasoningDisabled?: boolean;
-    showProviderWarningNotice?: boolean;
-    /**
-     * Extra classes for the provider notice boxes. Callers that render the
-     * picker inside a flex row use this to let the notice break onto its own
-     * full-width line (e.g. `basis-full w-full max-w-full` + `flex-wrap` on
-     * the row) instead of sitting inline next to the trigger.
-     */
-    noticeClass?: string;
   }
 
   let {
@@ -377,8 +373,6 @@
     defaultReasoningEffort,
     onReasoningChange,
     reasoningDisabled = false,
-    showProviderWarningNotice,
-    noticeClass,
   }: Props = $props();
 
   const workspaceIdStore = writable(untrack(() => workspaceId) ?? '');
@@ -392,28 +386,8 @@
   // Named profiles (§5.54) ride their base provider's availability: each
   // available base is followed by its profile references, which the picker
   // then treats as providers of their own (catalog fetch, group, tab).
-  //
-  // Profiles are a Labs feature (Settings → Labs → Provider profiles). While
-  // it is off the picker offers no profile groups, tabs, `Default` labels or
-  // sign-in probes, but a selection that already references a saved profile
-  // keeps resolving, running and showing its profile name — never a silent
-  // account switch. `allProviderProfiles$` is every saved profile (resolution
-  // and labels); `providerProfiles$` is the offered set.
-  const allProviderProfiles$ = selectProviderCatalogProfiles(workspaceIdStore);
-  const labsProviderProfilesEnabled$ = selectLabsProviderProfilesEnabled();
-  const NO_OFFERED_PROFILES: ProviderProfileSummary[] = [];
-  const providerProfiles$ = derived(
-    [allProviderProfiles$, labsProviderProfilesEnabled$],
-    ([profiles, enabled]) => (enabled ? profiles : NO_OFFERED_PROFILES),
-  );
-  // Profile references the current selection already uses; set below once
-  // the selection is known. Kept in the fetch/availability sets while off.
-  const selectionProfileRefs$ = writable<string[]>([]);
-  const runnableProviderProfiles$ = derived(
-    [allProviderProfiles$, labsProviderProfilesEnabled$, selectionProfileRefs$],
-    ([profiles, enabled, refs]) =>
-      enabled ? profiles : profiles.filter((profile) => refs.includes(profile.providerRef)),
-  );
+  const providerProfiles$ = selectProviderCatalogProfiles(workspaceIdStore);
+  const providerDefaultNames$ = selectProviderCatalogDefaultNames(workspaceIdStore);
   const baseModelFetchProviderIds$ = selectContextModelProviderIds(workspaceIdStore);
   const baseAvailableEnabledProviderIds$ = selectContextAvailableProviderIds(workspaceIdStore);
   // A signed-out profile stays selectable but is flagged (§5.54 status mapping:
@@ -421,7 +395,7 @@
   const profileSignInStatuses$ = selectProfileSignInStatuses();
   $effect(() => {
     const profiles = $providerProfiles$;
-    if (profiles.length === 0 || isGuestLocked) return;
+    if (profiles.length === 0 || isGuestLocked || !$canAdministerHost$) return;
     appStore.dispatch(
       providerProfileSummaryStatusesEnsured(
         profiles.map(({ id, providerRef }) => ({ id, providerRef })),
@@ -429,18 +403,20 @@
     );
   });
   const modelFetchProviderIds$ = derived(
-    [baseModelFetchProviderIds$, runnableProviderProfiles$],
+    [baseModelFetchProviderIds$, providerProfiles$],
     ([ids, profiles]) => expandProviderIdsWithProfiles(ids, profiles),
   );
   const availableEnabledProviderIds$ = derived(
-    [baseAvailableEnabledProviderIds$, runnableProviderProfiles$],
+    [baseAvailableEnabledProviderIds$, providerProfiles$],
     ([ids, profiles]) => expandProviderIdsWithProfiles(ids, profiles),
   );
   const enabledProviders$ = selectContextEnabledProviders(workspaceIdStore);
   const selectedModel$ = selectContextSelectedModel(workspaceIdStore);
   const hasCheckedOnce$ = selectContextReadinessLoaded(workspaceIdStore);
+  const listedProviderIds$ = selectContextListedProviderIds(workspaceIdStore);
   const allProviderWarnings$ = selectContextProviderWarnings(workspaceIdStore);
   const allProviderStaleFlags$ = selectContextProviderStaleFlags(workspaceIdStore);
+  const allProviderWarningKinds$ = selectContextProviderWarningKinds(workspaceIdStore);
   const workspaceCatalogEpoch$ = selectWorkspaceCatalogEpoch();
   $effect(() => {
     // An open picker can outlive its workspace lifecycle subscription. Refresh
@@ -448,12 +424,6 @@
     void $workspaceCatalogEpoch$;
     if (workspaceId) appStore.dispatch(ensureWorkspaceCatalogRequested(workspaceId));
   });
-
-  // `default`-variant pickers stack the notice directly under a full-width
-  // trigger, so give it a default top margin; callers can still override it.
-  const resolvedNoticeClass = $derived(
-    variant === 'default' ? cn('mt-2', noticeClass) : noticeClass,
-  );
 
   const agentSession$ = useAgentSession(() => agentId);
 
@@ -513,7 +483,7 @@
   // host: the agent-bound picker renders read-only with the host catalog
   // label and no availability warnings (intent#5378). The selector fails
   // closed while the window's identity is still the boot-time default.
-  const isWorkspaceCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
+  const isWorkspaceCollaborator$ = selectHidesAgentCreationActions(workspaceIdStore);
   $effect(() => {
     workspaceIdStore.set(workspaceId ?? '');
   });
@@ -533,14 +503,6 @@
   });
 
   import { store as appStore } from '$store/renderer/store';
-
-  function getProviderWarningNotice(
-    providerId: string,
-    warnings: Record<string, string>,
-  ): ProviderWarningNotice | null {
-    const normalizedId = normalizeProviderId(providerId);
-    return createProviderWarningNotice(normalizedId, warnings[normalizedId]);
-  }
 
   // The saga owns the catalog and request generations. Read-through cache rows
   // render synchronously on remount while the owner revalidates in the background.
@@ -594,27 +556,14 @@
     isProviderEnabled($availableEnabledProviderIds$, effectiveProviderId),
   );
 
-  // An existing agent whose current provider was explicitly disabled in
-  // Settings > Agents (intent#5737). Read from `providers.enabled` alone — not
-  // the available+enabled set, which also drops providers whose probe failed,
-  // and not a daemon event — so the picker can warn before any message is
-  // sent. The daemon refuses to run the agent on a disabled provider and
-  // re-homes it on the next send, so unlike the cloudlands-fe#749 policy
-  // (keep a since-unavailable provider selectable) the model is reported as
-  // unavailable and the disabled provider's group is not offered. A
-  // guest-locked picker never sees the host's settings and stays read-only.
+  // Explicit disablement also gates cached rows in settings and specialist
+  // pickers. Failed probes alone do not; guests retain the host-owned receipt.
   const isEffectiveProviderDisabled = $derived(
-    !!agentId &&
-      !isGuestLocked &&
-      isProviderDisabledInSettings($enabledProviders$, effectiveProviderId),
+    !isGuestLocked && isProviderDisabledInSettings($enabledProviders$, effectiveProviderId),
   );
 
-  // Providers whose models the picker may offer. The available+enabled set
-  // always admits the default provider (`model.defaultProvider`) even when it
-  // was disabled in settings, so its catalog keeps loading for the fetch and
-  // warning paths — but the daemon refuses every turn on a disabled provider
-  // and a disabled default has no re-home target, so its rows must not be
-  // selectable (intent#5737). Same settings blind spot as above for guests.
+  // Disabled providers cannot supply selectable rows, including the default
+  // (intent#5737). Guest pickers use the host's enabled-provider receipt.
   const selectableProviderIds = $derived(
     $availableEnabledProviderIds$.filter(
       (pid) =>
@@ -912,7 +861,12 @@
       return;
     }
     const pick = model === undefined ? undefined : (picked ?? resolvePickedTriple(model));
-    if (pick && (!hasResolvedProvider(pick.providerId) || !canUseProviderModels(pick.providerId))) {
+    if (
+      pick &&
+      (!hasResolvedProvider(pick.providerId) ||
+        !canUseProviderModels(pick.providerId) ||
+        (!isGuestLocked && isProviderDisabledInSettings($enabledProviders$, pick.providerId)))
+    ) {
       dropdownValue = currentDropdownValue();
       return;
     }
@@ -928,10 +882,11 @@
       return;
     }
     if (updateGlobalDefault) {
+      if (!$canAdministerHost$) return;
       // Defaults have one Redux-rendered selection. Dispatch before returning
       // from the click; never stage a component draft or an agent request.
       onModelChange?.(model ?? '', pick);
-      if (pick && !effectiveLocked && !destroyed && !$hostMember$)
+      if (pick && !effectiveLocked && !destroyed && $canAdministerHost$)
         appStore.dispatch(selectModel(pick.modelId, pick.providerId));
       return;
     }
@@ -1306,33 +1261,6 @@
       : [],
   );
 
-  const providerFallbackWarnings = $derived.by<ProviderWarningNotice[]>(() => {
-    const warnings = $allProviderWarnings$;
-    return $availableEnabledProviderIds$
-      .map((pid) => getProviderWarningNotice(pid, warnings))
-      .filter((warning): warning is ProviderWarningNotice => Boolean(warning));
-  });
-
-  // A stale warning (PROTOCOL §5.30 `stale: true`) accompanies the daemon's
-  // last-known-good list after a transient probe failure: the models on screen
-  // are real and usable, so the "install Codex CLI" notice would be wrong.
-  // The notice stays for the degraded case (warning with no codex models).
-  // Named Codex profiles (§5.54) have their own catalogs and get the same rule.
-  function hasCatalogModels(providerId: string): boolean {
-    return (
-      (allProviderModels[providerId]?.length ?? 0) > 0 ||
-      (normalizeProviderId(effectiveProviderId) === providerId &&
-        (agentProviderModels?.length ?? 0) > 0)
-    );
-  }
-  const codexFallbackWarning = $derived(
-    providerFallbackWarnings.find(
-      (warning) =>
-        providerRefBaseId(warning.providerId) === 'codex' &&
-        !($allProviderStaleFlags$[warning.providerId] && hasCatalogModels(warning.providerId)),
-    ) ?? null,
-  );
-
   // D1(B): when no provider is available at all, never fall back to a
   // default provider/model — surface an explicit failure instead.
   // Per-provider fetch failures / a single unavailable effective provider
@@ -1360,7 +1288,7 @@
   let noProviderToastShown = false;
 
   function openProviderSettings() {
-    if ($hostMember$) return;
+    if (!$canAdministerHost$) return;
     dropdownOpen = false;
     void navigateToSettings({ tab: 'accounts', hash: 'providers' }).catch((error: unknown) => {
       logger.error('Failed to open provider settings from model picker', error);
@@ -1372,13 +1300,13 @@
       if (!noProviderToastShown) {
         noProviderToastShown = true;
         notify.error(
-          $hostMember$
+          !$canAdministerHost$
             ? m.hostExecution_providerSetup_description()
             : m.chat_modelPicker_noProviderAvailable_toast(),
           {
             id: 'no-provider-available',
             duration: 6000,
-            action: $hostMember$
+            action: !$canAdministerHost$
               ? undefined
               : {
                   label: m.chat_modelPicker_noProviderAvailable_openSettings_label(),
@@ -1414,8 +1342,12 @@
     };
   });
 
-  const groupedModelOptions = $derived.by(() =>
-    buildGroupedModelOptions({
+  const groupedModelOptions = $derived.by(() => {
+    void $providerCatalogEntries$;
+    // Group labels read the renamed Default (catalog `defaultNames`).
+    void $providerDefaultNames$;
+    return buildGroupedModelOptions({
+      workspaceId,
       showDefaultOption,
       useDefaultOption,
       effectiveProviderId,
@@ -1429,9 +1361,12 @@
       allProviderWarnings: $allProviderWarnings$,
       profiles: $providerProfiles$,
     }).filter(
-      (group) => group.key === 'default' || canUseProviderModels(group.parentKey ?? group.key),
-    ),
-  );
+      (group) =>
+        group.key === 'default' ||
+        ($listedProviderIds$.includes(providerRefBaseId(group.parentKey ?? group.key)) &&
+          canUseProviderModels(group.parentKey ?? group.key)),
+    );
+  });
   let legacyModelsExpanded = $state(false);
   let modelSearchValue = $state('');
   const onlyLegacyAuggieModels = $derived(
@@ -1514,7 +1449,7 @@
     if (
       isProviderProfileRef(gate) &&
       $providerCatalogEntries$.length > 0 &&
-      !findProfileByRef($allProviderProfiles$, gate)
+      !findProfileByRef($providerProfiles$, gate)
     )
       return { providerRef: gate, reason: 'profile-missing' as const };
     return null;
@@ -1528,21 +1463,9 @@
       isProviderDisabledInSettings($enabledProviders$, selectedModelGateProviderId),
   );
 
-  $effect(() => {
-    const refs = [effectiveProviderId, selectedModelGateProviderId].filter(
-      (id): id is string => !!id && isProviderProfileRef(id),
-    );
-    const current = get(selectionProfileRefs$);
-    if (refs.length !== current.length || refs.some((ref, i) => ref !== current[i]))
-      selectionProfileRefs$.set(refs);
-  });
-
-  // A profile kept running while the Labs toggle is off never gets a tab.
   const providerTabIds = $derived.by(() => [
     ...new Set([
-      ...selectableProviderIds
-        .filter((id) => $labsProviderProfilesEnabled$ || !isProviderProfileRef(id))
-        .map((id) => normalizeProviderId(id)),
+      ...selectableProviderIds.map((id) => normalizeProviderId(id)),
       ...groupedModelOptions
         .filter((group) => group.key !== 'default')
         .map((group) => group.parentKey ?? group.key),
@@ -1575,6 +1498,44 @@
       providerBrowseChanged = false;
     }
   });
+
+  // The "install Codex CLI" notice lives inside the open picker and only on
+  // the Codex tab being browsed: it concerns Codex's list alone, so it must not
+  // repeat under every closed picker or on other providers' tabs.
+  // A stale warning (PROTOCOL §5.30 `stale: true`) accompanies the daemon's
+  // last-known-good list after a transient probe failure: the models on screen
+  // are real and usable, so the notice would be wrong there.
+  // The notice shows only when the daemon labels the warning `warningKind:
+  // "cli-missing"` (§5.30); every other degraded warning — an adapter crash,
+  // a timeout, missing Node.js — keeps the generic failure row with Details
+  // and Retry, never an install prompt keyed on the warning text.
+  // Named Codex profiles (§5.54) have their own catalogs and get the same rule.
+  function hasCatalogModels(providerId: string): boolean {
+    return (
+      (allProviderModels[providerId]?.length ?? 0) > 0 ||
+      (normalizeProviderId(effectiveProviderId) === providerId &&
+        (agentProviderModels?.length ?? 0) > 0)
+    );
+  }
+  // Same browsed provider as `activeProviderIssue` (falls back to the
+  // preferred tab before the first browse), limited to enabled providers.
+  const codexFallbackWarning = $derived.by<ProviderWarningNotice | null>(() => {
+    const providerId = normalizeProviderId(activeBrowseProviderId || preferredBrowseProviderId);
+    if (!providerId || providerRefBaseId(providerId) !== 'codex') return null;
+    if (!$availableEnabledProviderIds$.some((id) => normalizeProviderId(id) === providerId))
+      return null;
+    if ($allProviderStaleFlags$[providerId] && hasCatalogModels(providerId)) return null;
+    if ($allProviderWarningKinds$[providerId] !== 'cli-missing') return null;
+    return createProviderWarningNotice(providerId, $allProviderWarnings$[providerId]);
+  });
+  // The notice restates the catalog's fallback warning, so drop the generic
+  // row for it; a request error on the same provider still gets its own row.
+  const footerProviderWarnings = $derived(
+    codexFallbackWarning &&
+      !$providerRequests$[activeBrowseProviderId || preferredBrowseProviderId]?.error
+      ? []
+      : nonBlockingProviderWarnings,
+  );
 
   // Display groups — every picker browses one provider at a time.
   const displayGroups = $derived.by(() => {
@@ -1796,8 +1757,9 @@
     return providerRefProfileName(
       providerRefLabelParts(
         isProfile ? ref : baseId,
-        isProfile ? $allProviderProfiles$ : $providerProfiles$,
+        $providerProfiles$,
         baseId,
+        $providerDefaultNames$,
       ),
     );
   });
@@ -1847,6 +1809,7 @@
   const refreshProviderId = $derived(activeBrowseProviderId || preferredBrowseProviderId);
   const showDropdownFooter = $derived(
     showReasoningFooter ||
+      codexFallbackWarning !== null ||
       (!allProvidersLoaded && Object.keys(allProviderModels).length > 0) ||
       activeProviderIssue !== null ||
       refreshingProviders.has(refreshProviderId),
@@ -2422,15 +2385,26 @@
   {/snippet}
 
   {#snippet dropdownFooter()}
+    {#if codexFallbackWarning}
+      <div class="px-3 py-2">
+        <ModelPickerProviderNotice
+          warning={codexFallbackWarning.message}
+          docsUrl={codexFallbackWarning.docsUrl}
+          show={true}
+          variant="warning"
+          class="max-w-none"
+        />
+      </div>
+    {/if}
     {#if !allProvidersLoaded && Object.keys(allProviderModels).length > 0}
       <div class="px-3 py-2 flex items-center gap-2 text-xs text-muted-foreground">
         <IntentMarkLoader size={12} />
         <span>{m.chat_modelPicker_loadingMore_label()}</span>
       </div>
     {/if}
-    {#if nonBlockingProviderWarnings.length > 0}
+    {#if footerProviderWarnings.length > 0}
       <div class="px-3 py-2 space-y-1.5 text-xs">
-        {#each nonBlockingProviderWarnings as warning (warning.providerId)}
+        {#each footerProviderWarnings as warning (warning.providerId)}
           <div class="flex items-start gap-2 text-muted-foreground" role="status">
             <ModelProviderErrorItem
               providerId={warning.providerId}
@@ -2624,7 +2598,7 @@
             </Button>
           {/each}
         </div>
-        {#if !hasNoAvailableProvider && !$hostMember$}
+        {#if !hasNoAvailableProvider && $canAdministerHost$}
           <Button
             variant="ghost"
             size="icon-sm"
@@ -2759,20 +2733,12 @@
         blockingLoadError={activeProviderIssue ?? blockingLoadError}
         retryInFooter={activeProviderIssue !== null || refreshingProviders.has(refreshProviderId)}
         {hasNoAvailableProvider}
-        hostManaged={$hostMember$}
+        hostManaged={!$canAdministerHost$}
         onOpenProviderSettings={openProviderSettings}
         onRetry={handleRetry}
       />
     {/snippet}
   </Dropdown>
-
-  <ModelPickerProviderNotice
-    warning={codexFallbackWarning?.message}
-    docsUrl={codexFallbackWarning?.docsUrl}
-    show={(showProviderWarningNotice ?? variant === 'default') && Boolean(codexFallbackWarning)}
-    variant="warning"
-    class={resolvedNoticeClass}
-  />
 {/if}
 
 <ContentDialog

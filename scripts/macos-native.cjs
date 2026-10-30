@@ -1,6 +1,7 @@
 /** Shared architecture checks for native Mac packaging and cached Swift helpers. */
 const fs = require('node:fs');
 const path = require('node:path');
+const childProcess = require('node:child_process');
 
 const CPU_ARCH = new Map([
   [0x01000007, 'x64'],
@@ -80,14 +81,18 @@ const DOCK_COMPOSER_HELPERS = Object.freeze([
   'dock-helper/intent-dock-element-pick',
 ]);
 
-function helperPaths(resources, sidecarDirectory) {
+function helperPaths(resources, sidecarDirectory, includeKeychain = true) {
   return [
     path.join(resources, sidecarDirectory, 'intentd'),
     path.join(resources, 'speech-helper/intent-speech-helper'),
-    path.join(
-      resources,
-      'keychain-helper/intent-keychain-helper.app/Contents/MacOS/intent-keychain-helper',
-    ),
+    ...(includeKeychain
+      ? [
+          path.join(
+            resources,
+            'keychain-helper/intent-keychain-helper.app/Contents/MacOS/intent-keychain-helper',
+          ),
+        ]
+      : []),
     ...DOCK_COMPOSER_HELPERS.map((helper) => path.join(resources, helper)),
   ];
 }
@@ -110,8 +115,32 @@ function validateStagedMacBinaries(root, arch) {
 function validatePackagedMacBinaries(appPath, arch) {
   const contents = path.join(appPath, 'Contents');
   const resources = path.join(contents, 'Resources');
+  const isolated = path.basename(appPath) === 'Intent GitLab Test.app';
+  if (isolated) {
+    // Read the assembled bundle, not ambient build flags or the absence of a helper.
+    const info = JSON.parse(
+      childProcess.execFileSync(
+        'plutil',
+        ['-convert', 'json', '-o', '-', path.join(contents, 'Info.plist')],
+        { encoding: 'utf8' },
+      ),
+    );
+    if (
+      info.CFBundleIdentifier !== 'app.cloudlands.intent.gitlab-test' ||
+      !/^manual-[1-9][0-9]{0,19}-[1-9][0-9]{0,2}$/.test(info.IntentIsolatedTestBuild || '') ||
+      !/^[a-f0-9]{40}$/.test(info.IntentIsolatedTestBackend || '')
+    )
+      throw new Error('Invalid isolated package identity');
+    if (
+      info.CFBundleURLTypes !== undefined &&
+      (!Array.isArray(info.CFBundleURLTypes) || info.CFBundleURLTypes.length !== 0)
+    )
+      throw new Error('Isolated package must not register shared protocols');
+    if (fs.lstatSync(path.join(resources, 'keychain-helper'), { throwIfNoEntry: false }))
+      throw new Error('Isolated package must not contain the shared Keychain helper');
+  }
   const required = [
-    ...helperPaths(resources, 'intentd'),
+    ...helperPaths(resources, 'intentd', !isolated),
     path.join(resources, 'tailcat/tailcat'),
     path.join(resources, 'app.asar.unpacked/node_modules/node-pty/build/Release/pty.node'),
     path.join(resources, 'app.asar.unpacked/node_modules/node-pty/build/Release/spawn-helper'),

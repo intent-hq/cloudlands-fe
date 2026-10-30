@@ -11,6 +11,7 @@
     createOwnedPopupRegistration,
     getOwnedPopupContext,
   } from '$lib/components/ui/owned-popup-context';
+  import { useDialogPortalTarget } from '$lib/components/ui/dialog';
 
   const popupOwner = getOwnedPopupContext();
   const registerOwnedPopup = createOwnedPopupRegistration();
@@ -20,13 +21,14 @@
     class: className = '',
     wrapperClass = '',
     dropUp = false,
-    portal = false,
+    portal,
     children,
   }: {
     wrapperId?: string;
     class?: string;
     wrapperClass?: string;
     dropUp?: boolean;
+    /** Body portal when true; inline when false; unset (and not dropUp) portals into an enclosing dialog, else inline. */
     portal?: boolean;
     children?: Snippet;
   } = $props();
@@ -36,7 +38,11 @@
     wrapperProps: Record<string, unknown>;
   };
 
-  const usePortal = $derived(dropUp || portal);
+  const usePortal = $derived(dropUp || portal === true);
+  // Inside a dialog, an inline list is clipped by the dialog's scroll body and
+  // a body portal sits under the modal layer and outside its focus scope, so
+  // portal into the dialog itself (see useDialogPortalTarget).
+  const dialogPortalTarget = useDialogPortalTarget();
   const surface = clampSurface(useSurface() + 2);
   setSurface(surface);
   const select = getContext<{
@@ -106,8 +112,14 @@
     child={staticContentChild}
   />
 {:else}
-  <SelectPrimitive.Portal disabled={!usePortal} to={popupOwner?.target()}>
+  {@const dialogTarget = portal === undefined && !dropUp ? dialogPortalTarget() : undefined}
+  <SelectPrimitive.Portal
+    disabled={!usePortal && !dialogTarget}
+    to={dialogTarget ?? popupOwner?.target()}
+  >
     <SelectPrimitive.Content
+      strategy={dialogTarget ? 'absolute' : 'fixed'}
+      hideWhenDetached={dialogTarget !== undefined}
       onEscapeKeydown={restoreTriggerFocusOnEscape}
       data-slot="select-content"
       data-surface-level={surface}

@@ -1,4 +1,4 @@
-import { runSaga } from 'redux-saga';
+import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 
@@ -42,6 +42,7 @@ import {
 import { withPanelLayoutInvariants } from '../../panel-layout/panel-layout-invariants.test-helpers';
 import { initialState as guestSessionsInitialState } from '../../guest-sessions/guest-sessions-slice';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+import { workspaceDeleted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { browserIpcSaga } from './browser-ipc-saga';
 
 const panelLayoutReducer = withPanelLayoutInvariants(rawPanelLayoutReducer);
@@ -116,6 +117,8 @@ describe('browserIpcSaga', () => {
     const duplicate = start();
     await duplicate.toPromise();
     expect(on.mock.calls).toEqual([
+      ['browser:host-workspace', handlers['browser:host-workspace']],
+      ['browser:diagnose-tab', handlers['browser:diagnose-tab']],
       ['browser:open-tab', handlers['browser:open-tab']],
       ['browser:close-tab', handlers['browser:close-tab']],
       ['browser:focus-tab', handlers['browser:focus-tab']],
@@ -128,6 +131,8 @@ describe('browserIpcSaga', () => {
     first.cancel();
     await first.toPromise();
     expect(offById.mock.calls).toEqual([
+      ['browser:host-workspace', 'browser:host-workspace-listener'],
+      ['browser:diagnose-tab', 'browser:diagnose-tab-listener'],
       ['browser:open-tab', 'browser:open-tab-listener'],
       ['browser:close-tab', 'browser:close-tab-listener'],
       ['browser:focus-tab', 'browser:focus-tab-listener'],
@@ -138,9 +143,120 @@ describe('browserIpcSaga', () => {
     ]);
 
     const restarted = start();
-    expect(on).toHaveBeenCalledTimes(14);
+    expect(on).toHaveBeenCalledTimes(18);
     restarted.cancel();
     await restarted.toPromise();
+  });
+
+  // intent-hq/intent#7855: main's registration wait timed out; the window
+  // logs its whole view of the tab so a packaged build names the cause.
+  it('logs a URL-less hidden shell as skipped for no-url when main asks for a diagnosis', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    state = {
+      ...state,
+      browserClients: { ownClientId: 'client-own' },
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': {
+            ...persistedLayout([]),
+            restoreStatus: 'restored',
+            hiddenTabs: createCollection('id', [
+              {
+                id: 'tab-shell',
+                type: 'browser',
+                title: 'Browser',
+                closable: true,
+                hostClientId: 'client-own',
+                ownerAgentId: 'agent-1',
+              },
+            ]),
+          },
+        },
+      },
+    };
+    const task = start();
+
+    await emit({ workspaceId: 'ws-1', tabId: 'tab-shell', stage: 'open' }, 'browser:diagnose-tab');
+
+    const diagnoses = info.mock.calls.filter(([line]) =>
+      String(line).includes('[BrowserHosting] tab diagnosis'),
+    );
+    expect(diagnoses).toHaveLength(1);
+    expect(diagnoses[0][1]).toMatchObject({
+      workspaceId: 'ws-1',
+      tabId: 'tab-shell',
+      stage: 'open',
+      location: 'hidden',
+      decision: 'no-url',
+      hasUrl: false,
+      hostClientId: 'client-own',
+      ownClientId: 'client-own',
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it("diagnoses with the offscreen host's own displayed workspace, not a re-derivation", async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const host = document.createElement('div');
+    host.setAttribute('data-offscreen-webview-host', '');
+    host.setAttribute('data-offscreen-excluded-workspaces', 'ws-1');
+    document.body.appendChild(host);
+    state = {
+      ...state,
+      browserClients: { ownClientId: 'client-own' },
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': {
+            ...persistedLayout([{ ...TAB('http://127.0.0.1:5173/'), id: 'tab-panel' }]),
+            restoreStatus: 'restored',
+            hiddenTabs: createCollection('id', []),
+          },
+        },
+      },
+    };
+    const task = start();
+    try {
+      await emit(
+        { workspaceId: 'ws-1', tabId: 'tab-panel', stage: 'mount' },
+        'browser:diagnose-tab',
+      );
+
+      const diagnosis = info.mock.calls.find(([line]) => String(line).includes('tab diagnosis'));
+      expect(diagnosis?.[1]).toMatchObject({
+        location: 'panel',
+        decision: 'workspace-displayed',
+        workspaceDisplayed: true,
+        offscreenElement: false,
+        openInFlight: false,
+      });
+    } finally {
+      host.remove();
+      task.cancel();
+      await task.toPromise();
+    }
+  });
+
+  it('logs no open-tab breadcrumb for a payload openBrowser rejects', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const task = start();
+
+    await emit({ workspaceId: 'ws-1', tabId: 'tab-bad' });
+
+    expect(info.mock.calls.some(([line]) => String(line).includes('open-tab handled'))).toBe(false);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('ignores a diagnosis request without a tab id', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const task = start();
+
+    await emit({ workspaceId: 'ws-1' }, 'browser:diagnose-tab');
+
+    expect(info.mock.calls.some(([line]) => String(line).includes('tab diagnosis'))).toBe(false);
+    task.cancel();
+    await task.toPromise();
   });
 
   it('maps every position and replacement branch exactly without leaking wire-only fields', async () => {
@@ -2247,6 +2363,184 @@ describe('browserIpcSaga', () => {
           payload: expect.objectContaining({ wsId: 'ws-hyd-4', tabId: 'browser-1' }),
         }),
       );
+      task.cancel();
+      await task.toPromise();
+    });
+
+    // No window had the workspace open, so main asked this window to host
+    // it in the background: it hydrates the saved layout without a
+    // workspace tab and answers the browser requests main sends after.
+    it('background-hosts a workspace outside the tab strip and answers its requests', async () => {
+      const { actions, task } = startWithReducer();
+      hostedState('ws-viewed');
+      seedStorage('ws-closed', [
+        {
+          id: 'browser-1',
+          type: 'browser',
+          title: 'Sandbox',
+          browserUrl: 'http://sandbox/',
+          closable: true,
+          ownerAgentId: 'agent-1',
+        },
+      ]);
+
+      handlers['browser:host-workspace']({ workspaceId: 'ws-closed' });
+      handlers['browser:list-tabs-request']({ workspaceId: 'ws-closed', requestId: 'req-bg' });
+      await settle();
+      await settle();
+
+      expect(state.panelLayout.byWorkspaceId['ws-closed']).toBeDefined();
+      expect(
+        actions.filter((action: any) => action.type === 'panelLayout/initializeLayout'),
+      ).toHaveLength(1);
+      const replies = (channel: string) =>
+        mocks.invoke.mock.calls
+          .filter((call: any[]) => call[0] === channel)
+          .map((call: any[]) => call[1]);
+      expect(replies('browser:list-tabs-response')).toEqual([
+        {
+          requestId: 'req-bg',
+          tabs: [
+            {
+              tabId: 'browser-1',
+              url: 'http://sandbox/',
+              title: 'Sandbox',
+              closable: true,
+              ownerAgentId: 'agent-1',
+              active: true,
+            },
+          ],
+        },
+      ]);
+      // The window confirms the adoption so main keeps routing to it.
+      expect(replies('browser:background-hosted-workspaces')).toEqual([
+        { workspaceIds: ['ws-closed'] },
+      ]);
+      expect(state.tabState.workspaceStacks).toEqual([['ws-viewed']]);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    // Closing a workspace's tab keeps its layout in memory but resets the
+    // daemon tab-registry sync, which only reloads when the layout settles
+    // again. Every browser request for a held, settled layout therefore asks
+    // the registry to reconcile (the registry saga reloads only a torn-down
+    // workspace); without it new agent tabs went unreported (live repro on
+    // the manual build: openTab "could not be confirmed").
+    it('asks the registry to reconcile a held, settled layout on browser requests', async () => {
+      const { actions, task } = startWithReducer();
+      hostedState('ws-viewed');
+      state = {
+        ...state,
+        panelLayout: {
+          byWorkspaceId: {
+            'ws-closed-held': { ...emptyWorkspaceState, restoreStatus: 'restored' },
+          },
+        },
+        // The workspace tab was closed: its registry record was torn down.
+        browserTabRegistry: {
+          byWorkspaceId: {
+            'ws-closed-held': { generation: 2, phase: 'unmounted', reported: {}, unresolved: {} },
+          },
+          closing: {},
+        },
+      };
+
+      await emit({ workspaceId: 'ws-closed-held' }, 'browser:host-workspace');
+      await emit(
+        {
+          url: 'http://a/',
+          workspaceId: 'ws-closed-held',
+          tabId: 'tab-x',
+          ownerAgentId: 'agent-1',
+          visible: false,
+        },
+        'browser:open-tab',
+      );
+
+      const reconciles = actions.filter(
+        (action: any) => action.type === 'panelLayout/browserTabRegistryReconcileRequested',
+      );
+      expect(reconciles.map((action: any) => action.payload)).toEqual([
+        ['ws-closed-held'],
+        ['ws-closed-held'],
+      ]);
+      // Held layouts are not re-restored (that would reload live guests).
+      expect(
+        actions.filter((action: any) => action.type === 'panelLayout/initializeLayout'),
+      ).toEqual([]);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('opens an agent tab in a background-hosted workspace', async () => {
+      const { actions, task } = startWithReducer();
+      hostedState('ws-viewed');
+
+      handlers['browser:host-workspace']({ workspaceId: 'ws-closed' });
+      handlers['browser:open-tab']({
+        url: 'http://sandbox/',
+        workspaceId: 'ws-closed',
+        tabId: 'tab-agent',
+        ownerAgentId: 'agent-1',
+        visible: false,
+      });
+      await settle();
+      await settle();
+
+      expect(actions).toContainEqual(
+        expect.objectContaining({
+          type: 'panelLayout/openHiddenTab',
+          payload: expect.objectContaining({ wsId: 'ws-closed', newTabId: 'tab-agent' }),
+        }),
+      );
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('stops answering for a background-hosted workspace once it is deleted', async () => {
+      hostedState('ws-viewed');
+      const channel = stdChannel();
+      const dispatch = (action: any) => {
+        state = { ...state, panelLayout: panelLayoutReducer(state.panelLayout, action) };
+        channel.put(action);
+      };
+      const task = runSaga({ channel, dispatch, getState: () => state }, browserIpcSaga);
+
+      await emit({ workspaceId: 'ws-gone' }, 'browser:host-workspace');
+      expect(state.panelLayout.byWorkspaceId['ws-gone']).toBeDefined();
+
+      dispatch(workspaceDeleted('ws-gone', []));
+      await settle();
+      expect(state.panelLayout.byWorkspaceId['ws-gone']).toBeUndefined();
+
+      // The window tells main it no longer hosts the deleted workspace.
+      expect(mocks.invoke).toHaveBeenLastCalledWith('browser:background-hosted-workspaces', {
+        workspaceIds: [],
+      });
+      mocks.invoke.mockClear();
+
+      await emit({ workspaceId: 'ws-gone', requestId: 'req-gone' }, 'browser:list-tabs-request');
+      expect(mocks.invoke).not.toHaveBeenCalled();
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('does not answer for a background-hosted workspace of another backend', async () => {
+      const { actions, task } = startWithReducer();
+      hostedState('ws-viewed');
+
+      handlers['browser:host-workspace']({ workspaceId: 'ws-remote', backendId: 'remote-1' });
+      await settle();
+      mocks.invoke.mockClear();
+      state = {
+        ...state,
+        panelLayout: { byWorkspaceId: {} },
+      };
+      actions.length = 0;
+      await emit({ workspaceId: 'ws-remote', requestId: 'req-r' }, 'browser:list-tabs-request');
+
+      expect(mocks.invoke).not.toHaveBeenCalled();
       task.cancel();
       await task.toPromise();
     });

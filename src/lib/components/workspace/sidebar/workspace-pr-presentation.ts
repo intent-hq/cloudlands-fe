@@ -1,4 +1,8 @@
-import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
+import type {
+  ReviewMonitorRow as PrMonitorRow,
+  ReviewMonitorExtension,
+} from '$shared/types/pr-monitor';
+import { monitorNumber } from '$lib/utils/review-monitor-presentation';
 import type { PRInfo } from '$lib/components/file-tracking/accept-changes/types';
 import { getPRTooltipContent } from '$lib/utils/pr-status';
 import { m } from '$shared/paraglide/messages.js';
@@ -22,7 +26,8 @@ export interface WorkspacePRPresentationOptions {
   getDisplayTitle: (pr: PullRequestInfo) => string;
 }
 
-export interface WorkspacePRPresentationRow {
+export interface WorkspacePRPresentationRow extends ReviewMonitorExtension {
+  numberLabel?: string;
   identity: string;
   number: number;
   title: string;
@@ -30,9 +35,10 @@ export interface WorkspacePRPresentationRow {
   repo: string | undefined;
   repoContext: string | undefined;
   status: PRInfo['status'];
-  /** Open PR reported by its monitor snapshot as sitting in the merge queue.
-   * The `status` stays `open` (ordering and `data-pr-status` are unchanged);
-   * only `accessibleStateLabel` / `details` say "Queued". */
+  /** Open PR sitting in the merge queue, per its monitor snapshot or, without
+   * one, the daemon pool entry's `isInMergeQueue`. The `status` stays `open`
+   * (`data-pr-status` is unchanged); the row sorts ahead of every other PR
+   * and `accessibleStateLabel` / `details` say "Queued". */
   queued: boolean;
   statusIcon: IconDefinition;
   foregroundClass: string;
@@ -44,19 +50,21 @@ export interface WorkspacePRPresentationRow {
 }
 
 /**
- * PR lifecycle order: rows sort earliest-in-flow first, so the first row is
- * the least-progressed PR (a draft ahead of an open PR ahead of a merged one).
- * The workspace card renders only that first row, so the same-status
- * tie-breaker is user-visible: among PRs in the same state the most recently
- * updated one wins (`updatedAt` desc, missing timestamps last), then the
- * higher PR number, then the repo-qualified identity. Merge readiness from a
- * monitor snapshot does not take part in the ranking.
+ * PR ranking: a merge-queued PR comes first — it is the one about to land,
+ * so the workspace card's single pill names it. The rest sort earliest-in-flow
+ * first, so the next row is the least-progressed PR (a draft ahead of an open
+ * PR ahead of a merged one). The workspace card renders only the first row,
+ * so the same-rank tie-breaker is user-visible: the most recently updated PR
+ * wins (`updatedAt` desc, missing timestamps last), then the higher PR number,
+ * then the repo-qualified identity. Other merge-readiness signals from a
+ * monitor snapshot do not take part in the ranking.
  */
-const PR_STATUS_ORDER: Record<PRInfo['status'], number> = {
-  draft: 0,
-  open: 1,
-  merged: 2,
-  closed: 3,
+const PR_RANK: Record<PRInfo['status'] | 'queued', number> = {
+  queued: 0,
+  draft: 1,
+  open: 2,
+  merged: 3,
+  closed: 4,
 };
 
 function prIdentity(repo: string | undefined, number: number): string {
@@ -119,7 +127,7 @@ function getPRStatusPresentation(
  * Build presentation rows for every PR attributable to a workspace. The pool
  * keeps the existing branch/active fallback and monitor wire semantics, then
  * deduplicates by case-insensitive, repo-qualified GitHub identity. Rows are
- * sorted earliest-in-flow first (see `PR_STATUS_ORDER`).
+ * sorted merge-queued first, then earliest-in-flow (see `PR_RANK`).
  */
 export function buildWorkspacePRPresentationModel({
   workspacePRs,
@@ -152,7 +160,8 @@ export function buildWorkspacePRPresentationModel({
   );
   const deduplicated = new Map<string, PRInfo>();
   for (const pr of combined) {
-    const key = normalizedPrIdentity(pr.crossRepo ?? workspaceRepo, pr.number);
+    const key =
+      pr.monitorIdentity ?? normalizedPrIdentity(pr.crossRepo ?? workspaceRepo, pr.number);
     const existing = deduplicated.get(key);
     if (!existing) {
       deduplicated.set(key, pr);
@@ -160,33 +169,43 @@ export function buildWorkspacePRPresentationModel({
     }
     existing.monitorAgentId = pr.monitorAgentId ?? existing.monitorAgentId;
     existing.monitorSnapshot = pr.monitorSnapshot ?? existing.monitorSnapshot;
+    existing.isInMergeQueue = existing.isInMergeQueue || pr.isInMergeQueue;
   }
 
-  const statusOf = (pr: PRInfo): PRInfo['status'] => {
+  // Resolve each row's source, display status and queue state once, then
+  // sort and present from those values.
+  const decorated = [...deduplicated.values()].map((pr) => {
     const repo = pr.crossRepo ?? workspaceRepo;
-    return sourceByIdentity.get(normalizedPrIdentity(repo, pr.number))?.isDraft
-      ? 'draft'
-      : pr.status;
-  };
+    const identity = normalizedPrIdentity(repo, pr.number);
+    const source = pr.resource ? undefined : sourceByIdentity.get(identity);
+    const status: PRInfo['status'] = source?.isDraft ? 'draft' : pr.status;
+    const queued = isPRQueued({ ...pr, status });
+    return {
+      pr,
+      repo,
+      identity,
+      source,
+      status,
+      queued,
+      rank: PR_RANK[queued ? 'queued' : status],
+    };
+  });
 
-  return [...deduplicated.values()]
+  return decorated
     .sort(
       (a, b) =>
-        PR_STATUS_ORDER[statusOf(a)] - PR_STATUS_ORDER[statusOf(b)] ||
-        compareMissingLast(a.updatedAt, b.updatedAt) ||
-        b.number - a.number ||
-        normalizedPrIdentity(a.crossRepo ?? workspaceRepo, a.number).localeCompare(
-          normalizedPrIdentity(b.crossRepo ?? workspaceRepo, b.number),
-        ),
+        a.rank - b.rank ||
+        compareMissingLast(a.pr.updatedAt, b.pr.updatedAt) ||
+        b.pr.number - a.pr.number ||
+        a.identity.localeCompare(b.identity),
     )
-    .map((pr) => {
-      const repo = pr.crossRepo ?? workspaceRepo;
-      const source = sourceByIdentity.get(normalizedPrIdentity(repo, pr.number));
-      const status = statusOf(pr);
-      const queued = isPRQueued({ status, monitorSnapshot: pr.monitorSnapshot });
+    .map(({ pr, repo, source, status, queued }) => {
       const sourceDetails = pr.monitorSnapshot ? '' : getPRTooltipContent(source);
       return {
-        identity: prIdentity(repo, pr.number),
+        identity: pr.monitorIdentity ?? prIdentity(repo, pr.number),
+        resource: pr.resource,
+        monitorAvailability: pr.monitorAvailability,
+        numberLabel: monitorNumber(pr, pr.number),
         number: pr.number,
         title: pr.title,
         url: pr.url,

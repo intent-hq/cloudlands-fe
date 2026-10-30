@@ -15,6 +15,7 @@
  */
 import type { LearnedModelNames } from './model-name-cache';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
+import type { ModelReplyLabels } from '../model/model-types';
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 
 export type ProviderModelsRequestMode = 'background' | 'refresh' | 'retry' | 'silentRetry';
@@ -36,15 +37,13 @@ export interface ProviderModelsObserver {
   workspaceId?: string;
 }
 
-/** Successful `getModelsForProviderForLoadingState`-shaped fetch result. */
-export interface ProviderModelsFetchResult {
-  /** Dropdown-ready rows (compound-prefixed for non-default providers). */
+/**
+ * Successful `getModelsForProviderForLoadingState`-shaped fetch result: the
+ * reply's labels (`ModelReplyLabels`) plus the dropdown-ready rows.
+ */
+export type ProviderModelsFetchResult = ModelReplyLabels & {
   models: AuggieModel[];
-  /** Daemon-provided reason for fallback/stale/empty data (PROTOCOL §6.7). */
-  warning?: string;
-  /** True when the daemon served last-good data after a failed probe. */
-  stale?: boolean;
-}
+};
 
 /** One cached catalog: the fetch result plus its write timestamp. */
 export interface ProviderModelsCacheEntry extends ProviderModelsFetchResult {

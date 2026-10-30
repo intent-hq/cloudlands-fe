@@ -33,7 +33,7 @@ vi.mock('$lib/client', () => ({
 vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: mocks.toastError } }));
 
 import type { LiveClient } from '$shared/types/browser-clients';
-import { resolveDrivingClientView } from '$lib/components/workspace/driving-indicator';
+import { resolveDrivingClientSwitch } from '$lib/components/workspace/driving-indicator';
 import type { StoreAction } from '@themislib/themis/types';
 import type { StoreState } from '../../../types';
 import { removeWorkspaceEntity } from '../../workspace/workspace-slice';
@@ -47,6 +47,7 @@ import {
 import {
   browserClientsConsumerMounted,
   browserClientsReducer,
+  browserRouteInputChanged,
   browserTabClosed,
   closeBrowserTabRequested,
   fetchWorkspaceBrowserClientRequested,
@@ -105,12 +106,11 @@ function startWithReducer() {
     dispatch,
     task,
     entry: (wsId: string) => state.browserClients.byWorkspaceId[wsId],
-    /** The sidebar indicator's view for `wsId`, resolved from live state (with a browser tab open). */
+    /** The workspace menu's primary client. */
     sidebar: (wsId: string) =>
-      resolveDrivingClientView({
-        ...selectWorkspaceDrivingClient.select(state as unknown as StoreState, wsId),
-        hasBrowserTabs: true,
-      }),
+      resolveDrivingClientSwitch(
+        selectWorkspaceDrivingClient.select(state as unknown as StoreState, wsId),
+      ),
   };
 }
 
@@ -139,6 +139,188 @@ describe('browserClientsSaga', () => {
     vi.resetAllMocks();
     mocks.list.mockResolvedValue([desk]);
     mocks.ownClientId.mockResolvedValue('cli-desk');
+  });
+
+  it('re-reads the primary client when tab changes can move an unpinned route', async () => {
+    const staleRoute = {
+      source: 'default',
+      resolved: null,
+      target: { clientId: 'legacy-host', via: 'tabs' },
+    };
+    mocks.getBrowserClient.mockResolvedValue(staleRoute);
+    const run = startWithReducer();
+    run.dispatch(mountBrowserConsumer('ws-1'));
+    await settle();
+    expect(run.sidebar('ws-1').mode).toBe('offline');
+    const reads = mocks.getBrowserClient.mock.calls.length;
+
+    const tab = {
+      tabId: 'user-tab',
+      workspaceId: 'ws-1',
+      hostClientId: 'cli-desk',
+      url: 'https://example.com/',
+      visibility: 'visible' as const,
+      createdAt: '2026-09-07T00:00:00.000Z',
+      updatedAt: '2026-09-07T00:00:00.000Z',
+    };
+    const claimed = { ...tab, ownerAgentId: 'a-1' };
+    // A newer claimed tab, or a close on another host, never displaces the oldest host.
+    run.dispatch(browserRouteInputChanged('ws-1', { kind: 'tab', tab: claimed, change: 'opened' }));
+    run.dispatch(browserRouteInputChanged('ws-1', { kind: 'tab', tab: claimed, change: 'closed' }));
+    await settle();
+    expect(mocks.getBrowserClient).toHaveBeenCalledTimes(reads);
+
+    // Closing a tab on the routed host can retire the claimed-tab route.
+    mocks.getBrowserClient.mockResolvedValue({
+      source: 'default',
+      resolved: { clientId: 'cli-desk' },
+    });
+    run.dispatch(
+      browserRouteInputChanged('ws-1', {
+        kind: 'tab',
+        tab: { ...claimed, tabId: 'stale-tab', hostClientId: 'legacy-host' },
+        change: 'closed',
+      }),
+    );
+    await settle();
+    expect(mocks.getBrowserClient).toHaveBeenCalledTimes(reads + 1);
+    expect(run.sidebar('ws-1').mode).toBe('here');
+
+    // With no routed client, a newly claimed tab can create a route; a re-home always can.
+    run.dispatch(browserRouteInputChanged('ws-1', { kind: 'tab', tab: claimed, change: 'opened' }));
+    await settle();
+    expect(mocks.getBrowserClient).toHaveBeenCalledTimes(reads + 2);
+    run.dispatch(browserRouteInputChanged('ws-1', { kind: 'tab', tab, change: 'rehomed' }));
+    await settle();
+    expect(mocks.getBrowserClient).toHaveBeenCalledTimes(reads + 3);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('queues a re-read for a route input that arrives while a refresh is in flight', async () => {
+    const claimedOn = (tabId: string, hostClientId: string) => ({
+      tabId,
+      workspaceId: 'ws-1',
+      hostClientId,
+      ownerAgentId: 'a-1',
+      url: 'https://example.com/',
+      visibility: 'visible' as const,
+      createdAt: '2026-09-07T00:00:00.000Z',
+      updatedAt: '2026-09-07T00:00:00.000Z',
+    });
+    mocks.getBrowserClient.mockResolvedValueOnce({
+      source: 'default',
+      resolved: null,
+      target: { clientId: 'host-a', via: 'tabs' },
+    });
+    const run = startWithReducer();
+    run.dispatch(mountBrowserConsumer('ws-1'));
+    await settle();
+    const reads = mocks.getBrowserClient.mock.calls.length;
+
+    // Closing A starts a read that will observe B as the oldest claimed host.
+    const afterA = deferred<unknown>();
+    mocks.getBrowserClient.mockReturnValueOnce(afterA.promise);
+    mocks.getBrowserClient.mockResolvedValue({
+      source: 'default',
+      resolved: { clientId: 'cli-desk' },
+    });
+    run.dispatch(
+      browserRouteInputChanged('ws-1', {
+        kind: 'tab',
+        tab: claimedOn('a', 'host-a'),
+        change: 'closed',
+      }),
+    );
+    await settle();
+    expect(mocks.getBrowserClient).toHaveBeenCalledTimes(reads + 1);
+    // B closes before that reply lands: the stored answer still says A.
+    run.dispatch(
+      browserRouteInputChanged('ws-1', {
+        kind: 'tab',
+        tab: claimedOn('b', 'host-b'),
+        change: 'closed',
+      }),
+    );
+    afterA.resolve({
+      source: 'default',
+      resolved: null,
+      target: { clientId: 'host-b', via: 'tabs' },
+    });
+    await settle();
+    await settle();
+    expect(mocks.getBrowserClient).toHaveBeenCalledTimes(reads + 2);
+    expect(run.sidebar('ws-1').mode).toBe('here');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('queues a re-read for a route input that arrives before the first answer', async () => {
+    const first = deferred<unknown>();
+    mocks.getBrowserClient.mockReturnValueOnce(first.promise);
+    mocks.getBrowserClient.mockResolvedValue({
+      source: 'default',
+      resolved: { clientId: 'cli-desk' },
+    });
+    const run = startWithReducer();
+    run.dispatch(mountBrowserConsumer('ws-1'));
+    await settle();
+    const reads = mocks.getBrowserClient.mock.calls.length;
+    run.dispatch(
+      browserRouteInputChanged('ws-1', {
+        kind: 'tab',
+        tab: {
+          tabId: 'stale-tab',
+          workspaceId: 'ws-1',
+          hostClientId: 'legacy-host',
+          ownerAgentId: 'a-0',
+          url: 'https://example.com/',
+          visibility: 'visible',
+          createdAt: '2026-09-07T00:00:00.000Z',
+          updatedAt: '2026-09-07T00:00:00.000Z',
+        },
+        change: 'closed',
+      }),
+    );
+    first.resolve({
+      source: 'default',
+      resolved: null,
+      target: { clientId: 'legacy-host', via: 'tabs' },
+    });
+    await settle();
+    await settle();
+    expect(mocks.getBrowserClient.mock.calls.length).toBeGreaterThan(reads);
+    expect(run.sidebar('ws-1').mode).toBe('here');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('re-reads the primary client when a desktop session of a mounted workspace changes', async () => {
+    mocks.getBrowserClient.mockResolvedValue({
+      source: 'default',
+      resolved: null,
+      target: { clientId: 'gone-desk', via: 'desktop' },
+    });
+    const run = startWithReducer();
+    run.dispatch(mountBrowserConsumer('ws-1'));
+    await settle();
+    const reads = mocks.getBrowserClient.mock.calls.length;
+    const session = (workspaceId: string) =>
+      browserRouteInputChanged(workspaceId, { kind: 'desktop-session' });
+    run.dispatch(session('ws-other'));
+    await settle();
+    expect(mocks.getBrowserClient).toHaveBeenCalledTimes(reads);
+
+    mocks.getBrowserClient.mockResolvedValue({
+      source: 'default',
+      resolved: { clientId: 'cli-desk' },
+    });
+    run.dispatch(session('ws-1'));
+    await settle();
+    expect(mocks.getBrowserClient).toHaveBeenCalledTimes(reads + 1);
+    expect(run.sidebar('ws-1').mode).toBe('here');
+    run.task.cancel();
+    await run.task.toPromise();
   });
 
   it('identity hydration does not read a roster without browser consumers', async () => {
@@ -423,7 +605,12 @@ describe('browserClientsSaga', () => {
       task.cancel();
 
       expect(entry('ws-1').browserClient).toEqual({ source: 'default', resolved: desk });
-      expect(sidebar('ws-1')).toBeNull();
+      // One client still names its primary; fallback is still unpinned.
+      expect(sidebar('ws-1')).toMatchObject({
+        mode: 'here',
+        hostName: 'Intent Desktop',
+        canSwitchHere: true,
+      });
     });
   });
 

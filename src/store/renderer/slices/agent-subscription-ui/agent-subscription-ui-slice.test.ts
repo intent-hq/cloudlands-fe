@@ -172,13 +172,15 @@ describe('agentSubscriptionUIReducer', () => {
       expect(entry.waitingState).toBe('waiting');
     });
 
-    it('marks the entry ready when the fresh read lands after a view switch', () => {
+    it('keeps a failed entry failed while its retry is in flight, then marks it ready', () => {
       let state = agentSubscriptionUIReducer(
         initialState,
         subscriptionSnapshotFetchFailed(WS, AGENT),
       );
       state = agentSubscriptionUIReducer(state, subscriptionSnapshotFetchStarted(WS, AGENT));
-      expect(state.entries[makeKey(WS, AGENT)].snapshotStatus).toBe('loading');
+      // The error lane stays up during the retry instead of hiding and re-appearing.
+      expect(state.entries[makeKey(WS, AGENT)].snapshotStatus).toBe('failed');
+      expect(selectAgentSubscriptionLane.select(stateWith(state), WS, AGENT).visible).toBe(true);
       state = agentSubscriptionUIReducer(
         state,
         setSubscriptionSnapshot(WS, AGENT, {
@@ -543,16 +545,19 @@ describe('agentSubscriptionUI selectors', () => {
     expect(selectSubscriptionSnapshotStatus.select(stateWith(ready), WS, AGENT)).toBe('ready');
   });
 
-  it.each(['loading', 'failed'] as const)(
-    'keeps an empty agent lane visible while its snapshot is %s',
-    (snapshotStatus) => {
+  it.each([
+    ['loading', false],
+    ['failed', true],
+  ] as const)(
+    'shows an empty agent lane only for a failed snapshot (%s → visible %s)',
+    (snapshotStatus, visible) => {
       const key = makeKey(WS, AGENT);
       const slice: AgentSubscriptionUIState = {
         entries: { [key]: { ...emptyEntry, snapshotStatus } },
       };
 
       expect(selectAgentSubscriptionLane.select(stateWith(slice), WS, AGENT)).toEqual({
-        visible: true,
+        visible,
         count: 0,
         participantAgentIds: [],
       });

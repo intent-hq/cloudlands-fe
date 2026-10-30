@@ -37,6 +37,10 @@ import {
   monitorDisplayStatus,
   monitorPillStatus,
   toPullRequestStatus,
+  SIDEBAR_CHANGES_DISPLAY_LIMIT,
+  limitDisplayedChanges,
+  limitGroupedChanges,
+  formatHiddenChangesNotice,
 } from '../sidebar-changes-utils';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -725,6 +729,31 @@ describe('mapWorkspacePRs', () => {
   it('returns empty array when no PRs and no active PR', () => {
     expect(mapWorkspacePRs(undefined, null, buildUrl, getTitle)).toEqual([]);
     expect(mapWorkspacePRs([], null, buildUrl, getTitle)).toEqual([]);
+  });
+
+  it('carries the pool merge-queue flag so an open row reads Queued without a monitor', () => {
+    const [queued, plain] = mapWorkspacePRs(
+      [
+        makePR({ number: 1, status: PullRequestStatus.Open, isInMergeQueue: true }),
+        makePR({ number: 2, status: PullRequestStatus.Open }),
+      ],
+      null,
+      buildUrl,
+      getTitle,
+    );
+    expect(getPRStatusTooltip(queued).split('\n')[0]).toBe('Queued');
+    expect(getPRStatusTooltip(plain).split('\n')[0]).toBe('Open');
+  });
+
+  it('drops a stale merge-queue flag from a draft pool entry', () => {
+    const [draft] = mapWorkspacePRs(
+      [makePR({ status: PullRequestStatus.Open, isDraft: true, isInMergeQueue: true })],
+      null,
+      buildUrl,
+      getTitle,
+    );
+    expect(draft.isInMergeQueue).toBeUndefined();
+    expect(getPRStatusTooltip(draft).split('\n')[0]).not.toBe('Queued');
   });
 
   it('maps workspace PRs when available', () => {
@@ -1774,6 +1803,42 @@ describe('getPRStatusTooltip', () => {
     ).toBe('Merged');
   });
 
+  it('adds the merge-queue position line under Queued when the snapshot carries it', () => {
+    const queued = getPRStatusTooltip(
+      makePR({
+        status: 'open',
+        monitorSnapshot: makeSnapshot({
+          isInMergeQueue: true,
+          mergeQueue: { position: 2, queueSize: 3, estimatedTimeToMerge: 3900 },
+        }),
+      }),
+    );
+    expect(queued.split('\n').slice(0, 2)).toEqual([
+      'Queued',
+      '#2 of 3 in queue · ~1 h 5 min to merge',
+    ]);
+
+    // Older daemons (no entry) keep today's tooltip; a non-queued or settled
+    // row never shows a stale position.
+    const flagOnly = getPRStatusTooltip(
+      makePR({ status: 'open', monitorSnapshot: makeSnapshot({ isInMergeQueue: true }) }),
+    );
+    expect(flagOnly).not.toContain('in queue');
+    for (const pr of [
+      makePR({ status: 'open', monitorSnapshot: makeSnapshot({ mergeQueue: { position: 1 } }) }),
+      makePR({
+        status: 'merged',
+        monitorSnapshot: makeSnapshot({
+          state: 'merged',
+          isInMergeQueue: true,
+          mergeQueue: { position: 1 },
+        }),
+      }),
+    ]) {
+      expect(getPRStatusTooltip(pr)).not.toContain('in queue');
+    }
+  });
+
   it('adds a checks line only when the snapshot has checks', () => {
     const withChecks = getPRStatusTooltip(
       makePR({
@@ -2059,5 +2124,84 @@ describe('monitorPillStatus', () => {
       PullRequestStatus.Draft,
     );
     expect(monitorPillStatus(makeMonitor())).toBe(PullRequestStatus.Open);
+  });
+});
+
+describe('limitDisplayedChanges', () => {
+  it('caps the sidebar list at 500 rows', () => {
+    expect(SIDEBAR_CHANGES_DISPLAY_LIMIT).toBe(500);
+  });
+
+  it('returns the list unchanged when it fits', () => {
+    const items = [1, 2, 3];
+    const result = limitDisplayedChanges(items, 3);
+    expect(result.visible).toBe(items);
+    expect(result.shown).toBe(3);
+    expect(result.hiddenCount).toBe(0);
+  });
+
+  it('keeps the first items in order and counts the rest as hidden', () => {
+    const items = Array.from({ length: 5000 }, (_, i) => i);
+    const result = limitDisplayedChanges(items);
+    expect(result.visible).toHaveLength(500);
+    expect(result.visible[0]).toBe(0);
+    expect(result.visible[499]).toBe(499);
+    expect(result.shown).toBe(500);
+    expect(result.hiddenCount).toBe(4500);
+  });
+
+  it('handles empty lists', () => {
+    expect(limitDisplayedChanges([])).toEqual({ visible: [], shown: 0, hiddenCount: 0 });
+  });
+});
+
+describe('limitGroupedChanges', () => {
+  const group = (agentId: string | null, count: number): AgentChangeGroup => ({
+    agentId,
+    agentName: agentId ?? 'Manual',
+    files: Array.from({ length: count }, (_, i) => ({
+      path: `${agentId ?? 'manual'}/f${i}.ts`,
+      additions: 1,
+      deletions: 0,
+    })),
+    stats: { fileCount: count, additions: count, deletions: 0 },
+  });
+
+  it('trims rows from the bottom of the rendered group order and keeps every header', () => {
+    const groups = [group('newest', 300), group('older', 400), group(null, 100)];
+    const result = limitGroupedChanges(groups, () => false, 500);
+    expect(result.groups.map((entry) => entry.group)).toEqual(groups);
+    expect(result.groups.map((entry) => entry.visibleFiles.length)).toEqual([300, 200, 0]);
+    expect(result.groups[0].visibleFiles).toBe(groups[0].files);
+    expect(result.shown).toBe(500);
+    expect(result.hiddenCount).toBe(300);
+  });
+
+  it('gives collapsed groups no rows and no share of the budget', () => {
+    const groups = [group('big', 480), group('next', 300)];
+    const result = limitGroupedChanges(groups, (g) => g.agentId === 'big', 500);
+    expect(result.groups.map((entry) => entry.visibleFiles.length)).toEqual([0, 300]);
+    expect(result.shown).toBe(300);
+    expect(result.hiddenCount).toBe(0);
+  });
+});
+
+describe('formatHiddenChangesNotice', () => {
+  it('is empty when nothing is hidden', () => {
+    expect(formatHiddenChangesNotice(limitDisplayedChanges([1, 2], 5))).toBe('');
+  });
+
+  it('uses the singular form for one hidden file', () => {
+    const notice = formatHiddenChangesNotice(limitDisplayedChanges([1, 2, 3], 2));
+    expect(notice).toBe(
+      'Showing 2 of 3 files. 1 more file is hidden to keep the panel responsive.',
+    );
+  });
+
+  it('uses the plural form with grouped counts', () => {
+    const items = Array.from({ length: 5123 }, (_, i) => i);
+    expect(formatHiddenChangesNotice(limitDisplayedChanges(items))).toBe(
+      'Showing 500 of 5,123 files. 4,623 more files are hidden to keep the panel responsive.',
+    );
   });
 });

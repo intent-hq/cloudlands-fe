@@ -16,14 +16,24 @@ import {
 } from '@themislib/themis/utils/collections/collection-utils';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { removeWorkspaceEntity } from '../workspace/workspace-slice';
-import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
+import type {
+  ReviewMonitorRow,
+  PrMonitorOrigin,
+  ReviewMonitoringSupport,
+} from '$shared/types/pr-monitor';
 
-export type PrMonitorSnapshotStatus = 'loading' | 'ready' | 'failed';
+/**
+ * `stale`: rows retained from a released lease on the same host, shown while
+ * the re-acquired lease's fresh read is in flight. Their `origin` names a
+ * retired session, so row actions stay disabled until `ready`.
+ */
+export type PrMonitorSnapshotStatus = 'loading' | 'stale' | 'ready' | 'failed';
 
 /** Per-workspace live monitor state (active + completed; selectors filter). */
 interface PrMonitorWorkspaceState {
-  monitors: Collection<PrMonitorRow, 'monitorId'>;
+  monitors: Collection<ReviewMonitorRow, 'monitorId'>;
   snapshotStatus: PrMonitorSnapshotStatus;
+  support?: ReviewMonitoringSupport;
 }
 
 /** Root pr-monitor state, keyed by workspace ID. */
@@ -32,7 +42,7 @@ export interface PrMonitorState {
 }
 
 const emptyPrMonitorWorkspaceState: PrMonitorWorkspaceState = {
-  monitors: createCollection<PrMonitorRow, 'monitorId'>('monitorId'),
+  monitors: createCollection<ReviewMonitorRow, 'monitorId'>('monitorId'),
   snapshotStatus: 'loading',
 };
 
@@ -59,7 +69,7 @@ export const prMonitorsActiveWorkspaceChanged = createAction<[workspaceId: strin
 
 /** Service → reducer: full monitor list after a seed or event fold. */
 export const prMonitorsUpdated =
-  createAction<[workspaceId: string, monitors: PrMonitorRow[]]>('prMonitor/updated');
+  createAction<[workspaceId: string, monitors: ReviewMonitorRow[]]>('prMonitor/updated');
 
 export const prMonitorsSnapshotFailed = createAction<[workspaceId: string]>(
   'prMonitor/snapshotFailed',
@@ -68,13 +78,22 @@ export const prMonitorsSnapshotFailed = createAction<[workspaceId: string]>(
 /** Trigger: `prMonitor.flush` (§6.9) — outcome arrives via `prMonitor:*` events.
  * `check: true` asks the daemon to re-poll the PR first (§5.42 additive param). */
 export const flushPrMonitorRequested = createAction<
-  [workspaceId: string, monitorId: string, check?: boolean]
+  [workspaceId: string, monitorId: string, check?: boolean, origin?: PrMonitorOrigin]
 >('prMonitor/flushRequested');
 
 /** Trigger: `prMonitor.cancel` (§6.9) — `prMonitor:cancelled` drops the row. */
-export const cancelPrMonitorRequested = createAction<[workspaceId: string, monitorId: string]>(
-  'prMonitor/cancelRequested',
+export const cancelPrMonitorRequested = createAction<
+  [workspaceId: string, monitorId: string, origin?: PrMonitorOrigin]
+>('prMonitor/cancelRequested');
+
+export const prMonitorsConnectionChanged = createAction<[workspaceId: string]>(
+  'prMonitor/connectionChanged',
 );
+/** Lease re-acquired on the same host: keep the rows until the fresh read lands. */
+export const prMonitorsMarkedStale = createAction<[workspaceId: string]>('prMonitor/markedStale');
+export const prMonitorsSupportUpdated = createAction<
+  [workspaceId: string, support: ReviewMonitoringSupport]
+>('prMonitor/supportUpdated');
 
 // ── Reducer ──
 
@@ -82,16 +101,39 @@ export const prMonitorReducer = createReducer<PrMonitorState>(initialState);
 
 prMonitorReducer.with(prMonitorsUpdated, (state, { payload: [workspaceId, monitors] }) => {
   return setWorkspaceState(state, workspaceId, {
-    monitors: createCollection<PrMonitorRow, 'monitorId'>('monitorId', monitors),
+    monitors: createCollection<ReviewMonitorRow, 'monitorId'>('monitorId', monitors),
     snapshotStatus: 'ready',
+    support: state.byWorkspaceId[workspaceId]?.support,
   });
 });
 
 prMonitorReducer.with(prMonitorsSnapshotFailed, (state, { payload: [workspaceId] }) => {
   const entry = state.byWorkspaceId[workspaceId] ?? emptyPrMonitorWorkspaceState;
+  // Stale rows were never confirmed by the current session: a failed refresh
+  // must not leave them (or their session's support) behind.
+  if (entry.snapshotStatus === 'stale')
+    return setWorkspaceState(state, workspaceId, {
+      ...emptyPrMonitorWorkspaceState,
+      snapshotStatus: 'failed',
+    });
   return setWorkspaceState(state, workspaceId, { ...entry, snapshotStatus: 'failed' });
 });
 
 prMonitorReducer.with(removeWorkspaceEntity, (state, { payload: [wsId] }) =>
   clearWorkspaceState(state, wsId),
+);
+
+prMonitorReducer.with(prMonitorsConnectionChanged, (state, { payload: [workspaceId] }) =>
+  setWorkspaceState(state, workspaceId, emptyPrMonitorWorkspaceState),
+);
+prMonitorReducer.with(prMonitorsMarkedStale, (state, { payload: [workspaceId] }) => {
+  const entry = state.byWorkspaceId[workspaceId];
+  if (!entry) return state;
+  return setWorkspaceState(state, workspaceId, { ...entry, snapshotStatus: 'stale' });
+});
+prMonitorReducer.with(prMonitorsSupportUpdated, (state, { payload: [workspaceId, support] }) =>
+  setWorkspaceState(state, workspaceId, {
+    ...(state.byWorkspaceId[workspaceId] ?? emptyPrMonitorWorkspaceState),
+    support,
+  }),
 );

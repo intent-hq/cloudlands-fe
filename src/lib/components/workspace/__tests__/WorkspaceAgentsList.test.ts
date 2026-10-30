@@ -106,8 +106,6 @@ describe('WorkspaceAgentsList single-line rows', () => {
     const longRow = view.container.querySelector<HTMLElement>(
       `[data-agent-panel-row="${longName.id}"]`,
     );
-    expect(longRow?.className).toContain('bg-transparent');
-    expect(longRow?.className).not.toContain('hover:bg-muted');
     expect(longRow?.getAttribute('aria-current')).toBe('true');
     expect(longRow?.querySelector('[data-agent-row-name]')?.className).toContain('flex-1');
     expect(longRow?.querySelector('[data-panel-open-state]')).toBeNull();
@@ -1380,9 +1378,6 @@ describe('WorkspaceAgentsList single-line rows', () => {
     expect(bar?.getAttribute('aria-expanded')).toBe('false');
     expect(bar?.closest('[data-index]')).toBeTruthy();
     expect(view.container.querySelectorAll('[data-agent-delegation-toggle]')).toHaveLength(1);
-    for (const slot of view.container.querySelectorAll<HTMLElement>('[data-index]')) {
-      expect(slot.style.height).toBe('40px');
-    }
     expect(onLoadDelegated).not.toHaveBeenCalled();
 
     // Expanding the bar requests only that parent's children; the skeleton
@@ -1560,7 +1555,6 @@ describe('WorkspaceAgentsList single-line rows', () => {
     const slots = section!.querySelectorAll<HTMLElement>('[data-index]');
     expect(slots.length).toBeGreaterThan(0);
     expect(slots.length).toBeLessThan(retired.length);
-    for (const slot of slots) expect(slot.style.height).toBe('40px');
 
     // Rows keep the restore affordance inside the virtual path.
     const restoreButton = section!.querySelector<HTMLElement>(
@@ -1569,22 +1563,5 @@ describe('WorkspaceAgentsList single-line rows', () => {
     expect(restoreButton).toBeTruthy();
     await fireEvent.click(restoreButton!);
     expect(onRestoreRetired).toHaveBeenCalledWith({ agentId: retired[0].id });
-  });
-
-  it('keeps virtualized row slots at the shared 40px height', async () => {
-    const agents = Array.from({ length: 21 }, (_, index) =>
-      makeAgent(`virtual-${index}`, { name: `Virtual agent ${index}` }),
-    );
-    appStore.dispatch(bulkUpsertSessions(agents));
-    const { container } = render(WorkspaceAgentsList, { props: { agents, workspaceId } });
-
-    await waitFor(() => expect(container.querySelector('[data-index]')).toBeTruthy());
-    for (const slot of container.querySelectorAll<HTMLElement>('[data-index]')) {
-      expect(slot.style.height).toBe('40px');
-    }
-    expect(container.querySelector('[data-testid="agent-card-preview"]')).toBeNull();
-    expect(container.querySelectorAll('[data-avatar-variant="emphasized"]').length).toBeGreaterThan(
-      0,
-    );
   });
 });

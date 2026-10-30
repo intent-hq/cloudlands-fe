@@ -14,6 +14,7 @@
  */
 import type { DraftAttachment } from '$lib/client/app-client';
 import type { ContextItem } from './input/context-api';
+import { isSupportedImageMimeType } from './input/image-attachment-format';
 
 /**
  * Optional FE-owned evidence for one attachment (the dock composer stores its
@@ -104,6 +105,9 @@ export function deserializeDraftAttachments(attachments: DraftAttachment[]): Con
     ...(a.path !== undefined ? { path: a.path } : {}),
     ...(a.imageData !== undefined ? { imageData: a.imageData } : {}),
     ...(a.imageMimeType !== undefined ? { imageMimeType: a.imageMimeType } : {}),
+    ...(a.imageMimeType && !isSupportedImageMimeType(a.imageMimeType)
+      ? { placementFileName: a.label }
+      : {}),
     ...(a.attachmentId !== undefined ? { attachmentId: a.attachmentId } : {}),
     ...(a.attachmentMimeType !== undefined ? { attachmentMimeType: a.attachmentMimeType } : {}),
     ...(a.attachmentSize !== undefined ? { attachmentSize: a.attachmentSize } : {}),

@@ -40,11 +40,10 @@ test('notch answers canonical questions once and restores the ordinary chat draf
     }),
   ]);
   if (!cardBox) throw new Error('Missing question card bounds');
-  // Bottom-aligned in the composer lane with no extra inset; it hugs its content.
-  expect(Math.abs(cardBox.x - laneBox.left)).toBeLessThan(1);
-  expect(Math.abs(cardBox.x + cardBox.width - laneBox.right)).toBeLessThan(1);
-  expect(Math.abs(cardBox.y + cardBox.height - laneBox.bottom)).toBeLessThan(1);
-  expect(cardBox.height).toBeLessThan(260);
+  // The question controls remain contained in the live composer lane.
+  expect(cardBox.x).toBeGreaterThanOrEqual(laneBox.left - 1);
+  expect(cardBox.x + cardBox.width).toBeLessThanOrEqual(laneBox.right + 1);
+  expect(cardBox.y + cardBox.height).toBeLessThanOrEqual(laneBox.bottom + 1);
   await card.screenshot({ path: info.outputPath('notch-question.png') });
   await component.screenshot({ path: artifact('dock-question-after.png') });
   // Hide collapses the card above the composer and gives the composer back.

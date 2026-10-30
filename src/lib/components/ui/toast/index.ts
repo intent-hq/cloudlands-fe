@@ -2,6 +2,7 @@ export { toast } from 'svelte-sonner';
 export type { ExternalToast, ToastT } from 'svelte-sonner';
 export { default as AgentAttentionToast } from './AgentAttentionToast.svelte';
 export { default as AgentFailureToast } from './AgentFailureToast.svelte';
+export { default as AgentIdleToast } from './AgentIdleToast.svelte';
 export { default as ErrorToast } from './ErrorToast.svelte';
 export { default as Toast } from './Toast.svelte';
 export { default as ToastCloseButton } from './ToastCloseButton.svelte';

@@ -212,6 +212,19 @@ class Admission(unittest.TestCase):
         for key in ('GH_TOKEN', 'ANTHROPIC_API_KEY', 'SSH_AUTH_SOCK', 'INTENTD_SOCKET', 'NODE_OPTIONS'):
             self.assertNotIn(key, env)
 
+    def test_fresh_vm_accepts_github_hosted_and_warpbuild_but_not_a_slot(self):
+        # WarpBuild gives each job a fresh VM too: it reports self-hosted with its token set.
+        for environment, token, fresh in [
+            ('github-hosted', None, True),
+            ('self-hosted', 'fixture', True),
+            ('self-hosted', None, False),
+            ('self-hosted', '', False),
+            (None, 'fixture', False),
+        ]:
+            env = {key: value for key, value in [('RUNNER_ENVIRONMENT', environment), ('WARPBUILD_RUNNER_VERIFICATION_TOKEN', token)] if value is not None}
+            with self.subTest(environment=environment, token=token), patch.dict(os.environ, env, clear=True):
+                self.assertEqual(smoke.fresh_vm(), fresh)
+
     def test_refuses_local_or_wrong_arch_host_before_commands(self):
         cases = [
             ('self-hosted', 'macOS', 'ARM64', 'Darwin', 'arm64'),

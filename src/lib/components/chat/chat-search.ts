@@ -1,11 +1,7 @@
 import type { AgentMessage } from '$shared/types';
 import { extractAllContent } from '$shared/types';
 import { getContentBlockText } from '$shared/utils/content-block-helpers';
-import {
-  groupContentBlocks,
-  parseSuggestedPrompts,
-  parseSuggestedPromptsFromContentBlocks,
-} from '$lib/utils/messageParser';
+import { parseSuggestedPrompts } from '$lib/utils/messageParser';
 import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
 interface ChatSearchBlock {
   messageId: string;
@@ -14,12 +10,23 @@ interface ChatSearchBlock {
   disclosurePath: string[];
   text: string;
 }
-import { normalizeResponseGroups, shouldRenderResponseGroupInline } from './response-group-blocks';
+import { shouldRenderResponseGroupInline } from './response-group-blocks';
 import {
   classifyToolResults,
   getStandaloneToolResultPresentation,
   isStandaloneToolResult,
 } from './tool-result-pairing';
+import { groupMessageBlocks } from './operational-run-collapse';
+import { prepareMessageBlocks, renderedBlockText } from './prepare-message-blocks';
+
+export interface ChatSearchOptions {
+  /** Mirror the renderer's collapsed tool runs so block paths match the DOM. */
+  collapseToolRuns?: boolean;
+  /** Owning workspace, so video normalization (and its dedupe) matches the renderer. */
+  workspaceId?: string;
+  /** Mirror the renderer's thinking-as-prose presentation for the agent. */
+  reasoningAsText?: boolean;
+}
 
 export interface ChatSearchMatch {
   messageId: string;
@@ -38,6 +45,7 @@ function buildMessageSearchBlocks(
   message: AgentMessage,
   turnKey: string,
   ownerPrincipalId: string | null | undefined,
+  options: ChatSearchOptions = {},
 ): ChatSearchBlock[] {
   const contentBlocks = message.contentBlocks;
   if (!contentBlocks?.length) return [];
@@ -57,12 +65,16 @@ function buildMessageSearchBlocks(
     ];
   }
 
-  const parsedPromptBlocks = parseSuggestedPromptsFromContentBlocks(contentBlocks, {
-    isStreaming: !!message.isStreaming,
-  });
-  const grouped = normalizeResponseGroups(
-    groupContentBlocks(parsedPromptBlocks.contentBlocks, !!message.isStreaming),
-    !!message.isStreaming,
+  const isStreaming = !!message.isStreaming;
+  const grouped = groupMessageBlocks(
+    prepareMessageBlocks(contentBlocks, {
+      role: message.role,
+      workspaceId: options.workspaceId,
+      isStreaming,
+      reasoningAsText: options.reasoningAsText,
+    }),
+    isStreaming,
+    !!options.collapseToolRuns,
   );
   const toolResultClassification = classifyToolResults(grouped);
   const output: ChatSearchBlock[] = [];
@@ -75,11 +87,15 @@ function buildMessageSearchBlocks(
   grouped.forEach((block, blockIndex) => {
     const path = chatSearchBlockPath(blockIndex);
     if (block.type === 'text') {
-      addText(block.text || block.content || '', path, []);
+      addText(renderedBlockText(block), path, []);
       return;
     }
     if (block.type === 'tool_result' && isStandaloneToolResult(toolResultClassification, block)) {
       addText(getStandaloneToolResultPresentation(block).searchableText, path, []);
+      return;
+    }
+    if (block.type === 'thinking') {
+      addText(renderedBlockText(block), path, [`thinking:${path}`]);
       return;
     }
     if (block.type !== 'content_group') return;
@@ -98,7 +114,7 @@ function buildMessageSearchBlocks(
         }
         if (child.type === 'text' || (child.type === 'thinking' && !block.isReasoningPhase)) {
           addText(
-            child.text || child.content || '',
+            renderedBlockText(child),
             chatSearchBlockPath(blockIndex, childIndex),
             child.type === 'thinking'
               ? [`thinking:${chatSearchBlockPath(blockIndex, childIndex)}`]
@@ -131,7 +147,7 @@ function buildMessageSearchBlocks(
     block.children.forEach((child, childIndex) => {
       const childPath = chatSearchBlockPath(blockIndex, childIndex);
       if (child.type === 'text') {
-        addText(child.text || child.content || '', childPath, [`group:${path}`]);
+        addText(renderedBlockText(child), childPath, [`group:${path}`]);
       } else if (
         child.type === 'tool_result' &&
         isStandaloneToolResult(toolResultClassification, child)
@@ -149,12 +165,14 @@ function buildChatSearchIndex(
   messages: AgentMessage[],
   turnKeyByMessageId: ReadonlyMap<string, string>,
   ownerPrincipalId: string | null | undefined,
+  options: ChatSearchOptions,
 ): ChatSearchBlock[] {
   return messages.flatMap((message) =>
     buildMessageSearchBlocks(
       message,
       turnKeyByMessageId.get(message.id) ?? message.id,
       ownerPrincipalId,
+      options,
     ),
   );
 }
@@ -173,12 +191,18 @@ export function findChatSearchMatches(
   query: string,
   turnKeyByMessageId: ReadonlyMap<string, string>,
   ownerPrincipalId?: string | null,
+  options: ChatSearchOptions = {},
 ): ChatSearchMatch[] {
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) return [];
   const matches: ChatSearchMatch[] = [];
   const occurrenceByMessage = new Map<string, number>();
-  for (const block of buildChatSearchIndex(messages, turnKeyByMessageId, ownerPrincipalId)) {
+  for (const block of buildChatSearchIndex(
+    messages,
+    turnKeyByMessageId,
+    ownerPrincipalId,
+    options,
+  )) {
     const content = block.text.toLowerCase();
     let offset = 0;
     let occurrenceInBlock = 0;

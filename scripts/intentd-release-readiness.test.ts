@@ -1,4 +1,4 @@
-// @verify-changed-triggers: .github/workflows/auto-cut-alpha.yml, scripts/intentd-release-readiness.mjs, scripts/release-pr-fast-path.mjs, scripts/intentd-pin-advance.sh
+// @verify-changed-triggers: .github/workflows/auto-cut-alpha.yml, scripts/intentd-release-readiness.mjs, scripts/release-pr-fast-path.mjs, scripts/intentd-pin-advance.sh, scripts/ci-gate-state.mjs, scripts/rolling-pr.mjs
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
@@ -42,6 +42,26 @@ function decisionLines(stdout: string) {
   return stdout.split('\n').filter((line) => line.startsWith('auto-cut-decision:'));
 }
 
+type PinBumpPr = {
+  number: number;
+  headRefName: string;
+  isCrossRepository: boolean;
+  author: { login: string };
+  labels: { name: string }[];
+};
+
+/** An open rolling pin PR as `gh pr list --json` returns it (RELEASE_PAT-authored by default). */
+function pinBumpPr(number: number, overrides: Partial<PinBumpPr> = {}): PinBumpPr {
+  return {
+    number,
+    headRefName: 'auto/intentd-pin',
+    isCrossRepository: false,
+    author: { login: 'releaser' },
+    labels: [],
+    ...overrides,
+  };
+}
+
 function fixture() {
   return {
     pin: PIN,
@@ -75,7 +95,7 @@ function fixture() {
       mergeStateStatus: 'CLEAN',
       statusCheckRollup: [{ name: 'CI Gate', conclusion: 'SUCCESS' }],
     },
-    pinPr: [] as { number: number; isCrossRepository: boolean }[],
+    pinPr: [] as PinBumpPr[],
     unresolved: 0,
     beTag: 'v0.9.111',
     beTagDate: '2026-09-26T05:50:00Z',
@@ -113,6 +133,7 @@ function fixture() {
     liveHead: '',
     missingHead: false,
     missingHelper: false,
+    missingGuardHelper: '',
     fetchFail: false,
   };
 }
@@ -154,12 +175,15 @@ function runCut(
   const headRefOid = git('rev-parse', 'HEAD');
   mkdirSync(join(directory, 'scripts'));
   for (const script of [
+    'ci-gate-state.mjs',
+    'rolling-pr.mjs',
     'intentd-release-readiness.mjs',
     'release-pr-fast-path.mjs',
     'intentd-pin-advance.sh',
   ])
     writeFileSync(join(directory, 'scripts', script), readFileSync(`scripts/${script}`));
   if (data.missingHelper) rmSync(join(directory, 'scripts', 'release-pr-fast-path.mjs'));
+  if (data.missingGuardHelper) rmSync(join(directory, 'scripts', data.missingGuardHelper));
   writeFileSync(
     join(directory, 'fixture.json'),
     JSON.stringify({
@@ -312,12 +336,16 @@ process.stdout.write(String(Math.floor(epoch / 1000)) + '\\n');
     ? readFileSync(join(directory, 'summary'), 'utf8')
     : '';
   expect(decisionLines(summary)).toEqual(decisions);
-  const calls = readFileSync(join(directory, 'calls'), 'utf8');
+  // A run that stops before its first gh call never creates the log.
+  const calls = existsSync(join(directory, 'calls'))
+    ? readFileSync(join(directory, 'calls'), 'utf8')
+    : '';
   if (dryRun) expect(calls).not.toContain('"merge"');
   return {
     calls: calls
       .trim()
       .split('\n')
+      .filter(Boolean)
       .map((line) => JSON.parse(line) as string[]),
     slept: existsSync(join(directory, 'slept')),
     headRefOid,
@@ -401,7 +429,7 @@ describe('auto-cut intentd dependency guard', () => {
   ])('retains the independent %s guard despite a valid no-op', (guard) => {
     const data = fixture();
     if (guard === 'hold') data.pr.labels = [{ name: 'hold-release' }];
-    if (guard === 'pin PR') data.pinPr = [{ number: 7, isCrossRepository: false }];
+    if (guard === 'pin PR') data.pinPr = [pinBumpPr(7)];
     if (guard === 'failed CI') data.detail.statusCheckRollup[0].conclusion = 'FAILURE';
     if (guard === 'pending CI') data.detail.statusCheckRollup = [];
     if (guard === 'review') data.unresolved = 1;
@@ -592,6 +620,8 @@ describe('single-pass alpha cut', () => {
     expect(steps.indexOf(checkout)).toBeLessThan(steps.indexOf(throttle));
     expect(checkout.with?.['sparse-checkout']).toContain('/scripts/intentd-release-readiness.mjs');
     expect(checkout.with?.['sparse-checkout']).toContain('/scripts/release-pr-fast-path.mjs');
+    expect(checkout.with?.['sparse-checkout']).toContain('/scripts/ci-gate-state.mjs');
+    expect(checkout.with?.['sparse-checkout']).toContain('/scripts/rolling-pr.mjs');
     expect(checkout.if).toBe("steps.token.outputs.enabled == 'true'");
     expect(throttle.if).toContain("github.event_name != 'workflow_dispatch'");
     expect(inflight.if).toContain("steps.throttle.outputs.defer != 'true'");
@@ -772,7 +802,7 @@ describe('single-pass alpha cut', () => {
   ])('keeps the %s guard for eligible pin pushes without sleeping', (guard) => {
     const data = pinFixture();
     if (guard === 'hold') data.pr.labels = [{ name: 'hold-release' }];
-    if (guard === 'pin PR') data.pinPr = [{ number: 7, isCrossRepository: false }];
+    if (guard === 'pin PR') data.pinPr = [pinBumpPr(7)];
     if (guard === 'failed CI') data.detail.statusCheckRollup[0].conclusion = 'FAILURE';
     if (guard === 'pending CI') data.detail.statusCheckRollup = [];
     if (guard === 'review') data.unresolved = 1;
@@ -1119,12 +1149,20 @@ describe('auto-cut decision line', () => {
       'hold',
       'hold-release',
     ],
+    ['open pin PR', 'schedule', (d) => (d.pinPr = [pinBumpPr(7)]), 'defer', 'pin-bump-open'],
     [
-      'open pin PR',
-      'schedule',
-      (d) => (d.pinPr = [{ number: 7, isCrossRepository: false }]),
-      'defer',
-      'pin-bump-open',
+      'fork pin PR',
+      'workflow_dispatch',
+      (d) => (d.pinPr = [pinBumpPr(7, { isCrossRepository: true })]),
+      'dry-run',
+      'direct-merge',
+    ],
+    [
+      'pin PR by another author',
+      'workflow_dispatch',
+      (d) => (d.pinPr = [pinBumpPr(7, { author: { login: 'someone-else' } })]),
+      'dry-run',
+      'direct-merge',
     ],
     ['draft', 'workflow_dispatch', (d) => (d.detail.isDraft = true), 'skip', 'draft'],
     [
@@ -1154,6 +1192,22 @@ describe('auto-cut decision line', () => {
       (d) => (d.detail.statusCheckRollup[0].conclusion = 'FAILURE'),
       'skip',
       'ci-gate-failed',
+    ],
+    ...(['SKIPPED', 'NEUTRAL', 'STARTUP_FAILURE', 'STALE'] as const).map(
+      (conclusion): [string, string, (data: Data) => void, string, string] => [
+        `${conclusion.toLowerCase()} gate`,
+        'workflow_dispatch',
+        (d) => (d.detail.statusCheckRollup[0].conclusion = conclusion),
+        'skip',
+        'ci-gate-failed',
+      ],
+    ),
+    [
+      'in-progress gate',
+      'workflow_dispatch',
+      (d) => (d.detail.statusCheckRollup = [{ name: 'CI Gate', conclusion: '' }]),
+      'defer',
+      'ci-gate-pending',
     ],
     [
       'missing gate',
@@ -1238,6 +1292,25 @@ describe('auto-cut decision line', () => {
     data.fail = 'graphql';
     const result = runCut(data, 'workflow_dispatch', MERGE_STEP, '', true, 1);
     expect(result.decision).toEqual(['error', 'unexpected-exit']);
+  });
+
+  it.each(['ci-gate-state.mjs', 'rolling-pr.mjs'])(
+    'stops with a named error, never a merge, when the trusted %s is missing',
+    (helper) => {
+      const data = pinFixture();
+      data.missingGuardHelper = helper;
+      const result = runCut(data, 'workflow_dispatch', MERGE_STEP, '', false, 1);
+      expect(result.decision).toEqual(['error', 'missing-helper']);
+      expect(result.calls.some((args) => args[0] === 'pr' && args[1] === 'merge')).toBe(false);
+    },
+  );
+
+  it('reports an unreadable CI Gate state as an error, not a pending wait', () => {
+    const data = pinFixture();
+    data.detail.statusCheckRollup = {} as never;
+    const result = runCut(data, 'workflow_dispatch', MERGE_STEP, '', false, 1);
+    expect(result.decision).toEqual(['error', 'ci-gate-unreadable']);
+    expect(result.calls.some((args) => args[0] === 'pr' && args[1] === 'merge')).toBe(false);
   });
 
   it('reports throttle and in-flight deferrals from their own steps', () => {

@@ -16,6 +16,13 @@ describe('durable Home configuration', () => {
     expect(homePersistenceKey('local', 'alice')).not.toBe(homePersistenceKey('remote', 'alice'));
     expect(homePersistenceKey('a:b', 'c')).not.toBe(homePersistenceKey('a', 'b:c'));
   });
+  it('migrates a saved Retired chip to Archived, which now holds purged workspaces', () => {
+    expect(normalizeHomeConfiguration({ filter: 'retired' }).filter).toBe('archived');
+    expect(normalizeHomeConfiguration({ filter: 'archived' }).filter).toBe('archived');
+  });
+  it('keeps the Waiting chip selected across reloads', () => {
+    expect(normalizeHomeConfiguration({ filter: 'waiting' }).filter).toBe('waiting');
+  });
   it('round-trips automatic settings without transient or retired fields', () => {
     const config = normalizeHomeConfiguration({
       view: 'canvas',

@@ -21,6 +21,9 @@ import {
 } from '../console-owner';
 
 interface MockWindow extends ConsoleOwnerWindow {
+  webContents: ConsoleOwnerWindow['webContents'] & {
+    isOffscreen: () => boolean;
+  };
   hud: boolean;
   send: ReturnType<typeof vi.fn>;
   _close: () => void;
@@ -43,6 +46,7 @@ function makeWindow(opts: { hud?: boolean; focused?: boolean } = {}): MockWindow
       id,
       isDestroyed: () => destroyed,
       send,
+      isOffscreen: () => false,
     },
     on: (_event: 'closed', listener: () => void) => {
       closedHandlers.push(listener);

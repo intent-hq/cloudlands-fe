@@ -23,6 +23,7 @@ export function extractAttachmentBlocks(items: ContextItem[]) {
             type: 'image' as const,
             data: item.imageData!,
             mimeType: item.imageMimeType!,
+            ...(item.placementFileName ? { placementFileName: item.placementFileName } : {}),
           },
     );
   const fileBlocks = items
@@ -53,9 +54,11 @@ export function buildWorkspaceContextString(
       // i18n-ignore (agent-directed context marker, not user-facing UI)
       parts.push(`[Currently viewing diff for: ${panel.filePath}]`);
     } else if (panel.type === 'note' && panel.noteId) {
+      // Keeps its own read instruction so the note stays reachable against a
+      // daemon that predates by-reference `noteIds` notices.
       parts.push(
         // i18n-ignore (agent-directed context marker, not user-facing UI)
-        `[Currently viewing note: "${panel.label}" (ID: ${panel.noteId}). Use read_note_space-mcp(noteId="${panel.noteId}") to read its content.]`,
+        `[Currently viewing note: "${panel.label}" (ID: ${panel.noteId}). Read it with ws.note.read("${panel.noteId}").]`,
       );
     } else if (panel.type === 'spec') {
       // i18n-ignore (agent-directed context marker, not user-facing UI)

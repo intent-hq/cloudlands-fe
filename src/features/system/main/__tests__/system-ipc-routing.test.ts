@@ -177,6 +177,7 @@ describe('window close cleanup', () => {
     const closedHandlers: Array<() => void> = [];
     const window = {
       id: 42,
+      webContents: { on: vi.fn() },
       on: vi.fn((event: string, cb: () => void) => {
         if (event === 'closed') closedHandlers.push(cb);
       }),
@@ -200,7 +201,7 @@ describe('window close cleanup', () => {
     const window = {
       id: 42,
       isDestroyed: vi.fn(() => false),
-      webContents: { send: vi.fn() },
+      webContents: { send: vi.fn(), on: vi.fn() },
       on: vi.fn((event: string, cb: () => void) => {
         handlers[event] = cb;
       }),

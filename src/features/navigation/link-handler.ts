@@ -13,6 +13,7 @@
  * - Workspace preview links → Enter the workspace and open its content panel
  * - Intent links (intent://) → Handle internally (navigate to notes/tasks)
  * - File links (file://) → Open in external editor
+ * - Saved assets (workspace-asset://) → Owning view's media preview, never a browser
  * - Other links → External browser as fallback
  */
 
@@ -31,7 +32,6 @@ import {
 import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { selectGithubLinkDefaultAction } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
-import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import {
   focusPanel,
@@ -87,6 +87,14 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
         logger.debug('Link handled by custom handler', { url });
         return true;
       }
+    }
+
+    // Media-capable views consume valid saved-media links before reaching here.
+    // Reject unhandled assets before Home routing or external fallback: neither
+    // a browser nor an editor can resolve these internal media URLs safely.
+    if (/^workspace-asset:/i.test(url.trim())) {
+      notify.error(m.ui_linkHandler_assetUnavailable_error());
+      return false;
     }
 
     const gitHubRef = parseGitHubIssueOrPrUrl(url);
@@ -204,7 +212,9 @@ async function handleIntentLink(url: string, options: LinkHandlerOptions): Promi
     const targetWorkspaceId = info.workspaceId
       ? WorkspaceId(info.workspaceId)
       : options.workspaceId;
-    if (info.valid) await activateLinkWorkspace(targetWorkspaceId, options);
+    // A workspace link navigates to its workspace itself.
+    if (info.valid && info.type !== 'workspace')
+      await activateLinkWorkspace(targetWorkspaceId, options);
     focusSourcePanel(options);
     return await handleIntent(url, {
       workspaceId: options.openInWorkspace ? targetWorkspaceId : options.workspaceId,
@@ -295,10 +305,9 @@ async function activateLinkWorkspace(
   options: LinkHandlerOptions,
 ): Promise<void> {
   if (!options.openInWorkspace || !workspaceId) return;
-  const { navigateToRoute } = await import('$lib/utils/navigation.client');
+  const { openAndShowWorkspace } = await import('$lib/utils/show-workspace');
   try {
-    await navigateToRoute(`/workspace/${encodeURIComponent(workspaceId)}`);
-    appStore.dispatch(openWorkspaceTab(workspaceId));
+    await openAndShowWorkspace(workspaceId);
   } catch (error) {
     notify.error(m.ui_linkHandler_navigationFailed_title(), {
       description: error instanceof Error ? error.message : m.ui_linkHandler_unknownError_label(),

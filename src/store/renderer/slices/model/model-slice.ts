@@ -8,51 +8,80 @@ import type {
   ModelFallbackInfo,
   ModelLoadingState,
   ModelLoadingStatus,
+  ModelReplyLabels,
   ModelState,
 } from './model-types';
 
-export type { ModelFallbackInfo, ModelLoadingStatus, ModelState } from './model-types';
+export type { ModelFallbackInfo, ModelState } from './model-types';
+
+/**
+ * One `setLoadingStateForProvider` update: the load status plus whatever reply
+ * labels (`ModelReplyLabels`) accompany it.
+ */
+type ModelLoadingStateUpdate = ModelReplyLabels & {
+  status: ModelLoadingStatus;
+  retryAttempt?: number;
+  error?: string;
+};
+
+/**
+ * Default carry rule for every reply label: a fresh result replaces it, a
+ * failed load clears it, and a loading update keeps it unless it brings its own.
+ */
+function carryLabel(status: ModelLoadingStatus, next: unknown, previous: unknown): unknown {
+  if (status === 'success') return next;
+  if (status === 'error') return undefined;
+  return next ?? previous;
+}
 
 function buildLoadingState(
   previous: ModelLoadingState | undefined,
-  updates: {
-    status: ModelLoadingStatus;
-    retryAttempt?: number;
-    error?: string;
-    warning?: string;
-    stale?: boolean;
-  },
+  updates: ModelLoadingStateUpdate,
 ): ModelLoadingState {
-  const nextState: ModelLoadingState = {
-    status: updates.status,
-    retryAttempt: updates.retryAttempt ?? previous?.retryAttempt ?? 0,
-  };
+  const { status, retryAttempt, error: nextError, ...nextLabels } = updates;
+  const {
+    status: _previousStatus,
+    retryAttempt: previousRetryAttempt,
+    error: previousError,
+    ...previousLabels
+  }: Partial<ModelLoadingState> = previous ?? {};
+  const next: Record<string, unknown> = nextLabels;
+  const prior: Record<string, unknown> = previousLabels;
 
-  const error = updates.error ?? previous?.error;
+  // Labels are merged by key, not copied one by one, so a new reply label
+  // follows the default rule without an edit here; only labels with their own
+  // rule are special-cased below.
+  const labels: Record<string, unknown> = {};
+  for (const key of new Set([...Object.keys(prior), ...Object.keys(next)])) {
+    const value = carryLabel(status, next[key], prior[key]);
+    if (value !== undefined) labels[key] = value;
+  }
+
+  // `stale` is recorded only when true.
+  if (labels.stale !== true) delete labels.stale;
+
+  // The kind follows its warning's lifecycle and never outlives it: a new
+  // warning brings its own kind (or none), never the previous one's.
+  const warningKind =
+    status === 'success' || nextLabels.warning !== undefined
+      ? nextLabels.warningKind
+      : status === 'error'
+        ? undefined
+        : previousLabels.warningKind;
+  delete labels.warningKind;
+  if (labels.warning !== undefined && warningKind !== undefined) {
+    labels.warningKind = warningKind;
+  }
+
+  const nextState: ModelLoadingState = {
+    ...(labels as ModelReplyLabels),
+    status,
+    retryAttempt: retryAttempt ?? previousRetryAttempt ?? 0,
+  };
+  const error = nextError ?? previousError;
   if (error !== undefined) {
     nextState.error = error;
   }
-
-  const warning =
-    updates.status === 'success'
-      ? updates.warning
-      : updates.status === 'error'
-        ? undefined
-        : (updates.warning ?? previous?.warning);
-  if (warning !== undefined) {
-    nextState.warning = warning;
-  }
-
-  const stale =
-    updates.status === 'success'
-      ? updates.stale
-      : updates.status === 'error'
-        ? undefined
-        : (updates.stale ?? previous?.stale);
-  if (stale) {
-    nextState.stale = true;
-  }
-
   return nextState;
 }
 
@@ -84,16 +113,7 @@ export const setAvailableModels = createAction<[models: AuggieModel[], providerI
 );
 
 export const setLoadingStateForProvider = createAction<
-  [
-    payload: {
-      providerId: string;
-      status: ModelLoadingStatus;
-      retryAttempt?: number;
-      error?: string;
-      warning?: string;
-      stale?: boolean;
-    },
-  ]
+  [payload: ModelLoadingStateUpdate & { providerId: string }]
 >('model/setLoadingStateForProvider');
 
 export const loadProviderModelsFromStorage = createAction<[models: Record<string, string>]>(
@@ -160,17 +180,11 @@ modelReducer.with(setAvailableModels, (state, { payload: [models, providerId] })
 }));
 modelReducer.with(
   setLoadingStateForProvider,
-  (state, { payload: [{ providerId, status, retryAttempt, error, warning, stale }] }) => ({
+  (state, { payload: [{ providerId, ...updates }] }) => ({
     ...state,
     loadingState: {
       ...state.loadingState,
-      [providerId]: buildLoadingState(state.loadingState[providerId], {
-        status,
-        retryAttempt,
-        error,
-        warning,
-        stale,
-      }),
+      [providerId]: buildLoadingState(state.loadingState[providerId], updates),
     },
   }),
 );

@@ -59,6 +59,25 @@ afterEach(() => {
 });
 
 describe('electron-ipc-transport onReconnected fan-out', () => {
+  it('resumes qualified document readers only after attachment readiness and removes listeners on disposal', () => {
+    const api = installFakeApi();
+    Object.assign(api, { reviewMonitoring: 1 });
+    const qualified = createElectronIpcBackendTransport({ reviewMonitoring: 1 });
+    const legacy = createElectronIpcBackendTransport();
+    const capable = vi.fn(),
+      ordinary = vi.fn();
+    const stop = qualified.onReconnected(capable);
+    const stopLegacy = legacy.onReconnected(ordinary);
+    api.emit('backend:pr-monitor:ready', {});
+    expect(capable).not.toHaveBeenCalled();
+    api.emit('backend:pr-monitor:ready', { attachment: true });
+    expect(capable).toHaveBeenCalledOnce();
+    expect(ordinary).not.toHaveBeenCalled();
+    stop();
+    stopLegacy();
+    api.emit('backend:pr-monitor:ready', { attachment: true });
+    expect(capable).toHaveBeenCalledOnce();
+  });
   it('registers a single backend:status listener for many subscribers and fans out', () => {
     const api = installFakeApi();
     const transport = createElectronIpcBackendTransport();
@@ -980,5 +999,55 @@ describe('native review original renderer bridge', () => {
     expect(api.invoke.mock.calls.filter(([name]) => name === channels.PREPARE)).toHaveLength(2);
     api.invoke.mockResolvedValue({ ok: true, result: { released: true } } as never);
     await parent.release();
+  });
+});
+
+describe('native document history recipient', () => {
+  it('intersects the renderer and preload receipts only for admitted history methods', async () => {
+    const api = installFakeApi();
+    Object.assign(api, { reviewMonitoring: 1 });
+    const transport = createElectronIpcBackendTransport({ reviewMonitoring: 1 });
+    await transport.request('agent.getConversation', { agentId: 'agent' });
+    expect(api.invoke).toHaveBeenLastCalledWith(IPC_CHANNELS.BACKEND.REQUEST, {
+      method: 'agent.getConversation',
+      params: { agentId: 'agent' },
+      reviewMonitoring: 1,
+    });
+    await transport.request('agent.getSession', { agentId: 'agent' });
+    expect(api.invoke.mock.calls.at(-1)?.[1]).not.toHaveProperty('reviewMonitoring');
+    Object.assign(api, { reviewMonitoring: undefined });
+    await transport.request('agent.getConversation', { agentId: 'agent' });
+    expect(api.invoke.mock.calls.at(-1)?.[1]).not.toHaveProperty('reviewMonitoring');
+  });
+});
+
+describe('passive principal discovery IPC', () => {
+  it('uses the dedicated read channel and preserves raw discovery fields', async () => {
+    const api = installFakeApi();
+    const raw = {
+      hello: { server: { capabilities: { hostMembership: 1, prWorkspaceLookup: 1 } } },
+      principal: { id: 'caller' },
+    };
+    api.invoke.mockResolvedValue({ ok: true, result: raw } as never);
+    await expect(createElectronIpcBackendTransport().readPrincipal!()).resolves.toEqual(raw);
+    expect(api.invoke).toHaveBeenCalledExactlyOnceWith(IPC_CHANNELS.BACKEND.READ_PRINCIPAL);
+  });
+
+  it('preserves daemon refusal fields for nonretryable discovery', async () => {
+    const api = installFakeApi();
+    api.invoke.mockResolvedValue({
+      ok: false,
+      error: {
+        code: 'FORBIDDEN',
+        rpcCode: -32003,
+        message: 'Forbidden',
+        data: { reason: 'revoked' },
+      },
+    } as never);
+    await expect(createElectronIpcBackendTransport().readPrincipal!()).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+      rpcCode: -32003,
+      data: { reason: 'revoked' },
+    });
   });
 });

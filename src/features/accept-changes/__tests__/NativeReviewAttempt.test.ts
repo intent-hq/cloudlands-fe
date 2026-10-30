@@ -9,7 +9,7 @@ import {
   nativeReviewEditEnded,
 } from '$store/renderer/slices/repository-context/repository-context-slice';
 import { selectNativeReviewForOwner } from '$store/renderer/slices/repository-context/repository-context-selectors';
-import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { setNativeReviewEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { principalContextChanged } from '$store/renderer/slices/principal/principal-slice';
 import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
 import {
@@ -725,7 +725,7 @@ describe('native review through rendered Store, root saga, Live client and contr
   });
   it('preserves the Labs-off legacy form without acquiring repository/native state', async () => {
     await mount({}, nativeRoot, true);
-    store.dispatch(setLabsMultiplayerEnabled(false));
+    store.dispatch(setNativeReviewEnabled(false));
     store.dispatch(
       setWorkspaceHasLoaded(
         true,

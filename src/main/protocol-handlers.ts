@@ -21,6 +21,7 @@ import { ANY_HOST } from '../features/system/main/window-workspace-tracking';
 import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
 import { JsonRpcError } from '../features/backend/main/json-rpc-errors';
 import type { JsonRpcClient } from '../features/backend/main/json-rpc-client';
+import { createVideoPreview } from './utils/video-preview';
 
 /**
  * Bounded retry while no hosting window is known yet: the window→workspace
@@ -612,7 +613,14 @@ export function setupWorkspaceFileProtocolHandler() {
       });
     }
 
-    const { workspaceId, filePath, mimeType, backendId: backendIdHint } = parsed;
+    const { workspaceId, filePath, mimeType, backendId: backendIdHint, preview } = parsed;
+    // Preview conversion is an explicit full-file fetch, never a ranged/original download.
+    if (
+      preview &&
+      (process.platform !== 'darwin' || request.method !== 'GET' || request.headers.has('range'))
+    ) {
+      return new Response(null, { status: 415, headers: corsHeaders });
+    }
     // Bytes come from the backend that owns the workspace (monorepo#3501).
     let backendId: string | null = null;
     let fallback: string | null = null;
@@ -651,6 +659,7 @@ export function setupWorkspaceFileProtocolHandler() {
       const chunks: Buffer[] = [];
 
       async function readChunk(offset: number, length: number): Promise<WorkspaceFileChunk> {
+        request.signal.throwIfAborted();
         let chunk: WorkspaceFileChunk;
         try {
           chunk = (await client.request('file.readChunk', {
@@ -758,7 +767,18 @@ export function setupWorkspaceFileProtocolHandler() {
         }
       }
 
-      const body = Buffer.concat(chunks);
+      let body = Buffer.concat(chunks);
+      if (preview) {
+        try {
+          body = await createVideoPreview(
+            body,
+            JSON.stringify([backendId, workspaceId, filePath]),
+            request.signal,
+          );
+        } catch {
+          return new Response(null, { status: 415, headers: corsHeaders });
+        }
+      }
       const responseBody = new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
       const commonHeaders = {
         ...corsHeaders,

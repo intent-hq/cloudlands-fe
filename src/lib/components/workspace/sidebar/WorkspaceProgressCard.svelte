@@ -5,12 +5,9 @@
   import { selectCanShareWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
   import { Input } from '$lib/components/ui/input';
   import { Textarea } from '$lib/components/ui/textarea';
-  /* eslint-disable max-lines */
   import { slide } from '$lib/motion';
   import type { Note } from '$shared/types';
   import { WORKSPACE_STATUS_MESSAGE_MAX_LENGTH, WorkspaceStatusEnum } from '$shared/types';
-  import { isSpecNote } from '$shared/constants/notes';
-  import { extractOrderedSpecTaskIds, extractSpecTaskIds } from '$shared/utils/task-stats';
   import {
     selectWorkspaceTaskProgress,
     selectWorkspaceTasksInitialized,
@@ -33,7 +30,6 @@
   import CheckoutModePill from '$lib/components/workspace/CheckoutModePill.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
-  import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import WorkspaceActionsMenu, {
     type MenuAction,
@@ -94,14 +90,16 @@
     selectWorkspaceDrivingClient,
     selectWorkspaceBrowserSelectionKnown,
     selectOwnClientIdConfirmed,
+    selectOwnClientLacksBrowserExec,
   } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
   import { setWorkspaceBrowserClientRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
-  import { selectWorkspaceHasBrowserTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-  import DrivingClientIndicator from '$lib/components/workspace/DrivingClientIndicator.svelte';
   import SetPrimaryClientConfirmDialog from '$lib/components/workspace/SetPrimaryClientConfirmDialog.svelte';
   import { selectCanSetWorkspacePrimaryClient } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
-  import { browserClientDisplayName } from '$lib/components/workspace/driving-indicator';
+  import {
+    selectHostRole,
+    selectPrincipalActionContext,
+  } from '$store/renderer/slices/principal/principal-selectors';
+  import { resolveDrivingClientSwitch } from '$lib/components/workspace/driving-indicator';
 
   const readyLogger = createLogger('ReadyTasks');
 
@@ -112,7 +110,7 @@
     onAcceptChanges?: () => void;
   }
 
-  let { workspaceId, active = true, onOpenNote: _onOpenNote, onAcceptChanges }: Props = $props();
+  let { workspaceId, active = true, onOpenNote, onAcceptChanges }: Props = $props();
 
   const workspaceIdStore = writable('');
   $effect(() => {
@@ -185,19 +183,6 @@
   );
   const statusDescriptionId = $props.id();
   const currentStatusMessage = $derived($workspace?.statusMessage?.trim() ?? '');
-
-  // Agent-authored status screenshot (intent-hq/monorepo#997). Content-addressed
-  // asset id served via the workspace-asset:// protocol; a failed load hides the
-  // image until the asset id changes (the URL comparison resets naturally).
-  const statusImageUrl = $derived(
-    $workspace?.statusImageAssetId
-      ? `workspace-asset://${$workspace.id}/${$workspace.statusImageAssetId}`
-      : '',
-  );
-  let failedStatusImageUrl = $state('');
-  const showStatusImage = $derived(!!statusImageUrl && statusImageUrl !== failedStatusImageUrl);
-  let statusImageLightboxOpen = $state(false);
-  let statusImageButtonRef: HTMLButtonElement | null = $state(null);
 
   // Copy workspace repo path to clipboard
   let copiedRepoPath = $state(false);
@@ -471,13 +456,9 @@
       : null,
   );
 
-  // REV-2 driving browser client (spec Model 8): the daemon resolves it; the
-  // indicator renders only when the workspace has a browser tab and another
-  // eligible client could take over (or the pin is offline).
   const ownClientIdConfirmed$ = selectOwnClientIdConfirmed();
   const browserSelectionKnown$ = selectWorkspaceBrowserSelectionKnown(workspaceIdStore);
   const drivingClient$ = selectWorkspaceDrivingClient(workspaceIdStore);
-  const hasBrowserTabs$ = selectWorkspaceHasBrowserTabs(workspaceIdStore);
   const canSetPrimaryClient$ = selectCanSetWorkspacePrimaryClient(workspaceIdStore);
   const principalActionContext$ = selectPrincipalActionContext();
   const primaryAlreadySelected = $derived(
@@ -508,21 +489,75 @@
     context: string | null;
   } | null>(null);
 
-  const setPrimaryClientAction: MenuAction = $derived({
-    id: 'set-primary-client',
-    label: m.workspace_drivingClient_setPrimary_label(),
+  const primaryClient = $derived(resolveDrivingClientSwitch($drivingClient$));
+  // A saved self pin stays selected while its browser is offline.
+  const primaryClientHere = $derived(
+    primaryAlreadySelected || (primaryClient.mode === 'here' && $drivingClient$.driving !== null),
+  );
+  const primaryClientOffline = $derived(primaryClient.mode === 'offline');
+  const hostRole$ = selectHostRole();
+  const ownClientLacksBrowserExec$ = selectOwnClientLacksBrowserExec(workspaceIdStore);
+  // Explain only stable blocks; loading and reconnecting stay quietly unavailable.
+  const thisAppUnavailableReason = $derived(
+    canSetPrimaryClient || primaryClientHere
+      ? undefined
+      : $hostRole$ === 'guest'
+        ? m.workspace_drivingClient_guestReason_description()
+        : $ownClientLacksBrowserExec$
+          ? m.workspace_drivingClient_noBrowserReason_description()
+          : undefined,
+  );
+
+  function requestSetPrimaryClient() {
+    if (!workspaceId || !canSetPrimaryClient) return;
+    pendingPrimaryClient = {
+      workspaceId,
+      clientId: $drivingClient$.ownClientId,
+      context: $principalActionContext$,
+    };
+  }
+
+  // The menu names the current primary; choosing this app still asks for confirmation.
+  const primaryClientAction: MenuAction = $derived({
+    id: 'primary-client',
+    label: m.workspace_drivingClient_menu_label(),
     icon: faGlobe,
     dividerBefore: true,
-    checked: primaryAlreadySelected,
-    disabled: !canSetPrimaryClient,
-    onClick: () => {
-      if (!workspaceId || !canSetPrimaryClient) return;
-      pendingPrimaryClient = {
-        workspaceId,
-        clientId: $drivingClient$.ownClientId,
-        context: $principalActionContext$,
-      };
-    },
+    detail: primaryClientOffline
+      ? m.workspace_drivingClient_offline_label()
+      : primaryClientHere
+        ? m.workspace_drivingClient_thisApp_label()
+        : primaryClient.mode === 'elsewhere'
+          ? primaryClient.hostName
+          : undefined,
+    detailTone: primaryClientOffline ? 'danger' : undefined,
+    note: primaryClientOffline
+      ? $drivingClient$.routedVia === 'tabs' && canSetPrimaryClient
+        ? m.workspace_drivingClient_offlineTabHost_description()
+        : m.workspace_drivingClient_offline_description()
+      : m.workspace_drivingClient_menu_description(),
+    selection: 'single',
+    onClick: () => {},
+    submenu: [
+      {
+        id: 'primary-client-this-app',
+        label: m.workspace_drivingClient_thisApp_label(),
+        checked: primaryClientHere,
+        disabled: !canSetPrimaryClient,
+        disabledReason: thisAppUnavailableReason,
+        onClick: requestSetPrimaryClient,
+      },
+      ...(primaryClient.mode === 'elsewhere' && !primaryClientHere
+        ? [
+            {
+              id: 'primary-client-current',
+              label: primaryClient.hostName,
+              checked: true,
+              onClick: () => {},
+            },
+          ]
+        : []),
+    ],
   });
 
   function handleConfirmSetPrimaryClient() {
@@ -544,7 +579,7 @@
   const additionalActions: MenuAction[] = $derived([
     sidebarToggleAction,
     sidebarSideAction,
-    setPrimaryClientAction,
+    primaryClientAction,
     ...(shareAction ? [shareAction] : []),
     ...(transferAction ? [transferAction] : []),
   ]);
@@ -644,184 +679,6 @@
   const taskProgressReady = $derived($tasksInitialized$ || !!$workspace?.taskStats);
   const showFlameGraph = $derived(!taskProgressReady || taskStats.total > 0);
 
-  // Tree node with computed weight (leaf count)
-  interface TaskTreeNode {
-    note: Note;
-    children: TaskTreeNode[];
-    weight: number; // Number of leaf descendants (or 1 if leaf)
-    isLeaf: boolean;
-  }
-
-  // Sort notes by their order in the parent's content, falling back to peerOrder/createdAt
-  function sortByContentOrder(notesToSort: Note[], parentContent: string | undefined): Note[] {
-    const orderFromContent = extractOrderedSpecTaskIds(parentContent);
-    const orderMap = new Map(orderFromContent.map((id, index) => [id, index]));
-
-    return [...notesToSort].sort((a, b) => {
-      const aId = a.id as string;
-      const bId = b.id as string;
-      const aOrder = orderMap.get(aId);
-      const bOrder = orderMap.get(bId);
-
-      // If both are in the content, sort by content order
-      if (aOrder !== undefined && bOrder !== undefined) {
-        return aOrder - bOrder;
-      }
-      // If only one is in the content, prioritize the one in content
-      if (aOrder !== undefined) return -1;
-      if (bOrder !== undefined) return 1;
-
-      // Neither in content - fall back to peerOrder then createdAt
-      const aPeerOrder = a.metadata?.task?.peerOrder ?? 0;
-      const bPeerOrder = b.metadata?.task?.peerOrder ?? 0;
-      if (aPeerOrder !== bPeerOrder) {
-        return aPeerOrder - bPeerOrder;
-      }
-      const aCreated = (a.createdAt || a.created_at || '') as string;
-      const bCreated = (b.createdAt || b.created_at || '') as string;
-      return aCreated.localeCompare(bCreated);
-    });
-  }
-
-  // Build task tree from notes using parentId (for nested flame graph)
-  // Only includes tasks within the spec note hierarchy
-  // Orders tasks by their appearance in parent note content
-  function buildTaskTree(notes: Note[]): TaskTreeNode[] {
-    // Get spec note for ordering
-    const specNote = notes.find((n) => isSpecNote(n.id as string));
-
-    // First, find all task notes (excluding spec and cancelled)
-    const seenIds = new Set<string>();
-    const allTaskNotes = notes.filter((n) => {
-      if (
-        !n.metadata?.task ||
-        isSpecNote(n.id as string) ||
-        n.metadata.task.status === 'cancelled'
-      ) {
-        return false;
-      }
-      const noteId = n.id as string;
-      if (seenIds.has(noteId)) {
-        return false; // Skip duplicate
-      }
-      seenIds.add(noteId);
-      return true;
-    });
-
-    // Find tasks that are descendants of the spec note
-    // A task is in the spec hierarchy if:
-    // 1. Its parentId is 'spec', OR
-    // 2. Its parentId is another task that is in the spec hierarchy
-    const specDescendantIds = new Set<string>();
-
-    // First pass: find direct children of spec
-    for (const note of allTaskNotes) {
-      if (isSpecNote(note.parentId as string)) {
-        specDescendantIds.add(note.id as string);
-      }
-    }
-
-    // Subsequent passes: find children of spec descendants
-    let foundNew = true;
-    while (foundNew) {
-      foundNew = false;
-      for (const note of allTaskNotes) {
-        const noteId = note.id as string;
-        const parentId = note.parentId as string | undefined;
-        if (!specDescendantIds.has(noteId) && parentId && specDescendantIds.has(parentId)) {
-          specDescendantIds.add(noteId);
-          foundNew = true;
-        }
-      }
-    }
-
-    // Filter to only tasks within the spec hierarchy
-    const taskNotes = allTaskNotes.filter((n) => specDescendantIds.has(n.id as string));
-
-    // Build parent -> children map
-    const childrenMap = new Map<string | undefined, Note[]>();
-    for (const note of taskNotes) {
-      const rawParentId = note.parentId as string | undefined;
-      // Normalize: spec parent → undefined (root level in flame graph)
-      const parentId = rawParentId && !isSpecNote(rawParentId) ? rawParentId : undefined;
-      if (!childrenMap.has(parentId)) {
-        childrenMap.set(parentId, []);
-      }
-      childrenMap.get(parentId)!.push(note);
-    }
-
-    // Recursively build tree nodes with weights
-    // Sort children by their order in the parent note's content
-    function buildNode(note: Note): TaskTreeNode {
-      const childNotes = childrenMap.get(note.id as string) || [];
-      // Sort children by their order in this note's content
-      const sortedChildren = sortByContentOrder(childNotes, note.content);
-      const children = sortedChildren.map(buildNode);
-
-      const isLeaf = children.length === 0;
-      const weight = isLeaf ? 1 : children.reduce((sum, c) => sum + c.weight, 0);
-
-      return { note, children, weight, isLeaf };
-    }
-
-    // Get root tasks (direct children of spec - their parentId is 'spec')
-    // Only include tasks that are actually referenced in the spec note content
-    // If spec has no task links, fall back to all direct children of spec
-    const specTaskIds = extractSpecTaskIds(specNote?.content);
-    const hasSpecLinks = specTaskIds.size > 0;
-    const roots = taskNotes.filter(
-      (n) => isSpecNote(n.parentId as string) && (!hasSpecLinks || specTaskIds.has(n.id as string)),
-    );
-
-    // Sort roots by their order in the spec note content
-    const sortedRoots = sortByContentOrder(roots, specNote?.content);
-
-    return sortedRoots.map(buildNode);
-  }
-
-  // Convert tree to rows for table rendering (flame graph style)
-  interface RowCell {
-    node: TaskTreeNode | null; // null for empty filler cells
-    colspan: number;
-  }
-
-  function treeToRows(roots: TaskTreeNode[]): RowCell[][] {
-    if (roots.length === 0) return [];
-
-    const rows: RowCell[][] = [];
-
-    // First row is the roots
-    let currentRow: RowCell[] = roots.map((node) => ({ node, colspan: node.weight }));
-
-    // Keep building rows until all cells are leaves or fillers
-    while (currentRow.some((cell) => cell.node && !cell.node.isLeaf)) {
-      rows.push(currentRow);
-
-      const nextRow: RowCell[] = [];
-      for (const cell of currentRow) {
-        if (cell.node === null || cell.node.isLeaf) {
-          // Filler or leaf becomes filler in next row
-          nextRow.push({ node: null, colspan: cell.colspan });
-        } else {
-          // Expand children into this position
-          for (const child of cell.node.children) {
-            nextRow.push({ node: child, colspan: child.weight });
-          }
-        }
-      }
-      currentRow = nextRow;
-    }
-
-    // Add final row (all leaves or fillers)
-    rows.push(currentRow);
-
-    return rows;
-  }
-
-  // Reactive: build flame graph data
-  const taskTree = $derived(buildTaskTree($notes));
-  const _flameRows = $derived(treeToRows(taskTree));
-
   // Calculate completion ratio
   const completionRatio = $derived(taskStats.total > 0 ? taskStats.completed / taskStats.total : 0);
 
@@ -909,7 +766,7 @@
             onblur={saveTitle}
             onkeydown={handleTitleKeydown}
             noFocusStyle
-            class="edit-input relative z-10 text-xl font-semibold text-foreground bg-transparent hover:bg-transparent border-none
+            class="edit-input type-title relative z-10 font-medium text-foreground bg-transparent hover:bg-transparent border-none
                py-0.5 rounded
                outline-none w-full leading-normal
                focus:ring-none! focus:outline-none!
@@ -919,7 +776,7 @@
         {:else}
           <Button
             variant="plain"
-            class="relative z-10 text-xl font-semibold text-foreground bg-transparent {!$workspace?.title
+            class="type-title relative z-10 font-medium text-foreground bg-transparent {!$workspace?.title
               ? 'opacity-50'
               : ''}
                border-none py-0.5 pr-1 rounded cursor-text text-left
@@ -945,7 +802,21 @@
         ></span>
       </div>
 
-      <div class="flex shrink-0 -mt-0.5 -mr-2 items-center gap-0.5" data-workspace-header-actions>
+      <div
+        class="relative flex shrink-0 -mt-0.5 -mr-2 items-center gap-0"
+        data-workspace-header-actions
+      >
+        <Button
+          variant="ghost-light"
+          size="icon-sm"
+          iconOnly
+          data-sidebar-collapse
+          aria-label={m.layout_titleBar_toggleSidebar_ariaLabel()}
+          tooltip={m.layout_titleBar_toggleSidebar_ariaLabel()}
+          onclick={() => appStore.dispatch(toggleSidebar())}
+        >
+          <SidebarIcon size={18} side={$sidebarSide$} />
+        </Button>
         <DropdownMenu bind:open={dropdownOpen}>
           {#snippet trigger({ props })}
             <Button
@@ -994,10 +865,17 @@
             </div>
           {/snippet}
         </DropdownMenu>
+        {#if primaryClientOffline}
+          <span
+            aria-hidden="true"
+            data-workspace-primary-client-offline
+            class="pointer-events-none absolute top-1 right-1 size-1.5 rounded-full bg-danger"
+          ></span>
+        {/if}
       </div>
     </div>
     <!-- repository and branch metadata -->
-    <div class="mb-4 flex w-full flex-col gap-1" data-sidebar-workspace-metadata>
+    <div class="mb-2 flex w-full flex-col gap-1" data-sidebar-workspace-metadata>
       <div
         class="type-caption flex h-5 w-full min-w-0 items-center gap-2.5 font-normal leading-5 text-muted-foreground"
         data-sidebar-repository-branch-metadata
@@ -1119,18 +997,16 @@
           </TooltipRich>
         {/if}
       </div>
-      <!-- driving browser client (REV-2); renders nothing with one eligible client or no browser tabs -->
-      <DrivingClientIndicator {...$drivingClient$} hasBrowserTabs={$hasBrowserTabs$} />
     </div>
   </div>
 
-  <div class="flex w-full flex-col gap-3.5 pb-2 text-left">
+  <div class="flex w-full flex-col gap-2 pb-2 text-left">
     {#if showFlameGraph}
       <!-- Keep the task progress placeholder visible until daemon progress arrives. -->
       <div class="flex h-5 flex-1 shrink-0" data-workspace-task-progress>
         <FlameGraph
           notes={$notes}
-          onTaskClick={_onOpenNote}
+          onTaskClick={onOpenNote}
           progress={completionRatio}
           loading={!taskProgressReady}
           animationKey={workspaceId}
@@ -1162,55 +1038,6 @@
             </Tooltip>
           </div>
         {/if}
-
-        <!-- Contextual Action Prompts (AI-assisted actions) -->
-        <!-- {#if onCreateAgentWithPrompt && (hasContentNoTasks || hasIdleTasks)}
-          <div class="mt-1">
-            {#if hasContentNoTasks}
-              <Tooltip
-                content="Creates an agent with a prompt to generate tasks from the spec. You can review and edit the prompt before sending."
-                side="bottom"
-                align="start"
-              >
-                <Button
-                  variant="ghost-light"
-                  size="xs"
-                  class="w-full text-left justify-start px-0! -mb-1"
-                  onclick={() =>
-                    onCreateAgentWithPrompt(
-                      'Read through the spec and add a few tasks that are easy to delegate. Create focused, actionable task notes that can be assigned to other agents.',
-                      'Task Planner',
-                    )}
-                >
-                  <Fa icon={faWandMagicSparkles} size="xs" class="ml-1" />
-                  <span class="underline decoration-dotted underline-offset-2"
-                    >Generate tasks from spec</span
-                  >
-                </Button>
-              </Tooltip>
-            {:else if hasIdleTasks}
-              <Tooltip
-                content="Creates an agent with a prompt to delegate tasks. You can review and edit the prompt before sending."
-                side="bottom"
-                align="start"
-              >
-                <Button
-                  variant="ghost-light"
-                  size="xs"
-                  class="w-full text-left justify-start px-0! -mb-1"
-                  onclick={() =>
-                    onCreateAgentWithPrompt(
-                      'Delegate the tasks in this workspace, running them in parallel when sensible. Assign agents to work on tasks that are ready to start.',
-                      'Task Delegator',
-                    )}
-                >
-                  <Fa icon={faWandMagicSparkles} size="xs" class="ml-1" />
-                  <span class="underline decoration-dotted underline-offset-2">Delegate tasks</span>
-                </Button>
-              </Tooltip>
-            {/if}
-          </div>
-        {/if} -->
       </div>
     {/if}
 
@@ -1229,7 +1056,7 @@
               maxlength={WORKSPACE_STATUS_MESSAGE_MAX_LENGTH}
               rows={1}
               aria-label={m.workspace_sidebarHeader_status_ariaLabel()}
-              class="edit-input type-body relative z-10 min-h-0 max-h-32 w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded border-none bg-transparent hover:bg-transparent py-0.5 text-foreground outline-none leading-snug
+              class="edit-input type-caption relative z-10 min-h-0 max-h-32 w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded border-none bg-transparent hover:bg-transparent py-0.5 text-foreground outline-none leading-snug
                      focus:ring-none! focus:outline-none! transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none disabled:opacity-50"
               style="field-sizing: content;"
               placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}
@@ -1238,7 +1065,7 @@
             <Button
               variant="plain"
               wrapContent={false}
-              class="type-body relative z-10 h-auto w-full justify-start cursor-text whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
+              class="type-caption relative z-10 h-auto w-full justify-start cursor-text whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
                      transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none leading-snug hover:text-foreground
                      focus-visible:outline focus-visible:outline-1 focus-visible:outline-ring focus-visible:outline-offset-[-1px]
                      disabled:cursor-default disabled:opacity-50"
@@ -1268,102 +1095,13 @@
         </div>
       </div>
     {/if}
-
-    <!-- status screenshot (agent-authored, intent-hq/monorepo#997) -->
-    {#if showStatusImage}
-      <div class="py-1">
-        <Button
-          variant="plain"
-          bind:ref={statusImageButtonRef}
-          type="button"
-          class="block w-full cursor-zoom-in bg-transparent border-none p-0
-                 focus-visible:outline focus-visible:outline-1
-                 focus-visible:outline-primary-ink/50 focus-visible:outline-offset-1"
-          onclick={() => (statusImageLightboxOpen = true)}
-          title={m.workspace_progressCard_statusImage_title()}
-          aria-label={m.workspace_progressCard_statusImage_ariaLabel()}
-        >
-          <img
-            src={statusImageUrl}
-            alt={m.workspace_progressCard_statusImage_alt()}
-            class="w-full max-h-48 object-contain rounded-md border border-border"
-            onerror={(e) =>
-              (failedStatusImageUrl = e.currentTarget.getAttribute('src') ?? statusImageUrl)}
-          />
-        </Button>
-      </div>
-      <ImageLightbox
-        bind:open={statusImageLightboxOpen}
-        imageUrl={statusImageUrl}
-        imageName="Workspace status screenshot"
-        openerElement={statusImageButtonRef}
-      />
-    {/if}
-
-    <!-- Ready Tasks Section (excludes spec from display) -->
-    <!-- {#if isLoadingReadyTasks}
-    <div
-      class="w-full px-4x pb-3 flex items-center gap-2 text-xs text-subtle"
-      transition:slide={{ axis: 'y', tier: 'moderate' }}
-    >
-      <IntentMarkLoader size={12} />
-      <span>Finding ready tasks...</span>
-    </div>
-  {:else if displayReadyTasks.length > 0 && currentDisplayReadyTask}
-    <div class="w-full px-4x pb-3" transition:slide={{ axis: 'y', tier: 'moderate' }}>
-      <div class="flex items-center justify-between text-xs text-subtle">
-        <span>{displayReadyTasks.length} ready task{displayReadyTasks.length > 1 ? 's' : ''}:</span>
-        {#if displayReadyTasks.length > 1}
-          <span class="flex items-center gap-1">
-            <Button
-              variant="ghost-light"
-              class="p-0.5 hover:bg-muted rounded transition-colors text-ghost cursor-pointer"
-              onclick={navigatePrev}
-              disabled={displayReadyTasks.length <= 1}
-              title="Previous ready task"
-            >
-              <Fa icon={faChevronLeft} size="xs" />
-            </Button>
-            <Button
-              variant="ghost-light"
-              class="p-0.5 hover:bg-muted rounded transition-colors text-ghost cursor-pointer"
-              onclick={navigateNext}
-              disabled={displayReadyTasks.length <= 1}
-              title="Next ready task"
-            >
-              <Fa icon={faChevronRight} size="xs" />
-            </Button>
-          </span>
-        {/if}
-      </div>
-      <Button
-        variant="ghost-light"
-        class="flex items-center gap-2 w-full text-left text-sm text-subtle transition-colors py-1 rounded cursor-pointer"
-        onclick={() => onOpenNote?.(currentDisplayReadyTask.id as string)}
-        onmouseenter={() => (highlightedNoteId = currentDisplayReadyTask.id as string)}
-        onmouseleave={() => (highlightedNoteId = null)}
-      >
-        <span class="flex-1 truncate text-xs">{currentDisplayReadyTask.title}</span>
-        <Fa icon={faArrowRight} size="xs" class="text-ghost" />
-      </Button>
-    </div>
-  {:else if readyTasksError}
-    <div
-      class="w-full px-4x pb-3 text-xs text-danger mt-2"
-      transition:slide={{ axis: 'y', tier: 'moderate' }}
-    >
-      Error: {readyTasksError}
-    </div>
-  {/if} -->
   </div>
 </div>
 
 {#if pendingPrimaryClient}
   <SetPrimaryClientConfirmDialog
     open
-    currentHost={$drivingClient$.driving
-      ? browserClientDisplayName($drivingClient$.driving)
-      : undefined}
+    currentHost={primaryClient.mode === 'here' ? undefined : primaryClient.hostName}
     onConfirm={handleConfirmSetPrimaryClient}
     onCancel={() => (pendingPrimaryClient = null)}
   />

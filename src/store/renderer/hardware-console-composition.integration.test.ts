@@ -122,8 +122,9 @@ beforeEach(() => {
       return { sessions: [], openIds: [], connectedIds: [] };
     // Principal admission is explicit below; unrelated discovery stays pending.
     if (
-      channel === IPC_CHANNELS.BACKEND.REQUEST &&
-      ['client.hello', 'principal.me'].includes(request?.method ?? '')
+      channel === IPC_CHANNELS.BACKEND.READ_PRINCIPAL ||
+      (channel === IPC_CHANNELS.BACKEND.REQUEST &&
+        ['client.hello', 'principal.me'].includes(request?.method ?? ''))
     )
       return new Promise(() => {});
     // Owner-status query (#1928): with a bridge present the saga flips

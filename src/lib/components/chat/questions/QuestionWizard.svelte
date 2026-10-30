@@ -16,6 +16,7 @@
   import { Button } from '$lib/components/ui/button';
   import { onDestroy } from 'svelte';
   import AttachmentPreview from '../AttachmentPreview.svelte';
+  import CollapsedCardChip from '../CollapsedCardChip.svelte';
   import type { ContextItem } from '../input/context-api';
   import {
     imageFilesToContextItems,
@@ -163,6 +164,7 @@
                 type: 'image' as const,
                 data: image.imageData!,
                 mimeType: image.imageMimeType!,
+                ...(image.placementFileName ? { placementFileName: image.placementFileName } : {}),
               })),
             }
           : {}),
@@ -326,32 +328,23 @@
     <div
       bind:this={collapsedElement}
       data-question-state="collapsed"
-      class="flex w-full min-w-0 items-center rounded-(--radius-large) border border-border bg-card"
+      class="w-full min-w-0"
       in:enterState={false}
       out:exitState
     >
-      <Button
-        variant="plain"
-        wrapContent={false}
-        class="h-auto min-w-0 flex-1 justify-start gap-2 px-3 py-2.5 text-left sm:px-4"
-        aria-expanded={false}
-        onclick={() => onToggleCollapsed?.(false)}
-      >
-        <span class="flex min-w-0 flex-1 items-center gap-1">
-          <span class="truncate type-caption font-medium text-foreground"
-            >{m.chat_questionWizard_title()}</span
-          >
-          <span class="shrink-0 type-caption text-muted-foreground">{questions.length}</span>
-        </span>
-        <span class="min-w-0 max-w-[40%] truncate type-caption text-muted-foreground">
-          {m.chat_questionWizard_clickToExpand_label()}
-        </span>
-      </Button>
-      {#if onDismiss}
-        <div class="shrink-0 pr-1 sm:pr-2">
-          {@render dismissAction()}
-        </div>
-      {/if}
+      <CollapsedCardChip
+        heading={m.chat_questionWizard_title()}
+        count={questions.length}
+        hint={m.chat_questionWizard_clickToExpand_label()}
+        onExpand={() => onToggleCollapsed?.(false)}
+        dismiss={onDismiss
+          ? {
+              label: m.chat_questionWizard_dismiss_label(),
+              tooltip: m.chat_questionWizard_dismiss_tooltip(),
+              onDismiss: () => (confirmingDismiss = true),
+            }
+          : undefined}
+      />
     </div>
   {:else}
     <div

@@ -4,7 +4,7 @@
 //   ../../sidebar-nav/SidebarNav.svelte,
 //   ../../../workspace/WorkspaceLayout.svelte, ../../../workspace/WorkspaceSidebarHeader.svelte,
 //   ../../../workspace/MultiSelectTabbedSidebar.svelte,
-//   ../../../workspace/WorkspaceTerminalDock.svelte, ../../../workspace/multi-select-sidebar-tabs.ts,
+//   ../../../workspace/multi-select-sidebar-tabs.ts,
 //   ../../../workspace/sidebar/SidebarHeaderAction.svelte,
 //   ../../../workspace/sidebar/WorkspaceProgressCard.svelte,
 //   ../../../terminal/QuakeTerminalOverlay.svelte, ../../../../../app.css, ../../../../../app.html,
@@ -32,15 +32,6 @@ describe('editorial workspace shell presentation contract', () => {
     expect(layout).toContain('data-testid="panel-workspace-inset"');
     expect(layout).toContain('flex h-full w-max min-w-full');
     expect(layout).not.toMatch(/\bpr-0\b/);
-  });
-
-  it('keeps compact content full-width while the persistent sidebar overlays it', () => {
-    const workspace = source('../../../workspace/WorkspaceLayout.svelte');
-
-    expect(workspace).toContain('workspace-sidebar-panel workspace-sidebar-{sidebarSide}');
-    expect(workspace).toContain('@media (max-width: 639px)');
-    expect(workspace).toContain('.upper-area :global(.workspace-sidebar-panel)');
-    expect(workspace).toContain('position: absolute');
   });
 
   it('uses one clipped borderless shell with state-specific panel surfaces', () => {
@@ -92,7 +83,6 @@ describe('editorial workspace shell presentation contract', () => {
     expect(container).not.toContain('min-width: 30rem');
     expect(container).toContain('.panel-split-container {');
     expect(container).toContain('min-width: 0');
-    expect(container).toContain('overflow: hidden');
     expect(handle).toContain('width: 16px');
     expect(handle).toContain('height: 16px');
   });
@@ -121,45 +111,6 @@ describe('editorial workspace shell presentation contract', () => {
     expect(layout).not.toContain("e.key === 't' || e.key === 'T'");
     expect(layout).not.toContain("e.key >= '1' && e.key <= '9'");
     expect(routeShortcuts).not.toContain("event.key === '1' && !event.shiftKey");
-  });
-
-  it('uses equal muted launchers with direct item actions that disappear when expanded', () => {
-    const workspace = source('../../../workspace/WorkspaceLayout.svelte');
-    const sidebar = source('../../../workspace/MultiSelectTabbedSidebar.svelte');
-    const headerAction = source('../../../workspace/sidebar/SidebarHeaderAction.svelte');
-    const tabDefinitions = source('../../../workspace/multi-select-sidebar-tabs.ts');
-    const launcherMarkup = sidebar.slice(sidebar.indexOf('<!-- Lightweight launchers'));
-
-    expect(workspace).toContain('sidebarMinWidth = 280');
-    expect(workspace).toContain('sidebarDefaultWidth = 360');
-    expect(workspace).toContain('sidebarPercentageWeight = 0');
-    expect(tabDefinitions).toContain('m.workspace_multiSelectSidebar_contextTab_label()');
-    expect(sidebar).toContain('grid h-56 w-full auto-rows-fr grid-cols-2 gap-3');
-    expect(launcherMarkup).toContain('h-full min-h-0');
-    expect(launcherMarkup).toContain(
-      'rounded-lg border border-border bg-sidebar p-2 text-foreground',
-    );
-    expect(sidebar).toContain('<AgentAvatar');
-    expect(sidebar).toContain('data-sidebar-agent={agent.id}');
-    expect(launcherMarkup).toContain('itemContent={launcherAgentAvatar}');
-    expect(launcherMarkup).toContain('data-sidebar-context={note.id}');
-    // Launcher action/expansion behavior: MultiSelectTabbedSidebar.open-in.test.ts round-trip.
-    expect(launcherMarkup).not.toContain('data-sidebar-change=');
-    expect(launcherMarkup).not.toContain('content={`${tab.label}:');
-    expect(launcherMarkup).toContain('data-files-open-in');
-    expect(launcherMarkup).not.toContain('faFolderTree');
-    expect(sidebar).toContain('grid-rows-[minmax(0,1fr)_0px]');
-    expect(sidebar).toContain('{#if isLauncherOverview}');
-    expect(sidebar).toContain('label={m.ui_tab_close_ariaLabel()}');
-    expect(headerAction).toContain('data-sidebar-close');
-    expect(headerAction).toContain('hover:bg-muted/50!');
-    expect(sidebar).toContain('sidebar-expanded-card relative z-10 flex');
-    expect(sidebar).toContain('rounded-lg border border-border bg-sidebar');
-    expect(sidebar).not.toContain('.sidebar-expanded-card :global(*)');
-    expect(sidebar).not.toContain('view-transition-name: sidebar-section');
-    expect(sidebar).toContain('in:cardMorph|global');
-    expect(sidebar).toContain('out:cardMorph|global');
-    expect(sidebar).not.toContain('h-16 grid-cols-4 gap-1.5');
   });
 
   it('uses a two-zone titlebar without a competing centered search field', () => {
@@ -267,27 +218,6 @@ describe('editorial workspace shell presentation contract', () => {
     );
     expect(appLayout).toContain('rounded-xl bg-sidebar border border-border shadow-sm');
     expect(appLayout).not.toContain('backdrop-filter:');
-  });
-
-  it('moves collapsed terminal controls into the workspace sidebar', () => {
-    const sidebar = source('../../../workspace/MultiSelectTabbedSidebar.svelte');
-    const dock = source('../../../workspace/WorkspaceTerminalDock.svelte');
-    const terminal = source('../../../terminal/QuakeTerminalOverlay.svelte');
-    const route = source('../../../../../routes/(app)/workspace/[id]/WorkspaceSurface.svelte');
-
-    expect(sidebar).toContain('<WorkspaceTerminalDock');
-    expect(sidebar).toContain("onExpand={() => handleTabClick('shell')}");
-    expect(sidebar).toContain(
-      "class={cn('relative flex h-full flex-col overflow-hidden bg-transparent', className)}",
-    );
-    expect(dock).toContain('{#each $terminals$.slice(0, 1) as terminal (terminal.id)}');
-    expect(dock).toContain('data-dev-script-count');
-    expect(dock).toContain('rounded-lg border border-border bg-sidebar px-3 text-foreground');
-    expect(dock).toContain('border-0 bg-transparent p-0');
-    expect(dock).not.toContain('faPlus');
-    expect(dock).not.toContain('faChevron');
-    expect(terminal).toContain('showDockWhenClosed || $isOpen');
-    expect(route).toContain('showDockWhenClosed={false}');
   });
 
   it('orders workspace identity, progress, and status like the reference hierarchy', () => {

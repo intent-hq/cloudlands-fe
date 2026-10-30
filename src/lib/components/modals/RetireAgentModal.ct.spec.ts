@@ -1,4 +1,5 @@
 import { expect, test } from '../../../test/ct-test';
+import { expectDismissibleLayerArmed } from '../../../test/dismissible-layer';
 import RetireAgentModalHarness from './__tests__/RetireAgentModalHarness.svelte';
 
 for (const dismissal of ['Cancel', 'Enter', 'Escape', 'outside'] as const) {
@@ -14,8 +15,10 @@ for (const dismissal of ['Cancel', 'Enter', 'Escape', 'outside'] as const) {
     });
     const cancel = page.getByRole('button', { name: 'Cancel', exact: true });
     await expect(cancel).toBeFocused();
-    if (dismissal === 'outside') await page.mouse.click(5, 5);
-    else if (dismissal === 'Cancel') await cancel.click();
+    if (dismissal === 'outside') {
+      await expectDismissibleLayerArmed(page.getByRole('dialog'));
+      await page.mouse.click(5, 5);
+    } else if (dismissal === 'Cancel') await cancel.click();
     else await page.keyboard.press(dismissal);
     await expect(page.getByRole('dialog')).toHaveCount(0);
     expect(intents).toEqual([]);

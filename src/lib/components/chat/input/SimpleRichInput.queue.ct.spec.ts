@@ -1,4 +1,4 @@
-import { expect, test } from '../../../../test/ct-test';
+import { expect, test, wheelUntilScrolled } from '../../../../test/ct-test';
 import SimpleRichInputQueueHost from './SimpleRichInputQueueHost.svelte';
 
 for (const submit of ['button', 'Enter'] as const) {
@@ -38,14 +38,6 @@ test('keeps queued messages above subscriptions without moving the composer', as
   const subscriptions = component.getByTestId('event-subscriptions-card');
   await expect(editor).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
-  const textInset = () =>
-    input.evaluate(
-      (node) =>
-        node.querySelector('.tiptap-editor p')!.getBoundingClientRect().top -
-        node.getBoundingClientRect().top -
-        node.clientTop,
-    );
-  await expect.poll(textInset).toBe(12);
   const emptyBox = await input.boundingBox();
   await expect(queue).toHaveCount(0);
 
@@ -73,13 +65,11 @@ test('keeps queued messages above subscriptions without moving the composer', as
   await component.update({ props: { queueCount: 0, width: 240 } });
   await expect(queue).toHaveCount(0);
   await expect.poll(() => input.boundingBox()).toEqual(emptyBox);
-  await expect.poll(textInset).toBe(12);
 });
 
 for (const streaming of [false, true]) {
   test(`keeps the editor and ${streaming ? 'stop' : 'send'} reachable with twelve queued messages`, async ({
     mount,
-    page,
   }, testInfo) => {
     const component = await mount(SimpleRichInputQueueHost, { props: { streaming } });
     const input = component.getByTestId('message-input');
@@ -100,9 +90,7 @@ for (const streaming of [false, true]) {
         ),
       )
       .toBe(true);
-    await queueViewport.hover();
-    await page.mouse.wheel(0, 600);
-    await expect.poll(() => queueViewport.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+    await wheelUntilScrolled(queueViewport, { deltaY: 600 });
     await expect.poll(() => input.boundingBox()).toEqual(composerBox);
     await expect(action).toBeInViewport();
     await editor.click();

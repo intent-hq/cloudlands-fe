@@ -38,7 +38,11 @@ vi.mock('../../workspace/utils/workspace.client', () => ({
 vi.mock('$features/workspace/navigate-away-if-viewing', () => ({
   navigateAwayIfViewing: mocks.navigate,
 }));
-vi.mock('$lib/utils/navigation.client', () => ({ navigateToRoute: mocks.navigateToRoute }));
+vi.mock('$lib/utils/navigation.client', async () => {
+  const { landingNavigation } =
+    await import('$store/renderer/utils/test-helpers/landing-navigation');
+  return { navigateToRoute: landingNavigation(mocks.navigateToRoute) };
+});
 vi.mock('$lib/utils/delete-warning-utils', () => ({
   getActiveWorkNames: mocks.getActiveWorkNames,
 }));
@@ -55,6 +59,7 @@ import type { Specialist } from '$lib/constants/specialists';
 import { initialState as githubAuthInitialState } from '../../github-auth/github-auth-slice';
 import { initialState as proposalLifecycleInitialState } from '../../proposal-lifecycle/proposal-lifecycle-slice';
 import { initialState as specialistsInitialState } from '../../specialists/specialists-slice';
+import { initialState as workspaceInitializerInitialState } from '../../workspace-initializer/workspace-initializer-slice';
 import { openWorkspaceTab } from '../../tab-state/tab-state-slice';
 import {
   initialState as workspaceInitialState,
@@ -175,6 +180,7 @@ function harness(seed: Workspace[], bundledSpecialists: Specialist[] = []) {
       proposalLifecycle,
       specialists,
       githubAuth: githubAuthInitialState,
+      workspaceInitializer: workspaceInitializerInitialState,
     }),
   );
   const dispatch = vi.fn((action) => store.dispatch(action));
@@ -892,7 +898,7 @@ describe('workspaceOperationsSaga', () => {
     );
     latestUndo()?.();
     await settle();
-    // Undo focuses the restored workspace: tab reopen + navigation
+    // Undo shows the restored workspace through the shared helper: navigation, then tab
     expect(run.dispatch.mock.calls.flat()).toContainEqual({
       type: 'tabState/openWorkspaceTab',
       payload: ['ws-1'],
@@ -1214,6 +1220,8 @@ describe('workspaceOperationsSaga', () => {
     });
     expect(mocks.create.mock.calls[0]?.[0]?.initialAgent?.specialist).toBeUndefined();
     expect(mocks.create.mock.calls[0]?.[0]?.initialAgent).not.toHaveProperty('agentId');
+    // No origin on the apply payload → none on the wire.
+    expect(mocks.create.mock.calls[0]?.[0]).not.toHaveProperty('origin');
     expect(getItem(run.state().workspace.workspaces, 'ws-created')).toBeDefined();
     expect(run.state().proposalLifecycle['create-success']).toMatchObject({
       status: 'applied',
@@ -1228,6 +1236,71 @@ describe('workspaceOperationsSaga', () => {
       errorCode: 'base-ref-unresolvable',
     });
     expect(mocks.notify.error).toHaveBeenCalledWith('cannot resolve base ref');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('forwards the card origin on workspace.create (intent-hq/intent#8086)', async () => {
+    mocks.create.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        workspace: workspace('ws-origin'),
+        proposalOrigin: { proposalId: 'create-origin', outcome: 'applied' },
+      },
+    });
+    const run = harness([]);
+    const origin = { kind: 'proposal' as const, agentId: 'agent-1', proposalId: 'create-origin' };
+    run.send(applyWorkspaceProposal({ proposal: createProposal('create-origin'), origin }));
+    await settle();
+    expect(mocks.create.mock.calls[0]?.[0]?.origin).toEqual(origin);
+    // The daemon's report is kept so the chat fallback knows not to resolve.
+    expect(run.state().proposalLifecycle['create-origin']).toMatchObject({
+      status: 'applied',
+      result: {
+        workspaceId: 'ws-origin',
+        proposalOrigin: { proposalId: 'create-origin', outcome: 'applied' },
+      },
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('maps the daemon proposalOrigin outcome onto the card lifecycle (intent-hq/intent#8086)', async () => {
+    const run = harness([]);
+    const cases = [
+      ['card-dismissed', 'dismissed', 'dismissed'],
+      ['card-declined', 'notResolved', 'idle'],
+    ] as const;
+    for (const [id, outcome, status] of cases) {
+      mocks.create.mockResolvedValueOnce({
+        ok: true,
+        data: { workspace: workspace(`ws-${id}`), proposalOrigin: { proposalId: id, outcome } },
+      });
+      run.send(
+        applyWorkspaceProposal({
+          proposal: createProposal(id),
+          origin: { kind: 'proposal', agentId: 'agent-1', proposalId: id },
+        }),
+      );
+      await settle();
+      // The workspace exists either way; only the card state follows the daemon.
+      expect(run.state().proposalLifecycle[id]).toMatchObject({
+        status,
+        result: { workspaceId: `ws-${id}`, proposalOrigin: { proposalId: id, outcome } },
+      });
+    }
+    // A declined card stays re-appliable: Apply runs workspace.create again.
+    mocks.create.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        workspace: workspace('ws-card-declined'),
+        proposalOrigin: { proposalId: 'card-declined', outcome: 'applied' },
+      },
+    });
+    run.send(applyWorkspaceProposal({ proposal: createProposal('card-declined') }));
+    await settle();
+    expect(mocks.create).toHaveBeenCalledTimes(3);
+    expect(run.state().proposalLifecycle['card-declined']?.status).toBe('applied');
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -1257,6 +1330,41 @@ describe('workspaceOperationsSaga', () => {
     await settle();
     expect(tabOrder()).toEqual(['ws-current', 'ws-from-proposal']);
     expect(tabs().currentTabId).toBe('ws-current');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('records the applied specialist as recently used only after a successful create', async () => {
+    mocks.create
+      .mockResolvedValueOnce({ ok: false, error: 'cannot resolve base ref' })
+      .mockResolvedValueOnce({ ok: true, data: { workspace: workspace('ws-general') } })
+      .mockResolvedValueOnce({ ok: true, data: { workspace: workspace('ws-reviewer') } });
+    const run = harness([]);
+    const recents = () => run.state().workspaceInitializer.recentSpecialistIds;
+
+    run.send(
+      applyWorkspaceProposal({
+        proposal: createProposal('recent-failure'),
+        editedFields: { specialist: 'implementor' },
+      }),
+    );
+    await settle();
+    expect(run.state().proposalLifecycle['recent-failure']).toMatchObject({ status: 'failed' });
+    expect(recents()).toEqual([]);
+
+    run.send(applyWorkspaceProposal({ proposal: createProposal('recent-general') }));
+    await settle();
+    expect(recents()).toEqual([]);
+
+    run.send(
+      applyWorkspaceProposal({
+        proposal: createProposal('recent-success'),
+        editedFields: { specialist: 'reviewer' },
+      }),
+    );
+    await settle();
+    expect(mocks.create.mock.calls[2]?.[0]?.initialAgent?.specialist).toBe('reviewer');
+    expect(recents()).toEqual(['reviewer']);
     run.task.cancel();
     await run.task.toPromise();
   });

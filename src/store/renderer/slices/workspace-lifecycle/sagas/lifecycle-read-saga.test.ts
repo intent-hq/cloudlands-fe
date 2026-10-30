@@ -11,6 +11,7 @@ import { getPeopleActivity } from '$features/presence/components/people-activity
 import { selectWorkspacePeopleIdentities } from '../../presence/presence-selectors';
 import {
   selectPeopleEventsLoading,
+  selectPeopleEventsEndReached,
   selectPeopleEventsError,
 } from '../../workspace-events/workspace-events-selectors';
 import { CURRENT_PROTOCOL_VERSION } from '../../../../../test/current-protocol-version';
@@ -427,6 +428,27 @@ describe('lifecycleReadSaga', () => {
   });
 
   describe('membership summary refresh (workspace:updated roster / invite deltas)', () => {
+    it.each(['manager', 'collaborator'])(
+      'refreshes current role %s without granting full management',
+      async (myRole) => {
+        mocks.workspaces.get.mockResolvedValue({ id: WS, myRole, canManage: false });
+        const current = state();
+        current.principal.snapshot!.capabilities.workspaceGuestRoles = true;
+        const run = start(current);
+        run.channel.put(refreshWorkspaceMembershipRequested(WS));
+        await settle();
+        expect(run.actions).toContainEqual(
+          expect.objectContaining({
+            type: 'workspace/bulkUpdateWorkspaceEntities',
+            payload: [[expect.objectContaining({ payload: [WS, { myRole, canManage: false }] })]],
+          }),
+        );
+        expect(run.actions.some((action) => action.type === refreshScripts.type)).toBe(
+          myRole === 'manager',
+        );
+        await stop(run.task);
+      },
+    );
     it('re-reads workspace.get for the one workspace and merges only the membership counts', async () => {
       mocks.workspaces.get.mockResolvedValue({
         id: WS,
@@ -1055,13 +1077,19 @@ describe('lifecycleReadSaga', () => {
       actor: { type: 'user', id: 'person', name: 'Sam' },
       data: { title: 'Plan' },
     });
-    const noise = (id: string): WorkspaceEvent => ({
+    const humanMessage = (id: string): WorkspaceEvent => ({
       ...humanEvent(id),
+      type: 'agent:message',
       actor: { type: 'system' },
+      data: {
+        role: 'user',
+        agentId: 'agent',
+        messageId: id,
+        author: { principalId: 'person', displayName: 'Sam', login: 'sam', avatarUrl: null },
+      },
     });
     const rows = (prefix: string, count: number) =>
       Array.from({ length: count }, (_, index) => humanEvent(`${prefix}-${index}`));
-
     function startPeople() {
       const channel = stdChannel();
       const current = withLegacyPrincipal(appStore.state);
@@ -1086,65 +1114,135 @@ describe('lifecycleReadSaga', () => {
       };
     }
 
-    it('traverses sparse unfiltered wire pages and counts author-resolved system messages', async () => {
+    it('queries user actions and system-stamped human messages past unrelated machine traffic', async () => {
       const client = new LiveEventsClient();
       mocks.events.queryPage.mockImplementation(client.queryPage.bind(client));
-      const message: WorkspaceEvent = {
-        ...noise('human-message'),
-        type: 'agent:message',
-        data: {
-          role: 'user',
-          agentId: 'agent',
-          messageId: 'message',
-          author: { principalId: 'person', displayName: 'Sam', login: 'sam', avatarUrl: null },
-        },
+      const overlap = {
+        ...humanMessage('overlap'),
+        actor: { type: 'user' as const, id: 'person', name: 'Sam' },
       };
-      mocks.backendRequest
-        .mockResolvedValueOnce({ items: [noise('noise')], nextToken: 'page-2' })
-        .mockResolvedValueOnce({ items: [], nextToken: 'page-3' })
-        .mockResolvedValueOnce({ items: [message, ...rows('human', 19)], nextToken: 'page-4' });
+      const machine = Array.from({ length: 1500 }, (_, index) => ({
+        ...humanEvent(`machine-${index}`),
+        actor: { type: 'agent' as const, id: 'agent' },
+        type: 'tool:call' as WorkspaceEvent['type'],
+      }));
+      const automated = {
+        ...humanMessage('automated'),
+        data: { role: 'assistant', agentId: 'agent' },
+      };
+      const history = [
+        ...machine,
+        ...rows('human', 19),
+        overlap,
+        humanMessage('stamped'),
+        automated,
+      ];
+      mocks.backendRequest.mockImplementation(async (_method, params) => ({
+        items: history
+          .filter(
+            (event) =>
+              (!params.actorType || event.actor.type === params.actorType) &&
+              (!params.eventType || event.type === params.eventType),
+          )
+          .slice(0, params.limit),
+        nextToken: null,
+      }));
       const run = startPeople();
       run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
       await settle();
-
       expect(mocks.backendRequest.mock.calls).toEqual([
-        ['event.query', { workspaceId: WS, limit: 100, paginate: true }],
-        ['event.query', { workspaceId: WS, limit: 100, nextToken: 'page-2', paginate: true }],
-        ['event.query', { workspaceId: WS, limit: 100, nextToken: 'page-3', paginate: true }],
+        ['event.query', { workspaceId: WS, limit: 100, actorType: 'user', paginate: true }],
+        [
+          'event.query',
+          { workspaceId: WS, limit: 100, eventType: 'agent:message', paginate: true },
+        ],
       ]);
-      expect(run.visible()).toHaveLength(20);
-      expect(run.history()).toMatchObject({ peopleInitialized: true, nextToken: 'page-4' });
+      expect(run.visible()).toHaveLength(21);
+      expect(run.visible().map((row) => row.id)).toContain('stamped');
+      expect(run.visible().map((row) => row.id)).not.toContain('automated');
+      expect(run.history().events.filter((event) => event.id === 'overlap')).toHaveLength(1);
+      expect(selectPeopleEventsEndReached.select(run.current, WS)).toBe(true);
       expect(selectPeopleEventsLoading.select(run.current, WS)).toBe(false);
     });
 
-    it('uses existing history for initial load and fetches 20 additional rows for more', async () => {
+    it('keeps filtered cursors independent from raw history and fetches more from each stream', async () => {
       const run = startPeople();
-      run.dispatch(eventsLoaded(WS, rows('cached', 19), 'page-2'));
+      run.dispatch(eventsLoaded(WS, rows('cached', 19), 'raw-cursor'));
       mocks.events.queryPage
-        .mockResolvedValueOnce({ items: [humanEvent('twentieth')], nextToken: 'page-3' })
         .mockResolvedValueOnce({
-          items: [noise('noise'), humanEvent('older')],
-          nextToken: 'page-4',
+          items: [
+            { ...humanMessage('twentieth'), actor: { type: 'user', id: 'person', name: 'Sam' } },
+          ],
+          nextToken: 'users-2',
         })
-        .mockResolvedValueOnce({ items: rows('more', 19), nextToken: 'page-5' });
+        .mockResolvedValueOnce({
+          items: [
+            { ...humanMessage('twentieth'), actor: { type: 'user', id: 'person', name: 'Sam' } },
+          ],
+          nextToken: 'messages-2',
+        })
+        .mockResolvedValueOnce({ items: rows('older', 19), nextToken: 'users-3' })
+        .mockResolvedValueOnce({ items: [humanMessage('older-message')], nextToken: null });
       run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
       await settle();
-      expect(run.visible()).toHaveLength(20);
-      expect(mocks.events.queryPage).toHaveBeenCalledTimes(1);
       run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
       await settle();
-      expect(mocks.events.queryPage).toHaveBeenCalledTimes(1);
+      expect(mocks.events.queryPage).toHaveBeenCalledTimes(2);
       run.dispatch(loadPeopleEventsRequested(WS, 'more'));
       await settle();
       expect(run.visible()).toHaveLength(40);
       expect(mocks.events.queryPage.mock.calls).toEqual([
-        [WS, { limit: 100, nextToken: 'page-2' }],
-        [WS, { limit: 100, nextToken: 'page-3' }],
-        [WS, { limit: 100, nextToken: 'page-4' }],
+        [WS, { limit: 100, actorType: 'user' }],
+        [WS, { limit: 100, eventType: 'agent:message' }],
+        [WS, { limit: 100, actorType: 'user', nextToken: 'users-2' }],
+        [WS, { limit: 100, eventType: 'agent:message', nextToken: 'messages-2' }],
       ]);
+      expect(run.history()).toMatchObject({
+        nextToken: 'raw-cursor',
+        endReached: false,
+        peopleStreams: {
+          user: { nextToken: 'users-3' },
+          message: { initialized: true, nextToken: null },
+        },
+      });
     });
 
-    it('counts unnamed human actions through the current full identity roster', async () => {
+    it('continues the newer message stream after an older user page already fills the row target', async () => {
+      const oldActions = rows('old', 20).map((event) => ({
+        ...event,
+        timestamp: '2026-01-01T00:00:00Z',
+      }));
+      const automated = (id: string, timestamp: string): WorkspaceEvent => ({
+        ...humanMessage(id),
+        timestamp,
+        data: { role: 'assistant' },
+      });
+      mocks.events.queryPage
+        .mockResolvedValueOnce({ items: oldActions, nextToken: 'users-2' })
+        .mockResolvedValueOnce({
+          items: [automated('new-noise', '2026-01-03T00:00:00Z')],
+          nextToken: 'messages-2',
+        })
+        .mockResolvedValueOnce({
+          items: [
+            { ...humanMessage('new-human'), timestamp: '2026-01-02T00:00:00Z' },
+            automated('old-noise', '2025-12-31T00:00:00Z'),
+          ],
+          nextToken: 'messages-3',
+        });
+      const run = startPeople();
+      run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
+      await settle();
+      expect(mocks.events.queryPage.mock.calls).toEqual([
+        [WS, { limit: 100, actorType: 'user' }],
+        [WS, { limit: 100, eventType: 'agent:message' }],
+        [WS, { limit: 100, eventType: 'agent:message', nextToken: 'messages-2' }],
+      ]);
+      expect(run.visible()[0].id).toBe('new-human');
+      expect(run.visible()).toHaveLength(21);
+    });
+
+    it('counts unnamed user actions using the current identity roster', async () => {
       const run = startPeople();
       run.current.userPreferences.labsMultiplayerEnabled = true;
       run.current.presence.context = selectPrincipalActionContext.select(run.current);
@@ -1167,16 +1265,15 @@ describe('lifecycleReadSaga', () => {
           ...event,
           actor: { type: 'user', id: 'person' },
         })),
-        nextToken: 'older',
+        nextToken: 'users-2',
       });
       run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
       await settle();
       expect(run.visible()).toHaveLength(20);
-      expect(mocks.events.queryPage).toHaveBeenCalledTimes(1);
-      expect(run.history().nextToken).toBe('older');
+      expect(mocks.events.queryPage).toHaveBeenCalledTimes(2);
     });
 
-    it('merges the first People page with a live-only cache and continues past duplicate rows', async () => {
+    it('merges live events and overlapping pages without counting duplicates toward the target', async () => {
       let resolve!: (page: { items: WorkspaceEvent[]; nextToken: string | null }) => void;
       mocks.events.queryPage
         .mockReturnValueOnce(
@@ -1184,7 +1281,8 @@ describe('lifecycleReadSaga', () => {
             resolve = done;
           }),
         )
-        .mockResolvedValueOnce({ items: rows('older', 18), nextToken: 'page-3' });
+        .mockResolvedValueOnce({ items: [], nextToken: null })
+        .mockResolvedValueOnce({ items: rows('older', 18), nextToken: 'users-3' });
       const run = startPeople();
       run.dispatch(eventReceived(WS, humanEvent('cached')));
       run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
@@ -1192,56 +1290,66 @@ describe('lifecycleReadSaga', () => {
       run.dispatch(eventReceived(WS, humanEvent('live')));
       resolve({
         items: Array.from({ length: 100 }, () => humanEvent('cached')),
-        nextToken: 'page-2',
+        nextToken: 'users-2',
       });
       await settle();
       expect(run.visible()).toHaveLength(20);
       expect(run.history().events.map((event) => event.id)).toEqual(
         expect.arrayContaining(['cached', 'live']),
       );
-      expect(mocks.events.queryPage).toHaveBeenCalledTimes(2);
+      expect(mocks.events.queryPage).toHaveBeenCalledTimes(3);
     });
 
-    it('caps one request at ten pages and keeps continuation without automatic repeat loading', async () => {
-      let page = 0;
-      mocks.events.queryPage.mockImplementation(async () => ({
-        items: [noise(`noise-${page}`)],
-        nextToken: `page-${++page}`,
-      }));
+    it('shares a ten-page bound across both streams and retains separate continuations', async () => {
+      let users = 0;
+      let messages = 0;
+      mocks.events.queryPage.mockImplementation(async (_ws, options) =>
+        options.actorType
+          ? {
+              items: [
+                { ...humanEvent(`unknown-${users}`), actor: { type: 'user', id: 'unresolved' } },
+              ],
+              nextToken: `users-${++users}`,
+            }
+          : {
+              items: [{ ...humanMessage(`machine-${messages}`), data: { role: 'assistant' } }],
+              nextToken: `messages-${++messages}`,
+            },
+      );
       const run = startPeople();
       run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
       for (let i = 0; i < 4; i++) await settle();
       expect(mocks.events.queryPage).toHaveBeenCalledTimes(10);
-      expect(run.history()).toMatchObject({ nextToken: 'page-10', endReached: false });
+      expect(run.history().peopleStreams).toMatchObject({
+        user: { initialized: true, nextToken: 'users-5' },
+        message: { initialized: true, nextToken: 'messages-5' },
+      });
       run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
       await settle();
       expect(mocks.events.queryPage).toHaveBeenCalledTimes(10);
-      mocks.events.queryPage.mockResolvedValueOnce({
-        items: [humanEvent('last')],
-        nextToken: null,
-      });
+      mocks.events.queryPage.mockResolvedValue({ items: [], nextToken: null });
       run.dispatch(loadPeopleEventsRequested(WS, 'more'));
       await settle();
-      expect(mocks.events.queryPage).toHaveBeenLastCalledWith(WS, {
-        limit: 100,
-        nextToken: 'page-10',
-      });
-      expect(run.history()).toMatchObject({ endReached: true, peopleRequestId: null });
+      expect(mocks.events.queryPage.mock.calls.slice(-2)).toEqual([
+        [WS, { limit: 100, actorType: 'user', nextToken: 'users-5' }],
+        [WS, { limit: 100, eventType: 'agent:message', nextToken: 'messages-5' }],
+      ]);
+      expect(selectPeopleEventsEndReached.select(run.current, WS)).toBe(true);
     });
 
-    it('stops at empty end-of-history, including repeated initial and more requests', async () => {
-      mocks.events.queryPage.mockResolvedValue({ items: [], nextToken: null });
+    it('stops only when both filtered histories are exhausted', async () => {
       const run = startPeople();
       run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
       await settle();
       run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
       run.dispatch(loadPeopleEventsRequested(WS, 'more'));
       await settle();
-      expect(mocks.events.queryPage).toHaveBeenCalledTimes(1);
-      expect(run.history()).toMatchObject({ events: [], endReached: true, peopleError: null });
+      expect(mocks.events.queryPage).toHaveBeenCalledTimes(2);
+      expect(selectPeopleEventsEndReached.select(run.current, WS)).toBe(true);
+      expect(run.history()).toMatchObject({ events: [], peopleError: null, endReached: false });
     });
 
-    it('coalesces repeated more requests and preserves live events arriving during the read', async () => {
+    it('coalesces repeated more requests while preserving events arriving during the read', async () => {
       let resolve!: (page: { items: WorkspaceEvent[]; nextToken: string | null }) => void;
       mocks.events.queryPage.mockReturnValueOnce(
         new Promise((done) => {
@@ -1249,44 +1357,44 @@ describe('lifecycleReadSaga', () => {
         }),
       );
       const run = startPeople();
-      run.dispatch(eventsLoaded(WS, rows('cached', 20), 'page-2'));
+      run.dispatch(eventsLoaded(WS, rows('cached', 20), 'raw-cursor'));
       run.dispatch(loadPeopleEventsRequested(WS, 'more'));
       await settle();
       run.dispatch(loadPeopleEventsRequested(WS, 'more'));
       run.dispatch(loadPeopleEventsRequested(WS, 'more'));
       run.dispatch(eventReceived(WS, humanEvent('live')));
       expect(selectPeopleEventsLoading.select(run.current, WS)).toBe(true);
-      resolve({ items: rows('older', 20), nextToken: 'page-3' });
+      resolve({ items: rows('older', 20), nextToken: 'users-2' });
       await settle();
-      expect(mocks.events.queryPage).toHaveBeenCalledTimes(1);
+      expect(mocks.events.queryPage).toHaveBeenCalledTimes(2);
       expect(run.visible()).toHaveLength(41);
-      expect(run.history().events.map((event) => event.id)).toContain('live');
     });
 
-    it('keeps a failed page cursor and requires an explicit retry after initial failure', async () => {
+    it('keeps a failed stream cursor and retries explicitly without advancing the raw cursor', async () => {
       mocks.events.queryPage
-        .mockResolvedValueOnce({ items: [humanEvent('first')], nextToken: 'page-2' })
+        .mockResolvedValueOnce({ items: [humanEvent('first')], nextToken: 'users-2' })
         .mockRejectedValueOnce(new Error('offline'))
         .mockResolvedValueOnce({ items: rows('rest', 19), nextToken: null });
       const run = startPeople();
       run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
       await settle();
       expect(selectPeopleEventsError.select(run.current, WS)).toBe('offline');
-      expect(run.history()).toMatchObject({ nextToken: 'page-2', peopleRequestId: null });
+      expect(run.history().peopleStreams.user.nextToken).toBe('users-2');
       run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
       await settle();
       expect(mocks.events.queryPage).toHaveBeenCalledTimes(2);
       run.dispatch(loadPeopleEventsRequested(WS, 'initial', true));
       await settle();
-      expect(mocks.events.queryPage).toHaveBeenLastCalledWith(WS, {
-        limit: 100,
-        nextToken: 'page-2',
-      });
+      expect(mocks.events.queryPage.mock.calls[2]).toEqual([
+        WS,
+        { limit: 100, actorType: 'user', nextToken: 'users-2' },
+      ]);
       expect(run.visible()).toHaveLength(20);
       expect(selectPeopleEventsError.select(run.current, WS)).toBeNull();
+      expect(run.history().nextToken).toBeNull();
     });
 
-    it('serializes People requests behind a shared refresh and uses its new cursor', async () => {
+    it('serializes behind raw refresh but never reuses its unfiltered cursor', async () => {
       let resolve!: (page: { items: WorkspaceEvent[]; nextToken: string | null }) => void;
       mocks.events.queryPage
         .mockReturnValueOnce(
@@ -1305,14 +1413,16 @@ describe('lifecycleReadSaga', () => {
       await settle();
       expect(mocks.events.queryPage.mock.calls).toEqual([
         [WS, { limit: 100 }],
-        [WS, { limit: 100, nextToken: 'fresh-cursor' }],
+        [WS, { limit: 100, actorType: 'user' }],
+        [WS, { limit: 100, eventType: 'agent:message' }],
       ]);
       expect(run.visible()).toHaveLength(20);
       expect(run.history().events.map((event) => event.id)).not.toContain('stale');
+      expect(run.history().nextToken).toBe('fresh-cursor');
     });
 
     it.each(['unmount', 'backend', 'connection', 'principal', 'cancel'] as const)(
-      'discards a late People response after %s and clears its loading state',
+      'discards late filtered responses after %s and clears loading',
       async (change) => {
         let resolve!: (page: { items: WorkspaceEvent[]; nextToken: string | null }) => void;
         mocks.events.queryPage.mockReturnValueOnce(
@@ -1328,26 +1438,26 @@ describe('lifecycleReadSaga', () => {
         if (change === 'connection') run.current.workspaceEvents.subscriptionGeneration += 1;
         if (change === 'principal') run.current.principal.presentationVersion += 1;
         if (change === 'cancel') await stop(run.task);
-        resolve({ items: [humanEvent('late')], nextToken: 'page-2' });
+        resolve({ items: [humanEvent('late')], nextToken: 'users-2' });
         await settle();
         expect(run.visible()).toHaveLength(0);
         expect(selectPeopleEventsLoading.select(run.current, WS)).toBe(false);
         expect(run.history().peopleInitialized).toBe(false);
+        expect(run.history().peopleStreams.user.initialized).toBe(false);
         expect(mocks.events.queryPage).toHaveBeenCalledTimes(1);
       },
     );
 
-    it('stops a non-advancing cursor without marking the remaining history exhausted', async () => {
+    it('stops stalled streams independently without claiming exhausted history', async () => {
       mocks.events.queryPage.mockResolvedValue({ items: [], nextToken: 'same' });
       const run = startPeople();
-      run.dispatch(eventsLoaded(WS, [], 'same'));
       run.dispatch(loadPeopleEventsRequested(WS, 'initial'));
       await settle();
-      expect(mocks.events.queryPage).toHaveBeenCalledTimes(1);
+      expect(mocks.events.queryPage).toHaveBeenCalledTimes(4);
+      expect(selectPeopleEventsEndReached.select(run.current, WS)).toBe(false);
       expect(run.history()).toMatchObject({
-        nextToken: 'same',
-        endReached: false,
         peopleRequestId: null,
+        peopleStreams: { user: { nextToken: 'same' }, message: { nextToken: 'same' } },
       });
     });
   });
@@ -2952,7 +3062,6 @@ describe('lifecycleReadSaga', () => {
     const kept = agent('agent-keep', { messages: existing.messages });
     const background = agent('agent-bg', { isBackground: true });
     expect(run.actions).toEqual([
-      { type: 'workspaceAgents/setAgentsLoaded', payload: [WS, true] },
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
       { type: 'workspaceAgents/setScopeCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setDelegatedCounts', payload: [WS, null] },
@@ -2961,8 +3070,64 @@ describe('lifecycleReadSaga', () => {
         type: 'agentSessions/bulkUpsertSessions',
         payload: [[background, kept], { listProjection: true }],
       },
+      // Loaded and settled only after the sessions land, so readers see current rows.
+      { type: 'workspaceAgents/setAgentsLoaded', payload: [WS, true] },
+      { type: 'workspaceAgents/agentsReadSettled', payload: [WS] },
       { type: 'workspaceAgents/setActiveAgentId', payload: [WS, 'agent-keep'] },
     ]);
+    await stop(run.task);
+  });
+
+  it('sets agentsLoaded only after the rows, counts and sessions are stored', async () => {
+    mocks.agents.listWithMeta.mockResolvedValue({
+      agents: [agent('agent-a'), agent('agent-b')],
+      retiredCount: 2,
+    });
+    const run = start();
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+
+    const types = run.actions.map((action) => action.type);
+    const loadedAt = types.indexOf(setAgentsLoaded.type);
+    expect(loadedAt).toBeGreaterThan(-1);
+    for (const stored of [
+      'workspaceAgents/setRetiredCount',
+      'workspaceAgents/setScopeCounts',
+      'workspaceAgents/setDelegatedCounts',
+      'workspaceAgents/setAgents',
+      'agentSessions/bulkUpsertSessions',
+    ]) {
+      expect(types.indexOf(stored)).toBeGreaterThan(-1);
+      expect(types.indexOf(stored)).toBeLessThan(loadedAt);
+    }
+    expect(types[loadedAt + 1]).toBe('workspaceAgents/agentsReadSettled');
+    await stop(run.task);
+  });
+
+  it('sets agentsLoaded after the empty snapshot when the workspace has no agents', async () => {
+    mocks.agents.listWithMeta.mockResolvedValue({ agents: [], retiredCount: 0 });
+    const run = start();
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+
+    expect(run.actions.map((action) => action.type)).toEqual([
+      'workspaceAgents/setRetiredCount',
+      'workspaceAgents/setScopeCounts',
+      'workspaceAgents/setDelegatedCounts',
+      'workspaceAgents/setAgents',
+      setAgentsLoaded.type,
+      'workspaceAgents/agentsReadSettled',
+    ]);
+    await stop(run.task);
+  });
+
+  it('leaves agentsLoaded unset when the agent-list read fails', async () => {
+    mocks.agents.listWithMeta.mockRejectedValue(new Error('offline'));
+    const run = start();
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+
+    expect(run.actions.filter((action) => action.type === setAgentsLoaded.type)).toEqual([]);
     await stop(run.task);
   });
 
@@ -3162,11 +3327,12 @@ describe('lifecycleReadSaga', () => {
     await settle();
 
     expect(run.actions).toEqual([
-      { type: 'workspaceAgents/setAgentsLoaded', payload: [WS, true] },
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
       { type: 'workspaceAgents/setScopeCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setDelegatedCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setAgents', payload: [WS, []] },
+      { type: 'workspaceAgents/setAgentsLoaded', payload: [WS, true] },
+      { type: 'workspaceAgents/agentsReadSettled', payload: [WS] },
     ]);
     await stop(run.task);
   });
@@ -3404,12 +3570,13 @@ describe('lifecycleReadSaga', () => {
     expect(mocks.agents.listWithMeta.mock.calls).toEqual([[WS, TOP_LEVEL]]);
     expect(mocks.agents.list).not.toHaveBeenCalled();
     expect(run.actions).toEqual([
-      { type: 'workspaceAgents/setAgentsLoaded', payload: [WS, true] },
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
       { type: 'workspaceAgents/setScopeCounts', payload: [WS, COUNTS] },
       { type: 'workspaceAgents/setDelegatedCounts', payload: [WS, DELEGATED_COUNTS] },
       { type: 'workspaceAgents/setAgents', payload: [WS, [top]] },
       { type: 'agentSessions/bulkUpsertSessions', payload: [[top], { listProjection: true }] },
+      { type: 'workspaceAgents/setAgentsLoaded', payload: [WS, true] },
+      { type: 'workspaceAgents/agentsReadSettled', payload: [WS] },
       { type: 'workspaceAgents/setActiveAgentId', payload: [WS, 'agent-top'] },
     ]);
     await stop(run.task);
@@ -4662,11 +4829,12 @@ describe('lifecycleReadSaga', () => {
       [WS, TOP_LEVEL],
     ]);
     expect(run.actions).toEqual([
-      setAgentsLoaded(WS, true),
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
       { type: 'workspaceAgents/setScopeCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setDelegatedCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setAgents', payload: [WS, []] },
+      setAgentsLoaded(WS, true),
+      { type: 'workspaceAgents/agentsReadSettled', payload: [WS] },
     ]);
     await stop(run.task);
   });
@@ -4702,11 +4870,12 @@ describe('lifecycleReadSaga', () => {
       [WS, TOP_LEVEL],
     ]);
     expect(run.actions).toEqual([
-      setAgentsLoaded(WS, true),
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
       { type: 'workspaceAgents/setScopeCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setDelegatedCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setAgents', payload: [WS, []] },
+      setAgentsLoaded(WS, true),
+      { type: 'workspaceAgents/agentsReadSettled', payload: [WS] },
     ]);
     await stop(run.task);
   });

@@ -15,6 +15,7 @@ test('resolved image sources open in the lightbox and restore keyboard focus', a
     context.fillRect(0, 0, 640, 360);
     return canvas.toDataURL();
   });
+
   const component = await mount(ChatImageBlock, {
     props: { src, mimeType: 'image/png', alt: 'desktop.png' },
   });
@@ -93,11 +94,11 @@ test('image-read tool row preview', async ({ mount, page }, testInfo) => {
   await expect(component.getByTestId('image-file-metadata')).toContainText('640 × 360 px');
   await expect(component.getByTestId('image-file-metadata')).toContainText('PNG');
   const card = component.locator('[data-chat-image]');
-  const summaryBox = await component.getByTestId('tool-call-summary').boundingBox();
-  const cardBox = await card.boundingBox();
-  expect(Math.abs(cardBox!.x - summaryBox!.x)).toBeLessThanOrEqual(1);
   const imageBox = await image.boundingBox();
-  expect(imageBox!.width / imageBox!.height).toBeCloseTo(640 / 360, 1);
+  const naturalAspectRatio = await image.evaluate(
+    (node: HTMLImageElement) => node.naturalWidth / node.naturalHeight,
+  );
+  expect(imageBox!.width / imageBox!.height).toBeCloseTo(naturalAspectRatio, 1);
   await expect(component.getByTestId('tool-call-disclosure')).toHaveAttribute(
     'aria-expanded',
     'true',

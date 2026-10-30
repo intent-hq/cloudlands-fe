@@ -85,7 +85,7 @@ export interface RemoteTargetResolution {
   tunneled: boolean;
   /** Explanatory agent-facing error when unreachable and not tunnelable. */
   error?: string;
-  /** The daemon refused the forward as owner-only (multiplayer w3); `error` is set too. */
+  /** The daemon refused the forward for lacking host-level access; `error` is set too. */
   forbidden?: true;
 }
 
@@ -174,9 +174,9 @@ function findTunnelLocalPassthrough(
  * before navigating to it. Any HTTP response (including error statuses)
  * proves the host:port is reachable from this machine; only a network-level
  * failure (connection refused, unroutable, timeout) fails the probe. URLs
- * that were not rewritten to a remote host are never probed. A saved remote
- * reached through client loopback skips the probe because that origin names
- * the transport endpoint on this machine, not the daemon machine.
+ * that were not rewritten to a remote host are never probed. Tailcat and saved
+ * remotes reached through client loopback skip the probe because their
+ * transport endpoints are not directly reachable daemon hostnames.
  *
  * A requested URL already pointing at one of our own active tunnel-local
  * forwards is passed through untouched instead of being probed/re-tunneled
@@ -212,7 +212,7 @@ export async function resolveRewrittenRemoteTarget(
     }
   }
   const detail = rewrite.requiresTunnel
-    ? 'direct probe skipped because the saved remote transport endpoint is client loopback'
+    ? 'direct probe skipped because daemon-local URLs require a tunnel for this connection'
     : probeError instanceof Error
       ? probeError.cause instanceof Error
         ? probeError.cause.message
@@ -220,11 +220,11 @@ export async function resolveRewrittenRemoteTarget(
       : String(probeError);
   const port = target.port || (target.protocol === 'https:' ? '443' : '80');
   const directTargetReason = rewrite.requiresTunnel
-    ? `${target.origin} is the saved remote's client-side transport endpoint`
+    ? `${target.origin} must be reached through the daemon tunnel`
     : `${target.origin} is not directly reachable from this machine`;
   logger.warn(
     rewrite.requiresTunnel
-      ? 'Direct probe skipped for saved remote reached through client loopback' // i18n-ignore (log message)
+      ? 'Direct probe skipped for a remote target that requires a tunnel' // i18n-ignore (log message)
       : 'Reachability probe failed for rewritten remote URL', // i18n-ignore (log message)
     {
       requestedUrl: rewrite.requestedUrl,
@@ -272,7 +272,7 @@ export async function resolveRewrittenRemoteTarget(
       tunneledUrl.port = String(localPort);
       logger.info(
         rewrite.requiresTunnel
-          ? 'Saved remote uses client loopback; forwarding through the daemon tunnel' // i18n-ignore (log message)
+          ? 'Remote target requires forwarding through the daemon tunnel' // i18n-ignore (log message)
           : 'Rewritten remote origin unreachable; falling back to the daemon tunnel', // i18n-ignore (log message)
         {
           requestedUrl: rewrite.requestedUrl,
@@ -302,15 +302,15 @@ export async function resolveRewrittenRemoteTarget(
         remotePort: Number(port),
         error: forwardingFailure,
       });
-      // Owner-only refusal (multiplayer w3): a collaborator credential can
-      // never forward, so the reachability lecture below does not apply.
+      // Host-level access is required: a workspace guest cannot forward,
+      // so the reachability lecture below does not apply.
       if (tunnelError instanceof TunnelForbiddenError) {
         return {
           rewrite,
           tunneled: false,
           forbidden: true,
           // i18n-ignore (agent-facing protocol error; the renderer shows a localized message off `forbidden`)
-          error: `${tunnelError.message}: ${rewrite.requestedUrl} lives on the daemon machine's loopback and port ${port} cannot be forwarded for this connection.`,
+          error: `${tunnelFailureDetail(tunnelError)}: ${rewrite.requestedUrl} lives on the daemon machine's loopback and port ${port} cannot be forwarded for this connection.`,
         };
       }
     }
@@ -321,7 +321,7 @@ export async function resolveRewrittenRemoteTarget(
     tunneled: false,
     error: rewrite.requiresTunnel
       ? // i18n-ignore (agent-facing protocol error, not user-facing)
-        `The requested URL ${rewrite.requestedUrl} requires the daemon tunnel because the saved remote transport endpoint is client loopback, but port ${port} could not be forwarded (${forwardingFailure}).` // i18n-ignore (agent-facing protocol error)
+        `The requested URL ${rewrite.requestedUrl} requires the daemon tunnel, but port ${port} could not be forwarded (${forwardingFailure}).` // i18n-ignore (agent-facing protocol error)
       : // i18n-ignore (agent-facing protocol error, not user-facing)
         `The requested URL ${rewrite.requestedUrl} was rewritten to ${rewrite.url} because the daemon runs on a remote machine, ` + // i18n-ignore (agent-facing protocol error)
         // i18n-ignore (agent-facing protocol error, not user-facing)
@@ -353,7 +353,7 @@ export interface ResolvedBrowserUrl {
   warning?: string;
   /** Explanatory error when the remote target is unreachable and not tunnelable. */
   error?: string;
-  /** The forward was refused as owner-only (multiplayer w3): render a localized message, not `error`. */
+  /** Host-level access was refused: render a localized message, not `error`. */
   forbidden?: true;
 }
 

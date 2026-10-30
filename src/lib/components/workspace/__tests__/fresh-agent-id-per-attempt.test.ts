@@ -56,6 +56,12 @@ const mocks = vi.hoisted(() => {
     update: vi.fn(),
     pull: vi.fn(async () => ({ success: true })),
     setReasoningEffort: vi.fn(),
+    initializationOutcome$: writable<
+      | Partial<
+          import('$store/renderer/slices/workspace-initializer/workspace-initializer-types').WorkspaceInitializationOutcome
+        >
+      | undefined
+    >(undefined),
     hydrated$: writable(false),
     compactFormState$: writable<{
       selectedSpecialist?: string | null;
@@ -107,8 +113,10 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
   selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
   selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
-  selectWorkspaceInitializerDraftRestore: () => mocks.readable(() => undefined),
-  selectWorkspaceInitializationOutcome: { select: () => undefined },
+  selectWorkspaceInitializerDraftAuthority: () =>
+    mocks.readable(() => ({ restore: undefined, clear: undefined })),
+  selectWorkspaceInitializationOutcomeForConsumer: () => mocks.initializationOutcome$,
+  selectWorkspaceInitializationResume: { select: () => undefined },
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
@@ -272,8 +280,13 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.dispatch.mockImplementation(
-      createWorkspaceInitializationDispatchAdapter({ create: mocks.create, pull: mocks.pull }),
+      createWorkspaceInitializationDispatchAdapter({
+        create: mocks.create,
+        pull: mocks.pull,
+        setOutcome: (outcome) => mocks.initializationOutcome$.set(outcome),
+      }),
     );
+    mocks.initializationOutcome$.set(undefined);
     sessionStorage.clear();
     mocks.hydrated$.set(false);
     mocks.compactFormState$.set(null);

@@ -6,7 +6,7 @@ signed="${2:?Expected true or false}"
 case "$arch" in x64|arm64) ;; *) exit 1 ;; esac
 case "$signed" in true|false) ;; *) exit 1 ;; esac
 shopt -s nullglob
-apps=(dist-electron/mac*/Intent.app)
+apps=(dist-electron/mac*/Intent.app dist-electron/mac*/"Intent GitLab Test.app")
 dmgs=(dist-electron/*-"$arch".dmg)
 zips=(dist-electron/*-"$arch"-mac.zip)
 if [ "${#apps[@]}" -ne 1 ] || [ "${#dmgs[@]}" -ne 1 ] || [ "${#zips[@]}" -ne 1 ]; then
@@ -22,5 +22,7 @@ if [ "$signed" = true ]; then
   codesign --verify --deep --strict --verbose=2 "${apps[0]}"
   codesign --display --verbose=2 "${apps[0]}"
   spctl --assess --type execute --verbose=2 "${apps[0]}"
-  xcrun stapler validate "${apps[0]}"
+  # Apple's ticket service intermittently drops the connection (stapler exit 68,
+  # intent-hq/intent#7614); retry only that with backoff, fail anything else.
+  node scripts/apple-ticket-retry.mjs validate "${apps[0]}"
 fi

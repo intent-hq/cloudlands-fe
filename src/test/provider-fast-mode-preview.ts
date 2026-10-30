@@ -13,6 +13,7 @@ export function setupProviderFastModePreview(
   supported = true,
   rejectWrites = false,
   onWrite?: (changes: Parameters<NonNullable<typeof appClient.settings.updateSnapshot>>[0]) => void,
+  initial: Record<string, boolean> = { codex: true, 'claude-code': false },
 ) {
   const before = selectProviderFastModeState.select(appStore.state);
   const update = appClient.settings.updateSnapshot;
@@ -23,7 +24,7 @@ export function setupProviderFastModePreview(
     return { applied: changes, revision: ++revision };
   };
   appStore.dispatch(fastModeHydrationStarted());
-  appStore.dispatch(hydrateProviderFastMode({ codex: true, 'claude-code': false }, revision));
+  appStore.dispatch(hydrateProviderFastMode(initial, revision));
   appStore.dispatch(fastModeSupportReceived(supported));
   const stop = appStore.runSaga(providerFastModeSaga);
   return () => {

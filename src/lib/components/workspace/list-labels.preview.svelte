@@ -57,7 +57,8 @@
     getKey={(item) => item.id}
     getText={(item) => item.name}
     selectable="single"
-    bind:selectedKeys
+    {selectedKeys}
+    onSelectedKeysChange={(keys) => (selectedKeys = keys)}
     ariaLabel="Collection labels"
   >
     {#snippet row({ item })}<ListRow>{#snippet title()}{item.name}{/snippet}</ListRow>{/snippet}

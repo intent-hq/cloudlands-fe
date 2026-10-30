@@ -1,3 +1,4 @@
+import { DEFAULT_DISCUSSION_ID } from '$shared/types/workspace-discussion';
 /**
  * Presence Slice (multiplayer w5)
  *
@@ -16,7 +17,12 @@ import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { effectivePresenceRows, type PresenceRoster } from '$shared/types/presence';
 import type { WorkspaceMember } from '../guest-sessions/guest-sessions-types';
-import type { LiveTypingEntry, PresenceIdentity, PresenceState } from './presence-types';
+import type {
+  LiveTypingEntry,
+  LiveDiscussionTypingEntry,
+  PresenceIdentity,
+  PresenceState,
+} from './presence-types';
 
 // ---------------------------------------------------------------------------
 // Initial state
@@ -33,7 +39,12 @@ export const initialState: PresenceState = {
   ownPrincipalId: null,
   ownTypingSource: null,
   ownTyping: null,
+  ownDiscussionTyping: null,
+  discussionComposerWorkspaceId: null,
+  discussionComposerConversationId: DEFAULT_DISCUSSION_ID,
+  liveDiscussionTyping: {},
   windowVisible: true,
+  captureDrawingActive: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -79,8 +90,26 @@ export const presenceTypingPulse = createAction<[agentId: string]>('presence/typ
 /** The composer went idle, was cleared, or sent. */
 export const presenceTypingStopped = createAction('presence/typingStopped');
 
+export const presenceDiscussionComposerFocused = createAction<
+  [workspaceId: string, focused: boolean, conversationId?: string]
+>('presence/discussionComposerFocused');
+export const presenceDiscussionTypingPulse = createAction<
+  [workspaceId: string, conversationId?: string]
+>('presence/discussionTypingPulse');
+export const presenceDiscussionTypingStopped = createAction<
+  [workspaceId: string, conversationId?: string]
+>('presence/discussionTypingStopped');
+export const presenceDiscussionTypingExpired = createAction<
+  [workspaceId: string, source: string, pulse: number, conversationId?: string]
+>('presence/discussionTypingExpired');
+
 export const presenceWindowVisibilityChanged = createAction<[visible: boolean]>(
   'presence/windowVisibilityChanged',
+);
+
+/** An agent capture started / stopped keeping this hidden window drawing. */
+export const presenceCaptureDrawingChanged = createAction<[active: boolean]>(
+  'presence/captureDrawingChanged',
 );
 
 /** `principal.me` of the window's backend (`null` when the daemon has none). */
@@ -118,6 +147,31 @@ function foldLiveTyping(
               agentId: entry.agentId,
               pulse: entry.pulse,
               expired: false,
+            };
+    }
+  }
+  return next;
+}
+
+function foldDiscussionTyping(
+  previous: Record<string, LiveDiscussionTypingEntry> | undefined,
+  roster: PresenceRoster,
+): Record<string, LiveDiscussionTypingEntry> {
+  const next: Record<string, LiveDiscussionTypingEntry> = {};
+  for (const member of roster.members) {
+    for (const entry of member.discussionTyping ?? []) {
+      const seen = previous?.[entry.source];
+      next[entry.source] =
+        seen &&
+        seen.pulse === entry.pulse &&
+        seen.principalId === member.principalId &&
+        seen.conversationId === (entry.conversationId ?? DEFAULT_DISCUSSION_ID)
+          ? seen
+          : {
+              principalId: member.principalId,
+              pulse: entry.pulse,
+              expired: false,
+              conversationId: entry.conversationId ?? DEFAULT_DISCUSSION_ID,
             };
     }
   }
@@ -175,6 +229,13 @@ function replaceRoster(
     rosters: {
       ...state.rosters,
       [roster.workspaceId]: createCollection('principalId', onlineMembers),
+    },
+    liveDiscussionTyping: {
+      ...state.liveDiscussionTyping,
+      [roster.workspaceId]: foldDiscussionTyping(
+        state.liveDiscussionTyping[roster.workspaceId],
+        roster,
+      ),
     },
     liveTyping: {
       ...state.liveTyping,
@@ -240,8 +301,86 @@ presenceReducer.with(presenceTypingStopped, (state) =>
   state.ownTyping === null ? state : { ...state, ownTyping: null },
 );
 
+presenceReducer.with(
+  presenceDiscussionComposerFocused,
+  (state, { payload: [workspaceId, focused, conversationId = DEFAULT_DISCUSSION_ID] }) => {
+    if (focused)
+      return state.context && state.windowVisible && state.workspaceIds.includes(workspaceId)
+        ? {
+            ...state,
+            discussionComposerWorkspaceId: workspaceId,
+            discussionComposerConversationId: conversationId,
+            ownDiscussionTyping:
+              state.ownDiscussionTyping?.workspaceId === workspaceId &&
+              (state.ownDiscussionTyping.conversationId ?? DEFAULT_DISCUSSION_ID) === conversationId
+                ? state.ownDiscussionTyping
+                : null,
+          }
+        : state;
+    return state.discussionComposerWorkspaceId === workspaceId &&
+      state.discussionComposerConversationId === conversationId
+      ? { ...state, discussionComposerWorkspaceId: null, ownDiscussionTyping: null }
+      : state;
+  },
+);
+presenceReducer.with(
+  presenceDiscussionTypingPulse,
+  (state, { payload: [workspaceId, conversationId = DEFAULT_DISCUSSION_ID] }) =>
+    state.context &&
+    state.windowVisible &&
+    state.discussionComposerWorkspaceId === workspaceId &&
+    state.discussionComposerConversationId === conversationId &&
+    state.workspaceIds.includes(workspaceId) &&
+    (state.ownDiscussionTyping?.workspaceId !== workspaceId ||
+      (state.ownDiscussionTyping?.conversationId ?? DEFAULT_DISCUSSION_ID) !== conversationId)
+      ? {
+          ...state,
+          ownDiscussionTyping: {
+            workspaceId,
+            ...(conversationId !== DEFAULT_DISCUSSION_ID ? { conversationId } : {}),
+          },
+        }
+      : state,
+);
+presenceReducer.with(
+  presenceDiscussionTypingStopped,
+  (state, { payload: [workspaceId, conversationId = DEFAULT_DISCUSSION_ID] }) =>
+    state.ownDiscussionTyping?.workspaceId === workspaceId &&
+    (state.ownDiscussionTyping.conversationId ?? DEFAULT_DISCUSSION_ID) === conversationId
+      ? { ...state, ownDiscussionTyping: null }
+      : state,
+);
+presenceReducer.with(
+  presenceDiscussionTypingExpired,
+  (state, { payload: [workspaceId, source, pulse, conversationId = DEFAULT_DISCUSSION_ID] }) => {
+    const entry = state.liveDiscussionTyping[workspaceId]?.[source];
+    if (!entry || entry.pulse !== pulse || entry.expired || entry.conversationId !== conversationId)
+      return state;
+    return {
+      ...state,
+      liveDiscussionTyping: {
+        ...state.liveDiscussionTyping,
+        [workspaceId]: {
+          ...state.liveDiscussionTyping[workspaceId],
+          [source]: { ...entry, expired: true },
+        },
+      },
+    };
+  },
+);
+
 presenceReducer.with(presenceWindowVisibilityChanged, (state, { payload: [visible] }) =>
-  state.windowVisible === visible ? state : { ...state, windowVisible: visible },
+  state.windowVisible === visible
+    ? state
+    : {
+        ...state,
+        windowVisible: visible,
+        ...(!visible ? { ownDiscussionTyping: null, discussionComposerWorkspaceId: null } : {}),
+      },
+);
+
+presenceReducer.with(presenceCaptureDrawingChanged, (state, { payload: [active] }) =>
+  state.captureDrawingActive === active ? state : { ...state, captureDrawingActive: active },
 );
 
 presenceReducer.with(presenceOwnPrincipalReceived, (state, { payload: [principalId] }) => ({
@@ -256,11 +395,13 @@ presenceReducer.with(presenceOwnTypingSourceReceived, (state, { payload: [source
 presenceReducer.with(presenceReset, (state) => ({
   ...initialState,
   windowVisible: state.windowVisible,
+  captureDrawingActive: state.captureDrawingActive,
 }));
 
 presenceReducer.with(presenceContextReceived, (state, { payload: [context, ownPrincipalId] }) => ({
   ...initialState,
   windowVisible: state.windowVisible,
+  captureDrawingActive: state.captureDrawingActive,
   context,
   ownPrincipalId,
 }));
@@ -269,11 +410,26 @@ presenceReducer.with(presenceWorkspaceRemoved, (state, { payload: [workspaceId] 
   const members = { ...state.members };
   const profileUpdates = { ...state.profileUpdates };
   const liveTyping = { ...state.liveTyping };
+  const liveDiscussionTyping = { ...state.liveDiscussionTyping };
   delete rosters[workspaceId];
   delete members[workspaceId];
   delete profileUpdates[workspaceId];
   delete liveTyping[workspaceId];
-  return { ...state, rosters, members, profileUpdates, liveTyping };
+  delete liveDiscussionTyping[workspaceId];
+  return {
+    ...state,
+    rosters,
+    members,
+    profileUpdates,
+    liveTyping,
+    liveDiscussionTyping,
+    ownDiscussionTyping:
+      state.ownDiscussionTyping?.workspaceId === workspaceId ? null : state.ownDiscussionTyping,
+    discussionComposerWorkspaceId:
+      state.discussionComposerWorkspaceId === workspaceId
+        ? null
+        : state.discussionComposerWorkspaceId,
+  };
 });
 
 presenceReducer.with(presenceWorkspacesReceived, (state, { payload: [workspaceIds] }) => {
@@ -286,5 +442,15 @@ presenceReducer.with(presenceWorkspacesReceived, (state, { payload: [workspaceId
     members: keep(state.members),
     profileUpdates: keep(state.profileUpdates),
     liveTyping: keep(state.liveTyping),
+    liveDiscussionTyping: keep(state.liveDiscussionTyping),
+    ownDiscussionTyping:
+      state.ownDiscussionTyping && workspaceIds.includes(state.ownDiscussionTyping.workspaceId)
+        ? state.ownDiscussionTyping
+        : null,
+    discussionComposerWorkspaceId:
+      state.discussionComposerWorkspaceId &&
+      workspaceIds.includes(state.discussionComposerWorkspaceId)
+        ? state.discussionComposerWorkspaceId
+        : null,
   };
 });

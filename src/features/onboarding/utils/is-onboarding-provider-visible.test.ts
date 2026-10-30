@@ -5,6 +5,24 @@ const featureEnabled = () => true;
 const featureDisabled = () => false;
 
 describe('isOnboardingProviderVisible', () => {
+  it.each([
+    [undefined, false, false],
+    [false, false, false],
+    [true, false, true],
+    [undefined, true, true],
+    [false, true, true],
+    [true, true, true],
+  ])('Auggie installed=%s enabled=%s is listed=%s', (installed, enabled, listed) => {
+    expect(
+      isOnboardingProviderVisible({
+        provider: { id: 'auggie' },
+        isFeatureEnabled: featureEnabled,
+        status: installed === undefined ? undefined : { available: installed },
+        enabled,
+      }),
+    ).toBe(listed);
+  });
+
   it('shows ungated providers regardless of availability status', () => {
     expect(
       isOnboardingProviderVisible({

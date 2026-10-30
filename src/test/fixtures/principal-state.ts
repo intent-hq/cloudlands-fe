@@ -28,7 +28,10 @@ export function withLegacyPrincipal(input: object, role: 'owner' | 'guest' = 'ow
 }
 
 /** Admit a caller in component tests using the real store but no transport sagas. */
-export function admitLegacyPrincipal(role: 'owner' | 'guest' = 'owner'): void {
+export function admitLegacyPrincipal(
+  role: 'owner' | 'guest' = 'owner',
+  capabilities: { workspaceLabels?: 1 } = {},
+): void {
   const { connections: current } = store.state;
   store.dispatch(
     connectionsListReceived({
@@ -44,7 +47,10 @@ export function admitLegacyPrincipal(role: 'owner' | 'guest' = 'owner'): void {
   store.dispatch(
     principalReceived(
       { context: principal.context!, invalidation: 0, presentationVersion: 0 },
-      principal.snapshot!,
+      {
+        ...principal.snapshot!,
+        capabilities: { ...principal.snapshot!.capabilities, ...capabilities },
+      },
     ),
   );
 }

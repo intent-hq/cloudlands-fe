@@ -1,6 +1,6 @@
 import type { Locator } from '@playwright/experimental-ct-svelte';
 import type { AgentMessage } from '$shared/types';
-import { expect, test } from '../../../../test/ct-test';
+import { expect, test, wheelUntilScrolled } from '../../../../test/ct-test';
 import ChatMessageNavigatorIntegrationHost from './ChatMessageNavigatorIntegrationHost.svelte';
 
 // Chromium hides native scrollbars in headless mode unless this default is removed.
@@ -299,8 +299,7 @@ test('previous-message navigation follows its target while earlier content hydra
   const source = component.locator('[data-message-id="user-24"]');
   // Bring the earlier placeholder into the real preload band without letting
   // follow-bottom undo the reader's scroll before observer delivery.
-  await scroll.hover();
-  await page.mouse.wheel(0, -400);
+  await wheelUntilScrolled(scroll, { deltaY: -400 });
   await expect
     .poll(() => page.evaluate(() => Reflect.get(window, 'hasDeferredNavigationHydration')()))
     .toBe(true);
@@ -403,6 +402,51 @@ for (const removal of ['truncate-navigation-target', 'discard-transcript'] as co
     await page.clock.resume();
   });
 }
+
+test('previous-message navigation tracks a preceding row collapsing during animation', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  const component = await mount(ChatMessageNavigatorIntegrationHost);
+  const scroll = component.getByTestId('chat-transcript-scroll-viewport');
+  await bottomArrow(component).expectAtBottom(true);
+  const now = Date.now();
+  await page.clock.install({ time: now });
+  await page.clock.pauseAt(now + 1000);
+  const target = component.locator('[data-message-id="user-23"]');
+  // Model an overestimated preceding lazy row becoming measured content.
+  await target.evaluate((node) => {
+    const spacer = document.createElement('div');
+    spacer.dataset.testid = 'collapsing-preceding-row';
+    spacer.style.height = '112px';
+    node.before(spacer);
+  });
+  await page.clock.runFor(32);
+  await component
+    .locator('[data-message-id="user-24"]')
+    .getByRole('button', { name: 'Scroll to previous message' })
+    .evaluate((node: HTMLButtonElement) => node.focus({ preventScroll: true }));
+  await page.keyboard.press('Enter');
+  await page.clock.runFor(32);
+  await component.getByTestId('collapsing-preceding-row').evaluate((node) => node.remove());
+  await page.clock.runFor(800);
+  const offset = await target.evaluate(
+    (node, container) =>
+      node.getBoundingClientRect().top - (container as HTMLElement).getBoundingClientRect().top,
+    await scroll.elementHandle(),
+  );
+  const bottomDistance = await scroll.evaluate(
+    (node) => node.scrollHeight - node.clientHeight - node.scrollTop,
+  );
+  await testInfo.attach('collapsed-predecessor-navigation', {
+    body: JSON.stringify({ offset, bottomDistance }),
+    contentType: 'application/json',
+  });
+  expect(Math.abs(offset)).toBeLessThanOrEqual(3);
+  expect(bottomDistance).toBeGreaterThan(2);
+  await page.clock.resume();
+});
 
 for (const sourceRole of ['user', 'assistant'] as const) {
   for (const reducedMotion of ['no-preference', 'reduce'] as const) {
@@ -882,7 +926,8 @@ for (const motion of ['reduce', 'no-preference'] as const) {
       });
     const landed = await measure();
     expect(landed.offset).not.toBeNull();
-    await page.mouse.wheel(0, 350);
+    // A resend would double the distance this test checks; give one wheel longer.
+    await wheelUntilScrolled(viewport, { deltaY: 350, pointer: 'current', attemptTimeout: 5_000 });
     // Native wheel scrolling is asynchronous even while JavaScript time is paused.
     await expect.poll(async () => (await measure()).offset).toBeCloseTo(landed.offset! - 350, 0);
     const before = await measure();

@@ -25,6 +25,8 @@ import {
 import { selectEnabledProviders } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 import { loadEnabledProvidersFromStorage } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 import ProviderSelector from './ProviderSelector.svelte';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
+import { setFileSpecialists } from '$store/renderer/slices/specialists/specialists-slice';
 
 export const previewProviders = [
   {
@@ -112,11 +114,63 @@ function setupProviderSelector() {
   };
 }
 
+export function setupProviderDisablePreview(
+  status: 'signed-out' | 'pending' | 'unavailable' = 'signed-out',
+  auggieEnabled = true,
+) {
+  const restoreProviders = setupProviderSelector();
+  const specialists = getItems(appStore.state.specialists.fileSpecialists);
+  const auggie = {
+    id: 'auggie',
+    displayName: 'Augment Auggie',
+    shortName: 'Auggie',
+    command: 'auggie',
+    canBeDisabled: true,
+    visible: true,
+    loginCommandHint: 'auggie login',
+    loginDocsUrl: 'https://docs.augmentcode.com/cli/overview',
+  };
+  appStore.dispatch(providerCatalogLoaded({ providers: [...previewProviders, auggie] }));
+  appStore.dispatch(
+    loadEnabledProvidersFromStorage({ codex: true, 'claude-code': true, auggie: auggieEnabled }),
+  );
+  if (status !== 'pending')
+    appStore.dispatch(
+      checkSingleProviderSuccess('auggie', {
+        available: status !== 'unavailable',
+        authenticated: false,
+      }),
+    );
+  appStore.dispatch(
+    setFileSpecialists([
+      {
+        id: 'pinned-provider',
+        name: 'Pinned specialist',
+        description: '',
+        codingAgent: 'auggie',
+        model: '',
+        behaviorPrompt: '',
+        filePath: '/fixture/specialists/pinned.md',
+        source: 'user',
+      },
+    ]),
+  );
+  return () => {
+    appStore.dispatch(setFileSpecialists(specialists));
+    restoreProviders();
+  };
+}
+
 export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
   id: 'provider-selector',
   title: 'Provider selector',
   defaultState: 'mixed',
   states: {
+    'disable-in-use': { props: {}, setup: () => setupProviderDisablePreview() },
+    'auggie-not-installed': {
+      props: {},
+      setup: () => setupProviderDisablePreview('unavailable', false),
+    },
     mixed: { props: {}, setup: setupProviderSelector },
     profiles: {
       props: {},
@@ -129,15 +183,30 @@ export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
         };
       },
     },
-    // Settings → Labs → Provider profiles off: saved profiles exist, but no
-    // profile management is offered.
-    'profiles-labs-off': {
+    // Backup profiles: reorder with drag or arrow keys on the handle; backups carry a badge.
+    'profiles-backup': {
       props: {},
       setup: () => {
         const restoreProviders = setupProviderSelector();
         const restoreProfiles = setupProviderProfilesPreview({
           appOwned: true,
-          labsEnabled: false,
+          withBackups: true,
+        });
+        return () => {
+          restoreProfiles();
+          restoreProviders();
+        };
+      },
+    },
+    // The Default configuration renamed: its pinned first row shows the name plus a Default pill.
+    'profiles-renamed-default': {
+      props: {},
+      setup: () => {
+        const restoreProviders = setupProviderSelector();
+        const restoreProfiles = setupProviderProfilesPreview({
+          appOwned: true,
+          withBackups: true,
+          defaultNames: { codex: 'Main account' },
         });
         return () => {
           restoreProfiles();
@@ -151,6 +220,24 @@ export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
         const restoreProviders = setupProviderSelector();
         const restoreProfiles = setupProviderProfilesPreview({ appOwned: false });
         return () => {
+          restoreProfiles();
+          restoreProviders();
+        };
+      },
+    },
+    // Each named profile has its own Fast mode / service tier (off unless set).
+    'profiles-fast-mode': {
+      props: {},
+      setup: () => {
+        const restoreProviders = setupProviderSelector();
+        const restoreProfiles = setupProviderProfilesPreview({ appOwned: true });
+        const restoreFastMode = setupProviderFastModePreview(true, false, undefined, {
+          codex: true,
+          'claude-code': false,
+          'claude-code@pproxy0000001': true,
+        });
+        return () => {
+          restoreFastMode();
           restoreProfiles();
           restoreProviders();
         };

@@ -54,14 +54,20 @@ test('Home status groups restore every work stage in list view only', async ({
   });
   await component.getByRole('button', { name: 'Board view', exact: true }).click();
   const board = component.locator('[data-home-board]');
-  await expect(board.locator('section')).toHaveCount(3);
+  await expect(board.locator('section')).toHaveCount(4);
   await expect(board.getByRole('region', { name: 'Needs you', exact: true })).toBeVisible();
   await expect(board.getByRole('region', { name: 'Running', exact: true })).toBeVisible();
+  // A PR in the merge queue is waiting on CI, not done.
+  await expect(
+    board
+      .getByRole('region', { name: 'Waiting', exact: true })
+      .locator('[data-home-workspace="home-status-pr_queued"]'),
+  ).toHaveCount(1);
   await expect(
     board
       .getByRole('region', { name: 'Done & idle', exact: true })
       .locator('[data-home-workspace]'),
-  ).toHaveCount(8);
+  ).toHaveCount(7);
   await expect(board.locator('[data-home-workspace]')).toHaveCount(13);
   await component.getByRole('button', { name: 'View options', exact: true }).click();
   const grouping = page.getByRole('combobox', { name: 'Group by', exact: true });
@@ -234,4 +240,74 @@ test('Home status groups preserve selection and collapse state with a narrow dar
     body: await page.screenshot({ path: testInfo.outputPath('after-status-dark-narrow.png') }),
     contentType: 'image/png',
   });
+});
+
+test('Home activity groups move script-running and waiting workspaces live', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1320 });
+  await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'light' });
+  const component = await mount(Preview, {
+    props: { scenario: 'status-grouping', height: 1300 },
+  });
+  await expect(component.locator('[data-home-workspace]')).toHaveCount(13);
+  const group = (name: string) => component.getByRole('listbox', { name, exact: true });
+  const row = (name: string, id: string) =>
+    group(name).locator(`[data-home-workspace="home-status-${id}"]`);
+  await expect(row('Waiting', 'pr_queued')).toHaveCount(1);
+  await expect(row('Done & idle', 'idle')).toHaveCount(1);
+
+  await page.evaluate(() =>
+    window.__homeWorkspacePreview!.setFlags('home-status-idle', { scriptsRunning: true }),
+  );
+  await expect(row('Running', 'idle')).toHaveCount(1);
+  await expect(
+    row('Running', 'idle').getByRole('img', { name: /^Running\. A command script/ }),
+  ).toBeVisible();
+
+  // An agent's background shell (no turn, no script) also counts as Running.
+  await page.evaluate(() =>
+    window.__homeWorkspacePreview!.setFlags('home-status-idle', {
+      scriptsRunning: false,
+      backgroundTasksRunning: true,
+    }),
+  );
+  await expect(row('Running', 'idle')).toHaveCount(1);
+  await expect(
+    row('Running', 'idle').getByRole('img', { name: /^Running\. An agent's background task/ }),
+  ).toBeVisible();
+  await page.mouse.move(0, 0);
+  await testInfo.attach('background-task-running', {
+    body: await page.screenshot({ path: testInfo.outputPath('background-task-running.png') }),
+    contentType: 'image/png',
+  });
+
+  await page.evaluate(() =>
+    window.__homeWorkspacePreview!.setFlags('home-status-idle', {
+      backgroundTasksRunning: false,
+      waiting: true,
+    }),
+  );
+  await expect(row('Waiting', 'idle')).toHaveCount(1);
+  await expect(group('Waiting').locator('[data-home-workspace]')).toHaveCount(2);
+  await page.mouse.move(0, 0);
+  await testInfo.attach('waiting-group', {
+    body: await page.screenshot({ path: testInfo.outputPath('waiting-group.png') }),
+    contentType: 'image/png',
+  });
+
+  // Needs you still wins over waiting.
+  await page.evaluate(() =>
+    window.__homeWorkspacePreview!.setStatus('home-status-idle', 'needs_attention'),
+  );
+  await expect(row('Needs you', 'idle')).toHaveCount(1);
+
+  // The Waiting filter lists exactly the Waiting group.
+  await component
+    .locator('.home-workspace-filters-wide')
+    .getByRole('button', { name: /^Waiting/ })
+    .click();
+  await expect(component.locator('[data-home-workspace]')).toHaveCount(1);
+  await expect(component.locator('[data-home-workspace="home-status-pr_queued"]')).toHaveCount(1);
 });

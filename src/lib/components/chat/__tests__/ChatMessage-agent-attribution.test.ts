@@ -3,6 +3,7 @@
  */
 import { render, screen, fireEvent, within } from '@testing-library/svelte';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import pollingProducer from '../../../../test/fixtures/qualified-monitor-polling-producer.json';
 import type { AgentMessage } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import {
@@ -17,6 +18,7 @@ import {
 } from '../subscription-disclosure';
 import { USER_MESSAGE_SURFACE_CLASS } from '../user-message-surface';
 import { createMockWorkspace } from '../../../../test/factories/workspace.factory';
+import { predictOwnSenderAttribution } from '$lib/utils/collaborator-sender-attribution';
 
 const { dispatchMock, handleLinkMock, agentSelectorHarness } = vi.hoisted(() => {
   type Snapshot = {
@@ -161,77 +163,6 @@ function userTextMessage(text: string): AgentMessage {
   };
 }
 
-function installGeometryUtilities(): HTMLStyleElement {
-  const style = document.createElement('style');
-  style.textContent = `
-    .px-1\\.5 { padding-left: 6px; padding-right: 6px; }
-    .py-1 { padding-top: 4px; padding-bottom: 4px; }
-    .px-3 { padding-left: 12px; padding-right: 12px; }
-    .py-2 { padding-top: 8px; padding-bottom: 8px; }
-    .min-h-9 { min-height: 36px; }
-    .h-9\\! { height: 36px; }
-    .h-5 { height: 20px; }
-    .w-5 { width: 20px; }
-    .h-6 { height: 24px; }
-    .w-6 { width: 24px; }
-    [data-geometry-card] { box-sizing: border-box; border: 1px solid; }
-  `;
-  document.head.append(style);
-  return style;
-}
-
-function px(value: string): number {
-  return Number.parseFloat(value) || 0;
-}
-
-function measureCollapsedCard(
-  card: HTMLElement,
-  row: HTMLElement,
-  chevron: HTMLElement,
-  width: number,
-  zoom: number,
-) {
-  const cardStyle = getComputedStyle(card);
-  const rowStyle = getComputedStyle(row);
-  const chevronStyle = getComputedStyle(chevron);
-  const contentHeight = px(chevronStyle.height);
-  const rowHeight =
-    px(rowStyle.height) ||
-    Math.max(
-      px(rowStyle.minHeight),
-      px(rowStyle.paddingTop) + contentHeight + px(rowStyle.paddingBottom),
-    );
-  const height =
-    px(cardStyle.borderTopWidth) +
-    px(cardStyle.paddingTop) +
-    rowHeight +
-    px(cardStyle.paddingBottom) +
-    px(cardStyle.borderBottomWidth);
-  card.getBoundingClientRect = () => ({ width: width * zoom, height: height * zoom }) as DOMRect;
-  return {
-    rect: {
-      width: card.getBoundingClientRect().width,
-      height: card.getBoundingClientRect().height,
-    },
-    insets: {
-      top:
-        (px(cardStyle.borderTopWidth) + px(cardStyle.paddingTop) + px(rowStyle.paddingTop)) * zoom,
-      right:
-        (px(cardStyle.borderRightWidth) + px(cardStyle.paddingRight) + px(rowStyle.paddingRight)) *
-        zoom,
-      bottom:
-        (px(cardStyle.borderBottomWidth) +
-          px(cardStyle.paddingBottom) +
-          px(rowStyle.paddingBottom)) *
-        zoom,
-      left:
-        (px(cardStyle.borderLeftWidth) + px(cardStyle.paddingLeft) + px(rowStyle.paddingLeft)) *
-        zoom,
-    },
-    chevron: { width: px(chevronStyle.width) * zoom, height: contentHeight * zoom },
-  };
-}
-
 describe('ChatMessage user message text rendering', () => {
   it('renders multi-line text with no leading whitespace before the first character', () => {
     const { container } = render(ChatMessage, {
@@ -276,6 +207,53 @@ describe('ChatMessage user message text rendering', () => {
     const spans = Array.from(container.querySelectorAll('span.whitespace-pre-wrap'));
     expect(spans.some((el) => el.textContent === 'see ')).toBe(true);
     expect(spans.some((el) => el.textContent === ' now')).toBe(true);
+  });
+
+  it('renders a multi-word @note[id:title] mention as one chip that opens the note by id', async () => {
+    dispatchMock.mockClear();
+    const { container } = render(ChatMessage, {
+      props: {
+        message: userTextMessage('@note[n-123:Meeting with Andre Oct 30 2026] Read the transcript'),
+        workspace: { id: 'ws-1' } as any,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Meeting with Andre Oct 30 2026' }));
+
+    expect(dispatchMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'workspaceNavigation/openWorkspaceNote',
+        payload: ['ws-1', 'n-123', expect.anything()],
+      }),
+    );
+    const spans = Array.from(container.querySelectorAll('span.whitespace-pre-wrap'));
+    expect(spans.some((el) => el.textContent === ' Read the transcript')).toBe(true);
+  });
+
+  it('opens a cross-workspace @note mention through its workspace-qualified link', async () => {
+    render(ChatMessage, {
+      props: {
+        message: userTextMessage('@note[ws-2/n-9:Other plan]'),
+        workspace: { id: 'ws-1' } as any,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Other plan' }));
+
+    expect(handleLinkMock).toHaveBeenCalledWith(
+      'intent://local/ws-2/note/n-9',
+      expect.objectContaining({ workspaceId: 'ws-1' }),
+    );
+  });
+
+  it('keeps a title containing ":" and "/" whole inside a note chip', () => {
+    render(ChatMessage, {
+      props: {
+        message: userTextMessage('@note[n-5:Call: ASG / Andre]'),
+        workspace: { id: 'ws-1' } as any,
+      },
+    });
+    expect(screen.getByRole('button', { name: 'Call: ASG / Andre' })).toBeTruthy();
   });
 
   it('opens an inline file mention at its captured line', async () => {
@@ -440,45 +418,6 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     await Promise.resolve();
 
     expect(screen.getByTestId('agent-avatar').getAttribute('data-avatar-state')).toBe('running');
-  });
-
-  it.each([
-    { width: 450, zoom: 1 },
-    { width: 220, zoom: 1 },
-    { width: 450, zoom: 2 },
-    { width: 220, zoom: 2 },
-  ])('matches finished event geometry at $width px and $zoom× zoom', ({ width, zoom }) => {
-    const style = installGeometryUtilities();
-    const view = render(ChatMessage, {
-      props: {
-        message: userMessage({
-          type: 'agent_message',
-          fromAgentId: 'agent-sender-geometry',
-          fromAgentName: 'Coordinator with a deliberately long sender name',
-        }),
-      },
-    });
-    const agentCard = screen.getByTestId('user-message-surface');
-    const agentRow = screen.getByTestId('agent-message-disclosure-header');
-    const agentChevron = screen.getByTestId('agent-message-chevron-column');
-    agentCard.setAttribute('data-geometry-card', '');
-    const eventCard = document.createElement('div');
-    eventCard.setAttribute('data-geometry-card', '');
-    eventCard.className = SUBSCRIPTION_CARD_SURFACE_CLASS;
-    const eventRow = document.createElement('div');
-    eventRow.className = SUBSCRIPTION_DISCLOSURE_ROW_CLASS;
-    const eventChevron = document.createElement('span');
-    eventChevron.className = 'h-6 w-6';
-    eventRow.append(eventChevron);
-    eventCard.append(eventRow);
-    view.container.append(eventCard);
-    expect(measureCollapsedCard(agentCard, agentRow, agentChevron, width, zoom)).toEqual(
-      measureCollapsedCard(eventCard, eventRow, eventChevron, width, zoom),
-    );
-    expect(measureCollapsedCard(agentCard, agentRow, agentChevron, width, zoom).rect.height).toBe(
-      38 * zoom,
-    );
-    style.remove();
   });
 
   it('keeps attributed content expanded-only without hiding plain user messages', async () => {
@@ -1814,4 +1753,154 @@ describe('ChatMessage script monitor wake attribution', () => {
       expect(onEditSubmit).not.toHaveBeenCalled();
     },
   );
+});
+
+// Backend38c1aa82 actual ACP prompts and stored typed wakes, including retained history.
+describe('actual GitLab polling wake messages', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    agentSelectorHarness.reset();
+  });
+  for (const fixture of pollingProducer.fixtures) {
+    for (const [index, wake] of fixture.wakes.entries()) {
+      it.each([false, true])(`${fixture.terminal} wake ${index}, retained=%s`, async (retained) => {
+        const message: AgentMessage = {
+          id: 'actual-producer-wake',
+          role: 'user',
+          timestamp: new Date(),
+          contentBlocks: structuredClone(wake.content) as AgentMessage['contentBlocks'],
+          ...(retained ? {} : { metadata: wake.metadata }),
+        };
+        const stored = structuredClone(message);
+        render(ChatMessage, { props: { message } });
+        const toggle = screen.getByTestId('automated-wake-toggle');
+        await fireEvent.click(toggle);
+        expect(toggle.getAttribute('aria-expanded')).toBe('true');
+        const body = screen.getByTestId('automated-wake-details').textContent;
+        expect(body).not.toContain('[MR monitor ');
+        expect(body).toContain(wake.content[0].text.replace(/^\[MR monitor [^\]]+\]\s*/, ''));
+        expect(screen.getByTestId('pr-monitor-wake-chip').getAttribute('aria-label')).toContain(
+          'gitlab.test/forge',
+        );
+        await fireEvent.click(screen.getByTestId('pr-monitor-wake-chip'));
+        expect(handleLinkMock).toHaveBeenCalledWith(
+          wake.metadata.url,
+          expect.objectContaining({ forceExternal: true }),
+        );
+        expect(message).toEqual(stored);
+      });
+    }
+  }
+});
+
+describe('ChatMessage pending own-send sender row', () => {
+  // A pending (display-only) row of the viewer's own send carries neither the
+  // daemon's `author` projection nor its sender preamble, so without a
+  // prediction its author row pops in when the confirmed row replaces it.
+  const self = {
+    principalId: 'principal-guest',
+    login: 'octocat',
+    displayName: 'The Octocat',
+    avatarUrl: 'https://avatars.example/octocat.png',
+  };
+  const workspace = () =>
+    createMockWorkspace({
+      memberCount: 2,
+      myRole: 'collaborator',
+      ownerPrincipalId: 'principal-owner',
+    });
+  const confirmedGuestRow = (): AgentMessage => ({
+    ...userMessage(
+      { fromPrincipalId: self.principalId },
+      'Message from @octocat (The Octocat), a collaborator (guest) of this workspace — not the workspace owner.\n\nhello team',
+    ),
+    author: self,
+  });
+  const pendingRow = (): AgentMessage => userTextMessage('hello team');
+  const prediction = () =>
+    predictOwnSenderAttribution({
+      hostRole: 'guest',
+      principal: {
+        id: self.principalId,
+        login: self.login,
+        displayName: self.displayName,
+        avatarUrl: self.avatarUrl,
+      },
+      workspace: workspace(),
+    });
+  const chipSnapshot = () => {
+    const chip = screen.getByTestId('user-message-author');
+    return {
+      principalId: chip.getAttribute('data-principal-id'),
+      senderRole: chip.getAttribute('data-sender-role'),
+      ariaLabel: chip.getAttribute('aria-label'),
+      name: screen.getByTestId('user-message-author-name').textContent,
+      role: screen.queryByTestId('user-message-author-role')?.textContent ?? null,
+      avatar: (screen.getByTestId('user-message-author-avatar') as HTMLImageElement).src,
+    };
+  };
+
+  it('renders the same author row on the pending row as on its confirmed row', () => {
+    const confirmed = render(ChatMessage, {
+      props: {
+        message: confirmedGuestRow(),
+        workspace: workspace(),
+        ownPrincipalId: self.principalId,
+      },
+    });
+    const expected = chipSnapshot();
+    expect(screen.getByText('hello team')).toBeTruthy();
+    confirmed.unmount();
+
+    render(ChatMessage, {
+      props: {
+        message: pendingRow(),
+        workspace: workspace(),
+        ownPrincipalId: self.principalId,
+        pendingSender: prediction(),
+      },
+    });
+    expect(chipSnapshot()).toEqual(expected);
+    expect(screen.getByText('hello team')).toBeTruthy();
+  });
+
+  it('renders no author row on a pending row without a prediction', () => {
+    render(ChatMessage, {
+      props: { message: pendingRow(), workspace: workspace(), ownPrincipalId: self.principalId },
+    });
+    expect(screen.queryByTestId('user-message-author')).toBeNull();
+  });
+
+  it('keeps the agent sender header, not the prediction, on agent-to-agent rows', () => {
+    render(ChatMessage, {
+      props: {
+        message: userMessage({
+          type: 'agent_message',
+          fromAgentId: 'a-1',
+          fromAgentName: 'Sender',
+        }),
+        workspace: workspace(),
+        ownPrincipalId: self.principalId,
+        pendingSender: prediction(),
+      },
+    });
+    expect(screen.getByTestId('agent-message-attribution')).toBeTruthy();
+    expect(screen.queryByTestId('user-message-author')).toBeNull();
+  });
+
+  it("does not attribute the owner's own pending row", () => {
+    render(ChatMessage, {
+      props: {
+        message: { ...pendingRow(), author: { ...self, principalId: 'principal-owner' } },
+        workspace: workspace(),
+        ownPrincipalId: 'principal-owner',
+        pendingSender: predictOwnSenderAttribution({
+          hostRole: 'owner',
+          principal: { id: 'principal-owner', login: 'owner', displayName: null, avatarUrl: null },
+          workspace: workspace(),
+        }),
+      },
+    });
+    expect(screen.queryByTestId('user-message-author')).toBeNull();
+  });
 });

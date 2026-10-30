@@ -123,7 +123,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:action-menu:
             "Requires access"
       <span class="sr-only" id="c<id>-locked-reason">
         "Requires access"
-      <div class="-mx-1 bg-border h-px my-1.5" data-dropdown-menu-separator="" data-slot="menu-separator" id="bits-<id>" role="group">
+      <div class="-mx-1 border-border border-t my-1.5" data-dropdown-menu-separator="" data-slot="menu-separator" id="bits-<id>" role="group">
       <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:focus:text-danger data-[destructive]:text-danger data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-action-id="delete" data-destructive="" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
         <span aria-hidden="true" class="first-line-icon w-(--menu-icon-size)" data-slot="menu-item-leading">
           <svg aria-hidden="true" class="size-4 text-current" data-icon="trash" data-weight="regular" role="img">
@@ -5113,15 +5113,15 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
               "Chip on left"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="chip-on-left" data-catalog-preview="ask-user-questions">
             <div class="flex justify-center w-full" data-catalog-rendered-state="left-chip trailing-action" data-catalog-renderer-fixture="chip-on-left">
-              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full" data-slot="ask-user-questions">
+              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full wrap-anywhere" data-slot="ask-user-questions">
                 <div class="flex items-center pb-2 pt-3.5 px-5 sm:pt-4 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 1"
                 <div>
-                  <div class="grid">
-                    <div class="col-start-1 flex flex-col gap-2 pb-2.5 px-5 row-start-1 sm:pb-3" data-animated-height-target="">
+                  <div class="grid grid-cols-1">
+                    <div class="col-start-1 flex flex-col gap-2 min-w-0 pb-2.5 px-5 row-start-1 sm:pb-3" data-animated-height-target="">
                       <div class="flex flex-wrap gap-x-2 gap-y-1 items-start min-w-0" data-slot="ask-user-questions-header">
-                        <h3 class="basis-48 break-words font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-order-title">
+                        <h3 class="basis-48 font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-order-title">
                           "Choose the first step"
                       <div aria-labelledby="c<id>-order-title" class="-mx-3 flex flex-col gap-0.5 relative" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
@@ -5129,7 +5129,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                           <span class="inline-flex items-center justify-center relative shrink-0 size-7">
                             <span aria-hidden="true" class="absolute duration-spring-fast ease-spring-fast inline-flex items-center justify-center motion-reduce:transition-none size-5 text-muted-foreground text-xs transition-[opacity,font-weight]">
                               "1"
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Speed"
                             <span aria-hidden="true">
@@ -5143,7 +5143,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                           <span class="inline-flex items-center justify-center relative shrink-0 size-7">
                             <span aria-hidden="true" class="absolute duration-spring-fast ease-spring-fast inline-flex items-center justify-center motion-reduce:transition-none size-5 text-muted-foreground text-xs transition-[opacity,font-weight]">
                               "2"
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Quality"
                             <span aria-hidden="true">
@@ -5157,7 +5157,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                           <span class="inline-flex items-center justify-center relative shrink-0 size-7">
                             <span aria-hidden="true" class="absolute duration-spring-fast ease-spring-fast inline-flex items-center justify-center motion-reduce:transition-none size-5 text-muted-foreground text-xs transition-[opacity,font-weight]">
                               "3"
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Balance"
                             <span aria-hidden="true">
@@ -5230,20 +5230,20 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
               "Controlled"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="controlled" data-catalog-preview="ask-user-questions">
             <div class="flex justify-center w-full" data-catalog-rendered-state="controlled-index controlled-answers" data-catalog-renderer-fixture="controlled">
-              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full" data-slot="ask-user-questions">
+              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full wrap-anywhere" data-slot="ask-user-questions">
                 <div class="flex items-center pb-2 pt-3.5 px-5 sm:pt-4 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 2"
                 <div>
-                  <div class="grid">
-                    <div class="col-start-1 flex flex-col gap-2 pb-1 px-5 row-start-1" data-animated-height-target="">
+                  <div class="grid grid-cols-1">
+                    <div class="col-start-1 flex flex-col gap-2 min-w-0 pb-1 px-5 row-start-1" data-animated-height-target="">
                       <div class="flex flex-wrap gap-x-2 gap-y-1 items-start min-w-0" data-slot="ask-user-questions-header">
-                        <h3 class="basis-48 break-words font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-priority-title">
+                        <h3 class="basis-48 font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-priority-title">
                           "What should we prioritize?"
                       <div aria-labelledby="c<id>-priority-title" class="-mx-3 flex flex-col gap-0.5 relative" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="0" data-state="unchecked" role="radio" tabindex="0">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Speed"
                             <span aria-hidden="true">
@@ -5256,7 +5256,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                               <svg aria-hidden="true" class="size-3.5">
                                 <path>
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="1" data-state="unchecked" role="radio" tabindex="-1">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Quality"
                             <span aria-hidden="true">
@@ -5269,7 +5269,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                               <svg aria-hidden="true" class="size-3.5">
                                 <path>
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="2" data-state="unchecked" role="radio" tabindex="-1">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Balance"
                             <span aria-hidden="true">
@@ -5359,15 +5359,15 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
               "Free text"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="free-text" data-catalog-preview="ask-user-questions">
             <div class="flex justify-center w-full" data-catalog-rendered-state="multiline command-enter auto-focus" data-catalog-renderer-fixture="free-text">
-              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full" data-slot="ask-user-questions">
+              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full wrap-anywhere" data-slot="ask-user-questions">
                 <div class="flex items-center pb-2 pt-3.5 px-5 sm:pt-4 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 1"
                 <div>
-                  <div class="grid">
-                    <div class="col-start-1 flex flex-col gap-2 pb-1 px-5 row-start-1" data-animated-height-target="">
+                  <div class="grid grid-cols-1">
+                    <div class="col-start-1 flex flex-col gap-2 min-w-0 pb-1 px-5 row-start-1" data-animated-height-target="">
                       <div class="flex flex-wrap gap-x-2 gap-y-1 items-start min-w-0" data-slot="ask-user-questions-header">
-                        <h3 class="basis-48 break-words font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-context-title">
+                        <h3 class="basis-48 font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-context-title">
                           "What context should we know?"
                       <div aria-labelledby="c<id>-context-title" class="-mx-3 cursor-text duration-spring-fast ease-spring-fast focus-within:bg-card! focus-within:ring-1 focus-within:ring-border focus-within:ring-inset hover:bg-hover min-h-[76px] motion-reduce:transition-none mt-1 px-3 py-2.5 relative rounded-(--radius-small) transition-colors" role="group" tokens=["--surface-2"]>
                         <textarea aria-labelledby="c<id>-context-title" class="aria-invalid:border-danger bg-transparent block border-0 border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) focus-visible:outline-none focus-visible:shadow-none hover:bg-transparent min-h-0! min-h-20 motion-reduce:transition-none overflow-hidden p-0 placeholder:text-muted-foreground read-only:text-muted-foreground resize-none rounded-none shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="textarea">
@@ -5449,15 +5449,15 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
               "Free text validation"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="free-text-validation" data-catalog-preview="ask-user-questions">
             <div class="flex justify-center w-full" data-catalog-rendered-state="invalid error valid" data-catalog-renderer-fixture="free-text-validation">
-              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full" data-slot="ask-user-questions">
+              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full wrap-anywhere" data-slot="ask-user-questions">
                 <div class="flex items-center pb-2 pt-3.5 px-5 sm:pt-4 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 1"
                 <div>
-                  <div class="grid">
-                    <div class="col-start-1 flex flex-col gap-2 pb-1 px-5 row-start-1" data-animated-height-target="">
+                  <div class="grid grid-cols-1">
+                    <div class="col-start-1 flex flex-col gap-2 min-w-0 pb-1 px-5 row-start-1" data-animated-height-target="">
                       <div class="flex flex-wrap gap-x-2 gap-y-1 items-start min-w-0" data-slot="ask-user-questions-header">
-                        <h3 class="basis-48 break-words font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-name-title">
+                        <h3 class="basis-48 font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-name-title">
                           "Name this project"
                       <div aria-labelledby="c<id>-name-title" class="-mx-3 cursor-text duration-spring-fast ease-spring-fast focus-within:bg-card! focus-within:ring-1 focus-within:ring-border focus-within:ring-inset hover:bg-hover min-h-10 motion-reduce:transition-none mt-1 px-3 py-2.5 relative rounded-(--radius-small) transition-colors" role="group" tokens=["--surface-2"]>
                         <textarea aria-labelledby="c<id>-name-title" class="aria-invalid:border-danger bg-transparent block border-0 border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) focus-visible:outline-none focus-visible:shadow-none hover:bg-transparent min-h-0! min-h-20 motion-reduce:transition-none overflow-hidden p-0 placeholder:text-muted-foreground read-only:text-muted-foreground resize-none rounded-none shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="textarea">
@@ -5539,20 +5539,20 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
               "Multi-select"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="multi-select" data-catalog-preview="ask-user-questions">
             <div class="flex justify-center w-full" data-catalog-rendered-state="multiple-selection continue finish" data-catalog-renderer-fixture="multi-select">
-              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full" data-slot="ask-user-questions">
+              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full wrap-anywhere" data-slot="ask-user-questions">
                 <div class="flex items-center pb-2 pt-3.5 px-5 sm:pt-4 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 1"
                 <div>
-                  <div class="grid">
-                    <div class="col-start-1 flex flex-col gap-2 pb-1 px-5 row-start-1" data-animated-height-target="">
+                  <div class="grid grid-cols-1">
+                    <div class="col-start-1 flex flex-col gap-2 min-w-0 pb-1 px-5 row-start-1" data-animated-height-target="">
                       <div class="flex flex-wrap gap-x-2 gap-y-1 items-start min-w-0" data-slot="ask-user-questions-header">
-                        <h3 class="basis-48 break-words font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-features-title">
+                        <h3 class="basis-48 font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-features-title">
                           "Which features matter?"
                       <div aria-labelledby="c<id>-features-title" class="-mx-3 flex flex-col gap-0.5 relative" role="group">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="0" data-state="unchecked" role="checkbox" tabindex="0">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Speed"
                             <span aria-hidden="true">
@@ -5562,7 +5562,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                             <span aria-hidden="true" class="absolute border border-border duration-spring-fast ease-spring-fast inline-flex items-center justify-center motion-reduce:transition-none rounded-(--radius-small) size-5 text-muted-foreground text-xs transition-[opacity,font-weight]">
                               "1"
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="1" data-state="unchecked" role="checkbox" tabindex="-1">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Quality"
                             <span aria-hidden="true">
@@ -5572,7 +5572,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                             <span aria-hidden="true" class="absolute border border-border duration-spring-fast ease-spring-fast inline-flex items-center justify-center motion-reduce:transition-none rounded-(--radius-small) size-5 text-muted-foreground text-xs transition-[opacity,font-weight]">
                               "2"
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="2" data-state="unchecked" role="checkbox" tabindex="-1">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Balance"
                             <span aria-hidden="true">
@@ -5659,20 +5659,20 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
               "Multiple questions"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="multiple-questions" data-catalog-preview="ask-user-questions">
             <div class="flex justify-center w-full" data-catalog-rendered-state="progress advance finish" data-catalog-renderer-fixture="multiple-questions">
-              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full" data-slot="ask-user-questions">
+              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full wrap-anywhere" data-slot="ask-user-questions">
                 <div class="flex items-center pb-2 pt-3.5 px-5 sm:pt-4 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 2"
                 <div>
-                  <div class="grid">
-                    <div class="col-start-1 flex flex-col gap-2 pb-1 px-5 row-start-1" data-animated-height-target="">
+                  <div class="grid grid-cols-1">
+                    <div class="col-start-1 flex flex-col gap-2 min-w-0 pb-1 px-5 row-start-1" data-animated-height-target="">
                       <div class="flex flex-wrap gap-x-2 gap-y-1 items-start min-w-0" data-slot="ask-user-questions-header">
-                        <h3 class="basis-48 break-words font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-priority-title">
+                        <h3 class="basis-48 font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-priority-title">
                           "What should we prioritize?"
                       <div aria-labelledby="c<id>-priority-title" class="-mx-3 flex flex-col gap-0.5 relative" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="0" data-state="unchecked" role="radio" tabindex="0">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Speed"
                             <span aria-hidden="true">
@@ -5685,7 +5685,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                               <svg aria-hidden="true" class="size-3.5">
                                 <path>
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="1" data-state="unchecked" role="radio" tabindex="-1">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Quality"
                             <span aria-hidden="true">
@@ -5698,7 +5698,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                               <svg aria-hidden="true" class="size-3.5">
                                 <path>
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="2" data-state="unchecked" role="radio" tabindex="-1">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Balance"
                             <span aria-hidden="true">
@@ -5787,20 +5787,20 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
               "Playground"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="playground" data-catalog-preview="ask-user-questions">
             <div class="flex justify-center w-full" data-catalog-rendered-state="single-select digit-shortcuts" data-catalog-renderer-fixture="playground">
-              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full" data-slot="ask-user-questions">
+              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full wrap-anywhere" data-slot="ask-user-questions">
                 <div class="flex items-center pb-2 pt-3.5 px-5 sm:pt-4 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 1"
                 <div>
-                  <div class="grid">
-                    <div class="col-start-1 flex flex-col gap-2 pb-2.5 px-5 row-start-1 sm:pb-3" data-animated-height-target="">
+                  <div class="grid grid-cols-1">
+                    <div class="col-start-1 flex flex-col gap-2 min-w-0 pb-2.5 px-5 row-start-1 sm:pb-3" data-animated-height-target="">
                       <div class="flex flex-wrap gap-x-2 gap-y-1 items-start min-w-0" data-slot="ask-user-questions-header">
-                        <h3 class="basis-48 break-words font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-priority-title">
+                        <h3 class="basis-48 font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-priority-title">
                           "What should we prioritize?"
                       <div aria-labelledby="c<id>-priority-title" class="-mx-3 flex flex-col gap-0.5 relative" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="0" data-state="unchecked" role="radio" tabindex="0">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Speed"
                             <span aria-hidden="true">
@@ -5813,7 +5813,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                               <svg aria-hidden="true" class="size-3.5">
                                 <path>
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="1" data-state="unchecked" role="radio" tabindex="-1">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Quality"
                             <span aria-hidden="true">
@@ -5826,7 +5826,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                               <svg aria-hidden="true" class="size-3.5">
                                 <path>
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="2" data-state="unchecked" role="radio" tabindex="-1">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Balance"
                             <span aria-hidden="true">
@@ -5902,20 +5902,20 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
               "Skippable"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="skippable" data-catalog-preview="ask-user-questions">
             <div class="flex justify-center w-full" data-catalog-rendered-state="skip callback advance" data-catalog-renderer-fixture="skippable">
-              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full" data-slot="ask-user-questions">
+              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full wrap-anywhere" data-slot="ask-user-questions">
                 <div class="flex items-center pb-2 pt-3.5 px-5 sm:pt-4 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 2"
                 <div>
-                  <div class="grid">
-                    <div class="col-start-1 flex flex-col gap-2 pb-1 px-5 row-start-1" data-animated-height-target="">
+                  <div class="grid grid-cols-1">
+                    <div class="col-start-1 flex flex-col gap-2 min-w-0 pb-1 px-5 row-start-1" data-animated-height-target="">
                       <div class="flex flex-wrap gap-x-2 gap-y-1 items-start min-w-0" data-slot="ask-user-questions-header">
-                        <h3 class="basis-48 break-words font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-priority-title">
+                        <h3 class="basis-48 font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-priority-title">
                           "What should we prioritize?"
                       <div aria-labelledby="c<id>-priority-title" class="-mx-3 flex flex-col gap-0.5 relative" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="0" data-state="unchecked" role="radio" tabindex="0">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Speed"
                             <span aria-hidden="true">
@@ -5928,7 +5928,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                               <svg aria-hidden="true" class="size-3.5">
                                 <path>
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="1" data-state="unchecked" role="radio" tabindex="-1">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Quality"
                             <span aria-hidden="true">
@@ -5941,7 +5941,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                               <svg aria-hidden="true" class="size-3.5">
                                 <path>
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="2" data-state="unchecked" role="radio" tabindex="-1">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Balance"
                             <span aria-hidden="true">
@@ -6030,20 +6030,20 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
               "Stacked layout"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="stacked-layout" data-catalog-preview="ask-user-questions">
             <div class="flex justify-center w-full" data-catalog-rendered-state="stacked long-description" data-catalog-renderer-fixture="stacked-layout">
-              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full" data-slot="ask-user-questions">
+              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full wrap-anywhere" data-slot="ask-user-questions">
                 <div class="flex items-center pb-2 pt-3.5 px-5 sm:pt-4 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 1"
                 <div>
-                  <div class="grid">
-                    <div class="col-start-1 flex flex-col gap-2 pb-2.5 px-5 row-start-1 sm:pb-3" data-animated-height-target="">
+                  <div class="grid grid-cols-1">
+                    <div class="col-start-1 flex flex-col gap-2 min-w-0 pb-2.5 px-5 row-start-1 sm:pb-3" data-animated-height-target="">
                       <div class="flex flex-wrap gap-x-2 gap-y-1 items-start min-w-0" data-slot="ask-user-questions-header">
-                        <h3 class="basis-48 break-words font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-approach-title">
+                        <h3 class="basis-48 font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-approach-title">
                           "Choose an approach"
                       <div aria-labelledby="c<id>-approach-title" class="-mx-3 flex flex-col gap-0.5 relative" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-start min-h-14 px-3 py-2 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="stacked" data-proximity-index="0" data-state="unchecked" role="radio" tabindex="0">
-                          <span class="break-words flex flex-1 flex-col gap-0.5 min-w-0 type-caption">
+                          <span class="flex flex-1 flex-col gap-0.5 min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Speed"
                             <span class="text-muted-foreground text-xs">
@@ -6055,7 +6055,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                               <svg aria-hidden="true" class="size-3.5">
                                 <path>
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-start min-h-14 px-3 py-2 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="stacked" data-proximity-index="1" data-state="unchecked" role="radio" tabindex="-1">
-                          <span class="break-words flex flex-1 flex-col gap-0.5 min-w-0 type-caption">
+                          <span class="flex flex-1 flex-col gap-0.5 min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Quality"
                             <span class="text-muted-foreground text-xs">
@@ -6067,7 +6067,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                               <svg aria-hidden="true" class="size-3.5">
                                 <path>
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-start min-h-14 px-3 py-2 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="stacked" data-proximity-index="2" data-state="unchecked" role="radio" tabindex="-1">
-                          <span class="break-words flex flex-1 flex-col gap-0.5 min-w-0 type-caption">
+                          <span class="flex flex-1 flex-col gap-0.5 min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Balance"
                             <span class="text-muted-foreground text-xs">
@@ -6142,20 +6142,20 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
               "With other"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="with-other" data-catalog-preview="ask-user-questions">
             <div class="flex justify-center w-full" data-catalog-rendered-state="other enter shift-enter" data-catalog-renderer-fixture="with-other">
-              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full" data-slot="ask-user-questions">
+              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full wrap-anywhere" data-slot="ask-user-questions">
                 <div class="flex items-center pb-2 pt-3.5 px-5 sm:pt-4 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 1"
                 <div>
-                  <div class="grid">
-                    <div class="col-start-1 flex flex-col gap-2 pb-2.5 px-5 row-start-1 sm:pb-3" data-animated-height-target="">
+                  <div class="grid grid-cols-1">
+                    <div class="col-start-1 flex flex-col gap-2 min-w-0 pb-2.5 px-5 row-start-1 sm:pb-3" data-animated-height-target="">
                       <div class="flex flex-wrap gap-x-2 gap-y-1 items-start min-w-0" data-slot="ask-user-questions-header">
-                        <h3 class="basis-48 break-words font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-direction-title">
+                        <h3 class="basis-48 font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-direction-title">
                           "Choose a direction"
                       <div aria-labelledby="c<id>-direction-title" class="-mx-3 flex flex-col gap-0.5 relative" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="0" data-state="unchecked" role="radio" tabindex="0">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Speed"
                             <span aria-hidden="true">
@@ -6168,7 +6168,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                               <svg aria-hidden="true" class="size-3.5">
                                 <path>
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="1" data-state="unchecked" role="radio" tabindex="-1">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Quality"
                             <span aria-hidden="true">
@@ -9126,7 +9126,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
                       <span class="mt-1 text-center text-xs truncate w-full">
                         "workspace-map.png"
                       <div>
-                        <button aria-label="Remove workspace-map.png" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-foreground! bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast focus-visible:-outline-offset-1 font-inherit font-normal gap-1.5 group-focus-within/file:opacity-100 group-hover/file:opacity-100 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none opacity-0 p-0 px-0 py-0 right-1 rounded-(--radius-medium) rounded-full! shrink-0 size-(--control-height-compact) size-5! text-background! text-inherit top-1 transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                        <button aria-label="Remove workspace-map.png" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast focus-visible:-outline-offset-1 font-inherit font-normal gap-1.5 group-focus-within/file:opacity-100 group-hover/file:opacity-100 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none opacity-0 p-0 px-0 py-0 right-1 rounded-(--radius-medium) rounded-full! shrink-0 size-(--control-height-compact) size-5! surface-inverse top-1 transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                           <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                           <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                             <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
@@ -9140,7 +9140,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
                       <span class="mt-1 text-center text-xs truncate w-full">
                         "brief.pdf"
                       <div>
-                        <button aria-label="Remove brief.pdf" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-foreground! bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast focus-visible:-outline-offset-1 font-inherit font-normal gap-1.5 group-focus-within/file:opacity-100 group-hover/file:opacity-100 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none opacity-0 p-0 px-0 py-0 right-1 rounded-(--radius-medium) rounded-full! shrink-0 size-(--control-height-compact) size-5! text-background! text-inherit top-1 transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                        <button aria-label="Remove brief.pdf" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast focus-visible:-outline-offset-1 font-inherit font-normal gap-1.5 group-focus-within/file:opacity-100 group-hover/file:opacity-100 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none opacity-0 p-0 px-0 py-0 right-1 rounded-(--radius-medium) rounded-full! shrink-0 size-(--control-height-compact) size-5! surface-inverse top-1 transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                           <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                           <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                             <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
@@ -11570,11 +11570,11 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:sidebar:si
                   <output aria-label="Sidebar menu selections" class="sr-only">
                     "0"
                 <div class="[&_button[data-sidebar-action=search]]:outline-1 [&_button[data-sidebar-action=search]]:outline-focus-ring [&_button[data-sidebar-action=search]]:outline-offset-2 [&_button[data-sidebar-action=search]]:outline-solid p-3" data-catalog-rendered-state="keyboard-focus">
-                  <div class="flex items-center min-w-0 shrink-0 sidebar-search--header svelte-<scope>" data-sidebar-search="agents">
+                  <div class="flex items-center min-w-0 shrink-0 sidebar-search--header" data-sidebar-search="agents">
                     <span class="inline-flex" id="bits-<id>" tabindex="-1">
                       <div>
-                        <button aria-label="Search sidebar" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent bg-transparent! border-0 border-0! cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast expanded-card-action focus-visible:bg-muted! focus-visible:border-transparent! focus-visible:outline-solid font-inherit font-normal forced-colors:focus-visible:outline forced-colors:hover:outline gap-1.5 group/button hover:bg-muted/50! inline-flex isolate items-center justify-center motion-reduce:transition-none outline-none p-0 p-0! px-0 py-0 relative rounded-(--radius-medium) rounded-md! shadow-none! shrink-0 size-(--control-height-compact) text-foreground transition-colors type-caption whitespace-nowrap" data-delay-duration="300" data-sidebar-action="search" data-slot="button" data-state="closed" data-tooltip-trigger="" type="button">
-                          <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <button aria-label="Search sidebar" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-compact) text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-delay-duration="300" data-sidebar-action="search" data-slot="button" data-state="closed" data-tooltip-trigger="" type="button">
+                          <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                           <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                             <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                               <svg aria-hidden="true" class="shrink-0 size-3.5" data-sidebar-action-icon="search" role="img">
@@ -12059,7 +12059,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:tabs:tabs-
               <div data-catalog-rendered-state="default subtle selected proximity-hover keyboard-navigation disabled compact reduced-motion">
                 <div data-orientation="horizontal" data-tabs-root="" id="bits-<id>">
                   <div aria-label="Catalog tabs" aria-orientation="horizontal" class="bg-muted/40 gap-0.5 inline-flex isolate items-center max-w-full relative rounded-(--radius-medium) select-none" data-orientation="horizontal" data-tabs-list="" id="bits-<id>" role="tablist">
-                    <div aria-hidden="true" class="absolute bg-card dark:bg-surface-3 left-0 pointer-events-none shadow-(--elevation-raised) top-0" data-tabs-indicator="" tokens=["--radius-medium"]>
+                    <div aria-hidden="true" class="absolute bg-card dark:bg-surface-3 left-0 pointer-events-none shadow-(--elevation-raised) svelte-<scope> top-0" data-tabs-indicator="" data-variant="default" tokens=["--radius-medium"]>
                     <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
                     <button aria-controls="bits-<id>" aria-selected="true" class="bg-transparent border-0 cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast gap-1.5 h-(--control-height-medium) inline-flex items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) text-foreground transition-colors type-caption z-10" data-orientation="horizontal" data-size="default" data-state="active" data-tabs-trigger="" data-value="overview" data-variant="default" id="bits-<id>" role="tab" tabindex="0" type="button">
                       "Overview"
@@ -12208,6 +12208,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
     "app-error",
     "agent-failure",
     "agent-attention",
+    "agent-idle",
     "update-available",
     "update-downloading",
     "undoable-paused",
@@ -12252,7 +12253,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
             <h2 class="svelte-<scope>">
               "Toast notification styles"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="toast-state-matrix" data-catalog-preview="toast">
-            <div class="gap-6 grid min-w-0" data-catalog-rendered-state="success error warning info loading notify-error-details app-error agent-failure agent-attention update-available update-downloading undoable-paused multi-toast-stack clear-all live-actions light dark reduced-motion" data-catalog-renderer-fixture="toast-state-matrix">
+            <div class="gap-6 grid min-w-0" data-catalog-rendered-state="success error warning info loading notify-error-details app-error agent-failure agent-attention agent-idle update-available update-downloading undoable-paused multi-toast-stack clear-all live-actions light dark reduced-motion" data-catalog-renderer-fixture="toast-state-matrix">
               <div class="svelte-<scope> toast-preview-grid">
                 <section class="content-start gap-2 grid min-w-0" data-toast-preview="success">
                   <h3 class="font-medium text-muted-foreground text-xs">
@@ -12518,6 +12519,45 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
                                     <svg aria-hidden="true" role="img">
                                       <rect>
                                       <path>
+                <section class="content-start gap-2 grid min-w-0" data-toast-preview="agent-idle">
+                  <h3 class="font-medium text-muted-foreground text-xs">
+                    "Agent finished"
+                  <div class="svelte-<scope> toast-static" data-surface-level="3" id="toast-catalog-region-agent-idle" tokens=["--surface-3"]>
+                    <section aria-atomic="false" aria-label="Agent finished preview alt+T" aria-live="polite" aria-relevant="additions text" tabindex="-1">
+                      <ol class="group toaster" data-sonner-theme="light" data-sonner-toaster="true" data-toast-sized="" data-x-position="left" data-y-position="bottom" tabindex="-1">
+                        <li aria-atomic="true" aria-live="polite" class="bg-surface-3 group group-[.toaster]:text-foreground max-w-full min-w-0 shadow-surface-3 toast w-full" data-dismissible="true" data-expanded="false" data-front="true" data-index="0" data-invert="false" data-mounted="true" data-promise="false" data-removed="false" data-rich-colors="false" data-sonner-toast="" data-styled="false" data-swipe-out="false" data-swiped="false" data-swiping="false" data-toast-compact="0" data-type="default" data-visible="true" data-x-position="left" data-y-position="bottom" tabindex="0">
+                          <div class="flex gap-2.5 items-start min-w-0 pr-6 relative w-full" data-toast-layout="agent-idle">
+                            <span class="first-line-icon svelte-<scope> toast-first-line">
+                              <span aria-hidden="true" class="svelte-<scope> toast-glyph toast-glyph-success" data-toast-glyph="success">
+                                <svg aria-hidden="true" role="img">
+                                  <rect>
+                                  <path>
+                            <div class="flex-1 min-w-0">
+                              <div class="flex gap-1.5 items-start">
+                                <p class="flex items-baseline min-w-0 svelte-<scope> toast-title">
+                                  <span class="min-w-0 truncate" data-toast-title="">
+                                    "Builder finished"
+                                  <span class="font-normal ml-1 shrink-0 text-muted-foreground text-xs whitespace-nowrap" data-delay-duration="700" data-slot="tooltip-trigger" data-state="closed" data-tooltip-trigger="" id="bits-<id>" tabindex="0" type="button">
+                                    "6s"
+                              <p class="svelte-<scope> toast-workspace truncate" data-toast-workspace="">
+                                "Toast catalog"
+                              <p class="svelte-<scope> toast-description" data-toast-description="">
+                                "Restore the agent-finished toast"
+                              <div class="svelte-<scope> toast-actions">
+                                <div>
+                                  <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-compact) inline-flex isolate items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-primary-foreground toast-action transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                    <span aria-hidden="true" class="-z-10 absolute bg-primary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-0 motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                    <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                      <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                        "Switch To"
+                            <div>
+                              <button aria-label="Dismiss notification" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-compact) text-foreground toast-close-btn transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                  <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                    <svg aria-hidden="true" role="img">
+                                      <rect>
+                                      <path>
                 <section class="content-start gap-2 grid min-w-0" data-toast-preview="update-available">
                   <h3 class="font-medium text-muted-foreground text-xs">
                     "Update available"
@@ -12752,7 +12792,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toast:toas
                 <dt>
                   "States"
                 <dd class="mt-1 text-foreground">
-                  "success, error, warning, info, loading, notify-error-details, app-error, agent-failure, agent-attention, update-available, update-downloading, undoable-paused, multi-toast-stack, clear-all, live-actions, light, dark, reduced-motion"
+                  "success, error, warning, info, loading, notify-error-details, app-error, agent-failure, agent-attention, agent-idle, update-available, update-downloading, undoable-paused, multi-toast-stack, clear-all, live-actions, light, dark, reduced-motion"
               <div>
                 <dt>
                   "Themes"
@@ -16918,7 +16958,6 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                     <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                                       <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                         <svg aria-hidden="true" class="shrink-0 text-blue-500/80 w-3.5" data-icon="folder" data-weight="regular" role="img">
-                                          <rect>
                                           <path>
                                         <span class="truncate">
                                           "Documents"
@@ -16983,7 +17022,6 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                         <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                                           <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                             <svg aria-hidden="true" class="text-blue-500/80" data-icon="folder" data-weight="regular" role="img">
-                                              <rect>
                                               <path>
                                             <span class="flex-1 min-w-0 text-sm truncate">
                                               "Projects"
@@ -16994,7 +17032,6 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                         <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                                           <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                             <svg aria-hidden="true" class="text-warning-ink" data-icon="folder" data-weight="regular" role="img">
-                                              <rect>
                                               <path>
                                             <span class="flex-1 min-w-0 text-sm truncate">
                                               "design-system"
@@ -17037,7 +17074,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                               <div class="min-h-0 min-w-0 overflow-y-auto overscroll-contain pb-5 pt-5 px-6" data-slot="dialog-body">
                                 <div class="gap-4 grid grid-cols-1 min-w-0">
                                   <p class="type-body">
-                                    "This workspace's browser is currently driven by Studio Mac. It will be pinned to this client and all of its agent-owned tabs will move here. Page state is not preserved; tabs you opened yourself are unaffected."
+                                    "This workspace’s primary computer is Studio Mac. Switching here ends active desktop control and moves agent-owned browser tabs here. Page state is not preserved; tabs you opened yourself stay put."
                               <div class="dialog-actions flex flex-wrap gap-2 items-center justify-end m-0 min-w-0 pb-6 px-6 shrink-0 svelte-<scope>" data-slot="dialog-footer">
                                 <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
                                   <div class="flex items-center" data-slot="form-actions-destructive">
@@ -17644,7 +17681,6 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                         <div class="first-line-icon type-caption" data-slot="list-row-leading">
                                           <span class="bg-accent flex items-center justify-center rounded size-5 text-foreground">
                                             <svg aria-hidden="true" class="size-3.5" data-icon="folder" data-weight="regular" role="img">
-                                              <rect>
                                               <path>
                                         <div class="flex-1 min-w-0">
                                           <div class="flex gap-2 items-baseline min-w-0">
@@ -17761,15 +17797,16 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                             <div class="gap-4 grid grid-cols-1 min-w-0">
                               <div class="min-w-0 release-notes-body svelte-<scope>">
                                 <div class="markdown-viewer static-content svelte-<scope>" role="group">
-                                  <h2>
-                                    "Highlights"
-                                  <ul>
-                                    <li>
-                                      <p>
-                                        "Refined modal compositions"
-                                    <li>
-                                      <p>
-                                        "Improved keyboard navigation"
+                                  <div class="markdown-content">
+                                    <h2>
+                                      "Highlights"
+                                    <ul>
+                                      <li>
+                                        <p>
+                                          "Refined modal compositions"
+                                      <li>
+                                        <p>
+                                          "Improved keyboard navigation"
                           <div class="dialog-actions flex flex-wrap gap-2 items-center justify-end m-0 min-w-0 pb-6 px-6 shrink-0 svelte-<scope>" data-slot="dialog-footer">
                             <div>
                               <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-(--control-height-small) inline-flex isolate items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
@@ -18165,6 +18202,13 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                               "Terminal read access"
                                           <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                                             "Let agents list terminal sessions and read their output"
+                                      <div class="[&_.truncate]:whitespace-normal flex gap-3 items-start min-h-0 min-w-0 px-0 py-0" data-density="default" data-enabled="false" data-feature="desktopControl" data-slot="list-row" data-testid="harness-feature-state" role="listitem">
+                                        <div class="flex-1 min-w-0">
+                                          <div class="flex gap-2 items-baseline min-w-0">
+                                            <div class="min-w-0 text-foreground truncate type-caption" data-slot="list-row-title">
+                                              "Desktop control"
+                                          <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
+                                            "Make desktop control tools available to new agent sessions. Your permission is still required. This does not change remembered permission or stop active control."
                                       <div class="[&_.truncate]:whitespace-normal flex gap-3 items-start min-h-0 min-w-0 px-0 py-0" data-density="default" data-enabled="false" data-feature="richChatBlocks" data-slot="list-row" data-testid="harness-feature-state" role="listitem">
                                         <div class="flex-1 min-w-0">
                                           <div class="flex gap-2 items-baseline min-w-0">
@@ -18172,6 +18216,13 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                               "Rich chat blocks"
                                           <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                                             "Prompt agents to emit rich chat blocks (Mermaid diagrams, CLI commands, code references, navigation links)"
+                                      <div class="[&_.truncate]:whitespace-normal flex gap-3 items-start min-h-0 min-w-0 px-0 py-0" data-density="default" data-enabled="false" data-feature="secretRequests" data-slot="list-row" data-testid="harness-feature-state" role="listitem">
+                                        <div class="flex-1 min-w-0">
+                                          <div class="flex gap-2 items-baseline min-w-0">
+                                            <div class="min-w-0 text-foreground truncate type-caption" data-slot="list-row-title">
+                                              "Secret requests"
+                                          <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
+                                            "Let top-level agents ask you for secrets such as API keys, held in memory only for their commands. Also needs Host command execution"
                                       <div class="[&_.truncate]:whitespace-normal flex gap-3 items-start min-h-0 min-w-0 px-0 py-0" data-density="default" data-enabled="false" data-feature="attentionRequests" data-slot="list-row" data-testid="harness-feature-state" role="listitem">
                                         <div class="flex-1 min-w-0">
                                           <div class="flex gap-2 items-baseline min-w-0">
@@ -19009,7 +19060,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                     <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:focus:text-danger data-[destructive]:text-danger data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-destructive="" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
                       <span aria-hidden="true" class="first-line-icon w-(--menu-icon-size)" data-slot="menu-item-leading">
                       "Delete workspace"
-                    <div class="-mx-1 bg-border h-px my-1.5" data-dropdown-menu-separator="" data-slot="menu-separator" id="bits-<id>" role="group">
+                    <div class="-mx-1 border-border border-t my-1.5" data-dropdown-menu-separator="" data-slot="menu-separator" id="bits-<id>" role="group">
                     <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:focus:text-danger data-[destructive]:text-danger data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
                       <span aria-hidden="true" class="first-line-icon w-(--menu-icon-size)" data-slot="menu-item-leading">
                       "After separator"
@@ -19401,9 +19452,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                           "Settings"
                   <div data-bits-floating-content-wrapper="" id="bits-<id>">
-                    <div class="[&_kbd]:text-background/70 bg-foreground max-w-56 overlay-surface px-2 py-1 text-background text-balance tooltip-motion type-caption w-fit whitespace-pre-wrap z-(--layer-tooltip)" data-align="start" data-overlay-surface="true" data-side="bottom" data-slot="tooltip-content" data-state="instant-open" data-surface-level="3" data-tooltip-content="" role="tooltip" tabindex="-1" tokens=["--bits-floating-anchor-height","--bits-floating-anchor-width","--bits-floating-available-height","--bits-floating-available-width","--bits-floating-transform-origin"]>
+                    <div class="[&_kbd]:text-muted-foreground max-w-56 overlay-surface px-2 py-1 surface-inverse text-balance tooltip-motion type-caption w-fit whitespace-pre-wrap z-(--layer-tooltip)" data-align="start" data-overlay-surface="true" data-side="bottom" data-slot="tooltip-content" data-state="instant-open" data-surface-level="3" data-tooltip-content="" role="tooltip" tabindex="-1" tokens=["--bits-floating-anchor-height","--bits-floating-anchor-width","--bits-floating-available-height","--bits-floating-available-width","--bits-floating-transform-origin"]>
                       "Open settings"
-                      <div class="bg-foreground data-[side=bottom]:-translate-x-1/2 data-[side=bottom]:-translate-y-[calc(-50%_+_1px)] data-[side=left]:-translate-y-[calc(50%_-_3px)] data-[side=right]:translate-x-[calc(50%_+_2px)] data-[side=right]:translate-y-1/2 data-[side=top]:translate-x-1/2 data-[side=top]:translate-y-[calc(-50%_+_2px)] rotate-45 rounded-[2px] size-2.5 z-(--layer-tooltip)" data-side="bottom" id="bits-<id>">
+                      <div class="data-[side=bottom]:-translate-x-1/2 data-[side=bottom]:-translate-y-[calc(-50%_+_1px)] data-[side=left]:-translate-y-[calc(50%_-_3px)] data-[side=right]:translate-x-[calc(50%_+_2px)] data-[side=right]:translate-y-1/2 data-[side=top]:translate-x-1/2 data-[side=top]:translate-y-[calc(-50%_+_2px)] rotate-45 rounded-[2px] size-2.5 surface-inverse z-(--layer-tooltip)" data-side="bottom" id="bits-<id>">
               <article class="matrix-cell svelte-<scope>" data-catalog-rendered-state="tooltip multi-line">
                 <h3 class="font-medium text-muted-foreground type-caption">
                   "Tooltip — multi-line"
@@ -19415,9 +19466,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                           "Update workspaces"
                   <div data-bits-floating-content-wrapper="" id="bits-<id>">
-                    <div class="[&_kbd]:text-background/70 bg-foreground max-w-56 overlay-surface px-2 py-1 text-background text-balance tooltip-motion type-caption w-fit whitespace-pre-wrap z-(--layer-tooltip)" data-align="start" data-overlay-surface="true" data-side="bottom" data-slot="tooltip-content" data-state="instant-open" data-surface-level="3" data-tooltip-content="" role="tooltip" tabindex="-1" tokens=["--bits-floating-anchor-height","--bits-floating-anchor-width","--bits-floating-available-height","--bits-floating-available-width","--bits-floating-transform-origin"]>
+                    <div class="[&_kbd]:text-muted-foreground max-w-56 overlay-surface px-2 py-1 surface-inverse text-balance tooltip-motion type-caption w-fit whitespace-pre-wrap z-(--layer-tooltip)" data-align="start" data-overlay-surface="true" data-side="bottom" data-slot="tooltip-content" data-state="instant-open" data-surface-level="3" data-tooltip-content="" role="tooltip" tabindex="-1" tokens=["--bits-floating-anchor-height","--bits-floating-anchor-width","--bits-floating-available-height","--bits-floating-available-width","--bits-floating-transform-origin"]>
                       "This action updates every selected workspace and cannot be undone."
-                      <div class="bg-foreground data-[side=bottom]:-translate-x-1/2 data-[side=bottom]:-translate-y-[calc(-50%_+_1px)] data-[side=left]:-translate-y-[calc(50%_-_3px)] data-[side=right]:translate-x-[calc(50%_+_2px)] data-[side=right]:translate-y-1/2 data-[side=top]:translate-x-1/2 data-[side=top]:translate-y-[calc(-50%_+_2px)] rotate-45 rounded-[2px] size-2.5 z-(--layer-tooltip)" data-side="bottom" id="bits-<id>">
+                      <div class="data-[side=bottom]:-translate-x-1/2 data-[side=bottom]:-translate-y-[calc(-50%_+_1px)] data-[side=left]:-translate-y-[calc(50%_-_3px)] data-[side=right]:translate-x-[calc(50%_+_2px)] data-[side=right]:translate-y-1/2 data-[side=top]:translate-x-1/2 data-[side=top]:translate-y-[calc(-50%_+_2px)] rotate-45 rounded-[2px] size-2.5 surface-inverse z-(--layer-tooltip)" data-side="bottom" id="bits-<id>">
               <article class="matrix-cell svelte-<scope>" data-catalog-rendered-state="tooltip kbd zoom-200 reduced-motion">
                 <h3 class="font-medium text-muted-foreground type-caption">
                   "Tooltip — keyboard shortcut"
@@ -19429,12 +19480,12 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                           "Command menu"
                   <div data-bits-floating-content-wrapper="" id="bits-<id>">
-                    <div class="[&_kbd]:text-background/70 bg-foreground max-w-56 overlay-surface px-2 py-1 text-background text-balance tooltip-motion type-caption w-fit whitespace-pre-wrap z-(--layer-tooltip)" data-align="start" data-overlay-surface="true" data-side="bottom" data-slot="tooltip-content" data-state="instant-open" data-surface-level="3" data-tooltip-content="" role="tooltip" tabindex="-1" tokens=["--bits-floating-anchor-height","--bits-floating-anchor-width","--bits-floating-available-height","--bits-floating-available-width","--bits-floating-transform-origin"]>
+                    <div class="[&_kbd]:text-muted-foreground max-w-56 overlay-surface px-2 py-1 surface-inverse text-balance tooltip-motion type-caption w-fit whitespace-pre-wrap z-(--layer-tooltip)" data-align="start" data-overlay-surface="true" data-side="bottom" data-slot="tooltip-content" data-state="instant-open" data-surface-level="3" data-tooltip-content="" role="tooltip" tabindex="-1" tokens=["--bits-floating-anchor-height","--bits-floating-anchor-width","--bits-floating-available-height","--bits-floating-available-width","--bits-floating-transform-origin"]>
                       <span class="flex gap-2 items-center">
                         "Open command menu"
                         <kbd class="font-normal leading-none shrink-0 text-shortcut-foreground type-caption" data-slot="shortcut-chip" tokens=["--font-ui"]>
                           "⌘K"
-                      <div class="bg-foreground data-[side=bottom]:-translate-x-1/2 data-[side=bottom]:-translate-y-[calc(-50%_+_1px)] data-[side=left]:-translate-y-[calc(50%_-_3px)] data-[side=right]:translate-x-[calc(50%_+_2px)] data-[side=right]:translate-y-1/2 data-[side=top]:translate-x-1/2 data-[side=top]:translate-y-[calc(-50%_+_2px)] rotate-45 rounded-[2px] size-2.5 z-(--layer-tooltip)" data-side="bottom" id="bits-<id>">
+                      <div class="data-[side=bottom]:-translate-x-1/2 data-[side=bottom]:-translate-y-[calc(-50%_+_1px)] data-[side=left]:-translate-y-[calc(50%_-_3px)] data-[side=right]:translate-x-[calc(50%_+_2px)] data-[side=right]:translate-y-1/2 data-[side=top]:translate-x-1/2 data-[side=top]:translate-y-[calc(-50%_+_2px)] rotate-45 rounded-[2px] size-2.5 surface-inverse z-(--layer-tooltip)" data-side="bottom" id="bits-<id>">
           <details class="fixture-inspector svelte-<scope> text-muted-foreground text-xs">
             <summary class="svelte-<scope>">
               "Fixture details"
@@ -19512,7 +19563,6 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-fam
                   <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                     <div class="first-line-icon type-caption" data-slot="list-row-leading">
                       <svg aria-hidden="true" class="size-4 text-muted-foreground" data-icon="folder" data-weight="regular" role="img">
-                        <rect>
                         <path>
                     <div class="flex-1 min-w-0">
                       <div class="flex gap-2 items-baseline min-w-0">
@@ -19531,8 +19581,10 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-fam
                       <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden p-1 rounded-full shrink-0 size-6 text-[12px] text-foreground transition-[background-color,color,box-shadow] whitespace-nowrap" data-color="gray" data-size="default" data-slot="badge" data-variant="solid" tokens=["--accent"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           <svg aria-hidden="true" class="size-3" data-icon="robot" data-weight="regular" role="img">
-                            <rect>
                             <path>
+                            <rect>
+                            <circle>
+                            <circle>
                     <div class="flex-1 min-w-0">
                       <div class="flex gap-2 items-baseline min-w-0">
                         <div class="min-w-0 text-foreground truncate type-caption" data-slot="list-row-title">
@@ -19720,8 +19772,10 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-fam
                         <button aria-current="page" class="[&>svg]:shrink-0 [&>svg]:size-4 aria-disabled:opacity-50 aria-disabled:pointer-events-none cursor-pointer data-[active=true]:text-foreground data-[proximity-active=true]:text-foreground disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:-outline-offset-1 focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:shadow-none font-normal gap-2 group-focus-within/menu-item:pr-(--row-gutter-hover) group-hover/menu-item:pr-(--row-gutter-hover) items-center justify-start min-h-(--control-height-small) motion-reduce:transition-none overflow-hidden peer/menu-button px-2 py-1 relative rounded-(--radius-row) select-none svelte-<scope> text-left transition-[padding] type-caption w-full z-10" data-active="true" data-proximity-active="false" data-sidebar-index="0" data-sidebar="menu-button" data-size="default" data-slot="sidebar-menu-button" data-status="active" tabindex="0">
                           <span class="[&>svg]:duration-spring-fast [&>svg]:size-4 [&>svg]:transition-[stroke-width] duration-spring-fast ease-spring-fast flex items-center justify-center motion-reduce:transition-none shrink-0 sidebar-menu-icon size-4 svelte-<scope> text-foreground transition-colors">
                             <svg aria-hidden="true" data-icon="robot" data-weight="regular" role="img">
-                              <rect>
                               <path>
+                              <rect>
+                              <circle>
+                              <circle>
                           <span class="flex-1 font-normal inline-grid min-w-0 text-left">
                             <span aria-hidden="true" class="col-start-1 invisible row-start-1 truncate">
                               "Active catalog implementor"
@@ -19731,8 +19785,10 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-fam
                         <button class="[&>svg]:shrink-0 [&>svg]:size-4 aria-disabled:opacity-50 aria-disabled:pointer-events-none cursor-pointer data-[active=true]:text-foreground data-[proximity-active=true]:text-foreground disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:-outline-offset-1 focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:shadow-none font-normal gap-2 group-focus-within/menu-item:pr-(--row-gutter-hover) group-hover/menu-item:pr-(--row-gutter-hover) items-center justify-start min-h-(--control-height-small) motion-reduce:transition-none overflow-hidden peer/menu-button px-2 py-1 relative rounded-(--radius-row) select-none svelte-<scope> text-left transition-[padding] type-caption w-full z-10" data-active="false" data-proximity-active="false" data-sidebar-index="1" data-sidebar="menu-button" data-size="default" data-slot="sidebar-menu-button" tabindex="-1">
                           <span class="[&>svg]:duration-spring-fast [&>svg]:size-4 [&>svg]:transition-[stroke-width] duration-spring-fast ease-spring-fast flex items-center justify-center motion-reduce:transition-none shrink-0 sidebar-menu-icon size-4 svelte-<scope> text-muted-foreground transition-colors">
                             <svg aria-hidden="true" data-icon="robot" data-weight="regular" role="img">
-                              <rect>
                               <path>
+                              <rect>
+                              <circle>
+                              <circle>
                           <span class="flex-1 font-normal inline-grid min-w-0 text-left">
                             <span aria-hidden="true" class="col-start-1 invisible row-start-1 truncate">
                               "A very long background agent name that must truncate"
@@ -19850,7 +19906,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-fam
                 <div class="row-cell svelte-<scope>" data-row-preview="panel-tab-strip">
                   <div data-orientation="horizontal" data-tabs-root="" id="bits-<id>">
                     <div aria-label="Panel tabs" aria-orientation="horizontal" class="bg-muted/40 gap-0.5 inline-flex isolate items-center justify-start max-w-full overflow-hidden relative rounded-(--radius-medium) select-none w-full" data-orientation="horizontal" data-tabs-list="" id="bits-<id>" role="tablist">
-                      <div aria-hidden="true" class="absolute bg-card dark:bg-surface-3 left-0 pointer-events-none shadow-(--elevation-raised) top-0" data-tabs-indicator="" tokens=["--radius-medium"]>
+                      <div aria-hidden="true" class="absolute bg-card dark:bg-surface-3 left-0 pointer-events-none shadow-(--elevation-raised) svelte-<scope> top-0" data-tabs-indicator="" data-variant="default" tokens=["--radius-medium"]>
                       <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
                       <button aria-selected="false" class="bg-transparent border-0 cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast gap-1.5 h-(--control-height-medium) inline-flex items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) text-muted-foreground transition-colors type-caption z-10" data-orientation="horizontal" data-size="default" data-state="inactive" data-tabs-trigger="" data-value="note" data-variant="default" id="bits-<id>" role="tab" tabindex="-1" type="button">
                         "Implementation plan"
@@ -19863,7 +19919,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-fam
                 <div class="row-cell svelte-<scope>" data-row-preview="workspace-tab-strip">
                   <div data-orientation="horizontal" data-tabs-root="" id="bits-<id>">
                     <div aria-label="Workspace tabs" aria-orientation="horizontal" class="bg-muted/40 gap-0.5 inline-flex isolate items-center justify-start max-w-full overflow-hidden relative rounded-(--radius-medium) select-none w-full" data-orientation="horizontal" data-tabs-list="" id="bits-<id>" role="tablist">
-                      <div aria-hidden="true" class="absolute bg-card dark:bg-surface-3 left-0 pointer-events-none shadow-(--elevation-raised) top-0" data-tabs-indicator="" tokens=["--radius-medium"]>
+                      <div aria-hidden="true" class="absolute bg-card dark:bg-surface-3 left-0 pointer-events-none shadow-(--elevation-raised) svelte-<scope> top-0" data-tabs-indicator="" data-variant="default" tokens=["--radius-medium"]>
                       <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
                       <button aria-selected="true" class="bg-transparent border-0 cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast gap-1.5 h-(--control-height-medium) inline-flex items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) text-foreground transition-colors type-caption z-10" data-orientation="horizontal" data-size="default" data-state="active" data-tabs-trigger="" data-value="active" data-variant="default" id="bits-<id>" role="tab" tabindex="0" type="button">
                         "Active workspace"
@@ -20353,39 +20409,43 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:screen-state
                       "Media unavailable · missing"
                     <div class="preview-frame svelte-<scope>" data-preview-width="full">
                       <div class="p-4">
-                        <div class="bg-muted/30 border border-border border-dashed flex flex-wrap gap-x-2 gap-y-1.5 items-center max-w-full min-w-0 px-2.5 py-2 rounded-lg text-muted-foreground w-fit" data-reason="missing" data-testid="media-unavailable" role="status">
-                          <svg aria-hidden="true" class="shrink-0 size-3.5" data-icon="triangle-exclamation" data-weight="regular" role="img">
-                            <rect>
-                            <path>
-                          <span class="flex-1 min-w-0">
-                            <span class="block font-medium text-foreground truncate type-caption">
-                              "architecture.png"
-                            <span class="block type-caption">
-                              "File is missing."
+                        <div class="flex gap-3 items-center max-w-full min-w-0 py-1 text-muted-foreground type-caption w-fit whitespace-normal" data-reason="missing" data-testid="media-unavailable" role="status">
+                          <span class="flex flex-1 gap-2 items-start max-w-full min-w-0">
+                            <span aria-hidden="true" class="first-line-icon">
+                              <svg aria-hidden="true" class="size-3.5" data-icon="image" data-weight="regular" role="img">
+                                <rect>
+                                <path>
+                            <span class="min-w-0">
+                              <span class="block text-foreground truncate">
+                                "architecture.png"
+                              <span class="block break-words">
+                                "File is missing."
                   <article aria-labelledby="media-unavailable-actions-320-label" class="preview-cell svelte-<scope>" data-screen-preview="media-unavailable-actions-320">
                     <h4 class="preview-label svelte-<scope>" id="media-unavailable-actions-320-label">
                       "Media unavailable · actions · 320 px"
                     <div class="narrow preview-frame svelte-<scope>" data-preview-width="320">
                       <div class="p-4">
-                        <div class="bg-muted/30 border border-border border-dashed flex flex-wrap gap-x-2 gap-y-1.5 items-center max-w-full min-w-0 px-2.5 py-2 rounded-lg text-muted-foreground w-fit" data-reason="unsupported" data-testid="media-unavailable" role="status">
-                          <svg aria-hidden="true" class="shrink-0 size-3.5" data-icon="triangle-exclamation" data-weight="regular" role="img">
-                            <rect>
-                            <path>
-                          <span class="flex-1 min-w-0">
-                            <span class="block font-medium text-foreground truncate type-caption">
-                              "recording.webm"
-                            <span class="block type-caption">
-                              "This file type is not supported."
-                          <span class="flex gap-1 items-center shrink-0">
-                            <div>
-                              <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.375rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1 group/button h-6 hover:text-foreground inline-flex isolate items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
-                                <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                                <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-                                  <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                    <svg aria-hidden="true" data-icon="copy" data-weight="regular" role="img">
-                                      <rect>
-                                      <path>
-                                    "Copy path"
+                        <div class="flex gap-3 items-center max-w-full min-w-0 py-1 text-muted-foreground type-caption w-fit whitespace-normal" data-reason="unsupported" data-testid="media-unavailable" role="status">
+                          <span class="flex flex-1 gap-2 items-start max-w-full min-w-0">
+                            <span aria-hidden="true" class="first-line-icon">
+                              <svg aria-hidden="true" class="size-3.5" data-icon="image" data-weight="regular" role="img">
+                                <rect>
+                                <path>
+                            <span class="min-w-0">
+                              <span class="block text-foreground truncate">
+                                "recording.webm"
+                              <span class="block break-words">
+                                "This file type is not supported."
+                          <span class="flex flex-wrap gap-1 items-center shrink-0">
+                            <span class="inline-flex" id="bits-<id>" tabindex="-1">
+                              <div>
+                                <button aria-label="Copy path" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-(--radius-medium) shrink-0 size-(--control-height-compact) text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-delay-duration="200" data-slot="button" data-state="closed" data-tooltip-trigger="" type="button">
+                                  <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                  <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                    <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                      <svg aria-hidden="true" data-icon="copy" data-weight="regular" role="img">
+                                        <rect>
+                                        <path>
                   <article aria-labelledby="notify-error-toast-static-label" class="preview-cell svelte-<scope>" data-screen-preview="notify-error-toast-static">
                     <h4 class="preview-label svelte-<scope>" id="notify-error-toast-static-label">
                       "NotifyErrorToast · static"

@@ -30,6 +30,7 @@ import type {
   CreateWorkspaceRequest,
   UpdateWorkspaceRequest,
   Workspace,
+  WorkspaceCreateProposalOutcome,
   WorkspaceDiskUsage,
 } from '$shared/types';
 import type { TokenUsage } from '$features/token-usage/token-usage-types';
@@ -45,6 +46,7 @@ import type {
   SubscriptionHandler,
   Unsubscribe,
   WorkspaceCancelDeleteResult,
+  WorkspaceRetireResult,
   WorkspaceCreateResult,
   WorkspaceDeleteResult,
   WorkspaceDiskUsageResult,
@@ -88,6 +90,8 @@ function toWorkspaceStatus(value: unknown): WorkspaceStatus {
       return WorkspaceStatus.Inactive;
     case 'archived':
       return WorkspaceStatus.Archived;
+    case 'retired':
+      return WorkspaceStatus.Retired;
     case 'deleted':
       return WorkspaceStatus.Deleted;
     default:
@@ -174,6 +178,21 @@ function isPullRequestWorkspace(row: unknown): row is PullRequestWorkspace {
   );
 }
 
+const PROPOSAL_ORIGIN_OUTCOMES: readonly string[] = ['applied', 'dismissed', 'notResolved'];
+
+/**
+ * `workspace.create` result `proposalOrigin` (PROTOCOL §5.1), accepted only in
+ * its documented shape: its presence turns off the client-side resolve
+ * fallback, so a malformed value must not be mistaken for a daemon report.
+ */
+function parseProposalOrigin(value: unknown): WorkspaceCreateProposalOutcome | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const { proposalId, outcome } = value as Record<string, unknown>;
+  if (typeof proposalId !== 'string' || typeof outcome !== 'string') return undefined;
+  if (!PROPOSAL_ORIGIN_OUTCOMES.includes(outcome)) return undefined;
+  return { proposalId, outcome: outcome as WorkspaceCreateProposalOutcome['outcome'] };
+}
+
 export class LiveWorkspacesClient implements WorkspacesClient {
   beginNativeReview(
     owner: NativeReviewOwner,
@@ -195,27 +214,42 @@ export class LiveWorkspacesClient implements WorkspacesClient {
     return createRepositoryContextTransport().observe(request, handler);
   }
 
-  private readonly listRequests = new Map<boolean, Promise<Workspace[]>>();
+  private readonly listRequests = new Map<string, Promise<Workspace[]>>();
   private readonly getRequests = new Map<string, Promise<Workspace | null>>();
 
-  list(options?: { includeArchived?: boolean }): Promise<Workspace[]> {
+  /**
+   * `workspace.list` (§5.1). Retired rows are returned only when the caller
+   * opts in with `includeRetired: true` (strict opt-in, §5.1 Retired
+   * workspaces); `includeArchived` alone never includes them.
+   */
+  list(options?: { includeArchived?: boolean; includeRetired?: boolean }): Promise<Workspace[]> {
     const includeArchived = options?.includeArchived === true;
-    const existing = this.listRequests.get(includeArchived);
+    const includeRetired = options?.includeRetired === true;
+    const key = `${includeArchived}:${includeRetired}`;
+    // Retired reads are never shared: a reader that reloads after a restore,
+    // delete or identity change must observe a request started after it, not
+    // an older in-flight snapshot whose changes it never journaled.
+    const existing = includeRetired ? undefined : this.listRequests.get(key);
     if (existing) return existing;
 
+    const params = {
+      ...(includeArchived ? { includeArchived: true } : {}),
+      ...(includeRetired ? { includeRetired: true } : {}),
+    };
     const request = backendRequest<{ workspaces?: unknown[] }>(
       'workspace.list',
-      includeArchived ? { includeArchived: true } : undefined,
+      Object.keys(params).length > 0 ? params : undefined,
     ).then((result) => {
       const workspaces = Array.isArray(result?.workspaces) ? result.workspaces : [];
       return workspaces.map((workspace) =>
         normalizeWorkspace(workspace as Record<string, unknown>),
       );
     });
-    this.listRequests.set(includeArchived, request);
+    if (includeRetired) return request;
+    this.listRequests.set(key, request);
     const clearRequest = () => {
-      if (this.listRequests.get(includeArchived) === request) {
-        this.listRequests.delete(includeArchived);
+      if (this.listRequests.get(key) === request) {
+        this.listRequests.delete(key);
       }
     };
     void request.then(clearRequest, clearRequest);
@@ -276,7 +310,11 @@ export class LiveWorkspacesClient implements WorkspacesClient {
    */
   async create(request: CreateWorkspaceRequest): Promise<WorkspaceCreateResult> {
     try {
-      const result = await backendRequest<{ workspace?: unknown; initialAgent?: unknown }>(
+      const result = await backendRequest<{
+        workspace?: unknown;
+        initialAgent?: unknown;
+        proposalOrigin?: unknown;
+      }>(
         'workspace.create',
         {
           ...request,
@@ -286,6 +324,7 @@ export class LiveWorkspacesClient implements WorkspacesClient {
       );
       const raw = result?.workspace;
       const rawAgent = result?.initialAgent;
+      const proposalOrigin = parseProposalOrigin(result?.proposalOrigin);
       let initialAgent: ({ id: string } & Record<string, unknown>) | undefined;
       if (rawAgent !== undefined && rawAgent !== null) {
         // The daemon-assigned `initialAgent.id` is the only way callers can
@@ -309,6 +348,7 @@ export class LiveWorkspacesClient implements WorkspacesClient {
             success: true,
             workspace: normalizeWorkspace(raw as Record<string, unknown>),
             ...(initialAgent ? { initialAgent } : {}),
+            ...(proposalOrigin ? { proposalOrigin } : {}),
           }
         : { success: true };
     } catch (error) {
@@ -396,6 +436,29 @@ export class LiveWorkspacesClient implements WorkspacesClient {
 
   async unarchive(id: string): Promise<MutationResult> {
     return runMutation('workspace.unarchive', { workspaceId: id });
+  }
+
+  /** `workspace.retire` (§5.1): delete the folder, keep the rows read-only. */
+  async retire(id: string): Promise<WorkspaceRetireResult> {
+    try {
+      const result = await backendRequest<{ workspace?: unknown }>('workspace.retire', {
+        workspaceId: id,
+      });
+      const raw = result?.workspace;
+      return {
+        success: true,
+        ...(raw && typeof raw === 'object'
+          ? { workspace: normalizeWorkspace(raw as Record<string, unknown>) }
+          : {}),
+      };
+    } catch (error) {
+      const errorCode = extractErrorCode(error);
+      return {
+        success: false,
+        error: mutationErrorMessage(error),
+        ...(errorCode ? { errorCode } : {}),
+      };
+    }
   }
 
   // `workspace.markSeen` (§5.1) clears the unread `attention` flag only; the

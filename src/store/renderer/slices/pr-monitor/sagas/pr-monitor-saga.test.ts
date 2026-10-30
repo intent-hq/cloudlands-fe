@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 
-const mocks = vi.hoisted(() => ({ subscribePrMonitors: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  subscribePrMonitors: vi.fn(),
+  prMonitorBackendId: vi.fn<() => string | undefined>(),
+}));
+vi.mock('$lib/client/live/backend-transport', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/client/live/backend-transport')>()),
+  prMonitorBackendId: mocks.prMonitorBackendId,
+}));
 vi.mock('$features/pr-monitor/pr-monitor-service', async (importOriginal) => {
   const actual = await importOriginal<typeof import('$features/pr-monitor/pr-monitor-service')>();
   return { ...actual, subscribePrMonitors: mocks.subscribePrMonitors };
@@ -21,6 +28,7 @@ import {
   prMonitorsUnsubscribeRequested,
 } from '../pr-monitor-slice';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import { openWorkspaceTab, tabStateReducer } from '../../tab-state/tab-state-slice';
 import { workspaceMounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { cancelPrMonitorWorker, flushPrMonitorWorker, prMonitorSaga } from './pr-monitor-saga';
@@ -76,32 +84,35 @@ describe('prMonitorSaga', () => {
 
   it('forwards flush and cancel triggers with their exact wire arguments', () => {
     const flushIterator = flushPrMonitorWorker(flushPrMonitorRequested('ws-1', 'mon-1'));
-    const flushEffect = flushIterator.next().value as {
+    flushIterator.next();
+    const flushEffect = flushIterator.next([]).value as {
       type: string;
       payload: { fn: unknown; args: unknown[] };
     };
     expect(flushEffect.type).toBe('CALL');
     expect(flushEffect.payload.fn).toBe(flushPrMonitor);
-    expect(flushEffect.payload.args).toEqual(['ws-1', 'mon-1', undefined]);
+    expect(flushEffect.payload.args).toEqual(['ws-1', 'mon-1', undefined, undefined]);
 
     // Check-and-flush trigger (§5.42) forwards the check flag to the service.
     const checkIterator = flushPrMonitorWorker(flushPrMonitorRequested('ws-1', 'mon-1', true));
-    const checkEffect = checkIterator.next().value as {
+    checkIterator.next();
+    const checkEffect = checkIterator.next([]).value as {
       type: string;
       payload: { fn: unknown; args: unknown[] };
     };
     expect(checkEffect.type).toBe('CALL');
     expect(checkEffect.payload.fn).toBe(flushPrMonitor);
-    expect(checkEffect.payload.args).toEqual(['ws-1', 'mon-1', true]);
+    expect(checkEffect.payload.args).toEqual(['ws-1', 'mon-1', true, undefined]);
 
     const cancelIterator = cancelPrMonitorWorker(cancelPrMonitorRequested('ws-1', 'mon-1'));
-    const cancelEffect = cancelIterator.next().value as {
+    cancelIterator.next();
+    const cancelEffect = cancelIterator.next([]).value as {
       type: string;
       payload: { fn: unknown; args: unknown[] };
     };
     expect(cancelEffect.type).toBe('CALL');
     expect(cancelEffect.payload.fn).toBe(cancelPrMonitor);
-    expect(cancelEffect.payload.args).toEqual(['ws-1', 'mon-1']);
+    expect(cancelEffect.payload.args).toEqual(['ws-1', 'mon-1', undefined]);
   });
 
   it.each([null, 'ws-A'])('loads Chief independently of selected tab %s', async (selected) => {
@@ -350,7 +361,7 @@ describe('prMonitorSaga', () => {
     emitB([{ monitorId: 'mon-B', workspaceId: 'ws-B', state: 'active' } as PrMonitorRow]);
     await settle();
 
-    expect(harness.getState().prMonitor.byWorkspaceId['ws-A']).toBeUndefined();
+    expect(harness.getState().prMonitor.byWorkspaceId['ws-A'].monitors.ids).toEqual([]);
     expect(harness.getState().prMonitor.byWorkspaceId['ws-B'].monitors.map['mon-B']).toBeDefined();
     harness.task.cancel();
     await harness.task.toPromise();
@@ -445,5 +456,204 @@ describe('prMonitorSaga', () => {
 
     expect(mocks.subscribePrMonitors.mock.results[0].value.dispose).toHaveBeenCalledOnce();
     expect(mocks.subscribePrMonitors.mock.results[1].value.dispose).toHaveBeenCalledOnce();
+  });
+});
+
+describe('monitor source correlation in saga actions', () => {
+  it('preserves an explicit original origin even if the current workspace has another host', () => {
+    const origin = { workspaceId: 'ws', backendId: 'original', sessionId: 'original-session' };
+    const replacement = {
+      origin: { ...origin, backendId: 'replacement', sessionId: 'new-session' },
+      monitorId: 'same',
+    };
+    const worker = cancelPrMonitorWorker(cancelPrMonitorRequested('ws', 'same', origin));
+    worker.next();
+    expect(worker.next([replacement] as PrMonitorRow[]).value).toMatchObject({
+      payload: { fn: cancelPrMonitor, args: ['ws', 'same', origin] },
+    });
+    const flush = flushPrMonitorWorker(flushPrMonitorRequested('ws', 'same', true, origin));
+    flush.next();
+    expect(flush.next([replacement] as PrMonitorRow[]).value).toMatchObject({
+      payload: { fn: flushPrMonitor, args: ['ws', 'same', true, origin] },
+    });
+  });
+});
+
+describe('monitor lease re-acquisition', () => {
+  it('clears released host rows when the replacement seed fails without clearing independent leases', async () => {
+    mocks.subscribePrMonitors.mockReset();
+    mocks.subscribePrMonitors.mockImplementation(() => ({ dispose: vi.fn() }));
+    const h = createHarness();
+    const old = {
+      monitorId: 'same',
+      workspaceId: 'ws',
+      state: 'active',
+      origin: { backendId: 'A', sessionId: 'old', workspaceId: 'ws' },
+    } as PrMonitorRow;
+    const independent = {
+      ...old,
+      workspaceId: 'other',
+      origin: { ...old.origin!, workspaceId: 'other' },
+    };
+    try {
+      h.dispatch(prMonitorsSubscribeRequested('ws'));
+      h.dispatch(prMonitorsSubscribeRequested('other'));
+      h.dispatch(prMonitorsSubscribeRequested('other'));
+      const [first, other] = mocks.subscribePrMonitors.mock.calls;
+      first[1]([old]);
+      other[1]([independent]);
+      await settle();
+      expect(h.getState().prMonitor.byWorkspaceId.ws.monitors.ids).toEqual(['same']);
+      h.dispatch(prMonitorsUnsubscribeRequested('ws'));
+      expect(mocks.subscribePrMonitors.mock.results[0].value.dispose).toHaveBeenCalledOnce();
+      h.dispatch(prMonitorsSubscribeRequested('ws'));
+      const replacement = mocks.subscribePrMonitors.mock.calls[2];
+      replacement[2]('failed');
+      first[1]([old]);
+      await settle();
+      expect(h.getState().prMonitor.byWorkspaceId.ws.snapshotStatus).toBe('failed');
+      expect(h.getState().prMonitor.byWorkspaceId.ws.monitors.ids).toEqual([]);
+      expect(h.getState().prMonitor.byWorkspaceId.other.monitors.map.same).toBe(independent);
+      expect(h.getState().prMonitor.byWorkspaceId.other.snapshotStatus).toBe('ready');
+      expect(mocks.subscribePrMonitors.mock.results[1].value.dispose).not.toHaveBeenCalled();
+      h.dispatch(prMonitorsUnsubscribeRequested('other'));
+      expect(mocks.subscribePrMonitors.mock.results[1].value.dispose).not.toHaveBeenCalled();
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
+  });
+});
+
+describe('monitor lease re-acquisition on the same host', () => {
+  const sameHost = {
+    monitorId: 'kept',
+    workspaceId: 'ws',
+    state: 'active',
+    agentId: 'agent-1',
+    origin: { backendId: LOCAL_CONNECTION_ID, sessionId: 'released', workspaceId: 'ws' },
+  } as PrMonitorRow;
+
+  async function releaseAfterSeed(h: ReturnType<typeof createHarness>, rows: PrMonitorRow[]) {
+    h.dispatch(prMonitorsSubscribeRequested('ws'));
+    const [first] = mocks.subscribePrMonitors.mock.calls;
+    first[3]?.('supported');
+    first[1](rows);
+    await settle();
+    h.dispatch(prMonitorsUnsubscribeRequested('ws'));
+    expect(mocks.subscribePrMonitors.mock.results[0].value.dispose).toHaveBeenCalledOnce();
+  }
+
+  beforeEach(() => {
+    mocks.subscribePrMonitors.mockReset();
+    mocks.subscribePrMonitors.mockImplementation(() => ({ dispose: vi.fn() }));
+  });
+
+  it('keeps saved rows as stale until the fresh list replaces them', async () => {
+    const h = createHarness();
+    try {
+      await releaseAfterSeed(h, [sameHost]);
+      h.dispatch(prMonitorsSubscribeRequested('ws'));
+      await settle();
+      const reopened = h.getState().prMonitor.byWorkspaceId.ws;
+      expect(reopened.snapshotStatus).toBe('stale');
+      expect(reopened.monitors.ids).toEqual(['kept']);
+      expect(reopened.support).toBe('supported');
+
+      const fresh = {
+        ...sameHost,
+        monitorId: 'fresh',
+        origin: { ...sameHost.origin!, sessionId: 'current' },
+      };
+      mocks.subscribePrMonitors.mock.calls[1][1]([fresh]);
+      await settle();
+      const refreshed = h.getState().prMonitor.byWorkspaceId.ws;
+      expect(refreshed.snapshotStatus).toBe('ready');
+      expect(refreshed.monitors.ids).toEqual(['fresh']);
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
+  });
+
+  it('compares against the host label the monitor transport stamps when it has one', async () => {
+    const wsUrl = 'wss://daemon.example/rpc';
+    mocks.prMonitorBackendId.mockReturnValue(wsUrl);
+    const h = createHarness();
+    try {
+      await releaseAfterSeed(h, [
+        { ...sameHost, origin: { ...sameHost.origin!, backendId: wsUrl } },
+      ]);
+      h.dispatch(prMonitorsSubscribeRequested('ws'));
+      await settle();
+      const reopened = h.getState().prMonitor.byWorkspaceId.ws;
+      expect(reopened.snapshotStatus).toBe('stale');
+      expect(reopened.monitors.ids).toEqual(['kept']);
+    } finally {
+      mocks.prMonitorBackendId.mockReset();
+      h.task.cancel();
+      await h.task.toPromise();
+    }
+  });
+
+  it('clears saved rows that belong to a different host', async () => {
+    const h = createHarness();
+    try {
+      await releaseAfterSeed(h, [
+        { ...sameHost, origin: { ...sameHost.origin!, backendId: 'remote-host' } },
+      ]);
+      h.dispatch(prMonitorsSubscribeRequested('ws'));
+      await settle();
+      const reopened = h.getState().prMonitor.byWorkspaceId.ws;
+      expect(reopened.snapshotStatus).toBe('loading');
+      expect(reopened.monitors.ids).toEqual([]);
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
+  });
+
+  it('clears stale rows without an origin', async () => {
+    const h = createHarness();
+    try {
+      await releaseAfterSeed(h, [{ ...sameHost, origin: undefined }]);
+      h.dispatch(prMonitorsSubscribeRequested('ws'));
+      await settle();
+      expect(h.getState().prMonitor.byWorkspaceId.ws.monitors.ids).toEqual([]);
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
+  });
+
+  it('drops stale rows and their support when the first fresh read fails', async () => {
+    const h = createHarness();
+    try {
+      await releaseAfterSeed(h, [sameHost]);
+      h.dispatch(prMonitorsSubscribeRequested('ws'));
+      mocks.subscribePrMonitors.mock.calls[1][2]('failed');
+      await settle();
+      const failed = h.getState().prMonitor.byWorkspaceId.ws;
+      expect(failed.snapshotStatus).toBe('failed');
+      expect(failed.monitors.ids).toEqual([]);
+      expect(failed.support).toBeUndefined();
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
+  });
+
+  it('drops stale rows when the reopened session retires before refreshing', async () => {
+    const h = createHarness();
+    try {
+      await releaseAfterSeed(h, [sameHost]);
+      h.dispatch(prMonitorsSubscribeRequested('ws'));
+      mocks.subscribePrMonitors.mock.calls[1][2]('reconnecting');
+      await settle();
+      expect(h.getState().prMonitor.byWorkspaceId.ws.monitors.ids).toEqual([]);
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
   });
 });

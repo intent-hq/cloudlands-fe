@@ -23,6 +23,7 @@ const mockGetDisplayMatching = vi.fn();
 
 /** A live BrowserWindow test double: constructable + destroyable + URL-bearing. */
 const { FakeBrowserWindow, mockRegisterWindowTitleListener } = vi.hoisted(() => {
+  let nextWebContentsId = 1;
   class FakeBrowserWindow {
     static instances: FakeBrowserWindow[] = [];
     static focused: FakeBrowserWindow | null = null;
@@ -34,7 +35,9 @@ const { FakeBrowserWindow, mockRegisterWindowTitleListener } = vi.hoisted(() => 
     handlers = new Map<string, (...args: unknown[]) => void>();
     private url = 'about:blank';
     webContents = {
+      id: nextWebContentsId++,
       on: vi.fn(),
+      send: vi.fn(),
       isDestroyed: () => this.destroyed,
       getURL: () => this.url,
       session: { clearCache: () => Promise.resolve() },
@@ -136,6 +139,7 @@ vi.mock('../utils/resolve-app-title', () => ({
 }));
 
 import type { DeepLinkHandler } from '../../features/deeplink/deep-link-handler';
+import { consumePendingDeepLinks } from '../../features/deeplink/main/pending-deep-links';
 import { _resetHudWindowRefForTests, isTrackedHudWindow, registerHudWindow } from '../hud-window';
 import {
   _resetRendererWindowGateForTests,
@@ -359,6 +363,24 @@ describe('multi-backend window sessions', () => {
         JSON.stringify({
           local: [
             { route: '/dev-console', bounds: local.bounds },
+            { route: '/work/local', bounds: local.bounds },
+          ],
+        }),
+      );
+      expect(loadWindowSessions('local')).toEqual([{ route: '/work/local', bounds: local.bounds }]);
+    });
+
+    it('never restores a desktop-control indicator without an active native session', async () => {
+      const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      seedLiveWindow('app://workspaces/desktop-overlay?kind=glow', undefined, 'local');
+      seedLiveWindow('app://workspaces/desktop-overlay?kind=controls', undefined, 'local');
+      await saveAllWindowSessions();
+      expect(readMap().local).toEqual([{ route: '/work/local', bounds: local.bounds }]);
+      fs.writeFileSync(
+        getWindowSessionsPath(),
+        JSON.stringify({
+          local: [
+            { route: '/desktop-overlay', bounds: local.bounds },
             { route: '/work/local', bounds: local.bounds },
           ],
         }),
@@ -1337,9 +1359,9 @@ describe('multi-backend window sessions', () => {
       expect(loadedPaths()).toEqual(['/workspace/new', '/workspace/kept']);
     });
 
-    it('opens deep-link windows on the bootstrap route carrying the encoded action', async () => {
-      const action = { type: 'open' as const, params: { id: 'workspace_123' } };
-      await createWindowForDeepLink('intent://open?id=workspace_123', {
+    it('opens newWindow create links on the bootstrap route and queues the action there', async () => {
+      const action = { type: 'create' as const, params: { repo: '/r', newWindow: 'true' } };
+      await createWindowForDeepLink('intent://create?repo=%2Fr&newWindow=true', {
         parseDeepLink: () => action,
         handleDeepLink: vi.fn(async () => {}),
       } as unknown as DeepLinkHandler);
@@ -1347,18 +1369,34 @@ describe('multi-backend window sessions', () => {
       const [window] = FakeBrowserWindow.getAllWindows();
       const url = new URL(window.webContents.getURL());
       expect(url.pathname).toBe('/workspace/new');
-      expect(JSON.parse(url.searchParams.get('deepLink') ?? 'null')).toEqual(action);
+      // The action never rides in the URL; the window pulls it from main.
+      expect(url.searchParams.has('deepLink')).toBe(false);
+      expect(consumePendingDeepLinks(window.webContents.id).actions).toEqual([action]);
+    });
+
+    it('opens a local window for an open link when only a remote window exists', async () => {
+      const remote = new FakeBrowserWindow();
+      remote.backendId = 'remote-1';
+      const action = { type: 'open' as const, params: { path: '/Users/me' } };
+      await createWindowForDeepLink('intent://open?path=%2FUsers%2Fme', {
+        parseDeepLink: () => action,
+        handleDeepLink: vi.fn(async () => {}),
+      } as unknown as DeepLinkHandler);
+
+      const local = FakeBrowserWindow.getAllWindows().filter((w) => w.backendId === 'local');
+      expect(local).toHaveLength(1);
+      expect(consumePendingDeepLinks(local[0].webContents.id).actions).toEqual([action]);
+      expect(consumePendingDeepLinks(remote.webContents.id).actions).toEqual([]);
     });
   });
 
   describe('renderer window gate', () => {
     const bounds = { x: 100, y: 100, width: 1024, height: 768 };
-    // A non-pair deep link whose action opens a NEW window (not `settings`,
-    // not `create` without newWindow) — the only deep-link branch that
-    // constructs a BrowserWindow.
-    const openDeepLink = 'intent://open?id=workspace_123';
+    // A non-pair deep link whose action opens a NEW window (`create` with
+    // newWindow=true) — the deep-link branch that always constructs one.
+    const openDeepLink = 'intent://create?repo=%2Fr&newWindow=true';
     const openDeepLinkHandler = {
-      parseDeepLink: () => ({ type: 'open' as const, params: { id: 'workspace_123' } }),
+      parseDeepLink: () => ({ type: 'create' as const, params: { repo: '/r', newWindow: 'true' } }),
       handleDeepLink: vi.fn(async () => {}),
     } as unknown as DeepLinkHandler;
 
@@ -1390,7 +1428,9 @@ describe('multi-backend window sessions', () => {
       await pending;
 
       expect(FakeBrowserWindow.instances).toHaveLength(1);
-      expect(FakeBrowserWindow.instances[0].webContents.getURL()).toContain('deepLink=');
+      expect(
+        consumePendingDeepLinks(FakeBrowserWindow.instances[0].webContents.id).actions,
+      ).toHaveLength(1);
     });
 
     it('createWindowForSession waits for the gate, then restores exactly one window', async () => {

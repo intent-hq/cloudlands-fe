@@ -9,6 +9,7 @@ import { setupModelPickerPreviewHandler } from '../../../../test/catalog-preview
 import {
   providerModelsLoaded,
   providerModelsCacheCleared,
+  providerModelsRequested,
 } from '$store/renderer/slices/provider-models/provider-models-slice';
 import {
   selectProviderModelsCacheMap,
@@ -36,8 +37,8 @@ import {
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { normalizeAgent } from '$lib/client/live/live-agents-client';
 import { providerProfileSummaryStatusChanged } from '$store/renderer/slices/provider-settings/provider-settings-slice';
-import { setProviderProfilesLabForPreview } from '../../../../test/provider-profiles-preview';
 import ModelPickerPreview from './ModelPickerPreview.svelte';
+import type { ModelWarningKind } from '$shared/models/wire-model-info';
 
 const models = [
   {
@@ -54,7 +55,16 @@ const models = [
 const selectLoadingStates = appStore.createSelector((state) => state.model.loadingState);
 let activeCleanup: (() => void) | undefined;
 
-function setupModels(populated: boolean, degraded = false, diagnostic?: string) {
+// `fallbackWarning` serves Codex's built-in list *with* a warning — what the
+// daemon returns when the Codex CLI is missing — so the open picker shows the
+// "Showing default model list" notice in its footer instead of an error screen.
+function setupModels(
+  populated: boolean,
+  degraded = false,
+  diagnostic?: string,
+  fallbackWarning?: string,
+  fallbackWarningKind?: ModelWarningKind,
+) {
   return () => {
     activeCleanup?.();
     const previousLoading = selectLoadingStates.select(appStore.state);
@@ -64,6 +74,21 @@ function setupModels(populated: boolean, degraded = false, diagnostic?: string) 
     const previousDefault = selectEffectiveDefaultProviderId.select(appStore.state);
     const previousCollapsed = selectModelPickerCollapsedGroups.select(appStore.state);
     const restoreProviders = setupPreviewProviders();
+    if (fallbackWarning || fallbackWarningKind) {
+      // The daemon's Codex catalog entry carries this docs link; the notice
+      // shows it as "Setup docs". restoreProviders() puts the old rows back.
+      appStore.dispatch(
+        providerCatalogLoaded({
+          providers: selectProviderCatalogEntries
+            .select(appStore.state)
+            .map((row) =>
+              row.id === 'codex'
+                ? { ...row, loginDocsUrl: 'https://developers.openai.com/codex/cli#cli-setup' }
+                : row,
+            ),
+        }),
+      );
+    }
     const bridge = typeof window === 'undefined' ? undefined : window.electronAPI;
     const originalInvoke = bridge?.invoke;
     if (bridge && originalInvoke) {
@@ -76,29 +101,35 @@ function setupModels(populated: boolean, degraded = false, diagnostic?: string) 
     appStore.dispatch(hydrateDefaultProvider('codex'));
     for (const group of previousCollapsed)
       appStore.dispatch(setModelPickerGroupCollapsed(group, false));
-    const epoch = selectProviderModelsClearEpoch.select(appStore.state);
+    // Catalogs arrive only through the mocked `<provider>:get-models` channel
+    // and the app's provider-models saga, so the cache, loading state and
+    // warnings land exactly where the app puts them.
     const restoreModelHandlers: Array<() => void> = [];
     for (const providerId of ['codex', 'claude-code']) {
       const rows = populated
         ? models.map((model) => ({ ...model, value: `${providerId}-${model.value}` }))
         : [];
-      restoreModelHandlers.push(setupModelPickerPreviewHandler(providerId, rows));
-      appStore.dispatch(
-        providerModelsLoaded(
-          providerId,
-          degraded || (diagnostic && providerId === 'codex')
-            ? {
-                models: [],
-                warning: diagnostic ?? 'Temporary model catalog failure',
-              }
-            : { models: rows },
-          epoch,
-        ),
-      );
+      const warning = providerId === 'codex' ? fallbackWarning : undefined;
+      // A degraded first answer (empty list + warning, as the daemon reports
+      // a failed probe); Retry then gets the real rows.
+      const failed =
+        degraded || (diagnostic && providerId === 'codex')
+          ? {
+              data: [],
+              warning: diagnostic ?? 'Temporary model catalog failure',
+              ...(providerId === 'codex' && fallbackWarningKind
+                ? { warningKind: fallbackWarningKind }
+                : {}),
+            }
+          : undefined;
+      restoreModelHandlers.push(setupModelPickerPreviewHandler(providerId, rows, warning, failed));
       if (providerId === 'codex')
         appStore.dispatch(setAvailableModels(degraded ? [] : rows, providerId));
     }
+    appStore.dispatch(providerModelsCacheCleared());
     const cancelCatalog = appStore.runSaga(modelReloadSaga);
+    for (const providerId of ['codex', 'claude-code'])
+      appStore.dispatch(providerModelsRequested(providerId, 'refresh'));
     let disposed = false;
     const cleanup = () => {
       if (disposed) return;
@@ -118,7 +149,10 @@ function setupModels(populated: boolean, degraded = false, diagnostic?: string) 
         appStore.dispatch(setModelPickerGroupCollapsed(group, true));
       restoreProviders();
       appStore.dispatch(hydrateDefaultProvider(previousDefault));
-      for (const providerId of ['codex', 'claude-code']) {
+      // The saga records a loading state for every provider and profile it
+      // loaded; put back the previous ones and reset any it added.
+      const loaded = Object.keys(selectLoadingStates.select(appStore.state));
+      for (const providerId of new Set(['codex', 'claude-code', ...loaded])) {
         appStore.dispatch(
           setLoadingStateForProvider({
             providerId,
@@ -156,14 +190,9 @@ const previewProfiles = [
 ];
 const PROFILE_AGENT_ID = 'preview-profile-agent';
 
-function setupProfiles(
-  agent?: Record<string, unknown>,
-  signedOut: string[] = [],
-  labsEnabled = true,
-) {
+function setupProfiles(agent?: Record<string, unknown>, signedOut: string[] = []) {
   return () => {
     const cleanupModels = setupModels(true)();
-    const restoreLab = setProviderProfilesLabForPreview(labsEnabled);
     const rows = selectProviderCatalogEntries.select(appStore.state);
     appStore.dispatch(
       providerCatalogLoaded({
@@ -173,7 +202,6 @@ function setupProfiles(
         profiles: previewProfiles,
       }),
     );
-    const epoch = selectProviderModelsClearEpoch.select(appStore.state);
     const rowsFor = (providerId: string) => {
       const prefix = previewProfiles.find((p) => p.providerRef === providerId)?.id ?? providerId;
       return models.map((model) => ({ ...model, value: `${prefix}-${model.value}` }));
@@ -185,11 +213,8 @@ function setupProfiles(
         data: rowsFor((data as { providerRef?: string } | undefined)?.providerRef ?? base),
       })),
     );
-    for (const profile of previewProfiles) {
-      appStore.dispatch(
-        providerModelsLoaded(profile.providerRef, { models: rowsFor(profile.providerRef) }, epoch),
-      );
-    }
+    for (const profile of previewProfiles)
+      appStore.dispatch(providerModelsRequested(profile.providerRef, 'refresh'));
     for (const profileId of signedOut)
       appStore.dispatch(providerProfileSummaryStatusChanged(profileId, 'error'));
     if (agent) {
@@ -213,7 +238,6 @@ function setupProfiles(
         appStore.dispatch(providerProfileSummaryStatusChanged(profileId, 'configured'));
       if (agent) appStore.dispatch(removeSession(PROFILE_AGENT_ID));
       for (const restore of restoreHandlers) restore();
-      restoreLab();
       cleanupModels();
     };
   };
@@ -240,6 +264,9 @@ export const preview = definePreview<ComponentProps<typeof ModelPickerPreview>>(
     open: {
       props: {
         initialOpen: true,
+        captureMenu: true,
+        portal: false,
+        collisionBoundary: 'body',
         selectedModel: null,
         defaultModelId: 'codex-preview-balanced',
         showDefaultOption: true,
@@ -252,6 +279,9 @@ export const preview = definePreview<ComponentProps<typeof ModelPickerPreview>>(
     reasoning: {
       props: {
         initialOpen: true,
+        captureMenu: true,
+        portal: false,
+        collisionBoundary: 'body',
         selectedModel: 'codex-preview-balanced',
         showReasoning: true,
         reasoningEffort: 'medium',
@@ -264,6 +294,9 @@ export const preview = definePreview<ComponentProps<typeof ModelPickerPreview>>(
     recovery: {
       props: {
         initialOpen: true,
+        captureMenu: true,
+        portal: false,
+        collisionBoundary: 'body',
         selectedModel: 'codex-preview-balanced',
         agentId: 'preview-recovery-agent',
         showReasoning: true,
@@ -275,6 +308,8 @@ export const preview = definePreview<ComponentProps<typeof ModelPickerPreview>>(
       },
       setup: setupModels(true, true),
     },
+    // Codex adapter crash: the daemon answers with an empty list plus the
+    // diagnostic as a warning, so the app shows the fallback notice here too.
     'adapter-error': {
       props: {
         initialOpen: true,
@@ -303,6 +338,31 @@ export const preview = definePreview<ComponentProps<typeof ModelPickerPreview>>(
         ].join('\n'),
       ),
     },
+    // Codex CLI missing, as the daemon reports it (§5.30): an empty Codex
+    // catalog with the real missing-CLI warning labeled `warningKind:
+    // "cli-missing"`; the open menu's footer shows the install notice above
+    // Retry, which (CLI installed) then loads the real rows.
+    'codex-fallback': {
+      props: {
+        initialOpen: true,
+        captureMenu: true,
+        portal: false,
+        collisionBoundary: 'body',
+        providerId: 'codex',
+        selectedModel: 'codex-preview-balanced',
+        showDefaultOption: false,
+        updateGlobalStore: false,
+        updateGlobalDefault: false,
+        showManageLink: false,
+      },
+      setup: setupModels(
+        true,
+        false,
+        'codex: Install codex on the execution host and make it available on PATH, then retry. Intent requires the installed CLI; no bundled runtime replaces a missing one.',
+        undefined,
+        'cli-missing',
+      ),
+    },
     'profiles-open': {
       props: {
         initialOpen: true,
@@ -316,22 +376,6 @@ export const preview = definePreview<ComponentProps<typeof ModelPickerPreview>>(
         showManageLink: false,
       },
       setup: setupProfiles(),
-    },
-    // Settings → Labs → Provider profiles off: no profile tabs or groups, but
-    // the selection that already uses the Work profile keeps its label.
-    'profiles-labs-off-open': {
-      props: {
-        initialOpen: true,
-        captureMenu: true,
-        portal: false,
-        collisionBoundary: 'body',
-        selectedModel: 'pwork00000001-preview-balanced',
-        providerId: 'codex@pwork00000001',
-        updateGlobalStore: false,
-        updateGlobalDefault: false,
-        showManageLink: false,
-      },
-      setup: setupProfiles(undefined, [], false),
     },
     'profile-signed-out': {
       props: {

@@ -12,8 +12,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/sv
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type {
+  CompactWorkspaceInitializationSubmission,
   CompactWorkspaceInitializerFormState,
-  WorkspaceInitializationRequest,
 } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
 import { createWorkspaceInitializationDispatchAdapter } from './workspace-initialization-dispatch.test-helper';
 
@@ -53,6 +53,12 @@ const mocks = vi.hoisted(() => {
     defaultReasoningEffort$: writable(''),
     compactFormState$: writable<unknown>(null),
     lastSubmittedAgent$: writable<unknown>(null),
+    initializationOutcome$: writable<
+      | Partial<
+          import('$store/renderer/slices/workspace-initializer/workspace-initializer-types').WorkspaceInitializationOutcome
+        >
+      | undefined
+    >(undefined),
     agentByRepo: {} as Record<string, unknown>,
     // Never resolves: provider availability stays unknown, so it is never
     // clearing evidence — the provider-models catalog below decides validity.
@@ -114,10 +120,13 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(null),
   selectWorkspaceInitializerLastSubmittedAgent: () => mocks.lastSubmittedAgent$,
   selectWorkspaceInitializerRecentRepos: () => mocks.readable([]),
+  selectWorkspaceInitializerRecentSpecialistIds: () => mocks.readable([]),
   selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(null),
   selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(''),
-  selectWorkspaceInitializerDraftRestore: () => mocks.readable(undefined),
-  selectWorkspaceInitializationOutcome: { select: () => undefined },
+  selectWorkspaceInitializerDraftAuthority: () =>
+    mocks.readable({ restore: undefined, clear: undefined }),
+  selectWorkspaceInitializationOutcomeForConsumer: () => mocks.initializationOutcome$,
+  selectWorkspaceInitializationResume: { select: () => undefined },
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
@@ -363,8 +372,12 @@ describe('initializer model-override persistence (monorepo#2678)', () => {
     mocks.principalState = withLegacyPrincipal({});
     vi.clearAllMocks();
     mocks.dispatch.mockImplementation(
-      createWorkspaceInitializationDispatchAdapter({ create: mocks.create }),
+      createWorkspaceInitializationDispatchAdapter({
+        create: mocks.create,
+        setOutcome: (outcome) => mocks.initializationOutcome$.set(outcome),
+      }),
     );
+    mocks.initializationOutcome$.set(undefined);
     sessionStorage.clear();
     mocks.hydrated$.set(false);
     mocks.selectedModel$.set('');
@@ -662,22 +675,26 @@ describe('initializer remembers the agent setup per repository', () => {
     );
   }
 
-  function initializationRequest(): WorkspaceInitializationRequest {
+  function initializationSubmission(): CompactWorkspaceInitializationSubmission {
     const action = mocks.dispatch.mock.calls
       .map(([dispatched]) => dispatched)
       .find(
         (dispatched) =>
-          dispatched.asyncActionType === 'workspaceInitializer/initializationRequested',
+          dispatched.asyncActionType === 'workspaceInitializer/initializationSubmitted',
       );
-    return action.payload.request;
+    return action.payload.submission;
   }
 
   beforeEach(() => {
     mocks.principalState = withLegacyPrincipal({});
     vi.clearAllMocks();
     mocks.dispatch.mockImplementation(
-      createWorkspaceInitializationDispatchAdapter({ create: mocks.create }),
+      createWorkspaceInitializationDispatchAdapter({
+        create: mocks.create,
+        setOutcome: (outcome) => mocks.initializationOutcome$.set(outcome),
+      }),
     );
+    mocks.initializationOutcome$.set(undefined);
     sessionStorage.clear();
     mocks.selectedModel$.set('');
     mocks.configuredModels$.set({});
@@ -707,9 +724,9 @@ describe('initializer remembers the agent setup per repository', () => {
       reasoningEffort: 'high',
       metadata: { workMode: 'single' },
     });
-    expect(initializationRequest()).toMatchObject({
+    expect(initializationSubmission()).toMatchObject({
       rememberAgentRepoKey: 'local:/tmp/repo-a',
-      lastSubmittedAgent: {
+      agent: {
         isTeamMode: false,
         selectedSpecialist: null,
         selectedProvider: 'codex',
@@ -736,7 +753,7 @@ describe('initializer remembers the agent setup per repository', () => {
       model: 'opus4.6',
       metadata: { workMode: 'team' },
     });
-    expect(initializationRequest().rememberAgentRepoKey).toBe('local:/tmp/repo-b');
+    expect(initializationSubmission().rememberAgentRepoKey).toBe('local:/tmp/repo-b');
   });
 
   it('keeps an explicit in-session model pick when the repository changes', async () => {

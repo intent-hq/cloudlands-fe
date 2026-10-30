@@ -11,10 +11,9 @@ import {
   setAgentFontStyle,
   setChatAuroraEnabled,
   setGithubLinkDefaultAction,
-  setLabsMultiplayerEnabled,
   setLabsGitLabEnabled,
   setLabsRemoteAgentsEnabled,
-  setLabsProviderProfilesEnabled,
+  setPauseAnimationsWhenUnfocused,
   setShellTransparencyEnabled,
   setVolume,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
@@ -275,24 +274,11 @@ describe('settings-proposal-actions', () => {
     ]);
   });
 
-  it('applies and reverses the Multiplayer lab preference', async () => {
-    const result = await applySettingsProposalWork(
-      makeDetail(makeProposal('labs.multiplayer', true)),
-    );
-
-    expect(mocks.dispatch).toHaveBeenCalledWith(setLabsMultiplayerEnabled(true));
-    expect(result.reverseChanges).toEqual([
-      {
-        path: 'labs.multiplayer',
-        value: false,
-        apply: { kind: 'redux-action', action: 'userPreferences/setLabsMultiplayerEnabled' },
-      },
-    ]);
-
-    mocks.dispatch.mockClear();
-    await undoSettingsProposalWork(result.reverseChanges);
-
-    expect(mocks.dispatch).toHaveBeenCalledWith(setLabsMultiplayerEnabled(false));
+  it('rejects the retired Multiplayer lab setting: Multiplayer is always on', async () => {
+    await expect(
+      applySettingsProposalWork(makeDetail(makeProposal('labs.multiplayer', false))),
+    ).rejects.toThrow('Unknown or unsupported setting "labs.multiplayer"');
+    expect(mocks.dispatch).not.toHaveBeenCalled();
   });
 
   it('applies and reverses the GitLab lab preference', async () => {
@@ -345,34 +331,59 @@ describe('settings-proposal-actions', () => {
     },
   );
 
-  it('applies and reverses the provider profiles lab preference', async () => {
-    const result = await applySettingsProposalWork(
-      makeDetail(makeProposal('labs.providerProfiles', true)),
-    );
+  it.each([true, false])(
+    'applies and reverses pause animations when unfocused = %s',
+    async (value) => {
+      mocks.getState.mockReturnValue(
+        makeState({
+          userPreferences: { ...userPreferencesInitialState, pauseAnimationsWhenUnfocused: !value },
+        }),
+      );
+      const result = await applySettingsProposalWork(
+        makeDetail(makeProposal('appearance.pauseAnimationsWhenUnfocused', value)),
+      );
 
-    expect(mocks.dispatch).toHaveBeenCalledExactlyOnceWith(setLabsProviderProfilesEnabled(true));
-    expect(result.reverseChanges).toEqual([
-      {
-        path: 'labs.providerProfiles',
-        value: false,
-        apply: { kind: 'redux-action', action: 'userPreferences/setLabsProviderProfilesEnabled' },
-      },
-    ]);
-    expect(mocks.settingsUpdate).not.toHaveBeenCalled();
-    mocks.dispatch.mockClear();
-    await undoSettingsProposalWork(result.reverseChanges);
-    expect(mocks.dispatch).toHaveBeenCalledExactlyOnceWith(setLabsProviderProfilesEnabled(false));
-  });
+      expect(mocks.dispatch).toHaveBeenCalledExactlyOnceWith(
+        setPauseAnimationsWhenUnfocused(value),
+      );
+      expect(result.reverseChanges).toEqual([
+        {
+          path: 'appearance.pauseAnimationsWhenUnfocused',
+          value: !value,
+          apply: {
+            kind: 'redux-action',
+            action: 'userPreferences/setPauseAnimationsWhenUnfocused',
+          },
+        },
+      ]);
 
-  it.each(['true', 1, null, {}])(
-    'rejects invalid provider profiles opt-in proposals: %j',
+      mocks.dispatch.mockClear();
+      await undoSettingsProposalWork(result.reverseChanges);
+
+      expect(mocks.dispatch).toHaveBeenCalledExactlyOnceWith(
+        setPauseAnimationsWhenUnfocused(!value),
+      );
+    },
+  );
+
+  it.each(['true', 1, null])(
+    'rejects invalid pause animations when unfocused proposals: %j',
     async (value) => {
       await expect(
-        applySettingsProposalWork(makeDetail(makeProposal('labs.providerProfiles', value))),
+        applySettingsProposalWork(
+          makeDetail(makeProposal('appearance.pauseAnimationsWhenUnfocused', value)),
+        ),
       ).rejects.toThrow('Invalid value');
       expect(mocks.dispatch).not.toHaveBeenCalled();
     },
   );
+
+  it('rejects the retired provider profiles lab setting', async () => {
+    await expect(
+      applySettingsProposalWork(makeDetail(makeProposal('labs.providerProfiles', true))),
+    ).rejects.toThrow('Unknown or unsupported setting "labs.providerProfiles"');
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+  });
 
   it('falls back to the proposal value when a numeric edit is invalid', async () => {
     const proposal = makeProposal('notifications.volume', 0.75);

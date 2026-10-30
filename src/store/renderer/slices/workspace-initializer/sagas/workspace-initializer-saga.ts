@@ -29,15 +29,18 @@ import {
   getLocalStorageJSON,
 } from '$store/renderer/utils/safe-local-storage-saga';
 import { readAgentByRepo } from '../utils/agent-by-repo';
+import { readRecentSpecialists } from '../utils/recent-specialists';
 import {
   selectCompactWorkspaceInitializerFormState,
   selectWorkspaceInitializerAgentByRepo,
   selectWorkspaceInitializerBranchByRepo,
   selectWorkspaceInitializerDefaultParentPath,
+  selectWorkspaceInitializerDraftAuthority,
   selectWorkspaceInitializerLastSelectedRepo,
   selectWorkspaceInitializerLastSubmittedAgent,
   selectWorkspaceInitializerOnboardingFormState,
   selectWorkspaceInitializerRecentRepos,
+  selectWorkspaceInitializerRecentSpecialistIds,
   selectWorkspaceInitializerDismissedRecentRepoKeys,
   selectWorkspaceInitializerRemoteSetups,
 } from '../workspace-initializer-selectors';
@@ -46,6 +49,7 @@ import {
   debounceWorkspaceInitializerOnboardingFormState,
   hydrateWorkspaceInitializer,
   dismissWorkspaceInitializerRecentRepo,
+  rememberWorkspaceInitializerRecentSpecialist,
   removeWorkspaceInitializerRemoteSetup,
   setCompactWorkspaceInitializerFormState,
   setWorkspaceInitializerAgentForRepo,
@@ -159,6 +163,7 @@ function* buildWorkspaceInitializerBag() {
   const remoteSetups = yield* selectWorkspaceInitializerRemoteSetups.effect();
   const lastSubmittedAgent = yield* selectWorkspaceInitializerLastSubmittedAgent.effect();
   const agentByRepo = yield* selectWorkspaceInitializerAgentByRepo.effect();
+  const recentSpecialistIds = yield* selectWorkspaceInitializerRecentSpecialistIds.effect();
   return {
     compactFormState,
     onboardingFormState,
@@ -170,6 +175,7 @@ function* buildWorkspaceInitializerBag() {
     remoteSetups,
     lastSubmittedAgent,
     agentByRepo,
+    recentSpecialistIds,
   } satisfies WorkspaceInitializerHydrationState;
 }
 
@@ -274,6 +280,7 @@ export function* hydrateWorkspaceInitializerWorker() {
         ? (daemonBag.lastSubmittedAgent as WorkspaceInitializerAgentSettings)
         : null,
       agentByRepo: readAgentByRepo(daemonBag.agentByRepo),
+      recentSpecialistIds: readRecentSpecialists(daemonBag.recentSpecialistIds),
     };
     yield* put(hydrateWorkspaceInitializer(hydrationState));
     return true;
@@ -302,13 +309,21 @@ function* applyDebouncedOnboardingFormWorker(
   yield* put(setWorkspaceInitializerOnboardingFormState(action.payload[0]));
 }
 
-function* resetWorkspaceInitializerWorker() {
-  yield* put(
-    workspaceInitializerDraftClearRequested(
-      'onboarding-workspace-initializer',
-      crypto.randomUUID(),
-    ),
-  );
+function* resetWorkspaceInitializerWorker(action: ReturnType<typeof resetOnboarding>) {
+  const ownerId = 'onboarding-workspace-initializer';
+  const [admission] = action.payload;
+  const authority = yield* selectWorkspaceInitializerDraftAuthority.effect(ownerId);
+  const clearAlreadyOwned =
+    authority.clear?.status === 'pending' || authority.clear?.status === 'success';
+  if (!authority.restore && !clearAlreadyOwned) {
+    yield* put(
+      workspaceInitializerDraftClearRequested(ownerId, crypto.randomUUID(), undefined, admission),
+    );
+  } else if (authority.clear?.status === 'failure') {
+    yield* put(
+      workspaceInitializerDraftClearRequested(ownerId, crypto.randomUUID(), undefined, admission),
+    );
+  }
   yield* put(setWorkspaceInitializerOnboardingFormState(null));
 }
 
@@ -338,6 +353,7 @@ function* watchWorkspaceInitializerPersistence(gate: HydrationGate) {
       removeWorkspaceInitializerRemoteSetup,
       setWorkspaceInitializerLastSubmittedAgent,
       setWorkspaceInitializerAgentForRepo,
+      rememberWorkspaceInitializerRecentSpecialist,
     ],
     buffers.sliding(1),
   );

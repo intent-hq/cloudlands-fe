@@ -1,8 +1,10 @@
 /**
  * @vitest-environment jsdom
  */
+import { m } from '$shared/paraglide/messages.js';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { tick } from 'svelte';
 import { WorkspaceStatus } from '$shared/types';
 
 const {
@@ -24,7 +26,6 @@ const {
   multiplayerState,
   gitlabState,
   remoteAgentsState,
-  providerProfilesLabState,
   storeEvents,
 } = vi.hoisted(() => {
   const createSelectorReadable = <TArg, TValue>(arg: TArg, resolver: (value: any) => TValue) => ({
@@ -149,12 +150,15 @@ const {
     multiplayerState: { enabled: false },
     gitlabState: { enabled: undefined as boolean | undefined },
     remoteAgentsState: { enabled: undefined as boolean | undefined },
-    providerProfilesLabState: { enabled: undefined as boolean | undefined },
     storeEvents: { emit: () => {} },
   };
 });
 
-vi.mock('$app/navigation', () => ({ goto: gotoMock }));
+vi.mock('$app/navigation', async () => {
+  const { landingNavigation } =
+    await import('$store/renderer/utils/test-helpers/landing-navigation');
+  return { goto: landingNavigation(gotoMock) };
+});
 vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToSettings: navigateToSettingsMock }));
 vi.mock('$lib/electron-bridge', () => ({ invoke: invokeMock }));
 vi.mock('$lib/utils/open-message', () => ({ openMessage: openMessageMock }));
@@ -229,6 +233,8 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
     createSelectorReadable(workspaceIdArg, () => collaboratorState.workspace),
   selectHidesAgentLifecycleActions: (workspaceIdArg: any) =>
     createSelectorReadable(workspaceIdArg, () => collaboratorState.workspace),
+  selectHidesAgentCreationActions: (workspaceIdArg: any) =>
+    createSelectorReadable(workspaceIdArg, () => collaboratorState.workspace),
   selectIsCollaboratorOnlyClient: () => ({
     subscribe: (fn: (value: boolean) => void) => {
       collaboratorState.subscribers.add(fn);
@@ -263,7 +269,6 @@ vi.mock('$store/renderer/store', async () => {
         labsMultiplayerEnabled: multiplayerState.enabled,
         labsGitLabEnabled: gitlabState.enabled,
         labsRemoteAgentsEnabled: remoteAgentsState.enabled,
-        labsProviderProfilesEnabled: providerProfilesLabState.enabled,
       },
     }),
     dispatch: reduxDispatchMock,
@@ -379,6 +384,7 @@ import { createNoteRequested } from '$store/renderer/slices/note-read-tracking/n
 import { commandPaletteNewFileRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import { setStatsOverlayOpen } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { openTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { terminalManager } from '$features/terminal/terminal-manager.svelte';
 
 // Actions that dispatch Redux actions directly (no window event intermediary)
@@ -388,6 +394,11 @@ const reduxActions = [
   { label: 'New Note', actionCreator: createNoteRequested },
   { label: 'New File', actionCreator: commandPaletteNewFileRequested },
 ] as const;
+
+const retiredLoads = () =>
+  reduxDispatchMock.mock.calls.filter(
+    ([action]) => action?.type === 'workspaceOperations/loadRetiredWorkspacesRequested',
+  ).length;
 
 describe('CommandPalette new actions', () => {
   beforeEach(() => {
@@ -402,7 +413,6 @@ describe('CommandPalette new actions', () => {
     multiplayerState.enabled = false;
     gitlabState.enabled = undefined;
     remoteAgentsState.enabled = undefined;
-    providerProfilesLabState.enabled = undefined;
   });
 
   it.each([
@@ -608,39 +618,13 @@ describe('CommandPalette new actions', () => {
     },
   );
 
-  it.each([undefined, false, true])(
-    'changes experimental provider profiles from saved=%s without a workspace',
-    async (enabled) => {
-      providerProfilesLabState.enabled = enabled;
-      const onClose = vi.fn();
-      render(CommandPalette, {
-        props: { isOpen: true, initialQuery: 'provider profiles', onClose },
-      });
-      const command = await screen.findByRole('button', {
-        name: enabled
-          ? /Disable experimental provider profiles/i
-          : /Enable experimental provider profiles/i,
-      });
-      expect(
-        screen.queryByRole('button', {
-          name: enabled
-            ? /Enable experimental provider profiles/i
-            : /Disable experimental provider profiles/i,
-        }),
-      ).toBeNull();
-
-      reduxDispatchMock.mockClear();
-      await fireEvent.click(command);
-
-      expect(reduxDispatchMock).toHaveBeenCalledExactlyOnceWith({
-        type: 'userPreferences/setLabsProviderProfilesEnabled',
-        payload: [!enabled],
-      });
-      expect(invokeMock).not.toHaveBeenCalled();
-      expect(backendRequestMock).not.toHaveBeenCalled();
-      expect(onClose).toHaveBeenCalledOnce();
-    },
-  );
+  it('offers no command to turn provider profiles on or off', async () => {
+    render(CommandPalette, {
+      props: { isOpen: true, initialQuery: 'experimental', onClose: vi.fn() },
+    });
+    await screen.findByRole('button', { name: /Enable experimental remote agents/i });
+    expect(screen.queryByRole('button', { name: /experimental provider profiles/i })).toBeNull();
+  });
 
   it('updates the remote agents command after delayed hydration without changing the saved choice', async () => {
     render(CommandPalette, {
@@ -714,32 +698,23 @@ describe('CommandPalette new actions', () => {
   });
 
   it.each([false, true])(
-    'changes experimental multiplayer from enabled=%s through command search without a workspace',
+    'offers no command to turn multiplayer on or off (saved state=%s): it is always on',
     async (enabled) => {
       multiplayerState.enabled = enabled;
-      const onClose = vi.fn();
-      render(CommandPalette, { props: { isOpen: true, onClose } });
+      render(CommandPalette, { props: { isOpen: true, onClose: vi.fn() } });
       const input = screen.getByRole('textbox');
 
+      await fireEvent.input(input, { target: { value: 'experimental' } });
+      await screen.findByRole('button', { name: /Enable experimental remote agents/i });
+      expect(screen.queryByRole('button', { name: /experimental multiplayer/i })).toBeNull();
+
       await fireEvent.input(input, { target: { value: 'multiplayer' } });
-      const command = await screen.findByRole('button', {
-        name: enabled ? /Disable experimental multiplayer/i : /Enable experimental multiplayer/i,
-      });
-      expect(
-        screen.queryByRole('button', {
-          name: enabled ? /Enable experimental multiplayer/i : /Disable experimental multiplayer/i,
-        }),
-      ).toBeNull();
-
-      reduxDispatchMock.mockClear();
-      if (enabled) await fireEvent.click(command);
-      else await fireEvent.keyDown(input, { key: 'Enter' });
-
-      expect(reduxDispatchMock).toHaveBeenCalledWith({
-        type: 'userPreferences/setLabsMultiplayerEnabled',
-        payload: [!enabled],
-      });
-      expect(onClose).toHaveBeenCalledOnce();
+      await waitFor(() =>
+        expect(
+          screen.queryByRole('button', { name: /Enable experimental remote agents/i }),
+        ).toBeNull(),
+      );
+      expect(screen.queryByRole('button', { name: /experimental multiplayer/i })).toBeNull();
     },
   );
 
@@ -1009,6 +984,96 @@ describe('CommandPalette workspace activity recency', () => {
     expect(old.textContent).toContain('Jan 15');
     expect(old.textContent).not.toContain('just now');
   });
+
+  it('shows a selected workspace and opens its tab', async () => {
+    workspaceItemsState.value = [
+      { id: 'current', title: 'Current Space', createdAt: '2025-01-01T00:00:00.000Z' },
+      { id: 'closed', title: 'Closed Space', createdAt: '2025-06-01T00:00:00.000Z' },
+    ];
+    try {
+      render(CommandPalette, {
+        props: { isOpen: true, workspaceId: 'current', onClose: vi.fn() },
+      });
+      await fireEvent.click(await screen.findByRole('button', { name: /Closed Space/i }));
+
+      await waitFor(() =>
+        expect(reduxDispatchMock).toHaveBeenCalledWith(openWorkspaceTab('closed')),
+      );
+      expect(gotoMock).toHaveBeenCalledWith('/workspace/closed');
+    } finally {
+      workspaceItemsState.value = [];
+    }
+  });
+
+  it('lists purged (retired) workspaces with the Archived badge and opts in to loading them', async () => {
+    workspaceItemsState.value = [
+      {
+        id: 'live',
+        title: 'Live Space',
+        status: WorkspaceStatus.Active,
+        createdAt: '2025-06-01T00:00:00.000Z',
+        updatedAt: '2025-06-01T00:00:00.000Z',
+      },
+      {
+        id: 'retired',
+        title: 'Old Importer Space',
+        status: WorkspaceStatus.Retired,
+        archived: true,
+        retiredAt: '2025-06-02T00:00:00.000Z',
+        createdAt: '2025-06-01T00:00:00.000Z',
+        updatedAt: '2025-06-01T00:00:00.000Z',
+      },
+    ];
+
+    render(CommandPalette, { props: { isOpen: true, onClose: vi.fn() } });
+
+    const retired = await screen.findByRole('button', { name: /Old Importer Space/i });
+    const live = screen.getByRole('button', { name: /Live Space/i });
+    expect(retired.textContent).toContain(m.lib_commandPalette_archivedWorkspace_pill());
+    expect(retired.textContent).not.toContain('Retired');
+    expect(live.textContent).not.toContain(m.lib_commandPalette_archivedWorkspace_pill());
+    expect(retiredLoads()).toBe(1);
+  });
+
+  it('binds the retired opt-in to the palette being open and reconciles list refreshes', async () => {
+    const live = {
+      id: 'live',
+      title: 'Live Space',
+      status: WorkspaceStatus.Active,
+      createdAt: '2025-06-01T00:00:00.000Z',
+      updatedAt: '2025-06-01T00:00:00.000Z',
+    };
+    const retired = { ...live, id: 'old', title: 'Old', status: WorkspaceStatus.Retired };
+    const publish = (items: any[]) => {
+      workspaceItemsState.value = items;
+      for (const fn of workspaceItemsState.subscribers) fn(items);
+    };
+    publish([live]);
+    const view = render(CommandPalette, { props: { isOpen: false, onClose: vi.fn() } });
+    await tick();
+    expect(retiredLoads()).toBe(0);
+
+    await view.rerender({ isOpen: true, onClose: vi.fn() });
+    await tick();
+    expect(retiredLoads()).toBe(1);
+
+    // The load's own response must not trigger another load.
+    publish([live, retired]);
+    await tick();
+    expect(retiredLoads()).toBe(1);
+
+    // An ordinary refresh drops retired rows while the palette is open: reload.
+    publish([live]);
+    await tick();
+    expect(retiredLoads()).toBe(2);
+
+    // Closing and reopening searches again with a fresh opt-in read.
+    await view.rerender({ isOpen: false, onClose: vi.fn() });
+    await tick();
+    await view.rerender({ isOpen: true, onClose: vi.fn() });
+    await tick();
+    expect(retiredLoads()).toBe(3);
+  });
 });
 
 describe('CommandPalette chat message rows', () => {
@@ -1191,6 +1256,7 @@ describe('CommandPalette indexed notes', () => {
         ),
       );
       expect(gotoMock).toHaveBeenCalledWith('/workspace/other');
+      expect(reduxDispatchMock).toHaveBeenCalledWith(openWorkspaceTab('other'));
       expect(reduxDispatchMock).toHaveBeenCalledWith(
         recordPaletteMruItem('note', JSON.stringify(['other', 'spec']), expect.any(Number)),
       );

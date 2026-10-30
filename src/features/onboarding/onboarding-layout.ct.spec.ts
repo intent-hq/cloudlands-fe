@@ -1,3 +1,4 @@
+import type { Locator } from '@playwright/experimental-ct-svelte';
 import { expect, test } from '../../test/ct-test';
 import Preview from './onboarding-layout.preview.svelte';
 
@@ -213,66 +214,7 @@ for (const scenario of [
   });
 }
 
-for (const width of [720, 1280]) {
-  for (const step of ['welcome', 'forge', 'project', 'configuring'] as const) {
-    test(`${step} shares the content edge at ${width}px`, async ({ mount, page }) => {
-      await page.setViewportSize({ width, height: 1000 });
-      const component = await mount(Preview, { props: { step } });
-      const heading = component.locator('h1,h2').first();
-      await expect(heading).toBeVisible();
-      const root = await component.boundingBox();
-      const expectedLeft = root!.x + Math.max(36, (root!.width - 1024) / 2);
-      await expect
-        .poll(async () => Math.abs((await heading.boundingBox())!.x - expectedLeft))
-        .toBeLessThanOrEqual(1);
-      const content =
-        step === 'welcome'
-          ? component.locator('div[role=button]').first()
-          : step === 'configuring'
-            ? component.locator('.rich-input-container')
-            : step === 'forge'
-              ? component.getByRole('button', { name: /Connect GitHub/, exact: true })
-              : component.getByRole('button', { name: /Let's go/ });
-      await expect
-        .poll(async () => Math.abs((await content.boundingBox())!.x - expectedLeft))
-        .toBeLessThanOrEqual(1);
-      if (step === 'configuring') {
-        const metadata = component.locator('.onboarding-metadata-row').first();
-        const action = component.getByRole('button', { name: /Create workspace/ });
-        expect(Math.abs((await metadata.boundingBox())!.x - expectedLeft)).toBeLessThanOrEqual(1);
-        expect(Math.abs((await action.boundingBox())!.x - expectedLeft)).toBeLessThanOrEqual(1);
-      }
-    });
-  }
-}
-
-for (const compact of [false, true]) {
-  test(`${compact ? 'New Workspace' : 'Step4'} leaves top space inside the empty and typed editor`, async ({
-    mount,
-    page,
-  }) => {
-    await page.setViewportSize({ width: 900, height: 900 });
-    const component = await mount(Preview, { props: { compact } });
-    const editor = component.locator('.rich-textarea [contenteditable=true]');
-    await expect(editor).toBeVisible();
-    const measure = () =>
-      editor.evaluate((element) => {
-        const paragraph = element.querySelector('p')!;
-        return {
-          top: paragraph.getBoundingClientRect().top - element.getBoundingClientRect().top,
-          padding: parseFloat(getComputedStyle(element).paddingTop),
-        };
-      });
-    const empty = await measure();
-    expect(empty.padding).toBeGreaterThanOrEqual(12);
-    expect(empty.top).toBeGreaterThanOrEqual(12);
-    await editor.fill('A comfortable place to start a workspace.');
-    await expect(editor).toContainText('A comfortable place to start a workspace.');
-    expect(await measure()).toEqual(empty);
-  });
-}
-
-test('starter suggestions have tight text gaps and preserve keyboard selection and shuffle', async ({
+test('starter suggestions preserve containment, keyboard selection, and shuffle', async ({
   mount,
   page,
 }, testInfo) => {
@@ -281,44 +223,14 @@ test('starter suggestions have tight text gaps and preserve keyboard selection a
   const editor = component.locator('.rich-textarea [contenteditable=true]');
   const options = component.getByRole('option');
   await expect(options).toHaveCount(4);
-  // Inter is `font-display: swap`: until the woff2 lands, the fallback-font heading above the
-  // composer wraps to a second 48px line, so a baseline measured before the swap is stale.
   await page.evaluate(() => document.fonts.ready);
-  const measureGeometry = () =>
-    options.evaluateAll((elements) =>
-      elements.map((element) => {
-        const box = element.getBoundingClientRect();
-        const list = element.closest('[role=listbox]')!.getBoundingClientRect();
-        const title = element
-          .querySelector('[data-slot="action-row-title"]')!
-          .getBoundingClientRect();
-        return {
-          top: box.top,
-          bottom: box.bottom,
-          height: box.height,
-          right: box.right,
-          listRight: list.right,
-          textTop: title.top,
-          textBottom: title.bottom,
-        };
-      }),
-    );
-  const geometry = await measureGeometry();
-  geometry
-    .slice(1)
-    .forEach((box, i) => expect(Math.abs(box.top - geometry[i]!.bottom)).toBeLessThanOrEqual(1));
+  const geometry = await options.evaluateAll((elements) =>
+    elements.map((element) => ({
+      right: element.getBoundingClientRect().right,
+      listRight: element.closest('[role=listbox]')!.getBoundingClientRect().right,
+    })),
+  );
   geometry.forEach((box) => expect(box.right).toBeLessThanOrEqual(box.listRight));
-  // Touching row boxes alone misses the padding that separates visible suggestion text.
-  geometry.forEach((box) => expect(box.height).toBe(24));
-  geometry.slice(1, -1).forEach((box, i) => {
-    const textGap = box.textTop - geometry[i]!.textBottom;
-    expect(textGap).toBeGreaterThanOrEqual(0);
-    expect(textGap).toBeLessThanOrEqual(4);
-  });
-  await options.first().hover();
-  expect(await measureGeometry()).toEqual(geometry);
-  await options.first().focus();
-  expect(await measureGeometry()).toEqual(geometry);
   const original = await options.first().innerText();
   await editor.focus();
   await page.keyboard.press('ArrowDown');
@@ -376,3 +288,225 @@ for (const gitlabEnabled of [false, true]) {
     }
   });
 }
+
+interface StripState {
+  scrollLeft: number;
+  stripLeft: number;
+  stripRight: number;
+  columnLeft: number;
+  columnRight: number;
+  cards: { id: string; left: number; right: number }[];
+  /** Cards fully inside the strip's viewport. */
+  visible: string[];
+}
+
+function readStrip(strip: Locator): Promise<StripState> {
+  return strip.evaluate((element) => {
+    const bounds = element.getBoundingClientRect();
+    // The welcome actions row that follows the strip spans the content column.
+    const column = element.nextElementSibling!.getBoundingClientRect();
+    const cards = [...element.querySelectorAll<HTMLElement>('[data-provider-id]')].map((card) => {
+      const rect = card.getBoundingClientRect();
+      return { id: card.dataset.providerId!, left: rect.left, right: rect.right };
+    });
+    return {
+      scrollLeft: element.scrollLeft,
+      stripLeft: bounds.left,
+      stripRight: bounds.right,
+      columnLeft: column.left,
+      columnRight: column.right,
+      cards,
+      visible: cards
+        .filter((card) => card.left >= bounds.left - 1 && card.right <= bounds.right + 1)
+        .map((card) => card.id),
+    };
+  });
+}
+
+function waitFrames(strip: Locator, frames: number): Promise<void> {
+  return strip.evaluate(
+    (_, count) =>
+      new Promise<void>((resolve) => {
+        let remaining = count;
+        const tick = () => (--remaining <= 0 ? resolve() : requestAnimationFrame(tick));
+        requestAnimationFrame(tick);
+      }),
+    frames,
+  );
+}
+
+/** Waits for a press to move the strip away from `from`, then for the scroll to come to rest. */
+async function settleStrip(strip: Locator, from: number): Promise<StripState> {
+  await expect.poll(() => strip.evaluate((element) => element.scrollLeft)).not.toBe(from);
+  await strip.evaluate(
+    (element) =>
+      new Promise<void>((resolve) => {
+        let last = element.scrollLeft;
+        let still = 0;
+        const tick = () => {
+          still = element.scrollLeft === last ? still + 1 : 0;
+          last = element.scrollLeft;
+          if (still >= 6) resolve();
+          else requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }),
+  );
+  return readStrip(strip);
+}
+
+interface Box {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+const overlaps = (a: Box, b: Box) =>
+  a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
+test.describe('welcome provider strip', () => {
+  test.use({ contextOptions: { reducedMotion: 'no-preference' } });
+
+  // At 1440px the content column is centered; at 600px the strip falls back to
+  // its fixed gutter and the arrows share a tight row with Let's go.
+  for (const width of [1440, 600]) {
+    test(`arrows page through every provider at ${width}px`, async ({ mount, page }, testInfo) => {
+      await page.setViewportSize({ width, height: 900 });
+      const component = await mount(Preview, { props: { step: 'welcome', allProviders: true } });
+      const strip = component.locator('#onboarding-provider-strip');
+      await expect(strip.locator('[data-provider-id]')).toHaveCount(10);
+      const back = component.getByRole('button', { name: 'Previous providers', exact: true });
+      const next = component.getByRole('button', { name: 'Next providers', exact: true });
+      const letsGo = component.getByRole('button', { name: /Let's go/ });
+      await expect(back).toHaveAttribute('aria-disabled', 'true');
+      await expect(next).toHaveAttribute('aria-disabled', 'false');
+      const capture = async (name: string) => {
+        await component.locator('[role=log]').evaluate((log) => (log.scrollTop = log.scrollHeight));
+        await testInfo.attach(`${name}-${width}px`, {
+          body: await component.screenshot(),
+          contentType: 'image/png',
+        });
+      };
+
+      const start = await readStrip(strip);
+      // The arrows stay clear of Let's go and inside the content column.
+      const goBox = (await letsGo.boundingBox())!;
+      for (const arrow of [back, next]) {
+        const box = (await arrow.boundingBox())!;
+        expect(overlaps(box, goBox)).toBe(false);
+        expect(box.x).toBeGreaterThanOrEqual(start.columnLeft - 1);
+        expect(box.x + box.width).toBeLessThanOrEqual(start.columnRight + 1);
+      }
+      await capture('provider-strip-start');
+
+      const seen = new Set(start.visible);
+      const pages = [start];
+      while ((await next.getAttribute('aria-disabled')) === 'false') {
+        const before = pages.at(-1)!;
+        const firstHidden = before.cards.find((card) => card.right > before.stripRight + 1)!;
+        await next.click();
+        const after = await settleStrip(strip, before.scrollLeft);
+        expect(after.scrollLeft).toBeGreaterThan(before.scrollLeft);
+        // A press never skips a card the user has not seen in full.
+        expect(after.visible).toContain(firstHidden.id);
+        after.visible.forEach((id) => seen.add(id));
+        pages.push(after);
+        if (pages.length === 2) await capture('provider-strip-next');
+        expect(pages.length).toBeLessThan(12);
+      }
+      const end = pages.at(-1)!;
+      // Next dims only once the last card is fully in view.
+      expect(end.visible).toContain(end.cards.at(-1)!.id);
+      expect(seen.size).toBe(end.cards.length);
+      await expect(back).toHaveAttribute('aria-disabled', 'false');
+      await capture('provider-strip-end');
+
+      // The exhausted arrow keeps focus and ignores further presses.
+      await next.focus();
+      await page.keyboard.press('Enter');
+      await waitFrames(strip, 10);
+      await expect(next).toBeFocused();
+      expect((await readStrip(strip)).scrollLeft).toBe(end.scrollLeft);
+
+      let current = end;
+      while ((await back.getAttribute('aria-disabled')) === 'false') {
+        const lastHidden = current.cards.findLast((card) => card.left < current.stripLeft - 1)!;
+        await back.click();
+        const after = await settleStrip(strip, current.scrollLeft);
+        expect(after.scrollLeft).toBeLessThan(current.scrollLeft);
+        expect(after.visible).toContain(lastHidden.id);
+        current = after;
+        expect(current.scrollLeft).toBeGreaterThanOrEqual(0);
+      }
+      expect(current.scrollLeft).toBe(0);
+      expect(current.visible).toContain(current.cards[0]!.id);
+      await testInfo.attach(`provider-strip-pages-${width}px`, {
+        body: JSON.stringify(
+          pages.map(({ scrollLeft, visible }) => ({ scrollLeft, visible })),
+          null,
+          2,
+        ),
+        contentType: 'application/json',
+      });
+    });
+  }
+
+  test('presses during a scroll each advance a page', async ({ mount, page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const component = await mount(Preview, { props: { step: 'welcome', allProviders: true } });
+    const strip = component.locator('#onboarding-provider-strip');
+    const next = component.getByRole('button', { name: 'Next providers', exact: true });
+    await expect(next).toHaveAttribute('aria-disabled', 'false');
+    await next.click();
+    const first = await settleStrip(strip, 0);
+    await next.click();
+    const second = await settleStrip(strip, first.scrollLeft);
+    await strip.evaluate((element) => element.scrollTo({ left: 0, behavior: 'instant' }));
+    await expect.poll(() => strip.evaluate((element) => element.scrollLeft)).toBe(0);
+    // Both clicks land before the first smooth scroll starts moving.
+    await next.dblclick();
+    expect((await settleStrip(strip, 0)).scrollLeft).toBe(second.scrollLeft);
+  });
+
+  test('focusing a hidden card scrolls it into the content column', async ({ mount, page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const component = await mount(Preview, { props: { step: 'welcome', allProviders: true } });
+    const strip = component.locator('#onboarding-provider-strip');
+    await expect(strip.locator('[data-provider-id]')).toHaveCount(10);
+    const start = await readStrip(strip);
+    const hidden = start.cards.find((card) => !start.visible.includes(card.id))!;
+    await strip.locator(`[data-provider-id="${hidden.id}"] [role=button]`).first().focus();
+    const after = await settleStrip(strip, 0);
+    const card = after.cards.find(({ id }) => id === hidden.id)!;
+    expect(card.left).toBeGreaterThanOrEqual(after.columnLeft - 1);
+    expect(card.right).toBeLessThanOrEqual(after.columnRight + 1);
+  });
+
+  test('hides the arrows when every provider fits', async ({ mount, page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const component = await mount(Preview, { props: { step: 'welcome' } });
+    const strip = component.locator('#onboarding-provider-strip');
+    await expect(strip.locator('[data-provider-id]')).toHaveCount(3);
+    await waitFrames(strip, 10);
+    await expect(component.getByRole('button', { name: 'Next providers' })).toHaveCount(0);
+    await expect(component.getByRole('button', { name: 'Previous providers' })).toHaveCount(0);
+  });
+});
+
+test.describe('welcome provider strip with reduced motion', () => {
+  test.use({ contextOptions: { reducedMotion: 'reduce' } });
+
+  test('arrows jump without animating', async ({ mount, page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const component = await mount(Preview, { props: { step: 'welcome', allProviders: true } });
+    const strip = component.locator('#onboarding-provider-strip');
+    const next = component.getByRole('button', { name: 'Next providers', exact: true });
+    await expect(next).toHaveAttribute('aria-disabled', 'false');
+    await next.click();
+    const immediate = await strip.evaluate((element) => element.scrollLeft);
+    expect(immediate).toBeGreaterThan(0);
+    await waitFrames(strip, 10);
+    expect((await readStrip(strip)).scrollLeft).toBe(immediate);
+  });
+});

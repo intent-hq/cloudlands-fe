@@ -5,7 +5,7 @@
   import { homeWorkspaceMotion } from './home-workspace-motion.svelte';
   import { homeSidebarMotion } from './home-sidebar-motion';
   import './home.css';
-  import { goto } from '$app/navigation';
+  import { openAndShowWorkspace } from '$lib/utils/show-workspace';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import SidebarOverflowMenu from '$lib/components/ui/sidebar-context-menu/SidebarOverflowMenu.svelte';
   import {
@@ -13,9 +13,16 @@
     type SidebarContextPosition,
     type SidebarMenuEntry,
   } from '$lib/components/ui/sidebar-context-menu/types';
-  import { selectPinnedWorkspaceIds } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
-  import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
-  import { openHomeWorkspaceFromEvent } from './home-workspace-opening';
+  import {
+    selectLabelsSupported,
+    selectPinnedWorkspaceIds,
+    selectWorkspaceLabelsInUse,
+  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
+  import { buildHomeListGroups } from './home-workspace-labels';
+  import {
+    createHomeDoubleClickOpener,
+    openHomeWorkspaceFromEvent,
+  } from './home-workspace-opening';
   import { createHomeWorkspaceMenu } from './home-workspace-menu';
   import { faThumbtack } from '@fortawesome/free-solid-svg-icons';
   import { tick, untrack } from 'svelte';
@@ -65,6 +72,7 @@
     faFolder,
     faCircleExclamation,
     faPlay,
+    faHourglass,
     faPlus,
     faChevronDown,
     faChevronRight,
@@ -88,6 +96,8 @@
   import { selectHomeWorkspaceView, selectHomeWorkspaceError } from './home-workspaces-selectors';
   import { updateHomeWorkspaceView } from './home-workspaces-slice';
   import { loadWorkspacesRequested } from '$store/renderer/slices/workspace/workspace-slice';
+  import { homeRetiredWorkspaces } from './home-retired-workspaces.svelte';
+  import { selectPrincipalActionContext as admissionSelector } from '$store/renderer/slices/principal/principal-selectors';
   import HomeIntegrations from './HomeIntegrations.svelte';
   import type { HomeIntegrationsState } from './home-integrations-types';
 
@@ -100,13 +110,20 @@
   } = $props();
   const microConnected$ = microConnectedReadable();
   const pinnedIds$ = selectPinnedWorkspaceIds();
+  const labelsInUse$ = selectWorkspaceLabelsInUse();
+  const labelsSupported$ = selectLabelsSupported();
   let contextMenu = $state<(SidebarContextPosition & { workspace: Workspace }) | null>(null);
   function openWorkspace(id: string) {
     contextMenu = null;
-    store.dispatch(openWorkspaceTab(id));
-    void goto(`/workspace/${encodeURIComponent(id)}`);
+    void openAndShowWorkspace(id);
   }
+  function openSelectedWorkspace(id: string) {
+    updateView({ selectedId: id });
+    openWorkspace(id);
+  }
+  const doubleClick = createHomeDoubleClickOpener(openSelectedWorkspace);
   function openModifiedWorkspace(event: MouseEvent | KeyboardEvent, id: string) {
+    if (event instanceof MouseEvent) doubleClick.arm(event, id);
     openHomeWorkspaceFromEvent(event, id, openWorkspace);
   }
   function showWorkspaceMenu(event: MouseEvent | KeyboardEvent, workspace: Workspace) {
@@ -126,8 +143,8 @@
       pinned: $pinnedIds$.includes(workspace.id),
       onOpen: openWorkspace,
       onClose: () => (contextMenu = null),
-      expandPinned: () =>
-        updateView({ expandedGroups: { ...$view$.expandedGroups, pinned: true } }),
+      expandGroup: (key) =>
+        updateView({ expandedGroups: { ...$view$.expandedGroups, [key]: true } }),
       getHomeElement: () => homeElement,
     });
   }
@@ -265,6 +282,7 @@
         { id: 'all', label: m.home_integrations_all(), icon: faLayerGroup },
         { id: 'attention', label: m.home_filter_attention(), icon: faCircleExclamation },
         { id: 'running', label: m.home_filter_running(), icon: faPlay },
+        { id: 'waiting', label: m.home_filter_waiting(), icon: faHourglass },
       ] as const satisfies readonly { id: HomeFilter; label: string; icon: unknown }[]
     ).map((item) => ({
       ...item,
@@ -298,7 +316,7 @@
   const selectedWorkspace = $derived(
     filteredWorkspaces.find((workspace) => workspace.id === selectedId),
   );
-  const triageOrder = ['needs-you', 'running', 'inactive'] as const;
+  const triageOrder = ['needs-you', 'running', 'waiting', 'inactive'] as const;
   // Hiding a group that holds the selected workspace also closes the preview;
   // otherwise the selection would keep the group open and the button inert.
   function setGroupExpanded(group: string, expanded: boolean, items: Workspace[]) {
@@ -314,6 +332,8 @@
         return m.home_filter_attention();
       case 'running':
         return m.home_filter_running();
+      case 'waiting':
+        return m.home_filter_waiting();
       case 'blocked':
         return m.home_filter_blocked();
       default:
@@ -372,43 +392,25 @@
       collapsible: true,
     })),
   );
-  const listGroups: {
-    id: string;
-    label: string;
-    items: Workspace[];
-    expanded: boolean;
-    collapsible: boolean;
-  }[] = $derived.by(() => {
-    if ($view$.groupBy === 'none') return [];
-    const groups = (
-      $view$.groupBy === 'repository'
-        ? repositorySections
-        : $view$.groupBy === 'workspace-status'
-          ? statusGroups
-          : triageGroups
-    )
-      .map((group) => ({
-        ...group,
-        items: group.items.filter((workspace) => !$pinnedIds$.includes(workspace.id)),
-      }))
-      .filter((group) => group.items.length);
-    if ($view$.groupBy === 'status' && filter !== 'all') return [];
-    const items = filteredWorkspaces.filter((workspace) => $pinnedIds$.includes(workspace.id));
-    return items.length
-      ? [
-          {
-            id: 'pinned',
-            label: m.layout_activeCard_pinned_header(),
-            items,
-            expanded:
-              $view$.expandedGroups.pinned !== false ||
-              items.some((workspace) => workspace.id === selectedId),
-            collapsible: true,
-          },
-          ...groups,
-        ]
-      : groups;
-  });
+  const listGroups = $derived(
+    buildHomeListGroups({
+      groupBy: $view$.groupBy,
+      filter,
+      baseGroups:
+        $view$.groupBy === 'repository'
+          ? repositorySections
+          : $view$.groupBy === 'workspace-status'
+            ? statusGroups
+            : triageGroups,
+      workspaces: filteredWorkspaces,
+      pinnedIds: $pinnedIds$,
+      labels: $labelsInUse$,
+      labelsSupported: $labelsSupported$,
+      pinnedLabel: m.layout_activeCard_pinned_header(),
+      expandedGroups: $view$.expandedGroups,
+      selectedId,
+    }),
+  );
   const boardGroups = $derived(
     $view$.groupBy === 'repository'
       ? repositorySections
@@ -437,7 +439,6 @@
     syncPaneOwnership(pane, value);
     return { destroy: () => homePanes.delete(pane) };
   }
-  // Sync outside paused keyed effects, including same-pane reversal.
   $effect.pre(() => {
     const activeTab = destination === 'workspaces' ? tab : null;
     untrack(() => {
@@ -474,6 +475,7 @@
       row?.closest<HTMLElement>('[role="option"], button')?.focus();
     });
   });
+  homeRetiredWorkspaces(() => ({ filter, preview }), workspaces$, admissionSelector());
   function chooseFilter(next: HomeFilter) {
     store.dispatch(closePanel());
     updateView({ filter: next, tab: 'workspaces', selectedId: null });
@@ -523,6 +525,7 @@
 
 <div
   bind:this={homeElement}
+  {@attach doubleClick.listen}
   class="home-layout h-full min-h-0 min-w-0 bg-sidebar text-foreground"
   class:home-assistant={destination === 'assistant' && !$collaborator$}
   data-home-page
@@ -742,12 +745,13 @@
             in:springIn|global={{ tier: 'moderate', x: mainDirection * 12, y: 0, scale: 1 }}
             out:crispOut|global={{ tier: 'moderate', x: -mainDirection * 12, y: 0, scale: 1 }}
             onoutrostart={(event) => {
-              // Outer routes can leave tab/destination unchanged; every outro revokes ownership.
               event.currentTarget.inert = true;
               event.currentTarget.setAttribute('aria-hidden', 'true');
               if (tabFocus?.value === renderedTab) tabFocus = null;
             }}
-            onintrostart={(event) => syncPaneOwnership(event.currentTarget, renderedTab)}
+            onintrostart={(event) => {
+              if (!event.currentTarget.inert) syncPaneOwnership(event.currentTarget, renderedTab);
+            }}
           >
             <Tabs.Root
               bind:value={() => renderedTab, () => undefined}
@@ -884,6 +888,7 @@
                         {:else if $view$.view === 'board'}
                           <HomeWorkspaceBoard
                             workspaces={filteredWorkspaces}
+                            pinnedIds={$pinnedIds$}
                             groups={boardGroups}
                             showRepository={!selectedRepository}
                             showRepositoryOwner={!selectedOrg}
@@ -891,6 +896,7 @@
                             onselect={(id) =>
                               updateView({ selectedId: selectedId === id ? null : id })}
                             onopen={openWorkspace}
+                            {doubleClick}
                             oncontextmenu={showWorkspaceMenu}
                             archived={filter === 'archived'}
                           />

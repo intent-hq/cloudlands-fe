@@ -38,7 +38,9 @@ import {
 import { createMentionSuggestionRenderer } from '$lib/components/chat/input/mention-suggestion-renderer';
 import { getMentionSystem, type SearchContext } from '$lib/services/mentions';
 import { toPromptToken } from '$lib/services/mentions/format';
-import { memberMentionLabel } from '$lib/utils/member-mention-token';
+import { noteUrl } from '$shared/constants/intent-links';
+import { mentionChipDisplayLabel } from '$lib/utils/note-mention-label';
+import { storeNoteTitleLookup } from '$lib/utils/store-note-title-lookup';
 import { m } from '$shared/paraglide/messages.js';
 
 // Import note primitives extensions
@@ -490,8 +492,13 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
                   class: 'mention-chip',
                 },
                 renderHTML({ node }: any) {
-                  // Ensure we always have a non-empty label for the mention
-                  const label = node.attrs.label || node.attrs.id || 'mention';
+                  // Note chips show the note's live title; data-label and the
+                  // saved token keep the original, so nothing is rewritten.
+                  const displayLabel = mentionChipDisplayLabel(
+                    node.attrs,
+                    workspace?.id,
+                    storeNoteTitleLookup,
+                  );
                   return [
                     'span',
                     {
@@ -504,7 +511,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
                       class: 'mention-chip',
                       tabindex: '0',
                     },
-                    node.attrs.type === 'member' ? memberMentionLabel(label) : label,
+                    displayLabel,
                   ];
                 },
                 renderText: mentionRenderText,
@@ -909,8 +916,13 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
                 },
                 suggestion: mentionSuggestion,
                 renderHTML({ node }: any) {
-                  // Ensure we always have a non-empty label for the mention
-                  const label = node.attrs.label || node.attrs.id || 'mention';
+                  // Note chips show the note's live title; data-label and the
+                  // saved token keep the original, so nothing is rewritten.
+                  const displayLabel = mentionChipDisplayLabel(
+                    node.attrs,
+                    workspace?.id,
+                    storeNoteTitleLookup,
+                  );
                   return [
                     'span',
                     {
@@ -923,7 +935,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
                       class: 'mention-chip',
                       tabindex: '0',
                     },
-                    node.attrs.type === 'member' ? memberMentionLabel(label) : label,
+                    displayLabel,
                   ];
                 },
                 renderText: mentionRenderText,
@@ -965,9 +977,6 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
       CommentDecorationsExtension,
     ];
   }
-
-  // Line attribution is now handled by LineAttributionGutter.svelte component
-  // extensions = [...extensions, LineAttributionExtensionV2];
 
   return {
     element,
@@ -1143,8 +1152,20 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
               );
             }
           } else if (mentionType === 'note' || mentionType === 'note-range') {
-            // Open note in main content area
-            if (mentionId && workspace?.id) {
+            // A chip rebuilt from `@note[<ws>/<id>:<title>]` names a sibling
+            // workspace: route through its workspace-qualified link.
+            if (
+              mentionId &&
+              meta.isExternalLink &&
+              meta.workspaceId &&
+              meta.workspaceId !== workspace?.id
+            ) {
+              handleLink(noteUrl(mentionId, meta.workspaceId), {
+                workspaceId: workspace?.id,
+                sourcePanelId,
+                event,
+              });
+            } else if (mentionId && workspace?.id) {
               appStore.dispatch(
                 openWorkspaceNote(workspace.id, mentionId, {
                   openInAdjacentPanel,

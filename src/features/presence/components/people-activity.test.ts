@@ -3,6 +3,7 @@ import type { WorkspaceEvent } from '$features/events/types';
 import type { PresenceIdentity } from '$store/renderer/slices/presence/presence-types';
 import { getPeopleActivity } from './people-activity';
 import { buildCollaboratorSenderPreamble } from '$lib/utils/collaborator-sender-attribution';
+import { getLocale, locales, setLocale } from '$shared/paraglide/runtime.js';
 
 const workspaceId = 'workspace-1';
 const person: PresenceIdentity = {
@@ -27,6 +28,188 @@ function rows(events: WorkspaceEvent[], people: PresenceIdentity[] = [person]) {
 }
 
 describe('People activity', () => {
+  it.each(locales)(
+    'keeps actor-free actions separate from full accessible labels in %s',
+    (locale) => {
+      const previous = getLocale();
+      try {
+        setLocale(locale, { reload: false });
+        const result = rows([
+          event({ id: 'first', timestamp: '2026-10-14T12:01:00Z' }),
+          event({ id: 'second', type: 'comment:added', data: { noteId: 'note-1' } }),
+        ]);
+        expect(result[1].continuation).toBe(true);
+        for (const row of result) {
+          expect(row.label).toContain('Historical name');
+          expect(row.actionLabel).not.toContain('Historical name');
+          expect(row.actionLabel.trim().length).toBeGreaterThan(0);
+        }
+      } finally {
+        setLocale(previous, { reload: false });
+      }
+    },
+  );
+
+  it('does not join human rows across a message with no stamped author', () => {
+    const result = rows([
+      event({ id: 'new', timestamp: '2026-10-14T12:02:00Z' }),
+      event({
+        id: 'unstamped',
+        timestamp: '2026-10-14T12:01:00Z',
+        type: 'agent:message',
+        data: { role: 'user' },
+      }),
+      event({ id: 'old' }),
+    ]);
+    expect(result.map(({ continuation }) => continuation)).toEqual([false, false]);
+  });
+
+  it.each([
+    { actor: { type: 'system' as const, id: 'system' }, metadata: undefined },
+    { actor: { type: 'agent' as const, id: 'worker' }, metadata: undefined },
+    { actor: { type: 'user' as const, id: person.principalId }, metadata: { source: 'system' } },
+    { actor: { type: 'user' as const, id: person.principalId }, metadata: { type: 'hook' } },
+  ])(
+    'groups human messages across hidden automated user-role events: %j',
+    ({ actor, metadata }) => {
+      const message = (id: string, minute: number) =>
+        event({
+          id,
+          timestamp: `2026-10-14T12:0${minute}:00Z`,
+          type: 'agent:message',
+          actor: { type: 'system', id: 'system' },
+          data: { role: 'user', agentId: 'agent-1', messageId: id, author: person },
+        });
+      const result = rows([
+        message('new', 2),
+        event({
+          id: 'wake',
+          timestamp: '2026-10-14T12:01:00Z',
+          type: 'agent:message',
+          actor,
+          data: { role: 'user', agentId: 'agent-1', messageId: 'wake', metadata },
+        }),
+        message('old', 0),
+      ]);
+      expect(result.map(({ id, continuation }) => [id, continuation])).toEqual([
+        ['new', false],
+        ['old', true],
+      ]);
+    },
+  );
+
+  it('groups consecutive principal aliases but never matching names from different principals', () => {
+    const result = rows([
+      event({ id: 'new', timestamp: '2026-10-14T12:03:00Z' }),
+      event({
+        id: 'alias',
+        timestamp: '2026-10-14T12:02:00Z',
+        actor: { type: 'user', id: person.principalId, name: 'Former name' },
+      }),
+      event({
+        id: 'other',
+        timestamp: '2026-10-14T12:01:00Z',
+        actor: { type: 'user', id: 'other', name: 'Former name' },
+      }),
+      event({ id: 'again' }),
+    ]);
+    expect(result.map(({ continuation }) => continuation)).toEqual([false, true, false, false]);
+    expect(result[1]).toMatchObject({
+      principalId: person.principalId,
+      name: 'Former name',
+      destination: { noteId: 'note-1' },
+    });
+  });
+
+  it.each([0, 15 * 60_000, 15 * 60_000 + 1])(
+    'uses the inclusive fifteen-minute adjacent-row boundary: %s ms',
+    (gap) => {
+      const recent = event({ id: 'new', timestamp: '2026-10-14T12:30:00Z' });
+      const older = event({
+        id: 'older',
+        timestamp: new Date(Date.parse(recent.timestamp) - gap).toISOString(),
+      });
+      const result = rows([recent, older]);
+      expect(result.map(({ continuation }) => continuation)).toEqual([false, gap <= 900_000]);
+    },
+  );
+
+  it('groups in display order and compares adjacent rows, not the run start', () => {
+    const result = rows([
+      event({ id: 'oldest', timestamp: '2026-10-14T12:00:00Z' }),
+      event({ id: 'newest', timestamp: '2026-10-14T12:30:00Z' }),
+      event({ id: 'middle', timestamp: '2026-10-14T12:15:00Z' }),
+    ]);
+    expect(result.map(({ id, continuation }) => [id, continuation])).toEqual([
+      ['newest', false],
+      ['middle', true],
+      ['oldest', true],
+    ]);
+  });
+
+  it.each([
+    { type: 'user', name: 'Former member' },
+    { type: 'user', id: 'missing-person' },
+    { type: 'user', name: 'Unknown' },
+  ] as const)(
+    'breaks runs at unknown principals even when the row cannot be displayed: %j',
+    (actor) => {
+      const result = rows([
+        event({ id: 'new', timestamp: '2026-10-14T12:02:00Z' }),
+        event({ id: 'unknown', timestamp: '2026-10-14T12:01:00Z', actor }),
+        event({ id: 'old' }),
+      ]);
+      expect(result.every(({ continuation }) => !continuation)).toBe(true);
+    },
+  );
+
+  it('does not bridge a discarded invalid timestamp', () => {
+    const result = rows([
+      event({ id: 'new', timestamp: '2026-10-14T12:02:00Z' }),
+      event({ id: 'invalid', timestamp: 'not-a-date' }),
+      event({ id: 'old' }),
+    ]);
+    expect(result.map(({ id, continuation }) => [id, continuation])).toEqual([
+      ['new', false],
+      ['old', false],
+    ]);
+  });
+
+  it('uses the stamped message principal instead of the delivery actor and keeps portable authors separate', () => {
+    const message = (id: string, minute: number, principalId: string | null) =>
+      event({
+        id,
+        timestamp: `2026-10-14T12:0${minute}:00Z`,
+        type: 'agent:message',
+        actor: { type: 'system', id: 'delivery-agent' },
+        data: {
+          role: 'user',
+          agentId: 'agent-1',
+          messageId: id,
+          author: { ...person, principalId },
+        },
+      });
+    const result = rows([
+      message('first', 4, person.principalId),
+      message('second', 3, person.principalId),
+      message('portable', 2, null),
+      message('portable-again', 1, null),
+      event(),
+    ]);
+    expect(result.map(({ continuation }) => continuation)).toEqual([
+      false,
+      true,
+      false,
+      false,
+      false,
+    ]);
+    expect(result[1]).toMatchObject({
+      principalId: person.principalId,
+      messageId: 'second',
+      destination: { agentId: 'agent-1' },
+    });
+  });
+
   const messageEvent = event({
     type: 'agent:message',
     data: { role: 'user', agentId: 'agent-1', messageId: 'message-1', author: person },

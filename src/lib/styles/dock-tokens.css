@@ -34,7 +34,6 @@
   --background: var(--dock-surface);
   --card: var(--dock-surface);
   --popover: var(--dock-surface);
-  --app-background: var(--dock-surface);
   --foreground: var(--dock-foreground);
   --card-foreground: var(--dock-foreground);
   --popover-foreground: var(--dock-foreground);
@@ -78,7 +77,6 @@
   --background: var(--theme-background);
   --card: var(--theme-card);
   --popover: var(--theme-popover);
-  --app-background: var(--theme-app-background);
   --foreground: var(--theme-foreground);
   --card-foreground: var(--theme-card-foreground);
   --popover-foreground: var(--theme-popover-foreground);
@@ -96,7 +94,7 @@
   --color-card: hsl(var(--card));
   --color-popover: hsl(var(--popover));
   --color-sidebar: hsl(var(--sidebar));
-  --color-app-background: hsl(var(--app-background));
+  --color-app-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
   --color-card-foreground: hsl(var(--card-foreground));
   --color-popover-foreground: hsl(var(--popover-foreground));

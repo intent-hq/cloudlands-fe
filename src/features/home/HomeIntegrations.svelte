@@ -16,6 +16,8 @@
   import HomeWorkspaceDetail from './HomeWorkspaceDetail.svelte';
   import { onDestroy, untrack, tick, type Snippet } from 'svelte';
   import { goto } from '$app/navigation';
+  import { openAndShowWorkspace } from '$lib/utils/show-workspace';
+  import { createHomeDoubleClickOpener } from './home-workspace-opening';
   import { handleLink } from '$features/navigation/link-handler';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { Button } from '$lib/components/ui/button';
@@ -275,6 +277,22 @@
       workspaceId: linkedWorkspace ? WorkspaceId(linkedWorkspace.workspaceId) : undefined,
     });
   }
+  function goToWorkspace(id: string) {
+    void openAndShowWorkspace(id);
+  }
+  function linkedWorkspaceFor(item: { url: string }) {
+    return $linkedWorkspaces$.find(
+      (link) => link.url === item.url.replace(/\/$/, '').toLowerCase(),
+    );
+  }
+  const doubleClick = createHomeDoubleClickOpener((itemId) => {
+    const item = items.find((candidate) => candidate.id === itemId);
+    const linked = item && linkedWorkspaceFor(item);
+    if (!linked) return;
+    const current = preview ? selectedId : selectHomeIntegrations.select(appStore.state).selectedId;
+    if (current !== itemId) void selectItem(itemId);
+    goToWorkspace(linked.workspaceId);
+  });
   function openWorkspace() {
     if (!linkedWorkspace) return;
     workspacePreviewId = linkedWorkspace.workspaceId;
@@ -285,6 +303,7 @@
 
 <div
   bind:this={root}
+  {@attach doubleClick.listen}
   class="home-integrations flex h-full min-h-0 flex-1 overflow-hidden"
   data-home-integrations={kind}
 >
@@ -446,8 +465,12 @@
                 : m.home_integrations_empty()}
             </p>{/snippet}
           {#snippet row({ item })}
+            {@const linked = linkedWorkspaceFor(item)}
             <ListRow
               class="home-list-row home-integration-row min-h-12 items-start border-b border-border px-2 py-3"
+              onclick={(event) => {
+                if (isPr) doubleClick.arm(event, item.id);
+              }}
             >
               {#snippet leading()}{#if isPr}<HomePullState
                     state={item.state}
@@ -513,9 +536,6 @@
                 </div>
               {/snippet}
               {#snippet description()}
-                {@const linked = $linkedWorkspaces$.find(
-                  (link) => link.url === item.url.replace(/\/$/, '').toLowerCase(),
-                )}
                 {#if linked}
                   <div class="pt-2 pb-1">
                     <Button
@@ -1016,7 +1036,8 @@
     margin-block: 1rem 0.5rem;
     font-weight: 500;
   }
-  .linear-description :global(.markdown-viewer > :first-child) {
+  .linear-description :global(.markdown-viewer > :first-child),
+  .linear-description :global(.markdown-content > :first-child) {
     margin-top: 0;
   }
   .home-integrations {

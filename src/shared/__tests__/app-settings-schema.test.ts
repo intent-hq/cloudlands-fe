@@ -19,17 +19,8 @@ describe('app settings schema', () => {
     });
   });
 
-  it('exposes provider profiles as a local, default-off Labs preference', () => {
-    expect(findAppSettingDefinition('labs.providerProfiles')).toMatchObject({
-      label: 'Provider profiles',
-      description: 'Whether the experimental Provider profiles lab is enabled.',
-      category: 'labs',
-      type: 'boolean',
-      source: 'local-storage',
-      storageKey: 'labs:providerProfilesEnabled',
-      defaultValue: false,
-      apply: { kind: 'redux-action', action: 'userPreferences/setLabsProviderProfilesEnabled' },
-    });
+  it('has no provider profiles Labs preference: profiles are always on', () => {
+    expect(findAppSettingDefinition('labs.providerProfiles')).toBeUndefined();
   });
 
   it('exposes remote agents as a local, default-off Labs preference', () => {
@@ -111,15 +102,8 @@ describe('app settings schema', () => {
     });
   });
 
-  it('defines the Multiplayer lab preference as an opt-in local-storage boolean', () => {
-    expect(findAppSettingDefinition('labs.multiplayer')).toMatchObject({
-      category: 'labs',
-      type: 'boolean',
-      source: 'local-storage',
-      storageKey: 'labs:multiplayerEnabled',
-      defaultValue: false,
-      apply: { kind: 'redux-action', action: 'userPreferences/setLabsMultiplayerEnabled' },
-    });
+  it('does not expose the retired Multiplayer toggle: Multiplayer is always on', () => {
+    expect(findAppSettingDefinition('labs.multiplayer')).toBeUndefined();
   });
 
   it('exposes theme preset IDs as enum values', () => {

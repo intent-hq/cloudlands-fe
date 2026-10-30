@@ -39,8 +39,10 @@ export function groupHomeWorkspacesByStatus(workspaces: readonly Workspace[]) {
   const buckets = new Map<StatusGroup | 'archived', Workspace[]>();
   for (const workspace of workspaces) {
     if (workspace.status === WorkspaceStatusEnum.Deleted || workspace.pendingDeleteAt) continue;
+    // A Retired workspace (its folder was purged, PROTOCOL §5.1) is archived.
     const status =
-      workspace.status === WorkspaceStatusEnum.Archived
+      workspace.status === WorkspaceStatusEnum.Archived ||
+      workspace.status === WorkspaceStatusEnum.Retired
         ? 'archived'
         : isWorkspaceDisplayStatus(workspace.displayStatus)
           ? statusGroups[workspace.displayStatus]

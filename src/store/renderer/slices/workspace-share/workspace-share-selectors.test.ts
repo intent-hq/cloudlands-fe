@@ -1,3 +1,4 @@
+import { selectPrincipalActionContext } from '../principal/principal-selectors';
 import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 /**
  * Hover-card roster selectors: the owner gate (`workspace.myRole === 'owner'`
@@ -7,7 +8,11 @@ import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { describe, expect, it } from 'vitest';
 
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
-import type { HostPrincipal, WorkspaceMember } from '$features/workspace-sharing/types';
+import type {
+  HostPrincipal,
+  WorkspaceInvite,
+  WorkspaceMember,
+} from '$features/workspace-sharing/types';
 import type { Workspace, WorkspaceRole } from '$shared/types';
 import type { StoreState } from '../../types';
 import {
@@ -22,7 +27,15 @@ import {
 } from '../guest-sessions/guest-sessions-slice';
 import type { GuestSessionRecord } from '../guest-sessions/guest-sessions-types';
 import {
+  selectWorkspacePeopleInvites,
+  selectShareInvites,
+  selectShareSharingEnabled,
+  selectShareSharingChecking,
+  selectShareSharingEnabling,
+  selectShareSharingError,
   selectShareCanManage,
+  selectShareCanSetMemberRole,
+  selectShareOwnerPrincipalId,
   selectShareInvitablePrincipals,
   selectWorkspaceRosterCanManage,
   selectWorkspaceRosterMembers,
@@ -32,6 +45,12 @@ import {
   selectWorkspaceRosterWithheld,
 } from './workspace-share-selectors';
 import {
+  sharePeopleInvitesScopeChanged,
+  sharePeopleInvitesLoaded,
+  sharePeopleInvitesWithheld,
+  closeShareDialog,
+  sharePrerequisitesStarted,
+  sharePrerequisitesSettled,
   initialState,
   openShareDialog,
   shareDataLoaded,
@@ -229,5 +248,183 @@ describe('keyed roster reads', () => {
     expect(selectWorkspaceRosterRemoveError.select(state, 'ws-1')).toBeNull();
     expect(selectWorkspaceRosterTracked.select(state, 'ws-1')).toBe(true);
     expect(selectWorkspaceRosterTracked.select(state, 'ws-2')).toBe(false);
+  });
+});
+
+it('hides prerequisite status as soon as host identity changes', () => {
+  const root = stateWith(
+    { 'ws-1': 'owner' },
+    openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'Space' }),
+  );
+  const target = {
+    workspaceId: 'ws-1',
+    session: root.workspaceShare.session,
+    authority: selectPrincipalActionContext.select(root),
+  };
+  root.workspaceShare = workspaceShareReducer(
+    root.workspaceShare,
+    sharePrerequisitesStarted({ target, enabling: true }),
+  );
+  expect(selectShareSharingEnabling.select(root)).toBe(true);
+  root.workspaceShare = workspaceShareReducer(
+    root.workspaceShare,
+    sharePrerequisitesSettled({ target, enabled: true, error: null }),
+  );
+  expect(selectShareSharingEnabled.select(root)).toBe(true);
+  root.principal = { ...root.principal, invalidation: root.principal.invalidation + 1 };
+  expect(selectShareSharingEnabled.select(root)).toBeNull();
+  expect(selectShareSharingChecking.select(root)).toBe(false);
+  expect(selectShareSharingEnabling.select(root)).toBe(false);
+  expect(selectShareSharingError.select(root)).toBeNull();
+});
+
+it('uses authoritative ownership for role controls even with a collaborator projection', () => {
+  const state = stateWith(
+    { 'ws-role': 'collaborator' },
+    openShareDialog({ workspaceId: 'ws-role', workspaceTitle: 'Roles' }),
+  );
+  state.principal.snapshot!.capabilities.hostMembership = true;
+  state.principal.snapshot!.capabilities.workspaceGuestRoles = true;
+  state.principal.snapshot!.principal.hostRole = 'owner';
+  state.workspace.workspaces.map['ws-role'].canManage = true;
+  state.workspace.workspaces.map['ws-role'].ownerPrincipalId =
+    state.principal.snapshot!.principal.id;
+  state.workspace.hasLoaded = true;
+  state.workspace.loadedBackendId = state.connections.windowBackendId;
+  state.workspace.capabilityContext = selectPrincipalActionContext.select(state);
+  expect(selectShareOwnerPrincipalId.select(state)).toBe(state.principal.snapshot!.principal.id);
+  expect(selectShareCanSetMemberRole.select(state)).toBe(true);
+  state.workspace.workspaces.map['ws-role'].ownerPrincipalId = 'another-owner';
+  expect(selectShareCanSetMemberRole.select(state)).toBe(true);
+  state.principal.snapshot!.principal.hostRole = 'member';
+  expect(selectShareCanSetMemberRole.select(state)).toBe(false);
+  state.principal.snapshot!.capabilities.workspaceGuestRoles = false;
+  expect(selectShareCanSetMemberRole.select(state)).toBe(false);
+});
+
+describe('persistent People invitations', () => {
+  const now = Date.parse('2026-10-23T12:00:00Z');
+  const pending: WorkspaceInvite = {
+    id: 'inv-pending',
+    workspaceId: 'ws-1',
+    createdByPrincipalId: 'p-alice',
+    pinLogin: 'carol',
+    pinIdentity: { provider: 'github', host: 'github.com', externalUserId: '3' },
+    createdAt: '2026-10-23T00:00:00Z',
+    expiresAt: '2026-10-24T00:00:00Z',
+  };
+  function cached(invites: WorkspaceInvite[] = [pending]) {
+    const state = stateWith({ 'ws-1': 'owner', 'ws-2': 'owner' });
+    const context = selectPrincipalActionContext.select(state)!;
+    state.workspaceShare = [
+      sharePeopleInvitesScopeChanged({ context, workspaceIds: ['ws-1'] }),
+      sharePeopleInvitesLoaded({
+        workspaceId: 'ws-1',
+        context,
+        generation: 1,
+        invites,
+        receivedAt: now,
+      }),
+    ].reduce(workspaceShareReducer, state.workspaceShare);
+    return state;
+  }
+
+  it('shows a named pending invite with the dialog closed and a solo workspace', () => {
+    const state = cached();
+    expect(selectWorkspacePeopleInvites.select(state, 'ws-1')).toEqual([pending]);
+    expect(selectWorkspacePeopleInvites.select(state, 'ws-2')).toEqual([]);
+    expect(selectShareInvites.select(state)).toEqual([]);
+    state.workspaceShare = workspaceShareReducer(
+      state.workspaceShare,
+      openShareDialog({ workspaceId: 'ws-1', workspaceTitle: '' }),
+    );
+    expect(selectShareInvites.select(state)).toEqual([pending]);
+    state.workspaceShare = workspaceShareReducer(state.workspaceShare, closeShareDialog());
+    expect(selectWorkspacePeopleInvites.select(state, 'ws-1')).toEqual([pending]);
+  });
+
+  it('excludes generic, revoked, expired, and redeemed single-use invitations', () => {
+    const state = cached([
+      pending,
+      { ...pending, id: 'generic', pinLogin: undefined, pinIdentity: undefined },
+      { ...pending, id: 'revoked', revokedAt: '2026-10-23T01:00:00Z' },
+      { ...pending, id: 'expired', expiresAt: '2026-10-23T11:00:00Z' },
+      { ...pending, id: 'redeemed', redeemedAt: '2026-10-23T01:00:00Z' },
+    ]);
+    expect(selectWorkspacePeopleInvites.select(state, 'ws-1')).toEqual([pending]);
+  });
+
+  it('deduplicates qualified identities, including legacy github.com pins, without matching login across forges', () => {
+    const gitlab = {
+      ...pending,
+      id: 'gitlab',
+      pinIdentity: { provider: 'gitlab' as const, host: 'forge.example', externalUserId: '3' },
+    };
+    const state = cached([
+      { ...pending, reusable: true, redeemedAt: '2026-10-23T01:00:00Z' },
+      { ...pending, id: 'legacy', pinIdentity: undefined, pinGithubUserId: 3 },
+      gitlab,
+      { ...gitlab, id: 'duplicate', pinIdentity: { ...gitlab.pinIdentity, host: 'FORGE.EXAMPLE' } },
+      {
+        ...pending,
+        id: 'another-host',
+        pinIdentity: { ...gitlab.pinIdentity, host: 'other.example' },
+      },
+    ]);
+    state.presence = {
+      context: selectPrincipalActionContext.select(state),
+      members: {
+        'ws-1': createCollection('principalId', [
+          { ...guest, login: 'carol', identity: { ...pending.pinIdentity!, host: 'GitHub.COM' } },
+        ]),
+      },
+    } as StoreState['presence'];
+    expect(selectWorkspacePeopleInvites.select(state, 'ws-1').map((row) => row.id)).toEqual([
+      'gitlab',
+      'another-host',
+    ]);
+    state.presence = { ...state.presence, context: 'old-context' };
+    expect(selectWorkspacePeopleInvites.select(state, 'ws-1').map((row) => row.id)).toEqual([
+      'inv-pending',
+      'gitlab',
+      'another-host',
+    ]);
+  });
+
+  it('never treats matching logins or unqualified member identities as acceptance', () => {
+    const state = cached();
+    state.presence = {
+      context: selectPrincipalActionContext.select(state),
+      members: { 'ws-1': createCollection('principalId', [{ ...guest, login: 'carol' }]) },
+    } as StoreState['presence'];
+    expect(selectWorkspacePeopleInvites.select(state, 'ws-1')).toEqual([pending]);
+    state.workspaceShare.invites = createCollection('id', [
+      {
+        ...pending,
+        reusable: true,
+        redeemedAt: '2026-10-23T01:00:00Z',
+        redeemedByPrincipalId: guest.principalId,
+      },
+    ]);
+    expect(selectWorkspacePeopleInvites.select(state, 'ws-1')).toEqual([]);
+  });
+
+  it('fails closed on changed authority and daemon denial', () => {
+    const state = cached();
+    const context = selectPrincipalActionContext.select(state)!;
+    state.workspaceShare = workspaceShareReducer(
+      state.workspaceShare,
+      sharePeopleInvitesWithheld({ workspaceId: 'ws-1', context, generation: 1 }),
+    );
+    expect(selectWorkspacePeopleInvites.select(state, 'ws-1')).toEqual([]);
+    const stale = cached();
+    stale.principal = { ...stale.principal, invalidation: stale.principal.invalidation + 1 };
+    expect(selectWorkspacePeopleInvites.select(stale, 'ws-1')).toEqual([]);
+    const denied = cached();
+    denied.workspace = {
+      ...denied.workspace,
+      workspaces: createCollection('id', [{ id: 'ws-1', myRole: 'collaborator' } as Workspace]),
+    };
+    expect(selectWorkspacePeopleInvites.select(denied, 'ws-1')).toEqual([]);
   });
 });

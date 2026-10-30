@@ -38,9 +38,13 @@ export const selectBrowserTabNavigations = store.createSelector((state) => {
  * True once the tab saga has (re)hydrated the persisted tab strip for the
  * ACTIVE backend. Until then `currentTabId` may still be the previous
  * backend's (or empty), so boot-time consumers must not treat it as final.
+ * The initial local backend is a placeholder until the connection list arrives.
  */
 export const selectWorkspaceTabsHydrated = store.createSelector((state) => {
-  return state.tabState.hydratedBackendId === getActiveBackendId(state);
+  return (
+    state.connections?.hasReceivedList === true &&
+    state.tabState.hydratedBackendId === getActiveBackendId(state)
+  );
 });
 
 export const selectWorkspaceTabOrder = store.createSelector((state) => {

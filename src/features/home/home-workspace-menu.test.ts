@@ -27,7 +27,7 @@ function menu(connected = true, target = workspace) {
     microConnected: connected,
     onOpen: vi.fn(),
     onClose: close,
-    expandPinned: vi.fn(),
+    expandGroup: vi.fn(),
     getHomeElement: () => null,
   });
 }

@@ -1,5 +1,6 @@
 <script module lang="ts">
   import type { AskUserAnswer, AskUserOption, AskUserQuestionsProps } from './types';
+  import { isTextEntryTarget } from '$lib/utils/text-entry';
 
   const mountedInstances: HTMLElement[] = [];
   const DEFAULT_FREE_TEXT_PLACEHOLDER = 'Type your answer…'; // i18n-ignore (public primitive API default from reference)
@@ -400,8 +401,7 @@
       return;
     }
     if (event.metaKey || event.ctrlKey || event.altKey) return;
-    if (target && (['INPUT', 'TEXTAREA'].includes(target.tagName) || target.isContentEditable))
-      return;
+    if (isTextEntryTarget(target)) return;
     if (event.key < '1' || event.key > '9') return;
     const optionIndex = Number.parseInt(event.key, 10) - 1;
     if (optionIndex < options.length) {
@@ -554,7 +554,7 @@
     bind:this={rootElement}
     data-slot="ask-user-questions"
     class={cn(
-      'relative w-full max-w-[520px] overflow-hidden rounded-(--radius-large) border border-border',
+      'relative w-full max-w-[520px] overflow-hidden rounded-(--radius-large) border border-border wrap-anywhere',
       surfaceClasses(clampSurface(surface + 1)),
       className,
     )}
@@ -580,12 +580,14 @@
       {/if}
 
       <div use:animatedHeight={true}>
-        <div class="grid">
+        <!-- With the root's wrap-anywhere, a shrinkable column keeps unbreakable tokens
+             (e.g. snake_case names) from widening the step past the clipped card. -->
+        <div class="grid grid-cols-1">
           {#key questionId}
             <div
               data-animated-height-target
               class={cn(
-                'col-start-1 row-start-1 flex flex-col gap-2 px-5',
+                'col-start-1 row-start-1 flex min-w-0 flex-col gap-2 px-5',
                 !showCounter && (compact ? 'pt-2.5' : 'pt-3.5'),
                 showFooter ? 'pb-1' : compact ? 'pb-2 sm:pb-2.5' : 'pb-2.5 sm:pb-3',
               )}
@@ -602,7 +604,7 @@
                 {#if question.header}
                   <p
                     class={cn(
-                      'min-w-0 break-words type-caption text-muted-foreground',
+                      'min-w-0 type-caption text-muted-foreground',
                       centered ? 'w-full' : 'grow basis-48',
                     )}
                   >
@@ -612,7 +614,7 @@
                   <h3
                     id={titleId}
                     class={cn(
-                      'min-w-0 break-words text-[16px] font-semibold leading-snug text-foreground',
+                      'min-w-0 text-[16px] font-semibold leading-snug text-foreground',
                       centered ? 'w-full' : 'grow basis-48',
                     )}
                   >
@@ -634,7 +636,7 @@
                 <h3
                   id={titleId}
                   class={cn(
-                    'break-words text-[16px] font-semibold leading-snug text-foreground',
+                    'text-[16px] font-semibold leading-snug text-foreground',
                     centered && 'text-center',
                   )}
                 >
@@ -644,7 +646,7 @@
               {#if question.description}
                 <p
                   class={cn(
-                    'break-words text-xs leading-snug text-muted-foreground',
+                    'text-xs leading-snug text-muted-foreground',
                     centered && 'text-center',
                   )}
                 >
@@ -811,7 +813,7 @@
                       {#if chipPosition === 'left'}{@render chip()}{/if}
                       <span
                         class={cn(
-                          'min-w-0 flex-1 break-words leading-snug',
+                          'min-w-0 flex-1 leading-snug',
                           compact ? 'text-xs' : 'type-caption',
                           question.layout === 'stacked'
                             ? 'flex flex-col gap-0.5'

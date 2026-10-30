@@ -1,3 +1,4 @@
+import { DEFAULT_DISCUSSION_ID, discussionKey } from '$shared/types/workspace-discussion';
 /**
  * Presence Saga (multiplayer w5, PROTOCOL §5.46)
  *
@@ -36,15 +37,7 @@
  * admission invalidation cancels every worker and clears ephemeral projections.
  */
 
-import {
-  END,
-  buffers,
-  channel,
-  eventChannel,
-  type Channel,
-  type EventChannel,
-  type Task,
-} from 'redux-saga';
+import { buffers, channel, type Channel, type Task } from 'redux-saga';
 import {
   all,
   call,
@@ -56,6 +49,7 @@ import {
   race,
   select,
   take,
+  takeEvery,
   type SagaGenerator,
 } from 'typed-redux-saga';
 import {
@@ -68,10 +62,13 @@ import {
   takeLatestInContext,
   takeSingleFlightInContext,
 } from '../../../utils/context-saga-effects';
+import { takeEveryFromWindowEvent } from '../../../utils/ipc-channel';
 import { backendRequest, observeBackendNodeCapabilities } from '$lib/client/live/backend-transport';
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { isWorkspaceRole } from '$shared/types';
+import { watchCaptureDrawing, watchPresenceVisibility } from './presence-visibility-watcher';
 import {
   isPresenceRoster,
   isPresenceIdentity,
@@ -92,10 +89,13 @@ import {
   presenceReset,
   presenceRosterReceived,
   presenceSnapshotReceived,
+  presenceDiscussionComposerFocused,
+  presenceDiscussionTypingExpired,
+  presenceDiscussionTypingPulse,
+  presenceDiscussionTypingStopped,
   presenceTypingExpired,
   presenceTypingPulse,
   presenceTypingStopped,
-  presenceWindowVisibilityChanged,
 } from '../presence-slice';
 import {
   selectPresenceContext,
@@ -103,10 +103,16 @@ import {
   selectOwnPresenceReport,
   selectOwnPresenceReportKey,
   selectPresenceLiveTyping,
+  selectPresenceLiveDiscussionTyping,
+  selectDiscussionTypingTarget,
   selectPresenceMembershipKeys,
   selectPresenceProfileRevision,
 } from '../presence-selectors';
-import { PRESENCE_TYPING_EXPIRY_MS, type LiveTypingEntry } from '../presence-types';
+import {
+  PRESENCE_TYPING_EXPIRY_MS,
+  type LiveTypingEntry,
+  type LiveDiscussionTypingEntry,
+} from '../presence-types';
 
 const logger = createLogger('PresenceSaga');
 const PRESENCE = IPC_CHANNELS.PRESENCE;
@@ -148,7 +154,7 @@ async function readMembership(workspaceId: string): Promise<WorkspaceMembersList
       result.members.every(
         (member) =>
           isPresenceIdentity(member) &&
-          (member.role === 'owner' || member.role === 'collaborator') &&
+          isWorkspaceRole(member.role) &&
           typeof member.addedAt === 'string',
       )
       ? result
@@ -174,19 +180,6 @@ function supersedesSnapshot(action: ObservedAction, workspaceId: string): boolea
   );
 }
 
-/** `visibilitychange` is a document event, so the window-event helper does not apply. */
-function createVisibilityChannel(): EventChannel<boolean> {
-  return eventChannel<boolean>((emit) => {
-    if (typeof document === 'undefined') {
-      emit(END as never);
-      return () => {};
-    }
-    const handler = () => emit(document.visibilityState === 'visible');
-    document.addEventListener('visibilitychange', handler);
-    return () => document.removeEventListener('visibilitychange', handler);
-  }, buffers.sliding<boolean>(1));
-}
-
 /** Successful idle reports belong to one admitted connection lifetime only. */
 function createReportSender() {
   let lastSuccessfulKey: string | null = null;
@@ -194,14 +187,15 @@ function createReportSender() {
   return function* sendReport(): SagaGenerator<void> {
     const params = yield* select(selectOwnPresenceReport.select);
     const key = JSON.stringify(params);
-    if (!params.typing && key === lastSuccessfulKey) return;
+    if (!params.typing && !params.discussionTyping && key === lastSuccessfulKey) return;
     const current = ++ordinal;
     lastSuccessfulKey = null;
     try {
       const result = yield* call(invokeReport, params);
       if (current !== ordinal) return;
       // A null source can mean a failed send; leave the next report retryable.
-      if (result.typingSource !== null) lastSuccessfulKey = params.typing ? null : key;
+      if (result.typingSource !== null)
+        lastSuccessfulKey = params.typing || params.discussionTyping ? null : key;
       yield* put(presenceOwnTypingSourceReceived(result.typingSource));
     } catch (error) {
       logger.debug('presence:report failed', { error: String(error) });
@@ -210,21 +204,6 @@ function createReportSender() {
 }
 
 type ReportSender = ReturnType<typeof createReportSender>;
-
-function* watchVisibility(): SagaGenerator<void> {
-  const channel = createVisibilityChannel();
-  try {
-    if (typeof document !== 'undefined')
-      yield* put(presenceWindowVisibilityChanged(document.visibilityState === 'visible'));
-    while (true) {
-      const visible = yield* take(channel);
-      if ((visible as unknown) === END) break;
-      yield* put(presenceWindowVisibilityChanged(visible));
-    }
-  } finally {
-    channel.close();
-  }
-}
 
 /**
  * Debounced report: every change restarts the delay; only the last one sends.
@@ -269,6 +248,93 @@ function* watchTypingPulses(sendReport: ReportSender): SagaGenerator<void> {
     if (now - lastPulseAt < PRESENCE_TYPING_PULSE_MS) continue;
     lastPulseAt = now;
     yield* fork(sendReport);
+  }
+}
+
+/** Discussion input has its own episode and idle timer; it never clears agent typing. */
+function* watchDiscussionTypingPulses(sendReport: ReportSender): SagaGenerator<void> {
+  let episode: string | null = null;
+  let lastPulseAt = 0;
+  let idle: Task | undefined;
+  const pulses = yield* takeEvery(
+    presenceDiscussionTypingPulse,
+    function* ({
+      payload: [workspaceId, conversationId = DEFAULT_DISCUSSION_ID],
+    }): SagaGenerator<void> {
+      if (
+        (yield* select(selectDiscussionTypingTarget.select)) !==
+        discussionKey(workspaceId, conversationId)
+      )
+        return;
+      if (idle) yield* cancel(idle);
+      idle = yield* fork(function* () {
+        yield* delay(PRESENCE_TYPING_IDLE_MS);
+        yield* put(presenceDiscussionTypingStopped(workspaceId, conversationId));
+      });
+      const now = Date.now();
+      if (episode !== discussionKey(workspaceId, conversationId)) {
+        episode = discussionKey(workspaceId, conversationId);
+        lastPulseAt = now;
+        return;
+      }
+      if (now - lastPulseAt < PRESENCE_TYPING_PULSE_MS) return;
+      lastPulseAt = now;
+      yield* fork(sendReport);
+    },
+  );
+  const stops = yield* takeEvery(
+    presenceDiscussionTypingStopped,
+    function* ({
+      payload: [workspaceId, conversationId = DEFAULT_DISCUSSION_ID],
+    }): SagaGenerator<void> {
+      if (episode !== discussionKey(workspaceId, conversationId)) return;
+      episode = null;
+      if (idle) yield* cancel(idle);
+    },
+  );
+  try {
+    yield* join([pulses, stops]);
+  } finally {
+    yield* cancel([pulses, stops]);
+    if (idle) yield* cancel(idle);
+  }
+}
+
+function* clearDiscussionWindowFocus(): SagaGenerator<void> {
+  const target = yield* select(selectDiscussionTypingTarget.select);
+  if (target) {
+    const [ws, id] = JSON.parse(target);
+    yield* put(presenceDiscussionComposerFocused(ws, false, id));
+  }
+}
+
+function* clearUnfocusedDiscussion({
+  payload,
+  prevPayload,
+}: SelectorChannelPayload<string | null>): SagaGenerator<void> {
+  if (prevPayload && prevPayload !== payload) {
+    const [ws, id] = JSON.parse(prevPayload);
+    yield* put(presenceDiscussionComposerFocused(ws, false, id));
+    yield* put(presenceDiscussionTypingStopped(ws, id));
+  }
+}
+
+function* armDiscussionTypingTimers({
+  payload,
+  prevPayload,
+}: SelectorChannelPayload<
+  Record<string, Record<string, LiveDiscussionTypingEntry>>
+>): SagaGenerator<void> {
+  for (const [workspaceId, entries] of Object.entries(payload)) {
+    for (const [source, entry] of Object.entries(entries)) {
+      if (entry.expired || prevPayload?.[workspaceId]?.[source] === entry) continue;
+      yield* fork(function* () {
+        yield* delay(PRESENCE_TYPING_EXPIRY_MS);
+        yield* put(
+          presenceDiscussionTypingExpired(workspaceId, source, entry.pulse, entry.conversationId),
+        );
+      });
+    }
   }
 }
 
@@ -491,8 +557,15 @@ function* runPresence({
   yield* put(presenceWorkspacesReceived(yield* select(selectPresenceWorkspaceIds.select)));
   try {
     const membershipEvents = yield* call(supportsMembershipEvents);
-    tasks.push(yield* fork(watchVisibility));
     tasks.push(yield* fork(watchTypingPulses, sendReport));
+    tasks.push(yield* fork(watchDiscussionTypingPulses, sendReport));
+    tasks.push(yield* takeEveryFromWindowEvent('blur', clearDiscussionWindowFocus));
+    tasks.push(
+      yield* takeEveryFromSelector(selectDiscussionTypingTarget, clearUnfocusedDiscussion),
+    );
+    tasks.push(
+      yield* takeEveryFromSelector(selectPresenceLiveDiscussionTyping, armDiscussionTypingTimers),
+    );
     tasks.push(yield* fork(watchMembershipNotifications, memberReads, membershipEvents));
     tasks.push(
       yield* takeLatestFromSelector(selectOwnPresenceReportKey, reportOnChange(sendReport)),
@@ -532,5 +605,10 @@ function* runPresence({
 }
 
 export function* presenceSaga(): SagaGenerator<void> {
+  // Session-long, not admission-scoped: window visibility (gated on agent
+  // capture brackets) must stay current across admission gaps, so a hidden
+  // window is never published as visible when presence (re)admits.
+  yield* fork(watchCaptureDrawing);
+  yield* fork(watchPresenceVisibility);
   yield* takeLatestFromSelector(selectPresenceContext, runPresence);
 }

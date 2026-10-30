@@ -13,6 +13,16 @@ import { EventEmitter } from 'node:events';
 import type { Duplex } from 'node:stream';
 import { StringDecoder } from 'node:string_decoder';
 import { parseProtocolVersion, type ProtocolVersion } from '$shared/protocol-version';
+import {
+  classifyStartupReply,
+  type DaemonStartupState,
+  STARTUP_POLL_TIMEOUT_MS,
+  STARTUP_STATUS_METHOD,
+  StartupPoller,
+  type StartupReply,
+  type StartupSnapshot,
+  startupErrorShape,
+} from '$shared/daemon-startup';
 import { assertScopedFileReadSupport } from '$shared/root-file-read-support';
 import { Logger } from '$shared/logger';
 import type { RpcTrafficMessage, RpcTrafficObserver } from './rpc-traffic';
@@ -40,6 +50,7 @@ export interface RepositoryConnection {
   readonly incarnation: object;
   readonly identity: object;
   readonly repositoryContext: boolean;
+  readonly reviewMonitoring?: number;
   readonly repositoryResourceRead?: boolean;
   readonly gitlabCheckout?: boolean;
   readonly gitlabCheckoutOwnerAvatar?: boolean;
@@ -130,11 +141,39 @@ const DEFAULT_MAX_RECONNECT_MS = 5_000;
 const HELLO_METHOD = 'client.hello';
 
 // The connect-time handshake holds the connection at `connecting` (queueing
-// all scoped work behind it), so it gets a much tighter bound than ordinary
-// requests: a daemon that accepted the socket but never answers the hello
-// degrades to an anonymous connection after 5s instead of stalling every
-// queued request for the full request timeout.
+// all scoped work behind it), so its first attempt gets a much tighter bound
+// than ordinary requests: queued work fails after 5s instead of stalling for
+// the full request timeout. Later attempts escalate (see below).
 const HELLO_HANDSHAKE_TIMEOUT_MS = 5_000;
+
+// An unanswered hello (lost reply, transient stall) is retried on a fresh
+// socket: staying connected without a handshake leaves every hello-gated
+// feature dead for the socket's lifetime (intent-hq/intent#7868). Each
+// consecutive connect-time timeout doubles the bound up to this ceiling, so a
+// slow daemon or high-latency tunnel converges instead of churning at 5s.
+const MAX_HELLO_HANDSHAKE_TIMEOUT_MS = 30_000;
+
+// A corrupted inbound line reconnects (its reply is lost), but a daemon that
+// corrupts frames deterministically would turn that into a reconnect storm
+// failing all in-flight work every cycle. Past this many reconnects within the
+// window, further corrupted lines are skipped (the pre-#7868 behavior) until
+// the burst ages out; a lost hello reply is still recovered by its timeout.
+const MAX_MALFORMED_FRAME_RECONNECTS = 3;
+const MALFORMED_FRAME_WINDOW_MS = 60_000;
+
+/**
+ * A request that got no reply within its bound. `name` and `message` stay the
+ * plain-Error ones callers and IPC error payloads already see.
+ */
+class RequestTimeoutError extends Error {
+  constructor(readonly method: string) {
+    super(`JSON-RPC request timed out: ${method}`);
+  }
+}
+
+function isHelloTimeout(error: unknown): error is RequestTimeoutError {
+  return error instanceof RequestTimeoutError && error.method === HELLO_METHOD;
+}
 
 type RetirementFailure = {
   owner: object | null;
@@ -160,10 +199,24 @@ export interface JsonRpcRetirement {
 }
 
 /**
+ * Request methods whose params never reach traffic observers (Dev Console
+ * capture): desktop authority and input, and `secret.provide` (PROTOCOL
+ * §5.56), whose `value` is a user secret.
+ */
+const REDACTED_TRAFFIC_METHODS: ReadonlySet<string> = new Set([
+  'desktop.control',
+  'desktop.revoke',
+  'secret.provide',
+]);
+
+/**
  * Events: `notification` (JsonRpcNotification), `status` (ConnectionStatus),
  * `reconnected` (void — fires when a successful connect follows an earlier
- * connected state or failed dial so consumers can retry startup work, replay
- * `events.subscribe`, and refresh state after a daemon restart), `error` (Error),
+ * connected state, failed dial or daemon startup wait so consumers can retry
+ * startup work, replay `events.subscribe`, and refresh state after a daemon
+ * restart), `startup` ({@link DaemonStartupState} | null — the daemon is
+ * starting, failed to start, or became ready; see {@link getStartupState}),
+ * `error` (Error),
  * `heartbeat` (void), `cert-warning` ({@link HostCertMismatch} — a NON-FATAL
  * per-host pin mismatch observed by the multi-host connection race (#1746);
  * informative only, never treated as a connection failure).
@@ -200,10 +253,18 @@ export class JsonRpcClient extends EventEmitter {
   private socket: Duplex | null = null;
   /** This socket's `client.hello` version, parsed once when the hello answers. */
   private protocolVersion: ProtocolVersion | null = null;
+  private helloSnapshot: unknown;
+  private helloRevision = 0;
+  private renegotiatingHello = false;
   private socketIncarnation: object | null = null;
   private repositoryConnection: RepositoryConnection | null = null;
+  private acknowledgedHelloIdentity: Readonly<{
+    clientId: string;
+    connectionRole: unknown;
+  }> | null = null;
   private readonly repositoryObservers = new Set<(event: RepositoryConnectionEvent) => void>();
   private helloAttempt: object | null = null;
+  private acknowledgedHello: unknown = null;
   private nodeCapabilities: Readonly<Record<string, number>> | null = null;
   // How the current connection's winning candidate reached the daemon
   // (multi-host race only; null for a single-host dial and whenever no socket
@@ -232,12 +293,29 @@ export class JsonRpcClient extends EventEmitter {
   private hasConnectionFailed = false;
   /** Consecutive reconnect attempts since the last successful connect (#1750). */
   private reconnectAttempts = 0;
+  /** Hellos in a row that got no reply; drives the escalating hello bound (#7868). */
+  private helloTimeoutStreak = 0;
+  /** Reconnects caused by corrupted inbound lines within the current window (#7868). */
+  private malformedFrameReconnects = 0;
+  private malformedFrameWindowStart = 0;
   /** The last connect attempt was refused by the guest connection cap (HTTP 503). */
   private connectionLimited = false;
   /** The daemon-requested wait before the next attempt while `connectionLimited`. */
   private connectionLimitRetryAfterMs: number | null = null;
   /** Handlers for daemon-initiated (reverse) requests, keyed by method name. */
   private readonly reverseHandlers = new Map<string, ReverseRequestHandler>();
+  /** The daemon is starting or failed to start (docs/protocol/startup-readiness.md). */
+  private startupState: DaemonStartupState | null = null;
+  /** The socket whose hello was answered with daemon-not-ready, while it is polled. */
+  private startupIncarnation: object | null = null;
+  /** Polls the bootstrap socket; stopped whenever that socket is torn down. */
+  private readonly startupPoller = new StartupPoller({
+    request: () => this.sendNow(STARTUP_STATUS_METHOD, undefined, STARTUP_POLL_TIMEOUT_MS),
+    publish: (state) => this.updateStartup(state),
+    handoff: (ready) => this.startupHandoff(ready),
+    fail: (message, snapshot) => this.failStartup(message, snapshot),
+    track: (poll) => void this.own('startup-poll', poll),
+  });
 
   constructor(options: JsonRpcClientOptions = {}) {
     super();
@@ -275,6 +353,22 @@ export class JsonRpcClient extends EventEmitter {
     this.currentReconnectDelay = this.reconnectDelayMs;
   }
 
+  /** Read connection metadata without renegotiating identity or desktop authority. */
+  readHelloSnapshot(): Promise<unknown> {
+    const refused = this.refuseIndependent();
+    if (refused) return Promise.reject(refused);
+    return this.own('hello-snapshot', async () => {
+      if (this.disposed) throw new Error('JSON-RPC client disposed');
+      // No handshake exists until the daemon finishes starting.
+      if (this.startupState?.state === 'starting')
+        throw new JsonRpcError(startupErrorShape(this.startupState));
+      await this.ensureConnected();
+      if (this.status !== 'connected' || this.helloSnapshot === undefined)
+        throw new Error('Current backend handshake is unavailable');
+      return structuredClone(this.helloSnapshot);
+    });
+  }
+
   /** Stop autonomous producers now; sealing is a separate synchronous admission boundary. */
   beginRetirement(): JsonRpcRetirement {
     const owned = this.lifecycle;
@@ -283,6 +377,13 @@ export class JsonRpcClient extends EventEmitter {
     owned.stopping = true;
     this.clearReconnect();
     this.stopHeartbeat();
+    // A starting daemon may take minutes: stop waiting for it now, whether a
+    // status poll is pending or the ready handoff's fresh dial is scheduled.
+    if (
+      this.startupState?.state === 'starting' &&
+      (this.startupIncarnation !== null || !this.socket)
+    )
+      this.abandonStartup();
     const drained = () =>
       owned.active.size === 0 &&
       this.pending.size === 0 &&
@@ -478,11 +579,33 @@ export class JsonRpcClient extends EventEmitter {
     return this.status;
   }
 
+  /**
+   * The daemon's startup posture: `starting` while it answers with
+   * daemon-not-ready (status stays `connecting` and ordinary requests are
+   * refused locally), `failed` after daemon-startup-failed (status is
+   * `disconnected` and reconnects continue), `null` once a hello succeeds.
+   */
+  getStartupState(): DaemonStartupState | null {
+    return this.startupState;
+  }
+
   /** Main-private current socket AND positively acknowledged hello lifetime. */
   getRepositoryConnection(): RepositoryConnection | null {
     return !this.disposed && this.status === 'connected' && this.socket && !this.socket.destroyed
       ? this.repositoryConnection
       : null;
+  }
+
+  /** Main-private acknowledgement metadata; IDs here are not authorization. */
+  getAcknowledgedHelloIdentity(
+    captured: object,
+  ): Readonly<{ clientId: string; connectionRole: unknown }> | null {
+    return captured === this.getRepositoryConnection() ? this.acknowledgedHelloIdentity : null;
+  }
+
+  /** Read the existing handshake without changing the current connection's identity. */
+  getAcknowledgedHello(): unknown {
+    return this.getRepositoryConnection() ? structuredClone(this.acknowledgedHello) : null;
   }
 
   /** Observe only the current acknowledged identity; never send or renew hello. */
@@ -503,6 +626,8 @@ export class JsonRpcClient extends EventEmitter {
   private retireRepositoryIdentity(): void {
     const connection = this.repositoryConnection;
     this.repositoryConnection = null;
+    this.acknowledgedHelloIdentity = null;
+    this.acknowledgedHello = null;
     this.nodeCapabilities = null;
     if (connection) this.emitRepositoryEvent({ type: 'identity-retired', connection });
   }
@@ -548,6 +673,8 @@ export class JsonRpcClient extends EventEmitter {
   }
 
   private beginHello(): object {
+    this.helloSnapshot = undefined;
+    this.helloRevision++;
     this.retireRepositoryIdentity();
     this.helloAttempt = Object.freeze({});
     return this.helloAttempt;
@@ -565,6 +692,7 @@ export class JsonRpcClient extends EventEmitter {
       return;
     const capabilities = (result as { server?: { capabilities?: Record<string, unknown> } }).server
       ?.capabilities;
+    this.acknowledgedHello = structuredClone(result);
     this.nodeCapabilities = Object.freeze({
       agentNodes: capabilities?.agentNodes === 1 ? 1 : 0,
       localNodeIsolation: capabilities?.localNodeIsolation === 1 ? 1 : 0,
@@ -573,10 +701,22 @@ export class JsonRpcClient extends EventEmitter {
       // Dock evidence placement (strict integer advertisement; anything else is absent).
       rawScreenshotRetention: capabilities?.rawScreenshotRetention === 1 ? 1 : 0,
       chiefAttachments: capabilities?.chiefAttachments === 1 ? 1 : 0,
+      // Truncated note reads (§5.2): gates maxContentBytes / baseContentBytes.
+      noteTruncatedRead: capabilities?.noteTruncatedRead === 1 ? 1 : 0,
+    });
+    this.acknowledgedHelloIdentity = Object.freeze({
+      clientId: result.clientId,
+      connectionRole: (result as { connectionRole?: unknown }).connectionRole,
     });
     this.repositoryConnection = Object.freeze({
       incarnation: this.socketIncarnation,
       identity: Object.freeze({}),
+      reviewMonitoring:
+        typeof capabilities?.reviewMonitoring === 'number' &&
+        Number.isSafeInteger(capabilities.reviewMonitoring) &&
+        capabilities.reviewMonitoring >= 1
+          ? capabilities.reviewMonitoring
+          : undefined,
       repositorySelection:
         (result as { server?: { capabilities?: { repositorySelection?: unknown } } }).server
           ?.capabilities?.repositorySelection === 1,
@@ -682,6 +822,11 @@ export class JsonRpcClient extends EventEmitter {
     if (this.trafficObservers.size === 0) return;
     try {
       const event = { ...build(), connectionGeneration: this.connectionGeneration };
+      // Desktop authority, user input and secret values must never reach
+      // diagnostic observers, which may persist or forward their traffic
+      // payloads to renderers.
+      if (event.type === 'request' && REDACTED_TRAFFIC_METHODS.has(event.method))
+        event.payload = { redacted: true };
       for (const observer of this.trafficObservers) {
         try {
           void observer(event)?.catch(() => {});
@@ -778,6 +923,12 @@ export class JsonRpcClient extends EventEmitter {
     parent?: object,
   ): Promise<T> {
     if (this.disposed) return Promise.reject(new Error('JSON-RPC client disposed'));
+    // A starting daemon rejects every ordinary request; refuse it here with the
+    // same structured error instead of queueing it for minutes. Callers recover
+    // on `reconnected`, which fires once the daemon is ready. After a failed
+    // start, requests still wait for (or start) the next connect attempt.
+    if (this.startupState?.state === 'starting')
+      return Promise.reject(new JsonRpcError(startupErrorShape(this.startupState)));
     if (
       [
         'sourceControl.authStatus',
@@ -836,6 +987,8 @@ export class JsonRpcClient extends EventEmitter {
    */
   private sendNow<T = unknown>(method: string, params: unknown, timeoutMs: number): Promise<T> {
     const socket = this.socket;
+    const helloRevision = method === HELLO_METHOD ? ++this.helloRevision : undefined;
+    if (method === HELLO_METHOD) this.helloSnapshot = undefined;
     const id = ++this.requestId;
     return new Promise<T>((resolve, reject) => {
       assertScopedFileReadSupport(method, params, this.protocolVersion);
@@ -849,7 +1002,7 @@ export class JsonRpcClient extends EventEmitter {
           status: 'timeout',
           payload: undefined,
         }));
-        reject(new Error(`JSON-RPC request timed out: ${method}`));
+        reject(new RequestTimeoutError(method));
       }, timeoutMs);
       this.pending.set(id, {
         method,
@@ -859,6 +1012,7 @@ export class JsonRpcClient extends EventEmitter {
             this.protocolVersion = parseProtocolVersion(
               (result as { protocolVersion?: unknown } | null)?.protocolVersion,
             );
+            if (helloRevision === this.helloRevision) this.helloSnapshot = structuredClone(result);
           }
           resolve(result as T);
         },
@@ -899,28 +1053,68 @@ export class JsonRpcClient extends EventEmitter {
     timeoutMs: number,
     parent?: object,
   ): Promise<unknown> {
-    // A queued hello must not supersede the startup/reconnect handshake it
-    // needs to finish. An already-connected renegotiation retires immediately,
-    // before even awaiting the persisted identity provider.
-    if (this.status === 'connected') this.beginHello();
-    const merged = await this.mergedHelloParams(params);
-    if (this.disposed) throw new Error('JSON-RPC client disposed');
-    if (this.status !== 'connected') await this.ensureConnected();
-    if (this.disposed) throw new Error('JSON-RPC client disposed');
-    // ensureConnected may itself have completed a handshake while this caller
-    // waited. Retire that identity too, immediately before this renegotiation.
-    const attempt = this.beginHello();
-    const incarnation = this.socketIncarnation;
-    const result = await this.sendNow(HELLO_METHOD, merged, timeoutMs);
-    if (this.socketIncarnation !== incarnation || this.helloAttempt !== attempt || this.disposed)
+    let attempt: object | undefined;
+    let incarnation = this.socketIncarnation;
+    const beginRenegotiation = () => {
+      attempt = this.beginHello();
+      incarnation = this.socketIncarnation;
+      this.renegotiatingHello = true;
+      this.stopHeartbeat();
+      // Desktop execution and pending consent lose authority immediately, even
+      // while the identity provider is still resolving. Concurrent hellos may
+      // join this physical socket, but only the winning attempt restores it.
+      this.setStatus('connecting');
+    };
+    if (this.status === 'connected' || this.renegotiatingHello) beginRenegotiation();
+    let unanswered: RequestTimeoutError | undefined;
+    try {
+      const merged = await this.mergedHelloParams(params);
+      if (this.disposed) throw new Error('JSON-RPC client disposed');
+      if (!this.renegotiatingHello || incarnation !== this.socketIncarnation)
+        await this.ensureConnected();
+      if (this.disposed) throw new Error('JSON-RPC client disposed');
+      beginRenegotiation();
+      const result = await this.sendNow(HELLO_METHOD, merged, timeoutMs).catch((error) => {
+        if (isHelloTimeout(error)) unanswered = error;
+        throw error;
+      });
+      if (this.socketIncarnation !== incarnation || this.helloAttempt !== attempt || this.disposed)
+        return result;
+      this.own('hello-result', () =>
+        this.originalCallback(parent, (parent) =>
+          parent === undefined
+            ? this.onHelloResult?.(result)
+            : this.onHelloResult?.(result, parent),
+        ),
+      );
+      this.confirmHello(attempt!, result);
       return result;
-    this.own('hello-result', () =>
-      this.originalCallback(parent, (parent) =>
-        parent === undefined ? this.onHelloResult?.(result) : this.onHelloResult?.(result, parent),
-      ),
-    );
-    this.confirmHello(attempt, result);
-    return result;
+    } finally {
+      if (
+        attempt &&
+        this.socketIncarnation === incarnation &&
+        this.helloAttempt === attempt &&
+        !this.disposed
+      ) {
+        this.renegotiatingHello = false;
+        if (unanswered) {
+          // beginHello already retired the previous identity; finishing here
+          // would leave this socket without a handshake for good
+          // (intent-hq/intent#7868). Reconnect so the connect-time handshake
+          // restores it and consumers re-register on `reconnected`.
+          // The daemon just failed to answer a hello, so the next connect-time
+          // attempt starts from the escalated bound.
+          this.helloTimeoutStreak += 1;
+          logger.warn('client.hello re-handshake timed out; reconnecting', {
+            nextBoundMs: this.handshakeTimeoutMs(),
+          });
+          this.onConnectionFailure(unanswered);
+        } else {
+          this.finishConnect();
+          if (this.getRepositoryConnection()) this.emit('identity-confirmed');
+        }
+      }
+    }
   }
 
   /** Caller-supplied hello fields survive; the persisted identity wins on `clientId`. */
@@ -1024,12 +1218,9 @@ export class JsonRpcClient extends EventEmitter {
     try {
       const params = await this.mergedHelloParams();
       if (this.disposed || this.socket !== socket) return;
-      const result = await this.sendNow(
-        HELLO_METHOD,
-        params,
-        Math.min(this.requestTimeoutMs, HELLO_HANDSHAKE_TIMEOUT_MS),
-      );
+      const result = await this.sendNow(HELLO_METHOD, params, this.handshakeTimeoutMs());
       if (this.disposed || this.socket !== socket || this.helloAttempt !== attempt) return;
+      this.helloTimeoutStreak = 0;
       this.own('hello-result', () =>
         this.originalCallback(this.connectionOwner, (parent) =>
           parent === undefined
@@ -1039,6 +1230,28 @@ export class JsonRpcClient extends EventEmitter {
       );
       this.confirmHello(attempt, result);
     } catch (error) {
+      if (!this.disposed && this.socket === socket && this.helloAttempt === attempt) {
+        const startup = classifyStartupReply(error);
+        if (startup) {
+          this.helloTimeoutStreak = 0;
+          this.enterStartup(startup);
+          return;
+        }
+      }
+      // No reply at all (e.g. the reply was lost): the rest of the app gates on
+      // the handshake result and only re-registers on a reconnect, so an
+      // anonymous socket would stay degraded for its whole lifetime
+      // (intent-hq/intent#7868). Retry on a fresh socket with a longer bound.
+      // onConnectionFailure records this failure (as `transport`) itself.
+      if (!this.disposed && this.socket === socket && isHelloTimeout(error)) {
+        this.helloTimeoutStreak += 1;
+        logger.warn('client.hello handshake timed out; reconnecting', {
+          consecutiveTimeouts: this.helloTimeoutStreak,
+          nextBoundMs: this.handshakeTimeoutMs(),
+        });
+        this.onConnectionFailure(error);
+        return;
+      }
       this.lifecycle?.failures.push({
         owner: this.connectionOwner ?? null,
         kind: 'original',
@@ -1049,7 +1262,10 @@ export class JsonRpcClient extends EventEmitter {
       if (this.disposed || this.socket !== socket) return;
       // Identity degrades, transport survives: the daemon treats a failed
       // hello as an anonymous connection, so scoped features (§5.16 drafts)
-      // may not restore, but everything else keeps working.
+      // may not restore, but everything else keeps working. Only a daemon error
+      // reply (e.g. method missing from a legacy daemon) lands here: it is
+      // definitive, so retrying would not help.
+      this.helloTimeoutStreak = 0;
       logger.warn('client.hello handshake failed; continuing without confirmed identity', {
         error: error instanceof Error ? error.message : String(error),
       });
@@ -1057,7 +1273,24 @@ export class JsonRpcClient extends EventEmitter {
     this.finishConnect();
   }
 
+  /**
+   * The connect-time hello bound: 5s, doubling per consecutive timeout up to
+   * 30s, and never longer than an ordinary request may wait.
+   */
+  private handshakeTimeoutMs(): number {
+    let bound = HELLO_HANDSHAKE_TIMEOUT_MS;
+    for (let i = 0; i < this.helloTimeoutStreak && bound < MAX_HELLO_HANDSHAKE_TIMEOUT_MS; i++)
+      bound *= 2;
+    return Math.min(this.requestTimeoutMs, bound, MAX_HELLO_HANDSHAKE_TIMEOUT_MS);
+  }
+
   private finishConnect(): void {
+    this.startupPoller.reset();
+    this.startupIncarnation = null;
+    // Cleared before the `connected` broadcast, announced after it, so no
+    // window sees a `connecting` push without startup state in between.
+    const leftStartup = this.startupState !== null;
+    this.startupState = null;
     this.currentReconnectDelay = this.reconnectDelayMs;
     this.reconnectAttempts = 0;
     this.connectionLimited = false;
@@ -1065,6 +1298,7 @@ export class JsonRpcClient extends EventEmitter {
     this.hasBeenConnected = true;
     this.hasConnectionFailed = false;
     this.setStatus('connected');
+    if (leftStartup) this.emit('startup', null);
     this.flushWaiters();
     this.startHeartbeat();
     logger.info('Backend connected', {
@@ -1086,6 +1320,26 @@ export class JsonRpcClient extends EventEmitter {
 
   private onConnectionFailure(error: Error): void {
     if (this.disposed) return;
+    // A starting daemon closes its bootstrap sockets once it is ready: reopen
+    // one fresh connection and hello again, still `connecting`.
+    if (this.startupIncarnation !== null && this.startupIncarnation === this.socketIncarnation) {
+      logger.info('Starting backend closed the connection; reconnecting', {
+        target: describeBackendConfig(this.config),
+        reason: error.message,
+      });
+      this.startupHandoff(true);
+      return;
+    }
+    // Any other drop ends the wait: the daemon is gone, not starting. A
+    // startup failure stays latched until a new attempt or a connect, except
+    // that a credential rejection is the more useful thing to show.
+    if (
+      this.startupState?.state === 'starting' ||
+      (this.startupState && error instanceof AuthRejectedError)
+    ) {
+      this.startupPoller.reset();
+      this.updateStartup(null);
+    }
     this.lifecycle?.failures.push({
       owner: this.connectionOwner ?? null,
       kind: 'transport',
@@ -1093,6 +1347,9 @@ export class JsonRpcClient extends EventEmitter {
     });
     this.retireRepositorySocket();
     this.hasConnectionFailed = true;
+    // Only back-to-back unanswered hellos escalate the hello bound; any other
+    // drop (daemon restart, dial failure) starts the count over.
+    if (!isHelloTimeout(error)) this.helloTimeoutStreak = 0;
     this.observeFrame(() => ({ type: 'disconnected' }));
     this.emitError(error);
     this.stopHeartbeat();
@@ -1145,12 +1402,56 @@ export class JsonRpcClient extends EventEmitter {
       if (this.socketIncarnation !== incarnation || this.disposed) return;
       const trimmed = line.trim();
       if (!trimmed) continue;
+      let message: unknown;
+      let malformed: string | undefined;
       try {
-        this.handleMessage(JSON.parse(trimmed), incarnation);
+        message = JSON.parse(trimmed);
+        // No batches on this wire: anything but a plain object is corruption.
+        if (message === null || typeof message !== 'object' || Array.isArray(message))
+          malformed = 'not a JSON-RPC message object';
+      } catch (error) {
+        malformed = error instanceof Error ? error.message : String(error);
+      }
+      if (malformed !== undefined) {
+        // A corrupted line means any reply inside it is lost: its caller would
+        // wait out the full timeout, and a lost hello reply strands the socket
+        // without a handshake (intent-hq/intent#7868). Reconnect so pending
+        // work fails now and consumers re-register on `reconnected`.
+        if (this.admitMalformedFrameReconnect()) {
+          logger.warn('Malformed JSON-RPC frame from backend; reconnecting', {
+            bytes: trimmed.length,
+            error: malformed,
+          });
+          this.onConnectionFailure(
+            new Error(`Malformed JSON-RPC frame from backend: ${malformed}`),
+          );
+          return;
+        }
+        logger.warn('Malformed JSON-RPC frame from backend; skipping (reconnect budget spent)', {
+          bytes: trimmed.length,
+          error: malformed,
+        });
+        this.emitError(new Error(`Malformed JSON-RPC frame from backend: ${malformed}`));
+        continue;
+      }
+      try {
+        this.handleMessage(message as Parameters<JsonRpcClient['handleMessage']>[0], incarnation);
       } catch (error) {
         this.emitError(error instanceof Error ? error : new Error(String(error)));
       }
     }
+  }
+
+  /** Whether a corrupted line may reconnect, within the per-window budget. */
+  private admitMalformedFrameReconnect(): boolean {
+    const now = Date.now();
+    if (now - this.malformedFrameWindowStart >= MALFORMED_FRAME_WINDOW_MS) {
+      this.malformedFrameWindowStart = now;
+      this.malformedFrameReconnects = 0;
+    }
+    if (this.malformedFrameReconnects >= MAX_MALFORMED_FRAME_RECONNECTS) return false;
+    this.malformedFrameReconnects += 1;
+    return true;
   }
 
   private handleMessage(
@@ -1365,7 +1666,12 @@ export class JsonRpcClient extends EventEmitter {
   }
 
   private teardownSocket(): void {
+    this.startupPoller.stop();
+    this.startupIncarnation = null;
     this.protocolVersion = null;
+    this.helloSnapshot = undefined;
+    this.helloRevision++;
+    this.renegotiatingHello = false;
     // Retire BEFORE any teardown callback can attempt another dispatch.
     this.retireRepositorySocket();
     if (!this.socket) return;
@@ -1423,6 +1729,100 @@ export class JsonRpcClient extends EventEmitter {
    */
   private emitError(error: Error): void {
     if (this.listenerCount('error') > 0) this.emit('error', error);
+  }
+
+  private updateStartup(next: DaemonStartupState | null): void {
+    this.startupState = next ? Object.freeze({ ...next }) : null;
+    this.emit('startup', this.startupState);
+  }
+
+  /** The connect-time hello was answered with the structured startup reply. */
+  private enterStartup(reply: StartupReply): void {
+    // The eventual ready connect is a recovery: consumers whose requests were
+    // refused meanwhile retry on `reconnected`.
+    this.hasConnectionFailed = true;
+    if (reply.kind === 'failed') {
+      this.failStartup(reply.message, reply.snapshot);
+      return;
+    }
+    if (this.lifecycle?.stopping) {
+      this.abandonStartup();
+      return;
+    }
+    this.startupIncarnation = this.socketIncarnation;
+    logger.info('Backend is starting; waiting until it is ready', {
+      target: describeBackendConfig(this.config),
+      phase: reply.snapshot?.phase,
+      retryAfterMs: reply.retryAfterMs,
+    });
+    this.startupPoller.start(reply);
+    if (this.startupState) this.failWaiters(new JsonRpcError(startupErrorShape(this.startupState)));
+  }
+
+  /**
+   * Leave the bootstrap socket and dial one fresh connection. Status stays
+   * `connecting`, so no connection-lost posture flashes; the fresh hello
+   * either confirms readiness or re-enters startup. A ready daemon is redialed
+   * after the base delay; one whose status is unusable backs off like any
+   * other reconnect, so a daemon that never serves status cannot spin.
+   */
+  private startupHandoff(ready: boolean): void {
+    if (!ready)
+      logger.warn('Backend startup status unavailable; reconnecting', {
+        target: describeBackendConfig(this.config),
+      });
+    const refusal = this.startupState
+      ? new JsonRpcError(startupErrorShape(this.startupState))
+      : new Error('Connection closed');
+    this.teardownSocket();
+    this.failPending(refusal);
+    this.finishConnectionOwner();
+    if (this.disposed || this.lifecycle?.stopping) {
+      this.failWaiters(refusal);
+      this.setStatus('disconnected');
+      return;
+    }
+    this.clearReconnect();
+    let delay = this.reconnectDelayMs;
+    if (ready) this.currentReconnectDelay = this.reconnectDelayMs;
+    else {
+      delay = this.currentReconnectDelay;
+      this.currentReconnectDelay = Math.min(delay * 2, this.maxReconnectDelayMs);
+    }
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (!this.disposed && !this.lifecycle?.stopping) this.connect();
+    }, delay);
+  }
+
+  /** The daemon reported a terminal startup failure. */
+  private failStartup(message: string, snapshot: StartupSnapshot | null): void {
+    this.startupPoller.stop();
+    this.startupIncarnation = null;
+    this.hasConnectionFailed = true;
+    const failed: DaemonStartupState = {
+      state: 'failed',
+      snapshot,
+      available: snapshot !== null,
+      message,
+    };
+    this.updateStartup(failed);
+    logger.warn('Backend failed to start', {
+      target: describeBackendConfig(this.config),
+      message,
+    });
+    // Normal reconnect backoff continues: the sitter may restart or roll back.
+    this.onConnectionFailure(new JsonRpcError(startupErrorShape(failed)));
+  }
+
+  /** Retirement during startup: stop waiting and release the connection. */
+  private abandonStartup(): void {
+    const error = new Error('Original transport unavailable during retirement');
+    this.teardownSocket();
+    this.failPending(error);
+    this.failWaiters(error);
+    this.setStatus('disconnected');
+    this.finishConnectionOwner();
   }
 
   private setStatus(status: ConnectionStatus): void {

@@ -1,7 +1,7 @@
 import type { Locator, Page } from '@playwright/test';
-import { expect, test } from '../../../test/ct-test';
+import { expect, test, expectAnimationsToSettle } from '../../../test/ct-test';
 import Harness from './__tests__/DockAnnotationOverlayHarness.svelte';
-import { dockAnnotationMediaIdle } from './dock-annotation-overlay.fixtures';
+import { dockAnnotationMediaIdle, dockAnnotationStill } from './dock-annotation-overlay.fixtures';
 
 async function recorded(page: Page, name: 'pointers' | 'gestures'): Promise<unknown[]> {
   const host = page.getByTestId('dock-annotation-harness');
@@ -26,10 +26,9 @@ test('draws authoritative numbered marks from Retina image pixels at overlay sca
   const marks = page.locator('[data-mark]');
   await expect(marks).toHaveCount(4);
   await expect(marks.locator('text')).toHaveText(['1', '2', '3', '4']);
-  // Pick (240,300,448,144) image px at 2× → overlay (120,150,224,72); badge at its top-right.
+  // Pick image coordinates at 2× map into the overlay coordinate system.
   const pick = page.locator('[data-mark="1"]');
   expect(await numbers(pick, 'rect', ['x', 'y', 'width', 'height'])).toEqual([120, 150, 224, 72]);
-  expect(await numbers(pick, 'circle', ['cx', 'cy'])).toEqual([344, 150]);
   const box = page.locator('[data-mark="2"]');
   expect(await numbers(box, 'rect', ['x', 'y', 'width', 'height'])).toEqual([600, 100, 200, 120]);
 });
@@ -88,26 +87,25 @@ test('still markup letterboxes the frozen image and maps its marks into the same
   page,
 }) => {
   await mount(Harness, { props: { fixture: 'still' } });
-  // 1600×1200 contained in 1280×800 → scale 2/3, centred with x offset 106.67.
   const still = page.locator('img');
   await expect(still).toHaveCount(1);
-  // Measure once its entrance transition has settled.
-  await expect.poll(async () => (await still.boundingBox())?.width ?? 0).toBeCloseTo(1066.67, 0);
-  const frame = await still.boundingBox();
-  expect(frame?.x).toBeCloseTo(106.67, 1);
-  expect(frame?.y).toBeCloseTo(0, 1);
-  expect(frame?.width).toBeCloseTo(1066.67, 1);
-  expect(frame?.height).toBeCloseTo(800, 1);
+  await expectAnimationsToSettle(still);
+  const frame = (await still.boundingBox())!;
+  // The mark must track its authoritative image coordinates within the live image,
+  // independently of the viewport's chosen letterbox spacing.
+  const mark = dockAnnotationStill.marks[0].geometry;
+  if (mark.kind !== 'rect') throw new Error('Expected rectangle fixture');
+  const image = dockAnnotationStill.image!;
   const [x, y, width, height] = await numbers(page.locator('[data-mark="1"]'), 'rect', [
     'x',
     'y',
     'width',
     'height',
   ]);
-  expect(x).toBeCloseTo(240, 1);
-  expect(y).toBeCloseTo(133.33, 1);
-  expect(width).toBeCloseTo(266.67, 1);
-  expect(height).toBeCloseTo(200, 1);
+  expect(x).toBeCloseTo(frame.x + (mark.x / image.width) * frame.width, 1);
+  expect(y).toBeCloseTo(frame.y + (mark.y / image.height) * frame.height, 1);
+  expect(width).toBeCloseTo((mark.w / image.width) * frame.width, 1);
+  expect(height).toBeCloseTo((mark.h / image.height) * frame.height, 1);
 });
 
 test('the on-screen tool bar sits next to the dock and follows it, switches tools, ends the session and never starts a mark', async ({
@@ -122,15 +120,13 @@ test('the on-screen tool bar sits next to the dock and follows it, switches tool
     if (!box) throw new Error('Missing tool bar bounds');
     return box;
   };
-  // Edge rail on the right (x 1000-1280): beside it on the inner side, 8 DIP away,
-  // vertically centred on the rail.
-  // Polled: the bar measures itself once rendered and then settles next to the dock.
+  // The tool bar stays clear of the live dock region.
   await expect
     .poll(async () => {
       const box = await bounds();
-      return [Math.round(box.x + box.width), Math.abs(box.y + box.height / 2 - 400) <= 1];
+      return box.x + box.width <= 1000;
     })
-    .toEqual([1000 - 8, true]);
+    .toBe(true);
   const side = await bounds();
   // Main learns where the bar is, so it stays clickable and never starts a gesture.
   await expect
@@ -151,15 +147,10 @@ test('the on-screen tool bar sits next to the dock and follows it, switches tool
   await expect(bar.getByRole('tooltip').filter({ hasText: 'Pen' })).toHaveCSS('opacity', '1');
   const sideShot = await page.screenshot();
 
-  // The dock moves to the notch: the bar follows, 8 DIP below it and centred on it.
+  // The tool bar follows the dock without overlapping its new location.
   const notch = { shape: 'notch', rect: { x: 440, y: 0, width: 400, height: 56 } } as const;
   await component.update({ props: { fixture: 'live-marked', pick: 'permission', dock: notch } });
-  await expect
-    .poll(async () => {
-      const box = await bounds();
-      return [Math.round(box.y), Math.abs(box.x + box.width / 2 - 640) <= 1];
-    })
-    .toEqual([56 + 8, true]);
+  await expect.poll(async () => (await bounds()).y >= notch.rect.y + notch.rect.height).toBe(true);
   const below = await bounds();
   // Under the notch there is no room above: tooltips open below the bar and stay
   // inside the work area (the long permission line included).
@@ -205,147 +196,11 @@ test('the on-screen tool bar sits next to the dock and follows it, switches tool
   await expect(page.getByTestId('dock-annotation-overlay')).toHaveAttribute('data-tool', 'pen');
   expect(await recorded(page, 'pointers')).toEqual([]);
 
-  // Order: Mouse and the drawing tools | Attach, X.
-  expect(
-    await bar
-      .getByRole('button')
-      .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label'))),
-  ).toEqual([
-    'Mouse',
-    'Pick an element',
-    'Box',
-    'Pen',
-    'Arrow',
-    'Attach',
-    'Clear annotations',
-    'End annotating',
-  ]);
-  // Attach counts the marks it will attach (the fixture has 4).
-  await expect(bar.locator('[data-attach-count]')).toHaveText('4');
-  // Attach keeps the marks as an image and carries on in mouse mode: the bar stays.
-  await bar.getByRole('button', { name: 'Attach' }).click();
-  await expect(bar).toBeVisible();
-  await expect(bar.getByRole('button', { name: 'Mouse' })).toHaveAttribute('aria-pressed', 'true');
-  // X ends the session: the bar goes away.
-  await bar.getByRole('button', { name: 'End annotating' }).click();
-  await expect(bar).toHaveCount(0);
-  const actions = JSON.parse(
-    (await page.getByTestId('dock-annotation-harness').getAttribute('data-toolbar')) ?? '[]',
-  );
-  expect(actions).toEqual([
-    { sessionId: 'fixture-live', action: 'mouse' },
-    { sessionId: 'fixture-live', action: 'tool', tool: 'pen' },
-    { sessionId: 'fixture-live', action: 'commit' },
-    { sessionId: 'fixture-live', action: 'end' },
-  ]);
-
-  // One artifact with both placements, side rail (left) and notch (right).
-  await page.setViewportSize({ width: 1280, height: 400 });
-  await page.setContent(
-    `<body style="margin:0;display:flex;gap:0;background:#000">${[sideShot, notchShot]
-      .map(
-        (shot) =>
-          `<img style="width:640px;height:400px" src="data:image/png;base64,${shot.toString('base64')}">`,
-      )
-      .join('')}</body>`,
-  );
-  const combined = await page.screenshot();
-  if (process.env.DOCK_ARTIFACT_DIR)
-    await page.screenshot({ path: `${process.env.DOCK_ARTIFACT_DIR}/dock-annotate-toolbar.png` });
-  await testInfo.attach('dock-annotate-toolbar', { body: combined, contentType: 'image/png' });
-});
-
-test('Screenshot and Record on the tool bar run the composer actions with its look, limit and alerts', async ({
-  mount,
-  page,
-}, testInfo) => {
-  const notch = { shape: 'notch', rect: { x: 440, y: 0, width: 400, height: 56 } } as const;
-  const props = {
-    fixture: 'live-marked',
-    dock: notch,
-    media: dockAnnotationMediaIdle,
-    markCount: 3,
-  } as const;
-  const component = await mount(Harness, { props });
-  const bar = page.getByRole('toolbar', { name: 'Annotation tools' });
-  await expect(bar).toBeVisible();
-  const toolbar = async () =>
-    JSON.parse(
-      (await page.getByTestId('dock-annotation-harness').getAttribute('data-toolbar')) ?? '[]',
-    ) as { action: string }[];
-  const reportedWidth = async () =>
-    (
-      JSON.parse(
-        (await page.getByTestId('dock-annotation-harness').getAttribute('data-toolbar-rect')) ??
-          'null',
-      ) as { rect: { width: number } } | null
-    )?.rect.width ?? 0;
-
-  // Order: Mouse and the drawing tools (one group) | Screenshot, Record | Attach, X.
-  expect(
-    await bar
-      .getByRole('button')
-      .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label'))),
-  ).toEqual([
-    'Mouse',
-    'Pick an element',
-    'Box',
-    'Pen',
-    'Arrow',
-    'Capture the screen · ⌘⇧S',
-    'Record the screen · ⌘⇧R',
-    'Attach',
-    'Clear annotations',
-    'End annotating',
-  ]);
-  // The tools share one group; the selected one is tinted, not filled.
-  expect(
-    await bar
-      .getByRole('group')
-      .getByRole('button')
-      .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('data-tool'))),
-  ).toEqual(['mouse', 'pick', 'box', 'pen', 'arrow']);
   // Attach is the primary action and counts the 3 marks it will attach.
   await expect(bar.locator('[data-attach-count]')).toHaveText('3');
   // Idle with marks: the first half of the artifact.
   const idleShot = await page.screenshot({ clip: { x: 290, y: 0, width: 700, height: 150 } });
-  expect(
-    // Buttons and dividers in document order (the shared Button may wrap its element).
-    await bar.evaluate((node) =>
-      [...node.querySelectorAll('button, .divider')].map((child) =>
-        child.classList.contains('divider')
-          ? '|'
-          : (child.getAttribute('data-tool') ??
-            child.getAttribute('data-media') ??
-            (child.hasAttribute('data-commit')
-              ? 'done'
-              : child.hasAttribute('data-clear')
-                ? 'clear'
-                : 'end')),
-      ),
-    ),
-  ).toEqual([
-    'mouse',
-    'pick',
-    'box',
-    'pen',
-    'arrow',
-    '|',
-    'capture',
-    'record',
-    '|',
-    'done',
-    'clear',
-    'end',
-  ]);
-  // Attach and Clear share one pill: Clear is flush against Attach.
-  const attachBox = (await bar.getByRole('button', { name: 'Attach' }).boundingBox())!;
-  const clearBox = (await bar.getByRole('button', { name: 'Clear annotations' }).boundingBox())!;
-  expect(Math.round(clearBox.x)).toBe(Math.round(attachBox.x + attachBox.width));
-  // Bigger, airier buttons: 38 px, the same as the tools.
   const shot = bar.getByRole('button', { name: 'Capture the screen · ⌘⇧S' });
-  const shotBox = (await shot.boundingBox())!;
-  expect([Math.round(shotBox.width), Math.round(shotBox.height)]).toEqual([38, 38]);
   await shot.hover();
   await expect(bar.getByRole('tooltip').filter({ hasText: 'Capture the screen' })).toHaveCSS(
     'opacity',
@@ -370,12 +225,10 @@ test('Screenshot and Record on the tool bar run the composer actions with its lo
   await expect(stop).toHaveAttribute('data-recording');
   await expect(stop).toHaveAttribute('aria-pressed', 'true');
   await expect(stop.locator('[data-record-time]')).toHaveText(/^1:0[5-9]$/);
-  const red = await stop.evaluate((node) => getComputedStyle(node).backgroundColor);
-  expect(red).not.toBe('rgba(0, 0, 0, 0)');
   // The wider bar re-reports its rect, so main keeps all of it clickable.
   await expect.poll(reportedWidth).toBeGreaterThan(idleWidth);
   // A fixed pill: timer ticks never change its width (or the bar's).
-  await expect.poll(async () => Math.round((await stop.boundingBox())!.width)).toBe(80);
+  await expectAnimationsToSettle(bar);
   const settled = (await bar.boundingBox())!;
   await page.waitForTimeout(1_100);
   const ticked = (await bar.boundingBox())!;

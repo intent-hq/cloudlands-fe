@@ -288,6 +288,23 @@ describe('workspace-forward-cleanup.service', () => {
     expect(closeForward).toHaveBeenCalledWith(4000);
   });
 
+  it('closes owned forwards on a retire transition (folder deleted)', async () => {
+    const { registry, closeForward } = arm();
+    registry.record(3000, 'ws-a');
+    await flush();
+
+    emitEvent('workspace:updated', {
+      workspaceId: 'ws-a',
+      changes: {
+        archived: true,
+        status: 'Retired',
+        archivedAt: '2026-10-01T00:00:00Z',
+        retiredAt: '2026-10-20T00:00:00Z',
+      },
+    });
+    expect(closeForward).toHaveBeenCalledWith(3000);
+  });
+
   it('ignores non-archive workspace:updated deltas', async () => {
     const { registry, closeForward } = arm();
     registry.record(3000, 'ws-a');

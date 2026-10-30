@@ -1,11 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+// Static import on purpose: the service pulls in the generated paraglide
+// message bundle (tens of MB), whose cold transform can take 15s+ locally.
+// Loading it at collection time keeps that cost outside every test/hook
+// timeout; a per-test dynamic import made the first test flake on loaded
+// machines. `vi.mock` calls below are hoisted above this import.
+import { NotificationService, __resetNotificationCacheForTesting } from './notification.service';
 
 /**
  * Wire-contract tests for the NotificationService rewire (PROTOCOL.md §5.12).
  * The legacy `notificationSettings` electron-store bag is retired; the
- * `enabled` and `soundOnlyWhenUnfocused` flags now read from the daemon-owned
- * `notifications.*` settings via `settings.get`. Every legacy `settings`
- * store instantiation in this file is grep-proof gone.
+ * `enabled` flag now reads from the daemon-owned `notifications.*` settings
+ * via `settings.get` (`soundOnlyWhenUnfocused` is a renderer sound gate).
+ * Every legacy `settings` store instantiation in this file is grep-proof gone.
  */
 
 const requestMock = vi.hoisted(() =>
@@ -67,19 +73,16 @@ function flush() {
 }
 
 describe('NotificationService ↔ daemon settings.notifications.enabled', () => {
-  beforeEach(async () => {
+  beforeEach(() => {
     requestMock.mockClear();
     requestMock.mockImplementation(async () => ({
       path: 'notifications.enabled',
       value: true,
     }));
-    vi.resetModules();
-    const mod = await import('./notification.service');
-    mod.__resetNotificationCacheForTesting();
+    __resetNotificationCacheForTesting();
   });
 
   it('reads notifications.enabled from the daemon via settings.get', async () => {
-    const { NotificationService } = await import('./notification.service');
     const svc = new NotificationService();
     // ctor kicks off hydration; give the microtask a chance to run.
     await flush();
@@ -90,7 +93,6 @@ describe('NotificationService ↔ daemon settings.notifications.enabled', () => 
   });
 
   it('sends only settings.get for the enabled flag (never write)', async () => {
-    const { NotificationService } = await import('./notification.service');
     // Trigger hydration by constructing the service.
     new NotificationService();
     await flush();
@@ -101,9 +103,6 @@ describe('NotificationService ↔ daemon settings.notifications.enabled', () => 
 
   it('defaults to enabled when the daemon call rejects', async () => {
     requestMock.mockRejectedValueOnce(new Error('boom'));
-    const { NotificationService, __resetNotificationCacheForTesting } =
-      await import('./notification.service');
-    __resetNotificationCacheForTesting();
     const svc = new NotificationService();
     await flush();
     // The daemon call errored; behavior is still "enabled by default".
@@ -133,9 +132,6 @@ describe('NotificationService ↔ daemon settings.notifications.enabled', () => 
       }
       return {};
     });
-    const { NotificationService, __resetNotificationCacheForTesting } =
-      await import('./notification.service');
-    __resetNotificationCacheForTesting();
     const svc = new NotificationService();
     await flush();
     requestMock.mockClear();

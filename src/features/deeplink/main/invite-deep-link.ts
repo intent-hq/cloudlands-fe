@@ -454,6 +454,8 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
       attempt,
     );
   } finally {
+    // Cancellation can happen after Join without entering the proof/failure handoff.
+    prompts?.current()?.dismiss('cancelled');
     connecting?.dismiss();
     connection?.close();
     attempt.release();

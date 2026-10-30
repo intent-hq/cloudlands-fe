@@ -1,6 +1,8 @@
 import type { WorkspaceId } from '$shared/types/branded-ids';
+import type { MergeQueueEntry } from '$lib/utils/merge-queue';
 import type { SubmissionCorrelation } from '$shared/types/agent-message';
 import type { AgentPlacement } from '$shared/types/agent-node';
+import type { SecretAnswerResult, SecretListing } from '$shared/types/secret-request-resource';
 import type {
   ScriptArchiveFilter,
   ScriptListPage,
@@ -58,6 +60,7 @@ import type {
   WorkspaceDiskUsage,
   WorkspaceTask,
   WorkspaceTaskStats,
+  WorkspaceCreateProposalOutcome,
 } from '$shared/types';
 import type { CommitInfo, TrackedChange } from '$features/file-tracking/types';
 import type { WorkspaceEvent } from '$features/events/types';
@@ -78,9 +81,13 @@ import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { ProviderCatalogResult } from '$shared/provider-catalog';
 import type {
+  ProviderDefaultUpdateParams,
+  ProviderDefaultUpdateResult,
   ProviderProfileCreateParams,
   ProviderProfileCreateResult,
   ProviderProfileDeleteResult,
+  ProviderProfileReorderParams,
+  ProviderProfileReorderResult,
   ProviderProfilesListResult,
   ProviderProfileUpdateParams,
   ProviderProfileUpdateResult,
@@ -170,6 +177,12 @@ export interface MutationResult extends SubmissionCorrelation {
    * `current` into the domain entity (`Note` / `WorkspaceTask`) before returning.
    */
   conflict?: { current: unknown };
+  /**
+   * Whole-content write refused by the truncated-read write guard (§5.2
+   * "Truncated note reads"): `-32602` with `data.code === "content-base-mismatch"`.
+   * Nothing was written; the caller must re-read the note rather than retry.
+   */
+  contentBaseMismatch?: true;
   /**
    * Queued-message surface returned by `agents.queue` (`agent.queueMessage`,
    * §5.5). Surfaced on the uniform mutation result so the queue-on-send caller
@@ -367,6 +380,8 @@ export interface WorkspaceUpdateResult extends MutationResult {
 export interface WorkspaceCreateResult extends MutationResult {
   workspace?: Workspace;
   initialAgent?: { id: string } & Record<string, unknown>;
+  /** The daemon's handling of the request's `origin` (PROTOCOL §5.1). */
+  proposalOrigin?: WorkspaceCreateProposalOutcome;
   /**
    * Machine-readable code for a failed create, surfaced from the transport
    * error's `data.code`. Only daemon-authored codes (e.g.
@@ -414,6 +429,14 @@ export interface WorkspaceCancelDeleteResult extends MutationResult {
   cancelled?: boolean;
 }
 
+/** `workspace.retire` outcome (PROTOCOL §5.1 Retired workspaces). */
+export interface WorkspaceRetireResult extends MutationResult {
+  /** The refreshed retired row on success. */
+  workspace?: Workspace;
+  /** Daemon error discriminator, e.g. `"retire-unsupported"` or `"not-found"`. */
+  errorCode?: string;
+}
+
 export type RepositoryContextUpdate =
   | { type: 'received'; response: RepositoryContextResponse }
   | { type: 'unavailable' | 'retired'; request: RepositoryContextRequest };
@@ -442,7 +465,8 @@ export interface WorkspacesClient {
     request: RepositoryContextRequest,
     handler: (update: RepositoryContextUpdate) => void,
   ): Promise<Unsubscribe>;
-  list(options?: { includeArchived?: boolean }): Promise<Workspace[]>;
+  /** Retired rows are returned only with `includeRetired: true` (strict opt-in, §5.1). */
+  list(options?: { includeArchived?: boolean; includeRetired?: boolean }): Promise<Workspace[]>;
   /**
    * Workspaces linked to a pull-request URL (`workspace.findByPullRequest`,
    * §5.1), most recently linked first, archived included. Callers must gate on
@@ -490,6 +514,12 @@ export interface WorkspacesClient {
   archive(id: string): Promise<MutationResult>;
   /** Unarchive a workspace (`workspace.unarchive`, §5.1) — the archive-undo path. */
   unarchive(id: string): Promise<MutationResult>;
+  /**
+   * Retire a workspace (`workspace.retire`, §5.1): deletes its folder on disk
+   * while every database row stays readable. Unarchive revives it as a fresh
+   * blank workspace.
+   */
+  retire(id: string): Promise<WorkspaceRetireResult>;
   /**
    * Mark a workspace seen (`workspace.markSeen`, §5.1) — clears the unread
    * `attention` flag only (unlike `workspace.dismissAttention`, which also
@@ -891,6 +921,24 @@ export interface AgentsClient {
     workspaceId: string;
     messageId: string;
   }): Promise<MutationResult>;
+  /**
+   * Names of one agent's memory-held secrets and its pending / answered
+   * secret requests (`secret.list`, PROTOCOL §5.56). Never returns values.
+   * `null` when the read fails.
+   */
+  secretList(params: { workspaceId: string; agentId: string }): Promise<SecretListing | null>;
+  /**
+   * Answer a pending secret request with its value (`secret.provide`,
+   * §5.56). The value goes straight to the daemon, which holds it in memory
+   * for the requesting agent only; callers must not store, log or echo it.
+   */
+  secretProvide(params: {
+    workspaceId: string;
+    requestId: string;
+    value: string;
+  }): Promise<SecretAnswerResult>;
+  /** Decline a pending secret request (`secret.dismiss`, §5.56). */
+  secretDismiss(params: { workspaceId: string; requestId: string }): Promise<SecretAnswerResult>;
   /**
    * Resolve one pending proposal (`agent.resolveProposal`, §5.5). The daemon
    * removes `proposalId` from the session-metadata `pendingProposals` set,
@@ -1602,56 +1650,24 @@ export interface NoteRestoreResult extends MutationResult {
   note?: Note;
 }
 
-/**
- * Author stamped on an attributed line (PROTOCOL §5.2.1). Mirrors the FE
- * `LineAuthor` shape the tiptap gutter consumes (`line-to-block-mapper.ts`).
- */
-export interface LineAttributionAuthor {
-  id: string;
-  name: string;
-  type: 'user' | 'agent' | 'system';
-  turnNumber?: number;
-}
-
-/**
- * Per-line attribution info (PROTOCOL §5.2.1). `timestamp` is milliseconds
- * since the Unix epoch (JS `Date.now()`-compatible) so the gutter's age math
- * works unchanged.
- */
-export interface LineAttributionInfo {
-  timestamp: number;
-  author?: LineAttributionAuthor;
-}
-
-/**
- * `note.lineAttribution.load` payload (PROTOCOL §5.2.1). Keys of
- * `attributions` are stringified 1-based line numbers so the JSON shape
- * matches what the FE `Record<number, LineAttributionInfo>` decoder in the
- * gutter accepts. `null` when the daemon has not computed attributions yet.
- */
-export interface LineAttributionData {
-  noteId: string;
-  workspaceId: string;
-  computedAt: string;
-  attributions: Record<string, LineAttributionInfo>;
-}
-
-/**
- * `note.lineAttribution.*` seam (PROTOCOL §5.2.1). Attached to `NotesClient`
- * so tiptap components resolve it as `appClient.notes.lineAttribution.*`.
- */
-export interface LineAttributionClient {
+/** Options for `NotesClient.setContent` (`note.setContent`, §5.2). */
+export interface NoteSetContentOptions {
   /**
-   * Load the persisted attribution payload for a note, or `null` when the
-   * daemon has not computed one yet. The `line-attribution:updated` event
-   * (§6.5, relayed via daemon-events-bridge) drives live refreshes.
+   * Truncated-read write guard: the UTF-8 size of the exact base text the
+   * draft was built from. Send only when `supportsTruncatedRead()` is true.
    */
-  load(workspaceId: string, noteId: string): Promise<LineAttributionData | null>;
+  baseContentBytes?: number;
+}
+
+/** Options for `NotesClient.get` (`note.get`, §5.2). */
+export interface NoteGetOptions {
   /**
-   * Force an immediate recompute + persist + `line-attribution:updated` emit,
-   * bypassing the daemon's 5 s debounce. Returns `{ ok: true }` on success.
+   * Opt in to a truncated read ("Truncated note reads", §5.2): a note larger
+   * than this many UTF-8 bytes comes back as a line-aligned prefix flagged
+   * `contentTruncated`. Callers must send it only when
+   * `NotesClient.supportsTruncatedRead()` is true (`noteTruncatedRead: 1`).
    */
-  computeNow(workspaceId: string, noteId: string): Promise<{ ok: boolean }>;
+  maxContentBytes?: number;
 }
 
 export interface NotesClient {
@@ -1671,7 +1687,9 @@ export interface NotesClient {
    * note), so callers that know the workspace MUST pass it rather than relying
    * on the live client's last-writer-wins resolver cache.
    */
-  get(noteId: string, workspaceId?: string): Promise<Note | null>;
+  get(noteId: string, workspaceId?: string, options?: NoteGetOptions): Promise<Note | null>;
+  /** Whether the daemon advertises truncated note reads (`noteTruncatedRead: 1`, §5.2). */
+  supportsTruncatedRead(): Promise<boolean>;
   subscribe(handler: SubscriptionHandler<Note[]>): Unsubscribe;
   /** Create a note (`note.create`); the live client attaches an idempotencyKey (§5.6). */
   create(request: CreateNoteRequest): Promise<MutationResult>;
@@ -1689,6 +1707,7 @@ export interface NotesClient {
     content: string,
     expectedVersion?: number,
     workspaceId?: string,
+    options?: NoteSetContentOptions,
   ): Promise<MutationResult>;
   /** Surgical, append-safe insert (`note.add`). `expectedVersion` (§11.4-D) and `workspaceId` are optional. */
   add(
@@ -1742,13 +1761,6 @@ export interface NotesClient {
     noteId: string,
     versionId: string,
   ): Promise<NoteRestoreResult>;
-  /**
-   * `note.lineAttribution.*` sub-domain (PROTOCOL §5.2.1). Consumed by the
-   * tiptap gutter to render "who last touched each line" over the daemon's
-   * version history; live refreshes flow through the `line-attribution:updated`
-   * event (§6.5) relayed by daemon-events-bridge.
-   */
-  lineAttribution: LineAttributionClient;
 }
 
 /** Inline checkbox status vocabulary (`task.updateStatus` / `task.update`). */
@@ -2191,6 +2203,9 @@ export interface ProvidersClient {
   createProfile(params: ProviderProfileCreateParams): Promise<ProviderProfileCreateResult>;
   updateProfile(params: ProviderProfileUpdateParams): Promise<ProviderProfileUpdateResult>;
   deleteProfile(profileId: string): Promise<ProviderProfileDeleteResult>;
+  reorderProfiles(params: ProviderProfileReorderParams): Promise<ProviderProfileReorderResult>;
+  /** `providers.profiles.updateDefault` (§5.54): the Default configuration's name and env. */
+  updateDefault(params: ProviderDefaultUpdateParams): Promise<ProviderDefaultUpdateResult>;
 }
 
 /** Wire `period` mode for `stats.getUsage`. */
@@ -2423,6 +2438,8 @@ export interface GitHubPullRequestDetails {
   url: string;
   headRef: string;
   baseRef: string;
+  /** Queue position and time-to-merge estimate; only on a `'queued'` PR whose daemon reports it. */
+  mergeQueue?: MergeQueueEntry;
 }
 
 /** One issue (`github.issues.get`, §5.27) normalized for link previews. */

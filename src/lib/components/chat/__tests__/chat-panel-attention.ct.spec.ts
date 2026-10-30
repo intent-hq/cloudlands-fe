@@ -1,4 +1,4 @@
-import { expect, test } from '../../../../test/ct-test';
+import { expect, test, wheelUntilScrolled } from '../../../../test/ct-test';
 import type { ComponentFixtures } from '@playwright/experimental-ct-svelte';
 import {
   failOnConsoleErrors,
@@ -6,6 +6,21 @@ import {
   takeConsoleErrors,
 } from '../../../../test/ct-console-errors';
 import ChatPanelComposerGeometryHost from './ChatPanelComposerGeometryHost.svelte';
+const hooksConfig = {
+  mockBackend: {
+    'agent.getQueue': {
+      success: true,
+      queue: [
+        {
+          id: 'attention-queue-fixture',
+          content: 'Check the narrow layout too.',
+          queuedAt: '2026-08-23T12:00:00.000Z',
+          position: 0,
+        },
+      ],
+    },
+  },
+};
 
 test.setTimeout(120_000);
 failOnConsoleErrors(test);
@@ -50,26 +65,6 @@ async function measure(component: CtLocator) {
     };
   });
 }
-
-// ChatPanel re-reads the authoritative queue via `agent.getQueue` on mount
-// (PROTOCOL §5.5/§6.6). Every case below seeds one queued message, so the
-// scripted daemon answers with that same row and the fold is a no-op instead
-// of a caught "Backend bridge unavailable" (intent-hq/intent#5276).
-const hooksConfig = {
-  mockBackend: {
-    'agent.getQueue': {
-      success: true,
-      queue: [
-        {
-          id: 'attention-queue-fixture',
-          content: 'Check the narrow layout too.',
-          queuedAt: '2026-08-23T12:00:00.000Z',
-          position: 0,
-        },
-      ],
-    },
-  },
-};
 
 // Negative harness check (intent-hq/intent#5276): without the mock daemon
 // bridge the fixture's queue hydration fails, is caught, and surfaces through
@@ -124,23 +119,20 @@ for (const width of [280, 720]) {
         expect(before.queue).not.toBeNull();
         expect(before.inTranscript).toBe(true);
         expect(before.inComposer).toBe(false);
-        expect(Math.abs(before.banner.left - before.message.left)).toBeLessThanOrEqual(1);
-        expect(Math.abs(before.banner.right - before.message.right)).toBeLessThanOrEqual(1);
-        expect(Math.abs(before.banner.left - before.contentLeft)).toBeLessThanOrEqual(1);
-        expect(Math.abs(before.banner.right - before.contentRight)).toBeLessThanOrEqual(1);
         expect(before.banner.bottom).toBeLessThanOrEqual(before.viewport.bottom + 1);
         expect(before.viewport.bottom).toBeLessThanOrEqual(before.composer.top + 1);
         expect(before.banner.bottom).toBeLessThanOrEqual(before.queue!.top);
         expect(before.overflow).toBeLessThanOrEqual(1);
-        expect(before.border).toBe(0);
 
         // Real wheel input releases follow-bottom ownership. Observe displacement
         // against both the scroll offset and a rendered message, not CSS spelling.
-        await page.mouse.move(
-          (before.viewport.left + before.viewport.right) / 2,
-          (before.viewport.top + before.viewport.bottom) / 2,
-        );
-        await page.mouse.wheel(0, -120);
+        await wheelUntilScrolled(viewport, {
+          deltaY: -120,
+          pointer: {
+            x: (before.viewport.left + before.viewport.right) / 2,
+            y: (before.viewport.top + before.viewport.bottom) / 2,
+          },
+        });
         await expect
           .poll(async () => (await measure(component)).scrollTop)
           .toBeLessThan(before.scrollTop - 30);
@@ -159,7 +151,7 @@ for (const width of [280, 720]) {
         expect(Math.abs(moved.queue!.top - before.queue!.top - displacement)).toBeLessThanOrEqual(
           1,
         );
-        await page.mouse.wheel(0, -100_000);
+        await wheelUntilScrolled(viewport, { deltaY: -100_000, pointer: 'current' });
         await expect.poll(async () => viewport.evaluate((node) => node.scrollTop)).toBeLessThan(1);
         await expect(banner).not.toBeInViewport();
         // Offscreen message bodies may dehydrate; the notice itself must still

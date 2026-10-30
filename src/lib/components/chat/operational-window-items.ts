@@ -32,8 +32,14 @@ type GroupIdentity = {
   key: string;
   block: ContentBlockGroup;
   anchors: Set<string>;
-  signature: string;
+  /** Memoized content signature; computed only when id-based matching fails. */
+  signature: () => string;
 };
+
+function lazySignature(block: ContentBlockGroup): () => string {
+  let value: string | undefined;
+  return () => (value ??= JSON.stringify([block.sourceName ?? block.name, block.children]));
+}
 
 /** Retained by the panel, so group identity survives disposable renderer mounts. */
 export function createWindowItemProjector() {
@@ -66,7 +72,7 @@ export function createWindowItemProjector() {
         anchors: new Set(
           block.children.flatMap((child) => (child.id ? [`${child.type}:${child.id}`] : [])),
         ),
-        signature: JSON.stringify([block.sourceName ?? block.name, block.children]),
+        signature: lazySignature(block),
         match: undefined as GroupIdentity | undefined,
       }));
       const reserve = (
@@ -85,7 +91,7 @@ export function createWindowItemProjector() {
       // claim a slot. A newly prepended same-name group must not steal a survivor.
       reserve((record, old) => old.block === record.block);
       reserve((record, old) => [...record.anchors].some((id) => old.anchors.has(id)));
-      reserve((record, old) => old.signature === record.signature);
+      reserve((record, old) => old.signature() === record.signature());
       for (const [ordinal, record] of records.entries()) {
         record.match ??= [...available].find((old) => {
           if (!old.block.isStreaming || old.anchors.size > 0) return false;

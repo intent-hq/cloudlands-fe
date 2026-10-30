@@ -76,7 +76,8 @@ vi.mock(
       mocks.readable({ selectedSpecialist: 'spec-writer', isTeamMode: true }),
     selectWorkspaceInitializerRecentRepos: () => mocks.readable(mocks.recentRepos),
     selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(null),
-    selectWorkspaceInitializerDraftRestore: () => mocks.readable(undefined),
+    selectWorkspaceInitializerDraftAuthority: () =>
+      mocks.readable({ restore: undefined, clear: undefined }),
   }),
 );
 
@@ -100,6 +101,7 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectLoadError: () => mocks.readable(null),
   selectAllProviderWarnings: () => mocks.readable({}),
   selectAllProviderStaleFlags: () => mocks.readable({}),
+  selectAllProviderWarningKinds: () => mocks.readable({}),
   selectModelEffortLevels: {
     select: (_state: unknown, modelId: string | undefined) =>
       mocks.models.find((model) => model.value === modelId)?.effortLevels,
@@ -233,13 +235,6 @@ vi.mock('$lib/electron-bridge', () => ({
       : { success: true, data: null },
   ),
 }));
-vi.mock('$lib/components/workspace/initializer/new-workspace-draft', () => ({
-  LEGACY_PROMPT_SESSION_KEY: 'legacy-prompt',
-  restoreNewWorkspaceDraft: vi.fn(async () => ({ status: 'empty' })),
-  createNewWorkspaceDraftSaver: vi.fn(() => ({ schedule: vi.fn(), flush: vi.fn() })),
-  clearNewWorkspaceDraft: vi.fn(),
-}));
-
 vi.mock('$lib/components/ui/RichTextarea.svelte', async () => ({
   default: (await import('../../workspace/__tests__/mocks/MockRichTextarea.svelte')).default,
 }));
@@ -298,13 +293,6 @@ import { loadEnabledProvidersFromStorage } from '$store/renderer/slices/provider
 import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
 import { workspaceInitializationSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initialization-saga';
 import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
-
-function persistedStates() {
-  return mocks.dispatch.mock.calls
-    .map(([action]) => action)
-    .filter((action) => action?.type === setCompactWorkspaceInitializerFormState.type)
-    .map((action) => action.payload[0]);
-}
 
 /** The repository fields the form currently shows (via the mock picker props). */
 function shownSelection() {
@@ -1102,18 +1090,17 @@ describe('NewSpaceModal model-picker composition', () => {
       await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
 
       await waitFor(() =>
-        expect(persistedStates().at(-1)).toMatchObject({
+        expect(appStore.state.workspaceInitializer.compactFormState).toMatchObject({
           repoPath: '/repos/other',
           repoType: 'local',
           branch: 'feature',
           selectedModel: 'gpt5.6',
         }),
       );
-      const lastRepo = mocks.dispatch.mock.calls
-        .map(([action]) => action)
-        .filter((action) => action?.type === setWorkspaceInitializerLastSelectedRepo.type)
-        .at(-1);
-      expect(lastRepo?.payload[0]).toMatchObject({ path: '/repos/other', type: 'local' });
+      expect(appStore.state.workspaceInitializer.lastSelectedRepo).toMatchObject({
+        path: '/repos/other',
+        type: 'local',
+      });
     });
   });
 
@@ -1241,6 +1228,7 @@ describe('NewSpaceModal model-picker composition', () => {
 });
 
 vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', async () => {
+  const { derived } = await import('svelte/store');
   const providers =
     await import('$store/renderer/slices/provider-settings/provider-settings-selectors');
   const models = await import('$store/renderer/slices/model/model-selectors');
@@ -1252,6 +1240,10 @@ vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', a
   return {
     selectWorkspaceCatalogEpoch: () => mocks.readable(0),
     selectContextProviderEntries: catalog.selectProviderCatalogEntries,
+    selectContextListedProviderIds: () =>
+      derived(catalog.selectProviderCatalogEntries(), (entries) =>
+        entries.map((entry) => entry.id),
+      ),
     selectContextDefaultProvider: providers.selectActiveProviderId,
     selectContextSelectedModel: models.selectSelectedModel,
     selectContextEnabledProviders: providers.selectEnabledProviders,
@@ -1260,6 +1252,7 @@ vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', a
     selectContextReadinessLoaded: availability.selectHasCheckedOnce,
     selectContextProviderWarnings: models.selectAllProviderWarnings,
     selectContextProviderStaleFlags: models.selectAllProviderStaleFlags,
+    selectContextProviderWarningKinds: models.selectAllProviderWarningKinds,
     selectContextSpecialists: specialists.selectSpecialists,
   };
 });

@@ -3,6 +3,7 @@
   import './app-layout.css';
   import { m } from '$shared/paraglide/messages.js';
   import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
+  import { navigateToAppRoute } from '$lib/utils/show-workspace';
   import { page } from '$app/stores';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
 
@@ -91,7 +92,7 @@
   import { openTabInRightmostColumnRequested } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { resolveTerminalShortcutWorkspaceId } from '$features/terminal/terminal-shortcut-context';
   import {
-    selectHidesAgentLifecycleActions,
+    selectHidesAgentCreationActions,
     selectIsCollaboratorOnlyClient,
     selectIsWorkspaceCollaborator,
     selectWorkspaceHasLoaded,
@@ -103,7 +104,10 @@
     selectBackendSetupGate,
   } from '$store/renderer/slices/setup-prompt/setup-prompt-selectors';
   import { bootRouteGateResolved } from '$store/renderer/slices/setup-prompt/setup-prompt-slice';
-  import { selectCurrentConnection } from '$store/renderer/slices/connections/connections-selectors';
+  import {
+    selectConnectionsLoaded,
+    selectCurrentConnection,
+  } from '$store/renderer/slices/connections/connections-selectors';
   import { selectShellTransparencyEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { connectionShellTint } from '$lib/utils/connection-accents';
   import {
@@ -184,6 +188,7 @@
   const currentWorkspaceTabId = selectCurrentWorkspaceTabId();
   const workspaceTabsHydrated = selectWorkspaceTabsHydrated();
   const workspaceTabOrder = selectWorkspaceTabOrder();
+  const connectionsLoaded$ = selectConnectionsLoaded();
   const showReleaseNotesModal$ = selectShowReleaseNotesModal();
   const releaseNotes$ = selectReleaseNotes();
   const showCreateModal$ = selectShowCreateModal();
@@ -269,6 +274,19 @@
   // bootHoldTimedOut flips and decideBootRoute resolves best-effort instead
   // of holding a blank surface indefinitely.
   let bootHoldTimedOut = $state(false);
+  let bootWorkspaceRouteSettled = $state(false);
+  $effect(() => {
+    if (bootWorkspaceRouteSettled || !$connectionsLoaded$ || !$workspaceTabsHydrated) return;
+    bootWorkspaceRouteSettled = true;
+    // The first backend binding can replace tabs opened before its saved strip
+    // loads. Register the direct route afterward so cleanup cannot strand it.
+    untrack(() => {
+      if (workspaceId) {
+        appStore.dispatch(openWorkspaceTab(workspaceId, $page.state?.presenceFollowRequestId));
+        appStore.dispatch(recordWorkspaceView(workspaceId, Date.now()));
+      }
+    });
+  });
   $effect(() => {
     if ($bootGateResolved) return;
     const timer = setTimeout(() => {
@@ -445,7 +463,8 @@
     const initialRoute = urlParams.get('initialRoute');
     if (initialRoute) {
       // Navigate to the specified route
-      goto(initialRoute)
+      // A workspace route also opens the workspace's tab.
+      navigateToAppRoute(initialRoute)
         .then(() => {
           // Clear the query parameter from the URL without reloading
           const newUrl = new URL(window.location.href);
@@ -478,11 +497,6 @@
 
     loadData();
 
-    // Direct workspace routes open their tab without mirroring route identity into Redux.
-    if (workspaceId) {
-      appStore.dispatch(openWorkspaceTab(workspaceId, $page.state?.presenceFollowRequestId));
-      appStore.dispatch(recordWorkspaceView(workspaceId, Date.now()));
-    }
     // Register global palette shortcuts (config-driven later)
     paletteShortcuts = new KeyboardShortcutManager();
     const isMac =
@@ -532,7 +546,7 @@
       openNewWorkspace: () => appStore.dispatch(setShowCreateModal(true)),
       onCreateAgent: (workspaceId) => {
         // `agent.create` is refused (-32003) for a collaborator connection.
-        if (selectHidesAgentLifecycleActions.select(appStore.state, workspaceId)) return;
+        if (selectHidesAgentCreationActions.select(appStore.state, workspaceId)) return;
         appStore.dispatch(createAgentRequested(workspaceId));
       },
       onCreateNote: (workspaceId) => appStore.dispatch(createNoteRequested(workspaceId)),
@@ -715,7 +729,8 @@
       action: () => {
         const isOnSettings = $page.url.pathname.startsWith('/settings');
         if (isOnSettings) {
-          goto(lastNonSettingsPath);
+          // The workspace may have been closed while Settings was open.
+          void navigateToAppRoute(lastNonSettingsPath);
         } else {
           navigateToSettings();
         }

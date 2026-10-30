@@ -142,6 +142,7 @@ import {
   PANEL_LAYOUT_HANDLED_ACTION_TYPES,
   acknowledgeBrowserTabHost,
   applyBrowserTabRegistryRow,
+  browserTabRegistryReconcileRequested,
   browserTabRegistryReportRequested,
   closeTab,
   destroyTabsByType,
@@ -525,6 +526,14 @@ function* reconcileVisibility(
   }
 }
 
+/** Packaged-build breadcrumbs for agent background hosting (intent-hq/intent#7855). */
+const hostingLogger = createLogger('BrowserHosting');
+
+/** A URL-less shell (restored geometry) got its URL back from a registry row. */
+function logShellFilled(wsId: string, tabId: string, source: 'listing' | 'event'): void {
+  hostingLogger.info('registry filled URL-less tab', { wsId, tabId, source });
+}
+
 /**
  * Apply the daemon's rows for one settled workspace over the local layout.
  * A tab this client already hosts that still carries a URL is local truth
@@ -588,6 +597,7 @@ function* applyRows(
         toRehydrate.push({ tabId: row.tabId, requestedUrl, storedUrl: existing.tab.browserUrl });
       }
     } else {
+      if (!existing.tab.browserUrl && row.url) logShellFilled(wsId, row.tabId, 'listing');
       yield* effect(fence, applyBrowserTabRegistryRow(wsId, row.tabId, row));
       yield* call(reconcileVisibility, fence, existing, row);
       if (mine) applied(row);
@@ -716,6 +726,25 @@ function* loadUnder(
 function* reconcileOnSettle(action: ReturnType<typeof setRestoreStatus>): SagaGenerator<void> {
   const [wsId, status] = action.payload;
   if (status !== 'restored' && status !== 'empty' && status !== 'invalid') return;
+  yield* call(reconcileWorkspace, wsId);
+}
+
+/**
+ * A browser request reached this window for the workspace. Closing a
+ * workspace's tab tears its registry state down (`unmounted`) but keeps the
+ * layout settled, and a settled layout never settles again, so nothing
+ * would reload its rows: a tab an agent opens there while the workspace is
+ * background-hosted would never be reported. Reload only in exactly that
+ * state; a loading or applied workspace, or an unsettled layout (its settle
+ * reconciles), is left alone.
+ */
+function* onReconcileRequested(
+  action: ReturnType<typeof browserTabRegistryReconcileRequested>,
+): SagaGenerator<void> {
+  const [wsId] = action.payload;
+  const layout = (yield* selectPanelLayoutWorkspaces.effect())[wsId];
+  if (!layout || !isSettled(layout)) return;
+  if ((yield* selectBrowserTabRegistryWorkspace.effect(wsId)).phase !== 'unmounted') return;
   yield* call(reconcileWorkspace, wsId);
 }
 
@@ -967,6 +996,7 @@ function* applyRow(
     yield* effect(fence, acknowledgeBrowserTabHost(wsId, row.tabId, ownClientId));
     return;
   }
+  if (!existing.tab.browserUrl && row.url) logShellFilled(wsId, row.tabId, 'event');
   yield* effect(fence, applyBrowserTabRegistryRow(wsId, row.tabId, row));
   yield* call(reconcileVisibility, fence, existing, row);
   if (mine) {
@@ -1227,6 +1257,7 @@ export function* browserTabRegistrySaga(): SagaGenerator<void> {
   yield* takeEvery(browserTabRegistryReportRequested, onReportRequested, reports);
   yield* takeSingleFlightInContext(reports, (wsId) => wsId, reportHostedTabs);
   yield* takeEvery(setRestoreStatus, reconcileOnSettle);
+  yield* takeEvery(browserTabRegistryReconcileRequested, onReconcileRequested);
   yield* takeEvery(browserTabUpserted, onRegistryRow);
   yield* takeEvery(browserTabClosed, onRegistryClose);
   yield* takeEvery(connectionStatusChanged, onConnectionStatus);

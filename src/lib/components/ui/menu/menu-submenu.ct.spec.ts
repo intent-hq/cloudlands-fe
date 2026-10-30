@@ -1,4 +1,5 @@
 import { expect, test } from '../../../../test/ct-test';
+import { expectDismissibleLayerArmed } from '../../../../test/dismissible-layer';
 import OverlayCatalogPreview from '$lib/component-catalog/renderers/OverlayCatalogPreview.svelte';
 import { menuFixtures } from './menu.fixtures';
 
@@ -88,7 +89,10 @@ test('catalog nested submenu dismisses every layer on an outside pointer', async
   mount,
   page,
 }) => {
-  await openNestedSubmenu(mount, page);
+  const { more, archive } = await openNestedSubmenu(mount, page);
+  // One outside click must close both layers: wait until each listens for it.
+  await expectDismissibleLayerArmed(page.getByRole('menu').filter({ has: more }));
+  await expectDismissibleLayerArmed(page.getByRole('menu').filter({ has: archive }));
   await page.mouse.click(880, 680);
   await expect(page.getByRole('menu')).toHaveCount(0);
 });

@@ -43,14 +43,13 @@ import {
   selectGroupByRepo,
   selectGithubLinkDefaultAction,
   selectHasCompletedProviderSetup,
-  selectLabsMultiplayerEnabled,
   selectLabsGitLabEnabled,
   selectLabsRemoteAgentsEnabled,
-  selectLabsProviderProfilesEnabled,
   selectLanguagePreference,
   selectNotificationEnabled,
   selectNotificationVolume,
   selectNoteFontStyle,
+  selectPauseAnimationsWhenUnfocused,
   selectShowArchived,
   selectSoundEnabled,
   selectSoundOnlyWhenUnfocused,
@@ -101,13 +100,12 @@ import {
   setGroupByRepo,
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
-  setLabsMultiplayerEnabled,
   setLabsGitLabEnabled,
   setLabsRemoteAgentsEnabled,
-  setLabsProviderProfilesEnabled,
   setLanguagePreference,
   setNotificationEnabled,
   setNoteFontStyle,
+  setPauseAnimationsWhenUnfocused,
   setShowArchived,
   setSoundEnabled,
   setSoundOnlyWhenUnfocused,
@@ -300,14 +298,12 @@ async function readCurrentSettingValue(definition: AppSettingDefinition): Promis
       return selectChatAuroraEnabled.select(state);
     case 'appearance.shellTransparency':
       return selectShellTransparencyEnabled.select(state);
-    case 'labs.multiplayer':
-      return selectLabsMultiplayerEnabled.select(state);
+    case 'appearance.pauseAnimationsWhenUnfocused':
+      return selectPauseAnimationsWhenUnfocused.select(state);
     case 'labs.gitlab':
       return selectLabsGitLabEnabled.select(state);
     case 'labs.remoteAgents':
       return selectLabsRemoteAgentsEnabled.select(state);
-    case 'labs.providerProfiles':
-      return selectLabsProviderProfilesEnabled.select(state);
     case 'workspaceList.showArchived':
       return selectShowArchived.select(state);
     case 'workspaceList.groupByRepo':
@@ -414,8 +410,9 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
     case 'appearance.shellTransparency':
       appStore.dispatch(setShellTransparencyEnabled(Boolean(value)));
       return true;
-    case 'labs.multiplayer':
-      appStore.dispatch(setLabsMultiplayerEnabled(Boolean(value)));
+    case 'appearance.pauseAnimationsWhenUnfocused':
+      if (typeof value !== 'boolean') return false;
+      appStore.dispatch(setPauseAnimationsWhenUnfocused(value));
       return true;
     case 'labs.gitlab':
       appStore.dispatch(setLabsGitLabEnabled(Boolean(value)));
@@ -423,10 +420,6 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
     case 'labs.remoteAgents':
       if (typeof value !== 'boolean') return false;
       appStore.dispatch(setLabsRemoteAgentsEnabled(value));
-      return true;
-    case 'labs.providerProfiles':
-      if (typeof value !== 'boolean') return false;
-      appStore.dispatch(setLabsProviderProfilesEnabled(value));
       return true;
     case 'workspaceList.showArchived':
       appStore.dispatch(setShowArchived(Boolean(value)));

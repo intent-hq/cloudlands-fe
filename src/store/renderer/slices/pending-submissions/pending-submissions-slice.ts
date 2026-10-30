@@ -415,7 +415,12 @@ function applyParticipationRights(
   for (const entry of Object.values(state.byAgentId)) {
     if (entry.scope.workspaceId !== workspaceId) continue;
     const rights = replace ? changes : { ...entry.participationRights, ...changes };
-    if (rights.myRole !== 'owner' && rights.myRole !== 'collaborator' && rights.canManage !== true)
+    if (
+      rights.myRole !== 'owner' &&
+      rights.myRole !== 'collaborator' &&
+      rights.myRole !== 'manager' &&
+      rights.canManage !== true
+    )
       return forgetWorkspace(next, workspaceId);
     next = update(next, entry.scope, (current) => ({
       ...current,

@@ -4,7 +4,18 @@
 
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { store } from '../../store';
-import { selectCanShareWorkspace } from '../workspace/workspace-selectors';
+import type { WorkspaceInvite } from '$features/workspace-sharing/types';
+import { selectActiveWorkspaceIds } from '../tab-state/tab-state-selectors';
+import {
+  selectPrincipalActionContext,
+  selectPrincipalSnapshot,
+  selectCanAdministerHost,
+} from '../principal/principal-selectors';
+import {
+  selectCanShareWorkspace,
+  selectIsWorkspaceOwner,
+  selectWorkspaceById,
+} from '../workspace/workspace-selectors';
 import { getRosterState, type WorkspaceShareTarget } from './workspace-share-slice';
 
 export const selectShareDialogOpen = store.createSelector((state) => state.workspaceShare.open);
@@ -27,7 +38,13 @@ export const selectShareTarget = store.createSelector<[], WorkspaceShareTarget |
  */
 export const selectShareCanManage = store.createSelector((state) => {
   const { open, workspaceId, withheld } = state.workspaceShare;
-  if (!open || !workspaceId || withheld) return false;
+  if (
+    !open ||
+    !workspaceId ||
+    withheld ||
+    getRosterState(state.workspaceShare, workspaceId).inviteWithheld
+  )
+    return false;
   return selectCanShareWorkspace.select(state, workspaceId);
 });
 
@@ -55,7 +72,14 @@ export const selectShareHasMember = store.createSelector(
 
 /** Ordered open invites. */
 export const selectShareInvites = store.createSelector((state) =>
-  getItems(state.workspaceShare.invites),
+  state.workspaceShare.open &&
+  state.workspaceShare.workspaceId &&
+  !state.workspaceShare.withheld &&
+  !getRosterState(state.workspaceShare, state.workspaceShare.workspaceId).inviteWithheld
+    ? getItems(state.workspaceShare.invites).filter(
+        (invite) => invite.workspaceId === state.workspaceShare.workspaceId,
+      )
+    : [],
 );
 
 /**
@@ -116,7 +140,8 @@ export const selectShareActionError = store.createSelector(
 
 /** Saga: a hover card has asked for this workspace's roster at least once. */
 export const selectWorkspaceRosterTracked = store.createSelector(
-  (state, workspaceId: string) => workspaceId in state.workspaceShare.byWorkspaceId,
+  (state, workspaceId: string) =>
+    getRosterState(state.workspaceShare, workspaceId).loadStatus !== 'idle',
 );
 
 /** Hover card: the roster of `workspaceId` in daemon order (empty until read). */
@@ -158,3 +183,141 @@ export const selectWorkspaceRosterRemoveError = store.createSelector(
 export const selectShareIntegrationAuth = store.createSelector(
   (state) => state.workspaceShare.integrationAuth,
 );
+
+/** Never present another host/identity's prerequisite result, even before its next read. */
+const selectSharePrerequisitesCurrent = store.createSelector(
+  (state) =>
+    selectShareCanManage.select(state) &&
+    selectCanAdministerHost.select(state) &&
+    state.workspaceShare.sharingContext !== null &&
+    state.workspaceShare.sharingContext === selectPrincipalActionContext.select(state),
+);
+export const selectShareSharingEnabled = store.createSelector((state) =>
+  selectSharePrerequisitesCurrent.select(state) ? state.workspaceShare.sharingEnabled : null,
+);
+export const selectShareSharingChecking = store.createSelector(
+  (state) => selectSharePrerequisitesCurrent.select(state) && state.workspaceShare.sharingChecking,
+);
+export const selectShareSharingEnabling = store.createSelector(
+  (state) => selectSharePrerequisitesCurrent.select(state) && state.workspaceShare.sharingEnabling,
+);
+export const selectShareSharingError = store.createSelector((state) =>
+  selectSharePrerequisitesCurrent.select(state) ? state.workspaceShare.sharingError : null,
+);
+
+export const selectShareCanSetMemberRole = store.createSelector(
+  (state) =>
+    selectShareCanManage.select(state) &&
+    !!state.workspaceShare.workspaceId &&
+    (selectCanAdministerHost.select(state) ||
+      (selectShareOwnerPrincipalId.select(state)
+        ? selectShareOwnerPrincipalId.select(state) ===
+          selectPrincipalSnapshot.select(state)?.principal.id
+        : selectIsWorkspaceOwner.select(state, state.workspaceShare.workspaceId))) &&
+    selectPrincipalSnapshot.select(state)?.capabilities.workspaceGuestRoles === true,
+);
+export const selectSharePendingRolePrincipalIds = store.createSelector(
+  (state) => state.workspaceShare.pendingRolePrincipalIds,
+);
+export const selectShareRoleErrors = store.createSelector(
+  (state) => state.workspaceShare.roleErrors,
+);
+
+export const selectShareOwnerPrincipalId = store.createSelector((state) => {
+  const workspaceId = state.workspaceShare.workspaceId;
+  return workspaceId
+    ? (selectWorkspaceById.select(state, workspaceId)?.ownerPrincipalId ?? null)
+    : null;
+});
+
+/** People demand includes solo workspaces: their first guest may still be invited. */
+export const selectWorkspacePeopleInviteScope = store.createSelector((state) => {
+  const context = selectPrincipalActionContext.select(state);
+  const ids = selectActiveWorkspaceIds.select(state);
+  return {
+    context,
+    workspaceIds: context ? ids.filter((id) => selectCanShareWorkspace.select(state, id)) : [],
+  };
+});
+export const selectWorkspaceInviteRead = store.createSelector((state, workspaceId: string) => {
+  const roster = getRosterState(state.workspaceShare, workspaceId);
+  return {
+    context: roster.inviteContext,
+    generation: roster.inviteGeneration,
+    withheld: roster.inviteWithheld,
+  };
+});
+
+const NO_INVITES: WorkspaceInvite[] = [];
+
+/** Pending named invitees, joined only by qualified identity with accepted membership. */
+export const selectWorkspacePeopleInvites = store.createSelector(
+  (state, workspaceId: string): WorkspaceInvite[] => {
+    const context = selectPrincipalActionContext.select(state);
+    const roster = getRosterState(state.workspaceShare, workspaceId);
+    if (
+      !context ||
+      roster.inviteContext !== context ||
+      roster.inviteWithheld ||
+      !selectCanShareWorkspace.select(state, workspaceId)
+    )
+      return NO_INVITES;
+    const members =
+      state.presence?.context === context ? state.presence.members[workspaceId] : undefined;
+    const accepted = new Set(
+      members
+        ? getItems(members).flatMap((member) =>
+            member.identity
+              ? [
+                  JSON.stringify([
+                    member.identity.provider,
+                    member.identity.host.toLowerCase(),
+                    member.identity.externalUserId,
+                  ]),
+                ]
+              : [],
+          )
+        : [],
+    );
+    const seen = new Set<string>();
+    return getItems(state.workspaceShare.invites).filter((invite) => {
+      if (
+        invite.workspaceId !== workspaceId ||
+        !invite.pinLogin?.trim() ||
+        invite.revokedAt ||
+        (invite.redeemedAt && !invite.reusable) ||
+        !(Date.parse(invite.expiresAt) > roster.inviteReceivedAt)
+      )
+        return false;
+      const identity =
+        invite.pinIdentity ??
+        (invite.pinGithubUserId !== undefined
+          ? {
+              provider: 'github',
+              host: 'github.com',
+              externalUserId: String(invite.pinGithubUserId),
+            }
+          : null);
+      if (members && invite.redeemedByPrincipalId && getItem(members, invite.redeemedByPrincipalId))
+        return false;
+      if (!identity) return true;
+      const key = JSON.stringify([
+        identity.provider,
+        identity.host.toLowerCase(),
+        identity.externalUserId,
+      ]);
+      if (accepted.has(key) || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  },
+);
+
+/** One expiry timer over the current admitted collection, never a render-time clock. */
+export const selectWorkspacePeopleInviteExpiry = store.createSelector((state): number | null => {
+  const scope = selectWorkspacePeopleInviteScope.select(state);
+  const expiries = scope.workspaceIds.flatMap((id) =>
+    selectWorkspacePeopleInvites.select(state, id).map((invite) => Date.parse(invite.expiresAt)),
+  );
+  return expiries.length ? Math.min(...expiries) : null;
+});

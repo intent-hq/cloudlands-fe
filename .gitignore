@@ -74,6 +74,7 @@ test-results-quarantine
 test-reports
 playwright-report
 playwright-report-quarantine
+ct-full-runs
 test-harness-report.json
 .demo-artifacts/
 
@@ -136,6 +137,12 @@ resources/speech-helper/
 
 # Keychain helper staging directory (build-keychain-helper.cjs output)
 resources/keychain-helper/
+resources/desktop-helper/
+native/desktop/windows/bin/
+native/desktop/windows/obj/
+native/desktop/tests/windows/bin/
+native/desktop/tests/windows/obj/
+native/desktop/tests/windows/artifacts/
 
 # Generated production-only Paraglide bundle
 static/generated/
@@ -148,3 +155,6 @@ static/generated/
 /resources/dock-helper/intent-dock-cursor.node
 /resources/dock-helper/intent-dock-recorder
 /resources/dock-helper/intent-dock-element-pick
+# Python bytecode from the CI policy scripts
+__pycache__/
+*.pyc

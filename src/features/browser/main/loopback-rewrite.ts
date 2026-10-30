@@ -18,6 +18,8 @@
  * transport state.
  */
 
+import { isTcAddress } from '../../../shared/tc-address';
+
 const DAEMON_LOCALHOST = 'daemon.localhost';
 const CLIENT_LOCALHOST = 'client.localhost';
 
@@ -29,7 +31,7 @@ export interface LoopbackRewriteContext {
   daemonIsRemote: boolean;
   /** Hostname the FE uses to reach the remote daemon (sanitized transport target). */
   daemonHost?: string;
-  /** Daemon-local links must tunnel because the saved remote transport host is client loopback. */
+  /** Daemon-local links must tunnel (Tailcat or a saved remote on client loopback). */
   daemonLinksRequireTunnel?: boolean;
 }
 
@@ -44,7 +46,7 @@ export interface LoopbackRewriteResult {
   /** Ambiguity warning for bare-loopback rewrites in remote mode. */
   warning?: string;
   /**
-   * True only when the URL was rewritten to the REMOTE daemon host (never for
+   * True when the URL targets the REMOTE daemon (never for
    * local-mode or `client.localhost` rewrites, which stay on this machine).
    * The resolver probes reachability unless `requiresTunnel` is also set.
    */
@@ -72,6 +74,7 @@ export interface TransportConfigForLoopback {
   transport: 'uds' | 'tcp' | 'ws' | 'wss';
   wsUrl?: string;
   host?: string;
+  tcAddress?: string;
 }
 
 /**
@@ -96,6 +99,14 @@ export function loopbackContextFromTransport(
     }
   } else if (config?.transport === 'wss' || config?.transport === 'tcp') {
     host = config.host;
+  }
+  // Tailcat addresses may contain credentials and are not DNS hostnames.
+  // Keep them out of the rewrite context and all derived URLs/diagnostics.
+  if (
+    (host && isTcAddress(host)) ||
+    (!host && config?.tcAddress && isTcAddress(config.tcAddress))
+  ) {
+    return { daemonIsRemote: true, daemonLinksRequireTunnel: true };
   }
   if (host && classifyLoopbackHost(host) === 'bare-loopback') {
     if (!savedRemote) return { daemonIsRemote: false };
@@ -151,6 +162,27 @@ export function rewriteLoopbackUrl(
     };
   }
 
+  const tailcatHost = daemonHost !== undefined && isTcAddress(daemonHost);
+  if (daemonIsRemote && (context.daemonLinksRequireTunnel || tailcatHost)) {
+    return {
+      // Retain a safe daemon alias until the resolver allocates a local forward.
+      // Also handle callers that supply an opaque host directly in the context.
+      url: withHostname(url, daemonHost && !tailcatHost ? daemonHost : DAEMON_LOCALHOST),
+      rewritten: true,
+      requestedUrl: rawUrl,
+      // i18n-ignore (agent-facing protocol detail, not user-facing)
+      reason: 'Daemon-local URL requires forwarding through the remote daemon tunnel',
+      remoteHost: true,
+      requiresTunnel: true,
+      ...(kind === 'bare-loopback'
+        ? {
+            // i18n-ignore (agent-facing protocol warning, not user-facing)
+            warning: `Loopback host "${url.hostname}" was assumed to mean the daemon machine. Use http(s)://${DAEMON_LOCALHOST} to target the daemon machine explicitly, or http(s)://${CLIENT_LOCALHOST} to target the user's machine.`,
+          }
+        : {}),
+    };
+  }
+
   if (kind === 'daemon-alias') {
     if (!daemonIsRemote) {
       return {
@@ -173,7 +205,6 @@ export function rewriteLoopbackUrl(
       requestedUrl: rawUrl,
       reason: `${DAEMON_LOCALHOST} targets the daemon machine; rewritten to remote daemon host ${daemonHost}`,
       remoteHost: true,
-      ...(context.daemonLinksRequireTunnel ? { requiresTunnel: true } : {}),
     };
   }
 
@@ -194,7 +225,6 @@ export function rewriteLoopbackUrl(
     requestedUrl: rawUrl,
     reason: `bare loopback URL assumed daemon-local; rewritten to remote daemon host ${daemonHost}`,
     remoteHost: true,
-    ...(context.daemonLinksRequireTunnel ? { requiresTunnel: true } : {}),
     warning:
       // i18n-ignore (agent-facing protocol warning, not user-facing)
       `Loopback host "${url.hostname}" was assumed to mean the daemon machine and rewritten to ` +

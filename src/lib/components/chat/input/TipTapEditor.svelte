@@ -2,9 +2,15 @@
   import { getOwnedPopupContext } from '$lib/components/ui/owned-popup-context';
   /* eslint-disable max-lines */
   import { onMount, onDestroy, mount, unmount, untrack } from 'svelte';
+  import { isTextEntryTarget } from '$lib/utils/text-entry';
   import { Popover } from 'bits-ui';
 
-  import { Editor, getTextBetween, getTextSerializersFromSchema } from '@tiptap/core';
+  import {
+    createDocument,
+    Editor,
+    getTextBetween,
+    getTextSerializersFromSchema,
+  } from '@tiptap/core';
   import { PluginKey, TextSelection } from '@tiptap/pm/state';
   import StarterKit from '@tiptap/starter-kit';
   import Placeholder from '@tiptap/extension-placeholder';
@@ -43,7 +49,8 @@
   import { getMentionSystem, type SearchContext } from '$lib/services/mentions';
   import type { Workspace } from '$shared/types';
   import { toPromptToken } from '$lib/services/mentions/format';
-  import { memberMentionLabel } from '$lib/utils/member-mention-token';
+  import { mentionChipDisplayLabel } from '$lib/utils/note-mention-label';
+  import { storeNoteTitleLookup } from '$lib/utils/store-note-title-lookup';
   import { noteUrl } from '$shared/constants/intent-links';
   import { createIntentLink } from '$lib/utils/tiptap-link-extension';
   import { Slice, Fragment } from '@tiptap/pm/model';
@@ -66,6 +73,7 @@
   import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
   import { getEffectiveShortcut } from '$lib/utils/effective-shortcuts';
   import { matchesShortcut, type ShortcutId } from '$lib/utils/shortcut-bindings';
+  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
 
   /** Represents an inline image in the editor content */
   export interface InlineImage {
@@ -353,6 +361,7 @@
   let editorFocused = $state(false);
   let slashContext = $state<SlashCommandContext | null>(null);
   let dismissedSlashContext = $state<string | null>(null);
+  let dismissedSlashFrom = $state<number | null>(null);
   let slashSuggestionList: { onKeyDown: (props: { event: KeyboardEvent }) => boolean } | null =
     $state(null);
   const componentId = $props.id();
@@ -367,8 +376,15 @@
     editorFocused &&
       slashContext !== null &&
       slashContextKey !== dismissedSlashContext &&
+      slashContext.from !== dismissedSlashFrom &&
+      filteredSkills.length > 0 &&
       isEditable,
   );
+
+  $effect(() => {
+    if (!slashMenuOpen) return;
+    return pushEscapeLayer(dismissSlashMenu);
+  });
 
   // Slash detection reads the doc through a dedicated serialization that
   // renders the paste chip as a single-space token boundary, so pasted chip
@@ -402,13 +418,16 @@
   function refreshSlashContext(activeEditor: Editor, options?: { dismissNewContext?: boolean }) {
     const prompt = slashPrompt(activeEditor);
     const nextContext = findSlashCommandContext(prompt, slashTextBeforeCursor(activeEditor).length);
-    if (!nextContext) dismissedSlashContext = null;
+    if (!nextContext || nextContext.from !== slashContext?.from) {
+      dismissedSlashContext = null;
+      dismissedSlashFrom = null;
+    }
     slashContext = nextContext;
-    if (nextContext && options?.dismissNewContext) dismissSlashMenu();
+    if (nextContext && options?.dismissNewContext) dismissedSlashContext = slashContextKey;
   }
 
   function dismissSlashMenu() {
-    dismissedSlashContext = slashContextKey;
+    dismissedSlashFrom = slashContext?.from ?? null;
   }
 
   function preserveEditorFocus(event: Event) {
@@ -459,7 +478,7 @@
     const handled = slashSuggestionList.onKeyDown({ event });
     if (handled) return true;
 
-    // An open loading/empty/error menu still owns plain Enter so `/` cannot
+    // An open loading/error menu still owns plain Enter so `/` cannot
     // accidentally submit while the user is trying to select a command.
     if (event.key === 'Enter') {
       event.preventDefault();
@@ -504,7 +523,7 @@
           if (
             activeElement !== focusOwner &&
             activeElement instanceof HTMLElement &&
-            activeElement.closest('input, textarea, select, [contenteditable="true"]') &&
+            isTextEntryTarget(activeElement) &&
             !focusEditor.view.dom.contains(activeElement)
           ) {
             return;
@@ -579,6 +598,11 @@
   export async function setContent(text: string) {
     if (!editor) return;
     const html = editorHTML(text || '');
+    // Replacing a document with an identical one would only collapse the
+    // user's selection (e.g. a deferred draft hydration echo,
+    // intent-hq/intent#7479). Compare whole documents, not serialized text,
+    // so rich-only differences (images, links, chips) still get replaced.
+    if (createDocument(html, editor.schema).eq(editor.state.doc)) return;
     editor
       .chain()
       .command(({ tr }) => {
@@ -956,8 +980,13 @@
             },
             suggestion: mentionSuggestion,
             renderHTML({ node }: any) {
-              // Ensure we always have a non-empty label for the mention
-              const label = node.attrs.label || node.attrs.id || 'mention';
+              // Note chips show the note's live title; data-label and the
+              // saved token keep the original.
+              const displayLabel = mentionChipDisplayLabel(
+                node.attrs,
+                workspace?.id,
+                storeNoteTitleLookup,
+              );
               return [
                 'span',
                 {
@@ -970,7 +999,7 @@
                   class: 'mention-chip',
                   tabindex: '0',
                 },
-                node.attrs.type === 'member' ? memberMentionLabel(label) : label,
+                displayLabel,
               ];
             },
             // Ensure mentions serialize to canonical @-tokens when extracting text
@@ -1808,10 +1837,11 @@
     })();
   });
 
-  // Update editable state
+  // Update editable state. Pass emitUpdate=false: TipTap's default emits a
+  // doc-less `update` that reaches onUpdate as if the user had edited, which
+  // cancelled every in-flight Enhance prompt request (intent-hq/intent#5758).
   $effect(() => {
     if (editor) {
-      // Locking the editor is not a draft edit (an update would cancel enhancement).
       editor.setEditable(isEditable, false);
     }
   });

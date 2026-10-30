@@ -1,7 +1,10 @@
 import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
+import { isProviderListed } from '$shared/provider-visibility';
+import type { ModelWarningKind } from '$shared/models/wire-model-info';
 import {
   selectAllProviderWarnings,
   selectAllProviderStaleFlags,
+  selectAllProviderWarningKinds,
   selectSelectedModel,
 } from '../model/model-selectors';
 import {
@@ -84,6 +87,18 @@ export const selectContextModelProviderIds = store.createSelector(
       .map((p) => p.id);
   },
 );
+export const selectContextListedProviderIds = store.createSelector(
+  (state, workspaceId?: string): string[] => {
+    const enabled = selectContextEnabledProviders.select(state, workspaceId);
+    const status = workspaceId
+      ? (selectWorkspaceCatalog.select(state, workspaceId)?.readiness ?? {})
+      : selectProviderStatusMap.select(state);
+    return selectContextProviderEntries
+      .select(state, workspaceId)
+      .filter((p) => isProviderListed(p.id, status[p.id]?.available, enabled[p.id] === true))
+      .map((p) => p.id);
+  },
+);
 export const selectContextAvailableProviderIds = store.createSelector(
   (state, workspaceId?: string): string[] =>
     workspaceId
@@ -131,6 +146,17 @@ export const selectContextProviderStaleFlags = store.createSelector(
     return Object.fromEntries(
       Object.entries(state.providerModels?.byWorkspaceId?.[workspaceId] ?? {}).map(
         ([id, entry]) => [id, entry.stale === true],
+      ),
+    );
+  },
+);
+
+export const selectContextProviderWarningKinds = store.createSelector(
+  (state, workspaceId?: string): Record<string, ModelWarningKind> => {
+    if (!workspaceId) return selectAllProviderWarningKinds.select(state);
+    return Object.fromEntries(
+      Object.entries(state.providerModels?.byWorkspaceId?.[workspaceId] ?? {}).flatMap(
+        ([id, entry]) => (entry.warning && entry.warningKind ? [[id, entry.warningKind]] : []),
       ),
     );
   },

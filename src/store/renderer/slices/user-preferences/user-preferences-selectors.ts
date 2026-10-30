@@ -63,6 +63,10 @@ export const selectChatAuroraEnabled = store.createSelector((state) => {
   return state.userPreferences?.chatAuroraEnabled ?? true;
 });
 
+export const selectCollapseToolRuns = store.createSelector((state) => {
+  return state.userPreferences?.collapseToolRuns ?? false;
+});
+
 export const selectShellTransparencyEnabled = store.createSelector((state) => {
   return state.userPreferences?.shellTransparencyEnabled ?? true;
 });
@@ -71,12 +75,25 @@ export const selectReduceMotionOnBattery = store.createSelector((state) => {
   return state.userPreferences?.reduceMotionOnBattery ?? false;
 });
 
+export const selectPauseAnimationsWhenUnfocused = store.createSelector((state) => {
+  return state.userPreferences?.pauseAnimationsWhenUnfocused ?? false;
+});
+
 export const selectLabsSettingsVisible = store.createSelector((state) => {
   return state.userPreferences?.labsSettingsVisible ?? false;
 });
 
 export const selectLabsMultiplayerEnabled = store.createSelector((state) => {
-  return state.userPreferences?.labsMultiplayerEnabled ?? false;
+  return state.userPreferences?.labsMultiplayerEnabled ?? true;
+});
+
+export const selectUserPreferencesHydrated = store.createSelector((state) => {
+  return state.userPreferences?.preferencesHydrated === true;
+});
+
+/** Native review PR flow; independent of Multiplayer and off unless a test or preview enables it. */
+export const selectNativeReviewEnabled = store.createSelector((state) => {
+  return state.userPreferences?.nativeReviewEnabled === true;
 });
 
 export const selectLabsGitLabEnabled = store.createSelector((state) => {
@@ -91,15 +108,6 @@ export const selectLabsGitLabEnabled = store.createSelector((state) => {
  */
 export const selectLabsRemoteAgentsEnabled = store.createSelector((state) => {
   return state.userPreferences?.labsRemoteAgentsEnabled === true;
-});
-
-/**
- * Entry-point policy for named provider profiles (Labs): profile management,
- * picker profile groups and sign-in probes. Never use it to resolve, relabel
- * or reroute a selection that already references a profile.
- */
-export const selectLabsProviderProfilesEnabled = store.createSelector((state) => {
-  return state.userPreferences?.labsProviderProfilesEnabled === true;
 });
 
 export const selectCounterScale = store.createSelector((state) => {

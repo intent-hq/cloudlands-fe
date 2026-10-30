@@ -58,9 +58,6 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   // try/catches, so identify simply never fires — the same graceful skip as a
   // logged-out/BYOK user.
   ['auggie:get-user-info', undefined],
-  // (pi:check-mcp-adapter / pi:install-mcp-adapter are bridged to the daemon
-  // host — `pi list` / `pi install npm:pi-mcp-adapter` via host.exec — in
-  // pi-mcp-bridge-seeder.ts.)
   // (auto-update:* invoke channels are bridged to window.electronAPI.invoke
   // in auto-update-bridge-seeder.ts — the Electron main process owns the
   // auto-updater; bridge-less builds get the shaped not-available failure
@@ -167,7 +164,6 @@ export const EMITTED_MOCK_IPC_EVENT_CHANNELS: ReadonlySet<string> = new Set([
   // firehose re-emitted onto the legacy channels components still listen on.
   'workspace:updated',
   'task:ready-tasks-changed',
-  'line-attribution:updated',
   // window-state-bridge-seeder.ts registerWindowFullScreenEventRelay —
   // main-process enter/leave-full-screen (via the real preload bridge) or DOM
   // fullscreenchange re-emitted for listenSync('window:fullscreen') consumers.

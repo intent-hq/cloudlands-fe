@@ -69,6 +69,7 @@ export const menuMetadata = {
   callers: [
     'src/features/external-editors/components/FileActionsDropdown.svelte',
     'src/features/external-editors/components/OpenComboButton.svelte',
+    'src/features/layout/tab-types/DiscussionTabType.svelte',
     'src/lib/components/chat/RegularAgentWelcome.svelte',
     'src/lib/components/chat/SpecialistDropdown.svelte',
     'src/lib/components/layout/DaemonStatusIndicator.svelte',

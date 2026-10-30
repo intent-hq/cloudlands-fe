@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   redeem: vi.fn(),
   send: vi.fn(),
   clearLayout: vi.fn(),
+  resolveOnboardingModel: vi.fn(),
 }));
 vi.mock('$lib/components/workspace/initializer/staged-attachments', async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -15,19 +16,36 @@ vi.mock('$features/layout/panel-layout-adapter', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   getPanelLayoutManager: () => ({ clearLayout: mocks.clearLayout }),
 }));
+vi.mock('$features/onboarding/utils/resolve-onboarding-model', () => ({
+  resolveOnboardingModel: mocks.resolveOnboardingModel,
+}));
 vi.mock('$lib/components/patterns/notify', () => ({
   notify: { error: vi.fn(), success: vi.fn(), warning: vi.fn(), info: vi.fn() },
 }));
 
 import { appClient } from '$lib/client';
+import { registerWorkspaceInitializationPreparation } from '$lib/components/workspace/initializer/workspace-initialization-preparation';
+import {
+  chooseDefaultSetupScript,
+  getLastUsedSetupScript,
+  probeIdentityKey,
+  REPO_CONFIG_SCRIPT_NAME,
+} from '$features/setup-scripts';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { store as appStore } from '$store/renderer/store';
 import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
 import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import { guestSessionsListReceived } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
+import { principalContextChanged } from '$store/renderer/slices/principal/principal-slice';
 import { bootstrapNewWorkspaceLayout } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
+import {
+  goToStep,
+  resetOnboarding,
+  setOnboardingWorkspaceId,
+} from '$store/renderer/slices/onboarding/onboarding-slice';
+import { setHasCompletedProviderSetup } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { setInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { hydrateWorkspaceNavigation } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
@@ -35,16 +53,22 @@ import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspac
 import { workspaceStorageManager } from '$store/renderer/slices/workspace/utils/workspace-storage-manager';
 import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { createMockWorkspace } from '../../../../../test/factories/workspace.factory';
-import { selectWorkspaceInitializationOutcome } from '../workspace-initializer-selectors';
+import { selectWorkspaceInitializationOutcomeForConsumer } from '../workspace-initializer-selectors';
 import {
   clearWorkspaceInitializationOutcome,
+  setCompactWorkspaceInitializerFormState,
+  setWorkspaceInitializerLastSelectedRepo,
   workspaceInitializationRequested,
+  workspaceInitializationResumeRequested,
+  workspaceInitializationSubmitted,
 } from '../workspace-initializer-slice';
 import type {
+  CompactWorkspaceInitializationSubmission,
+  OnboardingWorkspaceInitializationSubmission,
   WorkspaceInitializationRequest,
   WorkspaceInitializationStagedItem,
 } from '../workspace-initializer-types';
-import { workspaceInitializationSaga } from './workspace-initialization-saga';
+import { workspaceInitializerSaga } from './workspace-initializer-saga';
 
 const consumer = { id: 'compact-1', resourceId: 'resource-1' };
 const staged: WorkspaceInitializationStagedItem[] = [
@@ -80,8 +104,99 @@ function request(overrides: Partial<WorkspaceInitializationRequest> = {}) {
   } satisfies WorkspaceInitializationRequest;
 }
 
+function compactSubmission(
+  overrides: Partial<CompactWorkspaceInitializationSubmission> = {},
+): CompactWorkspaceInitializationSubmission {
+  return {
+    entrypoint: 'compact',
+    admission: selectPrincipalActionContext.select(appStore.state) as string,
+    prompt: 'hello',
+    contextMentions: [],
+    fileMentions: [],
+    runtimeReferences: [],
+    stagedItems: [],
+    setupScript: '',
+    setupScriptName: '',
+    setupScriptNameSource: 'named',
+    repoConfigScript: null,
+    repoConfigScriptRepo: null,
+    branchBehind: 0,
+    pullEnabled: false,
+    skipIsolation: false,
+    selectedPrNumber: null,
+    draft: { ownerId: 'compact-owner', restoreRequestId: 'restore-1', clear: true },
+    repoType: 'remote',
+    repoPath: '/remote/repo',
+    githubUrl: '',
+    branch: 'main',
+    isNewRepo: false,
+    isValidPath: true,
+    scope: '',
+    prefillTitle: 'Work',
+    remoteSetup: {
+      id: 'remote-1',
+      name: 'Remote',
+      host: 'example.test',
+      port: 22,
+      username: 'dev',
+      workspacePath: '/remote/repo',
+    },
+    checkoutFormId: 'checkout-1',
+    repositoryCheckout: null,
+    checkoutContextUrl: null,
+    checkoutInstanceBaseUrl: null,
+    selectedPRBranch: '',
+    selectedPRTargetBranch: '',
+    agent: {
+      selectedSpecialist: null,
+      selectedModel: 'sonnet',
+      modelWasOverridden: true,
+      selectedProvider: 'claude-code',
+      isTeamMode: false,
+    },
+    setupScriptExplicit: false,
+    repoConfigError: false,
+    repoConfigUnavailable: false,
+    setupScriptProbeKey: null,
+    setupScriptRepoKey: null,
+    formPersistence: false,
+    ...overrides,
+  };
+}
+
+function onboardingSubmission(
+  overrides: Partial<OnboardingWorkspaceInitializationSubmission> = {},
+): OnboardingWorkspaceInitializationSubmission {
+  return {
+    entrypoint: 'onboarding',
+    admission: selectPrincipalActionContext.select(appStore.state) as string,
+    prompt: 'hello onboarding',
+    contextMentions: [],
+    fileMentions: [],
+    runtimeReferences: [],
+    stagedItems: [],
+    setupScript: '',
+    setupScriptName: '',
+    setupScriptNameSource: 'named',
+    repoConfigScript: null,
+    repoConfigScriptRepo: null,
+    branchBehind: 0,
+    pullEnabled: false,
+    skipIsolation: false,
+    selectedPrNumber: null,
+    draft: { ownerId: 'onboarding-owner', restoreRequestId: 'restore-2', clear: true },
+    project: { type: 'local', repoPath: '/repo', branch: 'main' },
+    treatAsNewRepo: false,
+    effectiveBranch: 'main',
+    selectedModel: 'sonnet',
+    selectedProvider: 'claude-code',
+    modelWasOverridden: true,
+    ...overrides,
+  };
+}
+
 const outcome = () =>
-  selectWorkspaceInitializationOutcome.select(appStore.state, consumer.id, consumer.resourceId);
+  selectWorkspaceInitializationOutcomeForConsumer.select(appStore.state, consumer.id);
 const types = () => recorded.map((action) => action.type);
 const installationActionTypes = [
   setWorkspaceEntity.type,
@@ -100,6 +215,16 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+function useMemoryLocalStorage() {
+  const values = new Map<string, string>();
+  // eslint-disable-next-line themis/direct-local-storage-usage -- Web Storage test harness.
+  vi.mocked(localStorage.getItem).mockImplementation((key) => values.get(key) ?? null);
+  // eslint-disable-next-line themis/direct-local-storage-usage -- Web Storage test harness.
+  vi.mocked(localStorage.setItem).mockImplementation((key, value) => {
+    values.set(key, String(value));
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   recorded = [];
@@ -114,6 +239,13 @@ beforeEach(() => {
   clearState = vi.spyOn(workspaceStorageManager, 'clearState').mockImplementation(() => {});
   mocks.redeem.mockResolvedValue({ items: placed, fileBlocks: [{ id: 'block' }], failedCount: 0 });
   mocks.send.mockResolvedValue({ sent: true });
+  mocks.resolveOnboardingModel.mockResolvedValue({
+    provider: 'claude-code',
+    model: 'sonnet',
+    behaviorPrompt: undefined,
+    specialistId: 'developer',
+    specialistName: 'Developer',
+  });
   const recorder = appStore.runSaga(function* () {
     while (true) {
       recorded.push(
@@ -127,14 +259,498 @@ beforeEach(() => {
       );
     }
   });
-  stops = [recorder, appStore.runSaga(workspaceInitializationSaga), dispose];
+  stops = [recorder, appStore.runSaga(workspaceInitializerSaga), dispose];
 });
 afterEach(() => {
   for (const stop of stops) stop();
+  // eslint-disable-next-line themis/direct-local-storage-usage -- Restore the global test harness.
+  vi.mocked(localStorage.getItem).mockImplementation(() => null);
+  // eslint-disable-next-line themis/direct-local-storage-usage -- Restore the global test harness.
+  vi.mocked(localStorage.setItem).mockImplementation(() => undefined);
   vi.restoreAllMocks();
 });
 
-describe('workspaceInitializationSaga (production saga, reducer-backed store)', () => {
+describe('workspaceInitializerSaga (registered production owner, reducer-backed store)', () => {
+  it.each([
+    {
+      provider: 'GitHub',
+      submission: () => {
+        const repoPath = '/clones/app';
+        const githubUrl = 'https://github.com/acme/app';
+        const setupScriptProbeKey = probeIdentityKey({
+          path: repoPath,
+          type: 'github',
+          githubUrl,
+          branch: 'main',
+        });
+        return {
+          value: compactSubmission({
+            repoType: 'github',
+            repoPath,
+            githubUrl,
+            branch: 'main',
+            remoteSetup: null,
+            setupScript: 'echo from main',
+            setupScriptName: REPO_CONFIG_SCRIPT_NAME,
+            setupScriptNameSource: 'repo-config',
+            repoConfigScript: 'echo from main',
+            repoConfigScriptRepo: setupScriptProbeKey,
+            setupScriptProbeKey,
+            setupScriptRepoKey: repoPath,
+          }),
+          repoPath,
+          githubUrl,
+        };
+      },
+    },
+    {
+      provider: 'GitLab',
+      submission: () => {
+        const instanceBaseUrl = 'https://git.example.test/Forge';
+        const projectPath = 'acme/app';
+        const branch = 'main';
+        const commitSha = 'a'.repeat(40);
+        const checkoutId = 'checkout-1';
+        const revision = 'account-1';
+        const repoPath = JSON.stringify(['gitlab', instanceBaseUrl, projectPath]);
+        const setupScriptProbeKey = probeIdentityKey({
+          path: '/unused/checkout/path',
+          type: 'gitlab',
+          branch,
+          gitlab: { instanceBaseUrl, projectPath, checkoutId, revision, commitSha },
+        });
+        return {
+          value: compactSubmission({
+            repoType: 'gitlab',
+            repoPath: '/unused/checkout/path',
+            remoteSetup: null,
+            repositoryCheckout: {
+              checkoutId,
+              revision,
+              projectPath,
+              branch,
+              commitSha,
+              mode: 'direct',
+            },
+            setupScript: 'echo from main',
+            setupScriptName: REPO_CONFIG_SCRIPT_NAME,
+            setupScriptNameSource: 'repo-config',
+            repoConfigScript: 'echo from main',
+            repoConfigScriptRepo: setupScriptProbeKey,
+            setupScriptProbeKey,
+            setupScriptRepoKey: repoPath,
+          }),
+          repoPath,
+          githubUrl: undefined,
+        };
+      },
+    },
+  ])(
+    'does not persist an untouched $provider repo-config script for a later branch',
+    async ({ submission }) => {
+      useMemoryLocalStorage();
+      const { value, repoPath, githubUrl } = submission();
+      const action = workspaceInitializationSubmitted(value, consumer);
+      appStore.dispatch(action);
+
+      await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+      expect(create.mock.calls[0]?.[0]).toMatchObject({ setupScript: undefined });
+      const lastUsed = getLastUsedSetupScript(repoPath, githubUrl);
+      expect(lastUsed).toBeUndefined();
+      expect(
+        chooseDefaultSetupScript({
+          repoConfigScript: null,
+          lastUsed,
+          genericTemplate: { name: 'Generic', content: 'echo generic' },
+        }),
+      ).toEqual({ name: 'Generic', content: 'echo generic', source: 'named' });
+    },
+  );
+
+  it('keeps onboarding repo-config comparison keyed to the project path', async () => {
+    useMemoryLocalStorage();
+    const action = workspaceInitializationSubmitted(
+      onboardingSubmission({
+        setupScript: 'echo from project config',
+        setupScriptName: REPO_CONFIG_SCRIPT_NAME,
+        setupScriptNameSource: 'repo-config',
+        repoConfigScript: 'echo from project config',
+        repoConfigScriptRepo: '/repo',
+      }),
+      { id: 'onboarding-1', resourceId: 'resource-onboarding' },
+    );
+    appStore.dispatch(action);
+
+    await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+    expect(create.mock.calls[0]?.[0]).toMatchObject({ setupScript: undefined });
+    expect(getLastUsedSetupScript('/repo')).toBeUndefined();
+  });
+
+  it('persists an intentional compact setup-script override under the repository key', async () => {
+    useMemoryLocalStorage();
+    const repoPath = '/clones/app';
+    const githubUrl = 'https://github.com/acme/app';
+    const setupScriptProbeKey = probeIdentityKey({
+      path: repoPath,
+      type: 'github',
+      githubUrl,
+      branch: 'main',
+    });
+    const action = workspaceInitializationSubmitted(
+      compactSubmission({
+        repoType: 'github',
+        repoPath,
+        githubUrl,
+        branch: 'main',
+        remoteSetup: null,
+        setupScript: 'echo user override',
+        setupScriptName: 'My override',
+        setupScriptNameSource: 'named',
+        repoConfigScript: 'echo from main',
+        repoConfigScriptRepo: setupScriptProbeKey,
+        setupScriptProbeKey,
+        setupScriptRepoKey: repoPath,
+      }),
+      consumer,
+    );
+    appStore.dispatch(action);
+
+    await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+    expect(create.mock.calls[0]?.[0]).toMatchObject({ setupScript: 'echo user override' });
+    expect(getLastUsedSetupScript(repoPath, githubUrl)).toEqual({
+      name: 'My override',
+      content: 'echo user override',
+      nameSource: 'named',
+    });
+  });
+
+  it('prepares a compact submission and creates with the exact wire params', async () => {
+    const action = workspaceInitializationSubmitted(compactSubmission(), consumer);
+    appStore.dispatch(action);
+
+    await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+    expect(create.mock.calls).toEqual([
+      [
+        {
+          title: 'Work',
+          repositoryPath: '/remote/repo',
+          githubUrl: undefined,
+          branch: undefined,
+          baseRef: 'main',
+          environmentConfig: {
+            type: 'remote',
+            ssh: {
+              host: 'example.test',
+              port: 22,
+              user: 'dev',
+              password: undefined,
+              key_path: undefined,
+              use_agent: undefined,
+              transport: undefined,
+              ws_url: undefined,
+            },
+            workspace_path: '/remote/repo',
+          },
+          isNewRepo: false,
+          skipIsolation: undefined,
+          contextLinks: undefined,
+          setupScript: undefined,
+          scope: undefined,
+          initialAgent: {
+            nameExplicitlySet: false,
+            rememberSpecialist: true,
+            model: 'sonnet',
+            specialist: undefined,
+            behaviorPrompt: undefined,
+            prompt: 'hello',
+            agentType: 'workspace',
+            provider: 'claude-code',
+            contextReferences: [
+              {
+                id: 'remote-1',
+                name: 'Remote',
+                host: 'example.test',
+                port: 22,
+                username: 'dev',
+                workspacePath: '/remote/repo',
+              },
+            ],
+            imageBlocks: undefined,
+            metadata: {
+              source: 'compact-initializer',
+              isInitialAgent: true,
+              specialist: undefined,
+              provider: 'claude-code',
+              workMode: 'single',
+              createdAt: expect.any(String),
+            },
+          },
+          progressId: action.payload.progressId,
+        },
+      ],
+    ]);
+    expect(outcome()).toMatchObject({
+      seq: action.seq,
+      entrypoint: 'compact',
+      status: 'success',
+      prepared: { pull: false },
+    });
+  });
+
+  it('prepares an onboarding submission and creates with the exact wire params', async () => {
+    const onboardingConsumer = { id: 'onboarding-1', resourceId: 'resource-onboarding' };
+    const action = workspaceInitializationSubmitted(onboardingSubmission(), onboardingConsumer);
+    appStore.dispatch(action);
+
+    await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+    expect(create.mock.calls).toEqual([
+      [
+        {
+          title: '',
+          repositoryPath: '/repo',
+          githubUrl: undefined,
+          baseRef: 'main',
+          isNewRepo: false,
+          skipIsolation: undefined,
+          scope: undefined,
+          setupScript: undefined,
+          contextLinks: undefined,
+          linearIssue: undefined,
+          sentryIssue: undefined,
+          initialAgent: {
+            name: 'Developer',
+            model: 'sonnet',
+            prompt: 'hello onboarding',
+            agentType: 'workspace',
+            specialist: 'developer',
+            behaviorPrompt: undefined,
+            provider: 'claude-code',
+            contextReferences: undefined,
+            imageBlocks: undefined,
+            metadata: {
+              source: 'onboarding',
+              isInitialAgent: true,
+              specialist: 'developer',
+            },
+          },
+          progressId: action.payload.progressId,
+        },
+      ],
+    ]);
+    expect(
+      selectWorkspaceInitializationOutcomeForConsumer.select(appStore.state, onboardingConsumer.id),
+    ).toMatchObject({
+      seq: action.seq,
+      entrypoint: 'onboarding',
+      status: 'success',
+      prepared: { pull: false, specialistId: 'developer', specialistName: 'Developer' },
+    });
+  });
+
+  it('applies onboarding domain completion exactly once in the production owner', async () => {
+    const completionActions: RecordedAction[] = [];
+    stops.push(
+      appStore.runSaga(function* () {
+        while (true) {
+          completionActions.push(
+            (yield* take([
+              resetOnboarding,
+              setHasCompletedProviderSetup,
+              setOnboardingWorkspaceId,
+              goToStep,
+            ])) as RecordedAction,
+          );
+        }
+      }),
+    );
+    const onboardingConsumer = { id: 'onboarding-1', resourceId: 'resource-onboarding' };
+    const action = workspaceInitializationSubmitted(onboardingSubmission(), onboardingConsumer);
+    appStore.dispatch(action);
+
+    await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+    await vi.waitFor(() => expect(completionActions).toHaveLength(4));
+    expect(completionActions).toEqual([
+      resetOnboarding(action.payload.submission.admission),
+      setHasCompletedProviderSetup(true),
+      setOnboardingWorkspaceId('ws-1'),
+      goToStep('ready'),
+    ]);
+  });
+
+  it('applies compact persisted completion exactly once in the production owner', async () => {
+    const completionActions: RecordedAction[] = [];
+    stops.push(
+      appStore.runSaga(function* () {
+        while (true) {
+          completionActions.push(
+            (yield* take([
+              setWorkspaceInitializerLastSelectedRepo,
+              setCompactWorkspaceInitializerFormState,
+            ])) as RecordedAction,
+          );
+        }
+      }),
+    );
+    const action = workspaceInitializationSubmitted(
+      compactSubmission({
+        repoType: 'local',
+        repoPath: '/repo',
+        remoteSetup: null,
+        branch: 'main',
+        isNewRepo: true,
+        formPersistence: true,
+      }),
+      consumer,
+    );
+    appStore.dispatch(action);
+
+    await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+    await vi.waitFor(() => expect(completionActions).toHaveLength(2));
+    expect(completionActions.map(({ type }) => type)).toEqual([
+      setWorkspaceInitializerLastSelectedRepo.type,
+      setCompactWorkspaceInitializerFormState.type,
+    ]);
+  });
+
+  it('resumes a retained submitted failure without pulling or creating again', async () => {
+    mocks.redeem.mockResolvedValueOnce({ items: failed, fileBlocks: [], failedCount: 1 });
+    const submission = compactSubmission({
+      stagedItems: staged,
+      prompt: 'held',
+    });
+    const action = workspaceInitializationSubmitted(submission, consumer);
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow('attachment-placement-failed');
+    expect(create).toHaveBeenCalledTimes(1);
+
+    mocks.redeem.mockResolvedValueOnce({
+      items: placed,
+      fileBlocks: [{ id: 'block' }],
+      failedCount: 0,
+    });
+    const resume = workspaceInitializationResumeRequested(
+      {
+        entrypoint: 'compact',
+        admission: selectPrincipalActionContext.select(appStore.state) as string,
+        stagedItems: failed,
+      },
+      consumer,
+    );
+    appStore.dispatch(resume);
+
+    await expect(resume.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+    expect(pull).not.toHaveBeenCalled();
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(mocks.redeem.mock.calls[1]?.slice(0, 2)).toEqual(['ws-1', failed]);
+    expect(outcome()).toMatchObject({ seq: resume.seq, status: 'success' });
+  });
+
+  it.each([
+    {
+      name: 'admission changes',
+      beforeResume: () => appStore.dispatch(principalContextChanged('replacement/backend/member')),
+      input: () => ({
+        entrypoint: 'compact' as const,
+        admission: 'replacement/backend/member',
+        stagedItems: failed,
+      }),
+    },
+    {
+      name: 'entrypoint changes',
+      beforeResume: () => undefined,
+      input: () => ({
+        entrypoint: 'onboarding' as const,
+        admission: selectPrincipalActionContext.select(appStore.state) as string,
+        stagedItems: failed,
+      }),
+    },
+  ])(
+    'rejects a retained resume without side effects when $name',
+    async ({ beforeResume, input }) => {
+      mocks.redeem.mockResolvedValueOnce({ items: failed, fileBlocks: [], failedCount: 1 });
+      const initial = workspaceInitializationRequested(request(), consumer);
+      appStore.dispatch(initial);
+      await expect(initial.promise).rejects.toThrow('attachment-placement-failed');
+      expect(create).toHaveBeenCalledTimes(1);
+
+      beforeResume();
+      const resume = workspaceInitializationResumeRequested(input(), consumer);
+      appStore.dispatch(resume);
+
+      await expect(resume.promise).rejects.toThrow('initialization-cancelled');
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(pull).not.toHaveBeenCalled();
+      expect(mocks.redeem).toHaveBeenCalledTimes(1);
+      expect(mocks.send).not.toHaveBeenCalled();
+      expect(outcome()).toMatchObject({
+        seq: resume.seq,
+        entrypoint: resume.payload.input.entrypoint,
+        status: 'cancelled',
+        stage: 'attachments',
+      });
+    },
+  );
+
+  it('rejects a submitted form whose admission is already stale', async () => {
+    const action = workspaceInitializationSubmitted(
+      compactSubmission({ admission: 'stale/backend/member' }),
+      consumer,
+    );
+    appStore.dispatch(action);
+
+    await expect(action.promise).rejects.toThrow('initialization-cancelled');
+    expect(pull).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+    expect(outcome()).toMatchObject({
+      seq: action.seq,
+      entrypoint: 'compact',
+      status: 'cancelled',
+      stage: 'prepare',
+    });
+  });
+
+  it('cancels deferred preparation through production registration and settles the original action', async () => {
+    const pendingPreparation = deferred<never>();
+    const prepare = vi.fn(() => pendingPreparation.promise);
+    const release = registerWorkspaceInitializationPreparation('deferred-preparation', prepare);
+    const action = workspaceInitializationSubmitted(
+      compactSubmission({ preparationId: 'deferred-preparation' }),
+      consumer,
+    );
+    appStore.dispatch(action);
+    await vi.waitFor(() => expect(prepare).toHaveBeenCalledTimes(1));
+
+    stops[1]();
+    stops[1] = () => undefined;
+
+    await expect(action.promise).rejects.toThrow('initialization-cancelled');
+    expect(create).not.toHaveBeenCalled();
+    expect(outcome()).toMatchObject({
+      seq: action.seq,
+      entrypoint: 'compact',
+      status: 'cancelled',
+      stage: 'prepare',
+    });
+    release();
+  });
+
+  it('settles deferred preparation when its form releases the correlated outcome', async () => {
+    const pendingPreparation = deferred<never>();
+    const prepare = vi.fn(() => pendingPreparation.promise);
+    registerWorkspaceInitializationPreparation('released-preparation', prepare);
+    const action = workspaceInitializationSubmitted(
+      compactSubmission({ preparationId: 'released-preparation' }),
+      consumer,
+    );
+    appStore.dispatch(action);
+    await vi.waitFor(() => expect(prepare).toHaveBeenCalledTimes(1));
+
+    appStore.dispatch(clearWorkspaceInitializationOutcome(consumer.id, action.seq));
+
+    await expect(action.promise).rejects.toThrow('initialization-cancelled');
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it('pulls, creates with exact params, installs, and publishes a correlated success', async () => {
     mocks.redeem.mockImplementationOnce(async () => {
       expect(types()).toEqual(installationActionTypes);
@@ -223,6 +839,7 @@ describe('workspaceInitializationSaga (production saga, reducer-backed store)', 
       status: 'failure',
       stage: 'attachments',
       error: 'attachment-placement-failed',
+      resumable: true,
       stagedItems: failed,
       workspaceId: 'ws-1',
       agentId: 'agent-1',
@@ -356,6 +973,40 @@ describe('workspaceInitializationSaga (production saga, reducer-backed store)', 
     });
   });
 
+  it('rejects stale admission before pull or create starts', async () => {
+    const action = workspaceInitializationRequested(
+      request({
+        admission: 'stale/backend/member',
+        pull: { repositoryPath: '/repo', branch: 'main' },
+      }),
+      consumer,
+    );
+    appStore.dispatch(action);
+
+    await expect(action.promise).rejects.toThrow('initialization-cancelled');
+    expect(pull).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+    expect(outcome()).toMatchObject({ seq: action.seq, status: 'cancelled' });
+  });
+
+  it('does not create when principal admission changes during pull', async () => {
+    const held = deferred<{ success: true }>();
+    pull.mockReturnValue(held.promise);
+    const action = workspaceInitializationRequested(
+      request({ pull: { repositoryPath: '/repo', branch: 'main' } }),
+      consumer,
+    );
+    appStore.dispatch(action);
+    await vi.waitFor(() => expect(pull).toHaveBeenCalledOnce());
+
+    appStore.dispatch(principalContextChanged('replacement/backend/member'));
+    held.resolve({ success: true });
+
+    await expect(action.promise).rejects.toThrow('initialization-cancelled');
+    expect(create).not.toHaveBeenCalled();
+    expect(outcome()).toMatchObject({ seq: action.seq, status: 'cancelled', stage: 'pull' });
+  });
+
   it('publishes an unexpected post-create delivery failure as resumable', async () => {
     mocks.redeem.mockRejectedValueOnce(new Error('placement transport failed'));
     const action = workspaceInitializationRequested(request(), consumer);
@@ -386,6 +1037,36 @@ describe('workspaceInitializationSaga (production saga, reducer-backed store)', 
     expect(outcome()).toBeUndefined();
     expect(mocks.clearLayout).not.toHaveBeenCalled();
     expect(mocks.redeem).not.toHaveBeenCalled();
+  });
+
+  it('cancels deferred transport under the registered root and safely re-enters', async () => {
+    const held = deferred<typeof created>();
+    create.mockReturnValueOnce(held.promise);
+    recorded = [];
+    const action = workspaceInitializationRequested(request(), consumer);
+    appStore.dispatch(action);
+    await vi.waitFor(() => expect(create).toHaveBeenCalledOnce());
+
+    stops[1]();
+    await expect(action.promise).rejects.toThrow('initialization-cancelled');
+    held.resolve(created);
+    await Promise.resolve();
+
+    expect(types()).toEqual([]);
+    expect(mocks.clearLayout).not.toHaveBeenCalled();
+    expect(clearState).not.toHaveBeenCalled();
+    expect(mocks.redeem).not.toHaveBeenCalled();
+    expect(mocks.send).not.toHaveBeenCalled();
+
+    stops.push(appStore.runSaga(workspaceInitializerSaga));
+    const reentered = workspaceInitializationRequested(request(), consumer);
+    appStore.dispatch(reentered);
+
+    await expect(reentered.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(mocks.redeem).toHaveBeenCalledOnce();
+    expect(mocks.send).toHaveBeenCalledOnce();
+    expect(outcome()).toMatchObject({ seq: reentered.seq, status: 'success' });
   });
 
   it('does not install or publish for a consumer replaced during installation', async () => {

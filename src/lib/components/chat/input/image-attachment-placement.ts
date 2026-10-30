@@ -9,6 +9,7 @@
  * image; message frames stay constant-size.
  */
 import { m } from '$shared/paraglide/messages.js';
+import { imageAttachmentName } from './image-attachment-format';
 import {
   abortAttachmentUpload,
   beginAttachmentUpload,
@@ -36,13 +37,6 @@ import type {
   WireImageBlock,
 } from '$shared/types/wire-image-block';
 export type { ImageReferenceBlock, WireImageBlock } from '$shared/types/wire-image-block';
-
-const MIME_EXTENSIONS: Record<string, string> = {
-  'image/png': 'png',
-  'image/jpeg': 'jpg',
-  'image/gif': 'gif',
-  'image/webp': 'webp',
-};
 
 /** Decode raw base64 (no data-URL prefix) into bytes. */
 function base64ToBytes(b64: string): Uint8Array {
@@ -199,8 +193,7 @@ export async function placeImageAttachment(
 
 /** Generated file name for a pasted/dropped image with no original name. */
 function imageAttachmentFileName(mimeType: string | undefined, index: number): string {
-  const ext = (mimeType && MIME_EXTENSIONS[mimeType.toLowerCase()]) || 'png';
-  return `image-${Date.now()}-${index + 1}.${ext}`;
+  return imageAttachmentName(mimeType, `image-${Date.now()}-${index + 1}`);
 }
 
 /**

@@ -1,4 +1,5 @@
 import { expect, test } from '../../../../test/ct-test';
+import { expectDismissibleLayerArmed } from '../../../../test/dismissible-layer';
 import DialogLayoutHarness from './DialogLayoutHarness.svelte';
 import PullConflictPreview from '../../modals/pull-conflict-audit.preview.svelte';
 
@@ -36,7 +37,7 @@ test('long content scrolls without hiding actions at a narrow, short viewport', 
   });
   expect(geometry.horizontalOverflow).toBeLessThanOrEqual(1);
   expect(geometry.top).toBeGreaterThanOrEqual(0);
-  expect(geometry.bottom).toBeLessThanOrEqual(480);
+  expect(geometry.bottom).toBeLessThanOrEqual(page.viewportSize()!.height);
   expect(geometry.bodyScrollable).toBe(true);
   for (const label of await dialog
     .locator('[data-slot="dialog-footer"] [data-slot="button-label"]')
@@ -56,6 +57,9 @@ test('busy content blocks Escape and outside dismissal then restores dismissal',
   const component = await mount(DialogLayoutHarness, { props: { busy: true } });
   await page.getByRole('button', { name: 'Open details' }).click();
   await page.keyboard.press('Escape');
+  // An outside click sent before bits-ui listens would be ignored anyway, so this
+  // check could pass without the busy guard; wait until the click really reaches it.
+  await expectDismissibleLayerArmed(page.getByRole('dialog'));
   await page.mouse.click(1, 1);
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Decide later' })).toBeDisabled();

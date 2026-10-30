@@ -23,6 +23,8 @@
     // gitignored output of `pnpm run generate:ipc-channels` (scripts/inline-ipc-channels.ts),
     // so knip skips it; the template carries the same imports and stands in as the entry.
     "src/preload/index.template.ts",
+    // Narrow desktop indicator bridge loaded by BrowserWindow's preload path.
+    "src/preload/desktop-overlay.ts",
     // MCP server bundled separately by scripts/build-cdp-mcp.js
     "cdp-mcp-server/server.ts",
     // Custom ESLint rules imported from eslint.config.js
@@ -51,6 +53,7 @@
     "test/fixtures/repository-context-native/main.ts",
     "test/fixtures/repository-selection-native/main.ts",
     "test/fixtures/native-review-native/main.ts",
+    "test/fixtures/pr-monitor-native/main.ts",
     "test/fixtures/native-review-native/ui-renderer.svelte",
     "test/fixtures/dock-placement-native/renderer.ts",
     // Substituted for production components through Vite alias/resolveId plugins inside
@@ -181,6 +184,7 @@
       "test/fixtures/native-review-native/playwright.config.ts",
       "test/fixtures/dock-placement-native/playwright.config.ts",
       "test/fixtures/dock-placement-native/placement.electron.ts",
+      "test/fixtures/pr-monitor-native/playwright.config.ts",
       "src/lib/components/ui/card/operate-patterns.playwright.config.ts",
       // playwright.config.ts: testDir ./test, testMatch **/*.spec.ts
       "test/**/*.spec.ts",
@@ -196,6 +200,7 @@
       "test/fixtures/repository-context-native/context.electron.ts",
       "test/fixtures/repository-selection-native/selection.electron.ts",
       "test/fixtures/native-review-native/review.electron.ts",
+      "test/fixtures/pr-monitor-native/monitor.electron.ts",
     ],
   },
   "playwright-ct": {

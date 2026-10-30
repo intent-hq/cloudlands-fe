@@ -196,6 +196,7 @@ function questionMessage(messageId: string) {
 function makeContext(state: TestActionKeyState) {
   const dispatch = vi.fn();
   const navigate = vi.fn(() => Promise.resolve());
+  const showWorkspace = vi.fn((_workspaceId: string): Promise<unknown> => Promise.resolve(true));
   const focusComposer = vi.fn();
   const showHint = vi.fn();
   const context: ActionKeyContext = {
@@ -203,10 +204,11 @@ function makeContext(state: TestActionKeyState) {
     workspaceId: state.currentWorkspaceId,
     dispatch,
     navigate,
+    showWorkspace,
     focusComposer,
     showHint,
   };
-  return { context, dispatch, navigate, focusComposer, showHint };
+  return { context, dispatch, navigate, showWorkspace, focusComposer, showHint };
 }
 
 /** The setActiveAgentId payloads dispatched, in order. */
@@ -330,11 +332,11 @@ describe('global cycle family', () => {
       agentsByWorkspace: { 'ws-1': { ids: ['a-1'] }, 'ws-2': { ids: ['a-2'] } },
       sessionOverrides: { 'a-2': { attentionRequestKind: 'blocker' } },
     });
-    const { context, dispatch, navigate } = makeContext(state);
+    const { context, dispatch, showWorkspace } = makeContext(state);
     const definition = getActionKeyDefinition('cycle-attention-agents');
     expect(definition.isAvailable(context)).toBe(true);
     definition.execute(context);
-    expect(navigate).toHaveBeenCalledWith('/workspace/ws-2');
+    expect(showWorkspace).toHaveBeenCalledWith('ws-2');
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'workspaceAgents/setActiveAgentId',
@@ -369,11 +371,11 @@ describe('global cycle family', () => {
       },
       unreadWorkspaceIds: ['ws-2'],
     });
-    const { context, dispatch, navigate } = makeContext(state);
+    const { context, dispatch, showWorkspace } = makeContext(state);
     const definition = getActionKeyDefinition('cycle-unread-agents');
     expect(definition.isAvailable(context)).toBe(true);
     definition.execute(context);
-    expect(navigate).toHaveBeenCalledWith('/workspace/ws-2');
+    expect(showWorkspace).toHaveBeenCalledWith('ws-2');
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'workspaceAgents/setActiveAgentId',
@@ -603,12 +605,12 @@ describe('cycle-unread-agents union (unread workspaces + attention requests)', (
       },
       sessionOverrides: { 'a-2': { attentionRequestKind: 'blocker' } },
     });
-    const { context, dispatch, navigate } = makeContext(state);
+    const { context, dispatch, showWorkspace } = makeContext(state);
     const definition = getActionKeyDefinition('cycle-unread-agents');
     // Available even though no workspace is unread (DoD: attention-only).
     expect(definition.isAvailable(context)).toBe(true);
     definition.execute(context);
-    expect(navigate).toHaveBeenCalledWith('/workspace/ws-2');
+    expect(showWorkspace).toHaveBeenCalledWith('ws-2');
     expect(activeAgentDispatches(dispatch)).toEqual([['ws-2', 'a-2']]);
     // No attention-clearing side effect — only focus/HUD dispatches.
     const types = dispatch.mock.calls.map(([action]) => (action as { type: string }).type);
@@ -808,9 +810,9 @@ describe('cycle-unread-agents last-active pick (intent-hq/monorepo#1779)', () =>
         'b-3': { lastActivity: '2026-08-01T10:00:00.000Z' },
       },
     });
-    const { context, dispatch, navigate } = makeContext(state);
+    const { context, dispatch, showWorkspace } = makeContext(state);
     getActionKeyDefinition('cycle-unread-agents').execute(context);
-    expect(navigate).toHaveBeenCalledWith('/workspace/ws-2');
+    expect(showWorkspace).toHaveBeenCalledWith('ws-2');
     expect(activeAgentDispatches(dispatch)).toEqual([['ws-2', 'b-2']]);
   });
 
@@ -1012,9 +1014,9 @@ describe('cycle-unread-agents unhydrated workspaces (intent-hq/monorepo#2438)', 
       agentsByWorkspace: { 'ws-1': { ids: ['a-1'], activeAgentId: 'a-1' } },
       unreadWorkspaceIds: ['ws-2'],
     });
-    const { context, dispatch, navigate, focusComposer } = makeContext(state);
+    const { context, dispatch, showWorkspace, focusComposer } = makeContext(state);
     getActionKeyDefinition('cycle-unread-agents').execute(context);
-    expect(navigate).toHaveBeenCalledWith('/workspace/ws-2');
+    expect(showWorkspace).toHaveBeenCalledWith('ws-2');
     expect(hydrateDispatches(dispatch)).toEqual([['ws-2']]);
     expect(activeAgentDispatches(dispatch)).toEqual([]);
     expect(focusComposer).not.toHaveBeenCalled();
@@ -1026,7 +1028,7 @@ describe('cycle-unread-agents unhydrated workspaces (intent-hq/monorepo#2438)', 
       agentsByWorkspace: { 'ws-1': { ids: ['a-1'], activeAgentId: null } },
       unreadWorkspaceIds: ['ws-1', 'ws-2'],
     });
-    const { context, dispatch, navigate } = makeContext(state);
+    const { context, dispatch, showWorkspace } = makeContext(state);
     const definition = getActionKeyDefinition('cycle-unread-agents');
     definition.execute(context);
     definition.execute(context);
@@ -1036,7 +1038,7 @@ describe('cycle-unread-agents unhydrated workspaces (intent-hq/monorepo#2438)', 
       ['ws-1', 'a-1'],
     ]);
     expect(hydrateDispatches(dispatch)).toEqual([['ws-2']]);
-    expect(navigate.mock.calls).toEqual([['/workspace/ws-2']]);
+    expect(showWorkspace.mock.calls).toEqual([['ws-2']]);
   });
 
   it('counts an unhydrated unread workspace as one remaining stop in the HUD', () => {
@@ -1063,12 +1065,12 @@ describe('cycle-unread-agents unhydrated workspaces (intent-hq/monorepo#2438)', 
       agentsByWorkspace: { 'ws-1': { ids: ['a-1'], activeAgentId: null } },
       unreadWorkspaceIds: ['ws-2'],
     });
-    const { context, dispatch, navigate, showHint } = makeContext(state);
+    const { context, dispatch, showWorkspace, showHint } = makeContext(state);
     getActionKeyDefinition('cycle-unread-agents').execute(context);
     expect(showHint).toHaveBeenCalledWith(
       m.hardwareConsole_actionKey_noOtherUnreadAgents_message(),
     );
-    expect(navigate).not.toHaveBeenCalled();
+    expect(showWorkspace).not.toHaveBeenCalled();
     // Still re-requests hydration so the press converges the session cache
     // even if the route-mount hydration failed.
     expect(hydrateDispatches(dispatch)).toEqual([['ws-2']]);
@@ -1247,10 +1249,10 @@ describe('round-robin across presses', () => {
         'b-1': { stopReasonTimestamp: '2026-08-01T10:00:00.000Z' },
       },
     });
-    const { context, dispatch, navigate } = makeContext(state);
+    const { context, dispatch, showWorkspace } = makeContext(state);
     const definition = getActionKeyDefinition('cycle-in-progress-agents');
     definition.execute(context);
-    expect(navigate).toHaveBeenCalledWith('/workspace/ws-2');
+    expect(showWorkspace).toHaveBeenCalledWith('ws-2');
     // Second press: the store still says ws-1/a-1 is active (navigation is
     // async), but the cursor knows the walk is at b-1 → wrap back to a-1.
     definition.execute(context);
@@ -1268,13 +1270,13 @@ describe('round-robin across presses', () => {
         'ws-2': { ids: ['b-1'] },
       },
     });
-    const { context, dispatch, navigate, showHint } = makeContext(state);
+    const { context, dispatch, showWorkspace, showHint } = makeContext(state);
     const definition = getActionKeyDefinition('cycle-workspace-agents');
     expect(definition.isAvailable(context)).toBe(true);
     definition.execute(context);
     definition.execute(context);
     expect(showHint).not.toHaveBeenCalled();
-    expect(navigate).toHaveBeenCalledWith('/workspace/ws-2');
+    expect(showWorkspace).toHaveBeenCalledWith('ws-2');
     expect(activeAgentDispatches(dispatch)).toEqual([
       ['ws-2', 'b-1'],
       ['ws-1', 'a-1'],
@@ -1287,9 +1289,9 @@ describe('round-robin across presses', () => {
       workspaces: ['ws-1'],
       agentsByWorkspace: { 'ws-1': { ids: ['a-1'] } },
     });
-    const { context, dispatch, navigate } = makeContext(state);
+    const { context, dispatch, showWorkspace } = makeContext(state);
     getActionKeyDefinition('cycle-workspace-agents').execute(context);
-    expect(navigate).toHaveBeenCalledWith('/workspace/ws-1');
+    expect(showWorkspace).toHaveBeenCalledWith('ws-1');
     expect(activeAgentDispatches(dispatch)).toEqual([['ws-1', 'a-1']]);
   });
 
@@ -1340,12 +1342,12 @@ describe('cycle step side-effect failures', () => {
 
   it('a rejected navigate is logged as a warning and does not throw', async () => {
     const state = makeUnreadState();
-    const { context, navigate } = makeContext(state);
+    const { context, showWorkspace } = makeContext(state);
     const error = new Error('goto stalled');
-    navigate.mockImplementation(() => Promise.reject(error));
+    showWorkspace.mockImplementation(() => Promise.reject(error));
     const definition = getActionKeyDefinition('cycle-unread-agents');
     expect(() => definition.execute(context)).not.toThrow();
-    expect(navigate).toHaveBeenCalledWith('/workspace/ws-2');
+    expect(showWorkspace).toHaveBeenCalledWith('ws-2');
     await vi.waitFor(() => expect(loggerWarnMock).toHaveBeenCalled());
     expect(loggerWarnMock).toHaveBeenCalledWith(
       expect.any(String),
@@ -1498,16 +1500,16 @@ describe('cycle step side-effect failures', () => {
     // settles, the next press must retry the stop that never mounted rather
     // than skipping past it.
     const state = makeUnreadState();
-    const { context, navigate } = makeContext(state);
-    navigate.mockImplementation(() => Promise.reject(new Error('goto stalled')));
+    const { context, showWorkspace } = makeContext(state);
+    showWorkspace.mockImplementation(() => Promise.reject(new Error('goto stalled')));
     const definition = getActionKeyDefinition('cycle-unread-agents');
     definition.execute(context);
-    expect(navigate).toHaveBeenCalledWith('/workspace/ws-2');
+    expect(showWorkspace).toHaveBeenCalledWith('ws-2');
     await vi.waitFor(() => expect(loggerWarnMock).toHaveBeenCalled());
 
     const second = makeContext(state);
     definition.execute(second.context);
-    expect(second.navigate).toHaveBeenCalledWith('/workspace/ws-2');
+    expect(second.showWorkspace).toHaveBeenCalledWith('ws-2');
     expect(activeAgentDispatches(second.dispatch)).toEqual([['ws-2', 'b-1']]);
     expect(hudDispatches(second.dispatch)).toHaveLength(1);
   });
@@ -1520,18 +1522,18 @@ describe('cycle step side-effect failures', () => {
     const definition = getActionKeyDefinition('cycle-unread-agents');
     let rejectFirst: (error: Error) => void = () => {};
     const first = makeContext(state);
-    first.navigate.mockImplementation(
+    first.showWorkspace.mockImplementation(
       () =>
         new Promise<void>((_, reject) => {
           rejectFirst = reject;
         }),
     );
     definition.execute(first.context);
-    expect(first.navigate).toHaveBeenCalledWith('/workspace/ws-2');
+    expect(first.showWorkspace).toHaveBeenCalledWith('ws-2');
 
     const second = makeContext(state);
     definition.execute(second.context);
-    expect(second.navigate).toHaveBeenCalledWith('/workspace/ws-3');
+    expect(second.showWorkspace).toHaveBeenCalledWith('ws-3');
     expect(activeAgentDispatches(second.dispatch)).toEqual([['ws-3', 'c-1']]);
 
     rejectFirst(new Error('goto stalled'));
@@ -1539,7 +1541,7 @@ describe('cycle step side-effect failures', () => {
 
     const third = makeContext(state);
     definition.execute(third.context);
-    expect(third.navigate).not.toHaveBeenCalled();
+    expect(third.showWorkspace).not.toHaveBeenCalled();
     expect(activeAgentDispatches(third.dispatch)).toEqual([['ws-1', 'a-1']]);
   });
 
@@ -1547,7 +1549,7 @@ describe('cycle step side-effect failures', () => {
   function pressWithPendingNavigate(state: TestActionKeyState) {
     let reject: (error: Error) => void = () => {};
     const made = makeContext(state);
-    made.navigate.mockImplementation(
+    made.showWorkspace.mockImplementation(
       () =>
         new Promise<void>((_, rejectNavigate) => {
           reject = rejectNavigate;
@@ -1565,7 +1567,7 @@ describe('cycle step side-effect failures', () => {
     const definition = getActionKeyDefinition('cycle-unread-agents');
     const first = pressWithPendingNavigate(state);
     definition.execute(first.context);
-    expect(first.navigate).toHaveBeenCalledWith('/workspace/ws-2');
+    expect(first.showWorkspace).toHaveBeenCalledWith('ws-2');
 
     const second = makeContext(state);
     const failure = new Error('open tab failed');
@@ -1598,7 +1600,7 @@ describe('cycle step side-effect failures', () => {
     const definition = getActionKeyDefinition('cycle-unread-agents');
     const first = pressWithPendingNavigate(state);
     definition.execute(first.context);
-    expect(first.navigate).toHaveBeenCalledWith('/workspace/ws-2');
+    expect(first.showWorkspace).toHaveBeenCalledWith('ws-2');
 
     const targets: Array<[string, string]> = [];
     for (let i = 0; i < 3; i += 1) {
@@ -1653,11 +1655,11 @@ describe('single-candidate toast', () => {
         agentsByWorkspace: { 'ws-1': { ids: ['a-1'], activeAgentId: 'a-1' } },
         ...options,
       });
-      const { context, dispatch, navigate, showHint } = makeContext(state);
+      const { context, dispatch, showWorkspace, showHint } = makeContext(state);
       getActionKeyDefinition(id).execute(context);
       expect(showHint, id).toHaveBeenCalledExactlyOnceWith(hint);
       expect(dispatch, id).not.toHaveBeenCalled();
-      expect(navigate, id).not.toHaveBeenCalled();
+      expect(showWorkspace, id).not.toHaveBeenCalled();
     }
   });
 
@@ -1696,7 +1698,7 @@ describe('execute dispatch', () => {
   });
 
   it('cycle-in-progress-agents navigates cross-workspace to the next running agent', () => {
-    const { context, dispatch, navigate } = makeContext(
+    const { context, dispatch, showWorkspace } = makeContext(
       makeState({
         workspaces: ['ws-1', 'ws-2'],
         agentsByWorkspace: {
@@ -1707,7 +1709,7 @@ describe('execute dispatch', () => {
       }),
     );
     getActionKeyDefinition('cycle-in-progress-agents').execute(context);
-    expect(navigate).toHaveBeenCalledWith('/workspace/ws-2');
+    expect(showWorkspace).toHaveBeenCalledWith('ws-2');
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'workspaceAgents/setActiveAgentId',
@@ -2049,10 +2051,10 @@ describe('execute dispatch', () => {
   });
 
   it('none executes as a no-op', () => {
-    const { context, dispatch, navigate } = makeContext(makeState());
+    const { context, dispatch, showWorkspace } = makeContext(makeState());
     getActionKeyDefinition('none').execute(context);
     expect(dispatch).not.toHaveBeenCalled();
-    expect(navigate).not.toHaveBeenCalled();
+    expect(showWorkspace).not.toHaveBeenCalled();
   });
 });
 

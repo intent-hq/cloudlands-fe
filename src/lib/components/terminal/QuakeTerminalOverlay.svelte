@@ -1523,10 +1523,6 @@
                 {workspaceId}
                 {selectedScriptId}
                 onSelectScript={(id) => setSelectedScript(id)}
-                onSelectTerminal={(id) => {
-                  if (workspaceId) appStore.dispatch(selectTerminal(workspaceId, id));
-                }}
-                onCreateTerminal={createNewTerminal}
               />
             {/key}
           {/if}

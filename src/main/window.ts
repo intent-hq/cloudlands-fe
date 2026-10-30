@@ -1,4 +1,5 @@
 import { isDevConsoleRoute } from '../shared/dev-console-route';
+import { isDesktopOverlayRoute } from '../shared/desktop-overlay';
 import path from 'path';
 import { app, screen, nativeTheme, nativeImage, BrowserWindow } from 'electron';
 import type { BrowserWindow as BrowserWindowType } from 'electron';
@@ -9,6 +10,7 @@ import { registerWindowTitleListener, resolveAppTitle } from './utils/resolve-ap
 import { DeepLinkHandler } from '../features/deeplink/deep-link-handler';
 import { scrubToken } from '../features/deeplink/utils/scrub-token';
 import { findIntentUrl } from '../features/deeplink/utils/find-intent-url';
+import { queueDeepLinkForWindow } from '../features/deeplink/main/pending-deep-links';
 import { isInviteUri } from '../shared/utils/invite-uri';
 import { isPairingUri } from '../shared/utils/pairing-uri';
 import { getMainWindow, setMainWindow } from './state';
@@ -39,6 +41,7 @@ const logger = new Logger('Main');
 // Backend stamping lives in the dependency-light window-backend.ts (so
 // hud-window.ts and other small modules can read stamps without this
 // module's graph); re-exported here for the existing import sites.
+import { getAppWindows } from './offscreen-window';
 import {
   findExistingHudWindow,
   HUD_ROUTE_PREFIX,
@@ -166,9 +169,12 @@ const RENDERER_CONSOLE_MAX_MESSAGE_CHARS = 4096;
  * Info is dropped by default to keep the log bounded, but a diagnostic whose
  * entire purpose is to populate a debug bundle is useless if it never reaches
  * the file. Entries here must be low-rate and periodic — `[RetentionFingerprint]`
- * emits one line per five minutes. Anything chatty belongs at debug instead.
+ * emits one line per five minutes; `[BrowserHosting]` (intent-hq/intent#7855)
+ * logs agent browser background-hosting steps only when a tab's mount
+ * decision changes or a registration times out. Anything chatty belongs at
+ * debug instead.
  */
-const FORWARDED_RENDERER_INFO_MARKERS = ['[RetentionFingerprint]'] as const;
+const FORWARDED_RENDERER_INFO_MARKERS = ['[RetentionFingerprint]', '[BrowserHosting]'] as const;
 
 function isForwardedInfoMessage(level: string, message: string): boolean {
   return level === 'info' && FORWARDED_RENDERER_INFO_MARKERS.some((m) => message.includes(m));
@@ -313,7 +319,7 @@ function readSessionsMap(): WindowSessionsMap {
 
 // In-memory snapshot of the most recent non-empty sessions list. Used as a
 // fallback when saveWindowSessions() is invoked after all windows are already
-// gone (e.g., non-macOS window-all-closed, where BrowserWindow.getAllWindows()
+// gone (e.g., non-macOS window-all-closed, where getAppWindows()
 // returns empty and there is nothing live left to serialize).
 let lastKnownSessions: WindowSessionsMap = {};
 
@@ -405,14 +411,15 @@ export function setOnLastWindowClosedForBackend(
 }
 
 function buildSessionsFromOpenWindows(backendId: string): WindowSession[] {
-  return BrowserWindow.getAllWindows()
+  return getAppWindows()
     .filter((w: BrowserWindowType) => {
       if (w.isDestroyed() || isTransientCaptureWindow(w)) return false;
       if (getBackendIdForWindow(w) !== backendId) return false;
       const url = w.webContents.getURL();
       // Skip windows that haven't loaded yet (about:blank) or have empty URLs
       if (!url || url === 'about:blank') return false;
-      if (isDevConsoleRoute(new URL(url).pathname)) return false;
+      if (isDevConsoleRoute(new URL(url).pathname) || isDesktopOverlayRoute(new URL(url).pathname))
+        return false;
       return true;
     })
     .map((w: BrowserWindowType) => {
@@ -445,7 +452,7 @@ function buildSessionsFromOpenWindows(backendId: string): WindowSession[] {
  * Synchronously capture a snapshot of current window sessions into an
  * in-memory cache. Intended to be wired to each window's `close` event so the
  * cache holds the final layout right before the window is destroyed — the
- * non-macOS window-all-closed path fires after BrowserWindow.getAllWindows()
+ * non-macOS window-all-closed path fires after getAppWindows()
  * has already emptied, at which point saveWindowSessions() would otherwise
  * have nothing to write. Electron invokes EventEmitter listeners with the
  * closing BrowserWindow as `this`, which also lets us distinguish one closed
@@ -453,7 +460,7 @@ function buildSessionsFromOpenWindows(backendId: string): WindowSession[] {
  */
 export function captureWindowSessionsSnapshot(this: BrowserWindowType | void): void {
   try {
-    const allLiveWindows = BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed());
+    const allLiveWindows = getAppWindows().filter((window) => !window.isDestroyed());
     const liveWindows = allLiveWindows.filter((window) => !isTransientCaptureWindow(window));
     const backendIds = new Set(liveWindows.map(getBackendIdForWindow));
     for (const backendId of backendIds) {
@@ -555,7 +562,7 @@ export async function saveAllWindowSessions(): Promise<void> {
     const backendIds = new Set([
       ...Object.keys(lastKnownSessions),
       ...closedBackendSessions,
-      ...BrowserWindow.getAllWindows()
+      ...getAppWindows()
         .filter((window) => !window.isDestroyed() && !isTransientCaptureWindow(window))
         .map(getBackendIdForWindow),
     ]);
@@ -625,7 +632,7 @@ export function loadWindowSessions(backendId: string): WindowSession[] | null {
   try {
     if (closedBackendSessions.has(backendId)) return null;
     const valid = readSessionsMap()[backendId]?.filter(
-      (session) => !isDevConsoleRoute(session.route),
+      (session) => !isDevConsoleRoute(session.route) && !isDesktopOverlayRoute(session.route),
     );
     if (valid && valid.length > 0) {
       // Cap per backend to guard against a corrupted sessions file.
@@ -832,16 +839,20 @@ export async function restoreAllBackendWindowSessions(
 }
 
 /** Focus the first app window for a backend, restoring saved/fresh windows if needed. */
+/** First live, non-HUD app window bound to `backendId`, if any. */
+function findAppWindowForBackend(backendId: string): BrowserWindowType | undefined {
+  return getAppWindows().find(
+    (window) =>
+      !window.isDestroyed() &&
+      !isTransientCaptureWindow(window) &&
+      getBackendIdForWebContents(window.webContents) === backendId &&
+      !isTrackedHudWindow(window) &&
+      !isHudWindow(window),
+  );
+}
+
 export async function openOrFocusWindowsForBackend(backendId: string): Promise<void> {
-  const findAppWindow = () =>
-    BrowserWindow.getAllWindows().find(
-      (window) =>
-        !window.isDestroyed() &&
-        !isTransientCaptureWindow(window) &&
-        getBackendIdForWebContents(window.webContents) === backendId &&
-        !isTrackedHudWindow(window) &&
-        !isHudWindow(window),
-    );
+  const findAppWindow = () => findAppWindowForBackend(backendId);
   let existing = findAppWindow();
   if (!existing) {
     await restoreWindowsForBackend(backendId);
@@ -857,7 +868,7 @@ export async function openOrFocusWindowsForBackend(backendId: string): Promise<v
 
 /** Ensure closing one backend cannot destroy the app's final live window. */
 export async function ensureLocalWindowBeforeClosingBackend(backendId: string): Promise<void> {
-  const liveWindows = BrowserWindow.getAllWindows().filter(
+  const liveWindows = getAppWindows().filter(
     (window) => !window.isDestroyed() && !isTransientCaptureWindow(window),
   );
   const closesAnyWindow = liveWindows.some((window) => getBackendIdForWindow(window) === backendId);
@@ -871,7 +882,7 @@ export async function ensureLocalWindowBeforeClosingBackend(backendId: string): 
 
 /** Destroy only windows bound to one backend, preserving every other backend. */
 export function closeWindowsForBackend(backendId: string): void {
-  const windows = BrowserWindow.getAllWindows();
+  const windows = getAppWindows();
   for (const window of windows) {
     if (
       !window.isDestroyed() &&
@@ -886,6 +897,12 @@ export function closeWindowsForBackend(backendId: string): void {
       windows.find((window) => !window.isDestroyed() && !isTransientCaptureWindow(window)) ?? null,
     );
   }
+}
+
+let coldStartDeepLinkTaken = false;
+
+export function __resetColdStartDeepLinkForTesting(): void {
+  coldStartDeepLinkTaken = false;
 }
 
 export async function createWindow(backendId: string = LOCAL_CONNECTION_ID): Promise<void> {
@@ -984,19 +1001,24 @@ export async function createWindow(backendId: string = LOCAL_CONNECTION_ID): Pro
 
   // Check process.argv for intent:// URL on cold start. Pair and invite links
   // are excluded: they are handled fully in the main process (parked at
-  // startup, processed once the window is ready) and must never be embedded
-  // in the renderer load URL — the credential in the URL would leak to the
-  // renderer.
-  const intentUrl = findIntentUrl(process.argv);
-  let loadUrl = buildLoadUrl();
+  // startup, processed once the window is ready) and never reach the
+  // renderer. Any other link is queued for this window; its deep-links saga
+  // pulls it once it starts listening. argv never changes, so only the first
+  // window created takes the link — a later createWindow (session restore,
+  // another backend) must not replay it (a replayed `open?path` could create
+  // a second workspace).
+  const intentUrl = coldStartDeepLinkTaken ? undefined : findIntentUrl(process.argv);
+  const loadUrl = buildLoadUrl();
 
   if (intentUrl && !isPairingUri(intentUrl) && !isInviteUri(intentUrl)) {
+    coldStartDeepLinkTaken = true;
     const deepLinkHandler = new DeepLinkHandler();
     const action = deepLinkHandler.parseDeepLink(intentUrl);
     if (action) {
-      const encoded = encodeURIComponent(JSON.stringify(action));
-      loadUrl += `${loadUrl.includes('?') ? '&' : '?'}deepLink=${encoded}`;
-      logger.info('Embedding deep link in load URL for cold start:', { url: intentUrl });
+      queueDeepLinkForWindow(window, action);
+      logger.info('Queued cold-start deep link for the boot window:', {
+        url: scrubToken(intentUrl),
+      });
     }
   }
 
@@ -1010,12 +1032,23 @@ export async function createWindow(backendId: string = LOCAL_CONNECTION_ID): Pro
   });
 }
 
+/** Focus `window` (restoring it from the dock first) for a delivered deep link. */
+function focusDeepLinkWindow(window: BrowserWindowType): void {
+  if (window.isMinimized()) window.restore();
+  window.focus();
+}
+
 /**
  * Handle a deep link URL received from the OS (intent:// protocol)
  *
- * Settings deep links are sent to the existing main window.
- * Create deep links are sent to the existing window unless newWindow=true.
- * All other deep link types create a new window.
+ * Every renderer-bound action is queued for its target window and pulled by
+ * that window's deep-links saga (see pending-deep-links.ts):
+ * - `open` links (`path` from the `intent` CLI, or a workspace `id`) target a
+ *   window bound to the local daemon — opened or focused on demand — because
+ *   the path and id refer to this machine's daemon, not a remote host.
+ * - `create` with `newWindow=true` opens a new (local) window.
+ * - Every other action (`create`, `clone`, `settings`) goes to the
+ *   last-focused main window.
  */
 export async function createWindowForDeepLink(
   deepLinkUrl: string,
@@ -1045,25 +1078,33 @@ export async function createWindowForDeepLink(
     return;
   }
 
-  // Settings actions are always sent to the existing window.
-  // Create actions are sent to the existing window unless newWindow=true.
-  const shouldRouteToExisting =
-    action.type === 'settings' ||
-    (action.type === 'create' && String(action.params?.newWindow) !== 'true');
+  const queueForLocalWindow = async (): Promise<void> => {
+    await openOrFocusWindowsForBackend(LOCAL_CONNECTION_ID);
+    const localWindow = findAppWindowForBackend(LOCAL_CONNECTION_ID);
+    if (localWindow) {
+      queueDeepLinkForWindow(localWindow, action);
+      focusDeepLinkWindow(localWindow);
+      logger.info('Queued deep link for local window', { type: action.type });
+    } else {
+      logger.warn('No local window could be opened for deep link', { type: action.type });
+    }
+  };
 
-  if (shouldRouteToExisting) {
+  if (action.type === 'open') {
+    await queueForLocalWindow();
+    return;
+  }
+
+  if (!(action.type === 'create' && String(action.params?.newWindow) === 'true')) {
     const mainWindow = getMainWindow();
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('deep-link', action);
-      if (mainWindow.isMinimized()) {
-        mainWindow.restore();
-      }
-      mainWindow.focus();
-      logger.info('Sent deep link to existing window', { type: action.type });
+      queueDeepLinkForWindow(mainWindow, action);
+      focusDeepLinkWindow(mainWindow);
+      logger.info('Queued deep link for existing window', { type: action.type });
     } else {
-      // No window yet — store as pending (will be processed after startup)
-      logger.info('No window available for deep link, storing as pending', { type: action.type });
-      await deepLinkHandler.handleDeepLink(deepLinkUrl, null);
+      // Every window is closed (e.g. macOS keeps the app in the dock): open a
+      // local one rather than parking a link nothing would drain.
+      await queueForLocalWindow();
     }
     return;
   }
@@ -1076,10 +1117,10 @@ export async function createWindowForDeepLink(
   const newWindow = await createConfiguredWindow({ bounds, title: resolveAppTitle(), iconPath });
   stampWindowWithBackend(newWindow);
   forwardRendererConsoleToMainLog(newWindow);
+  queueDeepLinkForWindow(newWindow, action);
 
-  const encodedAction = encodeURIComponent(JSON.stringify(action));
   newWindow
-    .loadURL(buildLoadUrl(`${DEFAULT_WINDOW_ROUTE}?deepLink=${encodedAction}`))
+    .loadURL(buildLoadUrl(DEFAULT_WINDOW_ROUTE))
     .catch((error: unknown) =>
       logger.error('Failed to load deep-link window URL:', error as Error),
     );

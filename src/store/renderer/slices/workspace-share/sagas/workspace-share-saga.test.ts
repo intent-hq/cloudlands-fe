@@ -42,6 +42,7 @@ import type {
 } from '$features/workspace-sharing/types';
 import type { Workspace, WorkspaceRole } from '$shared/types';
 import type { StoreState } from '../../../types';
+import { store } from '../../../store';
 import { initialState as connectionsInitialState } from '../../connections/connections-slice';
 import {
   guestSessionsListReceived,
@@ -49,6 +50,9 @@ import {
   initialState as guestSessionsInitialState,
 } from '../../guest-sessions/guest-sessions-slice';
 import {
+  sharePeopleInvitesRequested,
+  sharePrerequisitesRequested,
+  shareEnableRequested,
   shareIntegrationAuthRequested,
   closeShareDialog,
   getRosterState,
@@ -61,6 +65,7 @@ import {
   shareInviteRevokeRequested,
   shareMemberAddRequested,
   shareMemberRemoveRequested,
+  shareMemberRoleRequested,
   shareMembershipChanged,
   sharePrincipalsLoaded,
   shareRosterLoaded,
@@ -69,7 +74,11 @@ import {
   workspaceShareReducer,
   type WorkspaceShareState,
 } from '../workspace-share-slice';
-import { selectShareInvitablePrincipals } from '../workspace-share-selectors';
+import {
+  selectWorkspacePeopleInvites,
+  selectShareInvitablePrincipals,
+} from '../workspace-share-selectors';
+import { __resetSettingsReadCacheForTests } from '$lib/client/live/live-settings-client';
 import { initializeIdentity } from '../../identity/identity-slice';
 import { workspaceShareSaga } from './workspace-share-saga';
 
@@ -121,7 +130,7 @@ const invite: WorkspaceInviteRow = {
 };
 
 const settle = async () => {
-  for (let i = 0; i < 8; i++) await Promise.resolve();
+  for (let i = 0; i < 24; i++) await Promise.resolve();
 };
 
 /**
@@ -135,6 +144,7 @@ function rootState(share: WorkspaceShareState, roles: Record<string, WorkspaceRo
   );
   return withLegacyPrincipal({
     workspaceShare: share,
+    tabState: { openTabs: {} },
     githubAuth: { isAuthenticated: false },
     gitlabAuth: { host: 'forge.example', statusReady: false, isConfigured: false },
     workspace: { workspaces: createCollection('id', workspaces) },
@@ -153,6 +163,8 @@ function harness(
 ) {
   const channel = stdChannel();
   let state = seed;
+  const subscribers = new Set<() => void>();
+  const getState = () => project(rootState(state, roles));
   const dispatched: unknown[] = [];
   /** What the opt-in Redux action logger (`logReduxActions`) would print per dispatch. */
   const logged: { action: unknown; prevState: unknown; nextState: unknown }[] = [];
@@ -161,10 +173,27 @@ function harness(
     const prevState = state;
     state = workspaceShareReducer(state, action);
     logged.push({ action, prevState, nextState: state });
+    for (const subscriber of subscribers) subscriber();
     channel.put(action);
   });
   const task = runSaga(
-    { channel, dispatch, getState: () => project(rootState(state, roles)) },
+    {
+      channel,
+      dispatch,
+      getState,
+      context: {
+        reportRuntimeError: ({ error }: { error: unknown }) => {
+          throw error;
+        },
+        reduxStore: {
+          getState,
+          subscribe: (subscriber: () => void) => {
+            subscribers.add(subscriber);
+            return () => subscribers.delete(subscriber);
+          },
+        },
+      },
+    },
     workspaceShareSaga,
   );
   return {
@@ -174,6 +203,7 @@ function harness(
     logged,
     task,
     state: () => state,
+    root: getState,
     /** What the dialog host renders in the existing-guest dropdown. */
     invitable: () =>
       selectShareInvitablePrincipals.select(rootState(state, roles) as unknown as StoreState),
@@ -210,18 +240,38 @@ function forbidden(): Error {
 
 /** Reply per method so a read after a mutation gets list-shaped payloads. */
 function replyByMethod(overrides: Record<string, unknown> = {}) {
-  mocks.request.mockImplementation(async (method: string) => {
+  mocks.request.mockImplementation(async (method: string, params?: { path?: string }) => {
     if (method in overrides) {
       const reply = overrides[method];
       if (reply instanceof Error) throw reply;
-      if (typeof reply === 'function') return reply();
+      if (typeof reply === 'function') return reply(params);
       return reply;
     }
+    if (method === 'settings.get') return settingReply(params!.path!, true);
     if (method === 'workspace.members.list') return { members: [owner] };
     if (method === 'workspace.invite.list') return { invites: [invite] };
     if (method === 'principal.list') return { principals: [guest] };
     return {};
   });
+}
+
+function settingReply(path: string, value: unknown) {
+  return {
+    value,
+    definition: { path, type: 'boolean', defaultValue: false, label: path },
+    origin: 'file',
+    revision: 1,
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  return { promise, resolve, reject };
 }
 
 function calls(method: string) {
@@ -242,6 +292,7 @@ describe('workspaceShareSaga', () => {
   const consoleSpies = { warn: vi.spyOn(console, 'warn'), error: vi.spyOn(console, 'error') };
   beforeEach(() => {
     clearInviteLinks();
+    __resetSettingsReadCacheForTests();
     consoleSpies.warn.mockImplementation(() => {});
     consoleSpies.error.mockImplementation(() => {});
   });
@@ -321,7 +372,11 @@ describe('workspaceShareSaga', () => {
     expect(mocks.request).toHaveBeenCalledWith('workspace.members.list', { workspaceId: 'ws-1' });
     expect(mocks.request).toHaveBeenCalledWith('workspace.invite.list', { workspaceId: 'ws-1' });
     expect(mocks.request).toHaveBeenCalledWith('principal.list', {});
-    expect(mocks.request).toHaveBeenCalledTimes(3);
+    expect(mocks.request).toHaveBeenCalledTimes(5);
+    expect(calls('settings.get')).toEqual([
+      ['settings.get', { path: 'server.wsApi.enabled' }],
+      ['settings.get', { path: 'server.tunnel.enabled' }],
+    ]);
     // The pin's default forge follows `identity.provider`: the identity slice is asked to read it.
     expect(h.dispatched).toContainEqual(initializeIdentity());
     expect(h.state().loadStatus).toBe('loaded');
@@ -816,6 +871,28 @@ describe('workspaceShareSaga', () => {
     h.task.cancel();
   });
 
+  it('publishes the new invite without its secret even when the follow-up list fails', async () => {
+    replyByMethod({
+      'workspace.invite.create': createReply('inv-new'),
+      'workspace.invite.list': new Error('read failed'),
+    });
+    const h = harness(opened());
+    try {
+      h.dispatch(shareInviteCreateRequested({ pinLogin: 'dave' }));
+      await settle();
+      expect(h.state().createdLink?.inviteId).toBe('inv-new');
+      expect(getItems(h.state().invites)).toEqual([
+        expect.objectContaining({ id: 'inv-new', pinLogin: 'dave' }),
+      ]);
+      expect(readInviteLink('inv-new')).toBe(INVITE_URL);
+      expect(JSON.stringify(h.dispatched)).not.toContain(INVITE_URL);
+      expect(JSON.stringify(h.dispatched)).not.toContain(SECRET_MARKER);
+      expect(h.state().loadError).toBeTruthy();
+    } finally {
+      h.task.cancel();
+    }
+  });
+
   it('omits pinLogin from the wire for an open invite', async () => {
     replyByMethod({ 'workspace.invite.create': createReply() });
     const h = harness(opened());
@@ -874,72 +951,29 @@ describe('workspaceShareSaga', () => {
     generic.task.cancel();
   });
 
-  // Remote access off: the daemon's `Error::ListenerDown` (-32603,
-  // `data.code = 'listener-down'`) gets the actionable inline error; any
-  // other failure keeps the generic one.
-  it('maps the listener-down daemon code onto the Remote Access inline error, others stay generic', async () => {
-    const listenerDown = Object.assign(new Error('invite listener is down'), {
-      rpcCode: -32603,
-      data: { code: 'listener-down' },
-    });
-    replyByMethod({ 'workspace.invite.create': listenerDown });
-    const h = harness(opened());
-
-    h.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
-    await settle();
-
-    expect(h.state().creating).toBe(false);
-    const listenerDownError = h.state().createError;
-    expect(listenerDownError).toContain('Remote Access');
-    expect(h.state().createdLink).toBeNull();
-
-    replyByMethod({
-      'workspace.invite.create': Object.assign(new Error('boom'), { rpcCode: -32603 }),
-    });
-    h.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
-    await settle();
-
-    expect(h.state().creating).toBe(false);
-    expect(h.state().createError).not.toBeNull();
-    expect(h.state().createError).not.toBe(listenerDownError);
-    expect(h.state().createError).not.toContain('Remote Access');
-    h.task.cancel();
-  });
-
-  // Remote access on, Tailcat tunnel off: the daemon's tunnel-only refusal
-  // (-32603, `data.code = 'tunnel-down'`) names the tunnel, not Remote
-  // Access, so the owner turns on the one setting that is actually off.
-  it('maps the tunnel-down daemon code onto the Tailcat inline error, distinct from listener-down', async () => {
-    replyByMethod({
-      'workspace.invite.create': Object.assign(new Error('tunnel is down'), {
-        rpcCode: -32603,
-        data: { code: 'tunnel-down' },
-      }),
-    });
-    const h = harness(opened());
-
-    h.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
-    await settle();
-
-    expect(h.state().creating).toBe(false);
-    const tunnelDownError = h.state().createError;
-    expect(tunnelDownError).toContain('Tailcat');
-    expect(tunnelDownError).not.toContain('Remote Access');
-    expect(h.state().createdLink).toBeNull();
-
-    replyByMethod({
-      'workspace.invite.create': Object.assign(new Error('invite listener is down'), {
-        rpcCode: -32603,
-        data: { code: 'listener-down' },
-      }),
-    });
-    h.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
-    await settle();
-
-    expect(h.state().createError).toContain('Remote Access');
-    expect(h.state().createError).not.toBe(tunnelDownError);
-    h.task.cancel();
-  });
+  it.each(['listener-down', 'tunnel-down'])(
+    'refreshes sharing prerequisites after %s without settings navigation guidance',
+    async (code) => {
+      replyByMethod({
+        'workspace.invite.create': Object.assign(new Error('service unavailable'), {
+          rpcCode: -32603,
+          data: { code },
+        }),
+        'settings.get': ({ path }: { path: string }) => settingReply(path, false),
+      });
+      const h = harness(opened());
+      try {
+        h.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
+        await vi.waitFor(() => expect(h.state().sharingEnabled).toBe(false));
+        expect(h.state().creating).toBe(false);
+        expect(h.state().createdLink).toBeNull();
+        expect(calls('settings.get')).toHaveLength(2);
+        expect(h.state().createError).not.toMatch(/Settings|Remote Access|Tailcat/);
+      } finally {
+        h.task.cancel();
+      }
+    },
+  );
 
   // Regression (fe#2440 review P2): revoking the just-created invite retires
   // its one-time link.
@@ -1488,5 +1522,720 @@ describe('workspaceShareSaga', () => {
       expect(rosterOf(h, 'ws-1')).toEqual(['p-alice']);
       h.task.cancel();
     });
+  });
+});
+
+describe('inline sharing prerequisites', () => {
+  beforeEach(() => {
+    mocks.request.mockReset();
+    __resetSettingsReadCacheForTests();
+  });
+  afterEach(() => {
+    mocks.request.mockReset();
+  });
+
+  it.each([
+    [false, false, false],
+    [true, false, false],
+    [false, true, false],
+    [true, true, true],
+  ])('reads effective listener=%s tunnel=%s on open', async (listener, tunnel, enabled) => {
+    replyByMethod({
+      'settings.get': ({ path }: { path: string }) =>
+        settingReply(path, path === 'server.wsApi.enabled' ? listener : tunnel),
+    });
+    const h = harness();
+    try {
+      h.dispatch(openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'My Space' }));
+      expect(h.state().sharingChecking).toBe(true);
+      await vi.waitFor(() => expect(h.state().sharingEnabled).toBe(enabled));
+      expect(h.state().sharingChecking).toBe(false);
+      expect(h.state().sharingError).toBeNull();
+      expect(calls('settings.update')).toEqual([]);
+    } finally {
+      h.task.cancel();
+    }
+  });
+
+  it.each([
+    [false, false, ['server.wsApi.enabled', 'server.tunnel.enabled']],
+    [true, false, ['server.tunnel.enabled']],
+    [false, true, ['server.wsApi.enabled']],
+    [true, true, []],
+  ] as const)(
+    'enables only missing settings for listener=%s tunnel=%s',
+    async (listener, tunnel, paths) => {
+      const values: Record<string, boolean> = {
+        'server.wsApi.enabled': listener,
+        'server.tunnel.enabled': tunnel,
+      };
+      const write = deferred<{ applied: { path: string; value: boolean }[]; revision: number }>();
+      replyByMethod({
+        'settings.get': ({ path }: { path: string }) => settingReply(path, values[path]),
+        'settings.update': () => write.promise,
+      });
+      const h = harness(loaded());
+      try {
+        h.dispatch(shareEnableRequested());
+        h.dispatch(shareEnableRequested());
+        expect(h.state().sharingEnabling).toBe(true);
+        if (paths.length) {
+          await vi.waitFor(() => expect(calls('settings.update')).toHaveLength(1));
+          expect(calls('settings.update')).toEqual([
+            ['settings.update', { changes: paths.map((path) => ({ path, value: true })) }],
+          ]);
+          expect(h.state().sharingEnabled).toBeNull();
+          for (const path of paths) values[path] = true;
+          write.resolve({ applied: paths.map((path) => ({ path, value: true })), revision: 2 });
+        }
+        await vi.waitFor(() => expect(h.state().sharingEnabled).toBe(true));
+        expect(h.state().sharingEnabling).toBe(false);
+        expect(h.state().sharingError).toBeNull();
+        expect(h.state().open).toBe(true);
+        expect(h.invitable()).toEqual([guest]);
+        expect(getItems(h.state().members)).toEqual([owner]);
+        expect(calls('settings.get')).toHaveLength(paths.length ? 4 : 2);
+        expect(calls('settings.update')).toHaveLength(paths.length ? 1 : 0);
+      } finally {
+        h.task.cancel();
+      }
+    },
+  );
+
+  it.each(['missing', 'checking', 'enabling'])(
+    'settles invite requests without a wire call while sharing is %s',
+    async (phase) => {
+      const pending = deferred<ReturnType<typeof settingReply>>();
+      replyByMethod({
+        'settings.get': ({ path }: { path: string }) =>
+          phase === 'missing' ? settingReply(path, false) : pending.promise,
+      });
+      const h = harness(opened());
+      try {
+        h.dispatch(phase === 'enabling' ? shareEnableRequested() : sharePrerequisitesRequested());
+        if (phase === 'missing')
+          await vi.waitFor(() => expect(h.state().sharingEnabled).toBe(false));
+        h.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
+        await settle();
+        expect(calls('workspace.invite.create')).toHaveLength(0);
+        expect(h.state().creating).toBe(false);
+        expect(h.state().createError).toEqual(expect.any(String));
+      } finally {
+        h.task.cancel();
+        pending.resolve(settingReply('unused', false));
+      }
+    },
+  );
+
+  it('allows invite creation after explicit setup clears the prior setup error', async () => {
+    let enabled = false;
+    replyByMethod({
+      'settings.get': ({ path }: { path: string }) => settingReply(path, enabled),
+      'settings.update': () => {
+        enabled = true;
+        return { applied: [], revision: 2 };
+      },
+      'workspace.invite.create': createReply(),
+    });
+    const h = harness(opened());
+    try {
+      h.dispatch(sharePrerequisitesRequested());
+      await vi.waitFor(() => expect(h.state().sharingEnabled).toBe(false));
+      h.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
+      await settle();
+      expect(h.state().createError).not.toBeNull();
+      h.dispatch(shareEnableRequested());
+      expect(h.state().createError).toBeNull();
+      await vi.waitFor(() => expect(h.state().sharingEnabled).toBe(true));
+      expect(h.state().createError).toBeNull();
+      h.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
+      await vi.waitFor(() => expect(calls('workspace.invite.create')).toHaveLength(1));
+      expect(h.state().createError).toBeNull();
+    } finally {
+      h.task.cancel();
+    }
+  });
+
+  it('does not claim success when the daemon returns unchanged effective settings', async () => {
+    replyByMethod({
+      'settings.get': ({ path }: { path: string }) => settingReply(path, false),
+      'settings.update': { applied: [], revision: 1 },
+    });
+    const h = harness(opened());
+    try {
+      h.dispatch(shareEnableRequested());
+      await vi.waitFor(() => expect(h.state().sharingEnabling).toBe(false));
+      expect(h.state().sharingEnabled).toBe(false);
+      expect(h.state().sharingError).toEqual(expect.any(String));
+    } finally {
+      h.task.cancel();
+    }
+  });
+
+  it.each([null, 'true', undefined])(
+    'keeps missing or invalid settings unknown (%s)',
+    async (value) => {
+      replyByMethod({ 'settings.get': ({ path }: { path: string }) => settingReply(path, value) });
+      const h = harness(opened());
+      try {
+        h.dispatch(shareEnableRequested());
+        await vi.waitFor(() => expect(h.state().sharingError).toEqual(expect.any(String)));
+        expect(h.state().sharingEnabled).toBeNull();
+        expect(h.state().sharingEnabling).toBe(false);
+        expect(calls('settings.update')).toHaveLength(0);
+      } finally {
+        h.task.cancel();
+      }
+    },
+  );
+
+  it('allows a failed load to be retried without resetting the dialog', async () => {
+    replyByMethod({ 'settings.get': new Error('offline') });
+    const h = harness(loaded());
+    try {
+      h.dispatch(sharePrerequisitesRequested());
+      await vi.waitFor(() => expect(h.state().sharingError).not.toBeNull());
+      expect(h.state().sharingEnabled).toBeNull();
+      replyByMethod();
+      h.dispatch(sharePrerequisitesRequested());
+      await vi.waitFor(() => expect(h.state().sharingEnabled).toBe(true));
+      expect(h.state().sharingError).toBeNull();
+      expect(h.invitable()).toEqual([guest]);
+    } finally {
+      h.task.cancel();
+    }
+  });
+
+  it.each(['startup', 'missing-tailcat', 'forbidden'])(
+    'retains a recoverable safe error after a %s write failure',
+    async (failure) => {
+      const error =
+        failure === 'forbidden'
+          ? forbidden()
+          : new Error(
+              failure === 'missing-tailcat'
+                ? `cannot run tailcat genkey: binary was not found ${LEAK_MARKER}`
+                : LEAK_MARKER,
+            );
+      replyByMethod({
+        'settings.get': ({ path }: { path: string }) => settingReply(path, false),
+        'settings.update': error,
+      });
+      const h = harness(loaded());
+      try {
+        h.dispatch(shareEnableRequested());
+        await vi.waitFor(() => expect(h.state().sharingError).not.toBeNull());
+        expect(h.state().sharingEnabled).not.toBe(true);
+        expect(h.state().sharingEnabling).toBe(false);
+        expect(h.invitable()).toEqual([guest]);
+        expect(JSON.stringify([h.dispatched, h.state()])).not.toContain(LEAK_MARKER);
+        if (failure === 'missing-tailcat') expect(h.state().sharingError).toContain('Tailcat');
+        replyByMethod();
+        h.dispatch(shareEnableRequested());
+        await vi.waitFor(() => expect(h.state().sharingEnabled).toBe(true));
+      } finally {
+        h.task.cancel();
+      }
+    },
+  );
+
+  it('withholds enablement after the daemon refuses settings reads', async () => {
+    replyByMethod({ 'settings.get': forbidden() });
+    const h = harness(opened());
+    try {
+      h.dispatch(sharePrerequisitesRequested());
+      await vi.waitFor(() => expect(h.state().sharingError).not.toBeNull());
+      expect(h.state().sharingChecking).toBe(false);
+      expect(h.state().sharingEnabled).toBeNull();
+      expect(calls('settings.update')).toHaveLength(0);
+    } finally {
+      h.task.cancel();
+    }
+  });
+
+  it.each(['guest', 'unresolved'])(
+    'never reads or writes host settings for %s authority',
+    async (role) => {
+      replyByMethod();
+      const h = harness(opened(), { 'ws-1': 'owner' }, (root) => {
+        const state = withLegacyPrincipal(root, 'guest');
+        if (role === 'unresolved')
+          state.principal = { ...state.principal, status: 'loading', snapshot: null };
+        return state;
+      });
+      try {
+        h.dispatch(sharePrerequisitesRequested());
+        h.dispatch(shareEnableRequested());
+        await settle();
+        expect(calls('settings.get')).toHaveLength(0);
+        expect(calls('settings.update')).toHaveLength(0);
+      } finally {
+        h.task.cancel();
+      }
+    },
+  );
+
+  it.each(['backend', 'identity', 'authority', 'close', 'reopen'])(
+    'drops a delayed read after %s changes and never writes',
+    async (change) => {
+      const pending = deferred<ReturnType<typeof settingReply>>();
+      replyByMethod({ 'settings.get': () => pending.promise });
+      let changed = false;
+      const h = harness(opened(), { 'ws-1': 'owner' }, (root) => {
+        if (!changed) return root;
+        if (change === 'backend')
+          return withLegacyPrincipal({
+            ...root,
+            connections: { ...root.connections, windowBackendId: 'other-host' },
+          });
+        if (change === 'authority') return withLegacyPrincipal(root, 'guest');
+        if (change === 'identity')
+          return { ...root, principal: { ...root.principal, invalidation: 1 } };
+        return root;
+      });
+      try {
+        h.dispatch(shareEnableRequested());
+        expect(calls('settings.get')).toHaveLength(2);
+        changed = true;
+        if (change === 'close' || change === 'reopen') h.dispatch(closeShareDialog());
+        if (change === 'reopen')
+          h.dispatch(openShareDialog({ workspaceId: 'ws-2', workspaceTitle: 'Other' }));
+        pending.resolve(settingReply('unused', false));
+        await settle();
+        await settle();
+        expect(calls('settings.update')).toHaveLength(0);
+        expect(h.state().sharingEnabled).not.toBe(true);
+      } finally {
+        h.task.cancel();
+      }
+    },
+  );
+
+  it('coalesces refreshes during a read into one fresh follow-up', async () => {
+    const pending = deferred<ReturnType<typeof settingReply>>();
+    let first = true;
+    replyByMethod({
+      'settings.get': ({ path }: { path: string }) =>
+        first ? pending.promise : settingReply(path, false),
+    });
+    const h = harness(opened());
+    try {
+      h.dispatch(sharePrerequisitesRequested());
+      for (let n = 0; n < 5; n++) h.dispatch(sharePrerequisitesRequested());
+      expect(calls('settings.get')).toHaveLength(2);
+      first = false;
+      pending.resolve(settingReply('unused', true));
+      await vi.waitFor(() => expect(h.state().sharingEnabled).toBe(false));
+      expect(calls('settings.get')).toHaveLength(4);
+      expect(calls('settings.update')).toHaveLength(0);
+    } finally {
+      h.task.cancel();
+    }
+  });
+
+  it('explains who can fix unavailable sharing to a non-admin workspace owner', async () => {
+    replyByMethod({
+      'workspace.invite.create': Object.assign(new Error('down'), {
+        rpcCode: -32603,
+        data: { code: 'tunnel-down' },
+      }),
+    });
+    const h = harness(opened(), { 'ws-1': 'owner' }, (root) => withLegacyPrincipal(root, 'guest'));
+    try {
+      h.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
+      await vi.waitFor(() => expect(h.state().createError).not.toBeNull());
+      expect(calls('workspace.invite.create')).toHaveLength(1);
+      expect(calls('settings.get')).toHaveLength(0);
+      expect(calls('settings.update')).toHaveLength(0);
+    } finally {
+      h.task.cancel();
+    }
+  });
+
+  it('drops a successful write reply after identity changes without confirming the new host', async () => {
+    const write = deferred<object>();
+    replyByMethod({
+      'settings.get': ({ path }: { path: string }) => settingReply(path, false),
+      'settings.update': () => write.promise,
+    });
+    let changed = false;
+    const h = harness(opened(), { 'ws-1': 'owner' }, (root) =>
+      changed ? { ...root, principal: { ...root.principal, invalidation: 1 } } : root,
+    );
+    try {
+      h.dispatch(shareEnableRequested());
+      await vi.waitFor(() => expect(calls('settings.update')).toHaveLength(1));
+      changed = true;
+      write.resolve({ applied: [], revision: 2 });
+      await settle();
+      expect(calls('settings.get')).toHaveLength(2);
+      expect(h.state().sharingEnabled).not.toBe(true);
+    } finally {
+      h.task.cancel();
+    }
+  });
+});
+
+describe('guest role changes', () => {
+  beforeEach(() => mocks.request.mockReset());
+  function roleSupport(state: StoreState): StoreState {
+    return {
+      ...state,
+      principal: {
+        ...state.principal,
+        snapshot: {
+          ...state.principal.snapshot!,
+          capabilities: { ...state.principal.snapshot!.capabilities, workspaceGuestRoles: true },
+        },
+      },
+    };
+  }
+  it('holds confirmed roles until the server succeeds, coalesces duplicate clicks and reloads the roster', async () => {
+    let complete!: (value: unknown) => void;
+    replyByMethod({
+      'workspace.members.setRole': () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+      'workspace.members.list': { members: [owner, { ...guestAsMember, role: 'manager' }] },
+    });
+    const h = harness(loaded([owner, guestAsMember]), undefined, roleSupport);
+    try {
+      h.dispatch(shareMemberRoleRequested({ principalId: guest.principalId, role: 'manager' }));
+      h.dispatch(shareMemberRoleRequested({ principalId: guest.principalId, role: 'manager' }));
+      await settle();
+      expect(
+        mocks.request.mock.calls.filter(([method]) => method === 'workspace.members.setRole'),
+      ).toEqual([
+        [
+          'workspace.members.setRole',
+          { workspaceId: 'ws-1', principalId: guest.principalId, role: 'manager' },
+        ],
+      ]);
+      expect(
+        getItems(h.state().members).find((row) => row.principalId === guest.principalId)?.role,
+      ).toBe('collaborator');
+      expect(h.state().pendingRolePrincipalIds).toEqual([guest.principalId]);
+      complete({
+        workspaceId: 'ws-1',
+        principalId: guest.principalId,
+        role: 'manager',
+        changed: true,
+      });
+      await settle();
+      expect(h.state().pendingRolePrincipalIds).toEqual([]);
+      expect(
+        getItems(h.state().members).find((row) => row.principalId === guest.principalId)?.role,
+      ).toBe('manager');
+    } finally {
+      h.task.cancel();
+    }
+  });
+  it('never sends role changes to an older daemon', async () => {
+    const h = harness(loaded([owner, guestAsMember]));
+    try {
+      h.dispatch(shareMemberRoleRequested({ principalId: guest.principalId, role: 'manager' }));
+      await settle();
+      expect(mocks.request).not.toHaveBeenCalledWith(
+        'workspace.members.setRole',
+        expect.anything(),
+      );
+      expect(h.state().pendingRolePrincipalIds).toEqual([]);
+      expect(h.state().roleErrors[guest.principalId]).toBeTruthy();
+    } finally {
+      h.task.cancel();
+    }
+  });
+  it('keeps the confirmed role after failure and ignores a late reply after retargeting', async () => {
+    let complete!: (value: unknown) => void;
+    replyByMethod({
+      'workspace.members.setRole': () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+    });
+    const h = harness(loaded([owner, guestAsMember]), undefined, roleSupport);
+    try {
+      h.dispatch(shareMemberRoleRequested({ principalId: guest.principalId, role: 'manager' }));
+      await settle();
+      complete({
+        workspaceId: 'wrong',
+        principalId: guest.principalId,
+        role: 'manager',
+        changed: true,
+      });
+      await settle();
+      expect(h.state().roleErrors[guest.principalId]).toBeTruthy();
+      expect(getItems(h.state().members)[1].role).toBe('collaborator');
+      h.dispatch(shareMemberRoleRequested({ principalId: guest.principalId, role: 'manager' }));
+      await settle();
+      h.dispatch(closeShareDialog());
+      complete({
+        workspaceId: 'ws-1',
+        principalId: guest.principalId,
+        role: 'manager',
+        changed: true,
+      });
+      await settle();
+      expect(h.state().members.ids).toEqual([]);
+      expect(h.state().pendingRolePrincipalIds).toEqual([]);
+    } finally {
+      h.task.cancel();
+    }
+  });
+});
+
+describe('People invite hydration independent of the dialog', () => {
+  const pending = { ...invite, expiresAt: '2099-01-01T00:00:00Z' };
+  const tabs = (root: StoreState): StoreState => ({
+    ...root,
+    tabState: { ...root.tabState, openTabs: { 'ws-1': true } },
+  });
+  beforeEach(() => {
+    clearInviteLinks();
+    __resetSettingsReadCacheForTests();
+  });
+  afterEach(() => {
+    mocks.request.mockReset();
+    vi.useRealTimers();
+  });
+
+  it('hydrates a solo open workspace without opening Share, vaulting links, or reading members again', async () => {
+    replyByMethod({ 'workspace.invite.list': { invites: [pending] } });
+    const h = harness(initialState, { 'ws-1': 'owner' }, tabs);
+    try {
+      await settle();
+      expect(calls('workspace.invite.list')).toEqual([
+        ['workspace.invite.list', { workspaceId: 'ws-1' }],
+      ]);
+      expect(calls('workspace.members.list')).toEqual([]);
+      expect(calls('principal.list')).toEqual([]);
+      expect(selectWorkspacePeopleInvites.select(h.root(), 'ws-1').map((row) => row.id)).toEqual([
+        'inv-1',
+      ]);
+      expect(h.state().open).toBe(false);
+      expect(readInviteLink('inv-1')).toBeNull();
+      expect(JSON.stringify(h.logged)).not.toContain(SECRET_MARKER);
+    } finally {
+      h.task.cancel();
+    }
+  });
+
+  it('hydrates already-open tabs through the configured Store runtime', async () => {
+    replyByMethod({ 'workspace.invite.list': { invites: [pending] } });
+    const dispose = store.init(tabs(rootState(initialState, { 'ws-1': 'owner' })));
+    const cancel = store.runSaga(workspaceShareSaga);
+    try {
+      await settle();
+      expect(mocks.request).toHaveBeenCalledWith('workspace.invite.list', { workspaceId: 'ws-1' });
+      expect(selectWorkspacePeopleInvites.select(store.state, 'ws-1').map((row) => row.id)).toEqual(
+        ['inv-1'],
+      );
+    } finally {
+      cancel();
+      dispose();
+    }
+  });
+
+  it('never lists invites for collaborators or unknown management authority', async () => {
+    replyByMethod();
+    for (const role of ['collaborator', undefined] as const) {
+      const h = harness(initialState, { 'ws-1': role }, tabs);
+      await settle();
+      expect(calls('workspace.invite.list')).toEqual([]);
+      h.task.cancel();
+    }
+  });
+
+  it('coalesces membership bursts and rejects the older list before the trailing read lands', async () => {
+    const first = deferred<{ invites: WorkspaceInviteRow[] }>();
+    const second = deferred<{ invites: WorkspaceInviteRow[] }>();
+    let reads = 0;
+    replyByMethod({
+      'workspace.invite.list': () => (++reads === 1 ? first.promise : second.promise),
+    });
+    const h = harness(initialState, { 'ws-1': 'owner' }, tabs);
+    try {
+      for (let i = 0; i < 6; i++) h.dispatch(shareMembershipChanged({ workspaceId: 'ws-1' }));
+      expect(reads).toBe(1);
+      first.resolve({ invites: [pending] });
+      await settle();
+      expect(reads).toBe(2);
+      expect(selectWorkspacePeopleInvites.select(h.root(), 'ws-1')).toEqual([]);
+      second.resolve({ invites: [] });
+      await settle();
+      expect(reads).toBe(2);
+      expect(getItems(h.state().invites)).toEqual([]);
+    } finally {
+      h.task.cancel();
+    }
+  });
+
+  it('shares a pending wire read with Share and retains metadata after close', async () => {
+    const first = deferred<{ invites: WorkspaceInviteRow[] }>();
+    replyByMethod({ 'workspace.invite.list': first.promise });
+    const h = harness(initialState, { 'ws-1': 'owner' }, tabs);
+    try {
+      h.dispatch(openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'Space' }));
+      await settle();
+      expect(calls('workspace.invite.list')).toHaveLength(1);
+      first.resolve({ invites: [pending] });
+      await settle();
+      expect(readInviteLink('inv-1')).toBe(LISTED_URL);
+      h.dispatch(closeShareDialog());
+      expect(readInviteLink('inv-1')).toBeNull();
+      expect(selectWorkspacePeopleInvites.select(h.root(), 'ws-1').map((row) => row.id)).toEqual([
+        'inv-1',
+      ]);
+      expect(JSON.stringify(h.logged)).not.toContain(SECRET_MARKER);
+    } finally {
+      h.task.cancel();
+    }
+  });
+
+  it.each(['close', 'retarget'] as const)(
+    'keeps a People refresh alive when Share is abandoned by %s',
+    async (abandon) => {
+      const refresh = deferred<{ invites: WorkspaceInviteRow[] }>();
+      let reads = 0;
+      replyByMethod({
+        'workspace.invite.list': ({ workspaceId }: { workspaceId: string }) => {
+          if (workspaceId !== 'ws-1') return { invites: [] };
+          return ++reads === 3 ? refresh.promise : { invites: [pending] };
+        },
+      });
+      const h = harness(initialState, { 'ws-1': 'owner', 'ws-2': 'owner' }, tabs);
+      try {
+        await settle();
+        h.dispatch(openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'Space' }));
+        await settle();
+        expect(reads).toBe(2);
+        expect(readInviteLink('inv-1')).toBe(LISTED_URL);
+        h.dispatch(shareMembershipChanged({ workspaceId: 'ws-1' }));
+        await settle();
+        expect(reads).toBe(3);
+        if (abandon === 'close') h.dispatch(closeShareDialog());
+        else h.dispatch(openShareDialog({ workspaceId: 'ws-2', workspaceTitle: 'Other' }));
+        await settle();
+        expect(readInviteLink('inv-1')).toBeNull();
+        // The remote client revoked inv-1 and left another named invitation.
+        refresh.resolve({ invites: [{ ...pending, id: 'remaining-invite' }] });
+        await settle();
+        expect(selectWorkspacePeopleInvites.select(h.root(), 'ws-1').map((row) => row.id)).toEqual([
+          'remaining-invite',
+        ]);
+        expect(reads).toBe(3);
+        expect(h.state().open).toBe(abandon === 'retarget');
+        expect(h.state().workspaceId).toBe(abandon === 'retarget' ? 'ws-2' : null);
+        expect(readInviteLink('inv-1')).toBeNull();
+        expect(readInviteLink('remaining-invite')).toBeNull();
+        expect(JSON.stringify(h.logged)).not.toContain(SECRET_MARKER);
+      } finally {
+        h.task.cancel();
+      }
+    },
+  );
+
+  it('a background denial withholds a dialog read still waiting for its member response', async () => {
+    const members = deferred<{ members: WorkspaceMember[] }>();
+    let reads = 0;
+    replyByMethod({
+      'workspace.members.list': members.promise,
+      'workspace.invite.list': () => {
+        if (++reads === 1) return { invites: [pending] };
+        throw forbidden();
+      },
+    });
+    const h = harness(opened(), { 'ws-1': 'owner' }, tabs);
+    try {
+      await settle();
+      h.dispatch(sharePeopleInvitesRequested('ws-1'));
+      await settle();
+      expect(h.state().withheld).toBe(true);
+      members.resolve({ members: [owner] });
+      await settle();
+      expect(getItems(h.state().invites)).toEqual([]);
+      expect(getItems(h.state().members)).toEqual([]);
+      expect(selectWorkspacePeopleInvites.select(h.root(), 'ws-1')).toEqual([]);
+      expect(readInviteLink('inv-1')).toBeNull();
+    } finally {
+      h.task.cancel();
+    }
+  });
+
+  it.each(['success', 'forbidden'] as const)(
+    'drops a delayed %s from a previous authority and hydrates the new one',
+    async (outcome) => {
+      const first = deferred<{ invites: WorkspaceInviteRow[] }>();
+      let invalidation = 0;
+      let reads = 0;
+      replyByMethod({
+        'workspace.invite.list': () =>
+          ++reads === 1 ? first.promise : { invites: [{ ...pending, id: 'new-authority' }] },
+      });
+      const h = harness(initialState, { 'ws-1': 'owner' }, (root) =>
+        tabs({ ...root, principal: { ...root.principal, invalidation } }),
+      );
+      try {
+        invalidation = 1;
+        h.dispatch(shareMembershipChanged({ workspaceId: 'ws-1' }));
+        if (outcome === 'success') first.resolve({ invites: [pending] });
+        else first.reject(forbidden());
+        await settle();
+        expect(selectWorkspacePeopleInvites.select(h.root(), 'ws-1').map((row) => row.id)).toEqual([
+          'new-authority',
+        ]);
+        expect(getRosterState(h.state(), 'ws-1').inviteWithheld).toBe(false);
+      } finally {
+        h.task.cancel();
+      }
+    },
+  );
+
+  it('drops cached rows on loss of management and prevents further owner reads', async () => {
+    let allowed = true;
+    replyByMethod({ 'workspace.invite.list': { invites: [pending] } });
+    const h = harness(initialState, { 'ws-1': 'owner' }, (root) =>
+      tabs({
+        ...root,
+        workspace: {
+          ...root.workspace,
+          workspaces: createCollection('id', [
+            { id: 'ws-1', myRole: allowed ? 'owner' : 'collaborator' } as Workspace,
+          ]),
+        },
+      }),
+    );
+    try {
+      await settle();
+      expect(selectWorkspacePeopleInvites.select(h.root(), 'ws-1')).toHaveLength(1);
+      allowed = false;
+      h.dispatch(shareMembershipChanged({ workspaceId: 'ws-1' }));
+      await settle();
+      h.dispatch(sharePeopleInvitesRequested('ws-1'));
+      await settle();
+      expect(getItems(h.state().invites)).toEqual([]);
+      expect(calls('workspace.invite.list')).toHaveLength(1);
+    } finally {
+      h.task.cancel();
+    }
+  });
+
+  it('expires a visible invite without a membership event or another render', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-23T12:00:00Z'));
+    replyByMethod({
+      'workspace.invite.list': { invites: [{ ...pending, expiresAt: '2026-10-23T12:00:01Z' }] },
+    });
+    const h = harness(initialState, { 'ws-1': 'owner' }, tabs);
+    try {
+      await settle();
+      expect(selectWorkspacePeopleInvites.select(h.root(), 'ws-1')).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(selectWorkspacePeopleInvites.select(h.root(), 'ws-1')).toEqual([]);
+      expect(calls('workspace.invite.list')).toHaveLength(1);
+    } finally {
+      h.task.cancel();
+    }
   });
 });

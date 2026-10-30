@@ -35,6 +35,10 @@ companion releases; this checkpoint does not require simultaneous cross-repo mer
 - Use public `$lib/components/patterns/*` or `$lib/components/ui/*` subpaths; do not deep-import implementations.
 - Follow the [Never list](docs/DESIGN_SYSTEM.md#never), enforced by `eslint-rules/design-system/`.
 - Never hand-write motion durations or physical colors; use `$lib/motion` and semantic tokens.
+- Never pause, stop, or disable animations app-wide on your own (window blur, battery, visibility,
+  performance). Gate it behind an existing setting — OS reduced motion and "Reduce motion on
+  battery" via `prefersReducedMotion()` / `data-reduce-motion`, or "Pause animations when not in
+  focus" via `data-window-blurred` — or add a new Appearance setting that defaults to off.
 - Never add a raw control, direct toast/native dialog, bespoke settings row, or feature-owned dialog root.
 - Ratchets only shrink: do not raise `scripts/ui-component-guardrails.ts` ceilings or expand lint baselines.
 - Run `pnpm run lint:design-cheatsheet` (part of `pnpm run lint`) with the focused lint/tests; regenerate the cheatsheet with `pnpm exec tsx scripts/generate-design-cheatsheet.ts`.
@@ -80,6 +84,7 @@ in a monorepo checkout, where this repo mounts at `packages/cloudlands-fe/`.
 | debugging                                                               | ../../docs/fe/TROUBLESHOOTING_GUIDE.md, ../../docs/fe/IPC_DEBUG_GUIDE.md                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | prod stack traces                                                       | `pnpm resolve-stack <tag> < stack.txt` — rebuilds the tag with sourcemaps, maps frames                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | CT run failures (PR or nightly triage)                                  | `pnpm ct:failures <run-id \| run-url>` — every failed/flaky CT case of an `Intent PR Checks` or `Nightly Browser Tests` run, per shard, from the shard's JSON report artifact (list-log summary fallback); `--attempt N`, `--json`                                                                                                                                                                                                                                                                           |
+| full local CT run (all shards)                                          | `pnpm run test:ct:full` — the four CT shards in sequence via `test:ct` (CI's `@quarantine` filter, one `ct-<CT_PORT>` lock); per-shard log, JSON, HTML and traces in `ct-full-runs/<stamp>/shard-<i>/`, then one line per shard, failed/flaky cases, a total and `summary.json`; every shard runs, exit 0 only if all pass. About 2h15m (shards 25-40 min): give a monitor a 3h+ TTL. `-- --list` checks wiring                                                                                              |
 | error handling                                                          | ../../docs/fe/ERROR_HANDLING_SYSTEM.md                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | TypeScript/types                                                        | ../../docs/fe/TYPE_SYSTEM_GUIDE.md                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | events/IPC                                                              | ../../docs/fe/EVENT_SYSTEM.md                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
@@ -133,7 +138,7 @@ corepack pnpm run test:playwright
 
 A test that budgets wall time (perf guards, alignment work bounds) must fit its timeout
 under CI runner load, not just in isolation — the local 30 s `testTimeout` by default
-(`vitest.config.ts` raises it to 60 s on CI) or the documented per-test budget.
+(`vitest.config.ts` raises it to 60 s on CI, from `scripts/vitest-timeouts.mjs`) or the documented per-test budget; catalog contract entries derive theirs from their snapshot size (`src/lib/component-catalog/catalog-contract-budget.ts`).
 `intent/no-wall-clock-assertions-in-tests` (in `pnpm run lint`) flags a raw
 `performance.now()` / `Date.now()` elapsed-time assertion against a millisecond budget and
 names the alternatives; today's offenders are baselined under
@@ -290,6 +295,11 @@ A first tunneled open of a fresh, pre-warmed app takes roughly one to three minu
 hydrate depending on host load. If the splash remains after health is ok, keep waiting
 rather than restarting; later loads are fast.
 
+To land on a chosen chat or note, open `/workspace/<workspaceId>?agent=<agentId>` or
+`?note=<noteId>` (both may be combined). Do not use `/agent/<id>`: on a cold load it shows
+an empty placeholder, not the workspace chat panel. Recipe:
+[`Open a chat or note in the app sandbox`](../../docs/fe/DEVELOPER_GUIDE.md#open-a-chat-or-note-in-the-app-sandbox).
+
 The bridged daemon API is unauthenticated. Keep Vite on loopback and reach it only through
 the Intent client's authenticated tunnel.
 
@@ -321,7 +331,11 @@ and embedded tabs — is a target) and attach CDP locally. See
 builds any branch/ref — e.g. a PR branch — into platform-specific installers for testing:
 `gh workflow run manual-signed-build.yml --ref <pr-branch> -f build_macos=true` (also
 `build_windows` / `build_linux`; `sign` defaults to true — macOS Developer ID +
-notarization, Windows DigiCert). Add `-f intentd_ref=<hash>` (any intent-hq/intentd git
+notarization, Windows Azure Artifact Signing). A signed Windows request first runs the
+`windows-signing-preflight` job, which fails in seconds — naming every missing
+`INTENT_WINDOWS_AZURE_*` / `INTENT_WINDOWS_PUBLISHER_*` / `AZURE_*` setting — when the
+repository's Azure signing is not configured; re-run with `-f sign=false` for an unsigned
+Windows build. Add `-f intentd_ref=<hash>` (any intent-hq/intentd git
 ref — full 40-char commit SHA, branch, or tag; `actions/checkout` cannot resolve an
 abbreviated SHA from `git log --oneline`) to build the intentd sidecar from source at
 that ref instead of fetching the pinned release (all legs: macOS, Windows, and both
@@ -590,6 +604,24 @@ drop wire rows carrying the additive `pendingDeleteAt` field.
 - For copy-only changes, do not update unit tests. Run `pnpm run generate:i18n`,
   `pnpm run lint:i18n-completeness`, and `pnpm run lint:i18n-strings` instead.
 
+#### Pixel comparison tests are forbidden
+
+**Never add, restore, run, or regenerate pixel comparison tests. There are no
+exceptions for a component, feature, platform, theme, zoom level, or CI runner.**
+This ban covers screenshot/image snapshots, golden images, rendered pixel or alpha
+sampling, image similarity scores, and byte/hash comparisons of rendered images.
+Do not hide these checks in helpers, custom matchers, canvas redraws, or renamed
+"visual" tests. Do not add reference images, comparison tolerances, baseline update
+commands, or image-diff dependencies. Remove an existing violation; never refresh
+its baseline or loosen its threshold to make it pass.
+
+Enforce these bans during review. Do not add source-scanning scripts or fixture tests
+to enforce the pixel comparison or DOM measurement baseline policies.
+
+Manual screenshots and probes remain required for visual review where applicable.
+They are review evidence only: never compare their pixels or use them as automated
+pass/fail baselines. Test observable behavior with independent assertions instead.
+
 #### Do not write decorative appearance tests
 
 These rules apply to unit tests and browser tests alike:
@@ -607,14 +639,18 @@ These rules apply to unit tests and browser tests alike:
 - **Do not build circular style oracles:** importing a production class constant and
   checking for those same classes, or copying production spacing into a fixture and
   measuring that fixture, does not independently verify the app.
+- **Delete an appearance-only test when its useful assertions are gone.** Do not keep
+  it alive with prop echoes, unconditional render checks, direct focus assignment checks,
+  or expectations derived from its own mock. Every retained test needs an independent
+  behavioral failure it can detect.
 - **Do not multiply themes, widths, or zoom levels without a named behavioral reason
   for each variation.** Use the smallest set that exercises distinct contracts.
 
 Keep real-browser checks for clipping or overlap that hides content or controls, scroll
 ownership/anchoring, focus and keyboard access, usable hit areas, accessibility contrast,
 and reduced-motion behavior. Name the user-visible failure the assertion prevents.
-Geometry and computed styles are valid evidence for those contracts; do not remove a
-behavioral assertion solely because it measures pixels or lives in a geometry-named file.
+DOM geometry and computed styles are valid evidence for those contracts. This permits
+measurements of live elements, never pixel sampling or comparison of rendered images.
 
 | Do not write                                                                   | Write or retain instead                                                                         |
 | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
@@ -626,13 +662,28 @@ behavioral assertion solely because it measures pixels or lives in a geometry-na
 | Import a style constant and assert every token occurs in the rendered classes. | Dispatch an action or change a prop and assert the resulting state, content, or interaction.    |
 | Repeat an appearance assertion across every theme × width × zoom combination.  | Select named cases such as narrow keyboard access or zoomed control containment.                |
 
-Blanket coordinate/size snapshot tests and saved baselines are prohibited, including
-for registered sandbox scenes. Do not recreate them under another name or regenerate
-baselines to accept changed measurements. `pnpm run lint:geometry-snapshots`, included
-in `lint:architecture`, rejects retired baseline paths, snapshot APIs and regeneration
-hooks. Review must also reject equivalent mechanisms under new names. Manual probes
-and screenshot review remain available under [Visual verification](#visual-verification);
-automated geometry assertions must protect a named behavioral contract.
+#### DOM measurement baselines are forbidden
+
+**Never measure DOM elements and compare their size, position, or spacing with
+hard-coded or generated appearance baselines. No exceptions.** This includes a single
+width or height, inline numeric expectations, arrays or JSON of bounding boxes, saved
+coordinates, snapshots, and expected values imported or generated from CSS, tokens,
+fixtures, or a previous run. A tolerance, range, rounded value, ratio, renamed helper,
+or claim of "geometry coverage" does not make an appearance baseline acceptable.
+Remove violations; never record new measurements or adjust expected values to pass.
+
+Do not recreate these tests under another name, add exemptions, or regenerate their
+baselines. Capturing all boxes or path coordinates during a test and requiring the same
+layout later is also a generated appearance baseline. Review must reject equivalent
+custom comparisons.
+
+Keep independent behavioral assertions: content stays within its live container,
+controls remain reachable, a resize responds to user input, and scrolling preserves
+the user's position. Accessibility minimum target sizes are standards-based bounds,
+not decorative baselines. Small rounding tolerances may support these relationships;
+they must not pin an ornamental dimension or spacing value. Pure layout algorithm
+input/output contracts are also valid. Manual probes and screenshots remain review
+evidence only; never turn their measurements into automated pass/fail baselines.
 
 ### Component tests (Playwright CT) — when and how
 
@@ -674,7 +725,8 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   share ordered state.
 - **A pass-on-retry fails the required CT lane** (`--fail-on-flaky-tests`). Fix the flake
   or, if it needs more time, tag the individual test
-  `{ tag: '@quarantine' }` — never a whole file. The full four-shard CT suite
+  `{ tag: '@quarantine' }` — never a whole file. Run the same four shards locally with
+  `pnpm run test:ct:full` (about 2h15m; see [Where to look](#where-to-look)). The full four-shard CT suite
   runs nightly at 02:17 UTC and on manual dispatch (`nightly-browser-tests.yml`).
   Merge-queue entries that touch CT-contract paths, specs or their direct local imports
   also require it (classified by `scripts/ct-contract-paths.mjs`, shared with
@@ -709,12 +761,38 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   original archives survive reporting errors; rerun that workflow after correcting
   auth/API failures. Python 3 reads bounded ZIP members without extracting files.
   Writers use GitHub's `concurrency.queue: max` to retain pending completions;
-  actionlint 1.7.12 needs only its unknown-`queue` syntax diagnostic ignored until
-  it supports this [documented key](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
+  `.github/actionlint.yaml` ignores only actionlint's unknown-`queue` diagnostic for
+  this [documented key](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
+  `pnpm run lint:workflows` (part of `lint:architecture`) runs the pinned actionlint
+  with shellcheck over every workflow; add path-scoped ignores with a reason there.
   Quarantined CT tests still run as an advisory step on shard 1 and must carry an
   open tracking issue and an owner. Remove the tag in the PR that fixes the flake.
 - Motion specs that sample animation progress mid-flight are the historical flake source;
-  prefer asserting start/end states and `getAnimations()` counts over timed midpoints.
+  assert start/end states, and check "no animation is running" with the
+  `src/test/ct-test.ts` helpers, never a one-time `getAnimations()` count: a child's
+  short fade caught mid-flight ejected cloudlands-fe#3651 from the merge queue.
+  `expectAnimationsToSettle(locator)` waits for motion to finish (`includeFinished` also
+  requires `fill: 'forwards'` leftovers to be removed). `expectNoAnimations(locator, opts)`
+  asserts nothing animates; `opts.ignore` names a component (`{ within: selector }`)
+  whose own short finite fades are allowed. Both list what is still running. Lint
+  (`intent/no-one-shot-animation-count`) rejects the one-time count in CT specs; disable
+  it on the line, with the reason, only when zero animations is the deliberate contract.
+- Before an outside click that should dismiss a bits-ui menu, popover, select, combobox or
+  dialog, call `expectDismissibleLayerArmed(layer)` (`src/test/dismissible-layer.ts`):
+  bits-ui listens for outside pointers only after an `afterSleep(1)` timer, so an early
+  click is ignored (cloudlands-fe#3696 failed 3 of 20 runs). Any element inside the layer
+  works as `layer`. Lint
+  (`intent/no-unarmed-outside-click-in-ct`) flags an unguarded dismissing click; disable it
+  on the line, with the reason, for a click inside the layer or on a non-bits-ui popup.
+  Prove a wait with `CT_DELAY_DISMISSIBLE_LAYER=1` (1 ms timers become 500 ms, no rebuild):
+  the spec must pass, then fail with the wait removed (cloudlands-fe#3718 patched the fixture).
+- Scroll with `wheelUntilScrolled(scroller, { deltaY })` (`src/test/ct-test.ts`), never a
+  single `page.mouse.wheel`: Chromium can drop a wheel routed by a stale compositor frame,
+  so the element never scrolls (cloudlands-fe#3733 failed 4 of 320 runs). The helper checks
+  the element has room to scroll, hovers it (or `pointer`), and resends until it moves in
+  the wheel's direction; keep your own end-position assertion after it. Lint
+  (`intent/no-raw-mouse-wheel-in-ct`) rejects the raw call; disable it on the line, with
+  the reason, only when the test checks that a wheel does NOT scroll.
 - **Every CT spec imports `test` / `expect` from `src/test/ct-test.ts`** — lint-enforced
   (`no-restricted-imports`; only type imports may come from
   `@playwright/experimental-ct-svelte`). The module sets `_optionContextReuseMode: 'none'`

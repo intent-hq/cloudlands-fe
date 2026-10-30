@@ -1,3 +1,4 @@
+import type { DaemonStartupState } from '$shared/daemon-startup';
 import { buffers, channel as sagaChannel, type EventChannel } from 'redux-saga';
 import {
   actionChannel,
@@ -72,6 +73,8 @@ interface BackendStatusPayload {
   connectionLimited?: boolean;
   /** The wait main scheduled before its next attempt while `connectionLimited`. */
   connectionLimitRetryAfterMs?: number | null;
+  /** The daemon is starting or failed to start (docs/protocol/startup-readiness.md). */
+  daemonStartup?: DaemonStartupState | null;
   /**
    * Epoch ms of the first drop main observed while a user-requested daemon
    * update is outstanding for this backend.
@@ -192,6 +195,7 @@ function statusAction(payload: BackendStatusPayload, snapshot: boolean) {
     reconnectAttempts: payload.reconnectAttempts,
     connectionLimited: payload.connectionLimited,
     connectionLimitRetryAfterMs: payload.connectionLimitRetryAfterMs,
+    daemonStartup: payload.daemonStartup,
     daemonUpdateDisconnectedAt: payload.daemonUpdateDisconnectedAt,
   });
 }

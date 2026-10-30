@@ -8,6 +8,7 @@
  * - intent://local/file/{path} - Workspace-relative file in current workspace
  * - intent://local/{workspace-id}/file/{path} - File in specific workspace (cross-workspace)
  * - intent://local/{workspace-id}/agent/{agent-id}/message/{message-id} - Exact message
+ * - intent://local/workspace/{workspace-id} - Workspace
  *
  * Currently org-id is a placeholder "local" since we don't have org concept yet.
  * This reserves the URL slot for future use.
@@ -23,6 +24,7 @@ import {
 } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
 import { parseFilePathLineSuffix } from '$shared/utils/link-helpers';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 
 // URL-pattern examples shown in parse errors; passed as message params because
 // literal `{`/`}` inside a Paraglide message would parse as a parameter.
@@ -39,10 +41,10 @@ function invalidFormatError(): string {
 }
 
 export interface WorkspacesLinkInfo {
-  type: 'note' | 'task' | 'file' | 'message' | 'unknown';
+  type: 'note' | 'task' | 'file' | 'message' | 'workspace' | 'unknown';
   orgId: string; // Reserved for future, currently "local"
   workspaceId?: string; // Target workspace ID (undefined = current workspace)
-  resourceId: string; // noteId, messageId, or decoded workspace-relative file path
+  resourceId: string; // noteId, messageId, workspaceId, or decoded workspace-relative file path
   line?: number; // Starting line for file links
   agentId?: string; // Conversation owner for message links
   valid: boolean;
@@ -64,6 +66,7 @@ export class NotFoundError extends Error {
  * - intent://local/file/{path} - Workspace-relative file in current workspace
  * - intent://local/{workspace-id}/file/{path} - File in specific workspace
  * - intent://local/{workspace-id}/agent/{agent-id}/message/{message-id} - Exact message
+ * - intent://local/workspace/{workspace-id} - Workspace
  */
 export function parseIntentLink(url: string): WorkspacesLinkInfo {
   try {
@@ -107,7 +110,26 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
     let agentId: string | undefined;
     let line: number | undefined;
 
-    if (rawSegments[0] === 'file') {
+    if (
+      rawSegments[0] === 'workspace' &&
+      (rawSegments.length === 2 || (rawSegments.length === 3 && rawSegments[2] === ''))
+    ) {
+      // Workspace format: workspace/{workspace-id}, optional trailing slash
+      // (the Assistant panel accepts the same shape).
+      const id = decodeWorkspaceIdSegment(rawSegments[1]);
+      if (!id) {
+        return {
+          type: 'unknown',
+          orgId,
+          resourceId: '',
+          valid: false,
+          error: invalidFormatError(),
+        };
+      }
+      workspaceId = id;
+      resourceType = 'workspace';
+      resourceId = id;
+    } else if (rawSegments[0] === 'file') {
       // Short format: file/{workspace-relative-path} (remaining segments form the path)
       resourceType = 'file';
       resourceId = decodeFilePathSegments(rawSegments.slice(1));
@@ -209,6 +231,10 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
       };
     }
 
+    if (resourceType === 'workspace' && workspaceId) {
+      return { type: 'workspace', orgId, workspaceId, resourceId, valid: true };
+    }
+
     if (resourceType === 'message' && workspaceId && agentId) {
       return {
         type: 'message',
@@ -267,6 +293,18 @@ function isSafeWorkspaceRelativePath(path: string): boolean {
  * percent-encoded) or contain path separators. Validate before using the URL
  * parser's normalized path segments.
  */
+/** Workspace IDs that name app surfaces, not openable workspaces. */
+const RESERVED_WORKSPACE_LINK_IDS = new Set<string>([CHIEF_WORKSPACE_ID, 'new']);
+
+/**
+ * Decode the ID segment of a workspace link; null for an unsafe or reserved ID.
+ */
+function decodeWorkspaceIdSegment(segment: string | undefined): string | null {
+  if (segment === undefined || !isValidRawIdSegment(segment)) return null;
+  const id = decodeURIComponent(segment);
+  return RESERVED_WORKSPACE_LINK_IDS.has(id) ? null : id;
+}
+
 function isValidRawIdSegment(segment: string): boolean {
   let decoded: string;
   try {
@@ -314,6 +352,9 @@ export async function handleIntentLink(
         break;
       case 'file':
         await navigateToFile(info, options);
+        break;
+      case 'workspace':
+        await navigateToWorkspace(info.resourceId);
         break;
       case 'message': {
         const { openMessage } = await import('./open-message');
@@ -375,14 +416,24 @@ export function createIntentLinkClickHandler() {
 }
 
 /**
+ * Private: Open a workspace and its tab (the helper no-ops in the HUD pop-out
+ * window — never leaves /hud).
+ */
+async function navigateToWorkspace(workspaceId: string): Promise<void> {
+  const { appClient } = await import('$lib/client');
+  const workspace = await appClient.workspaces.get(workspaceId).catch(() => null);
+  if (!workspace) throw new NotFoundError(m.workspace_loader_notFound_title());
+  const { openAndShowWorkspace } = await import('./show-workspace');
+  await openAndShowWorkspace(workspaceId);
+}
+
+/**
  * Private: Navigate to a note
  */
 async function navigateToNote(
   info: WorkspacesLinkInfo,
   options: IntentLinkNavigationOptions,
 ): Promise<void> {
-  const { navigateToRoute } = await import('./navigation.client');
-
   const sourceWorkspaceId =
     options.workspaceId ?? selectCurrentWorkspaceTabId.select(appStore.state) ?? undefined;
 
@@ -402,9 +453,10 @@ async function navigateToNote(
     }
 
     if (isCrossWorkspace) {
-      // Navigate to the target workspace and note
-      // (navigateToRoute no-ops in the HUD pop-out window — never leaves /hud)
-      await navigateToRoute(`/workspace/${info.workspaceId}?note=${info.resourceId}`);
+      // Show the target workspace and its tab; the route's `?note=` deep link
+      // opens the note once the workspace is ready (no-op in the HUD window).
+      const { openAndShowWorkspace } = await import('./show-workspace');
+      await openAndShowWorkspace(info.workspaceId, { query: { note: info.resourceId } });
     } else {
       // Same workspace - navigate to the note directly
       appStore.dispatch(
@@ -456,10 +508,10 @@ async function navigateToFile(
     const isCrossWorkspace = !sourceWorkspaceId || info.workspaceId !== sourceWorkspaceId;
 
     if (isCrossWorkspace) {
-      // Navigate to the target workspace first, then open the file there
-      // (navigateToRoute no-ops in the HUD pop-out window — never leaves /hud)
-      const { navigateToRoute } = await import('./navigation.client');
-      await navigateToRoute(`/workspace/${info.workspaceId}`);
+      // Show the target workspace and its tab first, then open the file there.
+      // The HUD window never navigates, so it opens nothing.
+      const { openAndShowWorkspace } = await import('./show-workspace');
+      if (!(await openAndShowWorkspace(info.workspaceId))) return;
     }
 
     appStore.dispatch(

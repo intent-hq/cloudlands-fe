@@ -194,3 +194,103 @@ describe('window contribution ownership', () => {
     });
   });
 });
+
+describe('discussion typing aggregation', () => {
+  it('merges independent agent/discussion targets and removes only the closing window contribution', async () => {
+    const request = vi.fn().mockResolvedValue({ ok: true, typingSource: 'own' });
+    const aggregator = new PresenceAggregator(request);
+    await aggregator.report('host', 1, {
+      focus: [{ workspaceId: 'one' }],
+      typing: { agentId: 'agent' },
+    });
+    await aggregator.report('host', 2, {
+      focus: [{ workspaceId: 'two' }],
+      discussionTyping: { workspaceId: 'two' },
+    });
+    expect(request).toHaveBeenLastCalledWith('host', {
+      focus: [{ workspaceId: 'one' }, { workspaceId: 'two' }],
+      typing: { agentId: 'agent' },
+      discussionTyping: { workspaceId: 'two' },
+    });
+    await aggregator.report('host', 3, { focus: [], discussionTyping: { workspaceId: 'three' } });
+    expect(aggregator.merged('host').discussionTyping).toEqual({ workspaceId: 'three' });
+    aggregator.dropWindow(3);
+    await Promise.resolve();
+    expect(aggregator.merged('host').discussionTyping).toEqual({ workspaceId: 'two' });
+    await aggregator.report('host', 2, { focus: [{ workspaceId: 'two' }], discussionTyping: null });
+    expect(request).toHaveBeenLastCalledWith('host', {
+      focus: [{ workspaceId: 'one' }, { workspaceId: 'two' }],
+      typing: { agentId: 'agent' },
+    });
+  });
+  it('preserves pulses, transmits one clear, isolates backends, and never replays discussion typing after reconnect', async () => {
+    const request = vi.fn().mockResolvedValue({ ok: true, typingSource: 'own' });
+    const aggregator = new PresenceAggregator(request);
+    const focus = [{ workspaceId: 'ws' }];
+    const active = { focus, discussionTyping: { workspaceId: 'ws' } };
+    await aggregator.report('host', 1, active);
+    await aggregator.report('host', 1, active);
+    expect(request).toHaveBeenCalledTimes(2);
+    await aggregator.report('host', 1, { focus });
+    await aggregator.report('host', 1, { focus });
+    expect(request).toHaveBeenCalledTimes(3);
+    expect(request).toHaveBeenLastCalledWith('host', { focus, typing: null });
+    await aggregator.report('host', 1, active);
+    await aggregator.report('other', 2, active);
+    aggregator.reconnected('host');
+    await Promise.resolve();
+    expect(aggregator.merged('host')).toEqual({ focus, typing: null });
+    expect(aggregator.merged('other').discussionTyping).toEqual({ workspaceId: 'ws' });
+    await aggregator.report('other', 1, { focus: [] });
+    expect(aggregator.merged('host')).toEqual({ focus: [], typing: null });
+  });
+  it('serializes a discussion clear behind an in-flight pulse', async () => {
+    let resolve!: (value: unknown) => void;
+    const request = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      )
+      .mockResolvedValue({ ok: true, typingSource: 'own' });
+    const aggregator = new PresenceAggregator(request);
+    const active = aggregator.report('host', 1, {
+      focus: [],
+      discussionTyping: { workspaceId: 'ws' },
+    });
+    const clear = aggregator.report('host', 1, { focus: [] });
+    expect(request).toHaveBeenCalledTimes(1);
+    resolve({ ok: true, typingSource: 'own' });
+    await Promise.all([active, clear]);
+    expect(request.mock.calls.map(([, params]) => params)).toEqual([
+      { focus: [], typing: null, discussionTyping: { workspaceId: 'ws' } },
+      { focus: [], typing: null },
+    ]);
+  });
+});
+
+it('merges conversation targets across windows independently of agent typing and clears on reconnect', async () => {
+  const request = vi.fn().mockResolvedValue({ ok: true, typingSource: 'pooled' });
+  const aggregator = new PresenceAggregator(request);
+  await aggregator.report('host', 1, {
+    focus: [{ workspaceId: 'ws' }],
+    typing: { agentId: 'agent' },
+    discussionTyping: { workspaceId: 'ws', conversationId: 'c1' },
+  });
+  await aggregator.report('host', 2, {
+    focus: [{ workspaceId: 'ws' }],
+    discussionTyping: { workspaceId: 'ws', conversationId: 'c2' },
+  });
+  expect(request).toHaveBeenLastCalledWith('host', {
+    focus: [{ workspaceId: 'ws' }],
+    typing: { agentId: 'agent' },
+    discussionTyping: { workspaceId: 'ws', conversationId: 'c2' },
+  });
+  await aggregator.report('host', 2, { focus: [], discussionTyping: null });
+  expect(request.mock.calls.at(-1)?.[1].discussionTyping).toEqual({
+    workspaceId: 'ws',
+    conversationId: 'c1',
+  });
+});

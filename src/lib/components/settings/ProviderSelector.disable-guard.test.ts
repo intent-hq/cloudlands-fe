@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
 import { m } from '$shared/paraglide/messages.js';
 import { warmImport } from '../../../test/warm-import';
@@ -22,11 +22,6 @@ vi.mock('$lib/electron-bridge', () => ({
 
 vi.mock('$lib/client', () => ({
   appClient: { settings: { get: vi.fn().mockResolvedValue({ value: {} }) } },
-}));
-
-vi.mock('$features/pi/pi-models.client', () => ({
-  checkPiMcpAdapterInstalled: vi.fn().mockResolvedValue(true),
-  installPiMcpAdapter: vi.fn(),
 }));
 
 vi.mock('$lib/components/patterns/notify', () => ({
@@ -120,7 +115,7 @@ const availability = {
 warmImport(() => import('../workspace/sidebar/__tests__/mocks/MockSimple.svelte'));
 warmImport(() => import('./ProviderSelector.svelte'));
 
-describe('ProviderSelector disable guard', () => {
+describe('ProviderSelector disable action', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     mocks.state.current = await buildState([
@@ -171,23 +166,24 @@ describe('ProviderSelector disable guard', () => {
     return await waitFor(() => result.getByRole('menuitem', { name: 'Disable' }));
   }
 
-  it('disables the Disable control for an in-use provider with a reason', async () => {
+  it('allows disabling a provider used by a saved specialist', async () => {
     const result = await renderSelector();
     const claudeButton = (await getDisableButton(
       result,
       'Anthropic Claude Code',
     )) as HTMLButtonElement;
-    expect(claudeButton.getAttribute('aria-disabled')).toBe('true');
-    expect(claudeButton.getAttribute('title')).toBeTruthy();
+    expect(claudeButton.getAttribute('aria-disabled')).not.toBe('true');
     mocks.dispatch.mockClear();
     await fireEvent.click(claudeButton);
-    expect(mocks.dispatch).not.toHaveBeenCalled();
-
-    await fireEvent.click(
-      result.getByRole('button', { name: 'Provider actions for Anthropic Claude Code' }),
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'providerSettings/setProviderEnabled',
+        payload: [
+          { providerId: 'claude-code', enabled: false },
+          { id: expect.any(String), sessionId: expect.any(String) },
+        ],
+      }),
     );
-    const codexButton = (await getDisableButton(result, 'OpenAI Codex')) as HTMLButtonElement;
-    expect(codexButton.getAttribute('aria-disabled')).not.toBe('true');
   });
 
   it('still dispatches setProviderEnabled(false) for providers not in use', async () => {
@@ -205,12 +201,23 @@ describe('ProviderSelector disable guard', () => {
     );
   });
 
-  it('blocks disabling an in-use provider even if the click fires', async () => {
+  it('allows disabling the configured default provider', async () => {
+    const base = await buildState([]);
+    mocks.state.current = {
+      ...base,
+      model: { ...base.model, defaultProviderId: 'codex' },
+    };
     const result = await renderSelector();
-    const claudeButton = await getDisableButton(result, 'Anthropic Claude Code');
-    await fireEvent.click(claudeButton);
-    expect(mocks.dispatch).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'providerSettings/setProviderEnabled' }),
+    const codexButton = await getDisableButton(result, 'OpenAI Codex');
+    await fireEvent.click(codexButton);
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'providerSettings/setProviderEnabled',
+        payload: [
+          { providerId: 'codex', enabled: false },
+          { id: expect.any(String), sessionId: expect.any(String) },
+        ],
+      }),
     );
   });
 
@@ -232,12 +239,12 @@ describe('ProviderSelector disable guard', () => {
   });
 });
 
-describe('ProviderSelector default-unavailable honesty', () => {
+describe('ProviderSelector does not label the app default provider', () => {
   afterEach(() => {
     cleanup();
   });
 
-  it('marks a generic unavailable active provider as the unavailable default', async () => {
+  it('shows no Default label on an unavailable default provider', async () => {
     const base = await buildState([]);
     mocks.state.current = {
       ...base,
@@ -278,11 +285,12 @@ describe('ProviderSelector default-unavailable honesty', () => {
     const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
     const result = render(ProviderSelector);
     await waitFor(() => {
-      expect(result.getByText(m.settings_providers_defaultUnavailable_label())).toBeTruthy();
+      expect(result.getAllByRole('button', { name: /^Provider actions for / })).not.toHaveLength(0);
     });
+    expect(result.queryByText(/^Default/)).toBeNull();
   });
 
-  it('marks unavailable Auggie as the unavailable default', async () => {
+  it('shows no Default label on unavailable Auggie as the default provider', async () => {
     const base = await buildState([]);
     mocks.state.current = {
       ...base,
@@ -317,8 +325,9 @@ describe('ProviderSelector default-unavailable honesty', () => {
     const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
     const result = render(ProviderSelector);
     await waitFor(() => {
-      expect(result.getByText(m.settings_providers_defaultUnavailable_label())).toBeTruthy();
+      expect(result.getAllByRole('button', { name: /^Provider actions for / })).not.toHaveLength(0);
     });
+    expect(result.queryByText(/^Default/)).toBeNull();
   });
 });
 
@@ -337,15 +346,37 @@ describe('ProviderSelector profiles entry point', () => {
 
   async function renderWithCatalog(
     supportsProfiles: Record<string, boolean>,
-    labsProviderProfilesEnabled = true,
+    profiles?: { loadStatus: 'success' | 'failure' },
   ) {
     const state = await buildState([]);
-    const { initialState: userPreferencesInitialState } =
-      await import('$store/renderer/slices/user-preferences/user-preferences-slice');
-    (state as Record<string, unknown>).userPreferences = {
-      ...userPreferencesInitialState,
-      labsProviderProfilesEnabled,
-    };
+    if (profiles) {
+      const { providerProfilesLoaded } =
+        await import('$store/renderer/slices/provider-settings/provider-settings-slice');
+      const { reducers } = await import('$store/renderer/reducer');
+      const loaded = reducers.providerSettings(
+        state.providerSettings,
+        providerProfilesLoaded(
+          [
+            {
+              id: 'pwork',
+              providerRef: 'codex@pwork',
+              baseProviderId: 'codex',
+              name: 'Work',
+              env: [],
+              settingsFingerprint: 'fp',
+              createdAt: '2026-10-17T10:00:00Z',
+              updatedAt: '2026-10-17T10:00:00Z',
+            },
+          ],
+          3,
+          [{ baseProviderId: 'codex', providerRef: 'codex', name: 'Main account', env: [] }],
+        ),
+      );
+      state.providerSettings = {
+        ...loaded,
+        profiles: { ...loaded.profiles, loadStatus: profiles.loadStatus },
+      };
+    }
     const { MOCK_PROVIDER_CATALOG } =
       await import('../../../test/fixtures/provider-catalog.fixture');
     const { providerCatalogLoaded, providerCatalogReducer, initialState } =
@@ -369,37 +400,143 @@ describe('ProviderSelector profiles entry point', () => {
     return result;
   }
 
+  async function openProviderMenu(result: ReturnType<typeof render>, providerName: string) {
+    await fireEvent.click(
+      result.getByRole('button', { name: `Provider actions for ${providerName}` }),
+    );
+    return await waitFor(() => result.getByRole('menu'));
+  }
+
   it('offers Add profile on no provider when the catalog does not advertise profiles', async () => {
     const result = await renderWithCatalog({});
+    const menu = await openProviderMenu(result, 'OpenAI Codex');
     expect(
-      result.queryByRole('button', { name: m.settings_providerProfiles_add_label() }),
+      within(menu).queryByRole('menuitem', { name: m.settings_providerProfiles_add_label() }),
     ).toBeNull();
   });
 
-  it('offers Add profile only on providers whose catalog row supports profiles', async () => {
+  it('offers Add profile in the actions menu only on providers whose catalog row supports profiles', async () => {
     const result = await renderWithCatalog({ codex: true, 'claude-code': false });
-    await waitFor(() => expect(result.getByTestId('provider-profiles-codex')).toBeTruthy());
+    const codexMenu = await openProviderMenu(result, 'OpenAI Codex');
     expect(
-      result.getAllByRole('button', { name: m.settings_providerProfiles_add_label() }),
-    ).toHaveLength(1);
-    expect(result.queryByTestId('provider-profiles-claude-code')).toBeNull();
-    expect(result.queryByTestId('provider-profiles-auggie')).toBeNull();
-  });
-
-  it('hides profile management and skips the profile read while the Labs toggle is off', async () => {
-    const result = await renderWithCatalog({ codex: true }, false);
-    expect(result.queryByTestId('provider-profiles-codex')).toBeNull();
+      within(codexMenu).getByRole('menuitem', { name: m.settings_providerProfiles_add_label() }),
+    ).toBeTruthy();
+    await fireEvent.keyDown(codexMenu, { key: 'Escape' });
+    await waitFor(() => expect(result.queryByRole('menu')).toBeNull());
+    const claudeMenu = await openProviderMenu(result, 'Anthropic Claude Code');
+    expect(
+      within(claudeMenu).queryByRole('menuitem', { name: m.settings_providerProfiles_add_label() }),
+    ).toBeNull();
+    // No standalone Add profile button and no empty profile block without profiles.
     expect(
       result.queryByRole('button', { name: m.settings_providerProfiles_add_label() }),
     ).toBeNull();
-    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+    expect(result.queryByTestId('provider-profiles-codex')).toBeNull();
+  });
+
+  it('offers Environment variables for the Default only on profile-capable providers', async () => {
+    const result = await renderWithCatalog({ codex: true, 'claude-code': false });
+    const codexMenu = await openProviderMenu(result, 'OpenAI Codex');
+    await fireEvent.click(
+      within(codexMenu).getByRole('menuitem', { name: m.settings_providerDefault_menu_label() }),
+    );
+    const dialog = await waitFor(() => result.getByRole('dialog'));
+    expect(
+      within(dialog).getByText(
+        m.settings_providerDefault_title_label({ provider: 'OpenAI Codex' }),
+      ),
+    ).toBeTruthy();
+    expect(within(dialog).queryByTestId('provider-profile-backup')).toBeNull();
+    await fireEvent.click(
+      within(dialog).getByRole('button', { name: m.modals_bulkActionConfirm_cancel_label() }),
+    );
+    await waitFor(() => expect(result.queryByRole('dialog')).toBeNull());
+    const claudeMenu = await openProviderMenu(result, 'Anthropic Claude Code');
+    expect(
+      within(claudeMenu).queryByRole('menuitem', { name: m.settings_providerDefault_menu_label() }),
+    ).toBeNull();
+  });
+
+  it("opens the page's Default configuration dialog from the pinned Default row", async () => {
+    const result = await renderWithCatalog({ codex: true }, { loadStatus: 'failure' });
+    const row = await waitFor(() => result.getByTestId('provider-default-row'));
+    await fireEvent.click(
+      within(row).getByRole('button', {
+        name: m.settings_providerProfiles_actions_ariaLabel({ name: 'Main account' }),
+      }),
+    );
+    mocks.dispatch.mockClear();
+    await fireEvent.click(
+      await waitFor(() =>
+        result.getByRole('menuitem', { name: m.settings_providerProfiles_edit_label() }),
+      ),
+    );
+    const dialog = await waitFor(() => result.getByRole('dialog'));
+    expect(
+      within(dialog).getByText(
+        m.settings_providerDefault_title_label({ provider: 'OpenAI Codex' }),
+      ),
+    ).toBeTruthy();
+    // A failed read is retried so the dialog can seed and save.
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'providerProfiles/requested' }),
+    );
+  });
+
+  it('opens the add-profile dialog from the provider actions menu', async () => {
+    const result = await renderWithCatalog({ codex: true });
+    const menu = await openProviderMenu(result, 'OpenAI Codex');
+    await fireEvent.click(
+      within(menu).getByRole('menuitem', { name: m.settings_providerProfiles_add_label() }),
+    );
+    const dialog = await waitFor(() => result.getByRole('dialog'));
+    expect(
+      within(dialog).getByRole('button', { name: m.settings_providerProfiles_create_label() }),
+    ).toBeTruthy();
+  });
+
+  it('keeps a half-filled add-profile dialog open when the provider row re-renders', async () => {
+    const result = await renderWithCatalog({ codex: true });
+    const menu = await openProviderMenu(result, 'OpenAI Codex');
+    await fireEvent.click(
+      within(menu).getByRole('menuitem', { name: m.settings_providerProfiles_add_label() }),
+    );
+    const dialog = await waitFor(() => result.getByRole('dialog'));
+    const name = within(dialog).getByLabelText(m.settings_providerProfiles_name_label(), {
+      selector: 'input[required]',
+    }) as HTMLInputElement;
+    await fireEvent.input(name, { target: { value: 'Work' } });
+
+    // The row stops offering profiles (catalog refresh): its profile list
+    // unmounts, but the page-level dialog and its draft must survive.
+    const { MOCK_PROVIDER_CATALOG } =
+      await import('../../../test/fixtures/provider-catalog.fixture');
+    const { providerCatalogLoaded, providerCatalogReducer, initialState } =
+      await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
+    mocks.state.current = {
+      ...(mocks.state.current as object),
+      providerCatalog: providerCatalogReducer(
+        initialState,
+        providerCatalogLoaded({ providers: MOCK_PROVIDER_CATALOG.providers }),
+      ),
+    };
+    const { store } = await import('$store/renderer/store');
+    (store as unknown as { emitState: () => void }).emitState();
+    await waitFor(() => expect(result.queryByTestId('provider-profiles-codex')).toBeNull());
+    expect(result.getByRole('dialog')).toBe(dialog);
+    expect(name.value).toBe('Work');
+  });
+
+  it('requests saved profiles without any Labs opt-in when a provider supports them', async () => {
+    await renderWithCatalog({ codex: true });
+    expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: providerProfilesRequested.type }),
     );
   });
 
-  it('requests saved profiles when the Labs toggle is on', async () => {
-    await renderWithCatalog({ codex: true }, true);
-    expect(mocks.dispatch).toHaveBeenCalledWith(
+  it('skips the profile read when no provider supports profiles', async () => {
+    await renderWithCatalog({});
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: providerProfilesRequested.type }),
     );
   });

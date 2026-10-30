@@ -229,6 +229,8 @@ export const WorkspaceUpdateSchema = z.object({
   id: WorkspaceIdSchema,
   title: z.string().optional(),
   statusMessage: WorkspaceStatusMessageSchema.optional(),
+  // Workspace label: undefined = untouched, null = clear, string = set.
+  label: z.string().nullable().optional(),
   branch: z.string().optional(),
   baseRef: z.string().optional(),
   baseCommitSha: z.string().optional(),
@@ -829,6 +831,11 @@ export const WindowUpdateDockPlacementSchema = z.discriminatedUnion('action', [
   ),
 ]);
 
+/** Workspaces a window hosts in the background for agent browser ops. */
+export const BrowserBackgroundHostedWorkspacesSchema = z.object({
+  workspaceIds: z.array(z.string()),
+});
+
 export const WindowSetFullScreenSchema = z.object({
   fullScreen: z.boolean(),
 });
@@ -1228,6 +1235,17 @@ export const PresenceReportSchema = z.object({
   ),
   typing: z
     .object({ agentId: z.string().min(1, 'Agent id is required') })
+    .nullable()
+    .optional(),
+  discussionTyping: z
+    .object({
+      workspaceId: z.string().min(1, 'Workspace id is required'),
+      conversationId: z
+        .string()
+        .min(1)
+        .refine((id) => id !== 'new')
+        .optional(),
+    })
     .nullable()
     .optional(),
 });

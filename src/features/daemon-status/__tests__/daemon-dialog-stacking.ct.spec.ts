@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { Locator, Page, TestInfo } from '@playwright/experimental-ct-svelte';
-import { expect, test } from '../../../test/ct-test';
+import { expect, test, wheelUntilScrolled } from '../../../test/ct-test';
 import Harness from './DaemonDialogStackingHarness.svelte';
 
 test.use({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
@@ -156,8 +156,8 @@ for (const notesStatus of ['loading', 'unavailable'] as const) {
     await expect.poll(() => hitTest(dismiss)).toBe(true);
     const bounds = await dismiss.boundingBox();
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
-    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(360);
-    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(600);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
     await capture(page, testInfo, 'overlap');
     await page.keyboard.press('Escape');
     await expect(notes).toHaveCount(0);
@@ -178,9 +178,7 @@ test('reconnection preserves the open release notes and reading position', async
   await page.clock.runFor(2600);
   const notes = page.getByRole('dialog');
   const body = notes.locator('[data-slot="dialog-body"]');
-  await body.hover();
-  await page.mouse.wheel(0, 300);
-  await expect.poll(() => body.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await wheelUntilScrolled(body, { deltaY: 300 });
   const scrollTop = await body.evaluate((element) => element.scrollTop);
   await component.update({ props: { connected: true } });
   await expect(page.getByTestId('daemon-stopped-overlay')).toHaveCount(0);

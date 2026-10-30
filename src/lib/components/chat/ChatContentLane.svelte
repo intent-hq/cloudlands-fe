@@ -40,8 +40,9 @@
   .chief {
     --chat-content-inset: 0px;
   }
+  /* Reserve presence above the composer without resizing the input on updates. */
   .composer-prompt-lane {
-    padding-block: 0.5rem var(--chat-content-inset);
+    padding-block: 1.25rem var(--chat-content-inset);
   }
   .chief.composer-prompt-lane {
     padding-bottom: 0.25rem;

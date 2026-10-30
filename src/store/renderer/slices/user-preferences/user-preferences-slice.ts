@@ -55,22 +55,31 @@ export type UserPreferencesState = {
   /** Whether reasoning (thinking) dropdowns are shown in chat transcripts. */
   showReasoningBlocks: boolean;
   chatAuroraEnabled: boolean;
+  /** Whether runs of consecutive tool calls and thinking steps collapse into one chat row. */
+  collapseToolRuns: boolean;
   shellTransparencyEnabled: boolean;
   /** Whether motion is reduced while the machine runs on battery. */
   reduceMotionOnBattery: boolean;
+  /** Whether looping animations pause while the window is not focused. */
+  pauseAnimationsWhenUnfocused: boolean;
   /** Whether the experimental Labs tab is visible in Settings. */
   labsSettingsVisible: boolean;
-  /** Whether the Multiplayer lab (experimental) is enabled. */
+  /**
+   * Multiplayer is always on; this is no longer a user preference. The field and its
+   * actions remain only as an internal seam until the disabled-mode branches are removed.
+   */
   labsMultiplayerEnabled: boolean;
   /** Whether new GitLab setup is offered in Labs. Existing connections are preserved. */
   labsGitLabEnabled: boolean;
   /** Offers new remote setup/placement only; never restricts existing sessions or local execution. */
   labsRemoteAgentsEnabled: boolean;
   /**
-   * Offers named provider profile management and picker groups. Existing
-   * profile selections keep running (and stay labelled) when disabled.
+   * Internal gate for the native review pull-request flow. Off for everyone, so PR creation
+   * keeps the classic flow; not persisted and has no UI. Tests and previews turn it on.
    */
-  labsProviderProfilesEnabled: boolean;
+  nativeReviewEnabled: boolean;
+  /** Saved preferences have been read from local storage at least once this session. */
+  preferencesHydrated: boolean;
   agentFontStyle: AgentFontStyle;
   noteFontStyle: NoteFontStyle;
   codeFontFamily: string;
@@ -138,13 +147,16 @@ export const initialState: UserPreferencesStoreState = {
   providerSetupHydratedBackendId: null,
   showReasoningBlocks: false,
   chatAuroraEnabled: true,
+  collapseToolRuns: false,
   shellTransparencyEnabled: true,
   reduceMotionOnBattery: false,
+  pauseAnimationsWhenUnfocused: false,
   labsSettingsVisible: false,
-  labsMultiplayerEnabled: false,
+  labsMultiplayerEnabled: true,
   labsGitLabEnabled: false,
   labsRemoteAgentsEnabled: false,
-  labsProviderProfilesEnabled: false,
+  nativeReviewEnabled: false,
+  preferencesHydrated: false,
   ...fontSettingsInitialState,
   ...notificationSettingsInitialState,
   notificationVolumeEditId: 0,
@@ -311,6 +323,8 @@ const hasCompletedProviderSetupPreference = createBooleanPreference<UserPreferen
   toggleActionName: 'toggleHasCompletedProviderSetup',
 });
 
+export const userPreferencesHydrated = createAction('userPreferences/hydrated');
+
 export const providerSetupHydrated = createAction<[backendId: string, completed: boolean]>(
   'userPreferences/providerSetupHydrated',
 );
@@ -341,6 +355,17 @@ export const setChatAuroraEnabled = chatAuroraPreference.setAction;
 
 export const toggleChatAurora = chatAuroraPreference.toggleAction;
 
+const collapseToolRunsPreference = createBooleanPreference<UserPreferencesStoreState>({
+  sliceName: 'userPreferences',
+  field: 'collapseToolRuns',
+  setActionName: 'setCollapseToolRuns',
+  toggleActionName: 'toggleCollapseToolRuns',
+});
+
+export const setCollapseToolRuns = collapseToolRunsPreference.setAction;
+
+export const toggleCollapseToolRuns = collapseToolRunsPreference.toggleAction;
+
 const shellTransparencyPreference = createBooleanPreference<UserPreferencesStoreState>({
   sliceName: 'userPreferences',
   field: 'shellTransparencyEnabled',
@@ -362,6 +387,18 @@ const reduceMotionOnBatteryPreference = createBooleanPreference<UserPreferencesS
 export const setReduceMotionOnBattery = reduceMotionOnBatteryPreference.setAction;
 
 export const toggleReduceMotionOnBattery = reduceMotionOnBatteryPreference.toggleAction;
+
+const pauseAnimationsWhenUnfocusedPreference = createBooleanPreference<UserPreferencesStoreState>({
+  sliceName: 'userPreferences',
+  field: 'pauseAnimationsWhenUnfocused',
+  setActionName: 'setPauseAnimationsWhenUnfocused',
+  toggleActionName: 'togglePauseAnimationsWhenUnfocused',
+});
+
+export const setPauseAnimationsWhenUnfocused = pauseAnimationsWhenUnfocusedPreference.setAction;
+
+export const togglePauseAnimationsWhenUnfocused =
+  pauseAnimationsWhenUnfocusedPreference.toggleAction;
 
 const labsSettingsVisibilityPreference = createBooleanPreference<UserPreferencesStoreState>({
   sliceName: 'userPreferences',
@@ -407,16 +444,14 @@ export const setLabsRemoteAgentsEnabled = labsRemoteAgentsPreference.setAction;
 
 export const toggleLabsRemoteAgents = labsRemoteAgentsPreference.toggleAction;
 
-const labsProviderProfilesPreference = createBooleanPreference<UserPreferencesStoreState>({
+const nativeReviewPreference = createBooleanPreference<UserPreferencesStoreState>({
   sliceName: 'userPreferences',
-  field: 'labsProviderProfilesEnabled',
-  setActionName: 'setLabsProviderProfilesEnabled',
-  toggleActionName: 'toggleLabsProviderProfiles',
+  field: 'nativeReviewEnabled',
+  setActionName: 'setNativeReviewEnabled',
+  toggleActionName: 'toggleNativeReview',
 });
 
-export const setLabsProviderProfilesEnabled = labsProviderProfilesPreference.setAction;
-
-export const toggleLabsProviderProfiles = labsProviderProfilesPreference.toggleAction;
+export const setNativeReviewEnabled = nativeReviewPreference.setAction;
 
 export const userPreferencesReducer = createReducer<UserPreferencesStoreState>(initialState);
 userPreferencesReducer.with(agentRulesEditorOpened, (state) => ({
@@ -515,6 +550,10 @@ spellcheckPreference.register(userPreferencesReducer);
 showArchivedPreference.register(userPreferencesReducer);
 groupByRepoPreference.register(userPreferencesReducer);
 hasCompletedProviderSetupPreference.register(userPreferencesReducer);
+userPreferencesReducer.with(userPreferencesHydrated, (state) => ({
+  ...state,
+  preferencesHydrated: true,
+}));
 userPreferencesReducer.with(
   providerSetupHydrated,
   (state, { payload: [backendId, completed] }) => ({
@@ -525,13 +564,15 @@ userPreferencesReducer.with(
 );
 showReasoningBlocksPreference.register(userPreferencesReducer);
 chatAuroraPreference.register(userPreferencesReducer);
+collapseToolRunsPreference.register(userPreferencesReducer);
 shellTransparencyPreference.register(userPreferencesReducer);
 reduceMotionOnBatteryPreference.register(userPreferencesReducer);
+pauseAnimationsWhenUnfocusedPreference.register(userPreferencesReducer);
 labsSettingsVisibilityPreference.register(userPreferencesReducer);
 labsMultiplayerPreference.register(userPreferencesReducer);
 labsGitLabPreference.register(userPreferencesReducer);
 labsRemoteAgentsPreference.register(userPreferencesReducer);
-labsProviderProfilesPreference.register(userPreferencesReducer);
+nativeReviewPreference.register(userPreferencesReducer);
 userPreferencesReducer.with(setUpdateChannel, (state, { payload: [channel] }) => ({
   ...state,
   updateChannel: channel,

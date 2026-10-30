@@ -12,14 +12,17 @@ import {
   addItem,
   createCollection,
   getItem,
+  getItems,
   removeItem,
   updateItem,
 } from '@themislib/themis/utils/collections/collection-utils';
-import type {
-  EnvEntryWrite,
-  ProfileActivation,
-  ProviderProfile,
-  ProviderProfileFailure,
+import {
+  permuteBaseProfiles,
+  type EnvEntryWrite,
+  type ProfileActivation,
+  type ProviderDefaultConfig,
+  type ProviderProfile,
+  type ProviderProfileFailure,
 } from '$shared/provider-profiles';
 import type {
   ProviderProfileMutation,
@@ -51,6 +54,7 @@ export const initialProfilesState: ProviderProfilesState = {
   loadStatus: 'idle',
   status: {},
   activation: {},
+  defaults: {},
   mutations: createCollection<ProviderProfileMutation, 'id'>('id'),
 };
 
@@ -84,7 +88,10 @@ function readActivation(
   return next;
 }
 
-const onLoaded: Handler<[ProviderProfile[], number]> = (state, [profiles, revision]) => {
+const onLoaded: Handler<[ProviderProfile[], number, ProviderDefaultConfig[]?]> = (
+  state,
+  [profiles, revision, defaults],
+) => {
   if (revision < state.revision) return state;
   const ids = new Set(profiles.map((profile) => profile.id));
   let activation = Object.fromEntries(
@@ -100,6 +107,30 @@ const onLoaded: Handler<[ProviderProfile[], number]> = (state, [profiles, revisi
       profiles.map((profile) => [profile.id, state.status[profile.id] ?? 'configured']),
     ),
     activation,
+    defaults: Object.fromEntries((defaults ?? []).map((d) => [d.baseProviderId, d])),
+  };
+};
+
+export type DefaultMutationResult = {
+  revision: number;
+  defaultConfig: ProviderDefaultConfig;
+  activation: ProfileActivation;
+};
+
+/** A saved Default configuration; an older result than the shown list is not applied. */
+const onDefaultSucceeded: Handler<[string, DefaultMutationResult]> = (
+  state,
+  [requestId, { revision, defaultConfig, activation }],
+) => {
+  if (!getItem(state.mutations, requestId)) return state;
+  return {
+    ...state,
+    defaults:
+      revision > state.revision
+        ? { ...state.defaults, [defaultConfig.baseProviderId]: defaultConfig }
+        : state.defaults,
+    revision: Math.max(state.revision, revision),
+    mutations: updateItem(state.mutations, { id: requestId, status: 'success', activation }),
   };
 };
 
@@ -149,6 +180,69 @@ const onSucceeded: Handler<[string, ProfileMutationResult]> = (
   };
 };
 
+/** Re-slot one base provider's profiles; unchanged state when the ids do not match. */
+function withBaseOrder(
+  state: ProviderProfilesState,
+  baseProviderId: string,
+  orderedIds: readonly string[],
+  replacements: readonly ProviderProfile[] = [],
+): ProviderProfilesState['items'] {
+  const next = permuteBaseProfiles(getItems(state.items), baseProviderId, orderedIds, replacements);
+  return next ? createCollection<ProviderProfile, 'id'>('id', next) : state.items;
+}
+
+/** Whether a reorder of `baseProviderId` is still waiting for the daemon. */
+function hasPendingReorder(state: ProviderProfilesState, baseProviderId: string): boolean {
+  return getItems(state.mutations).some(
+    (mutation) =>
+      mutation.kind === 'reorder' &&
+      mutation.status === 'pending' &&
+      mutation.baseProviderId === baseProviderId,
+  );
+}
+
+/**
+ * Optimistic reorder: show the new order while the daemon saves it. One
+ * reorder per base provider at a time; a second request while one is pending
+ * is ignored (never recorded, never sent). A rejection keeps no client
+ * snapshot: the saga re-reads the daemon's list, whose order wins.
+ */
+const onReorder: Handler<[{ requestId: string; baseProviderId: string; profileIds: string[] }]> = (
+  state,
+  [{ requestId, baseProviderId, profileIds }],
+) => {
+  if (hasPendingReorder(state, baseProviderId)) return state;
+  return {
+    ...pendingMutation(state, { id: requestId, kind: 'reorder', baseProviderId }),
+    items: withBaseOrder(state, baseProviderId, profileIds),
+  };
+};
+
+const onReorderSucceeded: Handler<[string, ProviderProfile[], number]> = (
+  state,
+  [requestId, profiles, revision],
+) => {
+  const mutation = getItem(state.mutations, requestId);
+  if (!mutation) return state;
+  const baseProviderId = mutation.baseProviderId ?? profiles[0]?.baseProviderId;
+  // An older result than the list already shown must not resurrect stale data.
+  const items =
+    revision > state.revision && baseProviderId
+      ? withBaseOrder(
+          state,
+          baseProviderId,
+          profiles.map((profile) => profile.id),
+          profiles,
+        )
+      : state.items;
+  return {
+    ...state,
+    items,
+    revision: Math.max(state.revision, revision),
+    mutations: updateItem(state.mutations, { id: requestId, status: 'success' }),
+  };
+};
+
 export const profileHandlers = {
   loaded: onLoaded,
   loadFailed: ((state) => ({ ...state, loadStatus: 'failure' })) as Handler<[]>,
@@ -169,6 +263,15 @@ export const profileHandlers = {
       profileId: payload.profileId,
     })) as Handler<[{ requestId: string; profileId: string }]>,
   succeeded: onSucceeded,
+  updateDefault: ((state, [payload]) =>
+    pendingMutation(state, {
+      id: payload.requestId,
+      kind: 'updateDefault',
+      baseProviderId: payload.baseProviderId,
+    })) as Handler<[{ requestId: string; baseProviderId: string }]>,
+  defaultSucceeded: onDefaultSucceeded,
+  reorder: onReorder,
+  reorderSucceeded: onReorderSucceeded,
   failed: ((state, [requestId, failure]) =>
     getItem(state.mutations, requestId)
       ? {

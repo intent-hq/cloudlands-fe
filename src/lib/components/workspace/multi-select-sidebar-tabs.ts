@@ -1,11 +1,11 @@
 import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
 import {
-  faAsterisk,
-  faFolderTree,
-  faGlobe,
+  faCodeBranch,
+  faFolder,
   faRobot,
   faTerminal,
   faUsers,
+  faWindowMaximize,
 } from '@fortawesome/free-solid-svg-icons';
 import { m } from '$shared/paraglide/messages.js';
 import { RESOURCE_ICON_BY_KIND } from '$lib/components/shared/resource-icon';
@@ -21,26 +21,6 @@ export interface TabDefinition {
 
 export const TAB_DEFINITIONS: TabDefinition[] = [
   {
-    id: 'overview',
-    get label() {
-      return m.workspace_multiSelectSidebar_overviewTab_label();
-    },
-    icon: faAsterisk,
-    get description() {
-      return m.workspace_multiSelectSidebar_overviewTab_description();
-    },
-    hideLabel: true,
-    hideHeader: true,
-  },
-  {
-    id: 'people',
-    get label() {
-      return m.workspace_peopleTile_title();
-    },
-    icon: faUsers,
-    description: '',
-  },
-  {
     id: 'agents',
     get label() {
       return m.workspace_multiSelectSidebar_agentsTab_label();
@@ -49,6 +29,14 @@ export const TAB_DEFINITIONS: TabDefinition[] = [
     get description() {
       return m.workspace_multiSelectSidebar_agentsTab_description();
     },
+  },
+  {
+    id: 'people',
+    get label() {
+      return m.workspace_peopleTile_title();
+    },
+    icon: faUsers,
+    description: '',
   },
   {
     id: 'context',
@@ -65,7 +53,7 @@ export const TAB_DEFINITIONS: TabDefinition[] = [
     get label() {
       return m.workspace_multiSelectSidebar_changesTab_label();
     },
-    icon: RESOURCE_ICON_BY_KIND.changes,
+    icon: faCodeBranch,
     get description() {
       return m.workspace_multiSelectSidebar_changesTab_description();
     },
@@ -75,7 +63,7 @@ export const TAB_DEFINITIONS: TabDefinition[] = [
     get label() {
       return m.workspace_multiSelectSidebar_filesTab_label();
     },
-    icon: faFolderTree,
+    icon: faFolder,
     get description() {
       return m.workspace_multiSelectSidebar_filesTab_description();
     },
@@ -85,7 +73,7 @@ export const TAB_DEFINITIONS: TabDefinition[] = [
     get label() {
       return m.workspace_multiSelectSidebar_browserTab_label();
     },
-    icon: faGlobe,
+    icon: faWindowMaximize,
     get description() {
       return m.workspace_multiSelectSidebar_browserTab_description();
     },
@@ -103,36 +91,28 @@ export const TAB_DEFINITIONS: TabDefinition[] = [
 ];
 
 export type TabId = (typeof TAB_DEFINITIONS)[number]['id'];
-export type LauncherTabId = Exclude<TabId, 'overview'>;
-
-export const LAUNCHER_GRID_POSITIONS: Record<LauncherTabId, { column: number; row: number }> = {
-  agents: { column: 0, row: 0 },
-  context: { column: 1, row: 0 },
-  changes: { column: 0, row: 1 },
-  files: { column: 1, row: 1 },
-};
-
 function isValidTabId(value: string): value is TabId {
   return TAB_DEFINITIONS.some((tab) => tab.id === value);
 }
 
-/**
- * Strip tabs collaborators (multiplayer w3) never see: their terminal + browser
- * methods are refused by the daemon, so a persisted or restored selection of
- * these tabs must not reopen for them.
- */
+// Managers can use Shells for saved scripts; raw terminals and browsers stay owner-only.
 export const OWNER_ONLY_TAB_IDS: ReadonlySet<TabId> = new Set<TabId>(['browser', 'shell']);
 
 export function normalizeSelectedTabs(
   tabIds: string[],
   isCollaborator = false,
   showPeople = true,
+  canOperateScripts = false,
 ): Set<TabId> {
   const normalized = tabIds.filter(
     (tabId) =>
       isValidTabId(tabId) &&
       (tabId !== 'people' || showPeople) &&
-      !(isCollaborator && OWNER_ONLY_TAB_IDS.has(tabId as TabId)),
+      !(
+        isCollaborator &&
+        OWNER_ONLY_TAB_IDS.has(tabId as TabId) &&
+        !(tabId === 'shell' && canOperateScripts)
+      ),
   );
-  return new Set([(normalized[0] as TabId | undefined) ?? 'overview']);
+  return new Set([(normalized[0] as TabId | undefined) ?? 'agents']);
 }

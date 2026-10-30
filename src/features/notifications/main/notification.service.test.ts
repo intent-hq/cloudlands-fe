@@ -15,6 +15,7 @@ import {
 import { workspaceService } from '../../workspace/main/workspace.service';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
 import type { AgentIdleEvent } from '../../events/types';
+import { getActivationFocusClaim } from '../../../main/activation-focus-claim';
 
 vi.mock('../../../shared/logger', () => ({
   Logger: class {
@@ -806,7 +807,7 @@ describe('getNotificationService app-wide singleton', () => {
   });
 });
 
-describe('NotificationService focus gate (soundOnlyWhenUnfocused)', () => {
+describe('NotificationService viewing gate (focused window on the workspace)', () => {
   function buildIdleEvent(): AgentIdleEvent {
     return {
       type: 'agent:idle',
@@ -863,60 +864,47 @@ describe('NotificationService focus gate (soundOnlyWhenUnfocused)', () => {
     agentListResponse.agents = [];
   });
 
-  it('suppresses the OS banner but still sends notification:show (no navigateTarget) when the focused window views the workspace and soundOnlyWhenUnfocused=true', async () => {
-    settingsValues['notifications.soundOnlyWhenUnfocused'] = true;
-    installFocusedWindow(true);
+  it.each([true, false])(
+    'sends sound-only notification:show (no OS banner, no toast) when the focused window views the workspace, soundOnlyWhenUnfocused=%s',
+    async (soundOnlyWhenUnfocused) => {
+      settingsValues['notifications.soundOnlyWhenUnfocused'] = soundOnlyWhenUnfocused;
+      const focused = installFocusedWindow(true);
 
-    const service = new NotificationService();
-    await service.handleAgentIdle(buildIdleEvent());
+      const service = new NotificationService();
+      await service.handleAgentIdle(buildIdleEvent());
 
-    // OS banner suppressed…
-    expect(mockNotificationInstances.length).toBe(0);
-    // …but the renderer sound event is still delivered — sound-only, no toast.
-    expect(sendToWorkspaceWindows).toHaveBeenCalledWith(
-      'workspace-1',
-      'notification:show',
-      expect.objectContaining({ title: expect.any(String), body: expect.any(String) }),
-      LOCAL_ID,
-    );
-    expect(vi.mocked(sendToWorkspaceWindows).mock.calls[0][2]).not.toHaveProperty('navigateTarget');
-  });
-
-  it('delivers an in-app toast (navigateTarget, no OS banner) when frontmost and viewing the workspace with soundOnlyWhenUnfocused=false (electron#51885)', async () => {
-    settingsValues['notifications.soundOnlyWhenUnfocused'] = false;
-    installFocusedWindow(true);
-
-    const service = new NotificationService();
-    await service.handleAgentIdle(buildIdleEvent());
-
-    expect(mockNotificationInstances.length).toBe(0);
-    expect(sendToWorkspaceWindows).toHaveBeenCalledWith(
-      'workspace-1',
-      'notification:show',
-      expect.objectContaining({
-        title: expect.any(String),
-        body: expect.any(String),
-        navigateTarget: { workspaceId: 'workspace-1' },
-      }),
-      LOCAL_ID,
-    );
-  });
+      // No OS banner and no toast: the user is already looking at the
+      // workspace. The sound setting governs only the renderer sound gate.
+      expect(mockNotificationInstances.length).toBe(0);
+      expect(sendToWorkspaceWindows).toHaveBeenCalledWith(
+        'workspace-1',
+        'notification:show',
+        expect.objectContaining({ title: expect.any(String), body: expect.any(String) }),
+        LOCAL_ID,
+      );
+      expect(vi.mocked(sendToWorkspaceWindows).mock.calls[0][2]).not.toHaveProperty(
+        'navigateTarget',
+      );
+      const toastSends = focused.webContents.send.mock.calls.filter(
+        ([, payload]) => (payload as { navigateTarget?: unknown })?.navigateTarget,
+      );
+      expect(toastSends).toEqual([]);
+    },
+  );
 
   it('delivers an in-app toast when frontmost but NOT viewing the workspace regardless of soundOnlyWhenUnfocused (electron#51885)', async () => {
     settingsValues['notifications.soundOnlyWhenUnfocused'] = true;
-    installFocusedWindow(false);
+    const focused = installFocusedWindow(false);
 
     const service = new NotificationService();
     await service.handleAgentIdle(buildIdleEvent());
 
     expect(mockNotificationInstances.length).toBe(0);
-    expect(sendToWorkspaceWindows).toHaveBeenCalledWith(
-      'workspace-1',
+    expect(focused.webContents.send).toHaveBeenCalledWith(
       'notification:show',
       expect.objectContaining({
         navigateTarget: { workspaceId: 'workspace-1' },
       }),
-      LOCAL_ID,
     );
   });
 
@@ -987,25 +975,59 @@ describe('NotificationService frontmost in-app delivery (electron#51885)', () =>
     agentListResponse.agents = [];
   });
 
-  it('frontmost: creates NO OS Notification and sends notification:show with navigateTarget to workspace windows', async () => {
+  it('frontmost: creates NO OS Notification and sends notification:show with navigateTarget to the focused window', async () => {
     const focusedWindow = createMockWindow(41);
     vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(focusedWindow as never);
+    vi.mocked(BrowserWindow.fromId).mockImplementation(
+      (id: number) => (id === 41 ? focusedWindow : null) as never,
+    );
     vi.mocked(getWindowIdsForWorkspace).mockReturnValue([41]);
 
     const service = new NotificationService();
     await service.handleAgentIdle(buildIdleEvent());
 
     expect(mockNotificationInstances.length).toBe(0);
-    expect(sendToWorkspaceWindows).toHaveBeenCalledWith(
-      'workspace-1',
-      'notification:show',
-      expect.objectContaining({
-        title: expect.any(String),
-        body: expect.any(String),
-        navigateTarget: { workspaceId: 'workspace-1' },
-      }),
-      LOCAL_ID,
+    const showCalls = focusedWindow.webContents.send.mock.calls.filter(
+      ([channel]) => channel === 'notification:show',
     );
+    expect(showCalls).toEqual([
+      [
+        'notification:show',
+        expect.objectContaining({
+          title: expect.any(String),
+          body: expect.any(String),
+          navigateTarget: { workspaceId: 'workspace-1' },
+        }),
+      ],
+    ]);
+  });
+
+  it('frontmost: background windows with the workspace open get the sound only; the toast goes to the focused window', async () => {
+    const focusedWindow = createMockWindow(45);
+    const backgroundWindow = { ...createMockWindow(46), isFocused: () => false };
+    backgroundWindow.webContents = { send: vi.fn(), isDestroyed: () => false };
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(focusedWindow as never);
+    vi.mocked(BrowserWindow.fromId).mockImplementation(
+      (id: number) => (id === 45 ? focusedWindow : id === 46 ? backgroundWindow : null) as never,
+    );
+    // Only the unfocused window has (or background-hosts) the workspace.
+    vi.mocked(getWindowIdsForWorkspace).mockReturnValue([46]);
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent());
+
+    expect(mockNotificationInstances.length).toBe(0);
+    expect(sendToWorkspaceWindows).not.toHaveBeenCalled();
+    expect(focusedWindow.webContents.send).toHaveBeenCalledWith(
+      'notification:show',
+      expect.objectContaining({ navigateTarget: { workspaceId: 'workspace-1' } }),
+    );
+    const backgroundCalls = backgroundWindow.webContents.send.mock.calls.filter(
+      ([channel]) => channel === 'notification:show',
+    );
+    expect(backgroundCalls).toHaveLength(1);
+    expect(backgroundCalls[0][1]).not.toHaveProperty('navigateTarget');
+    expect(backgroundCalls[0][1]).toMatchObject({ title: expect.any(String) });
   });
 
   it('frontmost with the workspace open nowhere: navigateTarget payload falls back to the focused window', async () => {
@@ -2374,6 +2396,8 @@ describe('NotificationService structured notification:show payload', () => {
       provider: 'claude-code',
       // Seeds AgentAvatar's deterministic gradient colors in the toast.
       agentId: 'agent-self',
+      // Names who finished in the in-app toast.
+      agentName: 'Self Agent',
     });
   });
 
@@ -2389,6 +2413,7 @@ describe('NotificationService structured notification:show payload', () => {
       workspaceTitle: 'Test Workspace',
       specialistDisplayName: 'Agent',
       agentId: 'agent-self',
+      agentName: 'Self Agent',
     });
   });
 
@@ -2603,6 +2628,25 @@ describe('NotificationService click-time window targeting (multiple windows, rem
     ]);
     expect(localWindow.focus).not.toHaveBeenCalled();
     expect(navigateCalls(localWindow)).toEqual([]);
+  });
+
+  it('claims the clicked host window so app activation does not raise another host window', async () => {
+    liveBackendIds.push(REMOTE_ID);
+    const hostAWindow = makeWindow(1);
+    const hostBWindow = makeWindow(2, REMOTE_ID);
+    setLiveWindows([hostAWindow, hostBWindow]);
+    vi.mocked(getWindowIdsForWorkspace).mockReturnValue([hostBWindow.id]);
+    vi.mocked(getViewedWorkspaceIdForWindow).mockImplementation((id: number) =>
+      id === hostBWindow.id ? 'remote-workspace' : undefined,
+    );
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent('remote-workspace'), REMOTE_ID);
+    mockNotificationInstances[0].handlers['click']();
+
+    expect(hostBWindow.focus).toHaveBeenCalled();
+    expect(hostAWindow.focus).not.toHaveBeenCalled();
+    expect(getActivationFocusClaim()).toBe(hostBWindow);
   });
 
   it('does not open a window on a remote host whose connection was closed before the click', async () => {

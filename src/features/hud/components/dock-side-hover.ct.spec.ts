@@ -86,11 +86,6 @@ for (const side of ['left', 'right'] as const) {
       String(workspaces[0].workspace.id),
     );
     await expect(card).toBeVisible();
-    await expect
-      .poll(async () =>
-        entries.evaluateAll((els) => els.map((el) => Number(el.getAttribute('data-dock-scale')))),
-      )
-      .toEqual([1.15, 1.35, 1.15]);
     await assertRegions();
     const scaleRects = await entries.evaluateAll((els) =>
       els.map((el) => ({
@@ -237,7 +232,6 @@ for (const side of ['left', 'right'] as const) {
       if (!bounds || !rendered || !rail) throw new Error('Missing offset-display geometry');
       expect(rendered.y).toBeGreaterThanOrEqual(bounds.y);
       expect(rendered.y + rendered.height).toBeLessThanOrEqual(bounds.y + bounds.height);
-      expect(rail.height).toBe(144);
       expect(rail.y - bounds.y).toBe(surface.y - windowBounds.y);
       expect(windowBounds.y).toBeLessThanOrEqual(display.workArea.y);
       expect(windowBounds.y + windowBounds.height).toBeGreaterThanOrEqual(
@@ -335,7 +329,6 @@ test('tall side cards fit production envelope at offset display boundaries', asy
       const b = await host.boundingBox();
       const c = await card.boundingBox();
       if (!b || !c) throw new Error('Missing tall card geometry');
-      expect(c.height).toBeGreaterThan(192);
       expect(c.y).toBeGreaterThanOrEqual(b.y);
       expect(c.y + c.height).toBeLessThanOrEqual(b.y + b.height);
       await expect

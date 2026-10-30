@@ -4,6 +4,7 @@
     gitRootsConsumerUnmounted,
   } from '$store/renderer/slices/git-roots/git-roots-slice';
   import { setPendingAutoAction } from '$store/renderer/slices/changes/changes-slice';
+  import { isTextEntryTarget } from '$lib/utils/text-entry';
   import { Button } from '$lib/components/ui/button';
   /**
    * SidebarChangesPanel - Timeline-based changes panel
@@ -67,7 +68,7 @@
     orderPRSectionsForSelection,
     sectionPRs,
   } from './sidebar-changes-utils';
-  import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
+  import { selectReviewMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import {
     selectGitRoots,
     type WorkspaceGitRootEntry,
@@ -193,7 +194,7 @@
   const activePullRequest$ = selectWorkspaceActivePullRequest(workspaceIdStore);
 
   // Agent PR monitors (PROTOCOL §6.9): live rows join the PR list below.
-  const prMonitors$ = selectPrMonitors(workspaceIdStore);
+  const prMonitors$ = selectReviewMonitors(workspaceIdStore);
 
   const workspaceRepo = $derived(
     $workspace?.repositoryOwner && $workspace?.repositoryName
@@ -524,12 +525,22 @@
   // Reference to the changes panel container for focus management
   let changesPanelContainer: HTMLDivElement | undefined = $state(undefined);
 
-  // Get all files as a flat list for keyboard navigation
-  // Order: unstaged files first, then staged files
-  const allFilesFlat = $derived([
-    ...unstagedChanges.map((c) => ({ path: c.relativePath, staged: false })),
-    ...stagedChanges.map((c) => ({ path: c.relativePath, staged: true })),
-  ]);
+  // File rows FileChangesSection actually renders, in on-screen order
+  // (unstaged first). It caps each section at SIDEBAR_CHANGES_DISPLAY_LIMIT
+  // rows, so keyboard navigation and select-all only reach rendered rows.
+  let allFilesFlat = $state<Array<{ path: string; staged: boolean }>>([]);
+
+  function isRenderedFile(file: { path: string; staged: boolean } | null): boolean {
+    return !!file && allFilesFlat.some((f) => f.path === file.path && f.staged === file.staged);
+  }
+
+  // A refresh or group expansion can push the focused file past the cap; drop
+  // focus (and the shift-range anchor) so keys never act on a row that is gone.
+  function handleVisibleFilesChange(files: Array<{ path: string; staged: boolean }>) {
+    allFilesFlat = files;
+    if (focusedFile && !isRenderedFile(focusedFile)) focusedFile = null;
+    if (lastClickedFile && !isRenderedFile(lastClickedFile)) lastClickedFile = null;
+  }
 
   // Get the index of the focused file in the flat list
   const focusedIndex = $derived(() => {
@@ -561,11 +572,9 @@
   function handleChangesKeydown(e: KeyboardEvent) {
     // Secondary-root controls own their keyboard actions; the primary list is hidden.
     if (isBrowsingSecondaryRoot) return;
-    // Don't handle if we're in an input or textarea
+    // Text entry (inputs, contenteditable, code editors) owns its own keys.
+    if (isTextEntryTarget(e.target)) return;
     const target = e.target as HTMLElement;
-    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
-      return;
-    }
     // Summary controls own their native button and picker keyboard interactions.
     if (
       target.closest(
@@ -639,7 +648,7 @@
       case ' ': {
         // Open the focused file
         e.preventDefault();
-        if (focusedFile) {
+        if (focusedFile && isRenderedFile(focusedFile)) {
           const change = focusedFile.staged
             ? stagedChanges.find((c) => c.relativePath === focusedFile!.path)
             : unstagedChanges.find((c) => c.relativePath === focusedFile!.path);
@@ -719,12 +728,11 @@
 
   // Select all files in a section (staged or unstaged)
   function selectAllInSection(staged: boolean) {
-    const changes = staged ? stagedChanges : unstagedChanges;
     const newSelection = new Set(selectedFiles);
 
-    for (const change of changes) {
-      const key = `${staged ? 'staged' : 'unstaged'}:${change.relativePath}`;
-      newSelection.add(key);
+    for (const file of allFilesFlat) {
+      if (file.staged !== staged) continue;
+      newSelection.add(`${staged ? 'staged' : 'unstaged'}:${file.path}`);
     }
 
     selectedFiles = newSelection;
@@ -849,17 +857,15 @@
   <div class="flex-1 flex flex-col min-h-0">
     {#if !hasLoadedForWorkspace}
       <!-- Loading skeleton with timeline (shown during initial load or workspace switch) -->
-      <div class="flex-1 overflow-y-auto pb-20 pt-3">
+      <div class="flex-1 overflow-y-auto py-2 opacity-60">
         <div class="relative">
-          <div class="absolute left-0 top-2 bottom-2 w-px bg-border"></div>
           {#each [0, 1, 2, 3] as i (i)}
-            <div class="relative pl-4 mb-4">
-              <div class="absolute -left-1 top-1 w-2 h-2 rounded-full bg-muted"></div>
+            <div class="relative px-2 mb-2">
               <Skeleton class="h-3 w-16 mb-2" />
               <!-- i18n-ignore (scanner false positive on the < comparison) -->
               {#if i < 2}
-                <Skeleton class="h-5 w-full rounded mb-1" />
-                <Skeleton class="h-5 w-3/4 rounded" />
+                <Skeleton class="h-8 w-full rounded mb-1" />
+                <Skeleton class="h-8 w-3/4 rounded" />
               {/if}
             </div>
           {/each}
@@ -913,7 +919,7 @@
             isOwner={canUpdateWorkspace}
           />
 
-          <div class="relative flex items-center mb-2 h-7" data-changes-summary-count>
+          <div class="relative flex items-center mb-1 h-8" data-changes-summary-count>
             {#if !onRefreshActionChange}
               {@render refreshAction()}
             {/if}
@@ -926,14 +932,14 @@
                 onclick={handleOpenAllChanges}
                 size="compact"
                 wrapContent={false}
-                class="flex flex-1 justify-start items-center gap-2 px-0 py-0 text-subtle rounded-sm transition-colors group cursor-pointer min-w-0 {isActive
-                  ? 'bg-background text-foreground border-transparent'
-                  : 'border-transparent'}
+                class="flex h-8 flex-1 justify-start items-center gap-2 px-2 py-0 type-caption font-normal text-muted-foreground rounded-md transition-colors group cursor-pointer min-w-0 {isActive
+                  ? 'bg-muted text-foreground'
+                  : 'hover:bg-muted'}
                 "
               >
                 <div class="flex items-center gap-1.5 flex-1 min-w-0">
                   <!-- <Fa icon={faFolderOpen} class="opacity-30" size="xs" /> -->
-                  <span class="text-ui truncate min-w-0 text-left flex-1">
+                  <span class="type-caption truncate min-w-0 text-left flex-1">
                     {totalFilesChanged === 1
                       ? m.workspace_sidebarChanges_filesChangedInSpace_one()
                       : m.workspace_sidebarChanges_filesChangedInSpace_many({
@@ -945,9 +951,9 @@
               </Button>
             {:else}
               <div
-                class="flex flex-1 items-center gap-2 px-0 py-0 h-7 text-subtle rounded-sm transition-colors group cursor-pointer min-w-0"
+                class="flex h-8 flex-1 items-center gap-2 px-2 type-caption font-normal text-muted-foreground min-w-0"
               >
-                <span class="text-ui truncate min-w-0 text-left flex-1"
+                <span class="type-caption truncate min-w-0 text-left flex-1"
                   >{m.workspace_sidebarChanges_noChangesYet_label()}</span
                 >
               </div>
@@ -956,10 +962,8 @@
 
           <!-- Truncation warning banner -->
           {#if changesTruncated}
-            <div
-              class="mb-2 px-3 py-2 bg-warning/10 border border-warning/30 rounded-md text-xs text-warning-ink"
-            >
-              <span class="font-medium"
+            <div class="mb-2 px-2 py-2 type-caption text-warning-ink">
+              <span class="font-normal"
                 >{m.workspace_sidebarChanges_showingChanges_label({
                   shown: formatInteger(unstagedChanges.length + stagedChanges.length),
                   total: formatInteger(totalChangesCount),
@@ -978,9 +982,6 @@
           {/if}
 
           <div class="relative flex-1 flex flex-col pb-2 w-full">
-            <!-- Vertical timeline line -->
-            <div class="absolute left-[5.5px] top-2 bottom-0 w-px bg-border dark:bg-border"></div>
-
             <FileChangesSection
               {workspaceId}
               {activeFilePath}
@@ -992,6 +993,7 @@
               {openPanelTabs}
               {activePanelTab}
               {isOwner}
+              onVisibleFilesChange={handleVisibleFilesChange}
               onFileClicked={(path, staged) => {
                 focusedFile = { path, staged };
                 if (selectedFiles.size > 0) {

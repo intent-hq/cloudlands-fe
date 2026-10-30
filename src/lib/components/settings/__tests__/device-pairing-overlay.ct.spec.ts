@@ -1,4 +1,5 @@
 import { expect, test } from '../../../../test/ct-test';
+import { expectDismissibleLayerArmed } from '../../../../test/dismissible-layer';
 import { m } from '$shared/paraglide/messages.js';
 import Preview from '../devices-settings.preview.svelte';
 
@@ -34,8 +35,9 @@ test('Mobile QR dialog traps focus and returns it when dismissed', async ({ moun
   await expect(trigger).toBeFocused();
   await trigger.click();
   await expect(footerClose).toBeFocused();
-  // Visibility alone can precede the dialog's deferred outside-pointer listener.
-  // Use locator actionability and keep the click outside the dialog.
+  // Visibility, focus and locator actionability can all precede the dialog's
+  // deferred outside-pointer listener; wait for it, then click outside the dialog.
+  await expectDismissibleLayerArmed(dialog);
   await page.locator('[data-slot="dialog-overlay"]').click({ position: { x: 10, y: 10 } });
   await expect(dialog).toHaveCount(0);
   await expect(trigger).toBeFocused();

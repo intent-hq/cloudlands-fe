@@ -533,6 +533,8 @@ type CanonicalAgentSessionUpdates = {
   isStreaming?: boolean;
   isProcessing?: boolean;
   isResponding?: boolean;
+  turnInFlight?: boolean;
+  isWaitingOnTool?: boolean;
   stopReason?: string | null;
   stopReasonTimestamp?: string | null;
   sessionCorrupted?: boolean;
@@ -832,6 +834,9 @@ function canonicalSessionUpdates(
     updates.isStreaming = fields.isStreaming ?? false;
     updates.isProcessing = fields.isProcessing ?? false;
     updates.isResponding = fields.isResponding ?? false;
+    // Snapshots can leave these busy until the next detail read; idle ends them too.
+    updates.turnInFlight = false;
+    updates.isWaitingOnTool = false;
     updates.liveTurnOpen = false;
     updates.liveTurnOpenedAt = undefined;
   }
@@ -1643,10 +1648,16 @@ export const clearProcessQueueHint = createAction<[agentId: string]>(
  */
 export const processEvicted = createAction<[agentId: string]>('agentSessions/processEvicted');
 
-/** Rename agent session */
-export const renameSession = createAction<[agentId: string, name: string]>(
-  'agentSessions/renameSession',
-);
+/**
+ * Apply a daemon `agent:renamed` event. `nameExplicitlySet` mirrors the event's
+ * persisted flag (§6.5); it defaults to `true` for older daemons that omit it,
+ * since every rename path set the flag before it was sent. Assistant thread
+ * titles (`getChiefThreadTitle`) show the session name only once it is explicit,
+ * and keep the first-message preview otherwise.
+ */
+export const renameSession = createAction<
+  [agentId: string, name: string, nameExplicitlySet?: boolean]
+>('agentSessions/renameSession');
 
 /** Rename an agent session. Kept on the legacy action type for dispatch compatibility. */
 export const renameAgent = createAction<[wsId: string, agentId: string, name: string]>(
@@ -1922,27 +1933,34 @@ agentSessionReducer.with(eventReceived, (state, { payload: [, event] }) => {
     typeof event.timestamp === 'string' ? event.timestamp : undefined,
   );
   if (Object.keys(updates).length === 0) return state;
-  // Fresh running edge (the sticky liveTurnOpen slot transitions closed →
-  // open): clear the previous turn's `lastToolUse` so it cannot render as a
-  // live tool chip during the startup window before the first
-  // `agent:stream:activity` ping of the new turn arrives. Keyed on the slot
-  // EDGE, not on every running status event — mid-turn status ticks (slot
-  // already open) must not wipe the current turn's live tool. The first
-  // tool-arm ping of the new turn repopulates the field.
+  // Idle clears running overlays but keeps persisted tool previews. A fresh
+  // running edge clears the previous turn's preview until new activity arrives.
   const existing = getSession(state, agentId);
   if (existing && event.workspaceId && existing.workspaceId !== event.workspaceId) return state;
   const opensLiveTurn = updates.liveTurnOpen === true && existing?.liveTurnOpen !== true;
+  const clearsRunningTool =
+    updates.liveTurnOpen === false && existing?.lastToolUse?.status?.toLowerCase() === 'running';
   const merged: AgentSessionUpdate = {
     ...updates,
-    ...(opensLiveTurn && existing?.lastToolUse ? { lastToolUse: undefined } : {}),
+    ...(clearsRunningTool || (opensLiveTurn && existing?.lastToolUse)
+      ? { lastToolUse: undefined }
+      : {}),
   };
   return updateSessionFields(recordSessionProjection(state, agentId, merged), agentId, merged);
 });
-agentSessionReducer.with(renameSession, (state, { payload: [agentId, name] }) => {
-  const session = getSession(state, agentId);
-  if (!session || session.name === name) return state;
-  return setSession(state, agentId, { ...session, name });
-});
+agentSessionReducer.with(
+  renameSession,
+  (state, { payload: [agentId, name, nameExplicitlySet = true] }) => {
+    const session = getSession(state, agentId);
+    if (
+      !session ||
+      (session.name === name && (session.nameExplicitlySet ?? false) === nameExplicitlySet)
+    ) {
+      return state;
+    }
+    return setSession(state, agentId, { ...session, name, nameExplicitlySet });
+  },
+);
 agentSessionReducer.with(bulkUpsertSessions, (state, { payload: [sessions, options] }) => {
   let next = state;
   const listProjection = options?.listProjection === true;

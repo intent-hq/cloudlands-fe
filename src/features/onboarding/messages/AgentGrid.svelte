@@ -24,7 +24,10 @@
   import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
 
   import { selectIsFeatureEnabled } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
-  import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import {
+    selectActiveProviderId,
+    selectEnabledProviders,
+  } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 
   import {
     selectProviderStatusMap,
@@ -144,6 +147,7 @@
   };
 
   const catalogEntries$ = selectProviderCatalogEntries();
+  const enabledProviders$ = selectEnabledProviders();
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
 
   /** Cache carrying the per-mount shuffled id order across catalog
@@ -180,6 +184,7 @@
           provider: p,
           isFeatureEnabled: (code) => selectIsFeatureEnabled.select(state, code),
           status: statusMap[p.id],
+          enabled: $enabledProviders$[p.id] === true,
         }),
       )
       .map((p) => {
@@ -304,8 +309,10 @@
 
 <div class="flex gap-4 w-full">
   {#each visibleProviders as provider (provider.id)}
+    <!-- w-66 fixes the intrinsic width, so a fit-content parent never sizes cards by their text. -->
     <div
-      class="overflow-hidden transition-all flex flex-col flex-1 min-w-66"
+      data-provider-id={provider.id}
+      class="overflow-hidden transition-all flex flex-col flex-1 w-66 min-w-66"
       in:fly={{ tier: 'slow', distance: 20 }}
       animate:flip={{ duration: 300 }}
     >

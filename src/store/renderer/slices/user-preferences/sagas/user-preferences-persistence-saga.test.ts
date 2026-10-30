@@ -11,6 +11,7 @@ import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
 const mocks = vi.hoisted(() => ({
   getJSON: vi.fn(),
   setJSON: vi.fn(),
+  removeItem: vi.fn(),
   applyLanguagePreference: vi.fn(),
   isElectron: vi.fn(() => true),
 }));
@@ -21,7 +22,7 @@ vi.mock('$lib/utils/safe-storage', () => ({
     setJSON: mocks.setJSON,
     getItem: vi.fn(),
     setItem: vi.fn(),
-    removeItem: vi.fn(),
+    removeItem: mocks.removeItem,
     keysWithPrefix: vi.fn(),
   },
 }));
@@ -41,21 +42,22 @@ import {
   saveActivityLogPreset,
   setAgentFontStyle,
   setChatAuroraEnabled,
+  setCollapseToolRuns,
   setCodeFontFamily,
   setGroupByRepo,
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
   providerSetupHydrated,
   setLabsMultiplayerEnabled,
+  userPreferencesHydrated,
   setLabsGitLabEnabled,
   setLabsRemoteAgentsEnabled,
-  setLabsProviderProfilesEnabled,
   toggleLabsGitLab,
   toggleLabsRemoteAgents,
-  toggleLabsProviderProfiles,
   setLabsSettingsVisible,
   setLanguagePreference,
   setNoteFontStyle,
+  setPauseAnimationsWhenUnfocused,
   setReduceMotionOnBattery,
   setShowArchived,
   setShowReasoningBlocks,
@@ -66,8 +68,10 @@ import {
   toggleGroupByRepo,
   toggleHasCompletedProviderSetup,
   toggleChatAurora,
+  toggleCollapseToolRuns,
   toggleLabsMultiplayer,
   toggleLabsSettingsVisibility,
+  togglePauseAnimationsWhenUnfocused,
   toggleReduceMotionOnBattery,
   toggleShowArchived,
   toggleShowReasoningBlocks,
@@ -209,13 +213,13 @@ describe('userPreferencesPersistenceSaga', () => {
       'workspace-list:completedProviderSetup': true,
       'chat:showReasoningBlocks': true,
       'chat:auroraEnabled': false,
+      'chat:collapseToolRuns': true,
       'appearance:shellTransparencyEnabled': false,
       'appearance:reduceMotionOnBattery': false,
+      'appearance:pauseAnimationsWhenUnfocused': true,
       'labs:settingsVisible': true,
-      'labs:multiplayerEnabled': true,
       'labs:gitlabEnabled': true,
       'labs:remoteAgentsEnabled': true,
-      'labs:providerProfilesEnabled': true,
       'agent-font-settings': { fontStyle: 'monospace' },
       'note-font-settings': { fontStyle: 'sans' },
       'code-font-settings': { fontFamily: 'Monaco' },
@@ -239,19 +243,20 @@ describe('userPreferencesPersistenceSaga', () => {
       [providerSetupHydrated('local', true)],
       [setShowReasoningBlocks(true)],
       [setChatAuroraEnabled(false)],
+      [setCollapseToolRuns(true)],
       [setShellTransparencyEnabled(false)],
       [setReduceMotionOnBattery(false)],
+      [setPauseAnimationsWhenUnfocused(true)],
       [setLabsSettingsVisible(true)],
-      [setLabsMultiplayerEnabled(true)],
       [setLabsGitLabEnabled(true)],
       [setLabsRemoteAgentsEnabled(true)],
-      [setLabsProviderProfilesEnabled(true)],
       [setAgentFontStyle('monospace')],
       [setNoteFontStyle('sans')],
       [setCodeFontFamily('Monaco')],
       [hydrateActivityLogPresets([preset])],
       [setLanguagePreference('de')],
       [setGithubLinkDefaultAction('copy-link')],
+      [userPreferencesHydrated()],
     ]);
     expect(mocks.applyLanguagePreference.mock.calls).toEqual([]);
   });
@@ -268,6 +273,7 @@ describe('userPreferencesPersistenceSaga', () => {
       expect(dispatch.mock.calls).toEqual([
         [providerSetupHydrated('local', false)],
         [setReduceMotionOnBattery(stored)],
+        [userPreferencesHydrated()],
       ]);
       const hydrated = dispatch.mock.calls.reduce(
         (state, [action]) => userPreferencesReducer(state, action),
@@ -278,7 +284,7 @@ describe('userPreferencesPersistenceSaga', () => {
   );
 
   it.each([true, false])(
-    'hydrates a persisted labs:multiplayerEnabled = %s over the default',
+    'ignores (and keeps for older builds) a retired labs:multiplayerEnabled = %s: Multiplayer is always on',
     async (stored) => {
       mocks.getJSON.mockImplementation((key: string) =>
         key === 'labs:multiplayerEnabled' ? stored : undefined,
@@ -286,15 +292,17 @@ describe('userPreferencesPersistenceSaga', () => {
       const dispatch = vi.fn();
       await runSaga({ dispatch, getState: () => ({}) }, hydrateUserPreferencesWorker).toPromise();
 
+      expect(mocks.getJSON.mock.calls.map(([key]) => key)).not.toContain('labs:multiplayerEnabled');
+      expect(mocks.removeItem).not.toHaveBeenCalled();
       expect(dispatch.mock.calls).toEqual([
         [providerSetupHydrated('local', false)],
-        [setLabsMultiplayerEnabled(stored)],
+        [userPreferencesHydrated()],
       ]);
       const hydrated = dispatch.mock.calls.reduce(
         (state, [action]) => userPreferencesReducer(state, action),
         initialState,
       );
-      expect(hydrated.labsMultiplayerEnabled).toBe(stored);
+      expect(hydrated.labsMultiplayerEnabled).toBe(true);
     },
   );
 
@@ -330,7 +338,7 @@ describe('userPreferencesPersistenceSaga', () => {
       await settle();
       expect(first.getUserPreferences().labsGitLabEnabled).toBe(enabled);
       expect(storage['labs:gitlabEnabled']).toBe(enabled);
-      expect(first.getUserPreferences().labsMultiplayerEnabled).toBe(false);
+      expect(first.getUserPreferences().labsMultiplayerEnabled).toBe(true);
       await first.stop();
       const restarted = startPreferenceStore();
       await settle();
@@ -396,7 +404,7 @@ describe('userPreferencesPersistenceSaga', () => {
       await settle();
       expect(first.getUserPreferences().labsRemoteAgentsEnabled).toBe(enabled);
       expect(storage['labs:remoteAgentsEnabled']).toBe(enabled);
-      expect(first.getUserPreferences().labsMultiplayerEnabled).toBe(false);
+      expect(first.getUserPreferences().labsMultiplayerEnabled).toBe(true);
       await first.stop();
       const restarted = startPreferenceStore();
       await settle();
@@ -407,43 +415,22 @@ describe('userPreferencesPersistenceSaga', () => {
     },
   );
 
-  it.each([undefined, null, 'true', 'false', 1, 0, {}, []])(
-    'keeps the Provider profiles lab off for missing or invalid storage: %j',
-    async (stored) => {
-      mocks.getJSON.mockImplementation((key: string) =>
-        key === 'labs:providerProfilesEnabled' ? stored : undefined,
-      );
-      const run = startPreferenceStore();
-      await settle();
-      expect(run.getUserPreferences().labsProviderProfilesEnabled).toBe(false);
-      expect(
-        mocks.setJSON.mock.calls.filter(([key]) => key === 'labs:providerProfilesEnabled'),
-      ).toEqual([]);
-      await run.stop();
-    },
-  );
-
-  it.each([true, false])('persists Provider profiles %s across restart', async (enabled) => {
-    const storage: Record<string, unknown> = {};
-    mocks.getJSON.mockImplementation((key: string) => storage[key]);
-    mocks.setJSON.mockImplementation((key: string, value: unknown) => {
-      storage[key] = value;
-    });
-    const first = startPreferenceStore();
+  it('ignores a leftover Provider profiles lab value and never writes it', async () => {
+    mocks.getJSON.mockImplementation((key: string) =>
+      key === 'labs:providerProfilesEnabled' ? false : undefined,
+    );
+    const run = startPreferenceStore();
     await settle();
-    first.dispatch(setLabsProviderProfilesEnabled(!enabled));
-    first.dispatch(toggleLabsProviderProfiles());
+    expect(mocks.getJSON.mock.calls.map(([key]) => key)).not.toContain(
+      'labs:providerProfilesEnabled',
+    );
+    expect(run.getUserPreferences()).not.toHaveProperty('labsProviderProfilesEnabled');
+    run.dispatch(resetOnboarding());
     await settle();
-    expect(first.getUserPreferences().labsProviderProfilesEnabled).toBe(enabled);
-    expect(storage['labs:providerProfilesEnabled']).toBe(enabled);
-    expect(first.getUserPreferences().labsRemoteAgentsEnabled).toBe(false);
-    await first.stop();
-    const restarted = startPreferenceStore();
-    await settle();
-    expect(restarted.getUserPreferences().labsProviderProfilesEnabled).toBe(enabled);
-    restarted.dispatch(resetOnboarding());
-    expect(restarted.getUserPreferences().labsProviderProfilesEnabled).toBe(enabled);
-    await restarted.stop();
+    expect(
+      mocks.setJSON.mock.calls.filter(([key]) => key === 'labs:providerProfilesEnabled'),
+    ).toEqual([]);
+    await run.stop();
   });
 
   it('keeps RemoteAgents off until delayed preference hydration finishes without resetting it on rerun', async () => {
@@ -492,7 +479,6 @@ describe('userPreferencesPersistenceSaga', () => {
 
   it('restores both visibility choices across launches without changing experiments', async () => {
     const stored: Record<string, unknown> = {
-      'labs:multiplayerEnabled': true,
       'labs:gitlabEnabled': true,
     };
     mocks.getJSON.mockImplementation((key: string) => stored[key]);
@@ -523,7 +509,6 @@ describe('userPreferencesPersistenceSaga', () => {
     expect(third.getUserPreferences().labsMultiplayerEnabled).toBe(true);
     expect(third.getUserPreferences().labsGitLabEnabled).toBe(true);
     expect(stored['labs:gitlabEnabled']).toBe(true);
-    expect(stored['labs:multiplayerEnabled']).toBe(true);
     await third.stop();
   });
 
@@ -600,7 +585,10 @@ describe('userPreferencesPersistenceSaga', () => {
     const dispatch = vi.fn();
     await runSaga({ dispatch, getState: () => ({}) }, hydrateUserPreferencesWorker).toPromise();
 
-    expect(dispatch.mock.calls).toEqual([[providerSetupHydrated('local', false)]]);
+    expect(dispatch.mock.calls).toEqual([
+      [providerSetupHydrated('local', false)],
+      [userPreferencesHydrated()],
+    ]);
   });
 
   it('hydrates and persists shortcut overrides through the preference storage', async () => {
@@ -643,8 +631,10 @@ describe('userPreferencesPersistenceSaga', () => {
         hasCompletedProviderSetup: true,
         showReasoningBlocks: true,
         chatAuroraEnabled: false,
+        collapseToolRuns: true,
         shellTransparencyEnabled: false,
         reduceMotionOnBattery: false,
+        pauseAnimationsWhenUnfocused: true,
         labsMultiplayerEnabled: true,
         agentFontStyle: 'monospace',
         noteFontStyle: 'sans',
@@ -676,11 +666,15 @@ describe('userPreferencesPersistenceSaga', () => {
       toggleShowReasoningBlocks(),
       setChatAuroraEnabled(false),
       toggleChatAurora(),
+      setCollapseToolRuns(true),
+      toggleCollapseToolRuns(),
       setShellTransparencyEnabled(false),
       toggleShellTransparency(),
       setReduceMotionOnBattery(false),
       toggleReduceMotionOnBattery(),
-      setLabsMultiplayerEnabled(true),
+      setPauseAnimationsWhenUnfocused(true),
+      togglePauseAnimationsWhenUnfocused(),
+      setLabsMultiplayerEnabled(false),
       toggleLabsMultiplayer(),
       setAgentFontStyle('monospace'),
       setNoteFontStyle('sans'),
@@ -709,12 +703,14 @@ describe('userPreferencesPersistenceSaga', () => {
       ['chat:showReasoningBlocks', true],
       ['chat:auroraEnabled', false],
       ['chat:auroraEnabled', false],
+      ['chat:collapseToolRuns', true],
+      ['chat:collapseToolRuns', true],
       ['appearance:shellTransparencyEnabled', false],
       ['appearance:shellTransparencyEnabled', false],
       ['appearance:reduceMotionOnBattery', false],
       ['appearance:reduceMotionOnBattery', false],
-      ['labs:multiplayerEnabled', true],
-      ['labs:multiplayerEnabled', true],
+      ['appearance:pauseAnimationsWhenUnfocused', true],
+      ['appearance:pauseAnimationsWhenUnfocused', true],
       ['agent-font-settings', { fontStyle: 'monospace' }],
       ['note-font-settings', { fontStyle: 'sans' }],
       ['note-font-settings', { fontStyle: 'sans' }],

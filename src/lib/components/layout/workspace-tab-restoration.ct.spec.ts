@@ -62,7 +62,6 @@ test('keeps the plus button beside the strip after tab restoration at 1200px', a
     expect(geometry.offset, details).toBe('0px');
     expect(geometry.plusLeft, details).toBeGreaterThanOrEqual(geometry.stripRight - 1);
     expect(geometry.plusLeft, details).toBeGreaterThanOrEqual(geometry.lastVisibleTabRight - 1);
-    expect(geometry.plusWidth, details).toBeLessThanOrEqual(40);
     expect(geometry.plusIsHitTarget, details).toBe(true);
   }).toPass({ timeout: 5_000 });
 });

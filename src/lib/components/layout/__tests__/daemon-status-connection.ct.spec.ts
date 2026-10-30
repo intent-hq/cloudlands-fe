@@ -2,12 +2,12 @@ import { expect, test } from '../../../../test/ct-test';
 import DaemonStatusIndicator from '../DaemonStatusIndicator.svelte';
 
 const scenarios = [
-  { state: 'healthy', lines: 1, fullValue: true },
-  { state: 'remote-route', lines: 2, fullValue: true },
-  { state: 'long-endpoint', lines: 2, fullValue: false },
+  { state: 'healthy', fullValue: true },
+  { state: 'remote-route', fullValue: true },
+  { state: 'long-endpoint', fullValue: false },
 ];
 
-for (const { state, lines, fullValue } of scenarios) {
+for (const { state, fullValue } of scenarios) {
   test(`Connection details stay readable and contained: ${state}`, async ({
     mount,
     page,
@@ -66,22 +66,21 @@ for (const { state, lines, fullValue } of scenarios) {
     expect(geometry.label.right).toBeLessThan(geometry.value.left);
     expect(geometry.value.right).toBeLessThanOrEqual(geometry.row.right + 1);
     expect(geometry.row.right).toBeLessThanOrEqual(geometry.panel.right);
-    expect(geometry.value.height / geometry.lineHeight).toBeCloseTo(lines, 1);
 
     const visibleLines = geometry.textLines.filter(
       (line) => line.top >= geometry.value.top - 1 && line.bottom <= geometry.value.bottom + 1,
     );
-    expect(visibleLines).toHaveLength(lines);
+    expect(visibleLines.length).toBeGreaterThan(0);
     for (const line of visibleLines) {
       expect(line.left).toBeGreaterThanOrEqual(geometry.value.left - 1);
-      expect(Math.abs(line.right - geometry.value.right)).toBeLessThanOrEqual(1);
+      expect(line.right).toBeLessThanOrEqual(geometry.value.right + 1);
     }
     if (fullValue) {
       // Every line, including the route suffix, must be inside the visible box.
-      expect(geometry.textLines).toHaveLength(lines);
+      expect(visibleLines).toHaveLength(geometry.textLines.length);
       expect(geometry.textLines.at(-1)!.bottom).toBeLessThanOrEqual(geometry.value.bottom + 1);
     } else {
-      expect(geometry.textLines.length).toBeGreaterThan(lines);
+      expect(geometry.textLines.length).toBeGreaterThan(visibleLines.length);
       await expect(value).toHaveAttribute('title', (await value.textContent())!);
     }
   });

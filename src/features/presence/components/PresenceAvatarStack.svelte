@@ -96,7 +96,9 @@
       class="inline-flex h-full w-full items-center justify-center overflow-hidden rounded-full font-medium leading-none {variant ===
       'tile'
         ? 'bg-muted text-muted-foreground'
-        : 'text-primary-foreground'} {offline ? 'grayscale' : ''}"
+        : 'text-primary-foreground'} {offline || (variant === 'tile' && person.viewing === false)
+        ? 'grayscale'
+        : ''}"
       style:font-size={fontSize}
       style:background-color={variant === 'stack'
         ? presencePersonColor(person.principalId)
@@ -136,7 +138,7 @@
       ? 'flex-wrap gap-1.25'
       : '-space-x-1'} {className}"
     role="group"
-    aria-label={label}
+    aria-label={variant === 'tile' ? m.workspace_peopleTile_title() : label}
     data-presence-avatar-stack
     data-presence-count={people.length}
   >

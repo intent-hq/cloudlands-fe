@@ -140,10 +140,6 @@ export const selectHudAttentionByWorkspaceId = store.createSelector(
   (state) => state.hud.attentionByWorkspaceId,
 );
 
-export const selectHudQuestionsByAgentId = store.createSelector(
-  (state) => state.hud?.questionsByAgentId ?? {},
-);
-
 /** Whether an agent has a captured, unanswered question. */
 export const selectHudAgentHasPendingQuestion = store.createSelector((state, agentId: string) => {
   const question = state.hud?.questionsByAgentId?.[agentId];
@@ -178,6 +174,7 @@ const selectHudWorkspaces = store.createSelector((state): Workspace[] => {
     .filter(
       (workspace) =>
         workspace.status !== WorkspaceStatus.Archived &&
+        workspace.status !== WorkspaceStatus.Retired &&
         workspace.status !== WorkspaceStatus.Deleted,
     )
     .map((workspace) => {

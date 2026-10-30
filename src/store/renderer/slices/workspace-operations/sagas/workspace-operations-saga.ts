@@ -7,20 +7,25 @@ import {
 } from '../../workspace/utils/workspace-deletion';
 import { buffers, channel, type Channel } from 'redux-saga';
 import {
+  actionChannel,
   all,
   call,
   delay,
+  flush,
   fork,
   put,
   race,
   spawn,
   take,
   takeEvery,
+  takeLatest,
   takeLeading,
   type SagaGenerator,
 } from 'typed-redux-saga';
 
 import { invoke } from '$lib/electron-bridge';
+import { appClient } from '$lib/client';
+import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
 import { getProposalId } from '$lib/components/chat/proposals/proposal-id';
 import { withToastCountdown } from '$lib/components/patterns/notify';
 import { getActiveWorkNames, type ActiveWorkNames } from '$lib/utils/delete-warning-utils';
@@ -32,16 +37,18 @@ import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import { isBulkOperationProposal, isWorkspaceCreateProposal } from '$shared/types/proposal';
 import { navigateAwayIfViewing } from '$features/workspace/navigate-away-if-viewing';
-import { navigateToRoute } from '$lib/utils/navigation.client';
+import { showWorkspaceSaga } from '$lib/utils/show-workspace';
 import { removeRepo } from '../../known-repos/known-repos-slice';
-import { openWorkspaceTab, restoreWorkspaceTab } from '../../tab-state/tab-state-slice';
+import { restoreWorkspaceTab } from '../../tab-state/tab-state-slice';
 import {
   proposalApplyStarted,
   proposalApplySucceeded,
+  proposalCreateOutcomeReported,
   proposalFailed,
 } from '../../proposal-lifecycle/proposal-lifecycle-slice';
 import { selectProposalLifecycleEntry } from '../../proposal-lifecycle/proposal-lifecycle-selectors';
 import { selectSpecialists } from '../../specialists/specialists-selectors';
+import { rememberWorkspaceInitializerRecentSpecialist } from '../../workspace-initializer/workspace-initializer-slice';
 import {
   bulkUpdateWorkspaceEntities,
   markWorkspacePendingDeletion,
@@ -50,6 +57,7 @@ import {
   updateWorkspaceEntity,
 } from '../../workspace/workspace-slice';
 import { selectWorkspaceById, selectWorkspaceItems } from '../../workspace/workspace-selectors';
+import { workspaceDeleted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { workspaceClient } from '../../workspace/utils/workspace.client';
 import {
   applyWorkspaceProposal,
@@ -66,6 +74,9 @@ import {
   confirmBulkDelete,
   confirmDeleteWorkspace,
   confirmRemoveRepo,
+  closeRetireConfirm,
+  confirmRetireWorkspace,
+  loadRetiredWorkspacesRequested,
   openArchiveWarning,
   openBulkArchiveConfirm,
   openBulkDeleteConfirm,
@@ -82,6 +93,7 @@ import {
   selectPendingBulkWorkspaceIds,
   selectPendingDeleteWorkspaceId,
   selectPendingRemoveRepoPath,
+  selectPendingRetireWorkspaceId,
 } from '../workspace-operations-selectors';
 import { buildCreateWorkspaceRequestFromProposal } from '../utils/workspace-create-proposal';
 
@@ -333,10 +345,9 @@ function* watchArchiveUndo(workspaceId: WorkspaceId, undo: Channel<true>): SagaG
         archived: false,
       });
       // The daemon `workspace:updated` event restores the tab in the background;
-      // an explicit undo also focuses the restored workspace.
-      yield* put(openWorkspaceTab(workspaceId));
+      // an explicit undo also shows and focuses the restored workspace.
       try {
-        yield* call(navigateToRoute, `/workspace/${workspaceId}`);
+        yield* call(showWorkspaceSaga, workspaceId);
       } catch (error) {
         logger.warn('Failed to navigate to the unarchived workspace', { workspaceId, error });
       }
@@ -408,9 +419,13 @@ function* unarchive(action: ReturnType<typeof requestUnarchiveWorkspace>): SagaG
       notify.error(m.workspace_ops_unarchiveFailed_error());
       return;
     }
+    // A retired workspace revives through the same call (PROTOCOL §5.1), so
+    // drop `retiredAt` too; the daemon delta carries the new branch.
     yield* applyWorkspaceChanges(workspaceId, {
       status: WorkspaceStatusEnum.Active,
       archived: false,
+      archivedAt: undefined,
+      retiredAt: undefined,
     });
     notify.success(
       m.workspace_ops_unarchived_toast({
@@ -420,6 +435,116 @@ function* unarchive(action: ReturnType<typeof requestUnarchiveWorkspace>): SagaG
   } catch (error) {
     logger.error('workspace.unarchive failed', { workspaceId, error });
     notify.error(m.workspace_ops_unarchiveFailed_error());
+  }
+}
+
+function* confirmRetire(): SagaGenerator<void> {
+  const workspaceId = yield* selectPendingRetireWorkspaceId.effect();
+  yield* put(closeRetireConfirm());
+  if (!workspaceId) return;
+  const notify = yield* call(getToast);
+  const workspace = yield* selectWorkspaceById.effect(workspaceId);
+  try {
+    const result = yield* call(
+      [workspaceClient, workspaceClient.retire],
+      workspaceId as WorkspaceId,
+    );
+    if (!result.ok) {
+      notify.error(
+        result.errorCode === 'retire-unsupported'
+          ? m.workspace_ops_purgeUnsupported_error()
+          : m.workspace_ops_purgeFailed_error(),
+      );
+      return;
+    }
+    yield* applyWorkspaceChanges(workspaceId, {
+      status: WorkspaceStatusEnum.Retired,
+      archived: true,
+      ...(result.data?.archivedAt ? { archivedAt: result.data.archivedAt } : {}),
+      ...(result.data?.retiredAt ? { retiredAt: result.data.retiredAt } : {}),
+    });
+    notify.success(
+      m.workspace_ops_purged_toast({
+        title: workspace?.title || m.workspace_ops_space_fallback(),
+      }),
+    );
+  } catch (error) {
+    logger.error('workspace.retire failed', { workspaceId, error });
+    notify.error(m.workspace_ops_purgeFailed_error());
+  }
+}
+
+type RetiredReadJournalAction = ReturnType<
+  | typeof setWorkspaceEntity
+  | typeof updateWorkspaceEntity
+  | typeof bulkUpdateWorkspaceEntities
+  | typeof removeWorkspaceEntity
+  | typeof markWorkspacePendingDeletion
+  | typeof workspaceDeleted
+>;
+
+function* loadRetiredWorkspaces(
+  action: ReturnType<typeof loadRetiredWorkspacesRequested>,
+): SagaGenerator<void> {
+  const [options] = action.payload;
+  // Same staleness guard as the ordinary list refresh: a response that lands
+  // after the backend, principal or store changed must not leak across them.
+  const dispatch = store.dispatch;
+  const backendId = yield* selectActiveBackendId();
+  const context = yield* selectPrincipalActionContext.effect();
+  function* stale(): SagaGenerator<boolean> {
+    return (
+      store.dispatch !== dispatch ||
+      backendId !== (yield* selectActiveBackendId()) ||
+      context !== (yield* selectPrincipalActionContext.effect())
+    );
+  }
+  // Journal entity changes made while the read is in flight (same ordering as
+  // the ordinary list refresh): a restore, update or delete that lands first
+  // wins over the snapshot, so a restored row never flips back to retired and
+  // a deleted row is never resurrected.
+  const changes = yield* actionChannel(
+    [
+      setWorkspaceEntity,
+      updateWorkspaceEntity,
+      bulkUpdateWorkspaceEntities,
+      removeWorkspaceEntity,
+      markWorkspacePendingDeletion,
+      workspaceDeleted,
+    ],
+    buffers.expanding<RetiredReadJournalAction>(),
+  );
+  try {
+    const result = yield* call([appClient.workspaces, appClient.workspaces.list], {
+      includeArchived: true,
+      includeRetired: true,
+    });
+    if (yield* stale()) return;
+    const rows = new Map(result.map((row) => [row.id as string, row]));
+    const record = (journaled: RetiredReadJournalAction) => {
+      if (journaled.type === bulkUpdateWorkspaceEntities.type) {
+        for (const nested of journaled.payload[0] as ReturnType<typeof updateWorkspaceEntity>[])
+          record(nested);
+      } else if (journaled.type === setWorkspaceEntity.type) {
+        const row = journaled.payload[0] as Workspace;
+        rows.set(row.id, row);
+      } else if (journaled.type === updateWorkspaceEntity.type) {
+        const [id, patch] = journaled.payload as [string, Partial<Workspace>];
+        const row = rows.get(id);
+        if (row) rows.set(id, { ...row, ...patch });
+      } else rows.delete(journaled.payload[0] as string);
+    };
+    for (const journaled of yield* flush(changes)) record(journaled);
+    for (const row of rows.values()) {
+      if (row.status === WorkspaceStatusEnum.Retired) yield* put(setWorkspaceEntity(row));
+    }
+  } catch (error) {
+    logger.warn('workspace.list { includeRetired } failed', { error });
+    if (options?.quiet || (yield* stale())) return;
+    const notify = yield* call(getToast);
+    if (!(yield* stale())) notify.error(m.home_archived_loadFailed_error());
+  } finally {
+    changes.close();
   }
 }
 
@@ -712,7 +837,7 @@ function* failProposal(proposalId: string, error: string, errorCode?: string): S
 }
 
 function* applyCreateProposal(payload: WorkspaceProposalApplyPayload): SagaGenerator<void> {
-  const { proposal, editedFields } = payload;
+  const { proposal, editedFields, origin } = payload;
   if (!isWorkspaceCreateProposal(proposal)) return;
   const proposalId = getProposalId(proposal);
   const lifecycle = yield* selectProposalLifecycleEntry.effect(proposalId);
@@ -722,28 +847,42 @@ function* applyCreateProposal(payload: WorkspaceProposalApplyPayload): SagaGener
     // Mirror CompactWorkspaceInitializer: the specialist's display name, or
     // the generic "Agent" label when the specialist is General or unknown.
     const specialists = yield* selectSpecialists.effect();
-    const result = yield* call(
-      [workspaceClient, workspaceClient.create],
-      buildCreateWorkspaceRequestFromProposal(proposal, editedFields, {
-        resolveAgentName: (specialistId) =>
-          (specialistId ? specialists.find((s) => s.id === specialistId)?.name : undefined) ??
-          m.workspace_fileChanges_agent_label(),
-      }),
-    );
+    const request = buildCreateWorkspaceRequestFromProposal(proposal, editedFields, {
+      resolveAgentName: (specialistId) =>
+        (specialistId ? specialists.find((s) => s.id === specialistId)?.name : undefined) ??
+        m.workspace_fileChanges_agent_label(),
+      origin,
+    });
+    const result = yield* call([workspaceClient, workspaceClient.create], request);
     if (!result.ok) {
       yield* failProposal(proposalId, result.error, result.errorCode);
       return;
     }
+    // The submitted specialist counts as a recent use for every specialist picker.
+    yield* put(
+      rememberWorkspaceInitializerRecentSpecialist(request.initialAgent?.specialist ?? null),
+    );
     yield* put(setWorkspaceEntity(result.data.workspace));
     // Show the new workspace in the tab strip without focusing it: the user
     // stays in the conversation that proposed it.
     yield* put(restoreWorkspaceTab(result.data.workspace.id));
+    const { proposalOrigin } = result.data;
+    const applyResult = {
+      workspaceId: result.data.workspace.id,
+      ...(proposalOrigin ? { proposalOrigin } : {}),
+    };
+    // The workspace exists; the card follows the daemon's reported outcome
+    // (PROTOCOL §5.1). No report (an older daemon) keeps the applied state and
+    // the chat fallback resolves the card.
     yield* put(
-      proposalApplySucceeded({
-        proposalId,
-        completedAt: Date.now(),
-        result: { workspaceId: result.data.workspace.id },
-      }),
+      proposalOrigin
+        ? proposalCreateOutcomeReported({
+            proposalId,
+            completedAt: Date.now(),
+            outcome: proposalOrigin.outcome,
+            result: applyResult,
+          })
+        : proposalApplySucceeded({ proposalId, completedAt: Date.now(), result: applyResult }),
     );
   } catch (error) {
     yield* failProposal(proposalId, error instanceof Error ? error.message : String(error));
@@ -863,6 +1002,8 @@ export function* workspaceOperationsSaga(): SagaGenerator<void> {
     takeEvery(openBulkArchiveConfirm, computeBulkArchiveActiveWork),
     takeEvery(openBulkDeleteConfirm, computeBulkDeleteActiveWork),
     takeEvery(requestUnarchiveWorkspace, unarchive),
+    takeLeading(confirmRetireWorkspace, confirmRetire),
+    takeLatest(loadRetiredWorkspacesRequested, loadRetiredWorkspaces),
     takeLeading(confirmBulkArchive, bulkArchive),
     takeLeading(confirmBulkDelete, bulkDelete),
     takeEvery(confirmRemoveRepo, removeRepoFromRegistry),

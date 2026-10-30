@@ -44,6 +44,83 @@ describe('conversation turn indexing', () => {
     expect(indexed.turnKeyByMessageId.get('effort')).toBe('user');
   });
 
+  it('keeps a quota failover notice between the failed attempt and its retry', () => {
+    const [turn] = groupIntoTurns([
+      message('user', 'user'),
+      message('partial', 'assistant'),
+      message('failover', 'system', 'provider_failover'),
+      message('backup', 'assistant'),
+    ]);
+    expect(turn.bodyMessages.map(({ id }) => id)).toEqual(['partial', 'failover', 'backup']);
+    expect(turn.assistantMessages.map(({ id }) => id)).toEqual(['partial', 'backup']);
+    expect(turn.noticeMessages).toEqual([]);
+  });
+
+  it('keeps every switch of a failover chain in transcript order', () => {
+    const indexed = indexConversationTurns([
+      {
+        messages: [
+          message('user', 'user'),
+          message('a-partial', 'assistant'),
+          message('a-to-b', 'system', 'provider_failover'),
+          message('b-partial', 'assistant'),
+          message('b-to-c', 'system', 'provider_failover'),
+          message('c-reply', 'assistant'),
+        ],
+      },
+    ]);
+    const [turn] = indexed.groups[0].turns;
+    expect(turn.bodyMessages.map(({ id }) => id)).toEqual([
+      'a-partial',
+      'a-to-b',
+      'b-partial',
+      'b-to-c',
+      'c-reply',
+    ]);
+    expect(turn.assistantMessages.map(({ id }) => id)).toEqual([
+      'a-partial',
+      'b-partial',
+      'c-reply',
+    ]);
+    expect(turn.noticeMessages).toEqual([]);
+    expect(indexed.turnKeyByMessageId.get('b-to-c')).toBe('user');
+  });
+
+  it('keeps a returned-home notice in transcript order and out of assistant output', () => {
+    const [turn] = groupIntoTurns([
+      message('user', 'user'),
+      message('returned', 'system', 'provider_returned'),
+      message('home-reply', 'assistant'),
+    ]);
+    expect(turn.bodyMessages.map(({ id }) => id)).toEqual(['returned', 'home-reply']);
+    expect(turn.assistantMessages.map(({ id }) => id)).toEqual(['home-reply']);
+    expect(turn.noticeMessages).toEqual([]);
+  });
+
+  it('orders a failed return before the failover that follows it', () => {
+    const [turn] = groupIntoTurns([
+      message('user', 'user'),
+      message('home-partial', 'assistant'),
+      message('home-to-backup', 'system', 'provider_failover'),
+      message('backup-reply', 'assistant'),
+    ]);
+    expect(turn.bodyMessages.map(({ id }) => id)).toEqual([
+      'home-partial',
+      'home-to-backup',
+      'backup-reply',
+    ]);
+  });
+
+  it('keeps an orphan failover notice addressable when a history page begins with it', () => {
+    const indexed = indexConversationTurns([
+      { groupKey: 'older', messages: [message('failover', 'system', 'provider_failover')] },
+    ]);
+    const [turn] = indexed.groups[0].turns;
+    expect(turn.bodyMessages.map(({ id }) => id)).toEqual(['failover']);
+    expect(turn.assistantMessages).toEqual([]);
+    expect(indexed.turnKeyByMessageId.get('failover')).toBe('group-older-turn-0');
+  });
+
   it('keeps an orphan effort notice addressable when a history page begins with it', () => {
     const indexed = indexConversationTurns([
       { groupKey: 'older', messages: [message('effort', 'system', 'effort_changed')] },
@@ -237,6 +314,35 @@ describe('conversation turn indexing', () => {
     expect(
       hasOperationalAssistantTurnBoundary(turn(tool), turn(systemNotice('notice', 'interruption'))),
     ).toBe(false);
+  });
+
+  it('counts thinking the renderer shows as prose as prose when reasoningAsText is on', () => {
+    const tool = {
+      ...message('tool', 'assistant'),
+      contentBlocks: [{ type: 'tool_use', id: 'tool-call', name: 'view', input: {} }],
+    } as AgentMessage;
+    const update = {
+      ...message('update', 'assistant'),
+      contentBlocks: [{ type: 'thinking', id: 'thinking', text: 'Found it; fixing now.' }],
+    } as AgentMessage;
+    const legacyUpdate = {
+      ...message('legacy', 'assistant'),
+      contentBlocks: [{ type: 'thinking', id: 'thinking', text: '', content: 'Legacy update' }],
+    } as AgentMessage;
+    const emptyThinking = {
+      ...message('empty', 'assistant'),
+      contentBlocks: [{ type: 'thinking', id: 'thinking', text: '  ' }],
+    } as AgentMessage;
+    const turn = (assistant: AgentMessage) => groupIntoTurns([assistant])[0];
+
+    expect(isOperationalOnlyAssistantMessage(update, true)).toBe(false);
+    expect(isOperationalOnlyAssistantMessage(legacyUpdate, true)).toBe(false);
+    expect(isOperationalOnlyAssistantMessage(emptyThinking, true)).toBe(true);
+    expect(isOperationalOnlyAssistantMessage(update)).toBe(true);
+    expect(hasOperationalAssistantMessageBoundary(tool, update, true)).toBe(false);
+    expect(hasOperationalAssistantMessageBoundary(tool, update)).toBe(true);
+    expect(hasOperationalAssistantTurnBoundary(turn(tool), turn(legacyUpdate), true)).toBe(false);
+    expect(hasOperationalAssistantTurnBoundary(turn(tool), turn(emptyThinking), true)).toBe(true);
   });
 
   it('keeps consecutive notices while excluding unknown and non-system notice lookalikes', () => {

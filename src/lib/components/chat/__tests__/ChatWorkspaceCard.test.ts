@@ -52,7 +52,11 @@ const mocks = vi.hoisted(() => {
   };
 });
 
-vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
+vi.mock('$app/navigation', async () => {
+  const { landingNavigation } =
+    await import('$store/renderer/utils/test-helpers/landing-navigation');
+  return { goto: landingNavigation(mocks.goto) };
+});
 vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/') } }));
 
 vi.mock('$store/renderer/store', async () => {
@@ -106,10 +110,10 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   },
 }));
 vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', () => ({
-  selectActivePrMonitors: Object.assign(() => mocks.readable(() => []), {
+  selectActiveReviewMonitors: Object.assign(() => mocks.readable(() => []), {
     select: () => [],
   }),
-  selectPrMonitors: Object.assign(() => mocks.readable(() => []), {
+  selectReviewMonitors: Object.assign(() => mocks.readable(() => []), {
     select: () => [],
   }),
 }));

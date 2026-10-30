@@ -4,9 +4,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import ConfirmHost from './ConfirmHost.svelte';
 import { alert, confirm, prompt } from './confirm-service';
 import { resetConfirmServiceForTests } from './confirm-service';
+import { m } from '$shared/paraglide/messages.js';
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   resetConfirmServiceForTests();
 });
 
@@ -79,6 +81,44 @@ describe('confirm service', () => {
     release();
     await expect(result).resolves.toBe(true);
   });
+
+  it.each(['confirm', 'prompt'] as const)(
+    'surfaces a rejected %s action, keeps the dialog open, and settles on retry',
+    async (kind) => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      render(ConfirmHost);
+      let attempts = 0;
+      const onConfirm = vi.fn(async () => {
+        attempts++;
+        if (attempts === 1) throw new Error('Delete failed');
+      });
+      const result =
+        kind === 'confirm'
+          ? confirm({ title: 'Delete note', confirmLabel: 'Delete', destructive: true, onConfirm })
+          : prompt({
+              title: 'Rename note',
+              confirmLabel: 'Delete',
+              field: { label: 'Name', initialValue: 'Alpha', required: true },
+              onConfirm,
+            });
+      let settled = false;
+      void result.then(() => (settled = true));
+      const title = kind === 'confirm' ? 'Delete note' : 'Rename note';
+
+      await fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
+      expect(await screen.findByText(m.ui_dialog_submitFailed_error())).toBeTruthy();
+      expect(screen.getByRole('dialog', { name: title })).toBeTruthy();
+      const retry = screen.getByRole('button', { name: 'Delete' });
+      await waitFor(() => expect(retry.hasAttribute('disabled')).toBe(false));
+      expect(settled).toBe(false);
+
+      await fireEvent.click(retry);
+      await expect(result).resolves.toBe(kind === 'confirm' ? true : 'Alpha');
+      expect(onConfirm).toHaveBeenCalledTimes(2);
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: title })).toBeNull());
+      expect(screen.queryByText(m.ui_dialog_submitFailed_error())).toBeNull();
+    },
+  );
 
   it('submits a required prompt value and supports cancellation', async () => {
     render(ConfirmHost);

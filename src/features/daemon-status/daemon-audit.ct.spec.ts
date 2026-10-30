@@ -4,6 +4,8 @@ import { expect, test } from '../../test/ct-test';
 import Harness from './DaemonAuditHarness.svelte';
 
 for (const state of [
+  'daemon-starting',
+  'daemon-start-failed',
   'external',
   'long-host',
   'startup',
@@ -25,6 +27,14 @@ for (const state of [
       await expect(page.getByTestId('daemon-stopped-guest-leave')).toBeVisible();
       await expect(page.getByTestId('daemon-stopped-spawn-sidecar')).toHaveCount(0);
       await expect(page.getByTestId('daemon-stopped-repair')).toHaveCount(0);
+    } else if (state === 'daemon-starting') {
+      // A starting daemon is not lost: no spawn fallback or retry counter.
+      await expect(page.getByTestId('daemon-startup-progress')).toBeVisible();
+      await expect(page.getByTestId('daemon-stopped-spawn-sidecar')).toHaveCount(0);
+      await expect(page.getByTestId('daemon-stopped-retrying')).toHaveCount(0);
+    } else if (state === 'daemon-start-failed') {
+      await expect(page.getByTestId('daemon-startup-progress')).toBeVisible();
+      await expect(page.getByTestId('daemon-stopped-retrying')).toBeVisible();
     } else if (state.startsWith('auth-')) {
       await expect(page.getByTestId('daemon-stopped-repair')).toBeVisible();
       await expect(page.getByTestId('daemon-stopped-retrying')).toHaveCount(0);
@@ -38,7 +48,7 @@ for (const state of [
     const bounds = await panel.boundingBox();
     expect(bounds).not.toBeNull();
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
-    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(360);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
     expect(await panel.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
       true,
     );

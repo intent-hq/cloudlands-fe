@@ -6,7 +6,13 @@
 import type { TrackedChange, CommitInfo } from '$features/file-tracking/types';
 import type { PullRequestInfo, Workspace } from '$shared/types';
 import { PullRequestStatus } from '$shared/types';
-import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
+import type { ReviewMonitorRow as PrMonitorRow } from '$shared/types/pr-monitor';
+import {
+  monitorUrl,
+  monitorIdentity,
+  monitorNumber,
+  monitorAvailabilitySummary,
+} from '$lib/utils/review-monitor-presentation';
 import type {
   AgentChangeGroup,
   PRInfo,
@@ -15,6 +21,7 @@ import type {
 import { m } from '$shared/paraglide/messages.js';
 import { formatInteger } from '$lib/i18n/format';
 import { capitalize } from '$shared/utils-client';
+import { formatMergeQueueSummary } from '$lib/utils/merge-queue';
 
 /**
  * Validate a git branch name according to git-check-ref-format rules.
@@ -333,6 +340,8 @@ export function mapWorkspacePRs(
         status: toPRDisplayStatus(pr.status),
         createdAt: pr.createdAt,
         updatedAt: pr.updatedAt,
+        // A draft cannot sit in the merge queue; drop a stale flag.
+        isInMergeQueue: pr.isDraft ? undefined : pr.isInMergeQueue,
         crossRepo,
         crossRepoDisplay: crossRepo ? shortRepoDisplay(crossRepo, workspaceOwner) : undefined,
       };
@@ -348,6 +357,7 @@ export function mapWorkspacePRs(
         status: toPRDisplayStatus(activePR.status),
         createdAt: activePR.createdAt,
         updatedAt: activePR.updatedAt,
+        isInMergeQueue: activePR.isDraft ? undefined : activePR.isInMergeQueue,
       },
     ];
   }
@@ -418,18 +428,29 @@ export function mergeMonitoredPRs(
   const workspaceOwner = workspaceRepo?.split('/')[0];
   const merged = basePRs.map((pr) => ({ ...pr }));
   for (const monitor of monitors) {
-    const sameRepo = !workspaceRepo || monitor.repo === workspaceRepo;
-    const url = monitor.url ?? `https://github.com/${monitor.repo}/pull/${monitor.prNumber}`;
+    const sameRepo =
+      !monitor.resource &&
+      !monitor.monitorAvailability &&
+      (!workspaceRepo || monitor.repo === workspaceRepo);
+    const url = monitorUrl(monitor);
     const urlLower = url.toLowerCase();
     const existing = merged.find(
       (pr) =>
-        pr.url.toLowerCase() === urlLower ||
-        (sameRepo
-          ? !pr.crossRepo && pr.number === monitor.prNumber
-          : pr.crossRepo === monitor.repo && pr.number === monitor.prNumber),
+        (Boolean(url) && pr.url.toLowerCase() === urlLower) ||
+        (monitor.resource || monitor.monitorAvailability
+          ? pr.monitorIdentity === monitorIdentity(monitor)
+          : !pr.resource &&
+            !pr.monitorAvailability &&
+            (sameRepo
+              ? !pr.crossRepo && pr.number === monitor.prNumber
+              : pr.crossRepo === monitor.repo && pr.number === monitor.prNumber)),
     );
     if (existing) {
       existing.monitorAgentId = monitor.agentId;
+      existing.resource = monitor.resource;
+      existing.monitorAvailability = monitor.monitorAvailability;
+      existing.monitorIdentity =
+        monitor.resource || monitor.monitorAvailability ? monitorIdentity(monitor) : undefined;
       // `lastSnapshot` is absent until a monitor's first successful poll —
       // don't let a snapshotless duplicate monitor clobber a present one.
       existing.monitorSnapshot = monitor.lastSnapshot ?? existing.monitorSnapshot;
@@ -437,7 +458,11 @@ export function mergeMonitoredPRs(
     }
     merged.push({
       number: monitor.prNumber,
-      title: monitor.title ?? `${monitor.repo}#${monitor.prNumber}`,
+      title: monitor.title ?? `${monitor.repo}${monitorNumber(monitor, monitor.prNumber)}`,
+      resource: monitor.resource,
+      monitorAvailability: monitor.monitorAvailability,
+      monitorIdentity:
+        monitor.resource || monitor.monitorAvailability ? monitorIdentity(monitor) : undefined,
       url,
       htmlUrl: url,
       status: monitorDisplayStatus(monitor),
@@ -541,9 +566,18 @@ export function sectionPRs(
   const trackedMonitors: PrMonitorRow[] = [];
   for (const monitor of monitors) {
     const monitorRepoLower = monitor.repo.toLowerCase();
-    if (!workspaceRepoLower || monitorRepoLower === workspaceRepoLower)
+    if (
+      (monitorUrl(monitor) && ownBase.some((pr) => pr.url === monitorUrl(monitor))) ||
+      (!monitor.resource &&
+        !monitor.monitorAvailability &&
+        (!workspaceRepoLower || monitorRepoLower === workspaceRepoLower))
+    )
       primaryMonitors.push(monitor);
-    else if (rootRepos.has(monitorRepoLower)) rootMonitors.push(monitor);
+    else if (
+      (monitorUrl(monitor) && rootBase.some((pr) => pr.url === monitorUrl(monitor))) ||
+      (!monitor.resource && !monitor.monitorAvailability && rootRepos.has(monitorRepoLower))
+    )
+      rootMonitors.push(monitor);
     else trackedMonitors.push(monitor);
   }
 
@@ -677,9 +711,16 @@ function compareMissingLast(
  * Whether an open PR row sits in its host's merge queue. Only an open row can
  * be queued — a stale `isInMergeQueue` on a draft/merged/closed snapshot is
  * ignored — and the additive flag is presence-detected (absent = not queued).
+ * The monitor snapshot is the live signal when the row has one; otherwise the
+ * workspace PR pool entry's flag decides (the Home card passes no monitors).
  */
-export function isPRQueued(pr: Pick<PRInfo, 'status' | 'monitorSnapshot'>): boolean {
-  return pr.status === 'open' && pr.monitorSnapshot?.isInMergeQueue === true;
+export function isPRQueued(
+  pr: Pick<PRInfo, 'status' | 'monitorSnapshot' | 'isInMergeQueue'>,
+): boolean {
+  if (pr.status !== 'open') return false;
+  return pr.monitorSnapshot
+    ? pr.monitorSnapshot.isInMergeQueue === true
+    : pr.isInMergeQueue === true;
 }
 
 /**
@@ -698,13 +739,25 @@ export function getPRStatusTooltip(pr: PRInfo): string {
           : isPRQueued(pr)
             ? m.workspace_prSection_statusQueued_label()
             : m.workspace_prSection_statusOpen_label();
-  const lines: string[] = [stateLine];
+  const lines: string[] = [monitorAvailabilitySummary(pr) ?? stateLine];
+  // A queued row adds its queue position and time-to-merge estimate when the
+  // monitor snapshot carries them (additive; absent on older daemons).
+  const queueLine = isPRQueued(pr) ? formatMergeQueueSummary(pr.monitorSnapshot?.mergeQueue) : null;
+  if (queueLine) lines.push(queueLine);
   // Merged/closed rows no longer have merge requirements — the snapshot
   // detail lines would just be stale noise on a settled PR.
   const snapshot =
     pr.status === 'merged' || pr.status === 'closed' ? undefined : pr.monitorSnapshot;
   if (snapshot) {
-    if (snapshot.checks.total > 0) {
+    if (
+      snapshot.checks.total === null ||
+      snapshot.checks.passed === null ||
+      snapshot.checks.failed === null ||
+      snapshot.checks.pending === null ||
+      (snapshot.availability && snapshot.availability.checks !== 'available')
+    ) {
+      lines.push(m.chat_monitoredPrs_hover_checksUnknown_label());
+    } else if (snapshot.checks.total > 0) {
       lines.push(
         m.workspace_prSection_statusChecks_tooltip({
           passed: formatInteger(snapshot.checks.passed),
@@ -714,23 +767,28 @@ export function getPRStatusTooltip(pr: PRInfo): string {
       );
     }
     lines.push(
-      snapshot.approvals.needed != null
-        ? m.workspace_prSection_statusApprovalsOfNeeded_tooltip({
-            count: formatInteger(snapshot.approvals.have),
-            needed: formatInteger(snapshot.approvals.needed),
-          })
-        : m.workspace_prSection_statusApprovals_tooltip({
-            count: formatInteger(snapshot.approvals.have),
-          }),
+      snapshot.approvals.have === null ||
+        (snapshot.availability && snapshot.availability.approvals !== 'available')
+        ? m.chat_monitoredPrs_hover_approvalsUnknown_label()
+        : snapshot.approvals.needed != null
+          ? m.workspace_prSection_statusApprovalsOfNeeded_tooltip({
+              count: formatInteger(snapshot.approvals.have),
+              needed: formatInteger(snapshot.approvals.needed),
+            })
+          : m.workspace_prSection_statusApprovals_tooltip({
+              count: formatInteger(snapshot.approvals.have),
+            }),
     );
-    if (snapshot.approvals.changesRequested > 0) {
+    if (snapshot.approvals.changesRequested !== null && snapshot.approvals.changesRequested > 0) {
       lines.push(
         m.workspace_prSection_statusChangesRequested_tooltip({
           count: formatInteger(snapshot.approvals.changesRequested),
         }),
       );
     }
-    if (typeof snapshot.threads.unresolved === 'number') {
+    if (snapshot.availability && snapshot.availability.discussions !== 'available') {
+      lines.push(m.workspace_prSection_statusUnresolvedThreadsUnknown_tooltip());
+    } else if (typeof snapshot.threads.unresolved === 'number') {
       if (snapshot.threads.unresolved > 0) {
         lines.push(
           m.workspace_prSection_statusUnresolvedThreads_tooltip({
@@ -787,7 +845,9 @@ export function countOtherPrs(pool: PRInfo[], primaryPr: PRInfo | undefined): nu
     (pr) =>
       !(
         (pr.url && pr.url.toLowerCase() === primaryUrlLower) ||
-        (pr.number === primaryPr.number && pr.crossRepo?.toLowerCase() === primaryCrossRepoLower)
+        (pr.resource || primaryPr.resource
+          ? pr.monitorIdentity === primaryPr.monitorIdentity
+          : pr.number === primaryPr.number && pr.crossRepo?.toLowerCase() === primaryCrossRepoLower)
       ),
   ).length;
 }
@@ -818,4 +878,92 @@ export function toUIFileChange(change: TrackedChange, staged: boolean): UIFileCh
         }
       : undefined,
   };
+}
+
+/**
+ * Maximum number of file rows a single changes list renders. Each row is a
+ * full `FileRow` (tooltips, actions, transitions), so a workspace with
+ * thousands of changed files would otherwise freeze the sidebar. Bulk actions
+ * (Stage all, group stage/commit) still operate on the full list.
+ */
+export const SIDEBAR_CHANGES_DISPLAY_LIMIT = 500;
+
+/** Rendered vs cap-hidden row counts for one changes section. */
+export interface HiddenRowsSummary {
+  /** Rows actually rendered. */
+  shown: number;
+  /** Rows not rendered because of the display cap. */
+  hiddenCount: number;
+}
+
+export interface DisplayLimitedList<T> extends HiddenRowsSummary {
+  /** The first `limit` items, in their original order. */
+  visible: readonly T[];
+}
+
+/** Keep only the first `limit` items of a changes list for rendering. */
+export function limitDisplayedChanges<T>(
+  items: readonly T[],
+  limit: number = SIDEBAR_CHANGES_DISPLAY_LIMIT,
+): DisplayLimitedList<T> {
+  const cap = Math.max(0, Math.floor(limit));
+  if (items.length <= cap) {
+    return { visible: items, shown: items.length, hiddenCount: 0 };
+  }
+  return { visible: items.slice(0, cap), shown: cap, hiddenCount: items.length - cap };
+}
+
+interface LimitedAgentGroup {
+  /** The full group; group actions (stage/commit) use all of its files. */
+  group: AgentChangeGroup;
+  /** The rows rendered for this group (empty when collapsed or over the cap). */
+  visibleFiles: readonly UIFileChange[];
+}
+
+export interface LimitedAgentGroups extends HiddenRowsSummary {
+  groups: LimitedAgentGroup[];
+}
+
+/**
+ * Apply the display cap to agent groups in their rendered order, so rows are
+ * trimmed from the bottom of the section. Every group keeps its header (and
+ * its actions); collapsed groups render no rows and use none of the budget.
+ */
+export function limitGroupedChanges(
+  groups: readonly AgentChangeGroup[],
+  isCollapsed: (group: AgentChangeGroup) => boolean,
+  limit: number = SIDEBAR_CHANGES_DISPLAY_LIMIT,
+): LimitedAgentGroups {
+  let budget = Math.max(0, Math.floor(limit));
+  let shown = 0;
+  let hiddenCount = 0;
+  const limited = groups.map((group) => {
+    if (isCollapsed(group)) return { group, visibleFiles: [] };
+    const take = Math.min(budget, group.files.length);
+    budget -= take;
+    shown += take;
+    hiddenCount += group.files.length - take;
+    return {
+      group,
+      visibleFiles: take === group.files.length ? group.files : group.files.slice(0, take),
+    };
+  });
+  return { groups: limited, shown, hiddenCount };
+}
+
+/**
+ * "Showing X of Y files…" notice for a truncated changes list; empty string
+ * when nothing is hidden.
+ */
+export function formatHiddenChangesNotice(summary: HiddenRowsSummary): string {
+  if (summary.hiddenCount <= 0) return '';
+  const shown = formatInteger(summary.shown);
+  const total = formatInteger(summary.shown + summary.hiddenCount);
+  return summary.hiddenCount === 1
+    ? m.workspace_fileChanges_hiddenFiles_one({ shown, total })
+    : m.workspace_fileChanges_hiddenFiles_many({
+        shown,
+        total,
+        count: formatInteger(summary.hiddenCount),
+      });
 }

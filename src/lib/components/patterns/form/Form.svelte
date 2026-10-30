@@ -2,6 +2,7 @@
   import type { Snippet } from 'svelte';
   import type { HTMLFormAttributes } from 'svelte/elements';
   import { cn } from '$lib/utils.js';
+  import { isMultilineTextEntryTarget } from '$lib/utils/text-entry';
 
   type KeyPolicy = 'submit' | 'ignore';
 
@@ -39,10 +40,12 @@
     }
   }
 
+  // Multi-line targets (textareas, contenteditable, Monaco's EditContext textbox)
+  // keep plain Enter for new lines; see isMultilineTextEntryTarget (intent-hq/intent#8068).
   function handleKeydown(event: KeyboardEvent) {
     if (event.key !== 'Enter' || event.isComposing || event.defaultPrevented || isBusy) return;
     const target = event.target as HTMLElement;
-    const multiline = target instanceof HTMLTextAreaElement || target.isContentEditable;
+    const multiline = isMultilineTextEntryTarget(target);
     // Native controls and composite widgets own their Enter activation, even when
     // implicit submission is disabled. Check ancestors for nested button/link content.
     const interactive = target.closest(

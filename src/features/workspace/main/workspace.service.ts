@@ -217,6 +217,8 @@ export class WorkspaceService {
         return WorkspaceStatus.Inactive;
       case 'archived':
         return WorkspaceStatus.Archived;
+      case 'retired':
+        return WorkspaceStatus.Retired;
       case 'deleted':
         return WorkspaceStatus.Deleted;
       default:
@@ -352,7 +354,9 @@ export class WorkspaceService {
       // archived filter mirrors the daemon's `includeArchived` so callers that
       // request only active workspaces get the same rows either way.
       const filteredWorkspaces = allWorkspaces.filter((w) => {
-        if (w.status === WorkspaceStatus.Deleted) {
+        // Retired rows need the explicit `includeRetired` opt-in (PROTOCOL §5.1
+        // Retired workspaces), which this list never sends.
+        if (w.status === WorkspaceStatus.Deleted || w.status === WorkspaceStatus.Retired) {
           return false;
         }
         if (w.status === WorkspaceStatus.Archived && !includeArchived) {
@@ -860,6 +864,11 @@ export class WorkspaceService {
       // for these, so coerce nulls back to `undefined` before returning.
       if ((merged.prUrl as unknown) === null) merged.prUrl = undefined;
       if ((merged.prNumber as unknown) === null) merged.prNumber = undefined;
+      // The daemon omits `label` from Workspace payloads when it is unset, so
+      // its absence is authoritative: never fall back to a cached label.
+      const daemonLabel = (daemonWorkspace as { label?: unknown }).label;
+      if (typeof daemonLabel === 'string') merged.label = daemonLabel;
+      else delete merged.label;
 
       if (requestedPrStatus !== undefined) {
         if (requestedPrStatus === null) {

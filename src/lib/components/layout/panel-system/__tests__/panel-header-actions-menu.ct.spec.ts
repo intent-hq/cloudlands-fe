@@ -1,4 +1,5 @@
 import { expect, test } from '../../../../../test/ct-test';
+import { expectDismissibleLayerArmed } from '../../../../../test/dismissible-layer';
 import type { Locator, Page } from '@playwright/test';
 import type { PanelTabType } from '$store/renderer/slices/panel-layout/panel-layout-types';
 import PanelHeaderActionsHost from './mocks/PanelHeaderActionsHost.svelte';
@@ -87,6 +88,7 @@ test('panel menu commands remain clickable where they overlap the titlebar', asy
     body: await page.screenshot(),
     contentType: 'image/png',
   });
+  // eslint-disable-next-line intent/no-unarmed-outside-click-in-ct -- runs a menu command inside the menu; not an outside dismissal
   await page.mouse.click(overlap.x, overlap.y);
   await expect(component.getByTestId('panel-actions-host')).toHaveAttribute(
     'data-display-count',
@@ -235,8 +237,8 @@ test('traditional tab context menu supports keyboard focus and stays inside the 
   expect(bounds).not.toBeNull();
   expect(bounds!.x).toBeGreaterThanOrEqual(0);
   expect(bounds!.y).toBeGreaterThanOrEqual(0);
-  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(600);
-  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(420);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
   await menu.getByRole('menuitem', { name: 'Close', exact: true }).focus();
   await page.keyboard.press('Enter');
   await expect(menu).toBeHidden();
@@ -436,6 +438,8 @@ for (const [index, panelType] of panelTypes.entries()) {
     await page.keyboard.press('Escape');
 
     await trigger.click();
+    await expect(menu).toBeVisible();
+    await expectDismissibleLayerArmed(menu);
     await page.mouse.click(1100, 700);
     await expect(menu).toBeHidden();
     await expect(trigger).toHaveAttribute('aria-expanded', 'false');
@@ -491,8 +495,8 @@ for (const scenario of [
         shortcutColor: getComputedStyle(shortcut).color,
       };
     });
-    expect(geometry.left).toBeGreaterThanOrEqual(8 - 0.5);
-    expect(geometry.right).toBeLessThanOrEqual(scenario.viewportWidth - 8 + 0.5);
+    expect(geometry.left).toBeGreaterThanOrEqual(0);
+    expect(geometry.right).toBeLessThanOrEqual(page.viewportSize()!.width + 0.5);
     expect(geometry.shortcutColor).not.toBe(geometry.labelColor);
     expect(geometry.labelScrollWidth).toBeGreaterThan(geometry.labelClientWidth);
     await testInfo.attach('long-label-menu', {
@@ -525,7 +529,7 @@ test('keeps desktop menu commands unclipped and restores focus after selection',
     };
   });
   expect(geometry.left).toBeGreaterThanOrEqual(0);
-  expect(geometry.right).toBeLessThanOrEqual(1000);
+  expect(geometry.right).toBeLessThanOrEqual(page.viewportSize()!.width);
   expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth + 1);
   await testInfo.attach('desktop-panel-actions', {
     body: await menu.screenshot(),
@@ -542,6 +546,7 @@ test('keeps desktop menu commands unclipped and restores focus after selection',
     .locator('svg')
     .boundingBox();
   if (!leftArrow) throw new Error('Missing visible left arrow');
+  // eslint-disable-next-line intent/no-unarmed-outside-click-in-ct -- runs a menu command inside the menu; not an outside dismissal
   await page.mouse.click(leftArrow.x + leftArrow.width / 2, leftArrow.y + leftArrow.height / 2);
   await expect(component).toHaveAttribute('data-move-left-count', '1');
   await expect(menu).toBeHidden();

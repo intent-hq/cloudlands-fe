@@ -13,6 +13,18 @@ vi.mock('$lib/components/patterns/notify', () => ({
   notify: { error: vi.fn(), success: vi.fn(), warning: vi.fn(), info: vi.fn() },
 }));
 vi.mock('$store/renderer/store', () => ({ store: { dispatch } }));
+const liveTitles = vi.hoisted(() => {
+  let titles: Record<string, string> = {};
+  return {
+    lookup: (ws: string, id: string) => titles[`${ws}/${id}`],
+    set(next: Record<string, string>) {
+      titles = next;
+    },
+  };
+});
+vi.mock('$lib/utils/store-note-title-lookup', () => ({
+  storeNoteTitleLookup: (ws: string, id: string) => liveTitles.lookup(ws, id),
+}));
 
 warmImport(() => import('../MarkdownViewer.svelte'));
 
@@ -34,6 +46,71 @@ describe('MarkdownViewer panel navigation', () => {
       expect.objectContaining({
         type: 'workspaceNavigation/openWorkspaceFile',
         payload: ['ws-1', 'docs/chl-spec.md', expect.objectContaining({ line: 2471 })],
+      }),
+    );
+  });
+
+  it('shows a note chip with its current title, falling back to the saved one', async () => {
+    liveTitles.set({ 'ws-1/n-1': 'Meeting (renamed)' });
+    const MarkdownViewer = (await import('../MarkdownViewer.svelte')).default;
+    const view = render(MarkdownViewer, {
+      props: { content: 'see @note[n-1:Meeting with Andre] now', workspaceId: 'ws-1' },
+    });
+    expect(await screen.findByText('Meeting (renamed)')).toBeTruthy();
+    view.unmount();
+
+    liveTitles.set({});
+    render(MarkdownViewer, {
+      props: { content: 'see @note[n-1:Meeting with Andre] now', workspaceId: 'ws-1' },
+    });
+    expect(await screen.findByText('Meeting with Andre')).toBeTruthy();
+  });
+
+  it('opens a same-workspace @note[id:title] chip in the viewer workspace', async () => {
+    liveTitles.set({});
+    const MarkdownViewer = (await import('../MarkdownViewer.svelte')).default;
+    render(MarkdownViewer, {
+      props: { content: 'see @note[n-1:Meeting with Andre] now', workspaceId: 'ws-1' },
+    });
+
+    await fireEvent.click(await screen.findByText('Meeting with Andre'));
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'workspaceNavigation/openWorkspaceNote',
+        payload: ['ws-1', 'n-1', expect.anything()],
+      }),
+    );
+  });
+
+  it('opens a cross-workspace @note chip through its workspace-qualified link', async () => {
+    const MarkdownViewer = (await import('../MarkdownViewer.svelte')).default;
+    render(MarkdownViewer, {
+      props: { content: 'see @note[ws-2/n-9:Other plan] now', workspaceId: 'ws-1' },
+    });
+
+    await fireEvent.click(await screen.findByText('Other plan'));
+
+    expect(handleLink).toHaveBeenCalledWith(
+      'intent://local/ws-2/note/n-9',
+      expect.objectContaining({ workspaceId: 'ws-1' }),
+    );
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('opens a workspace-qualified @note chip for the viewer workspace in place', async () => {
+    const MarkdownViewer = (await import('../MarkdownViewer.svelte')).default;
+    render(MarkdownViewer, {
+      props: { content: 'see @note[ws-1/n-2:Own plan] now', workspaceId: 'ws-1' },
+    });
+
+    await fireEvent.click(await screen.findByText('Own plan'));
+
+    expect(handleLink).not.toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'workspaceNavigation/openWorkspaceNote',
+        payload: ['ws-1', 'n-2', expect.anything()],
       }),
     );
   });

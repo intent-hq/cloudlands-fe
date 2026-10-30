@@ -9,8 +9,14 @@
  */
 
 import { memberMentionLabel, parseMemberMention } from '$lib/utils/member-mention-token';
+import {
+  NOTE_MENTION_BODY_SOURCE,
+  noteMentionChipAttrs,
+  parseNoteMention,
+} from '$lib/utils/note-mention-token';
 
 // --- Regex patterns ---
+const noteBracketRe = new RegExp(`@${NOTE_MENTION_BODY_SOURCE}`, 'g');
 const noteRe = /@note\/([A-Za-z0-9\-_]+)/g;
 const rulesRe = /@\.augment\/rules\/[^\s<>()'\"]+/g;
 const fileRe = /@\/[^\s<>()'\"]+/g;
@@ -28,6 +34,7 @@ const contextMentionRe = /@context\[([A-Za-z0-9+/=]+|[^\[\]]*(?:\[[^\]]*\][^\[\]
 
 const allPatterns: Array<{ re: RegExp; kind: string }> = [
   { re: /@member\[[^\]\s]*\]/g, kind: 'member' },
+  { re: noteBracketRe, kind: 'note-bracket' },
   { re: noteRe, kind: 'note' },
   { re: rulesRe, kind: 'rule' },
   { re: fileRe, kind: 'file' },
@@ -44,6 +51,27 @@ const allPatterns: Array<{ re: RegExp; kind: string }> = [
 // --- Helper: escape HTML attribute values ---
 const escAttr = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+// --- Helper: decode the entities escAttr produces (HTML text -> plain text) ---
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  nbsp: '\u00a0',
+};
+const unescapeHtmlText = (s: string): string =>
+  s.replace(/&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z]+);/g, (entity, body: string) => {
+    if (body[0] === '#') {
+      const code =
+        body[1] === 'x' || body[1] === 'X'
+          ? parseInt(body.slice(2), 16)
+          : parseInt(body.slice(1), 10);
+      return Number.isFinite(code) && code <= 0x10ffff ? String.fromCodePoint(code) : entity;
+    }
+    return NAMED_ENTITIES[body] ?? entity;
+  });
 
 // --- Helper: build mention span HTML string ---
 function mentionSpanHtml(attrs: {
@@ -91,6 +119,10 @@ function matchToHtml(kind: string, value: string, groups: string[]): string {
   if (kind === 'member') {
     const member = parseMemberMention(value);
     return member ? mentionSpanHtml(member) : value;
+  } else if (kind === 'note-bracket') {
+    // Input is HTML text, so entities in the title are still escaped.
+    const note = parseNoteMention(unescapeHtmlText(value));
+    return note ? mentionSpanHtml(noteMentionChipAttrs(note)) : value;
   } else if (kind === 'note') {
     const id = groups[0] || '';
     return mentionSpanHtml({ type: 'note', id, label: id });

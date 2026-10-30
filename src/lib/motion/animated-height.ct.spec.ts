@@ -63,11 +63,15 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
     const component = await mount(AnimatedHeightHost);
     const wrapper = component.locator('[data-height-probe]');
     const height = () => wrapper.evaluate((node) => node.getBoundingClientRect().height);
+    const contentHeight = () =>
+      component
+        .locator('[data-height-content]')
+        .evaluate((node) => node.getBoundingClientRect().height);
     await expect.poll(height).toBe(0);
     await component.update({ props: { open: true } });
-    await expect.poll(height).toBe(48);
+    await expect.poll(height).toBe(await contentHeight());
     await component.update({ props: { open: true, contentHeight: 96 } });
-    await expect.poll(height).toBe(96);
+    await expect.poll(height).toBe(await contentHeight());
     await component.update({ props: { open: false, contentHeight: 96 } });
     await expect.poll(height).toBe(0);
   });

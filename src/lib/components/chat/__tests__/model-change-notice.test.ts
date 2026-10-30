@@ -201,3 +201,191 @@ it('uses learned names in both transcript notice formats before workspace catalo
     ),
   ).toContain('Remembered model');
 });
+
+describe('formatModelChangeLabel — named provider profiles', () => {
+  function profileState(
+    profiles = [
+      {
+        id: 'ppersonal',
+        providerRef: 'claude-code@ppersonal',
+        baseProviderId: 'claude-code',
+        name: 'Personal',
+      },
+      {
+        id: 'pwork',
+        providerRef: 'claude-code@pwork',
+        baseProviderId: 'claude-code',
+        name: 'Work',
+      },
+    ],
+  ): Record<string, unknown> {
+    const base = hydratedState();
+    return {
+      ...base,
+      providerCatalog: {
+        loaded: true,
+        defaultProviderId: 'auggie',
+        providers: createCollection('id', [
+          { id: 'auggie', displayName: 'Augment Auggie' },
+          { id: 'claude-code', displayName: 'Claude Code' },
+        ]),
+        profiles: createCollection('id', profiles),
+      },
+      providerModels: {
+        byProviderId: {
+          'claude-code': {
+            models: [{ value: 'opus', label: 'Opus 5.5' }],
+            fetchedAt: '2026-01-01T00:00:00Z',
+          },
+          'claude-code@pwork': {
+            models: [{ value: 'sonnet', label: 'Sonnet 5' }],
+            fetchedAt: '2026-01-01T00:00:00Z',
+          },
+        },
+        clearEpoch: 0,
+      },
+    };
+  }
+
+  it('labels both sides "<Model> (<Provider> · <Profile>)" without internal references', () => {
+    mockStoreState = profileState();
+    const label = formatModelChangeLabel(
+      {
+        from: 'opus',
+        to: 'opus',
+        fromProvider: 'claude-code@ppersonal',
+        toProvider: 'claude-code@pwork',
+      },
+      FALLBACK,
+    );
+    expect(label).toBe(
+      'Switched from Opus 5.5 (Claude Code · Personal) to Opus 5.5 (Claude Code · Work)',
+    );
+  });
+
+  it("prefers the profile's own model catalog and names the Default profile", () => {
+    mockStoreState = profileState();
+    const label = formatModelChangeLabel(
+      { from: 'opus', to: 'sonnet', fromProvider: 'claude-code', toProvider: 'claude-code@pwork' },
+      FALLBACK,
+    );
+    expect(label).toBe(
+      'Switched from Opus 5.5 (Claude Code · Default) to Sonnet 5 (Claude Code · Work)',
+    );
+  });
+
+  it('reads a removed profile as a removed profile and follows renames', () => {
+    mockStoreState = profileState([
+      { id: 'pwork', providerRef: 'claude-code@pwork', baseProviderId: 'claude-code', name: 'Job' },
+    ]);
+    const label = formatModelChangeLabel(
+      {
+        from: 'opus',
+        to: 'opus',
+        fromProvider: 'claude-code@ppersonal',
+        toProvider: 'claude-code@pwork',
+      },
+      FALLBACK,
+    );
+    expect(label).toBe(
+      'Switched from Opus 5.5 (Claude Code · Removed profile) to Opus 5.5 (Claude Code · Job)',
+    );
+  });
+
+  it('shows the bare provider name, not "Removed profile", until the catalog has loaded', () => {
+    const state = profileState([]);
+    mockStoreState = {
+      ...state,
+      providerCatalog: { ...(state.providerCatalog as object), loaded: false },
+    };
+    const label = formatModelChangeLabel(
+      {
+        from: 'opus',
+        to: 'opus',
+        fromProvider: 'claude-code@ppersonal',
+        toProvider: 'claude-code',
+      },
+      FALLBACK,
+    );
+    expect(label).toBe('Switched from Opus 5.5 (Claude Code) to Opus 5.5 (Claude Code)');
+    expect(label).not.toContain('Removed profile');
+  });
+
+  it('waits for the workspace catalog before calling a profile removed', () => {
+    mockStoreState = profileState();
+    const pending = formatModelChangeLabel(
+      {
+        from: null,
+        to: null,
+        fromProvider: 'claude-code@ppersonal',
+        toProvider: 'claude-code@pwork',
+      },
+      FALLBACK,
+      'ws-1',
+    );
+    expect(pending).toBe('Switched from Claude Code default model to Claude Code default model');
+    expect(pending).not.toContain('Removed profile');
+    mockStoreState = {
+      ...profileState(),
+      providerCatalog: {
+        ...(profileState().providerCatalog as object),
+        byWorkspaceId: {
+          'ws-1': {
+            catalog: {
+              providers: [{ id: 'claude-code', displayName: 'Claude Code' }],
+              profiles: [
+                {
+                  id: 'pwork',
+                  providerRef: 'claude-code@pwork',
+                  baseProviderId: 'claude-code',
+                  name: 'Work',
+                },
+              ],
+            },
+          },
+        },
+      },
+    };
+    const loaded = formatModelChangeLabel(
+      {
+        from: null,
+        to: null,
+        fromProvider: 'claude-code@ppersonal',
+        toProvider: 'claude-code@pwork',
+      },
+      FALLBACK,
+      'ws-1',
+    );
+    expect(loaded).toBe(
+      'Switched from Claude Code · Removed profile default model to Claude Code · Work default model',
+    );
+  });
+
+  it('describes a profile default-model side without the reference', () => {
+    mockStoreState = profileState();
+    const label = formatModelChangeLabel(
+      {
+        from: null,
+        to: 'opus',
+        fromProvider: 'claude-code@pwork',
+        toProvider: 'claude-code@ppersonal',
+      },
+      FALLBACK,
+    );
+    expect(label).toBe(
+      'Switched from Claude Code · Work default model to Opus 5.5 (Claude Code · Personal)',
+    );
+    expect(label).not.toContain('@');
+  });
+
+  it('keeps provider and model ids for switches that involve no profile', () => {
+    mockStoreState = profileState([]);
+    const label = formatModelChangeLabel(
+      { from: 'sonnet4.6', to: 'opus', fromProvider: 'auggie', toProvider: 'claude-code' },
+      FALLBACK,
+    );
+    expect(label).toBe(
+      'Switched from Claude Sonnet 4.6 (auggie / sonnet4.6) to Opus 5.5 (claude-code / opus)',
+    );
+  });
+});

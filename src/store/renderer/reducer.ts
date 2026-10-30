@@ -1,4 +1,5 @@
 import { dockConversationReducer } from './slices/dock-conversation/dock-conversation-slice';
+import { desktopControlReducer } from './slices/desktop-control/desktop-control-slice';
 import { homeWorkspacesReducer } from '$features/home/home-workspaces-slice';
 import { homeIntegrationsReducer } from '$features/home/home-integrations-slice';
 import { pendingSubmissionsReducer } from './slices/pending-submissions/pending-submissions-slice';
@@ -38,8 +39,10 @@ import { workspaceOperationsReducer } from './slices/workspace-operations/worksp
 import { workspaceAgentsReducer } from './slices/workspace-agents/workspace-agents-slice';
 import { agentMutationUiReducer } from './slices/agent-mutation-ui/agent-mutation-ui-slice';
 import { chatPanelUiReducer } from './slices/chat-panel-ui/chat-panel-ui-slice';
+import { inlineVisualsReducer } from './slices/inline-visuals/inline-visuals-slice';
 import { chatDraftsReducer } from './slices/chat-drafts/chat-drafts-slice';
 import { questionUiReducer } from './slices/question-ui/question-ui-slice';
+import { secretRequestsReducer } from './slices/secret-requests/secret-requests-slice';
 import { workspaceNavigationReducer } from './slices/workspace-navigation/workspace-navigation-slice';
 import { workspaceNotesReducer } from './slices/workspace-notes/workspace-notes-slice';
 import { workspaceTasksReducer } from './slices/workspace-tasks/workspace-tasks-slice';
@@ -75,6 +78,7 @@ import { scriptsReducer } from './slices/scripts/scripts-slice';
 import { statsReducer } from './slices/stats/stats-slice';
 import { backgroundHooksReducer } from './slices/background-hooks/background-hooks-slice';
 import { scriptMonitorReducer } from './slices/script-monitor/script-monitor-slice';
+import { agentWorkersReducer } from './slices/agent-workers/agent-workers-slice';
 import { prMonitorReducer } from './slices/pr-monitor/pr-monitor-slice';
 import { agentFollowReducer } from './slices/agent-follow/agent-follow-slice';
 import { gitReducer } from './slices/git/git-slice';
@@ -94,6 +98,7 @@ import { chatStateReducer } from './slices/chat-state/chat-state-slice';
 import { chatChangesReducer } from './slices/chat-changes/chat-changes-slice';
 import { fileExplorerReducer } from './slices/file-explorer/file-explorer-slice';
 import { pdfPreviewReducer } from './slices/pdf-preview/pdf-preview-slice';
+import { videoPreviewReducer } from './slices/video-preview/video-preview-slice';
 import { filesReducer } from './slices/files/files-slice';
 import { agentSessionReducer } from './slices/agent-session/agent-session-slice';
 import { agentQueueReducer } from './slices/agent-queue/agent-queue-slice';
@@ -116,6 +121,7 @@ import { connectionsReducer } from './slices/connections/connections-slice';
 import { guestSessionsReducer } from './slices/guest-sessions/guest-sessions-slice';
 import { principalReducer } from './slices/principal/principal-slice';
 import { presenceFollowReducer } from './slices/presence-follow/presence-follow-slice';
+import { workspaceDiscussionReducer } from './slices/workspace-discussion/workspace-discussion-slice';
 import { presenceReducer } from './slices/presence/presence-slice';
 import { hostRequirementsReducer } from './slices/host-requirements/host-requirements-slice';
 import { hudReducer } from './slices/hud/hud-slice';
@@ -125,6 +131,7 @@ import { workspaceImportReducer } from './slices/workspace-import/workspace-impo
 import { workspaceShareReducer } from './slices/workspace-share/workspace-share-slice';
 
 export const reducers = {
+  desktopControl: desktopControlReducer,
   homeIntegrations: homeIntegrationsReducer,
   homeWorkspaces: homeWorkspacesReducer,
   repositoryContext: repositoryContextReducer,
@@ -160,7 +167,9 @@ export const reducers = {
   agentMutationUi: agentMutationUiReducer,
   chatPanelUi: chatPanelUiReducer,
   chatDrafts: chatDraftsReducer,
+  inlineVisuals: inlineVisualsReducer,
   questionUi: questionUiReducer,
+  secretRequests: secretRequestsReducer,
   workspaceNavigation: workspaceNavigationReducer,
   workspaceNotes: workspaceNotesReducer,
   workspaceTasks: workspaceTasksReducer,
@@ -199,6 +208,7 @@ export const reducers = {
   backgroundHooks: backgroundHooksReducer,
   prMonitor: prMonitorReducer,
   scriptMonitor: scriptMonitorReducer,
+  agentWorkers: agentWorkersReducer,
   agentFollow: agentFollowReducer,
   git: gitReducer,
   gitWrite: gitWriteReducer,
@@ -218,6 +228,7 @@ export const reducers = {
   fileExplorer: fileExplorerReducer,
   files: filesReducer,
   pdfPreview: pdfPreviewReducer,
+  videoPreview: videoPreviewReducer,
   agentSessions: agentSessionReducer,
   agentQueue: agentQueueReducer,
   pendingSubmissions: pendingSubmissionsReducer,
@@ -239,6 +250,7 @@ export const reducers = {
   connections: connectionsReducer,
   guestSessions: guestSessionsReducer,
   presence: presenceReducer,
+  workspaceDiscussion: workspaceDiscussionReducer,
   presenceFollow: presenceFollowReducer,
   principal: principalReducer,
   hostExecution: hostExecutionReducer,

@@ -547,6 +547,12 @@
     if (nextIndex >= 0) moveHighlight(nextIndex);
   }
 
+  function focusIsInDropdown(): boolean {
+    const active = document.activeElement;
+    if (!active || active === document.body) return true;
+    return [containerRef, portalContentRef, inlineContentRef].some((el) => el?.contains(active));
+  }
+
   // Handle keyboard
   function handleKeyDown(e: KeyboardEvent) {
     if (!open) return;
@@ -598,6 +604,9 @@
         e.stopPropagation();
         if (highlightedIndex >= 0 && highlightedIndex < selectableOptions.length) {
           handleSelect(selectableOptions[highlightedIndex]);
+          // A closing selection unmounts the panel; return focus to the trigger
+          // like Escape does, unless the selection moved focus elsewhere.
+          if (!open && focusIsInDropdown()) triggerRef?.focus();
         }
         break;
       case 'Escape':

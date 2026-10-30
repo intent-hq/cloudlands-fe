@@ -36,7 +36,7 @@
   }
 
   interface Props {
-    state?: 'populated' | 'empty' | 'compact' | 'welcome';
+    state?: 'populated' | 'empty' | 'compact' | 'welcome' | 'crowded';
   }
   export const preview = definePreview<Props>({
     id: 'initial-agent-picker',
@@ -47,6 +47,7 @@
       empty: { props: { state: 'empty' } },
       compact: { props: { state: 'compact' } },
       welcome: { props: { state: 'welcome' } },
+      crowded: { props: { state: 'crowded' } },
     },
   });
 </script>
@@ -79,6 +80,19 @@
     metadata: { specialist: selected },
   } as AgentSession);
   onDestroy(setupPickerProviders());
+  // Enough rows to overflow the specialist menu's height cap.
+  const crowdedSpecialists = () =>
+    Array.from({ length: 8 }, (_, index) => ({
+      id: `fixture-crowded-${index + 1}`,
+      name: `Crowded specialist ${index + 1}`,
+      description: 'Keeps a steady pipeline of evidence-backed fixes across components.',
+      model: 'fixture-model',
+      codingAgent: 'codex',
+      behaviorPrompt: '',
+      filePath: `/fixture/crowded-${index + 1}.md`,
+      source: 'user' as const,
+      icon: 'developer',
+    }));
   const previousFiles = selectFileSpecialists.select(store.state);
   const previousFilesLoaded = selectFileSpecialistsLoaded.select(store.state);
   const previousCustomLoaded = selectCustomSpecialistsLoaded.select(store.state);
@@ -112,6 +126,7 @@
                 source: 'user',
                 icon: 'reviewer',
               },
+              ...(scenario === 'crowded' ? crowdedSpecialists() : []),
             ],
       ),
     ),

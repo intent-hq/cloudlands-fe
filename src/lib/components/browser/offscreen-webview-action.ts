@@ -18,6 +18,8 @@ import type { BrowserTabNavigation } from '$store/renderer/slices/tab-state/tab-
 import { store as appStore } from '$store/renderer/store';
 
 const logger = createLogger('OffscreenWebview');
+/** Packaged-build breadcrumbs for agent background hosting (intent-hq/intent#7855). */
+const hostingLogger = createLogger('BrowserHosting');
 
 export type OffscreenWebviewEntry = {
   tabId: string;
@@ -132,6 +134,11 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
           workspaceId: entry.workspaceId,
           webContentsId,
         });
+        hostingLogger.info('offscreen guest ready', {
+          tabId: entry.tabId,
+          workspaceId: entry.workspaceId,
+          webContentsId,
+        });
         window.electronAPI
           ?.invoke('browser:register-tab', { tabId: entry.tabId, webContentsId })
           .catch((err) => {
@@ -201,6 +208,11 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
     lastRegisteredWebContentsId = undefined;
   };
 
+  hostingLogger.info('offscreen guest created', {
+    tabId: entry.tabId,
+    workspaceId: entry.workspaceId,
+    url: describeUrlForLog(entry.url),
+  });
   // NOT { once: true }: reparenting the <webview> makes Electron destroy
   // and re-create the guest webContents, and the new guest fires dom-ready
   // again — registration (gated on webContentsId above) and muting must

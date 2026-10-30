@@ -1,5 +1,5 @@
 import type { Task } from 'redux-saga';
-import { all, call, join, put, type SagaGenerator } from 'typed-redux-saga';
+import { all, call, join, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import { invoke, isElectron } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
@@ -12,6 +12,7 @@ import {
   type BrowserEmulatedSize,
   type BrowserTabViewport,
   type BrowserFocusTabPayload,
+  type BrowserHostWorkspacePayload,
   type BrowserListTabsRequestPayload,
   type BrowserOpenTabPayload,
   type BrowserShowTabPayload,
@@ -34,6 +35,7 @@ import {
 import { dropRevealIfWorkspaceNotDisplayed } from '../../panel-layout/sagas/reveal-suppression';
 import {
   activateVisibleTab,
+  browserTabRegistryReconcileRequested,
   closeTab,
   openHiddenTab,
   openTab,
@@ -45,17 +47,61 @@ import {
   updateTabBrowserUrl,
 } from '../../panel-layout/panel-layout-slice';
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
-import { selectWorkspaceTabOrder } from '../../tab-state/tab-state-selectors';
+import {
+  selectMountedBrowserTabLeases,
+  selectWorkspaceTabOrder,
+} from '../../tab-state/tab-state-selectors';
 import {
   observeBrowserTabNavigation,
   requestBrowserTabNavigation,
   requestBrowserTabRecovery,
 } from '../../tab-state/tab-state-slice';
+import {
+  selectBrowserTabRegistryWorkspace,
+  selectIsBrowserTabRegistryTornDown,
+} from '../../browser-tab-registry/browser-tab-registry-selectors';
+import { selectOwnClientId } from '../../browser-clients/browser-clients-selectors';
+import { diagnoseOffscreenTab } from '../../panel-layout/offscreen-webview-eligibility';
+import { workspaceDeleted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
 import { focusBrowserTabRequested } from '../app-layout-slice';
 
 let running = false;
 
+/**
+ * Workspaces main asked this window to host in the background
+ * (`browser:host-workspace`), each with the backend it belongs to: no window
+ * had them open, so this window hosts them without a tab or display so agent
+ * browser ops keep working. A saga-local routing hint like the tab strip and
+ * route checks below — it only widens which browser IPC requests this window
+ * answers (and only while the window is still on that backend); the layout
+ * itself lives in the panel-layout slice. Main forgets the adoption on a
+ * renderer reload, matching this module state's lifetime.
+ */
+const backgroundHostedWorkspaces = new Map<string, string>();
+
+/** Tab ids whose browser:open-tab is still being applied (diagnostics, #7855). */
+const opensInFlight = new Set<string>();
+
+/** Report the background-hosted set so main confirms (or drops) its adoptions. */
+function* reportBackgroundHostedWorkspaces(): SagaGenerator<void> {
+  try {
+    yield* call(invoke, 'browser:background-hosted-workspaces', {
+      workspaceIds: [...backgroundHostedWorkspaces.keys()],
+    });
+  } catch (error) {
+    logger.warn('browser:background-hosted-workspaces report failed', { error });
+  }
+}
+
+function* isBackgroundHosted(workspaceId: string): SagaGenerator<boolean> {
+  const backendId = backgroundHostedWorkspaces.get(workspaceId);
+  return backendId !== undefined && backendId === (yield* selectActiveBackendId());
+}
+
 const logger = createLogger('BrowserIpcSaga');
+/** Packaged-build breadcrumbs for agent background hosting (intent-hq/intent#7855). */
+const hostingLogger = createLogger('BrowserHosting');
 
 function browserTab(
   url: string,
@@ -134,10 +180,24 @@ type LayoutReadiness =
  * cannot abort the whole browser IPC saga for the window.
  */
 
+/**
+ * A closed workspace keeps its layout settled in memory while its daemon
+ * tab-registry rows are torn down, and only a new settle reloads them — so a
+ * browser request for it (an agent op while it is background-hosted) asks
+ * the registry to reconcile; otherwise tabs opened now are never reported
+ * and the daemon cannot confirm them.
+ */
+function* requestRegistryReconcileIfTornDown(workspaceId: string): SagaGenerator<void> {
+  if (yield* selectIsBrowserTabRegistryTornDown.effect(workspaceId)) {
+    yield* put(browserTabRegistryReconcileRequested(workspaceId));
+  }
+}
+
 function* ensureWorkspaceLayoutForRequest(workspaceId: string): SagaGenerator<LayoutReadiness> {
   const held = workspaceId in (yield* selectPanelLayoutWorkspaces.effect());
   if (
     !held &&
+    !(yield* call(isBackgroundHosted, workspaceId)) &&
     !(yield* selectWorkspaceTabOrder.effect()).includes(workspaceId) &&
     routedWorkspaceId() !== workspaceId
   ) {
@@ -154,9 +214,13 @@ function* ensureWorkspaceLayoutForRequest(workspaceId: string): SagaGenerator<La
       // and retry the hydration instead of answering untruthfully from the
       // never-restored default state. Any other status (or a reducer-created
       // live entry) is usable as-is.
-      if (after?.restoreStatus !== 'pending') return { status: 'ready' };
+      if (after?.restoreStatus !== 'pending') {
+        yield* call(requestRegistryReconcileIfTornDown, workspaceId);
+        return { status: 'ready' };
+      }
     }
     yield* call(hydrateWorkspaceLayout, workspaceId);
+    yield* call(requestRegistryReconcileIfTornDown, workspaceId);
     return { status: 'ready' };
   } catch (error) {
     return {
@@ -164,6 +228,45 @@ function* ensureWorkspaceLayoutForRequest(workspaceId: string): SagaGenerator<La
       message: error instanceof Error ? error.message : String(error),
     };
   }
+}
+
+/**
+ * Host a workspace no window has open, in the background: record it as
+ * hosted first (synchronously, so a request main sends right after this one
+ * is answered rather than ignored as not-hosted), then hydrate its saved
+ * layout. The offscreen webview host mounts the hydrated layout's browser
+ * tabs because the workspace is not displayed here; nothing visible changes
+ * (no workspace tab, navigation or focus).
+ */
+function* hostWorkspace(data: BrowserHostWorkspacePayload | null): SagaGenerator<void> {
+  if (!isWorkspaceCommandPayload(data)) return;
+  const workspaceId = data.workspaceId;
+  const backendId =
+    typeof data.backendId === 'string' && data.backendId.length > 0
+      ? data.backendId
+      : yield* selectActiveBackendId();
+  backgroundHostedWorkspaces.set(workspaceId, backendId);
+  const readiness = yield* call(ensureWorkspaceLayoutForRequest, workspaceId);
+  hostingLogger.info('hosting workspace in background', {
+    workspaceId,
+    readiness: readiness.status,
+  });
+  if (readiness.status === 'hydration-failed') {
+    // Stay hosted: requests for the workspace are answered with the
+    // truthful hydration error instead of a silent timeout.
+    logger.warn('Layout hydration failed while background-hosting a workspace', {
+      workspaceId,
+      error: readiness.message,
+    });
+  }
+  yield* call(reportBackgroundHostedWorkspaces);
+}
+
+function* forgetBackgroundHostedWorkspace(
+  action: ReturnType<typeof workspaceDeleted>,
+): SagaGenerator<void> {
+  if (!backgroundHostedWorkspaces.delete(action.payload[0])) return;
+  yield* call(reportBackgroundHostedWorkspaces);
 }
 
 function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
@@ -623,14 +726,122 @@ function* tabOwnerChanged(data: BrowserTabOwnerChangedPayload | null): SagaGener
   );
 }
 
+/**
+ * Open the tab, then log where it landed (intent-hq/intent#7855): a tab that
+ * main waits on but the layout never received, or received without a URL,
+ * otherwise leaves no trace in a packaged build.
+ */
+function* openBrowserWithBreadcrumb(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
+  const tabId = typeof data?.tabId === 'string' ? data.tabId : undefined;
+  if (tabId) opensInFlight.add(tabId);
+  try {
+    yield* call(openBrowser, data);
+  } finally {
+    if (tabId) opensInFlight.delete(tabId);
+  }
+  // openBrowser drops a payload without a workspace or URL; nothing landed.
+  if (!isWorkspaceCommandPayload(data) || typeof data.url !== 'string' || !tabId) return;
+  const { workspaceId } = data;
+  const visible = (yield* selectAllTabs.effect(workspaceId)).find((tab) => tab.id === tabId);
+  const hidden = visible
+    ? undefined
+    : (yield* selectHiddenTabs.effect(workspaceId)).find((tab) => tab.id === tabId);
+  const tab = visible ?? hidden;
+  const layout = (yield* selectPanelLayoutWorkspaces.effect())[workspaceId];
+  hostingLogger.info('open-tab handled', {
+    workspaceId,
+    tabId,
+    location: visible ? 'panel' : hidden ? 'hidden' : 'absent',
+    hasUrl: Boolean(tab?.browserUrl),
+    restoreStatus: layout?.restoreStatus ?? 'none',
+    backgroundHosted: backgroundHostedWorkspaces.has(workspaceId),
+  });
+}
+
+/** `browser:diagnose-tab` payload (main → renderer), validated on arrival. */
+type BrowserDiagnoseTabPayload = { workspaceId?: unknown; tabId?: unknown; stage?: unknown };
+
+/**
+ * Main's wait for this tab's webview timed out (intent-hq/intent#7855): log
+ * this window's whole view of the tab in one line — where the layout holds
+ * it, whether it has a URL and host, why the offscreen host would skip it,
+ * the registry's phase for the workspace, and whether a guest element exists.
+ */
+function* diagnoseTab(data: BrowserDiagnoseTabPayload | null): SagaGenerator<void> {
+  const tabId = data?.tabId;
+  const stage = data?.stage;
+  if (!isWorkspaceCommandPayload(data)) return;
+  if (typeof tabId !== 'string' || tabId.length === 0) return;
+  const { workspaceId } = data;
+  const registry = yield* selectBrowserTabRegistryWorkspace.effect(workspaceId);
+  const host =
+    typeof document === 'undefined'
+      ? null
+      : document.querySelector('[data-offscreen-webview-host]');
+  // The host's own exclusion (the route workspace it renders panels for), so
+  // the logged decision is the one the host made, not a re-derivation.
+  const hostExcluded = host
+    ?.getAttribute('data-offscreen-excluded-workspaces')
+    ?.split(' ')
+    .filter(Boolean);
+  const offscreenElement =
+    host !== null &&
+    (typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+      ? host.querySelector(`[data-offscreen-webview-tab="${CSS.escape(tabId)}"]`) !== null
+      : [...host.querySelectorAll('[data-offscreen-webview-tab]')].some(
+          (element) => element.getAttribute('data-offscreen-webview-tab') === tabId,
+        ));
+  const diagnosis = diagnoseOffscreenTab({
+    workspaceId,
+    tabId,
+    layout: (yield* selectPanelLayoutWorkspaces.effect())[workspaceId],
+    ownClientId: yield* selectOwnClientId.effect(),
+    leasedTabIds: (yield* selectMountedBrowserTabLeases.effect()) ?? {},
+    workspaceDisplayed: hostExcluded
+      ? hostExcluded.includes(workspaceId)
+      : routedWorkspaceId() === workspaceId,
+    backgroundHosted: backgroundHostedWorkspaces.has(workspaceId),
+    registry,
+    offscreenElement,
+  });
+  hostingLogger.info('tab diagnosis', {
+    ...diagnosis,
+    // An open still settling (layout hydration) explains an 'absent' tab.
+    openInFlight: opensInFlight.has(tabId),
+    stage: typeof stage === 'string' ? stage : undefined,
+  });
+}
+
 export function* browserIpcSaga(): SagaGenerator<void> {
   if (!isElectron() || running) return;
   running = true;
   try {
     const tasks: Task[] = [
+      yield* takeEveryFromElectronChannel<BrowserHostWorkspacePayload | null>(
+        'browser:host-workspace',
+        hostWorkspace,
+        {
+          bufferPolicy: {
+            kind: 'lossless',
+            rationale:
+              'Every background-hosting request must be honoured before the requests main sends after it.',
+          },
+        },
+      ),
+      yield* takeEvery(workspaceDeleted, forgetBackgroundHostedWorkspace),
+      yield* takeEveryFromElectronChannel<BrowserDiagnoseTabPayload | null>(
+        'browser:diagnose-tab',
+        diagnoseTab,
+        {
+          bufferPolicy: {
+            kind: 'lossless',
+            rationale: 'A diagnosis request is rare and each one names a distinct stuck tab.',
+          },
+        },
+      ),
       yield* takeEveryFromElectronChannel<BrowserOpenTabPayload | null>(
         'browser:open-tab',
-        openBrowser,
+        openBrowserWithBreadcrumb,
         {
           bufferPolicy: {
             kind: 'lossless',
@@ -703,5 +914,6 @@ export function* browserIpcSaga(): SagaGenerator<void> {
     yield* all(tasks.map((task) => join(task)));
   } finally {
     running = false;
+    backgroundHostedWorkspaces.clear();
   }
 }

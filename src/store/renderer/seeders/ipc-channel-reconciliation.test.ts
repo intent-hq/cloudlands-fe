@@ -385,6 +385,16 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
     }
   });
 
+  it('finds every monitor session invoke on the real captured preload transport', () => {
+    for (const key of ['CAPTURE', 'REQUEST', 'RELEASE'] as const) {
+      const channel = IPC_CHANNELS.BACKEND.PR_MONITOR[key];
+      expect(invoked.get(channel)).toEqual([
+        expect.stringMatching(/^lib\/client\/live\/pr-monitor-transport\.ts:\d+$/),
+      ]);
+      expect(LIVE_TRANSPORT_CHANNELS.has(channel)).toBe(true);
+    }
+  });
+
   it.each([
     'channels.MISSING',
     'IPC_CHANNELS.BACKEND.REPOSITORY_RESOURCE.MISSING',
@@ -565,6 +575,12 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
   'backend:repository-checkout:capture',
   'backend:repository-checkout:request',
   'backend:repository-checkout:release',
+  // Monitor sessions capture the real preload document and original host connection.
+  // Without preload they reject; mock bridging would bypass origin/retirement checks.
+  // pr-monitor-lifecycle.test.ts exercises the real service/IPC/socket path.
+  'backend:pr-monitor:capture',
+  'backend:pr-monitor:request',
+  'backend:pr-monitor:release',
   // Console-owner status query (#1928): main-process-owned state (which
   // window is the last-focused non-HUD window) invoked directly on the real
   // preload bridge (console-owner-status.ts guards on its presence; without
@@ -786,9 +802,8 @@ describe('IPC event-channel reconciliation (renderer listener surface vs emitter
     // Accept-changes refreshes now ride the daemon event bridge instead of a
     // duplicate renderer `git:status-changed` listener.
     expect(listened.has('git:status-changed')).toBe(false);
-    // Remaining literal listener sites continue to exercise both direct and
-    // multiline generic `listenSync` calls.
-    expect(listened.has('line-attribution:updated')).toBe(true);
+    // Literal listener sites exercise direct `listenSync` calls; the multiline
+    // generic call is the CliBlock template family asserted below.
     expect(listened.has('terminal:created')).toBe(true);
     // Agent lifecycle consumers use admitted Redux events, not legacy relays.
     expect(listened.has('agent:status-changed')).toBe(false);
@@ -912,10 +927,11 @@ describe('IPC event-channel reconciliation (renderer listener surface vs emitter
 //
 // The file-tracking service, line-attribution service, and file-attribution
 // helpers were removed alongside their handlers, seeder bridges, and preload
-// allowlist entries. Only three channels survive: two live event relays
-// (`file-tracking:changes-updated`, `line-attribution:updated`) delivered by
-// the daemon-events bridge, and one agent-driven event
-// (`file-tracking:agent-file-changed`) emitted by workspace-file-tools. Any
+// allowlist entries; the `line-attribution:updated` relay followed when the
+// note edit gutter was removed. Only two channels survive: the live event
+// relay `file-tracking:changes-updated` delivered by the daemon-events bridge,
+// and one agent-driven event (`file-tracking:agent-file-changed`) emitted by
+// workspace-file-tools. Any
 // invoke, listener, or mock-bridge that resurrects a retired name would
 // silently reintroduce the class we just drained — pin the ban here so a
 // regression fails loud in this suite instead of at runtime.
@@ -939,9 +955,10 @@ const RETIRED_IPC_CHANNELS: ReadonlySet<string> = new Set([
   'file-tracking:load-transitions',
   // Retired FILE_TRACKING event channel (listener-ready handshake).
   'file-tracking:listener-ready',
-  // Retired LINE_ATTRIBUTION request channels (kept: `line-attribution:updated`).
+  // Retired LINE_ATTRIBUTION channels (the note edit gutter was removed).
   'line-attribution:load',
   'line-attribution:compute-now',
+  'line-attribution:updated',
   // Retired FILE_ATTRIBUTION namespace (agent-write attribution moved off IPC).
   'file-attribution:record-agent-write',
   'file-attribution:read-file-and-record',

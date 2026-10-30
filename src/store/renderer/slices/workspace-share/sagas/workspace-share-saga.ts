@@ -32,6 +32,11 @@
  * links at render time. Failures are logged as bounded codes only.
  */
 
+import {
+  readSetting,
+  updateSettings,
+  invalidateSettingsReadCache,
+} from '$lib/client/live/live-settings-client';
 import { isWorkspaceGuest } from '$features/workspace-sharing/utils/workspace-guest';
 import { canonicalInviteHost } from '$features/workspace-sharing/utils/invite-pin';
 import { selectLabsGitLabEnabled } from '../../user-preferences/user-preferences-selectors';
@@ -50,13 +55,15 @@ import {
 } from '../../principal/principal-selectors';
 import { selectWorkspaceManagementDenied } from '../../workspace/workspace-selectors';
 import { integrationReconnectSettled } from '$features/integrations-request-context';
-import { all, call, put, takeEvery, takeLatest, type SagaGenerator } from 'typed-redux-saga';
-
+import { all, call, delay, put, takeEvery, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 import {
-  clearInviteLinks,
-  storeInviteLink,
-  vaultInviteLinks,
-} from '$features/workspace-sharing/invite-link-vault';
+  takeEveryFromSelector,
+  takeLatestFromSelector,
+  type SelectorChannelPayload,
+} from '@themislib/themis/saga';
+import { selectCanShareWorkspace } from '../../workspace/workspace-selectors';
+
+import { clearInviteLinks, vaultInviteLinks } from '$features/workspace-sharing/invite-link-vault';
 import {
   workspaceSharingClient,
   type ShareFailure,
@@ -71,6 +78,15 @@ import { isForbiddenErrorResponse } from '$lib/client/live/backend-transport-typ
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import {
+  selectWorkspacePeopleInviteScope,
+  selectWorkspacePeopleInviteExpiry,
+  selectWorkspaceInviteRead,
+  selectShareCanSetMemberRole,
+  selectShareOwnerPrincipalId,
+  selectSharePendingRolePrincipalIds,
+  selectShareSharingChecking,
+  selectShareSharingEnabling,
+  selectShareSharingEnabled,
   selectShareAddingPrincipalId,
   selectShareMembers,
   selectWorkspaceRosterMembers,
@@ -86,6 +102,15 @@ import {
   selectWorkspaceRosterTracked,
 } from '../workspace-share-selectors';
 import {
+  sharePeopleInvitesScopeChanged,
+  sharePeopleInvitesRequested,
+  sharePeopleInvitesLoaded,
+  sharePeopleInvitesWithheld,
+  shareInvitesExpired,
+  sharePrerequisitesRequested,
+  shareEnableRequested,
+  sharePrerequisitesStarted,
+  sharePrerequisitesSettled,
   shareIntegrationAuthRequested,
   shareIntegrationAuthLoaded,
   closeShareDialog,
@@ -102,6 +127,8 @@ import {
   shareMemberAddRequested,
   shareMemberRemoveRequested,
   shareMembershipChanged,
+  shareMemberRoleRequested,
+  shareMemberRoleSettled,
   sharePrincipalsLoaded,
   shareRosterActionSettled,
   shareRosterFailed,
@@ -145,7 +172,11 @@ function coalescedByKey<A>(
   };
 }
 
+type InviteRead = { result: Promise<WorkspaceInviteRow[]>; context: string; generation: number };
+type ReadInvites = (workspaceId: string, context: string, generation: number) => InviteRead;
+
 type ShareData = WorkspaceMembersList & {
+  inviteGeneration: number;
   invites: WorkspaceInviteRow[];
   /** `null` when `principal.list` failed for a reason other than `-32003`. */
   principals: HostPrincipal[] | null;
@@ -162,13 +193,16 @@ type ShareData = WorkspaceMembersList & {
  * guard held and no second concurrent read starts while a sibling RPC is
  * still outstanding.
  */
-function readShareData(workspaceId: string): {
+function readShareData(
+  workspaceId: string,
+  inviteRead: InviteRead,
+): {
   result: Promise<ShareData>;
   settled: Promise<void>;
 } {
   const reads = [
     workspaceSharingClient.listMembers(workspaceId),
-    workspaceSharingClient.listInvites(workspaceId),
+    inviteRead.result,
     workspaceSharingClient.listPrincipals(),
   ] as const;
   const outcomes = Promise.allSettled(reads);
@@ -186,6 +220,7 @@ function readShareData(workspaceId: string): {
         resolve({
           ...members.value,
           invites: invites.value,
+          inviteGeneration: inviteRead.generation,
           principals: principals.status === 'fulfilled' ? principals.value : null,
         });
         return;
@@ -230,23 +265,43 @@ function logFailure(what: string, workspaceId: string, failure: ShareFailure): v
   logger.warn(`${what} failed`, { workspaceId, code: failure.code, rpcCode: failure.rpcCode });
 }
 
-function* loadShareData(): SagaGenerator<void> {
+function* loadShareData(readInvites: ReadInvites): SagaGenerator<void> {
   const target = yield* manageableTarget();
-  if (!target) return;
+  if (!target?.authority) return;
   const generation = yield* selectShareMutationGeneration.effect();
-  const read = readShareData(target.workspaceId);
+  const inviteRead = yield* selectWorkspaceInviteRead.effect(target.workspaceId);
+  const read = readShareData(
+    target.workspaceId,
+    readInvites(target.workspaceId, target.authority, inviteRead.generation),
+  );
   try {
     const {
       members,
       invites: rows,
+      inviteGeneration,
       principals,
       guestCount,
       guestLimit,
     } = yield* call(() => read.result);
     if (!(yield* stillTargets(target))) return;
     const invites = yield* call(vaultInviteLinks, rows);
-    yield* put(shareDataLoaded({ target, generation, members, invites, guestCount, guestLimit }));
+    yield* put(
+      shareDataLoaded({
+        target,
+        generation,
+        inviteGeneration,
+        receivedAt: Date.now(),
+        members,
+        invites,
+        guestCount,
+        guestLimit,
+      }),
+    );
     if (principals) yield* put(sharePrincipalsLoaded({ target, principals }));
+    if (
+      inviteGeneration !== (yield* selectWorkspaceInviteRead.effect(target.workspaceId)).generation
+    )
+      yield* put(shareDataRequested());
   } catch (error) {
     if (yield* stillTargets(target)) {
       if (isForbiddenErrorResponse(error)) {
@@ -261,22 +316,81 @@ function* loadShareData(): SagaGenerator<void> {
   yield* call(() => read.settled);
 }
 
-/**
- * Inline error for a failed `workspace.invite.create`: the pin failure names
- * the login; `listener-down` (Remote access off, so the daemon cannot serve
- * an invite) and `tunnel-down` (the Tailcat tunnel is off, so no tunnel-only
- * link can be minted) each name the one setting to turn on; `guest-limit`
- * (the cap was spent between the dialog's read and the create) names the
- * cap; anything else stays generic.
- */
+const SHARING_PATHS = ['server.wsApi.enabled', 'server.tunnel.enabled'] as const;
+
+/** Both values must be known. A missing or failed setting is never “disabled”. */
+async function readSharingPrerequisites(): Promise<boolean[]> {
+  invalidateSettingsReadCache(SHARING_PATHS);
+  const results = await Promise.allSettled(SHARING_PATHS.map((path) => readSetting(path)));
+  return results.map((result) => {
+    if (result.status === 'rejected') throw result.reason;
+    if (typeof result.value?.value !== 'boolean') throw new Error('Missing sharing setting');
+    return result.value.value;
+  });
+}
+
+/** One setup operation per admitted dialog; duplicate clicks never issue another write. */
+function* sharingPrerequisites(
+  action: ReturnType<typeof sharePrerequisitesRequested | typeof shareEnableRequested>,
+): SagaGenerator<void> {
+  const target = yield* manageableTarget();
+  if (!target || !(yield* selectCanAdministerHost.effect())) return;
+  if ((yield* selectShareSharingChecking.effect()) || (yield* selectShareSharingEnabling.effect()))
+    return;
+  const enabling = action.type === shareEnableRequested.type;
+  if (enabling && (yield* selectShareSharingEnabled.effect()) === true) return;
+  yield* put(sharePrerequisitesStarted({ target, enabling }));
+  try {
+    let values = yield* call(readSharingPrerequisites);
+    if (!(yield* stillTargets(target)) || !(yield* selectCanAdministerHost.effect())) return;
+    if (enabling) {
+      // Listener first: starting Tailcat requires it. Leave all other settings alone.
+      const changes = SHARING_PATHS.flatMap((path, index) =>
+        values[index] ? [] : [{ path, value: true }],
+      );
+      if (changes.length) {
+        yield* call(updateSettings, changes);
+        if (!(yield* stillTargets(target)) || !(yield* selectCanAdministerHost.effect())) return;
+        values = yield* call(readSharingPrerequisites);
+        if (!(yield* stillTargets(target)) || !(yield* selectCanAdministerHost.effect())) return;
+      }
+    }
+    const enabled = values.every(Boolean);
+    yield* put(
+      sharePrerequisitesSettled({
+        target,
+        enabled,
+        error: enabling && !enabled ? m.workspace_share_sharingEnableFailed_error() : null,
+      }),
+    );
+  } catch (error) {
+    if (!(yield* stillTargets(target)) || !(yield* selectCanAdministerHost.effect())) return;
+    // A rejected batch can roll back applied settings. Discard pre-write cached values.
+    invalidateSettingsReadCache(SHARING_PATHS);
+    const message = error instanceof Error ? error.message : '';
+    const missingTailcat =
+      /tailcat/i.test(message) && /not found|not installed|missing|no such file/i.test(message);
+    yield* put(
+      sharePrerequisitesSettled({
+        target,
+        enabled: null,
+        error: isForbiddenErrorResponse(error)
+          ? m.workspace_share_sharingAdminRequired_notice()
+          : missingTailcat
+            ? m.workspace_share_sharingTailcatMissing_error()
+            : enabling
+              ? m.workspace_share_sharingEnableFailed_error()
+              : m.workspace_share_sharingLoadFailed_error(),
+      }),
+    );
+  }
+}
+
+/** Inline error for an invite failure unrelated to host setup. */
 function createInviteErrorMessage(code: ShareFailure['code'], requestedPin: string): string {
   switch (code) {
     case 'invite-pin-unknown':
       return m.workspace_share_pinUnknown_error({ login: `@${requestedPin}` });
-    case 'listener-down':
-      return m.workspace_share_listenerDown_error();
-    case 'tunnel-down':
-      return m.workspace_share_tunnelDown_error();
     case 'identity-unverifiable':
       return m.collaboration_pin_unverifiable_error();
     case 'guest-limit':
@@ -290,6 +404,21 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
   const target = yield* manageableTarget();
   if (!target) return;
   const request = yield* selectShareCreateRequest.effect();
+  if (
+    (yield* selectCanAdministerHost.effect()) &&
+    ((yield* selectShareSharingEnabled.effect()) === false ||
+      (yield* selectShareSharingChecking.effect()) ||
+      (yield* selectShareSharingEnabling.effect()))
+  ) {
+    yield* put(
+      shareInviteCreateFailed({
+        target,
+        request,
+        error: m.workspace_share_sharingRequired_notice(),
+      }),
+    );
+    return;
+  }
   const [{ pinLogin, pin }] = action.payload;
   const requestedPin = pinLogin.trim();
   const independentPins = (yield* selectCollaborationCapabilities.effect()).hostMembership;
@@ -330,6 +459,20 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
       yield* put(shareAccessWithheld({ target }));
       return;
     }
+    if (outcome.code === 'listener-down' || outcome.code === 'tunnel-down') {
+      const administrator = yield* selectCanAdministerHost.effect();
+      yield* put(
+        shareInviteCreateFailed({
+          target,
+          request,
+          error: administrator
+            ? m.workspace_share_createFailed_error()
+            : m.workspace_share_sharingAdminRequired_notice(),
+        }),
+      );
+      if (administrator) yield* put(sharePrerequisitesRequested());
+      return;
+    }
     logFailure('Creating an invite', target.workspaceId, outcome);
     yield* put(
       shareInviteCreateFailed({
@@ -341,11 +484,17 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
     return;
   }
   const inviteId = outcome.result.invite.id;
-  yield* call(storeInviteLink, inviteId, outcome.result.url);
+  const [invite] = yield* call(vaultInviteLinks, [
+    {
+      ...outcome.result.invite,
+      url: outcome.result.url,
+    },
+  ]);
   yield* put(
     shareInviteCreated({
       target,
       request,
+      invite,
       link: {
         inviteId,
         pinLogin: outcome.result.invite.pinLogin,
@@ -459,6 +608,7 @@ function* addMember(action: ReturnType<typeof shareMemberAddRequested>): SagaGen
 function* requestDataOnOpen(): SagaGenerator<void> {
   yield* call(clearInviteLinks);
   yield* put(shareDataRequested());
+  yield* put(sharePrerequisitesRequested());
   // The pin's default forge follows the host's `identity.provider` setting.
   yield* put(initializeIdentity());
 }
@@ -532,7 +682,9 @@ function* removeRosterMember(
 
 /**
  * Another client changed the roster/invites of a workspace: re-read the
- * dialog when it targets that workspace, and the hover roster when tracked.
+ * dialog when it targets that workspace, People for open tabs, and the hover
+ * roster when tracked. People consumes the shared invite flight independently
+ * so closing or retargeting the dialog cannot abandon its metadata refresh.
  */
 function* refreshOnMembershipChange(
   action: ReturnType<typeof shareMembershipChanged>,
@@ -540,6 +692,8 @@ function* refreshOnMembershipChange(
   const [{ workspaceId }] = action.payload;
   const target = yield* selectShareTarget.effect();
   if (target && target.workspaceId === workspaceId) yield* put(shareDataRequested());
+  if ((yield* selectWorkspacePeopleInviteScope.effect()).workspaceIds.includes(workspaceId))
+    yield* put(sharePeopleInvitesRequested(workspaceId));
   if (yield* selectWorkspaceRosterTracked.effect(workspaceId)) {
     yield* put(shareRosterRequested({ workspaceId }));
   }
@@ -576,21 +730,216 @@ export function* refreshIntegrationAuthAfterReconnect(): SagaGenerator<void> {
   yield* put(shareIntegrationAuthRequested(target.workspaceId, host || undefined));
 }
 
+function* setMemberRole(action: ReturnType<typeof shareMemberRoleRequested>): SagaGenerator<void> {
+  const target = yield* manageableTarget();
+  if (!target) return;
+  const [{ principalId, role }] = action.payload;
+  if (!(yield* selectSharePendingRolePrincipalIds.effect()).includes(principalId)) return;
+  const member = (yield* selectShareMembers.effect()).find(
+    (row) => row.principalId === principalId,
+  );
+  if (
+    !(yield* selectShareCanSetMemberRole.effect()) ||
+    !member ||
+    !isWorkspaceGuest(member) ||
+    principalId === (yield* selectShareOwnerPrincipalId.effect())
+  ) {
+    yield* put(
+      shareMemberRoleSettled({
+        target,
+        principalId,
+        error: m.workspace_share_setRoleFailed_error(),
+      }),
+    );
+    return;
+  }
+  const outcome = yield* call(
+    workspaceSharingClient.setMemberRole,
+    target.workspaceId,
+    principalId,
+    role,
+  );
+  if (!(yield* stillTargets(target))) return;
+  if (!outcome.success && outcome.code === 'forbidden') {
+    yield* put(shareAccessWithheld({ target }));
+    return;
+  }
+  yield* put(
+    shareMemberRoleSettled({
+      target,
+      principalId,
+      error: outcome.success ? null : m.workspace_share_setRoleFailed_error(),
+    }),
+  );
+  // Re-read even for idempotent success; never infer the current roster or caller privilege from a click.
+  if (outcome.success) {
+    yield* put(shareDataRequested());
+    if (yield* selectWorkspaceRosterTracked.effect(target.workspaceId))
+      yield* put(shareRosterRequested({ workspaceId: target.workspaceId }));
+  }
+}
+
+function* syncPeopleInviteScope({
+  payload,
+  prevPayload,
+}: SelectorChannelPayload<
+  ReturnType<typeof selectWorkspacePeopleInviteScope.select>
+>): SagaGenerator<void> {
+  if (
+    payload.context === prevPayload?.context &&
+    payload.workspaceIds.length === prevPayload.workspaceIds.length &&
+    payload.workspaceIds.every((id, index) => id === prevPayload.workspaceIds[index])
+  )
+    return;
+  yield* put(sharePeopleInvitesScopeChanged(payload));
+  const target = yield* selectShareTarget.effect();
+  for (const workspaceId of payload.workspaceIds) {
+    if (payload.context === prevPayload?.context && prevPayload.workspaceIds.includes(workspaceId))
+      continue;
+    if (target?.workspaceId === workspaceId) yield* put(shareDataRequested());
+    else yield* put(sharePeopleInvitesRequested(workspaceId));
+  }
+}
+
+function* expirePeopleInvites({
+  payload,
+}: SelectorChannelPayload<number | null>): SagaGenerator<void> {
+  if (payload === null) return;
+  // Clamp long invite lifetimes to the browser timer range, then recheck the clock.
+  while (Date.now() < payload) yield* delay(Math.min(payload - Date.now(), 2_147_483_647));
+  yield* put(shareInvitesExpired(Date.now()));
+}
+
+function* loadPeopleInvites(readInvites: ReadInvites, workspaceId: string): SagaGenerator<void> {
+  const scope = yield* selectWorkspacePeopleInviteScope.effect();
+  const read = yield* selectWorkspaceInviteRead.effect(workspaceId);
+  if (!scope.context || !scope.workspaceIds.includes(workspaceId) || read.withheld) return;
+  const flight = readInvites(workspaceId, scope.context, read.generation);
+  try {
+    const rows = yield* call(() => flight.result);
+    const current = yield* selectWorkspaceInviteRead.effect(workspaceId);
+    if (
+      scope.context !== (yield* selectPrincipalActionContext.effect()) ||
+      !(yield* selectCanShareWorkspace.effect(workspaceId)) ||
+      !(yield* selectWorkspacePeopleInviteScope.effect()).workspaceIds.includes(workspaceId)
+    )
+      return;
+    if (flight.generation !== current.generation) {
+      yield* put(sharePeopleInvitesRequested(workspaceId));
+      return;
+    }
+    // Background reads need metadata only. URLs are never retained after dialog close.
+    const invites = rows.map(({ url: _url, ...invite }) => invite);
+    yield* put(
+      sharePeopleInvitesLoaded({
+        workspaceId,
+        context: flight.context,
+        generation: flight.generation,
+        invites,
+        receivedAt: Date.now(),
+      }),
+    );
+  } catch (error) {
+    if (scope.context !== (yield* selectPrincipalActionContext.effect())) return;
+    if (isForbiddenErrorResponse(error)) {
+      const current = yield* selectWorkspaceInviteRead.effect(workspaceId);
+      if (current.context !== scope.context || current.generation !== flight.generation) return;
+      yield* put(
+        sharePeopleInvitesWithheld({
+          workspaceId,
+          context: scope.context,
+          generation: flight.generation,
+        }),
+      );
+      const target = yield* selectShareTarget.effect();
+      if (target?.workspaceId === workspaceId) yield* put(shareAccessWithheld({ target }));
+    } else logger.warn('Loading People invitations failed', { workspaceId });
+  }
+}
+
 export function* workspaceShareSaga(): SagaGenerator<void> {
+  // Dialog and People share the same transport flight. Its generation belongs to
+  // the actual wire read, so a newer consumer cannot relabel an old snapshot.
+  const inviteFlights = new Map<string, InviteRead>();
+  const readInvites: ReadInvites = (workspaceId, context, generation) => {
+    const key = JSON.stringify([workspaceId, context]);
+    const existing = inviteFlights.get(key);
+    if (existing) return existing;
+    const read: InviteRead = {
+      context,
+      generation,
+      result: workspaceSharingClient
+        .listInvites(workspaceId)
+        .finally(() => inviteFlights.delete(key)),
+    };
+    inviteFlights.set(key, read);
+    return read;
+  };
+  const roleFlights = new Set<string>();
+  function* changeRole(action: ReturnType<typeof shareMemberRoleRequested>): SagaGenerator<void> {
+    const target = yield* selectShareTarget.effect();
+    const key = JSON.stringify([target, action.payload[0].principalId]);
+    if (roleFlights.has(key)) return;
+    roleFlights.add(key);
+    try {
+      yield* call(setMemberRole, action);
+    } finally {
+      roleFlights.delete(key);
+    }
+  }
+  const setupFlights = new Map<string, { refresh: boolean }>();
+  function* setup(
+    action: ReturnType<typeof sharePrerequisitesRequested | typeof shareEnableRequested>,
+  ): SagaGenerator<void> {
+    const target = yield* manageableTarget();
+    if (!target || !(yield* selectCanAdministerHost.effect())) return;
+    const key = JSON.stringify(target);
+    const flight = setupFlights.get(key);
+    if (flight) {
+      if (action.type === sharePrerequisitesRequested.type) flight.refresh = true;
+      return;
+    }
+    const mine = { refresh: false };
+    setupFlights.set(key, mine);
+    try {
+      yield* call(sharingPrerequisites, action);
+      while (mine.refresh && (yield* stillTargets(target))) {
+        mine.refresh = false;
+        yield* call(sharingPrerequisites, sharePrerequisitesRequested());
+      }
+    } finally {
+      setupFlights.delete(key);
+    }
+  }
   yield* all([
     takeLatest(shareIntegrationAuthRequested, loadIntegrationAuth),
+    takeEvery([sharePrerequisitesRequested, shareEnableRequested], setup),
     takeEvery(openShareDialog, requestDataOnOpen),
     takeEvery(closeShareDialog, clearLinksOnClose),
     takeEvery(shareMembershipChanged, refreshOnMembershipChange),
     takeEvery(
       shareDataRequested,
-      coalescedByKey(() => 'dialog', loadShareData),
+      coalescedByKey(
+        () => 'dialog',
+        function* () {
+          yield* call(loadShareData, readInvites);
+        },
+      ),
     ),
     takeEvery(
       shareRosterRequested,
       coalescedByKey(
         (action: ReturnType<typeof shareRosterRequested>) => action.payload[0].workspaceId,
         loadRoster,
+      ),
+    ),
+    takeEvery(
+      sharePeopleInvitesRequested,
+      coalescedByKey(
+        (action: ReturnType<typeof sharePeopleInvitesRequested>) => action.payload[0],
+        function* (workspaceId) {
+          yield* call(loadPeopleInvites, readInvites, workspaceId);
+        },
       ),
     ),
     takeEvery(shareRosterMemberRemoveRequested, removeRosterMember),
@@ -600,5 +949,10 @@ export function* workspaceShareSaga(): SagaGenerator<void> {
     takeEvery(shareInviteRevokeRequested, revokeInvite),
     takeEvery(shareMemberRemoveRequested, removeMember),
     takeEvery(shareMemberAddRequested, addMember),
+    takeEvery(shareMemberRoleRequested, changeRole),
+    call(function* watchPeopleInvites() {
+      yield* takeEveryFromSelector(selectWorkspacePeopleInviteScope, syncPeopleInviteScope);
+      yield* takeLatestFromSelector(selectWorkspacePeopleInviteExpiry, expirePeopleInvites);
+    }),
   ]);
 }

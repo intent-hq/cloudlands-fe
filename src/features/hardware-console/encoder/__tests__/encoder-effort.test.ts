@@ -55,6 +55,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
       device.turn();
       expect(mutations()).toHaveLength(0);
       expect(device.navigate).not.toHaveBeenCalled();
+      expect(device.showWorkspace).not.toHaveBeenCalled();
       await flush();
       device.turn();
       await flush();
@@ -68,6 +69,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
       expect(effort('agent-2')).toBeNull();
       expect(effort('agent-3')).toBeNull();
       expect(device.navigate).not.toHaveBeenCalled();
+      expect(device.showWorkspace).not.toHaveBeenCalled();
     },
   );
 
@@ -81,10 +83,11 @@ describe('decoded Micro encoder effort and wire behavior', () => {
     expect(state.hardwareConsole.encoderBehaviorHydrated).toBe(false);
     expect(mutations()).toHaveLength(0);
     expect(device.navigate).not.toHaveBeenCalled();
+    expect(device.showWorkspace).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1000);
     device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CW', act: 2 } });
     expect(state.hardwareConsole.encoderBehavior).toBe('workspace-switch');
-    expect(device.navigate).toHaveBeenCalledExactlyOnceWith('/workspace/ws-2');
+    expect(device.showWorkspace).toHaveBeenCalledExactlyOnceWith('ws-2');
     expect(mutations()).toHaveLength(0);
     mocks.dispatch(setHardwareConsoleEncoderBehavior('agent-effort'));
     device.turn();
@@ -678,6 +681,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
     await flush();
     expect(mutations()).toHaveLength(0);
     expect(device.navigate).not.toHaveBeenCalled();
+    expect(device.showWorkspace).not.toHaveBeenCalled();
   });
 
   it('preserves legacy model-variant request and response handling', async () => {
@@ -737,12 +741,13 @@ describe('decoded Micro encoder effort and wire behavior', () => {
     device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CLK', act: 1 } });
     expect(state.homeWorkspaces.tab).toBe('workspaces');
     device.navigate.mockClear();
+    device.showWorkspace.mockClear();
     mocks.dispatch(hydrateHardwareConsoleEncoderBehavior('workspace-switch'));
     device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CW', act: 2 } });
     device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CW', act: 2 } });
-    expect(device.navigate).toHaveBeenCalledTimes(1);
+    expect(device.showWorkspace).toHaveBeenCalledTimes(1);
     device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CC', act: 2 } });
-    expect(device.navigate).toHaveBeenLastCalledWith('/workspace/ws-1');
+    expect(device.showWorkspace).toHaveBeenLastCalledWith('ws-1');
     expect(mutations()).toHaveLength(0);
   });
 

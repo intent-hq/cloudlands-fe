@@ -117,6 +117,7 @@ const openBackendWindow = vi.fn();
 const captureIdentity = vi.fn(() => ({ supported: false }));
 const prepareIdentity = vi.fn();
 let lifetimeCurrent = true;
+let localConnectionCurrent = true;
 vi.mock('../invite-attempt', () => ({
   captureInviteAttempt: () => {
     let live = true;
@@ -137,7 +138,11 @@ vi.mock('../invite-attempt', () => ({
         cancel();
       },
       cancelled,
-      local: { ...captureIdentity(), current: () => lifetimeCurrent, request: localRequest },
+      local: {
+        ...captureIdentity(),
+        current: () => lifetimeCurrent && localConnectionCurrent,
+        request: localRequest,
+      },
     };
   },
 }));
@@ -378,6 +383,7 @@ function signedOutDaemon(): void {
 beforeEach(() => {
   isolatedTestBuild.mockReturnValue(false);
   lifetimeCurrent = true;
+  localConnectionCurrent = true;
   remoteIdentity.mockImplementation(async (candidate) => ({
     principal: {
       id: candidate.principalId,
@@ -3668,6 +3674,24 @@ describe('handleInviteDeepLink — collaboration-only continuation', () => {
     expect(guestAdd).not.toHaveBeenCalled();
     expect(showInviteNotice).not.toHaveBeenCalled();
   });
+  it.each(['connection', 'policy'] as const)(
+    'dismisses Join when the %s changes after sign-in while consent is open',
+    async (change) => {
+      const consent = fakeConsent('pending');
+      showInviteConsent.mockReturnValue(consent.prompt);
+      const joining = handleInviteDeepLink(LINK);
+      await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledOnce());
+      if (change === 'connection') localConnectionCurrent = false;
+      else allowed = false;
+      consent.decide('open');
+      await joining;
+      expect(consent.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('cancelled');
+      expect(localCalls('sourceControl.identityProof.create')).toHaveLength(0);
+      expect(prove).not.toHaveBeenCalled();
+      expect(guestAdd).not.toHaveBeenCalled();
+      expect(showInviteNotice).not.toHaveBeenCalled();
+    },
+  );
   it('refuses a different pin on challenge retry instead of reusing account consent', async () => {
     prove.mockRejectedValueOnce(new InviteRpcError(-32602, { code: 'proof-expired' }));
     challenge

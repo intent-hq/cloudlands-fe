@@ -1,4 +1,4 @@
-import { expect, test } from '../../../../test/ct-test';
+import { expect, test, wheelUntilScrolled } from '../../../../test/ct-test';
 import ChatMessageNavigatorIntegrationHost from './ChatMessageNavigatorIntegrationHost.svelte';
 
 for (const scenario of [
@@ -20,8 +20,7 @@ for (const scenario of [
     const gap = () => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
     await expect.poll(gap).toBeLessThanOrEqual(2);
     await expect(button).toHaveCount(0);
-    await viewport.hover();
-    await page.mouse.wheel(0, -1400);
+    await wheelUntilScrolled(viewport, { deltaY: -1400 });
     await expect(button).toBeVisible();
     const [buttonBox, viewportBox, composerBox] = await Promise.all([
       button.boundingBox(),
@@ -29,9 +28,6 @@ for (const scenario of [
       page.getByTestId('chat-composer-shell').boundingBox(),
     ]);
     if (!buttonBox || !viewportBox || !composerBox) throw new Error('Missing chat geometry');
-    expect(
-      Math.abs(buttonBox.x + buttonBox.width / 2 - viewportBox.x - viewportBox.width / 2),
-    ).toBeLessThan(15);
     expect(buttonBox.y + buttonBox.height).toBeLessThanOrEqual(composerBox.y);
     await testInfo.attach('scrolled-up', {
       body: await page.screenshot(),

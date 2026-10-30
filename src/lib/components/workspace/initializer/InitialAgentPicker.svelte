@@ -21,7 +21,11 @@
     selectProviderModels,
     selectDefaultReasoningEffort,
   } from '$store/renderer/slices/model/model-selectors';
-  import { selectWorkspaceInitializerHydrated } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+  import {
+    selectWorkspaceInitializerHydrated,
+    selectWorkspaceInitializerRecentSpecialistIds,
+  } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+  import { sortSpecialistsByRecency } from '$store/renderer/slices/workspace-initializer/utils/recent-specialists';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { faPlus, faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -63,6 +67,11 @@
   import { DEFAULT_NEW_WORKSPACE_SPECIALIST_ID } from '$lib/constants/specialists';
 
   const logger = createLogger('InitialAgentPicker');
+  // The menu content is the only scroller: a nested scroll box let the last
+  // row's highlight overflow the menu (a second vertical bar) and clipped the
+  // separator into a horizontal bar. Capped by the space Bits UI measures.
+  const SPECIALIST_MENU_MAX_HEIGHT =
+    'min(300px, var(--bits-dropdown-menu-content-available-height, calc(100dvh - 1rem)))';
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
   const catalogEntries$ = selectProviderCatalogEntries();
   const providerProfiles$ = selectProviderCatalogProfiles();
@@ -77,6 +86,7 @@
   const customSpecialistsLoaded$ = selectCustomSpecialistsLoaded();
   const fileSpecialistsLoaded$ = selectFileSpecialistsLoaded();
   const initializerHydrated$ = selectWorkspaceInitializerHydrated();
+  const recentSpecialistIds$ = selectWorkspaceInitializerRecentSpecialistIds();
   const activeProviderId$ = selectActiveProviderId();
   const enabledProviders$ = selectEnabledProviders();
   const selectedModel$ = selectSelectedModel();
@@ -301,10 +311,14 @@
 
   // Specialists offered in the single-agent dropdown: the modal-pickable set
   // (GitHub gating + `hidden` + `role: internal` excluded) minus the
-  // orchestrator, which is represented by the team card.
+  // orchestrator, which is represented by the team card. Those used to create
+  // workspaces come first, most recent first; the rest keep catalog order.
   const customSpecialists = $derived(
-    filterModalPickableSpecialists($specialists$, $isGitHubAuth$).filter(
-      (s) => s.id !== orchestratorId,
+    sortSpecialistsByRecency(
+      filterModalPickableSpecialists($specialists$, $isGitHubAuth$).filter(
+        (s) => s.id !== orchestratorId,
+      ),
+      $recentSpecialistIds$,
     ),
   );
 
@@ -805,6 +819,7 @@
         align="start"
         side="bottom"
         contentClass="p-1 w-80 max-w-[calc(100vw-1rem)]"
+        contentMaxHeight={SPECIALIST_MENU_MAX_HEIGHT}
       >
         {#snippet trigger({ props })}
           <Button
@@ -844,21 +859,19 @@
         {/snippet}
 
         {#snippet content()}
-          <div class="min-w-0 max-h-[300px] overflow-y-auto">
-            <SpecialistOptions
-              specialists={customSpecialists}
-              value={isTeamRoleId(selectedSpecialist) ? null : selectedSpecialist}
-              onchange={handleSpecialistSelect}
-            />
-            <Menu.Separator />
-            <!-- Create new specialist link -->
-            <Menu.Item class="type-caption gap-2" onSelect={openSpecialistSettings}>
-              {#snippet leading()}<Fa icon={faPlus} class="opacity-60" />{/snippet}
-              <span class="type-caption"
-                >{m.workspace_initialAgentPicker_manageSpecialists_label()}</span
-              >
-            </Menu.Item>
-          </div>
+          <SpecialistOptions
+            specialists={customSpecialists}
+            value={isTeamRoleId(selectedSpecialist) ? null : selectedSpecialist}
+            onchange={handleSpecialistSelect}
+          />
+          <Menu.Separator />
+          <!-- Create new specialist link -->
+          <Menu.Item class="type-caption gap-2" onSelect={openSpecialistSettings}>
+            {#snippet leading()}<Fa icon={faPlus} class="opacity-60" />{/snippet}
+            <span class="type-caption"
+              >{m.workspace_initialAgentPicker_manageSpecialists_label()}</span
+            >
+          </Menu.Item>
         {/snippet}
       </DropdownMenu>
     </div>
@@ -889,7 +902,6 @@
           defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
           fallbackToCatalogDefault
           fallbackProviderId={selectedProvider}
-          noticeClass="basis-full w-full max-w-full mt-1.5"
           silentFallback
           portal={false}
           modalAware={true}
@@ -965,7 +977,6 @@
             defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
             fallbackToCatalogDefault
             fallbackProviderId={selectedProvider}
-            noticeClass="basis-full w-full max-w-full mt-1.5"
             silentFallback
             portal={false}
             modalAware={true}

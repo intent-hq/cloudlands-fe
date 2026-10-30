@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { monitorAccessibleLabel } from '$lib/utils/review-monitor-presentation';
   import { truncatedTitle } from '$lib/actions/observe-overflow';
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import {
@@ -15,7 +16,7 @@
   import type { AgentSession, PullRequestInfo, Workspace } from '$shared/types';
   import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
   import { createLogger } from '$lib/utils/client-logger';
-  import { navigateToRoute } from '$lib/utils/navigation.client';
+  import { openAndShowWorkspace } from '$lib/utils/show-workspace';
   import { classifyAgentScope } from '$shared/utils/agent-scope';
   import { onMount } from 'svelte';
   import { writable } from 'svelte/store';
@@ -28,10 +29,9 @@
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { ensureAgentSessionLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { store as appStore } from '$store/renderer/store';
-  import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
+  import { selectReviewMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import { selectWorkspaceActivePullRequest } from '$store/renderer/slices/workspace/workspace-selectors';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
-  import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import WorkspaceStatusIcon from './WorkspaceStatusIcon.svelte';
   import { constructPrUrl } from './sidebar/sidebar-changes-utils';
@@ -69,7 +69,7 @@
     return staticData ? writable([]) : selectAllWorkspaceAgents(workspaceIdStore);
   }
   function createPrMonitorsStore() {
-    return staticData ? writable([]) : selectPrMonitors(workspaceIdStore);
+    return staticData ? writable([]) : selectReviewMonitors(workspaceIdStore);
   }
   const workspaceAgents$ = createWorkspaceAgentsStore();
   const prMonitors$ = createPrMonitorsStore();
@@ -318,18 +318,20 @@
   let hasPrRows = $derived(workspacePrRows.length > 0);
   let hasBodyContent = $derived(hasAgentRows || hasPrRows);
   function getWorkspacePrLabel(pr: WorkspacePRPresentationRow): string {
-    const identity = pr.repo
-      ? m.workspace_card_prBadge_repoLine_tooltip({ repo: pr.repo, number: pr.number })
-      : m.workspace_card_prBadge_label({ number: ` #${pr.number}` });
-    return [identity, pr.title, pr.details].filter(Boolean).join('\n');
+    const identity =
+      pr.resource?.repository.provider === 'gitlab'
+        ? `${pr.repo} !${pr.number}`
+        : pr.repo
+          ? m.workspace_card_prBadge_repoLine_tooltip({ repo: pr.repo, number: pr.number })
+          : m.workspace_card_prBadge_label({ number: ` #${pr.number}` });
+    return [monitorAccessibleLabel(identity, pr), pr.title, pr.details].filter(Boolean).join('\n');
   }
   function openAgentRow(event: MouseEvent, agentId: string) {
     event.stopPropagation();
     if (!workspace || !loadAgentSessions) return;
     const workspaceId = workspace.id;
     if (selectCurrentWorkspaceTabId.select(appStore.state) !== workspaceId) {
-      appStore.dispatch(openWorkspaceTab(workspaceId));
-      void navigateToRoute(`/workspace/${workspaceId}`).catch((error) => {
+      void openAndShowWorkspace(workspaceId).catch((error) => {
         logger.warn('Failed to switch workspace for hover-card agent', { agentId, error });
       });
     }
@@ -481,12 +483,24 @@
           </section>{/if}
         {#if hasPrRows}<section
             class="pull-requests min-w-0"
-            aria-label={m.workspace_hoverCard_pullRequests_label()}
+            aria-label={workspacePrRows.every(
+              (row) => row.resource?.repository.provider === 'gitlab',
+            )
+              ? m.workspace_hoverCard_mergeRequests_label()
+              : workspacePrRows.some((row) => row.resource?.repository.provider === 'gitlab')
+                ? m.workspace_hoverCard_reviews_label()
+                : m.workspace_hoverCard_pullRequests_label()}
             data-workspace-hover-card-pr-column
           >
             <div
               class="-mx-2 grid min-w-0 gap-2"
-              aria-label={m.workspace_hoverCard_pullRequests_label()}
+              aria-label={workspacePrRows.every(
+                (row) => row.resource?.repository.provider === 'gitlab',
+              )
+                ? m.workspace_hoverCard_mergeRequests_label()
+                : workspacePrRows.some((row) => row.resource?.repository.provider === 'gitlab')
+                  ? m.workspace_hoverCard_reviews_label()
+                  : m.workspace_hoverCard_pullRequests_label()}
               role="list"
               data-workspace-hover-card-pr-list
             >
@@ -502,7 +516,10 @@
                       class="type-caption min-w-0 truncate text-foreground"
                       data-workspace-hover-card-pr-title
                     >
-                      {pr.title || m.workspace_hoverCard_pullRequest_label()}
+                      {pr.title ||
+                        (pr.resource?.repository.provider === 'gitlab'
+                          ? m.workspace_hoverCard_mergeRequest_label()
+                          : m.workspace_hoverCard_pullRequest_label())}
                     </span>
                     <span
                       class="type-caption shrink-0 text-muted-foreground"
@@ -512,7 +529,7 @@
                     </span>
                     <span
                       class="type-caption shrink-0 text-muted-foreground"
-                      data-workspace-hover-card-pr-number>#{pr.number}</span
+                      data-workspace-hover-card-pr-number>{pr.numberLabel ?? `#${pr.number}`}</span
                     >
                   {/snippet}
                   {#if pr.url}

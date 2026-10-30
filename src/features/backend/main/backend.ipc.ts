@@ -32,6 +32,7 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import { Logger } from '$shared/logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { isLoopbackHost } from '$shared/loopback-host';
+import { classifyStartupReply } from '$shared/daemon-startup';
 import { cancelInflightHostExecStreamsForBackendSwitch } from '$shared/main/host-exec-stream';
 import {
   AuthRejectedError,
@@ -61,6 +62,7 @@ import { registerRepositoryRouteHandlers } from './repository-route-lifecycle';
 import { createRepositoryResourceFeed } from './repository-resource-feed';
 import { createRepositoryCheckoutFeed } from './repository-checkout-feed';
 import { registerRepositoryCheckoutHandlers } from './repository-checkout-lifecycle';
+import { registerPrMonitorHandlers } from './pr-monitor-lifecycle';
 import { registerRepositoryResourceHandlers } from './repository-resource-lifecycle';
 import { createRepositoryAuthorityFeed } from './repository-authority-feed';
 import { createRepositorySelectionFeed } from './repository-selection-feed';
@@ -128,6 +130,8 @@ import {
   type SelfPairingInfo,
 } from './self-publish';
 import { registerBrowserExecReverseHandler } from '../../browser/main/browser-exec-reverse';
+import { requestDesktopPermissions } from '../../desktop/main/desktop-permissions';
+import { registerDesktopExecReverseHandler } from '../../desktop/main/desktop-exec-reverse';
 import {
   LOCAL_CONNECTION_ID,
   isDetectedDeviceKind,
@@ -416,6 +420,7 @@ const repositoryFeeds = new WeakMap<
 const resourceFeeds = new WeakMap<JsonRpcClient, ReturnType<typeof createRepositoryResourceFeed>>();
 const checkoutFeeds = new WeakMap<JsonRpcClient, ReturnType<typeof createRepositoryCheckoutFeed>>();
 let checkoutRoutes: ReturnType<typeof registerRepositoryCheckoutHandlers> | undefined;
+let prMonitorRoutes: ReturnType<typeof registerPrMonitorHandlers> | undefined;
 let resourceRoutes: ReturnType<typeof registerRepositoryResourceHandlers> | undefined;
 const selectionFeeds = new WeakMap<
   JsonRpcClient,
@@ -821,6 +826,7 @@ function retireOriginalMember(
   try {
     repositoryRoutes?.retireBackend(member.id);
     resourceRoutes?.retireBackend(member.id);
+    prMonitorRoutes?.retireBackend(member.id);
     checkoutRoutes?.retireBackend(member.id);
     selectionRoutes?.retireBackend(member.id);
     nativeReviewRoutes?.retireBackend(member.id);
@@ -1006,6 +1012,7 @@ export function enrollBackendClientLifecycle(observer?: (event: PoolObservation)
         if (process.platform === 'darwin') poolAuxiliary('keychain-engine');
         repositoryRoutes?.dispose();
         resourceRoutes?.dispose();
+        prMonitorRoutes?.dispose();
         checkoutRoutes?.dispose();
         selectionRoutes?.dispose();
         nativeReviewRoutes?.dispose();
@@ -1636,6 +1643,7 @@ export function disconnectBackendClient(id: string): void {
   if (!instance) return;
   repositoryRoutes?.retireBackend(id);
   resourceRoutes?.retireBackend(id);
+  prMonitorRoutes?.retireBackend(id);
   checkoutRoutes?.retireBackend(id);
   selectionRoutes?.retireBackend(id);
   nativeReviewRoutes?.retireBackend(id);
@@ -1697,6 +1705,7 @@ function replayReconnectOnceConnected(id: string, rebuilt: JsonRpcClient): void 
           rebuilt.getConnectedVia(),
         ),
         reconnectAttempts: rebuilt.getReconnectAttempts(),
+        daemonStartup: rebuilt.getStartupState?.() ?? null,
         ...daemonUpdateMarker(id),
       },
       id,
@@ -2008,6 +2017,7 @@ function createAdditionalBackendClient(
                     instance.getConnectedVia(),
                   ),
                   reconnectAttempts: instance.getReconnectAttempts(),
+                  daemonStartup: instance.getStartupState?.() ?? null,
                   ...daemonUpdateMarker(id),
                 },
                 id,
@@ -2033,6 +2043,9 @@ function createAdditionalBackendClient(
     selectionFeeds.set(instance, createRepositorySelectionFeed(instance));
     nativeReviewFeeds.set(instance, createNativeReviewFeed(instance));
   }
+  instance.on('identity-confirmed', () => {
+    if (backendClients.get(id) === instance) broadcast(BACKEND.PR_MONITOR.READY, {}, id);
+  });
   instance.on('notification', (notification: JsonRpcNotification) => {
     if (
       notification.method === 'workspace.repositoryContext.retired' ||
@@ -2087,6 +2100,7 @@ function createAdditionalBackendClient(
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        daemonStartup: instance.getStartupState?.() ?? null,
         connectionLimited: instance.isConnectionLimited(),
         connectionLimitRetryAfterMs: instance.getConnectionLimitRetryAfterMs(),
         ...daemonUpdateMarker(id),
@@ -2095,6 +2109,29 @@ function createAdditionalBackendClient(
     );
     backendStatusForwarder.emit('status', id, status);
     refreshConnectionsForStatusChange();
+  });
+  // Startup progress changes while the status stays `connecting` (or after a
+  // failed start leaves it `disconnected`): re-broadcast the current status
+  // with the new startup state so every window's overlay follows it.
+  instance.on('startup', () => {
+    if (backendClients.get(id) !== instance) return;
+    broadcast(
+      BACKEND.STATUS,
+      {
+        status: instance.getStatus(),
+        transport: formatTransportInfo(
+          instance.getConfig(),
+          getPinnedVersion(),
+          instance.getConnectedVia(),
+        ),
+        reconnectAttempts: instance.getReconnectAttempts(),
+        daemonStartup: instance.getStartupState(),
+        connectionLimited: instance.isConnectionLimited(),
+        connectionLimitRetryAfterMs: instance.getConnectionLimitRetryAfterMs(),
+        ...daemonUpdateMarker(id),
+      },
+      id,
+    );
   });
   instance.on('reconnected', () => {
     if (backendClients.get(id) !== instance) return;
@@ -2110,6 +2147,7 @@ function createAdditionalBackendClient(
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        daemonStartup: instance.getStartupState?.() ?? null,
         ...daemonUpdateMarker(id),
       },
       id,
@@ -2209,6 +2247,7 @@ function createAdditionalBackendClient(
     backendId: id,
     savedRemote: id !== LOCAL_CONNECTION_ID,
   });
+  registerDesktopExecReverseHandler(instance, id);
   if (invitedCredential) invitedClientCredentials.set(instance, invitedCredential);
   captureRegistrations.set(id, devConsoleCapture.registerClient(id, id, instance));
   poolLifecycle?.members.set(instance, { id });
@@ -3067,6 +3106,7 @@ async function captureLocalUpdateSupportedOriginal(owner?: PoolOwner): Promise<v
               client.getConnectedVia(),
             ),
             reconnectAttempts: client.getReconnectAttempts(),
+            daemonStartup: client.getStartupState?.() ?? null,
             ...daemonUpdateMarker(LOCAL_CONNECTION_ID),
           },
           LOCAL_CONNECTION_ID,
@@ -3937,6 +3977,8 @@ function enqueueConnectionOperation<T>(fn: (owner?: PoolOwner) => Promise<T>): P
  * The LOCAL open keeps strict probe semantics: one authenticated
  * `host.status` completes before the window is created, and a failure
  * rejects — {@link openLocalAndSpawn}'s deadline/retry loop depends on it.
+ * The one exception is a daemon that is still starting: its window opens
+ * right away to show startup progress.
  * `options.probeTimeoutMs` bounds that local probe for a single call (used by
  * deadline-driven callers whose budget is shorter than the 30s client
  * default); it is ignored for a remote, which issues no probe.
@@ -3972,10 +4014,19 @@ async function performOpenBackendWindowOriginal(
       // creating a renderer, so the common healthy open never flashes the
       // connection-lost overlay. A failure rejects: openLocalAndSpawn's
       // deadline loop retries on it, and a local window without a daemon has
-      // no client reconnect posture worth showing.
-      await observeStatus(target, 'performOpenBackendWindow', owner, () =>
-        target.request('host.status', undefined, { timeoutMs: options?.probeTimeoutMs }),
-      );
+      // no client reconnect posture worth showing. A daemon that is still
+      // starting cannot answer yet: open the window so it shows startup
+      // progress instead of failing the open at the deadline.
+      if (target.getStartupState?.()?.state !== 'starting') {
+        try {
+          await observeStatus(target, 'performOpenBackendWindow', owner, () =>
+            target.request('host.status', undefined, { timeoutMs: options?.probeTimeoutMs }),
+          );
+        } catch (error) {
+          // The connect-time hello can discover startup while this probe waits.
+          if (classifyStartupReply(error)?.kind !== 'not-ready') throw error;
+        }
+      }
     } else {
       // Label the remote by its hostname once it connects (T14). Reuses the
       // live client's `host.status`; fire-and-forget so a slow remote never
@@ -4054,6 +4105,7 @@ async function performSpawnSidecar(): Promise<{
             client.getConnectedVia(),
           ),
           reconnectAttempts: client.getReconnectAttempts(),
+          daemonStartup: client.getStartupState?.() ?? null,
           ...daemonUpdateMarker(LOCAL_CONNECTION_ID),
         },
         LOCAL_CONNECTION_ID,
@@ -4129,8 +4181,9 @@ async function doPerformRestartOrphanedSidecar(): Promise<RestartOrphanedSidecar
     });
     if (result.ok) {
       const client = getLocalBackendClient();
-      // Unscoped broadcast: deliberately carries no daemon-update marker,
-      // which is a LOCAL-client fact and must not reach remote windows.
+      // Unscoped broadcast: deliberately carries no daemon-update marker or
+      // startup state, which are LOCAL-client facts and must not reach remote
+      // windows.
       broadcast(BACKEND.STATUS, {
         status: client.getStatus(),
         transport: formatTransportInfo(
@@ -4274,6 +4327,16 @@ export function registerBackendHandlers(): void {
   if (handlersRegistered) return;
   handlersRegistered = true;
 
+  // Local-only user gesture. Never forward this channel or native operations to a daemon.
+  ipcMain.handle(BACKEND.DESKTOP_PERMISSIONS, async (event, params: unknown) => {
+    try {
+      const { client } = getBackendClientForIpcEvent(event);
+      return { ok: true, result: await requestDesktopPermissions(client, params) };
+    } catch (error) {
+      return { ok: false, error: toErrorPayload(error) };
+    }
+  });
+
   nativeReviewRoutes = registerNativeReviewHandlers(ipcMain, {
     readBackend: (id) => backendClients.get(id),
     prepare: (client, connection, input) => {
@@ -4299,6 +4362,10 @@ export function registerBackendHandlers(): void {
     },
     errorPayload: toErrorPayload,
   });
+  prMonitorRoutes = registerPrMonitorHandlers(ipcMain, {
+    readBackend: (id) => backendClients.get(id),
+    errorPayload: toErrorPayload,
+  });
   resourceRoutes = registerRepositoryResourceHandlers(ipcMain, {
     readBackend: (id) => backendClients.get(id),
     capture: (client, connection, workspaceId) => {
@@ -4319,7 +4386,13 @@ export function registerBackendHandlers(): void {
     BACKEND.REQUEST,
     async (
       event,
-      payload: { method?: string; params?: unknown; timeoutMs?: number; localMachine?: boolean },
+      payload: {
+        method?: string;
+        params?: unknown;
+        timeoutMs?: number;
+        localMachine?: boolean;
+        reviewMonitoring?: unknown;
+      },
     ) => {
       const method = payload?.method;
       if (typeof method !== 'string' || method.length === 0) {
@@ -4370,6 +4443,17 @@ export function registerBackendHandlers(): void {
       // bound exceeds the flat 30s default) pass a larger value so the daemon's
       // structured `{ok:false}` result wins over a transport timeout.
       const timeoutMs = typeof payload?.timeoutMs === 'number' ? payload.timeoutMs : undefined;
+      const history =
+        payload.localMachine === true
+          ? undefined
+          : prMonitorRoutes?.requestHistory(
+              event,
+              method,
+              payload.params,
+              payload.reviewMonitoring,
+              timeoutMs,
+            );
+      if (history !== undefined) return history;
       try {
         const { backendId, client } =
           payload.localMachine === true
@@ -4393,7 +4477,19 @@ export function registerBackendHandlers(): void {
         }
         const nameGuard =
           method === 'system.status' ? beginGuestHostnameRead(backendId, client) : undefined;
-        const result = await client.request(method, payload?.params, { timeoutMs });
+        // Renderer capability/identity reads must not renegotiate the pooled
+        // connection: a real hello invalidates desktop consent and its event epoch.
+        // Main-owned identity refreshes and explicit renderer hellos still go on wire.
+        const params = payload?.params;
+        const helloRead =
+          method === 'client.hello' &&
+          (params == null ||
+            (typeof params === 'object' &&
+              !Array.isArray(params) &&
+              Object.keys(params).length === 0));
+        const result = helloRead
+          ? await client.readHelloSnapshot()
+          : await client.request(method, params, { timeoutMs });
         if (nameGuard?.()) void refreshGuestHostname(backendId, result, nameGuard);
         const expected = invitedClientCredentials.get(client);
         if (expected && method === 'principal.me') {
@@ -4435,6 +4531,45 @@ export function registerBackendHandlers(): void {
     },
   );
 
+  ipcMain.handle(BACKEND.READ_PRINCIPAL, async (event) => {
+    try {
+      return await poolWork('principal-discovery', undefined, async (owner) => {
+        const { backendId, client } = getBackendClientForIpcEvent(event);
+        poolClient(owner, client);
+        const connection = client.getRepositoryConnection();
+        const hello = client.getAcknowledgedHello();
+        if (!connection || !hello) throw new Error('Principal discovery unavailable');
+        const principal = await client.requestOnCapturedConnection(
+          connection,
+          'principal.me',
+          {},
+          undefined,
+          owner?.producer,
+        );
+        if (
+          event.sender.isDestroyed() ||
+          getBackendIdForWebContents(event.sender) !== backendId ||
+          backendClients.get(backendId) !== client ||
+          client.getRepositoryConnection() !== connection
+        )
+          throw new Error('Principal discovery connection changed');
+        const expected = invitedClientCredentials.get(client);
+        if (expected) {
+          const snapshot = parsePrincipalSnapshot(hello, principal);
+          if (!snapshot || snapshot.principal.id !== expected.principalId || !invitedRole(snapshot))
+            return {
+              ok: false,
+              // i18n-ignore (internal diagnostic; principal hydration renders its localized state)
+              error: { code: 'AUTH_REJECTED', message: 'Invited principal unavailable' },
+            };
+        }
+        return { ok: true, result: { hello, principal } };
+      });
+    } catch (error) {
+      return { ok: false, error: toErrorPayload(error) };
+    }
+  });
+
   ipcMain.handle(BACKEND.NODE_CAPABILITIES, (event) => {
     try {
       const { client } = getBackendClientForIpcEvent(event);
@@ -4462,6 +4597,7 @@ export function registerBackendHandlers(): void {
         status: client.getStatus(),
         transport,
         reconnectAttempts: client.getReconnectAttempts(),
+        daemonStartup: client.getStartupState?.() ?? null,
         sidecarStartupFailed: true as const,
         sidecarStartupFailedReason: startupFailure.reason,
         ...daemonUpdateMarker(backendId),
@@ -4471,6 +4607,7 @@ export function registerBackendHandlers(): void {
       status: client.getStatus(),
       transport,
       reconnectAttempts: client.getReconnectAttempts(),
+      daemonStartup: client.getStartupState?.() ?? null,
       connectionLimited: client.isConnectionLimited(),
       connectionLimitRetryAfterMs: client.getConnectionLimitRetryAfterMs(),
       ...daemonUpdateMarker(backendId),
@@ -4519,6 +4656,7 @@ export function registerBackendHandlers(): void {
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        daemonStartup: instance.getStartupState?.() ?? null,
         ...daemonUpdateMarker(LOCAL_CONNECTION_ID),
       },
       LOCAL_CONNECTION_ID,
@@ -4548,6 +4686,7 @@ export function registerBackendHandlers(): void {
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        daemonStartup: instance.getStartupState?.() ?? null,
         ...daemonUpdateMarker(LOCAL_CONNECTION_ID),
       },
       LOCAL_CONNECTION_ID,
@@ -5417,6 +5556,7 @@ async function getSelfPublishedStateOriginal(owner?: PoolOwner): Promise<SelfPub
 export function disposeAllBackendClients(): void {
   repositoryRoutes?.dispose();
   resourceRoutes?.dispose();
+  prMonitorRoutes?.dispose();
   checkoutRoutes?.dispose();
   selectionRoutes?.dispose();
   nativeReviewRoutes?.dispose();

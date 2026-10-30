@@ -909,6 +909,29 @@ describe('FileTabType Redux integration', () => {
     );
   }
 
+  it('routes the video error action through the original workspace download and disables repeats', async () => {
+    let finish!: (result: unknown) => void;
+    vi.mocked(invoke).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    renderFileTab({ ...fileTab, filePath: '/repo/recordings/clip.mp4' });
+    const button = await screen.findByRole<HTMLButtonElement>('button', {
+      name: 'Download original video',
+    });
+    await fireEvent.click(button);
+    expect(invoke).toHaveBeenCalledExactlyOnceWith('file:download-attachment', {
+      workspaceId: 'ws-1',
+      path: 'recordings/clip.mp4',
+      fileName: 'clip.mp4',
+    });
+    expect(button.disabled).toBe(true);
+    finish({ success: false, canceled: true });
+    await waitFor(() => expect(button.disabled).toBe(false));
+  });
+
   it.each([
     ['docs/Quarterly report #1.PDF', 'docs/Quarterly report #1.PDF', 'Quarterly report #1.PDF'],
     ['/repo/images/café.png', 'images/café.png', 'café.png'],

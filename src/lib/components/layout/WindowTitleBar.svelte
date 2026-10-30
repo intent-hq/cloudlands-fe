@@ -20,7 +20,9 @@
   import { cn } from '$lib/utils';
   import { watchReducedMotion } from '$lib/utils/reduced-motion.svelte';
   import { selectActiveTab } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-  import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { directSelectorReadable } from '$store/renderer/utils/direct-selector';
+  import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 
   import { onMount } from 'svelte';
   import { writable } from 'svelte/store';
@@ -96,8 +98,10 @@
   // Zoom selectors
   const zoomFactor = selectZoomFactor();
   const counterScale = selectCounterScale();
-  const workspaceItems = selectWorkspaceItems();
-  const windowGuestSession$ = selectWindowGuestSession();
+  // The native window title follows Redux per dispatch, not on the
+  // animation-frame cadence, so it updates even while the renderer's frames
+  // are suspended (intent-hq/intent#4622).
+  const windowGuestSession$ = directSelectorReadable(selectWindowGuestSession);
 
   // Detect platform for conditional styling and shortcuts
   const isMac = $derived.by(() => {
@@ -109,11 +113,6 @@
     );
   });
 
-  // Get workspace data
-  const workspace = $derived(
-    $workspaceItems.find((candidate) => candidate.id === workspaceId) ?? null,
-  );
-
   // Reactive writable store for workspaceId so Redux selectors re-evaluate
   // (initial value only; the $effect below keeps it in sync)
   // svelte-ignore state_referenced_locally
@@ -122,8 +121,12 @@
     workspaceIdStore.set(workspaceId ?? '');
   });
 
+  // Get workspace data (the chief workspace is not a titled workspace item)
+  const workspace$ = directSelectorReadable(selectWorkspaceById, workspaceIdStore);
+  const workspace = $derived(workspaceId === CHIEF_WORKSPACE_ID ? null : ($workspace$ ?? null));
+
   // Reactive selector subscription for the active panel title.
-  const focusedTab$ = selectActiveTab(workspaceIdStore);
+  const focusedTab$ = directSelectorReadable(selectActiveTab, workspaceIdStore);
 
   // Get focused tab info
   const focusedTab = $derived($focusedTab$ ?? null);
@@ -213,7 +216,7 @@
         aria-hidden="true"
       ></div>
       <div
-        class="titlebar-fixed-controls flex min-w-0 self-end items-end gap-1"
+        class="titlebar-fixed-controls flex min-w-0 shrink-0 self-end items-end gap-1"
         bind:this={fixedControlsEl}
         data-titlebar-fixed-controls
       >

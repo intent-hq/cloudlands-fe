@@ -69,6 +69,38 @@ describe('catalog preview IPC fixtures', () => {
     expect(hasMockIpcHandler('codex:get-models')).toBe(false);
   });
 
+  it('serves a catalog warning alongside the model rows when one is given', async () => {
+    const rows = [{ value: 'preview-model', label: 'Preview model' }];
+    const cleanup = setupModelPickerPreviewHandler('codex', rows, 'codex: CLI not found');
+    expect(await mockInvoke('codex:get-models')).toEqual({
+      success: true,
+      data: rows,
+      warning: 'codex: CLI not found',
+    });
+    cleanup();
+    expect(hasMockIpcHandler('codex:get-models')).toBe(false);
+  });
+
+  it('serves a different first response, then the rows on every later call', async () => {
+    const rows = [{ value: 'preview-model', label: 'Preview model' }];
+    const cleanup = setupModelPickerPreviewHandler('codex', rows, undefined, {
+      data: [],
+      warning: 'codex: adapter exited',
+    });
+    expect(await mockInvoke('codex:get-models')).toEqual({
+      success: true,
+      data: [],
+      warning: 'codex: adapter exited',
+    });
+    expect(await mockInvoke('codex:get-models', { forceRefresh: true })).toEqual({
+      success: true,
+      data: rows,
+    });
+    expect(await mockInvoke('codex:get-models')).toEqual({ success: true, data: rows });
+    cleanup();
+    expect(hasMockIpcHandler('codex:get-models')).toBe(false);
+  });
+
   it('serves availability and paths together and removes both handlers on teardown', async () => {
     const availability = {
       hasAnyProvider: false,

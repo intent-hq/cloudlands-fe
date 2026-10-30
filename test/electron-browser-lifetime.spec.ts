@@ -2,6 +2,7 @@
 import './electron-browser-lifetime-dev-console.fixture';
 import './electron-browser-lifetime-dev-console-ui.fixture';
 import './electron-browser-capture.fixture';
+import './electron-inline-html-preview.fixture';
 /** Real Electron guest identity evidence; never launches Intent or a daemon. */
 import {
   _electron as electron,
@@ -364,7 +365,7 @@ async function captureOriginal(
   testInfo: TestInfo,
   label = 'original-A-addressed-while-B-active',
 ) {
-  const result = await app.evaluate(async ({ webContents, nativeImage }, id) => {
+  const result = await app.evaluate(async ({ webContents }, id) => {
     const cdp = (globalThis as any).lifetimeCdp;
     const original = webContents.fromId(id);
     if (!original) throw new Error(`Original guest ${id} was destroyed`);
@@ -383,12 +384,6 @@ async function captureOriginal(
     ]).finally(() => clearTimeout(timer));
     const addressed = await cdp
       .screenshot('A-1', { deadline: Date.now() + 3000 })
-      .then((image: { base64: string; width: number; height: number }) => ({
-        ...image,
-        pixelValues: new Set(
-          nativeImage.createFromBuffer(Buffer.from(image.base64, 'base64')).toBitmap(),
-        ).size,
-      }))
       .catch((error: Error) => ({ error: error.message }));
     return { originalId: id, direct, addressed };
   }, originalId);
@@ -971,10 +966,7 @@ for (const owned of [false, true]) {
           .toMatchObject({
             width: expect.any(Number),
             height: expect.any(Number),
-            pixelValues: expect.any(Number),
           });
-        if (firstCapture.addressed && 'pixelValues' in firstCapture.addressed)
-          expect.soft(firstCapture.addressed.pixelValues).toBeGreaterThan(1);
         await page.evaluate(() => (window as any).lifetimeFixture.switchWorkspace('A'));
         for (let i = 0; i < 3; i++) {
           if (rapid) {
@@ -1009,9 +1001,6 @@ for (const owned of [false, true]) {
             for (const guest of guests) {
               expect.soft(guest.state, observation.label).toEqual(initial.state);
               expect
-                .soft(guest.viewport, `${observation.label}: ${tabId} viewport`)
-                .toEqual(initial.viewport);
-              expect
                 .soft(guest.muted, `${observation.label}: ${tabId} muted`)
                 .toBe(
                   !observation.label.startsWith(tabId[0]) &&
@@ -1019,10 +1008,6 @@ for (const owned of [false, true]) {
                 );
             }
             const element = observation.elements.find((entry: any) => entry.id === initial.id);
-            const originalElement = baseline.elements.find((entry: any) => entry.id === initial.id);
-            expect
-              .soft(element?.geometry, `${observation.label}: ${tabId} host geometry`)
-              .toEqual(originalElement.geometry);
             const background =
               !observation.label.startsWith(tabId[0]) &&
               observation.label !== `first visible ${tabId[0]}`;

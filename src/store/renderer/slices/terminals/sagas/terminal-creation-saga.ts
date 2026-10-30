@@ -13,16 +13,22 @@ import {
 import {
   selectIsTerminalOverlayOpenForWorkspace,
   selectTerminalCreationOutcome,
+  selectTerminalDisplayName,
   selectTerminalsForWorkspace,
+  selectWorkspaceTerminalState,
 } from '../terminals-selectors';
 import {
   addTerminal,
+  closeTerminalOverlay,
   createPanelTerminalRequested,
   createOverlayTerminalRequested,
   hydrateTerminalsRequested,
+  loadWorkspaceTerminals,
+  openFirstPanelTerminalRequested,
   openTerminalOverlay,
   removeTerminal,
   saveTerminalMetadata,
+  setTerminalPlacement,
   terminalCreationFinished,
   type TerminalCreationOutcome,
 } from '../terminals-slice';
@@ -127,6 +133,58 @@ function* createOverlayTerminalWorker(
   }
 }
 
+function* openPanelTerminalTab(
+  workspaceId: string,
+  terminalId: string,
+  title: string,
+  targetPanelId: string | undefined,
+): SagaGenerator<void> {
+  const panelId = targetPanelId ?? (yield* selectFocusedPanelId.effect(workspaceId));
+  yield* put(
+    openTab(
+      workspaceId,
+      { type: 'terminal', title, terminalId, closable: true },
+      panelId ?? undefined,
+    ),
+  );
+}
+
+/** Creates a PTY and opens it as a panel tab; returns its id, or null when dropped/failed. */
+function* createPanelTerminal(
+  workspaceId: string,
+  context: string,
+  targetPanelId: string | undefined,
+): SagaGenerator<string | null> {
+  try {
+    const result: Awaited<ReturnType<typeof appClient.terminals.create>> = yield* call(
+      [appClient.terminals, appClient.terminals.create],
+      { workspaceId, cols: 80, rows: 24 },
+    );
+    if (context !== (yield* selectWorkspaceActionContext.effect(workspaceId))) return null;
+    if (!result.success || !result.id) {
+      logger.error('Failed to create terminal', { error: result.error });
+      return null;
+    }
+
+    logger.info('Created new terminal', { terminalId: result.id });
+    yield* put(removeTerminal(workspaceId, result.id));
+    yield* put(saveTerminalMetadata(workspaceId, result.id, undefined, new Date().toISOString()));
+
+    yield* put(hydrateTerminalsRequested(workspaceId));
+
+    yield* openPanelTerminalTab(
+      workspaceId,
+      result.id,
+      m.layout_panelLayout_terminal_fallback(),
+      targetPanelId,
+    );
+    return result.id;
+  } catch (error) {
+    logger.error('Failed to create terminal', error);
+    return null;
+  }
+}
+
 function* createTerminalWorker(
   action: ReturnType<typeof createPanelTerminalRequested>,
 ): SagaGenerator<void> {
@@ -136,42 +194,75 @@ function* createTerminalWorker(
   if (yield* selectIsWorkspaceCollaborator.effect(workspaceId)) return;
   const context = yield* selectWorkspaceActionContext.effect(workspaceId);
   if (!context) return;
+  yield* createPanelTerminal(workspaceId, context, targetPanelId);
+}
+
+/**
+ * Hydrates an empty local list from `terminal.list` first so an existing PTY
+ * is reused rather than duplicated. Returns false when the list read failed or
+ * the workspace context changed underneath it.
+ */
+function* ensureTerminalsListed(workspaceId: string, context: string): SagaGenerator<boolean> {
+  if ((yield* selectTerminalsForWorkspace.effect(workspaceId)).length > 0) return true;
   try {
-    const result: Awaited<ReturnType<typeof appClient.terminals.create>> = yield* call(
-      [appClient.terminals, appClient.terminals.create],
-      { workspaceId, cols: 80, rows: 24 },
+    const result: Awaited<ReturnType<typeof appClient.terminals.list>> = yield* call(
+      [appClient.terminals, appClient.terminals.list],
+      workspaceId,
     );
-    if (!context || context !== (yield* selectWorkspaceActionContext.effect(workspaceId))) return;
-    if (!result.success || !result.id) {
-      logger.error('Failed to create terminal', { error: result.error });
+    if (context !== (yield* selectWorkspaceActionContext.effect(workspaceId))) return false;
+    yield* put(
+      Array.isArray(result)
+        ? loadWorkspaceTerminals(workspaceId, result)
+        : loadWorkspaceTerminals(workspaceId, result.terminals, null, result.daemonBootId),
+    );
+    return true;
+  } catch (error) {
+    logger.error('Failed to list terminals', error);
+    return false;
+  }
+}
+
+function* showTerminalInPanel(workspaceId: string, terminalId: string): SagaGenerator<void> {
+  yield* put(setTerminalPlacement(workspaceId, terminalId, 'panel'));
+  const state = yield* selectWorkspaceTerminalState.effect(workspaceId);
+  if (state.isOpen && state.selectedScriptId === null && state.activeTerminalId === terminalId)
+    yield* put(closeTerminalOverlay(workspaceId));
+}
+
+function* openFirstTerminalWorker(
+  inFlight: Set<string>,
+  action: ReturnType<typeof openFirstPanelTerminalRequested>,
+): SagaGenerator<void> {
+  const [workspaceId, targetPanelId] = action.payload;
+  // Rapid activations coalesce onto the in-flight attempt; a finished or
+  // failed attempt releases the slot so the next activation retries.
+  if (inFlight.has(workspaceId)) return;
+  if (yield* selectIsWorkspaceCollaborator.effect(workspaceId)) return;
+  const context = yield* selectWorkspaceActionContext.effect(workspaceId);
+  if (!context) return;
+  inFlight.add(workspaceId);
+  try {
+    if (!(yield* ensureTerminalsListed(workspaceId, context))) return;
+    const [first] = yield* selectTerminalsForWorkspace.effect(workspaceId);
+    if (first) {
+      yield* openPanelTerminalTab(
+        workspaceId,
+        first.id,
+        yield* selectTerminalDisplayName.effect(workspaceId, first.id),
+        targetPanelId,
+      );
+      yield* showTerminalInPanel(workspaceId, first.id);
       return;
     }
-
-    logger.info('Created new terminal', { terminalId: result.id });
-    yield* put(removeTerminal(workspaceId, result.id));
-    yield* put(saveTerminalMetadata(workspaceId, result.id, undefined, new Date().toISOString()));
-
-    yield* put(hydrateTerminalsRequested(workspaceId));
-
-    const panelId = targetPanelId ?? (yield* selectFocusedPanelId.effect(workspaceId));
-    yield* put(
-      openTab(
-        workspaceId,
-        {
-          type: 'terminal',
-          title: m.layout_panelLayout_terminal_fallback(),
-          terminalId: result.id,
-          closable: true,
-        },
-        panelId ?? undefined,
-      ),
-    );
-  } catch (error) {
-    logger.error('Failed to create terminal', error);
+    const createdId = yield* createPanelTerminal(workspaceId, context, targetPanelId);
+    if (createdId) yield* showTerminalInPanel(workspaceId, createdId);
+  } finally {
+    inFlight.delete(workspaceId);
   }
 }
 
 export function* terminalCreationSaga(): SagaGenerator<void> {
   yield* takeEvery(createOverlayTerminalRequested, createOverlayTerminalWorker);
   yield* takeEvery(createPanelTerminalRequested, createTerminalWorker);
+  yield* takeEvery(openFirstPanelTerminalRequested, openFirstTerminalWorker, new Set<string>());
 }

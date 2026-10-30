@@ -903,9 +903,10 @@ export const clearPanelLayout = createAction<[wsId: string]>('panelLayout/clearP
  */
 export const destroyTabsByType = createAction(
   'panelLayout/destroyTabsByType',
-  (wsId: string, tabType: PanelTabType, timestamp?: number) => ({
+  (wsId: string, tabType: PanelTabType, timestamp?: number, preservedScriptIds: string[] = []) => ({
     wsId,
     tabType,
+    preservedScriptIds,
     timestamp: timestamp ?? Date.now(),
   }),
 );
@@ -1890,6 +1891,15 @@ export const applyBrowserTabRegistryRow = createAction<
  * the daemon now (REV-2 §5.45). No reducer: the saga's single-flight reporter
  * is the only consumer.
  */
+/**
+ * A browser request reached this window for the workspace: if its registry
+ * rows were torn down (the workspace tab closed) while the layout stayed
+ * settled, reload them so its tabs are reported again. A no-op otherwise.
+ * Handled by the browser-tab-registry saga, not a reducer.
+ */
+export const browserTabRegistryReconcileRequested = createAction<[wsId: string]>(
+  'panelLayout/browserTabRegistryReconcileRequested',
+);
 export const browserTabRegistryReportRequested = createAction<[wsId: string]>(
   'panelLayout/browserTabRegistryReportRequested',
 );
@@ -2829,8 +2839,10 @@ panelLayoutReducer.with(closeTabsByType, (state, { payload }) => {
 });
 // --- Destroy Tabs By Type (multiplayer w3) ---
 panelLayoutReducer.with(destroyTabsByType, (state, { payload }) => {
-  const { wsId, tabType, timestamp } = payload;
-  const isType = (tab: PanelTab) => tab.type === tabType;
+  const { wsId, tabType, timestamp, preservedScriptIds } = payload;
+  const isType = (tab: PanelTab) =>
+    tab.type === tabType &&
+    !(tab.type === 'terminal' && tab.scriptId && preservedScriptIds.includes(tab.scriptId));
   const before = getWorkspaceState(state, wsId);
   const tabsToDestroy: { tabId: string; panelId: string }[] = [];
   for (const [pId, panel] of Object.entries(before.panels)) {
@@ -4730,3 +4742,155 @@ panelLayoutReducer.with(revealHiddenTabAvoidingPanel, (state, { payload }) => {
 
 // Wire up the mutable reference for recursive dispatch
 _reducerRef = panelLayoutReducer;
+
+/** Promote the local composer in every restorable layout without changing tab identity. */
+export const promoteDiscussionTab = createAction<
+  [layoutId: string, tabId: string, conversationId: string, title: string]
+>('panelLayout/promoteDiscussionTab');
+panelLayoutReducer.with(
+  promoteDiscussionTab,
+  (state, { payload: [layoutId, tabId, conversationId, title] }) => {
+    if (!conversationId || conversationId === 'new' || conversationId === 'default') return state;
+    const ws = getWorkspaceState(state, layoutId);
+    const promote = (tab: PanelTab): PanelTab =>
+      tab.id === tabId && tab.type === 'discussion' && tab.data?.conversationId === 'new'
+        ? { ...tab, data: { ...tab.data, conversationId }, title }
+        : tab;
+    const panels = (value: Record<string, PanelState>) =>
+      Object.fromEntries(
+        Object.entries(value).map(([id, panel]) => [
+          id,
+          { ...panel, tabs: panel.tabs.map(promote) },
+        ]),
+      );
+    return setWorkspaceState(state, layoutId, {
+      ...ws,
+      panels: panels(ws.panels),
+      hiddenTabs: createCollection('id', getItems(ws.hiddenTabs).map(promote)),
+      recentlyClosed: ws.recentlyClosed.map((entry) => ({ ...entry, tab: promote(entry.tab) })),
+      recentlyClosedColumns: createCollection(
+        'historyId',
+        getItems(
+          ws.recentlyClosedColumns ??
+            createCollection<RecentlyClosedPanelColumn, 'historyId'>('historyId'),
+        ).map((entry) => ({
+          ...entry,
+          panel: { ...entry.panel, tabs: entry.panel.tabs.map(promote) },
+        })),
+      ),
+      layoutHistory: ws.layoutHistory.map((snapshot) => ({
+        ...snapshot,
+        panels: panels(snapshot.panels),
+      })),
+    });
+  },
+);
+
+/** Apply daemon discussion metadata or deletion to every restorable copy. */
+export const syncDiscussionTabs = createAction<
+  [workspaceId: string, conversationId: string, title: string | null]
+>('panelLayout/syncDiscussionTabs');
+panelLayoutReducer.with(
+  syncDiscussionTabs,
+  (state, { payload: [workspaceId, conversationId, title] }) => {
+    let result = state;
+    for (const [layoutId, current] of Object.entries(state.byWorkspaceId)) {
+      const matches = (tab: PanelTab) =>
+        tab.type === 'discussion' &&
+        (tab.workspaceId ?? layoutId) === workspaceId &&
+        (tab.data?.conversationId ?? 'default') === conversationId;
+      const transform = (tabs: PanelTab[]) =>
+        title === null
+          ? tabs.filter((tab) => !matches(tab))
+          : tabs.map((tab) => (matches(tab) && tab.title !== title ? { ...tab, title } : tab));
+      const pruned = title === null ? purgeTabsFromLayoutHistory(current, matches) : current;
+      let changed = pruned !== current;
+      const panels = (value: Record<string, PanelState>) =>
+        Object.fromEntries(
+          Object.entries(value).map(([id, panel]) => {
+            const tabs = transform(panel.tabs);
+            if (
+              tabs.length === panel.tabs.length &&
+              tabs.every((tab, index) => tab === panel.tabs[index])
+            )
+              return [id, panel];
+            changed = true;
+            return [
+              id,
+              {
+                ...panel,
+                tabs,
+                activeTabId: tabs.some((tab) => tab.id === panel.activeTabId)
+                  ? panel.activeTabId
+                  : (tabs[0]?.id ?? null),
+                attentionTabIds: panel.attentionTabIds?.filter((tabId) =>
+                  tabs.some((tab) => tab.id === tabId),
+                ),
+              },
+            ];
+          }),
+        );
+      const nextPanels = panels(current.panels);
+      const hidden = getItems(current.hiddenTabs);
+      const hiddenTabs = transform(hidden);
+      const recentlyClosed = current.recentlyClosed.flatMap((entry) => {
+        const [tab] = transform([entry.tab]);
+        if (tab === entry.tab) return [entry];
+        changed = true;
+        return tab ? [{ ...entry, tab }] : [];
+      });
+      if (
+        hiddenTabs.length !== hidden.length ||
+        hiddenTabs.some((tab, index) => tab !== hidden[index])
+      )
+        changed = true;
+      const layoutHistory = pruned.layoutHistory.map((snapshot) => ({
+        ...snapshot,
+        panels: panels(snapshot.panels),
+      }));
+      const columns = getItems(
+        pruned.recentlyClosedColumns ??
+          createCollection<RecentlyClosedPanelColumn, 'historyId'>('historyId'),
+      );
+      const recentlyClosedColumns = columns.map((entry) => ({
+        ...entry,
+        panel: panels({ [entry.panel.id]: entry.panel })[entry.panel.id],
+      }));
+      if (!changed) continue;
+      let next: WorkspacePanelLayoutState = {
+        ...current,
+        panels: nextPanels,
+        hiddenTabs: createCollection('id', hiddenTabs),
+        recentlyClosed,
+        layoutHistory,
+        recentlyClosedColumns: createCollection(
+          'historyId',
+          title === null
+            ? recentlyClosedColumns.filter((entry) => entry.panel.tabs.length > 0)
+            : recentlyClosedColumns,
+        ),
+      };
+      if (title === null) {
+        const removedIds = new Set(
+          Object.values(current.panels).flatMap((panel) =>
+            panel.tabs.filter(matches).map((tab) => tab.id),
+          ),
+        );
+        next = {
+          ...next,
+          focusHistory: next.focusHistory.filter((entry) => !removedIds.has(entry.tabId)),
+          pendingFocusTabId:
+            next.pendingFocusTabId && removedIds.has(next.pendingFocusTabId)
+              ? null
+              : next.pendingFocusTabId,
+          pendingPanelReveal:
+            next.pendingPanelReveal?.tabId && removedIds.has(next.pendingPanelReveal.tabId)
+              ? null
+              : next.pendingPanelReveal,
+        };
+      }
+      result = setWorkspaceState(result, layoutId, next);
+    }
+    return result;
+  },
+);

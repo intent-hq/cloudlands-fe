@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createVideoPreview } from '../utils/video-preview';
+
+vi.mock('../utils/video-preview', () => ({ createVideoPreview: vi.fn() }));
 
 /**
  * workspace-file://{workspaceId}/{percent-encoded-path} — URL validation and
@@ -137,6 +140,36 @@ describe('workspaceFileMimeTypeForPath', () => {
 });
 
 describe('parseWorkspaceFileRequest', () => {
+  it('accepts only one MP4 preview request while retaining backend routing and version', () => {
+    const url = 'workspace-file://ws-1/clip.mp4?v=2&preview=h264&backend=foreign';
+    expect(withWorkspaceMediaBackendHint(url, 'owner')).toBe(
+      'workspace-file://ws-1/clip.mp4?v=2&preview=h264&backend=owner',
+    );
+    expect(withoutWorkspaceMediaBackendHint(url)).toBe(
+      'workspace-file://ws-1/clip.mp4?v=2&preview=h264',
+    );
+    expect(parseWorkspaceFileRequest(url)).toEqual({
+      ok: true,
+      workspaceId: 'ws-1',
+      filePath: 'clip.mp4',
+      mimeType: 'video/mp4',
+      backendId: 'foreign',
+      preview: 'h264',
+    });
+    for (const bad of [
+      'clip.mp4?preview=h264&preview=h264',
+      'clip.mp4?preview=hevc',
+      'clip.png?preview=h264',
+      'clip.webm?preview=h264',
+      'a%2F..%2Fclip.mp4?preview=h264',
+    ]) {
+      expect(parseWorkspaceFileRequest(`workspace-file://ws-1/${bad}`).ok).toBe(false);
+    }
+    expect(parseWorkspaceMediaBackendHint('?preview=h264').ok).toBe(false);
+    expect(
+      withWorkspaceMediaBackendHint('workspace-asset://ws-1/asset?preview=h264', 'owner'),
+    ).toBeNull();
+  });
   it('accepts a nested percent-encoded image path', () => {
     const parsed = parseWorkspaceFileRequest('workspace-file://ws-1/docs/my%20pic.png');
     expect(parsed).toEqual({
@@ -864,7 +897,11 @@ describe('createWorkspaceOwnershipProber', () => {
 });
 
 describe('setupWorkspaceFileProtocolHandler', () => {
+  const platform = process.platform;
+  afterEach(() => Object.defineProperty(process, 'platform', { value: platform }));
   beforeEach(() => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    vi.mocked(createVideoPreview).mockReset();
     protocolHandle.mockClear();
     mockRequest.mockReset();
     pooledRequests.clear();
@@ -876,6 +913,86 @@ describe('setupWorkspaceFileProtocolHandler', () => {
     // retry delay.
     windowBackends.set(7, 'local');
     workspaceWindows.set('ws-1', [7]);
+  });
+
+  it('converts only explicit previews from the owning backend and leaves downloads untouched', async () => {
+    const original = Buffer.from('HEVC-original');
+    const remote = vi.fn().mockResolvedValue({
+      content: original.toString('base64'),
+      bytesRead: original.length,
+      size: original.length,
+    });
+    pooledRequests.set('remote', remote);
+    vi.mocked(createVideoPreview).mockResolvedValue(Buffer.from('H264-preview'));
+    const handler = getHandler();
+    const request = new Request('workspace-file://ws-1/clip.mp4?backend=remote&preview=h264&v=2', {
+      headers: { Origin: 'app://workspaces' },
+    });
+    const preview = await handler(request);
+    expect(preview.status).toBe(200);
+    expect(await preview.text()).toBe('H264-preview');
+    expect(preview.headers.get('content-length')).toBe('12');
+    expect(remote).toHaveBeenCalledExactlyOnceWith('file.readChunk', {
+      workspaceId: 'ws-1',
+      path: 'clip.mp4',
+      offset: 0,
+      length: WORKSPACE_FILE_CHUNK_BYTES,
+    });
+    expect(createVideoPreview).toHaveBeenCalledExactlyOnceWith(
+      original,
+      JSON.stringify(['remote', 'ws-1', 'clip.mp4']),
+      request.signal,
+    );
+    const download = await handler(
+      new Request('workspace-file://ws-1/clip.mp4?backend=remote', {
+        headers: { Origin: 'app://workspaces' },
+      }),
+    );
+    expect(await download.text()).toBe('HEVC-original');
+    expect(createVideoPreview).toHaveBeenCalledTimes(1);
+    expect(mockRequest).not.toHaveBeenCalled();
+  });
+
+  it('keeps preview failures behind origin, backend, method and range guards', async () => {
+    const handler = getHandler();
+    for (const [origin, suffix, method, range, status] of [
+      ['https://evil.example', '', 'GET', '', 403],
+      ['app://workspaces', '&backend=disconnected', 'GET', '', 404],
+      ['app://workspaces', '', 'GET', 'bytes=0-10', 415],
+      ['app://workspaces', '', 'POST', '', 415],
+    ] as const) {
+      const response = await handler(
+        new Request(`workspace-file://ws-1/clip.mp4?preview=h264${suffix}`, {
+          method,
+          headers: { Origin: origin, ...(range ? { Range: range } : {}) },
+        }),
+      );
+      expect(response.status).toBe(status);
+    }
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    expect(
+      (
+        await handler(
+          new Request('workspace-file://ws-1/clip.mp4?preview=h264', {
+            headers: { Origin: 'app://workspaces' },
+          }),
+        )
+      ).status,
+    ).toBe(415);
+    expect(mockRequest).not.toHaveBeenCalled();
+    expect(createVideoPreview).not.toHaveBeenCalled();
+  });
+
+  it('returns a bounded unavailable response when conversion fails', async () => {
+    mockRequest.mockResolvedValue({ content: 'AA==', bytesRead: 1, size: 1 });
+    vi.mocked(createVideoPreview).mockRejectedValue(new Error('converter unavailable'));
+    const response = await getHandler()(
+      new Request('workspace-file://ws-1/clip.mp4?preview=h264', {
+        headers: { Origin: 'app://workspaces' },
+      }),
+    );
+    expect(response.status).toBe(415);
+    expect(await response.text()).toBe('');
   });
 
   it('rejects hostile, null, and arbitrary localhost origins before daemon access', async () => {

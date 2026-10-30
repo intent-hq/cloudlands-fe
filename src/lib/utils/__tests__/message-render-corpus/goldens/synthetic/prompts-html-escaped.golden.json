@@ -1,0 +1,19 @@
+{
+  "note": "HTML-escaped block copied from the XML-escaped recovery replay is stripped, entities decoded",
+  "prompts": [
+    "Run the full sizing report tomorrow and then start the job-size declarations.",
+    "Raise Type Check & Lint's timeout to 45 minutes.",
+    "What are WarpBuild's per-minute prices for 8x and 16x?"
+  ],
+  "tree": [
+    {
+      "type": "text",
+      "blocks": [
+        {
+          "type": "text",
+          "content": "Report back when the PR is ready to merge."
+        }
+      ]
+    }
+  ]
+}

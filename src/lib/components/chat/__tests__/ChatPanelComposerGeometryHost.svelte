@@ -1,5 +1,9 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
+  import {
+    createComposerDraftTransport,
+    type ComposerDraftRequest,
+  } from './mocks/composer-draft-transport';
   import { faComment } from '@fortawesome/free-solid-svg-icons';
   import { AgentStatus, type AgentMessage, type AgentSession } from '$shared/types';
   import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
@@ -10,6 +14,7 @@
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { startChatFixtureSagas } from '../../../../test/chat-fixture-sagas';
   import { store } from '$store/renderer/store';
+  import { clearDraftCacheForTests } from '../chat-draft-cache';
   import { selectAgentMessages } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
   import {
@@ -45,6 +50,12 @@
   } from '$store/renderer/slices/pending-submissions/pending-submissions-slice';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { setAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import {
+    desktopEntryPatched,
+    desktopEventReceived,
+  } from '$store/renderer/slices/desktop-control/desktop-control-slice';
+  import { request as desktopRequest } from '$features/desktop/renderer/desktop-test-fixtures';
+  import { m } from '$shared/paraglide/messages.js';
 
   let {
     theme = 'light',
@@ -54,6 +65,9 @@
     chief = false,
     streaming = false,
     draft = '',
+    restoredDraft,
+    holdDraftRestore = false,
+    onDraftRequest,
     persistedDraft = '',
     attention = null,
     queued = false,
@@ -72,6 +86,7 @@
     historyNotice,
     messages,
     ownerPrincipalId,
+    desktopNotice,
   }: {
     theme?: 'light' | 'dark';
     zoom?: number;
@@ -80,6 +95,9 @@
     chief?: boolean;
     streaming?: boolean;
     draft?: string;
+    restoredDraft?: string;
+    holdDraftRestore?: boolean;
+    onDraftRequest?: (request: ComposerDraftRequest) => void;
     persistedDraft?: string;
     attention?: 'blocker' | 'discussion' | null;
     queued?: boolean;
@@ -98,6 +116,8 @@
     historyNotice?: 'blocker-report' | 'discussion-request' | 'turn-failure' | 'interruption';
     messages?: AgentMessage[];
     ownerPrincipalId?: string;
+    /** `guidance`: macOS setup notice left after a request expired; `request`: consent card. */
+    desktopNotice?: 'guidance' | 'request';
   } = $props();
 
   $effect(() => {
@@ -136,13 +156,35 @@
   const initialDraft = fixture.persistedDraft || fixture.draft;
   if (initialDraft) draftFixture.seed(workspaceId, agentId, initialDraft);
   const ownsStore = untrack(() => initializeStore);
+  // These fixed fixture IDs are reused across same-page preview/test mounts.
+  clearDraftCacheForTests({ workspaceId, agentId });
+  const drafts = untrack(() =>
+    createComposerDraftTransport(
+      workspaceId,
+      agentId,
+      restoredDraft ?? initialDraft,
+      holdDraftRestore,
+      (request) => {
+        draftRequests = [...draftRequests, request];
+        onDraftRequest?.(request);
+      },
+    ),
+  );
+  const draftTransport = untrack(() =>
+    restoredDraft !== undefined || holdDraftRestore || onDraftRequest
+      ? drafts.transport
+      : draftFixture.client,
+  );
+  const startFixtureSagas = (appStore: Parameters<typeof startChatFixtureSagas>[0]) =>
+    startChatFixtureSagas(appStore, draftTransport);
   const previousPrincipal = store.state.principal;
   const disposeStore = ownsStore
-    ? startRootStoreLifecycle(store, {
-        startSagas: (appStore) => startChatFixtureSagas(appStore, draftFixture.client),
-      })
+    ? startRootStoreLifecycle(store, { startSagas: startFixtureSagas })
     : () => {};
-  const stopChatSagas = ownsStore ? [] : startChatFixtureSagas(store, draftFixture.client);
+  const stopChatSagas = ownsStore ? [] : startFixtureSagas(store);
+  $effect(() => {
+    if (!holdDraftRestore) drafts.releaseRestore();
+  });
   if (ownsStore) admitLegacyPrincipal();
   if (submissionSupport) {
     const current = store.state.principal;
@@ -620,9 +662,33 @@
     }),
   );
   store.dispatch(setRestoreStatus(workspaceId, 'restored'));
+  let appliedDesktopNotice: typeof desktopNotice;
+  $effect(() => {
+    const notice = desktopNotice;
+    if (notice === appliedDesktopNotice) return;
+    appliedDesktopNotice = notice;
+    if (notice === 'request')
+      store.dispatch(
+        desktopEventReceived({
+          id: 'composer-desktop-request',
+          type: 'desktop:permission-requested',
+          data: { ...desktopRequest, workspaceId, agentId, computerName: 'MacBook' },
+        }),
+      );
+    store.dispatch(
+      desktopEntryPatched(workspaceId, agentId, store.state.desktopControl.generation, {
+        error: notice ? m.desktop_os_setup_description() : undefined,
+        osChecklist: notice
+          ? { accessibility: false, screenRecording: false, screenCapture: 'unavailable' }
+          : undefined,
+      }),
+    );
+  });
   onDestroy(() => {
     stopChatSagas.forEach((stop) => stop());
     disposeStore();
+    drafts.dispose();
+    clearDraftCacheForTests({ workspaceId, agentId });
     if (!ownsStore) return;
     store.dispatch(principalContextChanged(previousPrincipal.context));
     if (previousPrincipal.context && previousPrincipal.snapshot)

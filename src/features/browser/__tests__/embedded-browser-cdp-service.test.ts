@@ -337,6 +337,83 @@ describe('listAllTabs vs closeTab registry agreement (#2536)', () => {
   });
 });
 
+describe('tab list right after a background-hosting adoption', () => {
+  // A window that was just asked to host a workspace no window had open
+  // replies only after a cold layout hydration; the usual short reply
+  // window would answer "unavailable" before the adopted window could.
+  function deferredRenderer(): { reply: (tabs: PanelTab[]) => void } {
+    let lastRequestId: string | undefined;
+    mocks.sendToWorkspaceWindows.mockImplementation(
+      (_ws: string | undefined, channel: string, payload: { requestId?: string }) => {
+        if (channel === IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST) lastRequestId = payload.requestId;
+        return DELIVERED;
+      },
+    );
+    return {
+      reply: (tabs) =>
+        mocks.handlers.get(IPC_CHANNELS.BROWSER.LIST_TABS_RESPONSE)?.(
+          {},
+          { tabs, requestId: lastRequestId },
+        ),
+    };
+  }
+
+  it('waits for the adopted window to finish hydrating instead of timing out', async () => {
+    const service = await loadService();
+    const renderer = deferredRenderer();
+    vi.useFakeTimers();
+    try {
+      service.noteWorkspaceAdopted('ws-closed');
+      const pending = service.listAllTabs('ws-closed');
+      await vi.advanceTimersByTimeAsync(2_000);
+      renderer.reply([{ tabId: 'tab-agent', url: 'http://sandbox/', title: 'S', hidden: true }]);
+      await expect(pending).resolves.toMatchObject({
+        stale: false,
+        tabs: [{ tabId: 'tab-agent', mounted: false, hidden: true }],
+      });
+
+      // Once the adopted window has answered, later requests use the usual window.
+      const later = service.listAllTabs('ws-closed');
+      await vi.advanceTimersByTimeAsync(600);
+      await expect(later).resolves.toMatchObject({ stale: true });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the longer window within half of the caller deadline', async () => {
+    const service = await loadService();
+    deferredRenderer();
+    vi.useFakeTimers();
+    try {
+      service.noteWorkspaceAdopted('ws-closed');
+      const pending = service.listAllTabs('ws-closed', undefined, {
+        deadline: Date.now() + 4_000,
+      });
+      pending.catch(() => {});
+      await vi.advanceTimersByTimeAsync(2_100);
+      await expect(pending).rejects.toThrow('Tab list for workspace ws-closed is unavailable');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('still gives up within the longer window when the adopted window never answers', async () => {
+    const service = await loadService();
+    deferredRenderer();
+    vi.useFakeTimers();
+    try {
+      service.noteWorkspaceAdopted('ws-closed');
+      const pending = service.listAllTabs('ws-closed');
+      pending.catch(() => {});
+      await vi.advanceTimersByTimeAsync(5_100);
+      await expect(pending).rejects.toThrow('Tab list for workspace ws-closed is unavailable');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('findModelTabByExactUrl (#2541, per-agent #2857)', () => {
   const URL_A = 'http://localhost:3000/board';
 
@@ -902,6 +979,191 @@ describe('tab ownership registry (#2857)', () => {
       emulatedSize: { width: 1024, height: 768 },
     });
     expect(tabs.find((t) => t.tabId === 'tab-user')?.ownerAgentId).toBeUndefined();
+  });
+});
+
+// A minimized or covered Intent window stops drawing frames, so a capture
+// of any of its browser tabs hung until "not-painting". During a capture
+// the guest and its hosting window keep drawing (background throttling off),
+// and the fallback capture makes the page visible instead of keeping it
+// hidden; both are restored afterwards so an idle window costs nothing.
+describe('screenshot keeps painting while the app window is minimized', () => {
+  const LAYOUT_METRICS = {
+    layoutViewport: { clientWidth: 800, clientHeight: 600 },
+    cssVisualViewport: { clientWidth: 800, clientHeight: 600, pageX: 0, pageY: 0 },
+  };
+
+  function withHost<T extends object>(guest: T, host: { backgroundThrottling: boolean }) {
+    return Object.assign(guest, {
+      backgroundThrottling: true,
+      hostWebContents: { ...host, isDestroyed: () => false, send: vi.fn() },
+    });
+  }
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('lets the guest and its app window draw during the CDP capture, then restores both', async () => {
+    const service = await loadService();
+    const seen: boolean[][] = [];
+    const wc = withHost(
+      fakeCdpWebview(71, {
+        'Page.getLayoutMetrics': LAYOUT_METRICS,
+        'Page.captureScreenshot': { data: JPEG_1PX },
+      }),
+      { backgroundThrottling: true },
+    );
+    wc.debugger.sendCommand.mockImplementation(async (method: string) => {
+      seen.push([wc.backgroundThrottling, wc.hostWebContents.backgroundThrottling]);
+      return method === 'Page.getLayoutMetrics' ? LAYOUT_METRICS : { data: JPEG_1PX };
+    });
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-min', 71);
+
+    await expect(service.screenshot('tab-min')).resolves.toMatchObject({ base64: JPEG_1PX });
+
+    expect(seen.length).toBeGreaterThan(0);
+    // Both draw during the capture: lifting the guest alone did not paint a
+    // minimized macOS window (live test on manual build 39607559335).
+    expect(seen.every(([guest, host]) => guest === false && host === false)).toBe(true);
+    expect(wc.backgroundThrottling).toBe(true);
+    expect(wc.hostWebContents.backgroundThrottling).toBe(true);
+    service.unregisterTab('tab-min');
+  });
+
+  it('asks the fallback capture to make the page visible and restores throttling on failure', async () => {
+    const service = await loadService();
+    const wc = withHost(fakeCdpWebview(72, { 'Page.getLayoutMetrics': 'hang' }, 'hang'), {
+      backgroundThrottling: true,
+    });
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-min-hang', 72);
+
+    const pending = service.screenshot('tab-min-hang');
+    pending.catch(() => {});
+    await vi.advanceTimersByTimeAsync(12_000);
+
+    await expect(pending).rejects.toThrow('not painting');
+    expect(wc.capturePage).toHaveBeenCalledWith(undefined, { stayHidden: false, stayAwake: true });
+    expect(wc.backgroundThrottling).toBe(true);
+    expect(wc.hostWebContents.backgroundThrottling).toBe(true);
+    service.unregisterTab('tab-min-hang');
+  });
+
+  it('keeps a guest drawing until its last overlapping capture finishes', async () => {
+    const service = await loadService();
+    let releaseFirst: () => void = () => {};
+    let calls = 0;
+    const wc = Object.assign(fakeCdpWebview(73, {}), { backgroundThrottling: true });
+    wc.debugger.sendCommand.mockImplementation((method: string) => {
+      if (method !== 'Page.getLayoutMetrics') return Promise.resolve({ data: JPEG_1PX });
+      calls++;
+      return calls === 1
+        ? new Promise((resolve) => (releaseFirst = () => resolve(LAYOUT_METRICS)))
+        : Promise.resolve(LAYOUT_METRICS);
+    });
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-a', 73);
+
+    const first = service.screenshot('tab-a');
+    await service.screenshot('tab-a');
+    expect(wc.backgroundThrottling).toBe(false);
+
+    releaseFirst();
+    await first;
+    expect(wc.backgroundThrottling).toBe(true);
+    service.unregisterTab('tab-a');
+  });
+
+  it('tells the app window a capture starts before it draws and ends after it is restored', async () => {
+    const service = await loadService();
+    const order: string[] = [];
+    const host = {
+      throttled: true,
+      isDestroyed: () => false,
+      send: vi.fn((_channel: string, data: { active: boolean }) =>
+        order.push(`send:${data.active}`),
+      ),
+      get backgroundThrottling() {
+        return this.throttled;
+      },
+      set backgroundThrottling(value: boolean) {
+        order.push(`throttling:${value}`);
+        this.throttled = value;
+      },
+    };
+    const wc = Object.assign(
+      fakeCdpWebview(78, {
+        'Page.getLayoutMetrics': LAYOUT_METRICS,
+        'Page.captureScreenshot': { data: JPEG_1PX },
+      }),
+      { backgroundThrottling: true, hostWebContents: host },
+    );
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-order', 78);
+
+    await service.screenshot('tab-order');
+
+    expect(order).toEqual(['send:true', 'throttling:false', 'throttling:true', 'send:false']);
+    service.unregisterTab('tab-order');
+  });
+
+  it('keeps a shared app window drawing until its last overlapping capture finishes', async () => {
+    const service = await loadService();
+    const host = { backgroundThrottling: true, isDestroyed: () => false, send: vi.fn() };
+    let releaseFirst: () => void = () => {};
+    const first = Object.assign(fakeCdpWebview(76, {}), {
+      backgroundThrottling: true,
+      hostWebContents: host,
+    });
+    first.debugger.sendCommand.mockImplementation((method: string) =>
+      method === 'Page.getLayoutMetrics'
+        ? new Promise((resolve) => (releaseFirst = () => resolve(LAYOUT_METRICS)))
+        : Promise.resolve({ data: JPEG_1PX }),
+    );
+    const second = Object.assign(
+      fakeCdpWebview(77, {
+        'Page.getLayoutMetrics': LAYOUT_METRICS,
+        'Page.captureScreenshot': { data: JPEG_1PX },
+      }),
+      { backgroundThrottling: true, hostWebContents: host },
+    );
+    mocks.fromId.mockImplementation((id) => (id === 76 ? first : id === 77 ? second : undefined));
+    service.registerTab('tab-x', 76);
+    service.registerTab('tab-y', 77);
+
+    const pending = service.screenshot('tab-x');
+    await service.screenshot('tab-y');
+    expect(host.backgroundThrottling).toBe(false);
+
+    releaseFirst();
+    await pending;
+    expect(host.backgroundThrottling).toBe(true);
+    // One start/end bracket for the whole overlap, so presence ignores it.
+    expect(host.send.mock.calls).toEqual([
+      ['browser:capture-drawing', { active: true }],
+      ['browser:capture-drawing', { active: false }],
+    ]);
+    service.unregisterTab('tab-x');
+    service.unregisterTab('tab-y');
+  });
+
+  it('leaves a guest that already draws in the background unchanged', async () => {
+    const service = await loadService();
+    const wc = Object.assign(
+      fakeCdpWebview(75, {
+        'Page.getLayoutMetrics': LAYOUT_METRICS,
+        'Page.captureScreenshot': { data: JPEG_1PX },
+      }),
+      { backgroundThrottling: false },
+    );
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-unthrottled', 75);
+
+    await service.screenshot('tab-unthrottled');
+
+    expect(wc.backgroundThrottling).toBe(false);
+    service.unregisterTab('tab-unthrottled');
   });
 });
 

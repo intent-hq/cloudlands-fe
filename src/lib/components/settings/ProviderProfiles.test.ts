@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { m } from '$shared/paraglide/messages.js';
-import type { ProviderProfile } from '$shared/provider-profiles';
+import type { ProviderDefaultConfig, ProviderProfile } from '$shared/provider-profiles';
 import { warmImport } from '../../../test/warm-import';
 
 const mocks = vi.hoisted(() => ({
@@ -60,7 +60,19 @@ async function seed({
   profiles = [WORK],
   defaultProviderId = 'codex',
   transportMode = 'sidecar-uds',
-}: { profiles?: ProviderProfile[]; defaultProviderId?: string; transportMode?: string } = {}) {
+  fastMode,
+  defaults,
+  providerStatus,
+  providerLoading,
+}: {
+  profiles?: ProviderProfile[];
+  defaultProviderId?: string;
+  transportMode?: string;
+  fastMode?: Record<string, boolean>;
+  defaults?: ProviderDefaultConfig[];
+  providerStatus?: Record<string, { available: boolean; authenticated?: boolean }>;
+  providerLoading?: Record<string, boolean>;
+} = {}) {
   const { reducers } = await import('$store/renderer/reducer');
   mocks.reducers = reducers as never;
   const init = { type: '@@test/init' };
@@ -73,9 +85,27 @@ async function seed({
   const { providerProfilesLoaded } =
     await import('$store/renderer/slices/provider-settings/provider-settings-slice');
   const { hydrateDefaultProvider } = await import('$store/renderer/slices/model/model-slice');
+  const { fastModeSupportReceived, hydrateProviderFastMode } =
+    await import('$store/renderer/slices/provider-settings/provider-settings-slice');
+  const { providerCatalogLoaded } =
+    await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
+  const { MOCK_PROVIDER_CATALOG } = await import('../../../test/fixtures/provider-catalog.fixture');
+  const fastModeActions = fastMode
+    ? [
+        providerCatalogLoaded({
+          providers: MOCK_PROVIDER_CATALOG.providers.map((p) => ({
+            ...p,
+            supportsFastMode: ['claude-code', 'codex'].includes(p.id),
+          })),
+        }),
+        fastModeSupportReceived(true),
+        hydrateProviderFastMode(fastMode, 1),
+      ]
+    : [];
   for (const action of [
-    providerProfilesLoaded(profiles, 3),
+    providerProfilesLoaded(profiles, 3, defaults),
     hydrateDefaultProvider(defaultProviderId),
+    ...fastModeActions,
   ]) {
     state = Object.fromEntries(
       Object.entries(state).map(([key, value]) => [
@@ -85,13 +115,21 @@ async function seed({
     );
   }
   state.daemonHealth = { ...state.daemonHealth, transport: { mode: transportMode } };
+  state.agentAvailability = {
+    ...state.agentAvailability,
+    providerStatusMap: { ...state.agentAvailability.providerStatusMap, ...providerStatus },
+    providerLoadingMap: { ...state.agentAvailability.providerLoadingMap, ...providerLoading },
+  };
   mocks.state.current = state;
 }
+
+const onEditDefault = vi.fn();
 
 const lastOf = (type: string) =>
   [...mocks.dispatched].reverse().find((action) => action.type === type);
 
 warmImport(() => import('./ProviderProfiles.svelte'));
+warmImport(() => import('./ProviderProfileDialog.svelte'));
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -103,27 +141,45 @@ describe('ProviderProfiles', () => {
   it('lists profiles with an honest status and offers Add profile', async () => {
     await seed();
     const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
-    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
+    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex', onEditDefault });
     const row = screen.getByTestId('provider-profile-row');
     expect(within(row).getByText('Work')).toBeTruthy();
     // A saved profile is configured, never ready, until its own probe says so.
     expect(row.querySelector('[data-profile-status]')?.getAttribute('data-profile-status')).toBe(
       'configured',
     );
+    // Adding starts from the provider row's actions menu, not a button here.
     expect(
-      screen.getByRole('button', { name: m.settings_providerProfiles_add_label() }),
-    ).toBeTruthy();
+      screen.queryByRole('button', { name: m.settings_providerProfiles_add_label() }),
+    ).toBeNull();
+  });
+
+  it('renders nothing for a provider without profiles', async () => {
+    await seed({ profiles: [] });
+    const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
+    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex', onEditDefault });
+    expect(screen.queryByTestId('provider-profiles-codex')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it("explains that only ~ or ~/ in CODEX_HOME and CLAUDE_CONFIG_DIR means the daemon user's home folder", async () => {
+    await seed({ profiles: [] });
+    const { default: ProviderProfileDialog } = await import('./ProviderProfileDialog.svelte');
+    render(ProviderProfileDialog, { open: true, providerId: 'codex', providerName: 'Codex' });
+    const dialog = await screen.findByRole('dialog');
+    const help = within(dialog).getByText(m.settings_providerProfiles_env_description());
+    expect(help.textContent).toMatch(/CODEX_HOME.*CLAUDE_CONFIG_DIR/);
+    expect(help.textContent).toMatch(
+      /~ or starting with ~\/ means the home folder of the user running the daemon/,
+    );
   });
 
   it('creates a profile with masked values, literal empty strings and daemon field errors', async () => {
     await seed({ profiles: [] });
-    const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
+    const { default: ProviderProfileDialog } = await import('./ProviderProfileDialog.svelte');
     const { takeStagedProfileEnv } =
       await import('$store/renderer/slices/provider-settings/provider-profiles-state');
-    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
-    await fireEvent.click(
-      screen.getByRole('button', { name: m.settings_providerProfiles_add_label() }),
-    );
+    render(ProviderProfileDialog, { open: true, providerId: 'codex', providerName: 'Codex' });
     const dialog = await screen.findByRole('dialog');
     await fireEvent.input(
       within(dialog).getByLabelText(m.settings_providerProfiles_name_label(), {
@@ -189,7 +245,7 @@ describe('ProviderProfiles', () => {
   it('keeps masked saved values on edit and warns with the app-owned restart copy', async () => {
     await seed({ transportMode: 'sidecar-uds' });
     const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
-    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
+    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex', onEditDefault });
     await openEdit();
     const dialog = await screen.findByRole('dialog');
     const value = within(dialog).getByLabelText(
@@ -251,7 +307,7 @@ describe('ProviderProfiles', () => {
   it('shows Using earlier settings while processes remain and clears it at zero', async () => {
     await seed();
     const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
-    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
+    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex', onEditDefault });
     const { providerProfilesLoaded } =
       await import('$store/renderer/slices/provider-settings/provider-settings-slice');
     const { store } = await import('$store/renderer/store');
@@ -272,7 +328,7 @@ describe('ProviderProfiles', () => {
   it('keeps an earlier-settings notice when a read carries no activation count', async () => {
     await seed();
     const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
-    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
+    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex', onEditDefault });
     const { providerProfilesLoaded } =
       await import('$store/renderer/slices/provider-settings/provider-settings-slice');
     const { store } = await import('$store/renderer/store');
@@ -293,7 +349,7 @@ describe('ProviderProfiles', () => {
   it('names intentd on the provider host when the daemon is not app-owned', async () => {
     await seed({ transportMode: 'external-uds' });
     const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
-    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
+    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex', onEditDefault });
     await openEdit();
     const dialog = await screen.findByRole('dialog');
     await fireEvent.input(
@@ -312,7 +368,7 @@ describe('ProviderProfiles', () => {
   it('blocks removal with named reasons while the profile is the default provider', async () => {
     await seed({ defaultProviderId: 'codex@pwork' });
     const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
-    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
+    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex', onEditDefault });
     await chooseMenuItem(m.settings_providerProfiles_remove_label());
     await waitFor(() => expect(mocks.notify.error).toHaveBeenCalledTimes(1));
     expect(mocks.notify.error.mock.calls[0][1]?.description).toContain(
@@ -326,7 +382,7 @@ describe('ProviderProfiles', () => {
     await seed();
     mocks.confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
     const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
-    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
+    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex', onEditDefault });
     await chooseMenuItem(m.settings_providerProfiles_remove_label());
     await waitFor(() => expect(mocks.confirm).toHaveBeenCalledTimes(1));
     expect(mocks.confirm.mock.calls[0][0]).toMatchObject({ destructive: true });
@@ -339,14 +395,107 @@ describe('ProviderProfiles', () => {
   });
 });
 
+const PERSONAL: ProviderProfile = {
+  ...WORK,
+  id: 'ppersonal',
+  providerRef: 'claude-code@ppersonal',
+  baseProviderId: 'claude-code',
+  name: 'Personal',
+  env: [{ key: 'CLAUDE_CONFIG_DIR', kind: 'set', value: '********' }],
+};
+
+describe('ProviderProfiles Fast mode', () => {
+  async function openActions(name: string) {
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.settings_providerProfiles_actions_ariaLabel({ name }) }),
+    );
+    return screen.findByRole('menu');
+  }
+
+  it('offers a per-profile Fast mode that starts off even when the Default profile has it on', async () => {
+    await seed({ profiles: [PERSONAL], fastMode: { 'claude-code': true } });
+    const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
+    render(ProviderProfiles, {
+      providerId: 'claude-code',
+      providerName: 'Claude Code',
+      onEditDefault,
+    });
+    const menu = await openActions('Personal');
+    const item = within(menu).getByRole('menuitemcheckbox', {
+      name: m.settings_providers_fastMode_label(),
+    });
+    expect(item.getAttribute('aria-checked')).toBe('false');
+    await fireEvent.click(item);
+    await waitFor(() => expect(lastOf('providerSettings/setFastMode')).toBeTruthy());
+    expect(lastOf('providerSettings/setFastMode')?.payload).toEqual([
+      'claude-code@ppersonal',
+      true,
+    ]);
+  });
+
+  it("reflects the profile's own saved Fast mode", async () => {
+    await seed({
+      profiles: [PERSONAL],
+      fastMode: { 'claude-code': false, 'claude-code@ppersonal': true },
+    });
+    const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
+    render(ProviderProfiles, {
+      providerId: 'claude-code',
+      providerName: 'Claude Code',
+      onEditDefault,
+    });
+    const menu = await openActions('Personal');
+    expect(
+      within(menu)
+        .getByRole('menuitemcheckbox', { name: m.settings_providers_fastMode_label() })
+        .getAttribute('aria-checked'),
+    ).toBe('true');
+  });
+
+  it('offers a Codex profile its own Service Tier', async () => {
+    await seed({ fastMode: { codex: true } });
+    const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
+    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex', onEditDefault });
+    const menu = await openActions('Work');
+    expect(
+      within(menu).getByRole('menuitem', { name: m.settings_providers_serviceTier_label() }),
+    ).toBeTruthy();
+    expect(within(menu).queryByRole('menuitemcheckbox')).toBeNull();
+    const tier = within(menu).getByRole('menuitem', {
+      name: m.settings_providers_serviceTier_label(),
+    });
+    tier.focus();
+    await fireEvent.keyDown(tier, { key: 'ArrowRight' });
+    const fast = await screen.findByRole('menuitemradio', {
+      name: m.settings_providers_serviceTierFast_label(),
+    });
+    expect(fast.getAttribute('aria-checked')).toBe('false');
+    await fireEvent.click(fast);
+    await waitFor(() => expect(lastOf('providerSettings/setFastMode')).toBeTruthy());
+    expect(lastOf('providerSettings/setFastMode')?.payload).toEqual(['codex@pwork', true]);
+  });
+
+  it('hides Fast mode when the daemon does not support it', async () => {
+    await seed({ profiles: [PERSONAL] });
+    const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
+    render(ProviderProfiles, {
+      providerId: 'claude-code',
+      providerName: 'Claude Code',
+      onEditDefault,
+    });
+    const menu = await openActions('Personal');
+    expect(within(menu).queryByRole('menuitemcheckbox')).toBeNull();
+    expect(
+      within(menu).queryByRole('menuitem', { name: m.settings_providers_serviceTier_label() }),
+    ).toBeNull();
+  });
+});
+
 describe('ProviderProfiles dialog outcomes', () => {
   it('creates a profile from its name alone, sending no env', async () => {
     await seed({ profiles: [] });
-    const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
-    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
-    await fireEvent.click(
-      screen.getByRole('button', { name: m.settings_providerProfiles_add_label() }),
-    );
+    const { default: ProviderProfileDialog } = await import('./ProviderProfileDialog.svelte');
+    render(ProviderProfileDialog, { open: true, providerId: 'codex', providerName: 'Codex' });
     const dialog = await screen.findByRole('dialog');
     await fireEvent.input(
       within(dialog).getByLabelText(m.settings_providerProfiles_name_label(), {
@@ -368,7 +517,7 @@ describe('ProviderProfiles dialog outcomes', () => {
   async function startEnvSaveThenCancel() {
     await seed();
     const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
-    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
+    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex', onEditDefault });
     await openEdit();
     const dialog = await screen.findByRole('dialog');
     await fireEvent.input(
@@ -417,6 +566,208 @@ describe('ProviderProfiles dialog outcomes', () => {
   });
 });
 
+describe('ProviderProfiles backup and order (§5.54)', () => {
+  const profileOf = (id: string, name: string, backup?: boolean): ProviderProfile => ({
+    ...WORK,
+    id,
+    providerRef: `codex@${id}`,
+    name,
+    ...(backup === undefined ? {} : { backup }),
+  });
+  const A = profileOf('pa', 'Alpha', false);
+  const B = profileOf('pb', 'Beta', true);
+  const C = profileOf('pc', 'Gamma', false);
+
+  const rowNames = () =>
+    screen.getAllByTestId('provider-profile-row').map((row) => row.getAttribute('data-profile-id'));
+  const grip = (name: string) =>
+    screen.getByRole('button', { name: m.settings_providerProfiles_reorder_ariaLabel({ name }) });
+
+  async function renderProfiles(profiles: ProviderProfile[]) {
+    await seed({ profiles });
+    const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
+    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex', onEditDefault });
+  }
+
+  it('offers the backup switch when creating the first profile', async () => {
+    await seed({ profiles: [] });
+    await openCreateDialog();
+    const dialog = await screen.findByRole('dialog');
+    await fireEvent.input(
+      within(dialog).getByLabelText(m.settings_providerProfiles_name_label(), {
+        selector: 'input[required]',
+      }),
+      { target: { value: 'Main' } },
+    );
+    await fireEvent.click(
+      within(dialog).getByRole('switch', { name: m.settings_providerProfiles_backup_label() }),
+    );
+    await fireEvent.click(
+      within(dialog).getByRole('button', { name: m.settings_providerProfiles_create_label() }),
+    );
+    expect(lastOf('providerProfiles/createRequested')?.payload).toMatchObject({
+      baseProviderId: 'codex',
+      name: 'Main',
+      backup: true,
+    });
+  });
+
+  it('treats a profile without backup as not a backup and still offers reorder', async () => {
+    await renderProfiles([profileOf('pa', 'Alpha'), profileOf('pb', 'Beta')]);
+    expect(screen.queryByText(m.settings_providerProfiles_backupBadge_label())).toBeNull();
+    await fireEvent.keyDown(grip('Alpha'), { key: 'ArrowDown' });
+    expect(
+      (lastOf('providerProfiles/reorderRequested') as { payload: [{ profileIds: string[] }] })
+        .payload[0].profileIds,
+    ).toEqual(['pb', 'pa']);
+    await openEditOf('Beta');
+    const dialog = await screen.findByRole('dialog');
+    expect(
+      within(dialog)
+        .getByRole('switch', { name: m.settings_providerProfiles_backup_label() })
+        .getAttribute('aria-checked'),
+    ).toBe('false');
+  });
+
+  it('shows a Backup badge only on backup profiles', async () => {
+    await renderProfiles([A, B]);
+    const rows = screen.getAllByTestId('provider-profile-row');
+    expect(within(rows[0]).queryByText(m.settings_providerProfiles_backupBadge_label())).toBeNull();
+    expect(within(rows[1]).getByText(m.settings_providerProfiles_backupBadge_label())).toBeTruthy();
+  });
+
+  it('moves a profile with the arrow keys and announces its new position', async () => {
+    await renderProfiles([A, B, C]);
+    await fireEvent.keyDown(grip('Alpha'), { key: 'ArrowDown' });
+    const action = lastOf('providerProfiles/reorderRequested') as {
+      payload: [{ baseProviderId: string; profileIds: string[] }];
+    };
+    expect(action.payload[0]).toMatchObject({
+      baseProviderId: 'codex',
+      profileIds: ['pb', 'pa', 'pc'],
+    });
+    await waitFor(() => expect(rowNames()).toEqual(['pb', 'pa', 'pc']));
+    expect(
+      screen.getByText(
+        m.settings_providerProfiles_reorderAnnouncement({ name: 'Alpha', position: 3 }),
+      ),
+    ).toBeTruthy();
+    // Moving past either end does nothing.
+    mocks.dispatched.length = 0;
+    await fireEvent.keyDown(grip('Beta'), { key: 'ArrowUp' });
+    expect(lastOf('providerProfiles/reorderRequested')).toBeUndefined();
+  });
+
+  it('reorders by dragging a row onto another', async () => {
+    await renderProfiles([A, B, C]);
+    const target = screen
+      .getAllByTestId('provider-profile-row')
+      .find((row) => row.getAttribute('data-profile-id') === 'pa')!;
+    vi.spyOn(target, 'getBoundingClientRect').mockReturnValue({
+      top: 0,
+      height: 40,
+      left: 0,
+      width: 300,
+    } as DOMRect);
+    await fireEvent.dragStart(grip('Gamma'));
+    await fireEvent.dragOver(target, { clientY: 5 });
+    await fireEvent.drop(target, { clientY: 5 });
+    const action = lastOf('providerProfiles/reorderRequested') as {
+      payload: [{ profileIds: string[] }];
+    };
+    expect(action.payload[0].profileIds).toEqual(['pc', 'pa', 'pb']);
+    await waitFor(() => expect(rowNames()).toEqual(['pc', 'pa', 'pb']));
+  });
+
+  it('blocks further moves until the daemon answers, then shows an error on rejection', async () => {
+    await renderProfiles([A, B, C]);
+    await fireEvent.keyDown(grip('Beta'), { key: 'ArrowUp' });
+    await waitFor(() => expect(rowNames()).toEqual(['pb', 'pa', 'pc']));
+    const action = lastOf('providerProfiles/reorderRequested') as {
+      payload: [{ requestId: string }];
+    };
+    await waitFor(() => expect(grip('Beta').getAttribute('aria-disabled')).toBe('true'));
+    const before = mocks.dispatched.length;
+    await fireEvent.keyDown(grip('Beta'), { key: 'ArrowDown' });
+    expect(mocks.dispatched.slice(before).map((a) => a.type)).not.toContain(
+      'providerProfiles/reorderRequested',
+    );
+    const { providerProfileMutationFailed } =
+      await import('$store/renderer/slices/provider-settings/provider-settings-slice');
+    const { store } = await import('$store/renderer/store');
+    store.dispatch(providerProfileMutationFailed(action.payload[0].requestId, { kind: 'other' }));
+    await waitFor(() =>
+      expect(mocks.notify.error).toHaveBeenCalledWith(
+        m.settings_providerProfiles_reorderFailed_error(),
+      ),
+    );
+    await waitFor(() => expect(grip('Beta').getAttribute('aria-disabled')).toBeNull());
+  });
+
+  it('saves the backup toggle on edit and on create', async () => {
+    await renderProfiles([profileOf('pwork', 'Work', false)]);
+    await openEdit();
+    let dialog = await screen.findByRole('dialog');
+    const toggle = within(dialog).getByRole('switch', {
+      name: m.settings_providerProfiles_backup_label(),
+    });
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    await fireEvent.click(toggle);
+    await fireEvent.click(
+      within(dialog).getByRole('button', { name: m.settings_providerProfiles_save_label() }),
+    );
+    expect(lastOf('providerProfiles/updateRequested')?.payload).toMatchObject({
+      profileId: 'pwork',
+      backup: true,
+      name: undefined,
+      envRef: undefined,
+    });
+
+    cleanup();
+    await openCreateDialog();
+    dialog = await screen.findByRole('dialog');
+    await fireEvent.input(
+      within(dialog).getByLabelText(m.settings_providerProfiles_name_label(), {
+        selector: 'input[required]',
+      }),
+      { target: { value: 'Spare' } },
+    );
+    await fireEvent.click(
+      within(dialog).getByRole('switch', { name: m.settings_providerProfiles_backup_label() }),
+    );
+    await fireEvent.click(
+      within(dialog).getByRole('button', { name: m.settings_providerProfiles_create_label() }),
+    );
+    expect(lastOf('providerProfiles/createRequested')?.payload).toMatchObject({
+      name: 'Spare',
+      backup: true,
+    });
+  });
+
+  it('leaves backup out of an edit that does not change it', async () => {
+    await renderProfiles([profileOf('pwork', 'Work', true)]);
+    await openEdit();
+    const dialog = await screen.findByRole('dialog');
+    expect(
+      within(dialog)
+        .getByRole('switch', { name: m.settings_providerProfiles_backup_label() })
+        .getAttribute('aria-checked'),
+    ).toBe('true');
+    await fireEvent.input(
+      within(dialog).getByLabelText(m.settings_providerProfiles_name_label(), {
+        selector: 'input[required]',
+      }),
+      { target: { value: 'Office' } },
+    );
+    await fireEvent.click(
+      within(dialog).getByRole('button', { name: m.settings_providerProfiles_save_label() }),
+    );
+    const payload = lastOf('providerProfiles/updateRequested')?.payload;
+    expect(payload).toMatchObject({ name: 'Office' });
+    expect(payload).not.toHaveProperty('backup');
+  });
+});
+
 async function chooseMenuItem(label: string) {
   await fireEvent.click(
     screen.getByRole('button', {
@@ -427,6 +778,392 @@ async function chooseMenuItem(label: string) {
   await fireEvent.click(item);
 }
 
+// Adding starts from the provider row menu (ProviderSelector), which opens this dialog.
+async function openCreateDialog() {
+  const { default: ProviderProfileDialog } = await import('./ProviderProfileDialog.svelte');
+  render(ProviderProfileDialog, { open: true, providerId: 'codex', providerName: 'Codex' });
+}
+
+describe('ProviderProfiles pinned Default row', () => {
+  const defaultNamed = (name: string): ProviderDefaultConfig => ({
+    baseProviderId: 'codex',
+    providerRef: 'codex',
+    name,
+    env: [],
+  });
+  const profileOf = (id: string, name: string, backup?: boolean): ProviderProfile => ({
+    ...WORK,
+    id,
+    providerRef: `codex@${id}`,
+    name,
+    ...(backup === undefined ? {} : { backup }),
+  });
+  const A = profileOf('pa', 'Alpha', true);
+  const B = profileOf('pb', 'Beta', true);
+
+  async function renderProfiles(options: Parameters<typeof seed>[0] = {}) {
+    await seed(options);
+    const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
+    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex', onEditDefault });
+    return screen.getByTestId('provider-profiles-codex');
+  }
+  const defaultRow = () => screen.getByTestId('provider-default-row');
+
+  it('pins the Default configuration as the first row above the named profiles', async () => {
+    const section = await renderProfiles({ profiles: [A, B], defaults: [defaultNamed('Default')] });
+    const rows = section.querySelectorAll('li');
+    expect(rows[0].getAttribute('data-testid')).toBe('provider-default-row');
+    expect([...rows].slice(1).map((row) => row.getAttribute('data-profile-id'))).toEqual([
+      'pa',
+      'pb',
+    ]);
+  });
+
+  it('shows only the name Default, with no pill, when the Default is named Default', async () => {
+    await renderProfiles({ defaults: [defaultNamed('Default')] });
+    expect(defaultRow().textContent).toContain('Default');
+    expect(within(defaultRow()).getAllByText('Default')).toHaveLength(1);
+    expect(within(defaultRow()).queryByTestId('provider-profile-default-badge')).toBeNull();
+  });
+
+  it('shows the renamed Default with a Default pill where Backup would be', async () => {
+    await renderProfiles({ defaults: [defaultNamed('Personal')] });
+    expect(within(defaultRow()).getByText('Personal')).toBeTruthy();
+    expect(within(defaultRow()).getByTestId('provider-profile-default-badge').textContent).toBe(
+      'Default',
+    );
+    expect(
+      within(defaultRow()).queryByText(m.settings_providerProfiles_backupBadge_label()),
+    ).toBeNull();
+  });
+
+  it('treats a saved "default" in any case as unrenamed: localized name, no pill', async () => {
+    await renderProfiles({ defaults: [defaultNamed('default')] });
+    expect(within(defaultRow()).getByText(m.chat_modelPicker_defaultProfile_name())).toBeTruthy();
+    expect(within(defaultRow()).queryByText('default')).toBeNull();
+    expect(within(defaultRow()).queryByTestId('provider-profile-default-badge')).toBeNull();
+  });
+
+  it('falls back to the name Default on a daemon that reports no Default configuration', async () => {
+    await renderProfiles();
+    expect(within(defaultRow()).getByText('Default')).toBeTruthy();
+    expect(within(defaultRow()).queryByTestId('provider-profile-default-badge')).toBeNull();
+  });
+
+  it('does not mark a named profile that is the app default provider', async () => {
+    await renderProfiles({
+      defaultProviderId: 'codex@pwork',
+      defaults: [defaultNamed('Personal')],
+    });
+    const row = screen.getByTestId('provider-profile-row');
+    expect(within(row).queryByText('Default')).toBeNull();
+    expect(within(row).getByText('Work')).toBeTruthy();
+  });
+
+  it('cannot be moved, and nothing can be moved above it', async () => {
+    await renderProfiles({ profiles: [A, B] });
+    expect(within(defaultRow()).queryByRole('button', { name: /reorder|move/i })).toBeNull();
+    expect(defaultRow().querySelector('[draggable]')).toBeNull();
+    await fireEvent.keyDown(
+      screen.getByRole('button', {
+        name: m.settings_providerProfiles_reorder_ariaLabel({ name: 'Alpha' }),
+      }),
+      { key: 'ArrowUp' },
+    );
+    expect(lastOf('providerProfiles/reorderRequested')).toBeUndefined();
+    // A drop onto the pinned row is not accepted.
+    await fireEvent.dragStart(
+      screen.getByRole('button', {
+        name: m.settings_providerProfiles_reorder_ariaLabel({ name: 'Beta' }),
+      }),
+    );
+    const dragOver = new Event('dragover', { bubbles: true, cancelable: true });
+    defaultRow().dispatchEvent(dragOver);
+    expect(dragOver.defaultPrevented).toBe(false);
+    await fireEvent.drop(defaultRow());
+    expect(lastOf('providerProfiles/reorderRequested')).toBeUndefined();
+  });
+
+  it.each([
+    [{ available: true, authenticated: true }, false, 'ready'],
+    [{ available: true, authenticated: false }, false, 'error'],
+    [{ available: false }, false, 'configured'],
+    // A background availability sweep keeps the last status instead of flashing Checking….
+    [{ available: true, authenticated: true }, true, 'ready'],
+    [undefined, true, 'checking'],
+  ] as const)(
+    'shows the base provider check as its status (%o, loading %s)',
+    async (status, loading, expected) => {
+      await renderProfiles({
+        providerStatus: status ? { codex: status } : {},
+        providerLoading: { codex: loading },
+      });
+      expect(
+        defaultRow().querySelector('[data-profile-status]')?.getAttribute('data-profile-status'),
+      ).toBe(expected);
+    },
+  );
+
+  async function openDefaultMenu(name = 'Default') {
+    await fireEvent.click(
+      within(defaultRow()).getByRole('button', {
+        name: m.settings_providerProfiles_actions_ariaLabel({ name }),
+      }),
+    );
+    return screen.findByRole('menu');
+  }
+
+  it('offers Edit and Recheck but no Remove', async () => {
+    await renderProfiles({ providerStatus: { codex: { available: true, authenticated: true } } });
+    const menu = await openDefaultMenu();
+    expect(
+      within(menu).getByRole('menuitem', { name: m.settings_providerProfiles_edit_label() }),
+    ).toBeTruthy();
+    expect(
+      within(menu).queryByRole('menuitem', { name: m.settings_providerProfiles_remove_label() }),
+    ).toBeNull();
+    await fireEvent.click(
+      within(menu).getByRole('menuitem', { name: m.settings_providers_recheck_label() }),
+    );
+    expect(lastOf('agentAvailability/checkSingleProviderRequested')?.payload).toEqual(['codex']);
+  });
+
+  it('asks the page to open the Default configuration dialog from Edit', async () => {
+    await renderProfiles({ defaults: [defaultNamed('Personal')] });
+    const menu = await openDefaultMenu('Personal');
+    await fireEvent.click(
+      within(menu).getByRole('menuitem', { name: m.settings_providerProfiles_edit_label() }),
+    );
+    expect(onEditDefault).toHaveBeenCalledTimes(1);
+    // The dialog is page-level (ProviderSelector), not mounted per provider row.
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('shows Checking… after its own Recheck until the check settles', async () => {
+    await renderProfiles({ providerStatus: { codex: { available: true, authenticated: true } } });
+    const status = () =>
+      defaultRow().querySelector('[data-profile-status]')?.getAttribute('data-profile-status');
+    const setLoading = (loading: boolean) => {
+      const availability = mocks.state.current.agentAvailability as Record<string, unknown>;
+      mocks.state.current = {
+        ...mocks.state.current,
+        agentAvailability: { ...availability, providerLoadingMap: { codex: loading } },
+      };
+      mocks.emit.current();
+    };
+    const menu = await openDefaultMenu();
+    await fireEvent.click(
+      within(menu).getByRole('menuitem', { name: m.settings_providers_recheck_label() }),
+    );
+    expect(lastOf('agentAvailability/checkSingleProviderRequested')?.payload).toEqual(['codex']);
+    setLoading(true);
+    await waitFor(() => expect(status()).toBe('checking'));
+    setLoading(false);
+    await waitFor(() => expect(status()).toBe('ready'));
+  });
+});
+
+async function openEditOf(name: string) {
+  await fireEvent.click(
+    screen.getByRole('button', { name: m.settings_providerProfiles_actions_ariaLabel({ name }) }),
+  );
+  await fireEvent.click(
+    await screen.findByRole('menuitem', { name: m.settings_providerProfiles_edit_label() }),
+  );
+}
+
 async function openEdit() {
   await chooseMenuItem(m.settings_providerProfiles_edit_label());
 }
+
+describe('Default configuration dialog (§5.54)', () => {
+  const SAVED_DEFAULT = {
+    baseProviderId: 'codex',
+    providerRef: 'codex',
+    name: 'Personal',
+    env: [{ key: 'OPENAI_API_KEY', kind: 'set' as const, value: '********' }],
+    settingsFingerprint: 'fdef',
+    activation: { runningProcesses: 0 },
+  };
+
+  async function renderDefault(
+    defaultConfig?: typeof SAVED_DEFAULT,
+    defaultsLoad: 'idle' | 'success' | 'failure' = 'success',
+  ) {
+    await seed({ profiles: [] });
+    const { default: ProviderProfileDialog } = await import('./ProviderProfileDialog.svelte');
+    const result = render(ProviderProfileDialog, {
+      open: true,
+      providerId: 'codex',
+      providerName: 'Codex',
+      isDefault: true,
+      defaultsLoad,
+      ...(defaultConfig ? { defaultConfig } : {}),
+    });
+    return Object.assign(await screen.findByRole('dialog'), { result });
+  }
+
+  const nameInput = (dialog: HTMLElement) =>
+    within(dialog).getByLabelText(m.settings_providerProfiles_name_label()) as HTMLInputElement;
+
+  it('edits name and env without the backup switch, keeping masked values', async () => {
+    const dialog = await renderDefault(SAVED_DEFAULT);
+    expect(
+      within(dialog).getByText(m.settings_providerDefault_title_label({ provider: 'Codex' })),
+    ).toBeTruthy();
+    expect(within(dialog).queryByTestId('provider-profile-backup')).toBeNull();
+    expect(nameInput(dialog).value).toBe('Personal');
+    expect(nameInput(dialog).required).toBe(false);
+    expect(nameInput(dialog).placeholder).toBe(m.chat_modelPicker_defaultProfile_name());
+
+    await fireEvent.input(nameInput(dialog), { target: { value: 'Home' } });
+    await fireEvent.click(
+      within(dialog).getByRole('button', { name: m.settings_providerProfiles_save_label() }),
+    );
+    const action = lastOf('providerProfiles/defaultUpdateRequested') as {
+      payload: { requestId: string; baseProviderId: string; name?: string; envRef?: number };
+    };
+    // A rename alone sends no env.
+    expect(action.payload).toMatchObject({
+      baseProviderId: 'codex',
+      name: 'Home',
+      envRef: undefined,
+    });
+    expect(screen.queryByTestId('provider-profile-restart-warning')).toBeNull();
+  });
+
+  it('sends a blank name to restore Default and keeps unchanged masked entries', async () => {
+    const dialog = await renderDefault(SAVED_DEFAULT);
+    await fireEvent.input(nameInput(dialog), { target: { value: '' } });
+    await fireEvent.click(
+      within(dialog).getByRole('button', { name: m.settings_providerProfiles_addVariable_label() }),
+    );
+    const label = m.settings_providerProfiles_variableN_label({ n: '2' });
+    await fireEvent.input(
+      within(dialog).getByLabelText(m.settings_providerProfiles_key_ariaLabel({ name: label })),
+      { target: { value: 'OPENAI_BASE_URL' } },
+    );
+    const value = within(dialog).getByLabelText(
+      m.settings_providerProfiles_value_ariaLabel({ name: 'OPENAI_BASE_URL' }),
+    );
+    await fireEvent.input(value, { target: { value: 'https://example.test' } });
+    expect(await screen.findByTestId('provider-profile-restart-warning')).toBeTruthy();
+    await fireEvent.click(
+      within(dialog).getByRole('button', { name: m.settings_providerProfiles_save_label() }),
+    );
+    const action = lastOf('providerProfiles/defaultUpdateRequested') as {
+      payload: { name?: string; envRef: number };
+    };
+    expect(action.payload.name).toBe('');
+    const { takeStagedProfileEnv } =
+      await import('$store/renderer/slices/provider-settings/provider-profiles-state');
+    expect(takeStagedProfileEnv(action.payload.envRef)).toEqual([
+      { key: 'OPENAI_API_KEY', kind: 'keep' },
+      { key: 'OPENAI_BASE_URL', kind: 'set', value: 'https://example.test' },
+    ]);
+  });
+
+  it('opens empty on a daemon that reports no Default and reports a failed save', async () => {
+    const dialog = await renderDefault();
+    expect(nameInput(dialog).value).toBe('');
+    await fireEvent.input(nameInput(dialog), { target: { value: 'Personal' } });
+    await fireEvent.click(
+      within(dialog).getByRole('button', { name: m.settings_providerProfiles_save_label() }),
+    );
+    const action = lastOf('providerProfiles/defaultUpdateRequested') as {
+      payload: { requestId: string };
+    };
+    const slice = await import('$store/renderer/slices/provider-settings/provider-settings-slice');
+    const { store } = await import('$store/renderer/store');
+    store.dispatch(
+      slice.providerProfileMutationFailed(action.payload.requestId, { kind: 'other' }),
+    );
+    expect(
+      await within(dialog).findByText(m.settings_providerDefault_saveFailed_error()),
+    ).toBeTruthy();
+  });
+
+  it('shows the restart warning toast after an env save commits', async () => {
+    const dialog = await renderDefault(SAVED_DEFAULT);
+    const value = within(dialog).getByLabelText(
+      m.settings_providerProfiles_value_ariaLabel({ name: 'OPENAI_API_KEY' }),
+    );
+    await fireEvent.input(value, { target: { value: 'sk-new' } });
+    await fireEvent.click(
+      within(dialog).getByRole('button', { name: m.settings_providerProfiles_save_label() }),
+    );
+    const action = lastOf('providerProfiles/defaultUpdateRequested') as {
+      payload: { requestId: string };
+    };
+    const slice = await import('$store/renderer/slices/provider-settings/provider-settings-slice');
+    const { store } = await import('$store/renderer/store');
+    store.dispatch(
+      slice.providerDefaultUpdateSucceeded(action.payload.requestId, {
+        revision: 4,
+        defaultConfig: { ...SAVED_DEFAULT, settingsFingerprint: 'fdef2' },
+        activation: { envChanged: true, runningProcesses: 1 },
+      }),
+    );
+    await waitFor(() => expect(mocks.notify.warning).toHaveBeenCalledTimes(1));
+    expect(mocks.notify.warning.mock.calls[0][0]).toBe(
+      m.settings_providerProfiles_saved_label({
+        name: m.chat_modelPicker_profileGroup_label({ provider: 'Codex', profile: 'Personal' }),
+      }),
+    );
+  });
+
+  it('waits for the saved list before seeding, so a save never replaces unseen overrides', async () => {
+    const dialog = await renderDefault(undefined, 'idle');
+    const save = within(dialog).getByRole('button', {
+      name: m.settings_providerProfiles_save_label(),
+    }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    expect(nameInput(dialog).disabled).toBe(true);
+    await fireEvent.click(save);
+    expect(lastOf('providerProfiles/defaultUpdateRequested')).toBeUndefined();
+    // The list lands: the form seeds from the saved Default.
+    await dialog.result.rerender({ defaultConfig: SAVED_DEFAULT, defaultsLoad: 'success' });
+    await waitFor(() => expect(nameInput(dialog).value).toBe('Personal'));
+    expect(
+      within(dialog).getByLabelText(
+        m.settings_providerProfiles_value_ariaLabel({ name: 'OPENAI_API_KEY' }),
+      ),
+    ).toBeTruthy();
+  });
+
+  it('closes without a request when nothing changed', async () => {
+    const dialog = await renderDefault(SAVED_DEFAULT);
+    await fireEvent.click(
+      within(dialog).getByRole('button', { name: m.settings_providerProfiles_save_label() }),
+    );
+    expect(lastOf('providerProfiles/defaultUpdateRequested')).toBeUndefined();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('names the provider the save was submitted for, even after the dialog moved on', async () => {
+    const dialog = await renderDefault(SAVED_DEFAULT);
+    await fireEvent.input(nameInput(dialog), { target: { value: 'Home' } });
+    await fireEvent.click(
+      within(dialog).getByRole('button', { name: m.settings_providerProfiles_save_label() }),
+    );
+    const action = lastOf('providerProfiles/defaultUpdateRequested') as {
+      payload: { requestId: string };
+    };
+    await dialog.result.rerender({ providerId: 'claude-code', providerName: 'Claude Code' });
+    const slice = await import('$store/renderer/slices/provider-settings/provider-settings-slice');
+    const { store } = await import('$store/renderer/store');
+    store.dispatch(
+      slice.providerDefaultUpdateSucceeded(action.payload.requestId, {
+        revision: 4,
+        defaultConfig: { ...SAVED_DEFAULT, name: 'Home' },
+        activation: { envChanged: false, runningProcesses: 0 },
+      }),
+    );
+    await waitFor(() => expect(mocks.notify.success).toHaveBeenCalledTimes(1));
+    expect(mocks.notify.success.mock.calls[0][0]).toBe(
+      m.settings_providerProfiles_saved_label({
+        name: m.chat_modelPicker_profileGroup_label({ provider: 'Codex', profile: 'Home' }),
+      }),
+    );
+  });
+});

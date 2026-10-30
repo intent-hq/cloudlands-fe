@@ -38,7 +38,6 @@
   installMockElectronBridge({
     'note.get': () => ({ note }),
     'comment.list': () => ({ threads: [] }),
-    'note.lineAttribution.load': () => null,
     'principal.me': () => ({ id: 'note-menu-owner' }),
     'note.presence.subscribe': () => ({ subscriptionId: 'note-menu-presence' }),
     'note.presence.unsubscribe': () => ({ ok: true }),

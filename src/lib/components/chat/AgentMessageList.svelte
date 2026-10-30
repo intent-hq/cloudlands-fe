@@ -9,6 +9,8 @@
   import BlockerReportNotice from './BlockerReportNotice.svelte';
   import TurnFailureNotice from './TurnFailureNotice.svelte';
   import QuestionsDismissedNotice from './QuestionsDismissedNotice.svelte';
+  import SecretRequestNotice from './secrets/SecretRequestNotice.svelte';
+  import { getSecretRequestNotice } from './secrets/secret-request-notice';
   import AutoUnarchivedNotice from './AutoUnarchivedNotice.svelte';
   import ProviderRehomedNotice from './ProviderRehomedNotice.svelte';
   import { getModelChangeNotice } from './model-change-notice';
@@ -17,6 +19,8 @@
   import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
   import { getAutoUnarchivedNotice } from './auto-unarchived-notice';
   import { getProviderRehomedNotice } from './rehome-notice';
+  import ProviderFailoverNotice from './ProviderFailoverNotice.svelte';
+  import { getProviderSwitchNotice } from './provider-failover-notice';
   import { crispOut, spring, springIn } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
   import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
@@ -54,6 +58,11 @@
     workspaceId,
     workspace = null,
   }: Props = $props();
+
+  // Transcript notices label profiles from the owning workspace's catalog.
+  const owningWorkspaceId = $derived(
+    workspaceId ?? (workspace?.id ? String(workspace.id) : undefined),
+  );
 
   // PERF: Cache for filtered messages to avoid re-filtering on unrelated updates
   // Keyed by message count + search query + owner principal (it changes which
@@ -119,8 +128,10 @@
     {@const modelChangeNotice = getModelChangeNotice(message)}
     {@const effortChangeNotice = getEffortChangeNotice(message)}
     {@const questionsDismissedNotice = getQuestionsDismissedNotice(message)}
+    {@const secretRequestNotice = getSecretRequestNotice(message)}
     {@const autoUnarchivedNotice = getAutoUnarchivedNotice(message)}
     {@const providerRehomedNotice = getProviderRehomedNotice(message)}
+    {@const providerFailoverNotice = getProviderSwitchNotice(message)}
     <div
       id="message-{message.id}"
       class="message-wrapper group/message"
@@ -139,6 +150,7 @@
              Discriminated on metadata.type before role branching so it renders
              regardless of the exact role the daemon persists. -->
         <ModelChangeNotice
+          workspaceId={owningWorkspaceId}
           notice={modelChangeNotice}
           fallbackText={extractAllContent(message) || undefined}
         />
@@ -152,6 +164,9 @@
              Discriminated on metadata type before role branching so it renders
              regardless of the exact role the daemon persists. -->
         <QuestionsDismissedNotice title={extractAllContent(message) || undefined} />
+      {:else if secretRequestNotice}
+        <!-- Daemon-delivered secret-request notice (§5.56) - compact chip. -->
+        <SecretRequestNotice notice={secretRequestNotice} />
       {:else if autoUnarchivedNotice}
         <!-- Daemon-persisted auto-unarchive notice - centered inline divider.
              Discriminated on metadata type before role branching so it renders
@@ -160,7 +175,15 @@
       {:else if providerRehomedNotice}
         <!-- Daemon-persisted provider re-home notice - centered inline divider. -->
         <ProviderRehomedNotice
+          workspaceId={owningWorkspaceId}
           notice={providerRehomedNotice}
+          fallbackText={extractAllContent(message) || undefined}
+        />
+      {:else if providerFailoverNotice}
+        <!-- Daemon-persisted quota failover notice - centered inline divider. -->
+        <ProviderFailoverNotice
+          workspaceId={owningWorkspaceId}
+          notice={providerFailoverNotice}
           fallbackText={extractAllContent(message) || undefined}
         />
       {:else if message.role === 'user'}

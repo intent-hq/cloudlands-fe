@@ -3,6 +3,7 @@
 
 import type { MentionCandidate, MentionType } from './types';
 import { serializeMemberMention } from '$lib/utils/member-mention-token';
+import { serializeNoteMention } from '$lib/utils/note-mention-token';
 
 /**
  * Helper to strip leading @ from a path if present
@@ -51,9 +52,19 @@ export function toPromptToken(
       return `@${token}`;
     }
     case 'note': {
-      // Use the note's label (title) when available, falling back to ID
-      const noteName = stripLeadingAt(item.label || item.id);
-      return `@note/${noteName}`;
+      // `@note[(<workspaceId>/)<id>:<title>]`: the id is authoritative for
+      // lookup/navigation, the title keeps the token readable (agents, chip
+      // fallback). Titles may contain spaces, which the legacy whitespace-
+      // delimited `@note/<x>` form cannot carry.
+      const crossWorkspace = meta.isExternalLink === true;
+      const token = serializeNoteMention({
+        id: stripLeadingAt(item.id),
+        title: item.label || item.id,
+        workspaceId: crossWorkspace ? meta.workspaceId : undefined,
+      });
+      // No token-safe id: emit the title as plain text rather than a
+      // whitespace-truncated `@note/<title>` chip pointing at the wrong note.
+      return token ?? (item.label || item.id || '');
     }
     case 'terminal': {
       const terminalName = stripLeadingAt(item.label || item.id || 'terminal');

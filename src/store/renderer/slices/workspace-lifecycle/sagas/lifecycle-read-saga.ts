@@ -47,6 +47,7 @@ import {
   selectHostRole,
   selectPrincipalActionContext,
   selectPrincipalConnectionContext,
+  selectPrincipalSnapshot,
 } from '../../principal/principal-selectors';
 import { selectWorkspacePeopleIdentities } from '../../presence/presence-selectors';
 import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
@@ -131,6 +132,7 @@ import {
   setActiveAgentId,
   setAgents,
   setAgentsLoaded,
+  agentsReadSettled,
   setDelegatedCounts,
   setDelegatedParentLoaded,
   setIsLoadingDelegatedParent,
@@ -167,7 +169,8 @@ import {
 } from '../../workspace-agents/workspace-agents-selectors';
 import {
   selectOlderEventsNextToken,
-  selectOlderEventsEndReached,
+  selectPeopleEventsStreams,
+  selectPeopleEventsStreamsToRead,
   selectPeopleEventsInitialized,
   selectWorkspaceEvents,
 } from '../../workspace-events/workspace-events-selectors';
@@ -182,6 +185,7 @@ import {
   olderEventsLoadFailed,
   peopleEventsLoadStarted,
   peopleEventsLoadFinished,
+  peopleEventsPageLoaded,
 } from '../../workspace-events/workspace-events-slice';
 import {
   acquireWorkspaceTasksDemand,
@@ -395,7 +399,11 @@ function* refreshMembershipSummary(
   const changes: Partial<Workspace> = {};
   if (context !== null) {
     if (typeof workspace.canManage === 'boolean') changes.canManage = workspace.canManage;
-    if (workspace.myRole === 'owner' || workspace.myRole === 'collaborator') {
+    if (
+      workspace.myRole === 'owner' ||
+      workspace.myRole === 'collaborator' ||
+      workspace.myRole === 'manager'
+    ) {
       changes.myRole = workspace.myRole;
     }
   }
@@ -407,6 +415,13 @@ function* refreshMembershipSummary(
   }
   if (Object.keys(changes).length === 0) return;
   yield* put(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, changes)]));
+  if (
+    changes.myRole === 'manager' &&
+    previous?.myRole !== 'manager' &&
+    (yield* selectPrincipalSnapshot.effect())?.capabilities.workspaceGuestRoles === true
+  ) {
+    yield* put(refreshScripts(workspaceId));
+  }
 }
 
 function* refreshPrStatus(
@@ -924,7 +939,6 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
   // case — a lazy load finishing while the reads above were awaiting — is
   // caught by the re-checks just after `setAgents`.
   const fetched = yield* filterPendingDeletions(listed);
-  yield* put(setAgentsLoaded(workspaceId, true));
   yield* put(setRetiredCount(workspaceId, retiredCount));
   yield* put(setScopeCounts(workspaceId, scopeCounts ?? null));
   yield* put(setDelegatedCounts(workspaceId, delegatedCounts ?? null));
@@ -1003,6 +1017,11 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
       yield* put(bulkUpsertSessions(agents, { listProjection: true }));
     }
   }
+  // `agentsLoaded` means the rows, counts and sessions above are all stored:
+  // the store notifies per dispatch, so an earlier put would let synchronous
+  // subscribers act on an empty or stale list.
+  yield* put(setAgentsLoaded(workspaceId, true));
+  yield* put(agentsReadSettled(workspaceId));
 
   const activeAgentId = yield* selectActiveAgentId.effect(workspaceId);
   const agentIds = yield* selectWorkspaceAgentIds.effect(workspaceId);
@@ -1429,6 +1448,7 @@ function* countPeopleEvents(workspaceId: string): SagaGenerator<number> {
     workspaceId,
     yield* selectWorkspaceEvents.effect(workspaceId),
     yield* selectWorkspacePeopleIdentities.effect(workspaceId),
+    (yield* selectWorkspaceById.effect(workspaceId))?.ownerPrincipalId,
   ).length;
 }
 
@@ -1462,21 +1482,44 @@ function* refreshPeopleEvents(
       if (!(yield* isCurrent())) return;
       const target =
         PEOPLE_ROWS_PER_REQUEST + (mode === 'more' ? yield* countPeopleEvents(workspaceId) : 0);
+      const streams = ['user', 'message'] as const;
+      const stalled = new Set<(typeof streams)[number]>();
       for (let pageIndex = 0; pageIndex < PEOPLE_MAX_PAGES_PER_REQUEST; pageIndex += 1) {
-        const nextToken = yield* selectOlderEventsNextToken.effect(workspaceId);
-        if (yield* selectOlderEventsEndReached.effect(workspaceId)) break;
-        // Establish a cursor even when a live-only cache already has enough rows.
-        if (nextToken && (yield* countPeopleEvents(workspaceId)) >= target) break;
+        const cursors = yield* selectPeopleEventsStreams.effect(workspaceId);
+        // A dense user page cannot hide newer human messages behind machine-authored messages.
+        const needed = yield* selectPeopleEventsStreamsToRead.effect(workspaceId, target);
+        const stream = [
+          streams[pageIndex % streams.length],
+          streams[(pageIndex + 1) % streams.length],
+        ].find((key) => !stalled.has(key) && needed.includes(key));
+        if (!stream) break;
+        const before = cursors[stream];
+        const filter =
+          stream === 'user' ? { actorType: 'user' as const } : { eventType: 'agent:message' };
         const page: Awaited<ReturnType<typeof appClient.events.queryPage>> = yield* call(
           [appClient.events, appClient.events.queryPage],
           workspaceId,
-          nextToken ? { limit: EVENTS_PAGE_LIMIT, nextToken } : { limit: EVENTS_PAGE_LIMIT },
+          {
+            limit: EVENTS_PAGE_LIMIT,
+            ...filter,
+            ...(before.nextToken ? { nextToken: before.nextToken } : {}),
+          },
         );
         if (!(yield* isCurrent())) return;
-        // Merge even the first page: the cache may already contain newer live events.
-        yield* put(olderEventsLoaded(workspaceId, [...page.items].reverse(), page.nextToken));
+        // One canonical collection deduplicates overlapping user-stamped messages and live events.
+        yield* put(
+          peopleEventsPageLoaded(
+            workspaceId,
+            requestId,
+            stream,
+            [...page.items].reverse(),
+            page.nextToken,
+          ),
+        );
         // Invalid pages or a non-advancing server cursor must not spin or hide continuation.
-        if ((yield* selectOlderEventsNextToken.effect(workspaceId)) === nextToken) break;
+        const after = (yield* selectPeopleEventsStreams.effect(workspaceId))[stream];
+        if (after === before || (before.initialized && after.nextToken === before.nextToken))
+          stalled.add(stream);
       }
       initialized = true;
     });

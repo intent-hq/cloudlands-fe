@@ -294,7 +294,7 @@ describe('buildWorkspacePRPresentationModel', () => {
       expect(row).toMatchObject({ status: 'draft', queued: false, accessibleStateLabel: 'Draft' });
     });
 
-    it('keeps the open sort position and colour treatment for a queued row', () => {
+    it('ranks a queued row ahead of a draft, keeping its open status and colour treatment', () => {
       const rows = build(
         [
           makePR({
@@ -310,14 +310,137 @@ describe('buildWorkspacePRPresentationModel', () => {
       );
 
       expect(rows.map(({ number, status }) => [number, status])).toEqual([
-        [2, 'draft'],
         [1, 'open'],
+        [2, 'draft'],
       ]);
-      expect(rows[1]).toMatchObject({
+      expect(rows[0]).toMatchObject({
         queued: true,
         foregroundClass: 'text-success',
         backgroundClass: 'bg-success/10',
       });
+    });
+
+    // Regression: the Home card passes no monitors, so it saw only the pool's
+    // `isInMergeQueue` and ranked a queued submodule PR (intentd#2733) behind a
+    // more recently updated open PR (intent#7906) on the recency tie-break.
+    it('ranks a pool-queued PR first without a monitor, even when older', () => {
+      const rows = buildWorkspacePRPresentationModel({
+        workspacePRs: [
+          makePR({
+            id: '7906',
+            number: 7906,
+            url: 'https://github.com/intent-hq/intent/pull/7906',
+            updatedAt: '2026-10-27T08:45:53Z',
+          }),
+          makePR({
+            id: '2733',
+            number: 2733,
+            url: 'https://github.com/intent-hq/intentd/pull/2733',
+            updatedAt: '2026-10-27T01:43:33Z',
+            isInMergeQueue: true,
+          }),
+          makePR({
+            id: '10',
+            number: 10,
+            url: 'https://github.com/intent-hq/intent/pull/10',
+            updatedAt: '2026-10-27T09:00:00Z',
+            isDraft: true,
+          }),
+        ],
+        activePR: null,
+        monitors: [],
+        workspaceRepo: 'intent-hq/intent',
+        buildPrUrl,
+        getDisplayTitle,
+      });
+
+      expect(rows.map(({ number, status, queued }) => [number, status, queued])).toEqual([
+        [2733, 'open', true],
+        [10, 'draft', false],
+        [7906, 'open', false],
+      ]);
+      expect(rows[0]).toMatchObject({
+        repo: 'intent-hq/intentd',
+        repoContext: 'intentd',
+        accessibleStateLabel: 'Queued',
+      });
+      expect(rows[0].details.split('\n')[0]).toBe('Queued');
+    });
+
+    it('breaks ties between queued rows by most recent update', () => {
+      const rows = build(
+        [
+          makePR({
+            id: 'older',
+            number: 3,
+            url: 'https://github.com/acme/widgets/pull/3',
+            updatedAt: '2026-08-01T00:00:00Z',
+            isInMergeQueue: true,
+          }),
+          makePR({
+            id: 'newer',
+            number: 2,
+            url: 'https://github.com/acme/widgets/pull/2',
+            updatedAt: '2026-08-05T00:00:00Z',
+            isInMergeQueue: true,
+          }),
+        ],
+        null,
+        [],
+      );
+
+      expect(rows.map(({ number }) => number)).toEqual([2, 3]);
+    });
+
+    it('lets the monitor snapshot override the pool queue flag', () => {
+      const rows = build(
+        [
+          makePR({ id: 'stale', number: 1, isInMergeQueue: true }),
+          makePR({
+            id: 'newer',
+            number: 2,
+            url: 'https://github.com/acme/widgets/pull/2',
+            updatedAt: '2026-08-09T00:00:00Z',
+          }),
+        ],
+        null,
+        [makeMonitor({ prNumber: 1, lastSnapshot: makeSnapshot() })],
+      );
+
+      expect(rows.map(({ number, queued }) => [number, queued])).toEqual([
+        [2, false],
+        [1, false],
+      ]);
+    });
+
+    it('ignores a stale pool queue flag on a draft or merged PR', () => {
+      const rows = build(
+        [
+          makePR({
+            id: 'merged',
+            number: 3,
+            url: 'https://github.com/acme/widgets/pull/3',
+            status: PullRequestStatus.Merged,
+            isInMergeQueue: true,
+          }),
+          makePR({
+            id: 'draft',
+            number: 2,
+            url: 'https://github.com/acme/widgets/pull/2',
+            isDraft: true,
+            isInMergeQueue: true,
+          }),
+          makePR({ id: 'open', number: 1 }),
+        ],
+        null,
+        [],
+      );
+
+      expect(rows.map(({ number, status, queued }) => [number, status, queued])).toEqual([
+        [2, 'draft', false],
+        [1, 'open', false],
+        [3, 'merged', false],
+      ]);
     });
 
     it('labels a monitor-only row Queued from its snapshot', () => {
@@ -452,5 +575,44 @@ describe('buildWorkspacePRPresentationModel', () => {
     expect(row.details).toContain('Merge conflicts');
     expect(row.details).toContain('1/3 checks failing (1 running)');
     expect(row.details).toContain('Changes requested');
+  });
+});
+
+describe('qualified monitor presentation', () => {
+  function qualified(host: string): PrMonitorRow {
+    return makeMonitor({
+      monitorId: host,
+      url: undefined,
+      resource: {
+        repository: { provider: 'gitlab', instanceBaseUrl: host, projectPath: workspaceRepo },
+        kind: 'merge-request',
+        number: 1,
+      },
+      monitorAvailability: { state: 'available' },
+    });
+  }
+  it('keeps same-project same-number GitHub and distinct GitLab instances separate', () => {
+    const rows = build([makePR()], null, [
+      qualified('https://gitlab.com'),
+      qualified('https://forge.example/gitlab'),
+    ]);
+    expect(rows).toHaveLength(3);
+    expect(new Set(rows.map((row) => row.identity)).size).toBe(3);
+    expect(rows.filter((row) => row.monitorOnly).map((row) => row.url)).toEqual(['', '']);
+    expect(rows.find((row) => !row.monitorOnly)?.monitorAgentId).toBeUndefined();
+  });
+  it('preserves a nested project canonical URL on a self-managed instance', () => {
+    const monitor = qualified('https://forge.example/gitlab');
+    const repo = 'group/subgroup/project';
+    monitor.repo = repo;
+    monitor.resource!.repository.projectPath = repo;
+    monitor.url = `https://forge.example/gitlab/${repo}/-/merge_requests/1`;
+    const [row] = build([], null, [monitor]);
+    expect(row.url).toBe(monitor.url);
+    expect(row.numberLabel).toBe('!1');
+    expect(row.resource).toEqual(monitor.resource);
+  });
+  it('does not invent a URL for a qualified monitor with no canonical URL', () => {
+    expect(build([], null, [qualified('https://forge.example/gitlab')])[0].url).toBe('');
   });
 });

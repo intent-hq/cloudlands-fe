@@ -9,10 +9,14 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import native from './macos-native.cjs';
+import { createRequire } from 'node:module';
 import signSidecar from './sign-sidecar.js';
 import buildModernMacOSIcon from './build-macos-icon.js';
 
 const directories: string[] = [];
+const childProcess = createRequire(import.meta.url)(
+  'node:child_process',
+) as typeof import('node:child_process');
 function temporaryDirectory() {
   const root = mkdtempSync(join(tmpdir(), 'mac-native-'));
   directories.push(root);
@@ -58,6 +62,75 @@ const packaged = [
 ];
 
 describe('Mac native binary validation', () => {
+  function isolatedFixture() {
+    const app = join(temporaryDirectory(), 'Intent GitLab Test.app');
+    for (const file of packaged.filter((file) => !file.includes('/keychain-helper/')))
+      put(app, file, binary('arm64'));
+    const plist = {
+      CFBundleIdentifier: 'app.cloudlands.intent.gitlab-test',
+      IntentIsolatedTestBuild: 'manual-123-1',
+      IntentIsolatedTestBackend: 'a'.repeat(40),
+      CFBundleURLTypes: [] as unknown[],
+    };
+    vi.spyOn(childProcess, 'execFileSync').mockImplementation((command, args) => {
+      expect(command).toBe('plutil');
+      expect(args).toEqual(['-convert', 'json', '-o', '-', join(app, 'Contents/Info.plist')]);
+      return JSON.stringify(plist);
+    });
+    return { app, plist };
+  }
+
+  it('accepts isolated afterPack payload without the forbidden shared Keychain helper', async () => {
+    const { app } = isolatedFixture();
+    vi.spyOn(native, 'builderMacArch').mockReturnValue('arm64');
+    vi.stubEnv('CSC_IDENTITY_AUTO_DISCOVERY', 'false');
+    vi.stubEnv('CSC_NAME', '');
+    vi.stubEnv('CSC_LINK', '');
+    await expect(
+      signSidecar({
+        electronPlatformName: 'darwin',
+        arch: 3,
+        appOutDir: dirname(app),
+        packager: { appInfo: { productFilename: 'Intent GitLab Test' } },
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it.each(['CFBundleIdentifier', 'IntentIsolatedTestBuild', 'IntentIsolatedTestBackend'] as const)(
+    'rejects a renamed isolated package with invalid %s',
+    (key) => {
+      const { app, plist } = isolatedFixture();
+      plist[key] = 'invalid';
+      expect(() => native.validatePackagedMacBinaries(app, 'arm64')).toThrow(
+        /isolated package identity/i,
+      );
+    },
+  );
+
+  it('rejects shared protocol registration and any shared Keychain payload in an isolated app', () => {
+    const { app, plist } = isolatedFixture();
+    plist.CFBundleURLTypes = [{ CFBundleURLSchemes: ['intent'] }];
+    expect(() => native.validatePackagedMacBinaries(app, 'arm64')).toThrow(/protocol/i);
+    plist.CFBundleURLTypes = [];
+    mkdirSync(join(app, 'Contents/Resources/keychain-helper'));
+    expect(() => native.validatePackagedMacBinaries(app, 'arm64')).toThrow(/Keychain/);
+  });
+
+  it('still requires other isolated helpers and checks their architecture', () => {
+    const { app } = isolatedFixture();
+    const file = join(app, packaged[0]);
+    writeFileSync(file, binary('x64'));
+    expect(() => native.validatePackagedMacBinaries(app, 'arm64')).toThrow(/Wrong architecture/);
+    rmSync(file);
+    expect(() => native.validatePackagedMacBinaries(app, 'arm64')).toThrow(/ENOENT/);
+  });
+
+  it('still requires the shared Keychain helper for ordinary packages', () => {
+    const app = join(temporaryDirectory(), 'Intent.app');
+    for (const file of packaged.filter((file) => !file.includes('/keychain-helper/')))
+      put(app, file, binary('arm64'));
+    expect(() => native.validatePackagedMacBinaries(app, 'arm64')).toThrow(/ENOENT/);
+  });
   it.each([
     ['x64', 'darwin', 'x64'],
     ['arm64', 'darwin', 'x64'],

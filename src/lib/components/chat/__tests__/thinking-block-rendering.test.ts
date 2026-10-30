@@ -264,11 +264,20 @@ describe('thinking blocks — StreamingMessageContent', () => {
           ),
       ).toBe(true);
 
-      // Standalone thinking is disclosure-only content and stays out of the
-      // chat search index (the pre-#1574 behavior); prose stays searchable.
+      // Standalone thinking stays a collapsed disclosure, but local Find indexes
+      // its body and reveals it through the disclosure (intent-hq/intent#4336).
       expect(
         findChatSearchMatches([persistedStandaloneMessage], 'saved theme preference', new Map()),
-      ).toEqual([]);
+      ).toEqual([
+        {
+          messageId: 'assistant-dark-mode-sanitized',
+          matchIndexInMessage: 0,
+          occurrenceInBlock: 0,
+          turnKey: 'assistant-dark-mode-sanitized',
+          blockPath: 'b:0',
+          disclosurePath: ['thinking:b:0'],
+        },
+      ]);
       expect(
         findChatSearchMatches([persistedStandaloneMessage], 'Theme storage', new Map()),
       ).toEqual([

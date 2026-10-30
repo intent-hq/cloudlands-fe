@@ -290,7 +290,7 @@ class BrowserCaptureService {
     if (!tab.mounted) {
       throw new Error(
         // i18n-ignore (agent-facing protocol error, not user-facing)
-        `Tab ${tab.tabId} is not mounted. Use { action: "focusTab", tabId: "${tab.tabId}" } first.`,
+        `Tab ${tab.tabId} is not mounted (its webview was unmounted before the capture could run). Retry; capture actions mount the tab on demand. Use { action: "listTabs" } to verify the tab still exists.`,
       );
     }
 
@@ -404,7 +404,7 @@ class BrowserCaptureService {
     if (!tab.mounted) {
       throw new Error(
         // i18n-ignore (agent-facing protocol error, not user-facing)
-        `Tab ${tab.tabId} is not mounted. Use { action: "focusTab", tabId: "${tab.tabId}" } first.`,
+        `Tab ${tab.tabId} is not mounted (its webview was unmounted before the capture could run). Retry; capture actions mount the tab on demand. Use { action: "listTabs" } to verify the tab still exists.`,
       );
     }
 
@@ -1179,6 +1179,15 @@ class BrowserCaptureService {
     }
     if (agentId && owner.ownerAgentId !== agentId)
       throw new Error('Capture is owned by another caller');
+  }
+
+  /**
+   * The tab a capture session targets, or undefined when the session is
+   * unknown for this workspace. Lets callers mount the tab on demand before
+   * a session op (the op itself still validates the session).
+   */
+  getSessionTabId(sessionId: string, workspaceId: string): string | undefined {
+    return this.getSession(sessionId, workspaceId)?.tabId;
   }
 
   private getOwnedSession(sessionId: string, workspaceId: string): CaptureSession {

@@ -27,6 +27,7 @@
   import { onDestroy } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import { store as appStore } from '$store/renderer/store';
+  import { directSelectorReadable } from '$store/renderer/utils/direct-selector';
   import {
     selectDaemonHealth,
     selectDaemonTransport,
@@ -44,6 +45,7 @@
     selectSidecarRunLogPending,
     selectSidecarRunLogError,
     selectDaemonUpdateDisconnectedAt,
+    selectDaemonStartup,
   } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import {
     spawnSidecarRequested,
@@ -77,12 +79,20 @@
   import { getCounterScaledTitlebarHeight } from '$lib/components/layout/titlebar-geometry';
   import Portal from '$lib/components/ui/Portal.svelte';
   import { DAEMON_UPDATING_COUNTDOWN_MS } from './DaemonUpdatingOverlay.svelte';
+  import StartupProgress from './StartupProgress.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
   import { formatGuestSessionLabel } from '$lib/utils/connection-label';
 
-  const health$ = selectDaemonHealth();
-  const updateDisconnectedAt$ = selectDaemonUpdateDisconnectedAt();
+  // Visibility follows Redux per dispatch, not on the animation-frame cadence:
+  // a renderer with suspended frames must still drop the blocking overlay once
+  // the daemon reconnects (intent-hq/intent#4622).
+  const health$ = directSelectorReadable(selectDaemonHealth);
+  const updateDisconnectedAt$ = directSelectorReadable(selectDaemonUpdateDisconnectedAt);
+  // The daemon answered but is still starting (or failed to start): show its
+  // startup screen right away instead of the connection-lost copy.
+  const daemonStartup$ = directSelectorReadable(selectDaemonStartup);
+  const isDaemonStarting = $derived($daemonStartup$?.state === 'starting');
   const transport$ = selectDaemonTransport();
   const reconnectAttempts$ = selectReconnectAttempts();
   const connectionLimited$ = selectConnectionLimited();
@@ -133,8 +143,16 @@
 
   $effect(() => {
     const updateDisconnectedAt = $updateDisconnectedAt$;
+    const daemonStartup = $daemonStartup$;
     if ($health$ === 'down' && !isSandboxPage) {
-      if (!visible && graceTimer === null) {
+      if (daemonStartup && !visible) {
+        // Startup can take minutes: no grace period or update countdown.
+        if (graceTimer !== null) {
+          clearTimeout(graceTimer);
+          graceTimer = null;
+        }
+        visible = true;
+      } else if (!visible && graceTimer === null) {
         const updatingRemaining =
           updateDisconnectedAt === null
             ? 0
@@ -355,8 +373,10 @@
       style:z-index="var(--layer-connection-overlay)"
       role="alertdialog"
       aria-modal={isGuestOffline ? undefined : 'true'}
-      aria-labelledby="daemon-stopped-title"
-      aria-describedby="daemon-stopped-description"
+      aria-labelledby={$daemonStartup$ ? 'daemon-startup-title' : 'daemon-stopped-title'}
+      aria-describedby={$daemonStartup$
+        ? 'daemon-startup-description'
+        : 'daemon-stopped-description'}
       tabindex="-1"
       data-testid="daemon-stopped-overlay"
       data-posture={isGuestOffline ? 'guest-offline' : undefined}
@@ -364,91 +384,95 @@
       <div
         class="mx-4 w-full max-w-md rounded-xl border border-border bg-background p-6 shadow-2xl"
       >
-        <h2 id="daemon-stopped-title" class="text-lg font-semibold text-foreground">
-          {#if isGuestRevoked}
-            {m.daemonStatus_overlay_guestRevokedTitle_label()}
-          {:else if isAuthRejected}
-            {m.daemonStatus_overlay_authRejectedTitle_label()}
-          {:else if isSidecarFailure}
-            {$sidecarStartupFailed$
-              ? m.daemonStatus_overlay_startupFailedTitle_label()
-              : m.daemonStatus_overlay_stoppedUnexpectedlyTitle_label()}
-          {:else if isConnectionLimited}
-            {m.daemonStatus_overlay_connectionLimitTitle_label()}
-          {:else if isGuestOffline}
-            {m.daemonStatus_overlay_guestOfflineTitle_label()}
-          {:else if isExternalMode && machineName}
-            {$hasEverConnected$
-              ? m.daemonStatus_overlay_machineLostTitle_label({ machine: machineName })
-              : m.daemonStatus_overlay_cannotConnectMachineTitle_label({ machine: machineName })}
-          {:else if !$hasEverConnected$}
-            {m.daemonStatus_overlay_cannotConnectTitle_label()}
-          {:else}
-            {m.daemonStatus_overlay_stoppedTitle_label()}
-          {/if}
-        </h2>
-
-        <p id="daemon-stopped-description" class="mt-2 text-sm text-muted-foreground">
-          {#if isGuestRevoked && $guestSession$}
-            {m.daemonStatus_overlay_guestRevoked_description({
-              host: formatGuestSessionLabel($guestSession$),
-            })}
-          {:else if isAuthRejected && $authRejected$}
-            {$authRejected$.statusCode === 403
-              ? m.daemonStatus_overlay_authRejectedDisabled_description({
-                  host: $authRejected$.host,
-                  port: $authRejected$.port,
-                })
-              : m.daemonStatus_overlay_authRejectedToken_description({
-                  host: $authRejected$.host,
-                  port: $authRejected$.port,
-                })}
-          {:else if isSidecarFailure}
-            {#if $sidecarStartupFailed$}
-              {$sidecarStartupFailedReason$
-                ? m.daemonStatus_overlay_startupFailedWithReason_description({
-                    reason: $sidecarStartupFailedReason$,
-                  })
-                : m.daemonStatus_overlay_startupFailed_description()}
+        {#if $daemonStartup$}
+          <StartupProgress state={$daemonStartup$} />
+        {:else}
+          <h2 id="daemon-stopped-title" class="text-lg font-semibold text-foreground">
+            {#if isGuestRevoked}
+              {m.daemonStatus_overlay_guestRevokedTitle_label()}
+            {:else if isAuthRejected}
+              {m.daemonStatus_overlay_authRejectedTitle_label()}
+            {:else if isSidecarFailure}
+              {$sidecarStartupFailed$
+                ? m.daemonStatus_overlay_startupFailedTitle_label()
+                : m.daemonStatus_overlay_stoppedUnexpectedlyTitle_label()}
+            {:else if isConnectionLimited}
+              {m.daemonStatus_overlay_connectionLimitTitle_label()}
+            {:else if isGuestOffline}
+              {m.daemonStatus_overlay_guestOfflineTitle_label()}
+            {:else if isExternalMode && machineName}
+              {$hasEverConnected$
+                ? m.daemonStatus_overlay_machineLostTitle_label({ machine: machineName })
+                : m.daemonStatus_overlay_cannotConnectMachineTitle_label({ machine: machineName })}
+            {:else if !$hasEverConnected$}
+              {m.daemonStatus_overlay_cannotConnectTitle_label()}
             {:else}
-              {$sidecarGaveUpReason$
-                ? m.daemonStatus_overlay_gaveUpWithReason_description({
-                    reason: $sidecarGaveUpReason$,
-                  })
-                : m.daemonStatus_overlay_gaveUp_description()}
+              {m.daemonStatus_overlay_stoppedTitle_label()}
             {/if}
-          {:else if isConnectionLimited}
-            <span data-testid="daemon-stopped-connection-limit">
-              {connectionLimitRetrySeconds === null
-                ? m.daemonStatus_overlay_connectionLimit_description()
-                : m.daemonStatus_overlay_connectionLimitRetryAfter_description({
-                    seconds: formatInteger(connectionLimitRetrySeconds),
+          </h2>
+
+          <p id="daemon-stopped-description" class="mt-2 text-sm text-muted-foreground">
+            {#if isGuestRevoked && $guestSession$}
+              {m.daemonStatus_overlay_guestRevoked_description({
+                host: formatGuestSessionLabel($guestSession$),
+              })}
+            {:else if isAuthRejected && $authRejected$}
+              {$authRejected$.statusCode === 403
+                ? m.daemonStatus_overlay_authRejectedDisabled_description({
+                    host: $authRejected$.host,
+                    port: $authRejected$.port,
+                  })
+                : m.daemonStatus_overlay_authRejectedToken_description({
+                    host: $authRejected$.host,
+                    port: $authRejected$.port,
                   })}
-            </span>
-          {:else if isGuestOffline && $guestSession$}
-            {m.daemonStatus_overlay_guestOffline_description({
-              host: formatGuestSessionLabel($guestSession$),
-            })}
-          {:else if isExternalMode && machineName}
-            {$hasEverConnected$
-              ? m.daemonStatus_overlay_externalLostMachine_description({ machine: machineName })
-              : m.daemonStatus_overlay_externalNeverConnectedMachine_description({
-                  machine: machineName,
-                })}
-          {:else if isExternalMode}
-            {#if $hasEverConnected$}
-              {m.daemonStatus_overlay_externalLost_description()}
+            {:else if isSidecarFailure}
+              {#if $sidecarStartupFailed$}
+                {$sidecarStartupFailedReason$
+                  ? m.daemonStatus_overlay_startupFailedWithReason_description({
+                      reason: $sidecarStartupFailedReason$,
+                    })
+                  : m.daemonStatus_overlay_startupFailed_description()}
+              {:else}
+                {$sidecarGaveUpReason$
+                  ? m.daemonStatus_overlay_gaveUpWithReason_description({
+                      reason: $sidecarGaveUpReason$,
+                    })
+                  : m.daemonStatus_overlay_gaveUp_description()}
+              {/if}
+            {:else if isConnectionLimited}
+              <span data-testid="daemon-stopped-connection-limit">
+                {connectionLimitRetrySeconds === null
+                  ? m.daemonStatus_overlay_connectionLimit_description()
+                  : m.daemonStatus_overlay_connectionLimitRetryAfter_description({
+                      seconds: formatInteger(connectionLimitRetrySeconds),
+                    })}
+              </span>
+            {:else if isGuestOffline && $guestSession$}
+              {m.daemonStatus_overlay_guestOffline_description({
+                host: formatGuestSessionLabel($guestSession$),
+              })}
+            {:else if isExternalMode && machineName}
+              {$hasEverConnected$
+                ? m.daemonStatus_overlay_externalLostMachine_description({ machine: machineName })
+                : m.daemonStatus_overlay_externalNeverConnectedMachine_description({
+                    machine: machineName,
+                  })}
+            {:else if isExternalMode}
+              {#if $hasEverConnected$}
+                {m.daemonStatus_overlay_externalLost_description()}
+              {:else}
+                {m.daemonStatus_overlay_externalNeverConnected_description()}
+              {/if}
+            {:else if $hasEverConnected$}
+              {m.daemonStatus_overlay_lost_description()}
             {:else}
-              {m.daemonStatus_overlay_externalNeverConnected_description()}
+              {m.daemonStatus_overlay_neverConnected_description()}
             {/if}
-          {:else if $hasEverConnected$}
-            {m.daemonStatus_overlay_lost_description()}
-          {:else}
-            {m.daemonStatus_overlay_neverConnected_description()}
-          {/if}
-        </p>
+          </p>
+        {/if}
 
-        {#if !isSidecarFailure && !isAuthRejected}
+        {#if !isSidecarFailure && !isAuthRejected && !isDaemonStarting}
           <p class="mt-3 text-sm text-muted-foreground" data-testid="daemon-stopped-retrying">
             <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-warning align-middle"
             ></span>
@@ -628,7 +652,7 @@
               </div>
             {/if}
           </div>
-        {:else if showSpawnButton}
+        {:else if showSpawnButton && !isDaemonStarting}
           <div class="mt-4">
             <Button
               type="button"

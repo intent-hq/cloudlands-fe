@@ -13,6 +13,7 @@ import { BROWSER_PROTOCOLS } from '../../../shared/constants';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import { workspaceCommandPayload } from '../../../shared/ipc/workspace-command-payloads';
 import { Logger } from '../../../shared/logger';
+import { describeUrlForLog } from '../../../shared/utils/sanitize-credentials';
 import { executeActions, type ExecutionResult } from './browser-action-executor';
 import type { BrowserExecutionBackendContext } from './browser-exec-reverse';
 import { embeddedBrowserCdp } from './embedded-browser-cdp-service';
@@ -40,11 +41,18 @@ import {
 import { getFocusedWindowBackendId } from '../../../main/window';
 import { DirectRelay } from '../../backend/main/direct-relay';
 import { TunnelManager } from '../../backend/main/tunnel-manager';
-import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
+import {
+  adoptWorkspaceForBackgroundHosting,
+  sendToWorkspaceWindows,
+} from '../../system/main/system.ipc';
 import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
 import type { BrowserTabListing } from '../../../shared/types/browser-clients';
 
 const logger = new Logger('BrowserIPC');
+/** Packaged-build breadcrumbs for agent background hosting (intent-hq/intent#7855). */
+const hostingLogger = new Logger('BrowserHosting');
+/** Last background-hosting state logged per workspace (log on change only). */
+const lastLoggedHostingState = new Map<string, string>();
 
 /** Confirm renderer reporting reached the same daemon that will route follow-up actions. */
 async function waitForDaemonTab(
@@ -196,6 +204,14 @@ function openBrowserTab(
     };
   }
   logger.info('Sent browser:open-tab', { url, position, workspaceId, tabId, allowDuplicate, pin });
+  hostingLogger.info('open-tab sent', {
+    tabId,
+    workspaceId,
+    windows: delivery.windowCount,
+    hidden: visible === false,
+    owned: ownerAgentId !== undefined,
+    url: describeUrlForLog(url),
+  });
   // i18n-ignore (agent-facing protocol message, not user-facing)
   return { success: true, message: `Opening browser tab with URL: ${url}`, tabId };
 }
@@ -436,6 +452,7 @@ export async function executeBrowserActions(
   deadline?: number,
 ): Promise<ExecutionResult> {
   const resolvedBackendContext = backendContext ?? getFocusedBrowserBackendContext();
+  ensureBrowserWorkspaceHost(actions, workspaceId, resolvedBackendContext.backendId);
   return executeActions(
     { actions, tabId },
     (
@@ -472,6 +489,68 @@ export async function executeBrowserActions(
     (tabId, requestDeadline) =>
       waitForDaemonTab(resolvedBackendContext, workspaceId, tabId, agentId, requestDeadline),
   );
+}
+
+/**
+ * Actions that never touch a tab — tunnels, and capture bookkeeping main
+ * answers from its own session state and the capture directory — so they
+ * need no window hosting the workspace.
+ */
+const TAB_FREE_ACTIONS = new Set([
+  'openTunnel',
+  'listTunnels',
+  'closeTunnel',
+  'endCapture',
+  'stopTrace',
+  'endSession',
+  'readCapture',
+  'getSummary',
+]);
+
+/**
+ * Make sure a window on the owning backend hosts the batch's workspace
+ * before any action routes to it. With no hosting window (the workspace's
+ * tab was closed, or it was not reopened since a restart) every browser op
+ * used to fail with "not open in any window"; now one window hosts it in
+ * the background — no tab, no navigation, no focus — so its saved layout
+ * hydrates and its tabs mount offscreen. The CDP service is told so its
+ * first tab-list request waits for that cold hydration. When no window is
+ * connected to the backend at all, nothing changes and the ops fail with
+ * their existing not-open / workspace-not-visible errors.
+ */
+function ensureBrowserWorkspaceHost(
+  actions: unknown[],
+  workspaceId: string | undefined,
+  backendId: string,
+): void {
+  const payload = workspaceCommandPayload(workspaceId);
+  if (!payload) return;
+  // Malformed actions fail validation without touching a tab.
+  const touchesTabs = actions.some((action) => {
+    const name = (action as { action?: unknown } | null)?.action;
+    return typeof name === 'string' && !TAB_FREE_ACTIONS.has(name);
+  });
+  if (!touchesTabs) return;
+  const { windowId, adopted } = adoptWorkspaceForBackgroundHosting(payload.workspaceId, backendId);
+  if (adopted) embeddedBrowserCdp.noteWorkspaceAdopted(payload.workspaceId);
+  // Log the hosting state per workspace only when it changes: agents retry
+  // browser actions in loops, and an unchanged state adds nothing.
+  const hostingState =
+    windowId === undefined ? 'none' : adopted ? `adopted:${windowId}` : `hosted:${windowId}`;
+  if (lastLoggedHostingState.get(payload.workspaceId) !== hostingState) {
+    lastLoggedHostingState.set(payload.workspaceId, hostingState);
+    if (windowId === undefined) {
+      hostingLogger.info('no window can host workspace', {
+        workspaceId: payload.workspaceId,
+        backendId,
+      });
+    } else if (adopted) {
+      hostingLogger.info('workspace adopted for background hosting', {
+        workspaceId: payload.workspaceId,
+        windowId,
+      });
+    }
+  }
 }
 
 /**

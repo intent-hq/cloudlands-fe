@@ -1,4 +1,17 @@
 <script lang="ts">
+  import {
+    INLINE_VISUAL_DRAFT_EVENT,
+    appendInlineVisualDraft,
+    type InlineVisualDraftDetail,
+  } from '$features/inline-html/inline-visual-handoff';
+  import { isInlineVisualSnapshot } from '$features/inline-html/inline-visual-types';
+  import { isTextEntryTarget } from '$lib/utils/text-entry';
+  import { selectInlineVisualDrafts } from '$store/renderer/slices/inline-visuals/inline-visuals-selectors';
+  import {
+    inlineVisualDraftRequested,
+    inlineVisualDraftConsumed,
+    inlineVisualDraftOwnerReleased,
+  } from '$store/renderer/slices/inline-visuals/inline-visuals-slice';
   import { submitChatMessage } from '$features/agent/chat-submission';
   import { requestChatMessageRetry } from '$features/agent/chat-submission-retry';
   import {
@@ -88,8 +101,10 @@
   import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
   import {
     selectCanAdministerHost,
+    selectHostRole,
     selectPrincipalSnapshot,
   } from '$store/renderer/slices/principal/principal-selectors';
+  import { predictOwnSenderAttribution } from '$lib/utils/collaborator-sender-attribution';
   import { hydrateAgentQueue } from '$features/agent/agent-queue-read-service';
   import { ensureWorkspaceDetail } from '$features/workspace/workspace-detail-hydration';
   import { workspaceSetupScriptText } from '$features/workspace/utils/workspace-setup-script';
@@ -117,6 +132,7 @@
   import {
     selectCheckedPanels,
     selectCheckedSelections,
+    selectCheckedNoteIds,
   } from '$store/renderer/slices/multi-panel-context/multi-panel-context-selectors';
 
   import { selectWorkspaceSetupTerminal } from '$store/renderer/slices/terminals/terminals-selectors';
@@ -220,6 +236,8 @@
 
   import SuggestedPrompts from './SuggestedPrompts.svelte';
   import QuestionWizard, { type QuestionAnswer } from './questions/QuestionWizard.svelte';
+  import SecretRequestCards from './secrets/SecretRequestCards.svelte';
+  import { deriveSecretRequestTranscript } from './secrets/pending-secret-requests';
   import QuestionComposer from './questions/QuestionComposer.svelte';
   import {
     getChatAttentionFocusAction,
@@ -319,7 +337,6 @@
     mergeUserMessageNavigationItems,
     type ChatNavigationState,
   } from './chat-message-navigation';
-  import { parseSuggestedPromptsFromContentBlocks } from '$lib/utils/messageParser';
   import { isBatchedDeliverySeam } from '$lib/utils/queue-info';
   import { isEventWakeMessage } from './event-wake-summary';
   import {
@@ -375,6 +392,7 @@
   import { selectPermissionRequests } from '$store/renderer/slices/permission/permission-selectors';
   import {
     selectChatAuroraEnabled,
+    selectCollapseToolRuns,
     selectIsAgentMonospace,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
@@ -412,6 +430,7 @@
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
   import ChatContentLane from './ChatContentLane.svelte';
   import ChatTurnNotice from './ChatTurnNotice.svelte';
+  import { rendersReasoningAsText, suggestedPromptsFromBlocks } from './prepare-message-blocks';
   import { getModelChangeNotice } from './model-change-notice';
   import { getEffortChangeNotice } from './effort-change-notice';
   import { getProviderRehomedNotice } from './rehome-notice';
@@ -427,6 +446,7 @@
     createRangeForSpan,
     findChatSearchMatches,
     type ChatSearchMatch,
+    type ChatSearchOptions,
   } from './chat-search';
   import { requestSearchDisclosure } from './chat-search-disclosure';
   import { resolveHydratedInputModel } from './input-hydration';
@@ -448,12 +468,14 @@
   import { isAutomatedChatMessage } from '$lib/utils/previous-user-message';
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import { rememberWorkspaceInitializerRecentSpecialist } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import { getEffectiveShortcut } from '$lib/utils/effective-shortcuts';
   import { matchesShortcut } from '$lib/utils/shortcut-bindings';
 
   const logger = createLogger('ChatPanel');
 
   const chatAuroraEnabled$ = selectChatAuroraEnabled();
+  const collapseToolRuns$ = selectCollapseToolRuns();
   const isAgentMonospace = selectIsAgentMonospace();
 
   // Constants
@@ -539,6 +561,9 @@
   // Broad selector rationale: ChatPanel passes the materialized session to
   // helpers/components that need model, metadata, provider, and prompt-handled state.
   const agentSession$ = selectAgentSession(agentIdStore);
+  // Claude Code agents' thinking renders as prose (see rendersReasoningAsText);
+  // search, prompt chips and operational spacing follow the same rule.
+  const reasoningAsText = $derived(rendersReasoningAsText($agentSession$));
   const agentSessionIsStreaming$ = selectAgentSessionIsStreaming(agentIdStore);
   const agentMessages$ = selectAgentMessages(agentIdStore);
   const submissionDisplay$ = selectAgentSubmissionDisplay(agentIdStore, workspaceIdStore);
@@ -656,6 +681,9 @@
   // Retired sessions (PROTOCOL §5.5 soft retire, retiredAt set) are read-only: the transcript
   // stays viewable but the composer is replaced with a restore affordance.
   const isRetiredSession = $derived(!!$agentSession$?.retiredAt);
+  // An archived workspace whose folder was purged (`Retired`, PROTOCOL §5.1)
+  // behaves like any archived workspace: a send unarchives it (daemon-side,
+  // as a fresh checkout) and the daemon tells the agent the folder was purged.
 
   // Derive error state: combine transient chatError with persisted agent status.
   // After a reload, chatError is null but agent status may be Error — use
@@ -766,6 +794,7 @@
   // DEBUG: Unique instance ID to detect duplicate ChatPanel mounts
   const instanceId = Math.random().toString(36).substring(2, 8);
   const questionUiConsumer$ = selectQuestionUiConsumer(instanceId);
+  const inlineVisualDrafts$ = selectInlineVisualDrafts(instanceId);
   const userMessageIndexUi$ = selectUserMessageIndexUi(workspace?.id ?? '', instanceId);
   let wizardPersistenceRequest: {
     messageId: string;
@@ -1081,7 +1110,7 @@
     if (pendingQuestions) {
       return [];
     }
-    return parseSuggestedPromptsFromContentBlocks(lastAssistantMessage.contentBlocks ?? []).prompts;
+    return suggestedPromptsFromBlocks(lastAssistantMessage.contentBlocks ?? [], reasoningAsText);
   });
 
   // Agent Q&A: the daemon's pending marker is authoritative when present, so
@@ -1240,6 +1269,13 @@
   // Legacy queues omit transcript-stamped drains. Correlated full snapshots
   // remain authoritative: a restored retry may legitimately share history aliases.
   const admittedPrincipal$ = selectPrincipalSnapshot();
+
+  // Agent secret requests (PROTOCOL §5.56), shown as composer-slot cards
+  // only when the daemon advertises `secretRequests: 1`.
+  const secretRequestsSupported = $derived($admittedPrincipal$?.capabilities.secretRequests === 1);
+  const secretRequestTranscript = $derived(
+    secretRequestsSupported ? deriveSecretRequestTranscript($agentMessages$) : null,
+  );
   const visibleQueuedMessages = $derived(
     $admittedPrincipal$?.capabilities.submissionCorrelation === 1
       ? $queuedMessages$.filter(isUserQueuedMessage)
@@ -1264,6 +1300,19 @@
   const presenceOwnPrincipalId$ = selectPresenceOwnPrincipalId();
   const isHostOwner$ = selectCanAdministerHost();
   const queuePrincipalId = $derived($admittedPrincipal$?.principal.id ?? null);
+  // The sender row the daemon will give the viewer's own sends here, shown on
+  // pending conversation rows so it does not pop in when the row is confirmed.
+  const hostRole$ = selectHostRole();
+  const ownPendingSender = $derived(
+    predictOwnSenderAttribution({
+      hostRole: $hostRole$,
+      principal: $admittedPrincipal$?.principal,
+      workspace,
+    }),
+  );
+  const pendingConversationIds = $derived(
+    new Set($submissionDisplay$.conversation.map((submission) => submission.id)),
+  );
 
   // Queue visibility around the wizard: hidden while the wizard is expanded,
   // shown while Ignore-collapsed. Derivation shared with the regression suite.
@@ -1472,12 +1521,19 @@
   // turnKey ties each match back to its enclosing conversation turn so that the
   // current-match turn (and its neighbors) can be force-rendered through the
   // LazyTurn virtualization while searching.
+  // Everything search needs to prepare blocks exactly like the rendered rows.
+  const chatSearchOptions: ChatSearchOptions = $derived({
+    collapseToolRuns: $collapseToolRuns$,
+    workspaceId: workspace?.id ? String(workspace.id) : undefined,
+    reasoningAsText,
+  });
   const allSearchMatches = $derived.by(() => {
     return findChatSearchMatches(
       $agentMessages$,
       debouncedSearchQuery,
       messageIdToTurnKey,
       workspace?.ownerPrincipalId,
+      chatSearchOptions,
     );
   });
 
@@ -2144,6 +2200,68 @@
     onSaveError: (err) => {
       logger.warn('[ChatPanel] Failed to save draft', { error: String(err) });
     },
+  });
+
+  // The event travels only through the originating transcript's DOM ancestors.
+  // Queue until this exact panel has completed its draft restore; never send.
+  $effect(() => {
+    const element = panelElement;
+    if (!element) return;
+    const receive = (event: Event) => {
+      event.stopPropagation();
+      const detail = (event as CustomEvent<InlineVisualDraftDetail>).detail;
+      if (
+        !detail ||
+        detail.workspaceId !== workspace?.id ||
+        detail.agentId !== agentId ||
+        !isActive ||
+        isRetiredSession ||
+        $agentSession$?.id !== agentId ||
+        !isInlineVisualSnapshot(detail.snapshot)
+      )
+        return;
+      appStore.dispatch(
+        inlineVisualDraftRequested({
+          id: crypto.randomUUID(),
+          ownerId: instanceId,
+          workspaceId: detail.workspaceId,
+          agentId: detail.agentId,
+          snapshot: detail.snapshot,
+        }),
+      );
+    };
+    element.addEventListener(INLINE_VISUAL_DRAFT_EVENT, receive);
+    return () => element.removeEventListener(INLINE_VISUAL_DRAFT_EVENT, receive);
+  });
+
+  $effect(() => {
+    const pending = $inlineVisualDrafts$;
+    if (
+      !isActive ||
+      !inputComponent ||
+      draftManager.gateActive ||
+      draftManager.restorePending ||
+      isRetiredSession ||
+      $agentSession$?.id !== agentId ||
+      !workspace?.id
+    )
+      return;
+    const targeted = pending.filter(
+      (item) => item.workspaceId === workspace.id && item.agentId === agentId,
+    );
+    if (!targeted.length) return;
+    untrack(() => {
+      let text = inputValue;
+      for (const item of targeted) {
+        text = appendInlineVisualDraft(text, item.snapshot);
+        appStore.dispatch(inlineVisualDraftConsumed(item.id));
+      }
+      // Preserve contextItems and let the existing draft manager persist them.
+      inputValue = text;
+      commitDraftWrite(text);
+      void inputComponent?.setContent?.(text);
+      void tick().then(() => inputComponent?.focus?.());
+    });
   });
 
   $effect(() => {
@@ -4389,17 +4507,10 @@
   });
 
   // ── Auto-focus on mount (used by Chief of Staff) ──
-  function isEditableElement(element: Element | null): boolean {
-    if (!element) return false;
-    if (!(element instanceof HTMLElement)) return false;
-    if (element.isContentEditable) return true;
-    return Boolean(element.closest('input, textarea, select, [contenteditable="true"]'));
-  }
-
   function shouldSkipPromptAutoFocus(): boolean {
     if (typeof document === 'undefined') return true;
     const activeElement = document.activeElement;
-    return isEditableElement(activeElement) && !panelElement?.contains(activeElement);
+    return isTextEntryTarget(activeElement) && !panelElement?.contains(activeElement);
   }
 
   onMount(() => {
@@ -5044,6 +5155,7 @@
             detail.query,
             messageIdToTurnKey,
             workspace?.ownerPrincipalId,
+            chatSearchOptions,
           )[0]
         : undefined;
       if (match) await revealSearchMatch(match, scrollContainer, current, detail.query);
@@ -5441,6 +5553,7 @@
       );
       wizardPersistenceRequest = null;
     }
+    appStore.dispatch(inlineVisualDraftOwnerReleased(instanceId));
     if (workspace?.id) appStore.dispatch(chatPanelUiReleased(workspace.id, instanceId));
     transferPanelInterestLease(null);
     flushPendingDraftWrite();
@@ -5690,7 +5803,7 @@
       selectCheckedPanels.select(appStore.state),
       selectCheckedSelections.select(appStore.state),
     );
-    const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
+    const noteIds = selectCheckedNoteIds.select(appStore.state);
 
     const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
     const userAppMessageId = createAppMessageId();
@@ -5832,6 +5945,8 @@
     if (!session) return;
 
     logger.info('Changing agent specialist', { agentId, specialistId });
+    // A composer pick counts as a recent use for every specialist picker's MRU order.
+    appStore.dispatch(rememberWorkspaceInitializerRecentSpecialist(specialistId));
 
     let behaviorPrompt: string | undefined;
     let newModel: string | null | undefined;
@@ -5927,7 +6042,7 @@
       selectCheckedPanels.select(appStore.state),
       selectCheckedSelections.select(appStore.state),
     );
-    const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
+    const noteIds = selectCheckedNoteIds.select(appStore.state);
 
     const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
     const userAppMessageId = createAppMessageId();
@@ -6223,11 +6338,25 @@
     }
   }
 
-  // Listen for resend message event (Alt+Enter keyboard shortcut)
+  // Listen for resend message event (Alt+Enter keyboard shortcut). The layout
+  // broadcasts the event to every active panel, so only the focused chat
+  // regenerates when several are visible (split view, Chief alongside an agent
+  // tab). Regeneration is destructive, so only the chat that actually contains
+  // keyboard focus qualifies: `isPanelFocused` is the panel system's retained
+  // selection and is not cleared when focus moves to another chat or to non-chat
+  // controls, so it is deliberately not consulted here. With focus on <body>,
+  // no chat regenerates. Focus is read at event time, not tracked by this
+  // effect, so the listener's lifecycle still follows `isActive` alone.
+  function ownsResendShortcut(): boolean {
+    const focused = document.activeElement;
+    return !!focused && focused !== document.body && !!panelElement?.contains(focused);
+  }
+
   $effect(() => {
     if (!isActive || typeof window === 'undefined') return;
 
     const handleResendEvent = () => {
+      if (!ownsResendShortcut()) return;
       handleResendLastMessage();
     };
 
@@ -6316,11 +6445,10 @@
   ondragover={panelFileDrop.handleDragOver}
   ondrop={panelFileDrop.handleDrop}
 >
-  <!-- The regular Aurora belongs to the complete chat surface, not the inset
-       composer lane. It inherits the real Panel radius for its own bottom clip. -->
+  <!-- Let the panel clip the regular Aurora at its inner border edge. -->
   {#if isActive && $chatAuroraEnabled$ && $agentSessionIsStreaming$ && !isChiefWorkspace}
     <div
-      class="composer-aurora-host regular-panel-aurora-host pointer-events-none absolute inset-x-0 bottom-0 z-0 overflow-hidden"
+      class="composer-aurora-host pointer-events-none absolute inset-x-0 bottom-0 z-0 overflow-hidden"
       style:height={`calc(${composerHeight}px + 10rem)`}
       data-testid="composer-aurora-host"
       in:springIn={{ tier: 'moderate', y: 0, scale: 1 }}
@@ -7030,6 +7158,7 @@
                   {@const compactOperationalTurnBoundary = hasOperationalAssistantTurnBoundary(
                     turn,
                     nextTurn,
+                    reasoningAsText,
                   )}
                   {@const zeroOperationalTurnBoundary = compactOperationalTurnBoundary}
                   {@const attentionQuestionAnswerTurnSeam = isAttentionQuestionAnswerSeam(
@@ -7235,10 +7364,12 @@
                         hasOperationalAssistantMessageBoundary(
                           turn.bodyMessages[bodyIndex - 1],
                           message,
+                          reasoningAsText,
                         )}
                       {@const compactNextMessageBoundary = hasOperationalAssistantMessageBoundary(
                         message,
                         turn.bodyMessages[bodyIndex + 1],
+                        reasoningAsText,
                       )}
                       {@const turnNumber = getMessageTurnNumber(message.id)}
                       {@const globalIndex = getMessageIndex(message.id)}
@@ -7518,7 +7649,14 @@
                   data-send-app-message-id={message.appMessageId}
                   class:invisible={pendingSendMessageIds.has(String(message.appMessageId ?? ''))}
                 >
-                  <ChatMessage {agentId} {message} {workspace} ownsMessageIdentity={false} />
+                  <ChatMessage
+                    {agentId}
+                    {message}
+                    {workspace}
+                    ownPrincipalId={$presenceOwnPrincipalId$}
+                    pendingSender={pendingConversationIds.has(message.id) ? ownPendingSender : null}
+                    ownsMessageIdentity={false}
+                  />
                 </div>
                 {#if ownsStatus}
                   <div class={isCompactMode ? 'mb-2' : 'mb-8'}>
@@ -7655,7 +7793,12 @@
       data-testid="composer-prompt-layer"
       data-has-transcript-utility={hasVisibleTranscriptUtility}
     >
-      <ChatContentLane data-testid="chat-composer-lane" chief={isChiefWorkspace} composer>
+      <ChatContentLane
+        data-testid="chat-composer-lane"
+        chief={isChiefWorkspace}
+        composer
+        operational
+      >
         <div
           class="w-full min-w-0"
           data-testid="chat-composer-controls-inner"
@@ -7699,6 +7842,13 @@
                 </Button>
               </div>
             {/if}
+            {#if workspace && agentId && secretRequestTranscript}
+              <SecretRequestCards
+                transcript={secretRequestTranscript}
+                workspaceId={workspace.id}
+                {agentId}
+              />
+            {/if}
             <QuestionComposer
               expanded={!!pendingQuestions && !questionWizardCollapsed}
               active={isActive && isChatFocused}
@@ -7726,43 +7876,45 @@
                 {#if draftManager.gateVisible}
                   <ChatDraftLoadingGate />
                 {/if}
-                {#if workspace && agentId}
-                  <PresenceTypingIndicator
-                    workspaceId={workspace.id}
+                <div class="relative min-w-0">
+                  {#if workspace && agentId}
+                    <PresenceTypingIndicator
+                      workspaceId={workspace.id}
+                      {agentId}
+                      class="pointer-events-none absolute inset-x-0 bottom-full mb-1"
+                    />
+                  {/if}
+                  <SimpleRichInput
+                    bind:this={inputComponent}
+                    bind:contextItems={getContextItems, setContextItems}
+                    bind:value={inputValue}
+                    onvaluechange={(value) => {
+                      scheduleDraftWrite(value);
+                      reportTypingActivity(value);
+                    }}
+                    onsubmit={(text: string) => handleSend(text)}
+                    onforcesubmit={(text: string) => handleForceSubmit(text)}
+                    onstop={handleStop}
+                    onHistoryPrev={handleHistoryPrev}
+                    onHistoryNext={handleHistoryNext}
+                    disabled={!workspace || !$agentSession$}
+                    inputLocked={draftManager.gateActive}
+                    isStreaming={$agentSessionIsStreaming$}
+                    isResponding={$agentIsResponding$}
+                    {workspace}
+                    currentContext={currentMainPanelContext}
                     {agentId}
-                    class={isChiefWorkspace ? 'px-3 pb-1' : 'regular-composer-content-inset pb-1'}
+                    selectedModel={hydratedInputModel}
+                    compactMode={isCompactMode}
+                    editorClassName={`${COMPOSER_INSET_CLASS} w-full`}
+                    contentInsetClassName={`${COMPOSER_INSET_CLASS} w-full`}
+                    actionBarEndClassName={COMPOSER_INSET_CLASS}
+                    edgeDocked
+                    externalDropTarget
+                    requiresModelSwitchConfirmation={!canChangeProvider}
+                    providerId={inputProviderId}
                   />
-                {/if}
-                <SimpleRichInput
-                  bind:this={inputComponent}
-                  bind:contextItems={getContextItems, setContextItems}
-                  bind:value={inputValue}
-                  onvaluechange={(value) => {
-                    scheduleDraftWrite(value);
-                    reportTypingActivity(value);
-                  }}
-                  onsubmit={handleSend}
-                  onforcesubmit={handleForceSubmit}
-                  onstop={handleStop}
-                  onHistoryPrev={handleHistoryPrev}
-                  onHistoryNext={handleHistoryNext}
-                  disabled={!workspace || !$agentSession$}
-                  inputLocked={draftManager.gateActive}
-                  isStreaming={$agentSessionIsStreaming$}
-                  isResponding={$agentIsResponding$}
-                  {workspace}
-                  currentContext={currentMainPanelContext}
-                  {agentId}
-                  selectedModel={hydratedInputModel}
-                  compactMode={isCompactMode}
-                  editorClassName={`${COMPOSER_INSET_CLASS} w-full`}
-                  contentInsetClassName={`${COMPOSER_INSET_CLASS} w-full`}
-                  actionBarEndClassName={COMPOSER_INSET_CLASS}
-                  edgeDocked
-                  externalDropTarget
-                  requiresModelSwitchConfirmation={!canChangeProvider}
-                  providerId={inputProviderId}
-                />
+                </div>
               {/if}
             </QuestionComposer>
           {/if}
@@ -7788,11 +7940,6 @@
     .workspace-setup-card-alignment {
       margin-left: 1.5rem;
     }
-  }
-
-  .regular-panel-aurora-host {
-    border-bottom-left-radius: var(--panel-shell-radius);
-    border-bottom-right-radius: var(--panel-shell-radius);
   }
 
   /* Keep style invalidation local without paint-containing sticky descendants. */

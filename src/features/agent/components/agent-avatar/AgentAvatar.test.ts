@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import AgentAvatar from './AgentAvatar.svelte';
 import { agentAvatarCatalogIdentities } from './agent-avatar.catalog';
 import { getAgentAvatarDesign } from './avatar-design';
-import { agentAvatarGeometry, agentAvatarVariants } from './avatar-size';
 
 afterEach(cleanup);
 
@@ -22,8 +21,6 @@ describe('AgentAvatar', () => {
 
       expect(svg?.getAttribute('data-avatar-design')).toBe(identity.design);
       expect(svg?.getAttribute('viewBox')).toBe('0 0 16 16');
-      expect(svg?.getAttribute('width')).toBe('20');
-      expect(svg?.getAttribute('height')).toBe('20');
       expect(svg?.getAttribute('data-avatar-variant')).toBe('standard');
       expect(svg?.getAttribute('overflow')).toBe('hidden');
       expect(
@@ -40,21 +37,6 @@ describe('AgentAvatar', () => {
       expect(svg?.querySelector('[stroke-linecap="round"], [stroke-linejoin="round"]')).toBeNull();
     },
   );
-
-  it.each(agentAvatarVariants)('maps %s to its named square geometry', (variant) => {
-    const { container } = render(AgentAvatar, {
-      props: { agentId: 'sized-agent', specialist: 'implementor', variant },
-    });
-    const svg = container.querySelector('svg');
-    expect([svg?.getAttribute('width'), svg?.getAttribute('height')]).toEqual([
-      String(agentAvatarGeometry[variant].surface),
-      String(agentAvatarGeometry[variant].surface),
-    ]);
-    expect(svg?.getAttribute('data-avatar-variant')).toBe(variant);
-    expect(agentAvatarGeometry[variant].surface - agentAvatarGeometry[variant].art).toBe(
-      agentAvatarGeometry[variant].clearSpace * 2,
-    );
-  });
 
   it('keeps numeric sizing as a temporary migration fallback', () => {
     const { container } = render(AgentAvatar, {

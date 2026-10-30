@@ -14,7 +14,8 @@ Pattern-first routing for product UI. Open the catalog URL in `pnpm run dev:ui` 
 
 - **Canvas:** use `bg-background` for the page and ordinary content; group controls with spacing first.
 - **Contained section:** use `bg-card` when a distinct group needs one enclosing boundary, such as a panel or card.
-- **Floating overlay:** use `bg-popover` for temporary content above the page, such as a menu, popover or tooltip.
+- **Floating overlay:** use `bg-popover` for temporary content above the page, such as a menu or popover.
+- **Inverse surface:** default tooltips, value bubbles, and pills use `surface-inverse`; inside it, keep `text-foreground`, `text-muted-foreground`, `ShortcutChip`, `border-border`, and `bg-muted` — the surface retunes them. `intent/no-raw-inverse-surface` rejects hand-built `bg-foreground text-background` pairs and repainted default tooltips.
 - Use one enclosing boundary per group; avoid wrapping an already contained section in another border or shadow.
 - **Compatibility helpers:** `SurfaceProvider`, `surfaceClasses`, and `surfaceHoverClasses` from `$lib/components/ui`.
 - **Internal levels (compatibility, not additional composition choices):** `bg-surface-1` through `bg-surface-8` pair with `shadow-surface-1` through `shadow-surface-8`.
@@ -153,6 +154,7 @@ with an explicit colour from the status mapping above.
 
 - **Borders:** Filled and ghost Buttons, resting Tabs, default Toggles, Toggle Groups, and Badge bodies are borderless. Use the Button `outline` variant or another explicit outline/input recipe when a 1px boundary is required.
 - **Segmented Tabs:** Use a 36px rail and selected pill, an 8px radius, 12px horizontal trigger padding, and a 6px icon gap.
+- **Icon Tabs:** The icon variant uses square triggers on a muted strip, a recessed selected tile, and a small top indicator. Give every icon an accessible label and tooltip; allow horizontal scrolling when the strip is constrained.
 - **Labels:** Resting control and Badge labels use regular weight; selected Tabs and Toggles use medium weight.
 - **Badge:** Badge bodies use an 8px radius. Removable badges retain a 16px circular end slot for the close control.
 - **Focus:** Preserve the shared 1px solid outline, non-zero offset, and no-shadow focus tuple on every interactive control.

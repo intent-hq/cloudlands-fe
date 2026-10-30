@@ -5,10 +5,12 @@
    *
    * Reads/writes the daemon-owned `agentFeatures.*` settings via
    * settings.list / settings.update (PROTOCOL §5.12), following the
-   * WorkspaceApiSettings pattern. Thirteen booleans with daemon defaults
-   * (see agent-feature-definitions.ts): all default on, while explicit false
-   * values remain off. Peer controls require a registered peerAgents entry;
-   * an older daemon that omits it keeps those controls unavailable.
+   * WorkspaceApiSettings pattern. One boolean per FEATURES entry, coerced to
+   * its FEATURE_DEFAULTS value when the daemon omits it; explicit values win.
+   * Peer agents and secret requests require their registered settings.list
+   * entry, so an older daemon that omits one keeps that control unavailable.
+   * Secret requests also stays unavailable while host command execution is
+   * off, because the daemon only exposes ws.secret alongside ws.host.exec.
    *
    * Toggles are captured at agent-session creation, so changes apply to
    * newly created sessions only — existing sessions keep the surface they
@@ -87,6 +89,10 @@
   // settings.list includes registered defaults even without a stored preference.
   const peerAgentsSupported = $derived($entries$['agentFeatures.peerAgents'] !== undefined);
   let peerAgentsEnabled = $derived(peerAgentsSupported && values['agentFeatures.peerAgents']);
+  const secretRequestsSupported = $derived($entries$['agentFeatures.secretRequests'] !== undefined);
+  const secretRequestsAvailable = $derived(
+    secretRequestsSupported && values['agentFeatures.hostExec'],
+  );
   // Daemon-provided approximate token cost per toggle (§5.12 `tokenImpact`);
   // absent on older daemons or unannotated entries → no line rendered.
   const tokenImpacts = $derived(
@@ -119,7 +125,13 @@
     if (
       !selectCanAdministerHost.select(appStore.state) ||
       !form?.loaded ||
-      (path === 'agentFeatures.peerAgents' && !entries[path])
+      (path === 'agentFeatures.peerAgents' && !entries[path]) ||
+      (path === 'agentFeatures.secretRequests' &&
+        (!entries[path] ||
+          !coerceValue(
+            'agentFeatures.hostExec',
+            form.drafts['agentFeatures.hostExec'] ?? entries['agentFeatures.hostExec']?.value,
+          )))
     )
       return;
     appStore.dispatch(settingsFormDraftChanged(identity, path, checked));
@@ -190,14 +202,21 @@
     const entries: SettingEntry[] = [];
     for (const feature of FEATURES) {
       const currentValue =
-        feature.path === 'agentFeatures.peerAgents' ? peerAgentsEnabled : values[feature.path];
+        feature.path === 'agentFeatures.peerAgents'
+          ? peerAgentsEnabled
+          : feature.path === 'agentFeatures.secretRequests'
+            ? secretRequestsSupported && values[feature.path]
+            : values[feature.path];
       entries.push({
         kind: 'switch',
         id: feature.path,
         label: feature.label(),
         description: feature.description(),
         featureCode: feature.path,
-        disabled: loading || (feature.path === 'agentFeatures.peerAgents' && !peerAgentsSupported),
+        disabled:
+          loading ||
+          (feature.path === 'agentFeatures.peerAgents' && !peerAgentsSupported) ||
+          (feature.path === 'agentFeatures.secretRequests' && !secretRequestsAvailable),
         // i18n-ignore (daemon-provided wire text, PROTOCOL §5.12 tokenImpact)
         status: tokenImpacts[feature.path],
         statusTone: 'subtle',

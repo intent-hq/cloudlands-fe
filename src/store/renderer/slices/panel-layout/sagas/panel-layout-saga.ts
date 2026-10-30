@@ -1,3 +1,10 @@
+import { takeEveryFromSelector } from '@themislib/themis/saga';
+import { createLogger } from '$lib/utils/client-logger';
+import {
+  selectAllWorkspaceScriptEntries,
+  selectCanReadScriptDefinition,
+  selectScriptById,
+} from '../../scripts/scripts-selectors';
 import { principalReceived, hostMembershipChanged } from '../../principal/principal-slice';
 import {
   call,
@@ -50,6 +57,8 @@ import {
 import { setAgents, setInitialAgentId } from '../../workspace-agents/workspace-agents-slice';
 import {
   selectIsWorkspaceCollaborator,
+  selectWorkspaceEntities,
+  selectWorkspaceSavedScriptContext,
   selectWorkspaceManagementDenied,
 } from '../../workspace/workspace-selectors';
 import { setWorkspaceEntity, setWorkspaceHasLoaded } from '../../workspace/workspace-slice';
@@ -146,6 +155,7 @@ import {
   updateTabBrowserUrl,
   updateTabFavicon,
   updateTabTitle,
+  promoteDiscussionTab,
   updateTabViewport,
 } from '../panel-layout-slice';
 import {
@@ -214,6 +224,7 @@ const PERSIST_ACTIONS = [
   reconcileStaleAgentTabs,
   seedContextLinkEmptyLayout,
   updateTabTitle,
+  promoteDiscussionTab,
   updateTabBrowserUrl,
   updateTabFavicon,
   updateTabViewport,
@@ -337,7 +348,16 @@ function* routeTabToRightmostColumn(
   // where a collaborator's owner-only open is dropped (multiplayer w3).
   if (
     OWNER_ONLY_TAB_TYPES.includes(tab.type) &&
-    (yield* selectIsWorkspaceCollaborator.effect(wsId))
+    (yield* selectIsWorkspaceCollaborator.effect(wsId)) &&
+    !(
+      tab.type === 'terminal' &&
+      tab.scriptId &&
+      (yield* selectWorkspaceSavedScriptContext.effect(wsId)) &&
+      (yield* selectCanReadScriptDefinition.effect(
+        wsId,
+        yield* selectScriptById.effect(wsId, tab.scriptId),
+      ))
+    )
   ) {
     return;
   }
@@ -735,6 +755,28 @@ function* reconcileRestoredPanelColumns(wsId: string): SagaGenerator<boolean> {
   return true;
 }
 
+/** Packaged-build breadcrumbs for agent background hosting (intent-hq/intent#7855). */
+const hostingLogger = createLogger('BrowserHosting');
+
+/**
+ * Log the browser tabs a storage restore left without a URL. Registry-hosted
+ * tabs persist as geometry shells (stripRegistryHeldFields) until the
+ * browser-tab registry re-applies its rows; until then the offscreen host
+ * cannot mount them (intent-hq/intent#7855).
+ */
+function* logUrlLessRestoredBrowserTabs(wsId: string, source: string): SagaGenerator<void> {
+  const layout = yield* selectPanelLayoutWorkspace.effect(wsId);
+  const tabIds = [
+    ...Object.values(layout.panels).flatMap((panel) => panel.tabs),
+    ...getItems(layout.hiddenTabs),
+  ]
+    .filter((tab) => tab.type === 'browser' && !tab.browserUrl)
+    .map((tab) => tab.id);
+  if (tabIds.length > 0) {
+    hostingLogger.info('layout restored with URL-less browser tabs', { wsId, source, tabIds });
+  }
+}
+
 function isSettledRestoreStatus(status: PanelLayoutRestoreStatus): boolean {
   return status === 'restored' || status === 'empty' || status === 'invalid';
 }
@@ -753,7 +795,18 @@ const OWNER_ONLY_TAB_TYPES: readonly PanelTabType[] = ['terminal', 'browser'];
 function* stripOwnerOnlyTabsForCollaborator(wsId: string): SagaGenerator<void> {
   if (!(yield* selectWorkspaceManagementDenied.effect(wsId))) return;
   for (const tabType of OWNER_ONLY_TAB_TYPES) {
-    yield* put(destroyTabsByType(wsId, tabType));
+    yield* put(
+      destroyTabsByType(
+        wsId,
+        tabType,
+        undefined,
+        (yield* selectWorkspaceSavedScriptContext.effect(wsId))
+          ? (yield* selectAllWorkspaceScriptEntries.effect(wsId))
+              .filter((script) => script.purpose === 'saved')
+              .map((script) => script.id)
+          : [],
+      ),
+    );
   }
 }
 
@@ -826,6 +879,7 @@ function* handleWorkspaceMountedRestore(
         yield* put(preparePanelLayoutBackendRestore(wsId));
       }
       yield* put(initializeLayout(wsId, normalized));
+      yield* call(logUrlLessRestoredBrowserTabs, wsId, 'mount');
       yield* call(stripOwnerOnlyTabsForCollaborator, wsId);
       repairedColumns = yield* call(reconcileRestoredPanelColumns, wsId);
       yield* put(setRestoreStatus(wsId, 'restored'));
@@ -1245,6 +1299,7 @@ function* restoreAfterBackendSwitch(wsId: string | null): SagaGenerator<void> {
       const normalized = normalizeLayoutForWorkspace(wsId, stored);
       repairedLayout = !deepEqual(normalized, stored);
       yield* put(initializeLayout(wsId, normalized));
+      yield* call(logUrlLessRestoredBrowserTabs, wsId, 'backend-switch');
       yield* call(stripOwnerOnlyTabsForCollaborator, wsId);
       repairedColumns = yield* call(reconcileRestoredPanelColumns, wsId);
       yield* put(setRestoreStatus(wsId, 'restored'));
@@ -1370,6 +1425,7 @@ export function* panelLayoutSaga(options?: {
     yield* takeEvery(bootstrapNewWorkspaceLayout, handleNewWorkspaceBootstrap);
     yield* takeEvery(setAgents, reconcileAgentsFromSnapshot);
     yield* takeEvery(setWorkspaceEntity, reconcileWorkspaceEntityArrived);
+    yield* takeEveryFromSelector(selectWorkspaceEntities, reconcileWorkspaceListLoaded);
     yield* takeEvery(
       [setWorkspaceHasLoaded, principalReceived, hostMembershipChanged],
       reconcileWorkspaceListLoaded,

@@ -2,7 +2,7 @@
  * Update checks while an artifact is downloaded (auto-supersede).
  *
  * A 'downloaded' state must not stop update checks: automatic checks
- * (startup / periodic / focus-resume) and manual checks keep querying the
+ * (startup / hourly / focus-resume, when due) and manual checks keep querying the
  * feed so a newer version can supersede the pending artifact through the
  * normal flow (update-available → autoDownload → update-downloaded). When
  * the feed re-offers the SAME version as the downloaded artifact, the
@@ -171,6 +171,9 @@ afterEach(async () => {
 
 describe('automatic checks while an update is downloaded', () => {
   it('startup and periodic checks query the feed while status is downloaded (regression)', async () => {
+    // Stable makes one successful automatic check per UTC day: start just
+    // before midnight so the hourly tick after the startup check is due.
+    vi.setSystemTime(new Date('2026-10-21T23:30:00Z'));
     const { service, checkMock } = await setupService();
     feedResolvesTo(checkMock, '2.1.0');
     landDownloaded('2.1.0');
@@ -180,7 +183,11 @@ describe('automatic checks while an update is downloaded', () => {
     await vi.advanceTimersByTimeAsync(STARTUP_CHECK_DELAY_MS);
     expect(checkMock).toHaveBeenCalledTimes(1);
 
-    // Neither must the hourly periodic check.
+    // Neither must the hourly check (due again after the UTC rollover). The
+    // 00:30:00 tick falls inside stable's hourly attempt throttle (startup
+    // ran at 23:30:10), so the 01:30:00 tick is the one that checks.
+    await vi.advanceTimersByTimeAsync(UPDATE_CHECK_INTERVAL_MS);
+    expect(checkMock).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(UPDATE_CHECK_INTERVAL_MS);
     expect(checkMock).toHaveBeenCalledTimes(2);
     expect(service.getState().status).toBe('downloaded');

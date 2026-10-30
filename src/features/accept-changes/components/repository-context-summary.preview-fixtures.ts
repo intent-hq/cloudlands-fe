@@ -25,7 +25,10 @@ import {
   setWorkspaceEntity,
   setWorkspaceHasLoaded,
 } from '$store/renderer/slices/workspace/workspace-slice';
-import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import {
+  setLabsMultiplayerEnabled,
+  setNativeReviewEnabled,
+} from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import type { Workspace } from '$shared/types';
 import type {
   SelectionPreview,
@@ -478,6 +481,9 @@ export function installSummaryFixture(
       ),
     );
   }
+  // These scenes exercise the native review flow, which product UI keeps off.
+  const nativeReviewBefore = store.state.userPreferences?.nativeReviewEnabled === true;
+  store.dispatch(setNativeReviewEnabled(true));
   admit('host-A');
   if (scene === 'inactive') store.dispatch(principalContextChanged(null));
   const stop = store.runSaga(repositoryContextSaga);
@@ -504,6 +510,7 @@ export function installSummaryFixture(
       stop();
       store.dispatch(principalContextChanged(null));
       cleanups.reverse().forEach((cleanup) => cleanup());
+      store.dispatch(setNativeReviewEnabled(nativeReviewBefore));
       if (window.electronAPI === bridge) window.electronAPI = previousBridge;
     },
   };

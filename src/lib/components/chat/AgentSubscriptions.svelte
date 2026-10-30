@@ -1,7 +1,7 @@
 <script lang="ts">
   import { openAssistantAgentFromEvent } from '$lib/utils/assistant-agent-link';
+  import { isTextEntryTarget } from '$lib/utils/text-entry';
   import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
-  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   /**
    * AgentSubscriptions Component
    *
@@ -97,9 +97,8 @@
   } from './subscription-disclosure';
   import { store as appStore } from '$store/renderer/store';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
-  import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
-  import { navigateToRoute } from '$lib/utils/navigation.client';
+  import { openAndShowWorkspace } from '$lib/utils/show-workspace';
   import { findSourcePanelId } from '$lib/utils/workspace-navigation';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
@@ -566,9 +565,7 @@
   const showSubscriptionRow = $derived(isCompleted || waitingAgentRows.length > 0);
 
   $effect(() => {
-    visible = isolatedPreview
-      ? showSubscriptionRow || !!$wokenUpInfo$
-      : $subscriptionLane$.visible || $snapshotStatus$ !== 'ready';
+    visible = isolatedPreview ? showSubscriptionRow || !!$wokenUpInfo$ : $subscriptionLane$.visible;
     count = isolatedPreview ? activeAgentRows.length : $subscriptionLane$.count;
     participantAgentIds = isolatedPreview
       ? activeAgentRows.map((row) => row.agentId)
@@ -670,11 +667,7 @@
         // These are automatic reveal retries, not a new user focus request.
         // Preserve a Find field, composer, or other editable control the user
         // has focused since opening the watched agent (intent-hq/intent#6395).
-        const activeElement = document.activeElement;
-        if (
-          activeElement instanceof HTMLElement &&
-          activeElement.closest('input, textarea, select, [contenteditable="true"]')
-        ) {
+        if (isTextEntryTarget(document.activeElement)) {
           clearWatchedAgentFocusTimers();
           return;
         }
@@ -712,8 +705,7 @@
     if (!workspaceId) return;
     if (openAssistantAgentFromEvent(event, workspaceId, watchedAgentId)) return;
     if (selectCurrentWorkspaceTabId.select(appStore.state) !== workspaceId) {
-      appStore.dispatch(openWorkspaceTab(workspaceId));
-      void navigateToRoute(`/workspace/${workspaceId}`).catch((error) => {
+      void openAndShowWorkspace(workspaceId).catch((error) => {
         logger.warn('Failed to switch workspace for watched agent', { watchedAgentId, error });
       });
     }
@@ -844,19 +836,14 @@
   </div>
 {/if}
 
-{#if !showSubscriptionRow && !$wokenUpInfo$ && $snapshotStatus$ !== 'ready'}
+{#if !showSubscriptionRow && !$wokenUpInfo$ && $snapshotStatus$ === 'failed'}
   <div
     class="flex min-h-10 items-center gap-2 px-3 py-2 text-muted-foreground {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
     data-testid="agent-subscriptions-snapshot-status"
     data-snapshot-status={$snapshotStatus$}
-    role={$snapshotStatus$ === 'failed' ? 'alert' : 'status'}
+    role="alert"
   >
-    {#if $snapshotStatus$ === 'loading'}
-      <span aria-hidden="true" class="shrink-0"><IntentMarkLoader size={12} /></span>
-      <span>{m.chat_chatMessage_loading_label()}</span>
-    {:else}
-      <span>{m.chat_streamingStatus_responseFailed_label()}</span>
-    {/if}
+    <span>{m.chat_agentSubscriptions_loadFailed_error()}</span>
   </div>
 {/if}
 

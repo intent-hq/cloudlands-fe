@@ -17,12 +17,7 @@ import {
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import type { WorkspaceNotesWorkspaceState, WorkspaceNotesState } from './workspace-notes-types';
-import type {
-  NoteAttributionViewState,
-  NotePresenceViewer,
-  NoteUiRequestState,
-} from './workspace-notes-types';
-import type { LineAttributionData } from '$lib/client';
+import type { NotePresenceViewer, NoteUiRequestState } from './workspace-notes-types';
 import { normalizeNoteUpdatePatch } from './workspace-notes-normalization';
 
 export type { WorkspaceNotesWorkspaceState, WorkspaceNotesState };
@@ -48,7 +43,6 @@ export const emptyWorkspaceNotesState: WorkspaceNotesWorkspaceState = {
   contentViews: createCollection('consumerId'),
   workspaceRoots: createCollection('consumerId'),
   presenceViews: createCollection('consumerId'),
-  attributionViews: createCollection('consumerId'),
 };
 
 export const initialState: WorkspaceNotesState = {
@@ -268,33 +262,15 @@ export const notePresenceViewersReceived = createAction<
 export const notePresenceViewReleased = createAction<[workspaceId: string, consumerId: string]>(
   'workspaceNotes/notePresenceViewReleased',
 );
-export const noteAttributionViewRequested = createAction<
-  [consumerId: string, requestId: string, workspaceId: string, noteId: string]
->('workspaceNotes/noteAttributionViewRequested');
-export const noteAttributionViewFinished = createAction<
-  [
-    consumerId: string,
-    requestId: string,
-    workspaceId: string,
-    authority: string | null,
-    data: LineAttributionData | null,
-    error?: string,
-  ]
->('workspaceNotes/noteAttributionViewFinished');
-export const noteAttributionViewReleased = createAction<[workspaceId: string, consumerId: string]>(
-  'workspaceNotes/noteAttributionViewReleased',
-);
-export const noteAttributionInvalidated = createAction<[workspaceId: string, noteId: string]>(
-  'workspaceNotes/noteAttributionInvalidated',
-);
 
 /** Saga trigger: update note title */
 export const updateNoteTitle = createAction<[workspaceId: string, noteId: string, title: string]>(
   'workspaceNotes/updateNoteTitle',
 );
+/** Resolves `false` when the daemon rejected the title and it was rolled back. */
 export const updateNoteTitlePersistRequested = createAsyncAction<
   [workspaceId: string, noteId: string, title: string],
-  void
+  boolean
 >('workspaceNotes/updateNoteTitlePersistRequested', 'workspaceNotes/updateNoteTitlePersistSettled');
 
 /** Saga trigger: create a new note */
@@ -383,6 +359,38 @@ workspaceNotesReducer.with(
     }, state);
   },
 );
+/**
+ * Reuse a cached body on an incoming row. The truncated-read markers (§5.2
+ * "Truncated note reads") describe that body, so they travel with it: a reused
+ * prefix must stay render-only, and an incoming row's markers must not be
+ * attached to a body they do not describe.
+ */
+function withCachedBody(note: Note, existing: Note): Note {
+  const { contentTruncated: _truncated, contentBytes: _bytes, ...rest } = note;
+  return {
+    ...rest,
+    content: existing.content,
+    ...(existing.contentTruncated
+      ? {
+          contentTruncated: true,
+          ...(existing.contentBytes !== undefined ? { contentBytes: existing.contentBytes } : {}),
+        }
+      : {}),
+  };
+}
+
+/**
+ * An incoming row for a note with a pending local draft: the draft body stays,
+ * and so does the rev that body is based on. A row must never claim a rev whose
+ * exact text it does not hold — an editor would take that rev as its base and
+ * the next save would replace the newer text (the incoming change survives in
+ * the daemon and is merged in by the stale-rev save, or re-read afterwards).
+ */
+function withPendingDraft(note: Note, existing: Note): Note {
+  const { rev: _incomingRev, ...rest } = withCachedBody(note, existing);
+  return existing.rev !== undefined ? { ...rest, rev: existing.rev } : rest;
+}
+
 workspaceNotesReducer.with(
   loadWorkspaceNotesSucceeded,
   (state, { payload: [workspaceIds, notesByWorkspace] }) => {
@@ -403,7 +411,7 @@ workspaceNotesReducer.with(
         if (note.rev === undefined || existing.rev === undefined || note.rev > existing.rev) {
           return note;
         }
-        return { ...note, content: existing.content };
+        return withCachedBody(note, existing);
       });
       return setWorkspaceState(nextState, workspaceId, {
         ...workspaceState,
@@ -499,14 +507,15 @@ workspaceNotesReducer.with(noteMetadataPushed, (state, { payload: [workspaceId, 
   const existing = getItem(ws.notes, note.id);
   if (existing?.rev !== undefined && note.rev !== undefined && note.rev < existing.rev)
     return state;
-  const next = {
-    ...note,
-    content: existing?.content ?? '',
-    ...(existing && {
-      contentLength: existing.contentLength,
-      contentPreview: existing.contentPreview,
-    }),
-  };
+  const next = existing
+    ? {
+        ...(ws.pendingContentByNoteId[note.id]
+          ? withPendingDraft({ ...note, content: '' }, existing)
+          : withCachedBody({ ...note, content: '' }, existing)),
+        contentLength: existing.contentLength,
+        contentPreview: existing.contentPreview,
+      }
+    : { ...note, content: '' };
   return setWorkspaceState(state, workspaceId, {
     ...ws,
     notes: existing ? replaceItem(ws.notes, note.id, next) : addItem(ws.notes, next),
@@ -577,10 +586,9 @@ workspaceNotesReducer.with(applyNoteUpdated, (state, { payload: [workspaceId, no
   return setWorkspaceState(state, workspaceId, {
     ...workspaceState,
     notes: upsertItem(workspaceState.notes, {
-      ...note,
       ...(workspaceState.pendingContentByNoteId[noteId] && existingNote
-        ? { content: existingNote.content }
-        : {}),
+        ? withPendingDraft(note, existingNote)
+        : note),
       id: existingNote?.id ?? (noteId as Note['id']),
     }),
     notesVersion: workspaceState.notesVersion + 1,
@@ -795,55 +803,6 @@ workspaceNotesReducer.with(
     return setWorkspaceState(state, workspaceId, {
       ...ws,
       presenceViews: removeItem(ws.presenceViews, consumerId),
-    });
-  },
-);
-workspaceNotesReducer.with(
-  noteAttributionViewRequested,
-  (state, { payload: [consumerId, requestId, workspaceId, noteId] }) => {
-    const ws = getWorkspaceState(state, workspaceId);
-    return setWorkspaceState(state, workspaceId, {
-      ...ws,
-      attributionViews: upsertItem(ws.attributionViews, {
-        consumerId,
-        requestId,
-        workspaceId,
-        noteId,
-        authority: null,
-        status: 'loading',
-        data: null,
-      }),
-    });
-  },
-);
-workspaceNotesReducer.with(
-  noteAttributionViewFinished,
-  (state, { payload: [consumerId, requestId, workspaceId, authority, data, error] }) => {
-    const ws = state.byWorkspaceId[workspaceId];
-    const current = ws ? getItem(ws.attributionViews, consumerId) : undefined;
-    if (!ws || !current || current.requestId !== requestId) return state;
-    const next: NoteAttributionViewState = {
-      ...current,
-      authority,
-      data,
-      status: error ? 'error' : 'ready',
-    };
-    if (error) next.error = error;
-    else delete next.error;
-    return setWorkspaceState(state, workspaceId, {
-      ...ws,
-      attributionViews: replaceItem(ws.attributionViews, consumerId, next),
-    });
-  },
-);
-workspaceNotesReducer.with(
-  noteAttributionViewReleased,
-  (state, { payload: [workspaceId, consumerId] }) => {
-    const ws = state.byWorkspaceId[workspaceId];
-    if (!ws || !getItem(ws.attributionViews, consumerId)) return state;
-    return setWorkspaceState(state, workspaceId, {
-      ...ws,
-      attributionViews: removeItem(ws.attributionViews, consumerId),
     });
   },
 );

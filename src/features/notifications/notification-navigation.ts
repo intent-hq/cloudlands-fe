@@ -13,7 +13,12 @@
  * app store and triggers SvelteKit navigation — it is a feature client module
  * shared by the two listeners above.
  */
+import { discussionNotificationLayoutRequested } from '$store/renderer/slices/notifications/notifications-slice';
+import { openWorkspaceDiscussion } from '$features/discussions/discussion-navigation';
+import { selectDiscussionMentionAdmission } from '$store/renderer/slices/notifications/notifications-selectors';
+import type { DiscussionTarget } from '$store/renderer/slices/workspace-discussion/workspace-discussion-slice';
 import { navigateToRoute } from '$lib/utils/navigation.client';
+import { openAndShowWorkspace } from '$lib/utils/show-workspace';
 import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -39,6 +44,7 @@ export interface NotificationNavigatePayload {
   /** Exact conversation to select in the target workspace or Assistant. */
   agentId?: string;
   workspaceTarget?: WorkspaceWindowTarget;
+  discussion?: { target: DiscussionTarget; messageId: string };
 }
 
 function openWorkspaceTarget(data: NotificationNavigatePayload): void {
@@ -59,8 +65,11 @@ function openWorkspaceTarget(data: NotificationNavigatePayload): void {
 }
 
 /**
- * Route a notification click: `goto(/workspace/{workspaceId})`, guarding
- * null/missing payloads. Chief-of-staff payloads (`chief: true` or the chief
+ * Route a notification click through `openAndShowWorkspace`: navigate to the
+ * workspace, then activate its tab (adding it to the strip when it is not
+ * open), guarding null/missing payloads. A failed navigation leaves the strip
+ * untouched.
+ * Chief-of-staff payloads (`chief: true` or the chief
  * virtual workspace id) open the homepage Assistant and select the chat
  * thread instead — the chief workspace page is hidden. No-ops in the HUD
  * pop-out window so a stray `notification:navigate` IPC can never replace
@@ -86,6 +95,27 @@ export async function handleNotificationNavigate(
   }
   const generation = ++navigationGeneration;
 
+  if (data.discussion) {
+    const { target, messageId } = data.discussion;
+    const admitted = () => {
+      const result = selectDiscussionMentionAdmission.select(appStore.state, target, messageId);
+      return result !== null && result !== 'pending';
+    };
+    if (target.workspaceId !== data.workspaceId || !admitted()) return;
+    try {
+      if (!(await openAndShowWorkspace(target.workspaceId))) return;
+      if (generation !== navigationGeneration || !admitted()) return;
+      const ready = await appStore.dispatch(
+        discussionNotificationLayoutRequested(target, messageId),
+      );
+      if (!ready || generation !== navigationGeneration || !admitted()) return;
+      openWorkspaceDiscussion(target.workspaceId, target.workspaceId, target.conversationId);
+    } catch (error) {
+      logger.warn('Failed to open discussion from notification click', { error });
+    }
+    return;
+  }
+
   // Chief-of-staff completions: never navigate to the hidden chief workspace
   // page — open the homepage Assistant and select the chat thread.
   if (data.chief === true || data.workspaceId === CHIEF_WORKSPACE_ID) {
@@ -103,7 +133,7 @@ export async function handleNotificationNavigate(
   }
 
   try {
-    await navigateToRoute(`/workspace/${encodeURIComponent(data.workspaceId)}`);
+    if (!(await openAndShowWorkspace(data.workspaceId))) return;
     if (data.agentId && generation === navigationGeneration) {
       appStore.dispatch(openAgentTabRequested(data.workspaceId, { agentId: data.agentId }));
     }

@@ -529,6 +529,56 @@ describe('chatSendSaga', () => {
     await run.task.toPromise();
   });
 
+  // Assistant chats name themselves through the daemon's first-turn naming
+  // instruction (`ws.workspace.setAgentName`), like workspace agents; the
+  // renderer must not pre-empt that by renaming to the message text.
+  it('leaves a placeholder-named Assistant chat for the agent to name after a direct send', async () => {
+    const chiefWorkspaceId = '__chief__';
+    mocks.send.mockResolvedValue(undefined);
+    const run = harness(
+      session({ workspaceId: chiefWorkspaceId, name: 'New chat', nameExplicitlySet: false }),
+      undefined,
+      null,
+    );
+
+    run.channel.put(sendMessage(AGENT, { wsId: chiefWorkspaceId, text: 'Plan my week' }));
+    await vi.waitFor(() => expect(mocks.send).toHaveBeenCalledTimes(1));
+    await settle();
+
+    expect(mocks.rename).not.toHaveBeenCalled();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('leaves a placeholder-named Assistant chat for the agent to name after a queued send', async () => {
+    const chiefWorkspaceId = '__chief__';
+    mocks.queue.mockResolvedValue({
+      success: true,
+      turnId: 'turn-queued',
+      queuedMessage: { id: 'queued-1', content: 'Plan my week', timestamp: 1 },
+    });
+    const run = harness(
+      session({
+        workspaceId: chiefWorkspaceId,
+        name: 'New chat',
+        nameExplicitlySet: false,
+        status: AgentStatus.Active,
+        isStreaming: true,
+        isProcessing: true,
+      }),
+      undefined,
+      null,
+    );
+
+    run.channel.put(sendMessage(AGENT, { wsId: chiefWorkspaceId, text: 'Plan my week' }));
+    await vi.waitFor(() => expect(mocks.queue).toHaveBeenCalledTimes(1));
+    await settle();
+
+    expect(mocks.rename).not.toHaveBeenCalled();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('lets stop bypass a blocked send while ordinary same-agent commands remain FIFO', async () => {
     const gates = Array.from({ length: 3 }, () => {
       let resolve!: () => void;
