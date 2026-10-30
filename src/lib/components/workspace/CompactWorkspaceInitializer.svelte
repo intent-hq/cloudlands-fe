@@ -3396,8 +3396,14 @@
         </div>
         <!-- Setup script -->
         <div class="grid gap-2">
+          <SetupScriptTrigger
+            presentation="form"
+            value={setupScriptDisplayName(setupScriptName, setupScriptNameSource)}
+            loading={isRepoConfigLoading}
+            expanded={showSetupScript}
+            onOpen={() => (showSetupScript = true)}
+          />
           <SetupScriptModal
-            presentation="popover"
             bind:open={showSetupScript}
             repoPath={repoType === 'gitlab' ? '' : repoPath}
             repositoryKey={setupScriptRepoKey ?? undefined}
@@ -3413,18 +3419,7 @@
               setupScriptExplicit = true;
             }}
             onClose={() => (showSetupScript = false)}
-          >
-            {#snippet trigger(triggerProps)}
-              <SetupScriptTrigger
-                {triggerProps}
-                presentation="form"
-                value={setupScriptDisplayName(setupScriptName, setupScriptNameSource)}
-                loading={isRepoConfigLoading}
-                expanded={showSetupScript}
-                onOpen={() => (showSetupScript = true)}
-              />
-            {/snippet}
-          </SetupScriptModal>
+          />
           {#if repoConfigError}
             <p class="text-sm text-subtle" role="status">
               {m.workspace_setupScript_configUnavailable_description()}

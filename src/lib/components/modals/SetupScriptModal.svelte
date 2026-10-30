@@ -91,7 +91,7 @@
   });
 
   $effect(() => {
-    if (!open || presentation !== 'popover') return;
+    if (!open) return;
     return pushEscapeLayer((event) => {
       if (
         isTextEntryTarget(event.target) ||
