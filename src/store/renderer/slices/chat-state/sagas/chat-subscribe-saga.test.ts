@@ -2736,6 +2736,60 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     expect(selectAgentSession.select(appStore.state, agentId)?.isWaitingOnTool).toBe(true);
   });
 
+  it("keeps a queue-drained turn live when the previous turn's terminal frame lands after the drain", () => {
+    // End-of-turn drain wire order (PROTOCOL §6.5): agent:stream:end (old
+    // turn) → agent:queue:processing, which opens liveTurnOpen stamped with
+    // its daemon timestamp → the ordered chat lane's old terminal frame.
+    const agentId = 'agent-queue-drained-turn';
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    sub.handler(transcript([makeMessage('old-answer', 'old', { isStreaming: true })], true));
+    appStore.dispatch(
+      updateSession(agentId, {
+        isStreaming: false,
+        isProcessing: false,
+        liveTurnOpen: true,
+        liveTurnOpenedAt: '2026-01-01T00:00:02.000Z',
+      }),
+    );
+    sub.handler(
+      transcript([makeMessage('old-answer', 'done', { streamingComplete: true, seq: 1 })]),
+    );
+    expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(true);
+    expect(selectAgentSession.select(appStore.state, agentId)?.liveTurnOpen).toBe(true);
+  });
+
+  it('settles a queue-drained turn from a completed idle snapshot when its live stream events were missed', () => {
+    // processing opens liveTurnOpen → connection drops through the whole turn
+    // (no chunk / agent:stream:end / agent:idle observed) → recovery delivers
+    // the completed idle transcript including the drained turn's reply.
+    const agentId = 'agent-queue-drained-recovered';
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    sub.handler(transcript([makeMessage('old-answer', 'old', { isStreaming: true })], true));
+    appStore.dispatch(
+      updateSession(agentId, {
+        isStreaming: false,
+        isProcessing: false,
+        liveTurnOpen: true,
+        liveTurnOpenedAt: '2026-01-01T00:00:02.000Z',
+      }),
+    );
+    sub.handler({
+      ...transcript([
+        makeMessage('old-answer', 'done', { streamingComplete: true, seq: 1 }),
+        makeMessage('drained-answer', 'reply', {
+          streamingComplete: true,
+          seq: 3,
+          timestamp: '2026-01-01T00:00:05.000Z',
+        }),
+      ]),
+      fromSnapshot: true,
+    });
+    expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(false);
+    expect(selectAgentSession.select(appStore.state, agentId)?.liveTurnOpen).toBe(false);
+  });
+
   it('starts streaming when the daemon-started turn opens before the first live snapshot', () => {
     // Build Smoke trace order: agent:status-changed (active) opens the live
     // turn, then the first chat snapshot already reports isStreaming with only

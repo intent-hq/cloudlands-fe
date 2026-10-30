@@ -4373,14 +4373,13 @@ describe('daemonEventsBridge (queue drain-start — agent:queue:processing opens
 
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
     const session = readSession();
-    expect(session?.isStreaming).toBe(true);
-    expect(session?.isProcessing).toBe(true);
+    expect(session?.liveTurnOpen).toBe(true);
+    // Daemon-owned liveness only: the send-path flags stay untouched.
+    expect(session?.isStreaming).toBe(false);
+    expect(session?.isProcessing).toBe(false);
     // The drained row arrives on its own `agent:message` echo; the drain-start
     // signal never fabricates one.
     expect((session?.messages ?? []).filter((m) => m.role === 'user')).toEqual([]);
-    expect(appStore.state.chatState.byAgentId[AGENT].streamingStartTime).toEqual(
-      expect.any(Number),
-    );
   });
 
   it('opens the turn for a batch flush carrying queuedMessages', async () => {
@@ -4404,45 +4403,47 @@ describe('daemonEventsBridge (queue drain-start — agent:queue:processing opens
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
   });
 
-  it('clears a stale failure banner from the previous turn', async () => {
+  it("stamps the drain frame's daemon timestamp as the live-turn ordering signal", async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
-    appStore.dispatch(chatSendFailed(AGENT, 'previous turn failed'));
-    expect(appStore.state.chatState.byAgentId[AGENT].error).toBe('previous turn failed');
 
     processing(handler);
 
-    expect(appStore.state.chatState.byAgentId[AGENT].error).toBeNull();
+    // The chat-subscribe snapshot guard compares this against the old turn's
+    // terminal row, so a late idle snapshot cannot close the drained turn.
+    expect(readSession()?.liveTurnOpen).toBe(true);
+    expect(readSession()?.liveTurnOpenedAt).toBe('2026-01-02T00:00:00.000Z');
   });
 
-  it('a duplicate processing frame for the same turnId does not reset the Thinking timer or status lines', async () => {
+  it('a replayed frame mid-turn leaves the Thinking timer and status lines untouched', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
     processing(handler);
     statusEvent(handler);
-    const startedAt = appStore.state.chatState.byAgentId[AGENT].streamingStartTime;
     const statusEventsBefore = readStatusEvents();
     expect(statusEventsBefore.length).toBeGreaterThan(0);
 
-    // Recovery re-admission / replay of the same provider turn.
     processing(handler, { messageId: 'q-recovered' });
 
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
     expect(readStatusEvents()).toEqual(statusEventsBefore);
-    expect(appStore.state.chatState.byAgentId[AGENT].streamingStartTime).toBe(startedAt);
   });
 
-  it('a later drain with a new turnId starts a fresh turn', async () => {
+  it('does not restart a local send that the daemon auto-queued and then drained', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
-    processing(handler);
+    // Turn-startup race: the send path opened the turn, the daemon queued it.
+    appStore.dispatch(chatSendStarted(AGENT, WS));
     statusEvent(handler);
-    expect(readStatusEvents().length).toBeGreaterThan(0);
+    const startedAt = appStore.state.chatState.byAgentId[AGENT].streamingStartTime;
+    const statusEventsBefore = readStatusEvents();
+    expect(startedAt).toEqual(expect.any(Number));
 
-    processing(handler, { messageId: 'q-2', turnId: 'turn-drain-2' });
+    processing(handler);
 
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
-    expect(readStatusEvents()).toEqual([]);
+    expect(appStore.state.chatState.byAgentId[AGENT].streamingStartTime).toBe(startedAt);
+    expect(readStatusEvents()).toEqual(statusEventsBefore);
   });
 
   it('a legacy frame without turnId still opens the turn', async () => {
@@ -4496,6 +4497,18 @@ describe('daemonEventsBridge (queue drain-start — agent:queue:processing opens
     handler(foreign);
 
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+  });
+
+  it('never fabricates a placeholder session for an agent that is not hydrated yet', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    processing(handler, { agentId: 'agent-unknown' });
+
+    const state = appStore.state as {
+      agentSessions?: { byAgentId: Record<string, StoredAgentSession> };
+    };
+    expect(state.agentSessions?.byAgentId['agent-unknown']).toBeUndefined();
   });
 });
 
