@@ -95,7 +95,7 @@ test('a missing repository keeps creation disabled without losing the draft', as
   const prompt = dialog.locator('[contenteditable=true]');
   await prompt.fill('Start a new project.');
   await expect(dialog.getByRole('button', { name: /Create workspace/ })).toBeDisabled();
-  await expect(dialog.getByRole('button', { name: /^Select a branch:/ })).toBeDisabled();
+  await expect(dialog.getByRole('button', { name: /^Select a branch:/ })).toHaveCount(0);
   await expect(prompt).toHaveText('Start a new project.');
   await testInfo.attach('missing-repository', {
     body: await page.screenshot({ path: testInfo.outputPath('missing-repository.png') }),

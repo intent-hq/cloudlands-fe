@@ -19,7 +19,7 @@ import {
 import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
 
-export type WorkspaceFormScenario = 'default' | 'long' | 'empty' | 'config-error' | 'orchestration';
+type WorkspaceFormScenario = 'default' | 'long' | 'empty' | 'config-error' | 'orchestration';
 
 export function setupWorkspaceFormPreview(scenario: WorkspaceFormScenario) {
   const restores: Array<() => void> = [];
