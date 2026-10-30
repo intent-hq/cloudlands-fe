@@ -14,19 +14,31 @@
   --sidebar-section-offset: -12px;
 }
 
-/* Cmd-click stacks sections: rows share the panel, short ones stop at their content. */
+/* Cmd-click stacks sections as separate cards: rows share the panel, short ones fit their content. */
+[data-sidebar-panels] {
+  --sidebar-card-surface: var(--color-selected);
+}
+
+.dark [data-sidebar-panels] {
+  --sidebar-card-surface: var(--color-surface-4);
+}
+
 [data-sidebar-panels][data-stacked] {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-auto-rows: minmax(7.5rem, max-content);
+  gap: 0.5rem;
   overflow-y: auto;
   scrollbar-width: none;
   --sidebar-section-offset: 0px;
   --sidebar-section-rise: 6px;
 }
 
-[data-sidebar-panels][data-stacked] .sidebar-section[data-active] ~ .sidebar-section[data-active] {
-  border-top: 1px solid hsl(var(--border) / 0.5);
+[data-sidebar-panels][data-stacked] .sidebar-section {
+  overflow: hidden;
+  border-radius: var(--radius-large);
+  background-color: var(--sidebar-card-surface);
+  box-shadow: inset 0 0 0 1px hsl(var(--border) / 0.5);
 }
 
 [data-sidebar-panels][data-floating='true'] .sidebar-section {

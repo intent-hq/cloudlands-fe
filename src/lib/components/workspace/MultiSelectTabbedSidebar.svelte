@@ -774,7 +774,8 @@
   </div>
   <div
     class={cn(
-      'relative min-h-0 flex-1 overflow-hidden rounded-(--radius-large) bg-selected ring-1 ring-inset ring-border/50 dark:bg-surface-4',
+      'relative min-h-0 flex-1 overflow-hidden rounded-(--radius-large)',
+      !stacked && 'bg-selected ring-1 ring-inset ring-border/50 dark:bg-surface-4',
       !panelOnly && 'mx-3 mt-2 mb-3',
     )}
     data-sidebar-panels
