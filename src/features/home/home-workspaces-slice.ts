@@ -10,12 +10,15 @@ export interface HomeWorkspacesState extends HomeConfiguration {
   selectedId: string | null;
   persistenceScope: string | null;
   persistenceError: boolean;
+  /** Agent the user explicitly picked in each workspace's Home preview, by workspace ID. */
+  previewAgentIds: Record<string, string>;
 }
 const initialState: HomeWorkspacesState = {
   ...defaultHomeConfiguration(),
   selectedId: null,
   persistenceScope: null,
   persistenceError: false,
+  previewAgentIds: {},
 };
 export const updateHomeWorkspaceView = createAction<[changes: Partial<HomeWorkspacesState>]>(
   'homeWorkspaces/updateView',
@@ -26,6 +29,15 @@ homeWorkspacesReducer.with(updateHomeWorkspaceView, (state, { payload: [changes]
   ...state,
   ...changes,
 }));
+// A dedicated action (not updateView) keeps picks out of the persisted-preference writes.
+export const setHomePreviewAgent = createAction<[workspaceId: string, agentId: string]>(
+  'homeWorkspaces/setPreviewAgent',
+);
+homeWorkspacesReducer.with(setHomePreviewAgent, (state, { payload: [workspaceId, agentId] }) =>
+  state.previewAgentIds[workspaceId] === agentId
+    ? state
+    : { ...state, previewAgentIds: { ...state.previewAgentIds, [workspaceId]: agentId } },
+);
 homeWorkspacesReducer.with(resetHomeWorkspaceView, (state) => ({
   ...initialState,
   persistenceScope: state.persistenceScope,

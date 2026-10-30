@@ -132,6 +132,7 @@ import {
   setActiveAgentId,
   setAgents,
   setAgentsLoaded,
+  agentsReadSettled,
   setDelegatedCounts,
   setDelegatedParentLoaded,
   setIsLoadingDelegatedParent,
@@ -1017,6 +1018,7 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
       yield* put(bulkUpsertSessions(agents, { listProjection: true }));
     }
   }
+  yield* put(agentsReadSettled(workspaceId));
 
   const activeAgentId = yield* selectActiveAgentId.effect(workspaceId);
   const agentIds = yield* selectWorkspaceAgentIds.effect(workspaceId);

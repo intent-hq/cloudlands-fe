@@ -36,6 +36,12 @@ export interface WorkspaceAgentState {
   /** Ordered list of foreground agent IDs belonging to this workspace. */
   foregroundAgentIds: AgentId[];
   agentsLoaded: boolean;
+  /**
+   * Bumped each time a full agent-list read has stored its rows and sessions. Unlike
+   * `agentsLoaded` (set before the rows land, and by partial reads), a change proves
+   * the agent data is at least as fresh as that read.
+   */
+  agentsReadRevision: number;
   isLoadingAgents: boolean;
   initialAgentId: string | null;
   recentlyCreatedAgents: string[];
@@ -276,6 +282,7 @@ export const emptyWorkspaceAgentState: WorkspaceAgentState = {
   agentIds: [],
   foregroundAgentIds: [],
   agentsLoaded: false,
+  agentsReadRevision: 0,
   isLoadingAgents: false,
   initialAgentId: null,
   recentlyCreatedAgents: [],
@@ -322,6 +329,8 @@ const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
 export const setAgents = createAction<[wsId: string, agents: AgentSession[]]>(
   'workspaceAgents/setAgents',
 );
+/** A full agent-list read finished storing its rows and sessions. */
+export const agentsReadSettled = createAction<[wsId: string]>('workspaceAgents/agentsReadSettled');
 export const addAgent = createAction<[wsId: string, agent: AgentSession]>(
   'workspaceAgents/addAgent',
 );
@@ -798,6 +807,13 @@ workspaceAgentsReducer.with(setAgentsLoaded, (state, { payload: [wsId, agentsLoa
     return state;
   }
   return setWorkspaceState(state, wsId, { ...workspaceState, agentsLoaded });
+});
+workspaceAgentsReducer.with(agentsReadSettled, (state, { payload: [wsId] }) => {
+  const workspaceState = getWorkspaceState(state, wsId);
+  return setWorkspaceState(state, wsId, {
+    ...workspaceState,
+    agentsReadRevision: workspaceState.agentsReadRevision + 1,
+  });
 });
 workspaceAgentsReducer.with(setIsLoadingAgents, (state, { payload: [wsId, isLoadingAgents] }) => {
   const workspaceState = getWorkspaceState(state, wsId);
