@@ -3,7 +3,7 @@ import { actionChannel, call, flush, put, race, take } from 'typed-redux-saga';
 
 import type { GitHubAuthRequiredEvent } from '$features/github-auth/types';
 import { isElectron } from '$lib/electron-bridge';
-import { navigateToRoute } from '$lib/utils/navigation.client';
+import { openAndShowWorkspace } from '$lib/utils/show-workspace';
 import {
   openGitCredentialsModal,
   openGitHubAuthModal,
@@ -89,7 +89,9 @@ async function toastCompleted(
     if (showOpen)
       options.action = {
         label: 'Open',
-        onClick: () => navigateToRoute(`/workspace/${data.workspaceId}`),
+        onClick: async () => {
+          await openAndShowWorkspace(data.workspaceId);
+        },
       };
     notify.success(
       messages[data.operationType] ?? `✅ Git operation completed in "${workspaceName}"`,
@@ -131,7 +133,9 @@ async function toastFailed(
     if (activeWorkspaceId && activeWorkspaceId !== data.workspaceId) {
       options.action = {
         label: 'Open',
-        onClick: () => navigateToRoute(`/workspace/${data.workspaceId}`),
+        onClick: async () => {
+          await openAndShowWorkspace(data.workspaceId);
+        },
       };
     }
     notify.error(

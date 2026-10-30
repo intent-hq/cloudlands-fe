@@ -34,6 +34,7 @@ import {
 } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import { store as appStore } from '$store/renderer/store';
 import { isSettingsRoute, navigateToRoute, SETTINGS_PREV_PATH_KEY } from './navigation.client';
+import { navigateToAppRoute, openAndShowWorkspace } from './show-workspace';
 
 const logger = new Logger('WorkspaceNavigation');
 
@@ -399,7 +400,9 @@ export function getSettingsPreviousPath(): string {
 export async function navigateBackFromSettings(): Promise<void> {
   const prevPath = getSettingsPreviousPath();
   logger.info('[navigateBackFromSettings] Navigating back to:', prevPath);
-  await goto(prevPath);
+  // A workspace destination may have been closed meanwhile (or is the
+  // first-workspace fallback): navigateToAppRoute also opens its tab.
+  await navigateToAppRoute(prevPath);
 }
 
 /**
@@ -419,9 +422,12 @@ function getFirstAvailableWorkspace(excludedWorkspaceId?: string) {
 /** Navigate to an available workspace, or the shared empty-window destination when none exist. */
 export async function navigateToFirstWorkspace(): Promise<void> {
   const workspace = getFirstAvailableWorkspace();
-  const target = workspace
-    ? `/workspace/${workspace.id}`
-    : resolveEmptyWindowDestination(selectWorkspaceItems.select(appStore.state));
+  if (workspace) {
+    logger.info('[navigateToFirstWorkspace] Showing workspace:', workspace.id);
+    await openAndShowWorkspace(workspace.id);
+    return;
+  }
+  const target = resolveEmptyWindowDestination(selectWorkspaceItems.select(appStore.state));
   logger.info('[navigateToFirstWorkspace] Navigating to:', target);
   await goto(target);
 }
@@ -429,12 +435,15 @@ export async function navigateToFirstWorkspace(): Promise<void> {
 /** Navigate away from a workspace after it has been archived or deleted. */
 export async function navigateAfterWorkspaceRemoval(removedWorkspaceId: string): Promise<void> {
   const workspace = getFirstAvailableWorkspace(removedWorkspaceId);
-  const target = workspace
-    ? `/workspace/${workspace.id}`
-    : resolveEmptyWindowDestination(
-        selectWorkspaceItems.select(appStore.state),
-        removedWorkspaceId,
-      );
+  if (workspace) {
+    logger.info('[navigateAfterWorkspaceRemoval] Showing workspace:', workspace.id);
+    await openAndShowWorkspace(workspace.id);
+    return;
+  }
+  const target = resolveEmptyWindowDestination(
+    selectWorkspaceItems.select(appStore.state),
+    removedWorkspaceId,
+  );
   logger.info('[navigateAfterWorkspaceRemoval] Navigating to:', target);
   await goto(target);
 }

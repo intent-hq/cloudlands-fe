@@ -207,6 +207,8 @@ describe('encoder (two windows, one owner)', () => {
     const manager = makeFakeManager();
     const navigateA = vi.fn(() => Promise.resolve());
     const navigateB = vi.fn(() => Promise.resolve());
+    const showWorkspaceA = vi.fn((_workspaceId: string) => Promise.resolve(true));
+    const showWorkspaceB = vi.fn((_workspaceId: string) => Promise.resolve(true));
     const dispatchA = vi.fn();
     const dispatchB = vi.fn();
     const getCurrentWorkspaceId = () => 'ws-2';
@@ -214,12 +216,14 @@ describe('encoder (two windows, one owner)', () => {
     teardowns.push(
       installHardwareConsoleEncoder(asManager(manager), {
         navigate: navigateA,
+        showWorkspace: showWorkspaceA,
         dispatch: dispatchA,
         isOwner: isOwnerA,
         getCurrentWorkspaceId,
       }),
       installHardwareConsoleEncoder(asManager(manager), {
         navigate: navigateB,
+        showWorkspace: showWorkspaceB,
         dispatch: dispatchB,
         isOwner: isOwnerB,
         getCurrentWorkspaceId,
@@ -229,19 +233,21 @@ describe('encoder (two windows, one owner)', () => {
     dispatchB.mockClear();
 
     manager.detent('ENC_CW');
-    expect(navigateA).toHaveBeenCalledTimes(1);
-    expect(navigateA).toHaveBeenCalledWith('/workspace/ws-1');
+    expect(showWorkspaceA).toHaveBeenCalledTimes(1);
+    expect(showWorkspaceA).toHaveBeenCalledWith('ws-1');
     expect(dispatchA).toHaveBeenCalledWith(expect.objectContaining({ payload: ['ws-1'] }));
-    expect(navigateB).not.toHaveBeenCalled();
+    expect(showWorkspaceB).not.toHaveBeenCalled();
 
     manager.keyDown('ENC_CLK');
+    expect(navigateA).toHaveBeenCalledWith('/');
     expect(dispatchA.mock.calls.length).toBeGreaterThan(0);
     expect(dispatchB).not.toHaveBeenCalled();
+    expect(navigateB).not.toHaveBeenCalled();
 
     owner = 'B';
     manager.detent('ENC_CW');
-    expect(navigateA).toHaveBeenCalledTimes(2);
-    expect(navigateB).toHaveBeenCalledTimes(1);
+    expect(showWorkspaceA).toHaveBeenCalledTimes(1);
+    expect(showWorkspaceB).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -5,7 +5,7 @@
   import { homeWorkspaceMotion } from './home-workspace-motion.svelte';
   import { homeSidebarMotion } from './home-sidebar-motion';
   import './home.css';
-  import { goto } from '$app/navigation';
+  import { openAndShowWorkspace } from '$lib/utils/show-workspace';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import SidebarOverflowMenu from '$lib/components/ui/sidebar-context-menu/SidebarOverflowMenu.svelte';
   import {
@@ -19,7 +19,6 @@
     selectWorkspaceLabelsInUse,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { buildHomeListGroups } from './home-workspace-labels';
-  import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import {
     createHomeDoubleClickOpener,
     openHomeWorkspaceFromEvent,
@@ -116,8 +115,7 @@
   let contextMenu = $state<(SidebarContextPosition & { workspace: Workspace }) | null>(null);
   function openWorkspace(id: string) {
     contextMenu = null;
-    store.dispatch(openWorkspaceTab(id));
-    void goto(`/workspace/${encodeURIComponent(id)}`);
+    void openAndShowWorkspace(id);
   }
   function openSelectedWorkspace(id: string) {
     updateView({ selectedId: id });

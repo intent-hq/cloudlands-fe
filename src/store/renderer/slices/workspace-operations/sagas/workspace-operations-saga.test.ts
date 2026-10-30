@@ -38,7 +38,11 @@ vi.mock('../../workspace/utils/workspace.client', () => ({
 vi.mock('$features/workspace/navigate-away-if-viewing', () => ({
   navigateAwayIfViewing: mocks.navigate,
 }));
-vi.mock('$lib/utils/navigation.client', () => ({ navigateToRoute: mocks.navigateToRoute }));
+vi.mock('$lib/utils/navigation.client', async () => {
+  const { landingNavigation } =
+    await import('$store/renderer/utils/test-helpers/landing-navigation');
+  return { navigateToRoute: landingNavigation(mocks.navigateToRoute) };
+});
 vi.mock('$lib/utils/delete-warning-utils', () => ({
   getActiveWorkNames: mocks.getActiveWorkNames,
 }));
@@ -894,7 +898,7 @@ describe('workspaceOperationsSaga', () => {
     );
     latestUndo()?.();
     await settle();
-    // Undo focuses the restored workspace: tab reopen + navigation
+    // Undo shows the restored workspace through the shared helper: navigation, then tab
     expect(run.dispatch.mock.calls.flat()).toContainEqual({
       type: 'tabState/openWorkspaceTab',
       payload: ['ws-1'],

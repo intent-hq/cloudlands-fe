@@ -12,7 +12,11 @@ import { handleNotificationNavigate } from './notification-navigation';
 const mocks = vi.hoisted(() => ({
   route: vi.fn<(route: string) => Promise<void>>(async () => {}),
 }));
-vi.mock('$lib/utils/navigation.client', () => ({ navigateToRoute: mocks.route }));
+vi.mock('$lib/utils/navigation.client', async () => {
+  const { landingNavigation } =
+    await import('$store/renderer/utils/test-helpers/landing-navigation');
+  return { navigateToRoute: landingNavigation(mocks.route) };
+});
 
 describe('handleNotificationNavigate', () => {
   let dispose: () => void;
