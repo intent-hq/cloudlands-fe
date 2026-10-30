@@ -22,7 +22,8 @@
   import SecretRequestCard from './SecretRequestCard.svelte';
   import SecretRequestDismissDialog from './SecretRequestDismissDialog.svelte';
   import {
-    isSecretStackCollapsed,
+    awaitingSecretRequests,
+    showSecretStackChip,
     visibleSecretRequests,
     type SecretRequestTranscript,
   } from './pending-secret-requests';
@@ -46,37 +47,99 @@
     ),
   );
 
-  const visibleIds = $derived(visible.map(({ request }) => request.requestId));
-  const collapsed = $derived(
-    isSecretStackCollapsed(visibleIds, $secretRequests$.collapsed[agentId]),
-  );
-  // The chip offers Dismiss only for a single pending request, like the Q&A
+  const answers = $derived($secretRequests$.answers);
+  const collapsedKeys = $derived($secretRequests$.collapsed[agentId]);
+  const awaiting = $derived(awaitingSecretRequests(visible, answers));
+  const collapsed = $derived(showSecretStackChip(visible, answers, collapsedKeys));
+  // The chip offers Dismiss only for a single waiting request, like the Q&A
   // chip; with several, the user expands the stack to choose.
   const chipRequest = $derived.by(() => {
-    if (visible.length !== 1) return null;
-    const [only] = visible;
+    if (!collapsed || awaiting.length !== 1) return null;
+    const [only] = awaiting;
     if (only.state !== 'pending') return null;
-    const status = $secretRequests$.answers[only.request.requestId]?.status;
-    return status === undefined || status === 'failed' ? only.request : null;
+    return answers[only.request.requestId]?.status === 'sending' ? null : only.request;
   });
-  let confirmingChipDismiss = $state(false);
+  // The chip's dismiss confirmation is bound to the exact request it was
+  // opened for; it closes as soon as the chip shows anything else.
+  let chipDismissTarget = $state<{
+    workspaceId: string;
+    agentId: string;
+    requestId: string;
+    name: string;
+  } | null>(null);
+  let stackElement = $state<HTMLDivElement>();
+  let focusAfter = $state<'chip' | 'cards' | null>(null);
+
+  $effect(() => {
+    const target = chipDismissTarget;
+    if (
+      target &&
+      (target.workspaceId !== workspaceId ||
+        target.agentId !== agentId ||
+        target.requestId !== chipRequest?.requestId)
+    )
+      chipDismissTarget = null;
+  });
+
+  // Nothing left to show: forget the hidden snapshot so it cannot re-collapse
+  // a later stack.
+  $effect(() => {
+    if (visible.length === 0 && collapsedKeys)
+      untrack(() => appStore.dispatch(secretRequestsExpanded(agentId)));
+  });
+
+  // Keep keyboard focus with the user's action: Hide focuses the chip,
+  // expanding focuses the first card's input.
+  $effect(() => {
+    const target = focusAfter;
+    const root = stackElement;
+    void collapsed;
+    if (!target || !root) return;
+    const selector =
+      target === 'chip'
+        ? '[data-testid="secret-request-expand"]'
+        : '[data-testid="secret-request-input"]:not([disabled]), [data-testid="secret-request-card"] button';
+    const element = root.querySelector<HTMLElement>(selector);
+    if (element) {
+      element.focus();
+      focusAfter = null;
+    }
+  });
 
   function hide(): void {
-    appStore.dispatch(secretRequestsCollapsed(agentId, visibleIds));
+    focusAfter = 'chip';
+    appStore.dispatch(
+      secretRequestsCollapsed(
+        agentId,
+        visible.map(({ cardKey }) => cardKey),
+      ),
+    );
   }
 
   function expand(): void {
+    focusAfter = 'cards';
     appStore.dispatch(secretRequestsExpanded(agentId));
   }
 
-  function dismissChipRequest(): void {
-    confirmingChipDismiss = false;
+  function openChipDismiss(): void {
     if (!chipRequest) return;
+    chipDismissTarget = {
+      workspaceId,
+      agentId,
+      requestId: chipRequest.requestId,
+      name: chipRequest.name,
+    };
+  }
+
+  function dismissChipRequest(): void {
+    const target = chipDismissTarget;
+    chipDismissTarget = null;
+    if (!target || target.requestId !== chipRequest?.requestId) return;
     appStore.dispatch(
       secretAnswerRequested({
-        workspaceId,
-        agentId,
-        requestId: chipRequest.requestId,
+        workspaceId: target.workspaceId,
+        agentId: target.agentId,
+        requestId: target.requestId,
         outcome: 'declined',
       }),
     );
@@ -100,7 +163,11 @@
 </script>
 
 {#if visible.length > 0}
-  <div class="flex w-full flex-col gap-2 px-4 pb-2" data-testid="secret-request-cards">
+  <div
+    bind:this={stackElement}
+    class="flex w-full flex-col gap-2 px-4 pb-2"
+    data-testid="secret-request-cards"
+  >
     {#if collapsed}
       <div
         class="flex w-full min-w-0 items-center rounded-(--radius-large) border border-border bg-card"
@@ -115,9 +182,9 @@
           data-testid="secret-request-expand"
         >
           <span class="min-w-0 flex-1 truncate type-caption font-medium text-foreground">
-            {visible.length === 1
-              ? m.chat_secretRequest_title_label({ name: visible[0].request.name })
-              : m.chat_secretRequest_collapsedMany_label({ count: visible.length })}
+            {awaiting.length === 1
+              ? m.chat_secretRequest_collapsed_one({ name: awaiting[0].request.name })
+              : m.chat_secretRequest_collapsed_many({ count: awaiting.length })}
           </span>
           <span class="min-w-0 max-w-[40%] truncate type-caption text-muted-foreground">
             {m.chat_secretRequest_clickToExpand_label()}
@@ -130,7 +197,7 @@
               size="xs"
               class="text-danger"
               title={m.chat_secretRequest_dismiss_tooltip()}
-              onclick={() => (confirmingChipDismiss = true)}
+              onclick={openChipDismiss}
               data-testid="secret-request-chip-dismiss"
             >
               {m.chat_secretRequest_dismiss_label()}
@@ -146,11 +213,11 @@
   </div>
 {/if}
 
-{#if chipRequest}
+{#if chipDismissTarget}
   <SecretRequestDismissDialog
-    open={confirmingChipDismiss}
-    name={chipRequest.name}
+    open
+    name={chipDismissTarget.name}
     onConfirm={dismissChipRequest}
-    onCancel={() => (confirmingChipDismiss = false)}
+    onCancel={() => (chipDismissTarget = null)}
   />
 {/if}

@@ -13,6 +13,8 @@ import { getSecretRequestNotice } from './secret-request-notice';
 interface TranscriptSecretRequest extends SecretRequest {
   /** A real user message came after the card (the user has moved on). */
   supersededByUser: boolean;
+  /** The message carrying the latest card for this request. */
+  messageId: string;
 }
 
 /** What the loaded transcript says about secret requests (PROTOCOL §5.56). */
@@ -45,7 +47,7 @@ export function deriveSecretRequestTranscript(
   messages: readonly AgentMessage[],
 ): SecretRequestTranscript {
   const answered = new Set<string>();
-  const open = new Map<string, { request: SecretRequest; index: number }>();
+  const open = new Map<string, { request: SecretRequest; index: number; messageId: string }>();
   let lastUserIndex = -1;
   messages.forEach((message, index) => {
     if (message.role !== 'assistant') {
@@ -59,14 +61,18 @@ export function deriveSecretRequestTranscript(
       const request = getSecretRequestFromResourceBlock(block);
       if (!request) continue;
       open.delete(request.requestId);
-      open.set(request.requestId, { request, index });
+      open.set(request.requestId, { request, index, messageId: message.id });
     }
   });
   if (open.size === 0 && answered.size === 0) return EMPTY_TRANSCRIPT;
   return {
     open: [...open.values()]
       .filter(({ request }) => !answered.has(request.requestId))
-      .map(({ request, index }) => ({ ...request, supersededByUser: lastUserIndex > index })),
+      .map(({ request, index, messageId }) => ({
+        ...request,
+        supersededByUser: lastUserIndex > index,
+        messageId,
+      })),
     answered,
   };
 }
@@ -98,6 +104,11 @@ export function secretRequestCardState(
 export interface VisibleSecretRequest {
   request: SecretRequest;
   state: SecretRequestCardState;
+  /**
+   * Identifies this showing of the card: the request id plus the message
+   * carrying it, so a repeat request (same id, newer message) counts as new.
+   */
+  cardKey: string;
 }
 
 /**
@@ -120,14 +131,19 @@ export function visibleSecretRequests(
     if (hidden[request.requestId]) continue;
     const state = secretRequestCardState(request.requestId, entry);
     if (state === 'expired' && request.supersededByUser) continue;
-    const { requestId, agentId: owner, name, reason } = request;
-    visible.push({ request: { requestId, agentId: owner, name, reason }, state });
+    const { requestId, agentId: owner, name, reason, messageId } = request;
+    visible.push({
+      request: { requestId, agentId: owner, name, reason },
+      state,
+      cardKey: `${requestId}@${messageId}`,
+    });
   }
   for (const pending of entry?.listing?.pendingRequests ?? []) {
     if (shown.has(pending.requestId) || transcript.answered.has(pending.requestId)) continue;
     visible.push({
       request: { requestId: pending.requestId, agentId, name: pending.name, reason: '' },
       state: 'pending',
+      cardKey: pending.requestId,
     });
   }
   return visible;
@@ -135,13 +151,51 @@ export function visibleSecretRequests(
 
 /**
  * Whether the stack shows as the collapsed chip: the user hid it and every
- * card now showing was already showing then. A new request expands it, so
- * it is never missed; answered ones leaving keep it collapsed.
+ * card now showing (by card key) was already showing then. A new or repeated
+ * request expands it, so it is never missed; answered ones leaving keep it
+ * collapsed.
  */
 export function isSecretStackCollapsed(
-  visibleRequestIds: readonly string[],
-  collapsedRequestIds: readonly string[] | undefined,
+  visibleCardKeys: readonly string[],
+  collapsedCardKeys: readonly string[] | undefined,
 ): boolean {
-  if (!collapsedRequestIds || visibleRequestIds.length === 0) return false;
-  return visibleRequestIds.every((requestId) => collapsedRequestIds.includes(requestId));
+  if (!collapsedCardKeys || visibleCardKeys.length === 0) return false;
+  return visibleCardKeys.every((cardKey) => collapsedCardKeys.includes(cardKey));
+}
+
+/** A local answer status, as the stack needs it (from the store). */
+type LocalAnswers = Readonly<Record<string, { status: string } | undefined>>;
+
+/**
+ * The cards still waiting on the user: pending or checking per the listing,
+ * and not already answered locally. The collapsed chip names and counts only
+ * these, and offers Dismiss when there is exactly one.
+ */
+export function awaitingSecretRequests(
+  visible: readonly VisibleSecretRequest[],
+  answers: LocalAnswers,
+): VisibleSecretRequest[] {
+  return visible.filter(({ request, state }) => {
+    if (state !== 'pending' && state !== 'checking') return false;
+    const status = answers[request.requestId]?.status;
+    return status !== 'provided' && status !== 'declined' && status !== 'expired';
+  });
+}
+
+/**
+ * Whether the stack shows as the collapsed chip right now: the user hid it,
+ * nothing new appeared, something still waits on the user, and no send
+ * failed (a failure expands the stack so its error is seen).
+ */
+export function showSecretStackChip(
+  visible: readonly VisibleSecretRequest[],
+  answers: LocalAnswers,
+  collapsedCardKeys: readonly string[] | undefined,
+): boolean {
+  if (visible.some(({ request }) => answers[request.requestId]?.status === 'failed')) return false;
+  if (awaitingSecretRequests(visible, answers).length === 0) return false;
+  return isSecretStackCollapsed(
+    visible.map(({ cardKey }) => cardKey),
+    collapsedCardKeys,
+  );
 }

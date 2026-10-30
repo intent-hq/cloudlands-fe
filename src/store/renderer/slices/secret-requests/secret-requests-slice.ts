@@ -57,7 +57,7 @@ export const secretRequestHidden = createAction<[requestId: string]>(
 );
 
 /** Collapse one agent's card stack (like the Q&A card's Hide). */
-export const secretRequestsCollapsed = createAction<[agentId: string, requestIds: string[]]>(
+export const secretRequestsCollapsed = createAction<[agentId: string, cardKeys: string[]]>(
   'secretRequests/secretRequestsCollapsed',
 );
 
@@ -116,13 +116,10 @@ secretRequestsReducer.with(secretRequestHidden, (state, { payload: [requestId] }
   ...state,
   hidden: { ...state.hidden, [requestId]: true },
 }));
-secretRequestsReducer.with(
-  secretRequestsCollapsed,
-  (state, { payload: [agentId, requestIds] }) => ({
-    ...state,
-    collapsed: { ...state.collapsed, [agentId]: requestIds },
-  }),
-);
+secretRequestsReducer.with(secretRequestsCollapsed, (state, { payload: [agentId, cardKeys] }) => ({
+  ...state,
+  collapsed: { ...state.collapsed, [agentId]: cardKeys },
+}));
 secretRequestsReducer.with(secretRequestsExpanded, (state, { payload: [agentId] }) => {
   const { [agentId]: _expanded, ...collapsed } = state.collapsed;
   return { ...state, collapsed };

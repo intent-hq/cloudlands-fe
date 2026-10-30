@@ -25,8 +25,8 @@ export interface SecretRequestsState {
   /** Expired cards the user hid, per request id (this session only). */
   hidden: Record<string, true>;
   /**
-   * Per agent: the request ids showing when the user hid the card stack.
-   * The stack stays collapsed until a request outside this set appears.
+   * Per agent: the card keys showing when the user hid the card stack. The
+   * stack stays collapsed until a card outside this set appears.
    */
   collapsed: Record<string, string[]>;
 }

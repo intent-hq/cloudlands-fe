@@ -8,6 +8,7 @@ import { SECRET_REQUEST_RESOURCE_MIME_TYPE } from '$shared/types/secret-request-
 import { store as appStore } from '$store/renderer/store';
 import {
   secretAnswerRequested,
+  secretAnswerUpdated,
   secretListLoaded,
   secretRequestsExpanded,
 } from '$store/renderer/slices/secret-requests/secret-requests-slice';
@@ -116,5 +117,98 @@ describe('SecretRequestCards', () => {
       requestId: 'sec-c1',
       outcome: 'declined',
     });
+  });
+
+  it('Hide moves keyboard focus to the chip, and expanding moves it back to the card', async () => {
+    const agentId = 'agent-stack-focus';
+    pending(agentId, ['sec-f1', 'KEY_ONE']);
+    render(SecretRequestCards, {
+      props: { transcript: transcriptFor(['sec-f1', 'KEY_ONE']), workspaceId: 'ws-1', agentId },
+    });
+    const hideButton = screen.getByTestId('secret-request-hide');
+    hideButton.focus();
+    await fireEvent.click(hideButton);
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByTestId('secret-request-expand')),
+    );
+    await fireEvent.click(screen.getByTestId('secret-request-expand'));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByTestId('secret-request-input')),
+    );
+  });
+
+  it('a failed send expands a hidden stack and the chip dialog never reopens on its own', async () => {
+    const agentId = 'agent-stack-failed';
+    pending(agentId, ['sec-x1', 'KEY_ONE']);
+    render(SecretRequestCards, {
+      props: { transcript: transcriptFor(['sec-x1', 'KEY_ONE']), workspaceId: 'ws-1', agentId },
+    });
+    await fireEvent.click(screen.getByTestId('secret-request-hide'));
+    await fireEvent.click(await screen.findByTestId('secret-request-chip-dismiss'));
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    appStore.dispatch(secretAnswerUpdated('sec-x1', 'sending', 1));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    appStore.dispatch(secretAnswerUpdated('sec-x1', 'failed', 2));
+    await waitFor(() => expect(screen.getByTestId('secret-request-card')).toBeTruthy());
+    expect(screen.getByRole('alert')).toBeTruthy();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('closes the chip dismiss dialog when the chip moves to another request, without dismissing it', async () => {
+    const agentId = 'agent-stack-retarget';
+    const dispatch = vi.spyOn(appStore, 'dispatch');
+    pending(agentId, ['sec-a', 'KEY_A']);
+    const view = render(SecretRequestCards, {
+      props: { transcript: transcriptFor(['sec-a', 'KEY_A']), workspaceId: 'ws-1', agentId },
+    });
+    await fireEvent.click(screen.getByTestId('secret-request-hide'));
+    await fireEvent.click(await screen.findByTestId('secret-request-chip-dismiss'));
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    // Request A is replaced by B directly (A answered elsewhere, B asked);
+    // B is a new card, so the stack expands and the dialog must close.
+    pending(agentId, ['sec-b', 'KEY_B']);
+    await view.rerender({
+      transcript: transcriptFor(['sec-b', 'KEY_B']),
+      workspaceId: 'ws-1',
+      agentId,
+    });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(screen.getAllByTestId('secret-request-card')).toHaveLength(1));
+    // Hiding again for B must not resurrect a confirmation for B.
+    await fireEvent.click(screen.getByTestId('secret-request-hide'));
+    await screen.findByTestId('secret-request-chip');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(
+      dispatch.mock.calls.some(
+        ([action]) => (action as { type: string }).type === secretAnswerRequested.type,
+      ),
+    ).toBe(false);
+  });
+
+  it('closes the chip dismiss dialog when the panel switches to another agent', async () => {
+    const dispatch = vi.spyOn(appStore, 'dispatch');
+    pending('agent-stack-one', ['sec-o1', 'KEY_ONE']);
+    pending('agent-stack-two', ['sec-o1', 'KEY_ONE']);
+    const view = render(SecretRequestCards, {
+      props: {
+        transcript: transcriptFor(['sec-o1', 'KEY_ONE']),
+        workspaceId: 'ws-1',
+        agentId: 'agent-stack-one',
+      },
+    });
+    await fireEvent.click(screen.getByTestId('secret-request-hide'));
+    await fireEvent.click(await screen.findByTestId('secret-request-chip-dismiss'));
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    await view.rerender({
+      transcript: transcriptFor(['sec-o1', 'KEY_ONE']),
+      workspaceId: 'ws-1',
+      agentId: 'agent-stack-two',
+    });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(
+      dispatch.mock.calls.some(
+        ([action]) => (action as { type: string }).type === secretAnswerRequested.type,
+      ),
+    ).toBe(false);
   });
 });

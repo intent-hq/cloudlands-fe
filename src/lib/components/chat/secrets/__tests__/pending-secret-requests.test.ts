@@ -8,8 +8,10 @@ import {
 } from '$shared/types/secret-request-resource';
 import { prepareMessageBlocks } from '../../prepare-message-blocks';
 import {
+  awaitingSecretRequests,
   deriveSecretRequestTranscript,
   isSecretStackCollapsed,
+  showSecretStackChip,
   secretRequestCardState,
   visibleSecretRequests,
 } from '../pending-secret-requests';
@@ -175,10 +177,12 @@ describe('visibleSecretRequests', () => {
       {
         request: { requestId: 'sec-1', agentId: 'agent-a', name: 'KEY', reason: 'run tests' },
         state: 'pending',
+        cardKey: 'sec-1@m1',
       },
       {
         request: { requestId: 'sec-old', agentId: 'agent-a', name: 'OLD', reason: '' },
         state: 'pending',
+        cardKey: 'sec-old',
       },
     ]);
   });
@@ -237,5 +241,47 @@ describe('isSecretStackCollapsed', () => {
   it('expands for a new request and never collapses an empty stack', () => {
     expect(isSecretStackCollapsed(['a', 'c'], ['a', 'b'])).toBe(false);
     expect(isSecretStackCollapsed([], ['a'])).toBe(false);
+  });
+});
+
+describe('collapsed chip rules', () => {
+  const entry = (pending: string[]) => ({
+    listing: parseSecretListing({
+      secrets: [],
+      pendingRequests: pending.map((requestId) => ({ requestId, name: 'KEY' })),
+      answeredRequests: [],
+    }),
+    covered: ['sec-1', 'sec-2', 'sec-gone'],
+    failed: false,
+  });
+  const visible = (messages: AgentMessage[], pending: string[]) =>
+    visibleSecretRequests(deriveSecretRequestTranscript(messages), 'agent-a', entry(pending), {});
+
+  it('a repeated request on a newer message counts as new and expands the chip', () => {
+    const first = visible([assistant('m1', [card('sec-1')])], ['sec-1']);
+    const hiddenKeys = first.map(({ cardKey }) => cardKey);
+    expect(showSecretStackChip(first, {}, hiddenKeys)).toBe(true);
+    const repeated = visible(
+      [assistant('m1', [card('sec-1')]), assistant('m2', [card('sec-1')])],
+      ['sec-1'],
+    );
+    expect(repeated[0]?.cardKey).not.toBe(first[0]?.cardKey);
+    expect(showSecretStackChip(repeated, {}, hiddenKeys)).toBe(false);
+  });
+
+  it('counts only cards still waiting and never collapses when nothing waits', () => {
+    const shown = visible([assistant('m1', [card('sec-1'), card('sec-gone')])], ['sec-1']);
+    const keys = shown.map(({ cardKey }) => cardKey);
+    expect(awaitingSecretRequests(shown, {}).map((v) => v.request.requestId)).toEqual(['sec-1']);
+    expect(showSecretStackChip(shown, {}, keys)).toBe(true);
+    const answered = { 'sec-1': { status: 'provided' } };
+    expect(awaitingSecretRequests(shown, answered)).toEqual([]);
+    expect(showSecretStackChip(shown, answered, keys)).toBe(false);
+  });
+
+  it('a failed send expands the stack so its error is seen', () => {
+    const shown = visible([assistant('m1', [card('sec-1')])], ['sec-1']);
+    const keys = shown.map(({ cardKey }) => cardKey);
+    expect(showSecretStackChip(shown, { 'sec-1': { status: 'failed' } }, keys)).toBe(false);
   });
 });

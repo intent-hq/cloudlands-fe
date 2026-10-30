@@ -70,7 +70,13 @@
         0,
       ),
     );
-    if (collapse) store.dispatch(secretRequestsCollapsed(agentId, ids));
+    if (collapse)
+      store.dispatch(
+        secretRequestsCollapsed(
+          agentId,
+          ids.map((requestId) => `${requestId}@m-${agentId}`),
+        ),
+      );
     const message = {
       id: `m-${agentId}`,
       role: 'assistant',
