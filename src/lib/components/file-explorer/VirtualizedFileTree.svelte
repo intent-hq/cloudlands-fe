@@ -4,6 +4,7 @@
   /* eslint-disable max-lines */
   import { onMount, tick, untrack } from 'svelte';
   import { prefersReducedMotion } from '$lib/utils/reduced-motion';
+  import { computeRevealScrollTop } from './reveal-scroll';
   import { writable } from 'svelte/store';
   import type {
     FileExplorerDisplayNode as FileNode,
@@ -1098,16 +1099,29 @@
     return false;
   }
 
-  // Scroll to a specific file path
+  // Reveal a file path with the least movement: a row that is already fully
+  // visible stays put, so clicking it does not shift the list under the cursor.
+  let revealScrollInFlight = false;
+
   export function scrollToPath(path: string) {
     const index = effectiveNodes.findIndex((n) => pathMatches(n.node.path, path));
-    if (index >= 0 && scrollEl) {
-      const targetScrollTop = index * itemHeight - measuredHeight / 2 + itemHeight / 2;
-      scrollEl.scrollTo({
-        top: Math.max(0, targetScrollTop),
-        behavior: prefersReducedMotion() ? 'instant' : 'smooth',
-      });
+    if (index < 0 || !scrollEl) return;
+    const viewHeight = scrollEl.clientHeight;
+    const top = viewHeight
+      ? computeRevealScrollTop({ index, itemHeight, viewTop: scrollEl.scrollTop, viewHeight })
+      : // Not laid out yet (hidden or collapsed panel): visibility is unknowable, so center.
+        Math.max(0, index * itemHeight - measuredHeight / 2 + itemHeight / 2);
+    if (top === null) {
+      // Stop an earlier reveal animation that would carry this visible row away.
+      if (revealScrollInFlight) {
+        revealScrollInFlight = false;
+        scrollEl.scrollTo({ top: scrollEl.scrollTop, behavior: 'instant' });
+      }
+      return;
     }
+    const smooth = !prefersReducedMotion();
+    revealScrollInFlight = smooth;
+    scrollEl.scrollTo({ top, behavior: smooth ? 'smooth' : 'instant' });
   }
 
   // A reveal target waits until expansion flattens its row into the rendered window.
@@ -1182,6 +1196,7 @@
     class="h-full overflow-y-auto overflow-x-hidden"
     style="contain: content;"
     onscroll={handleScroll}
+    onscrollend={() => (revealScrollInFlight = false)}
   >
     <!-- Total height spacer for correct scrollbar -->
     <div class="relative" style="height: {totalHeight}px;">
