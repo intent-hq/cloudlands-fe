@@ -744,7 +744,7 @@
             id: note.id,
             icon: isSpec ? faClipboard : faNoteSticky,
             noteId: note.id,
-            url: crossWorkspace ? noteUrl(note.id, note.workspaceId) : undefined,
+            url: crossWorkspace && !readOnly ? noteUrl(note.id, note.workspaceId) : undefined,
           });
         }
       } else if (captured.startsWith('note/')) {

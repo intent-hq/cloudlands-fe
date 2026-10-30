@@ -337,7 +337,7 @@
         const openInAdjacentPanel = isCmdClickModifier({ event });
 
         // Cross-workspace note chips carry their workspace in meta.
-        if (meta.isExternalLink && meta.workspaceId) {
+        if (meta.isExternalLink && meta.workspaceId && meta.workspaceId !== workspaceId) {
           handleLink(noteUrl(noteId, meta.workspaceId), {
             workspaceId: workspaceId ? WorkspaceId(workspaceId) : undefined,
             sourcePanelId,

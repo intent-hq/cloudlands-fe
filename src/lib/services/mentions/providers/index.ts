@@ -229,7 +229,7 @@ export class NoteProvider implements Provider {
             meta: {
               preview: body?.substring(0, 200) || '',
               workspaceId,
-              isCurrentWorkspace,
+              ...(isCurrentWorkspace ? {} : { isExternalLink: true }),
             },
           } satisfies MentionCandidate;
           return { candidate, score };

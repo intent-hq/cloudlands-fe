@@ -27,7 +27,6 @@ describe('note mention chips rebuilt from @note[...] tokens', () => {
     expect(JSON.parse(el?.getAttribute('data-meta') || '{}')).toMatchObject({
       workspaceId: 'ws-2',
       isExternalLink: true,
-      isCurrentWorkspace: false,
     });
   });
 

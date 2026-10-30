@@ -4,6 +4,7 @@
 
 import { stripInternalDeliveryNotes } from './user-message-presentation';
 import { memberMentionsToText } from '$lib/utils/member-mention-token';
+import { noteMentionsToText } from '$lib/utils/note-mention-token';
 
 /**
  * Strip `<group:Name>` and `</group>` (or `</group:Name>` / `</group:>`) tags
@@ -77,7 +78,7 @@ export function getLastMeaningfulLine(text: string): string {
  * Shared by the AgentCard footer preview and the HUD card agent line.
  */
 export function stripUserMessagePrefixes(text: string): string {
-  return memberMentionsToText(stripInternalDeliveryNotes(text))
+  return noteMentionsToText(memberMentionsToText(stripInternalDeliveryNotes(text)))
     .replace(/^(\[.*?\]\s*)+/, '')
     .replace(/@context\[[^\]]*\]/g, '')
     .trim();

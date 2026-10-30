@@ -13,7 +13,9 @@
  * Ids are restricted to `[A-Za-z0-9_-]`, so the first `/` and `:` are
  * unambiguous delimiters and the title may contain either. The token holds
  * no `|` (it would split a GFM table cell) and titles are stripped of
- * markdown-significant characters so a note round-trip cannot re-parse them.
+ * markdown-significant characters, `@` and `://`/`www.` so a note round-trip
+ * cannot re-parse them (emphasis, autolinks). Titles never contain `[`, so an
+ * unterminated token cannot swallow following bracketed text.
  */
 
 export interface NoteMention {
@@ -26,14 +28,16 @@ export interface NoteMention {
 const SAFE_ID = /^[A-Za-z0-9_-]+$/;
 
 /** Regex source (no flags, no groups) matching a whole token body after the `@`. */
-export const NOTE_MENTION_BODY_SOURCE = String.raw`note\[(?:[A-Za-z0-9_-]+\/)?[A-Za-z0-9_-]+:[^\]\n]*\]`;
+export const NOTE_MENTION_BODY_SOURCE = String.raw`note\[(?:[A-Za-z0-9_-]+\/)?[A-Za-z0-9_-]+:[^[\]\n]*\]`;
 
-const PARSE_RE = /^@?note\[(?:([A-Za-z0-9_-]+)\/)?([A-Za-z0-9_-]+):([^\]\n]*)\]$/;
+const PARSE_RE = /^@?note\[(?:([A-Za-z0-9_-]+)\/)?([A-Za-z0-9_-]+):([^[\]\n]*)\]$/;
 
 /** Strip delimiter and markdown-significant characters; collapse whitespace. */
 function sanitizeTitle(title: string): string {
   return title
-    .replace(/[[\]|*_`~\\<>]/g, ' ')
+    .replace(/[[\]|*_`~\\<>@]/g, ' ')
+    .replace(/:\/\//g, ' ')
+    .replace(/\bwww\./gi, 'www ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -44,9 +48,11 @@ function sanitizeTitle(title: string): string {
  */
 export function serializeNoteMention(mention: NoteMention): string | null {
   if (!SAFE_ID.test(mention.id)) return null;
+  // An unsafe workspace id must not silently degrade into a same-workspace
+  // token that would resolve the wrong note.
+  if (mention.workspaceId && !SAFE_ID.test(mention.workspaceId)) return null;
   const title = sanitizeTitle(mention.title) || mention.id;
-  const ws =
-    mention.workspaceId && SAFE_ID.test(mention.workspaceId) ? `${mention.workspaceId}/` : '';
+  const ws = mention.workspaceId ? `${mention.workspaceId}/` : '';
   return `@note[${ws}${mention.id}:${title}]`;
 }
 
@@ -64,7 +70,7 @@ export function noteMentionChipAttrs(note: NoteMention): {
   type: 'note';
   id: string;
   label: string;
-  meta?: { workspaceId: string; isExternalLink: true; isCurrentWorkspace: false };
+  meta?: { workspaceId: string; isExternalLink: true };
 } {
   return {
     type: 'note',
@@ -72,8 +78,18 @@ export function noteMentionChipAttrs(note: NoteMention): {
     label: note.title,
     ...(note.workspaceId
       ? {
-          meta: { workspaceId: note.workspaceId, isExternalLink: true, isCurrentWorkspace: false },
+          meta: { workspaceId: note.workspaceId, isExternalLink: true },
         }
       : {}),
   };
+}
+
+const NOTE_MENTION_GLOBAL = new RegExp(`@${NOTE_MENTION_BODY_SOURCE}`, 'g');
+
+/** Plain-text previews: render each `@note[...]` token as `@<title>`. */
+export function noteMentionsToText(text: string): string {
+  return text.replace(NOTE_MENTION_GLOBAL, (token) => {
+    const note = parseNoteMention(token);
+    return note ? `@${note.title}` : token;
+  });
 }

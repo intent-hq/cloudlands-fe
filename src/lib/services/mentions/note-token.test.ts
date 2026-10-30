@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { toPromptToken } from './format';
 import { findInlineMentions } from '$lib/components/chat/mention-match-utils';
-import { parseNoteMention, serializeNoteMention } from '$lib/utils/note-mention-token';
+import {
+  noteMentionsToText,
+  parseNoteMention,
+  serializeNoteMention,
+} from '$lib/utils/note-mention-token';
+import { stripUserMessagePrefixes } from '$lib/utils/text-utils';
 
 const NOTE_ID = '3f2a9c1e-7b4d-4e8a-9f10-2c5d6e7f8a9b';
 const TITLE = 'Meeting with Andre Oct 30 2026';
@@ -19,7 +24,7 @@ describe('note mention prompt token', () => {
         type: 'note',
         id: NOTE_ID,
         label: TITLE,
-        meta: { workspaceId: 'other-ws', isCurrentWorkspace: false },
+        meta: { workspaceId: 'other-ws', isExternalLink: true },
       }),
     ).toBe(`@note[other-ws/${NOTE_ID}:${TITLE}]`);
   });
@@ -41,7 +46,7 @@ describe('note mention prompt token', () => {
         type: 'note',
         id: NOTE_ID,
         label: TITLE,
-        meta: { workspaceId: 'this-ws', isCurrentWorkspace: true },
+        meta: { workspaceId: 'this-ws' },
       }),
     ).toBe(`@note[${NOTE_ID}:${TITLE}]`);
   });
@@ -99,5 +104,32 @@ describe('serializeNoteMention / parseNoteMention', () => {
     expect(parseNoteMention('@note[has space:x]')).toBeNull();
     expect(parseNoteMention('@note[bad ws/n1:x]')).toBeNull();
     expect(parseNoteMention('@note[n1]')).toBeNull();
+  });
+
+  it('refuses an unsafe workspace id instead of dropping it to a same-workspace token', () => {
+    expect(serializeNoteMention({ id: 'n1', title: 'x', workspaceId: 'bad ws' })).toBeNull();
+  });
+
+  it('strips @, :// and www. so markdown cannot autolink inside the token', () => {
+    expect(
+      serializeNoteMention({ id: 'n1', title: 'Read https://example.com/a and www.x.io bob@x.io' }),
+    ).toBe('@note[n1:Read https example.com/a and www x.io bob x.io]');
+  });
+
+  it('does not let an unterminated token swallow later bracketed text', () => {
+    expect(findInlineMentions('@note[n1:see notes, then check [x] done')).toEqual([]);
+  });
+});
+
+describe('plain-text previews of note mentions', () => {
+  it('noteMentionsToText renders tokens as @<title>', () => {
+    expect(noteMentionsToText(`@note[${NOTE_ID}:${TITLE}] read it`)).toBe(`@${TITLE} read it`);
+    expect(noteMentionsToText('@note[ws-2/n1:Plan] ok')).toBe('@Plan ok');
+  });
+
+  it('stripUserMessagePrefixes shows the note title, not the raw id token', () => {
+    expect(stripUserMessagePrefixes(`@note[${NOTE_ID}:${TITLE}] Read the transcript`)).toBe(
+      `@${TITLE} Read the transcript`,
+    );
   });
 });

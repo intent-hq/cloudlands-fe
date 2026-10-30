@@ -69,6 +69,23 @@ describe('MarkdownViewer panel navigation', () => {
     expect(dispatch).not.toHaveBeenCalled();
   });
 
+  it('opens a workspace-qualified @note chip for the viewer workspace in place', async () => {
+    const MarkdownViewer = (await import('../MarkdownViewer.svelte')).default;
+    render(MarkdownViewer, {
+      props: { content: 'see @note[ws-1/n-2:Own plan] now', workspaceId: 'ws-1' },
+    });
+
+    await fireEvent.click(await screen.findByText('Own plan'));
+
+    expect(handleLink).not.toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'workspaceNavigation/openWorkspaceNote',
+        payload: ['ws-1', 'n-2', expect.anything()],
+      }),
+    );
+  });
+
   it('passes a captured line through the file-click callback', async () => {
     const onFileClick = vi.fn();
     const MarkdownViewer = (await import('../MarkdownViewer.svelte')).default;

@@ -56,7 +56,7 @@ export function toPromptToken(
       // lookup/navigation, the title keeps the token readable (agents, chip
       // fallback). Titles may contain spaces, which the legacy whitespace-
       // delimited `@note/<x>` form cannot carry.
-      const crossWorkspace = meta.isCurrentWorkspace === false || meta.isExternalLink === true;
+      const crossWorkspace = meta.isExternalLink === true;
       const token = serializeNoteMention({
         id: stripLeadingAt(item.id),
         title: item.label || item.id,

@@ -13,6 +13,7 @@
     queuedMessagePermissions,
   } from '$lib/utils/queued-message-permissions';
   import { memberMentionsToText } from '$lib/utils/member-mention-token';
+  import { noteMentionsToText } from '$lib/utils/note-mention-token';
   import { presentQueuedMessageText } from '$lib/utils/collaborator-sender-attribution';
   import Fa from 'svelte-fa';
   import { faCheck, faArrowUp } from '@fortawesome/free-solid-svg-icons';
@@ -1250,7 +1251,7 @@
                                 labelClass="block!"
                                 data-testid="queued-message-content"
                                 data-mode="display"
-                                aria-label={memberMentionsToText(groupText)}
+                                aria-label={noteMentionsToText(memberMentionsToText(groupText))}
                                 ondblclick={() => startEdit(message)}
                                 onkeydown={(event) => handleDisplayKeydown(event, message)}
                               >
@@ -1258,7 +1259,7 @@
                                   class="block whitespace-pre-wrap wrap-anywhere {USER_MESSAGE_TEXT_CLASS}"
                                   data-testid="queued-message-text"
                                 >
-                                  {memberMentionsToText(groupText)}
+                                  {noteMentionsToText(memberMentionsToText(groupText))}
                                 </span>
                               </Button>
                             {/if}
