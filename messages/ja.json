@@ -7864,11 +7864,5 @@
   "desktop_os_checklist_blocked": "上の項目を待っています",
   "desktop_os_checklist_checking": "確認中",
   "desktop_os_checklist_ready": "準備完了",
-  "desktop_os_checklist_unconfirmed": "未確認",
-  "specialists_builtin_developerLegacy_name": "開発者（旧版）",
-  "specialists_builtin_coordinatorLegacy_name": "コーディネーター（旧版）",
-  "specialists_builtin_implementorLegacy_name": "実装担当（旧版）",
-  "specialists_builtin_verifierLegacy_name": "検証担当（旧版）",
-  "specialists_builtin_developerLegacy_description": "計画を立ててから単独で実装します",
-  "specialists_builtin_coordinatorLegacy_description": "作業を計画し、タスクを分割してサブエージェントを調整します"
+  "desktop_os_checklist_unconfirmed": "未確認"
 }

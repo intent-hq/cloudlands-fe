@@ -238,8 +238,7 @@ export const selectSpecialists = store.createSelector(
 /**
  * The specialist that powers the New Workspace modal's team-mode card: the
  * first `role: 'lead'` or legacy `role: 'orchestrator'` entry ranked with bundled specialist ids before
- * non-bundled ids, then by id order within each rank. The opt-in legacy
- * coordinator ranks last so adding it never replaces an existing team default. The shipped catalog is
+ * non-bundled ids, then by id order within each rank. The shipped catalog is
  * consulted for ranking because the daemon reports only the winning override
  * tier; it never adds missing entries to the roster. A same-id file override
  * retains its bundled rank. Returns null when no orchestrator exists — the modal
@@ -255,10 +254,8 @@ export const selectOrchestratorSpecialist = store.createSelector((state): Specia
     ...state.specialists.bundledSpecialists.map(({ id }) => id),
   ]);
   orchestrators.sort((a, b) => {
-    const legacyRank =
-      Number(a.id === 'coordinator-legacy') - Number(b.id === 'coordinator-legacy');
     const bundledRank = Number(!bundledIds.has(a.id)) - Number(!bundledIds.has(b.id));
-    return legacyRank || bundledRank || a.id.localeCompare(b.id);
+    return bundledRank || a.id.localeCompare(b.id);
   });
   return orchestrators[0];
 });

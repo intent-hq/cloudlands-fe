@@ -7864,11 +7864,5 @@
   "desktop_os_checklist_blocked": "En attente des éléments ci-dessus",
   "desktop_os_checklist_checking": "Vérification",
   "desktop_os_checklist_ready": "Prêt",
-  "desktop_os_checklist_unconfirmed": "Non confirmé",
-  "specialists_builtin_developerLegacy_name": "Développeur (ancienne version)",
-  "specialists_builtin_coordinatorLegacy_name": "Coordinateur (ancienne version)",
-  "specialists_builtin_implementorLegacy_name": "Implémenteur (ancienne version)",
-  "specialists_builtin_verifierLegacy_name": "Vérificateur (ancienne version)",
-  "specialists_builtin_developerLegacy_description": "Planifie puis implémente de manière autonome",
-  "specialists_builtin_coordinatorLegacy_description": "Planifie le travail, décompose les tâches et coordonne les sous-agents"
+  "desktop_os_checklist_unconfirmed": "Non confirmé"
 }

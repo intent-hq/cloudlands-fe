@@ -7864,11 +7864,5 @@
   "desktop_os_checklist_blocked": "等待上方各项",
   "desktop_os_checklist_checking": "正在检查",
   "desktop_os_checklist_ready": "就绪",
-  "desktop_os_checklist_unconfirmed": "未确认",
-  "specialists_builtin_developerLegacy_name": "开发者（旧版）",
-  "specialists_builtin_coordinatorLegacy_name": "协调者（旧版）",
-  "specialists_builtin_implementorLegacy_name": "实现者（旧版）",
-  "specialists_builtin_verifierLegacy_name": "验证者（旧版）",
-  "specialists_builtin_developerLegacy_description": "先制定计划，再独立实现",
-  "specialists_builtin_coordinatorLegacy_description": "规划工作、拆分任务并协调子代理"
+  "desktop_os_checklist_unconfirmed": "未确认"
 }

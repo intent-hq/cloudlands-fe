@@ -7864,11 +7864,5 @@
   "desktop_os_checklist_blocked": "Espera a los elementos anteriores",
   "desktop_os_checklist_checking": "Comprobando",
   "desktop_os_checklist_ready": "Listo",
-  "desktop_os_checklist_unconfirmed": "Sin confirmar",
-  "specialists_builtin_developerLegacy_name": "Desarrollador (heredado)",
-  "specialists_builtin_coordinatorLegacy_name": "Coordinador (heredado)",
-  "specialists_builtin_implementorLegacy_name": "Implementador (heredado)",
-  "specialists_builtin_verifierLegacy_name": "Verificador (heredado)",
-  "specialists_builtin_developerLegacy_description": "Planifica y luego implementa por su cuenta",
-  "specialists_builtin_coordinatorLegacy_description": "Planifica el trabajo, divide las tareas y coordina subagentes"
+  "desktop_os_checklist_unconfirmed": "Sin confirmar"
 }

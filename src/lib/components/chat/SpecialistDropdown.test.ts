@@ -53,7 +53,6 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 import SpecialistDropdown from './SpecialistDropdown.svelte';
-import { SPECIALISTS } from '$lib/constants/specialists';
 
 const catalog = [
   { id: 'developer', name: 'Developer', description: 'Builds things' },
@@ -79,20 +78,6 @@ describe('SpecialistDropdown ordering', () => {
   afterEach(() => {
     cleanup();
   });
-
-  it.each(['developer-legacy', 'coordinator-legacy', 'implementor-legacy', 'verifier-legacy'])(
-    'allows explicit selection of %s',
-    async (id) => {
-      mocks.specialists$.set(SPECIALISTS);
-      const onchange = vi.fn();
-      render(SpecialistDropdown, { props: { value: null, onchange } });
-      const options = await openOptionIds();
-      expect(options).toContain(id);
-      expect(options).not.toContain('verifier');
-      await fireEvent.click(document.querySelector(`[data-specialist-option="${id}"]`)!);
-      expect(onchange).toHaveBeenCalledExactlyOnceWith(id);
-    },
-  );
 
   it('keeps catalog order when nothing has been used', async () => {
     render(SpecialistDropdown, { props: { value: null } });

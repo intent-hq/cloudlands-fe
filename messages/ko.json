@@ -7864,11 +7864,5 @@
   "desktop_os_checklist_blocked": "위 항목을 기다리는 중",
   "desktop_os_checklist_checking": "확인 중",
   "desktop_os_checklist_ready": "준비됨",
-  "desktop_os_checklist_unconfirmed": "확인되지 않음",
-  "specialists_builtin_developerLegacy_name": "개발자 (이전 버전)",
-  "specialists_builtin_coordinatorLegacy_name": "코디네이터 (이전 버전)",
-  "specialists_builtin_implementorLegacy_name": "구현자 (이전 버전)",
-  "specialists_builtin_verifierLegacy_name": "검증자 (이전 버전)",
-  "specialists_builtin_developerLegacy_description": "계획을 세운 후 혼자 구현합니다",
-  "specialists_builtin_coordinatorLegacy_description": "작업을 계획하고 태스크를 나누며 하위 에이전트를 조율합니다"
+  "desktop_os_checklist_unconfirmed": "확인되지 않음"
 }

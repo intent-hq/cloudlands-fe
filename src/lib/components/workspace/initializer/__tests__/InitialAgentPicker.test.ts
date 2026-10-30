@@ -12,7 +12,6 @@
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SPECIALISTS } from '$lib/constants/specialists';
 import type { SpecialistDef } from '$lib/client/app-client';
 
 const mocks = vi.hoisted(() => {
@@ -1717,28 +1716,6 @@ describe('InitialAgentPicker specialist dropdown', () => {
     expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
     expect(trigger.getAttribute('aria-expanded')).toBe('false');
     expect(trigger.tabIndex).toBe(0);
-  });
-
-  it('lets new work explicitly select Legacy Coordinator while Lead remains the team choice', async () => {
-    const lead = SPECIALISTS.find(({ id }) => id === 'spec-writer')!;
-    mocks.orchestrator$.set(lead);
-    mocks.specialists$.set(SPECIALISTS);
-    const onSpecialistChange = vi.fn();
-    render(InitialAgentPicker, {
-      props: { selectedSpecialist: null, isTeamMode: false, onSpecialistChange },
-    });
-    const options = await openedOptionIds();
-    expect(options).toContain('coordinator-legacy');
-    expect(options).toContain('developer-legacy');
-    expect(options).not.toContain('implementor-legacy');
-    expect(options).not.toContain('verifier-legacy');
-    await fireEvent.click(screen.getByRole('menuitemradio', { name: /Coordinator \(Legacy\)/ }));
-    expect(onSpecialistChange).toHaveBeenLastCalledWith('coordinator-legacy');
-    expect(modeCards().single.getAttribute('aria-pressed')).toBe('true');
-    await fireEvent.click(modeCards().team);
-    expect(onSpecialistChange).toHaveBeenLastCalledWith('spec-writer');
-    await fireEvent.click(modeCards().single);
-    expect(onSpecialistChange).toHaveBeenLastCalledWith('coordinator-legacy');
   });
 
   it('opens the specialist menu without leaving single-agent mode', async () => {

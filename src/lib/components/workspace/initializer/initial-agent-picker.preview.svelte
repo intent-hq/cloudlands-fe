@@ -36,7 +36,7 @@
   }
 
   interface Props {
-    state?: 'populated' | 'empty' | 'compact' | 'welcome' | 'legacy' | 'legacy-compact';
+    state?: 'populated' | 'empty' | 'compact' | 'welcome';
   }
   export const preview = definePreview<Props>({
     id: 'initial-agent-picker',
@@ -44,8 +44,6 @@
     defaultState: 'populated',
     states: {
       populated: { props: { state: 'populated' } },
-      legacy: { props: { state: 'legacy' } },
-      'legacy-compact': { props: { state: 'legacy-compact' } },
       empty: { props: { state: 'empty' } },
       compact: { props: { state: 'compact' } },
       welcome: { props: { state: 'welcome' } },
@@ -55,7 +53,6 @@
 
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
-  import { SPECIALISTS } from '$lib/constants/specialists';
   import InitialAgentPicker from './InitialAgentPicker.svelte';
   import SpecialistDropdown from '$lib/components/chat/SpecialistDropdown.svelte';
   import RegularAgentWelcome from '$lib/components/chat/RegularAgentWelcome.svelte';
@@ -90,40 +87,32 @@
       untrack(() =>
         scenario === 'empty'
           ? []
-          : scenario.startsWith('legacy')
-            ? SPECIALISTS.map((specialist) => ({
-                ...specialist,
-                model: '',
-                behaviorPrompt: specialist.defaultBehaviorPrompt,
-                filePath: `/fixture/${specialist.id}.md`,
-                source: 'bundled' as const,
-              }))
-            : [
-                {
-                  id: 'fixture-developer',
-                  name: 'Developer',
-                  description: 'Builds and verifies focused changes.',
-                  model: 'fixture-model',
-                  codingAgent: 'codex',
-                  behaviorPrompt:
-                    '## Developer\n\nWork on one focused task at a time.\n\nInspect the relevant components before changing them.\n\nUse the existing design system.\n\nPreserve keyboard and pointer behavior.\n\nVerify narrow and wide layouts.\n\nRun focused tests and report the results.',
-                  filePath: '/fixture/developer.md',
-                  source: 'user',
-                  icon: 'developer',
-                },
-                {
-                  id: 'fixture-long',
-                  name: 'A specialist with a very long descriptive name',
-                  description:
-                    'Investigates difficult rendering problems and verifies accessible behavior in narrow application panels.',
-                  model: 'fixture-model',
-                  codingAgent: 'codex',
-                  behaviorPrompt: '',
-                  filePath: '/fixture/long.md',
-                  source: 'user',
-                  icon: 'reviewer',
-                },
-              ],
+          : [
+              {
+                id: 'fixture-developer',
+                name: 'Developer',
+                description: 'Builds and verifies focused changes.',
+                model: 'fixture-model',
+                codingAgent: 'codex',
+                behaviorPrompt:
+                  '## Developer\n\nWork on one focused task at a time.\n\nInspect the relevant components before changing them.\n\nUse the existing design system.\n\nPreserve keyboard and pointer behavior.\n\nVerify narrow and wide layouts.\n\nRun focused tests and report the results.',
+                filePath: '/fixture/developer.md',
+                source: 'user',
+                icon: 'developer',
+              },
+              {
+                id: 'fixture-long',
+                name: 'A specialist with a very long descriptive name',
+                description:
+                  'Investigates difficult rendering problems and verifies accessible behavior in narrow application panels.',
+                model: 'fixture-model',
+                codingAgent: 'codex',
+                behaviorPrompt: '',
+                filePath: '/fixture/long.md',
+                source: 'user',
+                icon: 'reviewer',
+              },
+            ],
       ),
     ),
   );
@@ -137,7 +126,7 @@
 </script>
 
 <section class="w-full min-w-0 p-4" data-testid="specialist-fixture">
-  {#if scenario === 'compact' || scenario === 'legacy-compact'}
+  {#if scenario === 'compact'}
     <SpecialistDropdown value={selected} onchange={(value) => (selected = value)} />
   {:else if scenario === 'welcome'}
     <RegularAgentWelcome
