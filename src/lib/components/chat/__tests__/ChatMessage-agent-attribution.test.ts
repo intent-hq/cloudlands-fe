@@ -209,11 +209,11 @@ describe('ChatMessage user message text rendering', () => {
     expect(spans.some((el) => el.textContent === ' now')).toBe(true);
   });
 
-  it('renders a multi-word @note[id|title] mention as one chip that opens the note by id', async () => {
+  it('renders a multi-word @note[id:title] mention as one chip that opens the note by id', async () => {
     dispatchMock.mockClear();
     const { container } = render(ChatMessage, {
       props: {
-        message: userTextMessage('@note[n-123|Meeting with Andre Oct 30 2026] Read the transcript'),
+        message: userTextMessage('@note[n-123:Meeting with Andre Oct 30 2026] Read the transcript'),
         workspace: { id: 'ws-1' } as any,
       },
     });
@@ -233,7 +233,7 @@ describe('ChatMessage user message text rendering', () => {
   it('opens a cross-workspace @note mention through its workspace-qualified link', async () => {
     render(ChatMessage, {
       props: {
-        message: userTextMessage('@note[n-9|Other plan|ws-2]'),
+        message: userTextMessage('@note[ws-2/n-9:Other plan]'),
         workspace: { id: 'ws-1' } as any,
       },
     });
@@ -244,6 +244,16 @@ describe('ChatMessage user message text rendering', () => {
       'intent://local/ws-2/note/n-9',
       expect.objectContaining({ workspaceId: 'ws-1' }),
     );
+  });
+
+  it('keeps a title containing ":" and "/" whole inside a note chip', () => {
+    render(ChatMessage, {
+      props: {
+        message: userTextMessage('@note[n-5:Call: ASG / Andre]'),
+        workspace: { id: 'ws-1' } as any,
+      },
+    });
+    expect(screen.getByRole('button', { name: 'Call: ASG / Andre' })).toBeTruthy();
   });
 
   it('opens an inline file mention at its captured line', async () => {

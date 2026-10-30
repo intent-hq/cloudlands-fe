@@ -52,7 +52,7 @@ export function toPromptToken(
       return `@${token}`;
     }
     case 'note': {
-      // `@note[<id>|<title>(|<workspaceId>)]`: the id is authoritative for
+      // `@note[(<workspaceId>/)<id>:<title>]`: the id is authoritative for
       // lookup/navigation, the title keeps the token readable (agents, chip
       // fallback). Titles may contain spaces, which the legacy whitespace-
       // delimited `@note/<x>` form cannot carry.
@@ -62,7 +62,9 @@ export function toPromptToken(
         title: item.label || item.id,
         workspaceId: crossWorkspace ? meta.workspaceId : undefined,
       });
-      return token ?? `@note/${stripLeadingAt(item.id || item.label)}`;
+      // No token-safe id: emit the title as plain text rather than a
+      // whitespace-truncated `@note/<title>` chip pointing at the wrong note.
+      return token ?? (item.label || item.id || '');
     }
     case 'terminal': {
       const terminalName = stripLeadingAt(item.label || item.id || 'terminal');

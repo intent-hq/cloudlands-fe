@@ -40,7 +40,7 @@ describe('markdown rendering strategy', () => {
     '+ item',
     '1. item',
     '@note/spec',
-    '@note[n1|Meeting with Andre]',
+    '@note[n1:Meeting with Andre]',
     '@context[context-id]',
     '@/absolute/path',
     '@relative/file.custom',

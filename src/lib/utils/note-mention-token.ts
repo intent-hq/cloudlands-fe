@@ -1,6 +1,6 @@
 /**
- * Note mention prompt token: `@note[<id>|<title>]`, or
- * `@note[<id>|<title>|<workspaceId>]` for a note in another workspace.
+ * Note mention prompt token: `@note[<id>:<title>]`, or
+ * `@note[<workspaceId>/<id>:<title>]` for a note in another workspace.
  *
  * The id (and optional workspace id) is authoritative for lookup and
  * navigation; the title is a human/agent-readable hint used as the display
@@ -9,6 +9,11 @@
  * `@note/<x>` form ends at the first space, so `@note/<title>` truncated
  * titles like "Meeting with Andre" to "Meeting". Legacy `@note/<id>` tokens
  * remain readable by the existing matchers.
+ *
+ * Ids are restricted to `[A-Za-z0-9_-]`, so the first `/` and `:` are
+ * unambiguous delimiters and the title may contain either. The token holds
+ * no `|` (it would split a GFM table cell) and titles are stripped of
+ * markdown-significant characters so a note round-trip cannot re-parse them.
  */
 
 export interface NoteMention {
@@ -20,13 +25,15 @@ export interface NoteMention {
 
 const SAFE_ID = /^[A-Za-z0-9_-]+$/;
 
-/** Regex source (no flags) matching a whole `@note[...]` token's body after the `@`. */
-export const NOTE_MENTION_BODY_SOURCE = String.raw`note\[[A-Za-z0-9_-]+\|[^\]\n]*\]`;
+/** Regex source (no flags, no groups) matching a whole token body after the `@`. */
+export const NOTE_MENTION_BODY_SOURCE = String.raw`note\[(?:[A-Za-z0-9_-]+\/)?[A-Za-z0-9_-]+:[^\]\n]*\]`;
 
-/** Strip characters that would break the token's delimiters; collapse whitespace. */
+const PARSE_RE = /^@?note\[(?:([A-Za-z0-9_-]+)\/)?([A-Za-z0-9_-]+):([^\]\n]*)\]$/;
+
+/** Strip delimiter and markdown-significant characters; collapse whitespace. */
 function sanitizeTitle(title: string): string {
   return title
-    .replace(/[[\]|]/g, ' ')
+    .replace(/[[\]|*_`~\\<>]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -39,23 +46,34 @@ export function serializeNoteMention(mention: NoteMention): string | null {
   if (!SAFE_ID.test(mention.id)) return null;
   const title = sanitizeTitle(mention.title) || mention.id;
   const ws =
-    mention.workspaceId && SAFE_ID.test(mention.workspaceId) ? `|${mention.workspaceId}` : '';
-  return `@note[${mention.id}|${title}${ws}]`;
+    mention.workspaceId && SAFE_ID.test(mention.workspaceId) ? `${mention.workspaceId}/` : '';
+  return `@note[${ws}${mention.id}:${title}]`;
 }
 
-/**
- * Parse a `@note[...]` token (with or without the leading `@`). Treats input
- * as untrusted: returns null unless the id (and workspace id, if present)
- * are token-safe.
- */
+/** Parse a `@note[...]` token (with or without the leading `@`); null if malformed. */
 export function parseNoteMention(token: string): NoteMention | null {
-  const match = /^@?note\[([^\]\n]*)\]$/.exec(token);
+  const match = PARSE_RE.exec(token);
   if (!match) return null;
-  const parts = match[1].split('|');
-  if (parts.length < 2 || parts.length > 3) return null;
-  const [id, rawTitle, workspaceId] = parts;
-  if (!SAFE_ID.test(id)) return null;
-  if (workspaceId !== undefined && !SAFE_ID.test(workspaceId)) return null;
+  const [, workspaceId, id, rawTitle] = match;
   const title = rawTitle.trim() || id;
   return workspaceId ? { id, title, workspaceId } : { id, title };
+}
+
+/** Mention-chip attributes for a parsed note token (note editor / markdown chips). */
+export function noteMentionChipAttrs(note: NoteMention): {
+  type: 'note';
+  id: string;
+  label: string;
+  meta?: { workspaceId: string; isExternalLink: true; isCurrentWorkspace: false };
+} {
+  return {
+    type: 'note',
+    id: note.id,
+    label: note.title,
+    ...(note.workspaceId
+      ? {
+          meta: { workspaceId: note.workspaceId, isExternalLink: true, isCurrentWorkspace: false },
+        }
+      : {}),
+  };
 }

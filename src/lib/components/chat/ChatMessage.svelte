@@ -723,26 +723,30 @@
           icon,
           url,
         });
-      } else if (captured.startsWith('note[') && parseNoteMention(captured)) {
-        // Note mention: @note[{noteId}|{title}(|{workspaceId})]. The id drives
+      } else if (captured.startsWith('note[')) {
+        // Note mention: @note[({workspaceId}/){noteId}:{title}]. The id drives
         // lookup/navigation; the saved title is the fallback label.
-        const note = parseNoteMention(captured)!;
-        const owningWsId = getOwningWorkspaceId() ?? '';
-        const crossWorkspace = !!note.workspaceId && note.workspaceId !== owningWsId;
-        const lookupWsId = crossWorkspace ? note.workspaceId! : owningWsId;
-        const matchingNote =
-          selectAllNotes.select(appStore.state, lookupWsId).find((n) => n.id === note.id) ?? null;
-        const isSpec = note.id === 'spec' && !crossWorkspace;
+        const note = parseNoteMention(captured);
+        if (!note) {
+          segments.push({ type: 'text', content: fullMatch });
+        } else {
+          const owningWsId = getOwningWorkspaceId() ?? '';
+          const crossWorkspace = !!note.workspaceId && note.workspaceId !== owningWsId;
+          const lookupWsId = crossWorkspace ? note.workspaceId! : owningWsId;
+          const matchingNote =
+            selectAllNotes.select(appStore.state, lookupWsId).find((n) => n.id === note.id) ?? null;
+          const isSpec = note.id === 'spec' && !crossWorkspace;
 
-        segments.push({
-          type: 'mention',
-          mentionType: isSpec ? 'spec' : 'note',
-          label: matchingNote?.title || note.title,
-          id: note.id,
-          icon: isSpec ? faClipboard : faNoteSticky,
-          noteId: note.id,
-          url: crossWorkspace ? noteUrl(note.id, note.workspaceId) : undefined,
-        });
+          segments.push({
+            type: 'mention',
+            mentionType: isSpec ? 'spec' : 'note',
+            label: matchingNote?.title || note.title,
+            id: note.id,
+            icon: isSpec ? faClipboard : faNoteSticky,
+            noteId: note.id,
+            url: crossWorkspace ? noteUrl(note.id, note.workspaceId) : undefined,
+          });
+        }
       } else if (captured.startsWith('note/')) {
         // Note mention: @note/{noteId}
         const noteId = captured.slice(5); // Remove "note/" prefix

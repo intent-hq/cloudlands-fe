@@ -9,11 +9,11 @@ const TITLE = 'Meeting with Andre Oct 30 2026';
 describe('note mention prompt token', () => {
   it('serializes a note mention with both its id and its multi-word title', () => {
     expect(toPromptToken({ type: 'note', id: NOTE_ID, label: TITLE })).toBe(
-      `@note[${NOTE_ID}|${TITLE}]`,
+      `@note[${NOTE_ID}:${TITLE}]`,
     );
   });
 
-  it('includes the workspace for a note from another workspace', () => {
+  it('prefixes the workspace for a note from another workspace', () => {
     expect(
       toPromptToken({
         type: 'note',
@@ -21,7 +21,18 @@ describe('note mention prompt token', () => {
         label: TITLE,
         meta: { workspaceId: 'other-ws', isCurrentWorkspace: false },
       }),
-    ).toBe(`@note[${NOTE_ID}|${TITLE}|other-ws]`);
+    ).toBe(`@note[other-ws/${NOTE_ID}:${TITLE}]`);
+  });
+
+  it('keeps the workspace of a cross-workspace chip rebuilt from an intent link', () => {
+    expect(
+      toPromptToken({
+        type: 'note',
+        id: 'n1',
+        label: 'Plan',
+        meta: { workspaceId: 'ws-2', isExternalLink: true },
+      }),
+    ).toBe('@note[ws-2/n1:Plan]');
   });
 
   it('omits the workspace for a note in the current workspace', () => {
@@ -32,11 +43,15 @@ describe('note mention prompt token', () => {
         label: TITLE,
         meta: { workspaceId: 'this-ws', isCurrentWorkspace: true },
       }),
-    ).toBe(`@note[${NOTE_ID}|${TITLE}]`);
+    ).toBe(`@note[${NOTE_ID}:${TITLE}]`);
   });
 
   it('serializes the spec note with the same bracketed form', () => {
-    expect(toPromptToken({ type: 'note', id: 'spec', label: 'Spec' })).toBe('@note[spec|Spec]');
+    expect(toPromptToken({ type: 'note', id: 'spec', label: 'Spec' })).toBe('@note[spec:Spec]');
+  });
+
+  it('emits plain title text instead of a truncating @note/<title> when the id is unusable', () => {
+    expect(toPromptToken({ type: 'note', id: '', label: TITLE })).toBe(TITLE);
   });
 
   it('round-trips through the chat renderer matcher as one whole mention', () => {
@@ -59,20 +74,30 @@ describe('serializeNoteMention / parseNoteMention', () => {
     expect(parseNoteMention(token!)).toEqual({ id: NOTE_ID, title: TITLE, workspaceId: 'ws-2' });
   });
 
-  it('replaces delimiter characters and newlines in titles', () => {
-    expect(serializeNoteMention({ id: 'n1', title: 'A [draft] | B\nC' })).toBe(
-      '@note[n1|A draft B C]',
+  it('keeps ":" and "/" in titles without mistaking them for delimiters', () => {
+    const token = serializeNoteMention({ id: 'n1', title: 'Call: ASG / Andre' });
+    expect(token).toBe('@note[n1:Call: ASG / Andre]');
+    expect(parseNoteMention(token!)).toEqual({ id: 'n1', title: 'Call: ASG / Andre' });
+  });
+
+  it('never emits a "|" (GFM table cell separator)', () => {
+    expect(serializeNoteMention({ id: 'n1', title: 'Roadmap | Q3' })).toBe('@note[n1:Roadmap Q3]');
+  });
+
+  it('strips delimiter and markdown-significant characters and newlines from titles', () => {
+    expect(serializeNoteMention({ id: 'n1', title: 'A [draft] *v2* `x` ~y~ <b>\\_\nC' })).toBe(
+      '@note[n1:A draft v2 x y b C]',
     );
   });
 
   it('falls back to the id when the title is empty', () => {
-    expect(serializeNoteMention({ id: 'n1', title: '  ' })).toBe('@note[n1|n1]');
+    expect(serializeNoteMention({ id: 'n1', title: '  ' })).toBe('@note[n1:n1]');
   });
 
   it('refuses ids that are not token-safe', () => {
     expect(serializeNoteMention({ id: 'has space', title: 'x' })).toBeNull();
-    expect(parseNoteMention('@note[has space|x]')).toBeNull();
-    expect(parseNoteMention('@note[n1|x|bad ws]')).toBeNull();
+    expect(parseNoteMention('@note[has space:x]')).toBeNull();
+    expect(parseNoteMention('@note[bad ws/n1:x]')).toBeNull();
     expect(parseNoteMention('@note[n1]')).toBeNull();
   });
 });

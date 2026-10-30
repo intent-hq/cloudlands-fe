@@ -38,6 +38,37 @@ describe('MarkdownViewer panel navigation', () => {
     );
   });
 
+  it('opens a same-workspace @note[id:title] chip in the viewer workspace', async () => {
+    const MarkdownViewer = (await import('../MarkdownViewer.svelte')).default;
+    render(MarkdownViewer, {
+      props: { content: 'see @note[n-1:Meeting with Andre] now', workspaceId: 'ws-1' },
+    });
+
+    await fireEvent.click(await screen.findByText('Meeting with Andre'));
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'workspaceNavigation/openWorkspaceNote',
+        payload: ['ws-1', 'n-1', expect.anything()],
+      }),
+    );
+  });
+
+  it('opens a cross-workspace @note chip through its workspace-qualified link', async () => {
+    const MarkdownViewer = (await import('../MarkdownViewer.svelte')).default;
+    render(MarkdownViewer, {
+      props: { content: 'see @note[ws-2/n-9:Other plan] now', workspaceId: 'ws-1' },
+    });
+
+    await fireEvent.click(await screen.findByText('Other plan'));
+
+    expect(handleLink).toHaveBeenCalledWith(
+      'intent://local/ws-2/note/n-9',
+      expect.objectContaining({ workspaceId: 'ws-1' }),
+    );
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
   it('passes a captured line through the file-click callback', async () => {
     const onFileClick = vi.fn();
     const MarkdownViewer = (await import('../MarkdownViewer.svelte')).default;

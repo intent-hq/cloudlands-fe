@@ -6,6 +6,7 @@
   import { logger } from '$lib/utils/client-logger';
   import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
   import { handleLink } from '$features/navigation/link-handler';
+  import { noteUrl } from '$shared/constants/intent-links';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
   import MarkdownMediaPreview from './MarkdownMediaPreview.svelte';
   import ImageActionsMenu from '$lib/components/ui/ImageActionsMenu.svelte';
@@ -334,6 +335,16 @@
         // Get source panel ID for same-panel navigation
         const sourcePanelId = getSourcePanelId(event);
         const openInAdjacentPanel = isCmdClickModifier({ event });
+
+        // Cross-workspace note chips carry their workspace in meta.
+        if (meta.isExternalLink && meta.workspaceId) {
+          handleLink(noteUrl(noteId, meta.workspaceId), {
+            workspaceId: workspaceId ? WorkspaceId(workspaceId) : undefined,
+            sourcePanelId,
+            event,
+          });
+          return;
+        }
 
         const wsIdNote = workspaceId;
         if (wsIdNote) {

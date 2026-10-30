@@ -12,7 +12,11 @@ import {
   workspaceFileMediaUrlToIntentFileUrl,
 } from './workspace-file-image';
 import { toPromptToken } from '$lib/services/mentions/format';
-import { NOTE_MENTION_BODY_SOURCE, parseNoteMention } from '$lib/utils/note-mention-token';
+import {
+  NOTE_MENTION_BODY_SOURCE,
+  noteMentionChipAttrs,
+  parseNoteMention,
+} from '$lib/utils/note-mention-token';
 import { memberMentionLabel, parseMemberMention } from '$lib/utils/member-mention-token';
 import { NotesPrimitivesSerializer } from './notes-primitives-serializer';
 import type { MarkdownWorkerResponse } from './markdown-worker';
@@ -1007,16 +1011,7 @@ function injectMentionSpans(html: string): string {
       } else if (m.type === 'note-bracket') {
         const note = parseNoteMention(m.value);
         frag.appendChild(
-          note
-            ? createMentionSpan({
-                type: 'note',
-                id: note.id,
-                label: note.title,
-                meta: note.workspaceId
-                  ? { workspaceId: note.workspaceId, isCurrentWorkspace: false }
-                  : undefined,
-              })
-            : document.createTextNode(m.value),
+          note ? createMentionSpan(noteMentionChipAttrs(note)) : document.createTextNode(m.value),
         );
       } else if (m.type === 'note') {
         const id = m.groups?.[0] || '';
