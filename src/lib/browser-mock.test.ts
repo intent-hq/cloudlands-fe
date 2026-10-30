@@ -749,6 +749,7 @@ describe('browser-mock daemon health with BrowserWebSocketTransport (dev:web)', 
     socket.drop();
     expect(events).toContainEqual({
       status: 'disconnected',
+      daemonStartup: null,
       transport: { mode: 'external-ws', target: 'ws://127.0.0.1:5181/rpc' },
     });
 
@@ -760,6 +761,7 @@ describe('browser-mock daemon health with BrowserWebSocketTransport (dev:web)', 
     await completeHello(reconnectSocket);
     expect(events).toContainEqual({
       status: 'connected',
+      daemonStartup: null,
       transport: { mode: 'external-ws', target: 'ws://127.0.0.1:5181/rpc' },
     });
     // Mirrors backend.ipc.ts: the 2nd+ connect also carries the
@@ -769,6 +771,39 @@ describe('browser-mock daemon health with BrowserWebSocketTransport (dev:web)', 
       reconnected: true,
       transport: { mode: 'external-ws', target: 'ws://127.0.0.1:5181/rpc' },
     });
+    (transport as { dispose?: () => void }).dispose?.();
+  });
+
+  it('carries a starting daemon to backend:status listeners and get-status', async () => {
+    const { resolveBackendTransport } = await import('./client/live/backend-transport-factory');
+    const transport = resolveBackendTransport();
+    const events: Array<{ status: string; daemonStartup?: { state?: string } | null }> = [];
+    api.on('backend:status', (payload: (typeof events)[number]) => {
+      events.push(payload);
+    });
+    void transport.request('system.status').catch(() => {});
+    const socket = FakeWebSocket.instances[0];
+    socket.open();
+    await Promise.resolve();
+    await Promise.resolve();
+    const hello = JSON.parse(socket.sent[socket.sent.length - 1]);
+    socket.receive({
+      jsonrpc: '2.0',
+      id: hello.id,
+      error: {
+        code: -32012,
+        message: 'Daemon not ready',
+        data: { code: 'daemon-not-ready', retryable: true, retryAfterMs: 1000 },
+      },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(events.at(-1)).toMatchObject({
+      status: 'connecting',
+      daemonStartup: { state: 'starting' },
+    });
+    const res = await api.invoke('backend:get-status');
+    expect(res).toMatchObject({ status: 'connecting', daemonStartup: { state: 'starting' } });
     (transport as { dispose?: () => void }).dispose?.();
   });
 
