@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.256.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.256.0...v2.256.1) (2026-10-30)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.82 ([#3880](https://github.com/intent-hq/cloudlands-fe/issues/3880)) ([160d164](https://github.com/intent-hq/cloudlands-fe/commit/160d164b783aa3dfdc41a7a8c7ffb98c763d8618))
+* **notes:** show live note titles on note pills outside chat ([#3871](https://github.com/intent-hq/cloudlands-fe/issues/3871)) ([d2afea1](https://github.com/intent-hq/cloudlands-fe/commit/d2afea1dff385af45e3bfbcce0ecae929a61ca04))
+* **store:** set agentsLoaded only after agent rows and sessions are stored ([#3864](https://github.com/intent-hq/cloudlands-fe/issues/3864)) ([3f0e8ef](https://github.com/intent-hq/cloudlands-fe/commit/3f0e8ef4f353071cc8298937cd0e9fd0fccc9bdf))
+
 ## [2.256.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.255.2...v2.256.0) (2026-10-30)
 
 
