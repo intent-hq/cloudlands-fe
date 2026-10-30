@@ -7,6 +7,7 @@
  */
 import { createLogger } from './client-logger';
 import { isHudWindowRenderer } from './hud-window';
+import { bumpNavigationEpoch } from './navigation-epoch';
 
 const logger = createLogger('Navigation');
 
@@ -40,7 +41,13 @@ export async function navigateToRoute(
     logger.debug('Ignoring navigation in HUD window', { route });
     return;
   }
-  if (options.assistantContent || route.startsWith('intent://') || /^https?:\/\//.test(route)) {
+  const mayStayInPlace =
+    options.assistantContent || route.startsWith('intent://') || /^https?:\/\//.test(route);
+  // Synchronously, before any await: a workspace jump still waiting on its
+  // own goto sees this navigation and skips its tab (show-workspace.ts).
+  // Routes that may open in the Assistant panel instead do not count.
+  if (!mayStayInPlace) bumpNavigationEpoch();
+  if (mayStayInPlace) {
     const { showAssistantContent } = await import('$features/home/assistant-panels');
     if (
       await showAssistantContent(route, {

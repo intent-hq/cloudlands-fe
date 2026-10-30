@@ -42,7 +42,7 @@ import { webNotificationSaga, notificationIpcSaga } from './notifications-saga';
 const mocks = vi.hoisted(() => ({
   toast: vi.fn(),
   sound: vi.fn(),
-  route: vi.fn(async () => {}),
+  route: vi.fn(async (_route: string) => {}),
   open: vi.fn(),
   electron: vi.fn(() => false),
 }));
@@ -50,7 +50,14 @@ vi.mock('$lib/components/patterns/notify', () => ({ notify: { info: mocks.toast 
 vi.mock('$features/notifications/notification-sound-gate', () => ({
   playNotificationSoundPerSettings: mocks.sound,
 }));
-vi.mock('$lib/utils/navigation.client', () => ({ navigateToRoute: mocks.route }));
+// Like the real goto, the window ends up on the route; the workspace helper
+// opens the tab only once the route has landed.
+vi.mock('$lib/utils/navigation.client', () => ({
+  navigateToRoute: (route: string) => {
+    window.history.pushState({}, '', route);
+    return mocks.route(route);
+  },
+}));
 vi.mock('$features/discussions/discussion-navigation', () => ({
   openWorkspaceDiscussion: mocks.open,
 }));

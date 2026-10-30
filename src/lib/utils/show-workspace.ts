@@ -12,10 +12,13 @@
  * leaves a stray focused tab; navigation errors are rethrown to the caller.
  * SvelteKit resolves (does not reject) a `goto` that a later navigation
  * abandoned, so a resolved jump also opens no tab when it was overtaken:
- * - by a newer jump through this module (spinning the hardware encoder
- *   through several workspaces only tabs the one it lands on), or
+ * - by any later navigation through this module or `navigateToRoute`
+ *   (spinning the hardware encoder through several workspaces only tabs the
+ *   one it lands on; an encoder click to Home cancels a pending jump);
+ * - by another workspace tab being selected (a tab-strip click selects its
+ *   tab before its raw `goto`); or
  * - by any other navigation that left the window on a different route
- *   (a tab-strip click, Home, browser back).
+ *   (browser back).
  * The HUD pop-out window never navigates (see `navigateToRoute`), so the
  * helper does nothing there.
  */
@@ -24,6 +27,7 @@ import { store as appStore } from '$store/renderer/store';
 import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { isHudWindowRenderer } from './hud-window';
 import { navigateToRoute } from './navigation.client';
+import { bumpNavigationEpoch, navigationEpoch } from './navigation-epoch';
 
 export interface ShowWorkspaceOptions {
   /** Search params for the workspace route (e.g. `{ note: id }`, `{ panel: 'terminal' }`). */
@@ -81,19 +85,33 @@ function tabIdOf(state: TabStateLike): string | null {
   return state?.tabState?.currentTabId ?? null;
 }
 
-/** Counts workspace jumps; a jump whose number is no longer the latest was superseded. */
-let latestJump = 0;
-
 interface Jump {
-  id: number;
   workspaceId: string;
+  /** Navigation epoch just after this jump's navigation started. */
+  epoch: number;
   startPathname: string | null;
   startTabId: string | null;
 }
 
-/** Record a jump's start (call only after {@link skipJump} said go). */
-function beginJump(workspaceId: string, startTabId: string | null): Jump {
-  return { id: ++latestJump, workspaceId, startPathname: currentPathname(), startTabId };
+/**
+ * Start a jump's navigation and resolve with the jump once it resolves (call
+ * only after {@link skipJump} said go). The epoch is read right after the
+ * navigation started, so only later navigations count as overtaking it; the
+ * helper bumps it itself too, so jumps supersede each other even where
+ * `navigateToRoute` is mocked.
+ */
+async function runJump(
+  workspaceId: string,
+  route: string,
+  state: App.PageState | undefined,
+  startTabId: string | null,
+): Promise<Jump> {
+  const startPathname = currentPathname();
+  bumpNavigationEpoch();
+  const navigation = navigate(route, state);
+  const jump = { workspaceId, epoch: navigationEpoch(), startPathname, startTabId };
+  await navigation;
+  return jump;
 }
 
 /** Nothing to do for an empty id or in the HUD window. */
@@ -103,7 +121,7 @@ function skipJump(workspaceId: string): boolean {
 
 /**
  * Whether a resolved jump's navigation still owns the window:
- * - no newer jump started;
+ * - no later navigation started through this module or `navigateToRoute`;
  * - no other workspace tab was selected meanwhile (a tab-strip click selects
  *   its tab before navigating);
  * - the window is on the target workspace. A window still on a non-workspace
@@ -111,7 +129,7 @@ function skipJump(workspaceId: string): boolean {
  *   one on another route was overtaken by a different navigation.
  */
 function jumpLanded(jump: Jump, tabId: string | null): boolean {
-  if (jump.id !== latestJump) return false;
+  if (navigationEpoch() !== jump.epoch) return false;
   if (tabId !== jump.startTabId && tabId !== jump.workspaceId) return false;
   const pathname = currentPathname();
   if (pathname === null) return true;
@@ -125,8 +143,7 @@ async function showAt(
   state: App.PageState | undefined,
 ): Promise<boolean> {
   if (skipJump(workspaceId)) return false;
-  const jump = beginJump(workspaceId, tabIdOf(appStore.state as TabStateLike));
-  await navigate(route, state);
+  const jump = await runJump(workspaceId, route, state, tabIdOf(appStore.state as TabStateLike));
   if (!jumpLanded(jump, tabIdOf(appStore.state as TabStateLike))) return false;
   appStore.dispatch(openTabAction(workspaceId, state));
   return true;
@@ -138,8 +155,8 @@ function* showAtSaga(
   state: App.PageState | undefined,
 ): SagaGenerator<boolean> {
   if (skipJump(workspaceId)) return false;
-  const jump = beginJump(workspaceId, tabIdOf(yield* select((s: TabStateLike) => s)));
-  yield* call(navigate, route, state);
+  const startTabId = tabIdOf(yield* select((s: TabStateLike) => s));
+  const jump = yield* call(runJump, workspaceId, route, state, startTabId);
   if (!jumpLanded(jump, tabIdOf(yield* select((s: TabStateLike) => s)))) return false;
   yield* put(openTabAction(workspaceId, state));
   return true;

@@ -8,11 +8,13 @@ import {
 import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import {
   navigateToAppRoute,
+  navigateToAppRouteSaga,
   openAndShowWorkspace,
   parseWorkspaceRoute,
   showWorkspaceSaga,
   workspaceRoute,
 } from './show-workspace';
+import { bumpNavigationEpoch } from './navigation-epoch';
 
 const mocks = vi.hoisted(() => ({
   route: vi.fn<(route: string, options?: { state?: App.PageState }) => Promise<void>>(),
@@ -209,6 +211,19 @@ describe('superseded jumps and string routes', () => {
     expect(selectCurrentWorkspaceTabId.select(store.state)).toBe('picked-ws');
   });
 
+  it('opens no tab when a later navigateToRoute started while the jump was pending', async () => {
+    // An encoder click to Home while still on Home: same route, but the real
+    // navigateToRoute marks the newer navigation.
+    mocks.route.mockImplementationOnce(async () => {
+      await Promise.resolve();
+      bumpNavigationEpoch();
+    });
+
+    await expect(openAndShowWorkspace('skipped-ws')).resolves.toBe(false);
+
+    expect(selectWorkspaceTabOrder.select(store.state)).toEqual([]);
+  });
+
   it('opens the tab when the stubbed navigation leaves a non-workspace start route', async () => {
     mocks.route.mockResolvedValueOnce(undefined);
 
@@ -243,15 +258,65 @@ describe('showWorkspaceSaga', () => {
     window.history.replaceState({}, '', '/');
   });
 
+  let sagaState: { tabState: { currentTabId: string | null } };
+
   async function run(...args: Parameters<typeof showWorkspaceSaga>) {
     const dispatched: unknown[] = [];
     const result = await runSaga(
-      { dispatch: (action) => dispatched.push(action), getState: () => ({}) },
+      { dispatch: (action) => dispatched.push(action), getState: () => sagaState },
       showWorkspaceSaga,
       ...args,
     ).toPromise();
     return { result, dispatched };
   }
+
+  beforeEach(() => {
+    sagaState = { tabState: { currentTabId: 'open-ws' } };
+  });
+
+  it('puts nothing when another workspace tab was picked during navigation', async () => {
+    mocks.route.mockImplementationOnce(async () => {
+      sagaState = { tabState: { currentTabId: 'picked-ws' } };
+    });
+
+    const { result, dispatched } = await run('ws-1');
+
+    expect(result).toBe(false);
+    expect(dispatched).toEqual([]);
+  });
+
+  it('puts nothing when another navigation left the window elsewhere', async () => {
+    mocks.route.mockImplementationOnce(async () => land('/settings'));
+
+    const { result, dispatched } = await run('ws-1');
+
+    expect(result).toBe(false);
+    expect(dispatched).toEqual([]);
+  });
+
+  it('puts nothing when a later navigateToRoute started while the jump was pending', async () => {
+    mocks.route.mockImplementationOnce(async () => {
+      await Promise.resolve();
+      bumpNavigationEpoch();
+    });
+
+    const { result, dispatched } = await run('ws-1');
+
+    expect(result).toBe(false);
+    expect(dispatched).toEqual([]);
+  });
+
+  it('keeps the route of navigateToAppRouteSaga unchanged and puts the tab', async () => {
+    const dispatched: unknown[] = [];
+    await runSaga(
+      { dispatch: (action) => dispatched.push(action), getState: () => sagaState },
+      navigateToAppRouteSaga,
+      '/workspace/ws-1?panel=terminal#log',
+    ).toPromise();
+
+    expect(mocks.route).toHaveBeenCalledWith('/workspace/ws-1?panel=terminal#log');
+    expect(dispatched).toEqual([openWorkspaceTab('ws-1')]);
+  });
 
   it('navigates, then puts openWorkspaceTab', async () => {
     const { result, dispatched } = await run('ws-1', { query: { note: 'n1' } });
