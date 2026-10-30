@@ -39,10 +39,28 @@
     }
   }
 
+  /**
+   * Inputs whose plain Enter inserts a newline. Code editors such as Monaco type
+   * through the EditContext API, so their focus target is a plain element marked
+   * as an ARIA multiline textbox rather than a textarea (intent-hq/intent#8068).
+   * Chromium exposes `editContext` as `null` on every element, so only an attached
+   * EditContext counts.
+   */
+  function isMultilineInput(target: HTMLElement): boolean {
+    return (
+      target instanceof HTMLTextAreaElement ||
+      target.isContentEditable ||
+      ('editContext' in target && target.editContext != null) ||
+      (target.getAttribute('role') === 'textbox' &&
+        target.getAttribute('aria-multiline') === 'true' &&
+        target.getAttribute('aria-readonly') !== 'true')
+    );
+  }
+
   function handleKeydown(event: KeyboardEvent) {
     if (event.key !== 'Enter' || event.isComposing || event.defaultPrevented || isBusy) return;
     const target = event.target as HTMLElement;
-    const multiline = target instanceof HTMLTextAreaElement || target.isContentEditable;
+    const multiline = isMultilineInput(target);
     // Native controls and composite widgets own their Enter activation, even when
     // implicit submission is disabled. Check ancestors for nested button/link content.
     const interactive = target.closest(
