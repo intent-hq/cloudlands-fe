@@ -1,6 +1,7 @@
 /**
- * Note chips in the composer show the note's live title, while the text the
- * composer sends keeps the saved `@note[...]` token.
+ * Note chips in the composer show the note's live title while `data-label`
+ * keeps the saved title (the composer's renderText, which serializes the sent
+ * token from attrs, is unchanged by this behaviour).
  *
  * @vitest-environment jsdom
  */

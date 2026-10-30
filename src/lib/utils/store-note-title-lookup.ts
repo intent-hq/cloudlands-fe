@@ -1,9 +1,10 @@
 /**
  * Live note titles for mention chips (see note-mention-label.ts), read through
- * the renderer store bridge so generic components (markdown viewer, editors)
- * do not statically import the app store. Before the store is initialised —
- * isolated renders, tests — the lookup returns undefined and chips keep their
- * saved label.
+ * the renderer store bridge rather than the workspace-notes selectors module.
+ * The markdown viewer and editors render in many isolated tests with a stub
+ * store or a partial selectors mock; importing the selectors there broke them.
+ * Before the bridge is initialised the lookup returns undefined and chips keep
+ * their saved label. Mirrors `selectNoteById` (workspace-notes-selectors.ts).
  */
 
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';

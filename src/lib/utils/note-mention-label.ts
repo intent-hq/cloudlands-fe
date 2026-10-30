@@ -52,8 +52,9 @@ export function mentionChipDisplayLabel(
 
 /**
  * Relabel note chips in rendered HTML with live titles. Returns the input
- * string unchanged (same reference) when nothing changes, so a `$derived`
- * consumer does not re-render the DOM.
+ * string itself when no chip label changes (no note chips, or every live title
+ * matches the saved one). Otherwise it re-serializes; callers rely on string
+ * equality, so an unchanged result does not re-render `{@html}`.
  */
 export function relabelNoteChipsInHtml(
   html: string,
