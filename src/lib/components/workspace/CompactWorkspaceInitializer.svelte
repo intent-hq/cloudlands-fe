@@ -3109,7 +3109,6 @@
 
   <div class="initializer-layout" class:expanded={isExpanded}>
     <div class="prompt-pane min-w-0">
-      <!-- Bordered container: Linear issues + Text area -->
       <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
       <div
         class="prompt-composer relative w-full rounded-lg {isExpanded
@@ -3212,28 +3211,26 @@
           </div>
         {/if}
 
-        <!-- Linear issue row (inside border, top-left) -->
         {#if isExpanded}
-          <div
-            class="linear-row flex items-center gap-2 px-2.5 pt-1 pb-2.5 overflow-x-auto relative min-h-11"
-            transition:slide={{ axis: 'y', tier: 'moderate' }}
-          >
-            <IssueSuggestions
-              onSelect={handleIssueSelect}
-              repositoryOwner={githubRepoInfo?.owner}
-              repositoryName={githubRepoInfo?.repo}
-            />
+          <div class="prompt-footer" transition:slide={{ axis: 'y', tier: 'moderate' }}>
+            <div class="min-w-0 py-1">
+              <IssueSuggestions
+                onSelect={handleIssueSelect}
+                repositoryOwner={githubRepoInfo?.owner}
+                repositoryName={githubRepoInfo?.repo}
+              />
+            </div>
 
-            <!-- Mic latch button: click starts dictation, click again (Esc
+            <div class="prompt-actions">
+              <!-- Mic latch button: click starts dictation, click again (Esc
              cancels) stops and transcribes into this prompt at the caret. -->
-            <div class="absolute top-2 {enhanceAvailable ? 'right-[62px]' : 'right-9'}">
               {#if micTranscribing}
                 <!-- Clickable while transcribing: cancel abandons the in-flight
                  session (a hung provider's late result is discarded) and
                  returns the button to idle immediately. -->
                 <Button
                   type="button"
-                  size="icon-xs"
+                  size="icon"
                   variant="ghost-light"
                   onclick={handleMicCancelTranscription}
                   tooltip={m.chat_richInput_micCancelTranscribing_label()}
@@ -3241,12 +3238,12 @@
                   aria-label={m.chat_richInput_micCancelTranscribing_label()}
                   data-testid="initializer-mic-button"
                 >
-                  <IntentMarkLoader size={12} />
+                  <IntentMarkLoader size={16} />
                 </Button>
               {:else if micRecording}
                 <Button
                   type="button"
-                  size="icon-xs"
+                  size="icon"
                   variant="ghost-light"
                   onclick={handleMicClick}
                   tooltip={m.chat_richInput_micStop_label()}
@@ -3256,12 +3253,12 @@
                   class="text-danger animate-pulse"
                   data-testid="initializer-mic-button"
                 >
-                  <Fa icon={faMicrophone} size="xs" />
+                  <Fa icon={faMicrophone} />
                 </Button>
               {:else}
                 <Button
                   type="button"
-                  size="icon-xs"
+                  size="icon"
                   variant="ghost-light"
                   onclick={handleMicClick}
                   tooltip={m.chat_richInput_micStart_label()}
@@ -3270,18 +3267,16 @@
                   aria-pressed="false"
                   data-testid="initializer-mic-button"
                 >
-                  <Fa icon={faMicrophone} size="xs" />
+                  <Fa icon={faMicrophone} />
                 </Button>
               {/if}
-            </div>
 
-            <!-- Enhance prompt button (§5.31 auggie-only gate) -->
-            {#if enhanceAvailable}
-              <div class="absolute top-2 right-9">
+              <!-- Enhance prompt button (§5.31 auggie-only gate) -->
+              {#if enhanceAvailable}
                 <Button
                   type="button"
                   onclick={isEnhancing ? handleCancelEnhance : handleEnhancePrompt}
-                  size="icon-xs"
+                  size="icon"
                   variant="ghost-light"
                   disabled={!initialPrompt.trim() && !isEnhancing}
                   tooltip={isEnhancing
@@ -3290,25 +3285,24 @@
                   tooltipSide="top"
                 >
                   {#if isEnhancing}
-                    <Fa icon={faStop} size="xs" class="text-danger" />
+                    <Fa icon={faStop} class="text-danger" />
                   {:else}
-                    <Fa icon={faMagicWandSparkles} size="xs" />
+                    <Fa icon={faMagicWandSparkles} />
                   {/if}
                 </Button>
-              </div>
-            {/if}
+              {/if}
 
-            <!-- File upload button -->
-            <Button
-              type="button"
-              onclick={handleImageButtonClick}
-              class="absolute top-2 right-2.5"
-              size="icon-xs"
-              variant="ghost-light"
-              title={m.workspace_compactInitializer_addFiles_tooltip()}
-            >
-              <Fa icon={faPaperclip} size="xs" />
-            </Button>
+              <!-- File upload button -->
+              <Button
+                type="button"
+                onclick={handleImageButtonClick}
+                size="icon"
+                variant="ghost-light"
+                title={m.workspace_compactInitializer_addFiles_tooltip()}
+              >
+                <Fa icon={faPaperclip} />
+              </Button>
+            </div>
           </div>
         {/if}
       </div>
@@ -3487,7 +3481,7 @@
         <!-- Validation hint -->
         {#if repoType !== 'gitlab' && isExpanded && !isValid && !isCreating && !error && (gitAvailable !== true || !repoPath || !isValidPath || (repoType === 'github' && githubAuthNeeded !== 'none'))}
           <div
-            class="mt-2 px-4.5 text-sm text-subtle"
+            class="mt-2 text-sm leading-5 text-subtle"
             transition:slide={{ axis: 'y', tier: 'moderate' }}
           >
             {#if gitAvailable === false}
@@ -3528,12 +3522,12 @@
           </div>
         {/if}
 
-        <div class="mt-auto pt-6">
+        <div class="settings-footer mt-auto pt-6">
           <!-- Create button -->
           {#snippet createButton(progressLabel?: Snippet)}
             <Button
               variant="primary"
-              class="w-full justify-between"
+              class="w-full h-auto min-h-10 justify-between gap-3 py-2 text-sm leading-5 font-medium"
               data-dialog-primary-action
               onclick={handleSubmit}
               disabled={!isValid || isCreating || isEnhancing || isProcessingImages}
@@ -3556,7 +3550,7 @@
                 <!-- Always rendered so the button never resizes when validity flips;
                    `invisible` reserves the space while hiding it (incl. from AT). -->
                 <span
-                  class="opacity-50 ml-1"
+                  class="shrink-0 text-xs leading-5 font-normal opacity-60"
                   class:invisible={!isValid}
                   aria-hidden={!isValid ? 'true' : undefined}
                 >
@@ -3687,32 +3681,56 @@
 
   .expanded .prompt-input :global(.rich-textarea-editor) {
     padding-inline: 0;
+    line-height: 1.5;
   }
 
   .settings-pane {
     gap: 0.25rem;
+    padding: 1rem;
+    background: var(--color-sidebar);
+    border-radius: var(--radius-large);
+  }
+
+  :global(.dark) .settings-pane {
+    background: var(--color-background);
+  }
+
+  .prompt-footer {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    min-height: 2.5rem;
+    margin-inline: -0.5rem;
+    column-gap: 0.5rem;
+  }
+
+  .prompt-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-height: 2.5rem;
   }
 
   @container (min-width: 48rem) {
     .initializer-layout.expanded {
-      grid-template-columns: minmax(0, 1fr) 19rem;
+      grid-template-columns: minmax(0, 1fr) 21rem;
       min-height: min(32rem, calc(100dvh - 12rem));
       column-gap: 2rem;
+    }
+
+    .expanded .prompt-pane {
+      padding-block: 1rem;
     }
   }
 
   @container (max-width: 47.99rem) {
+    .settings-pane {
+      margin-inline: -1rem;
+    }
+
     .prompt-input :global(.rich-textarea-editor) {
       min-height: 10rem !important;
     }
-  }
-
-  .linear-row {
-    scrollbar-width: none; /* Firefox */
-    -ms-overflow-style: none; /* IE/Edge */
-  }
-  .linear-row::-webkit-scrollbar {
-    display: none; /* Chrome, Safari, Opera */
   }
 
   /* Shimmer overlay for enhancement loading state */

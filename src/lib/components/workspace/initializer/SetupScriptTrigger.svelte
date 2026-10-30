@@ -2,7 +2,8 @@
   import { Button } from '$lib/components/ui/button';
   import { Label } from '$lib/components/ui/label';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
-  import CaretRight from 'phosphor-svelte/lib/CaretRight';
+  import Fa from 'svelte-fa';
+  import { faChevronRight } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
 
   let {
@@ -38,7 +39,7 @@
     type="button"
     variant={presentation === 'form' ? 'ghost' : 'outline'}
     class="w-full min-w-0 gap-2 font-normal {presentation === 'form'
-      ? 'h-auto min-h-10 justify-between px-2.5 py-2 text-left'
+      ? 'h-auto min-h-10 justify-between px-2.5 py-2 text-left text-sm leading-5'
       : 'justify-between text-left'}"
     aria-label={m.workspace_setupScriptEditor_setupScript_label()}
     aria-haspopup="dialog"
@@ -51,6 +52,6 @@
         >
       {:else}<span class="truncate">{value}</span>{/if}
     </span>
-    <CaretRight size={16} class="shrink-0 text-muted-foreground" aria-hidden="true" />
+    <Fa icon={faChevronRight} class="size-3 shrink-0 text-muted-foreground" />
   </Button>
 </div>

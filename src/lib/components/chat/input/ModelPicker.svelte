@@ -2555,7 +2555,12 @@
         {/if}
       </span>
       {#if variant === 'outline' || variant === 'default' || fullWidth}
-        <Fa icon={faChevronDown} class="h-2 w-2 opacity-50 shrink-0" />
+        <Fa
+          icon={faChevronDown}
+          class={fullWidth
+            ? 'size-3 shrink-0 text-muted-foreground'
+            : 'h-2 w-2 opacity-50 shrink-0'}
+        />
       {/if}
     {/snippet}
 

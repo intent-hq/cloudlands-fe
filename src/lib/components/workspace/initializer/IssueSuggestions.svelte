@@ -1833,7 +1833,7 @@
       <span>{m.workspace_issueSuggestions_addContext_label()}</span>
       <!-- Show all provider icons when collapsed -->
       <!-- {#if !isOpen} -->
-      <div class="flex items-end gap-2 ml-1 -mb-0.5">
+      <div class="flex items-center gap-2 ml-1">
         {#each orderedProviders as provider (provider)}
           {@const ProviderIcon = PROVIDER_ICONS[provider]}
           <ProviderIcon size={12} class={PROVIDER_ICON_CLASSES[provider]} />

@@ -278,12 +278,12 @@
         gitlabSelected={repoType === 'gitlab'}
         value={repoOnlyValue}
         onchange={handleRepoChange}
-        triggerClass="w-full min-w-0 h-auto min-h-10 px-2.5 py-2 font-normal"
+        triggerClass="w-full min-w-0 h-auto min-h-10 px-2.5 py-2 text-sm leading-5 font-normal"
         displayValue={metadataRepoName || undefined}
         triggerValueClass="text-foreground"
         triggerContentClass="gap-2"
         showTriggerChevron
-        triggerChevronClass="ml-auto size-2.5 shrink-0 text-muted-foreground"
+        triggerChevronClass="ml-auto size-3! shrink-0 text-muted-foreground"
       />
     </div>
     {#if !isNewRepo}
@@ -296,19 +296,19 @@
             {#if gitlabBranch}
               <GitLabBranchPicker
                 {...gitlabBranch}
-                triggerClass="w-full min-w-0 h-auto min-h-10 justify-start px-2.5 py-2 font-normal text-foreground"
+                triggerClass="w-full min-w-0 h-auto min-h-10 justify-start px-2.5 py-2 text-sm leading-5 font-normal text-foreground"
                 showTriggerChevron
-                triggerChevronClass="ml-auto size-2.5 shrink-0 text-muted-foreground"
+                triggerChevronClass="ml-auto size-3! shrink-0 text-muted-foreground"
               />
             {/if}
           {:else if repoType === 'remote' && remoteSetup}
-            <span class="block truncate px-2.5 py-2 text-right text-sm text-foreground"
+            <span class="block truncate px-2.5 py-2 text-sm leading-5 text-foreground"
               >{remoteSetup.branch || 'main'}<!-- i18n-ignore (git branch name) --></span
             >
           {:else}
             <BranchSelector
               variant="ghost"
-              triggerClass="w-full min-w-0 h-auto min-h-10 px-2.5 py-2 font-normal text-foreground"
+              triggerClass="w-full min-w-0 h-auto min-h-10 px-2.5 py-2 text-sm leading-5 font-normal text-foreground"
               value={branch}
               repoPath={branchRepoPath}
               repoType={repoType as 'local' | 'github'}
@@ -319,7 +319,7 @@
               disabled={!hasRepo}
               showUncommittedIndicator
               showTriggerChevron
-              triggerChevronClass="ml-auto size-2.5 shrink-0 text-muted-foreground"
+              triggerChevronClass="ml-auto size-3! shrink-0 text-muted-foreground"
               triggerContentClass="w-full gap-2"
               onSkipIsolationChange={(value) => onSkipIsolationChange?.(value)}
               onGitHubAuthNeededChange={(value) => onGitHubAuthNeededChange?.(value)}

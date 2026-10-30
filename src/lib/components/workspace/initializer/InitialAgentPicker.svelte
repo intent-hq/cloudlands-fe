@@ -74,7 +74,7 @@
   const agentValueId = `${uid}-agent-value`;
   // Matches the form's other settings rows: 40px hit height, body text.
   const SETTINGS_TRIGGER_CLASS =
-    'w-full min-w-0 min-h-10 justify-start gap-2 px-2.5! py-2! text-sm font-normal';
+    'w-full min-w-0 h-auto min-h-10 justify-start gap-2 px-2.5! py-2! text-sm leading-5 font-normal text-foreground';
   // The menu content is the only scroller: a nested scroll box let the last
   // row's highlight overflow the menu (a second vertical bar) and clipped the
   // separator into a horizontal bar. Capped by the space Bits UI measures.
@@ -864,7 +864,7 @@
           <span class="min-w-0 flex-1 truncate text-left" id={agentValueId}
             >{agentDisplayLabel}</span
           >
-          <Fa icon={faChevronDown} class="size-2 shrink-0 opacity-50" />
+          <Fa icon={faChevronDown} class="size-3 shrink-0 text-muted-foreground" />
         </Button>
       {/snippet}
 
@@ -936,6 +936,7 @@
 
   .agent-settings-label {
     font-size: var(--text-sm);
+    line-height: 1.25rem;
     color: var(--color-muted-foreground);
   }
 
