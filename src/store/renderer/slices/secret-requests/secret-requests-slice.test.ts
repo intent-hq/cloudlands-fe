@@ -4,6 +4,8 @@ import type { SecretListing } from '$shared/types/secret-request-resource';
 import {
   secretAnswerUpdated,
   secretListLoaded,
+  secretRequestsCollapsed,
+  secretRequestsExpanded,
   secretRequestsReducer,
 } from './secret-requests-slice';
 import type { SecretRequestsState } from './secret-requests-types';
@@ -70,5 +72,12 @@ describe('secretRequestsReducer', () => {
     );
     expect(state.answers['sec-1']?.status).toBe('sending');
     expect(state.answers['sec-2']?.status).toBe('failed');
+  });
+
+  it('remembers which requests were showing when an agent stack was hidden', () => {
+    let state = reduce(undefined, secretRequestsCollapsed('a', ['sec-1', 'sec-2']));
+    expect(state.collapsed.a).toEqual(['sec-1', 'sec-2']);
+    state = reduce(state, secretRequestsCollapsed('b', ['sec-9']), secretRequestsExpanded('a'));
+    expect(state.collapsed).toEqual({ b: ['sec-9'] });
   });
 });
