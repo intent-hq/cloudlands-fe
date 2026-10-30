@@ -1211,7 +1211,7 @@ describe('agent drawing hold', () => {
     service.setTabOwner('tab-agent', 'agent-1');
     const listenersBefore = guest.once.mock.calls.length;
 
-    service.touchAgentDrawing('tab-agent');
+    service.beginAgentDrawing('tab-agent', 'agent-1')();
     const onDestroyed = guest.once.mock.calls[listenersBefore][1];
 
     expect(service.hasAgentDrawingHold('tab-agent')).toBe(true);
@@ -1225,12 +1225,17 @@ describe('agent drawing hold', () => {
 
     // Each action restarts the idle window.
     vi.advanceTimersByTime(idleMs - 1);
-    service.touchAgentDrawing('tab-agent');
+    service.beginAgentDrawing('tab-agent', 'agent-1')();
     vi.advanceTimersByTime(idleMs - 1);
     expect(service.hasAgentDrawingHold('tab-agent')).toBe(true);
     expect(guest.backgroundThrottling).toBe(false);
-    // Refreshing the hold neither re-sends nor stacks a destroyed listener.
-    expect(agentDrawingMessages(host)).toHaveLength(1);
+    // Each action re-announces the box (idempotent in the renderer, and it
+    // restores a box whose renderer state was lost) without stacking a
+    // second destroyed listener.
+    expect(agentDrawingMessages(host)).toEqual([
+      { tabId: 'tab-agent', active: true },
+      { tabId: 'tab-agent', active: true },
+    ]);
     expect(guest.once).toHaveBeenCalledTimes(listenersBefore + 1);
 
     vi.advanceTimersByTime(1);
@@ -1240,52 +1245,119 @@ describe('agent drawing hold', () => {
     expect(host.send).toHaveBeenCalledWith(IPC_CHANNELS.BROWSER.CAPTURE_DRAWING, {
       active: false,
     });
-    expect(agentDrawingMessages(host)).toEqual([
-      { tabId: 'tab-agent', active: true },
-      { tabId: 'tab-agent', active: false },
-    ]);
+    expect(agentDrawingMessages(host).at(-1)).toEqual({ tabId: 'tab-agent', active: false });
     expect(guest.removeListener).toHaveBeenCalledWith('destroyed', onDestroyed);
   });
 
-  it('never holds a tab no agent owns (user tabs keep normal throttling)', async () => {
+  // Review regression: a long measurement (an evaluate awaiting 40 s of
+  // frames) must not lose the hold halfway through.
+  it('never lapses while an action is still in flight', async () => {
+    const service = await loadService();
+    const idleMs = await loadIdleMs();
+    const { guest } = heldGuest(87);
+    mocks.fromId.mockReturnValue(guest);
+    service.registerTab('tab-agent', 87);
+    service.setTabOwner('tab-agent', 'agent-1');
+
+    const endLong = service.beginAgentDrawing('tab-agent', 'agent-1');
+    service.beginAgentDrawing('tab-agent', 'agent-1')();
+    vi.advanceTimersByTime(idleMs * 3);
+    expect(service.hasAgentDrawingHold('tab-agent')).toBe(true);
+    expect(guest.backgroundThrottling).toBe(false);
+
+    endLong();
+    endLong(); // ending twice is harmless
+    vi.advanceTimersByTime(idleMs - 1);
+    expect(service.hasAgentDrawingHold('tab-agent')).toBe(true);
+    vi.advanceTimersByTime(1);
+    expect(service.hasAgentDrawingHold('tab-agent')).toBe(false);
+    expect(guest.backgroundThrottling).toBe(true);
+  });
+
+  it('only holds a tab for the agent that owns it (user and other agents keep throttling)', async () => {
     const service = await loadService();
     const { guest, host } = heldGuest(82);
     mocks.fromId.mockReturnValue(guest);
     service.registerTab('tab-user', 82);
+    service.registerTab('tab-other', 82);
+    service.setTabOwner('tab-other', 'agent-owner');
 
-    service.touchAgentDrawing('tab-user');
+    service.beginAgentDrawing('tab-user', 'agent-1')();
+    service.beginAgentDrawing('tab-other', 'agent-1')();
 
     expect(service.hasAgentDrawingHold('tab-user')).toBe(false);
+    expect(service.hasAgentDrawingHold('tab-other')).toBe(false);
     expect(guest.backgroundThrottling).toBe(true);
     expect(host.backgroundThrottling).toBe(true);
     expect(host.send).not.toHaveBeenCalled();
   });
 
-  it('releases at once when the tab unmounts, closes, or its guest is destroyed', async () => {
+  // Review regression: an action that mounts its tab on demand must draw
+  // at full rate as soon as the tab mounts, not only after it returns.
+  it('holds a tab that mounts while the action is in flight', async () => {
+    const service = await loadService();
+    const { guest, host } = heldGuest(88);
+    mocks.fromId.mockReturnValue(guest);
+    service.setTabOwner('tab-agent', 'agent-1');
+
+    const end = service.beginAgentDrawing('tab-agent', 'agent-1');
+    expect(service.hasAgentDrawingHold('tab-agent')).toBe(false);
+
+    service.registerTab('tab-agent', 88);
+    expect(service.hasAgentDrawingHold('tab-agent')).toBe(true);
+    expect(guest.backgroundThrottling).toBe(false);
+    expect(agentDrawingMessages(host)).toEqual([{ tabId: 'tab-agent', active: true }]);
+    end();
+  });
+
+  it('drops the guest hold on unmount or guest death, re-holds on remount, ends on close', async () => {
     const service = await loadService();
     const { guest, host } = heldGuest(83);
     mocks.fromId.mockReturnValue(guest);
     service.registerTab('tab-agent', 83);
     service.setTabOwner('tab-agent', 'agent-1');
 
-    service.touchAgentDrawing('tab-agent');
+    service.beginAgentDrawing('tab-agent', 'agent-1')();
     service.unregisterTab('tab-agent');
     expect(service.hasAgentDrawingHold('tab-agent')).toBe(false);
     expect(guest.backgroundThrottling).toBe(true);
     expect(host.backgroundThrottling).toBe(true);
+    // Still inside the idle window: a remount is held again.
+    const listenersBefore = guest.once.mock.calls.length;
+    service.registerTab('tab-agent', 83);
+    expect(service.hasAgentDrawingHold('tab-agent')).toBe(true);
+
+    // The hold's own listener is attached before registerTab's cleanup one.
+    const onDestroyed = guest.once.mock.calls[listenersBefore][1] as () => void;
+    onDestroyed();
+    expect(service.hasAgentDrawingHold('tab-agent')).toBe(false);
+    expect(guest.backgroundThrottling).toBe(true);
+    expect(agentDrawingMessages(host).at(-1)).toEqual({ tabId: 'tab-agent', active: false });
 
     service.registerTab('tab-agent', 83);
-    service.touchAgentDrawing('tab-agent');
+    expect(service.hasAgentDrawingHold('tab-agent')).toBe(true);
     service.clearTabOwnership('tab-agent');
     expect(service.hasAgentDrawingHold('tab-agent')).toBe(false);
     expect(guest.backgroundThrottling).toBe(true);
-
-    service.setTabOwner('tab-agent', 'agent-1');
-    service.touchAgentDrawing('tab-agent');
-    const onDestroyed = guest.once.mock.calls.at(-1)![1] as () => void;
-    onDestroyed();
+    // Closed: a later remount is not held.
+    service.registerTab('tab-agent', 83);
     expect(service.hasAgentDrawingHold('tab-agent')).toBe(false);
-    expect(agentDrawingMessages(host).at(-1)).toEqual({ tabId: 'tab-agent', active: false });
+  });
+
+  it('ends the hold when another agent takes the tab over', async () => {
+    const service = await loadService();
+    const { guest } = heldGuest(89);
+    mocks.fromId.mockReturnValue(guest);
+    service.registerTab('tab-agent', 89);
+    service.setTabOwner('tab-agent', 'agent-1');
+    const end = service.beginAgentDrawing('tab-agent', 'agent-1');
+
+    service.setTabOwner('tab-agent', 'agent-2');
+    service.registerTab('tab-agent', 89);
+
+    expect(service.hasAgentDrawingHold('tab-agent')).toBe(false);
+    expect(guest.backgroundThrottling).toBe(true);
+    end();
   });
 
   it('moves the hold when the tab is re-registered to a new guest', async () => {
@@ -1297,10 +1369,9 @@ describe('agent drawing hold', () => {
     );
     service.registerTab('tab-agent', 84);
     service.setTabOwner('tab-agent', 'agent-1');
-    service.touchAgentDrawing('tab-agent');
+    service.beginAgentDrawing('tab-agent', 'agent-1')();
 
     service.registerTab('tab-agent', 85);
-    service.touchAgentDrawing('tab-agent');
 
     expect(first.guest.backgroundThrottling).toBe(true);
     expect(first.host.backgroundThrottling).toBe(true);
@@ -1325,7 +1396,7 @@ describe('agent drawing hold', () => {
     mocks.fromId.mockReturnValue(wc);
     service.registerTab('tab-agent', 86);
     service.setTabOwner('tab-agent', 'agent-1');
-    service.touchAgentDrawing('tab-agent');
+    service.beginAgentDrawing('tab-agent', 'agent-1')();
 
     await expect(service.screenshot('tab-agent')).resolves.toMatchObject({ base64: JPEG_1PX });
 

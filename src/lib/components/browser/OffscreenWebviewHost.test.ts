@@ -969,8 +969,9 @@ describe('OffscreenWebviewHost', () => {
   // An agent acting on a hidden tab needs full frame rate, but Chromium
   // pauses or slows a frame whose visible box is 1x1 (~1 fps measured).
   // Main's agent drawing hold (`browser:agent-drawing`) grows only that
-  // tab's box to full size, still invisible, without reloading the guest.
-  it('gives a tab a full-size box while an agent is drawing it, then parks it again', async () => {
+  // tab's box to 8x8 (measured full rate), still invisible, without
+  // reloading the guest.
+  it('gives a tab a larger box while an agent is drawing it, then parks it again', async () => {
     layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-a' }, { id: 'tab-b' }]) });
     const { container } = render(OffscreenWebviewHost, {
       props: { excludedWorkspaceIds: new Set() },
@@ -983,8 +984,8 @@ describe('OffscreenWebviewHost', () => {
     agentDrawingStore.set({ 'tab-a': true });
     await tick();
     expect(box('tab-a').hasAttribute('data-agent-drawing')).toBe(true);
-    expect(box('tab-a').style.width).toBe('1280px');
-    expect(box('tab-a').style.height).toBe('800px');
+    expect(box('tab-a').style.width).toBe('8px');
+    expect(box('tab-a').style.height).toBe('8px');
     // Only the agent's tab grows; the other stays parked.
     expect(box('tab-b').style.width).toBe('1px');
     // Same guest element: growing the box never reloads the page.

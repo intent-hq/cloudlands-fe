@@ -126,7 +126,7 @@ const LIST_TABS_TIMEOUT_MS = 500;
 
 /**
  * How long an agent-owned tab keeps drawing at full frame rate after its
- * owner's last action (see EmbeddedBrowserCdpService.touchAgentDrawing):
+ * owner's last action (see EmbeddedBrowserCdpService.beginAgentDrawing):
  * long enough to span an agent's gap between tool calls, short enough that
  * an idle background tab goes back to being throttled.
  */
@@ -286,19 +286,25 @@ class EmbeddedBrowserCdpService {
   >();
 
   /**
-   * Agent-activity drawing holds, keyed by tabId: an agent-owned tab keeps
-   * drawing at full frame rate while its owner acts on it, until
-   * {@link AGENT_DRAWING_IDLE_MS} pass without another action (see
-   * {@link touchAgentDrawing}).
+   * Agent-activity drawing, keyed by tabId: an agent-owned tab keeps drawing
+   * at full frame rate while its owner acts on it and for
+   * {@link AGENT_DRAWING_IDLE_MS} after the last action ends (see
+   * {@link beginAgentDrawing}). `guest` is the hold on the tab's current
+   * webContents; it is absent while the tab is not mounted, and taken as
+   * soon as it mounts.
    */
-  private agentDrawingHolds = new Map<
+  private agentDrawing = new Map<
     string,
     {
-      webContentsId: number;
-      host: Electron.WebContents | undefined;
-      release: () => void;
-      timer: ReturnType<typeof setTimeout>;
-      detach: () => void;
+      agentId: string;
+      inFlight: number;
+      timer: ReturnType<typeof setTimeout> | undefined;
+      guest?: {
+        webContentsId: number;
+        host: Electron.WebContents | undefined;
+        release: () => void;
+        detach: () => void;
+      };
     }
   >();
 
@@ -542,6 +548,9 @@ class EmbeddedBrowserCdpService {
       hostingLogger.info('tab registered', { tabId, webContentsId });
     }
     this.tabRegistry.set(tabId, webContentsId);
+    // An agent acting on this tab (possibly the action that mounted it on
+    // demand) keeps the new guest drawing too.
+    if (this.agentDrawing.has(tabId)) this.attachAgentDrawing(tabId);
 
     // Owned tabs are always emulated (docs/protocol §5.9): (re)apply the
     // recorded viewport on every registration so emulation survives
@@ -666,7 +675,7 @@ class EmbeddedBrowserCdpService {
    * use {@link clearTabOwnership} on a genuine close (monorepo#2857).
    */
   unregisterTab(tabId: string): void {
-    this.releaseAgentDrawing(tabId);
+    this.detachAgentDrawing(tabId);
     this.tabsWithDeviceMetricsOverride.delete(tabId);
     const webContentsId = this.tabRegistry.get(tabId);
     if (webContentsId !== undefined) {
@@ -2270,58 +2279,95 @@ class EmbeddedBrowserCdpService {
   /**
    * Keep an agent-owned tab drawing at full frame rate while its owner acts
    * on it, so an agent can measure animation, flicker and timing in its own
-   * tab. Each call (re)starts an {@link AGENT_DRAWING_IDLE_MS} idle window;
-   * when it lapses the hold is released and the tab returns to normal
-   * throttling, so idle background tabs cost nothing.
+   * tab. Call when an action starts and call the returned `end` when it
+   * finishes: the hold lasts while any action is in flight and
+   * {@link AGENT_DRAWING_IDLE_MS} after the last one ends, then the tab
+   * returns to normal throttling, so idle background tabs cost nothing.
    *
    * Two things slow a hidden tab, and the hold lifts both:
    * - The offscreen host parks hidden guests in a 1x1 box, and Chromium
    *   pauses or slows a frame whose visible box is that tiny (measured: about
    *   1 frame per second). The host window is told
-   *   (`AGENT_DRAWING { tabId, active }`) to give the guest a full-size,
+   *   (`AGENT_DRAWING { tabId, active }`) to give the guest a slightly larger,
    *   still invisible box for the duration.
    * - A minimized or covered app window stops drawing altogether. The
    *   capture hold ({@link holdCaptureDrawing}) keeps the guest and its
    *   window drawing, with the same presence handshake.
    *
-   * The caller (executor) has already checked that the calling agent owns
-   * the tab; unowned (user) tabs are never held. Never throws.
+   * Only a tab `agentId` owns is held; user tabs and other agents' tabs are
+   * never touched. Never throws.
    */
-  touchAgentDrawing(tabId: string): void {
-    if (!this.tabOwnership.has(tabId)) return;
-    const webContentsId = this.resolveTabId(tabId);
-    const existing = this.agentDrawingHolds.get(tabId);
-    if (existing && existing.webContentsId === webContentsId) {
-      clearTimeout(existing.timer);
-      existing.timer = this.scheduleAgentDrawingRelease(tabId);
+  beginAgentDrawing(tabId: string, agentId: string): () => void {
+    if (this.tabOwnership.get(tabId)?.ownerAgentId !== agentId) return () => {};
+    let entry = this.agentDrawing.get(tabId);
+    if (entry && entry.agentId !== agentId) {
+      this.releaseAgentDrawing(tabId);
+      entry = undefined;
+    }
+    if (!entry) {
+      entry = { agentId, inFlight: 0, timer: undefined };
+      this.agentDrawing.set(tabId, entry);
+    }
+    entry.inFlight++;
+    if (entry.timer) {
+      clearTimeout(entry.timer);
+      entry.timer = undefined;
+    }
+    this.attachAgentDrawing(tabId);
+
+    const current = entry;
+    let ended = false;
+    return () => {
+      if (ended) return;
+      ended = true;
+      if (this.agentDrawing.get(tabId) !== current || --current.inFlight > 0) return;
+      current.timer = setTimeout(() => this.releaseAgentDrawing(tabId), AGENT_DRAWING_IDLE_MS);
+      current.timer.unref?.();
+    };
+  }
+
+  /** Whether a tab's current guest is held drawing for an agent (diagnostics/tests). */
+  hasAgentDrawingHold(tabId: string): boolean {
+    return this.agentDrawing.get(tabId)?.guest !== undefined;
+  }
+
+  /**
+   * Hold the tab's current guest for its agent drawing entry, moving the
+   * hold when the tab was handed to a new guest (offscreen <-> panel), and
+   * (re)announce the box to the host window, which is idempotent there and
+   * restores a box whose renderer state was lost. Never throws.
+   */
+  private attachAgentDrawing(tabId: string): void {
+    const entry = this.agentDrawing.get(tabId);
+    if (!entry) return;
+    if (this.tabOwnership.get(tabId)?.ownerAgentId !== entry.agentId) {
+      this.releaseAgentDrawing(tabId);
       return;
     }
-    // A tab handed to a new guest (offscreen <-> panel) moves its hold.
-    if (existing) this.releaseAgentDrawing(tabId);
+    const webContentsId = this.resolveTabId(tabId);
+    if (entry.guest && entry.guest.webContentsId !== webContentsId) this.detachAgentDrawing(tabId);
     if (webContentsId === undefined) return;
-    const guest = webContents.fromId(webContentsId);
-    if (!guest || guest.isDestroyed()) return;
-
-    const release = this.holdCaptureDrawing(webContentsId);
-    const host =
-      guest.hostWebContents && !guest.hostWebContents.isDestroyed()
-        ? guest.hostWebContents
-        : undefined;
-    const onDestroyed = () => {
-      if (this.agentDrawingHolds.get(tabId)?.webContentsId === webContentsId) {
-        this.releaseAgentDrawing(tabId);
-      }
-    };
-    this.agentDrawingHolds.set(tabId, {
-      webContentsId,
-      host,
-      release,
-      timer: this.scheduleAgentDrawingRelease(tabId),
-      detach: () => guest.removeListener('destroyed', onDestroyed),
-    });
     try {
-      host?.send(IPC_CHANNELS.BROWSER.AGENT_DRAWING, { tabId, active: true });
-      guest.once('destroyed', onDestroyed);
+      if (!entry.guest) {
+        const guest = webContents.fromId(webContentsId);
+        if (!guest || guest.isDestroyed()) return;
+        const onDestroyed = () => {
+          if (this.agentDrawing.get(tabId)?.guest?.webContentsId === webContentsId) {
+            this.detachAgentDrawing(tabId);
+          }
+        };
+        guest.once('destroyed', onDestroyed);
+        entry.guest = {
+          webContentsId,
+          host:
+            guest.hostWebContents && !guest.hostWebContents.isDestroyed()
+              ? guest.hostWebContents
+              : undefined,
+          release: this.holdCaptureDrawing(webContentsId),
+          detach: () => guest.removeListener('destroyed', onDestroyed),
+        };
+      }
+      entry.guest.host?.send(IPC_CHANNELS.BROWSER.AGENT_DRAWING, { tabId, active: true });
     } catch (error) {
       logger.debug('Could not keep agent tab drawing', {
         tabId,
@@ -2331,32 +2377,33 @@ class EmbeddedBrowserCdpService {
     }
   }
 
-  /** Whether an agent drawing hold is active for a tab (diagnostics/tests). */
-  hasAgentDrawingHold(tabId: string): boolean {
-    return this.agentDrawingHolds.has(tabId);
-  }
-
-  private scheduleAgentDrawingRelease(tabId: string): ReturnType<typeof setTimeout> {
-    const timer = setTimeout(() => this.releaseAgentDrawing(tabId), AGENT_DRAWING_IDLE_MS);
-    timer.unref?.();
-    return timer;
-  }
-
-  /** Release a tab's agent drawing hold, if any. Never throws. */
-  private releaseAgentDrawing(tabId: string): void {
-    const hold = this.agentDrawingHolds.get(tabId);
-    if (!hold) return;
-    this.agentDrawingHolds.delete(tabId);
-    clearTimeout(hold.timer);
-    hold.release();
+  /**
+   * Drop the hold on a tab's guest (unmount, guest destroyed, handoff) while
+   * keeping the agent activity, so a remount is held again. Never throws.
+   */
+  private detachAgentDrawing(tabId: string): void {
+    const entry = this.agentDrawing.get(tabId);
+    const held = entry?.guest;
+    if (!entry || !held) return;
+    entry.guest = undefined;
+    held.release();
     try {
-      hold.detach();
-      if (hold.host && !hold.host.isDestroyed()) {
-        hold.host.send(IPC_CHANNELS.BROWSER.AGENT_DRAWING, { tabId, active: false });
+      held.detach();
+      if (held.host && !held.host.isDestroyed()) {
+        held.host.send(IPC_CHANNELS.BROWSER.AGENT_DRAWING, { tabId, active: false });
       }
     } catch {
       // A window torn down mid-hold has no box left to shrink.
     }
+  }
+
+  /** End a tab's agent drawing entirely (idle window lapsed, tab closed). */
+  private releaseAgentDrawing(tabId: string): void {
+    const entry = this.agentDrawing.get(tabId);
+    if (!entry) return;
+    this.detachAgentDrawing(tabId);
+    this.agentDrawing.delete(tabId);
+    if (entry.timer) clearTimeout(entry.timer);
   }
 
   /** CDP capture, degrading to capturePage() (see screenshot()). */

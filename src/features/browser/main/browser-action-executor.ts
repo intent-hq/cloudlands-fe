@@ -750,11 +750,11 @@ const OWNERSHIP_ENFORCED_ACTIONS = new Set([
 
 /**
  * Content actions that keep the agent's own tab drawing at full frame rate
- * for a short idle window (see EmbeddedBrowserCdpService.touchAgentDrawing),
- * so animation and timing measured across consecutive actions are real.
- * Every entry is ownership-enforced, so the hold only ever lands on a tab
- * the calling agent owns. Session actions (captureStep, ...) also hold the
- * session's tab once the session owner is confirmed.
+ * while they run and for a short idle window after (see
+ * EmbeddedBrowserCdpService.beginAgentDrawing), so animation and timing
+ * measured across consecutive actions are real. Every entry is
+ * ownership-enforced; the service also re-checks that the caller owns the
+ * tab.
  */
 const AGENT_DRAWING_ACTIONS = new Set([
   'focusTab',
@@ -765,6 +765,14 @@ const AGENT_DRAWING_ACTIONS = new Set([
   'startSession',
   'navigate',
 ]);
+
+/**
+ * Capture-session actions that drive the session's tab and so take the same
+ * hold. Teardown and read-only ones (endSession, stopTrace, endCapture,
+ * readCapture, getSummary) deliberately do not: they would keep an idle tab
+ * and its window unthrottled for another idle window.
+ */
+const SESSION_DRAWING_ACTIONS = new Set(['startCapture', 'captureStep', 'startTrace']);
 
 /**
  * Per-`executeActions` memo of the owner display-name lookup, keyed by agent
@@ -942,19 +950,20 @@ async function executeAction(
     }
   }
 
-  // Agent activity keeps the owned tab drawing at full frame rate: touched
-  // before the action and again after it, so the idle window counts from
-  // the action's end (and covers a tab the action mounted on demand).
-  if (drawingTabId) embeddedBrowserCdp.touchAgentDrawing(drawingTabId);
+  // Agent activity keeps the owned tab drawing at full frame rate for the
+  // whole action (including a tab it mounts on demand), and for an idle
+  // window after it ends.
+  let endDrawing: (() => void) | undefined;
+  if (drawingTabId && agentId) {
+    endDrawing = embeddedBrowserCdp.beginAgentDrawing(drawingTabId, agentId);
+  }
   try {
     if ('sessionId' in action) {
       const sessionWorkspaceId = requireWorkspaceId(workspaceId, action.action);
       browserCapture.assertSessionOwner(action.sessionId, sessionWorkspaceId, agentId);
-      // Capture steps drive the session's tab, which startSession only
-      // opened on a tab the agent owns.
-      if (agentId) {
-        drawingTabId ??= browserCapture.getSessionTabId(action.sessionId, sessionWorkspaceId);
-        if (drawingTabId) embeddedBrowserCdp.touchAgentDrawing(drawingTabId);
+      if (agentId && !endDrawing && SESSION_DRAWING_ACTIONS.has(action.action)) {
+        const sessionTabId = browserCapture.getSessionTabId(action.sessionId, sessionWorkspaceId);
+        if (sessionTabId) endDrawing = embeddedBrowserCdp.beginAgentDrawing(sessionTabId, agentId);
       }
     }
     switch (action.action) {
@@ -1974,7 +1983,7 @@ async function executeAction(
       error: error instanceof Error ? error.message : 'Unknown error',
     };
   } finally {
-    if (drawingTabId) embeddedBrowserCdp.touchAgentDrawing(drawingTabId);
+    endDrawing?.();
   }
 }
 

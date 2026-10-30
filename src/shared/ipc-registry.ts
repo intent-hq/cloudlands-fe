@@ -596,8 +596,8 @@ export const IPC_CHANNELS = {
     CAPTURE_DRAWING: 'browser:capture-drawing',
     /**
      * An agent is (active: true) / is no longer (active: false) acting on an
-     * agent-owned tab, so its offscreen webview gets a full-size invisible
-     * box and draws at full frame rate (main->renderer event)
+     * agent-owned tab, so its offscreen webview gets a larger (8x8, still
+     * invisible) box and draws at full frame rate (main->renderer event)
      */
     AGENT_DRAWING: 'browser:agent-drawing',
     /** Report the workspaces this window hosts in the background (renderer->main) */
@@ -1282,7 +1282,7 @@ export const EVENT_CHANNELS = [
   'browser:host-workspace',
   // An agent capture keeps this window drawing while hidden (presence gate)
   'browser:capture-drawing',
-  // An agent is acting on an offscreen tab: give it a full-size invisible box
+  // An agent is acting on an offscreen tab: give it a box that draws at full rate
   'browser:agent-drawing',
   // Browser tab open request from main process (agent wants to open a browser tab)
   'browser:open-tab',

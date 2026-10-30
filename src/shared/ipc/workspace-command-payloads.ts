@@ -122,7 +122,7 @@ export type BrowserListTabsRequestPayload = WorkspaceCommandPayload & {
 
 /**
  * Main's agent drawing hold started (active: true) or ended for a tab: the
- * offscreen host gives it a full-size invisible box so it draws at full
+ * offscreen host gives it a larger, still invisible box so it draws at full
  * frame rate. Window-scoped (sent to the guest's host), so no workspaceId.
  */
 export type BrowserAgentDrawingPayload = {
