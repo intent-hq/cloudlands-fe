@@ -211,11 +211,12 @@
     const key = requestKey;
     const workspace = workspaceId;
     const agent = agentId;
-    owner = admission ? { admission, revision, dispatch: appStore.dispatch } : null;
+    const currentOwner = admission ? { admission, revision, dispatch: appStore.dispatch } : null;
+    owner = currentOwner;
     chipDismissTarget = null;
     focusAfter = null;
     focusFrom = null;
-    if (!isCurrent(owner)) return;
+    if (!isCurrent(currentOwner)) return;
     untrack(() => {
       appStore.dispatch(secretListRequested(workspace, agent, key ? key.split(',') : []));
     });
