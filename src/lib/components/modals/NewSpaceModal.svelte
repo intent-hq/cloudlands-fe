@@ -136,6 +136,7 @@
 
   .workspace-form :global(.initializer-layout.expanded) {
     grid-template-columns: minmax(0, 1fr) 18rem;
+    min-height: 0;
   }
 
   .workspace-sidebar-surface {
