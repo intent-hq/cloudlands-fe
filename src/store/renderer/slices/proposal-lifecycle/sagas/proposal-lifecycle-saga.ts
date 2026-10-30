@@ -296,7 +296,7 @@ function sameEntryIgnoringProgress(a: ProposalLifecycleEntry, b: ProposalLifecyc
 }
 
 /** True when `next` differs from `prev` only in live transfer progress. */
-export function isTransferProgressOnlyChange(
+function isTransferProgressOnlyChange(
   prev: Record<string, ProposalLifecycleEntry> | null,
   next: Record<string, ProposalLifecycleEntry>,
 ): boolean {
