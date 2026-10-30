@@ -1,6 +1,7 @@
 import type { AgentSession, ContentBlock, MessageRole, SuggestedPrompt } from '$shared/types';
 import { dedupeAgentVideoContentBlocks, normalizeAgentVideoContentBlocks } from '$shared/types';
 import { isQuestionResourceBlock } from '$shared/types/question-resource';
+import { isSecretRequestResourceBlock } from '$shared/types/secret-request-resource';
 import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
 import { providerRefBaseId } from '$shared/provider-profiles';
 import {
@@ -74,7 +75,8 @@ function hasVisibleText(block: ContentBlock): boolean {
  * 1. strip suggested prompts (rendered separately by ChatPanel);
  * 2. collapse duplicate resource blocks to one card per resource;
  * 3. normalize assistant video shapes;
- * 4. drop wizard-only question cards, empty text, and (optionally) tool rows;
+ * 4. drop composer-slot question and secret-request cards, empty text, and
+ *    (optionally) tool rows;
  * 5. drop repeated video sources among what is left, so a hidden block never
  *    claims a source and suppresses a visible copy;
  * 6. keep only the last tool_use per id (the skeleton is superseded by the
@@ -100,7 +102,7 @@ export function prepareMessageBlocks(
     role,
     workspaceId,
   ).filter((block) => {
-    if (isQuestionResourceBlock(block)) return false;
+    if (isQuestionResourceBlock(block) || isSecretRequestResourceBlock(block)) return false;
     if (hideToolCalls && (block.type === 'tool_use' || block.type === 'tool_result')) {
       return false;
     }

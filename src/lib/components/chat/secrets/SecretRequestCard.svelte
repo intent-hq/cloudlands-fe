@@ -1,0 +1,158 @@
+<script lang="ts">
+  /**
+   * One agent secret request (PROTOCOL §5.56): a masked input whose value is
+   * handed to the provide saga through the one-shot `secret-value-handoff`
+   * (never a Redux action or state), or Decline. The value lives only in this
+   * component's local input until sent, then is cleared — it never enters the
+   * store, drafts, the chat composer or telemetry.
+   */
+  import Fa from 'svelte-fa';
+  import { faEye, faEyeSlash, faKey } from '@fortawesome/free-solid-svg-icons';
+  import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
+  import { Label } from '$lib/components/ui/label';
+  import { m } from '$shared/paraglide/messages.js';
+  import type { SecretRequest } from '$shared/types/secret-request-resource';
+  import { secretAnswerRequested } from '$store/renderer/slices/secret-requests/secret-requests-slice';
+  import { selectSecretRequestsState } from '$store/renderer/slices/secret-requests/secret-requests-selectors';
+  import { store as appStore } from '$store/renderer/store';
+  import type { SecretRequestCardState } from './pending-secret-requests';
+  import { stashSecretValue } from './secret-value-handoff';
+
+  interface Props {
+    request: SecretRequest;
+    workspaceId: string;
+    agentId: string;
+    /** State from the daemon's `secret.list`; local answers override it. */
+    listedState: SecretRequestCardState;
+  }
+
+  let { request, workspaceId, agentId, listedState }: Props = $props();
+
+  const uid = $props.id();
+  const secretRequests$ = selectSecretRequestsState();
+  let value = $state('');
+  let revealed = $state(false);
+
+  const answer = $derived($secretRequests$.answers[request.requestId]);
+  const busy = $derived(answer === 'sending');
+  const shown = $derived<SecretRequestCardState>(
+    answer === 'provided' || answer === 'declined' || answer === 'expired' ? answer : listedState,
+  );
+  const canAnswer = $derived(shown === 'pending' && !busy);
+
+  function answerWith(outcome: 'provided' | 'declined'): void {
+    if (!canAnswer) return;
+    if (outcome === 'provided') {
+      if (value.length === 0) return;
+      stashSecretValue(request.requestId, value);
+    }
+    value = '';
+    revealed = false;
+    appStore.dispatch(
+      secretAnswerRequested({ workspaceId, agentId, requestId: request.requestId, outcome }),
+    );
+  }
+
+  function provide(): void {
+    answerWith('provided');
+  }
+
+  function decline(): void {
+    answerWith('declined');
+  }
+
+  function handleKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      provide();
+    }
+  }
+</script>
+
+<div
+  class="flex flex-col gap-2 rounded-lg border border-border bg-card p-3"
+  data-testid="secret-request-card"
+  data-request-id={request.requestId}
+  data-state={shown}
+>
+  <div class="flex items-center gap-2 type-body-sm font-medium">
+    <Fa icon={faKey} class="w-3 h-3 flex-shrink-0 text-muted-foreground" />
+    <span>{m.chat_secretRequest_title_label({ name: request.name })}</span>
+  </div>
+  {#if request.reason}
+    <p class="text-xs text-muted-foreground">{request.reason}</p>
+  {/if}
+  {#if shown === 'pending' || shown === 'checking'}
+    <div class="flex flex-col gap-1">
+      <Label for={`${uid}-value`} class="sr-only">
+        {m.chat_secretRequest_value_label({ name: request.name })}
+      </Label>
+      <div class="flex items-center gap-2">
+        <Input
+          id={`${uid}-value`}
+          type={revealed ? 'text' : 'password'}
+          autocomplete="off"
+          spellcheck={false}
+          bind:value
+          disabled={!canAnswer}
+          placeholder={m.chat_secretRequest_value_placeholder()}
+          onkeydown={handleKeydown}
+          data-testid="secret-request-input"
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label={revealed
+            ? m.chat_secretRequest_hide_ariaLabel()
+            : m.chat_secretRequest_show_ariaLabel()}
+          aria-pressed={revealed}
+          disabled={!canAnswer}
+          onclick={() => (revealed = !revealed)}
+          data-testid="secret-request-reveal"
+        >
+          <Fa icon={revealed ? faEyeSlash : faEye} class="w-3 h-3" />
+        </Button>
+      </div>
+      <p class="text-xs text-subtle">{m.chat_secretRequest_privacy_description()}</p>
+    </div>
+    <div class="flex items-center justify-end gap-2">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={!canAnswer}
+        onclick={decline}
+        data-testid="secret-request-decline"
+      >
+        {m.chat_secretRequest_decline_label()}
+      </Button>
+      <Button
+        type="button"
+        variant="primary"
+        size="sm"
+        disabled={!canAnswer || value.length === 0}
+        onclick={provide}
+        data-testid="secret-request-provide"
+      >
+        {m.chat_secretRequest_provide_label()}
+      </Button>
+    </div>
+  {:else if shown === 'provided'}
+    <p class="text-xs text-muted-foreground" role="status">
+      {m.chat_secretRequest_provided_description()}
+    </p>
+  {:else if shown === 'declined'}
+    <p class="text-xs text-muted-foreground" role="status">
+      {m.chat_secretRequest_declined_description()}
+    </p>
+  {:else}
+    <p class="text-xs text-muted-foreground" role="status">
+      {m.chat_secretRequest_expired_description()}
+    </p>
+  {/if}
+  {#if answer === 'failed' && shown === 'pending'}
+    <p class="text-xs text-danger" role="alert">{m.chat_secretRequest_failed_error()}</p>
+  {/if}
+</div>

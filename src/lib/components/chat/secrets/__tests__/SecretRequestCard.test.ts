@@ -1,0 +1,92 @@
+/**
+ * @vitest-environment jsdom
+ */
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { store as appStore } from '$store/renderer/store';
+import {
+  secretAnswerRequested,
+  secretAnswerUpdated,
+} from '$store/renderer/slices/secret-requests/secret-requests-slice';
+import SecretRequestCard from '../SecretRequestCard.svelte';
+import { takeSecretValue } from '../secret-value-handoff';
+
+const request = {
+  requestId: 'sec-card-1',
+  agentId: 'agent-a',
+  name: 'OPENROUTER_API_KEY',
+  reason: 'run tests',
+};
+
+function renderCard(state: 'pending' | 'expired' = 'pending', requestId = request.requestId) {
+  return render(SecretRequestCard, {
+    props: {
+      request: { ...request, requestId },
+      workspaceId: 'ws-1',
+      agentId: 'agent-a',
+      listedState: state,
+    },
+  });
+}
+
+beforeAll(() => appStore.init());
+
+describe('SecretRequestCard', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('masks the value and hands it off without putting it in any action or state', async () => {
+    const dispatch = vi.spyOn(appStore, 'dispatch');
+    renderCard('pending', 'sec-card-provide');
+    const input = screen.getByTestId('secret-request-input') as HTMLInputElement;
+    expect(input.type).toBe('password');
+    await fireEvent.input(input, { target: { value: 's3cret' } });
+    await fireEvent.click(screen.getByTestId('secret-request-provide'));
+    const sent = dispatch.mock.calls.map(
+      ([action]) => action as { type: string; payload?: unknown },
+    );
+    const answer = sent.find((action) => action.type === secretAnswerRequested.type);
+    expect(answer?.payload).toEqual([
+      {
+        workspaceId: 'ws-1',
+        agentId: 'agent-a',
+        requestId: 'sec-card-provide',
+        outcome: 'provided',
+      },
+    ]);
+    expect(JSON.stringify(sent)).not.toContain('s3cret');
+    expect(JSON.stringify(appStore.state)).not.toContain('s3cret');
+    expect(takeSecretValue('sec-card-provide')).toBe('s3cret');
+    expect(input.value).toBe('');
+  });
+
+  it('reveals the value only on request', async () => {
+    renderCard('pending', 'sec-card-reveal');
+    const input = screen.getByTestId('secret-request-input') as HTMLInputElement;
+    await fireEvent.click(screen.getByTestId('secret-request-reveal'));
+    expect(input.type).toBe('text');
+    await fireEvent.click(screen.getByTestId('secret-request-reveal'));
+    expect(input.type).toBe('password');
+  });
+
+  it('declines without handing off a value and shows the answered state', async () => {
+    const dispatch = vi.spyOn(appStore, 'dispatch');
+    renderCard('pending', 'sec-card-decline');
+    await fireEvent.click(screen.getByTestId('secret-request-decline'));
+    const answer = dispatch.mock.calls
+      .map(([action]) => action as { type: string; payload?: unknown[] })
+      .find((action) => action.type === secretAnswerRequested.type);
+    expect(answer?.payload?.[0]).toMatchObject({ outcome: 'declined' });
+    expect(takeSecretValue('sec-card-decline')).toBeUndefined();
+    appStore.dispatch(secretAnswerUpdated('sec-card-decline', 'declined'));
+    await waitFor(() =>
+      expect(screen.getByTestId('secret-request-card').dataset.state).toBe('declined'),
+    );
+    expect(screen.queryByTestId('secret-request-input')).toBeNull();
+  });
+
+  it('offers no input for an expired request', () => {
+    renderCard('expired', 'sec-card-expired');
+    expect(screen.queryByTestId('secret-request-input')).toBeNull();
+    expect(screen.queryByTestId('secret-request-provide')).toBeNull();
+  });
+});

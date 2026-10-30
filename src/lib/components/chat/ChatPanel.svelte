@@ -236,6 +236,8 @@
 
   import SuggestedPrompts from './SuggestedPrompts.svelte';
   import QuestionWizard, { type QuestionAnswer } from './questions/QuestionWizard.svelte';
+  import SecretRequestCards from './secrets/SecretRequestCards.svelte';
+  import { deriveOpenSecretRequests } from './secrets/pending-secret-requests';
   import QuestionComposer from './questions/QuestionComposer.svelte';
   import {
     getChatAttentionFocusAction,
@@ -1146,6 +1148,14 @@
       appStore.dispatch(pendingQuestionRecoveryRequested(agentId, marker.messageId));
     }
   });
+
+  // Open agent secret requests (PROTOCOL §5.56), shown as composer-slot
+  // cards only when the daemon advertises `secretRequests: 1`.
+  const openSecretRequests = $derived(
+    $admittedPrincipal$?.capabilities.secretRequests === 1
+      ? deriveOpenSecretRequests($agentMessages$)
+      : [],
+  );
 
   const pendingQuestions = $derived.by(() => {
     const hasUserMessage = $agentMessages$.some((m) => m.role === 'user');
@@ -7938,6 +7948,13 @@
                   {m.chat_proposalTray_title()}
                 </Button>
               </div>
+            {/if}
+            {#if workspace && agentId && openSecretRequests.length > 0}
+              <SecretRequestCards
+                requests={openSecretRequests}
+                workspaceId={workspace.id}
+                {agentId}
+              />
             {/if}
             <QuestionComposer
               expanded={!!pendingQuestions && !questionWizardCollapsed}

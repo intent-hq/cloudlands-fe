@@ -94,6 +94,8 @@
     SUBSCRIPTION_WAKE_BODY_PADDING_CLASS,
   } from './subscription-disclosure';
   import QuestionsDismissedNotice from './QuestionsDismissedNotice.svelte';
+  import SecretRequestNotice from './secrets/SecretRequestNotice.svelte';
+  import { getSecretRequestNotice } from './secrets/secret-request-notice';
   import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
   import AutoUnarchivedNotice from './AutoUnarchivedNotice.svelte';
   import { getAutoUnarchivedNotice } from './auto-unarchived-notice';
@@ -366,6 +368,7 @@
   let effortChangeNotice = $derived(getEffortChangeNotice(message));
 
   let questionsDismissedNotice = $derived(getQuestionsDismissedNotice(message));
+  let secretRequestNotice = $derived(getSecretRequestNotice(message));
 
   // Daemon-persisted auto-unarchive transcript row (metadata type "auto_unarchived")
   let autoUnarchivedNotice = $derived(getAutoUnarchivedNotice(message));
@@ -1549,6 +1552,8 @@
   />
 {:else if questionsDismissedNotice}
   <QuestionsDismissedNotice title={extractAllContent(message) || undefined} />
+{:else if secretRequestNotice}
+  <SecretRequestNotice notice={secretRequestNotice} />
 {:else if autoUnarchivedNotice}
   <!-- Daemon-persisted auto-unarchive notice row - centered inline divider -->
   <AutoUnarchivedNotice title={extractAllContent(message) || undefined} />
