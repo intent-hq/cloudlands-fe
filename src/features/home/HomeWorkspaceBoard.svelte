@@ -28,6 +28,7 @@
     showRepositoryOwner = true,
     groups,
     aside = [],
+    dragScope = null,
     ontoggleaside,
   }: {
     workspaces: Workspace[];
@@ -43,9 +44,14 @@
     showRepositoryOwner?: boolean;
     groups?: { id: string; label: string; items: Workspace[] }[];
     aside?: Workspace[];
-    ontoggleaside?: (workspace: Workspace) => void;
+    dragScope?: string | null;
+    ontoggleaside?: (workspace: Workspace, focusMoved?: boolean) => void;
   } = $props();
   const asideIds = $derived(new Set(aside.map((workspace) => workspace.id)));
+  const CARD_DRAG_TYPE = 'application/x-intent-home-workspace';
+  let drag = $state<{ workspaceId: string; scope: string; token: string } | null>(null);
+  let dropActive = $state(false);
+  let suppressClick = false;
   function column(workspace: Workspace): string {
     // A Retired workspace (its folder was purged, PROTOCOL §5.1) is archived.
     if (
@@ -59,6 +65,81 @@
       : group === 'done' || group === 'idle'
         ? 'inactive'
         : group;
+  }
+  function canDrag(workspace: Workspace): boolean {
+    return (
+      dragScope !== null &&
+      !!ontoggleaside &&
+      !archived &&
+      column(workspace) !== 'archived' &&
+      !asideIds.has(workspace.id)
+    );
+  }
+  const draggedWorkspace = $derived(
+    drag && drag.scope === dragScope
+      ? workspaces.find((workspace) => workspace.id === drag?.workspaceId && canDrag(workspace))
+      : undefined,
+  );
+  function finishDrag() {
+    drag = null;
+    dropActive = false;
+  }
+  $effect(() => {
+    if (drag && !draggedWorkspace) finishDrag();
+  });
+  function startDrag(event: DragEvent, workspace: Workspace) {
+    if (!canDrag(workspace) || dragScope === null || !event.dataTransfer) {
+      event.preventDefault();
+      return;
+    }
+    event.stopPropagation();
+    const token = globalThis.crypto.randomUUID();
+    drag = { workspaceId: workspace.id, scope: dragScope, token };
+    suppressClick = true;
+    event.dataTransfer.clearData();
+    event.dataTransfer.setData(CARD_DRAG_TYPE, token);
+    event.dataTransfer.effectAllowed = 'move';
+    if (event.currentTarget instanceof HTMLElement) {
+      const bounds = event.currentTarget.getBoundingClientRect();
+      event.dataTransfer.setDragImage(
+        event.currentTarget,
+        Math.max(0, event.clientX - bounds.left),
+        Math.max(0, event.clientY - bounds.top),
+      );
+    }
+  }
+  function dragOver(event: DragEvent) {
+    event.preventDefault();
+    if (!draggedWorkspace || !event.dataTransfer?.types.includes(CARD_DRAG_TYPE)) {
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
+      dropActive = false;
+      return;
+    }
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = 'move';
+    dropActive = true;
+  }
+  function dragLeave(event: DragEvent) {
+    if (!(event.currentTarget instanceof HTMLElement)) return;
+    if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))
+      return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    if (
+      event.clientX < bounds.left ||
+      event.clientX >= bounds.right ||
+      event.clientY < bounds.top ||
+      event.clientY >= bounds.bottom
+    )
+      dropActive = false;
+  }
+  function dropWorkspace(event: DragEvent) {
+    const workspace = draggedWorkspace;
+    const valid = workspace && drag && event.dataTransfer?.getData(CARD_DRAG_TYPE) === drag.token;
+    finishDrag();
+    event.preventDefault();
+    if (!valid) return;
+    event.stopPropagation();
+    ontoggleaside?.(workspace, true);
   }
   const columns = $derived(
     archived
@@ -87,6 +168,15 @@
   );
 </script>
 
+<svelte:window
+  ondragend={finishDrag}
+  ondrop={finishDrag}
+  onblur={finishDrag}
+  onkeydown={(event) => {
+    if (event.key === 'Escape') finishDrag();
+  }}
+/>
+
 {#snippet card(workspace: Workspace)}
   {@const pinned = pinnedIds.includes(workspace.id)}
   {@const displayTitle = workspace.title.trim()
@@ -96,7 +186,7 @@
     [showRepositoryOwner ? workspace.repositoryOwner : undefined, workspace.repositoryName]
       .filter(Boolean)
       .join('/') || workspace.repositoryPath}
-  <div class="home-board-item">
+  <div class="home-board-item" class:home-board-card-dragging={drag?.workspaceId === workspace.id}>
     <Button
       data-home-workspace={workspace.id}
       variant="outline"
@@ -104,12 +194,23 @@
       aria-pressed={selectedId === workspace.id}
       wrapContent={false}
       class="h-auto min-w-0 w-full shrink-0 flex-col items-stretch whitespace-normal rounded-xl border-border bg-background gap-0 p-3 text-left shadow-xs"
+      draggable={canDrag(workspace)}
+      ondragstart={(event) => startDrag(event, workspace)}
+      ondragend={finishDrag}
+      onpointerdown={() => {
+        suppressClick = false;
+      }}
       onclick={(event) => {
+        if (suppressClick) {
+          event.preventDefault();
+          return;
+        }
         doubleClick.arm(event, workspace.id);
         if (!openHomeWorkspaceFromEvent(event, workspace.id, onopen)) onselect(workspace.id);
       }}
       oncontextmenu={(event) => oncontextmenu?.(event, workspace)}
       onkeydown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') suppressClick = false;
         oncontextmenu?.(event, workspace);
         if (!event.defaultPrevented) openHomeWorkspaceFromEvent(event, workspace.id, onopen);
       }}
@@ -212,6 +313,7 @@
 <div
   class="min-h-0 min-w-0 flex-1 overflow-auto px-6 pb-5"
   data-home-board
+  data-home-dragging={drag?.workspaceId}
   aria-label={m.home_board_view()}
 >
   <div
@@ -219,14 +321,25 @@
   >
     {#each displayColumns as group (group.id)}
       {@const items = group.items}
+      {@const isAside = group.id === HOME_SET_ASIDE_GROUP}
       <section
         class="flex min-w-0 flex-col self-stretch"
+        class:rounded-xl={isAside}
+        class:home-board-aside-column={isAside}
+        class:home-board-drop-ready={isAside && !!draggedWorkspace}
+        class:home-board-drop-active={isAside && dropActive && !!draggedWorkspace}
         aria-label={group.label}
-        data-home-set-aside={group.id === HOME_SET_ASIDE_GROUP ? true : undefined}
+        data-home-set-aside={isAside ? true : undefined}
+        data-home-drop-active={isAside && dropActive && draggedWorkspace ? true : undefined}
+        ondragenter={isAside ? dragOver : undefined}
+        ondragover={isAside ? dragOver : undefined}
+        ondragleave={isAside ? dragLeave : undefined}
+        ondrop={isAside ? dropWorkspace : undefined}
       >
         <h3
           class="sticky top-0 z-20 flex min-w-0 items-center gap-2 [overflow-wrap:anywhere] bg-background px-2 py-3 type-caption font-medium"
-          class:text-muted-foreground={group.id === HOME_SET_ASIDE_GROUP}
+          class:rounded-t-xl={isAside}
+          class:text-muted-foreground={isAside}
         >
           {group.label}
         </h3>

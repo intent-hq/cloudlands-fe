@@ -89,6 +89,7 @@
     selectHomeWorkspaceView,
     selectHomeWorkspaceError,
     selectHomeSetAsideWorkspaceIds,
+    selectHomePersistenceScope,
   } from './home-workspaces-selectors';
   import {
     HOME_SET_ASIDE_GROUP,
@@ -170,6 +171,7 @@
     });
   }
   const asideIds$ = selectHomeSetAsideWorkspaceIds();
+  const persistenceScope$ = selectHomePersistenceScope();
   const asideSet = $derived(new Set($asideIds$));
   // Moving a row keeps the selection (and its mounted preview and drafts); focus only
   // moves when it left with the row.
@@ -179,8 +181,8 @@
       workspace.status !== WorkspaceStatusEnum.Retired
     );
   }
-  function toggleAside(workspace: Workspace) {
-    const neighbor = neighborHomeWorkspaceId(homeElement, workspace.id);
+  function toggleAside(workspace: Workspace, focusMoved = false) {
+    const neighbor = focusMoved ? null : neighborHomeWorkspaceId(homeElement, workspace.id);
     if (asideSet.has(workspace.id)) bringBackHomeWorkspaceNow(workspace.id);
     else setHomeWorkspaceAsideWithUndo(workspace);
     restoreHomeFocusAfterMove(() => homeElement, neighbor, workspace.id);
@@ -983,6 +985,7 @@
                             oncontextmenu={showWorkspaceMenu}
                             archived={filter === 'archived'}
                             aside={asideWorkspaces}
+                            dragScope={$persistenceScope$}
                             ontoggleaside={toggleAside}
                           />
                         {:else}

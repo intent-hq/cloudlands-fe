@@ -395,3 +395,246 @@ test('Archive and deletion remain separate from personal organization', async ({
   await expect.poll(async () => (await snapshot(page)).stored).not.toContain('aside-running');
   await expect(row(page, 'aside-running')).toHaveCount(0);
 });
+
+const board = (page: Page) => page.locator('[data-home-board]');
+const asideColumn = (page: Page) => board(page).locator('[data-home-set-aside]');
+const setAsideCount = async (page: Page) =>
+  (await snapshot(page)).actions.filter((type) => type === 'homeWorkspaces/setAside').length;
+
+async function center(locator: ReturnType<Page['locator']>) {
+  await expect(locator).toBeInViewport();
+  const box = (await locator.boundingBox())!;
+  return { x: box.x + box.width / 2, y: box.y + Math.min(box.height / 2, 96) };
+}
+
+async function startDrag(page: Page, source: ReturnType<Page['locator']>) {
+  await source.hover();
+  const from = await center(source);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(from.x + 8, from.y + 8, { steps: 4 });
+}
+
+async function dragOver(page: Page, target: ReturnType<Page['locator']>) {
+  const to = await center(target);
+  await page.mouse.move(to.x, to.y, { steps: 10 });
+  await page.mouse.move(to.x + 4, to.y + 6, { steps: 4 });
+}
+
+async function dropOn(page: Page, target: ReturnType<Page['locator']>) {
+  await dragOver(page, target);
+  await page.mouse.up();
+}
+
+async function dropTargetState(page: Page) {
+  const dragging = await board(page).getAttribute('data-home-dragging');
+  const active = await asideColumn(page).evaluate((column) =>
+    column.hasAttribute('data-home-drop-active'),
+  );
+  return `${dragging ?? ''}|${active ? 'drop-active' : ''}`;
+}
+
+async function draggable(locator: ReturnType<Page['locator']>) {
+  return locator.evaluate(
+    (element) =>
+      Boolean(element.closest('[draggable="true"]')) ||
+      Boolean(element.querySelector('[draggable="true"]')),
+  );
+}
+
+async function clearToasts(page: Page) {
+  const dismiss = page.getByRole('button', { name: /^Dismiss all \d+ notifications$/ });
+  if (await dismiss.isVisible()) await dismiss.click();
+  else {
+    const close = page.getByRole('button', { name: 'Close notification', exact: true }).first();
+    if (await close.isVisible()) await close.click();
+  }
+  await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
+}
+
+test('Dragging a card into Set aside sets it aside once and supports Undo and a normal click', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1200, height: 800 });
+  await mount(Harness, { props: { view: 'board', height: 800 } });
+  const card = row(page, 'aside-idle');
+  const asideCard = asideColumn(page).locator('[data-home-workspace="aside-idle"]');
+  await expect(asideColumn(page)).toBeVisible();
+  expect(await draggable(card)).toBe(true);
+  const idle = await dropTargetState(page);
+  await page.mouse.move(1190, 790);
+  await capture(page, testInfo, 'drag-idle-light');
+  const before = await setAsideCount(page);
+  await startDrag(page, card);
+  await dragOver(page, asideColumn(page));
+  await expect.poll(() => dropTargetState(page)).toBe('aside-idle|drop-active');
+  await capture(page, testInfo, 'drag-hover-light');
+  await page.mouse.up();
+  await expect(asideCard).toBeVisible();
+  await expect.poll(() => dropTargetState(page)).toBe(idle);
+  expect((await snapshot(page)).asideIds).toContain('aside-idle');
+  expect(await setAsideCount(page)).toBe(before + 1);
+  expect((await snapshot(page)).selectedId).toBeNull();
+  await page.mouse.move(1190, 790);
+  await capture(page, testInfo, 'drag-drop-light');
+  expect(await draggable(asideCard)).toBe(false);
+  await page.getByRole('button', { name: /^Undo/ }).click();
+  await expect(asideCard).toHaveCount(0);
+  await expect.poll(async () => (await snapshot(page)).asideIds).not.toContain('aside-idle');
+  await row(page, 'aside-idle').click();
+  await expect.poll(async () => (await snapshot(page)).selectedId).toBe('aside-idle');
+  expect((await snapshot(page)).asideIds).not.toContain('aside-idle');
+  expect(await setAsideCount(page)).toBe(before + 1);
+});
+
+test('Dragging running work into Set aside keeps it running in dark and narrow layouts', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1200, height: 800 });
+  await page.evaluate(() => document.documentElement.classList.add('dark'));
+  const component = await mount(Harness, { props: { view: 'board', height: 800 } });
+  const before = (await snapshot(page)).workspaces.find((item) => item.id === 'aside-running');
+  await startDrag(page, row(page, 'aside-running'));
+  await dragOver(page, asideColumn(page));
+  await capture(page, testInfo, 'drag-hover-dark');
+  await page.mouse.up();
+  await expect(asideColumn(page).locator('[data-home-workspace="aside-running"]')).toBeVisible();
+  await page.mouse.move(1190, 790);
+  await clearToasts(page);
+  await capture(page, testInfo, 'drag-drop-dark');
+  const result = await snapshot(page);
+  expect(result.workspaces.find((item) => item.id === 'aside-running')).toEqual(before);
+  expect(result.actions.filter((type) => /archive|retire|stop|interrupt/i.test(type))).toEqual([]);
+  expect(
+    result.requests.filter(({ method }) => /archive|retire|stop|interrupt/i.test(method)),
+  ).toEqual([]);
+  await page.setViewportSize({ width: 390, height: 1000 });
+  await component.update({ props: { view: 'board', height: 1000 } });
+  await board(page).evaluate((element) => (element.scrollTop = 0));
+  await startDrag(page, row(page, 'aside-idle'));
+  await dragOver(page, asideColumn(page));
+  await capture(page, testInfo, 'drag-hover-narrow-dark');
+  await page.mouse.up();
+  await expect(asideColumn(page).locator('[data-home-workspace="aside-idle"]')).toBeVisible();
+  await page.evaluate(() => document.documentElement.classList.remove('dark'));
+  await clearToasts(page);
+  await capture(page, testInfo, 'drag-drop-narrow-light');
+  expect(await board(page).evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+    true,
+  );
+});
+
+test('Cancelled, outside and Escape drags leave Set aside unchanged', async ({ mount, page }) => {
+  await page.setViewportSize({ width: 1600, height: 800 });
+  await mount(Harness, { props: { view: 'board', height: 800 } });
+  const card = row(page, 'aside-idle');
+  const idle = await dropTargetState(page);
+  const before = await setAsideCount(page);
+  await startDrag(page, card);
+  await dragOver(page, asideColumn(page));
+  await expect.poll(() => dropTargetState(page)).toBe('aside-idle|drop-active');
+  await dropOn(page, board(page).getByRole('region', { name: 'Done & idle', exact: true }));
+  await expect.poll(() => dropTargetState(page)).toBe(idle);
+  await startDrag(page, card);
+  await dragOver(page, asideColumn(page));
+  await page.mouse.move(1595, 795, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(() => dropTargetState(page)).toBe(idle);
+  await startDrag(page, card);
+  await dragOver(page, asideColumn(page));
+  await page.keyboard.press('Escape');
+  await expect.poll(() => dropTargetState(page)).toBe(idle);
+  await page.mouse.move(1595, 795, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(() => dropTargetState(page)).toBe(idle);
+  const result = await snapshot(page);
+  expect(result.asideIds).toEqual([]);
+  expect(result.selectedId).toBeNull();
+  expect(await setAsideCount(page)).toBe(before);
+  await card.click();
+  await expect.poll(async () => (await snapshot(page)).selectedId).toBe('aside-idle');
+  await startDrag(page, card);
+  await dropOn(page, asideColumn(page));
+  await expect(asideColumn(page).locator('[data-home-workspace="aside-idle"]')).toBeVisible();
+  await expect.poll(() => dropTargetState(page)).toBe(idle);
+  expect(await setAsideCount(page)).toBe(before + 1);
+});
+
+test('Set aside rejects foreign, archived, already-aside and stale drags', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 1200, height: 800 });
+  await mount(Harness, { props: { view: 'board', height: 800 } });
+  const idle = await dropTargetState(page);
+  const before = await setAsideCount(page);
+  await page.evaluate(() => {
+    const foreign = document.createElement('div');
+    foreign.id = 'foreign-drag';
+    foreign.draggable = true;
+    foreign.textContent = 'aside-idle';
+    foreign.style.cssText = 'position:fixed;left:8px;bottom:8px;padding:8px;z-index:100';
+    foreign.addEventListener('dragstart', (event) => {
+      event.dataTransfer!.setData('text/plain', 'aside-idle');
+      event.dataTransfer!.setData('text/uri-list', 'https://example.com/aside-idle');
+    });
+    document.body.append(foreign);
+  });
+  await startDrag(page, page.locator('#foreign-drag'));
+  await dragOver(page, asideColumn(page));
+  expect(await dropTargetState(page)).toBe(idle);
+  await expect(asideColumn(page)).not.toHaveAttribute('data-home-drop-active');
+  await page.mouse.up();
+  await asideColumn(page).evaluate((column) => {
+    const files = new DataTransfer();
+    files.items.add(new File(['aside-idle'], 'aside-idle.txt', { type: 'text/plain' }));
+    const text = new DataTransfer();
+    text.setData('text/plain', 'aside-idle');
+    for (const dataTransfer of [files, text])
+      for (const type of ['dragenter', 'dragover', 'drop'])
+        column.dispatchEvent(
+          new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer }),
+        );
+  });
+  await expect.poll(() => dropTargetState(page)).toBe(idle);
+  expect((await snapshot(page)).asideIds).toEqual([]);
+
+  await startDrag(page, row(page, 'aside-idle'));
+  await dragOver(page, asideColumn(page));
+  await page.evaluate(() => window.__homeSetAside!.configure({ repoKey: 'acme/platform' }));
+  await expect(row(page, 'aside-idle')).toHaveCount(0);
+  await expect.poll(() => dropTargetState(page)).toBe(idle);
+  await page.mouse.up();
+  await page.evaluate(() => window.__homeSetAside!.configure({ repoKey: null }));
+  expect((await snapshot(page)).asideIds).toEqual([]);
+
+  await startDrag(page, row(page, 'aside-idle'));
+  await dragOver(page, asideColumn(page));
+  await page.evaluate(() => window.__homeSetAside!.switchIdentity('another-person'));
+  await page.mouse.up();
+  expect((await snapshot(page)).asideIds).toEqual([]);
+  await page.evaluate(() => window.__homeSetAside!.switchIdentity('principal'));
+  await expect(asideColumn(page)).toBeVisible();
+  await expect.poll(() => dropTargetState(page)).toBe(idle);
+  expect((await snapshot(page)).asideIds).toEqual([]);
+
+  await startDrag(page, row(page, 'aside-other-repo'));
+  await dragOver(page, asideColumn(page));
+  await page.evaluate(() => window.__homeSetAside!.archive('aside-other-repo'));
+  await page.mouse.up();
+  await expect.poll(() => dropTargetState(page)).toBe(idle);
+  expect((await snapshot(page)).asideIds).toEqual([]);
+  expect(await setAsideCount(page)).toBe(before);
+
+  await aside(page, 'aside-idle');
+  const asideCard = asideColumn(page).locator('[data-home-workspace="aside-idle"]');
+  expect(await draggable(asideCard)).toBe(false);
+  await page.evaluate(() => window.__homeSetAside!.configure({ filter: 'archived' }));
+  await expect(row(page, 'aside-archived')).toBeVisible();
+  expect(await draggable(row(page, 'aside-archived'))).toBe(false);
+  await page.evaluate(() => window.__homeSetAside!.configure({ filter: 'all' }));
+  await expect(asideCard).toBeVisible();
+  expect(await setAsideCount(page)).toBe(before + 1);
+});
