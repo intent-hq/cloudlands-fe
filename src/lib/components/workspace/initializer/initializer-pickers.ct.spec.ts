@@ -673,6 +673,50 @@ for (const theme of ['light', 'dark']) {
   });
 }
 
+// The specialist menu must scroll as one container: a nested scroller let the
+// hover highlight of the last row overflow the menu (second vertical bar) and
+// made the inner box's overflow-x compute to auto (horizontal bar).
+for (const height of [900, 360]) {
+  test(`crowded specialist menu scrolls as a single container without horizontal overflow at ${height}px`, async ({
+    mount,
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1024, height });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await mount(InitialAgentPicker, { props: { state: 'crowded' } });
+    await page.locator('.specialist-trigger').click();
+    const menu = page.locator('[data-slot="menu-content"]');
+    await expect(menu).toBeVisible();
+    const lastRow = menu.locator('[data-specialist-option]').last();
+    await lastRow.scrollIntoViewIfNeeded();
+    await lastRow.hover();
+    await expect(lastRow).toHaveAttribute('data-highlighted', '');
+
+    const overflow = () =>
+      menu.evaluate((root) => {
+        const scrolls = (value: string) => value === 'auto' || value === 'scroll';
+        const elements = [root, ...root.querySelectorAll<HTMLElement>('*')];
+        return {
+          verticalScrollers: elements
+            .filter((el) => scrolls(getComputedStyle(el).overflowY))
+            .filter((el) => el.scrollHeight > el.clientHeight)
+            .map((el) => (el === root ? 'menu' : (el.getAttribute('class') ?? el.tagName))),
+          horizontalOverflow: elements
+            .filter((el) => scrolls(getComputedStyle(el).overflowX))
+            .filter((el) => el.scrollWidth > el.clientWidth)
+            .map((el) => (el === root ? 'menu' : (el.getAttribute('class') ?? el.tagName))),
+        };
+      });
+    await expect.poll(overflow).toEqual({ verticalScrollers: ['menu'], horizontalOverflow: [] });
+
+    const [menuBox, rowBox] = await Promise.all([menu.boundingBox(), lastRow.boundingBox()]);
+    expect(menuBox!.height).toBeLessThanOrEqual(300);
+    expect(rowBox!.y).toBeGreaterThanOrEqual(menuBox!.y);
+    expect(rowBox!.y + rowBox!.height).toBeLessThanOrEqual(menuBox!.y + menuBox!.height + 0.5);
+    expect(menuBox!.y + menuBox!.height).toBeLessThanOrEqual(height);
+  });
+}
+
 // Keyboard-drives focus so `:focus-visible` matches (a scripted `focus()` may not).
 async function tabUntilFocusVisible(page: Page, target: Locator) {
   for (let step = 0; step < 12; step += 1) {
