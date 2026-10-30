@@ -17,6 +17,10 @@
   declare global {
     interface Window {
       __homeAssistantPreview?: { removeSelectedThread: () => void };
+      __homePrReadyPreview?: {
+        setReadyStatus: (status: 'pr_ready' | 'in_progress') => void;
+        pinReady: () => void;
+      };
       __homeWorkspacePreview?: {
         navigation: () => { currentTabId: string | null; tabOrder: string[] };
         setTitle: (id: string, title: string) => void;
@@ -45,6 +49,7 @@
       | 'pr-status-list'
       | 'board-pr-status'
       | 'board'
+      | 'pr-ready'
       | 'board-pinned'
       | 'board-long-content'
       | 'board-repositories'
@@ -80,6 +85,7 @@
       'pr-status-list': { props: { scenario: 'pr-status-list', height: 1120 } },
       'board-pr-status': { props: { scenario: 'board-pr-status', height: 1120 } },
       board: { props: { scenario: 'board' } },
+      'pr-ready': { props: { scenario: 'pr-ready' } },
       'board-pinned': { props: { scenario: 'board-pinned' } },
       'board-long-content': { props: { scenario: 'board-long-content' } },
       'board-repositories': { props: { scenario: 'board-repositories' } },
@@ -181,6 +187,63 @@
         id: WorkspaceId(item.id),
       }) as Workspace,
   );
+  const prReadyFixtures: Workspace[] = [
+    ...fixtures,
+    ...[
+      {
+        id: 'home-ready-review',
+        title: 'Review before merging',
+        displayStatus: 'pr_ready',
+        attention: 'review_required',
+      },
+      {
+        id: 'home-ready-question',
+        title: 'Answer before merging',
+        displayStatus: 'needs_attention',
+      },
+      {
+        id: 'home-ready-blocked',
+        title: 'Resolve blocker before merging',
+        displayStatus: 'blocked',
+      },
+      { id: 'home-ready-failed', title: 'Resolve failure before merging', displayStatus: 'failed' },
+      {
+        id: 'home-ready-archived',
+        title: 'Archived ready workspace',
+        displayStatus: 'pr_ready',
+        status: WorkspaceStatus.Archived,
+      },
+      {
+        id: 'home-ready-deleted',
+        title: 'Deleted ready workspace',
+        displayStatus: 'pr_ready',
+        status: WorkspaceStatus.Deleted,
+      },
+      {
+        id: 'home-ready-deleting',
+        title: 'Deleting ready workspace',
+        displayStatus: 'pr_ready',
+        pendingDeleteAt: '2026-10-07T00:00:00Z',
+      },
+    ].map(
+      (item) =>
+        ({
+          ...fixtures[3],
+          attention: undefined,
+          ...item,
+          id: WorkspaceId(item.id),
+        }) as Workspace,
+    ),
+  ];
+  const untitledFixtures: Workspace[] = [
+    ...fixtures,
+    {
+      ...fixtures[0],
+      id: WorkspaceId('home-typeahead-review'),
+      title: 'Review release notes',
+      statusMessage: 'Ready for your review.',
+    },
+  ];
   // i18n-ignore (fixture labels: "pinned" is the wire value, "For Later" user data)
   const labelFixtures: Record<string, string> = {
     'home-complete': 'pinned',
@@ -397,9 +460,9 @@
   import { startHomePreviewFixtures } from './home-preview-lifecycle';
   import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
   import {
+    bulkUpdateWorkspaceEntities,
     replaceWorkspaceList,
     updateWorkspaceEntity,
-    bulkUpdateWorkspaceEntities,
     setWorkspaceHasLoaded,
     setWorkspaceError,
   } from '$store/renderer/slices/workspace/workspace-slice';
@@ -407,6 +470,7 @@
   import {
     closePanel,
     hydrateSidebarNav,
+    togglePinWorkspace,
     openPanel,
     setChiefActiveAgentId,
     setShowCreateModal,
@@ -518,6 +582,18 @@
       store.dispatch(removeSession(id));
     },
   };
+  window.__homePrReadyPreview = {
+    setReadyStatus(status) {
+      store.dispatch(
+        bulkUpdateWorkspaceEntities([
+          updateWorkspaceEntity(WorkspaceId('home-ready'), { displayStatus: status }),
+        ]),
+      );
+    },
+    pinReady() {
+      store.dispatch(togglePinWorkspace('home-ready'));
+    },
+  };
   // An archived workspace whose folder was purged (`Retired`, PROTOCOL §5.1)
   // as the Archived chip's opt-in fetch leaves it in the store; it shows only
   // under Archived, like any other archived workspace.
@@ -546,7 +622,7 @@
         pinnedWorkspaceIds:
           scenario === 'status-icons' || scenario === 'board-pinned'
             ? ['home-complete']
-            : scenario === 'status-grouping' || scenario === 'labels'
+            : scenario === 'pr-ready' || scenario === 'status-grouping' || scenario === 'labels'
               ? []
               : previousPinnedIds,
       }),
@@ -588,11 +664,15 @@
               ? prStatusFixtures
               : scenario === 'status-icons' || scenario === 'board-pinned'
                 ? statusFixtures
-                : scenario === 'status-grouping'
-                  ? statusGroupingFixtures
-                  : scenario === 'purged'
-                    ? [...fixtures, retiredFixture]
-                    : fixtures
+                : scenario === 'pr-ready'
+                  ? prReadyFixtures
+                  : scenario === 'untitled'
+                    ? untitledFixtures
+                    : scenario === 'status-grouping'
+                      ? statusGroupingFixtures
+                      : scenario === 'purged'
+                        ? [...fixtures, retiredFixture]
+                        : fixtures
             ).map((workspace) => ({
               ...workspace,
               myRole: scenario === 'collaborator' ? 'collaborator' : 'owner',
@@ -727,6 +807,7 @@
     store.dispatch(hydrateSidebarNav({ pinnedWorkspaceIds: previousPinnedIds }));
     assistantFixtures.forEach((thread) => store.dispatch(removeSession(thread.id)));
     delete window.__homeAssistantPreview;
+    delete window.__homePrReadyPreview;
     delete window.__homeWorkspacePreview;
     delete window.__homePrStatusPreview;
     dispose();

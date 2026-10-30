@@ -1,3 +1,7 @@
+import {
+  workspaceReminderStatus,
+  workspaceReminderDismissed,
+} from '$shared/utils/workspace-attention-reminder';
 import type { AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types/agent.types';
 import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
@@ -75,19 +79,20 @@ export function getHomeAttentionRequests(
 
 /** Mirrors Home grouping precedence, while distinguishing the actionable cause. */
 export function getHomeStatusCause(workspace: HomeTriageInput) {
+  const status = workspaceReminderStatus(workspace);
   if (workspace.displayStatus === 'failed') return 'failed';
   if (workspace.displayStatus === 'blocked') return 'blocked';
-  if (workspace.attention === 'review_required') return 'review';
-  if (workspace.displayStatus === 'needs_attention') return 'question';
-  if (workspace.displayStatus === 'pr_ready') return 'pr_ready';
-  if (workspace.activity === 'agent_running' || workspace.displayStatus === 'in_progress')
-    return 'running';
+  if (!workspaceReminderDismissed(workspace) && workspace.attention === 'review_required')
+    return 'review';
+  if (status === 'needs_attention') return 'question';
+  if (status === 'pr_ready') return 'pr_ready';
+  if (workspace.activity === 'agent_running' || status === 'in_progress') return 'running';
   if (workspace.scriptsRunning === true) return 'scripts_running';
   if (workspace.backgroundTasksRunning === true) return 'background_tasks_running';
-  if (workspace.displayStatus === 'pr_merged') return 'merged';
-  if (workspace.displayStatus === 'complete') return 'complete';
+  if (status === 'pr_merged') return 'merged';
+  if (status === 'complete') return 'complete';
+  if (status === 'waiting') return 'waiting';
   if (workspace.attention === 'unread') return 'unread';
-  if (workspace.displayStatus === 'pr_open' || workspace.displayStatus === 'pr_queued')
-    return workspace.displayStatus;
+  if (status === 'pr_open' || status === 'pr_queued') return status;
   return 'idle';
 }

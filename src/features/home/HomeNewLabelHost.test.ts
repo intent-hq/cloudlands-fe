@@ -55,6 +55,20 @@ describe('HomeNewLabelHost', () => {
     await fireEvent.keyDown(input, { key: 'Enter' });
     expect(await screen.findByText('A label with this name already exists.')).toBeTruthy();
     expect(dispatch).not.toHaveBeenCalled();
+
+    // A valid name in an old dialog cannot become the new admission's intent.
+    const retiredRequest = homeNewLabel.request!;
+    const next = workspaceLabelsState({ workspaces: [labelWorkspace('ws-target')] });
+    const nextDispose = store.init(next);
+    const currentDispatch = vi
+      .spyOn(store, 'dispatch')
+      .mockImplementation(() => undefined as never);
+    expect(retiredRequest.isCurrent()).toBe(false);
+    await fireEvent.input(input, { target: { value: 'Reading' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(homeNewLabel.request).toBeNull());
+    expect(currentDispatch).not.toHaveBeenCalledWith(setWorkspaceLabel('ws-target', 'Reading'));
+    nextDispose();
   });
 
   it('closes without assigning on cancel', async () => {

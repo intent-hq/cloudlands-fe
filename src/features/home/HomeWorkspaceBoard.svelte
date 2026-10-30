@@ -59,6 +59,9 @@
       ? [{ id: 'archived', label: m.home_filter_archived() }]
       : [
           { id: 'needs-you', label: m.home_filter_attention() },
+          ...(workspaces.some((workspace) => column(workspace) === 'pr-ready')
+            ? [{ id: 'pr-ready', label: m.home_filter_pr_ready() }]
+            : []),
           { id: 'running', label: m.home_filter_running() },
           { id: 'waiting', label: m.home_filter_waiting() },
           { id: 'inactive', label: m.home_board_done_idle() },

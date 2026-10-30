@@ -12,16 +12,17 @@
   function create(label: string) {
     const request = homeNewLabel.request;
     homeNewLabel.close();
-    if (!request) return;
+    if (!request?.isCurrent()) return;
     store.dispatch(setWorkspaceLabel(request.workspaceId, label));
     request.expandGroup(homeLabelGroupKey(label));
-    focusHomeWorkspaceRow(request.getHomeElement, request.workspaceId);
+    focusHomeWorkspaceRow(request.getHomeElement, request.workspaceId, request.isCurrent);
   }
 
   function cancel() {
     const request = homeNewLabel.request;
     homeNewLabel.close();
-    if (request) focusHomeWorkspaceRow(request.getHomeElement, request.workspaceId);
+    if (request?.isCurrent())
+      focusHomeWorkspaceRow(request.getHomeElement, request.workspaceId, request.isCurrent);
   }
 </script>
 

@@ -6,6 +6,10 @@ import { workspaceCatalogReceived } from '$store/renderer/slices/provider-catalo
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentStatus } from '$shared/types/agent.types';
 import type { WorkspaceMember } from '$features/workspace-sharing/types';
+import {
+  clearRendererStoreBridge,
+  initRendererStoreBridge,
+} from '$store/renderer/renderer-store-bridge';
 import { admitLegacyPrincipal, withHostPrincipal } from '../../test/fixtures/principal-state';
 import {
   principalContextChanged,
@@ -9128,9 +9132,14 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
       backendRequestSpy.mock.calls.filter(([method]) => method === 'workspace.get');
 
     beforeEach(() => {
+      initRendererStoreBridge(appStore);
       backendRequestSpy.mockImplementation((method: string) =>
         method === 'workspace.get' ? Promise.resolve({ workspace: served }) : undefined,
       );
+    });
+
+    afterEach(() => {
+      clearRendererStoreBridge(appStore);
     });
 
     function emitGitRoot(
@@ -9261,6 +9270,7 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
     });
 
     it('discards a read that a newer pr:* event invalidated and re-reads', async () => {
+      admitLegacyPrincipal();
       await seedListedRow({
         prNumber: 2590,
         prStatus: 'Open',
@@ -9310,6 +9320,33 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
       expect(row.activePullRequest ?? undefined).toBeUndefined();
       expect(row.prNumber).toBeUndefined();
       expect(row.pullRequests).toEqual([rootPull({ isInMergeQueue: true })]);
+
+      // A new admission must start its own read while the former caller is
+      // still pending, and that old reply must never replace the new pool.
+      let resolveOldCaller!: (value: unknown) => void;
+      const oldCaller = new Promise((resolve) => (resolveOldCaller = resolve));
+      let admittedReads = 0;
+      backendRequestSpy.mockImplementation((method: string) => {
+        if (method !== 'workspace.get') return undefined;
+        admittedReads += 1;
+        return admittedReads === 1
+          ? oldCaller
+          : Promise.resolve({ workspace: workspaceRow({ pullRequests: [] }) });
+      });
+      emitGitRoot('gitRoot:updated');
+      await settle();
+      expect(workspaceGets()).toHaveLength(3);
+
+      admitLegacyPrincipal('guest');
+      emitGitRoot('gitRoot:updated');
+      await settle();
+      expect(workspaceGets()).toHaveLength(4);
+      expect((await readWorkspace()).pullRequests).toEqual([]);
+
+      resolveOldCaller({ workspace: workspaceRow({ pullRequests: [rootPull()] }) });
+      await settle();
+      expect(workspaceGets()).toHaveLength(4);
+      expect((await readWorkspace()).pullRequests).toEqual([]);
     });
 
     it('never reads or adds a workspace this window does not hold', async () => {

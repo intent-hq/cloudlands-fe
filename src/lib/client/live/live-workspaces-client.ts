@@ -14,6 +14,7 @@ import { createRepositorySelectionTransport } from './repository-selection-trans
 import type { RepositoryContextRequest } from '$shared/types/repository-context';
 import type { RepositoryContextUpdate } from '../app-client';
 import { createRepositoryContextTransport } from './repository-context-transport';
+import { captureWorkspaceReadContext, type WorkspaceReadContext } from './workspace-read-context';
 /**
  * Live workspaces domain backed by the intentd daemon.
  *
@@ -27,6 +28,7 @@ import { createRepositoryContextTransport } from './repository-context-transport
  */
 import { WorkspaceStatus, createWorkspaceId } from '$shared/types';
 import type {
+  AttentionReminderReason,
   CreateWorkspaceRequest,
   UpdateWorkspaceRequest,
   Workspace,
@@ -198,8 +200,14 @@ export class LiveWorkspacesClient implements WorkspacesClient {
     return createRepositoryContextTransport().observe(request, handler);
   }
 
-  private readonly listRequests = new Map<string, Promise<Workspace[]>>();
-  private readonly getRequests = new Map<string, Promise<Workspace | null>>();
+  private readonly listRequests = new Map<
+    string,
+    { read: WorkspaceReadContext; promise: Promise<Workspace[]> }
+  >();
+  private readonly getRequests = new Map<
+    string,
+    { read: WorkspaceReadContext; promise: Promise<Workspace | null> }
+  >();
 
   /**
    * `workspace.list` (§5.1). Retired rows are returned only when the caller
@@ -209,12 +217,13 @@ export class LiveWorkspacesClient implements WorkspacesClient {
   list(options?: { includeArchived?: boolean; includeRetired?: boolean }): Promise<Workspace[]> {
     const includeArchived = options?.includeArchived === true;
     const includeRetired = options?.includeRetired === true;
-    const key = `${includeArchived}:${includeRetired}`;
+    const read = captureWorkspaceReadContext();
+    const key = JSON.stringify([read.key, includeArchived, includeRetired]);
     // Retired reads are never shared: a reader that reloads after a restore,
     // delete or identity change must observe a request started after it, not
     // an older in-flight snapshot whose changes it never journaled.
     const existing = includeRetired ? undefined : this.listRequests.get(key);
-    if (existing) return existing;
+    if (existing?.read.isCurrent()) return existing.promise;
 
     const params = {
       ...(includeArchived ? { includeArchived: true } : {}),
@@ -223,16 +232,25 @@ export class LiveWorkspacesClient implements WorkspacesClient {
     const request = backendRequest<{ workspaces?: unknown[] }>(
       'workspace.list',
       Object.keys(params).length > 0 ? params : undefined,
-    ).then((result) => {
-      const workspaces = Array.isArray(result?.workspaces) ? result.workspaces : [];
-      return workspaces.map((workspace) =>
-        normalizeWorkspace(workspace as Record<string, unknown>),
-      );
-    });
+    ).then(
+      (result) => {
+        if (!read.isCurrent() && read.isAdmitted()) return this.list(options);
+        read.assertCurrent();
+        const workspaces = Array.isArray(result?.workspaces) ? result.workspaces : [];
+        return workspaces.map((workspace) =>
+          normalizeWorkspace(workspace as Record<string, unknown>),
+        );
+      },
+      (error: unknown) => {
+        if (!read.isCurrent() && read.isAdmitted()) return this.list(options);
+        throw error;
+      },
+    );
     if (includeRetired) return request;
-    this.listRequests.set(key, request);
+    const entry = { read, promise: request };
+    this.listRequests.set(key, entry);
     const clearRequest = () => {
-      if (this.listRequests.get(key) === request) {
+      if (this.listRequests.get(key) === entry) {
         this.listRequests.delete(key);
       }
     };
@@ -241,19 +259,22 @@ export class LiveWorkspacesClient implements WorkspacesClient {
   }
 
   /**
-   * `workspace.get` (§5.1), single-flighted per workspace id: every caller —
+   * `workspace.get` (§5.1), single-flighted per workspace and admission: every caller —
    * `open`, the workspace-load saga, and the on-demand detail hydration
    * helpers — shares one in-flight request, so overlapping reads never fan
    * out into duplicate RPCs. The entry clears once the request settles either
    * way, so a rejected read never poisons later ones.
    */
   get(id: string): Promise<Workspace | null> {
-    const existing = this.getRequests.get(id);
-    if (existing) return existing;
+    const read = captureWorkspaceReadContext(id);
+    const key = JSON.stringify([read.key, id]);
+    const existing = this.getRequests.get(key);
+    if (existing?.read.isCurrent()) return existing.promise;
 
     const request = backendRequest<{ workspace?: unknown } | unknown>('workspace.get', {
       workspaceId: id,
     }).then((result) => {
+      read.assertCurrent();
       const raw =
         result && typeof result === 'object' && 'workspace' in result
           ? (result as { workspace?: unknown }).workspace
@@ -261,10 +282,11 @@ export class LiveWorkspacesClient implements WorkspacesClient {
       if (!raw || typeof raw !== 'object') return null;
       return normalizeWorkspace(raw as Record<string, unknown>);
     });
-    this.getRequests.set(id, request);
+    const entry = { read, promise: request };
+    this.getRequests.set(key, entry);
     const clearRequest = () => {
-      if (this.getRequests.get(id) === request) {
-        this.getRequests.delete(id);
+      if (this.getRequests.get(key) === entry) {
+        this.getRequests.delete(key);
       }
     };
     void request.then(clearRequest, clearRequest);
@@ -443,6 +465,15 @@ export class LiveWorkspacesClient implements WorkspacesClient {
   // daemon's `workspace:attention-changed` event drives the reactive clear.
   async markSeen(id: string): Promise<MutationResult> {
     return runMutation('workspace.markSeen', { workspaceId: id });
+  }
+
+  async dismissAttention(id: string, reasons?: AttentionReminderReason[]): Promise<Workspace> {
+    const result = await backendRequest<{ workspace: Record<string, unknown> }>(
+      'workspace.dismissAttention',
+      { workspaceId: id, ...(reasons === undefined ? {} : { reasons }) },
+    );
+    if (!result?.workspace) throw new Error('Missing workspace.dismissAttention workspace');
+    return normalizeWorkspace(result.workspace);
   }
 
   async setActive(id: string): Promise<MutationResult> {

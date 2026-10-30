@@ -16,6 +16,7 @@
     onAction,
     trigger,
     contextMenu,
+    returnFocus: menuReturnFocus,
     onOpenChange,
     ariaLabel,
     open = $bindable(false),
@@ -27,6 +28,7 @@
     onAction?: ActionHandler;
     trigger?: Snippet<[{ props: Record<string, unknown>; open: boolean }]>;
     contextMenu?: { x: number; y: number; returnFocus?: HTMLElement | null };
+    returnFocus?: HTMLElement | null;
     onOpenChange?: (open: boolean) => void;
     ariaLabel: string;
     open?: boolean;
@@ -98,8 +100,8 @@
     onOpenChange?.(false);
   }
 
-  function restoreContextFocus(event: Event) {
-    if (!contextMenu) return;
+  function restoreMenuFocus(event: Event) {
+    if (!contextMenu && !menuReturnFocus) return;
     event.preventDefault();
     if (tabDismissed) return;
     const active = document.activeElement;
@@ -113,8 +115,9 @@
       )
     )
       return;
-    const target = invokingElement?.isConnected
-      ? invokingElement
+    const requestedFocus = contextMenu ? invokingElement : menuReturnFocus;
+    const target = requestedFocus?.isConnected
+      ? requestedFocus
       : fallbackTargets.find(
           (element) =>
             element.isConnected &&
@@ -303,7 +306,7 @@
     collisionPadding={8}
     aria-label={ariaLabel}
     data-action-menu-owner={uid}
-    onCloseAutoFocus={restoreContextFocus}
+    onCloseAutoFocus={restoreMenuFocus}
     onkeydown={handleContextKeydown}
     class={className}
   >
