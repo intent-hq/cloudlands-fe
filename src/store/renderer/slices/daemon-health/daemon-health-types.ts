@@ -5,6 +5,7 @@
  * Safe to import from any process.
  */
 
+import type { DaemonStartupState } from '$shared/daemon-startup';
 import type { ProtocolVersion } from '$shared/protocol-version';
 
 /**
@@ -299,6 +300,13 @@ export interface DaemonHealthState {
    * otherwise. The overlay shows it where it names the cap.
    */
   connectionLimitRetryAfterMs: number | null;
+  /**
+   * The daemon is starting or failed to start (docs/protocol/startup-readiness.md),
+   * from the main process's backend:status broadcasts; null otherwise. While
+   * starting, the connection stays `connecting` and the daemon-loss overlay
+   * shows startup progress instead of the connection-lost copy.
+   */
+  daemonStartup: DaemonStartupState | null;
   /**
    * Daemon-reported connection locality from the last system.status poll
    * (`host.locality`, PROTOCOL §5.7/§5.14), or null before the first poll.
