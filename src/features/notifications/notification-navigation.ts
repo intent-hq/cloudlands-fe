@@ -25,6 +25,7 @@ import {
   openPanel,
   setChiefActiveAgentId,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 
 const logger = createLogger('NotificationNavigation');
 
@@ -39,8 +40,12 @@ export interface NotificationNavigatePayload {
 }
 
 /**
- * Route a notification click: `goto(/workspace/{workspaceId})`, guarding
- * null/missing payloads. Chief-of-staff payloads (`chief: true` or the chief
+ * Route a notification click: activate the workspace tab (adding it to the
+ * tab strip when it is not open) and `goto(/workspace/{workspaceId})`,
+ * guarding null/missing payloads. Like every other workspace entry point
+ * (deep links, attention "Switch To", link handler), the tab is opened before
+ * navigating — the route alone does not add a closed workspace to the strip.
+ * Chief-of-staff payloads (`chief: true` or the chief
  * virtual workspace id) open the homepage Assistant and select the chat
  * thread instead — the chief workspace page is hidden. No-ops in the HUD
  * pop-out window so a stray `notification:navigate` IPC can never replace
@@ -70,6 +75,7 @@ export async function handleNotificationNavigate(
     };
     if (target.workspaceId !== data.workspaceId || !admitted()) return;
     try {
+      appStore.dispatch(openWorkspaceTab(target.workspaceId));
       await navigateToRoute(`/workspace/${encodeURIComponent(target.workspaceId)}`);
       if (!admitted()) return;
       const ready = await appStore.dispatch(
@@ -99,6 +105,7 @@ export async function handleNotificationNavigate(
   }
 
   try {
+    appStore.dispatch(openWorkspaceTab(data.workspaceId));
     await navigateToRoute(`/workspace/${data.workspaceId}`);
   } catch (error) {
     logger.warn('Failed to navigate from notification click', {

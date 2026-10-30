@@ -31,6 +31,7 @@ import {
   setNotificationEnabled,
 } from '../../user-preferences/user-preferences-slice';
 import { openWorkspaceTab } from '../../tab-state/tab-state-slice';
+import { selectIsWorkspaceTabOpen } from '../../tab-state/tab-state-selectors';
 import { initializeLayout, setRestoreStatus } from '../../panel-layout/panel-layout-slice';
 import { handleNotificationNavigate } from '$features/notifications/notification-navigation';
 import { webNotificationSaga, notificationIpcSaga } from './notifications-saga';
@@ -499,6 +500,20 @@ describe('live discussion mention notifications', () => {
     stop();
     await click;
     expect(mocks.open).not.toHaveBeenCalled();
+  });
+  it('opens the workspace tab before navigating when it is not already open', async () => {
+    emit();
+    await settle();
+    let tabOpenAtNavigation: boolean | undefined;
+    mocks.route.mockImplementationOnce(async () => {
+      tabOpenAtNavigation = selectIsWorkspaceTabOpen.select(store.state, 'ws');
+      layout('agent');
+    });
+    expect(selectIsWorkspaceTabOpen.select(store.state, 'ws')).toBe(false);
+    await mocks.toast.mock.calls[0][1].action.onClick();
+    expect(tabOpenAtNavigation).toBe(true);
+    expect(mocks.route).toHaveBeenCalledWith('/workspace/ws');
+    expect(mocks.open).toHaveBeenCalledWith('ws', 'ws', 'default');
   });
   it('rejects stale toast clicks before navigation', async () => {
     emit();
