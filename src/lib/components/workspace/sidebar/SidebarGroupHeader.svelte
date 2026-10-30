@@ -1,7 +1,6 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
-  import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
-  import Fa from 'svelte-fa';
+  import DisclosureIcon from '$lib/components/icons/DisclosureIcon.svelte';
 
   interface Props {
     [attribute: `data-${string}`]: string | undefined;
@@ -9,17 +8,9 @@
     meta?: string;
     expanded: boolean;
     onclick: () => void;
-    collapsedChevronClass?: string;
   }
 
-  let {
-    title,
-    meta,
-    expanded,
-    onclick,
-    collapsedChevronClass = '-rotate-90',
-    ...restProps
-  }: Props = $props();
+  let { title, meta, expanded, onclick, ...restProps }: Props = $props();
 </script>
 
 <Button
@@ -38,10 +29,5 @@
       >{meta}</span
     >
   {/if}
-  <Fa
-    icon={faChevronDown}
-    class="size-3 shrink-0 opacity-50 transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {expanded
-      ? ''
-      : collapsedChevronClass}"
-  />
+  <DisclosureIcon {expanded} />
 </Button>

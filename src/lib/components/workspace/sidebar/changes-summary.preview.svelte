@@ -3,6 +3,7 @@
 
   interface Props {
     locked?: boolean;
+    disclosures?: boolean;
     admittedOwner?: boolean;
     secondaryFiles?: boolean;
     prs?: 'single' | 'multiple' | 'many';
@@ -17,6 +18,7 @@
     defaultState: 'editable',
     states: {
       editable: { props: {} },
+      disclosures: { props: { locked: true, disclosures: true } },
       locked: { props: { locked: true } },
       'single-pr': { props: { prs: 'single' } },
       'workspace-prs': { props: { prs: 'multiple', secondaryFiles: true } },
@@ -56,6 +58,7 @@
 
   let {
     locked = false,
+    disclosures = false,
     admittedOwner = true,
     secondaryFiles = false,
     prs,
@@ -95,6 +98,19 @@
       title: 'Changes summary',
       path: '/preview/workspace',
       repositoryPath: '/preview/repo',
+      pullRequests: disclosures
+        ? [
+            {
+              id: 'preview-pr',
+              number: 42,
+              title: 'Polish the sidebar',
+              status: PullRequestStatus.Open,
+              url: 'https://example.test/pull/42',
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            },
+          ]
+        : [],
       myRole: readOnly ? 'collaborator' : 'owner',
       branch,
       baseRef: 'main',
@@ -170,6 +186,7 @@
         workspaceId,
         path: '/preview/workspace/packages/component',
         branch: 'feature/component',
+        registeredCommitSha: disclosures ? 'older-component' : undefined,
         source: 'agent',
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -209,9 +226,29 @@
         behind: 0,
         isClean: !secondaryFiles,
       },
-      commits: [],
+      commits: disclosures
+        ? [
+            {
+              hash: 'new-component',
+              message: 'Refine component controls',
+              author: 'Preview',
+              date: timestamp,
+            },
+            {
+              hash: 'older-component',
+              message: 'Set up component',
+              author: 'Preview',
+              date: timestamp,
+            },
+          ]
+        : [],
       nextToken: undefined,
-      commitFiles: {},
+      commitFiles: disclosures
+        ? {
+            'new-component': [{ path: 'src/control.ts', additions: 6, deletions: 2 }],
+            'older-component': [{ path: 'README.md', additions: 2, deletions: 0 }],
+          }
+        : {},
     } as never),
   );
   store.dispatch(setMultiSelectSidebarSelectedTabs(workspaceId, ['changes']));
@@ -227,7 +264,7 @@
                 timestamp,
                 author: 'Preview',
                 isPushed: true,
-                files: [],
+                files: disclosures ? [{ path: 'src/control.ts', additions: 6, deletions: 2 }] : [],
               } as never,
             ]
           : [],

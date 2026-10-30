@@ -1,4 +1,6 @@
 <script lang="ts">
+  import DisclosureIcon from '$lib/components/icons/DisclosureIcon.svelte';
+
   import type { AgentDelegatedCounts, AgentScopeCounts, AgentSession } from '$shared/types';
   import AgentCard from '$lib/components/chat/AgentCard.svelte';
   import LazyAgentCard from './LazyAgentCard.svelte';
@@ -7,7 +9,7 @@
   import VirtualList from '$lib/components/ui/VirtualList.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { Separator } from '$lib/components/ui/separator';
-  import { faChevronDown, faRotateLeft } from '@fortawesome/free-solid-svg-icons';
+  import { faRotateLeft } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { untrack } from 'svelte';
   import { slide } from '$lib/motion';
@@ -659,13 +661,7 @@
             {m.workspace_agentsList_delegated_label({ count: formatInteger(row.total) })}
           {/if}
         </span>
-        <Fa
-          icon={faChevronDown}
-          size="xs"
-          class="ml-auto shrink-0 opacity-50 transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {isExpanded
-            ? ''
-            : 'rotate-90'}"
-        />
+        <DisclosureIcon expanded={isExpanded} class="ml-auto" />
       </Button>
     </div>
   {:else}

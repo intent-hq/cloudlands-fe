@@ -1,4 +1,6 @@
 <script lang="ts">
+  import DisclosureIcon from '$lib/components/icons/DisclosureIcon.svelte';
+
   import { truncatedTitle } from '$lib/actions/observe-overflow';
   /**
    * SecondaryRootChangesView - Read-only per-root changes browser
@@ -45,7 +47,7 @@
   import { writeTextToClipboard } from '$lib/utils/clipboard';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-  import { faChevronDown, faCodeCommit } from '@fortawesome/free-solid-svg-icons';
+  import { faCodeCommit } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import type { Snippet } from 'svelte';
   import ChangesRefreshAction from './ChangesRefreshAction.svelte';
@@ -381,11 +383,7 @@
             <div class="relative z-10 mr-auto flex w-fit items-center gap-2 bg-sidebar py-1.5 pr-3">
               <span class="flex items-center gap-1.5 text-ui text-subtle bg-sidebar select-none">
                 {m.workspace_sidebarChanges_rootRegistered_label()}
-                <Fa
-                  icon={faChevronDown}
-                  size="xs"
-                  class="opacity-50 transition-transform {olderExpanded ? '' : 'rotate-90'}"
-                />
+                <DisclosureIcon expanded={olderExpanded} />
               </span>
             </div>
             <div class="absolute top-3.5 left-0 right-0 flex-1 border-t border-border"></div>
@@ -439,8 +437,8 @@
     <div class="relative flex items-center gap-1.5 py-0.5 group w-full rounded px-1 -mx-1">
       <Button
         variant="ghost-light"
-        size="icon-xs"
-        class="absolute left-0.75 bg-sidebar opacity-0 group-hover:opacity-100 hover:text-foreground! -ml-1"
+        size="compact"
+        class="h-6 shrink-0 gap-1 px-1 text-muted-foreground hover:text-foreground"
         onclick={(e: MouseEvent) => {
           e.stopPropagation();
           toggleCommitExpanded(commit);
@@ -450,11 +448,7 @@
         aria-label={m.workspace_prSection_toggleFileList_tooltip()}
         data-testid="secondary-root-commit-toggle"
       >
-        <Fa
-          icon={faChevronDown}
-          size={12}
-          class="text-subtle shrink-0 transition-transform {isExpanded ? 'rotate-0' : 'rotate-90'}"
-        />
+        <DisclosureIcon expanded={isExpanded} />
         {#if commitFiles.length > 0}
           <LineChangesBadge
             additions={commitFiles.reduce((sum, f) => sum + (f.additions || 0), 0)}
@@ -464,9 +458,8 @@
         {/if}
       </Button>
 
-      <!-- Auggie avatar instead of commit icon when made by an agent - hides on hover to show chevron -->
       {#if commit.agentId}
-        <span class="shrink-0 group-hover:opacity-0 transition-opacity pointer-events-none">
+        <span class="shrink-0 pointer-events-none">
           <AgentAvatar agentId={commit.agentId} size={14} class="mr-[-2px]" />
         </span>
       {:else}

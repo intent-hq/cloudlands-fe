@@ -4,8 +4,7 @@
    * Shows a colored dot node and title, with content in a slot
    */
   import { Button } from '$lib/components/ui/button';
-  import { faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
-  import Fa from 'svelte-fa';
+  import DisclosureIcon from '$lib/components/icons/DisclosureIcon.svelte';
   import type { Snippet } from 'svelte';
 
   interface Props {
@@ -50,10 +49,7 @@
             <span class="inline-block ml-0.5 font-normal text-muted-foreground">/ {subtitle}</span>
           {/if}
           {#snippet trailingIcon()}
-            <Fa
-              icon={expanded ? faChevronDown : faChevronRight}
-              class="size-2.5 text-muted-foreground"
-            />
+            <DisclosureIcon {expanded} />
           {/snippet}
         </Button>
       {:else}

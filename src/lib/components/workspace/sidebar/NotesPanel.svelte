@@ -1,4 +1,6 @@
 <script lang="ts">
+  import DisclosureIcon from '$lib/components/icons/DisclosureIcon.svelte';
+
   import { Input } from '$lib/components/ui/input';
   import { Button } from '$lib/components/ui/button';
   import type { Note, TaskStatus } from '$shared/types';
@@ -16,7 +18,6 @@
     parseTaskStats,
   } from './utils';
   import {
-    faChevronDown,
     faPlus,
     faArrowUpRightFromSquare,
     faPencil,
@@ -816,12 +817,7 @@
                   ? m.workspace_notesPanel_expand_ariaLabel()
                   : m.workspace_notesPanel_collapse_ariaLabel()}
               >
-                <div
-                  class="transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
-                  class:-rotate-90={isCollapsed}
-                >
-                  <Fa icon={faChevronDown} size="10" />
-                </div>
+                <DisclosureIcon expanded={!isCollapsed} />
               </Button>
             {/if}
           </div>

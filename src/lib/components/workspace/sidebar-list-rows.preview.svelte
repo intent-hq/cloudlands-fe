@@ -213,6 +213,7 @@
         <div class="px-4">
           <NotesPanel
             {notes}
+            defaultCollapsed={false}
             workspaceId={LIST_LABELS_WORKSPACE}
             flush
             selectedNoteId={openedNote}

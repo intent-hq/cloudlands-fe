@@ -103,11 +103,12 @@
   import { createTerminalRequested } from '$store/renderer/slices/terminals/terminals-slice';
   import {
     setMultiSelectSidebarSelectedTabs,
-    toggleWorkspaceCollapsedNote,
+    setWorkspaceNoteExpanded,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
     selectMultiSelectSidebarSelectedTabIds,
     selectWorkspaceCollapsedNoteIds,
+    selectWorkspaceExpandedNoteIds,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { selectIsCollapsed } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
@@ -513,6 +514,7 @@
   function revealNoteAncestors(noteId: string): boolean {
     const notesById = new Map($notes.map((note) => [note.id as string, note]));
     const collapsed = new Set(selectWorkspaceCollapsedNoteIds.select(appStore.state, workspaceId));
+    const expandedIds = new Set(selectWorkspaceExpandedNoteIds.select(appStore.state, workspaceId));
     const visited = new Set([noteId]);
     let note = notesById.get(noteId);
     let expanded = false;
@@ -521,8 +523,8 @@
       visited.add(parentId);
       note = notesById.get(parentId);
       if (!note) break;
-      if (collapsed.has(parentId)) {
-        appStore.dispatch(toggleWorkspaceCollapsedNote(workspaceId, parentId));
+      if (collapsed.has(parentId) || !expandedIds.has(parentId)) {
+        appStore.dispatch(setWorkspaceNoteExpanded(workspaceId, parentId, true));
         expanded = true;
       }
     }

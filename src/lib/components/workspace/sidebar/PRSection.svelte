@@ -1,4 +1,6 @@
 <script lang="ts">
+  import DisclosureIcon from '$lib/components/icons/DisclosureIcon.svelte';
+
   import { untrack } from 'svelte';
   import { Input } from '$lib/components/ui/input';
   import { selectNativeReviewEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
@@ -67,7 +69,6 @@
     faArrowsRotate,
     faArrowUpRightFromSquare,
     faCheck,
-    faChevronDown,
     faCodeMerge,
     faCodePullRequest,
     faEye,
@@ -949,21 +950,17 @@
               {#if hasPRFiles}
                 <Button
                   variant="ghost-light"
-                  size="icon-xs"
-                  class="absolute left-0.75 bg-sidebar opacity-0 group-hover:opacity-100 hover:text-foreground! -ml-1"
+                  size="compact"
+                  class="h-6 shrink-0 gap-1 px-1 text-muted-foreground hover:text-foreground"
                   onclick={(e: MouseEvent) => {
                     e.stopPropagation();
                     togglePRExpanded(prKey(pr));
                   }}
+                  aria-expanded={isPRExpanded}
+                  aria-label={m.workspace_prSection_toggleFileList_tooltip()}
                   title={m.workspace_prSection_toggleFileList_tooltip()}
                 >
-                  <Fa
-                    icon={faChevronDown}
-                    size={12}
-                    class="text-subtle shrink-0 transition-transform {isPRExpanded
-                      ? 'rotate-0'
-                      : 'rotate-90'}"
-                  />
+                  <DisclosureIcon expanded={isPRExpanded} />
                   <LineChangesBadge
                     additions={prTotalAdditions}
                     deletions={prTotalDeletions}
@@ -1014,7 +1011,7 @@
               >
                 <Button
                   variant="ghost-light"
-                  size="icon-xs"
+                  size="icon-compact"
                   class="shrink-0"
                   disabled={!pr.url}
                   onclick={() =>

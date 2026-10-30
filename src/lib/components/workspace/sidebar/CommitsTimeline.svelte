@@ -1,4 +1,6 @@
 <script lang="ts">
+  import DisclosureIcon from '$lib/components/icons/DisclosureIcon.svelte';
+
   import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { Input } from '$lib/components/ui/input';
   /**
@@ -57,7 +59,6 @@
   import {
     faArrowUpFromBracket,
     faArrowUpRightFromSquare,
-    faChevronDown,
     faCloud,
     faCodeCommit,
     faFlag,
@@ -502,23 +503,17 @@
           >
             <Button
               variant="ghost-light"
-              size="icon-xs"
-              class="absolute left-0.75 bg-sidebar {commit.agentId
-                ? 'opacity-0 group-hover:opacity-100'
-                : 'opacity-0 group-hover:opacity-100'} hover:text-foreground! -ml-1"
+              size="compact"
+              class="h-6 shrink-0 gap-1 px-1 text-muted-foreground hover:text-foreground"
               onclick={(e: MouseEvent) => {
                 e.stopPropagation();
                 toggleCommitExpanded(commit);
               }}
+              aria-expanded={isExpanded}
+              aria-label={m.workspace_prSection_toggleFileList_tooltip()}
               title={m.workspace_prSection_toggleFileList_tooltip()}
             >
-              <Fa
-                icon={faChevronDown}
-                size={12}
-                class="text-subtle shrink-0 transition-transform {isExpanded
-                  ? 'rotate-0'
-                  : 'rotate-90'}"
-              />
+              <DisclosureIcon expanded={isExpanded} />
               {#if commitFiles.length > 0}
                 <LineChangesBadge
                   additions={commitFiles.reduce((sum, f) => sum + (f.additions || 0), 0)}
@@ -528,9 +523,8 @@
               {/if}
             </Button>
 
-            <!-- Show auggie avatar instead of commit icon when made by an agent - hides on hover to show chevron -->
             {#if commit.agentId}
-              <span class="shrink-0 group-hover:opacity-0 transition-opacity pointer-events-none">
+              <span class="shrink-0 pointer-events-none">
                 <AgentAvatar agentId={commit.agentId} size={14} class="mr-[-2px]" />
               </span>
             {:else}
@@ -723,11 +717,7 @@
         {#if $ftLoadingOlderCommits$}
           <IntentMarkLoader size={12} class="opacity-50" />
         {:else}
-          <Fa
-            icon={faChevronDown}
-            size="xs"
-            class="opacity-50 transition-transform {olderCommits.length > 0 ? '' : 'rotate-90'}"
-          />
+          <DisclosureIcon expanded={olderCommits.length > 0} />
         {/if}
       </span>
       <span
@@ -759,21 +749,17 @@
           >
             <Button
               variant="ghost-light"
-              size="icon-xs"
-              class="absolute left-0.75 bg-sidebar opacity-0 group-hover:opacity-100 hover:text-foreground! -ml-1"
+              size="compact"
+              class="h-6 shrink-0 gap-1 px-1 text-muted-foreground hover:text-foreground"
               onclick={(e: MouseEvent) => {
                 e.stopPropagation();
                 toggleCommitExpanded(commit);
               }}
+              aria-expanded={isExpanded}
+              aria-label={m.workspace_prSection_toggleFileList_tooltip()}
               title={m.workspace_prSection_toggleFileList_tooltip()}
             >
-              <Fa
-                icon={faChevronDown}
-                size={12}
-                class="text-subtle shrink-0 transition-transform {isExpanded
-                  ? 'rotate-0'
-                  : 'rotate-90'}"
-              />
+              <DisclosureIcon expanded={isExpanded} />
               {#if commitFiles.length > 0}
                 <LineChangesBadge
                   additions={commitFiles.reduce((sum, f) => sum + (f.additions || 0), 0)}

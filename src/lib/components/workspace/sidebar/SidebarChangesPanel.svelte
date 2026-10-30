@@ -565,6 +565,12 @@
     // Text entry (inputs, contenteditable, code editors) owns its own keys.
     if (isTextEntryTarget(e.target)) return;
     const target = e.target as HTMLElement;
+    if (
+      target.closest('button, [role="button"], [role="combobox"], [role="switch"]') &&
+      !target.closest('[data-file-key]')
+    ) {
+      return;
+    }
     // Summary controls own their native button and picker keyboard interactions.
     if (
       target.closest(

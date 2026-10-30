@@ -1,4 +1,6 @@
 <script lang="ts">
+  import DisclosureIcon from '$lib/components/icons/DisclosureIcon.svelte';
+
   import type { WorkspaceEvent } from '$features/events/types';
   import {
     getActivityTitle,
@@ -14,7 +16,7 @@
 
   import Fa from 'svelte-fa';
   import { slide } from '$lib/motion';
-  import { faChevronDown, faChevronLeft, faPlus } from '@fortawesome/free-solid-svg-icons';
+  import { faPlus } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -258,13 +260,10 @@
           variant="ghost"
           type="button"
           class="shrink-0 w-full text-sm text-muted-foreground hover:text-foreground transition-colors mt-1.5 flex items-center gap-1 cursor-pointer outline-none"
+          aria-expanded={expanded}
           onclick={() => (expanded = !expanded)}
         >
-          <Fa
-            icon={expanded ? faChevronDown : faChevronLeft}
-            size="xs"
-            class="text-ghost shrink-0 w-3.5 mr-0.5"
-          />
+          <DisclosureIcon {expanded} />
           <div class="flex-1 text-left text-ui-sm">
             {expanded
               ? m.workspace_activityPreview_showLess_label()
