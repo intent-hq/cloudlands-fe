@@ -31,18 +31,21 @@ export function labelWorkspace(id: string, overrides: Partial<Workspace> = {}): 
 
 /**
  * Admitted owner state with a loaded workspace list, local pins, and the
- * `workspaceLabels: 1` capability unless `supported` is false.
+ * `workspaceLabels: 1` capability unless `supported` is false, plus
+ * `workspaceAutoArchiveOptOut: 1` when `autoArchiveOptOut` is set.
  */
 export function workspaceLabelsState({
   workspaces = [],
   pinned = [],
   supported = true,
   role = 'owner',
+  autoArchiveOptOut = false,
 }: {
   workspaces?: Workspace[];
   pinned?: string[];
   supported?: boolean;
   role?: 'owner' | 'guest';
+  autoArchiveOptOut?: boolean;
 } = {}): StoreState {
   const workspace = workspaces.reduce(
     (state, row) => workspaceReducer(state, setWorkspaceEntity(row)),
@@ -62,6 +65,7 @@ export function workspaceLabelsState({
         capabilities: {
           ...snapshot.capabilities,
           ...(supported ? { workspaceLabels: 1 as const } : {}),
+          ...(autoArchiveOptOut ? { workspaceAutoArchiveOptOut: 1 as const } : {}),
         },
       },
     },

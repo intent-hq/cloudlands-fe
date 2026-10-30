@@ -2725,6 +2725,7 @@
   "home_views": "Vues de l’accueil",
   "home_workspace_details": "Aperçu de l’espace de travail",
   "home_workspace_view": "Vue des espaces de travail",
+  "home_workspace_disableAutoArchive_label": "Désactiver l'archivage automatique",
   "home_workspaceLabel_menu_label": "Étiquette",
   "home_workspaceLabel_new_label": "Nouvelle étiquette…",
   "home_workspaceLabel_remove_label": "Retirer l’étiquette",
