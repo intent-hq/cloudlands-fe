@@ -1,5 +1,6 @@
 import { expect, test } from '../../../../test/ct-test';
 import ProviderDisableHost from './mocks/ProviderDisableHost.svelte';
+import ModelPickerGeometryHost from '../../chat/input/__tests__/ModelPickerGeometryHost.svelte';
 
 for (const status of ['signed-out', 'pending', 'unavailable'] as const) {
   test(`disables a specialist-pinned provider while ${status}`, async ({
@@ -79,3 +80,25 @@ test('onboarding keeps an enabled but missing Auggie visible', async ({ mount, p
   await mount(ProviderDisableHost, { props: { status: 'unavailable', onboarding: true } });
   await expect(page.getByText('Augment Auggie', { exact: true })).toBeVisible();
 });
+
+for (const dark of [false, true]) {
+  test(`cached disabled default stays out of the settings picker (${dark ? 'dark' : 'light'})`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width: dark ? 390 : 800, height: 600 });
+    if (dark) await page.evaluate(() => document.documentElement.classList.add('dark'));
+    await mount(ModelPickerGeometryHost, {
+      props: { defaultProviderDisabled: true, multipleProviders: true },
+    });
+    await page.getByTestId('model-picker-host').getByRole('button').click();
+    const replacement = page.getByRole('option', { name: /Other provider model/ });
+    await expect(replacement).toBeVisible();
+    await expect(page.getByRole('option', { name: /Reasoning model/ })).toHaveCount(0);
+    await expect(page.getByRole('tab', { name: /Codex/ })).toHaveCount(0);
+    await expect(page.getByTestId('selection')).toContainText('reasoning-model');
+    await page.screenshot({ path: testInfo.outputPath('disabled-default-picker.png') });
+    await replacement.click();
+    await expect(page.getByTestId('selection')).toContainText('other-model');
+  });
+}

@@ -3569,7 +3569,7 @@ describe('ModelPicker availability gating', () => {
     expect(screen.queryByRole('tab', { name: /Auggie/ })).toBeNull();
   });
 
-  it('still renders the disabled effective provider group when the catalog was loaded for it', async () => {
+  it('still renders an unavailable effective provider group when the catalog was loaded for it', async () => {
     // Positive control for the provenance gate: when the global catalog DOES
     // belong to the (unavailable) effective provider, the fallback group must
     // keep rendering so the selected model isn't orphaned.
@@ -4148,6 +4148,47 @@ describe('ModelPicker disabled agent provider (intent#5737)', () => {
     mockAgentSession$.set(undefined);
     enabledProvidersMap$.set({});
     activeProviderId$.set('auggie');
+  });
+
+  it.each([
+    ['codex', 'settings'],
+    ['auggie', 'settings'],
+    ['codex', 'specialist'],
+    ['auggie', 'specialist'],
+  ])('excludes cached disabled %s rows from a no-agent %s picker', async (provider, context) => {
+    const onModelChange = vi.fn();
+    activeProviderId$.set(provider);
+    mockModelState.defaultProviderId = provider;
+    mockModelState.availableModelsProviderId = provider;
+    mockModelState.availableModels = [{ value: 'cached-model', label: 'Cached disabled model' }];
+    enabledProviderIds$.set(['claude-code']);
+    enabledProvidersMap$.set({ [provider]: false, 'claude-code': true });
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+      models: [{ value: 'replacement-model', label: 'Enabled replacement model' }],
+    });
+    render(ModelPicker, {
+      props: {
+        selectedModel: `${provider}:cached-model`,
+        providerId: context === 'specialist' ? provider : undefined,
+        updateGlobalDefault: context === 'settings',
+        portal: false,
+        onModelChange,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    const replacement = await screen.findByRole('option', { name: /Enabled replacement model/ });
+    expect(screen.queryByRole('option', { name: /Cached disabled model/ })).toBeNull();
+    expect(
+      screen.queryByRole('tab', { name: provider === 'codex' ? /Codex/ : /Auggie/ }),
+    ).toBeNull();
+    expect(onModelChange).not.toHaveBeenCalled();
+    expect(dispatchedTypes()).not.toContain(selectModel.type);
+    await fireEvent.click(replacement);
+    expect(onModelChange).toHaveBeenCalledWith('replacement-model', {
+      providerId: 'claude-code',
+      modelId: 'replacement-model',
+    });
   });
 
   it('warns before any send when the agent provider is disabled in settings, without switching the model itself', async () => {

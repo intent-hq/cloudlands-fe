@@ -556,19 +556,10 @@
     isProviderEnabled($availableEnabledProviderIds$, effectiveProviderId),
   );
 
-  // An existing agent whose current provider was explicitly disabled in
-  // Settings > Agents (intent#5737). Read from `providers.enabled` alone — not
-  // the available+enabled set, which also drops providers whose probe failed,
-  // and not a daemon event — so the picker can warn before any message is
-  // sent. The daemon refuses to run the agent on a disabled provider and
-  // re-homes it on the next send, so unlike the cloudlands-fe#749 policy
-  // (keep a since-unavailable provider selectable) the model is reported as
-  // unavailable and the disabled provider's group is not offered. A
-  // guest-locked picker never sees the host's settings and stays read-only.
+  // Explicit disablement also gates cached rows in settings and specialist
+  // pickers. Failed probes alone do not; guests retain the host-owned receipt.
   const isEffectiveProviderDisabled = $derived(
-    !!agentId &&
-      !isGuestLocked &&
-      isProviderDisabledInSettings($enabledProviders$, effectiveProviderId),
+    !isGuestLocked && isProviderDisabledInSettings($enabledProviders$, effectiveProviderId),
   );
 
   // Disabled providers cannot supply selectable rows, including the default
@@ -870,7 +861,12 @@
       return;
     }
     const pick = model === undefined ? undefined : (picked ?? resolvePickedTriple(model));
-    if (pick && (!hasResolvedProvider(pick.providerId) || !canUseProviderModels(pick.providerId))) {
+    if (
+      pick &&
+      (!hasResolvedProvider(pick.providerId) ||
+        !canUseProviderModels(pick.providerId) ||
+        (!isGuestLocked && isProviderDisabledInSettings($enabledProviders$, pick.providerId)))
+    ) {
       dropdownValue = currentDropdownValue();
       return;
     }
