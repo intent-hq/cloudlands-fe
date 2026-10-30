@@ -939,7 +939,6 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
   // case — a lazy load finishing while the reads above were awaiting — is
   // caught by the re-checks just after `setAgents`.
   const fetched = yield* filterPendingDeletions(listed);
-  yield* put(setAgentsLoaded(workspaceId, true));
   yield* put(setRetiredCount(workspaceId, retiredCount));
   yield* put(setScopeCounts(workspaceId, scopeCounts ?? null));
   yield* put(setDelegatedCounts(workspaceId, delegatedCounts ?? null));
@@ -1018,6 +1017,10 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
       yield* put(bulkUpsertSessions(agents, { listProjection: true }));
     }
   }
+  // `agentsLoaded` means the rows, counts and sessions above are all stored:
+  // the store notifies per dispatch, so an earlier put would let synchronous
+  // subscribers act on an empty or stale list.
+  yield* put(setAgentsLoaded(workspaceId, true));
   yield* put(agentsReadSettled(workspaceId));
 
   const activeAgentId = yield* selectActiveAgentId.effect(workspaceId);
