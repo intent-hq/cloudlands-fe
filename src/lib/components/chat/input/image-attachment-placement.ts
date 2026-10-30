@@ -17,6 +17,7 @@ import {
   placeAttachment,
   sendAttachmentUploadChunk,
   type PlaceAttachmentResult,
+  type RawScreenshotPlacement,
 } from './context-api';
 import {
   assertPlacementCurrent,
@@ -118,11 +119,20 @@ const defaultApi: ImagePlacementApi = {
 export async function placeImageAttachment(
   workspaceId: string,
   fileName: string,
-  source: { data: string; mimeType?: string; idempotencyKey?: string },
+  source: {
+    data: string;
+    mimeType?: string;
+    idempotencyKey?: string;
+    /** Raw-retention association (requires `idempotencyKey`); omitted for ordinary images. */
+    rawScreenshot?: RawScreenshotPlacement;
+  },
   api: ImagePlacementApi = defaultApi,
 ): Promise<PlaceAttachmentResult> {
   const { idempotencyKey } = source;
-  const keyed = idempotencyKey !== undefined ? { idempotencyKey } : {};
+  const keyed = {
+    ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
+    ...(source.rawScreenshot !== undefined ? { rawScreenshot: source.rawScreenshot } : {}),
+  };
   const recover = async (error: unknown): Promise<PlaceAttachmentResult | undefined> =>
     shouldRecoverPlacement(error, idempotencyKey)
       ? recoverPlacementByKey(workspaceId, idempotencyKey, api.getAttachmentInfo)

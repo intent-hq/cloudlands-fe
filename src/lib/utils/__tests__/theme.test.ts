@@ -346,7 +346,7 @@ describe('ThemeManager custom theme support', () => {
   });
 });
 
-describe.each(['dock', 'annotation-toolbar'])('%s window appearance', (windowKind) => {
+describe.each(['dock', 'dock-annotation'])('%s window appearance', (windowKind) => {
   beforeEach(() => {
     vi.clearAllMocks();
     const ls = getLocalStorageMock();

@@ -12,11 +12,13 @@
     reveal,
     floating,
     floatingUp,
+    settling = false,
+    clip,
     conversation,
     conversationWorkspaceId,
     focusRequest,
+    focusComposerOnMount = false,
     onOpen,
-    onFeedback,
     onRegionsChange,
     onPopupStateChange,
   }: {
@@ -26,11 +28,16 @@
     reveal: number;
     floating: boolean;
     floatingUp: boolean;
+    /** The visible shell is still settling to a new height and clips the panel edges. */
+    settling?: boolean;
+    /** Visible shell ink in viewport CSS pixels for inline region publication. */
+    clip?: () => DockPointerRect | null;
     conversation?: Snippet;
     conversationWorkspaceId?: string | null;
     focusRequest: number;
+    /** A user gesture opened this conversation: focus its composer once it settles. */
+    focusComposerOnMount?: boolean;
     onOpen: (id: string) => void;
-    onFeedback: (id: string, title: string) => void;
     onRegionsChange: (regions: DockPointerRect[]) => void;
     onPopupStateChange: (open: boolean) => void;
   } = $props();
@@ -51,6 +58,9 @@
     <DockConversationSurface
       workspaceId={conversationWorkspaceId}
       {focusRequest}
+      {focusComposerOnMount}
+      resizable={!settling}
+      {clip}
       active={expanded && reveal === 1}
       {onRegionsChange}
       {onPopupStateChange}
@@ -58,7 +68,7 @@
       {@render conversation()}
     </DockConversationSurface>
   {:else}
-    <DockOverview {workspaces} {pending} {onOpen} {onFeedback} />
+    <DockOverview {workspaces} {pending} {onOpen} />
   {/if}
 </div>
 
@@ -69,7 +79,8 @@
     bottom: 0;
     left: 0;
     right: 0;
-    padding: 8px 12px 12px;
+    /* The Assistant row closes the list; its own inset is the bottom margin. */
+    padding: 8px 12px 8px;
   }
   .floating-up {
     top: 0;

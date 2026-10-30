@@ -7,7 +7,48 @@ import { Logger } from '../shared/logger';
 
 const logger = new Logger('DockCursor');
 const requireNative = createRequire(import.meta.url);
-type HandCursor = 'grab' | 'grabbing' | 'none';
+type DockCursorKind =
+  | 'grab'
+  | 'grabbing'
+  | 'ns-resize'
+  | 'ew-resize'
+  | 'nesw-resize'
+  | 'nwse-resize'
+  | 'pointer'
+  | 'text'
+  | 'none';
+
+function cursorKind(type: string): DockCursorKind {
+  switch (type) {
+    case 'grab':
+    case 'grabbing':
+    case 'pointer':
+      return type;
+    case 'hand':
+      return 'pointer';
+    case 'text':
+    case 'vertical-text':
+      return 'text';
+    case 'n-resize':
+    case 's-resize':
+    case 'ns-resize':
+      return 'ns-resize';
+    case 'e-resize':
+    case 'w-resize':
+    case 'ew-resize':
+      return 'ew-resize';
+    case 'ne-resize':
+    case 'sw-resize':
+    case 'nesw-resize':
+      return 'nesw-resize';
+    case 'nw-resize':
+    case 'se-resize':
+    case 'nwse-resize':
+      return 'nwse-resize';
+    default:
+      return 'none';
+  }
+}
 
 interface CursorState {
   regions: readonly DockPointerRect[];
@@ -18,7 +59,7 @@ interface CursorState {
 
 interface NativeCursorModule {
   create(handle: Buffer): unknown;
-  update(token: unknown, state: CursorState & { kind: HandCursor }): void;
+  update(token: unknown, state: CursorState & { kind: DockCursorKind }): void;
   dispose(token: unknown): void;
   inspect(token: unknown): unknown;
 }
@@ -56,7 +97,7 @@ function loadNativeCursor(): NativeCursorModule | undefined {
   logger.warn('Native dock cursor module is unavailable');
 }
 
-/** Own only the dock hand cursor, without activating its window or the app. */
+/** Own dock grab/resize cursors without activating its window or the app. */
 export function attachDockCursor(window: BrowserWindow): DockCursorController | undefined {
   if (process.platform !== 'darwin') return;
   const existing = controllers.get(window);
@@ -66,7 +107,7 @@ export function attachDockCursor(window: BrowserWindow): DockCursorController | 
     if (!native) return;
     const token = native.create(window.getNativeWindowHandle());
     let disposed = false;
-    let kind: HandCursor = 'none';
+    let kind: DockCursorKind = 'none';
     let state: CursorState = { regions: [], excludedRegions: [], revision: 0, enabled: false };
     let lastUpdate = '';
     const publish = (): void => {
@@ -88,7 +129,7 @@ export function attachDockCursor(window: BrowserWindow): DockCursorController | 
         publish();
       },
       cursorChanged(type) {
-        kind = type === 'grab' || type === 'grabbing' ? type : 'none';
+        kind = cursorKind(type);
         publish();
       },
       dispose() {

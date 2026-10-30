@@ -80,7 +80,7 @@ describe('themeSaga', () => {
     delete document.documentElement.dataset.auxiliaryWindow;
   });
 
-  it.each(['dock', 'annotation-toolbar'])(
+  it.each(['dock', 'dock-annotation'])(
     'does not change process-wide native theme from %s',
     async (windowKind) => {
       document.documentElement.dataset.auxiliaryWindow = windowKind;

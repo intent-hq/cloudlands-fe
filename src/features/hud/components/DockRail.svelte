@@ -1,7 +1,11 @@
 <script lang="ts">
   import AdaptiveDockShell from './AdaptiveDockShell.svelte';
   import type { DockMachineOption } from './dock-machine-types';
-  import type { DockPlacementSnapshot, DockPlacementCommand } from '$shared/dock-placement';
+  import type {
+    DockPlacementSnapshot,
+    DockPlacementCommand,
+    DockPlacementFailure,
+  } from '$shared/dock-placement';
   import { onDestroy, onMount, tick, type Snippet } from 'svelte';
   import Logo from '$lib/components/Logo.svelte';
   import { Button } from '$lib/components/ui/button';
@@ -27,7 +31,7 @@
     type DockPointerRegionController,
   } from '$features/hud/utils/dock-pointer-routing';
   import { openDockWorkspace, openDockAssistant } from '$features/hud/dock-navigation';
-  import { startAnnotation } from '$features/annotation/annotation-client';
+  import { startDockFeedback, type DockFeedbackRequest } from '$features/hud/dock-feedback';
   import {
     DOCK_HOVER_SCALE_MS,
     DOCK_ITEM_GAP_PX,
@@ -62,14 +66,14 @@
     placement?: DockPlacementSnapshot;
     onPlacementCommand?: (command: DockPlacementCommand) => void;
     focusRequest?: number;
-    placementError?: boolean;
+    placementError?: DockPlacementFailure | boolean | null;
     dragStartResult?: { id: number; token: string | null } | null;
     resizeStartResult?: { id: number; token: string | null } | null;
     onOpenWorkspace?: (workspaceId: string) => void | Promise<void>;
     onOpenHud?: () => void | Promise<void>;
     onOpenAssistant?: () => void | Promise<void>;
     staticData?: boolean;
-    onAnnotate?: typeof startAnnotation;
+    onAnnotate?: (request: DockFeedbackRequest) => void | Promise<void>;
     pointerController?: DockPointerRegionController;
     viewportHeight?: number;
   }
@@ -90,7 +94,7 @@
     onOpenWorkspace = openDockWorkspace,
     onOpenAssistant = openDockAssistant,
     staticData = false,
-    onAnnotate = startAnnotation,
+    onAnnotate = startDockFeedback,
     pointerController,
     viewportHeight,
     conversation,
@@ -487,16 +491,12 @@
     );
   }
 
-  function startWorkspaceAnnotation(workspaceId: string, workspaceTitle: string): void {
-    void runAction(
-      workspaceId,
-      m.annotation_bootstrapLoading_title(),
-      m.annotation_startFailed_title(),
-      () =>
-        onAnnotate({
-          workspaceId: workspaceId === assistantId ? CHIEF_WORKSPACE_ID : workspaceId,
-          workspaceTitle,
-        }),
+  /** Feedback opens the workspace's conversation and starts annotating there. */
+  function startWorkspaceAnnotation(workspaceId: string): void {
+    const id = workspaceId === assistantId ? CHIEF_WORKSPACE_ID : workspaceId;
+    onOpenConversation?.(id);
+    void runAction(workspaceId, m.dock_opening_status(), m.dock_openFailed_error(), () =>
+      onAnnotate({ workspaceId: id }),
     );
   }
 
@@ -617,7 +617,6 @@
     {resizeStartResult}
     {onOpenWorkspace}
     {onOpenAssistant}
-    {onAnnotate}
     {pointerController}
   />
 {:else}
@@ -770,7 +769,7 @@
         title={menuTarget.title}
         isAssistant={menuTarget.id === assistantId}
         onOpenWorkspace={() => menuTarget && openWorkspace(menuTarget.id)}
-        onAnnotate={() => menuTarget && startWorkspaceAnnotation(menuTarget.id, menuTarget.title)}
+        onAnnotate={() => menuTarget && startWorkspaceAnnotation(menuTarget.id)}
       />
     {/if}
     <DockActionFeedback

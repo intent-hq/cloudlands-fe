@@ -10,7 +10,6 @@ const {
 const { join } = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { mkdir, writeFile, rm } = require('node:fs/promises');
-const createFeedbackBoundary = require('./feedback-boundary.cjs');
 const [profile, baseUrl, nativePath, geometry = 'unknown', appLayout = 'root'] =
   process.argv.slice(2);
 app.setPath('userData', profile);
@@ -41,30 +40,13 @@ app
       });
     }
     const calls = [];
-    const feedback = createFeedbackBoundary(calls);
-    app.on('browser-window-created', (_event, window) => {
-      const ignoreMouse = window.setIgnoreMouseEvents.bind(window);
-      window.setIgnoreMouseEvents = (ignore, options) => {
-        if (feedback.enabled)
-          calls.push({ boundary: 'annotation-pointer-routing', windowId: window.id, ignore });
-        return ignoreMouse(ignore, options);
-      };
-      const send = window.webContents.send.bind(window.webContents);
-      window.webContents.send = (channel, ...args) => {
-        if (feedback.enabled && channel.startsWith('annotation:'))
-          calls.push({
-            boundary: 'production-annotation-event',
-            channel,
-            windowId: window.id,
-            state: args[0] && { ...args[0], screenshotDataUrl: '[synthetic pixels]' },
-          });
-        return send(channel, ...args);
-      };
-    });
     let pointerRouting = null;
     let ignoredPointerInput = null;
     const actualCursor = screen.getCursorScreenPoint.bind(screen);
-    let controlledCursor = null;
+    // Tests never depend on the user's real mouse: main's cursor poll (hover presence,
+    // pointer routing) sees a point parked off every display until a test sets one.
+    // setControlledCursor(null) opts back into the real cursor (native pointer tests).
+    let controlledCursor = { x: -100000, y: -100000 };
     screen.getCursorScreenPoint = () => controlledCursor ?? actualCursor();
     let holdDragBegin = false;
     const pendingDragBegins = [];
@@ -80,13 +62,8 @@ app
           await new Promise((resolve) => pendingDragBegins.push(resolve));
         }
         const result = await handler(...args);
-        if (channel.startsWith('annotation:'))
-          calls.push({
-            boundary: 'production-annotation-command',
-            channel,
-            payload: args[1],
-            result,
-          });
+        if (channel.startsWith('dock-evidence:'))
+          calls.push({ boundary: 'production-dock-evidence-command', channel, ok: result?.ok });
         if (channel === 'window:set-dock-pointer-region')
           pointerRouting = { payload: args[1], result };
         if (channel === 'window:update-dock-placement')
@@ -112,28 +89,46 @@ app
         id: `screen:${display.id}`,
         name: 'Synthetic QA screen',
         display_id: String(display.id),
-        thumbnail: nativeImage.createFromBitmap(
-          feedback.enabled
-            ? Buffer.alloc(1280 * 800 * 4, Buffer.from([0x54, 0x76, 0x90, 0xff]))
-            : Buffer.from([0x54, 0x76, 0x90, 0xff]),
-          { width: feedback.enabled ? 1280 : 1, height: feedback.enabled ? 800 : 1 },
-        ),
+        thumbnail: nativeImage.createFromBitmap(Buffer.from([0x54, 0x76, 0x90, 0xff]), {
+          width: 1,
+          height: 1,
+        }),
       }));
     };
     systemPreferences.getMediaAccessStatus = () => 'granted';
     // Fail closed for external writes. This fixture cannot talk to an existing daemon.
     ipcMain.handle('backend:request', (_event, payload) => {
-      if (feedback.enabled) return feedback.request(payload);
       calls.push({ boundary: 'synthetic-backend', method: payload.method });
       if (payload.method === 'agent.list') return { agents: [] };
       if (payload.method === 'voice.getWorkspaceVocabulary') return { terms: [] };
       throw new Error(`External request unavailable in placement fixture: ${payload.method}`);
     });
-    ipcMain.handle('voice:transcribe-local', (_event, payload) => feedback.transcribe(payload));
     ipcMain.handle('power:get-battery-state', () => ({ onBattery: false }));
     const native = await import(pathToFileURL(nativePath).href);
     native.registerDockPlacementHandlers();
-    native.setupAnnotationIPC();
+    // The dock composer's capture session, behind the same sender checks as
+    // production's dock-evidence IPC (exact dock document main frame only).
+    const owner = (event) =>
+      event.sender.isDestroyed() ||
+      !event.senderFrame ||
+      event.senderFrame !== event.sender.mainFrame
+        ? null
+        : { sender: event.sender, frame: event.senderFrame };
+    ipcMain.handle('dock-evidence:begin', (event, request) => {
+      const caller = owner(event);
+      return caller
+        ? native.dockEvidenceSessions.begin(caller, request)
+        : { ok: false, error: 'unavailable' };
+    });
+    ipcMain.handle('dock-evidence:capture', (event, request) => {
+      const caller = owner(event);
+      return caller
+        ? native.dockEvidenceSessions.capture(caller, request)
+        : { ok: false, error: 'unavailable' };
+    });
+    // Exercise the hide-the-dock capture path (production's fallback without
+    // ScreenCaptureKit); the window-excluding helper is not part of this fixture.
+    native.dockEvidenceSessions.deps.captureVisible = undefined;
     const history = [];
     const tracked = new WeakSet();
     const menu = native.createDockMenuController({
@@ -162,10 +157,19 @@ app
       writeEnabledPreference: native.setDockEnabledLocalPref,
       onStateChange: () => history.push({ event: 'menu-state-changed' }),
     });
+    // The dock is a Labs feature that is off by default. Persist it on, then start
+    // the way the app does (src/main/index.ts): load the setting, register its handlers.
+    await native.setDockLabEnabledLocalPref(true);
+    await native.loadDockLabEnabled();
+    native.registerDockLabHandlers({
+      show: () => menu.setEnabled(true),
+      hide: () => menu.dismiss(),
+      onChange: () => {},
+    });
+    if (!native.isDockLabEnabled()) throw new Error('Dock Labs setting did not load as on');
     await menu.setEnabled(true);
     globalThis.companionNative = {
       native,
-      feedback,
       calls,
       history,
       menu,
@@ -220,10 +224,6 @@ app
             workArea,
             scaleFactor,
           })),
-          annotation: native.getAnnotationState() && {
-            ...native.getAnnotationState(),
-            screenshotDataUrl: '[synthetic QA pixels]',
-          },
           calls: [...calls],
           history: [...history],
         };

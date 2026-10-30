@@ -380,6 +380,10 @@
   --warning: var(--theme-warning);
   --warning-foreground: var(--theme-warning-foreground);
   --warning-ink: var(--theme-warning-ink);
+  /* A live microphone or screen recorder is distinct from a warning. Keep its
+     orange signal consistent across capture controls, meters and status dots. */
+  --capture-active: 24 79.186% 56.667%;
+  --capture-active-foreground: 0 0% 3.137%;
   --sidebar: var(--theme-sidebar);
   --sidebar-foreground: var(--theme-sidebar-foreground);
   --sidebar-accent: var(--theme-sidebar-accent);

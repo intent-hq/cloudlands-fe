@@ -15,10 +15,86 @@ struct Region {
     return x == other.x && y == other.y && width == other.width && height == other.height;
   }
 };
-enum class Kind { None, Grab, Grabbing };
+enum class Kind { None, Grab, Grabbing, NSResize, EWResize, NESWResize, NWSEResize, Pointer, Text };
+
+const char* KindName(Kind kind) {
+  switch (kind) {
+    case Kind::Grab:
+      return "grab";
+    case Kind::Grabbing:
+      return "grabbing";
+    case Kind::NSResize:
+      return "ns-resize";
+    case Kind::EWResize:
+      return "ew-resize";
+    case Kind::NESWResize:
+      return "nesw-resize";
+    case Kind::NWSEResize:
+      return "nwse-resize";
+    case Kind::Pointer:
+      return "pointer";
+    case Kind::Text:
+      return "text";
+    case Kind::None:
+      return "none";
+  }
+  return "none";
+}
+
+NSCursor* LegacyDiagonalCursor(bool descending) {
+  // Pre-macOS 15 exposes no named diagonal NSCursor. Rotate the public horizontal
+  // system cursor image using public AppKit drawing APIs, without private selectors.
+  NSCursor* base = NSCursor.resizeLeftRightCursor;
+  NSSize size = base.image.size;
+  CGFloat side = std::ceil(std::hypot(size.width, size.height));
+  NSAffineTransform* transform = [NSAffineTransform transform];
+  [transform translateXBy:side / 2 yBy:side / 2];
+  [transform rotateByDegrees:descending ? -45 : 45];
+  [transform translateXBy:-size.width / 2 yBy:-size.height / 2];
+  NSPoint hot =
+      [transform transformPoint:NSMakePoint(base.hotSpot.x, size.height - base.hotSpot.y)];
+  NSImage* image = [NSImage imageWithSize:NSMakeSize(side, side)
+                                  flipped:NO
+                           drawingHandler:^BOOL(NSRect rect) {
+                             [NSGraphicsContext saveGraphicsState];
+                             [transform concat];
+                             [base.image drawInRect:NSMakeRect(0, 0, size.width, size.height)];
+                             [NSGraphicsContext restoreGraphicsState];
+                             return YES;
+                           }];
+  return [[NSCursor alloc] initWithImage:image hotSpot:NSMakePoint(hot.x, side - hot.y)];
+}
 
 NSCursor* CursorFor(Kind kind) {
-  return kind == Kind::Grab ? NSCursor.openHandCursor : NSCursor.closedHandCursor;
+  if (kind == Kind::None) return nil;
+  if (kind == Kind::Grab) return NSCursor.openHandCursor;
+  if (kind == Kind::Grabbing) return NSCursor.closedHandCursor;
+  // Links and buttons, and text fields: the dock owns these too while it is not key.
+  if (kind == Kind::Pointer) return NSCursor.pointingHandCursor;
+  if (kind == Kind::Text) return NSCursor.IBeamCursor;
+  // Stable instances retain the existing ownership/dedup semantics.
+  static NSCursor* cursors[4];
+  const size_t index = static_cast<size_t>(kind) - static_cast<size_t>(Kind::NSResize);
+  if (!cursors[index]) {
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
+    if (@available(macOS 15.0, *)) {
+      NSCursorFrameResizePosition positions[] = {
+          NSCursorFrameResizePositionTop, NSCursorFrameResizePositionRight,
+          NSCursorFrameResizePositionTopRight, NSCursorFrameResizePositionTopLeft};
+      cursors[index] = [NSCursor frameResizeCursorFromPosition:positions[index]
+                                                  inDirections:NSCursorFrameResizeDirectionsAll];
+    } else
+#endif
+    {
+      if (kind == Kind::NSResize)
+        cursors[index] = NSCursor.resizeUpDownCursor;
+      else if (kind == Kind::EWResize)
+        cursors[index] = NSCursor.resizeLeftRightCursor;
+      else
+        cursors[index] = LegacyDiagonalCursor(kind == Kind::NWSEResize);
+    }
+  }
+  return cursors[index];
 }
 
 bool SameCursor(NSCursor* a, NSCursor* b) {
@@ -33,6 +109,9 @@ const char* CursorName(NSCursor* cursor) {
   if (!cursor) return "none";
   if (SameCursor(cursor, NSCursor.openHandCursor)) return "grab";
   if (SameCursor(cursor, NSCursor.closedHandCursor)) return "grabbing";
+  for (Kind kind : {Kind::NSResize, Kind::EWResize, Kind::NESWResize, Kind::NWSEResize}) {
+    if (SameCursor(cursor, CursorFor(kind))) return KindName(kind);
+  }
   if (SameCursor(cursor, NSCursor.arrowCursor)) return "arrow";
   if (SameCursor(cursor, NSCursor.pointingHandCursor)) return "pointer";
   if (SameCursor(cursor, NSCursor.IBeamCursor)) return "text";
@@ -120,7 +199,7 @@ const char* CursorName(NSCursor* cursor) {
   return hit && (hit == target || [hit isDescendantOf:target]);
 }
 - (void)releaseCursor {
-  // Never overwrite a cursor another view/app installed after ours, including another hand.
+  // Never overwrite a cursor another view/app installed after ours.
   NSWindow* window = attachedWindow;
   if (ownsCursor && window &&
       [NSWindow windowNumberAtPoint:NSEvent.mouseLocation belowWindowWithWindowNumber:0] ==
@@ -141,7 +220,7 @@ const char* CursorName(NSCursor* cursor) {
   [desired set];
   appliedCursor = desired;
   ownsCursor = YES;
-  lastApplied = kind == Kind::Grab ? @"grab" : @"grabbing";
+  lastApplied = [NSString stringWithUTF8String:KindName(kind)];
   ++setCount;
 }
 - (void)rebuildTracking {
@@ -311,6 +390,12 @@ napi_value Update(napi_env env, napi_value* args, Environment* environment) {
   Kind kind;
   if (std::strcmp(text, "grab") == 0 && length == 4) kind = Kind::Grab;
   else if (std::strcmp(text, "grabbing") == 0 && length == 8) kind = Kind::Grabbing;
+  else if (std::strcmp(text, "ns-resize") == 0 && length == 9) kind = Kind::NSResize;
+  else if (std::strcmp(text, "ew-resize") == 0 && length == 9) kind = Kind::EWResize;
+  else if (std::strcmp(text, "nesw-resize") == 0 && length == 11) kind = Kind::NESWResize;
+  else if (std::strcmp(text, "nwse-resize") == 0 && length == 11) kind = Kind::NWSEResize;
+  else if (std::strcmp(text, "pointer") == 0 && length == 7) kind = Kind::Pointer;
+  else if (std::strcmp(text, "text") == 0 && length == 4) kind = Kind::Text;
   else { Require(env, std::strcmp(text, "none") == 0 && length == 4, "Invalid cursor kind"); kind = Kind::None; }
   auto regions = ParseRegions(env, Property(env, args[1], "regions"));
   std::vector<Region> excludedRegions;

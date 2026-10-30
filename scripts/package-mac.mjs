@@ -123,6 +123,7 @@ export function packageMac(
     ['scripts/fetch-tailcat.cjs', `--targets=darwin-${arch}`],
     ['scripts/build-speech-helper.cjs'],
     ['scripts/build-dock-helper.cjs'],
+    ['scripts/pnpm-run.mjs', 'build:dock-composer-helpers'],
     ['scripts/build-keychain-helper.cjs'],
     ['scripts/validate-macos-native.cjs', arch],
   ])

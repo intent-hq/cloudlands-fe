@@ -52,6 +52,17 @@ export function createDockMenuController(deps: DockMenuControllerDependencies) {
       }
       deps.onStateChange();
     },
+    /** Closes the dock without recording a user hide, so a later restore shows it again. */
+    dismiss: (): void => {
+      const window = deps.getWindow();
+      if (!window) {
+        deps.onStateChange();
+        return;
+      }
+      trackWindow(window);
+      controllerClosures.add(window);
+      deps.closeWindow();
+    },
     restore: async (): Promise<boolean> => {
       try {
         if (!(await deps.readEnabledPreference())) return false;

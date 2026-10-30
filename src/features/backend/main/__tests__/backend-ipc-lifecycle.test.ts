@@ -751,7 +751,9 @@ describe('actual main finalization fence and original pool', () => {
       frame.method === 'client.hello'
         ? {
             clientId: 'acknowledged-original',
-            server: { capabilities: { agentNodes: 1, agentPlatformRouting: 1 } },
+            server: {
+              capabilities: { agentNodes: 1, agentPlatformRouting: 1, rawScreenshotRetention: 1 },
+            },
           }
         : defaultReply(frame);
     const { pool } = await load();
@@ -770,6 +772,8 @@ describe('actual main finalization fence and original pool', () => {
             localNodeIsolation: 0,
             agentPlatformRouting: 1,
             workspaceMembershipEvents: 0,
+            rawScreenshotRetention: 1,
+            chiefAttachments: 0,
           },
         },
       },

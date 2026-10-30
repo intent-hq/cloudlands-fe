@@ -2,7 +2,6 @@ import { expect, test, type ElectronApplication, type Page, type TestInfo } from
 import { readFile, rm, writeFile, mkdtemp } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { registerFeedbackTests } from './feedback-cases';
 import type {
   DockPlacementSnapshot,
   DockPlacementTarget,
@@ -34,7 +33,6 @@ import {
 
 test.beforeAll(prepare);
 test.afterAll(cleanup);
-registerFeedbackTests();
 
 test('conversation handoff wire: optional bounded exact agent identifier', () => {
   const request = { route: '/workspace/workspace-1', reuseExistingWorkspace: true };
@@ -420,14 +418,12 @@ for (const theme of ['light', 'dark'] as const) {
           };
         });
         observations.push({ label, style });
+        // Keyboard focus shows the app's standard focus ring: a solid outline of at least
+        // 1px and no shadow (a transparent background is fine).
         expect(style.visible).toBe(true);
-        expect(style.outline === 'none' || style.outlineWidth === '0px').toBe(true);
+        expect(style.outline).toBe('solid');
+        expect(parseFloat(style.outlineWidth)).toBeGreaterThanOrEqual(1);
         expect(style.shadow).toBe('none');
-        const channels = style.background.match(/[\d.]+/g)!.map(Number);
-        expect(Math.max(...channels.slice(0, 3)) - Math.min(...channels.slice(0, 3))).toBeLessThan(
-          12,
-        );
-        expect(channels[3] ?? 1).toBeGreaterThan(0);
         await artifact(page, testInfo, `${theme}-${label}`);
       };
       await page.keyboard.press('Tab');
@@ -438,74 +434,78 @@ for (const theme of ['light', 'dark'] as const) {
           (n) => (window as any).companionFixture.setUpdateWorkspaceCount(n, false),
           count,
         );
+        // Notch header 32 + overview (rows incl. Assistant, max 5 + 1, 52px each) + 8/12 frame padding.
+        await expect
+          .poll(async () => (await placement(page)).surface.height)
+          .toBe(32 + (Math.min(count, 5) + 1) * 52 + 20);
+        const rowsBox = async () => {
+          const p = await placement(page);
+          const bottoms = await page
+            .locator('[data-testid="dock-overview"] [data-dock-row]')
+            .evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().bottom));
+          // Rows below the frame are scrolled out of view; the last visible one ends the frame.
+          const limit = p.surface.y + p.surface.height;
+          return { p, lastBottom: Math.max(...bottoms.filter((bottom) => bottom <= limit + 0.5)) };
+        };
         await expect
           .poll(async () => {
-            const footer = (await page.getByTestId('dock-overview-footer').boundingBox())!;
-            const p = await placement(page);
-            return (
-              p.surface.height -
-              (32 + (Math.min(count, 5) + 1) * 52 + Math.ceil(footer.height) + 20)
-            );
+            const { p, lastBottom } = await rowsBox();
+            return Math.abs(p.surface.y + p.surface.height - lastBottom - 12) <= 1;
           })
-          .toBe(0);
-        await expect
-          .poll(async () => {
-            const rect = (await page.getByTestId('dock-overview-footer').boundingBox())!;
-            const current = await placement(page);
-            return current.surface.y + current.surface.height - rect.y - rect.height;
-          })
-          .toBe(12);
-        const footer = (await page.getByTestId('dock-overview-footer').boundingBox())!;
-        const p = await placement(page);
-        const bottomGap = p.surface.y + p.surface.height - footer.y - footer.height;
-        expect(bottomGap).toBeGreaterThanOrEqual(10);
-        expect(bottomGap).toBeLessThanOrEqual(14);
-        const contrast = await page.getByTestId('dock-feedback').evaluate((button) => {
-          const color = getComputedStyle(button).color;
-          const fill = getComputedStyle(document.querySelector('.shell-silhouette path')!).fill;
-          const luminance = (css: string) => {
-            const rgb = css
-              .match(/[\d.]+/g)!
-              .slice(0, 3)
-              .map(Number)
-              .map((n) => {
-                const v = n / 255;
-                return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
-              });
-            return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
-          };
-          const a = luminance(color),
-            b = luminance(fill);
-          return { color, fill, ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) };
-        });
+          .toBe(true);
+        const { p, lastBottom } = await rowsBox();
+        const bottomGap = p.surface.y + p.surface.height - lastBottom;
+        const contrast = await page
+          .locator('[data-testid="dock-overview"] [data-dock-row] .row-copy > :first-child')
+          .first()
+          .evaluate((title) => {
+            const color = getComputedStyle(title).color;
+            const fill = getComputedStyle(document.querySelector('.shell-silhouette path')!).fill;
+            const luminance = (css: string) => {
+              const rgb = css
+                .match(/[\d.]+/g)!
+                .slice(0, 3)
+                .map(Number)
+                .map((n) => {
+                  const v = n / 255;
+                  return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+                });
+              return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
+            };
+            const a = luminance(color),
+              b = luminance(fill);
+            return { color, fill, ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) };
+          });
         expect(contrast.ratio).toBeGreaterThanOrEqual(4.5);
         observations.push({
-          label: `footer-${count}`,
-          footer,
+          label: `overview-${count}`,
           surface: p.surface,
+          lastBottom,
           bottomGap,
           contrast,
         });
         await artifact(page, testInfo, `${theme}-content-${count}`);
       }
       await captureFocus('notch-keyboard');
-      await grip.press('Shift+F10');
-      await expect(page.getByRole('menu')).toBeVisible();
-      await page.keyboard.press('ArrowDown');
-      await captureFocus('menu-keyboard');
-      await page.keyboard.press('Escape');
-      await expect(page.getByRole('menu')).toHaveCount(0);
-      await grip.press('Shift+F10');
-      await expect(page.getByRole('menu')).toBeVisible();
-      await page.keyboard.press('Escape');
-      await expect(page.getByRole('menu')).toHaveCount(0);
+      // The grip has no keyboard menu; placement moves are native commands. A keyboard
+      // user reaches the floating overview by tabbing to the grip.
       await moveMenu(page, 'floating');
+      await page.keyboard.press('Tab');
+      await grip.focus();
+      await expect(page.getByTestId('dock-overview')).toBeVisible();
       const row = page.locator('[data-dock-row]').first();
       await row.focus();
       await captureFocus('floating-row-keyboard');
-      await page.getByTestId('dock-row-feedback').first().focus();
-      await captureFocus('feedback-keyboard');
+      // Rows have no feedback pen; the next row is the next keyboard stop.
+      await page.locator('[data-dock-row]').nth(1).focus();
+      await captureFocus('next-row-keyboard');
+      // Clicking outside moves focus out, which closes the keyboard-opened overview.
+      // A pointer user reopens it by hovering the dock before clicking a row.
       await page.mouse.click(8, 8);
+      await page
+        .getByTestId('dock-surface')
+        .dispatchEvent('pointerenter', { pointerType: 'mouse' });
+      await expect(page.getByTestId('dock-shell')).toHaveAttribute('data-reveal', '1');
       await row.click();
       const pointer = await row.evaluate((element) => {
         const s = getComputedStyle(element);
@@ -540,7 +540,9 @@ test('motion refinement: reversible reveal, inert close and retained-envelope ro
   try {
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     await page.evaluate(() => (window as any).companionFixture.setUpdateWorkspaceCount(12));
-    await expect.poll(async () => (await placement(page)).surface.width).toBe(280);
+    // The compact wing holds one 12px glyph per row status, 6px apart. These 12 workspaces span
+    // all five statuses: wing 12 + 5 x 12 + 4 x 6 + 4 = 100; 180 + 2 x 100 = 380.
+    await expect.poll(async () => (await placement(page)).surface.width).toBe(380);
     await page.evaluate(() => (window as any).companionFixture.startMotionEvidence());
     const shell = page.getByTestId('dock-shell');
     const surface = page.getByTestId('dock-surface');
@@ -559,7 +561,8 @@ test('motion refinement: reversible reveal, inert close and retained-envelope ro
     const envelope = await placement(page);
     observations.push(await observe(app, page, 'open-envelope'));
     await page.evaluate(() => (window as any).companionFixture.setUpdateWorkspaceCount(2, false));
-    await expect.poll(async () => (await placement(page)).surface.height).toBe(244);
+    // Notch header 32 + 3 rows (Assistant + 2) x 52 + 20 frame padding; no footer.
+    await expect.poll(async () => (await placement(page)).surface.height).toBe(208);
     await page.waitForTimeout(1600);
     await artifact(page, testInfo, 'motion-sparse-content');
     await page.evaluate(() => (window as any).companionFixture.setUpdateWorkspaceCount(12));
@@ -581,7 +584,8 @@ test('motion refinement: reversible reveal, inert close and retained-envelope ro
     ).toBe(false);
     const route = await app.evaluate(() => (globalThis as any).companionNative.snapshot());
     const shown = route.pointerRouting.payload.regions[0];
-    expect(shown.width).toBe(280);
+    // Compact notch for these 12 workspaces (five status glyphs): 180 + 2 x 100 = 380.
+    expect(shown.width).toBe(380);
     expect(shown.height).toBe(32);
     const inside = {
       x: envelope.windowBounds.x + shown.x + 10,
@@ -591,9 +595,11 @@ test('motion refinement: reversible reveal, inert close and retained-envelope ro
       x: envelope.windowBounds.x + shown.x + 10,
       y: envelope.windowBounds.y + shown.y + 80,
     };
+    // Below the closed header first: once the cursor rests in the header, main's
+    // presence report opens the dock on hover and that area becomes interactive.
     for (const [label, point, ignored] of [
-      ['inside', inside, false],
       ['outside', outside, true],
+      ['inside', inside, false],
     ] as const) {
       await app.evaluate(
         (_electron, cursor) => (globalThis as any).companionNative.setControlledCursor(cursor),
@@ -602,12 +608,23 @@ test('motion refinement: reversible reveal, inert close and retained-envelope ro
       await expect
         .poll(() =>
           app.evaluate(
-            () => (globalThis as any).companionNative.snapshot().ignoredPointerInput?.ignore,
+            // Unrecorded means the dock's initial click-through routing (applied before
+            // the harness wrapped setIgnoreMouseEvents) never changed.
+            () =>
+              (globalThis as any).companionNative.snapshot().ignoredPointerInput?.ignore ?? true,
           ),
         )
         .toBe(ignored);
       observations.push(await observe(app, page, `controlled-pointer-${label}`));
     }
+    await app.evaluate(
+      (_electron, cursor) => (globalThis as any).companionNative.setControlledCursor(cursor),
+      {
+        x: envelope.windowBounds.x + envelope.windowBounds.width + 400,
+        y: envelope.windowBounds.y + 400,
+      },
+    );
+    await settled(false);
     await artifact(page, testInfo, 'motion-closed');
     await page.waitForTimeout(1400);
     for (let cycle = 0; cycle < 3; cycle++) {
@@ -728,12 +745,12 @@ for (const geometry of ['notch', 'none', 'unknown'] as const) {
             (window as any).companionFixture.setUpdateWorkspaceCount(count, running),
           fixtureCase,
         );
-        await expect
-          .poll(async () => (await placement(page)).surface.height)
-          .toBe(geometry === 'notch' ? 32 : 40);
+        await expect.poll(async () => (await placement(page)).surface.height).toBe(32);
+        // Notch width follows the header's status groups; the checks below keep every
+        // group inside the surface and clear of the camera.
         await expect
           .poll(async () => (await placement(page)).surface.width)
-          .toBe(geometry === 'notch' ? (fixtureCase.count < 10 ? 264 : 280) : 360);
+          .toBeGreaterThanOrEqual(geometry === 'notch' ? 180 + 2 * 36 : 200);
         const current = await observe(
           app,
           page,
@@ -746,19 +763,44 @@ for (const geometry of ['notch', 'none', 'unknown'] as const) {
           };
           const header = surface.querySelector('header')!;
           const status = header.querySelector('[data-testid="dock-update-count"]');
-          const dot = status?.firstElementChild;
-          const number = status?.lastElementChild;
+          const groups = [...(status?.querySelectorAll('[data-status-group]') ?? [])].map(
+            (group) => {
+              const icon = group.querySelector('[data-workspace-status]');
+              const dot = group.querySelector('.workspace-status-dot');
+              return {
+                status: group.getAttribute('data-status-group'),
+                dotStatus: icon?.getAttribute('data-workspace-status') ?? null,
+                dot: dot ? box(dot) : null,
+                count: Number(group.getAttribute('data-status-count')),
+                text: group.textContent?.trim() ?? '',
+              };
+            },
+          );
           return {
             header: box(header),
             logo: box(header.querySelector('[data-testid="dock-drag-handle"] svg')!),
             avatarCount: header.querySelectorAll('.avatar-stack').length,
             controls: [...header.querySelectorAll('button')].map(box),
             status: status ? box(status) : null,
-            dot: dot ? { ...box(dot), classes: dot.className } : null,
-            number: number ? { ...box(number), fontSize: getComputedStyle(number).fontSize } : null,
+            total: status ? Number(status.getAttribute('data-count')) : 0,
+            label: status?.getAttribute('aria-label') ?? null,
+            groups,
           };
         });
         observations.push({ ...current, metrics, fixtureCase });
+        // Every glyph count (one glyph sends a 28px wing) must be accepted by main;
+        // a rejected resize surfaced as the dock's "Could not open the window." banner.
+        expect(
+          await app.evaluate(() =>
+            (globalThis as any).companionNative
+              .snapshot()
+              .calls.filter(
+                (entry: any) =>
+                  entry.boundary === 'production-placement-command' && !entry.resultPhase,
+              )
+              .map((entry: any) => entry.command),
+          ),
+        ).toEqual([]);
         expect(metrics.logo.width).toBe(16);
         expect(metrics.logo.height).toBe(16);
         for (const rect of [...metrics.controls, ...(metrics.status ? [metrics.status] : [])]) {
@@ -776,29 +818,24 @@ for (const geometry of ['notch', 'none', 'unknown'] as const) {
         }
         if (geometry === 'notch') {
           expect(metrics.avatarCount).toBe(0);
-          expect(metrics.dot?.width).toBe(6);
-          expect(metrics.dot?.height).toBe(6);
-          expect(metrics.number?.fontSize).toBe('12px');
-          expect(metrics.dot?.classes).toContain(
-            fixtureCase.count > 0
-              ? 'text-warning-ink'
-              : fixtureCase.running
-                ? 'text-primary-ink'
-                : 'text-muted-foreground',
-          );
-          await expect(page.getByTestId('dock-update-count')).toHaveAttribute(
-            'data-count',
-            String(fixtureCase.count),
-          );
-          await expect(page.getByTestId('dock-update-count')).toHaveText(String(fixtureCase.count));
-          await expect(page.getByTestId('dock-update-count')).toHaveAttribute(
-            'aria-label',
-            `${fixtureCase.count} workspaces with updates`,
-          );
+          // One glyph per row status, no visible numbers; the counts add up to the total.
+          for (const group of metrics.groups) {
+            expect(group.dotStatus).toBe(group.status);
+            if (group.dot) {
+              expect(group.dot.width).toBe(6);
+              expect(group.dot.height).toBe(6);
+            }
+            expect(group.text).toBe('');
+            expect(group.count).toBeGreaterThan(0);
+          }
+          expect(metrics.groups.reduce((sum, group) => sum + group.count, 0)).toBe(metrics.total);
+          expect(!!metrics.label).toBe(metrics.groups.length > 0);
           expect(current.placement.cutout).toMatchObject({ width: 180, height: 32 });
         } else {
           expect(current.placement.shape).toBe('top-pill');
-          expect(current.placement.surface).toMatchObject({ width: 360, height: 40 });
+          // No camera: the top pill uses the notch rules, header 32 and two glyph wings
+          // (five status glyphs: 12 + 5 x 12 + 4 x 6 + 4 = 100), so 2 x 100 = 200.
+          expect(current.placement.surface).toMatchObject({ width: 200, height: 32 });
           expect(current.placement.cutout).toBeNull();
           await expect(page.getByTestId('dock-camera-exclusion')).toHaveCount(0);
         }
@@ -843,8 +880,14 @@ for (const geometry of ['notch', 'none', 'unknown'] as const) {
             const preview = (await placement(page)).snapPreview;
             return preview && { width: preview.width, height: preview.height };
           })
-          .toEqual({ width: 280, height: 32 });
+          .toEqual({ width: 380, height: 32 });
         observations.push(await observe(app, page, 'destination-camera-sized-preview'));
+        // A real pointer-up happens where the cursor is; main drops at that release point.
+        const dragging = await placement(page);
+        await page.mouse.move(
+          display.bounds.x + display.bounds.width / 2 - dragging.windowBounds.x,
+          display.bounds.y + 16 - dragging.windowBounds.y,
+        );
         await page.mouse.up();
         await expect.poll(async () => (await placement(page)).phase).toBe('idle');
         await expect.poll(async () => (await placement(page)).shape).toBe('notch');
@@ -853,20 +896,17 @@ for (const geometry of ['notch', 'none', 'unknown'] as const) {
             const surface = (await placement(page)).surface;
             return { width: surface.width, height: surface.height };
           })
-          .toEqual({ width: 280, height: 32 });
+          .toEqual({ width: 380, height: 32 });
         observations.push(await observe(app, page, 'destination-camera-sized-drop'));
         await artifact(page, testInfo, 'compact-notch-after-snap');
-        // Dragging leaves the grip focused. Move focus before testing keyboard re-entry.
-        await page.keyboard.press('Tab');
       }
+      // Keyboard arrival: a Tab press precedes focus (dragging also left the grip focused,
+      // so this moves it away first). Focus without key or pointer input does not open.
+      await page.keyboard.press('Tab');
       await grip.focus();
       await expect(shell).toHaveAttribute('data-expanded', 'true');
       await expect(page.getByTestId('dock-overview')).toBeVisible();
       await expect(page.getByTestId('dock-dismiss')).toHaveCount(0);
-      await grip.press('Shift+F10');
-      await expect(page.getByRole('menu')).toBeVisible();
-      await page.keyboard.press('Escape');
-      await expect(page.getByRole('menu')).toHaveCount(0);
       expect(await app.evaluate(() => (globalThis as any).companionNative.menu.isEnabled())).toBe(
         true,
       );
@@ -981,20 +1021,17 @@ function reachable(
   expect(surface.x + surface.width).toBeLessThanOrEqual(area.x + area.width);
   expect(surface.y + surface.height).toBeLessThanOrEqual(area.y + area.height);
 }
+/**
+ * The adaptive shell has no grip placement menu (placement is drag-only; the
+ * "Move to …" labels live only in the rail action menu, which the shell does not
+ * wire). Send the same production placement command through the preload IPC.
+ */
 async function moveMenu(page: Page, target: DockPlacementTarget) {
-  const grip = page.getByTestId('dock-drag-handle');
-  await grip.focus();
-  await grip.press('Shift+F10');
-  const labels = {
-    notch: /Move to notch/i,
-    left: /Move to left/i,
-    right: /Move to right/i,
-    floating: /Float|Move to floating/i,
-    reset: /Reset placement/i,
-  };
-  const option = page.getByRole('menuitem', { name: labels[target] });
-  await option.focus();
-  await option.press('Enter');
+  await page.evaluate(
+    (value) =>
+      window.electronAPI!.invoke('window:update-dock-placement', { action: 'move', target: value }),
+    target,
+  );
   await expect
     .poll(async () => {
       const p = (await placement(page)).placement;
@@ -1051,6 +1088,8 @@ test('hover continuity and native click-through preserve another window focus', 
   const { app, page, profile } = await launch(testInfo);
   const observations = [];
   try {
+    // This case drives the real OS pointer, so main follows the real cursor.
+    await app.evaluate(() => (globalThis as any).companionNative.setControlledCursor(null));
     await moveMenu(page, 'right');
     const targetId = await app.evaluate(async () =>
       (globalThis as any).companionNative.openFocusTarget(),
@@ -1141,6 +1180,9 @@ test('keyboard placements retain renderer identity, bounded content, and user ch
         const overview = first.page.getByTestId('dock-overview');
         const rows = overview.locator('[data-dock-row]');
         const scroller = overview.locator('[data-dock-scroll]');
+        // A native move leaves the dock compact; a keyboard user opens it by tabbing to the grip.
+        await first.page.keyboard.press('Tab');
+        await first.page.getByTestId('dock-drag-handle').focus();
         await expect(overview).toBeVisible();
         await expect(first.page.getByTestId('dock-overflow-button')).toHaveCount(0);
         // The shared twelve-overflow fixture contains 48 workspaces plus Assistant.
@@ -1200,6 +1242,8 @@ test('real native drag follows cursor, previews exact landings, and Escape rejec
   const { app, page, profile } = await launch(testInfo);
   const observations = [];
   try {
+    // This case drives the real OS pointer, so main follows the real cursor.
+    await app.evaluate(() => (globalThis as any).companionNative.setControlledCursor(null));
     await moveMenu(page, 'floating');
     const initial = await observe(app, page, 'before-drag');
     const grip = await screenPoint(app, page);
@@ -1298,19 +1342,42 @@ test('real native drag follows cursor, previews exact landings, and Escape rejec
   }
 });
 
+/**
+ * The dock composer's capture, through the production session (begin + capture)
+ * and the dock's own preload bridge. The pending capture is left on the page.
+ */
+async function startComposerCapture(page: Page, workspaceId: string) {
+  await page.evaluate(async (workspace) => {
+    const scope = {
+      workspaceId: workspace,
+      agentId: 'placement-agent',
+      draftId: 'placement-draft',
+    };
+    const begun = (await window.electronAPI!.invoke('dock-evidence:begin', scope)) as {
+      ok: boolean;
+      value?: Record<string, string>;
+    };
+    if (!begun.ok || !begun.value)
+      throw new Error(`Composer capture refused: ${JSON.stringify(begun)}`);
+    (window as any).capturePromise = window.electronAPI!.invoke('dock-evidence:capture', {
+      ...begun.value,
+      requestId: crypto.randomUUID(),
+      source: 'capture',
+    });
+  }, workspaceId);
+}
+
 test('capture acquires visibility before async capture and rejects placement without losing the draft', async ({}, testInfo) => {
   const { app, page, profile } = await launch(testInfo);
   const observations = [];
+  const draft = 'Preserve this capture draft while placement is locked.';
   try {
     await moveMenu(page, 'floating');
     const initial = await observe(app, page, 'before-capture');
+    // The composer draft lives in this dock document; it survives only if the document does.
+    await page.evaluate((text) => Object.assign(window, { __composerDraft: text }), draft);
     await app.evaluate(() => (globalThis as any).companionNative.capture.hold(true));
-    await page.evaluate(() => {
-      (window as any).capturePromise = window.electronAPI!.invoke('annotation:start', {
-        workspaceId: 'placement-qa',
-        workspaceTitle: 'Synthetic placement QA',
-      });
-    });
+    await startComposerCapture(page, 'placement-qa');
     await expect.poll(async () => (await placement(page)).captureHidden).toBe(true);
     await expect
       .poll(() => app.evaluate(() => (globalThis as any).companionNative.snapshot().visible))
@@ -1322,29 +1389,9 @@ test('capture acquires visibility before async capture and rejects placement wit
       }),
     );
     expect((await placement(page)).placement).toEqual(initial.placement.placement);
+    observations.push(await observe(app, page, 'capture-hidden-placement-rejected'));
     await app.evaluate(() => (globalThis as any).companionNative.capture.release());
-    expect(await page.evaluate(() => (window as any).capturePromise)).toMatchObject({
-      success: true,
-    });
-    await expect
-      .poll(() => app.windows().some((p) => p.url().endsWith('/annotation-toolbar')))
-      .toBe(true);
-    const toolbar = app.windows().find((p) => p.url().endsWith('/annotation-toolbar'))!;
-    await expect(toolbar.getByText('Mic off', { exact: true })).toBeVisible();
-    await toolbar.getByRole('button', { name: 'Review', exact: true }).click();
-    const overlay = app.windows().find((p) => p.url().endsWith('/annotation'))!;
-    const draft = overlay.getByRole('textbox');
-    await draft.fill('Preserve this capture draft while placement is locked.');
-    await page.evaluate(() =>
-      window.electronAPI!.invoke('window:update-dock-placement', {
-        action: 'move',
-        target: 'right',
-      }),
-    );
-    await expect(draft).toHaveValue('Preserve this capture draft while placement is locked.');
-    observations.push(await observe(app, page, 'review-draft-survives-placement-attempt'));
-    await artifact(overlay, testInfo, 'capture-draft');
-    await app.evaluate(() => (globalThis as any).companionNative.native.closeAnnotationMode());
+    expect(await page.evaluate(() => (window as any).capturePromise)).toMatchObject({ ok: true });
     await expect.poll(async () => (await placement(page)).captureHidden).toBe(false);
     const restored = await observe(app, page, 'capture-restored');
     observations.push(restored);
@@ -1352,11 +1399,10 @@ test('capture acquires visibility before async capture and rejects placement wit
     expect(restored.native.id).toBe(initial.native.id);
     expect(restored.renderer.marker).toBe(initial.renderer.marker);
     expect(restored.native.visible).toBe(true);
+    expect(await page.evaluate(() => (window as any).__composerDraft)).toBe(draft);
+    await artifact(page, testInfo, 'capture-restored');
   } finally {
-    await app.evaluate(() => {
-      (globalThis as any).companionNative.capture.release();
-      (globalThis as any).companionNative.native.closeAnnotationMode();
-    });
+    await app.evaluate(() => (globalThis as any).companionNative.capture.release());
     await finish(app, page, testInfo, { ...(await provenance()), observations });
     await rm(profile, { recursive: true, force: true });
   }
@@ -1430,7 +1476,8 @@ test('dismissal: Escape closes the native window and menu reopen retains placeme
       );
       await artifact(page, testInfo, `dismiss-${method}-before`);
       const closed = page.waitForEvent('close');
-      await page.keyboard.press('Escape');
+      // Escape dismisses on keydown; the window can close before the synthetic keyup.
+      await page.keyboard.press('Escape').catch(() => {});
       await closed;
       await expect
         .poll(() => app.evaluate(() => (globalThis as any).companionNative.menu.isEnabled()))
@@ -1470,16 +1517,13 @@ test('dismissal: Escape closes the native window and menu reopen retains placeme
 test('dismissal: capture ownership rejects close and preserves draft and placement', async ({}, testInfo) => {
   const { app, page, profile } = await launch(testInfo);
   const observations = [];
+  const draft = 'Keep this draft while the companion is capture-owned.';
   try {
     await moveMenu(page, 'floating');
     const initial = await observe(app, page, 'before-capture-dismissal');
+    await page.evaluate((text) => Object.assign(window, { __composerDraft: text }), draft);
     await app.evaluate(() => (globalThis as any).companionNative.capture.hold(true));
-    await page.evaluate(() => {
-      (window as any).capturePromise = window.electronAPI!.invoke('annotation:start', {
-        workspaceId: 'placement-qa',
-        workspaceTitle: 'Synthetic dismissal QA',
-      });
-    });
+    await startComposerCapture(page, 'placement-qa');
     await expect.poll(async () => (await placement(page)).captureHidden).toBe(true);
     await page.evaluate(() =>
       window.electronAPI!.invoke('window:update-dock-placement', { action: 'dismiss' }),
@@ -1488,34 +1532,21 @@ test('dismissal: capture ownership rejects close and preserves draft and placeme
       true,
     );
     expect((await placement(page)).placement).toEqual(initial.placement.placement);
-    await app.evaluate(() => (globalThis as any).companionNative.capture.release());
-    expect(await page.evaluate(() => (window as any).capturePromise)).toMatchObject({
-      success: true,
-    });
-    const toolbar = app.windows().find((p) => p.url().endsWith('/annotation-toolbar'))!;
-    await toolbar.getByRole('button', { name: 'Review', exact: true }).click();
-    const overlay = app.windows().find((p) => p.url().endsWith('/annotation'))!;
-    await overlay
-      .getByRole('textbox')
-      .fill('Keep this draft while the companion is capture-owned.');
-    await page.evaluate(() =>
-      window.electronAPI!.invoke('window:update-dock-placement', { action: 'dismiss' }),
-    );
-    await expect(overlay.getByRole('textbox')).toHaveValue(
-      'Keep this draft while the companion is capture-owned.',
-    );
     expect(await app.evaluate(() => (globalThis as any).companionNative.snapshot().id)).toBe(
       initial.native.id,
     );
     observations.push(await observe(app, page, 'capture-owned-dismissal-rejected'));
-    await app.evaluate(() => (globalThis as any).companionNative.native.closeAnnotationMode());
+    await app.evaluate(() => (globalThis as any).companionNative.capture.release());
+    expect(await page.evaluate(() => (window as any).capturePromise)).toMatchObject({ ok: true });
     await expect.poll(async () => (await placement(page)).captureHidden).toBe(false);
+    const restored = await observe(app, page, 'capture-dismissal-restored');
+    observations.push(restored);
+    expect(restored.native.visible).toBe(true);
+    expect(restored.renderer.marker).toBe(initial.renderer.marker);
+    expect(await page.evaluate(() => (window as any).__composerDraft)).toBe(draft);
     await expect(page.getByTestId('dock-dismiss')).toHaveCount(0);
   } finally {
-    await app.evaluate(() => {
-      (globalThis as any).companionNative.capture.release();
-      (globalThis as any).companionNative.native.closeAnnotationMode();
-    });
+    await app.evaluate(() => (globalThis as any).companionNative.capture.release());
     await finish(app, page, testInfo, {
       ...(await provenance()),
       rendererSynthesizedInput: true,
@@ -2193,7 +2224,7 @@ test('native cursor diagnostic: expanded notch header and routing boundaries', a
         const element =
           name === 'logo'
             ? document.querySelector('[data-testid="dock-drag-handle"] svg')
-            : document.querySelector('[data-testid="dock-row-feedback"]');
+            : document.querySelector('[data-dock-row]');
         if (!element) throw new Error(`Missing diagnostic target: ${name}`);
         const rect = element.getBoundingClientRect();
         return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
@@ -3172,39 +3203,42 @@ for (const finishBeforeReply of ['pointer-release', 'Escape'] as const) {
       if (finishBeforeReply === 'Escape') await page.keyboard.press('Escape');
       else await page.mouse.up();
       await app.evaluate(() => (globalThis as any).companionNative.dragBeginGate.release());
-      await expect
-        .poll(() =>
-          app.evaluate(
-            () =>
-              (globalThis as any).companionNative
-                .snapshot()
-                .calls.filter(
-                  (entry: any) =>
-                    entry.boundary === 'production-placement-command' &&
-                    entry.command.action === 'cancel-drag',
-                ).length,
-          ),
-        )
-        .toBeGreaterThan(0);
-      await expect.poll(async () => (await placement(page)).phase).toBe('idle');
+      const finishes = (action: 'cancel-drag' | 'end-drag') =>
+        app.evaluate(
+          (_electron, wanted) =>
+            (globalThis as any).companionNative
+              .snapshot()
+              .calls.filter(
+                (entry: any) =>
+                  entry.boundary === 'production-placement-command' &&
+                  entry.command.action === wanted,
+              )
+              .map((entry: any) => entry.command),
+          action,
+        );
+      if (finishBeforeReply === 'Escape') {
+        // Escape abandons the drag: cancel, no drop, the placement is unchanged.
+        await expect.poll(async () => (await finishes('cancel-drag')).length).toBeGreaterThan(0);
+        await expect.poll(async () => (await placement(page)).phase).toBe('idle');
+        expect(await finishes('end-drag')).toEqual([]);
+        expect((await placement(page)).placement).toEqual(initial.placement.placement);
+      } else {
+        // A release while native begin is pending is a normal drop at the release point.
+        await expect.poll(async () => (await finishes('end-drag')).length).toBe(1);
+        const [drop] = await finishes('end-drag');
+        expect(drop.releasePoint).toEqual({
+          x: initial.native.bounds.x + point.x + 20,
+          y: initial.native.bounds.y + point.y + 20,
+        });
+        expect(await finishes('cancel-drag')).toEqual([]);
+        await expect.poll(async () => (await placement(page)).phase).toBe('idle');
+      }
       expect(await app.evaluate(() => (globalThis as any).companionNative.menu.isEnabled())).toBe(
         true,
       );
-      expect((await placement(page)).placement).toEqual(initial.placement.placement);
       expect((await savedPreferences(profile)).dockPlacement.placement).toEqual(
         (await placement(page)).placement,
       );
-      expect(
-        await app.evaluate(() =>
-          (globalThis as any).companionNative
-            .snapshot()
-            .calls.filter(
-              (entry: any) =>
-                entry.boundary === 'production-placement-command' &&
-                entry.command.action === 'end-drag',
-            ),
-        ),
-      ).toEqual([]);
       observations.push(await observe(app, page, 'delayed-begin-settled'));
     } finally {
       await app

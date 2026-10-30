@@ -18,6 +18,7 @@ import {
 } from './window-backend';
 import { DockPlacementController } from './dock-placement-controller';
 import { attachDockCursor } from './dock-cursor';
+import { createDockPointerPresenceTracker } from './dock-pointer-presence';
 import type { DockPlacementCommand, DockPlacementSnapshot } from '../shared/dock-placement';
 import type {
   DockBackendSwitchFailed,
@@ -95,7 +96,8 @@ export function isDockRoute(route: string): boolean {
   return route === DOCK_ROUTE_PREFIX || route.startsWith(`${DOCK_ROUTE_PREFIX}/`);
 }
 
-export function isDockWindow(window: BrowserWindow): boolean {
+export function isDockWindow(window: BrowserWindow | null | undefined): boolean {
+  if (!window) return false;
   if (dockWindowRef === window) return true;
   try {
     if (window.isDestroyed() || window.webContents.isDestroyed?.()) return false;
@@ -120,6 +122,23 @@ function supportsDockPointerForwarding(platform: NodeJS.Platform): boolean {
   return platform === 'darwin' || platform === 'win32';
 }
 
+const lastForwardedMove = new WeakMap<BrowserWindow, { x: number; y: number }>();
+const pointerPresence = new WeakMap<
+  BrowserWindow,
+  ReturnType<typeof createDockPointerPresenceTracker>
+>();
+function presenceFor(window: BrowserWindow) {
+  let tracker = pointerPresence.get(window);
+  if (!tracker) {
+    tracker = createDockPointerPresenceTracker((presence) => {
+      if (!window.isDestroyed() && !window.webContents.isDestroyed())
+        window.webContents.send(WINDOW_CHANNELS.DOCK_POINTER_PRESENCE_CHANGED, presence);
+    });
+    pointerPresence.set(window, tracker);
+  }
+  return tracker;
+}
+
 /**
  * Keep only an active dock surface interactive. On Linux, Electron cannot
  * forward mouse moves through an ignored window, so leave the window interactive.
@@ -136,6 +155,13 @@ export function setDockPointerRegions(
   pointerState = state;
   try {
     if (placementController?.isDragging || placementController?.isResizing) {
+      presenceFor(window).update({
+        inside: false,
+        x: 0,
+        y: 0,
+        revision: state.revision,
+        suppressed: true,
+      });
       applyPointerRouting(window, false);
       updateNativeCursor(window, true);
       return true;
@@ -150,6 +176,24 @@ export function setDockPointerRegions(
     const interactive = state.active && isPointInDockPointerRegions(localPoint, state.regions);
     applyPointerRouting(window, !interactive);
     updateNativeCursor(window, interactive);
+    // Hover is reported from this poll. macOS sends no mouse moves to a non-key
+    // window, so moves inside it are forwarded too: Chromium then tracks hover and
+    // reports cursor changes. Neither focuses the window nor activates the app.
+    const entered = presenceFor(window).update({
+      inside: interactive,
+      x: localPoint.x,
+      y: localPoint.y,
+      revision: state.revision,
+      suppressed: !window.isVisible() || !!snapshot?.captureHidden,
+    });
+    const x = Math.round(localPoint.x);
+    const y = Math.round(localPoint.y);
+    const last = lastForwardedMove.get(window);
+    const moved = !last || last.x !== x || last.y !== y;
+    if (entered || (interactive && moved && !window.isFocused())) {
+      lastForwardedMove.set(window, { x, y });
+      window.webContents.sendInputEvent({ type: 'mouseMove', x, y });
+    }
     return true;
   } catch (error) {
     updateNativeCursor(window, false);
@@ -180,6 +224,8 @@ function clearTrackedWindow(window: BrowserWindow): void {
   }
   if (!window.isDestroyed()) resetDockPointerRouting(window);
   appliedPointerRouting.delete(window);
+  pointerPresence.delete(window);
+  clearTimeout(readyFallbacks.get(window));
   dockCursor?.dispose();
   dockCursor = undefined;
   placementController?.dispose();
@@ -198,12 +244,47 @@ export function getDockPlacementSnapshot(window: BrowserWindow): DockPlacementSn
   return window === getDockWindow() ? (placementController?.getSnapshot() ?? null) : null;
 }
 
+/** The renderer publishes the painted shell first, before auxiliary input regions. */
+export function getDockVisibleSurfaceBounds(window: BrowserWindow): DockPointerRect | null {
+  if (window !== getDockWindow() || window.isDestroyed() || !pointerState.active) return null;
+  const snapshot = placementController?.getSnapshot();
+  if (!snapshot || snapshot.captureHidden || pointerState.revision !== snapshot.revision)
+    return null;
+  const rect = pointerState.regions[0];
+  if (
+    !rect ||
+    ![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) ||
+    rect.width <= 0 ||
+    rect.height <= 0
+  )
+    return null;
+  return { ...rect };
+}
+
+/** Every interactive dock region (shell plus open popups, banner, lightbox), window-local. */
+export function getDockVisibleSurfaceRegions(window: BrowserWindow): DockPointerRect[] {
+  if (!getDockVisibleSurfaceBounds(window)) return [];
+  return pointerState.regions
+    .filter(
+      (rect) =>
+        [rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) &&
+        rect.width > 0 &&
+        rect.height > 0,
+    )
+    .map((rect) => ({ ...rect }));
+}
+
 export async function updateDockPlacement(
   window: BrowserWindow,
   command: DockPlacementCommand,
 ): Promise<DockPlacementSnapshot | null> {
   if (window !== getDockWindow() || captureHiddenWindows.has(window) || sessionPaused)
     return getDockPlacementSnapshot(window);
+  if (command.action === 'focus') {
+    window.focus();
+    window.webContents.focus();
+    return getDockPlacementSnapshot(window);
+  }
   if (command.action === 'dismiss') {
     placementController?.cancelInteraction();
     // Let the validated invoke return before destroying its sending webContents.
@@ -445,8 +526,7 @@ function attachLifecycleListeners(window: BrowserWindow): void {
   const resume = (): void => {
     sessionPaused = suspended || locked;
     updateBounds();
-    if (!window.isDestroyed() && !captureHiddenWindows.has(window) && !sessionPaused)
-      window.showInactive();
+    if (canRevealDock(window)) window.showInactive();
   };
   const refreshBackend = (): void => {
     if (window.isDestroyed()) return;
@@ -456,6 +536,7 @@ function attachLifecycleListeners(window: BrowserWindow): void {
     if (dockWindowRef !== window) return;
     dockCursor?.cursorChanged('default');
     placementController?.cancelInteraction();
+    pointerPresence.get(window)?.reset();
     if (!window.isDestroyed()) resetDockPointerRouting(window);
   };
 
@@ -481,9 +562,21 @@ function attachLifecycleListeners(window: BrowserWindow): void {
   powerMonitor.on('lock-screen', lock);
   powerMonitor.on('resume', wake);
   powerMonitor.on('unlock-screen', unlock);
-  const pointerTimer = setInterval(() => {
-    if (!window.isDestroyed() && window.isVisible()) setDockPointerRegions(window, pointerState);
-  }, 50);
+  // Poll fast only while the pointer is near the dock; elsewhere a slow check is enough
+  // to notice it approaching. Each check is one cursor read and a few rect tests.
+  let pointerTimer: ReturnType<typeof setTimeout>;
+  const pollPointer = (): void => {
+    let near = false;
+    if (!window.isDestroyed() && window.isVisible()) {
+      setDockPointerRegions(window, pointerState);
+      const b = window.getBounds();
+      const p = screen.getCursorScreenPoint();
+      near =
+        p.x >= b.x - 48 && p.x < b.x + b.width + 48 && p.y >= b.y - 48 && p.y < b.y + b.height + 48;
+    }
+    pointerTimer = setTimeout(pollPointer, near ? 50 : 200);
+  };
+  pointerTimer = setTimeout(pollPointer, 50);
   const refreshCursorRouting = (_event: Electron.Event, type: string): void => {
     if (dockWindowRef === window && !window.isDestroyed() && window.isVisible()) {
       setDockPointerRegions(window, pointerState);
@@ -496,7 +589,7 @@ function attachLifecycleListeners(window: BrowserWindow): void {
   screen.on('display-removed', updateBounds);
   backendEvents.on('backend-connection-changed', refreshBackend);
   removeLifecycleListeners = () => {
-    clearInterval(pointerTimer);
+    clearTimeout(pointerTimer);
     // The BrowserWindow may already be destroyed when its closed listener runs.
     dockContents.off('cursor-changed', refreshCursorRouting);
     screen.off('display-added', updateBounds);
@@ -526,6 +619,7 @@ function attachLifecycleListeners(window: BrowserWindow): void {
     resetDockPointerRouting(window);
   });
   window.webContents.on('did-start-navigation', (_event, url, inPlace, mainFrame) => {
+    if (dockWindowRef === window && mainFrame && !inPlace) resetDockRendererReady(window);
     const operation = pendingBackendSwitch;
     if (!operation || operation.window !== window || inPlace || !mainFrame) return;
     if (operation.phase === 'handoff' && operation.expectedNavigation === url) {
@@ -564,6 +658,51 @@ function configurePlatformBehavior(window: BrowserWindow): void {
   }
 }
 
+// The dock is shown only once its renderer can respond (hydrated, presence and first
+// regions live); a document that never reports ready is shown after a fallback.
+const DOCK_READY_FALLBACK_MS = 10_000;
+const rendererReady = new WeakSet<BrowserWindow>();
+const readyFallbacks = new WeakMap<BrowserWindow, ReturnType<typeof setTimeout>>();
+
+function canRevealDock(window: BrowserWindow): boolean {
+  return (
+    !window.isDestroyed() &&
+    !sessionPaused &&
+    !captureHiddenWindows.has(window) &&
+    rendererReady.has(window)
+  );
+}
+
+function armDockReadyFallback(window: BrowserWindow): void {
+  clearTimeout(readyFallbacks.get(window));
+  readyFallbacks.set(
+    window,
+    setTimeout(() => {
+      if (dockWindowRef !== window || window.isDestroyed() || rendererReady.has(window)) return;
+      logger.warn('Dock renderer did not report ready; showing the dock anyway', {
+        timeoutMs: DOCK_READY_FALLBACK_MS,
+      });
+      markDockRendererReady(window);
+    }, DOCK_READY_FALLBACK_MS),
+  );
+}
+
+/** A new document (reload, crash recovery, backend switch) hides the dock until ready. */
+function resetDockRendererReady(window: BrowserWindow): void {
+  rendererReady.delete(window);
+  if (!window.isDestroyed() && window.isVisible()) window.hide();
+  armDockReadyFallback(window);
+}
+
+/** The dock document reports it can respond; show it without focusing or activating. */
+export function markDockRendererReady(window: BrowserWindow): boolean {
+  if (window !== dockWindowRef || window.isDestroyed()) return false;
+  clearTimeout(readyFallbacks.get(window));
+  rendererReady.add(window);
+  if (canRevealDock(window) && !window.isVisible()) window.showInactive();
+  return true;
+}
+
 export function createDockWindow(): BrowserWindow {
   const existing = getDockWindow();
   if (existing) return existing;
@@ -598,6 +737,8 @@ export function createDockWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
+      // The dock is rarely the key window; throttled frames stall its open/close morphs.
+      backgroundThrottling: false,
     },
   });
 
@@ -608,16 +749,13 @@ export function createDockWindow(): BrowserWindow {
   placementController = new DockPlacementController(
     window,
     () => resetDockPointerRouting(window),
-    () => !sessionPaused && !captureHiddenWindows.has(window),
+    () => canRevealDock(window),
   );
   resetDockPointerRouting(window);
   void placementController
     .initialize()
     .catch((error) => logger.warn('Failed to restore dock placement', { error }));
-  window.once('ready-to-show', () => {
-    if (!window.isDestroyed() && !captureHiddenWindows.has(window) && !sessionPaused)
-      window.showInactive();
-  });
+  armDockReadyFallback(window);
   refreshDockBackend(window, true);
   return window;
 }
@@ -629,18 +767,28 @@ export function getDockWindow(): BrowserWindow | null {
 }
 
 /** Capture owns visibility until it finishes, even if the first paint arrives late. */
-export function setDockHiddenForCapture(hidden: boolean): void {
+export function setDockHiddenForCapture(
+  hidden: boolean,
+  owner?: { window: BrowserWindow; restore?: boolean },
+): void {
   const window = getDockWindow();
-  if (!window) return;
+  if (!window || (owner && owner.window !== window)) return;
   if (hidden) {
     if (pendingBackendSwitch?.window === window) pendingBackendSwitch.cancelled = true;
     captureHiddenWindows.add(window);
     placementController?.setCaptureHidden(true);
     window.hide();
   } else {
+    if (owner?.restore === false) {
+      // Keep canShow() false through layout: a stale capture may release its
+      // barrier, but must not reveal the replacement document during reflow.
+      placementController?.setCaptureHidden(false);
+      captureHiddenWindows.delete(window);
+      return;
+    }
     captureHiddenWindows.delete(window);
     placementController?.setCaptureHidden(false);
-    if (!sessionPaused) window.showInactive();
+    if (canRevealDock(window)) window.showInactive();
   }
 }
 

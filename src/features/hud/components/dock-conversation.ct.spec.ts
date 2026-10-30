@@ -88,6 +88,7 @@ test('conversation stays dark with light or system app preferences and keeps nar
       notchChrome: true,
       dockAppearance: true,
       initialMessage: 'Review the `main` branch before continuing.',
+      syntheticNative: true,
     },
   });
   const editor = component.locator('[data-testid="message-input"] [contenteditable]');
@@ -244,6 +245,21 @@ test('conversation stays dark with light or system app preferences and keeps nar
     return false;
   });
   expect(clipping).toBe(true);
+  const reach = await aurora.evaluate((el) => {
+    const host = el.getBoundingClientRect();
+    const surface = el
+      .closest('[data-testid="dock-conversation-surface"]')!
+      .getBoundingClientRect();
+    return {
+      left: host.left - surface.left,
+      right: surface.right - host.right,
+      bottom: surface.bottom - host.bottom,
+    };
+  });
+  // The glow fills the card's bottom edge instead of stopping at the inset composer.
+  expect(Math.abs(reach.left)).toBeLessThanOrEqual(1);
+  expect(Math.abs(reach.right)).toBeLessThanOrEqual(1);
+  expect(Math.abs(reach.bottom)).toBeLessThanOrEqual(1);
   await component.getByRole('button', { name: 'Disable Aurora preference', exact: true }).click();
   await expect(aurora).toHaveCount(0);
   await component.getByRole('button', { name: 'Enable Aurora preference', exact: true }).click();
@@ -303,20 +319,35 @@ test('conversation stays dark with light or system app preferences and keeps nar
   await page.keyboard.press('Escape');
   await expect(page.locator('.model-picker-panel')).toHaveCount(0);
   await expect(modelTrigger).toBeFocused();
-  const actions = component.getByTestId('prompt-actions-trigger');
-  await actions.click();
-  const addContext = page.getByRole('menuitem', { name: 'Add Context', exact: false });
-  await addContext.focus();
-  await addContext.press('ArrowRight');
-  const context = page.getByRole('dialog', { name: 'Select context panels', exact: true });
-  await assertPopup(context);
-  await page.screenshot({ path: testInfo.outputPath('conversation-nested-context.png') });
+  // The dock footer has no + menu; its one popup is the annotate tool picker.
+  await expect(component.getByTestId('prompt-actions-trigger')).toHaveCount(0);
+  const annotate = component.getByRole('button', { name: /^Annotate the screen/ });
+  await expect(annotate).toBeEnabled();
+  const tools = page.getByRole('toolbar', { name: 'Annotation tools', exact: true });
+  // Hover opens it; every tool stays inside the narrow window and the dock's hit regions.
+  await annotate.hover();
+  await assertPopup(tools);
+  for (const name of ['Pick an element', 'Box', 'Pen', 'Arrow']) {
+    const tool = tools.getByRole('button', { name, exact: true });
+    await expect(tool).toBeEnabled();
+    const box = (await tool.boundingBox())!;
+    const hit = await page.evaluate(
+      ([x, y]) => document.elementFromPoint(x, y)?.closest('button')?.getAttribute('aria-label'),
+      [box.x + box.width / 2, box.y + box.height / 2],
+    );
+    expect(hit).toBe(name);
+  }
+  await page.screenshot({ path: testInfo.outputPath('conversation-annotate-tools.png') });
+  await page.mouse.move(0, 0);
+  await expect(tools).toHaveCount(0);
+  // Keyboard: focus the button, ArrowUp opens on the current tool, Escape returns focus.
+  await annotate.focus();
+  await annotate.press('ArrowUp');
+  await assertPopup(tools);
+  await expect(tools.getByRole('button', { name: 'Pick an element', exact: true })).toBeFocused();
   await page.keyboard.press('Escape');
-  await expect(context).toHaveCount(0);
-  await expect(page.getByRole('menu')).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(page.getByRole('menu')).toHaveCount(0);
-  await expect(actions).toBeFocused();
+  await expect(tools).toHaveCount(0);
+  await expect(annotate).toBeFocused();
   await expect(component.getByTestId('dock-conversation-surface')).toBeVisible();
   await editor.fill('');
   await editor.pressSequentially('@');
@@ -354,10 +385,9 @@ test('conversation stays dark with light or system app preferences and keeps nar
     await expect(chooser).toContainText(name);
     await expect(editor).toHaveAttribute('contenteditable', 'true');
   };
-  const enhance = async () => {
-    await actions.click();
-    await page.getByRole('menuitem', { name: 'Enhance prompt', exact: true }).click();
-  };
+  // The dock has no + menu; Enhance runs from its app-wide command (palette, ⌘/).
+  const enhance = () =>
+    page.evaluate(() => window.dispatchEvent(new CustomEvent('chat:enhance-prompt')));
   await editor.fill('Original enhancement draft');
   await enhance();
   await expect
@@ -424,39 +454,10 @@ test('conversation canonical composer preserves image drafts and retries one exa
     exact: true,
   });
   await expect(thumbnail).toBeVisible();
-  const notice = component
-    .locator(
-      '[data-dock-conversation-notifications] [data-sonner-toast]:not([data-removed="true"]):not([data-visible="false"]):not([inert])',
-    )
-    .last();
-  await expect(notice).toBeVisible();
-  await expect
-    .poll(async () => {
-      const n = await notice.boundingBox();
-      const p = await component.getByTestId('dock-conversation-surface').boundingBox();
-      const regions = JSON.parse((await component.getAttribute('data-regions')) ?? '[]') as {
-        x: number;
-        y: number;
-        width: number;
-        height: number;
-      }[];
-      return (
-        !!n &&
-        !!p &&
-        n.x >= p.x &&
-        n.y >= p.y &&
-        n.x + n.width <= p.x + p.width + 1 &&
-        n.y + n.height <= p.y + p.height + 1 &&
-        regions.some(
-          (r) =>
-            r.x <= n.x + 1 &&
-            r.y <= n.y + 1 &&
-            r.x + r.width >= n.x + n.width - 1 &&
-            r.y + r.height >= n.y + n.height - 1,
-        )
-      );
-    })
-    .toBe(true);
+  // The staged thumbnail is the feedback; the dock shows no success toast for a paste.
+  await expect(
+    component.locator('[data-dock-conversation-notifications] [data-dock-notice]'),
+  ).toHaveCount(0);
   await thumbnail.press('Enter');
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
@@ -606,10 +607,8 @@ test('conversation canonical composer preserves image drafts and retries one exa
   });
   expect(fit).toBe(true);
   await component.screenshot({ path: testInfo.outputPath('conversation-image-draft.png') });
-  await component.getByTestId('prompt-actions-trigger').click();
-  await expect(page.getByRole('menu')).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath('conversation-rich-narrow-options.png') });
-  await page.keyboard.press('Escape');
+  // The media composer footer has no + attach menu; files attach by paste and drop.
+  await expect(component.getByTestId('prompt-actions-trigger')).toHaveCount(0);
   // Attachment-only submission clears before acknowledgement too. A later
   // rejection must not replace text/images typed after that admission.
   await editor.fill('');
@@ -663,7 +662,7 @@ test('conversation canonical composer preserves image drafts and retries one exa
 });
 
 for (const mode of ['notch', 'side-left', 'side-right'] as const) {
-  test(`conversation ${mode} full workspace list scrolls and Back reveals its origin`, async ({
+  test(`conversation ${mode} full workspace list scrolls and closing reveals its origin`, async ({
     mount,
     page,
   }, testInfo) => {
@@ -701,9 +700,12 @@ for (const mode of ['notch', 'side-left', 'side-right'] as const) {
     await page.mouse.wheel(0, 1200);
     await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
     // Keyboard navigation must reveal the target itself, without a test scrollIntoView call.
+    // The notch pins the assistant row below the scrolled list: End lands there, and
+    // one step up is the last workspace at the bottom of the scrolled list.
     await entries.first().focus();
     await entries.first().press('End');
-    const last = entries.last();
+    const last = isSide ? entries.last() : scroller.locator('[data-dock-row]').last();
+    if (!isSide) await page.keyboard.press('ArrowUp');
     await expect(last).toBeFocused();
     const visible = async () =>
       last.evaluate((el) => {
@@ -718,7 +720,12 @@ for (const mode of ['notch', 'side-left', 'side-right'] as const) {
     await last.press('Enter');
     const panel = component.getByTestId('dock-conversation-surface');
     await expect(panel).toHaveAttribute('data-workspace-id', targetId);
-    await panel.getByRole('button', { name: 'Go back', exact: true }).click();
+    // Opening focuses the composer. The notch closes with Back; the side dock has
+    // no Back and closes with Escape. Either way focus returns to the entry.
+    const composer = panel.getByRole('textbox', { name: 'Message', exact: true });
+    await expect(composer).toBeFocused();
+    if (isSide) await composer.press('Escape');
+    else await panel.getByRole('button', { name: 'Go back', exact: true }).click();
     await expect(panel).toHaveCount(0);
     await expect(last).toBeFocused();
     await expect.poll(visible).toBe(true);
@@ -783,14 +790,11 @@ for (const mode of ['notch', 'side-left', 'side-right'] as const) {
         { steps: 8 },
       );
       await expect(card).toBeVisible();
-      await card.getByTestId('dock-row-feedback').click();
+      await expect(card).toHaveAttribute('data-preview-workspace-id', targetId);
     } else {
       await last.hover();
-      await component
-        .locator(`[data-testid="dock-row-feedback"][data-workspace-id="${targetId}"]`)
-        .click();
+      await expect(last).toHaveAttribute('data-workspace-id', targetId);
     }
-    await expect(component).toHaveAttribute('data-preview-action', `feedback:${targetId}`);
     await component.screenshot({ path: testInfo.outputPath(`workspace-scroll-${mode}.png`) });
   });
 }
@@ -966,6 +970,46 @@ test('conversation wire hydrates and keeps a newer draft across delayed acceptan
   );
 });
 
+test('conversation reopens a workspace with its last chosen agent, else the main agent', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(ConversationWireHarness);
+  const composer = component.locator('[data-testid="message-input"] [contenteditable]');
+  const chooser = component.getByRole('combobox', { name: 'Conversation with' });
+  const reopen = async () => {
+    await component.getByRole('button', { name: 'Go back', exact: true }).click();
+    await expect
+      .poll(
+        async () =>
+          JSON.parse((await component.getAttribute('data-diagnostic')) ?? '{}').dock?.workspaceId,
+      )
+      .toBeNull();
+    await component
+      .getByRole('button', { name: 'Reopen synthetic workspace', exact: true })
+      .click();
+    await expect(composer).toBeEnabled();
+  };
+  await expect(composer).toBeEnabled();
+  await expect(chooser).toContainText('Wire coordinator');
+  await chooser.click();
+  await page.getByRole('option', { name: 'Wire specialist', exact: true }).click();
+  await expect(chooser).toContainText('Wire specialist');
+  await expect(composer).toBeEnabled();
+  await reopen();
+  await expect(chooser).toContainText('Wire specialist');
+  // A remembered agent that no longer exists falls back to the workspace's main agent.
+  await page.evaluate(() => {
+    const key = 'dock:lastAgentByWorkspace';
+    const all = JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, string>;
+    if (!Object.keys(all).length) throw new Error('No remembered dock agent');
+    for (const scope of Object.keys(all)) all[scope] = 'wire-retired';
+    localStorage.setItem(key, JSON.stringify(all));
+  });
+  await reopen();
+  await expect(chooser).toContainText('Wire coordinator');
+});
+
 for (const side of ['left', 'right'] as const) {
   test(`conversation ${side} rail pins exact workspace and retains agent drafts`, async ({
     mount,
@@ -1022,7 +1066,16 @@ for (const side of ['left', 'right'] as const) {
     const panel = component.getByTestId('dock-conversation-surface');
     await expect(panel).toHaveAttribute('data-workspace-id', String(workspaces[0].workspace.id));
     await expect(component.getByTestId('dock-preview')).toHaveCount(0);
-    await expect(panel.getByRole('button', { name: 'Go back', exact: true })).toBeFocused();
+    // The side dock has no Back; opening by click focuses the composer.
+    await expect(panel.getByRole('button', { name: 'Go back', exact: true })).toHaveCount(0);
+    await expect(panel.getByRole('textbox', { name: 'Message', exact: true })).toBeFocused();
+    const edgeHeader = await panel
+      .locator('[data-dock-chrome]')
+      .evaluate((el) => [
+        getComputedStyle(el).backgroundColor,
+        getComputedStyle(el.closest('[data-dock-conversation]')!).backgroundColor,
+      ]);
+    expect(edgeHeader[0]).toBe(edgeHeader[1]);
     const composer = panel.getByRole('textbox', { name: 'Message', exact: true });
     await composer.fill('Keep the coordinator draft');
     const chooser = panel.getByRole('combobox', { name: 'Conversation with' });
@@ -1042,7 +1095,10 @@ for (const side of ['left', 'right'] as const) {
     await expect(panel).toBeVisible();
     await page.mouse.move(940, 700);
     await expect(panel).not.toBeVisible();
+    // A remembered conversation never reopens on hover on the side dock; a click does.
     await first.hover();
+    await expect(panel).not.toBeVisible();
+    await first.click();
     await expect(panel).toBeVisible();
     await expect(chooser).toContainText('Navigation specialist');
     await expect(composer).toHaveValue('Specialist draft');
@@ -1126,7 +1182,7 @@ for (const side of ['left', 'right'] as const) {
     const assistant = component.locator('[data-dock-entry="dock:assistant"]');
     await assistant.click();
     await expect(panel).toHaveAttribute('data-workspace-id', '__chief__');
-    await panel.getByRole('button', { name: 'Go back', exact: true }).click();
+    await panel.getByRole('textbox', { name: 'Message', exact: true }).press('Escape');
     await expect(assistant).toBeFocused();
     await writeFile(
       testInfo.outputPath(`conversation-${side}.json`),
@@ -1200,6 +1256,16 @@ test('conversation horizontal collapse preserves drafts and restores origin in n
     await expect(panel).toBeVisible();
     await expect(panel).toHaveAttribute('data-workspace-id', '__chief__');
     await expect(composer).toHaveValue('Retain this reply');
+    if (shape === 'floating') {
+      // Away from the camera the header is not chrome; it matches the panel background.
+      const header = await panel
+        .locator('[data-dock-chrome]')
+        .evaluate((el) => [
+          getComputedStyle(el).backgroundColor,
+          getComputedStyle(el.closest('[data-dock-conversation]')!).backgroundColor,
+        ]);
+      expect(header[0]).toBe(header[1]);
+    }
     await component.screenshot({ path: testInfo.outputPath(`conversation-${shape}.png`) });
     await panel.getByRole('button', { name: 'Go back', exact: true }).click();
     await expect(row).toBeFocused();
@@ -1225,6 +1291,148 @@ test('conversation horizontal collapse preserves drafts and restores origin in n
     await page.keyboard.press('Escape');
     await expect(panel).toHaveCount(0);
     await expect(row).toBeFocused();
+    if (shape === 'notch') {
+      // Animated expand from compact into the pinned conversation: content must not shift
+      // sideways once it settles, and only a user gesture hands the composer focus.
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
+      const shell = component.getByTestId('dock-shell');
+      const editor = panel.getByRole('textbox', { name: 'Message', exact: true });
+      const collapse = async () => {
+        await panel.getByRole('region', { name: 'Messages', exact: true }).click();
+        await page.mouse.move(900, 680);
+        await expect(shell).toHaveAttribute('data-reveal', '0');
+      };
+      await row.click();
+      await expect(panel).toHaveAttribute('data-workspace-id', '__chief__');
+      await expect(editor).toBeFocused();
+      await collapse();
+      // Hover is passive disclosure: it reveals the conversation without taking focus.
+      await component.getByTestId('dock-drag-handle').hover();
+      await expect(shell).toHaveAttribute('data-reveal', '1');
+      await expect(editor).not.toBeFocused();
+      await collapse();
+      await page.evaluate(() => {
+        type Inset = { left: number; right: number };
+        const host = window as unknown as { __laneFrames: unknown[]; __laneStop: boolean };
+        host.__laneFrames = [];
+        host.__laneStop = false;
+        // Content inset from the visible conversation edge (any surface gutter + lane
+        // padding), beside the lane's own padding: equal means no gutter was added.
+        const inset = (surface: Element, lane: Element | null) => {
+          if (!lane) return null;
+          const style = getComputedStyle(lane);
+          const outer = surface.getBoundingClientRect();
+          const inner = lane.getBoundingClientRect();
+          const own: Inset = {
+            left: parseFloat(style.paddingLeft),
+            right: parseFloat(style.paddingRight),
+          };
+          const content: Inset = {
+            left: inner.left + own.left - outer.left,
+            right: outer.right - (inner.right - own.right),
+          };
+          return { content, own };
+        };
+        const sample = () => {
+          const surface = document.querySelector('[data-testid="dock-conversation-surface"]');
+          const reveal = Number(
+            document.querySelector('[data-testid="dock-shell"]')?.getAttribute('data-reveal'),
+          );
+          const back = surface?.querySelector('[data-dock-conversation-back]');
+          if (surface && reveal > 0)
+            host.__laneFrames.push({
+              reveal,
+              handles: surface.querySelectorAll('[data-dock-resize]').length,
+              header: back
+                ? back.getBoundingClientRect().left - surface.getBoundingClientRect().left
+                : null,
+              transcript: inset(surface, surface.querySelector('.transcript')),
+              composer: inset(surface, surface.querySelector('.composer-prompt-lane')),
+            });
+          if (!host.__laneStop) requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
+      });
+      await component.getByTestId('dock-drag-handle').click();
+      await expect(shell).toHaveAttribute('data-reveal', '1');
+      await expect(editor).toBeFocused();
+      await expect(panel.locator('[data-dock-resize="e"]')).toHaveCount(1);
+      await page.waitForTimeout(300);
+      type Inset = { left: number; right: number };
+      type LaneInset = { content: Inset; own: Inset };
+      const frames = await page.evaluate(() => {
+        const host = window as unknown as {
+          __laneFrames: {
+            reveal: number;
+            handles: number;
+            header: number | null;
+            transcript: LaneInset | null;
+            composer: LaneInset | null;
+          }[];
+          __laneStop: boolean;
+        };
+        host.__laneStop = true;
+        return host.__laneFrames;
+      });
+      await writeFile(testInfo.outputPath('notch-expand-lane-frames.json'), JSON.stringify(frames));
+      const first = frames[0];
+      const settled = frames.at(-1);
+      if (!first?.transcript || !first.composer || !settled?.transcript || !settled.composer)
+        throw new Error('Expand frames missing conversation lanes');
+      // The first expanded frame precedes the resize handles: its inset is the pre-handle one.
+      expect(first.reveal).toBeLessThan(1);
+      expect(first.handles).toBe(0);
+      expect(settled.reveal).toBe(1);
+      expect(settled.handles).toBeGreaterThan(0);
+      expect(first.header).toBe(settled.header);
+      expect(first.transcript.content).toEqual(settled.transcript.content);
+      expect(first.composer.content).toEqual(settled.composer.content);
+      // Overlay handles take no layout space: the settled inset is only the lane padding.
+      expect(settled.transcript.content).toEqual(settled.transcript.own);
+      expect(settled.composer.content).toEqual(settled.composer.own);
+      // The east handle overlays the edge without covering the transcript scrollbar thumb.
+      // Headless Chromium hides scrollbars, so hit-test the thumb's ink column instead: the
+      // app scrollbar is 10px wide with a 5px transparent outer border on the thumb.
+      const messages = panel.getByRole('region', { name: 'Messages', exact: true });
+      const hits = await messages.evaluate((el) => {
+        const box = el.getBoundingClientRect();
+        const y = box.top + box.height / 2;
+        const hit = (inset: number) => {
+          const target = document.elementFromPoint(box.right - inset, y);
+          return (
+            target?.closest('[data-dock-resize]')?.getAttribute('data-dock-resize') ??
+            (target && el.contains(target) ? 'transcript' : null)
+          );
+        };
+        return { edge: hit(1), thumbInk: hit(6), thumbInner: hit(9) };
+      });
+      expect(hits).toEqual({ edge: 'e', thumbInk: 'transcript', thumbInner: 'transcript' });
+      // The chat uses the app's dark background; the notch chrome around it stays black.
+      const colors = await component.evaluate((root) => {
+        const probe = document.createElement('div');
+        probe.style.background = 'hsl(var(--background))';
+        document.body.append(probe);
+        const app = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        const chat = root.querySelector('[data-dock-conversation]');
+        const shellInk = root.querySelector('.shell-silhouette path');
+        return {
+          app,
+          chat: chat ? getComputedStyle(chat).backgroundColor : null,
+          shell: shellInk ? getComputedStyle(shellInk).fill : null,
+          header: chat?.querySelector('[data-dock-chrome]')
+            ? getComputedStyle(chat.querySelector('[data-dock-chrome]')!).backgroundColor
+            : null,
+        };
+      });
+      expect(colors.chat).toBe(colors.app);
+      expect(colors.app).not.toBe('rgb(0, 0, 0)');
+      expect(colors.shell).toBe('rgb(0, 0, 0)');
+      // The notch header is chrome: it stays black above the app-colored transcript.
+      expect(colors.header).toBe('rgb(0, 0, 0)');
+      await component.screenshot({ path: testInfo.outputPath('conversation-notch-expanded.png') });
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+    }
     await component.unmount();
   }
 });
@@ -1347,6 +1555,9 @@ for (const scene of [
         );
       })
       .toBeLessThanOrEqual(1);
+    // The side box grows in from the rail; measure once it has settled.
+    if (scene.side)
+      await expect(component.getByTestId('dock-edge-shell')).toHaveAttribute('data-reveal', '1');
     const before = await rect();
     const handle = panel.locator(`[data-dock-resize="${scene.edge}"]`);
     await expect(handle).toBeVisible();
@@ -1516,7 +1727,9 @@ for (const scene of [
     await component.screenshot({
       path: testInfo.outputPath(`conversation-resize-${scene.name}.png`),
     });
-    await panel.getByRole('button', { name: 'Go back', exact: true }).click();
+    // The side dock has no Back: Escape closes it (the draft stays).
+    if (scene.side) await editor.press('Escape');
+    else await panel.getByRole('button', { name: 'Go back', exact: true }).click();
     if (!scene.side) {
       // Leave the real pointer at Back's former position while the upward panel
       // shrinks. Wait beyond disclosure grace to distinguish geometry-only leave
@@ -1924,4 +2137,56 @@ test('conversation reader stays put while new activity arrives at narrow width',
     testInfo.outputPath('conversation-reader.json'),
     JSON.stringify({ scope: 'Presentation fake stream only', geometry }, null, 2),
   );
+});
+
+test('dock transcript admits every row in view inside the dock route frame, after the reveal and while scrolling', async ({
+  mount,
+  page,
+}) => {
+  // The live dock: a fixed screen inside a 0×0 clipping wrapper, and a shell that
+  // reveals with scaleY and clip-path. Rows in view must never stay blank spacers.
+  await page.setViewportSize({ width: 468, height: 476 });
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  const component = await mount(ConversationWireHarness, {
+    props: {
+      width: 420,
+      height: 420,
+      notchChrome: true,
+      dockAppearance: true,
+      routeFrame: true,
+      operationalHistory: 30,
+    },
+  });
+  const scroll = component.locator('.transcript-scroll');
+  await expect(scroll).toBeAttached();
+  const shell = component.locator('.route-shell');
+  await component.getByRole('button', { name: 'Reveal synthetic dock', exact: true }).click();
+  await expect.poll(() => shell.evaluate((el) => el.getAnimations().length)).toBe(0);
+  const spacersInView = () =>
+    scroll.evaluate(async (root) => {
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const view = root.getBoundingClientRect();
+      return [...root.querySelectorAll('[data-operational-spacer]')].filter((spacer) => {
+        const box = spacer.getBoundingClientRect();
+        return box.height > 0 && box.bottom > view.top + 1 && box.top < view.bottom - 1;
+      }).length;
+    });
+  // Enough rows to virtualize: some stay spacers off-screen.
+  await expect
+    .poll(() => scroll.evaluate((root) => root.scrollHeight > root.clientHeight * 3))
+    .toBe(true);
+  await expect.poll(spacersInView, { timeout: 2_000 }).toBe(0);
+  for (const where of ['bottom', 'middle', 'top'] as const) {
+    await scroll.evaluate((root, position) => {
+      root.scrollTop =
+        position === 'bottom'
+          ? root.scrollHeight
+          : position === 'middle'
+            ? (root.scrollHeight - root.clientHeight) / 2
+            : 0;
+    }, where);
+    await expect.poll(spacersInView, { timeout: 2_000 }).toBe(0);
+  }
+  // Still virtualized: rows far from the viewport remain spacers.
+  expect(await component.locator('[data-operational-spacer]').count()).toBeGreaterThan(0);
 });

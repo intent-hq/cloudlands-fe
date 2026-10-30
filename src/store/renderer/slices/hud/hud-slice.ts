@@ -16,7 +16,11 @@
 
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
-import type { DockPlacementCommand, DockPlacementSnapshot } from '$shared/dock-placement';
+import type {
+  DockPlacementCommand,
+  DockPlacementFailure,
+  DockPlacementSnapshot,
+} from '$shared/dock-placement';
 import type { Workspace, WorkspaceDisplayStatus } from '$shared/types';
 import { replaceWorkspaceList, setWorkspaceEntity } from '../workspace/workspace-slice';
 import {
@@ -189,7 +193,7 @@ export interface HudState {
   dockConversationAtByWorkspaceId: Record<string, number>;
   dockRecencyNow: number;
   dockPlacement: DockPlacementSnapshot | null;
-  dockPlacementError: boolean;
+  dockPlacementError: DockPlacementFailure | null;
   dockDragStartResult: { id: number; token: string | null } | null;
   dockResizeStartResult: { id: number; token: string | null } | null;
   dockFocusRequest: number;
@@ -217,7 +221,7 @@ export const initialState: HudState = {
   dockConversationAtByWorkspaceId: {},
   dockRecencyNow: 0,
   dockPlacement: null,
-  dockPlacementError: false,
+  dockPlacementError: null,
   dockDragStartResult: null,
   dockResizeStartResult: null,
   dockFocusRequest: 0,
@@ -231,7 +235,8 @@ export const dockPlacementCommandRequested = createAction<[command: DockPlacemen
 export const dockPlacementReceived = createAction<[snapshot: DockPlacementSnapshot]>(
   'hud/dockPlacementReceived',
 );
-export const dockPlacementFailed = createAction('hud/dockPlacementFailed');
+export const dockPlacementFailed =
+  createAction<[failure: DockPlacementFailure]>('hud/dockPlacementFailed');
 export const dockDragStartResolved = createAction<[token: string | null]>(
   'hud/dockDragStartResolved',
 );
@@ -510,9 +515,12 @@ hudReducer.with(hudGridFilterHydrated, (state, { payload: [filter] }) => {
 hudReducer.with(dockPlacementReceived, (state, { payload: [snapshot] }) => {
   if (!state.active || (state.dockPlacement && snapshot.revision < state.dockPlacement.revision))
     return state;
-  return { ...state, dockPlacement: snapshot, dockPlacementError: false };
+  return { ...state, dockPlacement: snapshot, dockPlacementError: null };
 });
-hudReducer.with(dockPlacementFailed, (state) => ({ ...state, dockPlacementError: true }));
+hudReducer.with(dockPlacementFailed, (state, { payload: [failure] }) => ({
+  ...state,
+  dockPlacementError: failure,
+}));
 hudReducer.with(dockFocusRequested, (state) => ({
   ...state,
   dockFocusRequest: state.dockFocusRequest + 1,

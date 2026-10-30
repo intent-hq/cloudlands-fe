@@ -1,5 +1,5 @@
 import { BrowserWindow, type MenuItemConstructorOptions } from 'electron';
-import { isAnnotationWindow } from '../features/annotation/main/annotation-window';
+import { isDockAnnotationWindow } from './dock-annotation-identity';
 import { isDockWindow } from './dock-window';
 
 function acceptsSettings(window: BrowserWindow | null): window is BrowserWindow {
@@ -8,7 +8,7 @@ function acceptsSettings(window: BrowserWindow | null): window is BrowserWindow 
     !window.isDestroyed() &&
     !window.webContents.isDestroyed() &&
     !isDockWindow(window) &&
-    !isAnnotationWindow(window)
+    !isDockAnnotationWindow(window)
   );
 }
 

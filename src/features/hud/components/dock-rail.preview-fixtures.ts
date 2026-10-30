@@ -21,7 +21,7 @@ export interface DockRailPreviewProps {
   viewportWidth?: number;
   theme?: 'light' | 'dark';
   placement?: DockPlacementSnapshot;
-  failFeedbackOnce?: boolean;
+  failOpenOnce?: boolean;
   focusRequest?: number;
   placementError?: boolean;
   floatingDisplay?: DockDisplayGeometry;

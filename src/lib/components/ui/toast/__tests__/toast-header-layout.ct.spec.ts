@@ -19,7 +19,8 @@ const contracts = [
   { status: 'downloading', width: 420 },
   { status: 'error', width: 420 },
   { status: 'standard', width: 420 },
-  { status: 'plain', width: 320 },
+  // Narrow plain toasts move their two actions to the footer; see the 320px contract below.
+  { status: 'plain', width: 420 },
 ] as const;
 
 for (const { status, width } of contracts) {
@@ -89,6 +90,85 @@ for (const { status, width } of contracts) {
     }
   });
 }
+
+test('plain toast moves both actions below its description at 320px', async ({ mount, page }) => {
+  await page.setViewportSize({ width: 320, height: 800 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mount(Preview, { props: { status: 'plain' } });
+  const toast = page.locator('[data-sonner-toast]');
+  const dismissals = page.getByTestId('toast-header-dismissals');
+  const show = async () => {
+    await page.getByRole('button', { name: 'Show fixture toast', exact: true }).click();
+    await settle(page, toast);
+    await expect(toast).toHaveAttribute('data-toast-footer', '');
+  };
+  await settle(page, toast);
+  await expect(toast).toHaveAttribute('data-toast-footer', '');
+  const geometry = await toast.evaluate((node) => {
+    const box = (selector: string) =>
+      node.querySelector(selector)?.getBoundingClientRect().toJSON();
+    const title = node.querySelector('[data-title]')!;
+    return {
+      root: node.getBoundingClientRect().toJSON(),
+      client: node.clientWidth,
+      scroll: node.scrollWidth,
+      title: box('[data-title]')!,
+      titleLineHeight: Number.parseFloat(getComputedStyle(title).lineHeight),
+      description: box('[data-description]')!,
+      icon: box('.icon-celebrate,[data-toast-glyph]'),
+      close: box('[data-close-button]')!,
+      action: box('[data-button]:not([data-cancel])')!,
+      cancel: box('[data-cancel]')!,
+    };
+  });
+  // Header: icon (when present) and close stay on the first title line.
+  const center = geometry.title.top + geometry.titleLineHeight / 2;
+  for (const control of [geometry.icon, geometry.close].filter(Boolean)) {
+    expect(Math.abs(control!.top + control!.height / 2 - center)).toBeLessThanOrEqual(1);
+    expect(control!.bottom).toBeLessThan(geometry.description.top);
+  }
+  expect(geometry.description.left).toBeCloseTo(geometry.title.left, 0);
+  // Footer: Later then Review on one row below the description, from its left edge.
+  for (const button of [geometry.cancel, geometry.action]) {
+    expect(button.top).toBeGreaterThanOrEqual(geometry.description.bottom);
+    expect(button.right).toBeLessThanOrEqual(geometry.root.right);
+  }
+  expect(geometry.cancel.left).toBeCloseTo(geometry.description.left, 0);
+  expect(
+    Math.abs(
+      geometry.cancel.top +
+        geometry.cancel.height / 2 -
+        (geometry.action.top + geometry.action.height / 2),
+    ),
+  ).toBeLessThanOrEqual(1);
+  expect(geometry.action.left - geometry.cancel.right).toBeGreaterThanOrEqual(8);
+  expect(geometry.root.left).toBeGreaterThanOrEqual(0);
+  expect(geometry.root.right).toBeLessThanOrEqual(320);
+  expect(geometry.scroll).toBeLessThanOrEqual(geometry.client + 1);
+  for (const button of [geometry.action, geometry.cancel, geometry.close]) {
+    expect(button.height).toBeGreaterThanOrEqual(24);
+    expect(button.width).toBeGreaterThanOrEqual(24);
+  }
+
+  // Each footer action and the header close stay operable; the fixture re-shows between them.
+  const review = toast.getByRole('button', { name: 'Review', exact: true });
+  await review.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('toast-header-actions')).toHaveText('1');
+  await expect(toast).toHaveCount(0);
+  const dismissedBeforeLater = Number(await dismissals.textContent());
+  await show();
+  await toast.getByRole('button', { name: 'Later', exact: true }).click();
+  await expect(dismissals).toHaveText(String(dismissedBeforeLater + 1));
+  await expect(toast).toHaveCount(0);
+  await show();
+  const close = toast.locator('[data-close-button]');
+  await close.focus();
+  await page.keyboard.press('Space');
+  await expect(dismissals).toHaveText(String(dismissedBeforeLater + 2));
+  await expect(toast).toHaveCount(0);
+  await expect(page.getByTestId('toast-header-actions')).toHaveText('1');
+});
 
 for (const { status, width } of [
   { status: 'multiline-warning', width: 420 },

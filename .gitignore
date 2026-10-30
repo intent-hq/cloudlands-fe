@@ -146,3 +146,5 @@ static/generated/
 
 /resources/dock-helper/intent-dock-helper
 /resources/dock-helper/intent-dock-cursor.node
+/resources/dock-helper/intent-dock-recorder
+/resources/dock-helper/intent-dock-element-pick

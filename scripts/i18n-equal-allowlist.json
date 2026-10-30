@@ -351,7 +351,7 @@
   "home_integrations_code_tab": ["de", "fr"],
   "home_integrations_discussion": ["fr"],
   "dock_assistant_label": ["fr"],
-  "annotation_assistantThreads_label": ["fr"],
-  "annotation_capture_label": ["fr"],
-  "annotation_agent_label": ["de", "fr"]
+  "settings_section_labs": "*",
+  "dock_statusGroup_label": ["de", "es", "ko"],
+  "chat_screenEvidence_image_label": ["fr"]
 }

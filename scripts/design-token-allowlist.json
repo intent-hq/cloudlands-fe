@@ -97,7 +97,10 @@
       "reason": "Existing window chrome surface",
       "replacement": "--background or --sidebar",
       "removalCondition": "No product usages remain",
-      "allowedFiles": ["src/lib/components/layout/WindowTitleBar.svelte"]
+      "allowedFiles": [
+        "src/lib/components/layout/WindowTitleBar.svelte",
+        "src/lib/styles/dock-tokens.css"
+      ]
     },
     {
       "token": "--text-primary",

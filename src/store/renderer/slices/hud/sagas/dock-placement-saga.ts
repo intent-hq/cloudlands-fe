@@ -1,7 +1,11 @@
 import { buffers } from 'redux-saga';
 import { actionChannel, call, cancel, put, take, type SagaGenerator } from 'typed-redux-saga';
 import { WINDOW_CHANNELS } from '$shared/ipc/channels';
-import type { DockPlacementCommand, DockPlacementSnapshot } from '$shared/dock-placement';
+import {
+  dockPlacementFailureFor,
+  type DockPlacementCommand,
+  type DockPlacementSnapshot,
+} from '$shared/dock-placement';
 import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
 import {
   dockPlacementCommandRequested,
@@ -55,7 +59,7 @@ export function* dockPlacementSaga(): SagaGenerator<void> {
       const snapshot = yield* call(invokePlacement);
       if (snapshot) yield* put(dockPlacementReceived(snapshot));
     } catch {
-      yield* put(dockPlacementFailed());
+      yield* put(dockPlacementFailed('update'));
     }
     while (true) {
       const {
@@ -71,7 +75,7 @@ export function* dockPlacementSaga(): SagaGenerator<void> {
         if (command.action === 'begin-resize')
           yield* put(dockResizeStartResolved(snapshot?.resizeToken ?? null));
       } catch {
-        yield* put(dockPlacementFailed());
+        yield* put(dockPlacementFailed(dockPlacementFailureFor(command)));
         if (command.action === 'begin-drag') yield* put(dockDragStartResolved(null));
         if (command.action === 'begin-resize') yield* put(dockResizeStartResolved(null));
       }

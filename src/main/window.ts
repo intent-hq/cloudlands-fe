@@ -22,12 +22,12 @@ import {
 import { resolveAppDockIconPath, resolveAppIconPath } from './utils/resolve-app-icon';
 import { whenRendererWindowsAllowed } from './renderer-window-gate';
 import { isDockRoute, isDockWindow } from './dock-window';
-import { isAnnotationWindow } from '../features/annotation/main/annotation-window';
+import { isDockAnnotationWindow } from './dock-annotation-identity';
 
 const isTransientCaptureWindow = (window: BrowserWindowType): boolean =>
-  isDockWindow(window) || isAnnotationWindow(window);
+  isDockWindow(window) || isDockAnnotationWindow(window);
 const isTransientCaptureRoute = (route: string): boolean =>
-  isDockRoute(route) || route === '/annotation' || route === '/annotation-toolbar';
+  isDockRoute(route) || route === '/dock-annotation';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -60,7 +60,9 @@ export function getFocusedWindowBackendId(): string {
   if (focused && !focused.isDestroyed() && !isTransientCaptureWindow(focused))
     return getBackendIdForWindow(focused);
   const main = getMainWindow();
-  return main && !main.isDestroyed() ? getBackendIdForWindow(main) : LOCAL_CONNECTION_ID;
+  return main && !main.isDestroyed() && !isTransientCaptureWindow(main)
+    ? getBackendIdForWindow(main)
+    : LOCAL_CONNECTION_ID;
 }
 
 /**

@@ -12,7 +12,7 @@ import { dockRailPreview } from './dock-rail.preview-fixtures';
 test.use({ video: { mode: 'on', size: { width: 720, height: 720 } } });
 
 for (const side of ['left', 'right'] as const) {
-  test(`side-only ${side} rail hovercards and keyboard feedback`, async ({
+  test(`side-only ${side} rail hovercards and keyboard previews`, async ({
     mount,
     page,
   }, testInfo) => {
@@ -61,13 +61,19 @@ for (const side of ['left', 'right'] as const) {
         .toBe(true);
     };
     await expect(entries).toHaveCount(3);
-    await expect(entries.first().locator('[data-dock-status-badge]')).toHaveCount(0);
-    for (const [index, status] of ['failed', 'blocked'].entries()) {
+    await expect(entries.first().locator('[data-dock-workspace-avatar]')).toHaveCount(0);
+    // The workspace's state shows on its avatar, as in the app (no separate status dot).
+    for (const [index, [status, avatarState]] of [
+      ['failed', 'failed'],
+      ['blocked', 'attention-blocker'],
+    ].entries()) {
       await expect(
         entries
           .nth(index + 1)
-          .locator(`[data-dock-status-badge] [data-workspace-status="${status}"]`),
-      ).toBeVisible();
+          .locator(
+            `[data-dock-workspace-avatar][data-workspace-status="${status}"] [data-agent-avatar-with-state]`,
+          ),
+      ).toHaveAttribute('data-avatar-state', avatarState);
       await expect(entries.nth(index + 1)).toHaveAccessibleDescription(
         index === 0 ? 'Failed' : 'Blocked',
       );
@@ -104,41 +110,16 @@ for (const side of ['left', 'right'] as const) {
       String(workspaces[0].workspace.id),
     );
     await expect(card).toContainText(workspaces[0].workspace.title ?? '');
-    await card.getByTestId('dock-row-feedback').click();
-    await expect(component).toHaveAttribute(
-      'data-preview-action',
-      `feedback:${workspaces[0].workspace.id}`,
-    );
-    await entries.nth(1).hover();
-    await expect(card).toBeVisible();
-    const pointerPen = card.getByTestId('dock-row-feedback');
-    await pointerPen.hover();
-    await component.screenshot({ path: testInfo.outputPath(`side-${side}-pen-hover.png`) });
-    await page.mouse.down();
-    await expect(pointerPen).toBeFocused();
-    await page.mouse.move(700, 690);
-    await expect(card).toHaveCount(0);
-    await page.mouse.up();
-    evidence.push({
-      pointerPenMouseout:
-        'pointer-down focus released on mouseout before activation; ordinary click target passed',
-    });
+    // The card is a preview only: no feedback action of its own.
+    await expect(card.getByRole('button')).toHaveCount(0);
     await entries.nth(2).hover();
     await expect(card).toHaveAttribute(
       'data-preview-workspace-id',
       String(workspaces[1].workspace.id),
     );
-    await card.getByTestId('dock-row-feedback').click();
     await entries.first().hover();
     await expect(card).toHaveAttribute('data-preview-workspace-id', 'dock:assistant');
     await expect(card).toContainText('Assistant');
-    await card.getByTestId('dock-row-feedback').click();
-    await expect(component).toHaveAttribute(
-      'data-preview-actions',
-      JSON.stringify(
-        workspaces.map((w) => `feedback:${w.workspace.id}`).concat('feedback:__chief__'),
-      ),
-    );
     await page.mouse.move(700, 690);
     await expect(card).toHaveCount(0);
     const closedPng = testInfo.outputPath(`side-${side}-pointer-mouseout.png`);
@@ -166,10 +147,9 @@ for (const side of ['left', 'right'] as const) {
       String(workspaces[1].workspace.id),
     );
     await expect(card).toBeVisible();
-    await expect(card.getByTestId('dock-row-feedback')).toBeVisible();
     await expect(entries.nth(2)).toBeFocused();
     evidence.push({
-      beforeKeyboardTab: await card.evaluate((el) => ({
+      beforeKeyboardEscape: await card.evaluate((el) => ({
         visibility: getComputedStyle(el).visibility,
         focused: document.activeElement?.getAttribute('data-dock-entry'),
         rect: el.getBoundingClientRect().toJSON(),
@@ -178,18 +158,6 @@ for (const side of ['left', 'right'] as const) {
     await writeFile(
       testInfo.outputPath(`side-${side}-progress.json`),
       JSON.stringify(evidence, null, 2),
-    );
-    await entries.nth(2).press('Tab');
-    await expect(card.getByTestId('dock-row-feedback')).toBeFocused();
-    await card.hover();
-    await page.mouse.move(700, 690);
-    await expect(card).toBeVisible();
-    await expect(card.getByTestId('dock-row-feedback')).toBeFocused();
-    evidence.push({ keyboardMouseout: 'intentional Tab focus retained across pointer exit' });
-    await page.keyboard.press('Enter');
-    await expect(component).toHaveAttribute(
-      'data-preview-action',
-      `feedback:${workspaces[1].workspace.id}`,
     );
     await page.keyboard.press('Escape');
     await expect(card).toHaveCount(0);

@@ -141,7 +141,8 @@ import {
   _resetRendererWindowGateForTests,
   markRendererWindowsAllowed,
 } from '../renderer-window-gate';
-import { setMainWindow } from '../state';
+import { getMainWindow, setMainWindow } from '../state';
+import { isDockAnnotationWindow, registerDockAnnotationWindow } from '../dock-annotation-identity';
 import {
   _resetWindowSessionsCacheForTests,
   captureWindowSessionsSnapshot,
@@ -211,6 +212,41 @@ describe('multi-backend window sessions', () => {
   });
 
   describe('per-backend save/restore', () => {
+    it('never persists the exact registered dock overlay even before its route is loaded', async () => {
+      const main = seedLiveWindow('app://workspaces/work/main', undefined, 'remote-1');
+      const overlay = seedLiveWindow('about:blank', undefined, 'remote-1');
+      registerDockAnnotationWindow(overlay as never);
+      expect(isDockAnnotationWindow(overlay as never)).toBe(true);
+      await saveWindowSessions('remote-1');
+      expect(readMap()['remote-1'].map((session) => session.route)).toEqual(['/work/main']);
+      overlay.setURLForTest('app://workspaces/dock-annotation');
+      await saveWindowSessions('remote-1');
+      expect(readMap()['remote-1'].map((session) => session.route)).toEqual(['/work/main']);
+      expect(main.isDestroyed()).toBe(false);
+      overlay.destroy();
+      expect(isDockAnnotationWindow(overlay as never)).toBe(false);
+    });
+
+    it('filters saved dock-annotation routes and never recreates an overlay as a normal window', async () => {
+      const bounds = { x: 0, y: 0, width: 1000, height: 700 };
+      fs.writeFileSync(
+        getWindowSessionsPath(),
+        JSON.stringify({
+          'remote-1': [
+            { route: '/dock-annotation', bounds },
+            { route: '/work/main', bounds },
+          ],
+        }),
+      );
+      await restoreWindowsForBackend('remote-1');
+      expect(
+        FakeBrowserWindow.getAllWindows().map(
+          (window) => new URL(window.webContents.getURL()).pathname,
+        ),
+      ).toEqual(['/work/main']);
+      await createWindowForSession({ route: '/dock-annotation', bounds }, false, 'remote-1');
+      expect(FakeBrowserWindow.getAllWindows()).toHaveLength(1);
+    });
     it('saves each backend under its own key without clobbering the others', async () => {
       const localBounds = { x: 10, y: 20, width: 1400, height: 900 };
       seedLiveWindow('app://workspaces/work/local', localBounds);
@@ -959,6 +995,50 @@ describe('multi-backend window sessions', () => {
       expect(getFocusedWindowBackendId()).toBe('local');
       remote.focus();
       expect(getFocusedWindowBackendId()).toBe('remote-1');
+    });
+
+    it('ignores exact overlay focus and main fallback without inferring ownership from a route', () => {
+      const main = seedLiveWindow('app://workspaces/work/main', undefined, 'remote-main');
+      const overlay = seedLiveWindow('about:blank', undefined, 'remote-overlay');
+      registerDockAnnotationWindow(overlay as never);
+      overlay.focus();
+      vi.mocked(getMainWindow).mockReturnValueOnce(main as never);
+      expect(getFocusedWindowBackendId()).toBe('remote-main');
+      vi.mocked(getMainWindow).mockReturnValueOnce(overlay as never);
+      expect(getFocusedWindowBackendId()).toBe('local');
+      const unowned = seedLiveWindow(
+        'app://workspaces/dock-annotation',
+        undefined,
+        'remote-unowned',
+      );
+      expect(isDockAnnotationWindow(unowned as never)).toBe(false);
+      unowned.focus();
+      expect(getFocusedWindowBackendId()).toBe('remote-unowned');
+    });
+
+    it('opens a regular local survivor when only a registered overlay would otherwise remain', async () => {
+      seedLiveWindow('app://workspaces/work/closing', undefined, 'remote-1');
+      const overlay = seedLiveWindow('app://workspaces/dock-annotation', undefined, 'remote-2');
+      registerDockAnnotationWindow(overlay as never);
+      await ensureLocalWindowBeforeClosingBackend('remote-1');
+      const local = FakeBrowserWindow.getAllWindows().find(
+        (window) => window.backendId === 'local',
+      );
+      expect(local).toBeDefined();
+      expect(overlay.show).not.toHaveBeenCalled();
+      expect(overlay.focus).not.toHaveBeenCalled();
+    });
+
+    it('never promotes the surviving overlay to main when another backend closes', () => {
+      const overlay = seedLiveWindow('app://workspaces/dock-annotation', undefined, 'remote-2');
+      registerDockAnnotationWindow(overlay as never);
+      const survivor = seedLiveWindow('app://workspaces/work/surviving', undefined, 'remote-2');
+      const closing = seedLiveWindow('app://workspaces/work/closing', undefined, 'remote-1');
+      vi.mocked(getMainWindow).mockReturnValueOnce(closing as never);
+      vi.mocked(setMainWindow).mockClear();
+      closeWindowsForBackend('remote-1');
+      expect(setMainWindow).toHaveBeenCalledExactlyOnceWith(survivor);
+      expect(overlay.isDestroyed()).toBe(false);
     });
 
     it('closes only windows belonging to the forgotten backend', () => {

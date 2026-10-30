@@ -20,6 +20,7 @@ import { promisify } from 'util';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
+import { fileURLToPath } from 'url';
 import native from './macos-native.cjs';
 
 const execAsync = promisify(exec);
@@ -90,6 +91,96 @@ async function verifySignature(binaryPath) {
   } catch (error) {
     console.error('  ✗ Verification failed:', error.message);
     throw error;
+  }
+}
+
+/** Microphone-only entitlements for the dock media helpers. */
+export const DOCK_MEDIA_ENTITLEMENTS = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../build/entitlements.dock-media.plist',
+);
+const AUDIO_INPUT = 'com.apple.security.device.audio-input';
+
+/**
+ * Signing policy for each dock composer helper (paths relative to Resources,
+ * matching macos-native.cjs DOCK_COMPOSER_HELPERS). electron-builder's deep-sign
+ * pass would re-sign them with the full app entitlements (JIT, apple-events,
+ * files.all, ...), so mac.signIgnore in electron-builder.yml excludes them and
+ * this hook signs each one with only what it needs before the outer app seal:
+ * the recorder and streaming dictation get microphone access; the element
+ * picker (Accessibility, TCC-gated) gets no entitlements at all.
+ */
+export const DOCK_COMPOSER_SIGNING = Object.freeze([
+  {
+    helper: 'dock-helper/intent-dock-recorder',
+    entitlements: DOCK_MEDIA_ENTITLEMENTS,
+    expectedEntitlements: [AUDIO_INPUT],
+  },
+  {
+    helper: 'speech-helper/intent-dock-speech',
+    entitlements: DOCK_MEDIA_ENTITLEMENTS,
+    expectedEntitlements: [AUDIO_INPUT],
+  },
+  {
+    helper: 'dock-helper/intent-dock-element-pick',
+    entitlements: null,
+    expectedEntitlements: [],
+  },
+]);
+
+/**
+ * Entitlement keys from `codesign -d --entitlements - --xml` output (empty
+ * output means the signature carries none).
+ *
+ * @param {string} xml - plist XML printed by codesign
+ * @returns {string[]} sorted entitlement keys
+ */
+export function entitlementKeysFromXml(xml) {
+  return [...String(xml ?? '').matchAll(/<key>([^<]+)<\/key>/g)].map((m) => m[1].trim()).sort();
+}
+
+/**
+ * Sign one dock composer helper with hardened runtime, a secure timestamp and
+ * its own entitlements, then verify both the signature and that the signed
+ * entitlements are exactly the expected set.
+ *
+ * @param {string} resourcesPath - Absolute Contents/Resources path
+ * @param {(typeof DOCK_COMPOSER_SIGNING)[number]} policy - helper signing policy
+ * @param {string} identity - Code signing identity
+ */
+async function signDockComposerHelper(resourcesPath, policy, identity) {
+  const binaryPath = path.join(resourcesPath, policy.helper);
+  if (!fs.existsSync(binaryPath)) {
+    throw new Error(`Required dock composer helper missing from app bundle: ${binaryPath}`);
+  }
+  const entitlementArgs = policy.entitlements ? ['--entitlements', policy.entitlements] : [];
+  console.log(`  Signing: ${binaryPath}`);
+  await execFileAsync('codesign', [
+    '--force',
+    '--options',
+    'runtime',
+    '--timestamp',
+    ...entitlementArgs,
+    '--sign',
+    identity,
+    binaryPath,
+  ]);
+  console.log('  ✓ Signed successfully');
+  await verifySignature(binaryPath);
+  const { stdout } = await execFileAsync('codesign', [
+    '-d',
+    '--entitlements',
+    '-',
+    '--xml',
+    binaryPath,
+  ]);
+  const actual = entitlementKeysFromXml(stdout);
+  const expected = [...policy.expectedEntitlements].sort();
+  if (actual.join('\n') !== expected.join('\n')) {
+    throw new Error(
+      `Unexpected entitlements on ${binaryPath}: expected [${expected.join(', ')}], ` +
+        `found [${actual.join(', ')}]`,
+    );
   }
 }
 
@@ -572,6 +663,13 @@ async function signSidecar(context) {
     if (fs.existsSync(speechHelperPath)) {
       await signBinary(speechHelperPath, identity);
       await verifySignature(speechHelperPath);
+    }
+
+    // Sign the required dock composer helpers with per-helper entitlements
+    // (same seal-ordering constraint; excluded from electron-builder's pass).
+    const resourcesPath = path.join(appPath, 'Contents', 'Resources');
+    for (const policy of DOCK_COMPOSER_SIGNING) {
+      await signDockComposerHelper(resourcesPath, policy, identity);
     }
 
     // Sign the keychain sync helper bundle when bundled (same seal-ordering

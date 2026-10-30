@@ -483,7 +483,7 @@ test('progressive empty history waits for explicit completion without fetching o
 test('progressive prepends preserve a reader who scrolls away before completion', async ({
   mount,
   page,
-}) => {
+}, testInfo) => {
   const component = await mount(ChatViewportFillHost, {
     props: { progressive: 21, received: 12, height: 500, controlled: true },
   });
@@ -524,7 +524,7 @@ test('progressive prepends preserve a reader who scrolls away before completion'
     )
     .toBeLessThan(5);
   await page.screenshot({
-    path: '../../.intent/artifacts/chat-progressive-reader.png',
+    path: testInfo.outputPath('chat-progressive-reader.png'),
     fullPage: true,
   });
   expect(JSON.parse(await component.getByTestId('requests').innerText()).requests).toHaveLength(0);
@@ -555,7 +555,7 @@ const offsetFromViewportTop = (viewport: Locator, selector: string) =>
 test('unread entry holds at the oldest loaded unseen row, then never jumps at completion', async ({
   mount,
   page,
-}) => {
+}, testInfo) => {
   // Marker m-6: unseen tail m-7..m-20 (taller than the viewport) arrives
   // before the marker row, which is the 15th row delivered.
   const component = await mount(ChatViewportFillHost, { props: unreadProps('m-6', 1) });
@@ -597,7 +597,7 @@ test('unread entry holds at the oldest loaded unseen row, then never jumps at co
   const settled = await offsetFromViewportTop(viewport, '[data-new-messages-divider]');
   expect(Math.abs(settled! - landed!)).toBeLessThanOrEqual(2);
   await page.screenshot({
-    path: '../../.intent/artifacts/chat-unread-entry-settled.png',
+    path: testInfo.outputPath('chat-unread-entry-settled.png'),
     fullPage: true,
   });
 });

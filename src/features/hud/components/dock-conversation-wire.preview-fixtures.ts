@@ -1,3 +1,10 @@
+import type { AgentMessage, ContentBlock, QueuedMessage } from '$shared/types';
+import { AgentId } from '$shared/types/branded-ids';
+import type { ResourceBlockContents } from '$shared/types/resource-block-identity';
+import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
+import { updateSession } from '$store/renderer/slices/agent-session/agent-session-slice';
+import { questionUiPersistenceSaga } from '$store/renderer/slices/question-ui/sagas/question-ui-persistence-saga';
+import { chatScrollbackSaga } from '$store/renderer/slices/chat-state/sagas/chat-scrollback-saga';
 import { ThemeManager, type Theme } from '$lib/utils/theme';
 import { themeSaga } from '$store/renderer/slices/theme/sagas/theme-saga';
 import { store } from '$store/renderer/store';
@@ -27,11 +34,42 @@ export interface ConversationWireCall {
 }
 const timestamp = '2026-10-22T01:00:00.000Z';
 export const conversationWireWorkspace = 'conversation-wire';
+const conversationWireQuestionId = '55d59402-06d1-4c51-bec4-f37c0a1b4b23';
+type ConversationWireMessage = Omit<AgentMessage, 'contentBlocks'> & {
+  contentBlocks?: Array<ContentBlock | { type: 'resource'; resource: ResourceBlockContents }>;
+};
+const questionRow: ConversationWireMessage = {
+  id: conversationWireQuestionId,
+  agentId: AgentId('wire-main'),
+  role: 'assistant',
+  timestamp,
+  contentBlocks: [
+    {
+      type: 'resource',
+      resource: {
+        uri: 'intent://question/wire-colour',
+        mimeType: QUESTION_RESOURCE_MIME_TYPE,
+        text: JSON.stringify({
+          attachmentId: 'tar-wire-colour',
+          header: 'Appearance',
+          question: 'Which appearance should we use?',
+          options: [{ label: 'Follow the system' }, { label: 'Always dark' }],
+        }),
+      },
+    },
+  ],
+};
 
 /** Only the daemon/preload boundary is synthetic. All conversation and chat owners are real. */
 export function setupConversationWire(
   record: (call: ConversationWireCall) => void,
-  options: { failPlacementOnce?: boolean; initialMessage?: string; dockAppearance?: boolean } = {},
+  options: {
+    failPlacementOnce?: boolean;
+    initialMessage?: string;
+    dockAppearance?: boolean;
+    /** Seed the main agent with this many assistant turns of operational (thinking) rows. */
+    operationalHistory?: number;
+  } = {},
 ) {
   const root = document.documentElement;
   const previousWindow = root.dataset.auxiliaryWindow;
@@ -63,11 +101,25 @@ export function setupConversationWire(
       ],
     };
   });
-  const messages = new Map<string, ReturnType<typeof message>[]>();
-  function message(agentId: string, text: string, id = `${agentId}-initial`) {
+  const messages = new Map<string, ConversationWireMessage[]>();
+  const queues = new Map<string, QueuedMessage[]>();
+  let pendingQuestion = false;
+  let dismissedQuestion = false;
+  let failDismiss = false;
+  let lastSend: ConversationWireCall | undefined;
+  function setQuestionMarker(value: string): void {
+    store.dispatch(
+      updateSession('wire-main', {
+        metadataPatch: {
+          pendingQuestionsMessageId: { op: 'set', value },
+        },
+      }),
+    );
+  }
+  function message(agentId: string, text: string, id = `${agentId}-initial`): AgentMessage {
     return {
       id,
-      agentId,
+      agentId: AgentId(agentId),
       role: 'assistant',
       timestamp,
       seq: 1,
@@ -84,15 +136,38 @@ export function setupConversationWire(
       model: 'opus4.7',
       acpSessionId: id,
       isInitialAgent: id === 'wire-main',
-      metadata: { isInitialAgent: id === 'wire-main' },
+      metadata: {
+        isInitialAgent: id === 'wire-main',
+        ...(id === 'wire-main' && pendingQuestion
+          ? { pendingQuestionsMessageId: dismissedQuestion ? '' : conversationWireQuestionId }
+          : {}),
+      },
       ...(id === 'wire-sub' ? { parentAgentId: 'wire-main' } : {}),
       createdAt: timestamp,
       updatedAt: timestamp,
     };
   }
+  function history(agentId: string): ConversationWireMessage[] {
+    return Array.from({ length: options.operationalHistory ?? 0 }, (_, turn) => ({
+      id: `${agentId}-history-${turn}`,
+      agentId: AgentId(agentId),
+      role: 'assistant' as const,
+      timestamp,
+      seq: turn + 1,
+      contentBlocks: [
+        ...Array.from({ length: 6 }, (_, row) => ({
+          type: 'thinking' as const,
+          id: `${agentId}-t${turn}-r${row}`,
+          text: `## Inspecting step ${turn}.${row}\n\nChecking file ${row} of turn ${turn}.`,
+        })),
+        { type: 'text' as const, text: `Turn ${turn} finished.` },
+      ],
+    }));
+  }
   function transcript(agentId: string) {
     if (!messages.has(agentId))
       messages.set(agentId, [
+        ...(agentId === 'wire-main' ? history(agentId) : []),
         message(agentId, options.initialMessage ?? `Live history for ${agentId}`),
       ]);
     return {
@@ -174,9 +249,25 @@ export function setupConversationWire(
       case 'agent.get':
         return { agent: agent(agentId) };
       case 'agent.getQueue':
-        return { queue: [] };
+        return { queue: queues.get(agentId) ?? [] };
       case 'agent.getConversation':
+        if (pendingQuestion && params.aroundMessageId === conversationWireQuestionId)
+          return {
+            messages: [questionRow],
+            totalMessages: 1,
+            truncated: false,
+            nextToken: null,
+            prevToken: null,
+          };
         return transcript(agentId);
+      case 'agent.dismissQuestions':
+        if (failDismiss) {
+          failDismiss = false;
+          return { success: false, error: 'Synthetic dismissal rejected' };
+        }
+        dismissedQuestion = true;
+        setQuestionMarker('');
+        return { success: true };
       case 'drafts.get':
         return drafts.get(String(params.workspaceId), agentId);
       case 'drafts.set':
@@ -220,10 +311,14 @@ export function setupConversationWire(
         subscriptions.delete(String(params.subscriptionId));
         return { ok: true };
       case 'agent.queueMessage':
-      case 'agent.sendMessage':
-        return await new Promise<unknown>((resolve) => {
+      case 'agent.sendMessage': {
+        lastSend = { method, params: structuredClone(params) };
+        const result = await new Promise<unknown>((resolve) => {
           releaseSend = resolve;
         });
+        if (result instanceof Error) throw result;
+        return result;
+      }
       case 'agent.enhancePrompt':
         return await new Promise<unknown>((resolve) => {
           releaseEnhancement = () =>
@@ -290,6 +385,8 @@ export function setupConversationWire(
     lifecycleReadSaga,
     chatDraftsSaga,
     chatReadSaga,
+    chatScrollbackSaga,
+    questionUiPersistenceSaga,
     chatSubscribeSaga,
     chatSendSaga,
     agentMutationSaga,
@@ -297,6 +394,23 @@ export function setupConversationWire(
     ...(options.dockAppearance ? [themeSaga] : []),
   ].map((saga) => store.runSaga(saga));
   return {
+    askQuestions(recover = false) {
+      pendingQuestion = true;
+      dismissedQuestion = false;
+      transcript('wire-main');
+      if (!recover) messages.get('wire-main')?.push(questionRow);
+      setQuestionMarker(conversationWireQuestionId);
+      for (const [id, entry] of subscriptions) if (entry.agentId === 'wire-main') publish(id);
+    },
+    failNextDismissal() {
+      failDismiss = true;
+    },
+    loseSendResponse() {
+      const resolve = releaseSend;
+      releaseSend = undefined;
+      if (!resolve) throw new Error('No pending synthetic delivery');
+      resolve(new Error('Synthetic response lost after write'));
+    },
     setThemePreference(preference: Theme) {
       ThemeManager.getInstance().setTheme(preference, { persist: false });
     },
@@ -310,9 +424,23 @@ export function setupConversationWire(
       const resolve = releaseSend;
       releaseSend = undefined;
       if (!resolve) throw new Error('No pending synthetic delivery');
-      resolve(
-        accepted ? { success: true } : { success: false, error: 'Synthetic explicit rejection' },
-      );
+      if (accepted && lastSend?.method === 'agent.queueMessage') {
+        const params = lastSend.params;
+        const queued: QueuedMessage = {
+          id: 'wire-answer-queue',
+          content: String(params.message ?? params.content ?? ''),
+          queuedAt: timestamp,
+          position: 0,
+          turnId: 'wire-answer-queue',
+          messageMetadata: params.messageMetadata as QueuedMessage['messageMetadata'],
+          submissionIds: [String(params.messageId)],
+        };
+        queues.set(String(params.agentId), [queued]);
+        resolve({ success: true, queuedMessage: queued });
+      } else
+        resolve(
+          accepted ? { success: true } : { success: false, error: 'Synthetic explicit rejection' },
+        );
     },
     append(agentId: string, text: string) {
       transcript(agentId);

@@ -5,9 +5,37 @@ import {
 import {
   serializeDraftAttachments,
   deserializeDraftAttachments,
+  readDraftAttachmentScreens,
 } from '$lib/components/chat/chat-draft-attachments';
+import {
+  DOCK_EVIDENCE_LIMITS,
+  buildDockEvidenceContext,
+  buildDockEvidenceMetadata,
+  dockCompositeSignature,
+  dockEvidenceFingerprint,
+  dockEvidenceId,
+  dockEvidenceImageItemIds,
+  dockClipItemIds,
+  fromDockDraftEvidence,
+  hasDockEvidence,
+  numberDockMarks,
+  toDockDraftEvidence,
+  validDockWireTokens,
+  type DockComposerEvidence,
+  type DockImagePlacementRecord,
+} from '$shared/dock-evidence';
+import { burnDockEvidenceImage } from '$features/hud/composer/dock-evidence-render';
+import { formatInteger } from '$lib/i18n/format';
+import {
+  captureDockPlacementBinding,
+  placeDockEvidenceImages,
+  probeDockAttachmentCapabilities,
+} from '$features/hud/composer/dock-evidence-placement';
+import { dockEvidenceSaga, evidenceOf } from './dock-evidence-saga';
+import { dockNativeSessionSaga } from './dock-native-session-saga';
 import { hasBlockingAttachments } from '$lib/components/chat/input/context-api';
 import { setComposerContextItems } from '../../transient-ui/transient-ui-slice';
+import { readDockLastAgent, rememberDockLastAgent } from '../dock-conversation-last-agent';
 import { selectComposerContextItems } from '../../transient-ui/transient-ui-selectors';
 import {
   selectCheckedPanels,
@@ -35,7 +63,7 @@ import { appClient } from '$lib/client';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { WorkspaceStatus } from '$shared/types';
 import { m } from '$shared/paraglide/messages.js';
-import { loadAnnotationRecipients } from '$features/annotation/annotation-submit-service';
+import { loadDockConversationAgents } from '$features/hud/dock-conversation-agents';
 import {
   acquireChatInterestLease,
   releaseChatInterestLease,
@@ -83,6 +111,18 @@ import {
   dockConversationDeliverySettled,
   dockConversationRetryArmed,
   dockConversationSendState,
+  dockEvidenceAnnotationEndRequested,
+  dockEvidenceCleared,
+  dockEvidenceClipChanged,
+  dockEvidenceImageCaptured,
+  dockEvidenceImageRemoved,
+  dockEvidenceMarkAdded,
+  dockEvidenceMarkRemoved,
+  dockEvidenceMarkUndone,
+  dockEvidenceReferencesEdited,
+  dockEvidenceRestored,
+  dockEvidenceInsertionCommitted,
+  dockEvidencePlacementRecorded,
 } from '../dock-conversation-slice';
 
 function current(generation: number, authority: string): boolean {
@@ -91,6 +131,14 @@ function current(generation: number, authority: string): boolean {
     getPrincipalActionContext(appStore.state) === authority
   );
 }
+/** Draft attachments with the pair's screen evidence (dimensions, numbered marks, clips). */
+function draftAttachments(
+  workspaceId: string,
+  agentId: string,
+  items = selectComposerContextItems.select(appStore.state, workspaceId, agentId),
+) {
+  return serializeDraftAttachments(items, toDockDraftEvidence(evidenceOf(workspaceId, agentId)));
+}
 function* saveDrafts(
   ownerId: string,
   workspaceId: string,
@@ -98,7 +146,20 @@ function* saveDrafts(
   authority: string,
 ): SagaGenerator<void> {
   while (true) {
-    const action = yield* take([dockConversationDraftChanged, dockConversationDraftRecovered]);
+    const action = yield* take([
+      dockConversationDraftChanged,
+      dockConversationDraftRecovered,
+      dockEvidenceImageCaptured,
+      dockEvidenceImageRemoved,
+      dockEvidenceMarkAdded,
+      dockEvidenceMarkRemoved,
+      dockEvidenceMarkUndone,
+      dockEvidenceReferencesEdited,
+      dockEvidenceClipChanged,
+      dockEvidenceCleared,
+      dockEvidenceRestored,
+      dockEvidenceInsertionCommitted,
+    ]);
     if (action.payload[0] !== workspaceId || action.payload[1] !== agentId) continue;
     if (getPrincipalActionContext(appStore.state) !== authority) continue;
     const draft = getItem(
@@ -111,9 +172,7 @@ function* saveDrafts(
         workspaceId,
         agentId,
         text: draft.text,
-        attachments: serializeDraftAttachments(
-          selectComposerContextItems.select(appStore.state, workspaceId, agentId),
-        ),
+        attachments: draftAttachments(workspaceId, agentId),
         rollback: null,
       }),
     );
@@ -143,18 +202,17 @@ function* conversationLifetime(): SagaGenerator<void> {
     if (!workspace || workspace.status === WorkspaceStatus.Deleted || workspace.pendingDeleteAt)
       throw new Error('unavailable');
     yield* put(setWorkspaceEntity(workspace));
-    const recipients = yield* call(loadAnnotationRecipients, workspaceId);
+    const agents = yield* call(loadDockConversationAgents, workspaceId);
     if (!current(generation, authority)) return;
-    const agents = recipients.flatMap((row) =>
-      row.agentId ? [{ id: row.agentId, name: row.name, isMain: row.isDefault === true }] : [],
-    );
     const selectedChief =
       workspaceId === CHIEF_WORKSPACE_ID ? selectChiefActiveAgentId.select(appStore.state) : null;
+    const backendScope = appStore.state.connections.windowBackendId;
+    const remembered = requestedAgent ? null : readDockLastAgent(backendScope, workspaceId);
     const chosen = requestedAgent
       ? agents.find((row) => row.id === requestedAgent)
       : workspaceId === CHIEF_WORKSPACE_ID
         ? (agents.find((row) => row.id === selectedChief) ?? agents[0])
-        : agents.find((row) => row.isMain);
+        : (agents.find((row) => row.id === remembered) ?? agents.find((row) => row.isMain));
     if (!chosen) {
       yield* put(
         dockConversationLoaded(
@@ -178,6 +236,7 @@ function* conversationLifetime(): SagaGenerator<void> {
     )
       throw new Error('unavailable');
     leasedAgent = chosen.id;
+    if (requestedAgent) rememberDockLastAgent(backendScope, workspaceId, chosen.id);
     acquireChatInterestLease(chosen.id, ownerId);
     yield* put(chatTrackedWorkspaceSet(chosen.id, workspaceId));
     yield* put(initializeChatRequested(chosen.id, { wsId: workspaceId }));
@@ -209,14 +268,23 @@ function* conversationLifetime(): SagaGenerator<void> {
         if (
           (!existing || existing.revision === 0) &&
           selectComposerContextItems.select(appStore.state, workspaceId, chosen.id).length === 0
-        )
+        ) {
+          const attachments = restore.draft?.attachments ?? [];
+          const restoredItems = deserializeDraftAttachments(attachments);
+          yield* put(setComposerContextItems(workspaceId, chosen.id, restoredItems));
+          // Marks persist beside their screenshot; only still-present items rebuild evidence.
+          const present = new Set(restoredItems.map((item) => item.id));
           yield* put(
-            setComposerContextItems(
+            dockEvidenceRestored(
               workspaceId,
               chosen.id,
-              deserializeDraftAttachments(restore.draft?.attachments ?? []),
+              fromDockDraftEvidence(
+                dockEvidenceId(workspaceId, chosen.id),
+                readDraftAttachmentScreens(attachments).filter(([id]) => present.has(id)),
+              ),
             ),
           );
+        }
         yield* put(
           dockConversationDraftRestored(
             workspaceId,
@@ -240,9 +308,7 @@ function* conversationLifetime(): SagaGenerator<void> {
           workspaceId,
           agentId: chosen.id,
           text: draft.text,
-          attachments: serializeDraftAttachments(
-            selectComposerContextItems.select(appStore.state, workspaceId, chosen.id),
-          ),
+          attachments: draftAttachments(workspaceId, chosen.id),
           rollback: null,
         }),
       );
@@ -273,7 +339,7 @@ function* conversationLifetime(): SagaGenerator<void> {
               workspaceId,
               agentId: leasedAgent,
               text: draft.text,
-              attachments: serializeDraftAttachments(retained),
+              attachments: draftAttachments(workspaceId, leasedAgent, retained),
               rollback: null,
             }),
           );
@@ -313,32 +379,90 @@ function* sendReply(
     JSON.stringify([workspaceId, agentId]),
   );
   const pairItems = selectComposerContextItems.select(appStore.state, workspaceId, agentId);
+  // The click also owns an immutable evidence snapshot. Raw screenshots are not
+  // sent as-is: each is replaced by its burned composite (marks + numbers).
+  const liveEvidence = evidenceOf(workspaceId, agentId);
+  const evidenceOwned = new Set([
+    ...dockEvidenceImageItemIds(liveEvidence),
+    ...dockClipItemIds(liveEvidence),
+  ]);
+  const promptItems = prompt?.contextItems ?? pairItems;
   // Snapshot the entire prompt before target validation; no File handles cross Redux.
-  const clickedItems = structuredClone(prompt?.contextItems ?? pairItems);
+  // Evidence bytes are never composer pills, so they join from the pair if omitted.
+  const clickedItems = structuredClone([
+    ...promptItems,
+    ...pairItems.filter(
+      (row) => evidenceOwned.has(row.id) && !promptItems.some((item) => item.id === row.id),
+    ),
+  ]);
   const clickedDraft = draft
     ? { text: prompt?.text ?? draft.text, revision: draft.revision }
     : null;
-  const blocks = extractAttachmentBlocks(clickedItems);
+  const evidence: DockComposerEvidence | null = hasDockEvidence(liveEvidence)
+    ? structuredClone(liveEvidence!)
+    : null;
+  const evidenceItems = dockEvidenceImageItemIds(evidence ?? undefined);
+  const sendItems = clickedItems.filter((item) => !evidenceItems.has(item.id));
+  const blocks = extractAttachmentBlocks(sendItems);
   if (
     !retry &&
     (!clickedDraft ||
       hasBlockingAttachments(clickedItems) ||
-      (!clickedDraft.text.trim() && !blocks.imageBlocks.length && !blocks.fileBlocks.length))
+      !!liveEvidence?.capture.pending ||
+      // Narration or chips not yet committed by the editor would be lost or resent.
+      (liveEvidence?.insertions.length ?? 0) > 0 ||
+      liveEvidence?.dictation?.status === 'transcribing' ||
+      liveEvidence?.clips.some(
+        (clip) => clip.status === 'recording' || clip.status === 'placing',
+      ) ||
+      !validDockWireTokens(clickedDraft.text, evidence ?? undefined) ||
+      (!clickedDraft.text.trim() &&
+        !blocks.imageBlocks.length &&
+        !blocks.fileBlocks.length &&
+        !evidence))
   )
     return;
+  // A restored or pasted draft can exceed the ordinary-file limit the editor enforces on add.
+  // Evidence screenshots and clips are separate; refusal keeps the draft and admits nothing.
+  const ordinaryFiles = clickedItems.filter(
+    (item) =>
+      item.type === 'file' && !item.imageData && !item.imageMimeType && !evidenceOwned.has(item.id),
+  ).length;
+  if (!retry && ordinaryFiles > DOCK_EVIDENCE_LIMITS.files) {
+    yield* put(
+      dockConversationSendState(
+        generation,
+        false,
+        m.dock_composer_fileLimit_error({ limit: formatInteger(DOCK_EVIDENCE_LIMITS.files) }),
+      ),
+    );
+    return;
+  }
   const contextFingerprint = JSON.stringify(pairItems);
+  const evidenceFingerprint = evidence ? dockEvidenceFingerprint(evidence) : undefined;
   const scopedContext = appStore.state.multiPanelContext.workspaceId === workspaceId;
   const checkedPanels = scopedContext ? selectCheckedPanels.select(appStore.state) : [];
   const checkedSelections = scopedContext ? selectCheckedSelections.select(appStore.state) : [];
+  const evidenceContext = evidence
+    ? {
+        workspaceId,
+        agentId,
+        appUrl: `intent://local/workspace/${encodeURIComponent(workspaceId)}`,
+        clipAttachmentIds: Object.fromEntries(
+          evidence.clips.map((clip) => [
+            clip.id,
+            clickedItems.find((item) => item.id === clip.contextItemId)?.attachmentId ?? null,
+          ]),
+        ),
+      }
+    : null;
+  // Placement requests bind to the backend this click belongs to.
+  const binding = captureDockPlacementBinding();
   const clickedPayload = {
     wsId: workspaceId,
     text: clickedDraft?.text ?? '',
-    contextItems: clickedItems,
-    workspaceContextStr: buildWorkspaceContextString(
-      clickedItems,
-      checkedPanels,
-      checkedSelections,
-    ),
+    contextItems: sendItems,
+    workspaceContextStr: buildWorkspaceContextString(sendItems, checkedPanels, checkedSelections),
     ...(blocks.imageBlocks.length ? { imageBlocks: blocks.imageBlocks } : {}),
     ...(blocks.fileBlocks.length ? { fileBlocks: blocks.fileBlocks } : {}),
     ...(prompt?.forceSubmit ? { forceSubmit: true } : {}),
@@ -366,9 +490,87 @@ function* sendReply(
     // The click owns this immutable snapshot. Edits made during validation are
     // a different draft revision and must neither be sent nor cleared here.
     if (!clickedDraft) return;
+    // Composites come only from the click's snapshot (items + evidence).
+    const burned = evidence ? yield* call(burnEvidence, evidence, clickedItems) : [];
+    if (!current(generation, authority)) return;
+    let evidenceBlocks: {
+      type: 'image';
+      data?: string;
+      mimeType?: string;
+      attachmentId?: string;
+    }[] = burned;
+    let imageAttachments: Record<
+      string,
+      { attachmentId: string; raw: { attachmentId: string; expiresAt: string } | null }
+    > | null = null;
+    // Workspaces pre-place composites (and, on retention daemons, raws) before
+    // admission so metadata names real references. The assistant workspace does
+    // so only where the daemon advertises its registry; otherwise it stays inline.
+    const attachmentCapabilities = evidence
+      ? yield* call(probeDockAttachmentCapabilities, binding)
+      : null;
+    if (!current(generation, authority)) return;
+    if (
+      evidence &&
+      (workspaceId !== CHIEF_WORKSPACE_ID || attachmentCapabilities?.chiefAttachments)
+    ) {
+      const records = yield* call(placeDockEvidenceImages, {
+        workspaceId,
+        binding,
+        images: evidence.images.map((image, index) => {
+          const item = clickedItems.find((row) => row.id === image.contextItemId);
+          return {
+            image,
+            signature: dockCompositeSignature(evidence, image.id),
+            composite: { base64: burned[index].data, mimeType: burned[index].mimeType },
+            raw:
+              item?.imageData && item.imageMimeType
+                ? { base64: item.imageData, mimeType: item.imageMimeType }
+                : null,
+          };
+        }),
+        records: evidenceOf(workspaceId, agentId)?.placements ?? {},
+        onRecord: (record: DockImagePlacementRecord) =>
+          appStore.dispatch(dockEvidencePlacementRecorded(workspaceId, agentId, record)),
+      });
+      if (!current(generation, authority)) return;
+      evidenceBlocks = records.map((record) => ({
+        type: 'image' as const,
+        attachmentId: record.composite!.attachmentId,
+        mimeType: record.composite!.mimeType,
+      }));
+      imageAttachments = Object.fromEntries(
+        records.map((record) => [
+          record.imageId,
+          { attachmentId: record.composite!.attachmentId, raw: record.raw },
+        ]),
+      );
+    }
+    const wireContext =
+      evidenceContext && imageAttachments
+        ? { ...evidenceContext, imageAttachments }
+        : evidenceContext;
+    const payload =
+      evidence && wireContext
+        ? {
+            ...clickedPayload,
+            imageBlocks: [...evidenceBlocks, ...(clickedPayload.imageBlocks ?? [])],
+            // Models may never see messageMetadata: an agent-readable copy leads the context.
+            workspaceContextStr: [
+              buildDockEvidenceContext(evidence, wireContext),
+              clickedPayload.workspaceContextStr,
+            ]
+              .filter(Boolean)
+              .join('\n\n'),
+            messageMetadata: buildDockEvidenceMetadata(evidence, wireContext) as unknown as Record<
+              string,
+              unknown
+            >,
+          }
+        : clickedPayload;
     const appMessageId = createAppMessageId();
     const admitted = admitChatMessage(appStore, agentId, {
-      ...clickedPayload,
+      ...payload,
       userAppMessageId: appMessageId,
     });
     if (!admitted) throw new Error('not-admitted');
@@ -379,15 +581,23 @@ function* sendReply(
         revision: clickedDraft.revision,
         authority,
         contextFingerprint,
-        recovery: { text: clickedDraft.text, contextItems: createCollection('id', clickedItems) },
+        ...(evidenceFingerprint ? { evidenceFingerprint } : {}),
+        recovery: {
+          text: clickedDraft.text,
+          contextItems: createCollection('id', clickedItems),
+          ...(evidence ? { evidence } : {}),
+        },
         composerSubmissionId: prompt?.submissionId,
       }),
     );
     // Match main chat: local admission owns cleanup, not a later daemon acknowledgement.
     yield* clearAdmittedDraft(workspaceId, agentId);
+    // Sending ends an annotate session; its marks went with this message.
+    if (evidence && evidenceOf(workspaceId, agentId)?.annotation)
+      yield* put(dockEvidenceAnnotationEndRequested(workspaceId, agentId));
     yield* put(
       sendMessage(agentId, {
-        ...clickedPayload,
+        ...payload,
         userAppMessageId: appMessageId,
         submission: { scope: admitted.scope, id: admitted.submission.id },
       }),
@@ -447,10 +657,14 @@ function* clearAdmittedDraft(workspaceId: string, agentId: string): SagaGenerato
     draft.revision !== delivery.revision ||
     (delivery.contextFingerprint !== undefined &&
       delivery.contextFingerprint !==
-        JSON.stringify(selectComposerContextItems.select(appStore.state, workspaceId, agentId)))
+        JSON.stringify(selectComposerContextItems.select(appStore.state, workspaceId, agentId))) ||
+    (delivery.evidenceFingerprint !== undefined &&
+      delivery.evidenceFingerprint !== dockEvidenceFingerprint(evidenceOf(workspaceId, agentId)))
   )
     return;
   yield* put(dockConversationDraftAdmitted(workspaceId, agentId, delivery.revision));
+  if (delivery.evidenceFingerprint !== undefined)
+    yield* put(dockEvidenceCleared(workspaceId, agentId, delivery.evidenceFingerprint));
   yield* put(setComposerContextItems(workspaceId, agentId, []));
   yield* put(chatDraftClearRequested(workspaceId, agentId));
 }
@@ -483,6 +697,11 @@ function* reconcileDeliveries(): SagaGenerator<void> {
     ) {
       const items = getItems(delivery.recovery.contextItems);
       yield* put(setComposerContextItems(scope.workspaceId, scope.agentId, items));
+      // The exact sent evidence returns with its screenshots; live evidence is never replaced.
+      if (delivery.recovery.evidence)
+        yield* put(
+          dockEvidenceRestored(scope.workspaceId, scope.agentId, delivery.recovery.evidence),
+        );
       yield* put(
         dockConversationDraftRecovered(
           scope.workspaceId,
@@ -494,7 +713,28 @@ function* reconcileDeliveries(): SagaGenerator<void> {
     }
   }
 }
+/** Burned composites for the snapshot, in tile order (matches metadata image indexes). */
+async function burnEvidence(
+  evidence: DockComposerEvidence,
+  items: readonly { id: string; imageData?: string; imageMimeType?: string }[],
+) {
+  const numbered = numberDockMarks(evidence);
+  return Promise.all(
+    evidence.images.map(async (image) => {
+      const item = items.find((row) => row.id === image.contextItemId);
+      if (!item?.imageData || !item.imageMimeType) throw new Error('dock-evidence-missing-pixels');
+      const burned = await burnDockEvidenceImage(
+        { base64: item.imageData, mimeType: item.imageMimeType },
+        image,
+        numbered.filter(({ mark }) => mark.imageId === image.id),
+      );
+      return { type: 'image' as const, data: burned.base64, mimeType: burned.mimeType };
+    }),
+  );
+}
 export function* dockConversationSaga(): SagaGenerator<void> {
+  yield* fork(dockEvidenceSaga);
+  yield* fork(dockNativeSessionSaga);
   yield* takeEvery(
     dockConversationContextItemsChanged,
     function* ({ payload: [workspaceId, agentId, items] }) {
@@ -503,7 +743,14 @@ export function* dockConversationSaga(): SagaGenerator<void> {
       if (dock.workspaceId !== workspaceId || dock.agentId !== agentId) return;
       const draft = getItem(dock.drafts, JSON.stringify([workspaceId, agentId]));
       if (!draft) return;
-      yield* put(setComposerContextItems(workspaceId, agentId, items));
+      // Evidence-owned screenshots and clips are not composer pills; an editor
+      // snapshot that omits them must not drop the bytes their marks depend on.
+      const evidence = evidenceOf(workspaceId, agentId);
+      const owned = new Set([...dockEvidenceImageItemIds(evidence), ...dockClipItemIds(evidence)]);
+      const retained = selectComposerContextItems
+        .select(appStore.state, workspaceId, agentId)
+        .filter((row) => owned.has(row.id) && !items.some((item) => item.id === row.id));
+      yield* put(setComposerContextItems(workspaceId, agentId, [...items, ...retained]));
       yield* put(dockConversationDraftChanged(workspaceId, agentId, draft.text));
     },
   );

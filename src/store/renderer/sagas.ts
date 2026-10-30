@@ -1,5 +1,4 @@
 import { dockConversationSaga } from './slices/dock-conversation/sagas/dock-conversation-saga';
-import { annotationSaga } from './slices/annotation/sagas/annotation-saga';
 import { homeWorkspacesSaga } from '$features/home/home-workspaces-saga';
 import { homeIntegrationsSaga } from '$features/home/home-integrations-saga';
 import { modelNameCacheSaga } from './slices/provider-models/sagas/model-name-cache-saga';
@@ -220,7 +219,6 @@ export const sagas = [
   setupPromptSaga,
   backgroundHooksSaga,
   hostOwnerServicesSaga,
-  annotationSaga,
   dockConversationSaga,
   themeSaga,
   powerSaga,

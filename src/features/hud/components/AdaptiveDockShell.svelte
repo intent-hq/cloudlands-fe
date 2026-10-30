@@ -13,15 +13,30 @@
   import type { DockPointerRegionController } from '$features/hud/utils/dock-pointer-routing';
   import { createDockPointerRegionController } from '$features/hud/utils/dock-pointer-routing';
   import { openDockWorkspace, openDockAssistant } from '$features/hud/dock-navigation';
-  import { startAnnotation } from '$features/annotation/annotation-client';
-  import { getDockHeaderBounds, getDockShellLayout } from './dock-shell-geometry';
+  import { dockHeightStep } from '$features/hud/utils/dock-motion';
+  import {
+    createFrameLoop,
+    createGrowGate,
+    createRevealTween,
+  } from '$features/hud/utils/dock-shell-frames';
+  import {
+    dockViewportRect,
+    getDockHeaderBounds,
+    getDockShellLayout,
+    dockDragGripCenter,
+    type DockDragGesture,
+    type DockDragFinish,
+  } from './dock-shell-geometry';
   import { useDockConversationPresence } from './dock-conversation-presence.svelte';
   import { useDockConversationResize } from './dock-conversation-resize.svelte';
   import { useDockShellResize } from './dock-shell-resize.svelte';
   import { useDockConversationFocus } from './dock-conversation-focus.svelte';
   import DockCompanionContent from './DockCompanionContent.svelte';
-  import DockConversationSurface from './DockConversationSurface.svelte';
+  import DockEdgeConversation from './DockEdgeConversation.svelte';
+  import type { DockEdgeOpenOrigin } from '$features/hud/utils/dock-edge-shell';
   import DockUpdateStatus from './DockUpdateStatus.svelte';
+  import { dockStatusGroups } from '$features/hud/utils/dock-status-groups';
+  import { dockPlacementFailureMessage } from '$features/hud/utils/dock-placement-failure';
   import DockSideEntries from './DockSideEntries.svelte';
   import DockActionFeedback from './DockActionFeedback.svelte';
   import DockShellSilhouette from './DockShellSilhouette.svelte';
@@ -43,7 +58,6 @@
     resizeStartResult,
     onOpenWorkspace = openDockWorkspace,
     onOpenAssistant = openDockAssistant,
-    onAnnotate = startAnnotation,
     pointerController,
     staticData = false,
     conversation,
@@ -65,12 +79,11 @@
     placement: DockPlacementSnapshot;
     onPlacementCommand: (command: DockPlacementCommand) => void;
     focusRequest?: number;
-    placementError?: boolean;
+    placementError?: Parameters<typeof dockPlacementFailureMessage>[0];
     dragStartResult?: { id: number; token: string | null } | null;
     resizeStartResult?: { id: number; token: string | null } | null;
     onOpenWorkspace?: (id: string) => void | Promise<void>;
     onOpenAssistant?: () => void | Promise<void>;
-    onAnnotate?: typeof startAnnotation;
     pointerController?: DockPointerRegionController;
   } = $props();
 
@@ -85,10 +98,37 @@
     () => rootElement,
     () => placement.captureHidden || placement.phase === 'dragging',
     () => conversationResize.held,
+    () => !edge,
   );
   const conversationVisible = $derived(pinned && conversationPresence.open);
 
   let conversationRegions: DockPointerRect[] = [];
+  let edgeState = $state({ held: false, reveal: 0, shell: null as DockPointerRect | null });
+  /**
+   * The clicked side entry, kept in terms that survive the window growing around the
+   * box: its hover card in screen DIP (the box grows from it and returns to it) and its
+   * centre as an offset from the rail's top (main anchors the box there). Cleared once
+   * the box has closed.
+   */
+  let edgeOrigin = $state<{
+    workspaceId: string;
+    card: DockPointerRect;
+    radius: number;
+    anchor: number;
+  } | null>(null);
+  /** The same origin in the current window-local space. */
+  const edgeCardOrigin = $derived<DockEdgeOpenOrigin | null>(
+    edgeOrigin && {
+      workspaceId: edgeOrigin.workspaceId,
+      radius: edgeOrigin.radius,
+      card: {
+        ...edgeOrigin.card,
+        x: edgeOrigin.card.x - placement.windowBounds.x,
+        y: edgeOrigin.card.y - placement.windowBounds.y,
+      },
+      entryCentre: placement.surface.y + edgeOrigin.anchor,
+    },
+  );
   let conversationPopupOpen = false;
   let machineMenuOpen = $state(false);
   let machineRegions: DockPointerRect[] = [];
@@ -100,6 +140,7 @@
   const floating = $derived(placement.shape === 'floating' && !dragging);
   const floatingUp = $derived(floating && placement.expansionDirection === 'up');
   let expandedByUser = $state(false);
+  let composerAsk = $state({ open: null as string | null, request: 0 });
   let surfaceElement = $state<HTMLElement>();
   let gripElement = $state<HTMLButtonElement | null>(null);
   let pending = $state(false);
@@ -109,7 +150,7 @@
   const actionFeedback = $derived(
     feedback ??
       (placementError && !placementErrorDismissed
-        ? { message: m.dock_openFailed_error(), retry: resetPlacement }
+        ? { message: dockPlacementFailureMessage(placementError), retry: resetPlacement }
         : null),
   );
   $effect(() => {
@@ -117,34 +158,32 @@
   });
   let reducedMotion = $state(false);
   let keyboardOpen = $state(false);
+  let lastUserInput = Number.NEGATIVE_INFINITY;
   let pointerInside = false;
   let openTimer: ReturnType<typeof setTimeout> | undefined;
   let closeTimer: ReturnType<typeof setTimeout> | undefined;
   let measureFrame: number | undefined;
   let dragFrame: number | undefined;
-  let shellFrame: number | undefined;
   let dragGripCenter = $state({ x: 26, y: 20 });
   const heldGripCenter = $derived(dragging ? dragGripCenter : null);
   let surfaceExpanded = $state(false);
   let contentVisible = $state(false);
   let reveal = $state(0);
-  let animationTarget = 0;
+  const shellTween = createRevealTween(
+    () => reveal,
+    (value) => (reveal = value),
+  );
+  let openHeight = $state<number | null>(null);
+  let heldHeight = $state<number | null>(null);
+  const heightLoop = createFrameLoop();
+  let heightTarget = 0;
+  const growGate = createGrowGate((from, to) => !disposed && morphHeight(openHeight ?? from, to));
   let disposed = false;
   let sequence = 0;
-  let gesture = $state<{
-    pointerId: number;
-    x: number;
-    y: number;
-    revision: number;
-    origin: { x: number; y: number };
-    headerBounds: DockPointerRect;
-    started: boolean;
-  } | null>(null);
+  let gesture = $state<DockDragGesture | null>(null);
   let awaitingDragStart = $state<number | null>(null);
   let activeDragToken = $state<string | null>(null);
-  type DragFinish =
-    { action: 'end-drag'; releasePoint: { x: number; y: number } } | { action: 'cancel-drag' };
-  let finishDrag = $state<DragFinish | null>(null);
+  let finishDrag = $state<DockDragFinish | null>(null);
   let suppressClick = false;
   let captureElement: HTMLElement | null = null;
   let sidePreviewOpen = $state(false);
@@ -156,14 +195,10 @@
       (machineMenuOpen ||
         (pinned ? conversationVisible : expandedByUser || (!floating && pending))),
   );
-  // This is a count of admitted workspaces with updates, not unread messages or agents.
-  const updateCount = $derived(
-    workspaces.filter((item) => item.isUnread || item.priorityGroup === 'action').length,
+  const statusGroups = $derived(dockStatusGroups(workspaces));
+  const compactWingWidth = $derived(
+    12 + statusGroups.length * 12 + 6 * Math.max(0, statusGroups.length - 1) + 4,
   );
-  const hasAttention = $derived(workspaces.some((item) => item.priorityGroup === 'action'));
-  const hasRunning = $derived(workspaces.some((item) => item.isRunning));
-  // Outer ink inset, widest status glyph, gap, count advance and camera clearance.
-  const compactWingWidth = $derived(12 + 12 + 4 + String(updateCount).length * 8 + 4);
   const rowLimit = 5;
   const conversationResize = useDockConversationResize(
     () => placement,
@@ -178,6 +213,7 @@
       conversationOpen: pinned,
       conversationSize: conversationResize.size,
       reveal,
+      expandedHeight: openHeight,
       rowLimit,
       workspaceCount: machineMenuOpen
         ? Math.max(workspaces.length, Math.min(machines?.length ?? 0, 5))
@@ -198,35 +234,35 @@
   const contentClip = $derived(layout.contentClip);
   const cameraLeft = $derived(placement.cutout ? placement.cutout.x - placement.surface.x : 0);
   const cameraWidth = $derived(placement.cutout?.width ?? 0);
-  // Follow the visible shell while keeping the logo and status outside the camera.
-  // The 28px grip's 16px mark has 6px inset: both attached header ink edges land at 12px.
+  const inlineClip = $derived.by(() => {
+    const visible = shown;
+    const surface = placement.surface;
+    return () => dockViewportRect(visible, surface, surfaceElement?.getBoundingClientRect());
+  });
   const headerWingLeft = $derived(shown.x + 6);
   const headerWingRight = $derived(placement.surface.width - shown.x - shown.width + 12);
 
-  function animateShell(target: number, instant: boolean): void {
-    if (animationTarget === target && shellFrame !== undefined && !instant) return;
-    if (shellFrame !== undefined) cancelAnimationFrame(shellFrame);
-    shellFrame = undefined;
-    animationTarget = target;
-    const from = reveal;
-    if (instant || from === target) {
-      reveal = target;
-      return;
-    }
-    const start = performance.now();
-    const duration =
-      (target ? spring.moderate.settleMs : spring.moderate.exit.duration) * Math.abs(target - from);
-    const easing = target ? spring.moderate.easing : spring.moderate.exit.easing;
-    const frame = (now: number) => {
-      const progress = duration > 0 ? Math.max(0, Math.min(1, (now - start) / duration)) : 1;
-      reveal = from + (target - from) * easing(progress);
-      if (progress < 1) shellFrame = requestAnimationFrame(frame);
-      else shellFrame = undefined;
-    };
-    shellFrame = requestAnimationFrame(frame);
+  function stopHeight(): void {
+    growGate.cancel();
+    heightLoop.cancel();
+    heldHeight = null;
+    openHeight = null;
   }
 
-  function sendDragEnd(token: string, finish: DragFinish): void {
+  function morphHeight(from: number, to: number): void {
+    heldHeight = to < from ? Math.max(heldHeight ?? 0, placement.surface.height) : null;
+    openHeight = from;
+    heightLoop.start((elapsed) => {
+      const step = dockHeightStep(from, to, elapsed);
+      openHeight = step.value;
+      if (!step.done) return false;
+      heldHeight = null;
+      if (placement.surface.height <= to + 0.5) openHeight = null;
+      return true;
+    });
+  }
+
+  function sendDragEnd(token: string, finish: DockDragFinish): void {
     command({
       action: finish.action,
       token,
@@ -236,9 +272,6 @@
         : {}),
     });
   }
-  // Allocate room before opening, then keep that transparent native envelope.
-  // Only the visible shell is interactive. Closing/re-entry never races a native
-  // shrink acknowledgement, and one progress value owns shell and content alike.
   $effect(() => {
     const wantOpen = expanded;
     const moving = dragging;
@@ -246,7 +279,7 @@
     const room = placement.surface.width > compactWidth || placement.surface.height > compactHeight;
     untrack(() => {
       if (moving) {
-        animateShell(0, true);
+        shellTween.animate(0, true);
         contentVisible = false;
         surfaceExpanded = false;
         return;
@@ -255,7 +288,7 @@
         surfaceExpanded = true;
         if (room) {
           contentVisible = true;
-          animateShell(1, instant);
+          shellTween.animate(1, instant);
         }
       } else {
         const focused = document.activeElement;
@@ -265,7 +298,7 @@
           surfaceElement?.contains(focused)
         )
           focused.blur();
-        animateShell(0, instant);
+        shellTween.animate(0, instant);
       }
     });
   });
@@ -276,18 +309,12 @@
 
   function publishRegions(): void {
     if (disposed || !surfaceElement || placement.captureHidden) return;
-    const regions: DockPointerRect[] = [
-      {
-        x: placement.surface.x + shown.x,
-        y: placement.surface.y + shown.y,
-        width: shown.width,
-        height: shown.height,
-      },
-    ];
+    const rail = { ...shown, x: placement.surface.x + shown.x, y: placement.surface.y + shown.y };
     pointerRegion.activate(
       [
-        ...regions,
+        rail,
         ...sideRegions,
+        ...(edgeState.shell && !dragging ? [edgeState.shell] : []),
         ...(conversationVisible && !dragging ? conversationRegions : []),
         ...feedbackRegions,
         ...machineRegions,
@@ -317,15 +344,58 @@
     measure();
   }
 
+  $effect(() => {
+    const target = desiredHeight;
+    const settled = expanded && surfaceExpanded && reveal === 1;
+    const immediate =
+      reducedMotion ||
+      keyboardOpen ||
+      dragging ||
+      placement.captureHidden ||
+      conversationResize.held ||
+      conversationResize.busy;
+    untrack(() => {
+      const previous = heightTarget;
+      heightTarget = target;
+      if (immediate) {
+        if (openHeight !== null || heldHeight !== null) stopHeight();
+        return;
+      }
+      if (previous === target || previous === 0) return;
+      if (!settled) {
+        stopHeight();
+        return;
+      }
+      const from = openHeight ?? placement.surface.height;
+      if (target > from && placement.surface.height < target - 0.5) {
+        heightLoop.cancel();
+        openHeight = from;
+        growGate.hold(from, target);
+        return;
+      }
+      growGate.cancel();
+      morphHeight(from, target);
+    });
+  });
+
+  $effect(() => {
+    placement.surface.height;
+    untrack(() => {
+      if (growGate.pending) growGate.release(placement.surface.height);
+      else if (!heightLoop.active && heldHeight === null && openHeight !== null) openHeight = null;
+    });
+  });
+
   useDockShellResize(
     () => ({
       placement,
       width: desiredWidth,
-      height: desiredHeight,
+      height: heldHeight === null ? desiredHeight : Math.max(desiredHeight, heldHeight),
       railHeight,
       compactWingWidth,
-      conversationVisible,
+      conversationVisible: conversationVisible || edgeState.held,
       conversationSize: conversationResize.size,
+      sidePanelAnchor: edgeOrigin?.anchor ?? null,
       expansionDirection: conversationResize.direction,
       resizeToken: conversationResize.token,
     }),
@@ -348,7 +418,6 @@
     untrack(publishRegions);
   });
 
-  // Only a command response settles startup; unrelated idle geometry updates do not.
   $effect(() => {
     const result = dragStartResult;
     const awaiting = awaitingDragStart;
@@ -389,13 +458,17 @@
       untrack(() => {
         pointerInside = false;
         pointerEnd(true);
-        animateShell(0, true);
+        shellTween.animate(0, true);
         contentVisible = false;
         surfaceExpanded = false;
       });
       expandedByUser = false;
       pointerRegion.deactivate([], placement.revision);
     }
+  });
+
+  $effect(() => {
+    if ((reveal === 0 && !edge) || dragging || placement.captureHidden) composerAsk.open = null;
   });
 
   const conversationFocus = useDockConversationFocus({
@@ -437,6 +510,7 @@
   function enter(): void {
     pointerInside = true;
     clearTimeout(closeTimer);
+    if (pinned && !dragging && !gesture?.started) keyboardOpen = false;
     if (edge || expanded || dragging || gesture?.started || awaitingDragStart !== null) return;
     keyboardOpen = false;
     clearTimeout(openTimer);
@@ -450,7 +524,7 @@
   function leave(event?: PointerEvent | FocusEvent): void {
     if (event instanceof PointerEvent) {
       pointerInside = false;
-      conversationFocus.pointerLeave();
+      conversationFocus.pointerLeave(event);
     }
     clearTimeout(openTimer);
     clearTimeout(closeTimer);
@@ -465,13 +539,12 @@
         expandedByUser = false;
       }
     };
-    // A microtask can run between blur and the browser's next focus event.
-    // Keep content focusable until that native focus transfer completes.
     if (event instanceof FocusEvent && keyboardOpen) closeTimer = setTimeout(close, 0);
     else closeTimer = setTimeout(close, spring.moderate.settleMs);
   }
 
   function resetPlacement(): void {
+    stopHeight();
     expandedByUser = false;
     contentVisible = false;
     surfaceExpanded = false;
@@ -486,16 +559,16 @@
     clearTimeout(openTimer);
     clearTimeout(closeTimer);
     if (dragFrame !== undefined) cancelAnimationFrame(dragFrame);
-    if (shellFrame !== undefined) cancelAnimationFrame(shellFrame);
     if (measureFrame !== undefined) cancelAnimationFrame(measureFrame);
-    dragFrame = shellFrame = measureFrame = undefined;
+    dragFrame = measureFrame = undefined;
+    shellTween.cancel();
+    stopHeight();
     pointerEnd(true);
     expandedByUser = false;
     keyboardOpen = false;
     contentVisible = false;
     feedback = null;
     (document.activeElement as HTMLElement | null)?.blur();
-    // Blur/focusout can schedule the grace timer; discard it before hiding.
     clearTimeout(closeTimer);
     pointerRegion.deactivate([], placement.revision);
     command({ action: 'dismiss' });
@@ -519,28 +592,20 @@
       if (!disposed) pending = false;
     }
   }
-
   function openWorkspace(id: string): void {
     if (onOpenConversation) {
+      command({ action: 'focus' });
+      const workspaceId = id === assistantId ? CHIEF_WORKSPACE_ID : id;
+      if (notch || edge) composerAsk.open = workspaceId;
+      if (edge) composerAsk.request += 1;
       conversationPresence.show();
-      onOpenConversation(id === assistantId ? CHIEF_WORKSPACE_ID : id);
+      onOpenConversation(workspaceId);
       return;
     }
     void runAction(
       () => (id === assistantId ? onOpenAssistant() : onOpenWorkspace(id)),
       m.dock_opening_status(),
       m.dock_openFailed_error(),
-    );
-  }
-  function annotate(id: string, title: string): void {
-    void runAction(
-      () =>
-        onAnnotate({
-          workspaceId: id === assistantId ? CHIEF_WORKSPACE_ID : id,
-          workspaceTitle: title,
-        }),
-      m.annotation_bootstrapLoading_title(),
-      m.annotation_startFailed_title(),
     );
   }
 
@@ -559,28 +624,13 @@
     const gripBounds = gripElement?.getBoundingClientRect();
     const surfaceBounds = surfaceElement?.getBoundingClientRect();
     const visibleHeader = getDockHeaderBounds(placement, shown, floatingCompact, headerHeight);
-    if (gripBounds && surfaceBounds?.width && surfaceBounds.height) {
-      dragGripCenter = {
-        x: Math.max(
-          14,
-          Math.min(
-            210,
-            ((gripBounds.x + gripBounds.width / 2 - surfaceBounds.x) * placement.surface.width) /
-              surfaceBounds.width -
-              (visibleHeader.x - placement.surface.x),
-          ),
-        ),
-        y: Math.max(
-          14,
-          Math.min(
-            26,
-            ((gripBounds.y + gripBounds.height / 2 - surfaceBounds.y) * placement.surface.height) /
-              surfaceBounds.height -
-              (visibleHeader.y - placement.surface.y),
-          ),
-        ),
-      };
-    }
+    dragGripCenter = dockDragGripCenter(
+      gripBounds,
+      surfaceBounds,
+      placement.surface,
+      visibleHeader,
+      dragGripCenter,
+    );
     gesture = {
       pointerId: event.pointerId,
       x: event.screenX,
@@ -634,7 +684,7 @@
   }
   function pointerEnd(cancelled = false, event?: PointerEvent): void {
     if (event && event.pointerId !== gesture?.pointerId) return;
-    const finish: DragFinish =
+    const finish: DockDragFinish =
       cancelled || !event
         ? { action: 'cancel-drag' }
         : { action: 'end-drag', releasePoint: { x: event.screenX, y: event.screenY } };
@@ -692,12 +742,14 @@
   });
   onDestroy(() => {
     disposed = true;
+    growGate.cancel();
     pointerEnd(true);
     clearTimeout(openTimer);
     clearTimeout(closeTimer);
     if (measureFrame !== undefined) cancelAnimationFrame(measureFrame);
     if (dragFrame !== undefined) cancelAnimationFrame(dragFrame);
-    if (shellFrame !== undefined) cancelAnimationFrame(shellFrame);
+    shellTween.cancel();
+    heightLoop.cancel();
     if (placement.dragToken)
       onPlacementCommand({
         action: 'cancel-drag',
@@ -726,7 +778,11 @@
 {/if}
 
 <svelte:window
+  onpointerdowncapture={() => {
+    lastUserInput = performance.now();
+  }}
   onkeydowncapture={(event) => {
+    lastUserInput = performance.now();
     if (gesture || awaitingDragStart !== null || dragging) keydown(event);
     else if (
       machineMenuOpen &&
@@ -774,7 +830,7 @@
       class:gesture-held={gesture !== null || dragging}
       class:grip-pressed={gesture !== null && !dragging}
       data-expansion-direction={floating ? (placement.expansionDirection ?? 'down') : undefined}
-      data-dock-surface={notch ? 'notch' : 'detached'}
+      data-dock-surface={notch || dragging ? 'notch' : 'detached'}
       data-expanded={expanded || reveal > 0}
       class:expanded
       class:keyboard-open={keyboardOpen}
@@ -800,8 +856,17 @@
       onpointerleave={leave}
       onfocusin={(event) => {
         if (gesture !== null || awaitingDragStart !== null || dragging) return;
+        if (performance.now() - lastUserInput > 1000) return;
         expandedByUser = true;
-        if (!conversationFocus.returning && (event.target as HTMLElement).matches(':focus-visible'))
+        const target = event.target as HTMLElement;
+        // Text entry always matches :focus-visible, including after a click; typing in
+        // a workspace conversation is not a keyboard disclosure and keeps motion.
+        if (
+          !conversationFocus.returning &&
+          !target.isContentEditable &&
+          !target.matches('input, textarea, select') &&
+          target.matches(':focus-visible')
+        )
           keyboardOpen = true;
       }}
       onfocusout={leave}
@@ -814,7 +879,8 @@
         style:clip-path={contentClip}
         inert={machineSwitching !== null}
       >
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <!-- Pointer drag surface; its click shortcut to the field has keyboard parity via Tab. -->
+        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
         <header
           class="companion-header"
           class:side-header={edge}
@@ -823,6 +889,17 @@
           style:padding-bottom={heldGripCenter ? `${26 - heldGripCenter.y}px` : undefined}
           onpointerdown={(event) => {
             if (!(event.target as HTMLElement).closest('button')) pointerDown(event);
+          }}
+          onclick={(event) => {
+            // Clicking the notch itself (not a drag, menu or status control) is the
+            // user's request to type into the pinned conversation.
+            const control = (event.target as HTMLElement).closest('button');
+            const grip = !!control && control === gripElement;
+            if (event.defaultPrevented || suppressClick || (control && !grip)) {
+              if (!control) suppressClick = false;
+              return;
+            }
+            if (notch && pinned && !(grip && machines && onMachine)) composerAsk.request += 1;
           }}
           onpointermove={pointerMove}
           onpointerup={(event) => pointerEnd(false, event)}
@@ -866,12 +943,7 @@
           </Button>
           {#if !edge}
             <div class="header-state" style:opacity={dragging ? 0 : 1}>
-              <DockUpdateStatus
-                {workspaces}
-                count={updateCount}
-                attention={hasAttention}
-                running={hasRunning}
-              />
+              <DockUpdateStatus groups={statusGroups} />
             </div>
           {/if}
         </header>
@@ -893,11 +965,13 @@
             {reveal}
             {floating}
             {floatingUp}
+            settling={openHeight !== null}
+            clip={inlineClip}
             {conversation}
             {conversationWorkspaceId}
-            {focusRequest}
+            focusRequest={focusRequest + composerAsk.request}
+            focusComposerOnMount={notch && composerAsk.open === conversationWorkspaceId}
             onOpen={openWorkspace}
-            onFeedback={annotate}
             onRegionsChange={conversationRegionsChanged}
             onPopupStateChange={(open) => (conversationPopupOpen = open)}
           />
@@ -920,10 +994,24 @@
       pinnedWorkspaceId={conversationWorkspaceId === CHIEF_WORKSPACE_ID
         ? assistantId
         : conversationWorkspaceId}
+      conversationOpen={!!edgeState.shell}
       closeRequest={sideCloseRequest}
       disabled={pending || gesture !== null || awaitingDragStart !== null}
-      onOpen={openWorkspace}
-      onFeedback={annotate}
+      onOpen={(id, origin) => {
+        edgeOrigin = origin
+          ? {
+              workspaceId: origin.workspaceId,
+              radius: origin.radius,
+              card: {
+                ...origin.card,
+                x: origin.card.x + placement.windowBounds.x,
+                y: origin.card.y + placement.windowBounds.y,
+              },
+              anchor: origin.entryCentre - placement.surface.y,
+            }
+          : null;
+        openWorkspace(id);
+      }}
       onPreviewChange={(open) => {
         sidePreviewOpen = open;
       }}
@@ -933,17 +1021,25 @@
       }}
     />
   {/if}
-  {#if edge && conversationVisible && !dragging && !placement.captureHidden && conversationWorkspaceId && conversation && placement.sidePanel}
-    <DockConversationSurface
+  {#if edge && side && !dragging && !placement.captureHidden && conversation}
+    <DockEdgeConversation
+      open={conversationVisible}
       workspaceId={conversationWorkspaceId}
-      {focusRequest}
-      focusComposerOnMount={conversationPresence.keyboardOpen}
-      rect={placement.sidePanel}
+      {placement}
+      {shown}
+      origin={edgeCardOrigin}
+      focusRequest={focusRequest + composerAsk.request}
+      focusComposerOnMount={conversationPresence.keyboardOpen ||
+        composerAsk.open === conversationWorkspaceId}
       onRegionsChange={conversationRegionsChanged}
       onPopupStateChange={(open) => (conversationPopupOpen = open)}
+      onStateChange={(next) => {
+        // Closed for good: the next open (a click or the keyboard) sets its own anchor.
+        if (edgeState.shell && !next.shell && !conversationVisible) edgeOrigin = null;
+        edgeState = next;
+        measure();
+      }}>{@render conversation()}</DockEdgeConversation
     >
-      {@render conversation()}
-    </DockConversationSurface>
   {/if}
   <DockActionFeedback
     feedback={placement.captureHidden || dragging ? null : actionFeedback}
@@ -959,7 +1055,7 @@
       topInset: placement.cutout ? placement.cutout.y + placement.cutout.height + 8 : 8,
     }}
     onDismiss={() => {
-      placementErrorDismissed = placementError;
+      placementErrorDismissed = !!placementError;
       feedback = null;
     }}
     onRegionsChange={(regions) => {

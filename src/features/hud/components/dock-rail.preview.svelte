@@ -30,7 +30,7 @@
     viewportWidth,
     theme,
     placement: initialPlacement,
-    failFeedbackOnce = false,
+    failOpenOnce = false,
     focusRequest = 0,
     placementError = false,
     floatingDisplay,
@@ -153,13 +153,21 @@
     return () => window.removeEventListener('dock-preview-conversation-message', receive);
   });
   let requestedSidePanel: { width: number; height: number } | null = null;
+  // Like native: the side conversation's vertical anchor (offset from the rail's top).
+  let requestedSideAnchor: number | null = null;
   let requestedExpansionDirection: 'up' | 'down' | null = null;
   let resizeOriginal: {
     placement: DockPlacementSnapshot;
     sidePanel: { width: number; height: number } | null;
     direction: 'up' | 'down' | null;
   } | null = null;
-  let feedbackFailed = false;
+  let openFailed = false;
+  /** Synthetic first-open failure, for the dock's visible recovery controls. */
+  function failFirstOpen(): void {
+    if (!failOpenOnce || openFailed) return;
+    openFailed = true;
+    throw new Error('Synthetic open unavailable');
+  }
   let lastAction = $state('');
   let actionHistory = $state<string[]>([]);
   let pointerState = $state<{ active: boolean; regions: DockPointerRect[]; revision?: number }>({
@@ -302,6 +310,7 @@
       }
       if (floatingDisplay && placement.placement.kind === 'edge') {
         if (command.sidePanelSize !== undefined) requestedSidePanel = command.sidePanelSize;
+        if (command.sidePanelAnchor !== undefined) requestedSideAnchor = command.sidePanelAnchor;
         const rail = resolveDockSurface(placement.placement, floatingDisplay, command);
         const panel = requestedSidePanel
           ? resolveDockSidePanelSurface(
@@ -309,6 +318,7 @@
               floatingDisplay,
               requestedSidePanel,
               placement.placement.side,
+              requestedSideAnchor,
             )
           : null;
         const windowBounds = dockWindowEnvelope(
@@ -323,11 +333,12 @@
         const surface = dockLocalRect(rail, windowBounds);
         const sidePanel = panel ? dockLocalRect(panel, windowBounds) : null;
         if (
-          JSON.stringify({ surface, sidePanel, windowBounds }) ===
+          JSON.stringify({ surface, sidePanel, windowBounds, anchor: requestedSideAnchor }) ===
           JSON.stringify({
             surface: placement.surface,
             sidePanel: placement.sidePanel ?? null,
             windowBounds: placement.windowBounds,
+            anchor: placement.sidePanelAnchor ?? null,
           })
         )
           return;
@@ -336,6 +347,7 @@
           revision: placement.revision + 1,
           surface,
           sidePanel,
+          sidePanelAnchor: sidePanel ? requestedSideAnchor : null,
           windowBounds,
           workArea: dockLocalRect(floatingDisplay.workArea, windowBounds),
         };
@@ -504,19 +516,17 @@
       {pointerController}
       staticData
       onOpenWorkspace={(id) => {
+        failFirstOpen();
         recordAction(`workspace:${id}`);
       }}
       onOpenAssistant={() => {
+        failFirstOpen();
         recordAction('assistant');
       }}
       onOpenHud={() => {
         recordAction('hud');
       }}
       onAnnotate={async (request) => {
-        if (failFeedbackOnce && !feedbackFailed) {
-          feedbackFailed = true;
-          throw new Error('Synthetic capture unavailable');
-        }
         recordAction(`feedback:${request.workspaceId}`);
       }}
     />

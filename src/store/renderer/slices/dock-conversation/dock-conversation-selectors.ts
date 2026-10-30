@@ -1,3 +1,8 @@
+import {
+  deriveWizardPendingQuestions,
+  deriveMarkedQuestionRecoveryState,
+  deriveAgentHasPendingQuestion,
+} from '$lib/components/chat/questions/wizard-gate';
 import { selectPresenceOwnPrincipalId } from '../presence/presence-selectors';
 import { selectComposerContextItems } from '../transient-ui/transient-ui-selectors';
 import { selectWorkspaceById } from '../workspace/workspace-selectors';
@@ -28,7 +33,19 @@ import {
 import { selectAgentSubmissionDisplay } from '../pending-submissions/pending-submissions-selectors';
 import { selectPendingCount } from '../permission/permission-selectors';
 import { m } from '$shared/paraglide/messages.js';
-import type { DockConversationMessage } from './dock-conversation-types';
+import type { DockConversationMessage, DockNativeSpeechState } from './dock-conversation-types';
+import type { DockSpeechCapability } from '$shared/dock-speech';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import {
+  dockClipItemIds,
+  recordingDockClip,
+  dockCaptureDisabled,
+  dockEvidenceId,
+  dockEvidenceImageItemIds,
+  hasDockEvidence,
+  numberDockMarks,
+  readyDockInsertions,
+} from '$shared/dock-evidence';
 import type { QueuedMessage } from '$shared/types';
 import type { PendingQueueDisplayRow } from '../pending-submissions/pending-submissions-projection';
 import { selectAgentQueueMessages } from '../agent-queue/agent-queue-selectors';
@@ -62,6 +79,20 @@ export const selectDockConversationView = store.createSelector((state) => {
     !session.retiredAt &&
     !session.pendingDeleteAt &&
     session.status !== 'deleted';
+  const questionMessages =
+    contextCurrent && available && agentId ? selectAgentMessages.select(state, agentId) : [];
+  const pendingQuestions =
+    contextCurrent && available && agentId
+      ? deriveWizardPendingQuestions(state, agentId, questionMessages)
+      : null;
+  const hasPendingQuestion =
+    contextCurrent && available && agentId
+      ? deriveAgentHasPendingQuestion(state, agentId, questionMessages)
+      : false;
+  const questionRecovery =
+    contextCurrent && available && agentId
+      ? deriveMarkedQuestionRecoveryState(state, agentId)
+      : null;
   const priorUncertain =
     !!draft?.delivery && !draft.delivery.settled && draft.delivery.authority !== dock.authority;
   let messages: DockConversationMessage[] = [];
@@ -81,8 +112,7 @@ export const selectDockConversationView = store.createSelector((state) => {
     : contextCurrent &&
         available &&
         agentId &&
-        (selectPendingCount.select(state, agentId) > 0 ||
-          session.metadata?.pendingQuestionsMessageId)
+        (selectPendingCount.select(state, agentId) > 0 || hasPendingQuestion)
       ? m.dock_conversation_attention_description()
       : null;
   const submitting = submissions.some(
@@ -130,6 +160,29 @@ export const selectDockConversationView = store.createSelector((state) => {
   return {
     workspaceId,
     workspaceTitle: dock.workspaceTitle,
+    questionRecovery,
+    questionContext:
+      pendingQuestions &&
+      workspaceId &&
+      agentId &&
+      dock.authority &&
+      contextCurrent &&
+      canParticipate &&
+      available &&
+      !loading &&
+      !dock.error &&
+      !uncertain &&
+      !submitting &&
+      !dock.sending &&
+      selectPendingCount.select(state, agentId) === 0
+        ? {
+            workspaceId,
+            agentId,
+            authority: dock.authority,
+            generation: dock.generation,
+            pending: pendingQuestions,
+          }
+        : null,
     agentId,
     agents: contextCurrent ? getItems(dock.agents) : [],
     messages,
@@ -234,4 +287,155 @@ export const selectDockConversationComposer = store.createSelector((state) => {
       messages: [...history, ...live],
     }),
   };
+});
+
+type StoreState = typeof store.state;
+
+/**
+ * Observed server capabilities, only while the connection they were read from
+ * is still the window's current backend connection; otherwise null.
+ */
+export function currentDockServerCapabilities(state: StoreState) {
+  const observed = state.dockConversation.serverCapabilities;
+  return observed &&
+    observed.backendId === (state.connections.windowBackendId ?? null) &&
+    observed.generation === state.daemonHealth.connectionGeneration
+    ? observed
+    : null;
+}
+
+/** The open draft pair under its authority (JSON), or '' when none; drives controller lifetime. */
+export const selectDockConversationScope = store.createSelector((state) => {
+  const { workspaceId, agentId, authority } = state.dockConversation;
+  return workspaceId && agentId && authority
+    ? JSON.stringify({ workspaceId, agentId, authority })
+    : '';
+});
+
+/**
+ * The scope one native evidence session belongs to: the open pair under an
+ * authority that is still the live principal action context. Empty otherwise.
+ */
+export const selectDockNativeScope = store.createSelector((state) => {
+  const { workspaceId, agentId, authority } = state.dockConversation;
+  return workspaceId && agentId && authority && authority === getPrincipalActionContext(state)
+    ? JSON.stringify({ workspaceId, agentId, authority })
+    : '';
+});
+
+/** Settled outcome of one explicit speech stop request; null while it is pending. */
+export const selectDockSpeechStopOutcome = store.createSelector(
+  (state, requestId: string) =>
+    state.dockConversation.nativeSpeech.stops.find((row) => row.requestId === requestId) ?? null,
+);
+
+/** Changes whenever the window's backend or its connection lifecycle changes. */
+export const selectDockBackendBinding = store.createSelector(
+  (state) =>
+    `${state.connections.windowBackendId ?? ''}:${state.daemonHealth.connectionGeneration}`,
+);
+
+/**
+ * Screen evidence for one draft pair. Chip labels are localized by the caller via
+ * `screenReferences(evidence, toolLabels)`; this selector carries no UI strings.
+ */
+export const selectDockComposerEvidence = store.createSelector(
+  (state, workspaceId: string, agentId: string) => {
+    const dock = state.dockConversation;
+    const contextCurrent = !!dock.authority && dock.authority === getPrincipalActionContext(state);
+    const evidence = contextCurrent
+      ? getItem(dock.evidence, dockEvidenceId(workspaceId, agentId))
+      : undefined;
+    const numbered = evidence ? numberDockMarks(evidence) : [];
+    return {
+      evidence: evidence ?? null,
+      tiles: (evidence?.images ?? []).map((image) => ({
+        image,
+        marks: numbered.filter(({ mark }) => mark.imageId === image.id),
+      })),
+      clips: evidence?.clips ?? [],
+      // The editor sees only the in-order prefix whose marks are accepted; queued counts all.
+      insertions: evidence ? readyDockInsertions(evidence) : [],
+      insertionsQueued: evidence?.insertions.length ?? 0,
+      tool:
+        dock.toolByWorkspace[workspaceId] ??
+        dock.rememberedToolByWorkspace[workspaceId] ??
+        ('pick' as const),
+      toolUsed: workspaceId in dock.toolByWorkspace,
+      annotating: !!evidence?.annotation && evidence.annotation.mode !== 'dictation',
+      dictation: evidence?.dictation ?? null,
+      recording: !!recordingDockClip(evidence),
+      capturePending: evidence?.capture.pending ?? false,
+      captureError: evidence?.capture.error ?? null,
+      captureDisabled: dockCaptureDisabled(evidence),
+      hasEvidence: hasDockEvidence(evidence),
+      /** Raw screenshot context items; presentation shows them only as evidence tiles. */
+      evidenceItemIds: [...dockEvidenceImageItemIds(evidence)],
+      /**
+       * Every composer context item owned by evidence (screenshots and clips).
+       * Anything else is an ordinary attachment routed to SimpleRichInput.
+       */
+      evidenceOwnedItemIds: [...dockEvidenceImageItemIds(evidence), ...dockClipItemIds(evidence)],
+      revision: evidence?.revision ?? 0,
+      /** Advances only on an accepted capture: drives the one-shot capture flash. */
+      captureAccepted: evidence?.capture.accepted ?? 0,
+      /** Ordinary file attachments are storable in this workspace on the current connection. */
+      fileAttachmentsEnabled:
+        workspaceId !== CHIEF_WORKSPACE_ID ||
+        !!currentDockServerCapabilities(state)?.chiefAttachments,
+      /** Draft revision the editor mirrors; echoed by `dockEvidenceInsertionCommitted`. */
+      draftRevision: contextCurrent
+        ? (getItem(dock.drafts, JSON.stringify([workspaceId, agentId]))?.revision ?? 0)
+        : 0,
+      /** Latest actionable annotate failure (permission → settings; unavailable → hint). */
+      annotationIssue: contextCurrent ? (evidence?.annotationIssue ?? null) : null,
+      /** The pair's native dictation mirror (owned by the native-session saga). */
+      speech: speechFor(dock.nativeSpeech, contextCurrent, dockEvidenceId(workspaceId, agentId)),
+      /** Honest availability; every control is disabled until its native owner exists. */
+      capabilities: contextCurrent
+        ? {
+            ...(dock.nativeCapabilities ?? { capture: false, annotate: false, record: false }),
+            // Clips ride as file references: the assistant workspace records only where
+            // the current connection advertised its attachment registry.
+            ...(workspaceId === CHIEF_WORKSPACE_ID &&
+            !currentDockServerCapabilities(state)?.chiefAttachments
+              ? { record: false }
+              : {}),
+          }
+        : { capture: false, annotate: false, record: false },
+    };
+  },
+);
+
+const NO_LEVELS: number[] = [];
+
+function speechFor(
+  native: DockNativeSpeechState,
+  contextCurrent: boolean,
+  pairId: string,
+): {
+  capability: DockSpeechCapability | null;
+  available: boolean;
+  active: boolean;
+  pending: boolean;
+  error: string | null;
+  levels: number[];
+} {
+  const own = contextCurrent && native.pairId === pairId;
+  return {
+    capability: own ? native.capability : null,
+    available: own && !!native.capability?.available,
+    active: own && native.activeId !== null,
+    pending: own && native.pending,
+    error: own ? native.error : null,
+    levels: own ? native.levels : NO_LEVELS,
+  };
+}
+
+/** Evidence of the open pair (no arguments): safe to create once at component init. */
+export const selectCurrentDockComposerEvidence = store.createSelector((state) => {
+  const { workspaceId, agentId } = state.dockConversation;
+  return workspaceId && agentId
+    ? { workspaceId, agentId, view: selectDockComposerEvidence.select(state, workspaceId, agentId) }
+    : null;
 });

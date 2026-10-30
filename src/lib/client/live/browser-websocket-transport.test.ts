@@ -940,7 +940,12 @@ describe('observational node capabilities', () => {
       result: {
         clientId: 'A',
         server: {
-          capabilities: { agentNodes: 1, agentPlatformRouting: 1, workspaceMembershipEvents: 1 },
+          capabilities: {
+            agentNodes: 1,
+            agentPlatformRouting: 1,
+            workspaceMembershipEvents: 1,
+            rawScreenshotRetention: 1,
+          },
         },
       },
     });
@@ -951,6 +956,8 @@ describe('observational node capabilities', () => {
           localNodeIsolation: 0,
           agentPlatformRouting: 1,
           workspaceMembershipEvents: 1,
+          rawScreenshotRetention: 1,
+          chiefAttachments: 0,
         },
       },
     });
@@ -976,7 +983,14 @@ describe('observational node capabilities', () => {
       id: replacement.lastFrame().id,
       result: {
         clientId: 'B',
-        server: { capabilities: { agentNodes: '1', workspaceMembershipEvents: true } },
+        server: {
+          capabilities: {
+            agentNodes: '1',
+            workspaceMembershipEvents: true,
+            rawScreenshotRetention: true,
+            chiefAttachments: '1',
+          },
+        },
       },
     });
     await expect(reconnecting).resolves.toEqual({
@@ -986,6 +1000,8 @@ describe('observational node capabilities', () => {
           localNodeIsolation: 0,
           agentPlatformRouting: 0,
           workspaceMembershipEvents: 0,
+          rawScreenshotRetention: 0,
+          chiefAttachments: 0,
         },
       },
     });
@@ -1011,7 +1027,14 @@ describe('observational node capabilities', () => {
       id: oldId,
       result: {
         clientId: 'old',
-        server: { capabilities: { agentNodes: 1, workspaceMembershipEvents: 1 } },
+        server: {
+          capabilities: {
+            agentNodes: 1,
+            workspaceMembershipEvents: 1,
+            rawScreenshotRetention: 1,
+            chiefAttachments: 1,
+          },
+        },
       },
     });
     await older;
@@ -1022,6 +1045,8 @@ describe('observational node capabilities', () => {
           localNodeIsolation: 0,
           agentPlatformRouting: 0,
           workspaceMembershipEvents: 0,
+          rawScreenshotRetention: 0,
+          chiefAttachments: 0,
         },
       },
     });

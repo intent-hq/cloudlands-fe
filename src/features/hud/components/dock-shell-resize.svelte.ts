@@ -15,6 +15,8 @@ interface DockShellResizeState {
   compactWingWidth: number;
   conversationVisible: boolean;
   conversationSize: DockConversationSize;
+  /** Side conversation centre as an offset from the rail surface top; null centres it. */
+  sidePanelAnchor?: number | null;
   expansionDirection: 'up' | 'down' | null;
   resizeToken: string | null;
 }
@@ -39,6 +41,11 @@ export function useDockShellResize(
         placement.shape === 'edge' && current.conversationVisible
           ? { ...current.conversationSize }
           : null,
+      ...(placement.shape === 'edge'
+        ? {
+            sidePanelAnchor: current.conversationVisible ? (current.sidePanelAnchor ?? null) : null,
+          }
+        : {}),
       expansionDirection: placement.shape === 'floating' ? current.expansionDirection : null,
       ...(current.resizeToken ? { resizeToken: current.resizeToken } : {}),
       landingSizes: {

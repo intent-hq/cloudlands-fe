@@ -13,10 +13,7 @@ try {
   const entry = join(root, 'entry.ts');
   await writeFile(
     entry,
-    [
-      `export * from ${JSON.stringify(resolve('src/main/dock-window.ts'))};`,
-      `export * from ${JSON.stringify(resolve('src/features/annotation/main/annotation-window.ts'))};`,
-    ].join('\n'),
+    [`export * from ${JSON.stringify(resolve('src/main/dock-window.ts'))};`].join('\n'),
   );
   await build({
     configFile: false,
@@ -36,7 +33,7 @@ try {
             return 'export class Logger { info() {} debug() {} warn() {} error() {} }';
         },
         transform(code, id) {
-          if (id.endsWith('/dock-window.ts') || id.endsWith('/annotation-window.ts')) {
+          if (id.endsWith('/dock-window.ts')) {
             // Placeholder pages do not have renderer code or IPC. Omit only the
             // preload path; all BrowserWindow behavior is the production module.
             return code.replace(/preload: path\.join\(__dirname, '[^']+'\),/g, '');

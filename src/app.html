@@ -13,7 +13,7 @@
     <script src="/runtime-config.js"></script>
     <script>
       const launchUrl = new URL(window.location.href);
-      if (['/dock', '/annotation', '/annotation-toolbar'].includes(launchUrl.pathname)) {
+      if (['/dock', '/dock-annotation'].includes(launchUrl.pathname)) {
         document.documentElement.dataset.auxiliaryWindow = launchUrl.pathname.slice(1);
         document.documentElement.dataset.startupSplash = 'suppressed';
       }
@@ -143,7 +143,7 @@
     <script>
       // Apply theme immediately to prevent FOUC
       (function () {
-        const theme = ['dock', 'annotation-toolbar'].includes(
+        const theme = ['dock', 'dock-annotation'].includes(
           document.documentElement.dataset.auxiliaryWindow,
         )
           ? 'dark'

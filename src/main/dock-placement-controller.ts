@@ -104,6 +104,8 @@ export class DockPlacementController {
   private revision = 0;
   private compactNotchWingWidth = DOCK_NOTCH_MIN_WING_WIDTH;
   private sidePanelSize: { width: number; height: number } | null = null;
+  /** Vertical anchor of the side conversation (offset from the rail top); null centres it. */
+  private sidePanelAnchor: number | null = null;
   private floatingExpansionDirection: 'up' | 'down' | null = null;
   private geometryGeneration = 0;
   private mutationGeneration = 0;
@@ -195,7 +197,13 @@ export class DockPlacementController {
     const side = !this.drag && this.placement.kind === 'edge' ? this.placement.side : null;
     const sidePanel =
       side && !this.hiddenForCapture && this.sidePanelSize
-        ? resolveDockSidePanelSurface(surface, display, this.sidePanelSize, side)
+        ? resolveDockSidePanelSurface(
+            surface,
+            display,
+            this.sidePanelSize,
+            side,
+            this.sidePanelAnchor,
+          )
         : null;
     let bounds = dockWindowEnvelope(
       surface,
@@ -243,6 +251,7 @@ export class DockPlacementController {
           : null,
       captureHidden: this.hiddenForCapture,
       sidePanel: sidePanel ? dockLocalRect(sidePanel, bounds) : null,
+      sidePanelAnchor: sidePanel ? this.sidePanelAnchor : null,
       ...(floating
         ? {
             floatingAnchor: dockLocalRect(floating.anchor, bounds),
@@ -298,7 +307,13 @@ export class DockPlacementController {
     const side = placement.kind === 'edge' ? placement.side : null;
     const panel =
       side && this.sidePanelSize && !this.hiddenForCapture
-        ? resolveDockSidePanelSurface(surface, display, this.sidePanelSize, side)
+        ? resolveDockSidePanelSurface(
+            surface,
+            display,
+            this.sidePanelSize,
+            side,
+            this.sidePanelAnchor,
+          )
         : null;
     return dockWindowEnvelope(
       surface,
@@ -362,7 +377,7 @@ export class DockPlacementController {
   }
 
   async command(
-    command: Exclude<DockPlacementCommand, { action: 'dismiss' }>,
+    command: Exclude<DockPlacementCommand, { action: 'dismiss' | 'focus' }>,
   ): Promise<DockPlacementSnapshot | null> {
     if (this.disposed || this.hiddenForCapture || this.window.isDestroyed()) return this.snapshot;
     if (command.action === 'move') {
@@ -405,6 +420,7 @@ export class DockPlacementController {
       if (command.compactNotchWingWidth !== undefined)
         this.compactNotchWingWidth = command.compactNotchWingWidth;
       if (command.sidePanelSize !== undefined) this.sidePanelSize = command.sidePanelSize;
+      if (command.sidePanelAnchor !== undefined) this.sidePanelAnchor = command.sidePanelAnchor;
       if (command.expansionDirection !== undefined)
         this.floatingExpansionDirection =
           this.placement.kind === 'floating' ? command.expansionDirection : null;

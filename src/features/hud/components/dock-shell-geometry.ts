@@ -1,5 +1,6 @@
 import type { DockPointerRect } from '$shared/dock-layout';
 import {
+  DOCK_CONVERSATION_DEFAULT_SIZE,
   DOCK_FLOATING_COMPACT_SIZE,
   getDockCompactNotchSize,
   type DockPlacementSnapshot,
@@ -10,6 +11,8 @@ interface DockShellLayoutInput {
   conversationOpen?: boolean;
   conversationSize?: { width: number; height: number };
   reveal: number;
+  /** Visible open height while a discrete content change settles; native surface otherwise. */
+  expandedHeight?: number | null;
   rowLimit: number;
   workspaceCount: number;
   compactWingWidth: number;
@@ -35,8 +38,9 @@ export function getDockShellLayout(
   {
     surfaceExpanded,
     conversationOpen = false,
-    conversationSize = { width: 420, height: 520 },
+    conversationSize = DOCK_CONVERSATION_DEFAULT_SIZE,
     reveal,
+    expandedHeight = null,
     rowLimit,
     workspaceCount,
     compactWingWidth,
@@ -55,7 +59,9 @@ export function getDockShellLayout(
       : null;
   const headerHeight = compactNotchSize?.height ?? 40;
   // Cap the viewport, not the rendered list: every workspace remains scrollable.
-  const overviewHeight = (Math.min(workspaceCount, rowLimit) + 1) * 52 + 20;
+  // Workspace rows (52), the divider (1 + 2 + 4), the Assistant row (40) and the
+  // frame's 8 + 8 padding. Keep in step with DockOverview / DockCompanionContent.
+  const overviewHeight = Math.min(workspaceCount, rowLimit) * 52 + 7 + 40 + 16;
   const railHeight = 48 + (Math.min(workspaceCount, rowLimit) + 1) * 32;
   const full = placement.surface;
   const desiredWidth = dragging
@@ -92,14 +98,19 @@ export function getDockShellLayout(
     height: anchorHeight,
   };
   const progress = edge ? 0 : dragging ? 1 : reveal;
+  const openHeight =
+    edge || dragging || expandedHeight === null
+      ? full.height
+      : Math.max(compactHeight, Math.min(full.height, expandedHeight));
   const width = Math.min(full.width, compactWidth + (full.width - compactWidth) * progress);
-  const height = Math.min(full.height, compactHeight + (full.height - compactHeight) * progress);
+  const height = Math.min(full.height, compactHeight + (openHeight - compactHeight) * progress);
+  const openY = floatingUp ? full.height - openHeight : 0;
   const shown = floating
     ? {
         x: floatingCompact.x * (1 - progress),
-        y: floatingCompact.y * (1 - progress),
+        y: floatingCompact.y + (openY - floatingCompact.y) * progress,
         width: floatingCompact.width + (full.width - floatingCompact.width) * progress,
-        height: floatingCompact.height + (full.height - floatingCompact.height) * progress,
+        height: floatingCompact.height + (openHeight - floatingCompact.height) * progress,
       }
     : {
         x: edge ? (side === 'right' ? full.width - width : 0) : (full.width - width) / 2,
@@ -177,4 +188,63 @@ export function getDockSilhouette(
   if (notchContour) return `${notchContour} Z`;
   if (edgeContour) return `${edgeContour} Z`;
   return `M ${x + r} ${y} H ${x + w - r} Q ${x + w} ${y} ${x + w} ${y + r} V ${y + h - r} Q ${x + w} ${y + h} ${x + w - r} ${y + h} H ${x + r} Q ${x} ${y + h} ${x} ${y + h - r} V ${y + r} Q ${x} ${y} ${x + r} ${y} Z`;
+}
+
+/** Map a surface-local rect into viewport CSS pixels via the rendered surface box,
+ * including any host offset or preview scale; matches getBoundingClientRect space. */
+export function dockViewportRect(
+  local: DockPointerRect,
+  surface: DockPointerRect,
+  box: DOMRect | undefined,
+): DockPointerRect | null {
+  if (!box || surface.width <= 0 || surface.height <= 0) return null;
+  const scaleX = box.width / surface.width;
+  const scaleY = box.height / surface.height;
+  return {
+    x: box.left + local.x * scaleX,
+    y: box.top + local.y * scaleY,
+    width: local.width * scaleX,
+    height: local.height * scaleY,
+  };
+}
+
+export interface DockDragGesture {
+  pointerId: number;
+  x: number;
+  y: number;
+  revision: number;
+  origin: { x: number; y: number };
+  headerBounds: DockPointerRect;
+  started: boolean;
+}
+
+export type DockDragFinish =
+  { action: 'end-drag'; releasePoint: { x: number; y: number } } | { action: 'cancel-drag' };
+
+export function dockDragGripCenter(
+  grip: DockPointerRect | undefined,
+  bounds: DockPointerRect | undefined,
+  surface: DockPointerRect,
+  header: DockPointerRect,
+  fallback: { x: number; y: number },
+): { x: number; y: number } {
+  if (!grip || !bounds?.width || !bounds.height) return fallback;
+  return {
+    x: Math.max(
+      14,
+      Math.min(
+        210,
+        ((grip.x + grip.width / 2 - bounds.x) * surface.width) / bounds.width -
+          (header.x - surface.x),
+      ),
+    ),
+    y: Math.max(
+      14,
+      Math.min(
+        26,
+        ((grip.y + grip.height / 2 - bounds.y) * surface.height) / bounds.height -
+          (header.y - surface.y),
+      ),
+    ),
+  };
 }

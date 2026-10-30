@@ -759,14 +759,16 @@ const DockSurfaceSizeSchema = z.object({
 
 export const WindowUpdateDockPlacementSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('dismiss') }),
+  z.object({ action: z.literal('focus') }),
   z.object({
     action: z.literal('move'),
     target: z.enum(['notch', 'left', 'right', 'floating', 'reset']),
   }),
   z.object({
     action: z.literal('resize'),
-    compactNotchWingWidth: z.number().finite().min(36).max(256).optional(),
+    compactNotchWingWidth: z.number().finite().min(0).max(256).optional(),
     sidePanelSize: DockSurfaceSizeSchema.nullable().optional(),
+    sidePanelAnchor: z.number().finite().min(0).max(16384).nullable().optional(),
     expansionDirection: z.enum(['up', 'down']).nullable().optional(),
     resizeToken: z.string().uuid().optional(),
     landingSizes: z
@@ -830,6 +832,8 @@ export const WindowUpdateDockPlacementSchema = z.discriminatedUnion('action', [
 export const WindowSetFullScreenSchema = z.object({
   fullScreen: z.boolean(),
 });
+
+export const WindowSetDockLabSchema = z.object({ enabled: z.boolean() }).strict();
 
 export const WindowSetBrowserFocusedSchema = z.object({
   browserFocused: z.boolean(),

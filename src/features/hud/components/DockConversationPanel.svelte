@@ -11,10 +11,16 @@
   export interface DockConversationPanelProps {
     conversationKey: string;
     composer?: Snippet;
+    questions?: Snippet;
+    /** False while the person has hidden the question card (it stays collapsed above the composer). */
+    questionsExpanded?: boolean;
+    mediaStatus?: { kind: 'annotating' | 'listening' | 'recording'; label: string };
     agentId: string | null;
     agents: DockConversationAgent[];
     workspaceTitle: string;
     workspace?: Workspace | null;
+    /** The open conversation's workspace (the Assistant's is the chief workspace). */
+    workspaceId?: string | null;
     ownPrincipalId?: string | null;
     pendingMessages?: DockConversationMessage[];
     queuedMessages?: QueuedMessage[];
@@ -43,6 +49,7 @@
 
 <script lang="ts">
   import { tick, untrack } from 'svelte';
+  import { fly } from '$lib/motion';
   import Fa from 'svelte-fa';
   import {
     faArrowLeft,
@@ -57,6 +64,10 @@
   import ScrollToBottomButton from '$lib/components/chat/ScrollToBottomButton.svelte';
   import ChatMessage from '$lib/components/chat/ChatMessage.svelte';
   import ChatContentLane from '$lib/components/chat/ChatContentLane.svelte';
+  import QuestionComposer from '$lib/components/chat/questions/QuestionComposer.svelte';
+  import DockConversationNotifications, {
+    getDockConversationNoticeHost,
+  } from './DockConversationNotifications.svelte';
   import ChatTurnNotice from '$lib/components/chat/ChatTurnNotice.svelte';
   import ConversationTurnGap from '$lib/components/chat/ConversationTurnGap.svelte';
   import StreamingStatus from '$lib/components/chat/StreamingStatus.svelte';
@@ -82,15 +93,21 @@
   import { provideOperationalPanel } from '$lib/components/chat/operational-panel.svelte';
   import { extractAllContent } from '$shared/types';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
+  import DockWorkspaceAvatar from './DockWorkspaceAvatar.svelte';
+  import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { m } from '$shared/paraglide/messages.js';
 
   let {
     conversationKey,
     composer,
+    questions,
+    questionsExpanded = !!questions,
+    mediaStatus,
     agentId,
     agents,
     workspaceTitle,
     workspace = null,
+    workspaceId = null,
     ownPrincipalId = null,
     pendingMessages = [],
     queuedMessages = [],
@@ -117,14 +134,39 @@
   }: DockConversationPanelProps = $props();
 
   const uid = $props.id();
+  const notices = getDockConversationNoticeHost();
+  let bodyHeight = $state(0);
+  let footerHeight = $state(0);
+  // The question may cover everything below the header, less the composer lane's
+  // block padding (0.5rem + 1rem) and a little transcript left visible above it.
+  const QUESTION_RESERVE_PX = 32;
+  const questionMaxHeight = $derived(
+    bodyHeight + footerHeight > 0
+      ? Math.max(0, bodyHeight + footerHeight - QUESTION_RESERVE_PX)
+      : undefined,
+  );
   const agent = $derived(agents.find((item) => item.id === agentId));
   const agentName = $derived(agent?.name ?? m.chat_shared_agentName_fallback());
+  const isAssistant = $derived(
+    (workspaceId ?? (workspace ? String(workspace.id) : null)) === CHIEF_WORKSPACE_ID,
+  );
   let scrollArea: HTMLDivElement | undefined = $state();
   let transcript: HTMLDivElement | undefined = $state();
   let following = $state(true);
   let lastScrollTop = 0;
   let newActivity = $state(false);
-  provideOperationalPanel(() => scrollArea);
+  const operationalPanel = provideOperationalPanel(() => scrollArea);
+  // The dock shell reveals and morphs with transforms and clip-path, which fire no
+  // scroll or resize. Re-measure visible transcript rows once each motion settles.
+  $effect(() => {
+    const refresh = () => operationalPanel.refreshGeometry();
+    window.addEventListener('transitionend', refresh, true);
+    window.addEventListener('animationend', refresh, true);
+    return () => {
+      window.removeEventListener('transitionend', refresh, true);
+      window.removeEventListener('animationend', refresh, true);
+    };
+  });
   const transcriptEmpty = $derived(
     messages.length === 0 &&
       pendingMessages.length === 0 &&
@@ -221,59 +263,113 @@
   aria-label={m.dock_conversation_transcript_label()}
   data-dock-conversation
 >
-  <ScreenHeader class="items-center gap-2 px-3 py-2 border-b border-border">
+  <ScreenHeader
+    class="items-center gap-1 px-2 py-1 border-b border-border bg-background"
+    data-dock-chrome
+  >
     {#snippet leading()}
-      <div class="flex items-center gap-2">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onclick={onBack}
-          data-dock-conversation-back
-          aria-label={m.ui_contentHeader_goBack_tooltip()}
-          title={m.ui_contentHeader_goBack_tooltip()}><Fa icon={faArrowLeft} /></Button
-        >
-        <AgentAvatar agentId={agentId ?? ''} variant="standard" class="shrink-0" />
-      </div>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        onclick={onBack}
+        data-dock-conversation-back
+        aria-label={m.ui_contentHeader_goBack_tooltip()}
+        title={m.ui_contentHeader_goBack_tooltip()}><Fa icon={faArrowLeft} /></Button
+      >
     {/snippet}
     {#snippet title()}
+      <!-- Workspace first, agent below; the workspace avatar leads (the Assistant uses its own). -->
+      {#snippet identity(picker: boolean)}
+        <span class="dock-header-avatar" data-dock-header-avatar aria-hidden="true">
+          {#if isAssistant}<AgentAvatar specialist="chief-of-staff" variant="emphasized" />
+          {:else if workspace}<DockWorkspaceAvatar item={{ workspace }} variant="emphasized" />
+          {:else}<AgentAvatar agentId={agentId ?? ''} variant="emphasized" />{/if}
+        </span>
+        <span class="min-w-0 flex-1 text-left" data-dock-header-identity>
+          <span
+            class="type-caption block truncate font-medium text-foreground"
+            title={workspaceTitle}
+            data-dock-header-workspace>{workspaceTitle}</span
+          >
+          <span
+            class="type-caption flex min-w-0 items-center gap-1 text-muted-foreground"
+            data-dock-header-agent
+            ><span class="truncate" title={agentName}>{agentName}</span>{#if picker}<Fa
+                icon={faChevronDown}
+                class="size-2.5 shrink-0"
+              />{/if}</span
+          >
+        </span>
+      {/snippet}
       {#if agents.length > 1}
         <Select.Root value={agentId ?? ''} items={choices} onchange={onSelectAgent}>
           <Select.Trigger
             variant="ghost"
-            class="w-full min-w-0 justify-start"
+            class="h-auto min-h-(--control-height-large) w-full min-w-0 justify-start gap-2.5 px-1.5 py-1"
             aria-label={m.dock_conversation_agent_ariaLabel()}
           >
-            <span class="truncate">{agentName}</span><Fa
-              icon={faChevronDown}
-              class="size-2.5 shrink-0 text-muted-foreground"
-            />
+            {@render identity(true)}
           </Select.Trigger>
-          <Select.Content portal={false} class="max-h-48">
+          <Select.Content portal={false} class="max-h-48 max-w-[calc(100vw-2rem)]">
             {#each agents as option (option.id)}
-              <Select.Item value={option.id} label={option.name}>{option.name}</Select.Item>
+              <Select.Item value={option.id} label={option.name}>
+                <span class="flex min-w-0 items-center gap-2">
+                  <AgentAvatar agentId={option.id} variant="compact" class="shrink-0" />
+                  <span class="truncate" title={option.name}>{option.name}</span>
+                </span>
+              </Select.Item>
             {/each}
           </Select.Content>
         </Select.Root>
       {:else}
-        <h2 class="type-body font-medium truncate" title={agentName}>{agentName}</h2>
+        <!-- The heading names the conversation: workspace, then agent. -->
+        <h2
+          class="flex min-w-0 items-center gap-2.5 px-1.5 py-1 min-h-(--control-height-large)"
+          aria-label={`${workspaceTitle}, ${agentName}`}
+        >
+          {@render identity(false)}
+        </h2>
       {/if}
     {/snippet}
-    {#snippet description()}
-      <p class="type-caption truncate" title={workspaceTitle}>{workspaceTitle}</p>
-    {/snippet}
     {#snippet actions()}
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        onclick={onOpenWorkspace}
-        aria-label={m.dock_conversation_openFull_ariaLabel()}
-        title={m.dock_conversation_openFull_ariaLabel()}
-        ><Fa icon={faArrowUpRightFromSquare} /></Button
-      >
+      {#if mediaStatus}
+        <span
+          class="dock-media-status"
+          role="status"
+          data-live={mediaStatus.kind !== 'annotating' || undefined}
+          title={mediaStatus.label}
+        >
+          <span class="dock-media-status-dot" aria-hidden="true"></span>
+          <span class="truncate">{mediaStatus.label}</span>
+        </span>
+      {:else}<Button
+          variant="ghost"
+          size="icon-sm"
+          onclick={onOpenWorkspace}
+          aria-label={m.dock_conversation_openFull_ariaLabel()}
+          title={m.dock_conversation_openFull_ariaLabel()}
+          ><Fa icon={faArrowUpRightFromSquare} /></Button
+        >{/if}
     {/snippet}
   </ScreenHeader>
 
-  <div class="conversation-body">
+  {#snippet noticeRail()}
+    {#if notices?.register}
+      {@const register = notices.register}
+      <!-- Zero-height rail at the composer's top edge, in the composer lane. -->
+      <div class="notice-rail">
+        <ChatContentLane class="relative h-0">
+          {#key notices.key}
+            <DockConversationNotifications {register} />
+          {/key}
+        </ChatContentLane>
+      </div>
+    {/if}
+  {/snippet}
+
+  <div class="conversation-body" bind:clientHeight={bodyHeight}>
+    <!-- A scrollable region must be keyboard-focusable so arrow keys and Page Up/Down scroll it. -->
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
     <div
       bind:this={scrollArea}
       class={`transcript-scroll ${CHAT_TRANSCRIPT_OVERFLOW_CLASS}`}
@@ -440,57 +536,111 @@
     {/if}
   </div>
 
-  <footer class="conversation-footer">
+  {@render noticeRail()}
+  <footer class="conversation-footer" bind:clientHeight={footerHeight}>
     <ChatContentLane composer>
-      {#if sendError}
-        <div class="send-recovery">
-          <InputMessage
-            id={`${uid}-send-error`}
-            tone="error"
-            class="m-0 max-h-18 overflow-auto min-w-0 flex-1 break-words">{sendError}</InputMessage
-          >
-          {#if canRetry}
-            <Button variant="outline" size="sm" onclick={onRetrySend} disabled={sending || loading}>
-              {m.chat_shared_retry_label()}
-            </Button>
+      <QuestionComposer
+        expanded={!!questions && questionsExpanded}
+        active={notices?.active ?? true}
+        maxHeight={questionMaxHeight}
+      >
+        {#snippet question()}
+          {#if questions}
+            <!-- Global: the card's block mounts with its parent; the enter still plays. -->
+            <div
+              class="dock-question"
+              data-dock-questions
+              in:fly|global={{ tier: 'moderate', distance: 6 }}
+              out:fly|global={{ tier: 'fast', distance: 6 }}
+            >
+              {@render questions()}
+            </div>
           {/if}
-        </div>
-      {/if}
-      {#if attention}<div class="attention">
-          <InputMessage id={`${uid}-attention`}>{attention}</InputMessage>
-          <Button variant="outline" size="sm" onclick={onOpenWorkspace}
-            >{m.dock_conversation_openFull_ariaLabel()}</Button
-          >
-        </div>{/if}
-      {#if composer}
-        {@render composer()}
-      {:else}
-        <MessageComposer
-          value={draft}
-          onValueChange={onDraftChange}
-          onSend={submit}
-          disabled={draftDisabled || loading || !agentId}
-          sendDisabled={!canSend}
-          placeholder={m.dock_conversation_reply_placeholder({ name: agentName })}
-          {sendLabel}
-          minRows={1}
-          maxRows={5}
-          textareaProps={{
-            'data-dock-conversation-composer': '',
-            'aria-label': m.chat_richInput_editor_ariaLabel(),
-            'aria-describedby': sendError
-              ? `${uid}-send-error`
-              : attention
-                ? `${uid}-attention`
-                : undefined,
-          }}
-        />
-      {/if}
+        {/snippet}
+        {#if sendError}
+          <div class="send-recovery">
+            <InputMessage
+              id={`${uid}-send-error`}
+              tone="error"
+              class="m-0 max-h-18 overflow-auto min-w-0 flex-1 break-words"
+              >{sendError}</InputMessage
+            >
+            {#if canRetry}
+              <Button
+                variant="outline"
+                size="sm"
+                onclick={onRetrySend}
+                disabled={sending || loading}
+              >
+                {m.chat_shared_retry_label()}
+              </Button>
+            {/if}
+          </div>
+        {/if}
+        {#if attention && !questions}<div class="attention">
+            <InputMessage id={`${uid}-attention`}>{attention}</InputMessage>
+            <Button variant="outline" size="sm" onclick={onOpenWorkspace}
+              >{m.dock_conversation_openFull_ariaLabel()}</Button
+            >
+          </div>{/if}
+        {#if composer}
+          {@render composer()}
+        {:else}
+          <MessageComposer
+            value={draft}
+            onValueChange={onDraftChange}
+            onSend={submit}
+            disabled={draftDisabled || loading || !agentId}
+            sendDisabled={!canSend}
+            placeholder={m.dock_conversation_reply_placeholder({ name: agentName })}
+            {sendLabel}
+            minRows={1}
+            maxRows={5}
+            textareaProps={{
+              'data-dock-conversation-composer': '',
+              'aria-label': m.chat_richInput_editor_ariaLabel(),
+              'aria-describedby': sendError
+                ? `${uid}-send-error`
+                : attention
+                  ? `${uid}-attention`
+                  : undefined,
+            }}
+          />
+        {/if}
+      </QuestionComposer>
     </ChatContentLane>
   </footer>
 </section>
 
 <style>
+  /* The header's leading visual: the dock's 24px emphasized avatar, shown at 30px. */
+  .dock-header-avatar {
+    display: inline-flex;
+    flex: none;
+    --agent-avatar-emphasized-surface-size: 30px;
+    --agent-avatar-emphasized-art-size: 24px;
+    --agent-avatar-emphasized-clear-space: 3px;
+    --agent-avatar-emphasized-corner-radius: 9px;
+  }
+  .dock-media-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    max-width: 8rem;
+    font-size: var(--text-caption-size);
+    font-weight: 500;
+  }
+  .dock-media-status-dot {
+    flex: none;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: hsl(var(--primary));
+  }
+  .dock-media-status[data-live] .dock-media-status-dot {
+    background: hsl(var(--capture-active));
+  }
   .dock-conversation {
     isolation: isolate;
     container: chat-panel / inline-size;
@@ -502,7 +652,7 @@
     min-height: 0;
     overflow: hidden;
     border-radius: var(--radius-large);
-    background: hsl(var(--popover));
+    background: hsl(var(--background));
     color: hsl(var(--foreground));
   }
   .conversation-body {
@@ -537,7 +687,24 @@
   .new-activity :global(button) {
     pointer-events: auto;
   }
+  /* Banners overlay the transcript's bottom edge; the rail never takes layout space. */
+  .notice-rail {
+    position: relative;
+    flex: none;
+    height: 0;
+    z-index: 2;
+  }
+  /* The card sits in the composer lane like the composer itself: no extra layer
+     inset, bottom-aligned to the composer it covers, and only as tall as its content. */
+  .conversation-footer :global([data-testid='question-wizard-slot']) {
+    padding: 0;
+    align-self: end;
+  }
+  .dock-question :global([data-question-wizard]) {
+    max-width: none;
+  }
   .conversation-footer {
+    position: relative;
     flex: none;
   }
   .attention {
@@ -558,5 +725,9 @@
   }
   .attention :global(button) {
     margin-top: var(--space-2);
+  }
+  /* The side dock's rail already switches conversations: no back. */
+  :global([data-placement='edge']) :global([data-dock-conversation-back]) {
+    display: none;
   }
 </style>

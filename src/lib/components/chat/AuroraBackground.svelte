@@ -29,9 +29,14 @@
     agentId?: string;
     /** Developer benchmark only; remount when changing these controls. */
     benchmark?: AuroraBenchmarkOptions;
+    /**
+     * Initialized but not drawing. Hosts mount a paused aurora while idle, so creating the
+     * context and compiling shaders never lands as a long task when streaming starts.
+     */
+    paused?: boolean;
   }
 
-  let { agentId = 'default', benchmark }: Props = $props();
+  let { agentId = 'default', benchmark, paused = false }: Props = $props();
 
   let canvas = $state<HTMLCanvasElement>();
   let gl = $state<WebGLRenderingContext | null>(null);
@@ -394,6 +399,16 @@
 
     scheduleCanvasSizeUpdate();
 
+    // Pre-warmed while paused: one cleared draw finishes the driver's lazy program setup
+    // now (in idle time), so the first visible frame after an unpause costs no more than
+    // any other. An unpaused aurora draws only once its color resolves, as before.
+    if (paused) {
+      gl.useProgram(program);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    }
+
     startTime = performance.now();
     render();
   }
@@ -435,7 +450,8 @@
       !program ||
       !isPageVisible ||
       !isWindowFocused ||
-      prefersReducedMotion
+      prefersReducedMotion ||
+      paused
     )
       return;
     animationFrame = requestAnimationFrame(render);
@@ -452,8 +468,9 @@
     animationFrame = 0;
     if (!gl || !program || !canvas) return;
 
-    // Skip rendering if the page or window is inactive, or the user prefers reduced motion
-    if (!isPageVisible || !isWindowFocused || prefersReducedMotion) {
+    // Skip rendering if the page or window is inactive, the host paused it, or the user
+    // prefers reduced motion
+    if (!isPageVisible || !isWindowFocused || prefersReducedMotion || paused) {
       return;
     }
 
@@ -625,6 +642,11 @@
   onDestroy(() => {
     destroyed = true;
     cleanup();
+  });
+
+  $effect(() => {
+    if (paused) cancelScheduledRender();
+    else scheduleRender();
   });
 
   // Start/stop animation based on visibility

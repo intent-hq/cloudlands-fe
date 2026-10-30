@@ -135,7 +135,24 @@ export async function __drainLocalPrefsWriteChainForTesting(): Promise<void> {
   writeChain = Promise.resolve();
 }
 
-/** The companion is visible by default; Window menu changes persist locally. */
+/** The experimental dock Labs setting is off until the user turns it on. */
+export async function getDockLabEnabledLocalPref(): Promise<boolean> {
+  return (await getLocalPref('dockLabEnabled')) === true;
+}
+
+export async function setDockLabEnabledLocalPref(enabled: boolean): Promise<void> {
+  const write = writeChain.then(async () => {
+    const all = await readAll();
+    all.dockLabEnabled = enabled;
+    await writeAll(all);
+  });
+  writeChain = write.catch((error) =>
+    logger.error('Failed to persist dock Labs setting', error as Error),
+  );
+  return write;
+}
+
+/** While the dock lab is on, the dock is visible by default; Window menu changes persist locally. */
 export async function getDockEnabledLocalPref(): Promise<boolean> {
   return (await getLocalPref('dockEnabled')) !== false;
 }

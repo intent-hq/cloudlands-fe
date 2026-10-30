@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { expect, test } from '../../../test/ct-test';
 import DockRailPreview from './dock-rail.preview.svelte';
 import { dockRailPreview, adaptiveDockFixture } from './dock-rail.preview-fixtures';
@@ -47,13 +48,12 @@ test.describe('companion handoff recording', () => {
         await expect(component.getByTestId('dock-preview')).toBeVisible();
         await page.waitForTimeout(1800);
         await entries.nth(1).hover();
-        await component.getByTestId('dock-row-feedback').hover();
         await page.waitForTimeout(1800);
       } else {
         await component.getByTestId('dock-drag-handle').hover();
         await expect(component.getByTestId('dock-shell')).toHaveAttribute('data-reveal', '1');
         await page.waitForTimeout(1500);
-        await component.getByTestId('dock-row-feedback').first().hover();
+        await component.locator('.overview-row').first().hover();
         await page.waitForTimeout(1000);
       }
       await component.screenshot({ path: testInfo.outputPath(`${mode}-polished.png`) });
@@ -136,7 +136,7 @@ test('companion mode visuals with two workspace rows', async ({ mount, page }, t
         const lastRail = [...el.querySelectorAll('.side-rail button')].at(-1);
         const buttons = [
           ...el.querySelectorAll<HTMLElement>(
-            '[data-dock-row], [data-testid="dock-row-feedback"], [data-testid="dock-drag-handle"], [data-testid="dock-dismiss"]',
+            '[data-dock-row], [data-testid="dock-drag-handle"], [data-testid="dock-dismiss"]',
           ),
         ].filter(
           (button) =>
@@ -157,13 +157,6 @@ test('companion mode visuals with two workspace rows', async ({ mount, page }, t
             name: button.getAttribute('aria-label'),
             rect: button.getBoundingClientRect().toJSON(),
           })),
-          pens: [...el.querySelectorAll('[data-testid="dock-row-feedback"]')].map((pen) => {
-            const row = pen.closest('.overview-row');
-            return {
-              pen: pen.getBoundingClientRect().toJSON(),
-              row: row?.getBoundingClientRect().toJSON(),
-            };
-          }),
           rows: [...el.querySelectorAll('.overview-row')].map((row) =>
             row.getBoundingClientRect().toJSON(),
           ),
@@ -184,13 +177,6 @@ test('companion mode visuals with two workspace rows', async ({ mount, page }, t
             expect(rect.top).toBeGreaterThanOrEqual(surface.top - 0.5);
             expect(rect.bottom).toBeLessThanOrEqual(surface.bottom + 0.5);
           }
-          for (const { pen, row } of measurements.pens) {
-            if (!row) throw new Error('Pen has no overview row');
-            expect(Math.abs(pen.y + pen.height / 2 - row.y - row.height / 2)).toBeLessThanOrEqual(
-              1,
-            );
-          }
-          expect(new Set(measurements.pens.map(({ pen }) => pen.right)).size).toBe(1);
         }
       }
       return measurements;
@@ -201,7 +187,8 @@ test('companion mode visuals with two workspace rows', async ({ mount, page }, t
     await component.getByTestId('dock-drag-handle').hover();
     await expect(shell).toHaveAttribute('data-expanded', 'true');
     await expect(shell).toHaveAttribute('data-reveal', '1');
-    await expect(component.getByTestId('dock-row-feedback')).toHaveCount(3);
+    // Rows carry title, status and time only: no per-row feedback pen.
+    await expect(component.getByTestId('dock-row-feedback')).toHaveCount(0);
     await capture('expanded');
     if (after && (mode === 'notch' || mode === 'floating')) {
       await expect(
@@ -213,14 +200,10 @@ test('companion mode visuals with two workspace rows', async ({ mount, page }, t
     if (after) {
       for (const item of props.workspaces.slice(0, 2)) {
         const id = String(item.workspace.id);
-        await component
-          .locator(`[data-testid="dock-row-feedback"][data-workspace-id="${id}"]`)
-          .click();
-        await expect(component).toHaveAttribute('data-preview-action', `feedback:${id}`);
+        await component.locator(`[data-dock-row][data-workspace-id="${id}"]`).click();
+        await expect(component).toHaveAttribute('data-preview-action', `workspace:${id}`);
       }
-      const assistant = component.locator(
-        '[data-testid="dock-row-feedback"][data-workspace-id="dock:assistant"]',
-      );
+      const assistant = component.locator('[data-dock-row][data-workspace-id="dock:assistant"]');
       await page.keyboard.press('Tab');
       await component.getByTestId('dock-drag-handle').focus();
       await expect(shell).toHaveAttribute('data-expanded', 'true');
@@ -229,11 +212,11 @@ test('companion mode visuals with two workspace rows', async ({ mount, page }, t
       await expect(assistant).toBeFocused();
       await expect.poll(() => assistant.evaluate((el) => el.matches(':focus-visible'))).toBe(true);
       await assistant.press('Enter');
-      await expect(component).toHaveAttribute('data-preview-action', 'feedback:__chief__');
+      await expect(component).toHaveAttribute('data-preview-action', 'assistant');
       evidence.push({
         mode,
         theme,
-        keyboard: 'Assistant pen Enter, visible keyboard focus',
+        keyboard: 'Assistant row Enter, visible keyboard focus',
         targets: props.workspaces
           .slice(0, 2)
           .map((item) => String(item.workspace.id))
@@ -280,7 +263,8 @@ test('floating companion opens on hover and keyboard without a close button', as
   });
   const shell = component.getByTestId('dock-shell');
   const grip = component.getByTestId('dock-drag-handle');
-  const pen = component.getByTestId('dock-row-feedback').first();
+  // The Assistant row (pinned below the list) stands in for any focusable row control.
+  const pen = component.locator('[data-dock-row][data-workspace-id="dock:assistant"]');
   await expect(shell).toHaveAttribute('data-expanded', 'false');
   await expect(shell).toHaveAttribute('data-reveal', '0');
   await expect(component.getByTestId('dock-dismiss')).toHaveCount(0);
@@ -291,15 +275,16 @@ test('floating companion opens on hover and keyboard without a close button', as
   await grip.hover();
   await expect(shell).toHaveAttribute('data-expanded', 'true');
   await expect(shell).toHaveAttribute('data-reveal', '1');
-  await expect(component.getByTestId('dock-row-feedback')).toHaveCount(3);
+  await expect(component.locator('[data-dock-row]')).toHaveCount(3);
+  await expect(component.getByTestId('dock-row-feedback')).toHaveCount(0);
   await expect(component.getByTestId('dock-dismiss')).toHaveCount(0);
   const expanded = testInfo.outputPath('floating-hover.png');
   await component.screenshot({ path: expanded });
   await testInfo.attach('Floating hover', { path: expanded, contentType: 'image/png' });
-  await component.locator('.overview-row').first().hover();
+  await component.locator('.overview-row.assistant-row').hover();
   await expect(pen).toHaveCSS('pointer-events', 'auto');
   await pen.click();
-  await expect(component).toHaveAttribute('data-preview-action', 'feedback:__chief__');
+  await expect(component).toHaveAttribute('data-preview-action', 'assistant');
   await expect(pen).toBeFocused();
   await page.mouse.move(700, 660);
   await expect(shell).toHaveAttribute('data-expanded', 'false');
@@ -396,9 +381,9 @@ test('floating companion opens on hover and keyboard without a close button', as
   await pen.focus();
   await expect(pen).toBeFocused();
   await pen.press('Enter');
-  await expect(component).toHaveAttribute('data-preview-action', 'feedback:__chief__');
+  await expect(component).toHaveAttribute('data-preview-action', 'assistant');
   await expect(shell).toHaveAttribute('data-expanded', 'true');
-  await component.getByTestId('dock-row-feedback').last().focus();
+  await component.locator('[data-dock-row]').last().focus();
   await page.keyboard.press('Tab');
   await expect(shell).toHaveAttribute('data-expanded', 'false');
   await expect(shell).toHaveAttribute('data-reveal', '0');
@@ -501,23 +486,19 @@ for (const mode of ['side-left', 'side-right', 'floating', 'notch'] as const) {
       props: {
         ...props,
         workspaces: props.workspaces.slice(0, 2),
-        failFeedbackOnce: true,
+        failOpenOnce: true,
         theme: 'dark',
       },
     });
     if (mode.startsWith('side-')) {
       await component.locator('[data-dock-entry]').nth(1).hover();
       await expect(component.getByTestId('dock-preview')).toBeVisible();
+      await component.locator('[data-dock-entry]').nth(1).click();
     } else {
       await component.getByTestId('dock-drag-handle').hover();
       await expect(component.getByTestId('dock-shell')).toHaveAttribute('data-reveal', '1');
-      await component.locator('.overview-row').first().hover();
+      await component.locator('[data-dock-row]').nth(1).click();
     }
-    await expect(component.getByTestId('dock-row-feedback').first()).toHaveCSS(
-      'pointer-events',
-      'auto',
-    );
-    await component.getByTestId('dock-row-feedback').first().click();
     const feedback = component.locator('[data-dock-action-feedback]');
     await expect(feedback.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
     const recoveryGeometry = () =>
@@ -627,7 +608,7 @@ for (const mode of ['side-left', 'side-right', 'floating', 'notch'] as const) {
     await feedback.getByRole('button', { name: 'Retry', exact: true }).focus();
     await page.keyboard.press('Enter');
     await expect(feedback).toHaveCount(0);
-    await expect(component).toHaveAttribute('data-preview-action', /feedback:/);
+    await expect(component).toHaveAttribute('data-preview-action', /^(workspace:|assistant)/);
     await component.unmount();
     await page.mouse.move(850, 690);
     const errorProps = { ...props, workspaces: props.workspaces.slice(0, 2), placementError: true };
@@ -675,11 +656,15 @@ test('notch keyboard focus request and grip retain internal Tab navigation', asy
     await expect(row).toBeFocused();
     await expect(shell).toHaveAttribute('data-reveal', '1');
     await page.keyboard.press('Tab');
-    const pen = component.getByTestId('dock-row-feedback').first();
-    await expect(pen).toBeFocused();
+    // Rows have no feedback pen: Tab moves to the next row.
+    const next = component.locator('[data-dock-row]').nth(1);
+    await expect(next).toBeFocused();
     await expect(shell).toHaveAttribute('data-expanded', 'true');
-    await pen.press('Enter');
-    await expect(component).toHaveAttribute('data-preview-action', 'feedback:__chief__');
+    await next.press('Enter');
+    await expect(component).toHaveAttribute(
+      'data-preview-action',
+      `workspace:${await next.getAttribute('data-workspace-id')}`,
+    );
     await expect(component.getByTestId('dock-dismiss')).toHaveCount(0);
     await component.screenshot({ path: testInfo.outputPath(`notch-keyboard-${focusRequest}.png`) });
     await page.keyboard.press('Escape');
@@ -841,17 +826,18 @@ test('floating boundary expansion aligns the header and preserves compact anchor
     expect(Math.abs(gutters.right - 12)).toBeLessThanOrEqual(1);
     if (scene.direction === 'up') expect(frame.y + frame.height).toBeLessThanOrEqual(gripBox.y + 1);
     else expect(frame.y).toBeGreaterThanOrEqual(gripBox.y + gripBox.height - 1);
-    const pen = component.getByTestId('dock-row-feedback').last();
-    await pen.scrollIntoViewIfNeeded();
-    await component.locator('.overview-row').last().hover();
-    await expect(pen).toHaveCSS('pointer-events', 'auto');
-    const penBox = await pen.boundingBox();
-    if (!penBox) throw new Error('Last feedback action missing');
-    expect(penBox.y).toBeGreaterThanOrEqual(frame.y);
-    expect(penBox.y + penBox.height).toBeLessThanOrEqual(frame.y + frame.height + 1);
-    const id = await pen.getAttribute('data-workspace-id');
-    await pen.click();
-    await expect(component).toHaveAttribute('data-preview-action', `feedback:${id}`);
+    // The last workspace in the scrolled list (Assistant is pinned below it).
+    const lastRow = component.locator('.overview-rows [data-dock-row]').last();
+    await lastRow.scrollIntoViewIfNeeded();
+    await component.locator('.overview-rows .overview-row').last().hover();
+    await expect(lastRow).toHaveCSS('pointer-events', 'auto');
+    const rowBox = await lastRow.boundingBox();
+    if (!rowBox) throw new Error('Last row missing');
+    expect(rowBox.y).toBeGreaterThanOrEqual(frame.y);
+    expect(rowBox.y + rowBox.height).toBeLessThanOrEqual(frame.y + frame.height + 1);
+    const id = await lastRow.getAttribute('data-workspace-id');
+    await lastRow.click();
+    await expect(component).toHaveAttribute('data-preview-action', `workspace:${id}`);
     const scroll = await component
       .locator('.overview-rows')
       .evaluate((el) => ({ height: el.clientHeight, content: el.scrollHeight, top: el.scrollTop }));
@@ -1835,7 +1821,63 @@ for (const reduced of [false, true]) {
           expect(last.dragTarget?.surface).toEqual(last.snapPreview);
           for (const region of frames.at(-1)!.pointer.regions) expect(region).toEqual(last.surface);
         } else await expect(component.getByTestId('dock-snap-preview')).toHaveCount(0);
+        // Never a light-filled box: the dragged shell and the drop-target preview
+        // are drawn dark (perceived luminance) in both themes.
+        const fills = await component.evaluate((root) =>
+          [
+            root.querySelector('.shell-silhouette path'),
+            ...root.querySelectorAll('[data-testid="dock-snap-preview"] path'),
+          ].map((path) => (path ? getComputedStyle(path).fill : null)),
+        );
+        for (const fill of fills) {
+          const [r, g, b] = (fill?.match(/\d+(\.\d+)?/g) ?? []).map(Number);
+          expect(fill, `${stage.name} fill`).not.toBeNull();
+          expect(
+            (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255,
+            `${stage.name} ${fill}`,
+          ).toBeLessThan(0.2);
+        }
+        // One form at a time: with a drop target only its preview is visible (the dragged
+        // shell keeps the gesture but fades out); with none, the dragged bar is the fallback.
+        await expect
+          .poll(() =>
+            component.evaluate((root) => {
+              const shown = (el: Element | null) => {
+                let opacity = 1;
+                for (let node = el; node && node !== root; node = node.parentElement)
+                  opacity *= Number(getComputedStyle(node).opacity);
+                return opacity > 0.01;
+              };
+              return {
+                shell:
+                  shown(root.querySelector('.shell-silhouette')) ||
+                  shown(root.querySelector('.companion-content')),
+                previews: [...root.querySelectorAll('.snap-preview-shape')].filter(shown).length,
+              };
+            }),
+          )
+          .toEqual(stage.candidate ? { shell: false, previews: 1 } : { shell: true, previews: 0 });
         await component.screenshot({ path: testInfo.outputPath(`${stage.name}.png`) });
+        // Review artifacts: the dragged dock per drop target, in this run's theme.
+        const target = { free: 'floating', 'acquire-left': 'edge', 'acquire-camera': 'notch' }[
+          stage.name as string
+        ];
+        if (target) {
+          const dir = resolve(process.cwd(), '../../.intent/artifacts');
+          await mkdir(dir, { recursive: true });
+          await expect
+            .poll(() =>
+              component.evaluate((root) =>
+                [...root.querySelectorAll('.snap-preview-shape')].every(
+                  (el) => el.getAnimations().length === 0,
+                ),
+              ),
+            )
+            .toBe(true);
+          await component.screenshot({
+            path: resolve(dir, `dock-drag-preview-${target}-${reduced ? 'light' : 'dark'}.png`),
+          });
+        }
       }
       await sampleFrames(1, 'last-held');
       const releasePoint = {
@@ -1985,7 +2027,7 @@ for (const shape of ['notch', 'top-pill'] as const) {
     await component.screenshot({ path: testInfo.outputPath(`${shape}-compact.png`) });
     await grip.hover();
     await expect(shell).toHaveAttribute('data-reveal', '1');
-    await expect(component.getByTestId('dock-row-feedback').first()).toHaveCSS('cursor', 'pointer');
+    await expect(component.locator('[data-dock-row]').first()).toHaveCSS('cursor', 'pointer');
     await component.screenshot({ path: testInfo.outputPath(`${shape}-expanded.png`) });
     if (shape === 'notch') {
       const gap = await component.getByTestId('dock-camera-exclusion').boundingBox();

@@ -29,6 +29,14 @@ export function visiblePopupRect(
   return right > x && bottom > y ? { x, y, width: right - x, height: bottom - y } : null;
 }
 
+function intersectRects(a: DockPointerRect, b: DockPointerRect): DockPointerRect | null {
+  const x = Math.max(a.x, b.x);
+  const y = Math.max(a.y, b.y);
+  const right = Math.min(a.x + a.width, b.x + b.width);
+  const bottom = Math.min(a.y + a.height, b.y + b.height);
+  return right > x && bottom > y ? { x, y, width: right - x, height: bottom - y } : null;
+}
+
 interface PopupRegistration {
   close?: () => void;
   pointerEvents: string;
@@ -41,11 +49,15 @@ export function createDockConversationPopupOwner(options: {
   active: () => boolean;
   onRegionsChange: (regions: DockPointerRect[]) => void;
   onPopupStateChange: (open: boolean) => void;
+  /** Visible host ink in viewport CSS pixels. Inline content never claims beyond it;
+   * body-level popups are independent. Omitted: the surface itself is the bound. */
+  clip?: () => DockPointerRect | null;
 }) {
   const popups = new Map<HTMLElement, PopupRegistration>();
   let disposed = false;
   let closing = false;
   let frame: number | undefined;
+  let measureTask: ReturnType<typeof setTimeout> | undefined;
   let lastRegions = '';
   let popupOpen = false;
   const resize = new ResizeObserver(schedule);
@@ -76,7 +88,9 @@ export function createDockConversationPopupOwner(options: {
 
   function cancelFrame(): void {
     if (frame !== undefined) cancelAnimationFrame(frame);
+    clearTimeout(measureTask);
     frame = undefined;
+    measureTask = undefined;
   }
 
   function unregister(element: HTMLElement, registration: PopupRegistration): void {
@@ -109,6 +123,7 @@ export function createDockConversationPopupOwner(options: {
 
   function measure(): void {
     frame = undefined;
+    measureTask = undefined;
     if (disposed) return;
     if (!options.active()) {
       close();
@@ -118,7 +133,9 @@ export function createDockConversationPopupOwner(options: {
     }
     const regions: DockPointerRect[] = [];
     const root = options.surface();
-    const surfaceRect = root && visiblePopupRect(root, window.innerWidth, window.innerHeight);
+    const clip = options.clip?.() ?? null;
+    const rootRect = root && visiblePopupRect(root, window.innerWidth, window.innerHeight);
+    const surfaceRect = rootRect && clip ? intersectRects(rootRect, clip) : rootRect;
     if (surfaceRect) regions.push(surfaceRect);
     let open = false;
     for (const [element, registration] of popups) {
@@ -135,13 +152,8 @@ export function createDockConversationPopupOwner(options: {
       if (rect && root?.contains(element)) {
         // Inline lists and toast actions are clipped by the conversation panel.
         // Their overflow must not claim transparent space beyond that panel.
-        if (surfaceRect) {
-          const x = Math.max(rect.x, surfaceRect.x);
-          const y = Math.max(rect.y, surfaceRect.y);
-          const right = Math.min(rect.x + rect.width, surfaceRect.x + surfaceRect.width);
-          const bottom = Math.min(rect.y + rect.height, surfaceRect.y + surfaceRect.height);
-          if (right > x && bottom > y) regions.push({ x, y, width: right - x, height: bottom - y });
-        }
+        const inline = surfaceRect && intersectRects(rect, surfaceRect);
+        if (inline) regions.push(inline);
       } else if (rect) regions.push(rect);
     }
     setOpen(open);
@@ -152,7 +164,12 @@ export function createDockConversationPopupOwner(options: {
   }
 
   function schedule(): void {
-    if (!disposed && frame === undefined) frame = requestAnimationFrame(measure);
+    // Measure after the frame has laid out (a task queued from the frame): reading popup
+    // bounds inside the frame forced a reflow every frame while the dock animated.
+    if (!disposed && frame === undefined)
+      frame = requestAnimationFrame(() => {
+        measureTask = setTimeout(measure, 0);
+      });
   }
 
   function refresh(): void {

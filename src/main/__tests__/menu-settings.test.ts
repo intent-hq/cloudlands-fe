@@ -9,8 +9,8 @@ const fixture = vi.hoisted(() => ({
 }));
 vi.mock('electron', () => ({ BrowserWindow: { getFocusedWindow: () => fixture.focused } }));
 vi.mock('../dock-window', () => ({ isDockWindow: () => fixture.dock }));
-vi.mock('../../features/annotation/main/annotation-window', () => ({
-  isAnnotationWindow: () => fixture.annotation,
+vi.mock('../dock-annotation-identity', () => ({
+  isDockAnnotationWindow: () => fixture.annotation,
 }));
 
 describe('Settings native menu accelerator', () => {

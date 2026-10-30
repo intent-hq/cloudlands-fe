@@ -1,5 +1,5 @@
 import type { DockPointerRect } from '$shared/dock-layout';
-import type { DockPlacementSnapshot } from '$shared/dock-placement';
+import { DOCK_SIDE_PANEL_INSET, type DockPlacementSnapshot } from '$shared/dock-placement';
 import type { DockConversationSize, DockResizeEdge } from './dock-conversation-resize-context';
 
 export function conversationResizeRect(
@@ -12,6 +12,23 @@ export function conversationResizeRect(
     ...state.surface,
     y: state.surface.y + (up ? 0 : header),
     height: Math.max(1, state.surface.height - header),
+  };
+}
+
+/**
+ * A side conversation's vertical centre and clamp band, as main resolves it: the
+ * entry anchor (or the rail's centre), inside the work area with the anchored inset.
+ */
+function sideVertical(state: DockPlacementSnapshot, area: DockPointerRect) {
+  const anchor = state.sidePanelAnchor;
+  const anchored = anchor !== null && anchor !== undefined && Number.isFinite(anchor);
+  const inset = anchored ? DOCK_SIDE_PANEL_INSET : 0;
+  return {
+    centre:
+      state.surface.y +
+      (anchored ? Math.max(0, Math.min(state.surface.height, anchor)) : state.surface.height / 2),
+    low: area.y + inset,
+    high: area.y + area.height - inset,
   };
 }
 
@@ -62,15 +79,10 @@ export function conversationSizeAtPointer(
         : centeredSize(x, centerX(state), area.x, area.x + area.width, edge.includes('w'));
   }
   if (/[ns]/.test(edge)) {
+    const vertical = sideVertical(state, area);
     height =
       state.placement.kind === 'edge'
-        ? centeredSize(
-            y,
-            state.surface.y + state.surface.height / 2,
-            area.y,
-            area.y + area.height,
-            edge.includes('n'),
-          )
+        ? centeredSize(y, vertical.centre, vertical.low, vertical.high, edge.includes('n'))
         : edge.includes('n')
           ? rect.y + rect.height - y
           : y - rect.y;
@@ -88,10 +100,11 @@ export function conversationResizeEdges(
   const idealX = centerX(state) - rect.width / 2;
   const west = side ? side === 'right' : !area || idealX >= area.x - 0.5;
   const east = side ? side === 'left' : !area || idealX + rect.width <= area.x + area.width + 0.5;
-  const idealY = state.surface.y + (state.surface.height - rect.height) / 2;
+  const vertical = area ? sideVertical(state, area) : null;
+  const idealY = (vertical?.centre ?? state.surface.y + state.surface.height / 2) - rect.height / 2;
   const up = state.shape === 'floating' && state.expansionDirection === 'up';
-  const north = side ? !area || idealY >= area.y - 0.5 : up;
-  const south = side ? !area || idealY + rect.height <= area.y + area.height + 0.5 : !up;
+  const north = side ? !vertical || idealY >= vertical.low - 0.5 : up;
+  const south = side ? !vertical || idealY + rect.height <= vertical.high + 0.5 : !up;
   const edges: DockResizeEdge[] = [];
   if (west) edges.push('w');
   if (east) edges.push('e');

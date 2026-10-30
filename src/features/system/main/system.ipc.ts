@@ -96,7 +96,7 @@ import {
 import { isHudWindow, isTrackedHudWindow } from '../../../main/hud-window';
 import { isDockWindow } from '../../../main/dock-window';
 import { registerDockPlacementHandlers } from '../../../main/dock-placement-ipc';
-import { isAnnotationWindow } from '../../annotation/main/annotation-window';
+import { isDockAnnotationWindow } from '../../../main/dock-annotation-identity';
 import { isWebviewPopupWindow } from '../../../main/webview-security';
 import { isDevConsoleRoute } from '../../../shared/dev-console-route';
 import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
@@ -123,7 +123,7 @@ type WindowOpenRequestEntry = {
 function refreshNativeWindowBackgrounds(): void {
   const backgroundColor = getWindowBackgroundColor(nativeTheme.shouldUseDarkColors);
   for (const window of BrowserWindow.getAllWindows()) {
-    if (isDockWindow(window) || isAnnotationWindow(window)) continue;
+    if (isDockWindow(window) || isDockAnnotationWindow(window)) continue;
     window.setBackgroundColor(backgroundColor);
   }
 }
@@ -921,7 +921,7 @@ export function setupSystemIPC() {
           if (window) {
             nativeTheme.themeSource = validated.theme;
             const isDark = nativeTheme.shouldUseDarkColors;
-            if (!isDockWindow(window) && !isAnnotationWindow(window)) {
+            if (!isDockWindow(window) && !isDockAnnotationWindow(window)) {
               window.setBackgroundColor(getWindowBackgroundColor(isDark));
             }
 
@@ -1220,7 +1220,7 @@ export function setupSystemIPC() {
       !existing.isDestroyed() &&
       !existing.webContents.isDestroyed() &&
       !isDockWindow(existing) &&
-      !isAnnotationWindow(existing) &&
+      !isDockAnnotationWindow(existing) &&
       !isWebviewPopupWindow(existing) &&
       !isDevConsoleRoute(new URL(existing.webContents.getURL() || 'about:blank').pathname) &&
       !isHudWindow(existing) &&
@@ -1305,8 +1305,9 @@ export function setupSystemIPC() {
       WindowOpenNewSchema,
       async (event, validated) => {
         const openWindow = async (): Promise<WindowOpenResult> => {
+          let openerBackendId: string | undefined;
           try {
-            const openerBackendId =
+            openerBackendId =
               validated.route === `/workspace/${CHIEF_WORKSPACE_ID}` ||
               (validated.reuseExistingWorkspace && validated.route === '/')
                 ? LOCAL_CONNECTION_ID
@@ -1359,7 +1360,13 @@ export function setupSystemIPC() {
             const newWindow = await createAppWindow(validated.route, openerBackendId);
             return { success: true, windowId: newWindow.id };
           } catch (error) {
-            logger.error('Failed to open new window', error as Error);
+            logger.error('Failed to open new window', error as Error, {
+              reason: error instanceof Error ? error.message : String(error),
+              route: validated.route,
+              workspaceTarget: validated.workspaceTarget?.type ?? null,
+              reuseExistingWorkspace: validated.reuseExistingWorkspace === true,
+              backendId: openerBackendId ?? null,
+            });
             return {
               success: false,
               error:
@@ -1465,7 +1472,7 @@ export function setupSystemIPC() {
             !w.isDestroyed() &&
             (w.isVisible() || w.isMinimized()) &&
             !isDockWindow(w) &&
-            !isAnnotationWindow(w) &&
+            !isDockAnnotationWindow(w) &&
             !isHudWindow(w) &&
             !isTrackedHudWindow(w),
         );

@@ -3,7 +3,6 @@
   import { Tooltip } from 'bits-ui';
   import { store } from '$store/renderer/store';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
-  import { annotationSaga } from '$store/renderer/slices/annotation/sagas/annotation-saga';
   import { dockPlacementSaga } from '$store/renderer/slices/hud/sagas/dock-placement-saga';
   import {
     dockActivated,
@@ -18,17 +17,12 @@
   import { guestSessionsListUnavailable } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
   import DockRail from '$features/hud/components/DockRail.svelte';
   import { dockRailPreview } from '$features/hud/components/dock-rail.preview-fixtures';
-  import AnnotationToolbar from '$features/annotation/components/AnnotationToolbar.svelte';
-  import AnnotationOverlay from '$features/annotation/components/AnnotationOverlay.svelte';
 
   const route = location.pathname;
   const stop = startRootStoreLifecycle(store, {
     startSagas: () => {
       if (route === '/dock') store.dispatch(dockActivated());
-      return [
-        store.runSaga(annotationSaga),
-        ...(route === '/dock' ? [store.runSaga(dockPlacementSaga)] : []),
-      ];
+      return route === '/dock' ? [store.runSaga(dockPlacementSaga)] : [];
     },
   });
   onDestroy(stop);
@@ -154,7 +148,6 @@
         evidence: () => ({
           marker,
           opened: [...opened],
-          draft: store.state.annotation.draft,
           commands: [...commands],
           pointerEvents: [...pointerEvents],
           dragStartResult: store.state.hud.dockDragStartResult,
@@ -189,11 +182,7 @@
 
 <Tooltip.Provider>
   <main data-testid="companion-native-fixture" data-route={route} data-marker={marker}>
-    {#if route === '/annotation-toolbar'}
-      <AnnotationToolbar />
-    {:else if route === '/annotation'}
-      <AnnotationOverlay />
-    {:else if $placement$}
+    {#if $placement$}
       <DockRail
         {workspaces}
         staticData

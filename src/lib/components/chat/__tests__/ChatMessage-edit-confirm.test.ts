@@ -67,6 +67,86 @@ function userMessage(): AgentMessage {
   };
 }
 
+const screenEvidenceHeader =
+  '[Screen evidence: screenshots lead the attached images in this order; [[mark:n]] in the message refers to mark n; [[clip:n]] and [[clip:n:end]] mark where recording n started and stopped while the user was speaking]';
+function screenEvidencePrefix(version = 1): string {
+  const body = {
+    type: 'dock_screen_evidence',
+    version,
+    images: [
+      {
+        image: 1,
+        size: [640, 480],
+        scale: 1,
+        marks: [
+          {
+            n: 1,
+            tool: 'box',
+            geometry: { kind: 'rect', x: 10, y: 10, w: 20, h: 20 },
+          },
+        ],
+      },
+    ],
+  };
+  return `${screenEvidenceHeader}\n\`\`\`json\n${JSON.stringify(body)}\n\`\`\``;
+}
+
+describe('ChatMessage screen evidence display and edit extraction', () => {
+  it('shows only the words with the reference chip, and preserves the same prompt when editing', async () => {
+    const prefix = screenEvidencePrefix();
+    const prompt = 'Keep this prompt [[mark:1]] unchanged.';
+    const message = {
+      ...userMessage(),
+      contentBlocks: [{ type: 'text', text: `${prefix}\n\n${prompt}` }],
+    };
+    const { container } = render(ChatMessage, { props: { message, onEditSubmit: vi.fn() } });
+    expect(container.textContent).not.toContain(screenEvidenceHeader);
+    expect(container.textContent).not.toContain('[[mark:1]]');
+    expect(screen.getByRole('img', { name: /^Reference 1/ }).textContent).toBe('1');
+
+    await fireEvent.dblClick(screen.getByTestId('user-message-surface'));
+    await waitFor(() => expect(screen.getByTestId('mock-rich-input')).toBeTruthy());
+    expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe(prompt);
+    expect(screen.getByTestId('mock-rich-input').getAttribute('data-context-count')).toBe('1');
+    await fireEvent.click(screen.getByTestId('mock-input-cancel'));
+    await waitFor(() => expect(screen.queryByTestId('mock-rich-input')).toBeNull());
+    expect(screen.getByRole('img', { name: /^Reference 1/ })).toBeTruthy();
+  });
+
+  it('keeps evidence-only content represented and preserves adjacent existing context', () => {
+    const prefix = screenEvidencePrefix();
+    const message = {
+      ...userMessage(),
+      contentBlocks: [
+        {
+          type: 'text',
+          text: `[Currently viewing file: src/main.ts]\n\n${prefix}\n\n[Currently viewing: Spec]`,
+        },
+      ],
+    };
+    const { container } = render(ChatMessage, { props: { message } });
+    expect(screen.getByRole('button', { name: 'src/main.ts' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Spec' })).toBeTruthy();
+    expect(container.textContent).not.toContain(screenEvidenceHeader);
+  });
+
+  it.each([
+    ['unknown version', screenEvidencePrefix(2)],
+    ['malformed JSON', `${screenEvidenceHeader}\n\`\`\`json\n{invalid}\n\`\`\``],
+    ['ordinary fenced JSON', '```json\n{"type":"example","version":1}\n```'],
+    ['non-prefix literal', `Example:\n\n${screenEvidencePrefix()}`],
+  ])('retains %s in normal display and the editable value', async (_name, prefix) => {
+    const text = `${prefix}\n\nKeep this prompt.`;
+    const message = { ...userMessage(), contentBlocks: [{ type: 'text', text }] };
+    const { container } = render(ChatMessage, { props: { message, onEditSubmit: vi.fn() } });
+    expect(container.textContent).toContain(prefix);
+    await fireEvent.click(screen.getByText(/Keep this prompt\./));
+    await waitFor(() => expect(screen.getByTestId('mock-rich-input')).toBeTruthy());
+    expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe(text);
+    expect(screen.getByTestId('mock-rich-input').getAttribute('data-context-count')).toBe('0');
+  });
+});
+
 /** Render, enter edit mode, and press save — the confirm dialog should open. */
 async function renderAndSave(onEditSubmit: (text: string, model?: string) => void) {
   const rendered = render(ChatMessage, { props: { message: userMessage(), onEditSubmit } });

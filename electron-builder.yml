@@ -102,6 +102,12 @@ mac:
   # The pre-signed bundle is sealed as-is into the outer app signature.
   signIgnore:
     - 'Resources/keychain-helper/intent-keychain-helper\.app'
+    # Dock composer helpers are signed by the afterPack hook with per-helper
+    # entitlements (microphone for recorder/speech, none for the element
+    # picker); the deep-sign pass would replace them with the full app set.
+    - 'Resources/dock-helper/intent-dock-recorder$'
+    - 'Resources/speech-helper/intent-dock-speech$'
+    - 'Resources/dock-helper/intent-dock-element-pick$'
   # Bundle the macOS speech transcription helper (built by
   # scripts/build-speech-helper.cjs; signed by the afterPack hook).
   # Runtime path: process.resourcesPath/speech-helper/intent-speech-helper

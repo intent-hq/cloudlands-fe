@@ -31,6 +31,26 @@
   let next: DockConversationSize | null = null;
   let frame: number | undefined;
   const enabled = $derived(active && !!owner?.enabled);
+  const cursors: Record<DockResizeEdge, string> = {
+    n: 'ns-resize',
+    s: 'ns-resize',
+    e: 'ew-resize',
+    w: 'ew-resize',
+    nw: 'nwse-resize',
+    se: 'nwse-resize',
+    ne: 'nesw-resize',
+    sw: 'nesw-resize',
+  };
+  function lockCursor(edge: DockResizeEdge | null): void {
+    const root = document.documentElement;
+    if (edge) {
+      root.dataset.dockResizeCursor = edge;
+      root.style.setProperty('--dock-resize-cursor', cursors[edge]);
+    } else if (root.dataset.dockResizeCursor) {
+      delete root.dataset.dockResizeCursor;
+      root.style.removeProperty('--dock-resize-cursor');
+    }
+  }
 
   function bounded(size: DockConversationSize): DockConversationSize {
     if (!owner) return size;
@@ -50,6 +70,7 @@
     const previous = gesture;
     gesture = null;
     held = null;
+    if (previous) lockCursor(null);
     if (frame !== undefined) cancelAnimationFrame(frame);
     frame = undefined;
     if (!previous) return;
@@ -81,6 +102,7 @@
       edgeY: edge.includes('n') ? rect.y : rect.y + rect.height,
     };
     held = edge;
+    lockCursor(edge);
   }
   function move(event: PointerEvent): void {
     if (!gesture || !owner || event.pointerId !== gesture.pointerId) return;
@@ -168,7 +190,11 @@
 {/if}
 
 <style>
+  /* Handles stay inside the visible panel, so native hit regions never claim
+     transparent space; depth makes the edge forgiving, and the presence owner
+     treats a short overshoot past it as an approach rather than a dismissal. */
   :global(.conversation-resize) {
+    /* Depths come from DockConversationSurface, which reserves the side gutters. */
     position: absolute;
     z-index: 2;
     min-width: 0;
@@ -178,21 +204,21 @@
   }
   :global(.conversation-resize[data-dock-resize='n']),
   :global(.conversation-resize[data-dock-resize='s']) {
-    left: 14px;
-    right: 14px;
-    height: 5px;
+    left: var(--dock-resize-corner);
+    right: var(--dock-resize-corner);
+    height: var(--dock-resize-depth-block);
     width: auto;
   }
   :global(.conversation-resize[data-dock-resize='e']),
   :global(.conversation-resize[data-dock-resize='w']) {
-    top: 14px;
-    bottom: 14px;
-    width: 5px;
+    top: var(--dock-resize-corner);
+    bottom: var(--dock-resize-corner);
+    width: var(--dock-resize-depth-inline);
     height: auto;
   }
   :global(.conversation-resize[data-resize-axis='both']) {
-    width: 14px;
-    height: 14px;
+    width: var(--dock-resize-corner);
+    height: var(--dock-resize-corner);
   }
   :global(.conversation-resize[data-dock-resize*='n']) {
     top: 0;
@@ -206,8 +232,44 @@
   :global(.conversation-resize[data-dock-resize*='e']) {
     right: 0;
   }
-  :global(.conversation-resize[data-dock-resize='ne']),
-  :global(.conversation-resize[data-dock-resize='sw']) {
+  /* Window edges, not splitters: the shared handle's col/row cursors read as panes. */
+  :global(.app-resize-handle.conversation-resize[data-dock-resize='e']),
+  :global(.app-resize-handle.conversation-resize[data-dock-resize='w']) {
+    cursor: ew-resize;
+  }
+  :global(.app-resize-handle.conversation-resize[data-dock-resize='n']),
+  :global(.app-resize-handle.conversation-resize[data-dock-resize='s']) {
+    cursor: ns-resize;
+  }
+  :global(.app-resize-handle.conversation-resize[data-dock-resize='nw']),
+  :global(.app-resize-handle.conversation-resize[data-dock-resize='se']) {
+    cursor: nwse-resize;
+  }
+  :global(.app-resize-handle.conversation-resize[data-dock-resize='ne']),
+  :global(.app-resize-handle.conversation-resize[data-dock-resize='sw']) {
     cursor: nesw-resize;
+  }
+  /* The quiet indicator hugs the visible edge rather than the deeper target's centre. */
+  :global(.app-resize-handle.conversation-resize[data-dock-resize='s']::before) {
+    top: auto;
+    bottom: 1px;
+    transform: none;
+  }
+  :global(.app-resize-handle.conversation-resize[data-dock-resize='n']::before) {
+    top: 1px;
+    transform: none;
+  }
+  :global(.app-resize-handle.conversation-resize[data-dock-resize='e']::before) {
+    left: auto;
+    right: 1px;
+    transform: none;
+  }
+  :global(.app-resize-handle.conversation-resize[data-dock-resize='w']::before) {
+    left: 1px;
+    transform: none;
+  }
+  /* Keep the edge cursor while a captured drag crosses content or the envelope. */
+  :global(html[data-dock-resize-cursor] *) {
+    cursor: var(--dock-resize-cursor) !important;
   }
 </style>

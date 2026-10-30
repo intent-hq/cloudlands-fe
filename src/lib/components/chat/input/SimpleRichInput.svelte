@@ -3,12 +3,18 @@
   import { selectWorkspaceCreationVisible } from '$store/renderer/slices/principal/principal-selectors';
   import { selectAgentProvider } from '$store/renderer/slices/agent-session/agent-session-selectors';
   /* eslint-disable max-lines */
-  import { onDestroy, onMount, tick } from 'svelte';
+  import { onDestroy, onMount, tick, type Snippet } from 'svelte';
   import { writable } from 'svelte/store';
   import { notify } from '$lib/components/patterns/notify';
   import { withToastCountdown } from '$lib/components/patterns/notify';
   import { createLogger } from '$lib/utils/client-logger';
   import type { Workspace } from '$shared/types';
+  import type {
+    EditorScreenReference,
+    DockEvidenceInsertion,
+    DockInsertionPart,
+    DockReferenceEdit,
+  } from '$shared/dock-evidence';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import {
@@ -121,6 +127,15 @@
   interface Props {
     value: string;
     placeholder?: string;
+    /** Opt-in: the editor follows later `placeholder` changes. */
+    reactivePlaceholder?: boolean;
+    /**
+     * The host holds content not yet in `value` (e.g. live dictation): Send stays
+     * available and the host's submit barrier commits it before sending.
+     */
+    pendingContent?: boolean;
+    /** The host is preparing this submission: Send shows a busy state. */
+    submitPending?: boolean;
     disabled?: boolean;
     editableWhileDisabled?: boolean;
     /**
@@ -160,6 +175,10 @@
     maxComposerHeight?: number;
     /** Render as the inset ChatPanel composer surface. */
     edgeDocked?: boolean;
+    /** Toast after images are added; compact hosts rely on the staged thumbnail. */
+    announceAddedImages?: boolean;
+    /** Tooltip explaining an enabled composer's Send that is disabled only by an empty draft. */
+    sendDisabledTooltip?: string;
     /** Padding/spacing class applied to the rich text editor content. */
     editorClassName?: string;
     /** Override the horizontal inset applied to context rows and the action bar. */
@@ -168,6 +187,23 @@
     actionBarEndClassName?: string;
     /** Optional local portal target for composer tooltips. */
     tooltipPortalTarget?: Element | string;
+    /** Host tools replace the default attach/enhance/mic group; Send stays canonical. */
+    composerActions?: Snippet;
+    /** Hosts may render the existing attachment collection as a single compact row. */
+    renderAttachments?: Snippet<[ContextItem[]]>;
+    fileAttachmentPolicy?: FileAttachmentPolicy;
+    screenReferences?: readonly EditorScreenReference[];
+    screenInsertions?: readonly DockEvidenceInsertion[];
+    screenInterim?: readonly DockInsertionPart[];
+    /** Dictation is live (its words land at one speech point). */
+    screenSpeechActive?: boolean;
+    onScreenInsertionApplied?: (id: string, text: string) => void;
+    onCompositionChange?: (composing: boolean) => void;
+    onUserTextInput?: () => void;
+    /** A user edit deleted or brought back reference chips (marks follow their chips). */
+    onScreenReferencesEdited?: (edit: DockReferenceEdit) => void;
+    /** A host with an async stop/flush barrier performs the evidence drain before admission. */
+    deferScreenEvidenceFlush?: boolean;
     /**
      * The parent owns file drag-and-drop (e.g. ChatPanel's full-panel drop
      * target): the container's own drag handlers and drop overlay are disabled
@@ -184,7 +220,8 @@
     oncontextAdd?: (item: ContextItem) => void;
     oncontextRemove?: (id: string) => void;
     onmodelChange?: (modelId: string) => void;
-    onvaluechange?: (value: string) => void;
+    /** `programmatic`: the editor changed itself (screen-reference renumbering), not the user. */
+    onvaluechange?: (value: string, change?: { programmatic: boolean }) => void;
     /** Callback to get previous history item (up arrow) - returns null if at start of history */
     onHistoryPrev?: () => string | null;
     /** Callback to get next history item (down arrow) - returns null if at end of history */
@@ -201,6 +238,7 @@
     placeAttachmentViaTransport,
   } from './attachment-placement';
   import { splitDroppedItems } from '$lib/utils/drop-split';
+  import { fileAttachmentRejection, type FileAttachmentPolicy } from './file-attachment-policy';
   import { cn } from '$lib/utils';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
@@ -215,6 +253,9 @@
   let {
     value = $bindable(''),
     placeholder = m.chat_richInput_askAnything_placeholder(),
+    reactivePlaceholder = false,
+    pendingContent = false,
+    submitPending = false,
     disabled = false,
     editableWhileDisabled = false,
     inputLocked = false,
@@ -238,10 +279,24 @@
     compactMode: _compactMode = false, // Reserved for future use
     maxComposerHeight,
     edgeDocked = false,
+    announceAddedImages = true,
+    sendDisabledTooltip,
     editorClassName = 'px-2!',
     contentInsetClassName = undefined,
     actionBarEndClassName = 'pr-1.5!',
     tooltipPortalTarget,
+    composerActions,
+    renderAttachments,
+    fileAttachmentPolicy,
+    screenReferences,
+    screenInsertions,
+    screenInterim,
+    screenSpeechActive,
+    onScreenInsertionApplied,
+    onCompositionChange,
+    onUserTextInput,
+    onScreenReferencesEdited,
+    deferScreenEvidenceFlush = false,
     externalDropTarget = false,
     onsubmit,
     onforcesubmit,
@@ -266,10 +321,11 @@
   let disposed = false;
   const lifetimeAborter = new AbortController();
 
-  function updateValue(nextValue: string) {
+  function updateValue(nextValue: string, change?: { programmatic: boolean }) {
     if (disposed) return;
     value = nextValue;
-    onvaluechange?.(nextValue);
+    if (change) onvaluechange?.(nextValue, change);
+    else onvaluechange?.(nextValue);
   }
 
   // §5.31 gate — enhance is auggie-only; gated on the settings-derived
@@ -320,7 +376,7 @@
   // pill must be retried or removed before the message can go out.
   let canSend = $derived(
     admitted &&
-      (value.trim() || contextItems.length > 0 || hasInlineImages) &&
+      (value.trim() || contextItems.length > 0 || hasInlineImages || pendingContent) &&
       !hasBlockingAttachments(contextItems),
   );
 
@@ -446,6 +502,27 @@
   }
 
   // Export clear method for parent components
+  /** The text the editor holds now, including just-committed screen evidence. */
+  export function getValue(): string {
+    return value;
+  }
+
+  export function flushScreenEvidence(): boolean {
+    return tiptap?.flushScreenEvidence() ?? false;
+  }
+
+  export function removeAttachment(id: string): boolean {
+    if (disposed || disabled || inputLocked || !contextItems.some((item) => item.id === id))
+      return false;
+    removeContextItem(id);
+    return true;
+  }
+
+  export async function retryAttachment(id: string): Promise<void> {
+    if (disposed || disabled || inputLocked) return;
+    await runPlacement(id);
+  }
+
   export function clear() {
     if (tiptap?.clear) {
       tiptap.clear();
@@ -803,6 +880,7 @@
   }
 
   function handleSubmit() {
+    if (screenReferences && !deferScreenEvidenceFlush && !flushScreenEvidence()) return;
     if (!canSend || disabled || inputLocked || isEnhancing) {
       return;
     }
@@ -814,6 +892,7 @@
   }
 
   function handleForceSubmit() {
+    if (screenReferences && !deferScreenEvidenceFlush && !flushScreenEvidence()) return;
     if (!canSend || disabled || inputLocked || isEnhancing) {
       return;
     }
@@ -1036,11 +1115,11 @@
 
   // Handle clipboard paste for files (images and non-images alike)
   async function handlePaste(e: ClipboardEvent) {
-    const items = e.clipboardData?.items;
-    if (!items) return;
+    const clipboard = e.clipboardData;
+    if (!clipboard) return;
 
     const pastedFiles: File[] = [];
-    for (const item of items) {
+    for (const item of Array.from(clipboard.items ?? [])) {
       if (item.kind === 'file') {
         const file = item.getAsFile();
         if (file) {
@@ -1048,6 +1127,11 @@
         }
       }
     }
+
+    // Some native paste events expose files without readable item entries.
+    // The two lists normally describe the same files: use files only as a
+    // fallback so one paste stages each attachment and its notification once.
+    if (pastedFiles.length === 0) pastedFiles.push(...Array.from(clipboard.files ?? []));
 
     if (pastedFiles.length > 0) {
       e.preventDefault(); // Prevent default paste behavior for files
@@ -1069,12 +1153,25 @@
       workspace?.id === CHIEF_WORKSPACE_ID ? INLINE_IMAGE_MAX_BYTES : REFERENCE_IMAGE_MAX_BYTES;
 
     const imageFiles: File[] = [];
+    const notified = new Set<'disabled' | 'limit'>();
     for (const file of files) {
       if (disposed) return;
       // Non-image files of ANY size are placed into the workspace via the
       // daemon (file.placeAttachment, PROTOCOL §5.9) and referenced by an
       // attachment block — never inlined, never dropped.
       if (!file.type.startsWith('image/')) {
+        const rejected = fileAttachmentRejection(contextItems, fileAttachmentPolicy);
+        if (rejected && fileAttachmentPolicy) {
+          if (!notified.has(rejected)) {
+            notified.add(rejected);
+            notify.error(
+              rejected === 'disabled'
+                ? fileAttachmentPolicy.unavailableMessage
+                : fileAttachmentPolicy.limitMessage,
+            );
+          }
+          continue;
+        }
         await placeNonImageFile(file);
         continue;
       }
@@ -1085,6 +1182,7 @@
     const items = await imageFilesToContextItems(imageFiles, {
       maxBytes,
       signal: lifetimeAborter.signal,
+      announceSuccess: announceAddedImages,
     });
     if (disposed) return;
     for (const item of items) {
@@ -1488,14 +1586,20 @@
           ? m.chat_richInput_queueMessage_ariaLabel()
           : m.chat_richInput_sendMessage_ariaLabel(),
   );
+  // The disabled button passes hover to the tooltip's trigger wrapper, so the reason is reachable.
+  const showSendDisabledReason = $derived(
+    !!sendDisabledTooltip && buttonMode === 'send' && !editMode && !disabled && !canSend,
+  );
   const buttonTooltipLabel = $derived(
-    buttonMode === 'stop'
-      ? m.chat_richInput_stop_label()
-      : buttonMode === 'queue'
-        ? m.chat_richInput_queueMessage_ariaLabel()
-        : editMode
-          ? m.chat_richInput_saveAndResend_label()
-          : m.chat_richInput_send_label(),
+    showSendDisabledReason && sendDisabledTooltip
+      ? sendDisabledTooltip
+      : buttonMode === 'stop'
+        ? m.chat_richInput_stop_label()
+        : buttonMode === 'queue'
+          ? m.chat_richInput_queueMessage_ariaLabel()
+          : editMode
+            ? m.chat_richInput_saveAndResend_label()
+            : m.chat_richInput_send_label(),
   );
 </script>
 
@@ -1554,8 +1658,11 @@
 
   <!-- A bounded composer scrolls draft and attachments together, keeping actions visible. -->
   <div class={maxComposerHeight !== undefined ? 'min-h-6 flex-1 overflow-y-auto' : 'contents'}>
+    {#if renderAttachments}
+      {@render renderAttachments(contextItems)}
+    {/if}
     <!-- Non-image context items and selections - shown above editor when present -->
-    {#if nonImageItems.length > 0}
+    {#if !renderAttachments && nonImageItems.length > 0}
       <div
         class="flex min-w-0 items-center gap-1 overflow-x-auto pt-1 scrollbar-none {contentInsetClasses}"
         style="-ms-overflow-style: none; scrollbar-width: none;"
@@ -1631,9 +1738,22 @@
         {autoFocus}
         {value}
         {placeholder}
+        {reactivePlaceholder}
         disabled={disabled || isEnhancing}
         editableWhileDisabled={editableWhileDisabled && !isEnhancing}
         {inputLocked}
+        {screenReferences}
+        {screenInsertions}
+        {screenInterim}
+        {screenSpeechActive}
+        {onCompositionChange}
+        {onUserTextInput}
+        {onScreenReferencesEdited}
+        onScreenInsertionApplied={(id, text) => {
+          if (disposed) return;
+          value = text;
+          onScreenInsertionApplied?.(id, text);
+        }}
         workspace={workspace ?? undefined}
         skills={$skills$}
         skillsLoading={$skillsLoading$}
@@ -1641,7 +1761,7 @@
         onSkillsRetry={() => {
           if (workspace?.id) appStore.dispatch(loadSkillsRequested(workspace.id));
         }}
-        onUpdate={(text) => {
+        onUpdate={(text, change) => {
           handleCancelEnhance();
           if (
             enhancementUndoValue !== null &&
@@ -1651,7 +1771,7 @@
             enhancementUndoValue = null;
             enhancedPromptValue = null;
           }
-          updateValue(text);
+          updateValue(text, change);
           // Update inline images state for send button reactivity
           hasInlineImages = (tiptap?.getInlineImages?.() ?? []).length > 0;
         }}
@@ -1679,7 +1799,7 @@
     </div>
 
     <!-- Image attachments - shown below editor in Slack-style thumbnail row -->
-    {#if imageAttachments.length > 0}
+    {#if !renderAttachments && imageAttachments.length > 0}
       <div
         class="flex min-w-0 items-center gap-2 overflow-x-auto py-1 scrollbar-none {contentInsetClasses}"
         style="-ms-overflow-style: none; scrollbar-width: none;"
@@ -1751,200 +1871,206 @@
     </div>
 
     <div class="flex min-w-0 shrink-0 items-center gap-1.5" data-chat-input-submit-actions>
-      <div class="relative inline-block">
-        <Menu.Root
-          bind:open={promptActionsOpen}
-          onOpenChange={(open) => {
-            if (open) insertingContextMention = false;
-            else contextFlyoutOpen = false;
-          }}
-        >
-          <Menu.Trigger>
-            {#snippet child({ props })}
-              <Button
-                {...props}
-                variant="ghost-light"
-                size="icon-sm"
-                {disabled}
-                aria-label={m.ui_breadcrumb_more_label()}
-                data-testid="prompt-actions-trigger"
-              >
-                <Fa icon={faPlus} size={16} class="size-4" />
-              </Button>
-            {/snippet}
-          </Menu.Trigger>
-          <Menu.Content
-            align="end"
-            side="top"
-            class="w-60"
-            onInteractOutside={(event) => {
-              if (event.target instanceof Node && contextFlyoutRef?.contains(event.target)) {
-                event.preventDefault();
-              }
-            }}
-            onCloseAutoFocus={(event) => {
-              if (insertingContextMention) event.preventDefault();
+      {#if composerActions}
+        {@render composerActions()}
+      {:else}
+        <div class="relative inline-block">
+          <Menu.Root
+            bind:open={promptActionsOpen}
+            onOpenChange={(open) => {
+              if (open) insertingContextMention = false;
+              else contextFlyoutOpen = false;
             }}
           >
-            {#each promptActionGroups as group, index (group.id)}
-              {#if index > 0}<Menu.Separator />{/if}
-              <Menu.Group>
-                {#each group.items as item (item.id)}
-                  {#if item.id === 'add-context'}
-                    <Popover.Root bind:open={contextFlyoutOpen}>
-                      <Menu.Item
-                        bind:ref={contextFlyoutTrigger}
-                        aria-haspopup="dialog"
-                        aria-expanded={contextFlyoutOpen}
-                        aria-controls={contextFlyoutOpen ? contextFlyoutId : undefined}
-                        onSelect={(event) => {
-                          event.preventDefault();
-                          openContextFlyout();
-                        }}
-                        onpointermove={(event) => {
-                          if (event.pointerType === 'mouse' && !contextFlyoutOpen) {
+            <Menu.Trigger>
+              {#snippet child({ props })}
+                <Button
+                  {...props}
+                  variant="ghost-light"
+                  size="icon-sm"
+                  {disabled}
+                  aria-label={m.ui_breadcrumb_more_label()}
+                  data-testid="prompt-actions-trigger"
+                >
+                  <Fa icon={faPlus} size={16} class="size-4" />
+                </Button>
+              {/snippet}
+            </Menu.Trigger>
+            <Menu.Content
+              align="end"
+              side="top"
+              class="w-60"
+              onInteractOutside={(event) => {
+                if (event.target instanceof Node && contextFlyoutRef?.contains(event.target)) {
+                  event.preventDefault();
+                }
+              }}
+              onCloseAutoFocus={(event) => {
+                if (insertingContextMention) event.preventDefault();
+              }}
+            >
+              {#each promptActionGroups as group, index (group.id)}
+                {#if index > 0}<Menu.Separator />{/if}
+                <Menu.Group>
+                  {#each group.items as item (item.id)}
+                    {#if item.id === 'add-context'}
+                      <Popover.Root bind:open={contextFlyoutOpen}>
+                        <Menu.Item
+                          bind:ref={contextFlyoutTrigger}
+                          aria-haspopup="dialog"
+                          aria-expanded={contextFlyoutOpen}
+                          aria-controls={contextFlyoutOpen ? contextFlyoutId : undefined}
+                          onSelect={(event) => {
+                            event.preventDefault();
                             openContextFlyout();
-                          }
-                        }}
-                        onkeydown={(event) => {
-                          if (event.key !== 'ArrowRight') return;
-                          event.preventDefault();
-                          openContextFlyout();
-                        }}
-                      >
-                        {#snippet leading()}
-                          <Fa icon={faAt} size={16} class="size-4 text-muted-foreground" />
-                        {/snippet}
-                        <span class="min-w-0 flex-1">{item.label}</span>
-                        <span class="ml-5 flex h-lh shrink-0 items-center" aria-hidden="true">
-                          <ShortcutChip>@</ShortcutChip>
-                        </span>
-                        <Menu.Indicator state="submenu" />
-                      </Menu.Item>
-                      <Popover.Content
-                        id={contextFlyoutId}
-                        customAnchor={contextFlyoutTrigger}
-                        role="dialog"
-                        aria-label={m.chat_contextPicker_selectPanels_ariaLabel()}
-                        aria-describedby={`${contextFlyoutId}-description`}
-                        side={contextFlyoutSide}
-                        sideOffset={contextFlyoutGap}
-                        align="start"
-                        class="flex w-80 max-h-(--bits-popover-content-available-height) flex-col p-0"
-                        onCloseAutoFocus={(event) => {
-                          event.preventDefault();
-                          if (restoreContextTrigger && promptActionsOpen) {
-                            contextFlyoutTrigger?.focus();
-                          }
-                        }}
-                        onkeydown={(event) => {
-                          // Text inputs keep Left for moving the caret.
-                          if (event.key !== 'ArrowLeft' || event.target instanceof HTMLInputElement)
-                            return;
-                          event.preventDefault();
-                          closeContextFlyout();
-                        }}
-                      >
-                        <ContextPickerButton
-                          bind:bodyRef={contextFlyoutRef}
-                          panels={availablePanels}
-                          selections={availableSelections}
-                          {workspace}
-                          {disabled}
-                          currentAgentId={agentId}
-                          onToggle={handleTogglePanel}
-                          onToggleSelection={handleToggleSelection}
-                          onInsertMention={async (mention) => {
-                            // The picker calls onPick synchronously; let both focus scopes
-                            // unmount before placing the mention and caret in the editor.
-                            await tick();
-                            tiptap?.insertMention(mention);
                           }}
-                          onPick={() => {
-                            insertingContextMention = true;
-                            contextFlyoutOpen = false;
-                            promptActionsOpen = false;
+                          onpointermove={(event) => {
+                            if (event.pointerType === 'mouse' && !contextFlyoutOpen) {
+                              openContextFlyout();
+                            }
                           }}
-                          renderTrigger={false}
-                          descriptionId={`${contextFlyoutId}-description`}
-                          embedded
-                        />
-                      </Popover.Content>
-                    </Popover.Root>
-                  {:else}
-                    <Menu.CommandItem
-                      icon={item.icon}
-                      label={item.label}
-                      shortcut={item.shortcut}
-                      disabled={item.disabled}
-                      onSelect={item.onSelect}
-                    />
-                  {/if}
-                {/each}
-              </Menu.Group>
-            {/each}
-          </Menu.Content>
-        </Menu.Root>
-      </div>
+                          onkeydown={(event) => {
+                            if (event.key !== 'ArrowRight') return;
+                            event.preventDefault();
+                            openContextFlyout();
+                          }}
+                        >
+                          {#snippet leading()}
+                            <Fa icon={faAt} size={16} class="size-4 text-muted-foreground" />
+                          {/snippet}
+                          <span class="min-w-0 flex-1">{item.label}</span>
+                          <span class="ml-5 flex h-lh shrink-0 items-center" aria-hidden="true">
+                            <ShortcutChip>@</ShortcutChip>
+                          </span>
+                          <Menu.Indicator state="submenu" />
+                        </Menu.Item>
+                        <Popover.Content
+                          id={contextFlyoutId}
+                          customAnchor={contextFlyoutTrigger}
+                          role="dialog"
+                          aria-label={m.chat_contextPicker_selectPanels_ariaLabel()}
+                          aria-describedby={`${contextFlyoutId}-description`}
+                          side={contextFlyoutSide}
+                          sideOffset={contextFlyoutGap}
+                          align="start"
+                          class="flex w-80 max-h-(--bits-popover-content-available-height) flex-col p-0"
+                          onCloseAutoFocus={(event) => {
+                            event.preventDefault();
+                            if (restoreContextTrigger && promptActionsOpen) {
+                              contextFlyoutTrigger?.focus();
+                            }
+                          }}
+                          onkeydown={(event) => {
+                            // Text inputs keep Left for moving the caret.
+                            if (
+                              event.key !== 'ArrowLeft' ||
+                              event.target instanceof HTMLInputElement
+                            )
+                              return;
+                            event.preventDefault();
+                            closeContextFlyout();
+                          }}
+                        >
+                          <ContextPickerButton
+                            bind:bodyRef={contextFlyoutRef}
+                            panels={availablePanels}
+                            selections={availableSelections}
+                            {workspace}
+                            {disabled}
+                            currentAgentId={agentId}
+                            onToggle={handleTogglePanel}
+                            onToggleSelection={handleToggleSelection}
+                            onInsertMention={async (mention) => {
+                              // The picker calls onPick synchronously; let both focus scopes
+                              // unmount before placing the mention and caret in the editor.
+                              await tick();
+                              tiptap?.insertMention(mention);
+                            }}
+                            onPick={() => {
+                              insertingContextMention = true;
+                              contextFlyoutOpen = false;
+                              promptActionsOpen = false;
+                            }}
+                            renderTrigger={false}
+                            descriptionId={`${contextFlyoutId}-description`}
+                            embedded
+                          />
+                        </Popover.Content>
+                      </Popover.Root>
+                    {:else}
+                      <Menu.CommandItem
+                        icon={item.icon}
+                        label={item.label}
+                        shortcut={item.shortcut}
+                        disabled={item.disabled}
+                        onSelect={item.onSelect}
+                      />
+                    {/if}
+                  {/each}
+                </Menu.Group>
+              {/each}
+            </Menu.Content>
+          </Menu.Root>
+        </div>
 
-      {#if micTranscribing}
-        <TooltipShortcut
-          label={m.chat_richInput_micCancelTranscribing_label()}
-          side="top"
-          portalTarget={tooltipPortalTarget}
-        >
-          <Button
-            variant="ghost-light"
-            size="icon-sm"
-            onclick={handleMicCancelTranscription}
-            onmousedown={handleMicMouseDown}
-            aria-label={m.chat_richInput_micCancelTranscribing_label()}
-            data-testid="composer-mic-button"
+        {#if micTranscribing}
+          <TooltipShortcut
+            label={m.chat_richInput_micCancelTranscribing_label()}
+            side="top"
+            portalTarget={tooltipPortalTarget}
           >
-            <IntentMarkLoader size={14} />
-          </Button>
-        </TooltipShortcut>
-      {:else if micRecording}
-        <TooltipShortcut
-          label={m.chat_richInput_micStop_label()}
-          shortcut="Escape"
-          side="top"
-          portalTarget={tooltipPortalTarget}
-        >
-          <Button
-            variant="ghost-light"
-            size="icon-sm"
-            onclick={handleMicClick}
-            onmousedown={handleMicMouseDown}
-            aria-label={m.chat_richInput_micStop_label()}
-            aria-pressed="true"
-            class="text-danger animate-pulse"
-            data-testid="composer-mic-button"
+            <Button
+              variant="ghost-light"
+              size="icon-sm"
+              onclick={handleMicCancelTranscription}
+              onmousedown={handleMicMouseDown}
+              aria-label={m.chat_richInput_micCancelTranscribing_label()}
+              data-testid="composer-mic-button"
+            >
+              <IntentMarkLoader size={14} />
+            </Button>
+          </TooltipShortcut>
+        {:else if micRecording}
+          <TooltipShortcut
+            label={m.chat_richInput_micStop_label()}
+            shortcut="Escape"
+            side="top"
+            portalTarget={tooltipPortalTarget}
           >
-            <Fa icon={faMicrophone} size="sm" />
-          </Button>
-        </TooltipShortcut>
-      {:else if $effectiveVoiceEngine$ !== 'unavailable'}
-        <TooltipShortcut
-          label={m.chat_richInput_micStart_label()}
-          side="top"
-          portalTarget={tooltipPortalTarget}
-        >
-          <Button
-            variant="ghost-light"
-            size="icon-sm"
-            {disabled}
-            onclick={handleMicClick}
-            onmousedown={handleMicMouseDown}
-            aria-label={m.chat_richInput_micStart_label()}
-            aria-pressed="false"
-            data-testid="composer-mic-button"
+            <Button
+              variant="ghost-light"
+              size="icon-sm"
+              onclick={handleMicClick}
+              onmousedown={handleMicMouseDown}
+              aria-label={m.chat_richInput_micStop_label()}
+              aria-pressed="true"
+              class="text-danger animate-pulse"
+              data-testid="composer-mic-button"
+            >
+              <Fa icon={faMicrophone} size="sm" />
+            </Button>
+          </TooltipShortcut>
+        {:else if $effectiveVoiceEngine$ !== 'unavailable'}
+          <TooltipShortcut
+            label={m.chat_richInput_micStart_label()}
+            side="top"
+            portalTarget={tooltipPortalTarget}
           >
-            <Fa icon={faMicrophone} size="sm" />
-          </Button>
-        </TooltipShortcut>
+            <Button
+              variant="ghost-light"
+              size="icon-sm"
+              {disabled}
+              onclick={handleMicClick}
+              onmousedown={handleMicMouseDown}
+              aria-label={m.chat_richInput_micStart_label()}
+              aria-pressed="false"
+              data-testid="composer-mic-button"
+            >
+              <Fa icon={faMicrophone} size="sm" />
+            </Button>
+          </TooltipShortcut>
+        {/if}
       {/if}
-
       {#if editMode}
         <div class="absolute right-2 top-2">
           <TooltipShortcut
@@ -1966,7 +2092,7 @@
       {/if}
       <TooltipShortcut
         label={buttonTooltipLabel}
-        shortcut={buttonMode === 'stop' ? undefined : $sendShortcut$}
+        shortcut={buttonMode === 'stop' || showSendDisabledReason ? undefined : $sendShortcut$}
         secondary={buttonMode === 'queue' && onforcesubmit && $forceSendShortcut$
           ? {
               label: m.chat_queuedMessages_sendImmediately_label(),
@@ -1986,6 +2112,8 @@
             : disabled || inputLocked || !canSend || isEnhancing}
           aria-label={buttonLabel}
           data-mode={buttonMode}
+          aria-busy={submitPending || undefined}
+          data-pending={submitPending || undefined}
           data-testid="composer-submit-button"
         >
           {#key buttonMode === 'stop'}

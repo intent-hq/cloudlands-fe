@@ -19,7 +19,7 @@ export async function prepare() {
   if (process.platform === 'darwin')
     await runFile(process.execPath, [resolve('scripts/build-dock-helper.cjs')]);
   codeRoot = await mkdtemp(join(tmpdir(), 'intent-placement-code-'));
-  await mkdir(join(codeRoot, 'features/annotation/main'), { recursive: true });
+  await mkdir(join(codeRoot, 'main'), { recursive: true });
   await mkdir(join(codeRoot, 'preload'));
   const entry = join(codeRoot, 'entry.ts');
   await writeFile(
@@ -29,9 +29,9 @@ export async function prepare() {
       `export * from ${JSON.stringify(resolve('src/main/dock-cursor.ts'))};`,
       `export * from ${JSON.stringify(resolve('src/main/dock-placement-ipc.ts'))};`,
       `export * from ${JSON.stringify(resolve('src/main/dock-menu-controller.ts'))};`,
-      `export * from ${JSON.stringify(resolve('src/features/annotation/main/annotation-window.ts'))};`,
-      `export * from ${JSON.stringify(resolve('src/features/annotation/main/annotation.ipc.ts'))};`,
+      `export * from ${JSON.stringify(resolve('src/features/hud/main/dock-evidence-session.ts'))};`,
       `export * from ${JSON.stringify(resolve('src/main/local-prefs.ts'))};`,
+      `export * from ${JSON.stringify(resolve('src/main/dock-lab.ts'))};`,
     ].join('\n'),
   );
   await build({
@@ -47,7 +47,7 @@ export async function prepare() {
         },
         load(id) {
           if (id === '\0placement-backend')
-            return 'export async function getActiveId() { return "placement-synthetic-backend"; }';
+            return 'export async function getActiveId() { return "placement-synthetic-backend"; }\nexport async function list() { return []; }';
           if (id === '\0placement-daemon')
             return `
             export function getBackendClient() { throw new Error('No daemon in placement fixture'); }
@@ -64,7 +64,7 @@ export async function prepare() {
     ssr: { noExternal: true },
     build: {
       ssr: entry,
-      outDir: join(codeRoot, 'features/annotation/main'),
+      outDir: join(codeRoot, 'main'),
       emptyOutDir: false,
       minify: false,
       rollupOptions: {
@@ -89,14 +89,8 @@ export async function prepare() {
       },
     },
   });
-  // Both production window constructors retain their own relative preload path
-  // in this combined bundle. Provide the same generated bridge at both paths,
-  // entirely inside the isolated code root.
-  await mkdir(join(codeRoot, 'features/annotation/preload'));
-  await copyFile(
-    join(codeRoot, 'preload/index.js'),
-    join(codeRoot, 'features/annotation/preload/index.js'),
-  );
+  // The dock window constructor keeps its production relative preload path
+  // (main/../preload/index.js), entirely inside the isolated code root.
   server = await createServer({
     configFile: false,
     root: process.cwd(),
@@ -119,11 +113,7 @@ export async function prepare() {
         name: 'native-companion-fixture-routes',
         configureServer(vite) {
           vite.middlewares.use((req, _res, next) => {
-            if (
-              ['/dock', '/annotation', '/annotation-toolbar'].includes(
-                (req.url || '').split('?')[0],
-              )
-            ) {
+            if ((req.url || '').split('?')[0] === '/dock') {
               req.url = '/test/fixtures/dock-placement-native/index.html';
             }
             next();
@@ -201,7 +191,7 @@ export async function launch(
       join(fixture, 'main.cjs'),
       profile,
       server.resolvedUrls!.local[0],
-      join(codeRoot, 'features/annotation/main/native.mjs'),
+      join(codeRoot, 'main/native.mjs'),
       geometry,
       appLayout,
     ],

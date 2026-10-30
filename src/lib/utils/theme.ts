@@ -22,7 +22,7 @@ export class ThemeManager {
   // preference intact; root-level tokens also cover body-portaled shared menus.
   private readonly fixedDarkAppearance =
     isBrowser &&
-    ['dock', 'annotation-toolbar'].includes(document.documentElement.dataset.auxiliaryWindow ?? '');
+    ['dock', 'dock-annotation'].includes(document.documentElement.dataset.auxiliaryWindow ?? '');
   private mediaQuery: MediaQueryList | null = null;
   /** Single custom theme from user-imported file (not a preset set) */
   private customTheme: ParsedVSCodeTheme | null = null;

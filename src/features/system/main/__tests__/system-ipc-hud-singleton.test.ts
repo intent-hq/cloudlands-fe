@@ -555,3 +555,51 @@ describe('HUD window singleton via WINDOW.OPEN_NEW', () => {
     expect(electronMocks.constructed).toHaveLength(1);
   });
 });
+
+describe('dock entries open through WINDOW.OPEN_NEW', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    electronMocks.loadURL.mockResolvedValue(undefined);
+    electronMocks.constructed.length = 0;
+    electronMocks.MockBrowserWindow.getAllWindows.mockReturnValue([]);
+    _resetHudWindowRefForTests();
+    setupSystemIPC();
+  });
+
+  // The dock document is bound to the machine it shows; each entry opens a normal window.
+  const dock = (backendId: string) => ({ sender: { backendId } });
+
+  it.each([
+    ['Assistant', 'remote-a', '/', 'local'],
+    ['local workspace', 'local', '/workspace/ws-local', 'local'],
+    ['workspace on another machine', 'remote-a', '/workspace/ws-remote', 'remote-a'],
+    // Main does not pre-check existence; the opened window shows its own not-found state.
+    ['archived or missing workspace', 'local', '/workspace/missing%20ws', 'local'],
+  ])('%s opens a normal window on the right machine', async (_name, from, route, backend) => {
+    const openNew = handlerFor(WINDOW_CHANNELS.OPEN_NEW);
+    const result = await openNew(dock(from), { route, reuseExistingWorkspace: true });
+    expect(result).toEqual({ success: true, windowId: 1 });
+    expect(electronMocks.constructed).toHaveLength(1);
+    expect(electronMocks.constructed[0].backendId).toBe(backend);
+  });
+
+  it('reports why a dock open failed, with route, target and machine', async () => {
+    const { Logger } = await import('../../../../shared/logger');
+    const error = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
+    electronMocks.loadURL.mockRejectedValue(new Error('navigation failed'));
+    const openNew = handlerFor(WINDOW_CHANNELS.OPEN_NEW);
+    const result = await openNew(dock('remote-a'), {
+      route: '/workspace/ws-remote',
+      reuseExistingWorkspace: true,
+      workspaceTarget: { type: 'note', noteId: 'n-1' },
+    });
+    expect(result).toEqual({ success: false, error: 'navigation failed' });
+    expect(error).toHaveBeenCalledWith('Failed to open new window', expect.any(Error), {
+      reason: 'navigation failed',
+      route: '/workspace/ws-remote',
+      workspaceTarget: 'note',
+      reuseExistingWorkspace: true,
+      backendId: 'remote-a',
+    });
+  });
+});

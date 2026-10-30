@@ -22,6 +22,7 @@ export function useDockConversationFocus(state: DockConversationFocus) {
   let returning = $state(false);
   let previousWorkspace: string | null = null;
   let lastRequest = 0;
+  let lastPointer: { x: number; y: number } | undefined;
   $effect(() => {
     if (state.request) untrack(state.openKeyboard);
   });
@@ -67,11 +68,15 @@ export function useDockConversationFocus(state: DockConversationFocus) {
       });
     });
   });
-  function pointerLeave(): void {
+  function pointerLeave(event?: PointerEvent): void {
+    // A settling Back shrink can move the shell out from under a still pointer after
+    // the hold is established; that geometry-only leave reports the last position.
+    // Only actual movement (or window blur) releases the return hold.
+    if (event && lastPointer && event.clientX === lastPointer.x && event.clientY === lastPointer.y)
+      return;
     returning = false;
   }
   onMount(() => {
-    let lastPointer: { x: number; y: number } | undefined;
     const rememberPointer = (event: PointerEvent) => {
       lastPointer = { x: event.clientX, y: event.clientY };
     };
@@ -96,11 +101,12 @@ export function useDockConversationFocus(state: DockConversationFocus) {
     };
     window.addEventListener('pointerdown', rememberPointer, true);
     window.addEventListener('pointermove', move, true);
-    window.addEventListener('blur', pointerLeave);
+    const blur = () => pointerLeave();
+    window.addEventListener('blur', blur);
     return () => {
       window.removeEventListener('pointerdown', rememberPointer, true);
       window.removeEventListener('pointermove', move, true);
-      window.removeEventListener('blur', pointerLeave);
+      window.removeEventListener('blur', blur);
     };
   });
   onDestroy(() => {

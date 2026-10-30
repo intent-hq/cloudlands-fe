@@ -60,6 +60,8 @@ export interface ImageContextItemsOptions {
   maxBytes: number;
   /** Test seam: file → data-URL reader (defaults to FileReader). */
   readFile?: (file: File) => Promise<string>;
+  /** False when the staged thumbnail is enough feedback; failures still notify. */
+  announceSuccess?: boolean;
 }
 
 /**
@@ -73,7 +75,7 @@ export async function imageFilesToContextItems(
   files: File[],
   options: ImageContextItemsOptions,
 ): Promise<ContextItem[]> {
-  const { maxBytes, readFile = fileToDataUrl, signal } = options;
+  const { maxBytes, readFile = fileToDataUrl, signal, announceSuccess = true } = options;
   const items: ContextItem[] = [];
   const oversizedFiles: string[] = [];
 
@@ -117,11 +119,12 @@ export async function imageFilesToContextItems(
   if (signal?.aborted) return [];
   if (items.length > 0) {
     logger.debug(`Added ${items.length} image(s) to context`);
-    notify.success(
-      items.length === 1
-        ? m.chat_richInput_addedImages_toast_one()
-        : m.chat_richInput_addedImages_toast_many({ count: formatInteger(items.length) }),
-    );
+    if (announceSuccess)
+      notify.success(
+        items.length === 1
+          ? m.chat_richInput_addedImages_toast_one()
+          : m.chat_richInput_addedImages_toast_many({ count: formatInteger(items.length) }),
+      );
   }
 
   if (oversizedFiles.length > 0) {

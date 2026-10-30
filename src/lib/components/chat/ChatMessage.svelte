@@ -33,7 +33,12 @@
   import { getModelChangeNotice } from './model-change-notice';
   import { getEffortChangeNotice } from './effort-change-notice';
   import { getAttentionNotice } from './attention-notice';
-  import { parseStoredMessage } from '$lib/utils/parseStoredMessage';
+  import {
+    consumeDockEvidencePrefix,
+    parseStoredMessage,
+    restoreDockEvidenceForEdit,
+  } from '$lib/utils/parseStoredMessage';
+  import { notify } from '$lib/components/patterns/notify';
   import { safeDisclosureTransition } from './disclosure-motion';
   import type { ContextItem } from './input/context-api';
   import type { FileBlock, ImageBlock } from '$lib/client/app-client';
@@ -75,6 +80,12 @@
   } from '$lib/utils/message-authorship';
   import { getQueueInfo } from '$lib/utils/queue-info';
   import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
+  import {
+    dockEvidenceMarks,
+    dockEvidenceRecordingNumbers,
+    isDockEvidenceMessage,
+    splitScreenTokens,
+  } from '$lib/utils/dock-evidence-display';
   import AutomatedWakeCardHeader from './AutomatedWakeCardHeader.svelte';
   import { getAutomatedWakePresentation } from './automated-wake-presentation';
   import {
@@ -199,7 +210,8 @@
         line?: number;
         noteId?: string;
         url?: string;
-      };
+      }
+    | { type: 'screen-ref'; kind: 'mark' | 'clip-start' | 'clip-end'; n: number };
 
   interface Props {
     /**
@@ -331,6 +343,7 @@
   let isEditing = $state(false);
   let editValue = $state('');
   let editContextItems = $state<ContextItem[]>([]);
+  let originalEditContextItems = $state.raw<ContextItem[]>([]);
   let editSelectedModel = $state<string | null | undefined>(undefined);
   // Go/no-go confirmation gate before the destructive edit-and-regenerate.
   let showEditConfirm = $state(false);
@@ -488,9 +501,14 @@
 
   // Parse context pills from message text
   // Context format: [Currently viewing file: path] or [Currently viewing note: title] etc.
-  function parseContextFromMessage(text: string): { pills: ContextPill[]; cleanText: string } {
+  function parseContextFromMessage(text: string): {
+    pills: ContextPill[];
+    cleanText: string;
+    evidence: boolean;
+  } {
     const pills: ContextPill[] = [];
     let cleanText = text;
+    let evidence = false;
 
     // Match context patterns at the start of the message
     // Each pattern can optionally be followed by a code block containing the content
@@ -545,6 +563,19 @@
     let foundMatch = true;
     while (foundMatch) {
       foundMatch = false;
+      // Keep display and edit recognition identical. The message's own metadata
+      // trusts the exact header + fence; without it only a valid body is accepted.
+      // The agent-readable block stays in the text sent to the agent; it is hidden
+      // here (no pill: the attachments and inline chips already show it).
+      const prefix = consumeDockEvidencePrefix(cleanText, {
+        trusted: isDockEvidenceMessage(message?.metadata),
+      });
+      if (prefix) {
+        evidence = true;
+        cleanText = prefix.remaining;
+        foundMatch = true;
+        continue;
+      }
       for (const pattern of contextPatterns) {
         const match = cleanText.match(pattern.regex);
         if (match) {
@@ -598,7 +629,7 @@
       }
     }
 
-    return { pills, cleanText: cleanText.trim() };
+    return { pills, cleanText: cleanText.trim(), evidence };
   }
 
   // Parse text into segments with inline mentions rendered as chips
@@ -1133,7 +1164,14 @@
 
       // Parse inline mentions first to collect which identifiers are in the text
       // (we'll skip adding metadata pills for these since they're already shown inline)
-      const segments = parseInlineMentions(parsed.cleanText, refsByIdentifier);
+      const mentionSegments = parseInlineMentions(parsed.cleanText, refsByIdentifier);
+      // Evidence messages show their reference tokens as the composer's chips.
+      const segments: MessageSegment[] =
+        parsed.evidence || isDockEvidenceMessage(message?.metadata)
+          ? mentionSegments.flatMap((segment): MessageSegment[] =>
+              segment.type === 'text' ? splitScreenTokens(segment.content) : [segment],
+            )
+          : mentionSegments;
 
       // Collect identifiers that appear as inline mentions in the text
       const inlineIdentifiers = new Set<string>();
@@ -1160,9 +1198,42 @@
     return {
       pills: [],
       cleanText: rawText,
-      segments: [{ type: 'text' as const, content: rawText }],
+      evidence: false,
+      segments: [{ type: 'text' as const, content: rawText }] as MessageSegment[],
     };
   });
+
+  // Evidence chips and attachment labels come from the message's own metadata.
+  const evidenceMetadata = $derived(
+    isDockEvidenceMessage(message?.metadata)
+      ? (message?.metadata as unknown as Record<string, unknown>)
+      : null,
+  );
+  const evidenceMarks = $derived(dockEvidenceMarks(evidenceMetadata));
+  const toolLabels: Record<string, string> = {
+    pick: m.dock_composer_pick_label(),
+    box: m.dock_composer_box_label(),
+    pen: m.dock_composer_pen_label(),
+    arrow: m.annotation_arrow_label(),
+  };
+  function screenRefLabel(segment: { kind: 'mark' | 'clip-start' | 'clip-end'; n: number }) {
+    const n = formatInteger(segment.n);
+    if (segment.kind === 'clip-start') return m.dock_composer_recordingStart_chip({ n });
+    if (segment.kind === 'clip-end') return m.dock_composer_recordingEnd_chip({ n });
+    const mark = evidenceMarks.get(segment.n);
+    return m.chat_screenReference_ariaLabel({
+      number: n,
+      label: mark?.name || (mark?.tool ? (toolLabels[mark.tool] ?? '') : ''),
+    });
+  }
+  /** A sent recording reads 'Recording n', not its file name. */
+  function fileChipName(block: ContentBlock): string {
+    const n =
+      (parsedMessage.evidence || evidenceMetadata) && block.attachmentId
+        ? dockEvidenceRecordingNumbers(evidenceMetadata, fileBlocks).get(block.attachmentId)
+        : undefined;
+    return n ? m.dock_composer_recordingStart_chip({ n: formatInteger(n) }) : `${block.fileName}`;
+  }
 
   // Get combined content for StreamingMessageContent - use $derived for reactivity
   const combinedContent = $derived(message?.contentBlocks || []);
@@ -1282,8 +1353,21 @@
     const rawText = message
       ? getPresentedUserMessageText(message, workspace?.ownerPrincipalId)
       : getMessageText();
-    const parsed = parseStoredMessage(rawText);
+    const evidenceMessage = isDockEvidenceMessage(message?.metadata);
+    const parsed = parseStoredMessage(rawText, { trustedEvidence: evidenceMessage });
     editValue = parsed.userMessage;
+    // Evidence screenshots are 'Image n' in image order, recordings 'Recording n'.
+    let imageNumber = 0;
+    const imageLabel = () =>
+      m.chat_screenEvidence_image_label({ n: formatInteger((imageNumber += 1)) });
+    const recordingNumbers =
+      evidenceMessage ||
+      parsed.contextItems.some((item) => item.metadata?.kind === 'dock_screen_evidence')
+        ? dockEvidenceRecordingNumbers(
+            evidenceMetadata,
+            (message?.contentBlocks ?? []).filter(isFileBlock),
+          )
+        : new Map<string, number>();
 
     // Start with parsed context items (from text patterns)
     const contextItemsForEdit: ContextItem[] = [...parsed.contextItems];
@@ -1298,7 +1382,7 @@
           contextItemsForEdit.push({
             id: `image-attachment-${block.attachmentId}`,
             type: 'file',
-            label: `Image ${index + 1}`,
+            label: imageLabel(),
             description: block.mimeType || 'image',
             attachmentId: block.attachmentId,
             // `imageMimeType` doubles as the image marker downstream; a
@@ -1311,7 +1395,7 @@
           contextItemsForEdit.push({
             id: `image-${message.id}-${index}`,
             type: 'file',
-            label: `Image ${index + 1}`,
+            label: imageLabel(),
             description: block.mimeType,
             imageData: block.data,
             imageMimeType: block.mimeType,
@@ -1322,7 +1406,12 @@
           contextItemsForEdit.push({
             id: `attachment-${block.attachmentId}`,
             type: 'file',
-            label: block.fileName,
+            label: recordingNumbers.has(block.attachmentId)
+              ? m.dock_composer_recordingStart_chip({
+                  n: formatInteger(recordingNumbers.get(block.attachmentId)!),
+                })
+              : block.fileName,
+            metadata: { fileName: block.fileName },
             description: block.mimeType || m.chat_shared_file_fallback(),
             attachmentId: block.attachmentId,
             attachmentMimeType: block.mimeType,
@@ -1333,6 +1422,7 @@
     }
 
     editContextItems = contextItemsForEdit;
+    originalEditContextItems = structuredClone(contextItemsForEdit);
     editSelectedModel = editModel;
     isEditing = true;
     onEditStateChange?.(true);
@@ -1343,6 +1433,7 @@
     onEditStateChange?.(false);
     editValue = '';
     editContextItems = [];
+    originalEditContextItems = [];
     editSelectedModel = undefined;
   }
 
@@ -1360,6 +1451,17 @@
   // handleCancelEdit exits edit mode.
   function handleConfirmEditSubmit() {
     showEditConfirm = false;
+    const content = restoreDockEvidenceForEdit(
+      originalEditContextItems,
+      editContextItems,
+      editValue,
+    );
+    if (content === null) {
+      // Keep both text and remaining media available for correction. The user
+      // can remove the evidence context explicitly; never invent new joins.
+      notify.error(m.agent_editRegenerate_failed_error());
+      return;
+    }
     // An attachmentId item marked as an image (imageMimeType) re-sends as an
     // image-reference block (monorepo#3338); inline imageData items re-send
     // inline (the edit saga places them and swaps to references).
@@ -1386,7 +1488,9 @@
       .map((item) => ({
         type: 'file' as const,
         attachmentId: item.attachmentId!,
-        fileName: item.label,
+        // A recording shows 'Recording n' but is re-sent under its stored file name.
+        fileName:
+          typeof item.metadata?.fileName === 'string' ? item.metadata.fileName : item.label,
         ...(item.attachmentMimeType ? { mimeType: item.attachmentMimeType } : {}),
         ...(item.attachmentSize !== undefined ? { size: item.attachmentSize } : {}),
       }));
@@ -1397,7 +1501,7 @@
             ...(fileBlocks.length > 0 ? { fileBlocks } : {}),
           }
         : undefined;
-    onEditSubmit?.(editValue, editSelectedModel ?? undefined, blocks);
+    onEditSubmit?.(content, editSelectedModel ?? undefined, blocks);
     handleCancelEdit();
   }
 
@@ -1720,6 +1824,19 @@
                               }}>{part.url}</a
                             >{:else}{part.content}{/if}{/each}</span
                       >
+                    {:else if segment.type === 'screen-ref'}
+                      <!-- The composer's reference chip: a mark's number disc, or a
+                       recording start/end pill. -->
+                      <span
+                        class="screen-reference-chip"
+                        data-reference-kind={segment.kind === 'mark' ? undefined : segment.kind}
+                        data-reference-number={segment.n}
+                        role="img"
+                        aria-label={screenRefLabel(segment)}
+                        >{segment.kind === 'mark'
+                          ? formatInteger(segment.n)
+                          : screenRefLabel(segment)}</span
+                      >
                     {:else if segment.type === 'mention'}
                       {@const isContextProvider = [
                         'linear',
@@ -1847,11 +1964,13 @@
                       class="type-caption flex cursor-pointer items-center gap-1.5 rounded border border-border bg-muted/50 px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                       onclick={() => openAttachmentReference(fileBlock)}
                       title={m.chat_chatMessage_openAttachment_title({
-                        name: `${fileBlock.fileName}`,
+                        name: fileChipName(fileBlock),
                       })}
                     >
                       <Fa icon={faFile} class="w-3 h-3" />
-                      <span class="truncate" style="max-width: 150px;">{fileBlock.fileName}</span>
+                      <span class="truncate" style="max-width: 150px;"
+                        >{fileChipName(fileBlock)}</span
+                      >
                       {#if secondary}
                         <span class="shrink-0">{secondary}</span>
                       {/if}
@@ -1977,3 +2096,27 @@
   onConfirm={handleConfirmEditSubmit}
   onCancel={() => (showEditConfirm = false)}
 />
+
+<style>
+  /* A sent message's screen references: the composer's chip look. */
+  .screen-reference-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    vertical-align: baseline;
+    min-width: 18px;
+    height: 18px;
+    margin-inline: 1px;
+    padding-inline: 2px;
+    border-radius: var(--radius-full);
+    background: var(--color-primary);
+    color: var(--color-primary-foreground);
+    font-size: var(--text-caption-size);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .screen-reference-chip[data-reference-kind] {
+    padding-inline: 6px;
+  }
+</style>

@@ -22,6 +22,8 @@ describe('conversation-owned popup regions', () => {
   let frames: Map<number, FrameRequestCallback>;
   let frameId: number;
   beforeEach(() => {
+    // Measurement runs in a task after the frame (post-layout), so tests drive both.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     frames = new Map();
     frameId = 0;
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
@@ -42,11 +44,13 @@ describe('conversation-owned popup regions', () => {
     document.body.replaceChildren();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
   function flush() {
     const pending = [...frames.values()];
     frames.clear();
     pending.forEach((callback) => callback(0));
+    vi.runOnlyPendingTimers();
   }
 
   it('clips registered content to the viewport and rejects hidden or zero-area roots', () => {
@@ -122,6 +126,49 @@ describe('conversation-owned popup regions', () => {
     owner.register(popup, close);
     expect(close).toHaveBeenCalledTimes(2);
     expect(surface.isConnected).toBe(true);
+    owner.destroy();
+  });
+
+  it('bounds the surface and inline content by visible host ink while body popups stay whole', () => {
+    const surface = box(document.createElement('div'), { x: 20, y: 20, width: 100, height: 160 });
+    const toast = box(document.createElement('div'), { x: 30, y: 120, width: 60, height: 40 });
+    surface.append(toast);
+    const target = document.createElement('div');
+    const popup = box(document.createElement('div'), { x: 40, y: 150, width: 80, height: 60 });
+    target.append(popup);
+    document.body.append(surface, target);
+    // A settling shell: its visible ink is shorter than the already-grown surface.
+    let clip: { x: number; y: number; width: number; height: number } | null = {
+      x: 20,
+      y: 20,
+      width: 100,
+      height: 110,
+    };
+    const regions = vi.fn();
+    const owner = createDockConversationPopupOwner({
+      surface: () => surface,
+      target,
+      active: () => true,
+      onRegionsChange: regions,
+      onPopupStateChange: vi.fn(),
+      clip: () => clip,
+    });
+    owner.registerNotification(toast);
+    owner.register(popup);
+    flush();
+    expect(regions).toHaveBeenLastCalledWith([
+      { x: 20, y: 20, width: 100, height: 110 },
+      { x: 30, y: 120, width: 60, height: 10 },
+      { x: 40, y: 150, width: 80, height: 60 },
+    ]);
+    clip = null;
+    owner.refresh();
+    flush();
+    expect(regions).toHaveBeenLastCalledWith([
+      { x: 20, y: 20, width: 100, height: 160 },
+      { x: 30, y: 120, width: 60, height: 40 },
+      { x: 40, y: 150, width: 80, height: 60 },
+    ]);
     owner.destroy();
   });
 

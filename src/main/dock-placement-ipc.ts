@@ -10,6 +10,7 @@ import { createSafeValidatedHandler, createValidatedHandler } from './ipc-valida
 import {
   getDockWindow,
   getDockPlacementSnapshot,
+  markDockRendererReady,
   updateDockPlacement,
   setDockPointerRegions,
   switchDockBackend,
@@ -44,6 +45,20 @@ export function registerDockPlacementHandlers(): void {
   );
 
   ipcMain.handle(
+    WINDOW_CHANNELS.DOCK_RENDERER_READY,
+    createSafeValidatedHandler(
+      EmptySchema,
+      async (event) => {
+        const window = BrowserWindow.fromWebContents(event.sender);
+        // Only the dock's own top-level document can reveal it.
+        if (!window || window !== getDockWindow() || event.senderFrame !== event.sender.mainFrame)
+          return { shown: false };
+        return { shown: markDockRendererReady(window) };
+      },
+      WINDOW_CHANNELS.DOCK_RENDERER_READY,
+    ),
+  );
+  ipcMain.handle(
     WINDOW_CHANNELS.GET_DOCK_PLACEMENT,
     createSafeValidatedHandler(
       EmptySchema,
@@ -62,8 +77,8 @@ export function registerDockPlacementHandlers(): void {
       WindowUpdateDockPlacementSchema,
       async (event, command) => {
         const window = BrowserWindow.fromWebContents(event.sender);
-        if (!window || window !== getDockWindow())
-          throw new Error('Only the dock can change placement');
+        if (!window || window !== getDockWindow() || event.senderFrame !== event.sender.mainFrame)
+          throw new Error('Only the dock document can change placement');
         return updateDockPlacement(window, command);
       },
       WINDOW_CHANNELS.UPDATE_DOCK_PLACEMENT,

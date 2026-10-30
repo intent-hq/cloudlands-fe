@@ -43,6 +43,7 @@ const WINDOW_STATE_INVOKE_CHANNELS = [
   IPC_CHANNELS.WINDOW.SET_TITLE,
   IPC_CHANNELS.WINDOW.SET_BROWSER_FOCUSED,
   IPC_CHANNELS.WINDOW.SET_DOCK_POINTER_REGION,
+  IPC_CHANNELS.WINDOW.DOCK_RENDERER_READY,
   IPC_CHANNELS.WINDOW.SWITCH_DOCK_BACKEND,
 ] as const;
 
@@ -70,6 +71,7 @@ export function registerWindowStateBridge(): void {
       if (channel === IPC_CHANNELS.WINDOW.SET_DOCK_POINTER_REGION) {
         return { success: false, supported: false };
       }
+      if (channel === IPC_CHANNELS.WINDOW.DOCK_RENDERER_READY) return { shown: false };
       return undefined;
     });
   }

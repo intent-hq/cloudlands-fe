@@ -34,6 +34,11 @@ export interface DockPlacementSnapshot {
   expansionDirection?: 'up' | 'down';
   /** Resolved side conversation bounds in window-local DIP; absent on older snapshots. */
   sidePanel?: DockPointerRect | null;
+  /**
+   * Echo of the side conversation's vertical anchor (its centre as an offset from the
+   * rail surface's top, DIP); null centres it on the rail.
+   */
+  sidePanelAnchor?: number | null;
   /** Native work area in window-local DIP, including space outside the envelope. */
   workArea?: DockPointerRect;
   /** Native ownership of a conversation resize gesture; not a placement drag. */
@@ -44,6 +49,7 @@ type DockLandingSizes = Record<DockPlacement['kind'], { width: number; height: n
 
 export type DockPlacementCommand =
   | { action: 'dismiss' }
+  | { action: 'focus' }
   | { action: 'move'; target: DockPlacementTarget }
   | {
       action: 'resize';
@@ -55,6 +61,11 @@ export type DockPlacementCommand =
       compactNotchWingWidth?: number;
       /** Transient side conversation size. Omission preserves it; null closes it. */
       sidePanelSize?: { width: number; height: number } | null;
+      /**
+       * The side conversation's vertical centre as an offset from the rail surface's
+       * top (the clicked entry's centre). Omission preserves it; null centres on the rail.
+       */
+      sidePanelAnchor?: number | null;
       /** Keep a user-resized floating conversation on its current side of the grip. */
       expansionDirection?: 'up' | 'down' | null;
       resizeToken?: string;
@@ -78,6 +89,15 @@ export type DockPlacementCommand =
       releasePoint?: { x: number; y: number };
     };
 
+/** Which placement request main rejected; the dock names it in its notice. */
+export type DockPlacementFailure = 'move' | 'resize' | 'update';
+
+/** Name a rejected command by what the user was doing: moving or resizing the dock. */
+export function dockPlacementFailureFor(command: { action: string }): DockPlacementFailure {
+  if (/resize/.test(command.action)) return 'resize';
+  return /move|drag|dismiss/.test(command.action) ? 'move' : 'update';
+}
+
 export interface DockDisplayGeometry {
   id: number;
   bounds: DockPointerRect;
@@ -89,11 +109,11 @@ export interface DockDisplayGeometry {
 export const DEFAULT_DOCK_PLACEMENT: DockPlacement = { kind: 'notch', displayId: null };
 const DOCK_NOTCH_MIN_HEIGHT = 32;
 export const DOCK_NOTCH_MIN_WING_WIDTH = 36;
-const DOCK_TOP_PILL_SIZE = { width: 240, height: 32 } as const;
 export const DOCK_FLOATING_COMPACT_SIZE = { width: 224, height: 40 } as const;
 /** Conversation content size; horizontal shells add their compact header height. */
 export const DOCK_CONVERSATION_MIN_SIZE = { width: 320, height: 300 } as const;
-export const DOCK_CONVERSATION_DEFAULT_SIZE = { width: 420, height: 520 } as const;
+/** A shorter default open height (420): the minimum still fits the composer and a few lines. */
+export const DOCK_CONVERSATION_DEFAULT_SIZE = { width: 420, height: 420 } as const;
 /** A wire guard only: native display geometry supplies the actual size limit. */
 export const DOCK_SURFACE_MAX_SIZE = 16384;
 // Dark overlay shadow: 12px vertical offset plus the 32px blur's ~48px painted tail.
@@ -104,8 +124,9 @@ export function getDockCompactNotchSize(
   cutout: Pick<DockPointerRect, 'width' | 'height'> | null,
   wingWidth = DOCK_NOTCH_MIN_WING_WIDTH,
 ): { width: number; height: number } {
-  if (!cutout) return { ...DOCK_TOP_PILL_SIZE };
   const wing = Math.max(DOCK_NOTCH_MIN_WING_WIDTH, wingWidth);
+  // Without a camera the top pill follows the same rules: header height, two wings.
+  if (!cutout) return { width: wing * 2, height: DOCK_NOTCH_MIN_HEIGHT };
   return {
     width: Math.ceil(cutout.width + wing * 2),
     height: Math.max(DOCK_NOTCH_MIN_HEIGHT, cutout.height),
@@ -254,9 +275,11 @@ export function findDockSnapTarget(
     : area.x + area.width / 2;
   const top = display.cutout ? display.bounds.y : area.y;
   const retained = previous?.displayId === display.id ? previous : null;
+  // Without a notch the pill sits below the menu bar, but a drag to the screen's top
+  // edge (inside the menu bar) still means "top"; the zone starts at the display top.
   const notchHit = (margin: number) =>
     Math.abs(point.x - center) <= 140 + margin &&
-    point.y >= top - margin &&
+    point.y >= display.bounds.y - margin &&
     point.y <= top + (display.cutout?.height ?? 8) + margin;
   const edge = (side: 'left' | 'right', margin: number) =>
     Math.abs(point.x - (side === 'left' ? area.x : area.x + area.width)) <= margin;
@@ -281,12 +304,21 @@ export function dockLocalRect(rect: DockPointerRect, bounds: DockPointerRect): D
   return { ...rect, x: rect.x - bounds.x, y: rect.y - bounds.y };
 }
 
-/** Place a side conversation inward without changing the compact rail's anchor. */
+/** Inset that keeps an entry-anchored side conversation's shadow off the work area edge. */
+export const DOCK_SIDE_PANEL_INSET = 8;
+
+/**
+ * Place a side conversation inward without changing the compact rail's anchor.
+ * Vertically it is centred on `anchor` (an offset from the rail's top, like the hover
+ * card on its entry) or on the rail, then clamped inside the work area (with a small
+ * inset when anchored and it fits).
+ */
 export function resolveDockSidePanelSurface(
   rail: DockPointerRect,
   display: DockDisplayGeometry,
   requested: { width: number; height: number },
   side: 'left' | 'right',
+  anchor: number | null = null,
 ): DockPointerRect | null {
   const area = display.workArea;
   const gap = 8;
@@ -296,8 +328,13 @@ export function resolveDockSidePanelSurface(
   const width = Math.max(1, Math.floor(Math.min(requested.width, inward)));
   const height = Math.max(1, Math.floor(Math.min(requested.height, area.height)));
   const x = side === 'left' ? rail.x + rail.width + gap : rail.x - gap - width;
+  const anchored = anchor !== null && Number.isFinite(anchor);
+  const inset = anchored
+    ? Math.min(DOCK_SIDE_PANEL_INSET, Math.max(0, (area.height - height) / 2))
+    : 0;
+  const centre = rail.y + (anchored ? Math.max(0, Math.min(rail.height, anchor)) : rail.height / 2);
   const y = Math.round(
-    Math.max(area.y, Math.min(rail.y + (rail.height - height) / 2, area.y + area.height - height)),
+    Math.max(area.y + inset, Math.min(centre - height / 2, area.y + area.height - height - inset)),
   );
   return { x, y, width, height };
 }

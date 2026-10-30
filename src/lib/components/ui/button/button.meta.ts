@@ -15,8 +15,6 @@ export const buttonMetadata = parseUiComponentMetadata({
   category: 'primitive',
   owner: '007-B1',
   callers: [
-    'src/features/annotation/components/AnnotationToolbarPanel.svelte',
-    'src/features/annotation/components/AnnotationOverlay.svelte',
     'src/features/host-membership/HostInvitationDialog.svelte',
     'src/features/hud/components/AdaptiveDockShell.svelte',
     'src/features/hud/components/DockActionFeedback.svelte',

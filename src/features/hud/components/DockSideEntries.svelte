@@ -1,11 +1,9 @@
 <script lang="ts">
   import { onDestroy, tick, untrack } from 'svelte';
-  import Fa from 'svelte-fa';
   import { Button } from '$lib/components/ui/button';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import DockWorkspaceAvatar from './DockWorkspaceAvatar.svelte';
   import WorkspaceHoverCard from '$lib/components/workspace/WorkspaceHoverCard.svelte';
-  import { faPen } from '$lib/icons/phosphor-icons';
   import { m } from '$shared/paraglide/messages.js';
   import {
     DOCK_ISLAND_WIDTH,
@@ -18,6 +16,7 @@
   import { DOCK_HOVER_SCALE_MS, getDockProximityScale } from '$features/hud/utils/dock-motion';
   import { intersectDockRect, revealDockItem } from '$features/hud/utils/dock-scroll';
   import { spring } from '$lib/motion';
+  import type { DockEdgeOpenOrigin } from '$features/hud/utils/dock-edge-shell';
 
   let {
     workspaces,
@@ -33,8 +32,8 @@
     focusRequest = 0,
     closeRequest = 0,
     pinnedWorkspaceId = null,
+    conversationOpen = false,
     onOpen,
-    onFeedback,
     onRegionsChange,
     onPreviewChange,
   }: {
@@ -51,8 +50,10 @@
     focusRequest?: number;
     closeRequest?: number;
     pinnedWorkspaceId?: string | null;
-    onOpen: (id: string) => void;
-    onFeedback: (id: string, title: string) => void;
+    /** The pinned conversation is on screen (not just remembered). */
+    conversationOpen?: boolean;
+    /** `origin`: the hover card (or its spot) the conversation box grows from. */
+    onOpen: (id: string, origin?: DockEdgeOpenOrigin) => void;
     onRegionsChange: (regions: DockPointerRect[]) => void;
     onPreviewChange: (open: boolean) => void;
   } = $props();
@@ -82,6 +83,7 @@
   let pointerFocusing = false;
   let closeTimer: ReturnType<typeof setTimeout> | undefined;
   let frame: number | undefined;
+  let measureTask: ReturnType<typeof setTimeout> | undefined;
   let sampleUntil = 0;
   let focusRevealUntil = 0;
   let disposed = false;
@@ -119,10 +121,11 @@
         return;
       }
       anchorRegion = rect;
+      lastCardHeight = card.getBoundingClientRect().height || lastCardHeight;
       previewTop = getDockPreviewTop({
         itemTop: rect.y - root.getBoundingClientRect().top,
         itemHeight: rect.height,
-        previewHeight: card.getBoundingClientRect().height,
+        previewHeight: lastCardHeight,
         viewportHeight: windowHeight,
         shadowInset: 8,
       });
@@ -140,12 +143,56 @@
       ]);
     });
   }
+  // Last measured card height and radius: where a card would sit when none is showing.
+  let lastCardHeight = 160;
+  let lastCardRadius = 12;
+  /** The clicked entry's hover card rect (or its spot) and centre, window-local. */
+  function openOrigin(id: string): DockEdgeOpenOrigin | undefined {
+    const button = buttons[id];
+    const viewport = rail ? region(rail) : null;
+    const entry = button && viewport ? intersectDockRect(region(button), viewport) : null;
+    if (!entry || !root) return undefined;
+    // Client rects are relative to the page; the root covers the window from its origin.
+    const origin = root.getBoundingClientRect();
+    const local = (rect: DockPointerRect): DockPointerRect => ({
+      ...rect,
+      x: rect.x - origin.left,
+      y: rect.y - origin.top,
+    });
+    const item = local(entry);
+    const entryCentre = item.y + item.height / 2;
+    if (card && positioned && previewId === id) {
+      const rect = local(region(card));
+      lastCardHeight = rect.height;
+      lastCardRadius = parseFloat(getComputedStyle(card).borderTopLeftRadius) || lastCardRadius;
+      return { workspaceId: id, card: rect, radius: lastCardRadius, entryCentre };
+    }
+    const height = Math.min(lastCardHeight, Math.max(0, windowHeight - 16));
+    const top = getDockPreviewTop({
+      itemTop: item.y,
+      itemHeight: item.height,
+      previewHeight: height,
+      viewportHeight: windowHeight,
+      shadowInset: 8,
+    });
+    return {
+      workspaceId: id,
+      card: { x: previewLeft, y: top, width: previewWidth, height },
+      radius: lastCardRadius,
+      entryCentre,
+    };
+  }
   function scheduleMeasure(): void {
     if (frame !== undefined || disposed) return;
     frame = requestAnimationFrame(() => {
-      frame = undefined;
-      measure();
-      if (performance.now() < sampleUntil) scheduleMeasure();
+      // Measure after this frame has laid out: reading bounds inside the frame forced a
+      // reflow every frame while the shell or the side box animated.
+      measureTask = setTimeout(() => {
+        frame = undefined;
+        measureTask = undefined;
+        measure();
+        if (performance.now() < sampleUntil) scheduleMeasure();
+      }, 0);
     });
   }
   function cancelClose(): void {
@@ -185,7 +232,15 @@
     cancelClose();
   }
   function show(id: string, keyboard = false): void {
-    if (disabled || pinnedWorkspaceId) return;
+    if (disabled) return;
+    // The open conversation needs no preview; every other entry shows its hover card.
+    if (conversationOpen && id === pinnedWorkspaceId) {
+      previewId = null;
+      positioned = false;
+      anchorRegion = null;
+      scheduleMeasure();
+      return;
+    }
     cancelClose();
     // Keep the existing surface visible when moving directly between neighbors.
     if (previewId === null) positioned = false;
@@ -216,9 +271,6 @@
     if (event.key === (side === 'left' ? 'ArrowRight' : 'ArrowLeft')) {
       event.preventDefault();
       show(entries[index].id, true);
-      void tick().then(() =>
-        card?.querySelector<HTMLButtonElement>('[data-testid="dock-row-feedback"]')?.focus(),
-      );
       return;
     }
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
@@ -264,7 +316,7 @@
   $effect(() => {
     if (
       disabled ||
-      pinnedWorkspaceId ||
+      (conversationOpen && previewId !== null && previewId === pinnedWorkspaceId) ||
       (previewId && !entries.some((entry) => entry.id === previewId))
     )
       untrack(closePreview);
@@ -291,12 +343,12 @@
     disposed = true;
     cancelClose();
     if (frame !== undefined) cancelAnimationFrame(frame);
+    clearTimeout(measureTask);
     onRegionsChange([]);
     onPreviewChange(false);
   });
 </script>
 
-{#snippet penIcon()}<Fa icon={faPen} class="size-4" />{/snippet}
 <svelte:window onblur={closePreview} />
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
@@ -345,7 +397,12 @@
   >
     <div class="side-rail-items">
       {#each entries as entry, index (entry.id)}
-        {@const scale = reducedMotion ? 1 : getDockProximityScale(index, center)}
+        <!-- The open conversation's entry rests at the hover size; hovering takes over. -->
+        {@const scale = reducedMotion
+          ? 1
+          : center === null && conversationOpen && entry.id === pinnedWorkspaceId
+            ? getDockProximityScale(index, index)
+            : getDockProximityScale(index, center)}
         <Button
           bind:ref={() => buttons[entry.id] ?? null, (button) => (buttons[entry.id] = button)}
           variant="ghost"
@@ -385,7 +442,7 @@
             leaveFocus(event);
           }}
           onkeydown={(event) => navigate(event, index)}
-          onclick={() => onOpen(entry.id)}
+          onclick={() => onOpen(entry.id, openOrigin(entry.id))}
         >
           {#if entry.item}<DockWorkspaceAvatar
               item={entry.item}
@@ -395,7 +452,7 @@
       {/each}
     </div>
   </nav>
-  {#if preview && !disabled && !pinnedWorkspaceId}
+  {#if preview && !disabled && !(conversationOpen && preview.id === pinnedWorkspaceId)}
     <div
       bind:this={bridge}
       class="preview-bridge"
@@ -445,20 +502,6 @@
           </section>
         {/if}
       </div>
-      <div class="preview-action">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          iconOnly
-          aria-label={`${m.dock_feedback_label()}: ${preview.title}`}
-          title={`${m.dock_feedback_label()}: ${preview.title}`}
-          data-testid="dock-row-feedback"
-          data-workspace-id={preview.id}
-          onclick={() => onFeedback(preview.id, preview.title)}
-        >
-          {@render penIcon()}
-        </Button>
-      </div>
     </div>
   {/if}
 </div>
@@ -467,6 +510,8 @@
   .side-entries {
     position: absolute;
     inset: 0;
+    /* Previews sit over the open conversation box. */
+    z-index: 1;
     pointer-events: none;
   }
   .side-entries :global(button:not(:disabled)) {
@@ -517,6 +562,7 @@
   .side-preview.positioned {
     opacity: 1;
   }
+
   .preview-content :global([data-workspace-hover-card]) {
     width: 100%;
     max-width: 100%;
@@ -566,11 +612,6 @@
   .side-preview.keyboard-preview,
   .reduced-motion .side-preview {
     transition: none;
-  }
-  .preview-action {
-    position: absolute;
-    top: 12px;
-    right: 12px;
   }
   .reduced-motion .side-rail :global(.side-entry) {
     transition: none;

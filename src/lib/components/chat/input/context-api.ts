@@ -146,6 +146,27 @@ export interface PlaceAttachmentResult {
    * placement or an unkeyed call.
    */
   replayed?: boolean;
+  /**
+   * Raw screenshot retention echo (daemons advertising
+   * `server.capabilities.rawScreenshotRetention === 1`): present only when this
+   * placement was stored as the raw original of `compositeAttachmentId`.
+   * `expiresAt` is fixed at the server commit and never renewed.
+   */
+  rawScreenshot?: RawScreenshotRetention;
+}
+
+/** Raw screenshot association and its server-fixed deadline. */
+interface RawScreenshotRetention {
+  compositeAttachmentId: string;
+  expiresAt: string;
+  retentionSeconds?: number;
+  /** Lookup results only: the deadline has passed. */
+  expired?: boolean;
+}
+
+/** Optional raw-screenshot association for a keyed image placement. */
+export interface RawScreenshotPlacement {
+  compositeAttachmentId: string;
 }
 
 /**
@@ -161,7 +182,14 @@ export interface PlaceAttachmentResult {
 export async function placeAttachment(
   workspaceId: string,
   fileName: string,
-  source: { data?: string; sourcePath?: string; mimeType?: string; idempotencyKey?: string },
+  source: {
+    data?: string;
+    sourcePath?: string;
+    mimeType?: string;
+    idempotencyKey?: string;
+    /** Only for daemons advertising raw retention; requires `idempotencyKey`. */
+    rawScreenshot?: RawScreenshotPlacement;
+  },
 ): Promise<PlaceAttachmentResult> {
   logger.debug('Placing attachment', {
     workspaceId,
@@ -178,6 +206,7 @@ export async function placeAttachment(
       ? { mimeType: source.mimeType }
       : {}),
     ...(source.idempotencyKey !== undefined ? { idempotencyKey: source.idempotencyKey } : {}),
+    ...(source.rawScreenshot !== undefined ? { rawScreenshot: source.rawScreenshot } : {}),
   });
 }
 
@@ -207,7 +236,11 @@ export async function beginAttachmentUpload(
   fileName: string,
   sizeBytes: number,
   sha256: string,
-  options: { mimeType?: string; idempotencyKey?: string } = {},
+  options: {
+    mimeType?: string;
+    idempotencyKey?: string;
+    rawScreenshot?: RawScreenshotPlacement;
+  } = {},
 ): Promise<BeginAttachmentUploadResult> {
   return await backendRequest<BeginAttachmentUploadResult>('file.attachmentUpload.begin', {
     workspaceId,
@@ -218,6 +251,7 @@ export async function beginAttachmentUpload(
       ? { mimeType: options.mimeType }
       : {}),
     ...(options.idempotencyKey !== undefined ? { idempotencyKey: options.idempotencyKey } : {}),
+    ...(options.rawScreenshot !== undefined ? { rawScreenshot: options.rawScreenshot } : {}),
   });
 }
 
@@ -289,6 +323,10 @@ export interface AttachmentInfo {
   path: string;
   /** Whether the file is still on disk at read time (the registry row survives an out-of-band delete). */
   exists: boolean;
+  /** On a raw screenshot (retention daemons): its composite and deadline. */
+  rawScreenshot?: RawScreenshotRetention & { expired: boolean };
+  /** On a composite (retention daemons): its retained raw original. */
+  retainedRawScreenshot?: { attachmentId: string; expiresAt: string; expired: boolean };
 }
 
 /**

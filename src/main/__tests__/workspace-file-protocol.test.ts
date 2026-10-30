@@ -99,6 +99,13 @@ import {
   WORKSPACE_FILE_MAX_BYTES,
   workspaceMediaBackendRedirect,
 } from '../protocol-handlers';
+import { DOCK_RECORDING_MAX_BYTES } from '../../shared/dock-recording';
+
+describe('dock clip size cap', () => {
+  it('dock clips stop within the size this protocol can play back', () => {
+    expect(DOCK_RECORDING_MAX_BYTES).toBe(WORKSPACE_FILE_MAX_BYTES);
+  });
+});
 
 describe('imageMimeTypeForPath', () => {
   it('maps allowlisted image extensions case-insensitively', () => {

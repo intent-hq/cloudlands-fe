@@ -71,6 +71,15 @@ function binaryMatchesArchitecture(file, arch) {
   }
 }
 
+// Dock composer helpers (screen recorder, streaming dictation, element picker),
+// relative to Resources in both the staging tree and the packaged app. They are
+// required in every Mac package and signed individually by sign-sidecar.js.
+const DOCK_COMPOSER_HELPERS = Object.freeze([
+  'dock-helper/intent-dock-recorder',
+  'speech-helper/intent-dock-speech',
+  'dock-helper/intent-dock-element-pick',
+]);
+
 function helperPaths(resources, sidecarDirectory) {
   return [
     path.join(resources, sidecarDirectory, 'intentd'),
@@ -79,6 +88,7 @@ function helperPaths(resources, sidecarDirectory) {
       resources,
       'keychain-helper/intent-keychain-helper.app/Contents/MacOS/intent-keychain-helper',
     ),
+    ...DOCK_COMPOSER_HELPERS.map((helper) => path.join(resources, helper)),
   ];
 }
 
@@ -132,6 +142,7 @@ function builderMacArch(context) {
 }
 
 module.exports = {
+  DOCK_COMPOSER_HELPERS,
   assertNativeMacArch,
   binaryArchitectures,
   assertBinaryArchitecture,

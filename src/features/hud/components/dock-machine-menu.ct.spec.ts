@@ -231,3 +231,38 @@ test('machine list remains operable inside an empty notch native envelope', asyn
     menu.getByRole('menuitemradio', { name: 'Build server', exact: true }),
   ).toHaveAttribute('aria-checked', 'true');
 });
+
+test('notch machine menu expands the shell at once and shows the whole menu', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  const component = await mount(DockRailPreview, {
+    props: { ...dockRailPreview.states.notch.props, machineFixture: true },
+  });
+  const shell = component.getByTestId('dock-shell');
+  await expect(shell).toHaveAttribute('data-expanded', 'false');
+  await component.getByRole('button', { name: 'Switch machine', exact: true }).click();
+  const menu = page.getByRole('menu', { name: 'Machines' });
+  await expect(menu).toBeVisible();
+  // The shell opens with the menu (never held compact waiting on a later event).
+  await expect(shell).toHaveAttribute('data-expanded', 'true');
+  await expect(shell).toHaveAttribute('data-reveal', '1', { timeout: 600 });
+  // The whole card is on screen and nothing covers or clips its corners.
+  const corners = await menu.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    const inset = 4;
+    return [
+      [box.left + inset, box.top + inset],
+      [box.right - inset, box.top + inset],
+      [box.left + inset, box.bottom - inset],
+      [box.right - inset, box.bottom - inset],
+    ].map(([x, y]) => {
+      const hit = document.elementFromPoint(x, y);
+      return (
+        x >= 0 && y >= 0 && x <= innerWidth && y <= innerHeight && !!hit && element.contains(hit)
+      );
+    });
+  });
+  expect(corners).toEqual([true, true, true, true]);
+});

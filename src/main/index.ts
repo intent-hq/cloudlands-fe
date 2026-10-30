@@ -314,13 +314,8 @@ import { setupProviderAvailabilityIPC } from '../features/providers/main/provide
 import { setupConfigIPC, getConfigManager } from '../features/config/main/config.ipc';
 
 import { setupEventsIPC } from '../features/events/main/events.ipc';
-import { setupAnnotationIPC } from '../features/annotation/main/annotation.ipc';
-import {
-  closeAnnotationMode,
-  focusAnnotationMode,
-  isAnnotationModeActive,
-  isAnnotationWindow,
-} from '../features/annotation/main/annotation-window';
+import { setupDockEvidenceIPC } from '../features/hud/main/dock-evidence.ipc';
+import { isDockAnnotationWindow } from './dock-annotation-identity';
 import {
   closeDockWindow,
   createDockWindow,
@@ -330,6 +325,7 @@ import {
 } from './dock-window';
 import { createDockMenuController } from './dock-menu-controller';
 import { getDockEnabledLocalPref, setDockEnabledLocalPref } from './local-prefs';
+import { isDockLabEnabled, loadDockLabEnabled, registerDockLabHandlers } from './dock-lab';
 import { registerExternalEditorsHandlers } from '../features/external-editors/main/external-editors.ipc';
 import { setupFileIPC } from '../features/file/main/file.ipc';
 import { registerIDEHandlers } from '../features/ide/main/ide.ipc';
@@ -516,7 +512,6 @@ async function gracefulShutdown() {
 
 async function performGracefulShutdown() {
   try {
-    closeAnnotationMode();
     // Stop memory sampling first: it is pure instrumentation, and clearing its
     // interval here means no timer survives any of the quit paths (before-quit,
     // SIGTERM, SIGINT) that funnel through this function.
@@ -983,13 +978,8 @@ const bootFlow = app.whenReady().then(async () => {
   const dockMenuController = createDockMenuController({
     createWindow: createDockWindow,
     getWindow: getDockWindow,
-    closeWindow: () => {
-      closeAnnotationMode();
-      closeDockWindow();
-    },
-    focusWindow: () => {
-      if (!focusAnnotationMode()) focusDockWindow();
-    },
+    closeWindow: () => closeDockWindow(),
+    focusWindow: () => focusDockWindow(),
     readEnabledPreference: getDockEnabledLocalPref,
     writeEnabledPreference: (enabled) =>
       isShuttingDown ? Promise.resolve() : setDockEnabledLocalPref(enabled),
@@ -1008,19 +998,24 @@ const bootFlow = app.whenReady().then(async () => {
       { role: 'minimize', label: m.menu_minimize(), accelerator: 'CmdOrCtrl+M' },
       { role: 'zoom', label: m.menu_window_fill() },
       { type: 'separator' },
-      {
-        label: m.menu_show_intent_dock(),
-        type: 'checkbox',
-        checked: dockMenuController.isEnabled(),
-        click: (menuItem) => void dockMenuController.setEnabled(menuItem.checked),
-      },
-      {
-        label: m.menu_focus_intent_dock(),
-        accelerator: 'CmdOrCtrl+Shift+D',
-        enabled: dockMenuController.isEnabled(),
-        click: () => dockMenuController.focus(),
-      },
-      { type: 'separator' },
+      // The dock is an experimental Labs feature: its items exist only while the lab is on.
+      ...(isDockLabEnabled()
+        ? ([
+            {
+              label: m.menu_show_intent_dock(),
+              type: 'checkbox',
+              checked: dockMenuController.isEnabled(),
+              click: (menuItem) => void dockMenuController.setEnabled(menuItem.checked),
+            },
+            {
+              label: m.menu_focus_intent_dock(),
+              accelerator: 'CmdOrCtrl+Shift+D',
+              enabled: dockMenuController.isEnabled(),
+              click: () => dockMenuController.focus(),
+            },
+            { type: 'separator' },
+          ] satisfies Electron.MenuItemConstructorOptions[])
+        : []),
       {
         label: m.menu_select_previous_tab(),
         accelerator: 'CmdOrCtrl+[',
@@ -1059,7 +1054,10 @@ const bootFlow = app.whenReady().then(async () => {
     // External webview popups (OAuth/auth flows) are not app windows — skip them.
     const liveWindows = (BrowserWindow.getAllWindows() as BrowserWindowType[]).filter(
       (w) =>
-        !w.isDestroyed() && !isWebviewPopupWindow(w) && !isDockWindow(w) && !isAnnotationWindow(w),
+        !w.isDestroyed() &&
+        !isWebviewPopupWindow(w) &&
+        !isDockWindow(w) &&
+        !isDockAnnotationWindow(w),
     );
     if (liveWindows.length > 0) {
       let connections: Awaited<ReturnType<typeof listConnections>> = [];
@@ -1452,7 +1450,6 @@ const bootFlow = app.whenReady().then(async () => {
   });
 
   app.on('backend-connection-changed', () => {
-    closeAnnotationMode();
     void rebuildMenu();
   });
 
@@ -1549,7 +1546,7 @@ const bootFlow = app.whenReady().then(async () => {
   setupWorkspaceSummaryIPC();
   setupFileIPC();
   setupSystemIPC();
-  setupAnnotationIPC();
+  setupDockEvidenceIPC();
   setupDevConsoleIPC();
   setupPowerStateIPC();
   await setupConfigIPC();
@@ -1607,8 +1604,15 @@ const bootFlow = app.whenReady().then(async () => {
 
   // Every critical handler a renderer invokes on boot now exists: let the
   // window creators in ./window.ts proceed (they all await this gate).
+  // The dock lab is main-owned and off by default; the dock restores only while it is on.
+  await loadDockLabEnabled();
+  registerDockLabHandlers({
+    show: () => dockMenuController.setEnabled(true),
+    hide: () => dockMenuController.dismiss(),
+    onChange: () => void rebuildMenu(),
+  });
   markRendererWindowsAllowed();
-  await dockMenuController.restore();
+  if (isDockLabEnabled()) await dockMenuController.restore();
   void rebuildMenu();
 
   // Hydrate the main-process provider catalog cache (non-blocking): the
@@ -2150,11 +2154,11 @@ app.on('activate', async () => {
     whenBootWindowsReady: () => bootWindowsGate.ready,
     shouldIgnoreActivation: () => {
       const focused = BrowserWindow.getFocusedWindow();
-      return isAnnotationModeActive() || isDockWindow(focused) || isAnnotationWindow(focused);
+      return !!focused && (isDockWindow(focused) || isDockAnnotationWindow(focused));
     },
     getAllWindows: () =>
       BrowserWindow.getAllWindows().filter(
-        (window: BrowserWindowType) => !isDockWindow(window) && !isAnnotationWindow(window),
+        (window: BrowserWindowType) => !isDockWindow(window) && !isDockAnnotationWindow(window),
       ),
     getMainWindow,
     focusWindow: (targetWindow) => {
