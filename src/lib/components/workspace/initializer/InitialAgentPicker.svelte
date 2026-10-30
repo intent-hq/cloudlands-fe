@@ -28,7 +28,7 @@
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import { sortSpecialistsByRecency } from '$store/renderer/slices/workspace-initializer/utils/recent-specialists';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
-  import { faPlus, faChevronDown } from '@fortawesome/free-solid-svg-icons';
+  import { faPlus } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onMount, untrack } from 'svelte';
   import {
@@ -79,7 +79,7 @@
   // row's highlight overflow the menu (a second vertical bar) and clipped the
   // separator into a horizontal bar. Capped by the space Bits UI measures.
   const SPECIALIST_MENU_MAX_HEIGHT =
-    'min(300px, var(--bits-dropdown-menu-content-available-height, calc(100dvh - 1rem)))';
+    'min(400px, var(--bits-dropdown-menu-content-available-height, calc(100dvh - 1rem)))';
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
   const catalogEntries$ = selectProviderCatalogEntries();
   const providerProfiles$ = selectProviderCatalogProfiles();
@@ -832,7 +832,6 @@
             <span class="min-w-0 flex-1 truncate text-left" id={agentValueId}
               >{agentDisplayLabel}</span
             >
-            <Fa icon={faChevronDown} class="size-3 shrink-0 text-muted-foreground" />
           </Button>
         {/snippet}
       </Menu.Trigger>
@@ -841,11 +840,11 @@
         sideOffset={isMobile.current ? 4 : 24}
         align={isMobile.current ? 'end' : 'start'}
         preventScroll={false}
-        class="p-1 w-[300px] max-w-[calc(100vw-1rem)]"
+        class="p-2 w-[320px] max-w-[calc(100vw-1rem)]"
         maxHeight={SPECIALIST_MENU_MAX_HEIGHT}
         aria-label={m.ui_dropdownMenu_ariaLabel()}
       >
-        <p class="type-caption px-2 pt-1.5 pb-1 text-muted-foreground">
+        <p class="type-caption px-3 py-2 text-muted-foreground">
           {m.workspace_initialAgentPicker_agentMenu_description()}
         </p>
         {#if orchestrator}
@@ -856,7 +855,7 @@
             <Menu.RadioItem
               value="orchestration"
               closeOnSelect
-              class="min-h-9 items-center gap-2 py-2 text-sm font-normal data-[state=checked]:bg-sidebar"
+              class="min-h-10 items-center gap-2 px-3 py-2 text-sm leading-5 font-normal data-[state=checked]:bg-sidebar"
               data-specialist-option="orchestration"
               onSelect={handleOrchestrationSelect}
             >
@@ -878,7 +877,7 @@
               >
             </Menu.RadioItem>
           </Menu.RadioGroup>
-          <Menu.Separator />
+          <Menu.Separator class="mx-1 my-2" />
         {/if}
         <SpecialistOptions
           compact
@@ -890,8 +889,11 @@
               : selectedSpecialist}
           onchange={handleAgentSelect}
         />
-        <Menu.Separator />
-        <Menu.Item class="gap-2" onSelect={openSpecialistSettings}>
+        <Menu.Separator class="mx-1 my-2" />
+        <Menu.Item
+          class="min-h-10 items-center gap-2 px-3 py-2 text-sm leading-5 font-normal"
+          onSelect={openSpecialistSettings}
+        >
           {#snippet leading()}<Fa icon={faPlus} class="opacity-60" />{/snippet}
           <span>{m.workspace_initialAgentPicker_manageSpecialists_label()}</span>
         </Menu.Item>
@@ -928,7 +930,7 @@
 </div>
 
 <style>
-  /* Whole-row triggers stack; each owns its label, value and chevron. */
+  /* Whole-row triggers stack; each owns its label and value. */
   .agent-settings {
     display: flex;
     flex-direction: column;

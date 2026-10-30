@@ -43,7 +43,7 @@
       closeOnSelect
       leading={compact ? compactLeading : undefined}
       class={compact
-        ? 'min-h-9 items-center gap-2 py-2 text-sm font-normal data-[state=checked]:bg-sidebar'
+        ? 'min-h-10 items-center gap-2 px-3 py-2 text-sm leading-5 font-normal data-[state=checked]:bg-sidebar'
         : 'h-auto min-h-(--control-height-medium) gap-2 py-2 whitespace-normal'}
       data-specialist-option={option.id ?? 'general'}
       onSelect={() => onchange(option.id)}

@@ -293,7 +293,7 @@
     deferUpdate?: boolean;
     variant?: 'ghost' | 'ghost-light' | 'underline' | 'outline' | 'default';
     size?: 'xs' | 'sm' | 'icon';
-    /** Stretch the trigger to its container with a trailing chevron. */
+    /** Stretch the trigger to its container. */
     fullWidth?: boolean;
     /** Short explanation shown at the top of the open menu. */
     description?: string;
@@ -2566,7 +2566,7 @@
           <div class="h-3.5 w-24 bg-muted/50 rounded-sm animate-pulse"></div>
         {/if}
       </span>
-      {#if variant === 'outline' || variant === 'default' || fullWidth}
+      {#if !rowLabel && (variant === 'outline' || variant === 'default' || fullWidth)}
         <Fa
           icon={faChevronDown}
           class={fullWidth

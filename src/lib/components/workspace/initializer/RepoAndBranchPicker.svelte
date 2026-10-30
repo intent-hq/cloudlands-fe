@@ -280,8 +280,6 @@
       displayValue={metadataRepoName || undefined}
       triggerValueClass="text-foreground"
       triggerContentClass="gap-2"
-      showTriggerChevron
-      triggerChevronClass="ml-auto size-3! shrink-0 text-muted-foreground"
     />
     {#if !isNewRepo}
       <div class="min-w-0">
@@ -291,8 +289,7 @@
               {...gitlabBranch}
               rowLabel={m.workspace_compactInitializer_branch_label()}
               triggerClass="w-full min-w-0 h-auto min-h-10 justify-start px-3 pr-2 py-2 text-sm leading-5 font-normal text-foreground"
-              showTriggerChevron
-              triggerChevronClass="ml-auto size-3! shrink-0 text-muted-foreground"
+              showTriggerChevron={false}
             />
           {/if}
         {:else if repoType === 'remote' && remoteSetup}
@@ -319,8 +316,6 @@
             hasTriggerIcon
             disabled={!hasRepo}
             showUncommittedIndicator
-            showTriggerChevron
-            triggerChevronClass="ml-auto size-3! shrink-0 text-muted-foreground"
             triggerContentClass="w-full gap-2"
             onSkipIsolationChange={(value) => onSkipIsolationChange?.(value)}
             onGitHubAuthNeededChange={(value) => onGitHubAuthNeededChange?.(value)}

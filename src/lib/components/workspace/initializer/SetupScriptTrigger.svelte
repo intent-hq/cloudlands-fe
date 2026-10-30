@@ -52,6 +52,8 @@
         >
       {:else}<span class="truncate">{value}</span>{/if}
     </span>
-    <Fa icon={faChevronRight} class="size-3 shrink-0 text-muted-foreground" />
+    {#if presentation !== 'form'}
+      <Fa icon={faChevronRight} class="size-3 shrink-0 text-muted-foreground" />
+    {/if}
   </Button>
 </div>
