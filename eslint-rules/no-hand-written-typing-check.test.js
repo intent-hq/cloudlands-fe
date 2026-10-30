@@ -118,6 +118,16 @@ function handleKeydown(event: KeyboardEvent) {
 }`,
     },
     {
+      name: 'a key event name passed to a non-listener call',
+      filename,
+      code: `
+emit('keydown', check);
+decoder.on('keydown', check);
+function check(target) {
+  return target.isContentEditable;
+}`,
+    },
+    {
       name: 'a helper the keydown handler does not call',
       filename,
       code: `
@@ -241,6 +251,89 @@ function handleKeydown(event: KeyboardEvent) {
   if ((event.target as Element).closest('input, [role="button"], .a, [data-button]')) return;
 }`,
       errors: [error(3)],
+    },
+    {
+      name: 'constants declared after the keyboard function that uses them',
+      filename,
+      code: `
+function handleKeydown(event: KeyboardEvent) {
+  const target = event.target as HTMLElement;
+  if (target.closest(EDITABLE)) return;
+  if (TYPING_TAGS.has(target.tagName)) return;
+}
+const EDITABLE = 'input, textarea';
+const TYPING_TAGS = new Set(['INPUT', 'TEXTAREA']);`,
+      errors: [error(4), error(5)],
+    },
+    {
+      name: 'class methods, class fields and this-bound listeners',
+      filename,
+      code: `
+class ShortcutManager {
+  isEditable(target) {
+    return target.isContentEditable;
+  }
+  handle = (event: KeyboardEvent) => {
+    if (this.isEditable(event.target)) return;
+  };
+  onKey(event) {
+    if (event.target.tagName === 'INPUT') return;
+  }
+  start() {
+    window.addEventListener('keydown', this.onKey);
+  }
+}`,
+      errors: [error(4), error(10)],
+    },
+    {
+      name: 'a contenteditable selector that also names a button',
+      filename,
+      code: `
+function handleKeydown(event: KeyboardEvent) {
+  if ((event.target as Element).closest('input, textarea, select, button, [contenteditable]')) return;
+}`,
+      errors: [error(3)],
+    },
+    {
+      name: 'capture attributes and key-handler props with inferred parameter types',
+      ...svelte(
+        `
+  function onCapture(event) {
+    if (event.target.tagName === 'INPUT') return;
+  }
+  const editorProps = {
+    handleKeyDown(view, event) {
+      return event.target.isContentEditable;
+    },
+  };`,
+        `<div onkeydowncapture={onCapture}></div>
+<Dialog onEscapeKeydown={(event) => event.target.closest('textarea')} />`,
+      ),
+      errors: [error(4), error(8), error(13)],
+    },
+    {
+      name: 'destructured tag names and contenteditable flags',
+      filename,
+      code: `
+function handleKeydown(event: KeyboardEvent) {
+  const { tagName } = event.target as HTMLElement;
+  if (tagName === 'INPUT') return;
+  const { isContentEditable } = event.target as HTMLElement;
+}`,
+      errors: [error(4), error(5)],
+    },
+    {
+      name: 'attribute, regex and indexOf forms',
+      filename,
+      code: `
+function handleKeydown(event: KeyboardEvent) {
+  const target = event.target as HTMLElement;
+  if (target.hasAttribute('contenteditable')) return;
+  if (target.getAttribute('contenteditable') === 'true') return;
+  if (/^(INPUT|TEXTAREA)$/.test(target.tagName)) return;
+  if (['INPUT', 'TEXTAREA'].indexOf(target.tagName) !== -1) return;
+}`,
+      errors: [error(4), error(5), error(6), error(7)],
     },
     {
       name: 'a union-typed keyboard parameter',

@@ -17,30 +17,38 @@
  *
  * Flagged signals:
  * - comparing `tagName` / `nodeName` / `localName` (or its lower/upper-cased form, or a
- *   name bound to either) with 'INPUT' / 'TEXTAREA' in any case, through `===`, `==`,
- *   `!==`, `!=`, `[...].includes(tag)`, `new Set([...]).has(tag)` or a `switch` case;
- * - reading `isContentEditable` or `contentEditable` (assigning `contentEditable` is fine);
+ *   name bound to either, including `const { tagName } = el`) with 'INPUT' / 'TEXTAREA' in
+ *   any case, through `===` / `==` / `!==` / `!=`, `includes` / `indexOf` / `has` on a
+ *   collection of those names, a regex `.test(tag)` naming them, or a `switch` case;
+ * - reading `isContentEditable` or `contentEditable`, directly or by destructuring
+ *   (assigning `contentEditable` is fine), and `hasAttribute` / `getAttribute`
+ *   ('contenteditable');
  * - a selector naming `input`, `textarea` or `[contenteditable]` passed to `closest`,
  *   `matches`, `querySelector` or `querySelectorAll`, as a literal or a name bound to one.
- *   A selector that also names `button`, `a`, `[href]` or `[tabindex]` lists interactive or
- *   focusable controls (focus traps, nested-control guards) and is not flagged.
+ *   A selector that also names `button`, `a`, `[href]` or `[tabindex]`, and not
+ *   `[contenteditable]`, lists interactive or focusable controls (focus traps,
+ *   nested-control guards) and is not flagged.
  *
  * Only inside a keyboard context:
  * - a function with a parameter typed `KeyboardEvent`, or a name annotated
  *   `KeyboardEventHandler<...>`;
- * - a listener passed after a 'keydown' / 'keyup' / 'keypress' argument (`addEventListener`,
- *   svelte/events `on`), assigned to `el.onkeydown` / `onkeyup` / `onkeypress`, or given
- *   as an `onkeydown: fn` object property;
- * - a Svelte `onkeydown` / `onkeyup` / `onkeypress` attribute (`{onkeydown}` shorthand too)
- *   or `on:keydown`-style directive;
- * - any function in the same file that one of those calls or passes along by name,
- *   transitively — the helper predicates (`isEditableTarget`, `isMultilineInput`) where
- *   most of the shipped copies lived.
+ * - a listener passed after a 'keydown' / 'keyup' / 'keypress' argument to
+ *   `addEventListener` or svelte/events `on`;
+ * - a handler assigned to, or given as, a key-handler property or Svelte attribute —
+ *   `on…keydown` / `on…keyup` / `on…keypress` / `handle…KeyDown`, with optional `capture`
+ *   (`onkeydown`, `onkeydowncapture`, `onEscapeKeydown`, TipTap's `handleKeyDown`),
+ *   `{onkeydown}` shorthand included — or an `on:keydown`-style directive;
+ * - any function in the same file that one of those calls or passes along by name
+ *   (`helper()`, `this.helper()`, `list.some(helper)`), transitively — the helper
+ *   predicates (`isEditableTarget`, `isMultilineInput`) where most shipped copies lived.
+ *   Function names come from declarations, `const` initializers, class methods and fields,
+ *   and object-literal methods.
  *
- * Names are matched per file, without scope analysis. Pointer, click, drag and focus code,
- * and text walks outside keyboard handling, are not checked. A keyboard handler that
- * inspects a tag for a reason other than "is the user typing" disables this rule on that
- * line with a reason.
+ * Names are matched per file, without scope analysis; bindings may be declared anywhere in
+ * the file. Callbacks nested inside a keyboard function count as keyboard code. Pointer,
+ * click, drag and focus code, text walks outside keyboard handling, and `instanceof`
+ * checks are not checked. A keyboard handler that inspects a tag for a reason other than
+ * "is the user typing" disables this rule on that line with a reason.
  */
 
 const MESSAGE =
@@ -53,7 +61,8 @@ const MESSAGE =
   '`// eslint-disable-next-line intent/no-hand-written-typing-check -- <why>`.';
 
 const KEY_EVENTS = new Set(['keydown', 'keyup', 'keypress']);
-const KEY_HANDLER_PROPS = new Set(['onkeydown', 'onkeyup', 'onkeypress']);
+const KEY_HANDLER_NAME = /^(?:on|handle)\w*key(?:down|up|press)(?:capture)?$/i;
+const LISTENER_REGISTRARS = new Set(['addEventListener', 'on']);
 const TAG_PROPERTIES = new Set(['tagName', 'nodeName', 'localName']);
 const CASE_METHODS = new Set([
   'toLowerCase',
@@ -63,6 +72,8 @@ const CASE_METHODS = new Set([
 ]);
 const EDITABLE_PROPERTIES = new Set(['isContentEditable', 'contentEditable']);
 const SELECTOR_METHODS = new Set(['closest', 'matches', 'querySelector', 'querySelectorAll']);
+const MEMBERSHIP_METHODS = new Set(['includes', 'indexOf', 'has']);
+const ATTRIBUTE_METHODS = new Set(['hasAttribute', 'getAttribute']);
 const EQUALITY = new Set(['===', '==', '!==', '!=']);
 const TYPING_TAGS = new Set(['input', 'textarea']);
 const FUNCTION_TYPES = new Set([
@@ -77,14 +88,20 @@ const CONTENTEDITABLE_SELECTOR = /\[\s*contenteditable\b/i;
 // controls (focus traps, "was a nested control clicked") rather than asking whether the
 // user is typing; every shipped typing check named only text-entry selectors.
 const CONTROL_SELECTOR = /(?:^|[\s,>+~(])(?:button|a)(?=$|[\s,>+~:.[#)])|\[\s*(?:href|tabindex)\b/i;
+const TYPING_TAG_PATTERN = /input|textarea/i;
+
+function keyName(key, computed) {
+  if (!key) return null;
+  if (!computed && (key.type === 'Identifier' || key.type === 'PrivateIdentifier')) {
+    return key.name;
+  }
+  if (key.type === 'Literal' && typeof key.value === 'string') return key.value;
+  return null;
+}
 
 function propertyName(node) {
   if (node?.type !== 'MemberExpression') return null;
-  if (!node.computed && node.property.type === 'Identifier') return node.property.name;
-  if (node.property.type === 'Literal' && typeof node.property.value === 'string') {
-    return node.property.value;
-  }
-  return null;
+  return keyName(node.property, node.computed);
 }
 
 function unwrap(node) {
@@ -110,14 +127,22 @@ function staticString(node) {
   return null;
 }
 
-function isTypingSelector(text) {
-  if (text === null || CONTROL_SELECTOR.test(text)) return false;
-  return TYPING_TAG_SELECTOR.test(text) || CONTENTEDITABLE_SELECTOR.test(text);
+function isTypingSelectorText(text) {
+  if (text === null) return false;
+  if (CONTENTEDITABLE_SELECTOR.test(text)) return true;
+  return TYPING_TAG_SELECTOR.test(text) && !CONTROL_SELECTOR.test(text);
 }
 
 function isTypingTagLiteral(node) {
   const text = staticString(node);
   return text !== null && TYPING_TAGS.has(text.toLowerCase());
+}
+
+function isTypingTagRegex(node) {
+  const target = unwrap(node);
+  return Boolean(
+    target?.type === 'Literal' && target.regex && TYPING_TAG_PATTERN.test(target.regex.pattern),
+  );
 }
 
 function mentionsKeyboardEvent(type) {
@@ -150,6 +175,24 @@ function paramAnnotation(param) {
   return param.typeAnnotation;
 }
 
+function enclosingFunctions(node) {
+  const functions = [];
+  for (let current = node.parent; current; current = current.parent) {
+    if (FUNCTION_TYPES.has(current.type)) functions.push(current);
+  }
+  return functions;
+}
+
+// `helper` or `this.helper` → 'helper'; anything else is not a same-file function name.
+function referencedName(node) {
+  const target = unwrap(node);
+  if (target?.type === 'Identifier') return target.name;
+  if (target?.type === 'MemberExpression' && unwrap(target.object)?.type === 'ThisExpression') {
+    return propertyName(target);
+  }
+  return null;
+}
+
 export default {
   meta: {
     type: 'problem',
@@ -166,25 +209,21 @@ export default {
     // Function nodes known to handle keyboard events, and names that refer to one.
     const keyboardFunctions = new Set();
     const keyboardNames = new Set();
-    // Per-file name tables (no scope analysis): functions, tag-name values, typing
-    // selectors and typing-tag collections bound by `const`/`let`/`function`.
+    // Per-file name tables (no scope analysis). Bindings are resolved at Program:exit,
+    // so a constant may be declared after the function that uses it.
     const functionsByName = new Map();
+    const declarators = [];
     const tagNameAliases = new Set();
     const selectorNames = new Set();
     const typingTagCollections = new Set();
-    // Names each function references as a callee or a passed-along argument.
+    // Names each call site references; enclosing functions are computed only when needed.
     const references = [];
+    // Nodes that may be typing checks once bindings are known, and definite ones.
+    const candidates = [];
     const signals = [];
 
-    const enclosingFunctions = (node) => {
-      const functions = [];
-      for (let current = node.parent; current; current = current.parent) {
-        if (FUNCTION_TYPES.has(current.type)) functions.push(current);
-      }
-      return functions;
-    };
-
     function addFunctionName(name, fn) {
+      if (typeof name !== 'string' || !fn || !FUNCTION_TYPES.has(fn.type)) return;
       if (!functionsByName.has(name)) functionsByName.set(name, []);
       functionsByName.get(name).push(fn);
     }
@@ -192,8 +231,12 @@ export default {
     function markHandler(node) {
       const target = unwrap(node);
       if (!target) return;
-      if (FUNCTION_TYPES.has(target.type)) keyboardFunctions.add(target);
-      else if (target.type === 'Identifier') keyboardNames.add(target.name);
+      if (FUNCTION_TYPES.has(target.type)) {
+        keyboardFunctions.add(target);
+        return;
+      }
+      const name = referencedName(target);
+      if (name) keyboardNames.add(name);
     }
 
     function isTagName(node) {
@@ -221,14 +264,59 @@ export default {
       return false;
     }
 
-    function isSelectorArgument(node) {
+    function isTypingSelector(node) {
       const target = unwrap(node);
       if (target?.type === 'Identifier') return selectorNames.has(target.name);
-      return isTypingSelector(staticString(target));
+      return isTypingSelectorText(staticString(target));
     }
 
-    function recordReference(node, name) {
-      references.push({ name, functions: enclosingFunctions(node) });
+    // Record what a declarator binds; repeated until no table grows, so aliases of
+    // aliases resolve regardless of order.
+    function resolveDeclarator({ id, init }) {
+      let grew = false;
+      const add = (set, name) => {
+        if (set.has(name)) return;
+        set.add(name);
+        grew = true;
+      };
+      if (id.type === 'Identifier') {
+        if (isTagName(init)) add(tagNameAliases, id.name);
+        if (isTypingSelectorText(staticString(init))) add(selectorNames, id.name);
+        if (isTypingTagCollection(init)) add(typingTagCollections, id.name);
+      } else if (id.type === 'ObjectPattern') {
+        for (const property of id.properties) {
+          if (property.type !== 'Property' || property.value.type !== 'Identifier') continue;
+          if (TAG_PROPERTIES.has(keyName(property.key, property.computed))) {
+            add(tagNameAliases, property.value.name);
+          }
+        }
+      }
+      return grew;
+    }
+
+    function isCandidateSignal(node) {
+      switch (node.type) {
+        case 'BinaryExpression':
+          return (
+            (isTagName(node.left) && isTypingTagLiteral(node.right)) ||
+            (isTagName(node.right) && isTypingTagLiteral(node.left))
+          );
+        case 'SwitchCase':
+          return isTagName(node.parent.discriminant) && isTypingTagLiteral(node.test);
+        case 'CallExpression': {
+          const callee = unwrap(node.callee);
+          const method = propertyName(callee);
+          const [first] = node.arguments;
+          if (SELECTOR_METHODS.has(method)) return isTypingSelector(first);
+          if (MEMBERSHIP_METHODS.has(method)) {
+            return isTagName(first) && isTypingTagCollection(callee.object);
+          }
+          if (method === 'test') return isTagName(first) && isTypingTagRegex(callee.object);
+          return false;
+        }
+        default:
+          return false;
+      }
     }
 
     return {
@@ -239,64 +327,77 @@ export default {
         }
       },
       VariableDeclarator(node) {
-        if (node.id.type !== 'Identifier' || !node.init) return;
-        const init = unwrap(node.init);
-        const { name } = node.id;
-        if (FUNCTION_TYPES.has(init.type)) {
-          addFunctionName(name, init);
-          if (isKeyboardEventHandlerType(node.id.typeAnnotation)) keyboardFunctions.add(init);
+        if (!node.init) return;
+        declarators.push(node);
+        if (node.id.type === 'Identifier') {
+          const init = unwrap(node.init);
+          addFunctionName(node.id.name, init);
+          if (isKeyboardEventHandlerType(node.id.typeAnnotation)) markHandler(init);
+          return;
         }
-        if (isTagName(init)) tagNameAliases.add(name);
-        if (isTypingSelector(staticString(init))) selectorNames.add(name);
-        if (isTypingTagCollection(init)) typingTagCollections.add(name);
+        if (node.id.type !== 'ObjectPattern') return;
+        for (const property of node.id.properties) {
+          if (property.type !== 'Property') continue;
+          if (EDITABLE_PROPERTIES.has(keyName(property.key, property.computed))) {
+            signals.push(property);
+          }
+        }
+      },
+      'MethodDefinition, PropertyDefinition'(node) {
+        const name = keyName(node.key, node.computed);
+        const value = node.value && unwrap(node.value);
+        addFunctionName(name, value);
+        if (node.type === 'PropertyDefinition' && isKeyboardEventHandlerType(node.typeAnnotation)) {
+          markHandler(value);
+        }
+        if (KEY_HANDLER_NAME.test(name ?? '')) markHandler(value);
+      },
+      Property(node) {
+        if (node.parent?.type !== 'ObjectExpression') return;
+        const name = keyName(node.key, node.computed);
+        addFunctionName(name, unwrap(node.value));
+        if (KEY_HANDLER_NAME.test(name ?? '')) markHandler(node.value);
       },
       CallExpression(node) {
         const callee = unwrap(node.callee);
-        if (callee.type === 'Identifier') recordReference(node, callee.name);
-        for (const argument of node.arguments) {
-          if (argument.type === 'Identifier') recordReference(node, argument.name);
-        }
-
-        const keyIndex = node.arguments.findIndex((argument) =>
-          KEY_EVENTS.has(staticString(argument) ?? ''),
+        const names = [referencedName(callee), ...node.arguments.map(referencedName)].filter(
+          Boolean,
         );
-        if (keyIndex !== -1) node.arguments.slice(keyIndex + 1).forEach(markHandler);
+        if (names.length > 0) references.push({ names, node });
+
+        const registrar = callee.type === 'Identifier' ? callee.name : propertyName(callee);
+        if (
+          LISTENER_REGISTRARS.has(registrar) &&
+          (registrar !== 'on' || callee.type === 'Identifier')
+        ) {
+          const keyIndex = node.arguments.findIndex((argument) =>
+            KEY_EVENTS.has(staticString(argument) ?? ''),
+          );
+          if (keyIndex !== -1) node.arguments.slice(keyIndex + 1).forEach(markHandler);
+        }
 
         const method = propertyName(callee);
-        if (SELECTOR_METHODS.has(method) && isSelectorArgument(node.arguments[0])) {
-          signals.push(node);
-        }
         if (
-          (method === 'includes' || method === 'has') &&
-          isTagName(node.arguments[0]) &&
-          isTypingTagCollection(callee.object)
+          ATTRIBUTE_METHODS.has(method) &&
+          staticString(node.arguments[0])?.toLowerCase() === 'contenteditable'
         ) {
           signals.push(node);
-        }
-      },
-      Property(node) {
-        const key = node.computed ? null : (node.key.name ?? node.key.value);
-        if (typeof key === 'string' && KEY_HANDLER_PROPS.has(key.toLowerCase())) {
-          markHandler(node.value);
+        } else if (
+          SELECTOR_METHODS.has(method) ||
+          MEMBERSHIP_METHODS.has(method) ||
+          method === 'test'
+        ) {
+          candidates.push(node);
         }
       },
       AssignmentExpression(node) {
-        if (KEY_HANDLER_PROPS.has(propertyName(node.left)?.toLowerCase())) markHandler(node.right);
+        if (KEY_HANDLER_NAME.test(propertyName(node.left) ?? '')) markHandler(node.right);
       },
       BinaryExpression(node) {
-        if (!EQUALITY.has(node.operator)) return;
-        if (
-          (isTagName(node.left) && isTypingTagLiteral(node.right)) ||
-          (isTagName(node.right) && isTypingTagLiteral(node.left))
-        ) {
-          signals.push(node);
-        }
+        if (EQUALITY.has(node.operator)) candidates.push(node);
       },
-      SwitchStatement(node) {
-        if (!isTagName(node.discriminant)) return;
-        for (const switchCase of node.cases) {
-          if (switchCase.test && isTypingTagLiteral(switchCase.test)) signals.push(switchCase);
-        }
+      SwitchCase(node) {
+        if (node.test) candidates.push(node);
       },
       MemberExpression(node) {
         if (!EDITABLE_PROPERTIES.has(propertyName(node))) return;
@@ -305,37 +406,54 @@ export default {
         signals.push(node);
       },
       SvelteAttribute(node) {
-        if (!KEY_HANDLER_PROPS.has(node.key?.name?.toLowerCase())) return;
+        if (!KEY_HANDLER_NAME.test(node.key?.name ?? '')) return;
         for (const value of node.value ?? []) {
           if (value.type === 'SvelteMustacheTag') markHandler(value.expression);
         }
       },
       SvelteShorthandAttribute(node) {
-        if (KEY_HANDLER_PROPS.has(node.key?.name?.toLowerCase())) markHandler(node.value);
+        if (KEY_HANDLER_NAME.test(node.key?.name ?? '')) markHandler(node.value);
       },
       SvelteDirective(node) {
         if (node.kind !== 'EventHandler' || !KEY_EVENTS.has(node.key?.name?.name)) return;
         if (node.expression) markHandler(node.expression);
       },
       'Program:exit'() {
+        if (signals.length === 0 && candidates.length === 0) return;
+        while (declarators.some(resolveDeclarator));
+        const found = [...signals, ...candidates.filter(isCandidateSignal)];
+        if (found.length === 0) return;
+
         for (const name of keyboardNames) {
           for (const fn of functionsByName.get(name) ?? []) keyboardFunctions.add(fn);
         }
         // Spread keyboard context to every same-file function a keyboard function
-        // references, until nothing new is reached.
+        // references; each call site is consumed once it is reached.
+        let pending = references.map(({ names, node }) => ({
+          names,
+          functions: enclosingFunctions(node),
+        }));
         let grew = true;
-        while (grew) {
+        while (grew && pending.length > 0) {
           grew = false;
-          for (const { name, functions } of references) {
-            if (!functions.some((fn) => keyboardFunctions.has(fn))) continue;
-            for (const fn of functionsByName.get(name) ?? []) {
-              if (keyboardFunctions.has(fn)) continue;
-              keyboardFunctions.add(fn);
-              grew = true;
+          const next = [];
+          for (const reference of pending) {
+            if (!reference.functions.some((fn) => keyboardFunctions.has(fn))) {
+              next.push(reference);
+              continue;
+            }
+            for (const name of reference.names) {
+              for (const fn of functionsByName.get(name) ?? []) {
+                if (keyboardFunctions.has(fn)) continue;
+                keyboardFunctions.add(fn);
+                grew = true;
+              }
             }
           }
+          pending = next;
         }
-        for (const signal of signals) {
+
+        for (const signal of found) {
           if (enclosingFunctions(signal).some((fn) => keyboardFunctions.has(fn))) {
             context.report({ node: signal, messageId: 'handWrittenTypingCheck' });
           }
