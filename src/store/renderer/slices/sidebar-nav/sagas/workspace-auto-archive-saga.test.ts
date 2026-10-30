@@ -186,6 +186,42 @@ describe('setWorkspaceAutoArchiveDisabled', () => {
     await run.stop();
   });
 
+  it('keeps another client turning it off while our failed off-write was in flight', async () => {
+    const run = start(ownerState(labelWorkspace('ws-1', { autoArchiveDisabled: true })));
+    const reply = deferred<unknown>();
+    mocks.update.mockReturnValueOnce(reply.promise);
+
+    run.put(setWorkspaceAutoArchiveDisabled('ws-1', false));
+    await settle();
+    // The events bridge applies `changes.autoArchiveDisabled: false` as absent.
+    run.put(remote('ws-1', undefined));
+    reply.resolve({ ok: false, error: 'offline' });
+    await settle();
+
+    expect(run.flag('ws-1')).toBeUndefined();
+    await run.stop();
+  });
+
+  it('falls back to an authoritative update that arrived between overlapping failed writes', async () => {
+    const run = start(ownerState());
+    const first = deferred<unknown>();
+    const second = deferred<unknown>();
+    mocks.update.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+
+    run.put(setWorkspaceAutoArchiveDisabled('ws-1', true));
+    await settle();
+    run.put(remote('ws-1', true));
+    run.put(setWorkspaceAutoArchiveDisabled('ws-1', false));
+    await settle();
+    first.resolve({ ok: false, error: 'first failed' });
+    await settle();
+    second.resolve({ ok: false, error: 'second failed' });
+    await settle();
+
+    expect(run.flag('ws-1')).toBe(true);
+    await run.stop();
+  });
+
   it('re-applies the served value over a stale row that landed during the write', async () => {
     const run = start(ownerState());
     const reply = deferred<unknown>();
