@@ -135,6 +135,7 @@ test('setup edits apply explicitly and survive reopening while cancelled edits a
   await prompt.fill('Keep this workspace draft.');
   const setup = dialog.getByRole('button', { name: 'Setup script', exact: true });
   await expect(setup).toContainText('From repo config');
+  const originalFrame = await dialog.elementHandle();
   const popup = page.getByRole('dialog', { name: 'Setup Script', exact: true });
   const editor = popup.getByRole('textbox', { name: 'Editor content', exact: true });
   const code = popup.locator('.monaco-editor .view-lines');
@@ -147,8 +148,12 @@ test('setup edits apply explicitly and survive reopening while cancelled edits a
     await expect(code).toContainText(value);
   }
   await setup.click();
+  await expect(page.getByRole('dialog')).toHaveCount(1);
+  expect(await popup.evaluate((element, original) => element === original, originalFrame)).toBe(
+    true,
+  );
   await enterCommands('echo cancelled-draft');
-  await popup.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await popup.getByRole('button', { name: 'Go back', exact: true }).click();
   await expect(popup).toBeHidden();
   await expect(setup).toContainText('From repo config');
 
@@ -162,7 +167,7 @@ test('setup edits apply explicitly and survive reopening while cancelled edits a
   await setup.click();
   await expect(code).toContainText('echo applied-commands');
   await enterCommands('echo escape-discard');
-  await popup.getByRole('button', { name: 'Cancel', exact: true }).focus();
+  await popup.getByRole('button', { name: 'Go back', exact: true }).focus();
   await page.keyboard.press('Escape');
   await expect(popup).toBeHidden();
   await setup.click();

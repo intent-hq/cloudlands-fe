@@ -10,6 +10,7 @@
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { acquireMarkerAttribute } from '$lib/utils/marker-attribute-lease';
   import { m } from '$shared/paraglide/messages.js';
+  import { provideWorkspaceSetupView } from '$lib/components/workspace/initializer/workspace-setup-view';
 
   interface Props {
     open?: boolean;
@@ -28,6 +29,8 @@
   let isExpanded = $state(true);
   let initializerRef: CompactWorkspaceInitializer | null = $state(null);
   let contentRef: HTMLElement | null = $state(null);
+  let setupBack = $state<(() => void) | null>(null);
+  provideWorkspaceSetupView((back) => (setupBack = back));
 
   function close() {
     open = false;
@@ -38,7 +41,10 @@
   // overlay (e.g. a lightbox opened above this modal) handles Escape
   $effect(() => {
     if (!open || staticPosition) return;
-    return pushEscapeLayer(close);
+    return pushEscapeLayer(() => {
+      if (setupBack) setupBack();
+      else close();
+    });
   });
 
   // Prepare the form; Dialog.Content owns initial focus on the primary action.
@@ -78,13 +84,18 @@
   bind:contentRef
   size="editor"
   allowOverflow
-  title={m.modals_newSpace_title()}
+  title={setupBack ? m.modals_setupScript_title() : m.modals_newSpace_title()}
+  onBack={setupBack ?? undefined}
   closeLabel={m.ui_updateToast_close_ariaLabel()}
   escapeKeydownBehavior="ignore"
   onClose={close}
 >
   {#if isExpanded}
-    <div class="workspace-sidebar-surface" aria-hidden="true"></div>
+    <div
+      class="workspace-sidebar-surface transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
+      class:setup-active={Boolean(setupBack)}
+      aria-hidden="true"
+    ></div>
   {/if}
   <div class="workspace-form min-w-0">
     {#if initializer}
@@ -111,10 +122,7 @@
   }
 
   :global(
-    [data-new-space-modal]
-      > .dialog-layout
-      > [data-slot='dialog-header']
-      > [data-slot='dialog-title']
+    [data-new-space-modal] > .dialog-layout > [data-slot='dialog-header'] [data-slot='dialog-title']
   ) {
     font-size: var(--text-body-size);
     line-height: 1.5rem;
@@ -135,12 +143,16 @@
   }
 
   .workspace-form :global(.settings-pane) {
-    padding: 0.5rem 1rem 0.5rem 0;
+    padding: 0.125rem 0 0.5rem 2.5rem;
+  }
+
+  .workspace-form :global(.settings-footer) {
+    margin-inline: -1rem 0;
   }
 
   .workspace-form :global(.initializer-layout.expanded) {
-    grid-template-areas: 'settings prompt';
-    grid-template-columns: 18rem minmax(0, 1fr);
+    grid-template-areas: 'prompt settings';
+    grid-template-columns: minmax(0, 1fr) 18rem;
     min-height: 0;
   }
 
@@ -148,17 +160,21 @@
     display: none;
     position: absolute;
     inset-block: 0;
-    inset-inline-start: 0;
+    inset-inline-end: 0;
     width: calc(18rem + 1.5rem);
     pointer-events: none;
     z-index: -1;
     background: var(--color-sidebar);
-    border-start-start-radius: var(--radius-medium);
-    border-end-start-radius: var(--radius-medium);
+    border-start-end-radius: var(--radius-medium);
+    border-end-end-radius: var(--radius-medium);
   }
 
   :global(.dark) .workspace-sidebar-surface {
     background: var(--color-background);
+  }
+
+  .workspace-sidebar-surface.setup-active {
+    opacity: 0;
   }
 
   @container (min-width: 51rem) {
@@ -167,7 +183,7 @@
     }
   }
 
-  @container (max-width: 47.99rem) {
+  @container (width < 48rem) {
     .workspace-form :global(.prompt-pane) {
       padding-block: 0;
     }
@@ -181,7 +197,7 @@
     .workspace-form :global(.settings-pane) {
       margin-inline: -1.5rem;
       margin-bottom: -1rem;
-      padding: 1rem 1.5rem 1.5rem;
+      padding: 1rem 1.5rem 1.5rem 2.5rem;
       border-end-start-radius: var(--radius-medium);
       border-end-end-radius: var(--radius-medium);
     }

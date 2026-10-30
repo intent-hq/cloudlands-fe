@@ -1,7 +1,11 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte';
+  import { tick, type Snippet } from 'svelte';
   import * as Dialog from '$lib/components/ui/dialog';
   import { InputMessage } from '$lib/components/ui/input-message';
+  import { Button } from '$lib/components/ui/button';
+  import Fa from 'svelte-fa';
+  import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
+  import { m } from '$shared/paraglide/messages.js';
 
   let {
     title,
@@ -12,6 +16,8 @@
     headerActions,
     footer,
     error,
+    onBack,
+    backLabel,
   }: {
     title: string;
     description?: string;
@@ -21,14 +27,38 @@
     headerActions?: Snippet;
     footer?: Snippet;
     error?: string;
+    onBack?: () => void;
+    backLabel?: string;
   } = $props();
+  let backButton = $state<HTMLButtonElement | null>(null);
+  $effect(() => {
+    if (onBack) void tick().then(() => backButton?.focus());
+  });
 </script>
+
+{#snippet heading()}
+  {#if onBack}
+    <div class="flex min-w-0 items-center gap-2">
+      <Button
+        bind:ref={backButton}
+        variant="ghost"
+        size="icon"
+        class="-my-1"
+        aria-label={backLabel ?? m.ui_navButtons_goBack_tooltip()}
+        onclick={onBack}><Fa icon={faArrowLeft} /></Button
+      >
+      <Dialog.Title id={titleId}>{title}</Dialog.Title>
+    </div>
+  {:else}
+    <Dialog.Title id={titleId}>{title}</Dialog.Title>
+  {/if}
+{/snippet}
 
 <div class="dialog-layout flex min-h-0 min-w-0 flex-1 flex-col">
   <Dialog.Header class="m-0 shrink-0 px-6 pt-6 {headerActions ? 'pr-22' : 'pr-14'}">
     {#if headerActions}
       <div class="flex min-w-0 flex-wrap items-center justify-between gap-3">
-        <Dialog.Title id={titleId}>{title}</Dialog.Title>
+        {@render heading()}
         <div
           class="absolute right-14 top-[calc(1.5rem+var(--text-title-line-height)/2)] -translate-y-1/2"
         >
@@ -36,7 +66,7 @@
         </div>
       </div>
     {:else}
-      <Dialog.Title id={titleId}>{title}</Dialog.Title>
+      {@render heading()}
     {/if}
     {#if description}<Dialog.Description id={descriptionId}>{description}</Dialog.Description>{/if}
   </Dialog.Header>

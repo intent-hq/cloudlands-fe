@@ -1804,10 +1804,17 @@
   </TooltipRich>
 {/snippet}
 
-<div class="context-picker w-full" data-state={isOpen ? 'open' : 'closed'}>
+<div
+  class="context-picker {iconOnly ? 'contents' : 'w-full'}"
+  data-state={isOpen ? 'open' : 'closed'}
+>
   <!-- Trigger button (hidden when hideToggle is true) -->
   {#if !hideToggle}
-    <div class={iconOnly ? 'flex justify-end' : undefined}>
+    <div
+      class={iconOnly
+        ? 'context-picker-trigger col-start-2 row-start-1 flex min-h-11 items-center justify-end'
+        : undefined}
+    >
       <Button
         variant="ghost"
         type="button"
@@ -1836,18 +1843,32 @@
   <!-- Expandable panel -->
   {#if isOpen}
     <div
-      class="{hideToggle ? '' : ''} rounded-lg border border-border bg-muted/20 overflow-hidden"
+      class={iconOnly
+        ? 'context-picker-panel col-span-full row-start-2 min-w-0 overflow-hidden'
+        : 'rounded-lg border border-border bg-muted/20 overflow-hidden'}
       transition:slide={{ tier: 'moderate' }}
     >
       <!-- Search + filter bar -->
-      <div class="flex items-center gap-2 px-3 py-2 border-b border-border">
-        <Fa icon={faSearch} class="w-3 h-3 text-ghost opacity-50" />
+      <div
+        class="context-picker-header flex items-center gap-2 px-3 py-2 border-border"
+        class:border-b={!iconOnly}
+        class:bg-sidebar={iconOnly}
+      >
+        <Fa
+          icon={faSearch}
+          class={iconOnly
+            ? 'size-4 shrink-0 text-muted-foreground'
+            : 'w-3 h-3 text-ghost opacity-50'}
+        />
         <Input
           bind:ref={searchInputEl}
+          noFocusStyle={iconOnly}
           type="text"
           bind:value={searchQuery}
           placeholder={getSearchPlaceholder(activeSource)}
-          class="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground focus:ring-0 focus:outline-none"
+          class="context-picker-search min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground focus:ring-0 focus:outline-none {iconOnly
+            ? 'border-0 rounded-none px-0 shadow-none bg-transparent!'
+            : ''}"
         />
         <!-- Refreshing indicator -->
         {#if isRefreshing}
@@ -1855,7 +1876,7 @@
         {/if}
         <!-- Source tabs with issue count (hidden when controlled externally) -->
         {#if !hideSourceTabs}
-          <div class="flex items-center gap-1 ml-auto">
+          <div class="context-picker-sources flex items-center gap-1 ml-auto">
             {#each sources as source (source.id)}
               {@const count = getSourceCount(source.id)}
               <Button
@@ -2080,13 +2101,15 @@
             {:else if activeSource === 'github-issues'}
               {m.workspace_issueSuggestions_noIssuesFoundFor_before()}
               <Button
-                variant="ghost"
+                variant="plain"
                 onclick={() => {
                   handleLink(`https://github.com/${repositoryOwner}/${repositoryName}/issues`, {
                     workspaceId: workspaceId as WorkspaceId | undefined,
                   });
                 }}
-                class="underline underline-offset-2 decoration-muted-foreground/20 cursor-pointer"
+                truncateLabel={false}
+                labelClass="whitespace-normal break-all"
+                class="h-auto min-h-0 max-w-full px-0 py-0 text-sm font-normal align-baseline underline underline-offset-2 decoration-muted-foreground/20 cursor-pointer"
                 >{repositoryOwner}/{repositoryName}</Button
               >
               {#if showRepoLabels}
@@ -2095,13 +2118,15 @@
             {:else if activeSource === 'github-prs'}
               {m.workspace_issueSuggestions_noPullRequestsFoundFor_before()}
               <Button
-                variant="ghost"
+                variant="plain"
                 onclick={() => {
                   handleLink(`https://github.com/${repositoryOwner}/${repositoryName}/pulls`, {
                     workspaceId: workspaceId as WorkspaceId | undefined,
                   });
                 }}
-                class="underline underline-offset-2 decoration-muted-foreground/20 cursor-pointer"
+                truncateLabel={false}
+                labelClass="whitespace-normal break-all"
+                class="h-auto min-h-0 max-w-full px-0 py-0 text-sm font-normal align-baseline underline underline-offset-2 decoration-muted-foreground/20 cursor-pointer"
                 >{repositoryOwner}/{repositoryName}</Button
               >
               {#if showRepoLabels}
@@ -2536,7 +2561,8 @@
         <!-- Linear auth status - only show when not authenticated -->
         {#if activeSource === 'linear' && !isLoading && !isLinearAuthenticated}
           <div
-            class="flex items-center justify-between px-3 py-2 text-sm border-t border-border"
+            class="flex items-center justify-between px-3 py-2 text-sm border-border"
+            class:border-t={!iconOnly}
             transition:slide={{ tier: 'moderate' }}
           >
             <div class="flex items-center gap-2">
@@ -2560,7 +2586,8 @@
         <!-- GitHub auth status - only show when not authenticated -->
         {#if !$hostMember$ && (activeSource === 'github-issues' || activeSource === 'github-prs') && !isLoading && !isGitHubAuthenticated}
           <div
-            class="flex items-center justify-between px-3 py-2 text-sm border-t border-border"
+            class="flex items-center justify-between px-3 py-2 text-sm border-border"
+            class:border-t={!iconOnly}
             transition:slide={{ tier: 'moderate' }}
           >
             <div class="flex items-center gap-2">
@@ -2604,7 +2631,11 @@
 
         <!-- Sentry auth status - only show when not authenticated -->
         {#if activeSource === 'sentry' && !isLoading && !isSentryAuthenticated}
-          <div class="border-t border-border" transition:slide={{ tier: 'moderate' }}>
+          <div
+            class="border-border"
+            class:border-t={!iconOnly}
+            transition:slide={{ tier: 'moderate' }}
+          >
             {#if !sentryShowForm}
               <div class="flex items-center justify-between px-3 py-2 text-sm">
                 <div class="flex items-center gap-2">
@@ -2684,3 +2715,20 @@
     </div>
   {/if}
 </div>
+
+<style>
+  @container (max-width: 47.99rem) {
+    .context-picker-panel .context-picker-header {
+      flex-wrap: wrap;
+    }
+
+    .context-picker-panel :global(.context-picker-search) {
+      flex-basis: calc(100% - 1.5rem);
+    }
+
+    .context-picker-panel .context-picker-sources {
+      flex-wrap: wrap;
+      margin-inline-start: 0;
+    }
+  }
+</style>

@@ -15,11 +15,12 @@
   import type { ProjectType, SetupScriptNameSource } from '$features/setup-scripts';
   import { m } from '$shared/paraglide/messages.js';
   import { workspacePickerStyles } from '$lib/components/workspace/initializer/workspace-picker-styles';
+  import { fade } from '$lib/motion';
 
   interface Props {
     open?: boolean;
     static?: boolean;
-    presentation?: 'dialog' | 'popover';
+    presentation?: 'dialog' | 'popover' | 'inline';
     trigger?: Snippet<[ButtonProps]>;
     editor?: Snippet<[string, (value: string) => void]>;
     repoPath?: string;
@@ -163,12 +164,28 @@
         bind:scriptNameSource={localScriptNameSource}
         bind:isCustomScript={localIsCustomScript}
         contentOnly
-        presentation={presentation === 'popover' ? 'picker' : 'editor'}
+        presentation={presentation === 'popover'
+          ? 'picker'
+          : presentation === 'inline'
+            ? 'workspace'
+            : 'editor'}
         contentClass={presentation === 'popover'
           ? 'min-h-0'
-          : 'h-[min(34rem,calc(100dvh-12rem))] min-h-80'}
+          : presentation === 'inline'
+            ? 'h-full min-h-0'
+            : 'h-[min(34rem,calc(100dvh-12rem))] min-h-80'}
       />
     {/await}
+  {/if}
+{/snippet}
+
+{#snippet submitAction()}
+  {#if localHasUnsavedChanges}
+    <Button variant="primary" onclick={handleSaveAndDone}>
+      {m.modals_setupScript_saveAndDone_label()}
+    </Button>
+  {:else}
+    <Button variant="primary" onclick={handleDone}>{m.modals_setupScript_done_label()}</Button>
   {/if}
 {/snippet}
 
@@ -209,6 +226,25 @@
       </div>
     </Popover.Content>
   </Popover.Root>
+{:else if presentation === 'inline'}
+  {#if open}
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions (tracks editor focus for Escape ownership) -->
+    <div
+      class="setup-script-inline"
+      role="region"
+      aria-label={m.workspace_setupScriptEditor_setupScript_label()}
+      onfocusin={handleFocusIn}
+      in:fade={{ tier: 'moderate' }}
+      out:fade={{ tier: 'moderate' }}
+    >
+      <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {@render editorContent()}
+      </div>
+      <div class="flex shrink-0 items-center justify-end gap-2 pt-3">
+        {@render submitAction()}
+      </div>
+    </div>
+  {/if}
 {:else}
   <FormDialog
     bind:open
@@ -227,13 +263,25 @@
     {@render editorContent()}
     {#snippet footer()}
       <Button variant="ghost" onclick={handleCancel}>{m.modals_setupScript_cancel_label()}</Button>
-      {#if localHasUnsavedChanges}
-        <Button variant="primary" onclick={handleSaveAndDone}>
-          {m.modals_setupScript_saveAndDone_label()}
-        </Button>
-      {:else}
-        <Button variant="primary" onclick={handleDone}>{m.modals_setupScript_done_label()}</Button>
-      {/if}
+      {@render submitAction()}
     {/snippet}
   </FormDialog>
 {/if}
+
+<style>
+  .setup-script-inline {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    max-height: calc(100dvh - 12rem);
+  }
+
+  @container (width < 48rem) {
+    .setup-script-inline {
+      padding-bottom: 1rem;
+    }
+  }
+</style>

@@ -7,7 +7,7 @@
   import * as Tooltip from '$lib/components/ui/tooltip';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
   import SetupScriptAgent from './SetupScriptAgent.svelte';
-  import { slide } from '$lib/motion';
+  import { fly, slide } from '$lib/motion';
   import { untrack } from 'svelte';
   import {
     SETUP_SCRIPT_TEMPLATES,
@@ -46,7 +46,7 @@
     triggerClass?: string;
     contentOnly?: boolean;
     contentClass?: string;
-    presentation?: 'editor' | 'picker';
+    presentation?: 'editor' | 'picker' | 'workspace';
     onchange?: (value: string) => void;
   }
 
@@ -508,183 +508,202 @@
   </div>
 {/snippet}
 
-{#snippet expandedContentSnippet()}
-  <!-- Stack sources above the editor on compact screens; both regions scroll independently. -->
-  <div
-    class="grid flex-1 min-h-0 min-w-0 grid-cols-1 grid-rows-[minmax(0,1fr)_minmax(0,2fr)] md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] md:grid-rows-1"
-  >
-    <!-- Left column: script sources -->
-    <div class="flex flex-col min-h-0 min-w-0 overflow-y-auto p-2 md:pr-4">
-      <!-- Auto-generate -->
-      <div class="mb-4">
-        <h4 class="type-caption font-medium text-muted-foreground mb-1.5 px-2">
-          {m.workspace_setupScriptEditor_generate_label()}
-        </h4>
-        <p class="text-xs text-subtle px-2 mb-2">
-          {m.workspace_setupScriptEditor_generate_description()}
-        </p>
-        {#if showAgentPanel && repoPath}
-          <div transition:slide={{ tier: 'moderate' }}>
-            <SetupScriptAgent
-              {repoPath}
-              onScriptGenerated={(script) => {
-                isProgrammaticChange = true;
-                selectedScriptId = '';
-                value = script.content;
-                customName = script.name;
-                hasUserEdited = true;
-                onchange?.(value);
-                showAgentPanel = false;
-                requestAnimationFrame(() => codeEditorRef?.focus());
-              }}
-              onClose={() => (showAgentPanel = false)}
-            />
-          </div>
-        {:else}
-          <Button
-            variant="ghost"
-            size="sm"
-            class="w-full justify-start text-subtle"
-            onclick={() => (showAgentPanel = true)}
-            disabled={!repoPath}
-          >
-            <Fa icon={faWandMagicSparkles} class="mr-1.5" />
-            {m.workspace_setupScriptEditor_autoGenerate_label()}
-          </Button>
-        {/if}
-      </div>
-
-      <!-- Repo-committed script from .intent/config.json -->
-      {#if repoConfigScript}
-        <div class="mb-4">
-          <h4 class="type-caption font-medium text-muted-foreground mb-1.5 px-2">
-            {m.workspace_setupScriptEditor_repoConfig_label()}
-          </h4>
-          <Button
-            variant="ghost"
-            truncateLabel={false}
-            active={selectedScriptId === REPO_CONFIG_SCRIPT_ID}
-            aria-pressed={selectedScriptId === REPO_CONFIG_SCRIPT_ID}
-            class="w-full h-auto justify-start whitespace-normal text-left px-2 py-1.5"
-            onclick={() => handleScriptSelect(REPO_CONFIG_SCRIPT_ID)}
-          >
-            <div class="min-w-0 w-full">
-              <span class="text-sm"
-                >{setupScriptDisplayName(REPO_CONFIG_SCRIPT_NAME, 'repo-config')}</span
-              >
-              <p class="text-xs text-subtle mt-0.5">
-                {m.workspace_setupScriptEditor_repoConfig_description()}
-              </p>
-            </div>
-          </Button>
-        </div>
-      {/if}
-
-      <!-- Last-used script for this repo (localStorage) -->
-      {#if lastUsedScript}
-        <div class="mb-4">
-          <h4 class="type-caption font-medium text-muted-foreground mb-1.5 px-2">
-            {m.workspace_setupScriptEditor_lastUsed_label()}
-          </h4>
-          <Button
-            variant="ghost"
-            truncateLabel={false}
-            active={selectedScriptId === LAST_USED_SCRIPT_ID}
-            aria-pressed={selectedScriptId === LAST_USED_SCRIPT_ID}
-            class="w-full h-auto justify-start whitespace-normal text-left px-2 py-1.5"
-            onclick={() => handleScriptSelect(LAST_USED_SCRIPT_ID)}
-          >
-            <div class="min-w-0 w-full">
-              <span class="text-sm"
-                >{setupScriptDisplayName(lastUsedScript.name, lastUsedScript.nameSource)}</span
-              >
-              <p class="text-xs text-subtle mt-0.5">
-                {m.workspace_setupScriptEditor_lastUsed_description()}
-              </p>
-            </div>
-          </Button>
-        </div>
-      {/if}
-
-      <!-- Templates -->
-      <div class="mb-4">
-        <h4 class="type-caption font-medium text-muted-foreground mb-1.5 px-2">
-          {m.workspace_setupScriptEditor_templates_label()}
-        </h4>
-        {#each SETUP_SCRIPT_TEMPLATES as template (template.id)}
-          <Button
-            variant="ghost"
-            truncateLabel={false}
-            active={selectedScriptId === `template-${template.id}`}
-            aria-pressed={selectedScriptId === `template-${template.id}`}
-            class="w-full h-auto justify-start whitespace-normal text-left px-2 py-1.5"
-            onclick={() => handleScriptSelect(`template-${template.id}`)}
-          >
-            <div class="min-w-0 w-full">
-              <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span class="text-sm">{template.name}</span>
-                {#if template.projectType === projectType}
-                  <span
-                    class="type-caption px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium shrink-0"
-                    >{m.workspace_setupScriptEditor_recommended_label()}</span
-                  >
-                {/if}
-              </div>
-              <p class="text-xs text-subtle mt-0.5">{template.description}</p>
-            </div>
-          </Button>
-        {/each}
-      </div>
-    </div>
-
-    <!-- Right column: variables + editor -->
-    <div class="flex flex-col min-w-0 min-h-0">
-      <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-1.5 bg-muted/30 shrink-0">
-        <span class="type-caption font-medium text-muted-foreground shrink-0"
-          >{m.workspace_setupScriptEditor_variables_label()}</span
-        >
-        <div class="flex flex-wrap gap-1.5">
-          {#each SETUP_SCRIPT_VARIABLES as variable (variable.name)}
-            <Tooltip.Provider delayDuration={100}>
-              <Tooltip.Root delayDuration={100}>
-                <Tooltip.Trigger>
-                  <code
-                    class="type-caption px-1.5 py-0.5 rounded bg-background/80 text-muted-foreground font-mono cursor-pointer hover:bg-background hover:text-foreground transition-colors"
-                  >
-                    ${variable.name}
-                  </code>
-                </Tooltip.Trigger>
-                <Tooltip.Content side="bottom" class="max-w-xs z-[200]">
-                  <p class="text-xs">{variable.description}</p>
-                  <p class="mt-1 text-xs text-muted-foreground">
-                    {m.workspace_setupScriptEditor_example_before()}
-                    <code class="type-caption">{variable.example}</code>
-                  </p>
-                </Tooltip.Content>
-              </Tooltip.Root>
-            </Tooltip.Provider>
-          {/each}
-        </div>
-      </div>
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div
-        class="flex-1 min-h-0 min-w-0 overflow-hidden py-3 bg-background"
-        onkeydown={(e) => {
-          if (e.altKey && e.key === 'z') {
-            e.preventDefault();
-            wordWrap = !wordWrap;
-          }
-        }}
-      >
-        <CodeEditor
-          bind:this={codeEditorRef}
-          bind:value
-          language="shell"
-          lineNumbers={true}
-          lineWrapping={wordWrap}
+{#snippet sourcesContent()}
+  <!-- Auto-generate -->
+  <div class="mb-4">
+    <h4 class="type-caption font-medium text-muted-foreground mb-1.5 px-2">
+      {m.workspace_setupScriptEditor_generate_label()}
+    </h4>
+    <p class="text-xs text-subtle px-2 mb-2">
+      {m.workspace_setupScriptEditor_generate_description()}
+    </p>
+    {#if showAgentPanel && repoPath}
+      <div transition:slide={{ tier: 'moderate' }}>
+        <SetupScriptAgent
+          {repoPath}
+          onScriptGenerated={(script) => {
+            isProgrammaticChange = true;
+            selectedScriptId = '';
+            value = script.content;
+            customName = script.name;
+            hasUserEdited = true;
+            onchange?.(value);
+            showAgentPanel = false;
+            requestAnimationFrame(() => codeEditorRef?.focus());
+          }}
+          onClose={() => (showAgentPanel = false)}
         />
       </div>
+    {:else}
+      <Button
+        variant="ghost"
+        size="sm"
+        class="w-full justify-start text-subtle"
+        onclick={() => (showAgentPanel = true)}
+        disabled={!repoPath}
+      >
+        <Fa icon={faWandMagicSparkles} class="mr-1.5" />
+        {m.workspace_setupScriptEditor_autoGenerate_label()}
+      </Button>
+    {/if}
+  </div>
+
+  <!-- Repo-committed script from .intent/config.json -->
+  {#if repoConfigScript}
+    <div class="mb-4">
+      <h4 class="type-caption font-medium text-muted-foreground mb-1.5 px-2">
+        {m.workspace_setupScriptEditor_repoConfig_label()}
+      </h4>
+      <Button
+        variant="ghost"
+        truncateLabel={false}
+        active={selectedScriptId === REPO_CONFIG_SCRIPT_ID}
+        aria-pressed={selectedScriptId === REPO_CONFIG_SCRIPT_ID}
+        class="w-full h-auto justify-start whitespace-normal text-left px-2 py-1.5"
+        onclick={() => handleScriptSelect(REPO_CONFIG_SCRIPT_ID)}
+      >
+        <div class="min-w-0 w-full">
+          <span class="text-sm"
+            >{setupScriptDisplayName(REPO_CONFIG_SCRIPT_NAME, 'repo-config')}</span
+          >
+          <p class="text-xs text-subtle mt-0.5">
+            {m.workspace_setupScriptEditor_repoConfig_description()}
+          </p>
+        </div>
+      </Button>
     </div>
+  {/if}
+
+  <!-- Last-used script for this repo (localStorage) -->
+  {#if lastUsedScript}
+    <div class="mb-4">
+      <h4 class="type-caption font-medium text-muted-foreground mb-1.5 px-2">
+        {m.workspace_setupScriptEditor_lastUsed_label()}
+      </h4>
+      <Button
+        variant="ghost"
+        truncateLabel={false}
+        active={selectedScriptId === LAST_USED_SCRIPT_ID}
+        aria-pressed={selectedScriptId === LAST_USED_SCRIPT_ID}
+        class="w-full h-auto justify-start whitespace-normal text-left px-2 py-1.5"
+        onclick={() => handleScriptSelect(LAST_USED_SCRIPT_ID)}
+      >
+        <div class="min-w-0 w-full">
+          <span class="text-sm"
+            >{setupScriptDisplayName(lastUsedScript.name, lastUsedScript.nameSource)}</span
+          >
+          <p class="text-xs text-subtle mt-0.5">
+            {m.workspace_setupScriptEditor_lastUsed_description()}
+          </p>
+        </div>
+      </Button>
+    </div>
+  {/if}
+
+  <!-- Templates -->
+  <div class="mb-4">
+    <h4 class="type-caption font-medium text-muted-foreground mb-1.5 px-2">
+      {m.workspace_setupScriptEditor_templates_label()}
+    </h4>
+    {#each SETUP_SCRIPT_TEMPLATES as template (template.id)}
+      <Button
+        variant="ghost"
+        truncateLabel={false}
+        active={selectedScriptId === `template-${template.id}`}
+        aria-pressed={selectedScriptId === `template-${template.id}`}
+        class="w-full h-auto justify-start whitespace-normal text-left px-2 py-1.5"
+        onclick={() => handleScriptSelect(`template-${template.id}`)}
+      >
+        <div class="min-w-0 w-full">
+          <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span class="text-sm">{template.name}</span>
+            {#if template.projectType === projectType}
+              <span
+                class="type-caption px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium shrink-0"
+                >{m.workspace_setupScriptEditor_recommended_label()}</span
+              >
+            {/if}
+          </div>
+          <p class="text-xs text-subtle mt-0.5">{template.description}</p>
+        </div>
+      </Button>
+    {/each}
+  </div>
+{/snippet}
+
+{#snippet commandsContent()}
+  <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-1.5 bg-muted/30 shrink-0">
+    <span class="type-caption font-medium text-muted-foreground shrink-0"
+      >{m.workspace_setupScriptEditor_variables_label()}</span
+    >
+    <div class="flex flex-wrap gap-1.5">
+      {#each SETUP_SCRIPT_VARIABLES as variable (variable.name)}
+        <Tooltip.Provider delayDuration={100}>
+          <Tooltip.Root delayDuration={100}>
+            <Tooltip.Trigger>
+              <code
+                class="type-caption px-1.5 py-0.5 rounded bg-background/80 text-muted-foreground font-mono cursor-pointer hover:bg-background hover:text-foreground transition-colors"
+              >
+                ${variable.name}
+              </code>
+            </Tooltip.Trigger>
+            <Tooltip.Content side="bottom" class="max-w-xs z-[200]">
+              <p class="text-xs">{variable.description}</p>
+              <p class="mt-1 text-xs text-muted-foreground">
+                {m.workspace_setupScriptEditor_example_before()}
+                <code class="type-caption">{variable.example}</code>
+              </p>
+            </Tooltip.Content>
+          </Tooltip.Root>
+        </Tooltip.Provider>
+      {/each}
+    </div>
+  </div>
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="flex-1 min-h-0 min-w-0 overflow-hidden py-3 bg-background"
+    onkeydown={(e) => {
+      if (e.altKey && e.key === 'z') {
+        e.preventDefault();
+        wordWrap = !wordWrap;
+      }
+    }}
+  >
+    <CodeEditor
+      bind:this={codeEditorRef}
+      bind:value
+      language="shell"
+      lineNumbers={true}
+      lineWrapping={wordWrap}
+    />
+  </div>
+{/snippet}
+
+{#snippet expandedContentSnippet()}
+  <!-- Each pane owns its scrolling; the workspace variant follows the containing form's columns. -->
+  <div
+    class={presentation === 'workspace'
+      ? 'setup-workspace-layout'
+      : 'grid flex-1 min-h-0 min-w-0 grid-cols-1 grid-rows-[minmax(0,1fr)_minmax(0,2fr)] md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] md:grid-rows-1'}
+  >
+    {#if presentation === 'workspace'}
+      <div
+        class="flex min-h-0 min-w-0 flex-col overflow-y-auto"
+        in:fly={{ tier: 'moderate', axis: 'x', distance: -8 }}
+      >
+        {@render sourcesContent()}
+      </div>
+      <div class="flex min-h-0 min-w-0 flex-col" in:fly={{ tier: 'moderate', axis: 'x' }}>
+        {@render commandsContent()}
+      </div>
+    {:else}
+      <div class="flex flex-col min-h-0 min-w-0 overflow-y-auto p-2 md:pr-4">
+        {@render sourcesContent()}
+      </div>
+      <div class="flex flex-col min-w-0 min-h-0">
+        {@render commandsContent()}
+      </div>
+    {/if}
   </div>
 {/snippet}
 
@@ -693,6 +712,10 @@
   {#if expanded}
     {#if presentation === 'picker'}
       <div class="{contentClass} min-w-0">{@render pickerContentSnippet()}</div>
+    {:else if presentation === 'workspace'}
+      <div class="{contentClass} flex min-h-0 min-w-0 flex-1 flex-col">
+        {@render expandedContentSnippet()}
+      </div>
     {:else}
       <div
         class="{contentClass} flex flex-col gap-3 flex-1 min-h-0 min-w-0"
@@ -733,3 +756,23 @@
     </div>
   {/if}
 {/if}
+
+<style>
+  .setup-workspace-layout {
+    display: grid;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 2fr);
+    gap: 1rem;
+  }
+
+  @container (min-width: 48rem) {
+    .setup-workspace-layout {
+      grid-template-columns: 18rem minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr);
+      column-gap: 2rem;
+    }
+  }
+</style>

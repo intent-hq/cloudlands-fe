@@ -878,7 +878,7 @@
       <Popover.Content
         role="dialog"
         aria-label={m.workspace_initialAgentPicker_agent_label()}
-        side={presentation === 'footer' ? 'top' : isMobile.current ? 'bottom' : 'right'}
+        side={presentation === 'footer' ? 'top' : isMobile.current ? 'bottom' : 'left'}
         sideOffset={presentation === 'footer' || isMobile.current ? 4 : 24}
         align={presentation === 'footer' ? 'start' : isMobile.current ? 'end' : 'start'}
         preventScroll={false}
@@ -969,7 +969,7 @@
       silentFallback
       portal={false}
       modalAware={true}
-      collisionBoundary="[data-model-picker-collision-boundary] > .dialog-layout > [data-slot=dialog-body]"
+      collisionBoundary="viewport"
     />
   {/key}
 </div>

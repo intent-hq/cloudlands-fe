@@ -26,6 +26,7 @@
   import { v4 as uuidv4 } from 'uuid';
   import { registerWorkspaceInitializationPreparation } from './initializer/workspace-initialization-preparation';
   import SetupScriptTrigger from './initializer/SetupScriptTrigger.svelte';
+  import { useWorkspaceSetupView } from './initializer/workspace-setup-view';
   import {
     SETUP_SCRIPT_TEMPLATES,
     getTemplateContent,
@@ -744,6 +745,34 @@
   // form state.
   let setupScript = $state('');
   let showSetupScript = $state(false); // Always collapsed on mount
+  const setupViewHost = useWorkspaceSetupView();
+  const inlineSetupOpen = $derived(Boolean(setupViewHost) && showSetupScript);
+  let setupReturnFocus: HTMLElement | null = null;
+  let wasInlineSetupOpen = false;
+  function openSetupScript() {
+    setupReturnFocus =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    showSetupScript = true;
+    if (setupViewHost)
+      controlsContainer?.closest('[data-slot="dialog-body"]')?.scrollTo({ top: 0 });
+  }
+  $effect(() => {
+    const active = inlineSetupOpen;
+    setupViewHost?.(
+      active
+        ? () => {
+            showSetupScript = false;
+          }
+        : null,
+    );
+    if (wasInlineSetupOpen && !active) {
+      void tick().then(() => {
+        if (setupReturnFocus?.isConnected) setupReturnFocus.focus();
+      });
+    }
+    wasInlineSetupOpen = active;
+  });
+  onDestroy(() => setupViewHost?.(null));
   let setupScriptName = $state('Custom');
   let setupScriptNameSource = $state<SetupScriptNameSource>('custom');
   let isCustomSetupScript = $state(false);
@@ -3108,8 +3137,16 @@
     onchange={handleFileInputChange}
   />
 
-  <div class="initializer-layout" class:expanded={isExpanded}>
-    <div class="prompt-pane min-w-0">
+  <div
+    class="initializer-layout"
+    class:expanded={isExpanded}
+    class:setup-active={inlineSetupOpen}
+    aria-hidden={inlineSetupOpen || undefined}
+    inert={inlineSetupOpen}
+  >
+    <div
+      class="prompt-pane min-w-0 transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
+    >
       <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
       <div
         class="prompt-composer relative w-full rounded-lg {isExpanded
@@ -3214,26 +3251,14 @@
 
         {#if isExpanded}
           <div class="prompt-footer" transition:slide={{ axis: 'y', tier: 'moderate' }}>
-            <div class="prompt-settings">
-              <InitialAgentPicker
-                presentation="footer"
-                bind:selectedSpecialist
-                {selectedModel}
-                onModelChange={(model) => {
-                  selectedModel = model;
-                  // An explicit pick pins the model for this form session so late
-                  // hydration cannot overwrite it (intent-hq/monorepo#2678).
-                  if (model) modelPickedThisSession = true;
-                }}
-                bind:selectedReasoningEffort
-                onReasoningEffortChange={() => (effortPickedThisSession = true)}
-                onSetupPick={() => (setupPickedThisSession = true)}
-                bind:modelWasOverridden
-                bind:isTeamMode
-                bind:selectedProvider
+            <div class="prompt-context">
+              <IssueSuggestions
+                iconOnly
+                onSelect={handleIssueSelect}
+                repositoryOwner={githubRepoInfo?.owner}
+                repositoryName={githubRepoInfo?.repo}
               />
             </div>
-
             <div class="prompt-actions">
               <!-- Mic latch button: click starts dictation, click again (Esc
              cancels) stops and transcribes into this prompt at the caret. -->
@@ -3316,14 +3341,6 @@
                 <Fa icon={faPaperclip} />
               </Button>
             </div>
-            <div class="prompt-context">
-              <IssueSuggestions
-                iconOnly
-                onSelect={handleIssueSelect}
-                repositoryOwner={githubRepoInfo?.owner}
-                repositoryName={githubRepoInfo?.repo}
-              />
-            </div>
           </div>
         {/if}
       </div>
@@ -3336,7 +3353,10 @@
       {/if}
     </div>
     {#if isExpanded}
-      <div class="settings-pane min-w-0" transition:slide={{ axis: 'y', tier: 'moderate' }}>
+      <div
+        class="settings-pane min-w-0 transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
+        transition:slide={{ axis: 'y', tier: 'moderate' }}
+      >
         <!-- Git not installed banner -->
         {#if gitAvailable === false}
           <div
@@ -3420,24 +3440,7 @@
             value={setupScriptDisplayName(setupScriptName, setupScriptNameSource)}
             loading={isRepoConfigLoading}
             expanded={showSetupScript}
-            onOpen={() => (showSetupScript = true)}
-          />
-          <SetupScriptModal
-            bind:open={showSetupScript}
-            repoPath={repoType === 'gitlab' ? '' : repoPath}
-            repositoryKey={setupScriptRepoKey ?? undefined}
-            githubUrl={repoType === 'github' ? githubUrl : null}
-            repoConfigScript={repoConfigScriptRepo === setupScriptProbeKey
-              ? repoConfigScript
-              : null}
-            bind:value={setupScript}
-            bind:scriptName={setupScriptName}
-            bind:scriptNameSource={setupScriptNameSource}
-            bind:isCustomScript={isCustomSetupScript}
-            onCommit={() => {
-              setupScriptExplicit = true;
-            }}
-            onClose={() => (showSetupScript = false)}
+            onOpen={openSetupScript}
           />
           {#if repoConfigError}
             <p class="text-sm text-subtle" role="status">
@@ -3464,6 +3467,26 @@
               >{/if}
           </div>
         {/if}
+
+        <div class="mt-3 border-t border-border pt-3">
+          <InitialAgentPicker
+            presentation="form"
+            bind:selectedSpecialist
+            {selectedModel}
+            onModelChange={(model) => {
+              selectedModel = model;
+              // An explicit pick pins the model for this form session so late
+              // hydration cannot overwrite it (intent-hq/monorepo#2678).
+              if (model) modelPickedThisSession = true;
+            }}
+            bind:selectedReasoningEffort
+            onReasoningEffortChange={() => (effortPickedThisSession = true)}
+            onSetupPick={() => (setupPickedThisSession = true)}
+            bind:modelWasOverridden
+            bind:isTeamMode
+            bind:selectedProvider
+          />
+        </div>
 
         <!-- Error message -->
         {#if error}
@@ -3557,11 +3580,11 @@
                   aria-hidden={!isValid ? 'true' : undefined}
                 >
                   <ShortcutChip
-                    class="flex min-w-6 h-6 items-center justify-center rounded-md px-1.5 text-primary-foreground"
+                    class="flex items-center justify-center px-0.5 text-primary-foreground/60"
                     >{navigator.userAgent?.includes('Mac') ? '⌘' : 'Ctrl'}</ShortcutChip
                   >
                   <ShortcutChip
-                    class="flex size-6 items-center justify-center rounded-md text-primary-foreground"
+                    class="flex items-center justify-center px-0.5 text-primary-foreground/60"
                     >↵</ShortcutChip
                   >
                 </span>
@@ -3592,6 +3615,22 @@
       </div>
     {/if}
   </div>
+  <SetupScriptModal
+    presentation={setupViewHost ? 'inline' : 'dialog'}
+    bind:open={showSetupScript}
+    repoPath={repoType === 'gitlab' ? '' : repoPath}
+    repositoryKey={setupScriptRepoKey ?? undefined}
+    githubUrl={repoType === 'github' ? githubUrl : null}
+    repoConfigScript={repoConfigScriptRepo === setupScriptProbeKey ? repoConfigScript : null}
+    bind:value={setupScript}
+    bind:scriptName={setupScriptName}
+    bind:scriptNameSource={setupScriptNameSource}
+    bind:isCustomScript={isCustomSetupScript}
+    onCommit={() => {
+      setupScriptExplicit = true;
+    }}
+    onClose={() => (showSetupScript = false)}
+  />
 </div>
 
 <!-- Pull Conflict Dialog -->
@@ -3660,6 +3699,7 @@
 <style>
   .workspace-initializer {
     container-type: inline-size;
+    position: relative;
   }
 
   .initializer-layout {
@@ -3671,6 +3711,17 @@
 
   .initializer-layout.expanded {
     grid-template-areas: 'prompt' 'settings';
+  }
+
+  .initializer-layout.setup-active {
+    max-height: calc(100dvh - 12rem);
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .setup-active .prompt-pane,
+  .setup-active .settings-pane {
+    opacity: 0;
   }
 
   .prompt-pane {
@@ -3715,7 +3766,7 @@
 
   .prompt-footer {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: auto minmax(0, 1fr);
     align-items: start;
     min-height: 2.75rem;
     margin-inline: -0.5rem;
@@ -3723,30 +3774,24 @@
   }
 
   .prompt-actions {
+    grid-column: 2;
+    grid-row: 1;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: flex-start;
     min-width: 0;
     gap: 0.25rem;
     min-height: 2.75rem;
   }
 
-  .prompt-settings,
   .prompt-context {
-    display: flex;
-    align-items: center;
-    min-width: 0;
-    min-height: 2.75rem;
+    display: contents;
   }
 
-  .prompt-context {
-    justify-content: flex-end;
-  }
-
-  .prompt-context:has(:global(.context-picker[data-state='open'])) {
-    grid-column: 1 / -1;
-    grid-row: 2;
+  .prompt-footer :global(.context-picker-trigger) {
+    grid-column: 1;
+    justify-content: flex-start;
   }
 
   @container (min-width: 48rem) {
@@ -3762,7 +3807,7 @@
     }
   }
 
-  @container (max-width: 47.99rem) {
+  @container (width < 48rem) {
     .settings-pane {
       margin-inline: -1rem;
     }
