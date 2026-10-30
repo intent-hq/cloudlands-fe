@@ -25,6 +25,7 @@ import {
   openPanel,
   setChiefActiveAgentId,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 
 const logger = createLogger('NotificationNavigation');
 
@@ -39,8 +40,13 @@ export interface NotificationNavigatePayload {
 }
 
 /**
- * Route a notification click: `goto(/workspace/{workspaceId})`, guarding
- * null/missing payloads. Chief-of-staff payloads (`chief: true` or the chief
+ * Route a notification click: `goto(/workspace/{workspaceId})`, then activate
+ * the workspace tab (adding it to the strip when it is not open), guarding
+ * null/missing payloads. In-app navigation alone never adds a closed
+ * workspace to the tab strip — only the boot route does — so, like the link
+ * handler, the tab is activated once navigation succeeds; a failed navigation
+ * leaves the strip untouched.
+ * Chief-of-staff payloads (`chief: true` or the chief
  * virtual workspace id) open the homepage Assistant and select the chat
  * thread instead — the chief workspace page is hidden. No-ops in the HUD
  * pop-out window so a stray `notification:navigate` IPC can never replace
@@ -71,6 +77,7 @@ export async function handleNotificationNavigate(
     if (target.workspaceId !== data.workspaceId || !admitted()) return;
     try {
       await navigateToRoute(`/workspace/${encodeURIComponent(target.workspaceId)}`);
+      appStore.dispatch(openWorkspaceTab(target.workspaceId));
       if (!admitted()) return;
       const ready = await appStore.dispatch(
         discussionNotificationLayoutRequested(target, messageId),
@@ -99,7 +106,8 @@ export async function handleNotificationNavigate(
   }
 
   try {
-    await navigateToRoute(`/workspace/${data.workspaceId}`);
+    await navigateToRoute(`/workspace/${encodeURIComponent(data.workspaceId)}`);
+    appStore.dispatch(openWorkspaceTab(data.workspaceId));
   } catch (error) {
     logger.warn('Failed to navigate from notification click', {
       workspaceId: data.workspaceId,

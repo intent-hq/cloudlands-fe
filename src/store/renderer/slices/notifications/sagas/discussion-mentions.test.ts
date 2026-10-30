@@ -31,6 +31,10 @@ import {
   setNotificationEnabled,
 } from '../../user-preferences/user-preferences-slice';
 import { openWorkspaceTab } from '../../tab-state/tab-state-slice';
+import {
+  selectCurrentWorkspaceTabId,
+  selectIsWorkspaceTabOpen,
+} from '../../tab-state/tab-state-selectors';
 import { initializeLayout, setRestoreStatus } from '../../panel-layout/panel-layout-slice';
 import { handleNotificationNavigate } from '$features/notifications/notification-navigation';
 import { webNotificationSaga, notificationIpcSaga } from './notifications-saga';
@@ -82,8 +86,8 @@ const target = () => selectDiscussionTarget.select(store.state, 'ws')!;
 const emit = (value = message()) => store.dispatch(discussionMessageReceived(target(), value));
 const settle = () => vi.advanceTimersByTimeAsync(0);
 
-function layout(active = 'discussion', secondary = false) {
-  store.dispatch(openWorkspaceTab('ws'));
+function layout(active = 'discussion', secondary = false, { openTab = true } = {}) {
+  if (openTab) store.dispatch(openWorkspaceTab('ws'));
   const tab = {
     id: 'discussion',
     type: 'discussion' as const,
@@ -499,6 +503,19 @@ describe('live discussion mention notifications', () => {
     stop();
     await click;
     expect(mocks.open).not.toHaveBeenCalled();
+  });
+  it('opens the workspace tab when it is not already open', async () => {
+    emit();
+    await settle();
+    mocks.route.mockImplementationOnce(async () => {
+      layout('agent', false, { openTab: false });
+    });
+    expect(selectIsWorkspaceTabOpen.select(store.state, 'ws')).toBe(false);
+    await mocks.toast.mock.calls[0][1].action.onClick();
+    expect(mocks.route).toHaveBeenCalledWith('/workspace/ws');
+    expect(selectIsWorkspaceTabOpen.select(store.state, 'ws')).toBe(true);
+    expect(selectCurrentWorkspaceTabId.select(store.state)).toBe('ws');
+    expect(mocks.open).toHaveBeenCalledWith('ws', 'ws', 'default');
   });
   it('rejects stale toast clicks before navigation', async () => {
     emit();
