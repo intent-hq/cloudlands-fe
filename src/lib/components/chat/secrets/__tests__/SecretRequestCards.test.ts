@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentMessage } from '$shared/types';
 import { SECRET_REQUEST_RESOURCE_MIME_TYPE } from '$shared/types/secret-request-resource';
 import { store as appStore } from '$store/renderer/store';
@@ -10,10 +10,13 @@ import {
   secretAnswerRequested,
   secretAnswerUpdated,
   secretListLoaded,
+  secretListRequested,
   secretRequestsExpanded,
 } from '$store/renderer/slices/secret-requests/secret-requests-slice';
 import SecretRequestCards from '../SecretRequestCards.svelte';
 import { deriveSecretRequestTranscript } from '../pending-secret-requests';
+import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+import { principalContextChanged } from '$store/renderer/slices/principal/principal-slice';
 
 function card(requestId: string, name: string) {
   return {
@@ -52,6 +55,7 @@ function pending(agentId: string, ...requests: [string, string][]) {
 }
 
 beforeAll(() => appStore.init());
+beforeEach(() => admitLegacyPrincipal());
 
 describe('SecretRequestCards', () => {
   afterEach(() => vi.restoreAllMocks());
@@ -210,5 +214,25 @@ describe('SecretRequestCards', () => {
         ([action]) => (action as { type: string }).type === secretAnswerRequested.type,
       ),
     ).toBe(false);
+    await fireEvent.click(screen.getByTestId('secret-request-hide'));
+    await fireEvent.click(await screen.findByTestId('secret-request-chip-dismiss'));
+    const retiredConfirm = screen.getByRole('button', { name: 'Dismiss request' });
+    appStore.dispatch(principalContextChanged(null));
+    await fireEvent.click(retiredConfirm);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(
+      dispatch.mock.calls.some(
+        ([action]) => (action as { type: string }).type === secretAnswerRequested.type,
+      ),
+    ).toBe(false);
+    const beforeReadmission = dispatch.mock.calls.length;
+    admitLegacyPrincipal();
+    await waitFor(() =>
+      expect(
+        dispatch.mock.calls
+          .slice(beforeReadmission)
+          .some(([action]) => (action as { type: string }).type === secretListRequested.type),
+      ).toBe(true),
+    );
   });
 });

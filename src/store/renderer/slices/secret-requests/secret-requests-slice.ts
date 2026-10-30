@@ -2,8 +2,12 @@ import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { SecretListing } from '$shared/types/secret-request-resource';
 import type { SecretAnswerStatus, SecretRequestsState } from './secret-requests-types';
+import { principalContextChanged } from '../principal/principal-slice';
 
 const initialState: SecretRequestsState = { listings: {}, answers: {}, hidden: {}, collapsed: {} };
+
+/** Retire caller-relative presentation without changing any daemon request. */
+export const secretRequestsReset = createAction('secretRequests/reset');
 
 /**
  * Refresh one agent's names-only `secret.list` (PROTOCOL §5.56). `requestIds`
@@ -67,6 +71,8 @@ export const secretRequestsExpanded = createAction<[agentId: string]>(
 );
 
 export const secretRequestsReducer = createReducer<SecretRequestsState>(initialState);
+secretRequestsReducer.with(principalContextChanged, () => initialState);
+secretRequestsReducer.with(secretRequestsReset, () => initialState);
 secretRequestsReducer.with(
   secretListLoaded,
   (state, { payload: [agentId, listing, requestIds, answeredBefore] }) => {

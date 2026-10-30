@@ -18,6 +18,7 @@
   import { selectSecretRequestsState } from '$store/renderer/slices/secret-requests/secret-requests-selectors';
   import { selectDaemonConnectionGeneration } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
   import CollapsedCardChip from '../CollapsedCardChip.svelte';
   import SecretRequestCard from './SecretRequestCard.svelte';
   import SecretRequestDismissDialog from './SecretRequestDismissDialog.svelte';
@@ -38,6 +39,21 @@
 
   const secretRequests$ = selectSecretRequestsState();
   const connectionGeneration$ = selectDaemonConnectionGeneration();
+  const principalContext$ = selectPrincipalActionContext();
+  type Owner = { admission: string; dispatch: typeof appStore.dispatch };
+  let owner = $state<Owner | null>(null);
+
+  function isCurrent(expected: Owner | null): boolean {
+    try {
+      return (
+        !!expected &&
+        appStore.dispatch === expected.dispatch &&
+        selectPrincipalActionContext.select(appStore.state) === expected.admission
+      );
+    } catch {
+      return false;
+    }
+  }
   const visible = $derived(
     visibleSecretRequests(
       transcript,
@@ -66,6 +82,7 @@
     agentId: string;
     requestId: string;
     name: string;
+    owner: Owner;
   } | null>(null);
   let stackElement = $state<HTMLDivElement>();
   let chipExpandButton = $state<HTMLElement | null>(null);
@@ -73,9 +90,11 @@
 
   $effect(() => {
     const target = chipDismissTarget;
+    void $principalContext$;
     if (
       target &&
-      (target.workspaceId !== workspaceId ||
+      (!isCurrent(target.owner) ||
+        target.workspaceId !== workspaceId ||
         target.agentId !== agentId ||
         target.requestId !== chipRequest?.requestId)
     )
@@ -109,6 +128,7 @@
   });
 
   function hide(): void {
+    if (!isCurrent(owner)) return;
     focusAfter = 'chip';
     appStore.dispatch(
       secretRequestsCollapsed(
@@ -119,24 +139,32 @@
   }
 
   function expand(): void {
+    if (!isCurrent(owner)) return;
     focusAfter = 'cards';
     appStore.dispatch(secretRequestsExpanded(agentId));
   }
 
   function openChipDismiss(): void {
-    if (!chipRequest) return;
+    if (!chipRequest || !owner || !isCurrent(owner)) return;
     chipDismissTarget = {
       workspaceId,
       agentId,
       requestId: chipRequest.requestId,
       name: chipRequest.name,
+      owner,
     };
   }
 
-  function dismissChipRequest(): void {
-    const target = chipDismissTarget;
+  function dismissChipRequest(target: NonNullable<typeof chipDismissTarget>): void {
+    if (chipDismissTarget !== target) return;
     chipDismissTarget = null;
-    if (!target || target.requestId !== chipRequest?.requestId) return;
+    if (
+      !isCurrent(target.owner) ||
+      target.workspaceId !== workspaceId ||
+      target.agentId !== agentId ||
+      target.requestId !== chipRequest?.requestId
+    )
+      return;
     appStore.dispatch(
       secretAnswerRequested({
         workspaceId: target.workspaceId,
@@ -155,9 +183,14 @@
   // and requests lost on restart show as expired.
   $effect(() => {
     void $connectionGeneration$;
+    const admission = $principalContext$;
     const key = requestKey;
     const workspace = workspaceId;
     const agent = agentId;
+    owner = admission ? { admission, dispatch: appStore.dispatch } : null;
+    chipDismissTarget = null;
+    focusAfter = null;
+    if (!admission) return;
     untrack(() => {
       appStore.dispatch(secretListRequested(workspace, agent, key ? key.split(',') : []));
     });
@@ -198,10 +231,13 @@
 {/if}
 
 {#if chipDismissTarget}
+  {@const target = chipDismissTarget}
   <SecretRequestDismissDialog
     open
-    name={chipDismissTarget.name}
-    onConfirm={dismissChipRequest}
-    onCancel={() => (chipDismissTarget = null)}
+    name={target.name}
+    onConfirm={() => dismissChipRequest(target)}
+    onCancel={() => {
+      if (chipDismissTarget === target) chipDismissTarget = null;
+    }}
   />
 {/if}

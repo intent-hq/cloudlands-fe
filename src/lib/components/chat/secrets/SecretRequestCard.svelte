@@ -21,6 +21,7 @@
   } from '$store/renderer/slices/secret-requests/secret-requests-slice';
   import { selectSecretRequestsState } from '$store/renderer/slices/secret-requests/secret-requests-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
   import type { SecretRequestCardState } from './pending-secret-requests';
   import SecretRequestDismissDialog from './SecretRequestDismissDialog.svelte';
   import { stashSecretValue } from './secret-value-handoff';
@@ -39,16 +40,42 @@
 
   const uid = $props.id();
   const secretRequests$ = selectSecretRequestsState();
+  const principalContext$ = selectPrincipalActionContext();
+  type Owner = { admission: string; dispatch: typeof appStore.dispatch };
+  let owner = $state<Owner | null>(null);
   let value = $state('');
   let revealed = $state(false);
-  let confirmingDismiss = $state(false);
+  let dismissTarget = $state<Owner | null>(null);
+
+  function isCurrent(expected: Owner | null): boolean {
+    try {
+      return (
+        !!expected &&
+        appStore.dispatch === expected.dispatch &&
+        selectPrincipalActionContext.select(appStore.state) === expected.admission
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  $effect(() => {
+    const admission = $principalContext$;
+    void workspaceId;
+    void agentId;
+    void request.requestId;
+    owner = admission ? { admission, dispatch: appStore.dispatch } : null;
+    value = '';
+    revealed = false;
+    dismissTarget = null;
+  });
 
   const answer = $derived($secretRequests$.answers[request.requestId]?.status);
   const busy = $derived(answer === 'sending');
   const shown = $derived<SecretRequestCardState>(
     answer === 'provided' || answer === 'declined' || answer === 'expired' ? answer : listedState,
   );
-  const canAnswer = $derived(shown === 'pending' && !busy);
+  const canAnswer = $derived(shown === 'pending' && !busy && owner !== null);
 
   // Drop the value once the request is answered or gone; a failed send keeps
   // it so the user can retry without pasting again.
@@ -60,7 +87,7 @@
   });
 
   function answerWith(outcome: 'provided' | 'declined'): void {
-    if (!canAnswer) return;
+    if (!canAnswer || !isCurrent(owner)) return;
     if (outcome === 'provided') {
       if (value.length === 0) return;
       stashSecretValue(request.requestId, value);
@@ -74,8 +101,22 @@
     answerWith('provided');
   }
 
-  function confirmDismiss(): void {
-    confirmingDismiss = false;
+  function toggleRevealed(): void {
+    if (canAnswer && isCurrent(owner)) revealed = !revealed;
+  }
+
+  function hideExpired(): void {
+    if (isCurrent(owner)) appStore.dispatch(secretRequestHidden(request.requestId));
+  }
+
+  function openDismiss(): void {
+    if (canAnswer && isCurrent(owner)) dismissTarget = owner;
+  }
+
+  function confirmDismiss(expected: Owner): void {
+    if (dismissTarget !== expected) return;
+    dismissTarget = null;
+    if (owner !== expected || !isCurrent(expected)) return;
     answerWith('declined');
   }
 
@@ -126,7 +167,7 @@
             : m.chat_secretRequest_show_ariaLabel()}
           aria-pressed={revealed}
           disabled={!canAnswer}
-          onclick={() => (revealed = !revealed)}
+          onclick={toggleRevealed}
           data-testid="secret-request-reveal"
         >
           <Fa icon={revealed ? faEyeSlash : faEye} class="w-3 h-3" />
@@ -155,7 +196,7 @@
           class="text-danger"
           title={m.chat_secretRequest_dismiss_tooltip()}
           disabled={!canAnswer}
-          onclick={() => (confirmingDismiss = true)}
+          onclick={openDismiss}
           data-testid="secret-request-dismiss"
         >
           {m.chat_secretRequest_dismiss_label()}
@@ -189,7 +230,7 @@
         type="button"
         variant="ghost"
         size="sm"
-        onclick={() => appStore.dispatch(secretRequestHidden(request.requestId))}
+        onclick={hideExpired}
         data-testid="secret-request-clear"
       >
         {m.chat_secretRequest_dismiss_label()}
@@ -201,9 +242,14 @@
   {/if}
 </div>
 
-<SecretRequestDismissDialog
-  open={confirmingDismiss}
-  name={request.name}
-  onConfirm={confirmDismiss}
-  onCancel={() => (confirmingDismiss = false)}
-/>
+{#if dismissTarget}
+  {@const target = dismissTarget}
+  <SecretRequestDismissDialog
+    open
+    name={request.name}
+    onConfirm={() => confirmDismiss(target)}
+    onCancel={() => {
+      if (dismissTarget === target) dismissTarget = null;
+    }}
+  />
+{/if}
