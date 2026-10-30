@@ -1093,6 +1093,15 @@ export const IPC_CHANNELS = {
     IMPORT_PROGRESS: 'transfer:import-progress',
   },
 
+  // Daemon-to-daemon remote machines (PROTOCOL nodes.md "Expose flow"): main
+  // relays executor.mint → remoteMachines.add so the executor token never
+  // reaches the renderer.
+  REMOTE_MACHINES: {
+    EXPOSE: 'remote-machines:expose',
+    UNEXPOSE: 'remote-machines:unexpose',
+    MACHINE_FINGERPRINT: 'remote-machines:machine-fingerprint',
+  },
+
   // Hardware console (Codex Micro / Creator Micro 2)
   HARDWARE_CONSOLE: {
     // Main → renderer: ask the renderer to send the lighting off-frame
