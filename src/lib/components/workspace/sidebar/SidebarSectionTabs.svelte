@@ -52,6 +52,7 @@
   type SectionTab = (typeof TAB_DEFINITIONS)[number];
   let tabViewport = $state<HTMLDivElement | null>(null);
   let pointerSelection = false;
+  let extendSelection = false;
   const flyout = getSidebarFlyout();
 
   const workspaceId$ = writable('');
@@ -197,6 +198,7 @@
           if (orientation === 'vertical') flyout?.preview(tab.id, event.currentTarget, true);
           else if (
             !pointerSelection &&
+            !extendSelection &&
             savedSelection.length === 1 &&
             savedSelection[0] !== tab.id &&
             event.currentTarget.matches(':focus-visible')
@@ -205,6 +207,10 @@
             selectSections([tab.id]);
         }}
         onkeydown={(event) => {
+          extendSelection = event.shiftKey;
+          queueMicrotask(() => {
+            extendSelection = false;
+          });
           if (event.key !== 'Enter' && event.key !== ' ') return;
           event.preventDefault();
           if (orientation === 'vertical') flyout?.preview(tab.id, event.currentTarget);

@@ -63,6 +63,7 @@
     <Button
       {...props}
       variant="plain"
+      size="default"
       wrapContent={false}
       role="tab"
       aria-selected={selected ? 'true' : 'false'}

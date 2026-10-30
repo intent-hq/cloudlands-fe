@@ -96,6 +96,73 @@ test('Shift-click from keyboard focus preserves the group and Shift+Space or Ent
   });
 });
 
+test('keyboard-only selection can start a group without replacing the first pane', async ({
+  mount,
+  page,
+}, testInfo) => {
+  const component = await mount(SidebarTabsPreview, { props: { navigationEnabled: true } });
+  const tabs = component.locator('[data-sidebar-section-tabs="horizontal"]');
+  const agents = tabs.getByRole('tab', { name: 'Agents', exact: true });
+  const context = tabs.getByRole('tab', { name: 'Context', exact: true });
+  const changes = tabs.getByRole('tab', { name: 'Changes', exact: true });
+  await agents.focus();
+  await agents.press('Shift+ArrowRight');
+  await expect(context).toBeFocused();
+  await expect(agents).toHaveAttribute('aria-selected', 'true');
+  await expect(context).toHaveAttribute('aria-selected', 'false');
+  await context.press('Shift+Space');
+  await expect(context).toHaveAttribute('aria-selected', 'true');
+  await context.press('Shift+ArrowRight');
+  await expect(changes).toBeFocused();
+  await changes.press('Shift+Enter');
+  for (const tab of [agents, context, changes]) {
+    await expect(tab).toHaveAttribute('aria-selected', 'true');
+  }
+  await expect(component).toHaveAttribute('data-sidebar-activation-count', '0');
+  await testInfo.attach('keyboard-only-pane-selection', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+});
+
+test('Escape closes only the focused pane search and keeps the other queries', async ({
+  mount,
+  page,
+}, testInfo) => {
+  const component = await mount(SidebarTabsPreview, {
+    props: { initialSections: ['agents', 'context', 'files'] },
+  });
+  for (const [scope, query] of [
+    ['context', 'Interaction'],
+    ['agents', 'Sidebar'],
+    ['files', 'README'],
+  ]) {
+    await component.locator(`[data-sidebar-search="${scope}"] button`).click();
+    await component.locator(`[data-sidebar-search-input="${scope}"]`).fill(query);
+  }
+  const contextSearch = component.locator('[data-sidebar-search-input="context"]');
+  const agentsSearch = component.locator('[data-sidebar-search-input="agents"]');
+  const filesSearch = component.locator('[data-sidebar-search-input="files"]');
+  await contextSearch.focus();
+  await contextSearch.press('Escape');
+  await expect(contextSearch).toHaveCount(0);
+  await expect(component.locator('[data-sidebar-search="context"] button')).toBeFocused();
+  await expect(agentsSearch).toHaveValue('Sidebar');
+  await expect(filesSearch).toHaveValue('README');
+  await testInfo.attach('independent-pane-searches', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await agentsSearch.focus();
+  await agentsSearch.press('Escape');
+  await expect(agentsSearch).toHaveCount(0);
+  await expect(filesSearch).toHaveValue('README');
+  await component.locator('[data-sidebar-search-clear="files"]').focus();
+  await page.keyboard.press('Escape');
+  await expect(filesSearch).toHaveCount(0);
+  await expect(component.locator('[data-sidebar-search="files"] button')).toBeFocused();
+});
+
 test('collapsing and previewing preserve selected panes, searches and drafts', async ({
   mount,
   page,
