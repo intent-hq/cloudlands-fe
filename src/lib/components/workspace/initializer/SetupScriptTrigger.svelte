@@ -4,7 +4,7 @@
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import Fa from 'svelte-fa';
   import { faChevronRight } from '@fortawesome/free-solid-svg-icons';
-  import Terminal from 'phosphor-svelte/lib/Terminal';
+  import { workspacePickerStyles } from './workspace-picker-styles';
   import { m } from '$shared/paraglide/messages.js';
 
   let {
@@ -45,10 +45,9 @@
     onclick={triggerProps?.onclick ?? onOpen}
   >
     {#if presentation === 'form'}
-      <span class="w-22 shrink-0 truncate text-muted-foreground"
+      <span class={workspacePickerStyles.fieldLabel}
         >{m.workspace_compactInitializer_setup_label()}</span
       >
-      <Terminal size={16} class="shrink-0 text-muted-foreground" aria-hidden="true" />
     {/if}
     <span class="flex min-w-0 flex-1 items-center gap-2">
       {#if loading}<IntentMarkLoader size={14} /><span class="truncate"

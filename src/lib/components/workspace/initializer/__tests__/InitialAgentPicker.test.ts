@@ -11,7 +11,7 @@
  * hydration) are cleared too.
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SpecialistDef } from '$lib/client/app-client';
 
 const mocks = vi.hoisted(() => {
@@ -227,6 +227,19 @@ import ProviderSelectionHarness from './mocks/ProviderSelectionHarness.svelte';
 import { store as mockAppStore } from '$store/renderer/store';
 import { LiveSpecialistsClient } from '$lib/client/live/live-specialists-client';
 
+const scrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
+beforeAll(() => {
+  Object.defineProperty(Element.prototype, 'scrollIntoView', {
+    configurable: true,
+    writable: true,
+    value: vi.fn(),
+  });
+});
+afterAll(() => {
+  if (scrollIntoView) Object.defineProperty(Element.prototype, 'scrollIntoView', scrollIntoView);
+  else Reflect.deleteProperty(Element.prototype, 'scrollIntoView');
+});
+
 const emitStoreState = () => (mockAppStore as unknown as { emitState: () => void }).emitState();
 
 /** One model picker serves both agent choices. */
@@ -242,13 +255,16 @@ function teamPickerDefault(): string {
 }
 
 function agentTrigger() {
-  return screen.getByRole('button', { name: /^Agent\b/ });
+  return screen.getByRole('button', { name: /^Initial agent\b/ });
 }
 
 /** Opens the Agent menu and picks the option whose name matches. */
 async function pickAgent(name: RegExp) {
   await fireEvent.click(agentTrigger());
-  await fireEvent.click(await screen.findByRole('menuitemradio', { name }));
+  await fireEvent.pointerUp(await screen.findByRole('option', { name }), {
+    button: 0,
+    pointerType: 'mouse',
+  });
 }
 
 /** The mocked orchestrator is listed by its own name. */
@@ -1683,8 +1699,7 @@ describe('InitialAgentPicker specialist dropdown', () => {
     return agentTrigger();
   }
 
-  const manageSpecialistsItem = () =>
-    screen.queryByRole('menuitem', { name: /manage specialists/i });
+  const manageSpecialistsItem = () => screen.queryByRole('button', { name: /manage specialists/i });
 
   it('opens the agent menu in team mode with orchestration as the only checked choice', async () => {
     mocks.specialists$.set([
@@ -1696,14 +1711,14 @@ describe('InitialAgentPicker specialist dropdown', () => {
     });
 
     const trigger = specialistTrigger();
-    expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
+    expect(trigger.getAttribute('aria-haspopup')).toBe('dialog');
 
     await fireEvent.click(trigger);
-    const orchestration = await screen.findByRole('menuitemradio', {
+    const orchestration = await screen.findByRole('option', {
       name: ORCHESTRATION,
-      checked: true,
+      selected: true,
     });
-    expect(screen.getAllByRole('menuitemradio', { checked: true })).toEqual([orchestration]);
+    expect(screen.getAllByRole('option', { selected: true })).toEqual([orchestration]);
     expect(onTeamModeChange).not.toHaveBeenCalled();
   });
 
@@ -1714,11 +1729,11 @@ describe('InitialAgentPicker specialist dropdown', () => {
     });
 
     const trigger = specialistTrigger();
-    expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
+    expect(trigger.getAttribute('aria-haspopup')).toBe('dialog');
     expect(manageSpecialistsItem()).toBeNull();
 
     await fireEvent.click(trigger);
-    await screen.findByRole('menuitem', { name: /manage specialists/i });
+    await screen.findByRole('button', { name: /manage specialists/i });
 
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
     expect(manageSpecialistsItem()).not.toBeNull();
@@ -1741,24 +1756,24 @@ describe('InitialAgentPicker specialist dropdown', () => {
 
     const trigger = specialistTrigger();
     await fireEvent.click(trigger);
-    const general = await screen.findByRole('menuitemradio', { name: /General/ });
-    const developer = screen.getByRole('menuitemradio', { name: /Developer/ });
-    expect(general.getAttribute('aria-checked')).toBe('true');
-    expect(developer.getAttribute('aria-checked')).toBe('false');
+    const general = await screen.findByRole('option', { name: /General/ });
+    const developer = screen.getByRole('option', { name: /Developer/ });
+    expect(general.getAttribute('aria-selected')).toBe('true');
+    expect(developer.getAttribute('aria-selected')).not.toBe('true');
 
-    await fireEvent.click(developer);
-    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    await fireEvent.pointerUp(developer, { button: 0, pointerType: 'mouse' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Initial agent' })).toBeNull());
     expect(onSpecialistChange).toHaveBeenCalledExactlyOnceWith('developer');
     expect(onModelChange).toHaveBeenCalledExactlyOnceWith(undefined);
     expect(screen.getAllByTestId('picker-selected')[SINGLE_PICKER].textContent).toBe('');
     expect(trigger.textContent).toContain('Developer');
 
     await fireEvent.click(trigger);
-    const selected = await screen.findByRole('menuitemradio', { name: /Developer/, checked: true });
-    expect(screen.getAllByRole('menuitemradio', { checked: true })).toEqual([selected]);
-    expect(
-      screen.getByRole('menuitemradio', { name: /General/ }).getAttribute('aria-checked'),
-    ).toBe('false');
+    const selected = await screen.findByRole('option', { name: /Developer/, selected: true });
+    expect(screen.getAllByRole('option', { selected: true })).toEqual([selected]);
+    expect(screen.getByRole('option', { name: /General/ }).getAttribute('aria-selected')).not.toBe(
+      'true',
+    );
   });
 
   const catalogSpecialists = [
@@ -1768,14 +1783,10 @@ describe('InitialAgentPicker specialist dropdown', () => {
     { id: 'writer', name: 'Writer', description: 'Writes things' },
   ];
 
-  async function openedOptionIds() {
+  async function openedOptionLabels() {
     await fireEvent.click(specialistTrigger());
-    await screen.findByRole('menuitemradio', { name: /General/ });
-    return [
-      ...document.querySelectorAll(
-        '[data-specialist-option]:not([data-specialist-option="orchestration"])',
-      ),
-    ].map((el) => el.getAttribute('data-specialist-option'));
+    await screen.findByRole('option', { name: /General/ });
+    return screen.getAllByRole('option').map((el) => el.textContent?.trim());
   }
 
   it('lists recently used specialists first, newest first, under General', async () => {
@@ -1783,12 +1794,13 @@ describe('InitialAgentPicker specialist dropdown', () => {
     mocks.recentSpecialistIds$.set(['writer', 'deleted-specialist', 'reviewer']);
     render(InitialAgentPicker, { props: { selectedSpecialist: null, isTeamMode: false } });
 
-    expect(await openedOptionIds()).toEqual([
-      'general',
-      'writer',
-      'reviewer',
-      'developer',
-      'researcher',
+    expect(await openedOptionLabels()).toEqual([
+      'General',
+      'Writer',
+      'Reviewer',
+      'Coordinator',
+      'Developer',
+      'Researcher',
     ]);
   });
 
@@ -1796,25 +1808,13 @@ describe('InitialAgentPicker specialist dropdown', () => {
     mocks.specialists$.set(catalogSpecialists);
     render(InitialAgentPicker, { props: { selectedSpecialist: null, isTeamMode: false } });
 
-    expect(await openedOptionIds()).toEqual([
-      'general',
-      'developer',
-      'reviewer',
-      'researcher',
-      'writer',
+    expect(await openedOptionLabels()).toEqual([
+      'General',
+      'Coordinator',
+      'Developer',
+      'Reviewer',
+      'Researcher',
+      'Writer',
     ]);
-  });
-
-  it('keeps the model picker inline and bounded by the modal collision boundary', () => {
-    render(InitialAgentPicker, { props: { selectedSpecialist: 'spec-writer', isTeamMode: true } });
-
-    const pickers = screen.getAllByTestId('mock-model-picker');
-    expect(pickers).toHaveLength(1);
-    for (const picker of pickers) {
-      expect(picker.getAttribute('data-portal')).toBe('false');
-      expect(picker.getAttribute('data-collision-boundary')).toBe(
-        '[data-model-picker-collision-boundary]',
-      );
-    }
   });
 });

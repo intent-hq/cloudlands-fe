@@ -17,6 +17,10 @@ import type {
 } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
 import { createWorkspaceInitializationDispatchAdapter } from './workspace-initialization-dispatch.test-helper';
 
+beforeEach(() => {
+  Element.prototype.scrollIntoView ??= vi.fn();
+});
+
 const mocks = vi.hoisted(() => {
   function writable<T>(initial: T) {
     let value = initial;
@@ -767,10 +771,13 @@ describe('initializer remembers the agent setup per repository', () => {
   it('keeps an explicit in-session agent mode pick when the repository changes', async () => {
     const { component } = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
     // The form opens in team mode (global setup); the user picks a single agent.
-    const agentTrigger = screen.getByRole('button', { name: /^Agent\b/ });
+    const agentTrigger = screen.getByRole('button', { name: /^Initial agent\b/ });
     expect(agentTrigger.textContent).toContain('Coordinator');
     await fireEvent.click(agentTrigger);
-    await fireEvent.click(await screen.findByRole('menuitemradio', { name: /^General/ }));
+    await fireEvent.pointerUp(await screen.findByRole('option', { name: /^General/ }), {
+      button: 0,
+      pointerType: 'mouse',
+    });
     await waitFor(() => expect(agentTrigger.textContent).toContain('General'));
 
     mocks.agentByRepo = { 'local:/tmp/repo-a': { ...REPO_A, isTeamMode: true } };

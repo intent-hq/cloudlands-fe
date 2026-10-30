@@ -1615,7 +1615,7 @@
       ? 'min-h-10 px-3 py-2'
       : 'py-1'}"
   >
-    {#if rowLabel}<span class="w-22 shrink-0 truncate text-muted-foreground">{rowLabel}</span>{/if}
+    {#if rowLabel}<span class={workspacePickerStyles.fieldLabel}>{rowLabel}</span>{/if}
     {#if hasTriggerIcon}
       <GitBranchIcon size={rowLabel ? 16 : 12} class="text-ghost shrink-0" />
     {/if}
@@ -1637,9 +1637,7 @@
             class={`w-full text-muted-foreground ${triggerClass} ${githubAuthNeeded === 'not-authenticated' ? 'ring-1 ring-orange-400 rounded-sm' : suggestedBranch && suggestedBranch !== internalSelectedBranch ? 'ring-1 ring-primary-ink rounded-sm' : ''}`}
           >
             <div class={`flex items-center truncate min-w-0 ${triggerContentClass}`}>
-              {#if rowLabel}<span class="w-22 shrink-0 truncate text-left text-muted-foreground"
-                  >{rowLabel}</span
-                >{/if}
+              {#if rowLabel}<span class={workspacePickerStyles.fieldLabel}>{rowLabel}</span>{/if}
               {#if githubAuthNeeded === 'not-authenticated'}
                 <Fa icon={faExclamationTriangle} class="text-orange-500" size="xs" />
               {:else if hasTriggerIcon}

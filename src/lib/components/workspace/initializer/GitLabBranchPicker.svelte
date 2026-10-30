@@ -46,8 +46,7 @@
       >
         <span class="flex w-full min-w-0 items-center truncate {rowLabel ? 'gap-2' : 'gap-0.75'}">
           {#if rowLabel}
-            <span class="w-22 shrink-0 truncate text-left text-muted-foreground">{rowLabel}</span>
-            <GitBranchIcon size={16} class="shrink-0 text-muted-foreground" />
+            <span class={workspacePickerStyles.fieldLabel}>{rowLabel}</span>
           {/if}
           {#if !selectedBranch && loading}
             <IntentMarkLoader size={14} class="text-ghost" />

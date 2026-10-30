@@ -1,5 +1,6 @@
 /** Shared presentation for the New Workspace settings menus. */
 export const workspacePickerStyles = {
+  fieldLabel: 'w-24 shrink-0 whitespace-normal text-left text-muted-foreground',
   header: 'shrink-0 px-4 pt-3 pb-2',
   title: 'type-body font-medium text-foreground',
   description: 'type-caption mt-1 text-muted-foreground',

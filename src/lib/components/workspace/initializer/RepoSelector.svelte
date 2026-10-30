@@ -238,7 +238,6 @@
    *  can target it exactly rather than matching any focused text field. */
   let githubInputElement = $state<HTMLInputElement | null>(null);
   let isOpen = $state(false); // Track dropdown open state
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let isDialogOpen = $state(false); // Track if a native dialog is open (prevents dropdown from closing)
   const isLoading = $derived(
     !$recentRepoRefresh$ ||
@@ -1683,11 +1682,18 @@
           wrapContent={!rowLabel}
           class={`w-full ${triggerClass ?? ''}`}
           aria-label={triggerAriaLabel ??
-            `${m.workspace_repoSelector_selectRepository_label()}: ${triggerDisplayValue}`}
+            (rowLabel
+              ? undefined
+              : `${m.workspace_repoSelector_selectRepository_label()}: ${triggerDisplayValue}`)}
+          aria-labelledby={rowLabel && !triggerAriaLabel
+            ? `${pickerId}-field-label ${pickerId}-field-value`
+            : undefined}
         >
           <div class={`flex w-full min-w-0 items-center truncate ${triggerContentClass}`}>
             {#if rowLabel}
-              <span class="w-22 shrink-0 truncate text-left text-muted-foreground">{rowLabel}</span>
+              <span class={workspacePickerStyles.fieldLabel} id={`${pickerId}-field-label`}
+                >{rowLabel}</span
+              >
             {/if}
             <!-- {#if isNewRepo}
           <Fa icon={faPlus} size="sm" class="text-ghost" />
@@ -1718,7 +1724,10 @@
               <GitRepoIcon size={16} class="shrink-0 text-muted-foreground" />
             {/if}
             {#if !triggerIcon && (hasTriggerValue || emptyLabel)}
-              <span class="min-w-0 flex-1 text-left truncate">
+              <span
+                class="min-w-0 flex-1 text-left truncate"
+                id={rowLabel ? `${pickerId}-field-value` : undefined}
+              >
                 {#if hasTriggerValue}
                   <span class={triggerValueClass}>{triggerDisplayValue}</span>
                   {#if isNewRepo && !displayValue && !gitlabSelected}

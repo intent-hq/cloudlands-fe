@@ -32,8 +32,8 @@ test('new workspace pickers restore focus and preserve the prompt when dismissed
   await expect(prompt).toHaveText('Refine the workspace navigation.');
   const panels = [
     {
-      trigger: dialog.getByRole('button', { name: /^Select a repository:/ }),
-      popup: page.getByRole('dialog', { name: 'Repository', exact: true }),
+      trigger: dialog.getByRole('button', { name: /^Codebase\b/ }),
+      popup: page.getByRole('dialog', { name: 'Codebase', exact: true }),
     },
     {
       trigger: dialog.getByRole('button', { name: 'Setup script', exact: true }),
@@ -67,10 +67,10 @@ test('new workspace pickers restore focus and preserve the prompt when dismissed
     body: await page.screenshot({ path: testInfo.outputPath('wide-light.png') }),
     contentType: 'image/png',
   });
-  const agent = dialog.getByRole('button', { name: /^Agent / });
+  const agent = dialog.getByRole('button', { name: /^Initial agent / });
   await agent.focus();
   await agent.press('Enter');
-  await expect(page.getByRole('menu')).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Initial agent', exact: true })).toBeVisible();
   await testInfo.attach('agent-menu', {
     body: await page.screenshot({ path: testInfo.outputPath('agent-menu.png') }),
     contentType: 'image/png',
@@ -96,10 +96,10 @@ test('long selections leave all form controls reachable in a narrow dark window'
   await create.scrollIntoViewIfNeeded();
   await expect(create).toBeInViewport();
   await expect.poll(() => dialog.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
-  const repo = dialog.getByRole('button', { name: /^Select a repository:/ });
+  const repo = dialog.getByRole('button', { name: /^Codebase\b/ });
   await repo.scrollIntoViewIfNeeded();
   await repo.click();
-  const picker = page.getByRole('dialog', { name: 'Repository', exact: true });
+  const picker = page.getByRole('dialog', { name: 'Codebase', exact: true });
   await expect(picker).toBeVisible();
   await expect
     .poll(() =>

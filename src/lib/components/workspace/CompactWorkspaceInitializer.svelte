@@ -3727,7 +3727,7 @@
 
   @container (min-width: 48rem) {
     .initializer-layout.expanded {
-      grid-template-columns: minmax(0, 1fr) 21rem;
+      grid-template-columns: minmax(0, 1fr) 19rem;
       min-height: min(32rem, calc(100dvh - 12rem));
       column-gap: 2rem;
     }

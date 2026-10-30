@@ -125,7 +125,7 @@ test('iconless menu items remain selectable', async ({ mount, page }) => {
 });
 
 for (const state of ['populated', 'empty', 'compact'] as const) {
-  test(`specialist ${state} has bounded stacked rows and keyboard selection`, async ({
+  test(`specialist ${state} keeps choices reachable and supports keyboard selection`, async ({
     mount,
     page,
   }, info) => {
@@ -135,46 +135,42 @@ for (const state of ['populated', 'empty', 'compact'] as const) {
     const trigger =
       state === 'compact'
         ? page.getByTestId('specialist-fixture').getByRole('button').first()
-        : page.getByTestId('initial-agent-picker').getByRole('button', { name: /^Agent / });
+        : page.getByTestId('initial-agent-picker').getByRole('button', { name: /^Initial agent / });
     await trigger.focus();
     await trigger.press('Enter');
-    const menu = page.getByRole('menu');
+    const menu =
+      state === 'compact'
+        ? page.getByRole('menu')
+        : page.getByRole('dialog', { name: 'Initial agent', exact: true });
     await expect(menu).toBeVisible();
     await page.screenshot({ path: info.outputPath('specialist-open.png') });
     const bounds = await menu.boundingBox();
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
-    const general = menu.getByRole('menuitemradio', { name: /General/ });
-    await expect(general).toHaveAttribute('aria-checked', 'true');
-    await expect(menu.getByRole('menuitemradio', { checked: true })).toHaveCount(1);
+    const role = state === 'compact' ? 'menuitemradio' : 'option';
+    const selectedAttribute = state === 'compact' ? 'aria-checked' : 'aria-selected';
+    const selected = () =>
+      state === 'compact'
+        ? menu.getByRole('menuitemradio', { checked: true })
+        : menu.getByRole('option', { selected: true });
+    const general = menu.getByRole(role, { name: /General/ });
+    await expect(general).toHaveAttribute(selectedAttribute, 'true');
+    await expect(selected()).toHaveCount(1);
     const choice =
-      state === 'empty' ? general : menu.getByRole('menuitemradio', { name: /A specialist with/ });
-    const geometry = await choice.evaluate((element) => {
-      const row = element.getBoundingClientRect();
-      const spans = [...element.querySelectorAll('span')].filter(
-        (span) => span.children.length === 0 && span.textContent?.trim(),
-      );
-      const [title, description] = spans.map((span) => span.getBoundingClientRect());
-      return {
-        titleWeight: getComputedStyle(spans[0]).fontWeight,
-        rowBottom: row.bottom,
-        titleBottom: title.bottom,
-        descriptionTop: description.top,
-        descriptionBottom: description.bottom,
-        overflow: element.scrollWidth - element.clientWidth,
-      };
-    });
-    console.log('specialist geometry', state, geometry);
-    expect(geometry.titleWeight).toBe('400');
-    expect(geometry.descriptionTop).toBeGreaterThanOrEqual(geometry.titleBottom - 1);
-    expect(geometry.descriptionBottom).toBeLessThanOrEqual(geometry.rowBottom + 1);
-    expect(geometry.overflow).toBeLessThanOrEqual(1);
-    await expect(general).toBeFocused();
-    if (state !== 'empty') {
+      state === 'empty' ? general : menu.getByRole(role, { name: /A specialist with/ });
+    if (state === 'compact') {
+      await expect(general).toBeFocused();
       await page.keyboard.press('ArrowDown');
+      await expect(choice).toBeFocused();
+      await page.keyboard.press('Enter');
+    } else {
+      const search = menu.getByRole('combobox', { name: 'Initial agent', exact: true });
+      await expect(search).toBeFocused();
+      await search.fill(state === 'empty' ? 'General' : 'A specialist with');
+      await expect(choice).toBeVisible();
+      await search.press('ArrowDown');
+      await search.press('Enter');
     }
-    await expect(choice).toBeFocused();
-    await page.keyboard.press('Enter');
     await expect(page.getByTestId('specialist-selection')).toHaveText(
       state === 'empty' ? 'general' : 'fixture-long',
     );
@@ -182,8 +178,8 @@ for (const state of ['populated', 'empty', 'compact'] as const) {
     await expect(trigger).toBeFocused();
     await trigger.press('Enter');
     await expect(menu).toBeVisible();
-    await expect(choice).toHaveAttribute('aria-checked', 'true');
-    await expect(menu.getByRole('menuitemradio', { checked: true })).toHaveCount(1);
+    await expect(choice).toHaveAttribute(selectedAttribute, 'true');
+    await expect(selected()).toHaveCount(1);
     await page.keyboard.press('Escape');
     await expect(trigger).toBeFocused();
   });

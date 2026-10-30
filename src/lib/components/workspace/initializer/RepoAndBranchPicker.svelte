@@ -2,7 +2,6 @@
   import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { Button } from '$lib/components/ui/button';
   import GitRepoIcon from '$lib/components/icons/GitRepoIcon.svelte';
-  import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
   import Checkbox from '$lib/components/ui/checkbox/checkbox.svelte';
   import { faPlus } from '@fortawesome/free-solid-svg-icons';
@@ -13,6 +12,7 @@
   import GitLabBranchPicker from './GitLabBranchPicker.svelte';
   import type { GitLabProjectPickerProps, GitLabBranchPickerProps } from './gitlab-picker-types';
   import { m } from '$shared/paraglide/messages.js';
+  import { workspacePickerStyles } from './workspace-picker-styles';
 
   type RepoSelectorHandle = {
     focusInput: () => void;
@@ -294,10 +294,9 @@
           {/if}
         {:else if repoType === 'remote' && remoteSetup}
           <div class="flex min-h-10 min-w-0 items-center gap-2 px-3 py-2 text-sm leading-5">
-            <span class="w-22 shrink-0 truncate text-muted-foreground"
+            <span class={workspacePickerStyles.fieldLabel}
               >{m.workspace_compactInitializer_branch_label()}</span
             >
-            <GitBranchIcon size={16} class="shrink-0 text-muted-foreground" />
             <span class="min-w-0 truncate"
               >{remoteSetup.branch || 'main'}<!-- i18n-ignore (git branch name) --></span
             >
@@ -313,7 +312,7 @@
             {githubUrl}
             {skipIsolation}
             {suggestedBranch}
-            hasTriggerIcon
+            hasTriggerIcon={false}
             disabled={!hasRepo}
             showUncommittedIndicator
             triggerContentClass="w-full gap-2"

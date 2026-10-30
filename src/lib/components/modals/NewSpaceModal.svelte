@@ -112,7 +112,7 @@
       > [data-slot='dialog-header']
       > [data-slot='dialog-title']
   ) {
-    font-size: var(--text-base);
+    font-size: var(--text-body-size);
     line-height: 1.5rem;
     font-weight: var(--text-body-strong-weight);
   }
@@ -135,7 +135,7 @@
   }
 
   .workspace-form :global(.initializer-layout.expanded) {
-    grid-template-columns: minmax(0, 1fr) 20rem;
+    grid-template-columns: minmax(0, 1fr) 18rem;
   }
 
   .workspace-sidebar-surface {
@@ -143,7 +143,7 @@
     position: absolute;
     inset-block: 0;
     inset-inline-end: 0;
-    width: calc(20rem + 1.5rem);
+    width: calc(18rem + 1.5rem);
     pointer-events: none;
     z-index: -1;
     background: var(--color-sidebar);

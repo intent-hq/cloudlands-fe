@@ -1,12 +1,15 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
-  import * as Menu from '$lib/components/ui/menu';
+  import { ActionRow } from '$lib/components/ui/menu';
+  import { Combobox, type ComboboxOption } from '$lib/components/ui/combobox';
+  import * as Popover from '$lib/components/ui/popover';
+  import { useDialogPortalTarget } from '$lib/components/ui/dialog';
   import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
-  import SpecialistOptions from '$lib/components/chat/SpecialistOptions.svelte';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { workspacePickerStyles } from './workspace-picker-styles';
   import { cn } from '$lib/utils';
+  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
 
   import {
     selectSpecialists,
@@ -74,14 +77,13 @@
   const agentLabelId = `${uid}-agent-label`;
   const agentValueId = `${uid}-agent-value`;
   const isMobile = new IsMobile();
+  const dialogPortalTarget = useDialogPortalTarget();
   // Matches the form's other settings rows: 40px hit height, body text.
   const SETTINGS_TRIGGER_CLASS =
     'w-full min-w-0 h-auto min-h-10 justify-start gap-2 px-3! pr-2! py-2! text-sm leading-5 font-normal text-foreground';
-  // The menu content is the only scroller: a nested scroll box let the last
-  // row's highlight overflow the menu (a second vertical bar) and clipped the
-  // separator into a horizontal bar. Capped by the space Bits UI measures.
+  // Search and the management action stay fixed around the scrollable results.
   const SPECIALIST_MENU_MAX_HEIGHT =
-    'min(520px, var(--bits-dropdown-menu-content-available-height, calc(100dvh - 1rem)))';
+    'min(520px, var(--bits-popover-content-available-height, calc(100dvh - 1rem)))';
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
   const catalogEntries$ = selectProviderCatalogEntries();
   const providerProfiles$ = selectProviderCatalogProfiles();
@@ -319,10 +321,8 @@
     }
   });
 
-  // Specialists offered in the single-agent dropdown: the modal-pickable set
-  // (GitHub gating + `hidden` + `role: internal` excluded) minus the
-  // orchestrator, which is represented by the team card. Those used to create
-  // workspaces come first, most recent first; the rest keep catalog order.
+  // Retain the existing modal-pickable gates for ordinary specialists. The
+  // resolved orchestrator joins them in the same list below.
   const customSpecialists = $derived(
     sortSpecialistsByRecency(
       filterModalPickableSpecialists($specialists$, $isGitHubAuth$).filter(
@@ -602,6 +602,13 @@
 
   // Specialist dropdown state
   let specialistDropdownOpen = $state(false);
+  let agentSearchInput = $state<HTMLInputElement | null>(null);
+  $effect(() => {
+    if (!specialistDropdownOpen) return;
+    return pushEscapeLayer(() => {
+      specialistDropdownOpen = false;
+    });
+  });
 
   // Snapshot of mode-specific state so switching modes preserves selections
   interface ModeSnapshot {
@@ -793,6 +800,33 @@
     isTeamMode && orchestrator ? orchestratorLabel : specialistDisplayLabel,
   );
   const activeDefaultModel = $derived(isTeamMode ? teamModeModel : singleAgentModel);
+  const agentSpecialists = $derived(
+    sortSpecialistsByRecency(
+      [...(orchestrator ? [orchestrator] : []), ...customSpecialists],
+      $recentSpecialistIds$,
+    ),
+  );
+  const agentOptions = $derived<ComboboxOption[]>([
+    { value: 'general', label: m.workspace_initialAgentPicker_general_label() },
+    ...agentSpecialists.map((specialist) => ({
+      value: specialist.id === orchestratorId ? 'orchestration' : `specialist:${specialist.id}`,
+      label: specialist.name,
+    })),
+  ]);
+  const selectedAgentValue = $derived(
+    isTeamMode && orchestrator
+      ? 'orchestration'
+      : selectedSpecialist && !isTeamRoleId(selectedSpecialist)
+        ? `specialist:${selectedSpecialist}`
+        : 'general',
+  );
+
+  function handleAgentCommit(value: string | string[]) {
+    if (typeof value !== 'string') return;
+    if (value === 'orchestration') handleOrchestrationSelect();
+    else if (value === 'general') handleAgentSelect(null);
+    else if (value.startsWith('specialist:')) handleAgentSelect(value.slice('specialist:'.length));
+  }
 
   async function openSpecialistSettings() {
     specialistDropdownOpen = false;
@@ -802,8 +836,8 @@
 
 <div class="agent-settings" data-testid="initial-agent-picker">
   <div class="w-full">
-    <Menu.Root bind:open={specialistDropdownOpen}>
-      <Menu.Trigger>
+    <Popover.Root bind:open={specialistDropdownOpen}>
+      <Popover.Trigger>
         {#snippet child({ props })}
           <Button
             {...props}
@@ -815,94 +849,78 @@
             aria-labelledby="{agentLabelId} {agentValueId}"
             class={SETTINGS_TRIGGER_CLASS}
           >
-            <span
-              class="w-[5.5rem] shrink-0 truncate text-left text-muted-foreground"
-              id={agentLabelId}>{m.workspace_initialAgentPicker_agent_label()}</span
+            <span class={workspacePickerStyles.fieldLabel} id={agentLabelId}
+              >{m.workspace_initialAgentPicker_agent_label()}</span
             >
-            <span class="plain-agent-icon flex w-4 shrink-0 text-muted-foreground">
-              <AgentAvatar
-                agentId="blank"
-                variant="compact"
-                specialist={isTeamMode
-                  ? orchestratorId
-                  : currentSpecialistInfo
-                    ? displayedSpecialist
-                    : null}
-                icon={isTeamMode ? orchestrator?.icon : currentSpecialistInfo?.icon}
-              />
-            </span>
             <span class="min-w-0 flex-1 truncate text-left" id={agentValueId}
               >{agentDisplayLabel}</span
             >
           </Button>
         {/snippet}
-      </Menu.Trigger>
-      <Menu.Content
+      </Popover.Trigger>
+      <Popover.Content
+        role="dialog"
+        aria-label={m.workspace_initialAgentPicker_agent_label()}
         side={isMobile.current ? 'bottom' : 'left'}
         sideOffset={isMobile.current ? 4 : 24}
         align={isMobile.current ? 'end' : 'start'}
         preventScroll={false}
-        class="p-0 w-[360px] max-w-[calc(100vw-1rem)]"
-        maxHeight={SPECIALIST_MENU_MAX_HEIGHT}
-        aria-label={m.ui_dropdownMenu_ariaLabel()}
+        class="flex min-h-0 w-[360px] max-w-[calc(100vw-1rem)] flex-col overflow-hidden p-0"
+        style="max-height: {SPECIALIST_MENU_MAX_HEIGHT}"
+        portalProps={{ to: dialogPortalTarget() }}
+        strategy={dialogPortalTarget() ? 'absolute' : 'fixed'}
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          agentSearchInput?.focus();
+        }}
+        onkeydown={(event) => {
+          if (event.key === 'Enter') event.stopPropagation();
+        }}
       >
-        <div class={workspacePickerStyles.header}>
-          <p class={workspacePickerStyles.title}>
-            {m.workspace_initialAgentPicker_agent_label()}
-          </p>
-          <p class={workspacePickerStyles.description}>
-            {m.workspace_initialAgentPicker_agentMenu_description()}
-          </p>
-        </div>
-        <div class={workspacePickerStyles.rows}>
-          {#if orchestrator}
-            <Menu.RadioGroup
-              value={isTeamMode ? 'orchestration' : ''}
-              aria-label={m.workspace_initialAgentPicker_teamMode_label()}
-            >
-              <Menu.RadioItem
-                value="orchestration"
-                closeOnSelect
-                class={workspacePickerStyles.row}
-                data-specialist-option="orchestration"
-                onSelect={handleOrchestrationSelect}
-              >
-                {#snippet leading()}<span
-                    class={cn('plain-agent-icon flex', workspacePickerStyles.icon)}
-                  >
-                    <AgentAvatar
-                      agentId="blank"
-                      variant="compact"
-                      specialist={orchestrator.id}
-                      icon={orchestrator.icon}
-                    />
-                  </span>{/snippet}
-                <span class="min-w-0 flex-1 truncate">{orchestratorLabel}</span>
-                <span class="type-caption shrink-0 text-muted-foreground"
-                  >{m.workspace_initialAgentPicker_multiAgent_label()}</span
-                >
-              </Menu.RadioItem>
-            </Menu.RadioGroup>
-            <Menu.Separator class="mx-1 my-2" />
-          {/if}
-          <SpecialistOptions
-            compact
-            specialists={customSpecialists}
-            value={isTeamMode
-              ? (orchestratorId ?? '')
-              : isTeamRoleId(selectedSpecialist)
-                ? null
-                : selectedSpecialist}
-            onchange={handleAgentSelect}
-          />
-          <Menu.Separator class="mx-1 my-2" />
-          <Menu.Item class={workspacePickerStyles.row} onSelect={openSpecialistSettings}>
+        <Combobox
+          value={selectedAgentValue}
+          options={agentOptions}
+          open={specialistDropdownOpen}
+          bind:inputRef={agentSearchInput}
+          ariaLabel={m.workspace_initialAgentPicker_agent_label()}
+          searchPlaceholder={m.workspace_multiSelectSidebar_searchAgents_placeholder()}
+          emptyText={m.workspace_agentsList_noSearchResults_label()}
+          staticPosition
+          size="compact"
+          class="flex min-h-0 flex-1 flex-col gap-2 p-2"
+          inputClass="shrink-0 {workspacePickerStyles.search}"
+          rowClass={workspacePickerStyles.row}
+          viewportClass="min-h-0 max-h-none flex-1 p-0"
+          contentClass="flex min-h-0 max-h-none flex-1 flex-col border-0 shadow-none"
+          oncommit={handleAgentCommit}
+          onopenchange={(open) => {
+            if (!open) specialistDropdownOpen = false;
+          }}
+        >
+          {#snippet optionIcon(option)}
+            {@const specialist = agentSpecialists.find((item) =>
+              option.value === 'orchestration'
+                ? item.id === orchestratorId
+                : `specialist:${item.id}` === option.value,
+            )}
+            <span class={cn('plain-agent-icon flex', workspacePickerStyles.icon)}>
+              <AgentAvatar
+                agentId="blank"
+                variant="compact"
+                specialist={specialist?.id ?? null}
+                icon={specialist?.icon}
+              />
+            </span>
+          {/snippet}
+        </Combobox>
+        <div class="shrink-0 border-t border-border p-2">
+          <ActionRow class={workspacePickerStyles.row} onclick={openSpecialistSettings}>
             {#snippet leading()}<Fa icon={faPlus} class={workspacePickerStyles.icon} />{/snippet}
-            <span>{m.workspace_initialAgentPicker_manageSpecialists_label()}</span>
-          </Menu.Item>
+            {#snippet title()}{m.workspace_initialAgentPicker_manageSpecialists_label()}{/snippet}
+          </ActionRow>
         </div>
-      </Menu.Content>
-    </Menu.Root>
+      </Popover.Content>
+    </Popover.Root>
   </div>
 
   {#key activeDefaultModel}
@@ -914,7 +932,7 @@
       size="sm"
       fullWidth
       rowLabel={m.workspace_initialAgentPicker_model_label()}
-      genericModelIcon
+      showTriggerIcons={false}
       menuSide={isMobile.current ? 'bottom' : 'left'}
       menuSideOffset={24}
       menuMaxHeight={440}
