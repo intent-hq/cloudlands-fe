@@ -5,6 +5,7 @@
     type InlineVisualDraftDetail,
   } from '$features/inline-html/inline-visual-handoff';
   import { isInlineVisualSnapshot } from '$features/inline-html/inline-visual-types';
+  import { isTextEntryTarget } from '$lib/utils/text-entry';
   import { selectInlineVisualDrafts } from '$store/renderer/slices/inline-visuals/inline-visuals-selectors';
   import {
     inlineVisualDraftRequested,
@@ -4508,17 +4509,10 @@
   });
 
   // ── Auto-focus on mount (used by Chief of Staff) ──
-  function isEditableElement(element: Element | null): boolean {
-    if (!element) return false;
-    if (!(element instanceof HTMLElement)) return false;
-    if (element.isContentEditable) return true;
-    return Boolean(element.closest('input, textarea, select, [contenteditable="true"]'));
-  }
-
   function shouldSkipPromptAutoFocus(): boolean {
     if (typeof document === 'undefined') return true;
     const activeElement = document.activeElement;
-    return isEditableElement(activeElement) && !panelElement?.contains(activeElement);
+    return isTextEntryTarget(activeElement) && !panelElement?.contains(activeElement);
   }
 
   onMount(() => {

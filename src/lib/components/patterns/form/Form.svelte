@@ -2,6 +2,7 @@
   import type { Snippet } from 'svelte';
   import type { HTMLFormAttributes } from 'svelte/elements';
   import { cn } from '$lib/utils.js';
+  import { isMultilineTextEntryTarget } from '$lib/utils/text-entry';
 
   type KeyPolicy = 'submit' | 'ignore';
 
@@ -46,21 +47,10 @@
    * Chromium exposes `editContext` as `null` on every element, so only an attached
    * EditContext counts.
    */
-  function isMultilineInput(target: HTMLElement): boolean {
-    return (
-      target instanceof HTMLTextAreaElement ||
-      target.isContentEditable ||
-      ('editContext' in target && target.editContext != null) ||
-      (target.getAttribute('role') === 'textbox' &&
-        target.getAttribute('aria-multiline') === 'true' &&
-        target.getAttribute('aria-readonly') !== 'true')
-    );
-  }
-
   function handleKeydown(event: KeyboardEvent) {
     if (event.key !== 'Enter' || event.isComposing || event.defaultPrevented || isBusy) return;
     const target = event.target as HTMLElement;
-    const multiline = isMultilineInput(target);
+    const multiline = isMultilineTextEntryTarget(target);
     // Native controls and composite widgets own their Enter activation, even when
     // implicit submission is disabled. Check ancestors for nested button/link content.
     const interactive = target.closest(
