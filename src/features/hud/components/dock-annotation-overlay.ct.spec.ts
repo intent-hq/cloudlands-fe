@@ -153,11 +153,12 @@ test('the on-screen tool bar sits next to the dock and follows it, switches tool
   // The tool bar follows the dock without overlapping its new location.
   const notch = { shape: 'notch', rect: { x: 440, y: 0, width: 400, height: 56 } } as const;
   await component.update({ props: { fixture: 'live-marked', pick: 'permission', dock: notch } });
+  await expect(bar).toHaveAttribute('data-tips', 'below');
+  await expectAnimationsToSettle(bar, { subtree: false });
   await expect.poll(async () => (await bounds()).y >= notch.rect.y + notch.rect.height).toBe(true);
   const below = await bounds();
   // Under the notch there is no room above: tooltips open below the bar and stay
   // inside the work area (the long permission line included).
-  await expect(bar).toHaveAttribute('data-tips', 'below');
   await bar.getByRole('button', { name: 'Pick an element' }).hover();
   const tip = bar.getByRole('tooltip').filter({ hasText: 'Allow Accessibility' });
   await expect(tip).toHaveCSS('opacity', '1');
@@ -320,10 +321,7 @@ test('the on-screen tool bar sits next to the dock and follows it, switches tool
       .join('')}</body>`,
   );
   const combined = await page.screenshot();
-  if (process.env.DOCK_ARTIFACT_DIR)
-    await page.screenshot({
-      path: `${process.env.DOCK_ARTIFACT_DIR}/dock-annotate-toolbar-v2.png`,
-    });
+  await page.screenshot({ path: testInfo.outputPath('dock-annotate-toolbar-v2.png') });
   await testInfo.attach('dock-annotate-toolbar-v2', {
     body: combined,
     contentType: 'image/png',

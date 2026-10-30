@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { readFile, writeFile } from 'node:fs/promises';
 import { expect, test } from '../../../test/ct-test';
 import DockRailPreview from './dock-rail.preview.svelte';
 import { dockRailPreview, adaptiveDockFixture } from './dock-rail.preview-fixtures';
@@ -1815,8 +1814,6 @@ for (const reduced of [false, true]) {
           stage.name as string
         ];
         if (target) {
-          const dir = resolve(process.cwd(), '../../.intent/artifacts');
-          await mkdir(dir, { recursive: true });
           await expect
             .poll(() =>
               component.evaluate((root) =>
@@ -1826,9 +1823,11 @@ for (const reduced of [false, true]) {
               ),
             )
             .toBe(true);
-          await component.screenshot({
-            path: resolve(dir, `dock-drag-preview-${target}-${reduced ? 'light' : 'dark'}.png`),
-          });
+          const path = testInfo.outputPath(
+            `dock-drag-preview-${target}-${reduced ? 'light' : 'dark'}.png`,
+          );
+          await component.screenshot({ path });
+          await testInfo.attach(`dock-drag-preview-${target}`, { path, contentType: 'image/png' });
         }
       }
       await sampleFrames(1, 'last-held');

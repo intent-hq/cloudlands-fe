@@ -54,10 +54,7 @@ test('a missing permission marks the blocked control, whose click opens Settings
   await expect(tools.getByRole('button', { name: 'Box' })).not.toHaveAttribute('data-alert');
   await pick.hover();
   await expect(page.getByRole('tooltip')).toHaveText(accessibility);
-  if (process.env.DOCK_ARTIFACT_DIR)
-    await page.screenshot({
-      path: `${process.env.DOCK_ARTIFACT_DIR}/dock-permission-error-state.png`,
-    });
+  await page.screenshot({ path: testInfo.outputPath('dock-permission-error-state.png') });
   await testInfo.attach('dock-permission-error-state', {
     body: await page.screenshot(),
     contentType: 'image/png',

@@ -1,5 +1,3 @@
-import { mkdir } from 'node:fs/promises';
-import { resolve } from 'node:path';
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from '../../../test/ct-test';
 import DockRailPreview from './dock-rail.preview.svelte';
@@ -12,14 +10,14 @@ import {
   type DockPlacementSnapshot,
 } from '$shared/dock-placement';
 
-// The open/close video is a review artifact (copied to .intent/artifacts after the run).
+// The open/close video is retained in the Playwright report for review.
 test.use({ video: { mode: 'on', size: { width: 1000, height: 700 } } });
 
-const ARTIFACTS = resolve(process.cwd(), '../../.intent/artifacts');
-
 async function shot(page: Page, name: string): Promise<void> {
-  await mkdir(ARTIFACTS, { recursive: true });
-  await page.screenshot({ path: resolve(ARTIFACTS, `${name}.png`) });
+  const info = test.info();
+  const path = info.outputPath(`${name}.png`);
+  await page.screenshot({ path });
+  await info.attach(name, { path, contentType: 'image/png' });
 }
 
 /** Composer card insets from the conversation surface: the lane contract shared by placements. */

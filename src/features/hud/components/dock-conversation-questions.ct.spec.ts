@@ -1,12 +1,9 @@
 import { writeFile } from 'node:fs/promises';
-import path from 'node:path';
 import { expect, test } from '../../../test/ct-test';
 import ConversationWireHarness from './DockConversationWireHarness.svelte';
 
 const questionId = '55d59402-06d1-4c51-bec4-f37c0a1b4b23';
 const draft = 'Keep my ordinary chat draft.';
-// Reviewable captures land in the workspace artifact folder (monorepo root).
-const artifact = (name: string) => path.resolve(process.cwd(), '../../.intent/artifacts', name);
 
 test('notch answers canonical questions once and restores the ordinary chat draft', async ({
   mount,
@@ -45,7 +42,11 @@ test('notch answers canonical questions once and restores the ordinary chat draf
   expect(cardBox.x + cardBox.width).toBeLessThanOrEqual(laneBox.right + 1);
   expect(cardBox.y + cardBox.height).toBeLessThanOrEqual(laneBox.bottom + 1);
   await card.screenshot({ path: info.outputPath('notch-question.png') });
-  await component.screenshot({ path: artifact('dock-question-after.png') });
+  await component.screenshot({ path: test.info().outputPath('dock-question-after.png') });
+  await test.info().attach('dock-question-after.png', {
+    path: test.info().outputPath('dock-question-after.png'),
+    contentType: 'image/png',
+  });
   // Hide collapses the card above the composer and gives the composer back.
   await component.getByRole('button', { name: 'Hide', exact: true }).click();
   await expect(composerLayer).not.toHaveAttribute('inert', '');

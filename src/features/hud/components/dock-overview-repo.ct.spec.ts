@@ -1,10 +1,6 @@
-import { mkdir } from 'node:fs/promises';
-import { resolve } from 'node:path';
 import { expect, test } from '../../../test/ct-test';
 import DockRailPreview from './dock-rail.preview.svelte';
 import { dockRailPreview } from './dock-rail.preview-fixtures';
-
-const ARTIFACTS = resolve(process.cwd(), '../../.intent/artifacts');
 
 test('overview rows show org/repo alone, without the status message', async ({ mount, page }) => {
   await page.setViewportSize({ width: 720, height: 640 });
@@ -26,8 +22,10 @@ test('overview rows show org/repo alone, without the status message', async ({ m
   await component.getByTestId('dock-drag-handle').hover();
   await expect(component.getByTestId('dock-shell')).toHaveAttribute('data-reveal', '1');
   const overview = component.getByTestId('dock-overview');
-  await mkdir(ARTIFACTS, { recursive: true });
-  await overview.screenshot({ path: resolve(ARTIFACTS, 'dock-overview-repo.png') });
+  const info = test.info();
+  const path = info.outputPath('dock-overview-repo.png');
+  await overview.screenshot({ path });
+  await info.attach('dock-overview-repo', { path, contentType: 'image/png' });
 
   const first = workspaces[0].workspace;
   const row = overview.locator(`[data-dock-row][data-workspace-id="${first.id}"]`);

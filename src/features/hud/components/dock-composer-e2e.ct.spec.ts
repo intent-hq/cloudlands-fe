@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { writeFile } from 'node:fs/promises';
 import type { Page } from '@playwright/test';
 import { expect, test } from '../../../test/ct-test';
 import ComposerE2EHarness from './DockComposerE2EHarness.svelte';
@@ -13,13 +12,9 @@ import { SYNTHETIC_ELEMENTS } from './dock-composer-e2e-geometry';
  * sagas, editor and send; the daemon wire and the native helper are scripted
  * (no screen capture, microphone, recording or real message).
  *
- * Artifacts (DOCK_E2E_ARTIFACTS, default ../../.intent/artifacts):
+ * Artifacts are saved per test and attached to the Playwright report:
  * dock-composer-e2e-{1..6}.png, dock-composer-e2e.webm, dock-composer-e2e-payload.json.
  */
-const ARTIFACTS = resolve(
-  process.cwd(),
-  process.env.DOCK_E2E_ARTIFACTS ?? '../../.intent/artifacts',
-);
 const VIEW = { width: 452, height: 680 };
 
 test.use({ viewport: VIEW, video: { mode: 'on', size: VIEW } });
@@ -77,7 +72,10 @@ async function screen(page: Page, n: number): Promise<void> {
   await page.evaluate(() => document.fonts.ready);
   const box = await page.getByTestId('composer-e2e').boundingBox();
   if (!box) throw new Error('Missing harness bounds');
-  await page.screenshot({ path: resolve(ARTIFACTS, `dock-composer-e2e-${n}.png`), clip: box });
+  const info = test.info();
+  const path = info.outputPath(`dock-composer-e2e-${n}.png`);
+  await page.screenshot({ path, clip: box });
+  await info.attach(`dock-composer-e2e-${n}`, { path, contentType: 'image/png' });
 }
 
 const beat = (page: Page, ms = 700) => page.waitForTimeout(ms);
@@ -86,7 +84,6 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
   mount,
   page,
 }) => {
-  await mkdir(ARTIFACTS, { recursive: true });
   await page.emulateMedia({ colorScheme: 'dark' });
   const component = await mount(ComposerE2EHarness);
   const footer = component.locator('[data-dock-media-footer]');
@@ -284,7 +281,7 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
         : rest;
     });
   await writeFile(
-    resolve(ARTIFACTS, 'dock-composer-e2e-payload.json'),
+    test.info().outputPath('dock-composer-e2e-payload.json'),
     `${JSON.stringify(
       {
         provenance: {
@@ -299,6 +296,11 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
       2,
     )}\n`,
   );
+
+  await test.info().attach('dock-composer-e2e-payload', {
+    path: test.info().outputPath('dock-composer-e2e-payload.json'),
+    contentType: 'application/json',
+  });
 
   const params = send.params as {
     message?: string;
@@ -320,7 +322,11 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
 
   const video = page.video();
   await page.close();
-  if (video) await video.saveAs(resolve(ARTIFACTS, 'dock-composer-e2e.webm'));
+  if (video) {
+    const path = test.info().outputPath('dock-composer-e2e.webm');
+    await video.saveAs(path);
+    await test.info().attach('dock-composer-e2e', { path, contentType: 'video/webm' });
+  }
 });
 
 test('closing retires transient media and preserves words and completed captures', async ({

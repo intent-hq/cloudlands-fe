@@ -1,5 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { writeFile } from 'node:fs/promises';
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from '../../../test/ct-test';
 import DockRailPreview from './dock-rail.preview.svelte';
@@ -21,13 +20,12 @@ import {
 /**
  * Motion audit: per-frame bounds of the moving surface, frame gaps, long tasks and
  * layouts forced inside animation frames (from a Chromium trace). Each motion writes
- * its stats to .intent/artifacts/dock-motion-audit/<phase>/<name>.json and keeps a video.
+ * its stats to its Playwright output directory, attaches the JSON and keeps a video.
  * The guarded contracts: no discontinuity at the start or end of an open/close.
  */
 test.use({ video: { mode: 'on', size: { width: 1000, height: 700 } } });
 
 const PHASE = process.env.DOCK_MOTION_AUDIT_PHASE ?? 'after';
-const OUT = resolve(process.cwd(), '../../.intent/artifacts/dock-motion-audit', PHASE);
 
 type Rect = [number, number, number, number] | null;
 interface Frame {
@@ -261,8 +259,10 @@ async function audit(
     layouts: layoutsInFrames(trace),
     slowTasks: slowTasks(trace),
   };
-  await mkdir(OUT, { recursive: true });
-  await writeFile(resolve(OUT, `${name}.json`), JSON.stringify({ stats, frames }, null, 2));
+  const info = test.info();
+  const path = info.outputPath(`motion-${PHASE}-${name}.json`);
+  await writeFile(path, JSON.stringify({ stats, frames }, null, 2));
+  await info.attach(name, { path, contentType: 'application/json' });
   return stats;
 }
 

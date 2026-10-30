@@ -1,4 +1,3 @@
-import { resolve } from 'node:path';
 import { expect, test } from '../../../test/ct-test';
 import DockRailPreview from './dock-rail.preview.svelte';
 import { dockRailPreview } from './dock-rail.preview-fixtures';
@@ -35,13 +34,17 @@ test('compact header shows the same status dots and counts as the rows', async (
   const box = await shell.boundingBox();
   if (!box) throw new Error('Missing shell bounds');
   await page.screenshot({
-    path: resolve(process.cwd(), '../../.intent/artifacts/dock-header-status-groups.png'),
+    path: test.info().outputPath('dock-header-status-groups.png'),
     clip: {
       x: box.x - 12,
       y: Math.max(0, box.y - 12),
       width: box.width + 24,
       height: box.height + 24,
     },
+  });
+  await test.info().attach('dock-header-status-groups.png', {
+    path: test.info().outputPath('dock-header-status-groups.png'),
+    contentType: 'image/png',
   });
   const headerGroups = await header.locator('[data-status-group]').evaluateAll((groups) =>
     groups.map((group) => ({

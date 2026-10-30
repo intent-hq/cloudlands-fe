@@ -42,8 +42,12 @@ test('fills with serial five-row pages despite virtual spacers, then stays at th
     before.requests.length,
   );
   await page.screenshot({
-    path: '../../.intent/artifacts/five-message-filled.png',
+    path: test.info().outputPath('five-message-filled.png'),
     fullPage: true,
+  });
+  await test.info().attach('five-message-filled.png', {
+    path: test.info().outputPath('five-message-filled.png'),
+    contentType: 'image/png',
   });
 });
 
@@ -329,7 +333,11 @@ test('keeps the newest row anchored after each controlled older page', async ({
     body: JSON.stringify({ bottom, samples }),
     contentType: 'application/json',
   });
-  await page.screenshot({ path: '../../.intent/artifacts/chat-pages-after.png', fullPage: true });
+  await page.screenshot({ path: test.info().outputPath('chat-pages-after.png'), fullPage: true });
+  await test.info().attach('chat-pages-after.png', {
+    path: test.info().outputPath('chat-pages-after.png'),
+    contentType: 'image/png',
+  });
   expect(Math.max(...samples.flat().map((frame) => Math.abs(frame.bottom - bottom)))).toBeLessThan(
     3,
   );
@@ -388,11 +396,16 @@ for (const total of [1, 19, 20, 21]) {
     const requests = async () =>
       JSON.parse(await component.getByTestId('requests').innerText()).requests;
     expect(await requests()).toHaveLength(0);
-    if (total === 21)
+    if (total === 21) {
       await page.screenshot({
-        path: '../../.intent/artifacts/chat-progressive-partial.png',
+        path: test.info().outputPath('chat-progressive-partial.png'),
         fullPage: true,
       });
+      await test.info().attach('chat-progressive-partial.png', {
+        path: test.info().outputPath('chat-progressive-partial.png'),
+        contentType: 'image/png',
+      });
+    }
     for (let received = 2; received <= Math.min(20, total); received++) {
       await component.update({
         props: { progressive: total, height: 900, controlled: true, received },
@@ -421,11 +434,16 @@ for (const total of [1, 19, 20, 21]) {
     });
     await expect(newest).toBeVisible();
     expect(await requests()).toHaveLength(0);
-    if (total === 1)
+    if (total === 1) {
       await page.screenshot({
-        path: '../../.intent/artifacts/chat-progressive-short.png',
+        path: test.info().outputPath('chat-progressive-short.png'),
         fullPage: true,
       });
+      await test.info().attach('chat-progressive-short.png', {
+        path: test.info().outputPath('chat-progressive-short.png'),
+        contentType: 'image/png',
+      });
+    }
     if (total === 21) {
       await expect(component.getByText('Message 11.', { exact: true })).toBeVisible();
       const layout = await viewport.evaluate((node) =>
@@ -448,8 +466,12 @@ for (const total of [1, 19, 20, 21]) {
         if (index > 0) expect(layout[index].top).toBeGreaterThan(layout[index - 1].top);
       }
       await page.screenshot({
-        path: '../../.intent/artifacts/chat-progressive-complete.png',
+        path: test.info().outputPath('chat-progressive-complete.png'),
         fullPage: true,
+      });
+      await test.info().attach('chat-progressive-complete.png', {
+        path: test.info().outputPath('chat-progressive-complete.png'),
+        contentType: 'image/png',
       });
       // The pinned user prompt can cover the top assistant line at the bottom
       // position. Scroll to make the complete turn readable in the evidence.
@@ -458,8 +480,12 @@ for (const total of [1, 19, 20, 21]) {
         ratio: 1,
       });
       await page.screenshot({
-        path: '../../.intent/artifacts/chat-progressive-readable.png',
+        path: test.info().outputPath('chat-progressive-readable.png'),
         fullPage: true,
+      });
+      await test.info().attach('chat-progressive-readable.png', {
+        path: test.info().outputPath('chat-progressive-readable.png'),
+        contentType: 'image/png',
       });
     }
   });

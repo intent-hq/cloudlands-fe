@@ -1,4 +1,3 @@
-import path from 'node:path';
 import type { Locator } from '@playwright/test';
 import { expect, test } from '../../../test/ct-test';
 import ConversationWireHarness from './DockConversationWireHarness.svelte';
@@ -9,7 +8,6 @@ const png =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aL1sAAAAASUVORK5CYII=';
 const visibleNotices = '[data-dock-conversation-notifications] [data-dock-notice]';
 // Reviewable banner captures land in the workspace artifact folder (monorepo root).
-const artifact = (name: string) => path.resolve(process.cwd(), '../../.intent/artifacts', name);
 
 type Rect = { x: number; y: number; width: number; height: number };
 
@@ -151,7 +149,11 @@ test('dock failed image read shows an error and accepts a later paste without lo
   await expect(error).toBeInViewport({ ratio: 1 });
   await expect(error).toHaveAttribute('role', 'alert');
   await expectBannerPlacement(component, error);
-  await component.screenshot({ path: artifact('dock-banner-error.png') });
+  await component.screenshot({ path: test.info().outputPath('dock-banner-error.png') });
+  await test.info().attach('dock-banner-error.png', {
+    path: test.info().outputPath('dock-banner-error.png'),
+    contentType: 'image/png',
+  });
   await expect(
     component.getByRole('button', { name: 'View retry.png full size', exact: true }),
   ).toHaveCount(0);
@@ -328,7 +330,11 @@ test('dock banner shows one notice at a time with an inline action and keeps the
   await expectBannerPlacement(component, banner);
   // The banner overlays the transcript instead of resizing it.
   expect(await transcript.boundingBox()).toEqual(before);
-  await component.screenshot({ path: artifact('dock-banner-action.png') });
+  await component.screenshot({ path: test.info().outputPath('dock-banner-action.png') });
+  await test.info().attach('dock-banner-action.png', {
+    path: test.info().outputPath('dock-banner-action.png'),
+    contentType: 'image/png',
+  });
 
   // Success notices keep their auto-dismiss lifetime; Undo still works while shown.
   await undo.click();

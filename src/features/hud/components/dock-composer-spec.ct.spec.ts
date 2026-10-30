@@ -1,22 +1,18 @@
-import { mkdir } from 'node:fs/promises';
-import { resolve } from 'node:path';
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from '../../../test/ct-test';
 import ComposerSpecHarness from './DockComposerSpecHarness.svelte';
 
 /** Owner-spec screens rendered by the production panel, composer, footer and tiles. */
-const ARTIFACTS = resolve(
-  process.cwd(),
-  process.env.DOCK_SPEC_ARTIFACTS ?? '../../.intent/artifacts',
-);
 const SUFFIX = process.env.DOCK_SPEC_SUFFIX ?? '';
 
 async function capture(page: Page, name: string): Promise<void> {
   const box = await page.getByTestId('composer-spec').boundingBox();
   if (!box) throw new Error('Missing harness bounds');
-  await mkdir(ARTIFACTS, { recursive: true });
   // Page clip so portaled tooltips and the tool popover are included.
-  await page.screenshot({ path: resolve(ARTIFACTS, `${name}${SUFFIX}.png`), clip: box });
+  const info = test.info();
+  const path = info.outputPath(`${name}${SUFFIX}.png`);
+  await page.screenshot({ path, clip: box });
+  await info.attach(name, { path, contentType: 'image/png' });
 }
 
 /** Left/right edges of the first tile, the editor text and the footer's outer controls. */
