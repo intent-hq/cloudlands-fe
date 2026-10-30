@@ -36,6 +36,7 @@ vi.mock('../main/embedded-browser-cdp-service', () => ({
     claimTab: vi.fn().mockReturnValue({ status: 'claimed', alreadyOwned: false }),
     resizeTab: vi.fn().mockReturnValue(undefined),
     resolveTabOwner: vi.fn().mockResolvedValue(undefined),
+    touchAgentDrawing: vi.fn(),
     listAllTabs: vi.fn().mockResolvedValue({ tabs: [], stale: false }),
     // Default: capture targets are already mounted so the mount-on-demand
     // path (monorepo#4103) stays out of unrelated tests.
@@ -3958,6 +3959,93 @@ describe('browser-action-executor', () => {
 
       expect(result.success).toBe(true);
       expect(embeddedBrowserCdp.screenshot).toHaveBeenCalled();
+    });
+
+    // Agents measuring animation or timing need their own tab at full frame
+    // rate: every content action on an owned tab takes the agent drawing
+    // hold, before the action and again after it (idle window starts at the
+    // action's end).
+    it('an owner evaluate keeps its tab drawing before and after the action', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValue('agent-1');
+      const order: string[] = [];
+      vi.mocked(embeddedBrowserCdp.touchAgentDrawing).mockImplementation(() => {
+        order.push('touch');
+      });
+      vi.mocked(embeddedBrowserCdp.evaluate).mockImplementationOnce(async () => {
+        order.push('evaluate');
+        return 2;
+      });
+
+      const result = await executeActions(
+        { actions: [{ action: 'evaluate', tabId: 'tab-x', expression: '1 + 1' }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(order).toEqual(['touch', 'evaluate', 'touch']);
+      expect(embeddedBrowserCdp.touchAgentDrawing).toHaveBeenCalledWith('tab-x');
+    });
+
+    it('a failing owner action still refreshes the drawing hold afterwards', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValue('agent-1');
+      vi.mocked(embeddedBrowserCdp.evaluate).mockRejectedValueOnce(new Error('boom'));
+
+      const result = await executeActions(
+        { actions: [{ action: 'evaluate', tabId: 'tab-x', expression: 'x' }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(false);
+      expect(embeddedBrowserCdp.touchAgentDrawing).toHaveBeenCalledTimes(2);
+    });
+
+    it('no drawing hold for non-owners, user calls, or tab lifecycle actions', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValueOnce('agent-owner');
+      await executeActions(
+        { actions: [{ action: 'evaluate', tabId: 'tab-x', expression: '1' }] },
+        mockOpenTabFn,
+        'agent-intruder',
+        'ws-1',
+      );
+      await executeActions(
+        { actions: [{ action: 'evaluate', tabId: 'tab-x', expression: '1' }] },
+        mockOpenTabFn,
+        undefined,
+        'ws-1',
+      );
+      vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValue('agent-1');
+      await executeActions(
+        { actions: [{ action: 'closeTab', tabId: 'tab-x' }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(embeddedBrowserCdp.touchAgentDrawing).not.toHaveBeenCalled();
+    });
+
+    it('capture-session steps keep the session tab drawing for its owner', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      const { browserCapture } = await import('../main/browser-capture-service');
+      vi.mocked(browserCapture.getSessionTabId).mockReturnValue('tab-session');
+
+      await executeActions(
+        { actions: [{ action: 'endCapture', sessionId: 'sess-1' }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(browserCapture.assertSessionOwner).toHaveBeenCalledWith('sess-1', 'ws-1', 'agent-1');
+      expect(embeddedBrowserCdp.touchAgentDrawing).toHaveBeenCalledWith('tab-session');
+      vi.mocked(browserCapture.getSessionTabId).mockReturnValue(undefined);
     });
 
     it("user-initiated calls (no agentId) are unrestricted on any agent's tab", async () => {

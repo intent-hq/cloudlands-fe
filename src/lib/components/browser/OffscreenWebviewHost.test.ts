@@ -14,6 +14,7 @@ const {
   mountedLeasesStore,
   recoveryStore,
   navigationStore,
+  agentDrawingStore,
   dispatchMock,
 } = vi.hoisted(() => {
   // Minimal svelte-store-contract writable (vi.hoisted runs before imports).
@@ -43,6 +44,7 @@ const {
     navigationStore: miniWritable<Record<string, { url: string; kind: 'observed' | 'requested' }>>(
       {},
     ),
+    agentDrawingStore: miniWritable<Record<string, true>>({}),
     dispatchMock: vi.fn(),
   };
 });
@@ -59,6 +61,7 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
   selectMountedBrowserTabLeases: () => mountedLeasesStore,
   selectBrowserTabRecoveryRequests: () => recoveryStore,
   selectBrowserTabNavigations: () => navigationStore,
+  selectBrowserTabsAgentDrawing: () => agentDrawingStore,
 }));
 
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-slice', () => ({
@@ -113,6 +116,7 @@ describe('OffscreenWebviewHost', () => {
     mountedLeasesStore.set({});
     recoveryStore.set({});
     navigationStore.set({});
+    agentDrawingStore.set({});
     dispatchMock.mockClear();
     dispatchMock.mockImplementation((action) => {
       const initial = tabStateReducer(undefined, { type: '@@INIT' });
@@ -951,11 +955,47 @@ describe('OffscreenWebviewHost', () => {
     expect(host.style.left).not.toBe('-10000px');
     expect(host.className).toContain('left-0');
     expect(host.className).toContain('top-0');
-    expect(host.className).toContain('overflow-hidden');
     expect(host.className).toContain('opacity-0');
     expect(host.className).toContain('pointer-events-none');
     // inert keeps the focusable webviews out of the tab order.
     expect(host.hasAttribute('inert')).toBe(true);
+    // Each idle guest is clipped to its own 1x1 box at the origin.
+    const box = container.querySelector('[data-offscreen-webview-box="tab-bg"]') as HTMLElement;
+    expect(box.style.width).toBe('1px');
+    expect(box.style.height).toBe('1px');
+    expect(box.hasAttribute('data-agent-drawing')).toBe(false);
+  });
+
+  // An agent acting on a hidden tab needs full frame rate, but Chromium
+  // pauses or slows a frame whose visible box is 1x1 (~1 fps measured).
+  // Main's agent drawing hold (`browser:agent-drawing`) grows only that
+  // tab's box to full size, still invisible, without reloading the guest.
+  it('gives a tab a full-size box while an agent is drawing it, then parks it again', async () => {
+    layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-a' }, { id: 'tab-b' }]) });
+    const { container } = render(OffscreenWebviewHost, {
+      props: { excludedWorkspaceIds: new Set() },
+    });
+    await waitFor(() => expect(mountedTabIds(container).sort()).toEqual(['tab-a', 'tab-b']));
+    const box = (tabId: string) =>
+      container.querySelector(`[data-offscreen-webview-box="${tabId}"]`) as HTMLElement;
+    const webviewA = container.querySelector('[data-offscreen-webview-tab="tab-a"]');
+
+    agentDrawingStore.set({ 'tab-a': true });
+    await tick();
+    expect(box('tab-a').hasAttribute('data-agent-drawing')).toBe(true);
+    expect(box('tab-a').style.width).toBe('1280px');
+    expect(box('tab-a').style.height).toBe('800px');
+    // Only the agent's tab grows; the other stays parked.
+    expect(box('tab-b').style.width).toBe('1px');
+    // Same guest element: growing the box never reloads the page.
+    expect(container.querySelector('[data-offscreen-webview-tab="tab-a"]')).toBe(webviewA);
+
+    agentDrawingStore.set({});
+    await tick();
+    expect(box('tab-a').hasAttribute('data-agent-drawing')).toBe(false);
+    expect(box('tab-a').style.width).toBe('1px');
+    expect(box('tab-a').style.height).toBe('1px');
+    expect(container.querySelector('[data-offscreen-webview-tab="tab-a"]')).toBe(webviewA);
   });
 
   it('skips tabs with non-loadable URLs', async () => {

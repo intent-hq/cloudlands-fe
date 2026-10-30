@@ -120,6 +120,16 @@ export type BrowserListTabsRequestPayload = WorkspaceCommandPayload & {
   recoverTabId?: string;
 };
 
+/**
+ * Main's agent drawing hold started (active: true) or ended for a tab: the
+ * offscreen host gives it a full-size invisible box so it draws at full
+ * frame rate. Window-scoped (sent to the guest's host), so no workspaceId.
+ */
+export type BrowserAgentDrawingPayload = {
+  tabId: string;
+  active: boolean;
+};
+
 export type BrowserTabOwnerChangedPayload = WorkspaceCommandPayload & {
   tabId: string;
   /** The agent that now owns the tab (claimTab / agent openTab, monorepo#2857). */

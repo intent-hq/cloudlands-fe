@@ -18,6 +18,7 @@ import {
   type BrowserShowTabPayload,
   type BrowserTabNavigatedPayload,
   type BrowserTabOwnerChangedPayload,
+  type BrowserAgentDrawingPayload,
 } from '$shared/ipc/workspace-command-payloads';
 import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
 import { routedWorkspaceId } from '../../../utils/routed-workspace-id';
@@ -52,6 +53,7 @@ import {
   selectWorkspaceTabOrder,
 } from '../../tab-state/tab-state-selectors';
 import {
+  browserTabAgentDrawingChanged,
   observeBrowserTabNavigation,
   requestBrowserTabNavigation,
   requestBrowserTabRecovery,
@@ -684,6 +686,11 @@ function* listBrowserTabs(data: BrowserListTabsRequestPayload | null): SagaGener
   }
 }
 
+function* agentDrawingChanged(data: BrowserAgentDrawingPayload | null): SagaGenerator<void> {
+  if (typeof data?.tabId !== 'string' || data.tabId.length === 0) return;
+  yield* put(browserTabAgentDrawingChanged(data.tabId, data.active === true));
+}
+
 function* tabOwnerChanged(data: BrowserTabOwnerChangedPayload | null): SagaGenerator<void> {
   if (
     !isWorkspaceCommandPayload(data) ||
@@ -907,6 +914,16 @@ export function* browserIpcSaga(): SagaGenerator<void> {
           bufferPolicy: {
             kind: 'lossless',
             rationale: 'Every ownership change must be persisted with the tab in arrival order.',
+          },
+        },
+      ),
+      yield* takeEveryFromElectronChannel<BrowserAgentDrawingPayload | null>(
+        'browser:agent-drawing',
+        agentDrawingChanged,
+        {
+          bufferPolicy: {
+            kind: 'lossless',
+            rationale: 'Drawing start and end must pair up or a tab would stay at full frame rate.',
           },
         },
       ),

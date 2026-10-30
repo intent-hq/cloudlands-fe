@@ -1167,6 +1167,174 @@ describe('screenshot keeps painting while the app window is minimized', () => {
   });
 });
 
+// An agent measuring animation, flicker or timing in its own hidden tab
+// saw ~1 frame per second (cloudlands-fe#3861 investigation). While the
+// agent acts on a tab it owns, the tab keeps drawing at full frame rate:
+// the capture hold keeps the guest and its window unthrottled, and the host
+// window is told to give the guest a full-size invisible box.
+describe('agent drawing hold', () => {
+  function heldGuest(id: number) {
+    const host = {
+      id: 1000 + id,
+      backgroundThrottling: true,
+      isDestroyed: () => false,
+      send: vi.fn(),
+    };
+    const guest = Object.assign(fakeWebview(id, 'http://agent/'), {
+      backgroundThrottling: true,
+      hostWebContents: host,
+      removeListener: vi.fn(),
+    });
+    return { guest, host };
+  }
+
+  function agentDrawingMessages(host: { send: ReturnType<typeof vi.fn> }) {
+    return host.send.mock.calls
+      .filter(([channel]) => channel === IPC_CHANNELS.BROWSER.AGENT_DRAWING)
+      .map(([, payload]) => payload);
+  }
+
+  async function loadIdleMs() {
+    const { AGENT_DRAWING_IDLE_MS } = await import('../main/embedded-browser-cdp-service');
+    return AGENT_DRAWING_IDLE_MS;
+  }
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('keeps an owned tab drawing until the idle window lapses, then restores throttling', async () => {
+    const service = await loadService();
+    const idleMs = await loadIdleMs();
+    const { guest, host } = heldGuest(81);
+    mocks.fromId.mockReturnValue(guest);
+    service.registerTab('tab-agent', 81);
+    service.setTabOwner('tab-agent', 'agent-1');
+    const listenersBefore = guest.once.mock.calls.length;
+
+    service.touchAgentDrawing('tab-agent');
+    const onDestroyed = guest.once.mock.calls[listenersBefore][1];
+
+    expect(service.hasAgentDrawingHold('tab-agent')).toBe(true);
+    expect(guest.backgroundThrottling).toBe(false);
+    expect(host.backgroundThrottling).toBe(false);
+    // Presence is told before the window's visibility changes.
+    expect(host.send).toHaveBeenCalledWith(IPC_CHANNELS.BROWSER.CAPTURE_DRAWING, {
+      active: true,
+    });
+    expect(agentDrawingMessages(host)).toEqual([{ tabId: 'tab-agent', active: true }]);
+
+    // Each action restarts the idle window.
+    vi.advanceTimersByTime(idleMs - 1);
+    service.touchAgentDrawing('tab-agent');
+    vi.advanceTimersByTime(idleMs - 1);
+    expect(service.hasAgentDrawingHold('tab-agent')).toBe(true);
+    expect(guest.backgroundThrottling).toBe(false);
+    // Refreshing the hold neither re-sends nor stacks a destroyed listener.
+    expect(agentDrawingMessages(host)).toHaveLength(1);
+    expect(guest.once).toHaveBeenCalledTimes(listenersBefore + 1);
+
+    vi.advanceTimersByTime(1);
+    expect(service.hasAgentDrawingHold('tab-agent')).toBe(false);
+    expect(guest.backgroundThrottling).toBe(true);
+    expect(host.backgroundThrottling).toBe(true);
+    expect(host.send).toHaveBeenCalledWith(IPC_CHANNELS.BROWSER.CAPTURE_DRAWING, {
+      active: false,
+    });
+    expect(agentDrawingMessages(host)).toEqual([
+      { tabId: 'tab-agent', active: true },
+      { tabId: 'tab-agent', active: false },
+    ]);
+    expect(guest.removeListener).toHaveBeenCalledWith('destroyed', onDestroyed);
+  });
+
+  it('never holds a tab no agent owns (user tabs keep normal throttling)', async () => {
+    const service = await loadService();
+    const { guest, host } = heldGuest(82);
+    mocks.fromId.mockReturnValue(guest);
+    service.registerTab('tab-user', 82);
+
+    service.touchAgentDrawing('tab-user');
+
+    expect(service.hasAgentDrawingHold('tab-user')).toBe(false);
+    expect(guest.backgroundThrottling).toBe(true);
+    expect(host.backgroundThrottling).toBe(true);
+    expect(host.send).not.toHaveBeenCalled();
+  });
+
+  it('releases at once when the tab unmounts, closes, or its guest is destroyed', async () => {
+    const service = await loadService();
+    const { guest, host } = heldGuest(83);
+    mocks.fromId.mockReturnValue(guest);
+    service.registerTab('tab-agent', 83);
+    service.setTabOwner('tab-agent', 'agent-1');
+
+    service.touchAgentDrawing('tab-agent');
+    service.unregisterTab('tab-agent');
+    expect(service.hasAgentDrawingHold('tab-agent')).toBe(false);
+    expect(guest.backgroundThrottling).toBe(true);
+    expect(host.backgroundThrottling).toBe(true);
+
+    service.registerTab('tab-agent', 83);
+    service.touchAgentDrawing('tab-agent');
+    service.clearTabOwnership('tab-agent');
+    expect(service.hasAgentDrawingHold('tab-agent')).toBe(false);
+    expect(guest.backgroundThrottling).toBe(true);
+
+    service.setTabOwner('tab-agent', 'agent-1');
+    service.touchAgentDrawing('tab-agent');
+    const onDestroyed = guest.once.mock.calls.at(-1)![1] as () => void;
+    onDestroyed();
+    expect(service.hasAgentDrawingHold('tab-agent')).toBe(false);
+    expect(agentDrawingMessages(host).at(-1)).toEqual({ tabId: 'tab-agent', active: false });
+  });
+
+  it('moves the hold when the tab is re-registered to a new guest', async () => {
+    const service = await loadService();
+    const first = heldGuest(84);
+    const second = heldGuest(85);
+    mocks.fromId.mockImplementation((id) =>
+      id === 84 ? first.guest : id === 85 ? second.guest : undefined,
+    );
+    service.registerTab('tab-agent', 84);
+    service.setTabOwner('tab-agent', 'agent-1');
+    service.touchAgentDrawing('tab-agent');
+
+    service.registerTab('tab-agent', 85);
+    service.touchAgentDrawing('tab-agent');
+
+    expect(first.guest.backgroundThrottling).toBe(true);
+    expect(first.host.backgroundThrottling).toBe(true);
+    expect(agentDrawingMessages(first.host).at(-1)).toEqual({ tabId: 'tab-agent', active: false });
+    expect(second.guest.backgroundThrottling).toBe(false);
+    expect(agentDrawingMessages(second.host)).toEqual([{ tabId: 'tab-agent', active: true }]);
+  });
+
+  it('a capture inside the hold does not end it early', async () => {
+    const service = await loadService();
+    const { host } = heldGuest(86);
+    const wc = Object.assign(
+      fakeCdpWebview(86, {
+        'Page.getLayoutMetrics': {
+          layoutViewport: { clientWidth: 800, clientHeight: 600 },
+          cssVisualViewport: { clientWidth: 800, clientHeight: 600, pageX: 0, pageY: 0 },
+        },
+        'Page.captureScreenshot': { data: JPEG_1PX },
+      }),
+      { backgroundThrottling: true, hostWebContents: host, removeListener: vi.fn() },
+    );
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-agent', 86);
+    service.setTabOwner('tab-agent', 'agent-1');
+    service.touchAgentDrawing('tab-agent');
+
+    await expect(service.screenshot('tab-agent')).resolves.toMatchObject({ base64: JPEG_1PX });
+
+    expect(wc.backgroundThrottling).toBe(false);
+    expect(host.backgroundThrottling).toBe(false);
+    expect(service.hasAgentDrawingHold('tab-agent')).toBe(true);
+  });
+});
+
 describe('screenshot Page-domain hang fallback (#3154)', () => {
   const LAYOUT_METRICS = {
     layoutViewport: { clientWidth: 800, clientHeight: 600 },

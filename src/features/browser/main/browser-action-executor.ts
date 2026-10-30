@@ -749,6 +749,24 @@ const OWNERSHIP_ENFORCED_ACTIONS = new Set([
 ]);
 
 /**
+ * Content actions that keep the agent's own tab drawing at full frame rate
+ * for a short idle window (see EmbeddedBrowserCdpService.touchAgentDrawing),
+ * so animation and timing measured across consecutive actions are real.
+ * Every entry is ownership-enforced, so the hold only ever lands on a tab
+ * the calling agent owns. Session actions (captureStep, ...) also hold the
+ * session's tab once the session owner is confirmed.
+ */
+const AGENT_DRAWING_ACTIONS = new Set([
+  'focusTab',
+  'getAccessibilityTree',
+  'screenshot',
+  'evaluate',
+  'snapshot',
+  'startSession',
+  'navigate',
+]);
+
+/**
  * Per-`executeActions` memo of the owner display-name lookup, keyed by agent
  * id and single-flight per id (a shared in-flight promise), so a batch with N
  * distinct owners costs at most N `agent.get` point reads — never a
@@ -912,6 +930,7 @@ async function executeAction(
   // methods apply — and reject agent calls on tabs the agent does not own.
   // A missing target falls through so the action fails with its own
   // descriptive "no tabs" error.
+  let drawingTabId: string | undefined;
   if (agentId && OWNERSHIP_ENFORCED_ACTIONS.has(action.action)) {
     const targetTabId = tabId ?? embeddedBrowserCdp.getFirstTab()?.tabId;
     if (targetTabId) {
@@ -919,16 +938,25 @@ async function executeAction(
       if (owner !== agentId) {
         return notOwnerResult(action.action, targetTabId, owner, workspaceId, ownerNameCache);
       }
+      if (AGENT_DRAWING_ACTIONS.has(action.action)) drawingTabId = targetTabId;
     }
   }
 
+  // Agent activity keeps the owned tab drawing at full frame rate: touched
+  // before the action and again after it, so the idle window counts from
+  // the action's end (and covers a tab the action mounted on demand).
+  if (drawingTabId) embeddedBrowserCdp.touchAgentDrawing(drawingTabId);
   try {
-    if ('sessionId' in action)
-      browserCapture.assertSessionOwner(
-        action.sessionId,
-        requireWorkspaceId(workspaceId, action.action),
-        agentId,
-      );
+    if ('sessionId' in action) {
+      const sessionWorkspaceId = requireWorkspaceId(workspaceId, action.action);
+      browserCapture.assertSessionOwner(action.sessionId, sessionWorkspaceId, agentId);
+      // Capture steps drive the session's tab, which startSession only
+      // opened on a tab the agent owns.
+      if (agentId) {
+        drawingTabId ??= browserCapture.getSessionTabId(action.sessionId, sessionWorkspaceId);
+        if (drawingTabId) embeddedBrowserCdp.touchAgentDrawing(drawingTabId);
+      }
+    }
     switch (action.action) {
       case 'listTabs': {
         const scope = action.scope ?? 'all';
@@ -1945,6 +1973,8 @@ async function executeAction(
       // i18n-ignore (agent-facing protocol error, not user-facing)
       error: error instanceof Error ? error.message : 'Unknown error',
     };
+  } finally {
+    if (drawingTabId) embeddedBrowserCdp.touchAgentDrawing(drawingTabId);
   }
 }
 
