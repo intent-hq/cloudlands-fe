@@ -249,7 +249,7 @@ test('Home board uses the same scope and restores keyboard focus after narrow pr
   await component.getByRole('combobox', { name: 'Status', exact: true }).click();
   await page.getByRole('option', { name: 'Running', exact: true }).click();
   await expect(board.locator('[data-home-workspace]')).toHaveCount(1);
-  await expect(board.getByRole('region')).toHaveCount(4);
+  await expect(board.locator('section:not([data-home-set-aside])')).toHaveCount(4);
   expect(await board.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await testInfo.attach('home-board', { body: await page.screenshot(), contentType: 'image/png' });
 });

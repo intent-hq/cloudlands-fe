@@ -68,14 +68,12 @@ export function* homeWorkspacePersistenceSaga(): SagaGenerator<void> {
     buffers.expanding<Action>(16),
   );
   let currentScope: string | null | undefined;
-  let lastWritten: string | undefined;
   let action: Action | undefined;
   try {
     while (true) {
       const scope = yield* select(selectHomePersistenceScope.select);
       if (scope !== currentScope) {
         currentScope = scope;
-        lastWritten = undefined;
         const stored = scope ? yield* call(getLocalStorageJSON<unknown>, scope) : undefined;
         // A mocked/asynchronous storage adapter may resolve after identity changes.
         if ((yield* select(selectHomePersistenceScope.select)) !== scope) continue;
@@ -99,12 +97,11 @@ export function* homeWorkspacePersistenceSaga(): SagaGenerator<void> {
             }
           }
           const serialized = JSON.stringify(persistedHomeState({ ...state, setAside }));
-          if (serialized !== lastWritten) {
+          if (serialized !== (yield* call(getLocalStorageItem, scope))) {
             yield* call(setLocalStorageItem, scope, serialized);
             const observed = yield* call(getLocalStorageItem, scope);
             if ((yield* select(selectHomePersistenceScope.select)) === scope) {
               yield* put(setHomePersistenceError(observed !== serialized));
-              if (observed === serialized) lastWritten = serialized;
             }
           }
         }

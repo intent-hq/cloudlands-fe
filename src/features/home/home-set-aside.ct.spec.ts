@@ -288,6 +288,41 @@ test('Another window can change personal organization without changing this wind
   }
 });
 
+test('Bringing back work set aside in another window survives reload', async ({ mount, page }) => {
+  await mount(Harness, { props: { view: 'board' } });
+  const saved = await snapshot(page);
+  const otherWindow = await page.context().newPage();
+  try {
+    await otherWindow.goto(new URL('/', page.url()).href);
+    await otherWindow.evaluate(
+      ({ key, stored }) => {
+        const document = JSON.parse(stored!);
+        const now = Date.now();
+        document.setAside = { 'aside-idle': { at: now, known: [], knownAt: now } };
+        localStorage.setItem(key!, JSON.stringify(document));
+      },
+      { key: saved.scope, stored: saved.stored },
+    );
+    await expect.poll(async () => (await snapshot(page)).asideIds).toContain('aside-idle');
+    await asideColumn(page).locator('[data-home-workspace="aside-idle"]').hover();
+    await asideColumn(page).getByRole('button', { name: 'Bring back', exact: true }).click();
+    await expect.poll(async () => (await snapshot(page)).asideIds).not.toContain('aside-idle');
+    await expect
+      .poll(() =>
+        otherWindow.evaluate(
+          (key) => JSON.parse(localStorage.getItem(key!)!).setAside?.['aside-idle'] ?? null,
+          saved.scope,
+        ),
+      )
+      .toBeNull();
+    await page.evaluate(() => window.__homeSetAside!.reloadPreferences());
+    await expect.poll(async () => (await snapshot(page)).asideIds).not.toContain('aside-idle');
+    await expect(row(page, 'aside-idle')).toBeVisible();
+  } finally {
+    await otherWindow.close();
+  }
+});
+
 test('Reading preserves set-aside state and a draft; sending an instruction brings it back', async ({
   mount,
   page,

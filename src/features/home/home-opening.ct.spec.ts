@@ -59,10 +59,12 @@ test('Home menu controls keep their own actions and can open an archived workspa
   const modifier = await page.evaluate(() =>
     navigator.platform.toUpperCase().includes('MAC') ? 'Meta' : 'Control',
   );
-  await row.getByRole('button').click({ modifiers: [modifier] });
+  await row
+    .getByRole('button', { name: 'Workspace actions', exact: true })
+    .click({ modifiers: [modifier] });
   expect(await page.evaluate(() => window.__homeWorkspacePreview?.navigation())).toEqual(before);
   await page.keyboard.press('Escape');
-  await row.getByRole('button').focus();
+  await row.getByRole('button', { name: 'Workspace actions', exact: true }).focus();
   await page.keyboard.press(`${modifier}+Enter`);
   await expect(page.getByRole('menu')).toBeVisible();
   expect(await page.evaluate(() => window.__homeWorkspacePreview?.navigation())).toEqual(before);
@@ -71,7 +73,7 @@ test('Home menu controls keep their own actions and can open an archived workspa
   await expect(component.locator('[data-home-detail]')).toHaveCount(0);
   await component.getByRole('button', { name: /^Archived/ }).click();
   const archived = component.locator('[data-home-workspace="home-archived"]');
-  await archived.getByRole('button').click();
+  await archived.getByRole('button', { name: 'Workspace actions', exact: true }).click();
   await testInfo.attach('home-open-menu', {
     body: await page.screenshot(),
     contentType: 'image/png',
@@ -157,7 +159,7 @@ test('Home double-click on a row menu button does not open the workspace', async
   const component = await mount(Preview);
   const row = component.locator('[data-home-workspace="home-review"]');
   const before = await page.evaluate(() => window.__homeWorkspacePreview?.navigation());
-  await row.getByRole('button').dblclick();
+  await row.getByRole('button', { name: 'Workspace actions', exact: true }).dblclick();
   await expect(page.getByRole('menu')).toBeVisible();
   expect(await page.evaluate(() => window.__homeWorkspacePreview?.navigation())).toEqual(before);
 });
