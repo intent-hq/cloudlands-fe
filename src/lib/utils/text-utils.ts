@@ -73,12 +73,20 @@ export function getLastMeaningfulLine(text: string): string {
 }
 
 /**
+ * Plain-text previews (queued messages, agent cards): render each persisted
+ * mention token as the `@<label>` a reader sees on its chip.
+ */
+export function mentionTokensToText(text: string): string {
+  return noteMentionsToText(memberMentionsToText(text));
+}
+
+/**
  * Strip `[Currently viewing: ...]`-style bracket prefixes and raw
  * `@context[...]` mentions from a user message before previewing it.
  * Shared by the AgentCard footer preview and the HUD card agent line.
  */
 export function stripUserMessagePrefixes(text: string): string {
-  return noteMentionsToText(memberMentionsToText(stripInternalDeliveryNotes(text)))
+  return mentionTokensToText(stripInternalDeliveryNotes(text))
     .replace(/^(\[.*?\]\s*)+/, '')
     .replace(/@context\[[^\]]*\]/g, '')
     .trim();
