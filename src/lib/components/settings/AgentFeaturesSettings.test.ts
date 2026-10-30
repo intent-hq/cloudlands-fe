@@ -147,14 +147,15 @@ describe('AgentFeaturesSettings', () => {
         screen.getByRole('switch', {
           name: 'Top-level agent spawning & retirement',
         });
-      // Secret requests falls back to its daemon default, off.
+      // Secret requests, like peer agents, needs a registered settings.list entry.
       const secretRequests = toggle === screen.getByRole('switch', { name: 'Secret requests' });
-      expect(toggle.getAttribute('aria-checked')).toBe(String(!peerAgents && !secretRequests));
-      expect((toggle as HTMLButtonElement).disabled).toBe(peerAgents);
+      const unregistered = peerAgents || secretRequests;
+      expect(toggle.getAttribute('aria-checked')).toBe(String(!unregistered));
+      expect((toggle as HTMLButtonElement).disabled).toBe(unregistered);
     }
   });
 
-  it('renders secret requests off when the daemon does not report a value', async () => {
+  it('keeps secret requests off and unavailable when the daemon does not register it', async () => {
     mocks.mockSettingsList.mockResolvedValue(
       FEATURE_PATHS.filter((path) => path !== 'agentFeatures.secretRequests').map((path) => ({
         path,
@@ -168,14 +169,40 @@ describe('AgentFeaturesSettings', () => {
     const hostExec = screen.getByRole('switch', { name: 'Host command execution' });
     await waitFor(() => expect(hostExec.getAttribute('aria-checked')).toBe('true'));
     expect(toggle.getAttribute('aria-checked')).toBe('false');
-    expect((toggle as HTMLButtonElement).disabled).toBe(false);
+    expect((toggle as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.click(toggle);
+    expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('keeps secret requests unavailable while host command execution is off', async () => {
+    mocks.mockSettingsList.mockResolvedValue(
+      FEATURE_PATHS.map((path) => ({
+        path,
+        value: path !== 'agentFeatures.hostExec' && path !== 'agentFeatures.secretRequests',
+      })),
+    );
+
+    await renderReady();
+
+    const toggle = await screen.findByRole('switch', { name: 'Secret requests' });
+    const hostExec = screen.getByRole('switch', { name: 'Host command execution' });
+    await waitFor(() => expect(hostExec.getAttribute('aria-checked')).toBe('false'));
+    expect((toggle as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.click(toggle);
+    expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+
+    mocks.mockSettingsUpdate.mockResolvedValueOnce([
+      { path: 'agentFeatures.hostExec', value: true },
+    ]);
+    await fireEvent.click(hostExec);
+    await waitFor(() => expect((toggle as HTMLButtonElement).disabled).toBe(false));
   });
 
   it.each([true, false])('renders secret requests with daemon value %s', async (enabled) => {
     mocks.mockSettingsList.mockResolvedValue(
       FEATURE_PATHS.map((path) => ({
         path,
-        value: path === 'agentFeatures.secretRequests' ? enabled : !enabled,
+        value: path === 'agentFeatures.secretRequests' ? enabled : true,
       })),
     );
 
