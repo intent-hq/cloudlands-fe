@@ -529,6 +529,18 @@
   // rows, so keyboard navigation and select-all only reach rendered rows.
   let allFilesFlat = $state<Array<{ path: string; staged: boolean }>>([]);
 
+  function isRenderedFile(file: { path: string; staged: boolean } | null): boolean {
+    return !!file && allFilesFlat.some((f) => f.path === file.path && f.staged === file.staged);
+  }
+
+  // A refresh or group expansion can push the focused file past the cap; drop
+  // focus (and the shift-range anchor) so keys never act on a row that is gone.
+  function handleVisibleFilesChange(files: Array<{ path: string; staged: boolean }>) {
+    allFilesFlat = files;
+    if (focusedFile && !isRenderedFile(focusedFile)) focusedFile = null;
+    if (lastClickedFile && !isRenderedFile(lastClickedFile)) lastClickedFile = null;
+  }
+
   // Get the index of the focused file in the flat list
   const focusedIndex = $derived(() => {
     if (!focusedFile) return -1;
@@ -637,7 +649,7 @@
       case ' ': {
         // Open the focused file
         e.preventDefault();
-        if (focusedFile) {
+        if (focusedFile && isRenderedFile(focusedFile)) {
           const change = focusedFile.staged
             ? stagedChanges.find((c) => c.relativePath === focusedFile!.path)
             : unstagedChanges.find((c) => c.relativePath === focusedFile!.path);
@@ -982,7 +994,7 @@
               {openPanelTabs}
               {activePanelTab}
               {isOwner}
-              onVisibleFilesChange={(files) => (allFilesFlat = files)}
+              onVisibleFilesChange={handleVisibleFilesChange}
               onFileClicked={(path, staged) => {
                 focusedFile = { path, staged };
                 if (selectedFiles.size > 0) {

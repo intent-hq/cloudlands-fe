@@ -1563,6 +1563,56 @@ describe('SidebarChangesPanel', () => {
       await waitFor(() => expect(focusedPaths()).toEqual(['u/f499.ts']));
     });
 
+    it('drops keyboard focus when a refresh pushes the focused row past the display cap', async () => {
+      mockFileTrackingStore.unstagedChanges = Array.from({ length: 500 }, (_, i) =>
+        makeChange({ relativePath: `u/f${i}.ts` }),
+      );
+      mockFileTrackingStore.stagedChanges = [];
+      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
+      const onOpenChange = vi.fn();
+
+      const { container } = await renderPanel({ onOpenChange });
+      await waitFor(() => {
+        expect(container.querySelector('[data-file-path="u/f499.ts"]')).not.toBeNull();
+      });
+      const panel = container.querySelector('[tabindex]') || container.firstElementChild;
+      const focusedPaths = () =>
+        Array.from(container.querySelectorAll('[data-testid="file-row"][data-focused="true"]')).map(
+          (row) => row.getAttribute('data-file-path'),
+        );
+
+      // Focus the boundary row (the 500th unstaged file).
+      await fireEvent.keyDown(panel!, { key: 'End' });
+      await waitFor(() => expect(focusedPaths()).toEqual(['u/f499.ts']));
+
+      // A refresh inserts a file ahead of it, pushing it past the cap. The
+      // reorder runs the rows' animate:flip, which needs getAnimations (absent
+      // in jsdom).
+      const proto = Element.prototype as Element & { getAnimations?: () => Animation[] };
+      const originalGetAnimations = proto.getAnimations;
+      proto.getAnimations = () => [];
+      try {
+        mockFileTrackingStore.unstagedChanges = [
+          makeChange({ relativePath: 'u/new.ts' }),
+          ...mockFileTrackingStore.unstagedChanges,
+        ];
+        flushFtSelectors();
+        await waitFor(() => {
+          expect(container.querySelector('[data-file-path="u/new.ts"]')).not.toBeNull();
+        });
+
+        // The hidden file must not be opened by Enter with no visible focused row.
+        await fireEvent.keyDown(panel!, { key: 'Enter' });
+        expect(onOpenChange).not.toHaveBeenCalled();
+
+        // Navigation restarts from a rendered row.
+        await fireEvent.keyDown(panel!, { key: 'ArrowDown' });
+        await waitFor(() => expect(focusedPaths()).toEqual(['u/new.ts']));
+      } finally {
+        proto.getAnimations = originalGetAnimations;
+      }
+    });
+
     it('handles keyboard ArrowUp navigation on changes panel', async () => {
       const unstaged = [
         makeChange({ relativePath: 'src/a.ts' }),

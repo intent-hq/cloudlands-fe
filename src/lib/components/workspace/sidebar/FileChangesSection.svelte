@@ -42,7 +42,7 @@
   import { faNote } from '$lib/icons/faNote';
   import { logger } from '$lib/utils/client-logger';
   import { faCodeCommit, faLock, faMinus, faPlus, faUser } from '@fortawesome/free-solid-svg-icons';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { flip } from 'svelte/animate';
@@ -221,7 +221,10 @@
   const visibleFileRows = $derived([...renderedRows('unstaged'), ...renderedRows('staged')]);
 
   $effect(() => {
-    onVisibleFilesChange?.(visibleFileRows);
+    const rows = visibleFileRows;
+    // The parent's handler reads and writes its own state; keep it out of
+    // this effect's dependencies.
+    untrack(() => onVisibleFilesChange?.(rows));
   });
   onDestroy(() => onVisibleFilesChange?.([]));
 
