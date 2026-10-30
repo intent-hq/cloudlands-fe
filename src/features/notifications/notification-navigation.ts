@@ -40,11 +40,12 @@ export interface NotificationNavigatePayload {
 }
 
 /**
- * Route a notification click: activate the workspace tab (adding it to the
- * tab strip when it is not open) and `goto(/workspace/{workspaceId})`,
- * guarding null/missing payloads. Like every other workspace entry point
- * (deep links, attention "Switch To", link handler), the tab is opened before
- * navigating — the route alone does not add a closed workspace to the strip.
+ * Route a notification click: `goto(/workspace/{workspaceId})`, then activate
+ * the workspace tab (adding it to the strip when it is not open), guarding
+ * null/missing payloads. In-app navigation alone never adds a closed
+ * workspace to the tab strip — only the boot route does — so, like the link
+ * handler, the tab is activated once navigation succeeds; a failed navigation
+ * leaves the strip untouched.
  * Chief-of-staff payloads (`chief: true` or the chief
  * virtual workspace id) open the homepage Assistant and select the chat
  * thread instead — the chief workspace page is hidden. No-ops in the HUD
@@ -75,8 +76,8 @@ export async function handleNotificationNavigate(
     };
     if (target.workspaceId !== data.workspaceId || !admitted()) return;
     try {
-      appStore.dispatch(openWorkspaceTab(target.workspaceId));
       await navigateToRoute(`/workspace/${encodeURIComponent(target.workspaceId)}`);
+      appStore.dispatch(openWorkspaceTab(target.workspaceId));
       if (!admitted()) return;
       const ready = await appStore.dispatch(
         discussionNotificationLayoutRequested(target, messageId),
@@ -105,8 +106,8 @@ export async function handleNotificationNavigate(
   }
 
   try {
+    await navigateToRoute(`/workspace/${encodeURIComponent(data.workspaceId)}`);
     appStore.dispatch(openWorkspaceTab(data.workspaceId));
-    await navigateToRoute(`/workspace/${data.workspaceId}`);
   } catch (error) {
     logger.warn('Failed to navigate from notification click', {
       workspaceId: data.workspaceId,

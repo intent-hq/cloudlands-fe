@@ -29,19 +29,30 @@ describe('handleNotificationNavigate', () => {
     window.history.replaceState({}, '', '/');
   });
 
-  it('opens and focuses the tab for a workspace that is not open, before navigating', async () => {
-    let tabOpenAtNavigation: boolean | undefined;
-    mocks.route.mockImplementationOnce(async () => {
-      tabOpenAtNavigation = selectIsWorkspaceTabOpen.select(store.state, 'closed-ws');
-    });
+  it('opens and focuses the tab for a workspace that is not open', async () => {
     expect(selectIsWorkspaceTabOpen.select(store.state, 'closed-ws')).toBe(false);
 
     await handleNotificationNavigate({ workspaceId: 'closed-ws' });
 
-    expect(tabOpenAtNavigation).toBe(true);
     expect(mocks.route).toHaveBeenCalledWith('/workspace/closed-ws');
     expect(selectWorkspaceTabOrder.select(store.state)).toEqual(['open-ws', 'closed-ws']);
     expect(selectCurrentWorkspaceTabId.select(store.state)).toBe('closed-ws');
+  });
+
+  it('leaves the tab strip untouched when navigation fails', async () => {
+    mocks.route.mockRejectedValueOnce(new Error('navigation aborted'));
+
+    await expect(handleNotificationNavigate({ workspaceId: 'closed-ws' })).resolves.toBeUndefined();
+
+    expect(selectWorkspaceTabOrder.select(store.state)).toEqual(['open-ws']);
+    expect(selectCurrentWorkspaceTabId.select(store.state)).toBe('open-ws');
+  });
+
+  it('encodes the workspace id in the route but opens the tab for the raw id', async () => {
+    await handleNotificationNavigate({ workspaceId: 'a/b?c' });
+
+    expect(mocks.route).toHaveBeenCalledWith('/workspace/a%2Fb%3Fc');
+    expect(selectCurrentWorkspaceTabId.select(store.state)).toBe('a/b?c');
   });
 
   it('switches to an already-open workspace without adding a duplicate tab', async () => {
