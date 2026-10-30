@@ -3688,7 +3688,6 @@
     gap: 0.25rem;
     padding: 1rem;
     background: var(--color-sidebar);
-    border-radius: var(--radius-large);
   }
 
   :global(.dark) .settings-pane {

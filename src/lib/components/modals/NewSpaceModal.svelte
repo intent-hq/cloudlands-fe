@@ -83,7 +83,10 @@
   escapeKeydownBehavior="ignore"
   onClose={close}
 >
-  <div class="min-w-0">
+  {#if isExpanded}
+    <div class="workspace-sidebar-surface" aria-hidden="true"></div>
+  {/if}
+  <div class="workspace-form min-w-0">
     {#if initializer}
       {@render initializer()}
     {:else}
@@ -99,6 +102,39 @@
 </ContentDialog>
 
 <style>
+  .workspace-sidebar-surface {
+    display: none;
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: 0;
+    width: calc(21rem + 1.5rem);
+    pointer-events: none;
+    z-index: -1;
+    background: var(--color-sidebar);
+    border-start-end-radius: var(--radius-medium);
+    border-end-end-radius: var(--radius-medium);
+  }
+
+  :global(.dark) .workspace-sidebar-surface {
+    background: var(--color-background);
+  }
+
+  @container (min-width: 51rem) {
+    .workspace-sidebar-surface {
+      display: block;
+    }
+  }
+
+  @container (max-width: 47.99rem) {
+    .workspace-form :global(.settings-pane) {
+      margin-inline: -1.5rem;
+      margin-bottom: -1.5rem;
+      padding-inline: 1.5rem;
+      border-end-start-radius: var(--radius-medium);
+      border-end-end-radius: var(--radius-medium);
+    }
+  }
+
   :global(body[data-new-space-modal-open] [data-slot='select-content']),
   :global(body[data-new-space-modal-open] [data-slot='menu-content']) {
     z-index: var(--layer-tooltip);
