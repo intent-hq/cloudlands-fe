@@ -1,14 +1,7 @@
 import { applyWorkspaceTransferProposal } from './workspace-transfer-proposal';
 import { notify } from '$lib/components/patterns/notify';
-import {
-  call,
-  delay,
-  fork,
-  put,
-  takeEvery,
-  takeLatest,
-  type SagaGenerator,
-} from 'typed-redux-saga';
+import { takeLatestFromSelector } from '@themislib/themis/saga';
+import { call, delay, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 import { m } from '$shared/paraglide/messages.js';
 import {
   getLocalStorageJSON,
@@ -26,12 +19,9 @@ import {
 import { selectSpecialistProposalAppliedState } from '../../specialist-proposal-history/specialist-proposal-history-selectors';
 import {
   applyProposalRequested,
-  clearProposalLifecycle,
   proposalApplyStarted,
   proposalApplySucceeded,
-  proposalCreateOutcomeReported,
   proposalFailed,
-  proposalResolutionReconciled,
   proposalUndoStarted,
   proposalUndoSucceeded,
   hydrateProposalLifecycle,
@@ -270,7 +260,10 @@ export function* persistProposalLifecycleSaga(): SagaGenerator<void> {
       .filter(([, entry]) => {
         if (entry.status !== 'applied' && entry.status !== 'dismissed') return true;
         return completedCount++ < PROPOSAL_LIFECYCLE_MAX_PERSISTED_ENTRIES;
-      }),
+      })
+      // Live relay progress is UI-only; a reload restores the checkpoint as
+      // failed/retryable, never mid-phase.
+      .map(([key, { transferProgress: _progress, ...entry }]) => [key, entry]),
   );
   yield* call(setLocalStorageJSON, PROPOSAL_LIFECYCLE_STORAGE_KEY, { entries: cappedEntries });
 }
@@ -280,24 +273,21 @@ function* debouncedPersistProposalLifecycleSaga(): SagaGenerator<void> {
   yield* call(persistProposalLifecycleSaga);
 }
 
+/**
+ * Saves whenever the lifecycle map changes, whatever action changed it, so a
+ * new card-state action can't silently skip persistence (a hand-kept action
+ * list once missed `proposalCreateOutcomeReported`, cloudlands-fe#3857).
+ * `takeLatest` + the delay debounce bursts into one write; the first emission
+ * writes back the pruned hydrated state. Pruning in
+ * `persistProposalLifecycleSaga` keeps in-progress and declined cards out.
+ */
 function* watchProposalLifecyclePersistenceSaga(): SagaGenerator<void> {
-  yield* takeLatest(
-    [
-      proposalApplySucceeded,
-      proposalCreateOutcomeReported,
-      proposalUndoSucceeded,
-      proposalFailed,
-      proposalResolutionReconciled,
-      clearProposalLifecycle,
-      hydrateProposalLifecycle,
-    ],
-    debouncedPersistProposalLifecycleSaga,
-  );
+  yield* takeLatestFromSelector(selectProposalLifecycleMap, debouncedPersistProposalLifecycleSaga);
 }
 
 export function* proposalLifecycleSaga(): SagaGenerator<void> {
   yield* call(hydrateProposalLifecycleSaga);
-  yield* fork(watchProposalLifecyclePersistenceSaga);
+  yield* call(watchProposalLifecyclePersistenceSaga);
   yield* takeEvery(applyProposalRequested, handleApplyProposal);
   yield* takeEvery(undoProposalRequested, handleUndoProposal);
 }
