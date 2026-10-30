@@ -111,14 +111,14 @@ export function* secretRequestsSaga(): SagaGenerator<void> {
 
   yield* takeEvery(
     [
-      principalContextChanged.type,
-      principalReceived.type,
-      principalReadFailed.type,
-      principalIdentityChanged.type,
-      hostMembershipChanged.type,
-      backendReconnected.type,
-      setLabsMultiplayerEnabled.type,
-      toggleLabsMultiplayer.type,
+      principalContextChanged,
+      principalReceived,
+      principalReadFailed,
+      principalIdentityChanged,
+      hostMembershipChanged,
+      backendReconnected,
+      setLabsMultiplayerEnabled,
+      toggleLabsMultiplayer,
     ],
     function* onAdmissionChanged(): SagaGenerator<void> {
       yield* call(admittedOwner);
