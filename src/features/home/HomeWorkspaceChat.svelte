@@ -5,36 +5,35 @@
   import { EmptyState, ErrorState } from '$lib/components/patterns/screen';
   import { store } from '$store/renderer/store';
   import {
-    selectActiveAgentId,
     selectAllWorkspaceAgents,
     selectAgentsLoaded,
-    resolveCanonicalInitialAgent,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
-  import {
-    hydrateAgentsRequested,
-    setActiveAgentId,
-  } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { homePreviewEligibleAgents } from './home-preview-agent';
+  import { hydrateAgentsRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { chatViewEnded } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
   import { MARK_AGENT_SEEN_DEBOUNCE_MS } from '$features/agent/mark-agent-seen';
   import type { ChatAttentionFocusRequest } from '$lib/components/chat/chat-attention-focus';
   import { m } from '$shared/paraglide/messages.js';
-  import type { Workspace } from '$shared/types';
+  import type { AgentSession, Workspace } from '$shared/types';
 
-  let { workspace, preview = false }: { workspace: Workspace; preview?: boolean } = $props();
+  let {
+    workspace,
+    preview = false,
+    agent,
+    onpick,
+  }: {
+    workspace: Workspace;
+    preview?: boolean;
+    /** The agent the preview shows; the parent decides which one. */
+    agent: AgentSession | null;
+    /** Records an explicit choice of agent, e.g. from an attention item. */
+    onpick: (agentId: string) => void;
+  } = $props();
   // The parent keys this component by workspace ID, keeping subscriptions and drafts scoped.
   const workspaceId = untrack(() => workspace.id);
   const agents$ = selectAllWorkspaceAgents(workspaceId);
-  const activeId$ = selectActiveAgentId(workspaceId);
   const loaded$ = selectAgentsLoaded(workspaceId);
-  const eligibleAgents = $derived(
-    $agents$.filter(
-      (agent) => !agent.retiredAt && !agent.pendingDeleteAt && agent.status !== 'deleted',
-    ),
-  );
-  const agent = $derived(
-    eligibleAgents.find((candidate) => candidate.id === $activeId$) ??
-      resolveCanonicalInitialAgent(eligibleAgents),
-  );
+  const eligibleAgents = $derived(homePreviewEligibleAgents($agents$));
   // A primitive so agent-list refreshes that keep the same agent on screen do
   // not end its viewing session.
   const shownAgentId = $derived(preview ? undefined : agent?.id);
@@ -61,7 +60,7 @@
   export function focusAttention(agentId: string, questionMessageId?: string) {
     if (preview || !eligibleAgents.some((candidate) => candidate.id === agentId)) return;
     attentionFocus = { agentId, questionMessageId, requestId: ++nextFocusRequest };
-    store.dispatch(setActiveAgentId(workspaceId, agentId));
+    onpick(agentId);
   }
   let timedOut = $state(false);
   let timeout: ReturnType<typeof setTimeout> | undefined;

@@ -3,9 +3,8 @@ import { tick } from 'svelte';
 import { writable } from 'svelte/store';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ dispatch: vi.fn() }));
+const mocks = vi.hoisted(() => ({ dispatch: vi.fn(), onpick: vi.fn() }));
 const agents$ = writable<Array<Record<string, unknown>>>([]);
-const activeId$ = writable<string | null>(null);
 const loaded$ = writable(true);
 
 vi.mock('$lib/components/chat/ChatPanel.svelte', async () => ({
@@ -14,17 +13,24 @@ vi.mock('$lib/components/chat/ChatPanel.svelte', async () => ({
 vi.mock('$store/renderer/store', () => ({ store: { dispatch: mocks.dispatch } }));
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAllWorkspaceAgents: () => agents$,
-  selectActiveAgentId: () => activeId$,
   selectAgentsLoaded: () => loaded$,
-  resolveCanonicalInitialAgent: (agents: Array<{ id: string }>) => agents[0] ?? null,
 }));
 
 import HomeWorkspaceChat from './HomeWorkspaceChat.svelte';
 import { MARK_AGENT_SEEN_DEBOUNCE_MS } from '$features/agent/mark-agent-seen';
-import type { Workspace } from '$shared/types';
+import type { AgentSession, Workspace } from '$shared/types';
 
 const workspace = { id: 'ws-1', title: 'Workspace' } as unknown as Workspace;
-const agent = (id: string, extra: Record<string, unknown> = {}) => ({ id, name: id, ...extra });
+const agent = (id: string, extra: Record<string, unknown> = {}) =>
+  ({ id, name: id, ...extra }) as unknown as AgentSession;
+
+const renderChat = (props: { agent?: AgentSession | null; preview?: boolean } = {}) =>
+  render(HomeWorkspaceChat, {
+    workspace,
+    agent: agent('a1'),
+    onpick: mocks.onpick,
+    ...props,
+  });
 
 function viewEnds(): string[] {
   return mocks.dispatch.mock.calls
@@ -39,8 +45,8 @@ const flushDeferred = () => vi.advanceTimersByTimeAsync(0);
 beforeEach(() => {
   vi.useFakeTimers();
   mocks.dispatch.mockClear();
-  agents$.set([agent('a1'), agent('a2')]);
-  activeId$.set('a1');
+  mocks.onpick.mockClear();
+  agents$.set([agent('a1'), agent('a2')] as unknown as Array<Record<string, unknown>>);
   loaded$.set(true);
 });
 afterEach(() => {
@@ -52,18 +58,18 @@ afterEach(() => {
 // so the seen marker and the "New messages" divider stayed where they were.
 describe('Home workspace chat viewing session', () => {
   it('ends the viewing session after the displayed agent changes', async () => {
-    render(HomeWorkspaceChat, { workspace });
+    const view = renderChat();
     await tick();
     await vi.advanceTimersByTimeAsync(MARK_AGENT_SEEN_DEBOUNCE_MS);
     expect(viewEnds()).toEqual([]);
-    activeId$.set('a2');
+    await view.rerender({ agent: agent('a2') });
     await tick();
     await flushDeferred();
     expect(viewEnds()).toEqual(['a1']);
   });
 
   it('ends the viewing session after the chat unmounts', async () => {
-    const view = render(HomeWorkspaceChat, { workspace });
+    const view = renderChat();
     await tick();
     await vi.advanceTimersByTimeAsync(MARK_AGENT_SEEN_DEBOUNCE_MS);
     view.unmount();
@@ -74,31 +80,51 @@ describe('Home workspace chat viewing session', () => {
   // A conversation flashed while the active agent resolves (or skimmed past
   // faster than the view trigger's debounce) was never read.
   it('does not end a viewing session shorter than the view debounce', async () => {
-    render(HomeWorkspaceChat, { workspace });
+    const view = renderChat();
     await tick();
     await vi.advanceTimersByTimeAsync(MARK_AGENT_SEEN_DEBOUNCE_MS - 1);
-    activeId$.set('a2');
+    await view.rerender({ agent: agent('a2') });
     await tick();
     await flushDeferred();
     expect(viewEnds()).toEqual([]);
   });
 
   it('keeps the viewing session across agent list refreshes', async () => {
-    render(HomeWorkspaceChat, { workspace });
+    const view = renderChat();
     await tick();
     await vi.advanceTimersByTimeAsync(MARK_AGENT_SEEN_DEBOUNCE_MS);
-    agents$.set([agent('a1', { name: 'renamed' }), agent('a2'), agent('a3')]);
+    await view.rerender({ agent: agent('a1', { name: 'renamed' }) });
     await tick();
     await flushDeferred();
     expect(viewEnds()).toEqual([]);
   });
 
   it('does not report fixture previews', async () => {
-    const view = render(HomeWorkspaceChat, { workspace, preview: true });
+    const view = renderChat({ preview: true });
     await tick();
     await vi.advanceTimersByTimeAsync(MARK_AGENT_SEEN_DEBOUNCE_MS);
     view.unmount();
     await flushDeferred();
     expect(viewEnds()).toEqual([]);
+  });
+});
+
+describe('Home workspace chat attention focus', () => {
+  it("records the attention item's agent as the explicit pick", async () => {
+    const view = renderChat();
+    await tick();
+    (view.component as unknown as { focusAttention: (id: string) => void }).focusAttention('a2');
+    expect(mocks.onpick).toHaveBeenCalledWith('a2');
+  });
+
+  it('ignores an attention item for an agent the preview cannot show', async () => {
+    agents$.set([
+      agent('a1'),
+      agent('gone', { retiredAt: '2026-03-19T00:00:00.000Z' }),
+    ] as unknown as Array<Record<string, unknown>>);
+    const view = renderChat();
+    await tick();
+    (view.component as unknown as { focusAttention: (id: string) => void }).focusAttention('gone');
+    expect(mocks.onpick).not.toHaveBeenCalled();
   });
 });
