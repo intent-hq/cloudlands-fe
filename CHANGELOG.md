@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.255.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.255.0...v2.255.1) (2026-10-30)
+
+
+### 🐛 Bug Fixes
+
+* **file-explorer:** stop the Files tree jumping when clicking a visible file ([#3861](https://github.com/intent-hq/cloudlands-fe/issues/3861)) ([16577a3](https://github.com/intent-hq/cloudlands-fe/commit/16577a3f6997a99922475846972000c16ed70ca6))
+* wait for remote daemon startup when confirming an update ([#3860](https://github.com/intent-hq/cloudlands-fe/issues/3860)) ([7def5ad](https://github.com/intent-hq/cloudlands-fe/commit/7def5add376742f2101ae2005883e295d314353c))
+
 ## [2.255.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.254.0...v2.255.0) (2026-10-30)
 
 
