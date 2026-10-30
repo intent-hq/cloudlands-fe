@@ -610,13 +610,22 @@ test('motion refinement: reversible reveal, inert close and retained-envelope ro
         .toBe(ignored);
       observations.push(await observe(app, page, `controlled-pointer-${label}`));
     }
+    const exitPoint = {
+      x: envelope.windowBounds.x + envelope.windowBounds.width + 400,
+      y: envelope.windowBounds.y + 400,
+    };
     await app.evaluate(
       (_electron, cursor) => (globalThis as any).companionNative.setControlledCursor(cursor),
-      {
-        x: envelope.windowBounds.x + envelope.windowBounds.width + 400,
-        y: envelope.windowBounds.y + 400,
-      },
+      exitPoint,
     );
+    // The controlled cursor changes main's poll only. Main forwarded the inside move
+    // to Chromium; move that input outside too, as an actual OS exit would, so :hover
+    // does not contradict the native presence report (real DOM hover takes priority).
+    await page.mouse.move(
+      exitPoint.x - envelope.windowBounds.x,
+      exitPoint.y - envelope.windowBounds.y,
+    );
+    await expect.poll(() => surface.evaluate((element) => element.matches(':hover'))).toBe(false);
     await settled(false);
     await artifact(page, testInfo, 'motion-closed');
     await page.waitForTimeout(1400);
@@ -705,6 +714,7 @@ test('motion refinement: reversible reveal, inert close and retained-envelope ro
       rendererSynthesizedInput: true,
       controlledOSCursor: true,
       syntheticHoverEvents: true,
+      finalObservation: page.isClosed() ? null : await observe(app, page, 'motion-final'),
       frames,
       observations,
     });
