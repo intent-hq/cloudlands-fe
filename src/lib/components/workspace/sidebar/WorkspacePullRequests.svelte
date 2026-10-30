@@ -52,7 +52,7 @@
 
 {#if rows.length || truncated}
   <section
-    class="flex min-h-0 max-h-1/2 shrink-0 flex-col overflow-hidden rounded-(--radius-large) bg-selected ring-1 ring-inset ring-border/50 dark:bg-surface-4"
+    class="flex min-h-0 max-h-1/2 shrink-0 flex-col overflow-hidden"
     data-workspace-pull-requests
     aria-label={m.workspace_prSection_pullRequests_label()}
   >
