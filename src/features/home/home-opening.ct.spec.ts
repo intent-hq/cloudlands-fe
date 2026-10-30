@@ -23,6 +23,8 @@ for (const platform of ['MacIntel', 'Linux x86_64']) {
     await expect
       .poll(() => page.evaluate(() => window.__homeWorkspacePreview?.navigation().currentTabId))
       .toBe('home-review');
+    await expect(page).toHaveURL(/\/workspace\/home-review$/);
+    await expect(component.locator('[data-home-detail]')).toBeVisible();
     await expect(row.locator('..')).toHaveAttribute('aria-selected', 'true');
     const tabs = await page.evaluate(() => window.__homeWorkspacePreview?.navigation().tabOrder);
     expect(tabs?.filter((id) => id === 'home-review')).toHaveLength(1);
