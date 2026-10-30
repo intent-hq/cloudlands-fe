@@ -36,6 +36,7 @@ import noWallClockInCatalogPreviewsRule, {
 } from './eslint-rules/no-wall-clock-in-catalog-previews.js';
 import noClassNameAssertionsInTestsRule from './eslint-rules/no-class-name-assertions-in-tests.js';
 import noFlushSyncInTeardownRule from './eslint-rules/no-flushsync-in-teardown.js';
+import noRawWorkspaceNavigationRule from './eslint-rules/no-raw-workspace-navigation.js';
 import noOneShotAnimationCountRule from './eslint-rules/no-one-shot-animation-count.js';
 import noUnarmedOutsideClickInCtRule from './eslint-rules/no-unarmed-outside-click-in-ct.js';
 import noRawMouseWheelInCtRule from './eslint-rules/no-raw-mouse-wheel-in-ct.js';
@@ -68,6 +69,7 @@ const intentPlugin = {
     'no-unarmed-outside-click-in-ct': noUnarmedOutsideClickInCtRule,
     'no-raw-mouse-wheel-in-ct': noRawMouseWheelInCtRule,
     'no-direct-reduced-motion-query': noDirectReducedMotionQueryRule,
+    'no-raw-workspace-navigation': noRawWorkspaceNavigationRule,
   },
 };
 
@@ -1022,6 +1024,16 @@ export default [
     rules: {
       'intent/no-component-async-data-fetch': 'error',
     },
+  },
+  // In-app navigation to `/workspace/<id>` never opens the workspace tab; each
+  // caller that forgot the separate `openWorkspaceTab` dispatch shipped a jump
+  // that switched pages without a tab (cloudlands-fe#3850, #3781, #3567).
+  // `openAndShowWorkspace` is the only allowed workspace jump.
+  {
+    files: ['src/**/*.{js,ts,svelte}'],
+    ignores: [...productionModuleIgnores, 'src/lib/utils/show-workspace.client.ts'],
+    plugins: { intent: intentPlugin },
+    rules: { 'intent/no-raw-workspace-navigation': 'error' },
   },
   // flushSync from an $effect cleanup, onDestroy callback, or action destroy()
   // flushes unrelated effects mid-teardown; any component mounted by that flush
