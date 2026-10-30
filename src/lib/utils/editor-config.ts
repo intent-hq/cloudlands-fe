@@ -38,6 +38,7 @@ import {
 import { createMentionSuggestionRenderer } from '$lib/components/chat/input/mention-suggestion-renderer';
 import { getMentionSystem, type SearchContext } from '$lib/services/mentions';
 import { toPromptToken } from '$lib/services/mentions/format';
+import { noteUrl } from '$shared/constants/intent-links';
 import { memberMentionLabel } from '$lib/utils/member-mention-token';
 import { m } from '$shared/paraglide/messages.js';
 
@@ -1140,8 +1141,20 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
               );
             }
           } else if (mentionType === 'note' || mentionType === 'note-range') {
-            // Open note in main content area
-            if (mentionId && workspace?.id) {
+            // A chip rebuilt from `@note[<ws>/<id>:<title>]` names a sibling
+            // workspace: route through its workspace-qualified link.
+            if (
+              mentionId &&
+              meta.isExternalLink &&
+              meta.workspaceId &&
+              meta.workspaceId !== workspace?.id
+            ) {
+              handleLink(noteUrl(mentionId, meta.workspaceId), {
+                workspaceId: workspace?.id,
+                sourcePanelId,
+                event,
+              });
+            } else if (mentionId && workspace?.id) {
               appStore.dispatch(
                 openWorkspaceNote(workspace.id, mentionId, {
                   openInAdjacentPanel,
