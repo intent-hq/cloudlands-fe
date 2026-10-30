@@ -17,9 +17,9 @@ test('new workspace pickers restore focus and preserve the prompt when dismissed
   await branch.press('Enter');
   const option = page.getByRole('option', { name: 'release/next', exact: true });
   await expect(option).toBeVisible();
-  const branchBox = await branch.boundingBox();
-  const branchMenu = await page.getByRole('dialog', { name: 'Branch', exact: true }).boundingBox();
-  expect(branchMenu!.x + branchMenu!.width).toBeLessThan(branchBox!.x);
+  await expect(page.getByRole('dialog', { name: 'Branch', exact: true })).toBeInViewport({
+    ratio: 1,
+  });
   await option.click();
   await expect(branch).toBeFocused();
   await expect(branch).toContainText('release/next');
@@ -43,13 +43,7 @@ test('new workspace pickers restore focus and preserve the prompt when dismissed
   for (const { trigger, popup } of panels) {
     await trigger.click();
     await expect(popup).toBeVisible();
-    await expect
-      .poll(async () => {
-        const menu = await popup.boundingBox();
-        const row = await trigger.boundingBox();
-        return menu !== null && row !== null && menu.x + menu.width < row.x;
-      })
-      .toBe(true);
+    await expect(popup).toBeInViewport({ ratio: 1 });
     if (await popup.getByRole('button', { name: 'Cancel', exact: true }).count()) {
       await popup.getByRole('button', { name: 'Cancel', exact: true }).click();
     } else {

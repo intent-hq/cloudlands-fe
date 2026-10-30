@@ -427,6 +427,8 @@
     initiallyExpanded?: boolean;
     /** Hide the toggle button - useful when embedded in a portal */
     hideToggle?: boolean;
+    /** Show only the add icon in compact prompt toolbars. */
+    iconOnly?: boolean;
     /** Lock to a specific source tab (hides the source tab bar) */
     initialSource?: ContextSource;
     /** Hide the internal source tabs when another parent surface manages source selection */
@@ -441,6 +443,7 @@
     repositoryName,
     initiallyExpanded = false,
     hideToggle = false,
+    iconOnly = false,
     initialSource,
     hideSourceTabs = false,
     prFilter,
@@ -1801,24 +1804,33 @@
   </TooltipRich>
 {/snippet}
 
-<div class="context-picker w-full">
+<div class="context-picker w-full" data-state={isOpen ? 'open' : 'closed'}>
   <!-- Trigger button (hidden when hideToggle is true) -->
   {#if !hideToggle}
-    <Button
-      variant="ghost"
-      type="button"
-      onclick={togglePanel}
-      class="inline-flex items-center gap-2.5 px-2 py-1 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-    >
-      <Fa
-        icon={faPlus}
-        size={11}
-        class="transform transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {isOpen
-          ? '-rotate-45'
-          : ''}"
-      />
-      <span>{m.workspace_issueSuggestions_addContext_label()}</span>
-    </Button>
+    <div class={iconOnly ? 'flex justify-end' : undefined}>
+      <Button
+        variant="ghost"
+        type="button"
+        size={iconOnly ? 'icon' : undefined}
+        aria-label={m.workspace_issueSuggestions_addContext_label()}
+        aria-expanded={isOpen}
+        tooltip={iconOnly ? m.workspace_issueSuggestions_addContext_label() : undefined}
+        tooltipSide="top"
+        onclick={togglePanel}
+        class={iconOnly
+          ? 'text-muted-foreground hover:text-foreground'
+          : 'inline-flex items-center gap-2.5 px-2 py-1 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer'}
+      >
+        <Fa
+          icon={faPlus}
+          size={11}
+          class="transform transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {isOpen
+            ? '-rotate-45'
+            : ''}"
+        />
+        {#if !iconOnly}<span>{m.workspace_issueSuggestions_addContext_label()}</span>{/if}
+      </Button>
+    </div>
   {/if}
 
   <!-- Expandable panel -->

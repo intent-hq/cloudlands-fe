@@ -78,9 +78,6 @@
   const agentValueId = `${uid}-agent-value`;
   const isMobile = new IsMobile();
   const dialogPortalTarget = useDialogPortalTarget();
-  // Matches the form's other settings rows: 40px hit height, body text.
-  const SETTINGS_TRIGGER_CLASS =
-    'w-full min-w-0 h-auto min-h-10 justify-start gap-2 px-3! pr-2! py-2! text-sm leading-5 font-normal text-foreground';
   // Search and the management action stay fixed around the scrollable results.
   const SPECIALIST_MENU_MAX_HEIGHT =
     'min(520px, var(--bits-popover-content-available-height, calc(100dvh - 1rem)))';
@@ -117,6 +114,7 @@
     : null;
 
   interface Props {
+    presentation?: 'form' | 'footer';
     /** Selected specialist ID - null means blank agent */
     selectedSpecialist?: string | null;
     /** Selected model - undefined means use specialist default */
@@ -147,6 +145,7 @@
   }
 
   let {
+    presentation = 'form',
     selectedSpecialist = $bindable<string | null>(defaultSingleAgentSpecialistId),
     selectedModel = $bindable<string | undefined>(undefined),
     modelWasOverridden = $bindable<boolean>(false),
@@ -834,8 +833,12 @@
   }
 </script>
 
-<div class="agent-settings" data-testid="initial-agent-picker">
-  <div class="w-full">
+<div
+  class="agent-settings"
+  class:footer={presentation === 'footer'}
+  data-testid="initial-agent-picker"
+>
+  <div class={presentation === 'footer' ? 'min-w-0' : 'w-full'}>
     <Popover.Root bind:open={specialistDropdownOpen}>
       <Popover.Trigger>
         {#snippet child({ props })}
@@ -847,11 +850,25 @@
             wrapContent={false}
             active={specialistDropdownOpen}
             aria-labelledby="{agentLabelId} {agentValueId}"
-            class={SETTINGS_TRIGGER_CLASS}
+            class={presentation === 'footer'
+              ? 'h-9 min-w-0 max-w-36 gap-1 px-2 text-sm font-normal'
+              : workspacePickerStyles.fieldTrigger}
           >
-            <span class={workspacePickerStyles.fieldLabel} id={agentLabelId}
-              >{m.workspace_initialAgentPicker_agent_label()}</span
+            <span
+              class={presentation === 'footer' ? 'sr-only' : workspacePickerStyles.fieldLabel}
+              id={agentLabelId}>{m.workspace_initialAgentPicker_agent_label()}</span
             >
+            {#if presentation === 'footer'}
+              {@const specialist = isTeamMode ? orchestrator : currentSpecialistInfo}
+              <span class={cn('plain-agent-icon flex', workspacePickerStyles.icon)}>
+                <AgentAvatar
+                  agentId="blank"
+                  variant="compact"
+                  specialist={specialist?.id ?? null}
+                  icon={specialist?.icon}
+                />
+              </span>
+            {/if}
             <span class="min-w-0 flex-1 truncate text-left" id={agentValueId}
               >{agentDisplayLabel}</span
             >
@@ -861,9 +878,9 @@
       <Popover.Content
         role="dialog"
         aria-label={m.workspace_initialAgentPicker_agent_label()}
-        side={isMobile.current ? 'bottom' : 'left'}
-        sideOffset={isMobile.current ? 4 : 24}
-        align={isMobile.current ? 'end' : 'start'}
+        side={presentation === 'footer' ? 'top' : isMobile.current ? 'bottom' : 'right'}
+        sideOffset={presentation === 'footer' || isMobile.current ? 4 : 24}
+        align={presentation === 'footer' ? 'start' : isMobile.current ? 'end' : 'start'}
         preventScroll={false}
         class="flex min-h-0 w-[360px] max-w-[calc(100vw-1rem)] flex-col overflow-hidden p-0"
         style="max-height: {SPECIALIST_MENU_MAX_HEIGHT}"
@@ -930,13 +947,16 @@
       onModelChange={handleModelChange}
       variant="ghost-light"
       size="sm"
-      fullWidth
+      fullWidth={presentation !== 'footer'}
       rowLabel={m.workspace_initialAgentPicker_model_label()}
+      showRowLabel={presentation !== 'footer'}
       showTriggerIcons={false}
-      menuSide={isMobile.current ? 'bottom' : 'left'}
+      menuSide={presentation === 'footer' || isMobile.current ? 'bottom' : 'left'}
       menuSideOffset={24}
       menuMaxHeight={440}
-      triggerClass={SETTINGS_TRIGGER_CLASS}
+      triggerClass={presentation === 'footer'
+        ? 'h-9 min-w-0 max-w-36 px-2 text-sm font-normal'
+        : workspacePickerStyles.fieldTrigger}
       description={m.workspace_initialAgentPicker_modelMenu_description()}
       showReasoning
       reasoningEffort={displayedReasoningEffort}
@@ -961,6 +981,13 @@
     flex-direction: column;
     gap: 0.25rem;
     min-width: 0;
+  }
+
+  .agent-settings.footer {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-start;
   }
 
   /* Outline glyph only: no avatar tile, ink follows the row text. */

@@ -37,7 +37,7 @@
     wrapContent={presentation !== 'form'}
     active={presentation === 'form' && expanded}
     class="w-full min-w-0 gap-2 font-normal {presentation === 'form'
-      ? 'h-auto min-h-10 justify-start px-3 pr-2 py-2 text-left text-sm leading-5'
+      ? workspacePickerStyles.fieldTrigger
       : 'justify-between text-left'}"
     aria-label={m.workspace_setupScriptEditor_setupScript_label()}
     aria-haspopup="dialog"

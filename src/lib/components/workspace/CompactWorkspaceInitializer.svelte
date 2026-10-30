@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { Separator } from '$lib/components/ui/separator';
   import { ShortcutChip } from '$lib/components/ui/kbd';
   import {
     selectWorkspaceCreationVisible,
@@ -3215,11 +3214,23 @@
 
         {#if isExpanded}
           <div class="prompt-footer" transition:slide={{ axis: 'y', tier: 'moderate' }}>
-            <div class="min-w-0 py-1.5">
-              <IssueSuggestions
-                onSelect={handleIssueSelect}
-                repositoryOwner={githubRepoInfo?.owner}
-                repositoryName={githubRepoInfo?.repo}
+            <div class="prompt-settings">
+              <InitialAgentPicker
+                presentation="footer"
+                bind:selectedSpecialist
+                {selectedModel}
+                onModelChange={(model) => {
+                  selectedModel = model;
+                  // An explicit pick pins the model for this form session so late
+                  // hydration cannot overwrite it (intent-hq/monorepo#2678).
+                  if (model) modelPickedThisSession = true;
+                }}
+                bind:selectedReasoningEffort
+                onReasoningEffortChange={() => (effortPickedThisSession = true)}
+                onSetupPick={() => (setupPickedThisSession = true)}
+                bind:modelWasOverridden
+                bind:isTeamMode
+                bind:selectedProvider
               />
             </div>
 
@@ -3304,6 +3315,14 @@
               >
                 <Fa icon={faPaperclip} />
               </Button>
+            </div>
+            <div class="prompt-context">
+              <IssueSuggestions
+                iconOnly
+                onSelect={handleIssueSelect}
+                repositoryOwner={githubRepoInfo?.owner}
+                repositoryName={githubRepoInfo?.repo}
+              />
             </div>
           </div>
         {/if}
@@ -3427,26 +3446,6 @@
           {/if}
         </div>
 
-        <div class="mx-3 my-1"><Separator /></div>
-        <div class="min-w-0">
-          <InitialAgentPicker
-            bind:selectedSpecialist
-            {selectedModel}
-            onModelChange={(model) => {
-              selectedModel = model;
-              // An explicit pick pins the model for this form session so late
-              // hydration cannot overwrite it (intent-hq/monorepo#2678).
-              if (model) modelPickedThisSession = true;
-            }}
-            bind:selectedReasoningEffort
-            onReasoningEffortChange={() => (effortPickedThisSession = true)}
-            onSetupPick={() => (setupPickedThisSession = true)}
-            bind:modelWasOverridden
-            bind:isTeamMode
-            bind:selectedProvider
-          />
-        </div>
-
         {#if isExpanded && repoType === 'gitlab' && ($checkoutForm$?.status === 'unavailable' || $checkoutForm$?.warmStatus === 'warming' || $checkoutForm$?.contextUrl)}
           <div class="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-sm">
             {#if $checkoutForm$?.status === 'unavailable' && $checkoutForm$.unavailable}
@@ -3553,16 +3552,16 @@
                 <!-- Always rendered so the button never resizes when validity flips;
                    `invisible` reserves the space while hiding it (incl. from AT). -->
                 <span
-                  class="inline-flex shrink-0 items-center gap-1 font-normal"
+                  class="inline-flex shrink-0 items-center gap-0.5 font-normal text-primary-foreground/75"
                   class:invisible={!isValid}
                   aria-hidden={!isValid ? 'true' : undefined}
                 >
                   <ShortcutChip
-                    class="flex min-w-6 h-6 items-center justify-center rounded-md bg-primary-foreground/10 px-1.5 text-primary-foreground"
+                    class="flex min-w-6 h-6 items-center justify-center rounded-md px-1.5 text-primary-foreground"
                     >{navigator.userAgent?.includes('Mac') ? '⌘' : 'Ctrl'}</ShortcutChip
                   >
                   <ShortcutChip
-                    class="flex size-6 items-center justify-center rounded-md bg-primary-foreground/10 text-primary-foreground"
+                    class="flex size-6 items-center justify-center rounded-md text-primary-foreground"
                     >↵</ShortcutChip
                   >
                 </span>
@@ -3665,8 +3664,17 @@
 
   .initializer-layout {
     display: grid;
+    grid-template-areas: 'prompt';
     min-width: 0;
     gap: 1.5rem;
+  }
+
+  .initializer-layout.expanded {
+    grid-template-areas: 'prompt' 'settings';
+  }
+
+  .prompt-pane {
+    grid-area: prompt;
   }
 
   .prompt-pane,
@@ -3695,6 +3703,7 @@
   }
 
   .settings-pane {
+    grid-area: settings;
     gap: 0.25rem;
     padding: 1rem;
     background: var(--color-sidebar);
@@ -3706,7 +3715,7 @@
 
   .prompt-footer {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     align-items: start;
     min-height: 2.75rem;
     margin-inline: -0.5rem;
@@ -3715,14 +3724,35 @@
 
   .prompt-actions {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
+    justify-content: flex-end;
+    min-width: 0;
     gap: 0.25rem;
     min-height: 2.75rem;
   }
 
+  .prompt-settings,
+  .prompt-context {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    min-height: 2.75rem;
+  }
+
+  .prompt-context {
+    justify-content: flex-end;
+  }
+
+  .prompt-context:has(:global(.context-picker[data-state='open'])) {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
   @container (min-width: 48rem) {
     .initializer-layout.expanded {
-      grid-template-columns: minmax(0, 1fr) 19rem;
+      grid-template-areas: 'settings prompt';
+      grid-template-columns: 19rem minmax(0, 1fr);
       min-height: min(32rem, calc(100dvh - 12rem));
       column-gap: 2rem;
     }

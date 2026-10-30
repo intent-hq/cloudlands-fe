@@ -71,7 +71,7 @@
     class={rowLabel
       ? 'flex w-[360px] max-w-[calc(100vw-1rem)] min-w-0 max-h-[min(440px,var(--bits-popover-content-available-height,calc(100dvh-1rem)))] flex-col overflow-hidden'
       : 'w-80 max-w-[calc(100vw-2rem)] max-h-[min(600px,var(--bits-popover-content-available-height,100dvh))] overflow-y-auto space-y-2 p-3'}
-    side={rowLabel ? (isMobile.current ? 'bottom' : 'left') : undefined}
+    side={rowLabel ? (isMobile.current ? 'bottom' : 'right') : undefined}
     sideOffset={rowLabel ? (isMobile.current ? 4 : 24) : undefined}
     align={rowLabel && isMobile.current ? 'end' : 'start'}
     portalProps={{ to: dialogPortalTarget() }}

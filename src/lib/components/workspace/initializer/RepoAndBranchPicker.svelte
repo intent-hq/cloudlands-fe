@@ -276,7 +276,7 @@
       value={repoOnlyValue}
       onchange={handleRepoChange}
       rowLabel={m.workspace_compactInitializer_repository_label()}
-      triggerClass="w-full min-w-0 h-auto min-h-10 px-3 pr-2 py-2 text-sm leading-5 font-normal"
+      triggerClass={workspacePickerStyles.fieldTrigger}
       displayValue={metadataRepoName || undefined}
       triggerValueClass="text-foreground"
       triggerContentClass="gap-2"
@@ -288,12 +288,12 @@
             <GitLabBranchPicker
               {...gitlabBranch}
               rowLabel={m.workspace_compactInitializer_branch_label()}
-              triggerClass="w-full min-w-0 h-auto min-h-10 justify-start px-3 pr-2 py-2 text-sm leading-5 font-normal text-foreground"
+              triggerClass={workspacePickerStyles.fieldTrigger}
               showTriggerChevron={false}
             />
           {/if}
         {:else if repoType === 'remote' && remoteSetup}
-          <div class="flex min-h-10 min-w-0 items-center gap-2 px-3 py-2 text-sm leading-5">
+          <div class="flex min-h-10 min-w-0 items-center gap-2 pl-0 pr-2 py-2 text-sm leading-5">
             <span class={workspacePickerStyles.fieldLabel}
               >{m.workspace_compactInitializer_branch_label()}</span
             >
@@ -305,7 +305,7 @@
           <BranchSelector
             variant="ghost"
             rowLabel={m.workspace_compactInitializer_branch_label()}
-            triggerClass="w-full min-w-0 h-auto min-h-10 px-3 pr-2 py-2 text-sm leading-5 font-normal text-foreground"
+            triggerClass={workspacePickerStyles.fieldTrigger}
             value={branch}
             repoPath={branchRepoPath}
             repoType={repoType as 'local' | 'github'}

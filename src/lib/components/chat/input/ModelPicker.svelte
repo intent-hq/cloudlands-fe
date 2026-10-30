@@ -299,6 +299,8 @@
     description?: string;
     /** Field label rendered inside a full-width trigger, before the value. */
     rowLabel?: string;
+    /** Keep the field label accessible without showing it in a compact trigger. */
+    showRowLabel?: boolean;
     /** Show decorative provider and reasoning icons inside the trigger. */
     showTriggerIcons?: boolean;
     /** Preferred side for the open menu; `left` falls back to vertical without room. */
@@ -367,6 +369,7 @@
     fullWidth = false,
     description,
     rowLabel,
+    showRowLabel = true,
     showTriggerIcons = true,
     menuSide = 'bottom',
     menuSideOffset,
@@ -2541,7 +2544,7 @@
       value: string | string[] | undefined;
     })}
       {#if rowLabel}
-        <span class={workspacePickerStyles.fieldLabel}>{rowLabel}</span>
+        <span class={showRowLabel ? workspacePickerStyles.fieldLabel : 'sr-only'}>{rowLabel}</span>
       {/if}
       <span
         class={cn(

@@ -106,6 +106,10 @@
     padding-top: 1.5rem;
   }
 
+  :global(body[data-new-space-modal-open] [data-slot='dialog-content']) {
+    max-width: min(60rem, calc(100vw - 2rem));
+  }
+
   :global(
     [data-new-space-modal]
       > .dialog-layout
@@ -131,11 +135,12 @@
   }
 
   .workspace-form :global(.settings-pane) {
-    padding: 0.5rem 0 0.5rem 1rem;
+    padding: 0.5rem 1rem 0.5rem 0;
   }
 
   .workspace-form :global(.initializer-layout.expanded) {
-    grid-template-columns: minmax(0, 1fr) 18rem;
+    grid-template-areas: 'settings prompt';
+    grid-template-columns: 18rem minmax(0, 1fr);
     min-height: 0;
   }
 
@@ -143,13 +148,13 @@
     display: none;
     position: absolute;
     inset-block: 0;
-    inset-inline-end: 0;
+    inset-inline-start: 0;
     width: calc(18rem + 1.5rem);
     pointer-events: none;
     z-index: -1;
     background: var(--color-sidebar);
-    border-start-end-radius: var(--radius-medium);
-    border-end-end-radius: var(--radius-medium);
+    border-start-start-radius: var(--radius-medium);
+    border-end-start-radius: var(--radius-medium);
   }
 
   :global(.dark) .workspace-sidebar-surface {
@@ -168,6 +173,7 @@
     }
 
     .workspace-form :global(.initializer-layout.expanded) {
+      grid-template-areas: 'prompt' 'settings';
       grid-template-columns: minmax(0, 1fr);
       row-gap: 1rem;
     }
@@ -175,7 +181,7 @@
     .workspace-form :global(.settings-pane) {
       margin-inline: -1.5rem;
       margin-bottom: -1rem;
-      padding: 1rem 1.5rem 1.5rem 0.75rem;
+      padding: 1rem 1.5rem 1.5rem;
       border-end-start-radius: var(--radius-medium);
       border-end-end-radius: var(--radius-medium);
     }
