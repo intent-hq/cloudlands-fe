@@ -57,19 +57,22 @@
     context.variant === 'icon' && selected && 'text-foreground',
     className,
   )}
+  child={context.multiple ? multiSelectTrigger : undefined}
   {...restProps as any}
 >
-  {#snippet child({ props })}
-    <Button
-      {...props}
-      variant="plain"
-      size="default"
-      wrapContent={false}
-      role="tab"
-      aria-selected={selected ? 'true' : 'false'}
-      data-state={selected ? 'active' : 'inactive'}
-    >
-      {@render children?.()}
-    </Button>
-  {/snippet}
+  {@render children?.()}
 </TabsPrimitive.Trigger>
+
+{#snippet multiSelectTrigger({ props }: { props: Record<string, unknown> })}
+  <Button
+    {...props}
+    variant="plain"
+    size="default"
+    wrapContent={false}
+    role="tab"
+    aria-selected={selected ? 'true' : 'false'}
+    data-state={selected ? 'active' : 'inactive'}
+  >
+    {@render children?.()}
+  </Button>
+{/snippet}

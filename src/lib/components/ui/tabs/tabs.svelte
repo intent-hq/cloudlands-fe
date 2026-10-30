@@ -48,6 +48,9 @@
     get selectedValues() {
       return selectedValues ?? (value ? [value] : []);
     },
+    get multiple() {
+      return selectedValues !== undefined;
+    },
     get variant() {
       return variant;
     },
