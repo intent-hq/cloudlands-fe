@@ -2669,6 +2669,7 @@
   "home_navigation_label": "主頁",
   "home_needs_you_badge_many": "{count} 個工作區需要你處理",
   "home_needs_you_badge_one": "{count} 個工作區需要你處理",
+  "home_new_chat": "新對話",
   "home_new_workspace": "新增工作區",
   "home_no_matches": "沒有符合的工作區",
   "home_no_matches_description": "請嘗試其他搜尋條件、儲存庫或待處理篩選條件。",

@@ -2669,6 +2669,7 @@
   "home_navigation_label": "主页",
   "home_needs_you_badge_many": "{count} 个工作区需要你处理",
   "home_needs_you_badge_one": "{count} 个工作区需要你处理",
+  "home_new_chat": "新对话",
   "home_new_workspace": "新建工作区",
   "home_no_matches": "没有匹配的工作区",
   "home_no_matches_description": "请尝试其他搜索条件、仓库或待处理筛选条件。",

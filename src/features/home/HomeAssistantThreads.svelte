@@ -1,6 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import Fa from 'svelte-fa';
+  import { faPlus } from '@fortawesome/free-solid-svg-icons';
   import { ListRow, ListView } from '$lib/components/patterns/collection';
+  import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
+  import { createChiefThreadStarter } from '$lib/components/layout/sidebar-nav/cards/chief-thread-starter.svelte';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
@@ -9,6 +14,7 @@
     selectChiefActiveAgentId,
     selectChiefThreads,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
+  import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
   import { setActiveAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
     backgroundHooksSubscribeRequested,
@@ -26,6 +32,8 @@
 
   const threads$ = selectChiefThreads();
   const activeAgentId$ = selectChiefActiveAgentId();
+  const hidesThreadActions$ = selectHidesAgentLifecycleActions(CHIEF_WORKSPACE_ID);
+  const threadStarter = createChiefThreadStarter();
   const selectedKeys = $derived($activeAgentId$ ? [$activeAgentId$] : []);
 
   onMount(() => {
@@ -43,7 +51,33 @@
     appStore.dispatch(setChiefActiveAgentId(agentId));
     appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, agentId));
   }
+
+  function startThread() {
+    if (!$hidesThreadActions$) threadStarter.start();
+  }
 </script>
+
+{#if !$hidesThreadActions$}
+  <Button
+    variant="ghost"
+    class="mb-3 h-9 w-full shrink-0 justify-start gap-2 px-2 text-muted-foreground hover:text-foreground focus-visible:-outline-offset-1"
+    labelClass="text-left"
+    aria-disabled={threadStarter.pending || undefined}
+    aria-busy={threadStarter.pending || undefined}
+    onclick={startThread}
+  >
+    {#snippet leadingIcon()}
+      <span class="flex size-3 items-center justify-center [&_svg]:size-3" aria-hidden="true">
+        {#if threadStarter.pending}
+          <IntentMarkLoader size={12} />
+        {:else}
+          <Fa icon={faPlus} />
+        {/if}
+      </span>
+    {/snippet}
+    {m.home_new_chat()}
+  </Button>
+{/if}
 
 <ListView
   items={$threads$}

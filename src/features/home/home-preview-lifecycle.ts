@@ -6,14 +6,17 @@ import { startChatFixtureSagas } from '../../test/chat-fixture-sagas';
 import { setupHomeIntegrationsFixtures } from './home-integrations-browser-fixtures';
 import { setupHomeAssistantActivityFixtures } from './home-assistant-activity-browser-fixtures';
 import { setupHomeAssistantRenameFixtures } from './home-assistant-rename-browser-fixtures';
+import { setupHomeAssistantNewChatFixtures } from './home-assistant-new-chat-browser-fixtures';
 
 export function startHomePreviewFixtures() {
   return startHomePreview(() => {
     const stopIntegrations = setupHomeIntegrationsFixtures(store);
     const stopActivity = setupHomeAssistantActivityFixtures();
     const stopRenames = setupHomeAssistantRenameFixtures();
+    const stopNewChats = setupHomeAssistantNewChatFixtures();
     return [
       () => {
+        stopNewChats();
         stopRenames();
         stopActivity();
         stopIntegrations();

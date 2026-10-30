@@ -9,7 +9,6 @@
   import Fa from 'svelte-fa';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { m } from '$shared/paraglide/messages.js';
-  import { v4 as uuidv4 } from 'uuid';
   import ChatPanel from '$lib/components/chat/ChatPanel.svelte';
   import AssistantThreadTitle from '$lib/components/chat/AssistantThreadTitle.svelte';
   import { createAssistantThreadRename } from '$lib/components/chat/assistant-thread-rename.svelte';
@@ -20,7 +19,6 @@
     selectChiefActiveAgentId,
     selectCurrentChiefThread,
     selectChiefThreads,
-    selectReusableChiefThread,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import {
@@ -28,45 +26,23 @@
     workspaceUnmounted,
   } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
   import {
-    clearAgentCreationOutcome,
-    createAgentFromConfigRequested,
     deleteAgentWithUndoRequested,
     setActiveAgentId,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
-  import {
-    selectAgentCreationOutcome,
-    selectAgentsLoaded,
-  } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
-  import { selectContextSelectedModel } from '$store/renderer/slices/provider-catalog/workspace-catalog-selectors';
-  import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { selectAgentsLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectHasResolvableProvider } from '$store/renderer/slices/model/model-selectors';
   import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectAgentMutationUi } from '$store/renderer/slices/agent-mutation-ui/agent-mutation-ui-selectors';
-  import { createAgentTypeId } from '$shared/types/agent.types';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
-  import {
-    buildChiefBehaviorPrompt,
-    CHIEF_PROMPT_VERSION,
-    CHIEF_SPECIALIST_ID,
-  } from '$shared/chief-agent-config';
   import { WorkspaceStatus, type Workspace } from '$shared/types';
-  import { formatChiefThreadName } from './chief-thread-name';
+  import { createChiefThreadStarter } from './chief-thread-starter.svelte';
   import { resolveChiefThreadOnExpansion } from './chief-thread-selection';
-  import {
-    selectEffectiveBehaviorPrompt,
-    selectSpecialists,
-  } from '$store/renderer/slices/specialists/specialists-selectors';
 
   const chiefThreads$ = selectChiefThreads();
   const currentChiefThread$ = selectCurrentChiefThread();
   const chiefActiveAgentId$ = selectChiefActiveAgentId();
   const chiefAgentsLoaded$ = selectAgentsLoaded(CHIEF_WORKSPACE_ID);
-  const creationConsumer = { id: uuidv4(), resourceId: 'chief-thread' };
-  const creationOutcome$ = selectAgentCreationOutcome(
-    creationConsumer.id,
-    CHIEF_WORKSPACE_ID,
-    creationConsumer.resourceId,
-  );
+  const threadStarter = createChiefThreadStarter();
   const hasResolvableProvider$ = selectHasResolvableProvider();
   // Chief threads are agents: creating / deleting one is refused (-32003) for
   // a collaborator connection, so the affordances (and the auto-start) are
@@ -98,7 +74,7 @@
     renameOutcome$,
     hidesAgentLifecycleActions$,
   );
-  const isCreatingThread = $derived($creationOutcome$?.status === 'pending');
+  const isCreatingThread = $derived(threadStarter.pending);
   let hasAutoStartedRef = $state(false);
   let isWorkspaceRegistered = $state(false);
   let hasActivatedChat = $state(false);
@@ -201,7 +177,6 @@
   });
 
   onDestroy(() => {
-    appStore.dispatch(clearAgentCreationOutcome(creationConsumer.id));
     if (!isWorkspaceRegistered) return;
     chiefMountCount = Math.max(0, chiefMountCount - 1);
     if (chiefMountCount === 0) {
@@ -232,52 +207,8 @@
   function createNewThread() {
     if (isCreatingThread) return;
     ensureChiefWorkspaceRegistered();
-
-    const reduxState = appStore.state;
-
-    // Reuse only blank threads created with the current Chief identity contract.
-    // A system prompt is fixed at agent creation, so selecting an older blank
-    // thread would silently preserve its stale generic-agent identity.
-    const emptyThread = selectReusableChiefThread.select(reduxState);
-    if (emptyThread) {
-      selectedAgentId = emptyThread.agentId;
-      appStore.dispatch(setChiefActiveAgentId(emptyThread.agentId));
-      appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, emptyThread.agentId));
-      return;
-    }
-
-    const chiefSpecialist = selectSpecialists
-      .select(reduxState)
-      .find((s) => s.id === CHIEF_SPECIALIST_ID);
-    const chiefBehaviorPrompt = buildChiefBehaviorPrompt(
-      selectEffectiveBehaviorPrompt.select(reduxState, CHIEF_SPECIALIST_ID),
-    );
-    appStore.dispatch(
-      createAgentFromConfigRequested(
-        CHIEF_WORKSPACE_ID,
-        {
-          workspaceId: CHIEF_WORKSPACE_ID,
-          name: formatChiefThreadName(new Date()),
-          // Generated timestamp name — keep the session self-renameable.
-          nameExplicitlySet: false,
-          model: selectContextSelectedModel.select(reduxState, CHIEF_WORKSPACE_ID),
-          provider: selectEffectiveDefaultProviderId.select(reduxState, CHIEF_WORKSPACE_ID),
-          agentType: createAgentTypeId('workspace'),
-          source: 'chief-card',
-          behaviorPrompt: chiefBehaviorPrompt,
-          metadata: {
-            source: 'chief-card',
-            chiefWorkspace: true,
-            chiefPromptVersion: CHIEF_PROMPT_VERSION,
-            specialist: CHIEF_SPECIALIST_ID,
-            specialistName: chiefSpecialist?.name ?? m.layout_chiefCard_title(),
-            roleReminder: chiefSpecialist?.roleReminder,
-            behaviorPrompt: chiefBehaviorPrompt,
-          },
-        },
-        { openAgent: false, consumer: creationConsumer },
-      ),
-    );
+    const reusedAgentId = threadStarter.start();
+    if (reusedAgentId) selectedAgentId = reusedAgentId;
   }
 </script>
 
@@ -355,7 +286,7 @@
         <Fa icon={faTrash} size="xs" />
       </Button>
     {/if}
-    {#if !$hidesAgentLifecycleActions$}
+    {#if threadPicker && !$hidesAgentLifecycleActions$}
       <div class="flex w-6 shrink-0 items-center">
         <Button
           variant="ghost"

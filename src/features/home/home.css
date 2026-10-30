@@ -268,8 +268,12 @@
   .home-layout.home-assistant {
     overflow: hidden;
   }
+  /* 3rem keeps the thread list's space below the New chat row. */
   .home-layout.home-assistant .home-sidebar-resizable {
-    height: min(10rem, 25%);
+    height: min(13rem, calc(25% + 3rem));
+  }
+  .home-layout.home-assistant .home-sidebar {
+    max-height: 13rem;
   }
   .home-layout.home-assistant .home-surface {
     min-height: 0;
