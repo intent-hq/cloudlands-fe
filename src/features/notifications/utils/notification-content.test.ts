@@ -9,7 +9,7 @@ import { buildNotificationContent, getSpecialistDisplayName } from './notificati
 
 describe('getSpecialistDisplayName', () => {
   it('maps known specialists and falls back to Agent', () => {
-    expect(getSpecialistDisplayName('spec-writer')).toBe('Coordinator');
+    expect(getSpecialistDisplayName('spec-writer')).toBe('Lead');
     expect(getSpecialistDisplayName('implementor')).toBe('Implementor');
     expect(getSpecialistDisplayName('verifier')).toBe('Verifier');
     expect(getSpecialistDisplayName('unknown')).toBe('Agent');
@@ -26,7 +26,7 @@ describe('buildNotificationContent', () => {
 
   it('builds "<Specialist>" / "Finished" without a task title', () => {
     expect(buildNotificationContent({ isChief: false, specialist: 'spec-writer' })).toEqual({
-      title: 'Coordinator',
+      title: 'Lead',
       body: 'Finished',
     });
   });
