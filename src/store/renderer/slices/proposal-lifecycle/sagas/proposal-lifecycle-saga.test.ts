@@ -1,3 +1,4 @@
+import { createWorkspaceId } from '$shared/types';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 
@@ -38,6 +39,7 @@ import {
   proposalApplySucceeded,
   proposalFailed,
   hydrateProposalLifecycle,
+  proposalCreateOutcomeReported,
   proposalResolutionReconciled,
   proposalUndoStarted,
   proposalUndoSucceeded,
@@ -421,6 +423,49 @@ describe('persistence', () => {
       });
     },
   );
+
+  it('persists a daemon-reported create outcome and restores it after reload (intent-hq/intent#8086)', async () => {
+    vi.useFakeTimers();
+    mocks.getJSON.mockReturnValue(undefined);
+    const channel = stdChannel();
+    const state = emptyState();
+    const task = runSaga(
+      { channel, dispatch: (action) => action, getState: () => state },
+      proposalLifecycleSaga,
+    );
+    await Promise.resolve();
+    const result = {
+      workspaceId: createWorkspaceId('ws-created'),
+      proposalOrigin: { proposalId: 'p-created', outcome: 'applied' as const },
+    };
+    const applied = { status: 'applied', completedAt: Date.now(), lastAction: 'apply', result };
+    state.proposalLifecycle['p-created'] = applied;
+
+    channel.put(
+      proposalCreateOutcomeReported({
+        proposalId: 'p-created',
+        completedAt: applied.completedAt,
+        outcome: 'applied',
+        result,
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect(mocks.setJSON).toHaveBeenCalledWith(PROPOSAL_LIFECYCLE_STORAGE_KEY, {
+      entries: { 'p-created': applied },
+    });
+    task.cancel();
+    await task.toPromise();
+    vi.useRealTimers();
+
+    // Reload: the stored entry (with the created workspace for the
+    // Open-workspace link) hydrates back unchanged.
+    mocks.getJSON.mockReturnValue(mocks.setJSON.mock.calls.at(-1)?.[1]);
+    const dispatched = await run(hydrateProposalLifecycleSaga, undefined, emptyState());
+    expect((dispatched[0] as ReturnType<typeof hydrateProposalLifecycle>).payload[0]).toEqual({
+      'p-created': applied,
+    });
+  });
 
   it('persists a dismissal when resolution reconciliation completes', async () => {
     vi.useFakeTimers();
