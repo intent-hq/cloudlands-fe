@@ -44,10 +44,6 @@ const checklistCases: Array<{
 ];
 
 beforeEach(() => {
-  Object.defineProperty(Element.prototype, 'getAnimations', {
-    configurable: true,
-    value: vi.fn(() => []),
-  });
   vi.spyOn(window, 'matchMedia').mockReturnValue({
     matches: true,
     media: '(prefers-reduced-motion: reduce)',

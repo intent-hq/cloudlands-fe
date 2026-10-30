@@ -172,7 +172,11 @@ describe('ChatMessageNavigator', () => {
     trigger.blur();
     trigger.focus();
     await fireEvent.focus(trigger);
-    await screen.findByRole('tooltip', { name: 'Browse user messages', hidden: true });
+    // The reopened tooltip has been positioned by now, and jsdom's zero-size layout makes
+    // the floating layer hide it (visibility: hidden), which empties its accessible name.
+    // Match on text content instead.
+    const tooltip = await screen.findByRole('tooltip', { hidden: true });
+    expect(tooltip.textContent).toContain('Browse user messages');
   });
 
   it('toggles with Space and Enter only from the trigger', async () => {
@@ -213,7 +217,8 @@ describe('ChatMessageNavigator', () => {
     input = await screen.findByRole('combobox', { name: 'Filter user messages' });
     await waitFor(() => expect(document.activeElement).toBe(input));
     onSelectMessage.mockImplementation(async () => {
-      expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull();
+      // Closed before the selection runs; the panel may still be playing its exit.
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
       downButton.focus();
       return true;
     });

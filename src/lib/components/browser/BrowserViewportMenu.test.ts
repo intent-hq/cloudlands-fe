@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import BrowserViewportMenu from './BrowserViewportMenu.svelte';
 
@@ -31,7 +31,7 @@ describe('BrowserViewportMenu', () => {
     await fireEvent.click(screen.getByTestId('browser-viewport-trigger'));
     await fireEvent.click(await screen.findByRole('menuitem', { name: 'Custom…' }));
     expect(screen.getByRole('dialog')).toBeTruthy();
-    expect(screen.queryByRole('menu')).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
     const width = screen.getByRole('spinbutton', { name: 'Width' });
     const height = screen.getByRole('spinbutton', { name: 'Height' });
     await fireEvent.input(width, { target: { value: '319' } });

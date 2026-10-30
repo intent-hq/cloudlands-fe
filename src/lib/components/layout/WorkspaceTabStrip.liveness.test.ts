@@ -169,7 +169,6 @@ async function expectContinuingLiveness({ sidebar, local, deliveries }: HarnessV
 
 describe('WorkspaceTabStrip reactive-parent liveness', () => {
   let frameDelayMs = 16;
-  const originalGetAnimations = Object.getOwnPropertyDescriptor(Element.prototype, 'getAnimations');
 
   beforeEach(() => {
     frameDelayMs = 16;
@@ -212,18 +211,11 @@ describe('WorkspaceTabStrip reactive-parent liveness', () => {
       addEventListener() {},
       removeEventListener() {},
     } as unknown as MediaQueryList);
-    Object.defineProperty(Element.prototype, 'getAnimations', {
-      configurable: true,
-      value: () => [],
-    });
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
-    if (originalGetAnimations)
-      Object.defineProperty(Element.prototype, 'getAnimations', originalGetAnimations);
-    else Reflect.deleteProperty(Element.prototype, 'getAnimations');
   });
 
   it.each([

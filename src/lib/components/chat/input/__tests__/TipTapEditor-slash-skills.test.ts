@@ -247,7 +247,7 @@ describe('TipTapEditor slash skills', () => {
     await waitFor(() => expect(screen.getByRole('listbox')).toBeTruthy());
 
     await fireEvent.keyDown(editor, { key: 'Escape' });
-    expect(screen.queryByRole('listbox')).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
     expect(onEscape).not.toHaveBeenCalled();
     expect(component.getTextContent()).toBe('/');
     expect(document.activeElement).toBe(editor);
@@ -275,7 +275,7 @@ describe('TipTapEditor slash skills', () => {
       await screen.findByRole('listbox');
 
       await fireEvent.keyDown(editor, { key: 'Escape' });
-      expect(screen.queryByTestId('slash-skill-menu')).toBeNull();
+      await waitFor(() => expect(screen.queryByTestId('slash-skill-menu')).toBeNull());
       expect(closeParent).not.toHaveBeenCalled();
       expect(document.activeElement).toBe(editor);
       expect(component.getTextContent()).toBe('/');
@@ -311,7 +311,7 @@ describe('TipTapEditor slash skills', () => {
     await view.rerender({ skills });
     await screen.findByRole('option', { name: 'research' });
     await view.rerender({ skills: [] });
-    expect(screen.queryByTestId('slash-skill-menu')).toBeNull();
+    await waitFor(() => expect(screen.queryByTestId('slash-skill-menu')).toBeNull());
   });
 
   it('reacts to skill prop updates and supports pointer selection', async () => {

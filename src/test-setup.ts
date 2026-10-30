@@ -108,6 +108,22 @@ if (typeof window !== 'undefined') {
     };
   }
 
+  // jsdom also lacks Element.prototype.getAnimations. Svelte calls it when a keyed
+  // `{#each}` with `animate:` drops an item; without it the flush throws partway and
+  // later effects silently stop re-running (cloudlands-fe#3856). Report no running
+  // animations by default. Writable and configurable so a test can still override it
+  // (assignment, defineProperty, or vi.spyOn); a plain function so resetting mocks
+  // cannot strip its return value.
+  if (typeof Element.prototype.getAnimations !== 'function') {
+    Object.defineProperty(Element.prototype, 'getAnimations', {
+      configurable: true,
+      writable: true,
+      value: function getAnimations(): Animation[] {
+        return [];
+      },
+    });
+  }
+
   // Mock window.matchMedia
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
