@@ -90,7 +90,7 @@
       </p>
     {:else}
       <p
-        class="type-body break-all rounded-md bg-muted px-3 py-2 font-mono text-foreground"
+        class="type-body break-all rounded-md border border-border bg-background px-3 py-2 font-mono text-foreground"
         data-testid="provider-profile-folder-path"
       >
         {folderPath}
@@ -116,7 +116,8 @@
     {#if !started}
       <p class="type-caption text-muted-foreground">
         {m.settings_providerProfileKinds_createRuns_label()}
-        <code class="rounded bg-muted px-1.5 py-0.5 font-mono type-caption text-foreground"
+        <code
+          class="rounded border border-border bg-muted px-1.5 py-0.5 font-mono type-caption text-foreground"
           >{command}</code
         >
       </p>
