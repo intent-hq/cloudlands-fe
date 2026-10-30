@@ -4,6 +4,22 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.255.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.254.0...v2.255.0) (2026-10-30)
+
+
+### 🚀 Features
+
+* show a masked card for agent secret requests ([#3855](https://github.com/intent-hq/cloudlands-fe/issues/3855)) ([5ac807c](https://github.com/intent-hq/cloudlands-fe/commit/5ac807caa66110351f5be7b4d959c9dca91441ae))
+
+
+### 🐛 Bug Fixes
+
+* allow new lines in setup script editor ([#3848](https://github.com/intent-hq/cloudlands-fe/issues/3848)) ([607656c](https://github.com/intent-hq/cloudlands-fe/commit/607656cc82c8e54c40ba20bed9fae6ccf09fa481))
+* bump intentd sidecar to v0.11.80 ([#3866](https://github.com/intent-hq/cloudlands-fe/issues/3866)) ([a06052f](https://github.com/intent-hq/cloudlands-fe/commit/a06052f01ce4ea392cbb05025a153ad123cd3c4c))
+* cap the sidebar changes list at 500 rows per section ([#3856](https://github.com/intent-hq/cloudlands-fe/issues/3856)) ([85789e3](https://github.com/intent-hq/cloudlands-fe/commit/85789e3315ec1f57b3417ba1aa2b780ec10636bd))
+* **chat:** save note mentions as [@note](https://github.com/note)[id:title] so multi-word titles render whole ([#3845](https://github.com/intent-hq/cloudlands-fe/issues/3845)) ([4e5d3f4](https://github.com/intent-hq/cloudlands-fe/commit/4e5d3f4eaf2f105d183a19040836959280bd308d))
+* **chat:** show Thinking indicator as soon as a queued message drains ([#3849](https://github.com/intent-hq/cloudlands-fe/issues/3849)) ([180ee9b](https://github.com/intent-hq/cloudlands-fe/commit/180ee9bc337392af2b7c866d7b403b6498aa15fb))
+
 ## [2.254.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.253.2...v2.254.0) (2026-10-30)
 
 
