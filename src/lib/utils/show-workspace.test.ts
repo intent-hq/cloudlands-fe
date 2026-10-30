@@ -15,14 +15,15 @@ import {
   workspaceRoute,
 } from './show-workspace';
 import { bumpNavigationEpoch } from './navigation-epoch';
+import { goto as ctGoto } from '../../../playwright/app-stubs/navigation';
 
 const mocks = vi.hoisted(() => ({
   route: vi.fn<(route: string, options?: { state?: App.PageState }) => Promise<void>>(),
 }));
 
-/** Like the real `goto`: the window ends up on the route. */
+/** Share the CT router fixture so unit and browser jumps land on the same route. */
 async function land(route: string): Promise<void> {
-  window.history.pushState({}, '', route);
+  await ctGoto(route);
 }
 vi.mock('./navigation.client', () => ({ navigateToRoute: mocks.route }));
 

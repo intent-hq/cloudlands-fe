@@ -5,7 +5,14 @@
  * CT browser bundle.
  */
 
-export const goto = async (): Promise<void> => {};
+export const goto = async (
+  url: string | URL,
+  options: { replaceState?: boolean; state?: App.PageState } = {},
+): Promise<void> => {
+  // Model a landed route without reloading or unmounting the CT component.
+  const method = options.replaceState ? 'replaceState' : 'pushState';
+  window.history[method](options.state ?? {}, '', url);
+};
 export const invalidate = async (): Promise<void> => {};
 export const invalidateAll = async (): Promise<void> => {};
 export const afterNavigate = (): void => {};
