@@ -141,6 +141,11 @@ export function reconcileAppliedProposals(input: {
     const applied =
       scoped?.status === 'applied' ? scoped : local?.status === 'applied' ? local : null;
     if (!applied) continue;
+    // A daemon that handles `workspace.create` `origin` reports it on the
+    // result: it resolved the card itself, or declined it on purpose (e.g. a
+    // replay naming another card) — resolving it here would undo that.
+    // Only an older daemon (no report) needs this client-side fallback.
+    if (applied.result?.proposalOrigin ?? local?.result?.proposalOrigin) continue;
     const workspaceId = applied.result?.workspaceId ?? local?.result?.workspaceId;
     // i18n-ignore (wire detail appended to the model notice, not UI copy)
     const detail = workspaceId ? `Created workspace ${workspaceId}.` : undefined;

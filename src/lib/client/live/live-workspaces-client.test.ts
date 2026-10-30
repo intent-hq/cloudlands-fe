@@ -157,6 +157,22 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
     });
   });
 
+  it('create forwards origin and surfaces the daemon proposalOrigin report (intent-hq/intent#8086)', async () => {
+    mockedRequest.mockResolvedValueOnce({
+      workspace: { id: 'ws-origin', title: 'Follow-up', branch: 'b', status: 'Active' },
+      proposalOrigin: { proposalId: 'card-1', outcome: 'applied' },
+    });
+    const client = new LiveWorkspacesClient();
+    const origin = { kind: 'proposal' as const, agentId: 'agent-1', proposalId: 'card-1' };
+
+    const result = await client.create({ title: 'Follow-up', origin } as CreateWorkspaceRequest);
+
+    const [method, params] = mockedRequest.mock.calls[0];
+    expect(method).toBe('workspace.create');
+    expect(CreateWorkspaceRequestSchema.parse(params).origin).toEqual(origin);
+    expect(result.proposalOrigin).toEqual({ proposalId: 'card-1', outcome: 'applied' });
+  });
+
   it('open sends the exact workspace.get request and unwraps the protocol response', async () => {
     const workspace = {
       id: '77777777-7777-4777-8777-777777777777',

@@ -1237,12 +1237,26 @@ describe('workspaceOperationsSaga', () => {
   });
 
   it('forwards the card origin on workspace.create (intent-hq/intent#8086)', async () => {
-    mocks.create.mockResolvedValueOnce({ ok: true, data: { workspace: workspace('ws-origin') } });
+    mocks.create.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        workspace: workspace('ws-origin'),
+        proposalOrigin: { proposalId: 'create-origin', outcome: 'applied' },
+      },
+    });
     const run = harness([]);
     const origin = { kind: 'proposal' as const, agentId: 'agent-1', proposalId: 'create-origin' };
     run.send(applyWorkspaceProposal({ proposal: createProposal('create-origin'), origin }));
     await settle();
     expect(mocks.create.mock.calls[0]?.[0]?.origin).toEqual(origin);
+    // The daemon's report is kept so the chat fallback knows not to resolve.
+    expect(run.state().proposalLifecycle['create-origin']).toMatchObject({
+      status: 'applied',
+      result: {
+        workspaceId: 'ws-origin',
+        proposalOrigin: { proposalId: 'create-origin', outcome: 'applied' },
+      },
+    });
     run.task.cancel();
     await run.task.toPromise();
   });

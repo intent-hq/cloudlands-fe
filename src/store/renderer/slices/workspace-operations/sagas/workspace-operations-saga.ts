@@ -870,7 +870,10 @@ function* applyCreateProposal(payload: WorkspaceProposalApplyPayload): SagaGener
       proposalApplySucceeded({
         proposalId,
         completedAt: Date.now(),
-        result: { workspaceId: result.data.workspace.id },
+        result: {
+          workspaceId: result.data.workspace.id,
+          ...(result.data.proposalOrigin ? { proposalOrigin: result.data.proposalOrigin } : {}),
+        },
       }),
     );
   } catch (error) {

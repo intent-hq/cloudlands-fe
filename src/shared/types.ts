@@ -1699,6 +1699,17 @@ export interface WorkspaceCreateOrigin {
   proposalId: string;
 }
 
+/**
+ * `workspace.create` result `proposalOrigin` (PROTOCOL §5.1): what the daemon
+ * did with the request's `origin`. Present only on daemons that handle
+ * `origin`; its presence means the client must not resolve the card itself.
+ */
+export interface WorkspaceCreateProposalOutcome {
+  proposalId: string;
+  /** `applied`, `dismissed` (an earlier resolution kept) or `notResolved`. */
+  outcome: string;
+}
+
 export interface CreateWorkspaceRequest {
   repositoryCheckout?: import('./types/repository-checkout').CheckoutSelection;
   idempotencyKey?: string;

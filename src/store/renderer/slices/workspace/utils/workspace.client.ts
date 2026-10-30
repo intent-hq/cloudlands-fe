@@ -12,6 +12,7 @@ import {
 
 import type {
   Workspace,
+  WorkspaceCreateProposalOutcome,
   WorkspaceId,
   CreateWorkspaceRequest,
   UpdateWorkspaceRequest,
@@ -337,7 +338,14 @@ export class WorkspaceClient {
   }
 
   async create(request: CreateWorkspaceRequest): Promise<
-    | { ok: true; data: { workspace: Workspace; initialAgent?: { id: string } } }
+    | {
+        ok: true;
+        data: {
+          workspace: Workspace;
+          initialAgent?: { id: string };
+          proposalOrigin?: WorkspaceCreateProposalOutcome;
+        };
+      }
     | {
         ok: false;
         error: string;
@@ -382,6 +390,7 @@ export class WorkspaceClient {
         data: {
           workspace: normalizeWorkspacePaths(result.workspace),
           initialAgent: result.initialAgent,
+          ...(result.proposalOrigin ? { proposalOrigin: result.proposalOrigin } : {}),
         },
       };
     }

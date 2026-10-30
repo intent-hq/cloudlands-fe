@@ -30,6 +30,7 @@ import type {
   CreateWorkspaceRequest,
   UpdateWorkspaceRequest,
   Workspace,
+  WorkspaceCreateProposalOutcome,
   WorkspaceDiskUsage,
 } from '$shared/types';
 import type { TokenUsage } from '$features/token-usage/token-usage-types';
@@ -304,6 +305,8 @@ export class LiveWorkspacesClient implements WorkspacesClient {
       );
       const raw = result?.workspace;
       const rawAgent = result?.initialAgent;
+      const proposalOrigin = (result as { proposalOrigin?: WorkspaceCreateProposalOutcome })
+        ?.proposalOrigin;
       let initialAgent: ({ id: string } & Record<string, unknown>) | undefined;
       if (rawAgent !== undefined && rawAgent !== null) {
         // The daemon-assigned `initialAgent.id` is the only way callers can
@@ -327,6 +330,7 @@ export class LiveWorkspacesClient implements WorkspacesClient {
             success: true,
             workspace: normalizeWorkspace(raw as Record<string, unknown>),
             ...(initialAgent ? { initialAgent } : {}),
+            ...(proposalOrigin ? { proposalOrigin } : {}),
           }
         : { success: true };
     } catch (error) {

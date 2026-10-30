@@ -18,7 +18,12 @@ vi.mock('$store/renderer/store', () => ({
 
 vi.mock('./proposal-draft-storage', () => ({ clearProposalDraft: vi.fn() }));
 
-import { applyProposal, dismissProposal } from './proposal-action-handlers';
+import { agentScopedProposalKey } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-slice';
+import {
+  applyProposal,
+  dismissProposal,
+  reconcileAppliedProposals,
+} from './proposal-action-handlers';
 
 const proposal: WorkspaceCreateProposal = {
   kind: 'workspace-create',
@@ -95,5 +100,47 @@ describe('applyProposal', () => {
         'origin',
       );
     }
+  });
+});
+
+describe('reconcileAppliedProposals', () => {
+  beforeEach(() => mocks.dispatch.mockClear());
+
+  const resolveCalls = () =>
+    mocks.dispatch.mock.calls
+      .map(([action]) => action as { type: string; payload?: unknown })
+      .filter((action) => action.type === 'agentSessions/resolveProposalRequested');
+
+  const applied = (proposalId: string, result: Record<string, unknown>) => ({
+    [agentScopedProposalKey('agent-1', proposalId)]: {
+      status: 'applied' as const,
+      completedAt: 1,
+      result,
+    },
+  });
+
+  it('skips the client fallback when the daemon reported the origin (intent-hq/intent#8086)', () => {
+    for (const outcome of ['applied', 'notResolved']) {
+      reconcileAppliedProposals({
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        refs: [{ proposalId: `card-${outcome}`, messageId: 'm-1' }],
+        lifecycle: applied(`card-${outcome}`, {
+          workspaceId: 'ws-new',
+          proposalOrigin: { proposalId: `card-${outcome}`, outcome },
+        }),
+      });
+    }
+    expect(resolveCalls()).toEqual([]);
+  });
+
+  it('keeps the fallback for an older daemon that reports nothing', () => {
+    reconcileAppliedProposals({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      refs: [{ proposalId: 'card-legacy', messageId: 'm-1' }],
+      lifecycle: applied('card-legacy', { workspaceId: 'ws-new' }),
+    });
+    expect(resolveCalls()).toHaveLength(1);
   });
 });
