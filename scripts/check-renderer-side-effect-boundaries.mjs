@@ -50,6 +50,7 @@ const APPROVED_BRIDGE_REGISTRATIONS = new Map([
   ['src/store/renderer/seeders/provider-status-bridge-seeder.ts', { registerMockIpcHandler: 5 }],
   ['src/store/renderer/seeders/quit-confirmation-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/release-notes-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
+  ['src/store/renderer/seeders/remote-machines-bridge-seeder.ts', { registerMockIpcHandler: 3 }],
   ['src/store/renderer/seeders/renderer-log-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/repo-config-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/settings-legacy-bridge-seeder.ts', { registerMockIpcHandler: 7 }],
