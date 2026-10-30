@@ -38,11 +38,13 @@
 >
   {#if context.state.hover}
     {#if context.variant === 'default' || context.variant === 'icon'}
-      <TabsIndicator
-        store={context.state.hover}
-        selectedIndexes={context.state.selectedIndexes}
-        variant={context.variant}
-      />
+      {#each context.state.selectedIndexes as selectedIndex, order (order === 0 ? -1 : selectedIndex)}
+        <TabsIndicator
+          store={context.state.hover}
+          selectedIndexes={[selectedIndex]}
+          variant={context.variant}
+        />
+      {/each}
       {#if !context.state.selectedIndexes.includes(context.state.hover.activeIndex ?? -1)}
         <ProximityHighlight store={context.state.hover} selectedIndexes={[]} />
       {/if}

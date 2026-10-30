@@ -1,5 +1,6 @@
 <script lang="ts">
   import { cn } from '$lib/utils';
+  import { Button } from '$lib/components/ui/button';
   import { Tabs as TabsPrimitive } from 'bits-ui';
   import { getContext, onDestroy, untrack, type Snippet } from 'svelte';
   import type { HTMLButtonAttributes } from 'svelte/elements';
@@ -22,7 +23,7 @@
   }: Props = $props();
   const context = getContext<TabsContext>(TABS_CONTEXT);
   const index = context.state.allocate(untrack(() => value));
-  const selected = $derived(context.value === value);
+  const selected = $derived(context.selectedValues.includes(value));
   const proximityActive = $derived(context.state.hover?.activeIndex === index);
   let element = $state<HTMLElement | null>(null);
 
@@ -58,5 +59,16 @@
   )}
   {...restProps as any}
 >
-  {@render children?.()}
+  {#snippet child({ props })}
+    <Button
+      {...props}
+      variant="plain"
+      wrapContent={false}
+      role="tab"
+      aria-selected={selected ? 'true' : 'false'}
+      data-state={selected ? 'active' : 'inactive'}
+    >
+      {@render children?.()}
+    </Button>
+  {/snippet}
 </TabsPrimitive.Trigger>

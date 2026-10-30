@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { normalizeSelectedTabs } from './multi-select-sidebar-tabs';
 
 describe('multi-select sidebar tabs', () => {
-  it('keeps the first valid selection and migrates the old overview to agents', () => {
-    expect([...normalizeSelectedTabs(['unknown', 'changes', 'files'])]).toEqual(['changes']);
-    expect([...normalizeSelectedTabs(['browser', 'shell'])]).toEqual(['browser']);
+  it('keeps valid selections and migrates the old overview to agents', () => {
+    expect([...normalizeSelectedTabs(['unknown', 'changes', 'files'])]).toEqual([
+      'changes',
+      'files',
+    ]);
+    expect([...normalizeSelectedTabs(['browser', 'shell'])]).toEqual(['browser', 'shell']);
     expect([...normalizeSelectedTabs(['unknown'])]).toEqual(['agents']);
     expect([...normalizeSelectedTabs(['overview'])]).toEqual(['agents']);
     expect([...normalizeSelectedTabs([])]).toEqual(['agents']);
@@ -13,7 +16,7 @@ describe('multi-select sidebar tabs', () => {
   it('drops persisted browser and shell selections for collaborators (multiplayer w3)', () => {
     expect([...normalizeSelectedTabs(['browser', 'shell'], true)]).toEqual(['agents']);
     expect([...normalizeSelectedTabs(['shell', 'files'], true)]).toEqual(['files']);
-    expect([...normalizeSelectedTabs(['browser', 'shell'], false)]).toEqual(['browser']);
+    expect([...normalizeSelectedTabs(['browser', 'shell'], false)]).toEqual(['browser', 'shell']);
   });
 
   it('allows People for collaborators and drops it when sharing is unavailable', () => {

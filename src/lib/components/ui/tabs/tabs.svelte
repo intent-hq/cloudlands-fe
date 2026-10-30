@@ -8,6 +8,8 @@
 
   interface Props extends HTMLAttributes<HTMLDivElement> {
     value?: string;
+    /** Opt-in multi-selection: values shown as selected; `value` keeps roving focus. */
+    selectedValues?: readonly string[];
     onValueChange?: (value: string) => void;
     orientation?: 'horizontal' | 'vertical';
     activationMode?: 'automatic' | 'manual';
@@ -20,6 +22,7 @@
 
   let {
     value = $bindable(''),
+    selectedValues,
     onValueChange,
     orientation = 'horizontal',
     activationMode = 'automatic',
@@ -33,7 +36,7 @@
   const contextualSize = useSize();
   const actualSize = $derived(size ?? contextualSize);
   const state = new ChoiceGroupState(
-    () => (value ? [value] : []),
+    () => selectedValues ?? (value ? [value] : []),
     untrack(() => (orientation === 'horizontal' ? 'x' : 'y')),
   );
 
@@ -41,6 +44,9 @@
     state,
     get value() {
       return value;
+    },
+    get selectedValues() {
+      return selectedValues ?? (value ? [value] : []);
     },
     get variant() {
       return variant;

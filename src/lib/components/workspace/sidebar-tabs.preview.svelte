@@ -25,6 +25,7 @@
     revealDelay?: number;
     filesError?: boolean;
     initialSection?: string;
+    initialSections?: string[];
     extraFiles?: number;
     scriptsState?: 'ready' | 'empty' | 'loading' | 'retry';
     navigationEnabled?: boolean;
@@ -36,6 +37,10 @@
     defaultState: 'default',
     states: {
       default: { props: {} },
+      'multiple-panes': { props: { initialSections: ['agents', 'context'] } },
+      'multiple-short': {
+        props: { initialSections: ['agents', 'context', 'files'], height: 440, items: 40 },
+      },
       collapsed: { props: { collapsed: true } },
       right: { props: { side: 'right', collapsed: true } },
       narrow: { props: { width: 420, sidebarWidth: 280, collapsed: true } },
@@ -96,7 +101,7 @@
     initializeLayout,
     clearPanelLayout,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
-  import { setMultiSelectSidebarSelectedTabs } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+  import { hydrateWorkspaceSidebarUi } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { selectActiveTab } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { setCollapsed } from '$store/renderer/slices/ui-layout/ui-layout-slice';
   import {
@@ -143,6 +148,7 @@
     delegatedParent = 1,
     filesError = false,
     initialSection = 'overview',
+    initialSections,
     extraFiles = 0,
     scriptsState = 'ready',
     navigationEnabled = false,
@@ -336,7 +342,11 @@
         focusedPanelId: 'sidebar-preview-panel',
       }),
     );
-    store.dispatch(setMultiSelectSidebarSelectedTabs(workspaceId, [initialSection]));
+    store.dispatch(
+      hydrateWorkspaceSidebarUi(workspaceId, {
+        selectedTabIds: initialSections ?? [initialSection],
+      }),
+    );
     store.dispatch(setCollapsed(collapsed));
     store.dispatch(
       setChangesData(

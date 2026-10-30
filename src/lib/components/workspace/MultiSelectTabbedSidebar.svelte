@@ -112,6 +112,7 @@
   import { selectIsCollapsed } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import {
     normalizeSelectedTabs,
+    orderSelectedTabs,
     OWNER_ONLY_TAB_IDS,
     TAB_DEFINITIONS,
     type TabId,
@@ -298,7 +299,11 @@
   const activeTabId = $derived(
     panelOnly && flyout?.open && flyout.tabId
       ? [...normalizeSelectedTabs([flyout.tabId], isCollaborator, showPeople, !!$scriptContext$)][0]
-      : ([...selectedTabs][0] ?? 'agents'),
+      : (orderSelectedTabs(selectedTabs)[0] ?? 'agents'),
+  );
+  // Expanded sidebars stack every selected pane in sidebar order; collapsed previews show one.
+  const visibleTabIds = $derived<string[]>(
+    panelOnly ? [activeTabId] : orderSelectedTabs(selectedTabs),
   );
   const panelId = $props.id();
   let mountedTabIds = $state<string[]>([]);
@@ -307,7 +312,8 @@
 
   $effect(() => {
     const id = activeTabId;
-    if (!mountedTabIds.includes(id)) mountedTabIds = [...mountedTabIds, id];
+    const missing = visibleTabIds.filter((tabId) => !mountedTabIds.includes(tabId));
+    if (missing.length > 0) mountedTabIds = [...mountedTabIds, ...missing];
     if (previousTabId && previousTabId !== id) {
       const order = TAB_DEFINITIONS.map((tab) => tab.id);
       direction = order.indexOf(id) > order.indexOf(previousTabId) ? 'right' : 'left';
@@ -556,7 +562,8 @@
         appStore.dispatch(locateItemInSidebarConsumed(workspaceId));
         return;
       }
-      persistSelectedTabs(new Set([targetTab]));
+      // Reveal adds the target pane and keeps the rest of the saved group.
+      if (!selectedTabs.has(targetTab)) persistSelectedTabs(new Set([...selectedTabs, targetTab]));
 
       // A collapsed sidebar only shows content in the flyout; open it on the target's rail tab.
       const revealFlyout = () => {
@@ -766,12 +773,14 @@
   </div>
   <div
     class={cn(
-      'relative min-h-0 flex-1 overflow-hidden rounded-(--radius-large) bg-selected ring-1 ring-inset ring-border/50 dark:bg-surface-4',
+      'relative flex min-h-0 flex-1 flex-col gap-2 overflow-x-hidden',
+      !panelOnly && visibleTabIds.length > 1 ? 'overflow-y-auto' : 'overflow-y-hidden',
       !panelOnly && 'mx-3 mt-2 mb-3',
     )}
     data-sidebar-panels
     data-floating={panelOnly || undefined}
     data-direction={direction}
+    data-stacked={visibleTabIds.length > 1 || undefined}
   >
     {#each TAB_DEFINITIONS.filter(({ id }) => (id !== 'people' || showPeople) && !(isCollaborator && OWNER_ONLY_TAB_IDS.has(id) && !(id === 'shell' && $scriptContext$))) as tab (tab.id)}
       {@const tabId = tab.id}
@@ -780,18 +789,21 @@
         role="tabpanel"
         aria-label={tab.label}
         tabindex="0"
-        class="sidebar-section h-full min-h-0 flex-col outline-none"
+        class={cn(
+          'sidebar-section min-h-0 flex-1 basis-0 flex-col overflow-hidden rounded-(--radius-large) bg-card ring-1 ring-inset ring-border/50 outline-none dark:bg-surface-4',
+          !panelOnly && visibleTabIds.length > 1 && 'min-h-40',
+        )}
         style:max-height={panelOnly ? `${flyout?.maxHeight}px` : undefined}
-        style:display={panelOnly || tabId === activeTabId ? 'flex' : 'none'}
-        hidden={!panelOnly && tabId !== activeTabId}
-        aria-hidden={tabId !== activeTabId}
-        inert={tabId !== activeTabId}
+        style:display={panelOnly || visibleTabIds.includes(tabId) ? 'flex' : 'none'}
+        hidden={!panelOnly && !visibleTabIds.includes(tabId)}
+        aria-hidden={!visibleTabIds.includes(tabId)}
+        inert={!visibleTabIds.includes(tabId)}
         data-position={TAB_DEFINITIONS.findIndex((tab) => tab.id === tabId) <
         TAB_DEFINITIONS.findIndex((tab) => tab.id === activeTabId)
           ? 'before'
           : 'after'}
         data-sidebar-section={tabId}
-        data-active={tabId === activeTabId || undefined}
+        data-active={visibleTabIds.includes(tabId) || undefined}
       >
         {#if mountedTabIds.includes(tabId)}
           {#if tab && !tab.hideHeader}
@@ -809,7 +821,7 @@
                     <WorkspaceTokenUsage {workspaceId} />
                     <SidebarExpandableSearch
                       bind:query={agentSearchQuery}
-                      active={active && activeTabId === 'agents'}
+                      active={active && visibleTabIds.includes('agents')}
                       scope="agents"
                       placeholder={m.workspace_multiSelectSidebar_searchAgents_placeholder()}
                     />
@@ -823,7 +835,7 @@
                   {:else if tabId === 'context'}
                     <SidebarExpandableSearch
                       bind:query={contextSearchQuery}
-                      active={active && activeTabId === 'context'}
+                      active={active && visibleTabIds.includes('context')}
                       scope="context"
                       placeholder={m.workspace_multiSelectSidebar_searchContext_placeholder()}
                     />
@@ -843,7 +855,7 @@
                   {:else if tabId === 'files'}
                     <ExpandableFileSearch
                       bind:query={fileSearchQuery}
-                      active={active && activeTabId === 'files'}
+                      active={active && visibleTabIds.includes('files')}
                       onKeydown={(event) => filesPanelRef?.handleSearchKeyDown(event)}
                     />
                     <Button
@@ -921,7 +933,7 @@
                 : 'overflow-y-auto'}"
               data-sidebar-section-scroll={tabId}
               use:scrollFade={{
-                enabled: active && tabId === activeTabId && (!panelOnly || !!flyout?.open),
+                enabled: active && visibleTabIds.includes(tabId) && (!panelOnly || !!flyout?.open),
               }}
             >
               {#if tabId === 'people'}
@@ -990,7 +1002,7 @@
                   <div class="min-h-0 w-full flex-1">
                     <SidebarChangesPanel
                       {workspaceId}
-                      active={active && tabId === activeTabId}
+                      active={active && visibleTabIds.includes(tabId)}
                       onRefreshActionChange={(action) => (changesRefreshAction = action)}
                       activeFilePath={effectiveActiveFilePath}
                       activeFileStaged={effectiveActiveFileStaged}
