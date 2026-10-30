@@ -1261,6 +1261,46 @@ describe('workspaceOperationsSaga', () => {
     await run.task.toPromise();
   });
 
+  it('maps the daemon proposalOrigin outcome onto the card lifecycle (intent-hq/intent#8086)', async () => {
+    const run = harness([]);
+    const cases = [
+      ['card-dismissed', 'dismissed', 'dismissed'],
+      ['card-declined', 'notResolved', 'idle'],
+    ] as const;
+    for (const [id, outcome, status] of cases) {
+      mocks.create.mockResolvedValueOnce({
+        ok: true,
+        data: { workspace: workspace(`ws-${id}`), proposalOrigin: { proposalId: id, outcome } },
+      });
+      run.send(
+        applyWorkspaceProposal({
+          proposal: createProposal(id),
+          origin: { kind: 'proposal', agentId: 'agent-1', proposalId: id },
+        }),
+      );
+      await settle();
+      // The workspace exists either way; only the card state follows the daemon.
+      expect(run.state().proposalLifecycle[id]).toMatchObject({
+        status,
+        result: { workspaceId: `ws-${id}`, proposalOrigin: { proposalId: id, outcome } },
+      });
+    }
+    // A declined card stays re-appliable: Apply runs workspace.create again.
+    mocks.create.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        workspace: workspace('ws-card-declined'),
+        proposalOrigin: { proposalId: 'card-declined', outcome: 'applied' },
+      },
+    });
+    run.send(applyWorkspaceProposal({ proposal: createProposal('card-declined') }));
+    await settle();
+    expect(mocks.create).toHaveBeenCalledTimes(3);
+    expect(run.state().proposalLifecycle['card-declined']?.status).toBe('applied');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('adds a created proposal workspace as a background tab without stealing focus', async () => {
     mocks.create
       .mockResolvedValueOnce({ ok: true, data: { workspace: workspace('ws-from-proposal') } })

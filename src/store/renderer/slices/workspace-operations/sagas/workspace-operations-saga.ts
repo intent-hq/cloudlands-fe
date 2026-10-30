@@ -43,6 +43,7 @@ import { openWorkspaceTab, restoreWorkspaceTab } from '../../tab-state/tab-state
 import {
   proposalApplyStarted,
   proposalApplySucceeded,
+  proposalCreateOutcomeReported,
   proposalFailed,
 } from '../../proposal-lifecycle/proposal-lifecycle-slice';
 import { selectProposalLifecycleEntry } from '../../proposal-lifecycle/proposal-lifecycle-selectors';
@@ -866,15 +867,23 @@ function* applyCreateProposal(payload: WorkspaceProposalApplyPayload): SagaGener
     // Show the new workspace in the tab strip without focusing it: the user
     // stays in the conversation that proposed it.
     yield* put(restoreWorkspaceTab(result.data.workspace.id));
+    const { proposalOrigin } = result.data;
+    const applyResult = {
+      workspaceId: result.data.workspace.id,
+      ...(proposalOrigin ? { proposalOrigin } : {}),
+    };
+    // The workspace exists; the card follows the daemon's reported outcome
+    // (PROTOCOL §5.1). No report (an older daemon) keeps the applied state and
+    // the chat fallback resolves the card.
     yield* put(
-      proposalApplySucceeded({
-        proposalId,
-        completedAt: Date.now(),
-        result: {
-          workspaceId: result.data.workspace.id,
-          ...(result.data.proposalOrigin ? { proposalOrigin: result.data.proposalOrigin } : {}),
-        },
-      }),
+      proposalOrigin
+        ? proposalCreateOutcomeReported({
+            proposalId,
+            completedAt: Date.now(),
+            outcome: proposalOrigin.outcome,
+            result: applyResult,
+          })
+        : proposalApplySucceeded({ proposalId, completedAt: Date.now(), result: applyResult }),
     );
   } catch (error) {
     yield* failProposal(proposalId, error instanceof Error ? error.message : String(error));
