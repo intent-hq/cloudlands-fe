@@ -103,7 +103,7 @@
 
 <style>
   :global([data-new-space-modal] > .dialog-layout > [data-slot='dialog-header']) {
-    padding-top: 1rem;
+    padding-top: 1.25rem;
   }
 
   :global(
@@ -118,12 +118,12 @@
   }
 
   :global([data-new-space-modal] > .dialog-layout > [data-slot='dialog-body']) {
-    padding-top: 0.75rem;
+    padding-top: 0.5rem;
     padding-bottom: 1rem;
   }
 
   :global([data-new-space-modal] > .dialog-close-button) {
-    top: calc(anchor(--dialog-title top, 1rem) + 1.25rem / 2);
+    top: calc(anchor(--dialog-title top, 1.25rem) + 1.25rem / 2);
   }
 
   .workspace-form :global(.prompt-pane) {
