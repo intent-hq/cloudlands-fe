@@ -13,11 +13,15 @@
 // keys once jumped this way) or saga `call(goto | navigateToRoute, ...)` whose
 // route is built from a `/workspace/` template or string concatenation (either
 // branch of a ternary counts). Constant routes such as '/workspace/new' are
-// not workspace jumps and pass. A route held in a variable is not traced.
+// not workspace jumps and pass. A route held in a variable is not traced:
+// code that navigates to an arbitrary string route (menu IPC, chat nav links,
+// a remembered path) uses `navigateToAppRoute`, which opens the tab when the
+// route is a workspace page.
 //
-// Navigation that deliberately must not open a tab (tab-close fallbacks whose
-// target tab is already open, creation flows whose tab the initialization saga
-// opens) uses `eslint-disable-next-line intent/no-raw-workspace-navigation --
+// Navigation that deliberately opens its tab another way (tab-close fallbacks
+// whose target tab is already open, creation flows whose tab the
+// initialization saga opens, the hardware key-switch that selects the tab
+// before navigating) uses `eslint-disable-next-line intent/no-raw-workspace-navigation --
 // <reason>`.
 
 const NAVIGATORS = new Set(['goto', 'navigateToRoute', 'navigate']);
@@ -111,7 +115,8 @@ export default {
       rawWorkspaceNavigation:
         '`{{navigator}}` to a `/workspace/` route shows the page but never opens the workspace tab ' +
         '(cloudlands-fe#3850). Use `openAndShowWorkspace(id, { query })` (or `showWorkspaceSaga` in a saga) ' +
-        'from `$lib/utils/show-workspace`, which navigates and then opens the tab.',
+        'from `$lib/utils/show-workspace`, which navigates and then opens the tab ' +
+        '(`navigateToAppRoute(route)` for a route that arrives as a string).',
     },
   },
   create(context) {

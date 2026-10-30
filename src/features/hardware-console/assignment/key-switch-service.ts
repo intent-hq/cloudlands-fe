@@ -26,7 +26,7 @@
  */
 import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
-import { openAndShowWorkspace } from '$lib/utils/show-workspace';
+import { navigateToRoute } from '$lib/utils/navigation.client';
 import type { HardwareConsoleManager } from '../device/device-manager';
 import { HardwareInputDecoder } from '../input/input-decoder';
 import type { LogicalKeyId } from '../input/types';
@@ -35,6 +35,7 @@ import { isConsoleOwner } from '../owner-gate';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { focusPanel, setActiveTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import { setActiveAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { sessionNeedsAttention } from '../actions/agent-cycle';
@@ -44,8 +45,8 @@ import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/ta
 const logger = createLogger('HardwareConsoleKeySwitch');
 
 export interface KeySwitchDeps {
-  /** Jump to a workspace and open its tab. Defaults to `openAndShowWorkspace`. */
-  showWorkspace?: (workspaceId: string) => Promise<unknown>;
+  /** Navigate the app to a route. Defaults to `navigateToRoute`. */
+  navigate?: (route: string) => Promise<void>;
   /** Focus an agent tab's chat composer. Defaults to `focusAgentComposer`. */
   focusComposer?: (agentId: string) => void;
   /** Console-owner gate (#1928). Defaults to the store-backed `isConsoleOwner`. */
@@ -148,9 +149,12 @@ export function focusWorkspaceSlot(workspaceId: string, deps: KeySwitchDeps = {}
     deps.getCurrentWorkspaceId ?? (() => selectCurrentWorkspaceTabId.select(appStore.state))
   )();
   if (activeWorkspaceId !== workspaceId) {
-    // The helper opens the workspace tab once the route lands.
-    const showWorkspace = deps.showWorkspace ?? openAndShowWorkspace;
-    void showWorkspace(workspaceId).catch((error: unknown) => {
+    // Open the workspace tab before route navigation, so a quick second press
+    // already sees the workspace as active and cycles its tabs.
+    appStore.dispatch(openWorkspaceTab(workspaceId));
+    const navigate = deps.navigate ?? navigateToRoute;
+    // eslint-disable-next-line intent/no-raw-workspace-navigation -- the tab was opened just above, before navigating, so a quick second key press cycles tabs instead of re-jumping.
+    void navigate(`/workspace/${workspaceId}`).catch((error: unknown) => {
       logger.warn('Failed to switch workspace from agent key', { workspaceId, error });
     });
     if (tabs.length === 0) {
