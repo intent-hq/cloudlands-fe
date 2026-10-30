@@ -194,7 +194,7 @@
           <div class="shrink-0 pr-1 sm:pr-2">
             <Button
               variant="ghost"
-              size="xs"
+              size="compact"
               class="text-danger"
               title={m.chat_secretRequest_dismiss_tooltip()}
               onclick={openChipDismiss}

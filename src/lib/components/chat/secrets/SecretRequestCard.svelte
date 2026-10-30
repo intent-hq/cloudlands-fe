@@ -140,7 +140,7 @@
           <Button
             type="button"
             variant="ghost-light"
-            size="xs"
+            size="compact"
             title={m.chat_secretRequest_hide_tooltip()}
             onclick={onHide}
             data-testid="secret-request-hide"
@@ -151,7 +151,7 @@
         <Button
           type="button"
           variant="ghost"
-          size="xs"
+          size="compact"
           class="text-danger"
           title={m.chat_secretRequest_dismiss_tooltip()}
           disabled={!canAnswer}
