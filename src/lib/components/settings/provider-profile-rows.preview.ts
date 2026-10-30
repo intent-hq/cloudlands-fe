@@ -23,18 +23,18 @@ export const preview = definePreview<ComponentProps<typeof ProfileRowsMock>>({
   states: {
     claude: { props: { ...claude } },
     'claude-menu-different-login': {
-      props: { ...claude, menuOpenFor: 'work', staticMenus: true },
+      props: { ...claude, menuOpenFor: 'work' },
     },
-    'claude-menu-signed-out': { props: { ...claude, menuOpenFor: 'side', staticMenus: true } },
-    'claude-menu-api-key': { props: { ...claude, menuOpenFor: 'key', staticMenus: true } },
+    'claude-menu-signed-out': { props: { ...claude, menuOpenFor: 'side' } },
+    'claude-menu-api-key': { props: { ...claude, menuOpenFor: 'key' } },
     'claude-default-signed-in': {
       props: { ...claude, defaultEmail: FAKE_EMAIL },
     },
     codex: { props: { ...codex } },
     'codex-menu-different-login': {
-      props: { ...codex, menuOpenFor: 'openai-key', staticMenus: true },
+      props: { ...codex, menuOpenFor: 'openai-key' },
     },
-    'codex-menu-token': { props: { ...codex, menuOpenFor: 'team', staticMenus: true } },
+    'codex-menu-token': { props: { ...codex, menuOpenFor: 'team' } },
   },
 });
 
