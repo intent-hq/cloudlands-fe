@@ -89,6 +89,7 @@
   let stackElement = $state<HTMLDivElement>();
   let chipExpandButton = $state<HTMLElement | null>(null);
   let focusAfter = $state<'chip' | 'cards' | null>(null);
+  let focusFrom = $state<Element | null>(null);
 
   $effect(() => {
     const target = chipDismissTarget;
@@ -118,10 +119,11 @@
     const focusOwner = owner;
     void collapsed;
     if (!target || !root || !isCurrent(focusOwner)) return;
-    const previousFocus = document.activeElement;
+    const previousFocus = focusFrom;
     void tick().then(() => {
       if (
         focusAfter !== target ||
+        focusFrom !== previousFocus ||
         stackElement !== root ||
         !root.isConnected ||
         !isCurrent(focusOwner)
@@ -148,6 +150,7 @@
 
   function hide(): void {
     if (!isCurrent(owner)) return;
+    focusFrom = document.activeElement;
     focusAfter = 'chip';
     appStore.dispatch(
       secretRequestsCollapsed(
@@ -159,6 +162,7 @@
 
   function expand(): void {
     if (!isCurrent(owner)) return;
+    focusFrom = document.activeElement;
     focusAfter = 'cards';
     appStore.dispatch(secretRequestsExpanded(agentId));
   }
@@ -210,6 +214,7 @@
     owner = admission ? { admission, revision, dispatch: appStore.dispatch } : null;
     chipDismissTarget = null;
     focusAfter = null;
+    focusFrom = null;
     if (!isCurrent(owner)) return;
     untrack(() => {
       appStore.dispatch(secretListRequested(workspace, agent, key ? key.split(',') : []));
