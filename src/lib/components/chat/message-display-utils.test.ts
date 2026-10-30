@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentMessage, ContentBlock } from '$shared/types';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
+import { SECRET_REQUEST_RESOURCE_MIME_TYPE } from '$shared/types/secret-request-resource';
 import {
   isQuestionOnlyContent,
   resolveFinishReasonNotice,
@@ -285,6 +286,22 @@ describe('isQuestionOnlyContent', () => {
   it('false for empty content and for content with no question blocks', () => {
     expect(isQuestionOnlyContent([])).toBe(false);
     expect(isQuestionOnlyContent([{ type: 'text', text: 'hello' } as ContentBlock])).toBe(false);
+  });
+
+  it('true for secret-request cards alone or with questions (composer-slot surfaces)', () => {
+    const secret = {
+      type: 'resource',
+      resource: {
+        uri: 'intent-secret-request://sec-1',
+        mimeType: SECRET_REQUEST_RESOURCE_MIME_TYPE,
+        text: '{"requestId":"sec-1","agentId":"a","name":"KEY","reason":"r"}',
+      },
+    } as unknown as ContentBlock;
+    expect(isQuestionOnlyContent([secret])).toBe(true);
+    expect(isQuestionOnlyContent([question(), secret])).toBe(true);
+    expect(
+      isQuestionOnlyContent([{ type: 'text', text: 'Need a key' } as ContentBlock, secret]),
+    ).toBe(false);
   });
 
   it('true for a malformed question-MIME block (missing uri/text) — the MIME-only strip must still suppress it', () => {

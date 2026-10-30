@@ -237,7 +237,7 @@
   import SuggestedPrompts from './SuggestedPrompts.svelte';
   import QuestionWizard, { type QuestionAnswer } from './questions/QuestionWizard.svelte';
   import SecretRequestCards from './secrets/SecretRequestCards.svelte';
-  import { deriveOpenSecretRequests } from './secrets/pending-secret-requests';
+  import { deriveSecretRequestTranscript } from './secrets/pending-secret-requests';
   import QuestionComposer from './questions/QuestionComposer.svelte';
   import {
     getChatAttentionFocusAction,
@@ -1149,14 +1149,6 @@
     }
   });
 
-  // Open agent secret requests (PROTOCOL §5.56), shown as composer-slot
-  // cards only when the daemon advertises `secretRequests: 1`.
-  const openSecretRequests = $derived(
-    $admittedPrincipal$?.capabilities.secretRequests === 1
-      ? deriveOpenSecretRequests($agentMessages$)
-      : [],
-  );
-
   const pendingQuestions = $derived.by(() => {
     const hasUserMessage = $agentMessages$.some((m) => m.role === 'user');
     const showingPendingUserMessage = !!pendingMessage && !hasUserMessage;
@@ -1278,6 +1270,13 @@
   // Legacy queues omit transcript-stamped drains. Correlated full snapshots
   // remain authoritative: a restored retry may legitimately share history aliases.
   const admittedPrincipal$ = selectPrincipalSnapshot();
+
+  // Agent secret requests (PROTOCOL §5.56), shown as composer-slot cards
+  // only when the daemon advertises `secretRequests: 1`.
+  const secretRequestsSupported = $derived($admittedPrincipal$?.capabilities.secretRequests === 1);
+  const secretRequestTranscript = $derived(
+    secretRequestsSupported ? deriveSecretRequestTranscript($agentMessages$) : null,
+  );
   const visibleQueuedMessages = $derived(
     $admittedPrincipal$?.capabilities.submissionCorrelation === 1
       ? $queuedMessages$.filter(isUserQueuedMessage)
@@ -7949,9 +7948,9 @@
                 </Button>
               </div>
             {/if}
-            {#if workspace && agentId && openSecretRequests.length > 0}
+            {#if workspace && agentId && secretRequestTranscript}
               <SecretRequestCards
-                requests={openSecretRequests}
+                transcript={secretRequestTranscript}
                 workspaceId={workspace.id}
                 {agentId}
               />

@@ -934,6 +934,7 @@
   "chat_questionsDismissedNotice_dismissed_label": "Questions rejetées",
   "chat_secretRequest_decline_label": "Refuser",
   "chat_secretRequest_declined_description": "Refusé.",
+  "chat_secretRequest_dismiss_label": "Rejeter",
   "chat_secretRequest_expired_description": "Cette demande a expiré. Demandez à l'agent de la refaire.",
   "chat_secretRequest_failed_error": "Envoi impossible. Réessayez.",
   "chat_secretRequest_hide_ariaLabel": "Masquer le secret",

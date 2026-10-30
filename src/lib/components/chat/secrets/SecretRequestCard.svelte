@@ -3,8 +3,9 @@
    * One agent secret request (PROTOCOL §5.56): a masked input whose value is
    * handed to the provide saga through the one-shot `secret-value-handoff`
    * (never a Redux action or state), or Decline. The value lives only in this
-   * component's local input until sent, then is cleared — it never enters the
-   * store, drafts, the chat composer or telemetry.
+   * component's local input, kept for a retry if sending fails and cleared once
+   * the request is answered — it never enters the store, drafts, the chat
+   * composer or telemetry.
    */
   import Fa from 'svelte-fa';
   import { faEye, faEyeSlash, faKey } from '@fortawesome/free-solid-svg-icons';
@@ -13,7 +14,10 @@
   import { Label } from '$lib/components/ui/label';
   import { m } from '$shared/paraglide/messages.js';
   import type { SecretRequest } from '$shared/types/secret-request-resource';
-  import { secretAnswerRequested } from '$store/renderer/slices/secret-requests/secret-requests-slice';
+  import {
+    secretAnswerRequested,
+    secretRequestHidden,
+  } from '$store/renderer/slices/secret-requests/secret-requests-slice';
   import { selectSecretRequestsState } from '$store/renderer/slices/secret-requests/secret-requests-selectors';
   import { store as appStore } from '$store/renderer/store';
   import type { SecretRequestCardState } from './pending-secret-requests';
@@ -41,14 +45,21 @@
   );
   const canAnswer = $derived(shown === 'pending' && !busy);
 
+  // Drop the value once the request is answered or gone; a failed send keeps
+  // it so the user can retry without pasting again.
+  $effect(() => {
+    if (shown === 'provided' || shown === 'declined' || shown === 'expired') {
+      value = '';
+      revealed = false;
+    }
+  });
+
   function answerWith(outcome: 'provided' | 'declined'): void {
     if (!canAnswer) return;
     if (outcome === 'provided') {
       if (value.length === 0) return;
       stashSecretValue(request.requestId, value);
     }
-    value = '';
-    revealed = false;
     appStore.dispatch(
       secretAnswerRequested({ workspaceId, agentId, requestId: request.requestId, outcome }),
     );
@@ -63,7 +74,7 @@
   }
 
   function handleKeydown(event: KeyboardEvent): void {
-    if (event.key === 'Enter') {
+    if (event.key === 'Enter' && !event.isComposing) {
       event.preventDefault();
       provide();
     }
@@ -148,9 +159,20 @@
       {m.chat_secretRequest_declined_description()}
     </p>
   {:else}
-    <p class="text-xs text-muted-foreground" role="status">
-      {m.chat_secretRequest_expired_description()}
-    </p>
+    <div class="flex items-center justify-between gap-2">
+      <p class="text-xs text-muted-foreground" role="status">
+        {m.chat_secretRequest_expired_description()}
+      </p>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onclick={() => appStore.dispatch(secretRequestHidden(request.requestId))}
+        data-testid="secret-request-hide"
+      >
+        {m.chat_secretRequest_dismiss_label()}
+      </Button>
+    </div>
   {/if}
   {#if answer === 'failed' && shown === 'pending'}
     <p class="text-xs text-danger" role="alert">{m.chat_secretRequest_failed_error()}</p>

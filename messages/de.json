@@ -934,6 +934,7 @@
   "chat_questionsDismissedNotice_dismissed_label": "Fragen verworfen",
   "chat_secretRequest_decline_label": "Ablehnen",
   "chat_secretRequest_declined_description": "Abgelehnt.",
+  "chat_secretRequest_dismiss_label": "Verwerfen",
   "chat_secretRequest_expired_description": "Diese Anfrage ist abgelaufen. Bitte den Agenten, sie erneut anzufordern.",
   "chat_secretRequest_failed_error": "Senden fehlgeschlagen. Versuche es erneut.",
   "chat_secretRequest_hide_ariaLabel": "Geheimnis ausblenden",

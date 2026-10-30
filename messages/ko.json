@@ -934,6 +934,7 @@
   "chat_questionsDismissedNotice_dismissed_label": "질문이 무시되었습니다",
   "chat_secretRequest_decline_label": "거절",
   "chat_secretRequest_declined_description": "거절했습니다.",
+  "chat_secretRequest_dismiss_label": "닫기",
   "chat_secretRequest_expired_description": "이 요청은 만료되었습니다. 에이전트에게 다시 요청하도록 하세요.",
   "chat_secretRequest_failed_error": "보내지 못했습니다. 다시 시도하세요.",
   "chat_secretRequest_hide_ariaLabel": "시크릿 숨기기",

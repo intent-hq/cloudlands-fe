@@ -934,6 +934,7 @@
   "chat_questionsDismissedNotice_dismissed_label": "问题已被忽略",
   "chat_secretRequest_decline_label": "拒绝",
   "chat_secretRequest_declined_description": "已拒绝。",
+  "chat_secretRequest_dismiss_label": "关闭",
   "chat_secretRequest_expired_description": "此请求已过期。请让代理重新请求。",
   "chat_secretRequest_failed_error": "无法发送。请重试。",
   "chat_secretRequest_hide_ariaLabel": "隐藏密钥",

@@ -16,6 +16,7 @@ import {
 import {
   secretAnswerRequested,
   secretAnswerUpdated,
+  secretListFailed,
   secretListLoaded,
   secretListRequested,
 } from '../secret-requests-slice';
@@ -114,13 +115,15 @@ describe('secretRequestsSaga', () => {
     task.cancel();
   });
 
-  it('coalesces list refreshes per agent into one trailing call', async () => {
+  it('coalesces list refreshes per agent into one trailing call covering every id', async () => {
     let resolveFirst: (value: unknown) => void = () => {};
     client.secretList
       .mockImplementationOnce(() => new Promise((resolve) => (resolveFirst = resolve)))
       .mockResolvedValue(listing);
-    const { channel, task } = start();
-    for (let i = 0; i < 4; i += 1) channel.put(secretListRequested('w', 'a') as never);
+    const { channel, dispatched, task } = start();
+    channel.put(secretListRequested('w', 'a', ['sec-1']) as never);
+    for (let i = 2; i < 5; i += 1)
+      channel.put(secretListRequested('w', 'a', [`sec-${i}`]) as never);
     await flush();
     expect(client.secretList).toHaveBeenCalledTimes(1);
     resolveFirst(listing);
@@ -128,6 +131,21 @@ describe('secretRequestsSaga', () => {
     await flush();
     expect(client.secretList).toHaveBeenCalledTimes(2);
     expect(client.secretList).toHaveBeenLastCalledWith({ workspaceId: 'w', agentId: 'a' });
+    const loaded = dispatched.filter((a) => a.type === secretListLoaded.type).map((a) => a.payload);
+    expect(loaded).toEqual([
+      ['a', listing, ['sec-1']],
+      ['a', listing, ['sec-2', 'sec-3', 'sec-4']],
+    ]);
+    task.cancel();
+  });
+
+  it('reports a failed refresh so cards do not wait forever', async () => {
+    client.secretList.mockResolvedValue(null);
+    const { channel, dispatched, task } = start();
+    channel.put(secretListRequested('w', 'a', ['sec-1']) as never);
+    await flush();
+    expect(dispatched.map((a) => a.type)).toContain(secretListFailed.type);
+    expect(dispatched.map((a) => a.type)).not.toContain(secretListLoaded.type);
     task.cancel();
   });
 });

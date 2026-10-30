@@ -934,6 +934,7 @@
   "chat_questionsDismissedNotice_dismissed_label": "Preguntas descartadas",
   "chat_secretRequest_decline_label": "Rechazar",
   "chat_secretRequest_declined_description": "Rechazado.",
+  "chat_secretRequest_dismiss_label": "Descartar",
   "chat_secretRequest_expired_description": "Esta solicitud caducó. Pide al agente que la vuelva a solicitar.",
   "chat_secretRequest_failed_error": "No se pudo enviar. Inténtalo de nuevo.",
   "chat_secretRequest_hide_ariaLabel": "Ocultar secreto",

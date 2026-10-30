@@ -189,6 +189,17 @@ export interface JsonRpcRetirement {
 }
 
 /**
+ * Request methods whose params never reach traffic observers (Dev Console
+ * capture): desktop authority and input, and `secret.provide` (PROTOCOL
+ * §5.56), whose `value` is a user secret.
+ */
+const REDACTED_TRAFFIC_METHODS: ReadonlySet<string> = new Set([
+  'desktop.control',
+  'desktop.revoke',
+  'secret.provide',
+]);
+
+/**
  * Events: `notification` (JsonRpcNotification), `status` (ConnectionStatus),
  * `reconnected` (void — fires when a successful connect follows an earlier
  * connected state or failed dial so consumers can retry startup work, replay
@@ -763,12 +774,10 @@ export class JsonRpcClient extends EventEmitter {
     if (this.trafficObservers.size === 0) return;
     try {
       const event = { ...build(), connectionGeneration: this.connectionGeneration };
-      // Desktop authority and user input must never reach diagnostic observers,
-      // which may persist or forward their traffic payloads to renderers.
-      if (
-        event.type === 'request' &&
-        (event.method === 'desktop.control' || event.method === 'desktop.revoke')
-      )
+      // Desktop authority, user input and secret values must never reach
+      // diagnostic observers, which may persist or forward their traffic
+      // payloads to renderers.
+      if (event.type === 'request' && REDACTED_TRAFFIC_METHODS.has(event.method))
         event.payload = { redacted: true };
       for (const observer of this.trafficObservers) {
         try {

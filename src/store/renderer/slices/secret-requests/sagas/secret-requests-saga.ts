@@ -5,6 +5,7 @@ import { takeSecretValue } from '$lib/components/chat/secrets/secret-value-hando
 import {
   secretAnswerRequested,
   secretAnswerUpdated,
+  secretListFailed,
   secretListLoaded,
   secretListRequested,
 } from '../secret-requests-slice';
@@ -16,16 +17,22 @@ import {
  */
 export function* secretRequestsSaga(): SagaGenerator<void> {
   const inFlight = new Set<string>();
-  const trailing = new Map<string, string>();
+  const trailing = new Map<string, { workspaceId: string; requestIds: Set<string> }>();
   const done: Channel<{ agentId: string }> = yield* call(channel<{ agentId: string }>);
 
-  function* refresh(workspaceId: string, agentId: string): SagaGenerator<void> {
+  function* refresh(
+    workspaceId: string,
+    agentId: string,
+    requestIds: string[],
+  ): SagaGenerator<void> {
     try {
       const listing = yield* call([appClient.agents, appClient.agents.secretList], {
         workspaceId,
         agentId,
       });
-      if (listing) yield* put(secretListLoaded(agentId, listing));
+      yield* put(
+        listing ? secretListLoaded(agentId, listing, requestIds) : secretListFailed(agentId),
+      );
     } finally {
       yield* put(done, { agentId });
     }
@@ -35,23 +42,29 @@ export function* secretRequestsSaga(): SagaGenerator<void> {
     while (true) {
       const { agentId } = yield* take(done);
       inFlight.delete(agentId);
-      const workspaceId = trailing.get(agentId);
-      if (workspaceId !== undefined) {
+      const next = trailing.get(agentId);
+      if (next !== undefined) {
         trailing.delete(agentId);
         inFlight.add(agentId);
-        yield* fork(refresh, workspaceId, agentId);
+        yield* fork(refresh, next.workspaceId, agentId, [...next.requestIds]);
       }
     }
   });
 
-  yield* takeEvery(secretListRequested, function* onList({ payload: [workspaceId, agentId] }) {
-    if (inFlight.has(agentId)) {
-      trailing.set(agentId, workspaceId);
-      return;
-    }
-    inFlight.add(agentId);
-    yield* fork(refresh, workspaceId, agentId);
-  });
+  yield* takeEvery(
+    secretListRequested,
+    function* onList({ payload: [workspaceId, agentId, requestIds] }) {
+      if (inFlight.has(agentId)) {
+        // Coalesce: the trailing refresh covers every id asked for meanwhile.
+        const pending = trailing.get(agentId)?.requestIds ?? new Set<string>();
+        for (const requestId of requestIds) pending.add(requestId);
+        trailing.set(agentId, { workspaceId, requestIds: pending });
+        return;
+      }
+      inFlight.add(agentId);
+      yield* fork(refresh, workspaceId, agentId, requestIds);
+    },
+  );
 
   yield* takeEvery(secretAnswerRequested, function* onAnswer({ payload: [request] }) {
     const { workspaceId, agentId, requestId, outcome } = request;
@@ -77,6 +90,6 @@ export function* secretRequestsSaga(): SagaGenerator<void> {
     yield* put(
       secretAnswerUpdated(requestId, result.ok ? outcome : result.expired ? 'expired' : 'failed'),
     );
-    yield* put(secretListRequested(workspaceId, agentId));
+    yield* put(secretListRequested(workspaceId, agentId, [requestId]));
   });
 }

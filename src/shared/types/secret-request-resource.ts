@@ -71,6 +71,18 @@ export interface SecretListing {
   answeredRequests: { requestId: string; name: string; outcome: SecretRequestOutcome }[];
 }
 
+/**
+ * One agent's latest `secret.list` as the cards need it. `covered` holds every
+ * request id the transcript showed when a listing was requested: the daemon
+ * had already created those, so a later listing that lacks one proves it is
+ * gone. `failed` is set when the latest refresh failed.
+ */
+export interface AgentSecretListing {
+  listing: SecretListing | null;
+  covered: readonly string[];
+  failed: boolean;
+}
+
 /** Result of `secret.provide` / `secret.dismiss` as the card needs it. */
 export type SecretAnswerResult =
   | { ok: true }

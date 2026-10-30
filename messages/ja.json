@@ -934,6 +934,7 @@
   "chat_questionsDismissedNotice_dismissed_label": "質問が却下されました",
   "chat_secretRequest_decline_label": "拒否",
   "chat_secretRequest_declined_description": "拒否しました。",
+  "chat_secretRequest_dismiss_label": "閉じる",
   "chat_secretRequest_expired_description": "このリクエストは期限切れです。もう一度リクエストするようエージェントに依頼してください。",
   "chat_secretRequest_failed_error": "送信できませんでした。もう一度お試しください。",
   "chat_secretRequest_hide_ariaLabel": "シークレットを隠す",

@@ -934,6 +934,7 @@
   "chat_questionsDismissedNotice_dismissed_label": "Questions dismissed",
   "chat_secretRequest_decline_label": "Decline",
   "chat_secretRequest_declined_description": "Declined.",
+  "chat_secretRequest_dismiss_label": "Dismiss",
   "chat_secretRequest_expired_description": "This request expired. Ask the agent to request it again.",
   "chat_secretRequest_failed_error": "Couldn't send. Try again.",
   "chat_secretRequest_hide_ariaLabel": "Hide secret",
