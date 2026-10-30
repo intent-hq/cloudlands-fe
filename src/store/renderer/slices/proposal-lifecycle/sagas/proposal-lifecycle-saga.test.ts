@@ -671,6 +671,63 @@ describe('automatic persistence on lifecycle changes', () => {
     await store.stop();
   });
 
+  it('saves an unrelated card while transfer progress keeps streaming', async () => {
+    const transfer = {
+      workspaceId: 'ws-1',
+      sourceWorkspacePath: '/repo/ws-1',
+      sourceConnectionId: 'source',
+      destinationConnectionId: 'target',
+      phase: 'transferring' as const,
+    };
+    const store = await lifecycleStore();
+    store.dispatch(proposalApplyStarted({ proposalId: 'transfer-p', startedAt: 1 }));
+    store.dispatch(proposalTransferCheckpoint({ proposalId: 'transfer-p', transfer }));
+    await vi.advanceTimersByTimeAsync(300);
+    mocks.setJSON.mockClear();
+
+    store.dispatch(
+      proposalResolutionReconciled({
+        proposalId: 'p-dismissed',
+        outcome: 'dismissed',
+        completedAt: Date.now(),
+      }),
+    );
+    // Relay chunks every 100 ms for 1.5 s: each frame rebuilds the entry.
+    for (let i = 0; i < 15; i++) {
+      store.dispatch(proposalTransferProgress({ proposalId: 'transfer-p', phase: 'relaying' }));
+      await vi.advanceTimersByTimeAsync(100);
+    }
+
+    expect(mocks.setJSON).toHaveBeenCalledTimes(1);
+    expect(mocks.setJSON.mock.calls[0]![1].entries['p-dismissed']).toMatchObject({
+      status: 'dismissed',
+    });
+    await store.stop();
+  });
+
+  it('does not save for progress-only changes', async () => {
+    const transfer = {
+      workspaceId: 'ws-1',
+      sourceWorkspacePath: '/repo/ws-1',
+      sourceConnectionId: 'source',
+      destinationConnectionId: 'target',
+      phase: 'transferring' as const,
+    };
+    const store = await lifecycleStore();
+    store.dispatch(proposalApplyStarted({ proposalId: 'transfer-p', startedAt: 1 }));
+    store.dispatch(proposalTransferCheckpoint({ proposalId: 'transfer-p', transfer }));
+    await vi.advanceTimersByTimeAsync(300);
+    mocks.setJSON.mockClear();
+
+    store.dispatch(proposalTransferProgress({ proposalId: 'transfer-p', phase: 'building' }));
+    store.dispatch(proposalTransferProgress({ proposalId: 'transfer-p', phase: 'relaying' }));
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(store.state.proposalLifecycle['transfer-p']?.transferProgress).toBe('relaying');
+    expect(mocks.setJSON).not.toHaveBeenCalled();
+    await store.stop();
+  });
+
   it('never writes transient transfer progress to storage', async () => {
     const transfer = {
       workspaceId: 'ws-1',
@@ -686,6 +743,13 @@ describe('automatic persistence on lifecycle changes', () => {
     mocks.setJSON.mockClear();
 
     store.dispatch(proposalTransferProgress({ proposalId: 'transfer-p', phase: 'relaying' }));
+    store.dispatch(
+      proposalResolutionReconciled({
+        proposalId: 'p-other',
+        outcome: 'dismissed',
+        completedAt: Date.now(),
+      }),
+    );
     await vi.advanceTimersByTimeAsync(300);
 
     expect(store.state.proposalLifecycle['transfer-p']?.transferProgress).toBe('relaying');

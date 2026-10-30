@@ -1,7 +1,17 @@
 import { applyWorkspaceTransferProposal } from './workspace-transfer-proposal';
 import { notify } from '$lib/components/patterns/notify';
-import { takeLatestFromSelector } from '@themislib/themis/saga';
-import { call, delay, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { createChannelFromSelector } from '@themislib/themis/saga';
+import type { Task } from 'redux-saga';
+import {
+  call,
+  cancel,
+  delay,
+  fork,
+  put,
+  take,
+  takeEvery,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 import { m } from '$shared/paraglide/messages.js';
 import {
   getLocalStorageJSON,
@@ -275,17 +285,66 @@ function* debouncedPersistProposalLifecycleSaga(): SagaGenerator<void> {
   yield* call(persistProposalLifecycleSaga);
 }
 
+function sameEntryIgnoringProgress(a: ProposalLifecycleEntry, b: ProposalLifecycleEntry): boolean {
+  const { transferProgress: _a, ...restA } = a;
+  const { transferProgress: _b, ...restB } = b;
+  const keys = Object.keys(restA) as Array<keyof typeof restA>;
+  return (
+    keys.length === Object.keys(restB).length &&
+    keys.every((key) => Object.is(restA[key], restB[key]))
+  );
+}
+
+/** True when `next` differs from `prev` only in live transfer progress. */
+export function isTransferProgressOnlyChange(
+  prev: Record<string, ProposalLifecycleEntry> | null,
+  next: Record<string, ProposalLifecycleEntry>,
+): boolean {
+  if (!prev) return false;
+  const keys = Object.keys(next);
+  return (
+    keys.length === Object.keys(prev).length &&
+    keys.every((key) => {
+      const before = prev[key];
+      const after = next[key];
+      return before === after || (!!before && !!after && sameEntryIgnoringProgress(before, after));
+    })
+  );
+}
+
+/**
+ * Saves whenever the lifecycle map changes, whatever action changed it, so a
+ * new card-state action can't silently skip persistence (a hand-kept action
+ * list once missed `proposalCreateOutcomeReported`, cloudlands-fe#3857).
+ * Each change restarts a 300 ms debounce; the first emission writes back the
+ * pruned hydrated state. Changes that only touch `transferProgress` are
+ * skipped, because a relay emits one per chunk and would otherwise keep
+ * postponing the save of other cards for the whole transfer. What reaches
+ * storage is decided by `persistProposalLifecycleSaga`'s pruning.
+ */
+function* watchProposalLifecyclePersistenceSaga(): SagaGenerator<void> {
+  const channel = yield* createChannelFromSelector(selectProposalLifecycleMap);
+  // Compare against the last map seen here, not the channel's prevPayload:
+  // the channel's sliding buffer may drop an intermediate emission.
+  let lastSeen: Record<string, ProposalLifecycleEntry> | null = null;
+  let pendingSave: Task | null = null;
+  try {
+    while (true) {
+      const { payload } = yield* take(channel);
+      const progressOnly = isTransferProgressOnlyChange(lastSeen, payload);
+      lastSeen = payload;
+      if (progressOnly) continue;
+      if (pendingSave) yield* cancel(pendingSave);
+      pendingSave = yield* fork(debouncedPersistProposalLifecycleSaga);
+    }
+  } finally {
+    channel.close();
+  }
+}
+
 export function* proposalLifecycleSaga(): SagaGenerator<void> {
   yield* call(hydrateProposalLifecycleSaga);
-  // Save whenever the lifecycle map changes, whatever action changed it, so a
-  // new card-state action can't silently skip persistence (a hand-kept action
-  // list once missed `proposalCreateOutcomeReported`, cloudlands-fe#3857).
-  // `takeLatest` + the delay debounce bursts into one write; the first
-  // emission writes back the pruned hydrated state. What reaches storage is
-  // decided by `persistProposalLifecycleSaga`'s pruning, not by this trigger.
-  // The helper forks itself; wrapping it in `call` would block the takers
-  // below forever.
-  yield* takeLatestFromSelector(selectProposalLifecycleMap, debouncedPersistProposalLifecycleSaga);
+  yield* fork(watchProposalLifecyclePersistenceSaga);
   yield* takeEvery(applyProposalRequested, handleApplyProposal);
   yield* takeEvery(undoProposalRequested, handleUndoProposal);
 }
