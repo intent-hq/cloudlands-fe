@@ -186,7 +186,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   asyncActionHandlers.reset();
   scriptEntries.value = [];
-  Element.prototype.getAnimations = () => [];
   scriptEntries.byWorkspaceId = {};
   asyncActionHandlers.detect = null;
   asyncActionHandlers.remove = null;
