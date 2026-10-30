@@ -66,10 +66,7 @@ import {
   resetWorkspaceState,
   setWorkspaceEntity,
 } from '../../workspace/workspace-slice';
-import {
-  hydrateAgentsRequested,
-  setAgents,
-} from '../../workspace-agents/workspace-agents-slice';
+import { hydrateAgentsRequested, setAgents } from '../../workspace-agents/workspace-agents-slice';
 import { selectHudGridFilter, selectHudWorkspaceEntities } from '../hud-selectors';
 import {
   hudActivated,
