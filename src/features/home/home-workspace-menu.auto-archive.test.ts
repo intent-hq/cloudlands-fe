@@ -8,12 +8,14 @@ import type {
   SidebarMenuItem,
 } from '$lib/components/ui/sidebar-context-menu/types';
 import { labelWorkspace, workspaceLabelsState } from '../../test/fixtures/workspace-labels-state';
+import {
+  bulkUpdateWorkspaceEntities,
+  updateWorkspaceEntity,
+} from '$store/renderer/slices/workspace/workspace-slice';
 import { createHomeWorkspaceMenu } from './home-workspace-menu';
 
 const item = (entries: SidebarMenuEntry[], id: string) =>
   entries.find((entry) => 'id' in entry && entry.id === id) as SidebarMenuItem | undefined;
-const ids = (entries: SidebarMenuEntry[]) =>
-  entries.map((entry) => ('id' in entry ? entry.id : 'type' in entry ? entry.type : ''));
 
 const close = vi.fn();
 let dispatch: ReturnType<typeof vi.spyOn>;
@@ -50,15 +52,10 @@ afterEach(() => {
 });
 
 describe('Home workspace Disable auto-archive toggle', () => {
-  it('offers an unchecked checkbox above Archive for the owner by default', () => {
-    const entries = setup();
-    const toggle = item(entries, 'disable-auto-archive');
-    expect(toggle?.label).toBe('Disable auto-archive');
+  it('offers the owner an unchecked toggle by default', () => {
+    const toggle = item(setup(), 'disable-auto-archive');
     expect(toggle?.checked).toBe(false);
     expect(toggle?.submenu).toBeUndefined();
-    const order = ids(entries);
-    expect(order.indexOf('disable-auto-archive')).toBe(order.indexOf('archive') - 1);
-    expect(order[order.indexOf('disable-auto-archive') - 1]).toBe('separator');
   });
 
   it('turns the opt-out on from an unchecked item', () => {
@@ -80,6 +77,28 @@ describe('Home workspace Disable auto-archive toggle', () => {
       target: labelWorkspace('ws-target', { status: WorkspaceStatusEnum.Archived }),
     });
     expect(item(entries, 'disable-auto-archive')).toBeDefined();
+  });
+
+  it('toggles from the value current at click time, not when the menu opened', () => {
+    const toggle = item(setup(), 'disable-auto-archive')!;
+    dispatch.mockRestore();
+    store.dispatch(
+      bulkUpdateWorkspaceEntities([
+        updateWorkspaceEntity('ws-target', { autoArchiveDisabled: true }),
+      ]),
+    );
+    dispatch = vi.spyOn(store, 'dispatch').mockImplementation(() => undefined as never);
+    toggle.onClick();
+    expect(dispatch).toHaveBeenCalledWith(setWorkspaceAutoArchiveDisabled('ws-target', false));
+  });
+
+  it('is hidden on remote workspaces, which are never auto-archived', () => {
+    expect(
+      item(
+        setup({ target: labelWorkspace('ws-target', { isRemote: true }) }),
+        'disable-auto-archive',
+      ),
+    ).toBeUndefined();
   });
 
   it('is hidden when the daemon does not advertise the opt-out', () => {

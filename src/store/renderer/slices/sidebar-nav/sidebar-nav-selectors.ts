@@ -141,15 +141,23 @@ export const selectWorkspaceAutoArchiveDisabled = store.createSelector<
 
 const AUTO_ARCHIVE_UPDATE_FIELDS = ['id', 'autoArchiveDisabled'];
 
-/** Whether this client may toggle the workspace's auto-archive opt-out (owner-only write). */
+/**
+ * Whether this client may toggle the workspace's auto-archive opt-out
+ * (owner-only write). Remote workspaces are never auto-archived, so the
+ * opt-out is not offered there.
+ */
 export const selectCanSetWorkspaceAutoArchive = store.createSelector<
   [workspaceId: string],
   boolean
->(
-  (state, workspaceId) =>
-    selectAutoArchiveOptOutSupported.select(state) &&
-    selectWorkspaceUpdateContext.select(state, workspaceId, AUTO_ARCHIVE_UPDATE_FIELDS) !== null,
-);
+>((state, workspaceId) => {
+  if (!selectAutoArchiveOptOutSupported.select(state)) return false;
+  const workspace = selectWorkspaceById.select(state, workspaceId);
+  if (!workspace || workspace.isRemote === true || workspace.environmentConfig?.type === 'remote')
+    return false;
+  return (
+    selectWorkspaceUpdateContext.select(state, workspaceId, AUTO_ARCHIVE_UPDATE_FIELDS) !== null
+  );
+});
 
 /** Local pin list (`intent:pinned-workspaces`), the source of pins on older daemons. */
 export const selectLocalPinnedWorkspaceIds = store.createSelector(

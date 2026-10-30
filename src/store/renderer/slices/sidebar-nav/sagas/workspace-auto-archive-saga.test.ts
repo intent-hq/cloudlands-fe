@@ -12,7 +12,7 @@ vi.mock('$lib/components/patterns/notify', () => ({
   notify: { error: mocks.notifyError, info: vi.fn() },
 }));
 
-import { takeEvery } from 'typed-redux-saga';
+import { fork, takeEvery } from 'typed-redux-saga';
 import type { StoreState } from '../../../types';
 import {
   labelWorkspace,
@@ -24,7 +24,12 @@ import { setWorkspaceAutoArchiveDisabled } from '../sidebar-nav-slice';
 import {
   resetWorkspaceAutoArchiveWritesForTest,
   setWorkspaceAutoArchiveDisabledWorker,
+  watchAuthoritativeAutoArchiveDisabled,
 } from './workspace-auto-archive-saga';
+import {
+  bulkUpdateWorkspaceEntities,
+  updateWorkspaceEntity,
+} from '../../workspace/workspace-slice';
 
 const settle = async () => {
   for (let i = 0; i < 6; i++) await Promise.resolve();
@@ -41,8 +46,13 @@ function served(id: string, disabled: boolean) {
 }
 
 function* root() {
+  yield* fork(watchAuthoritativeAutoArchiveDisabled);
   yield* takeEvery(setWorkspaceAutoArchiveDisabled, setWorkspaceAutoArchiveDisabledWorker);
 }
+
+/** An update this saga did not dispatch (another client's workspace:updated, a list refresh). */
+const remote = (id: string, autoArchiveDisabled: boolean | undefined) =>
+  bulkUpdateWorkspaceEntities([updateWorkspaceEntity(id, { autoArchiveDisabled })]);
 
 function start(initial: StoreState) {
   let state = initial;
@@ -157,6 +167,56 @@ describe('setWorkspaceAutoArchiveDisabled', () => {
     await settle();
     expect(run.flag('ws-1')).toBe(true);
     expect(mocks.notifyError).toHaveBeenCalledWith('nope');
+    await run.stop();
+  });
+
+  it('keeps a value another client set while our failed write was in flight', async () => {
+    const run = start(ownerState());
+    const reply = deferred<unknown>();
+    mocks.update.mockReturnValueOnce(reply.promise);
+
+    run.put(setWorkspaceAutoArchiveDisabled('ws-1', true));
+    await settle();
+    run.put(remote('ws-1', true));
+    reply.resolve({ ok: false, error: 'offline' });
+    await settle();
+
+    expect(run.flag('ws-1')).toBe(true);
+    expect(mocks.notifyError).toHaveBeenCalledWith('offline');
+    await run.stop();
+  });
+
+  it('re-applies the served value over a stale row that landed during the write', async () => {
+    const run = start(ownerState());
+    const reply = deferred<unknown>();
+    mocks.update.mockReturnValueOnce(reply.promise);
+
+    run.put(setWorkspaceAutoArchiveDisabled('ws-1', true));
+    await settle();
+    run.put(remote('ws-1', undefined));
+    expect(run.flag('ws-1')).toBeUndefined();
+    reply.resolve(served('ws-1', true));
+    await settle();
+
+    expect(run.flag('ws-1')).toBe(true);
+    await run.stop();
+  });
+
+  it('rolls a failed later write back to the value the daemon served for the earlier one', async () => {
+    const run = start(ownerState());
+    const first = deferred<unknown>();
+    const second = deferred<unknown>();
+    mocks.update.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+
+    run.put(setWorkspaceAutoArchiveDisabled('ws-1', true));
+    run.put(setWorkspaceAutoArchiveDisabled('ws-1', false));
+    await settle();
+    first.resolve(served('ws-1', false));
+    await settle();
+    second.resolve({ ok: false, error: 'nope' });
+    await settle();
+
+    expect(run.flag('ws-1')).toBeUndefined();
     await run.stop();
   });
 

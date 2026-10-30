@@ -167,14 +167,15 @@ export function createHomeWorkspaceMenu(
     // Per-workspace opt-out from the daemon's auto-archive sweep (PROTOCOL
     // §5.1); owner-only, offered on daemons that advertise it.
     if (selectCanSetWorkspaceAutoArchive.select(store.state, workspace.id)) {
-      const disabled = selectWorkspaceAutoArchiveDisabled.select(store.state, workspace.id);
       items.push({
         id: 'disable-auto-archive',
         label: m.home_workspace_disableAutoArchive_label(),
-        checked: disabled,
+        checked: selectWorkspaceAutoArchiveDisabled.select(store.state, workspace.id),
         closeOnSelect: true,
         onClick: () => {
           onClose();
+          // Read at click time: the flag may have changed while the menu was open.
+          const disabled = selectWorkspaceAutoArchiveDisabled.select(store.state, workspace.id);
           store.dispatch(setWorkspaceAutoArchiveDisabled(workspace.id, !disabled));
         },
       });
