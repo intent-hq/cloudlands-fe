@@ -4,6 +4,7 @@
   /* eslint-disable max-lines */
   import { onMount, tick, untrack } from 'svelte';
   import { prefersReducedMotion } from '$lib/utils/reduced-motion';
+  import { computeRevealScrollTop } from './reveal-scroll';
   import { writable } from 'svelte/store';
   import type {
     FileExplorerDisplayNode as FileNode,
@@ -1098,16 +1099,19 @@
     return false;
   }
 
-  // Scroll to a specific file path
+  // Reveal a file path with the least movement: a row that is already fully
+  // visible stays put, so clicking it does not shift the list under the cursor.
   export function scrollToPath(path: string) {
     const index = effectiveNodes.findIndex((n) => pathMatches(n.node.path, path));
-    if (index >= 0 && scrollEl) {
-      const targetScrollTop = index * itemHeight - measuredHeight / 2 + itemHeight / 2;
-      scrollEl.scrollTo({
-        top: Math.max(0, targetScrollTop),
-        behavior: prefersReducedMotion() ? 'instant' : 'smooth',
-      });
-    }
+    if (index < 0 || !scrollEl) return;
+    const top = computeRevealScrollTop({
+      index,
+      itemHeight,
+      viewTop: scrollEl.scrollTop,
+      viewHeight: scrollEl.clientHeight || measuredHeight,
+    });
+    if (top === null) return;
+    scrollEl.scrollTo({ top, behavior: prefersReducedMotion() ? 'instant' : 'smooth' });
   }
 
   // A reveal target waits until expansion flattens its row into the rendered window.
