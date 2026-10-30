@@ -574,6 +574,119 @@ describe('saga watcher ownership guard', () => {
     expect(result.violations).toEqual([expect.stringContaining('wildcard Redux watcher')]);
   });
 
+  describe('blocking calls to never-returning watchers', () => {
+    const inspect = (body: string) =>
+      inspectSagaWatcherOwnership([
+        root(['lifecycleSaga'], ["import { lifecycleSaga } from './slices/life/sagas/life-saga';"]),
+        {
+          path: 'src/store/renderer/slices/life/sagas/life-saga.ts',
+          content: [
+            "import { all, call, delay, fork, take, takeEvery, takeLatest } from 'typed-redux-saga';",
+            "import { takeLatestFromSelector } from '@themislib/themis/saga';",
+            "import { takeLatestByWorkspace } from '$store/renderer/utils/context-saga-effects';",
+            "import { apply, undo, persist, load, flush } from '../slice';",
+            'function* persistWorker() { yield* delay(1); }',
+            'function* selectorWatcher() { yield* takeLatestFromSelector(selectMap, persistWorker); }',
+            'function* nativeWatcher() { const ready = 1; yield* takeLatest(persist, persistWorker); }',
+            'function* contextWatcher() { yield* takeLatestByWorkspace(load, persistWorker); }',
+            'function* channelLoop() { try { while (true) { yield* take(channel); yield* call(persistWorker); } } finally { channel.close(); } }',
+            'function* wrapsWatcher() { yield* call(selectorWatcher); }',
+            'function* hydrate() { yield* call(persistWorker); }',
+            'function* exitingLoop() { while (true) { const next = yield* take(channel); if (!next) return; } }',
+            'function* earlyReturn() { if (disabled) return; yield* takeEvery(flush, persistWorker); }',
+            `export function* lifecycleSaga() { ${body} }`,
+          ].join('\n'),
+        },
+        {
+          path: 'src/store/renderer/utils/context-saga-effects.ts',
+          content: 'export function* takeLatestByWorkspace() {}',
+        },
+        actionOwner('src/store/renderer/slices/life/slice.ts', [
+          'apply',
+          'undo',
+          'persist',
+          'load',
+          'flush',
+        ]),
+      ]).violations;
+
+    it('rejects the cloudlands-fe#3874 shape: a call to a selector watcher before more watchers', () => {
+      expect(
+        inspect(
+          [
+            'yield* call(hydrate);',
+            'yield* call(selectorWatcher);',
+            'yield* takeEvery(apply, persistWorker);',
+            'yield* takeEvery(undo, persistWorker);',
+          ].join(' '),
+        ),
+      ).toEqual([
+        expect.stringMatching(
+          /life-saga\.ts:\d+: blocking call to never-returning watcher selectorWatcher/,
+        ),
+      ]);
+    });
+
+    it.each([
+      ['a native watcher after setup', 'nativeWatcher'],
+      ['a context watcher', 'contextWatcher'],
+      ['a forever take() loop', 'channelLoop'],
+      ['a generator that calls a watcher', 'wrapsWatcher'],
+    ])('rejects a call to %s with statements after it', (_name, watcher) => {
+      expect(inspect(`yield* call(${watcher}); yield* takeEvery(apply, persistWorker);`)).toEqual([
+        expect.stringContaining(`never-returning watcher ${watcher}`),
+      ]);
+    });
+
+    it.each([
+      [
+        'inside an if branch',
+        'if (enabled) { yield* call(selectorWatcher); } yield* call(hydrate);',
+      ],
+      [
+        'inside a try block',
+        'try { yield* call(selectorWatcher); yield* call(hydrate); } finally {}',
+      ],
+      [
+        'before a trailing try',
+        'yield* call(selectorWatcher); try { yield* call(hydrate); } finally {}',
+      ],
+    ])('rejects a blocking watcher call %s', (_name, body) => {
+      expect(inspect(body)).toEqual([expect.stringContaining('never-returning watcher')]);
+    });
+
+    it.each([
+      [
+        'as the final statement',
+        'yield* takeEvery(apply, persistWorker); yield* call(selectorWatcher);',
+      ],
+      [
+        'as the last statement of a try with a finally',
+        'try { yield* call(channelLoop); } finally { running = false; }',
+      ],
+      ['when forked', 'yield* fork(selectorWatcher); yield* takeEvery(apply, persistWorker);'],
+      [
+        'when delegated inline with yield*',
+        'yield* selectorWatcher(); yield* takeEvery(apply, persistWorker);',
+      ],
+      [
+        'inside all()',
+        'yield* all([call(selectorWatcher), call(contextWatcher)]); yield* call(hydrate);',
+      ],
+      ['for an ordinary worker', 'yield* call(hydrate); yield* takeEvery(apply, persistWorker);'],
+      [
+        'for a loop that can exit',
+        'yield* call(exitingLoop); yield* takeEvery(apply, persistWorker);',
+      ],
+      [
+        'for a watcher behind an early return',
+        'yield* call(earlyReturn); yield* takeEvery(apply, persistWorker);',
+      ],
+    ])('allows a watcher call %s', (_name, body) => {
+      expect(inspect(body)).toEqual([]);
+    });
+  });
+
   it('rejects duplicate root registration', () => {
     const result = inspectSagaWatcherOwnership([
       root(['oneSaga', 'oneSaga'], ["import { oneSaga } from './slices/one/sagas/one-saga';"]),

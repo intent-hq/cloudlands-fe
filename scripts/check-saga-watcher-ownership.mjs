@@ -489,6 +489,158 @@ function watcherWorker(effect, call) {
   return call.arguments[1];
 }
 
+const SELECTOR_WATCHER_SOURCE = '@themislib/themis/saga';
+const SELECTOR_WATCHER = /^take(?:Every|Latest|Leading)FromSelector$/;
+
+/** The call expression a `yield` / `yield*` expression statement runs, if any. */
+function yieldedCall(statement) {
+  if (!ts.isExpressionStatement(statement)) return undefined;
+  let expression = statement.expression;
+  while (ts.isParenthesizedExpression(expression)) expression = expression.expression;
+  if (!ts.isYieldExpression(expression) || !expression.expression) return undefined;
+  const yielded = expression.expression;
+  return ts.isCallExpression(yielded) ? yielded : undefined;
+}
+
+function isForeverLoop(statement) {
+  if (ts.isWhileStatement(statement) || ts.isDoStatement(statement))
+    return statement.expression.kind === ts.SyntaxKind.TrueKeyword;
+  return ts.isForStatement(statement) && !statement.condition;
+}
+
+/** Whether a statement can leave its enclosing loop: any return, break or throw. */
+function canExitLoop(loop) {
+  let exits = false;
+  const scan = (node) => {
+    if (exits || isFunction(node)) return;
+    if (ts.isReturnStatement(node) || ts.isBreakStatement(node) || ts.isThrowStatement(node))
+      exits = true;
+    else ts.forEachChild(node, scan);
+  };
+  ts.forEachChild(loop.statement, scan);
+  return exits;
+}
+
+/**
+ * Same-file generator declarations that never return once called: their body runs
+ * a non-blocking watcher (whose attached fork outlives the caller's `call`), loops
+ * forever on `take()`, or `call()`s another never-returning generator. `call()`
+ * waits for a generator and all of its attached forks, so any statement after such
+ * a call is dead (cloudlands-fe#3874).
+ */
+function neverReturningGenerators(source, effectNames, effectNamespaces) {
+  const selectorWatchers = new Set(
+    [...importsFor(source)]
+      .filter(
+        ([, binding]) =>
+          binding.specifier === SELECTOR_WATCHER_SOURCE && SELECTOR_WATCHER.test(binding.imported),
+      )
+      .map(([local]) => local),
+  );
+  const generators = new Map();
+  for (const statement of source.statements) {
+    if (ts.isFunctionDeclaration(statement) && statement.asteriskToken && statement.name)
+      generators.set(statement.name.text, statement);
+  }
+  const effectOf = (call) => effectForExpression(call.expression, effectNames, effectNamespaces);
+  const takesInLoop = (loop, owner) => {
+    let takes = false;
+    visit(loop.statement, (child) => {
+      if (
+        ts.isCallExpression(child) &&
+        ['take', 'takeMaybe'].includes(effectOf(child)) &&
+        enclosingFunction(child) === owner
+      )
+        takes = true;
+    });
+    return takes;
+  };
+  const never = new Set();
+  const blocks = (statement, owner) => {
+    const call = yieldedCall(statement);
+    if (call) {
+      const effect = effectOf(call);
+      if (WATCHERS.has(effect)) return true;
+      if (ts.isIdentifier(call.expression) && selectorWatchers.has(call.expression.text))
+        return true;
+      if (blockingCallTarget(call, effect, never)) return true;
+    }
+    if (isForeverLoop(statement)) return !canExitLoop(statement) && takesInLoop(statement, owner);
+    if (ts.isTryStatement(statement)) return statementsBlock(statement.tryBlock.statements, owner);
+    return false;
+  };
+  const statementsBlock = (statements, owner) => {
+    for (const statement of statements) {
+      if (blocks(statement, owner)) return true;
+      let returns = false;
+      visit(statement, (child) => {
+        if (ts.isReturnStatement(child) && enclosingFunction(child) === owner) returns = true;
+      });
+      if (returns) return false;
+    }
+    return false;
+  };
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const [name, declaration] of generators) {
+      if (never.has(name) || !declaration.body) continue;
+      if (statementsBlock(declaration.body.statements, declaration)) {
+        never.add(name);
+        changed = true;
+      }
+    }
+  }
+  return never;
+}
+
+/**
+ * The never-returning generator a `call(gen)` blocks on, if any. Delegation
+ * (`yield* gen()`) is not blocking: it runs inline, so a watcher fork attaches to
+ * the delegating saga and the delegation returns at once.
+ */
+function blockingCallTarget(call, effect, never) {
+  if (effect !== 'call') return undefined;
+  const target = call.arguments[0];
+  return target && ts.isIdentifier(target) && never.has(target.text) ? target.text : undefined;
+}
+
+/**
+ * Whether a statement follows `statement` in an enclosing block of the same function.
+ * A trailing `finally` is not a following statement: it runs on cancellation.
+ */
+function hasFollowingStatements(statement) {
+  for (
+    let current = statement;
+    current.parent && !isFunction(current.parent) && !ts.isSourceFile(current.parent);
+    current = current.parent
+  ) {
+    const parent = current.parent;
+    const siblings =
+      ts.isBlock(parent) || ts.isCaseClause(parent) || ts.isDefaultClause(parent)
+        ? parent.statements
+        : undefined;
+    if (siblings && siblings.indexOf(current) < siblings.length - 1) return true;
+  }
+  return false;
+}
+
+function blockingWatcherCallViolations(source, filePath, effectNames, effectNamespaces) {
+  const never = neverReturningGenerators(source, effectNames, effectNamespaces);
+  if (never.size === 0) return [];
+  const violations = [];
+  visit(source, (node) => {
+    const call = yieldedCall(node);
+    if (!call) return;
+    const effect = effectForExpression(call.expression, effectNames, effectNamespaces);
+    const target = blockingCallTarget(call, effect, never);
+    if (!target || !hasFollowingStatements(node)) return;
+    violations.push(
+      `${filePath}:${lineFor(source, node)}: blocking call to never-returning watcher ${target}; later statements never run — fork it instead`,
+    );
+  });
+  return violations;
+}
+
 function resolvedModulePath(sources, fromPath, specifier) {
   return moduleCandidates(fromPath, specifier).find((candidate) => sources.has(candidate));
 }
@@ -590,6 +742,9 @@ export function inspectSagaWatcherOwnership(files) {
       source,
       filePath,
       provenance.effects,
+    );
+    violations.push(
+      ...blockingWatcherCallViolations(source, filePath, effectNames, effectNamespaces),
     );
     const typeDeclarations = new Map();
     visit(source, (node) => {
