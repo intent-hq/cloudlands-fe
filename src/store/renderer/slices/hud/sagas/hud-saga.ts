@@ -69,7 +69,6 @@ import {
 import {
   hydrateAgentsRequested,
   setAgents,
-  setAgentsLoaded,
 } from '../../workspace-agents/workspace-agents-slice';
 import { selectHudGridFilter, selectHudWorkspaceEntities } from '../hud-selectors';
 import {
@@ -339,7 +338,9 @@ function* hydrateHudWorkspaceAgents(
     const agents = listed
       .filter((agent) => !agent.pendingDeleteAt && !isAgentDeletionPending(String(agent.id)))
       .map((agent) => ({ ...agent, messages: agent.messages ?? [] }));
-    yield* put(setAgentsLoaded(workspaceId, true));
+    // No `setAgentsLoaded`: this read is partial (top-level rows plus point
+    // reads, no bin counts). The full read requested alongside it via
+    // `hydrateAgentsRequested` owns the flag and sets it once its rows land.
     if (agents.length === 0) return;
     yield* put(setAgents(workspaceId, agents));
     yield* put(bulkUpsertSessions(agents, { listProjection: true }));

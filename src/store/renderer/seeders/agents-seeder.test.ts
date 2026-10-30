@@ -83,6 +83,57 @@ describe('agents-seeder', () => {
     });
   });
 
+  describe('agentsLoaded ordering', () => {
+    it('sets agentsLoaded only after the rows and sessions are stored', async () => {
+      const WORKSPACE_ID = 'ws-order';
+      mockedClient.agents.list.mockResolvedValueOnce([
+        {
+          id: 'agent-a',
+          workspaceId: WORKSPACE_ID,
+          name: 'A',
+          isBackground: false,
+          messages: [],
+          status: 'idle',
+        },
+      ]);
+      // The store notifies per dispatch: capture what a subscriber sees right
+      // after the first dispatch where the flag reads true.
+      let seenAtLoaded: { agentIds: string[]; hasSession: boolean } | null = null;
+      const observedStore = {
+        get state() {
+          return store.state;
+        },
+        dispatch(action: Parameters<typeof store.dispatch>[0]) {
+          const result = store.dispatch(action);
+          const workspaceState = store.state.workspaceAgents.byWorkspaceId[WORKSPACE_ID];
+          if (!seenAtLoaded && workspaceState?.agentsLoaded === true) {
+            seenAtLoaded = {
+              agentIds: [...workspaceState.agentIds],
+              hasSession: store.state.agentSessions.byAgentId['agent-a'] !== undefined,
+            };
+          }
+          return result;
+        },
+      } as unknown as typeof store;
+
+      const { seedMockStore } = await import('../mock-bootstrap');
+      await seedMockStore(observedStore, appClient, WORKSPACE_ID);
+
+      expect(seenAtLoaded).toEqual({ agentIds: ['agent-a'], hasSession: true });
+    });
+
+    it('still sets agentsLoaded when the agent list read fails', async () => {
+      mockedClient.agents.list.mockRejectedValueOnce(new Error('offline'));
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const { seedMockStore } = await import('../mock-bootstrap');
+      await seedMockStore(store, appClient, 'ws-failed');
+      error.mockRestore();
+
+      expect(store.state.workspaceAgents.byWorkspaceId['ws-failed']?.agentsLoaded).toBe(true);
+    });
+  });
+
   describe('preserve-messages merge', () => {
     it('preserves existing messages when AgentLite returns messages: []', async () => {
       const WORKSPACE_ID = 'amber-forest';

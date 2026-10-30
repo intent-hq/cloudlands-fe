@@ -41,8 +41,10 @@ registerMockSeeder('agents', async ({ store, client, workspaceId, getWorkspaceId
     return;
   }
 
-  store.dispatch(setAgentsLoaded(wsId, true));
-  if (fetched.length === 0) return;
+  if (fetched.length === 0) {
+    store.dispatch(setAgentsLoaded(wsId, true));
+    return;
+  }
 
   // Preserve existing messages when AgentLite returns messages: [] (PROTOCOL
   // §5.5 — same merge `hydrateWorkspaceAgents` uses in lifecycle-read-service.ts).
@@ -62,6 +64,8 @@ registerMockSeeder('agents', async ({ store, client, workspaceId, getWorkspaceId
   for (const agent of agents) {
     store.dispatch(upsertSession(agent));
   }
+  // Only now: `agentsLoaded` means the rows and sessions are stored.
+  store.dispatch(setAgentsLoaded(wsId, true));
 
   // Guard against clobbering activeAgentId when route navigation already set
   // one (mirrors the guard in `hydrateWorkspaceAgents`). If an active agent
