@@ -40,13 +40,8 @@
     }
   }
 
-  /**
-   * Inputs whose plain Enter inserts a newline. Code editors such as Monaco type
-   * through the EditContext API, so their focus target is a plain element marked
-   * as an ARIA multiline textbox rather than a textarea (intent-hq/intent#8068).
-   * Chromium exposes `editContext` as `null` on every element, so only an attached
-   * EditContext counts.
-   */
+  // Multi-line targets (textareas, contenteditable, Monaco's EditContext textbox)
+  // keep plain Enter for new lines; see isMultilineTextEntryTarget (intent-hq/intent#8068).
   function handleKeydown(event: KeyboardEvent) {
     if (event.key !== 'Enter' || event.isComposing || event.defaultPrevented || isBusy) return;
     const target = event.target as HTMLElement;

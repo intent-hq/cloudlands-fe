@@ -50,6 +50,16 @@ describe('isTextEntryTarget', () => {
     expect(isTextEntryTarget(element('div', { contenteditable: 'false' }))).toBe(false);
   });
 
+  it('does not treat a button in a contenteditable="false" island of an editor as text entry', () => {
+    const editor = element('div', { contenteditable: 'true' });
+    const island = document.createElement('div');
+    island.setAttribute('contenteditable', 'false');
+    const button = document.createElement('button');
+    island.append(button);
+    editor.append(island);
+    expect(isTextEntryTarget(button)).toBe(false);
+  });
+
   it('recognizes a Monaco-style EditContext owner', () => {
     const monaco = withEditContext(element('div'), {});
     expect(isTextEntryTarget(monaco)).toBe(true);

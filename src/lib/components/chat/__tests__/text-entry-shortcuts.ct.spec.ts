@@ -19,6 +19,17 @@ async function focusPage(page: Page): Promise<void> {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
 }
 
+test('permission digit shortcuts still claim keys when no editor is focused', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(Harness, { props: { surface: 'permission' } });
+  await expect(component.getByRole('button', { name: /Allow/ })).toBeVisible();
+  await focusPage(page);
+  await page.keyboard.press('1');
+  await expect(component.getByTestId('claimed-keys')).toHaveText('1');
+});
+
 test('digits typed in a focused code editor reach the editor, not the pending permission', async ({
   mount,
   page,
@@ -28,6 +39,7 @@ test('digits typed in a focused code editor reach the editor, not the pending pe
   await focusEditor(component);
   await page.keyboard.type('x12');
   await expect(component.getByTestId('editor-value')).toHaveText('x12');
+  await expect(component.getByTestId('claimed-keys')).toHaveText('');
 });
 
 test('digit shortcuts still toggle question options when no editor is focused', async ({

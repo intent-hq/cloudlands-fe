@@ -8,8 +8,11 @@
  * steal its keys (intent-hq/intent#8068).
  */
 
-const NATIVE_TEXT_ENTRY = 'input, textarea, select';
-const CONTENT_EDITABLE = '[contenteditable]:not([contenteditable="false"])';
+/**
+ * Native form controls own their keys (typing, arrow/space on selects and ranges),
+ * so every input type counts — matching the handlers this helper replaced.
+ */
+const NATIVE_FORM_CONTROL = 'input, textarea, select';
 
 /**
  * True when the element owns an attached EditContext. Chromium exposes
@@ -37,7 +40,7 @@ function asElement(target: EventTarget | Element | null | undefined): Element | 
 
 /**
  * True when keystrokes on `target` are text entry that page-level shortcuts must
- * not intercept: native inputs, contenteditable regions, EditContext owners
+ * not intercept: native form controls, contenteditable regions, EditContext owners
  * (Monaco), and ARIA textboxes, including their descendants. Read-only textboxes
  * count too — focus is still in an editor with caret navigation.
  */
@@ -46,7 +49,11 @@ export function isTextEntryTarget(target: EventTarget | Element | null | undefin
   if (!element) return false;
   if (isContentEditableElement(element)) return true;
   if (hasAttachedEditContext(element)) return true;
-  return element.closest(`${NATIVE_TEXT_ENTRY}, ${CONTENT_EDITABLE}, [role="textbox"]`) !== null;
+  if (element.closest(`${NATIVE_FORM_CONTROL}, [role="textbox"]`)) return true;
+  // The nearest contenteditable host decides: a contenteditable="false" island
+  // (e.g. a TipTap node-view toolbar) is not text entry even inside an editor.
+  const editableHost = element.closest('[contenteditable]');
+  return editableHost !== null && editableHost.getAttribute('contenteditable') !== 'false';
 }
 
 /**
