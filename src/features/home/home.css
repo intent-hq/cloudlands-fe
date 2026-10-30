@@ -125,6 +125,8 @@
 .home-layout {
   --home-header-height: 3rem;
   --home-content-gap: 1rem;
+  /* Space below the 2.25rem sidebar tabs when centered in the header height. */
+  --home-tabs-inset: 0.375rem;
   --selected: var(--home-selected);
   --color-selected: hsl(var(--selected));
   display: grid;
@@ -145,13 +147,14 @@
   min-height: var(--home-header-height);
 }
 
+/* Ends at the tabs' bottom edge, so each panel sets its own gap below them. */
 .home-sidebar-header {
-  height: var(--home-header-height);
+  height: calc(var(--home-header-height) - var(--home-tabs-inset));
 }
 
 /* Workspaces lines up with the main content; Assistant rows sit just under the tabs. */
 .home-sidebar-header + .home-sidebar-contents > [data-value='workspaces'] {
-  margin-top: var(--home-content-gap);
+  margin-top: calc(var(--home-tabs-inset) + var(--home-content-gap));
 }
 
 .home-sidebar-header + .home-sidebar-contents > [data-value='assistant'] {
@@ -278,10 +281,10 @@
   }
   /* New chat row minus the smaller top gap, so the thread list keeps its space. */
   .home-layout.home-assistant .home-sidebar-resizable {
-    height: min(11.5rem, calc(25% + 1.5rem));
+    height: min(11.125rem, calc(25% + 1.125rem));
   }
   .home-layout.home-assistant .home-sidebar {
-    max-height: 11.5rem;
+    max-height: 11.125rem;
   }
   .home-layout.home-assistant .home-surface {
     min-height: 0;
