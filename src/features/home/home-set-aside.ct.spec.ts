@@ -180,6 +180,9 @@ test('Board column supports Bring back, Undo, scopes and narrow layouts', async 
   await expect(asideCard).toBeVisible();
   await expect(board.locator('[data-home-workspace]')).toHaveCount(1);
   await page.getByRole('searchbox').clear();
+  const clearToasts = page.getByRole('button', { name: /^Dismiss all \d+ notifications$/ });
+  if (await clearToasts.isVisible()) await clearToasts.click();
+  await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
   await asideCard.hover();
   await capture(page, testInfo, 'kanban-column-light');
   await page.evaluate(() => document.documentElement.classList.add('dark'));
