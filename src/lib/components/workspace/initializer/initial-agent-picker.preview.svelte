@@ -81,17 +81,18 @@
   } as AgentSession);
   onDestroy(setupPickerProviders());
   // Enough rows to overflow the specialist menu's height cap.
-  const crowdedSpecialists = Array.from({ length: 8 }, (_, index) => ({
-    id: `fixture-crowded-${index + 1}`,
-    name: `Crowded specialist ${index + 1}`,
-    description: 'Keeps a steady pipeline of evidence-backed fixes across components.',
-    model: 'fixture-model',
-    codingAgent: 'codex',
-    behaviorPrompt: '',
-    filePath: `/fixture/crowded-${index + 1}.md`,
-    source: 'user' as const,
-    icon: 'developer',
-  }));
+  const crowdedSpecialists = () =>
+    Array.from({ length: 8 }, (_, index) => ({
+      id: `fixture-crowded-${index + 1}`,
+      name: `Crowded specialist ${index + 1}`,
+      description: 'Keeps a steady pipeline of evidence-backed fixes across components.',
+      model: 'fixture-model',
+      codingAgent: 'codex',
+      behaviorPrompt: '',
+      filePath: `/fixture/crowded-${index + 1}.md`,
+      source: 'user' as const,
+      icon: 'developer',
+    }));
   const previousFiles = selectFileSpecialists.select(store.state);
   const previousFilesLoaded = selectFileSpecialistsLoaded.select(store.state);
   const previousCustomLoaded = selectCustomSpecialistsLoaded.select(store.state);
@@ -125,7 +126,7 @@
                 source: 'user',
                 icon: 'reviewer',
               },
-              ...(scenario === 'crowded' ? crowdedSpecialists : []),
+              ...(scenario === 'crowded' ? crowdedSpecialists() : []),
             ],
       ),
     ),
