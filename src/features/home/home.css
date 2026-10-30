@@ -281,10 +281,10 @@
   }
   /* New chat row minus the smaller top gap, so the thread list keeps its space. */
   .home-layout.home-assistant .home-sidebar-resizable {
-    height: min(11.125rem, calc(25% + 1.125rem));
+    height: min(11.375rem, calc(25% + 1.375rem));
   }
   .home-layout.home-assistant .home-sidebar {
-    max-height: 11.125rem;
+    max-height: 11.375rem;
   }
   .home-layout.home-assistant .home-surface {
     min-height: 0;

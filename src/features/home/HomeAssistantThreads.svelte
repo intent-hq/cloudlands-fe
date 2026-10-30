@@ -68,8 +68,8 @@
 {#if !$hidesThreadActions$}
   <Button
     variant="ghost"
-    class="h-9 w-full shrink-0 justify-start gap-2 px-2 text-muted-foreground hover:text-foreground focus-visible:-outline-offset-1"
-    labelClass="text-left"
+    class="mb-1 h-9 w-full shrink-0 justify-start gap-2 px-2 text-muted-foreground hover:text-foreground focus-visible:-outline-offset-1"
+    labelClass="text-left font-normal"
     aria-disabled={threadStarter.pending || undefined}
     aria-busy={threadStarter.pending || undefined}
     onclick={startThread}
