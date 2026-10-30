@@ -42,7 +42,7 @@
   import { faNote } from '$lib/icons/faNote';
   import { logger } from '$lib/utils/client-logger';
   import { faCodeCommit, faLock, faMinus, faPlus, faUser } from '@fortawesome/free-solid-svg-icons';
-  import { onDestroy, untrack } from 'svelte';
+  import { onDestroy, untrack, type Snippet } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { flip } from 'svelte/animate';
@@ -52,7 +52,6 @@
     spring,
     type ImmediateMotionConfig as TransitionConfig,
   } from '$lib/motion';
-  import DividerButton from './DividerButton.svelte';
   import {
     getGroupKey,
     isFileActive as isFileActiveUtil,
@@ -64,7 +63,6 @@
     limitGroupedChanges,
     formatHiddenChangesNotice,
   } from './sidebar-changes-utils';
-  import TimelineDivider from './TimelineDivider.svelte';
   import TimelineSection from './TimelineSection.svelte';
   import { store as appStore } from '$store/renderer/store';
   import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
@@ -72,6 +70,7 @@
 
   interface Props {
     workspaceId: string;
+    summary?: Snippet;
     activeFilePath?: string | null;
     activeFileStaged?: boolean | null;
     /** Focused file from keyboard navigation in parent */
@@ -95,6 +94,7 @@
 
   let {
     workspaceId,
+    summary,
     activeFilePath = null,
     activeFileStaged = null,
     focusedFile = null,
@@ -582,509 +582,518 @@
   }
 </script>
 
-<!-- UNSTAGED SECTION -->
-<div>
-  <TimelineSection
-    title={m.workspace_fileChanges_unstaged_label()}
-    collapsible
-    expanded={unstagedExpanded}
-    onToggle={() => (unstagedExpanded = !unstagedExpanded)}
-    active={hasUnstaged}
-    activeColor="bg-warning"
-  >
-    {#snippet action()}
-      <!-- Auto-commit toggle (workspace.setAutoCommit is owner-only) -->
-      {#if isOwner}
-        <div
-          class="ml-auto flex min-w-0 items-center justify-end gap-2"
-          data-testid="auto-commit-toggle"
-        >
-          <Tooltip
-            content={$autoCommitEnabled
-              ? m.workspace_fileChanges_autoCommitOn_tooltip()
-              : m.workspace_fileChanges_autoCommitOff_tooltip()}
-            side="right"
-            contentClass="w-[12rem]"
-            class="min-w-0 items-center justify-end gap-2"
-            disableHoverableContent={false}
-            disableCloseOnTriggerClick={true}
-          >
-            <span class="type-caption min-w-0 truncate text-subtle">
-              {m.workspace_commitDrawer_autoCommit_label()}
-            </span>
-            <Switch
-              size="xs"
-              checked={$autoCommitEnabled}
-              class="shrink-0"
-              ariaLabel={m.workspace_commitDrawer_autoCommit_label()}
-              onCheckedChange={() => {
-                if (workspaceId) {
-                  appStore.dispatch(
-                    setAutoCommitEnabled(workspaceId as string, !$autoCommitEnabled),
-                  );
-                }
-              }}
-            />
-          </Tooltip>
-        </div>
-      {/if}
-    {/snippet}
+<div class="mb-2 flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-1">
+  {#if summary}
+    <div class="min-w-24 flex-1">{@render summary()}</div>
+  {/if}
+  {#if isOwner}
+    <div
+      class="ml-auto flex shrink-0 items-center justify-end gap-2"
+      data-testid="auto-commit-toggle"
+    >
+      <Tooltip
+        content={$autoCommitEnabled
+          ? m.workspace_fileChanges_autoCommitOn_tooltip()
+          : m.workspace_fileChanges_autoCommitOff_tooltip()}
+        side="right"
+        contentClass="w-[12rem]"
+        class="min-w-0 items-center justify-end gap-2"
+        disableHoverableContent={false}
+        disableCloseOnTriggerClick={true}
+      >
+        <span class="type-caption min-w-0 truncate text-subtle">
+          {m.workspace_commitDrawer_autoCommit_label()}
+        </span>
+        <Switch
+          size="xs"
+          checked={$autoCommitEnabled}
+          class="shrink-0"
+          ariaLabel={m.workspace_commitDrawer_autoCommit_label()}
+          onCheckedChange={() => {
+            if (workspaceId) {
+              appStore.dispatch(setAutoCommitEnabled(workspaceId as string, !$autoCommitEnabled));
+            }
+          }}
+        />
+      </Tooltip>
+    </div>
+  {/if}
+</div>
 
-    {#if hasUnstaged}
-      {#if hasAnyAgentAttribution}
-        <!-- Grouped view with agent headers -->
-        <div class="space-y-1">
-          {#each unstagedGroupDisplay.groups as entry (entry.group.agentId ?? 'manual')}
-            {@const group = entry.group}
-            {@const isCollapsed = isAgentGroupCollapsed(group.agentId)}
-            {@const isLocked = isAgentGroupLocked(group.agentId)}
-            {@const commitState = getGroupCommitState(group, 'unstaged')}
-            {@const queuePos = getGroupQueuePosition(group, 'unstaged')}
-            <div class="space-y-px">
-              <!-- Agent header -->
-              <div class="relative group/agent-header flex h-8 items-center gap-1.5 px-2">
-                <Button
-                  variant="ghost"
-                  type="button"
-                  size="compact"
-                  wrapContent={false}
-                  class="group/row flex h-8 items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer rounded-md px-2 -mx-2 type-caption font-normal"
-                  onclick={() => toggleAgentGroup(group.agentId)}
-                >
-                  {#if isLocked}
-                    <Tooltip
-                      content="These changes will auto-commit when agent completes"
-                      align="start"
-                    >
-                      <Fa icon={faLock} class="text-subtle shrink-0" size={10} />
-                    </Tooltip>
-                  {/if}
-                  <span
-                    class="type-caption flex-1 truncate text-muted-foreground {isLocked
-                      ? 'opacity-40'
-                      : ''}"
+<!-- UNSTAGED SECTION -->
+{#if hasUnstaged}
+  <div>
+    <TimelineSection
+      title={m.workspace_fileChanges_unstaged_label()}
+      collapsible
+      expanded={unstagedExpanded}
+      onToggle={() => (unstagedExpanded = !unstagedExpanded)}
+      active={hasUnstaged}
+      activeColor="bg-warning"
+    >
+      {#snippet action()}
+        {#if isOwner}
+          <Button
+            variant="ghost"
+            size="compact"
+            class="h-7 shrink-0 type-caption text-muted-foreground"
+            onclick={handleStageAll}
+            disabled={isStaging}
+            loading={isStaging}
+            data-testid="stage-all-button"
+          >
+            {m.workspace_fileChanges_stageAll_label()}
+          </Button>
+        {/if}
+      {/snippet}
+
+      {#if hasUnstaged}
+        {#if hasAnyAgentAttribution}
+          <!-- Grouped view with agent headers -->
+          <div class="space-y-1">
+            {#each unstagedGroupDisplay.groups as entry (entry.group.agentId ?? 'manual')}
+              {@const group = entry.group}
+              {@const isCollapsed = isAgentGroupCollapsed(group.agentId)}
+              {@const isLocked = isAgentGroupLocked(group.agentId)}
+              {@const commitState = getGroupCommitState(group, 'unstaged')}
+              {@const queuePos = getGroupQueuePosition(group, 'unstaged')}
+              <div class="space-y-px">
+                <!-- Agent header -->
+                <div class="relative group/agent-header flex h-8 items-center gap-1.5 px-2">
+                  <Button
+                    variant="ghost"
+                    type="button"
+                    size="compact"
+                    wrapContent={false}
+                    class="group/row flex h-8 items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer rounded-md px-2 -mx-2 type-caption font-normal"
+                    onclick={() => toggleAgentGroup(group.agentId)}
                   >
-                    {getAgentDisplayName(group)}
-                  </span>
-                  {#if group.agentId}
-                    {@const hasAnyActions = !isLocked || getLinkedNoteId(group.agentId)}
-                    <AgentAvatar
-                      class={hasAnyActions ? 'group-hover/agent-header:opacity-0' : ''}
-                      agentId={group.agentId}
-                      size={15}
-                    />
-                  {:else}
-                    <Fa
-                      icon={faUser}
-                      class="h-2.5 w-2.5 text-ghost {!isLocked
-                        ? 'group-hover/agent-header:opacity-0'
-                        : ''}"
-                    />
-                  {/if}
-                </Button>
-                <!-- Action buttons -->
-                <div
-                  class="bg-sidebar absolute top-1/2 right-1 transform translate-x-1 transition-transform {commitState !==
-                  'idle'
-                    ? 'translate-x-0 opacity-100'
-                    : 'group-hover/agent-header:translate-x-0'} -translate-y-1/2 {commitState !==
-                  'idle'
-                    ? ''
-                    : 'opacity-0 group-hover/agent-header:opacity-100'} flex items-center pl-0.25"
-                >
-                  {#if group.agentId && getLinkedNoteId(group.agentId)}
-                    <Button
-                      variant="ghost-light"
-                      size="icon-xs"
-                      class="h-5 w-5"
-                      tooltip={m.workspace_fileChanges_openLinkedNote_tooltip()}
-                      onclick={(e: MouseEvent) => {
-                        e.stopPropagation();
-                        const noteId = getLinkedNoteId(group.agentId);
-                        if (noteId) onOpenNote?.(noteId);
-                      }}
-                    >
-                      <Fa icon={faNote} class="h-2.5! w-2.5!" />
-                    </Button>
-                  {/if}
-                  <!-- Group stage / commit mutate the worktree (owner-only) -->
-                  {#if isOwner && !isLocked}
-                    <Button
-                      variant="ghost-light"
-                      size="icon-xs"
-                      class="h-5 w-5"
-                      tooltip={m.workspace_fileChanges_approveAll_tooltip()}
-                      onclick={(e: MouseEvent) => {
-                        e.stopPropagation();
-                        handleStageGroup(group);
-                      }}
-                    >
-                      <Fa icon={faPlus} class="h-2.5! w-2.5!" />
-                    </Button>
-                    {#if commitState === 'active'}
-                      <Tooltip content="Committing..." side="top">
-                        <span class="h-5 w-5 flex items-center justify-center">
-                          <IntentMarkLoader size={10} class="text-primary-ink" />
-                        </span>
-                      </Tooltip>
-                    {:else if commitState === 'queued'}
-                      <Button
-                        variant="ghost-light"
-                        size="icon-xs"
-                        class="h-5 w-5 relative"
-                        tooltip={m.workspace_fileChanges_queuedClickToCancel_tooltip()}
-                        onclick={(e: MouseEvent) => {
-                          e.stopPropagation();
-                          cancelGroupCommit(group, 'unstaged');
-                        }}
+                    {#if isLocked}
+                      <Tooltip
+                        content="These changes will auto-commit when agent completes"
+                        align="start"
                       >
-                        <span class="type-caption font-normal text-primary-ink leading-none"
-                          >{queuePos}</span
-                        >
-                      </Button>
+                        <Fa icon={faLock} class="text-subtle shrink-0" size={10} />
+                      </Tooltip>
+                    {/if}
+                    <span
+                      class="type-caption flex-1 truncate text-muted-foreground {isLocked
+                        ? 'opacity-40'
+                        : ''}"
+                    >
+                      {getAgentDisplayName(group)}
+                    </span>
+                    {#if group.agentId}
+                      {@const hasAnyActions = !isLocked || getLinkedNoteId(group.agentId)}
+                      <AgentAvatar
+                        class={hasAnyActions ? 'group-hover/agent-header:opacity-0' : ''}
+                        agentId={group.agentId}
+                        size={15}
+                      />
                     {:else}
+                      <Fa
+                        icon={faUser}
+                        class="h-2.5 w-2.5 text-ghost {!isLocked
+                          ? 'group-hover/agent-header:opacity-0'
+                          : ''}"
+                      />
+                    {/if}
+                  </Button>
+                  <!-- Action buttons -->
+                  <div
+                    class="bg-sidebar absolute top-1/2 right-1 transform translate-x-1 transition-transform {commitState !==
+                    'idle'
+                      ? 'translate-x-0 opacity-100'
+                      : 'group-hover/agent-header:translate-x-0'} -translate-y-1/2 {commitState !==
+                    'idle'
+                      ? ''
+                      : 'opacity-0 group-hover/agent-header:opacity-100'} flex items-center pl-0.25"
+                  >
+                    {#if group.agentId && getLinkedNoteId(group.agentId)}
                       <Button
                         variant="ghost-light"
                         size="icon-xs"
                         class="h-5 w-5"
-                        data-testid="group-commit-button"
-                        tooltip={m.workspace_fileChanges_stageAndCommit_tooltip()}
+                        tooltip={m.workspace_fileChanges_openLinkedNote_tooltip()}
                         onclick={(e: MouseEvent) => {
                           e.stopPropagation();
-                          enqueueGroupCommit(group, 'unstaged');
+                          const noteId = getLinkedNoteId(group.agentId);
+                          if (noteId) onOpenNote?.(noteId);
                         }}
                       >
-                        <Fa icon={faCodeCommit} class="h-2.5! w-2.5!" />
+                        <Fa icon={faNote} class="h-2.5! w-2.5!" />
                       </Button>
                     {/if}
-                  {/if}
-                </div>
-              </div>
-              <!-- Files in group -->
-              {#if !isCollapsed}
-                <div class="min-w-0" transition:slide={{ tier: 'moderate' }}>
-                  {#each entry.visibleFiles as file (file.path)}
-                    {@const panelState = getFilePanelState(file.path)}
-                    <div
-                      class="[&>div]:h-8 [&>div]:border-0 [&>div]:rounded-md"
-                      data-file-key="unstaged:{file.path}"
-                      in:receive|global={{ key: file.path }}
-                      out:send|global={{ key: file.path }}
-                    >
-                      <FileRow
-                        contextKey={workspaceId}
-                        compact
-                        {file}
-                        showStageAction={isOwner && !isLocked}
-                        showRevertAction={isOwner && !isLocked}
-                        locked={isLocked}
-                        active={isFileActive(file.path, false)}
-                        selected={isFileSelected(file.path, false)}
-                        focused={isFileFocused(file.path, false)}
-                        activeInPanel={panelState.isActive}
-                        onFileClick={(path, commitHash, _staged, event) => {
-                          trackLastClicked(path, false);
-                          handleFileClick(path, commitHash, false, event);
+                    <!-- Group stage / commit mutate the worktree (owner-only) -->
+                    {#if isOwner && !isLocked}
+                      <Button
+                        variant="ghost-light"
+                        size="icon-xs"
+                        class="h-5 w-5"
+                        tooltip={m.workspace_fileChanges_approveAll_tooltip()}
+                        onclick={(e: MouseEvent) => {
+                          e.stopPropagation();
+                          handleStageGroup(group);
                         }}
-                        onSelectClick={(path, e) => handleSelectClick(path, false, e)}
-                        onStage={handleStageFile}
-                        onRevert={handleRevertFile}
-                        onOpenFile={handleOpenFile}
-                      />
-                    </div>
-                  {/each}
+                      >
+                        <Fa icon={faPlus} class="h-2.5! w-2.5!" />
+                      </Button>
+                      {#if commitState === 'active'}
+                        <Tooltip content="Committing..." side="top">
+                          <span class="h-5 w-5 flex items-center justify-center">
+                            <IntentMarkLoader size={10} class="text-primary-ink" />
+                          </span>
+                        </Tooltip>
+                      {:else if commitState === 'queued'}
+                        <Button
+                          variant="ghost-light"
+                          size="icon-xs"
+                          class="h-5 w-5 relative"
+                          tooltip={m.workspace_fileChanges_queuedClickToCancel_tooltip()}
+                          onclick={(e: MouseEvent) => {
+                            e.stopPropagation();
+                            cancelGroupCommit(group, 'unstaged');
+                          }}
+                        >
+                          <span class="type-caption font-normal text-primary-ink leading-none"
+                            >{queuePos}</span
+                          >
+                        </Button>
+                      {:else}
+                        <Button
+                          variant="ghost-light"
+                          size="icon-xs"
+                          class="h-5 w-5"
+                          data-testid="group-commit-button"
+                          tooltip={m.workspace_fileChanges_stageAndCommit_tooltip()}
+                          onclick={(e: MouseEvent) => {
+                            e.stopPropagation();
+                            enqueueGroupCommit(group, 'unstaged');
+                          }}
+                        >
+                          <Fa icon={faCodeCommit} class="h-2.5! w-2.5!" />
+                        </Button>
+                      {/if}
+                    {/if}
+                  </div>
                 </div>
-              {/if}
-            </div>
-          {/each}
-        </div>
-      {:else}
-        <!-- Flat view when no agent attribution -->
-        <div class="space-y-px">
-          {#each visibleUnstagedChanges as change (change.id)}
-            {@const panelState = getFilePanelState(change.relativePath)}
-            <div
-              class="[&>div]:h-8 [&>div]:border-0 [&>div]:rounded-md"
-              data-file-key="unstaged:{change.relativePath}"
-              in:receive|global={{ key: change.relativePath }}
-              out:send|global={{ key: change.relativePath }}
-              animate:flip={{
-                duration: isWorkspaceSwitching || prefersReducedMotion() ? 0 : spring.fast.settleMs,
-              }}
-            >
-              <FileRow
-                contextKey={workspaceId}
-                compact
-                file={toUIFileChange(change, false)}
-                showStageAction={isOwner}
-                showRevertAction={isOwner}
-                active={isFileActive(change.relativePath, false)}
-                selected={isFileSelected(change.relativePath, false)}
-                focused={isFileFocused(change.relativePath, false)}
-                activeInPanel={panelState.isActive}
-                onFileClick={(path, commitHash, _staged, event) => {
-                  trackLastClicked(path, false);
-                  handleFileClick(path, commitHash, false, event);
+                <!-- Files in group -->
+                {#if !isCollapsed}
+                  <div class="min-w-0" transition:slide={{ tier: 'moderate' }}>
+                    {#each entry.visibleFiles as file (file.path)}
+                      {@const panelState = getFilePanelState(file.path)}
+                      <div
+                        class="[&>div]:h-8 [&>div]:border-0 [&>div]:rounded-md"
+                        data-file-key="unstaged:{file.path}"
+                        in:receive|global={{ key: file.path }}
+                        out:send|global={{ key: file.path }}
+                      >
+                        <FileRow
+                          contextKey={workspaceId}
+                          compact
+                          {file}
+                          showStageAction={isOwner && !isLocked}
+                          showRevertAction={isOwner && !isLocked}
+                          locked={isLocked}
+                          active={isFileActive(file.path, false)}
+                          selected={isFileSelected(file.path, false)}
+                          focused={isFileFocused(file.path, false)}
+                          activeInPanel={panelState.isActive}
+                          onFileClick={(path, commitHash, _staged, event) => {
+                            trackLastClicked(path, false);
+                            handleFileClick(path, commitHash, false, event);
+                          }}
+                          onSelectClick={(path, e) => handleSelectClick(path, false, e)}
+                          onStage={handleStageFile}
+                          onRevert={handleRevertFile}
+                          onOpenFile={handleOpenFile}
+                        />
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <!-- Flat view when no agent attribution -->
+          <div class="space-y-px">
+            {#each visibleUnstagedChanges as change (change.id)}
+              {@const panelState = getFilePanelState(change.relativePath)}
+              <div
+                class="[&>div]:h-8 [&>div]:border-0 [&>div]:rounded-md"
+                data-file-key="unstaged:{change.relativePath}"
+                in:receive|global={{ key: change.relativePath }}
+                out:send|global={{ key: change.relativePath }}
+                animate:flip={{
+                  duration:
+                    isWorkspaceSwitching || prefersReducedMotion() ? 0 : spring.fast.settleMs,
                 }}
-                onSelectClick={(path, e) => handleSelectClick(path, false, e)}
-                onStage={handleStageFile}
-                onRevert={handleRevertFile}
-                onOpenFile={handleOpenFile}
-              />
-            </div>
-          {/each}
-        </div>
+              >
+                <FileRow
+                  contextKey={workspaceId}
+                  compact
+                  file={toUIFileChange(change, false)}
+                  showStageAction={isOwner}
+                  showRevertAction={isOwner}
+                  active={isFileActive(change.relativePath, false)}
+                  selected={isFileSelected(change.relativePath, false)}
+                  focused={isFileFocused(change.relativePath, false)}
+                  activeInPanel={panelState.isActive}
+                  onFileClick={(path, commitHash, _staged, event) => {
+                    trackLastClicked(path, false);
+                    handleFileClick(path, commitHash, false, event);
+                  }}
+                  onSelectClick={(path, e) => handleSelectClick(path, false, e)}
+                  onStage={handleStageFile}
+                  onRevert={handleRevertFile}
+                  onOpenFile={handleOpenFile}
+                />
+              </div>
+            {/each}
+          </div>
+        {/if}
+        {#if unstagedHiddenNotice}
+          <p
+            class="px-2 pt-2 type-caption text-muted-foreground"
+            data-testid="hidden-changes-notice-unstaged"
+          >
+            {unstagedHiddenNotice}
+            {#if isOwner}
+              {m.workspace_fileChanges_hiddenFilesStageAll_hint()}
+            {/if}
+          </p>
+        {/if}
       {/if}
-      {#if unstagedHiddenNotice}
-        <p
-          class="px-2 pt-2 type-caption text-muted-foreground"
-          data-testid="hidden-changes-notice-unstaged"
-        >
-          {unstagedHiddenNotice}
-          {#if isOwner}
-            {m.workspace_fileChanges_hiddenFilesStageAll_hint()}
-          {/if}
-        </p>
-      {/if}
-    {/if}
-  </TimelineSection>
-</div>
-
-<!-- Divider with Stage all / Unstage all buttons (git.stage / git.unstage are owner-only in this tab) -->
-<div>
-  <TimelineDivider>
-    {#if isOwner && hasUnstaged}
-      <DividerButton
-        onclick={handleStageAll}
-        disabled={isStaging}
-        loading={isStaging}
-        data-testid="stage-all-button"
-      >
-        {m.workspace_fileChanges_stageAll_label()}
-      </DividerButton>
-    {/if}
-    {#if isOwner && hasStaged}
-      <DividerButton
-        onclick={handleUnstageAll}
-        disabled={isStaging}
-        loading={isStaging}
-        arrowUp
-        data-testid="unstage-all-button"
-      >
-        {m.workspace_fileChanges_unstageAll_label()}
-      </DividerButton>
-    {/if}
-  </TimelineDivider>
-</div>
+    </TimelineSection>
+  </div>
+{/if}
 
 <!-- STAGED SECTION -->
-<div>
-  <TimelineSection
-    title={m.workspace_fileChanges_staged_label()}
-    collapsible
-    expanded={stagedExpanded}
-    onToggle={() => (stagedExpanded = !stagedExpanded)}
-    active={hasStaged}
-    activeColor="bg-emerald-500"
-  >
-    {#if hasStaged}
-      {#if hasAnyAgentAttribution}
-        <!-- Grouped view with agent headers -->
-        <div class="space-y-1">
-          {#each stagedGroupDisplay.groups as entry (entry.group.agentId ?? 'manual')}
-            {@const group = entry.group}
-            {@const isCollapsed = isAgentGroupCollapsed(group.agentId)}
-            {@const isLocked = isAgentGroupLocked(group.agentId)}
-            {@const commitState = getGroupCommitState(group, 'staged')}
-            {@const queuePos = getGroupQueuePosition(group, 'staged')}
-            <div class="space-y-px">
-              <!-- Agent header -->
-              <div class="relative group/agent-header flex h-8 items-center gap-1.5 px-2">
-                <Button
-                  variant="ghost"
-                  type="button"
-                  size="compact"
-                  wrapContent={false}
-                  class="group/row flex h-8 items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer rounded-md px-2 -mx-2 type-caption font-normal"
-                  onclick={() => toggleAgentGroup(group.agentId)}
-                >
-                  <span class="type-caption flex-1 truncate text-muted-foreground">
-                    {getAgentDisplayName(group)}
-                  </span>
+{#if hasStaged}
+  <div>
+    <TimelineSection
+      title={m.workspace_fileChanges_staged_label()}
+      collapsible
+      expanded={stagedExpanded}
+      onToggle={() => (stagedExpanded = !stagedExpanded)}
+      active={hasStaged}
+      activeColor="bg-emerald-500"
+    >
+      {#snippet action()}
+        {#if isOwner}
+          <Button
+            variant="ghost"
+            size="compact"
+            class="h-7 shrink-0 type-caption text-muted-foreground"
+            onclick={handleUnstageAll}
+            disabled={isStaging}
+            loading={isStaging}
+            data-testid="unstage-all-button"
+          >
+            {m.workspace_fileChanges_unstageAll_label()}
+          </Button>
+        {/if}
+      {/snippet}
+      {#if hasStaged}
+        {#if hasAnyAgentAttribution}
+          <!-- Grouped view with agent headers -->
+          <div class="space-y-1">
+            {#each stagedGroupDisplay.groups as entry (entry.group.agentId ?? 'manual')}
+              {@const group = entry.group}
+              {@const isCollapsed = isAgentGroupCollapsed(group.agentId)}
+              {@const isLocked = isAgentGroupLocked(group.agentId)}
+              {@const commitState = getGroupCommitState(group, 'staged')}
+              {@const queuePos = getGroupQueuePosition(group, 'staged')}
+              <div class="space-y-px">
+                <!-- Agent header -->
+                <div class="relative group/agent-header flex h-8 items-center gap-1.5 px-2">
+                  <Button
+                    variant="ghost"
+                    type="button"
+                    size="compact"
+                    wrapContent={false}
+                    class="group/row flex h-8 items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer rounded-md px-2 -mx-2 type-caption font-normal"
+                    onclick={() => toggleAgentGroup(group.agentId)}
+                  >
+                    <span class="type-caption flex-1 truncate text-muted-foreground">
+                      {getAgentDisplayName(group)}
+                    </span>
 
-                  {#if group.agentId}
-                    {@const hasAnyActions = !isLocked || getLinkedNoteId(group.agentId)}
-                    <AgentAvatar
-                      class={hasAnyActions ? 'group-hover/agent-header:opacity-0' : ''}
-                      agentId={group.agentId}
-                      size={15}
-                    />
-                  {:else}
-                    <Fa
-                      icon={faUser}
-                      class="h-2.5 w-2.5 ml-1 mr-1 text-ghost {!isLocked
-                        ? 'group-hover/agent-header:opacity-0'
-                        : ''}"
-                    />
-                  {/if}
-                </Button>
-                <!-- Action buttons -->
-                <div
-                  class="bg-sidebar absolute top-1/2 right-1 transform translate-x-1 transition-transform {commitState !==
-                  'idle'
-                    ? 'translate-x-0 opacity-100'
-                    : 'group-hover/agent-header:translate-x-0'} -translate-y-1/2 {commitState !==
-                  'idle'
-                    ? ''
-                    : 'opacity-0 group-hover/agent-header:opacity-100'} flex items-center gap-0.5"
-                >
-                  {#if group.agentId && getLinkedNoteId(group.agentId)}
-                    <Button
-                      variant="ghost-light"
-                      size="icon-xs"
-                      class="h-5 w-5"
-                      tooltip={m.workspace_fileChanges_openLinkedNote_tooltip()}
-                      onclick={(e: MouseEvent) => {
-                        e.stopPropagation();
-                        const noteId = getLinkedNoteId(group.agentId);
-                        if (noteId) onOpenNote?.(noteId);
-                      }}
-                    >
-                      <Fa icon={faNote} class="h-2.5! w-2.5!" />
-                    </Button>
-                  {/if}
-                  <!-- Group unstage / commit mutate the worktree (owner-only) -->
-                  {#if isOwner && !isLocked}
-                    <Button
-                      variant="ghost-light"
-                      size="icon-xs"
-                      class="h-5 w-5"
-                      tooltip={m.workspace_fileChanges_unapproveAll_tooltip()}
-                      onclick={(e: MouseEvent) => {
-                        e.stopPropagation();
-                        handleUnstageGroup(group);
-                      }}
-                    >
-                      <Fa icon={faMinus} class="h-2.5! w-2.5!" />
-                    </Button>
-                    {#if commitState === 'active'}
-                      <Tooltip content="Committing..." side="top">
-                        <span class="h-5 w-5 flex items-center justify-center">
-                          <IntentMarkLoader size={10} class="text-primary-ink" />
-                        </span>
-                      </Tooltip>
-                    {:else if commitState === 'queued'}
-                      <Button
-                        variant="ghost-light"
-                        size="icon-xs"
-                        class="h-5 w-5 relative"
-                        tooltip={m.workspace_fileChanges_queuedClickToCancel_tooltip()}
-                        onclick={(e: MouseEvent) => {
-                          e.stopPropagation();
-                          cancelGroupCommit(group, 'staged');
-                        }}
-                      >
-                        <span class="type-caption font-normal text-primary-ink leading-none"
-                          >{queuePos}</span
-                        >
-                      </Button>
+                    {#if group.agentId}
+                      {@const hasAnyActions = !isLocked || getLinkedNoteId(group.agentId)}
+                      <AgentAvatar
+                        class={hasAnyActions ? 'group-hover/agent-header:opacity-0' : ''}
+                        agentId={group.agentId}
+                        size={15}
+                      />
                     {:else}
+                      <Fa
+                        icon={faUser}
+                        class="h-2.5 w-2.5 ml-1 mr-1 text-ghost {!isLocked
+                          ? 'group-hover/agent-header:opacity-0'
+                          : ''}"
+                      />
+                    {/if}
+                  </Button>
+                  <!-- Action buttons -->
+                  <div
+                    class="bg-sidebar absolute top-1/2 right-1 transform translate-x-1 transition-transform {commitState !==
+                    'idle'
+                      ? 'translate-x-0 opacity-100'
+                      : 'group-hover/agent-header:translate-x-0'} -translate-y-1/2 {commitState !==
+                    'idle'
+                      ? ''
+                      : 'opacity-0 group-hover/agent-header:opacity-100'} flex items-center gap-0.5"
+                  >
+                    {#if group.agentId && getLinkedNoteId(group.agentId)}
                       <Button
                         variant="ghost-light"
                         size="icon-xs"
                         class="h-5 w-5"
-                        data-testid="group-commit-button"
-                        tooltip={m.workspace_commitDrawer_commit_label()}
+                        tooltip={m.workspace_fileChanges_openLinkedNote_tooltip()}
                         onclick={(e: MouseEvent) => {
                           e.stopPropagation();
-                          enqueueGroupCommit(group, 'staged');
+                          const noteId = getLinkedNoteId(group.agentId);
+                          if (noteId) onOpenNote?.(noteId);
                         }}
                       >
-                        <Fa icon={faCodeCommit} class="h-2.5! w-2.5!" />
+                        <Fa icon={faNote} class="h-2.5! w-2.5!" />
                       </Button>
                     {/if}
-                  {/if}
-                </div>
-              </div>
-              <!-- Files in group -->
-              {#if !isCollapsed}
-                <div class="min-w-0" transition:slide={{ tier: 'moderate' }}>
-                  {#each entry.visibleFiles as file (file.path)}
-                    {@const panelState = getFilePanelState(file.path)}
-                    <div
-                      class="[&>div]:h-8 [&>div]:border-0 [&>div]:rounded-md"
-                      data-file-key="staged:{file.path}"
-                      in:receive|global={{ key: file.path }}
-                      out:send|global={{ key: file.path }}
-                    >
-                      <FileRow
-                        contextKey={workspaceId}
-                        compact
-                        {file}
-                        showStageAction={isOwner && !isLocked}
-                        locked={isLocked}
-                        active={isFileActive(file.path, true)}
-                        selected={isFileSelected(file.path, true)}
-                        focused={isFileFocused(file.path, true)}
-                        activeInPanel={panelState.isActive}
-                        onFileClick={(path, commitHash, _staged, event) => {
-                          trackLastClicked(path, true);
-                          handleFileClick(path, commitHash, true, event);
+                    <!-- Group unstage / commit mutate the worktree (owner-only) -->
+                    {#if isOwner && !isLocked}
+                      <Button
+                        variant="ghost-light"
+                        size="icon-xs"
+                        class="h-5 w-5"
+                        tooltip={m.workspace_fileChanges_unapproveAll_tooltip()}
+                        onclick={(e: MouseEvent) => {
+                          e.stopPropagation();
+                          handleUnstageGroup(group);
                         }}
-                        onSelectClick={(path, e) => handleSelectClick(path, true, e)}
-                        onUnstage={handleUnstageFile}
-                        onOpenFile={handleOpenFile}
-                      />
-                    </div>
-                  {/each}
+                      >
+                        <Fa icon={faMinus} class="h-2.5! w-2.5!" />
+                      </Button>
+                      {#if commitState === 'active'}
+                        <Tooltip content="Committing..." side="top">
+                          <span class="h-5 w-5 flex items-center justify-center">
+                            <IntentMarkLoader size={10} class="text-primary-ink" />
+                          </span>
+                        </Tooltip>
+                      {:else if commitState === 'queued'}
+                        <Button
+                          variant="ghost-light"
+                          size="icon-xs"
+                          class="h-5 w-5 relative"
+                          tooltip={m.workspace_fileChanges_queuedClickToCancel_tooltip()}
+                          onclick={(e: MouseEvent) => {
+                            e.stopPropagation();
+                            cancelGroupCommit(group, 'staged');
+                          }}
+                        >
+                          <span class="type-caption font-normal text-primary-ink leading-none"
+                            >{queuePos}</span
+                          >
+                        </Button>
+                      {:else}
+                        <Button
+                          variant="ghost-light"
+                          size="icon-xs"
+                          class="h-5 w-5"
+                          data-testid="group-commit-button"
+                          tooltip={m.workspace_commitDrawer_commit_label()}
+                          onclick={(e: MouseEvent) => {
+                            e.stopPropagation();
+                            enqueueGroupCommit(group, 'staged');
+                          }}
+                        >
+                          <Fa icon={faCodeCommit} class="h-2.5! w-2.5!" />
+                        </Button>
+                      {/if}
+                    {/if}
+                  </div>
                 </div>
-              {/if}
-            </div>
-          {/each}
-        </div>
-      {:else}
-        <!-- Flat view when no agent attribution -->
-        <div class="space-y-px">
-          {#each visibleStagedChanges as change (change.id)}
-            {@const panelState = getFilePanelState(change.relativePath)}
-            <div
-              class="[&>div]:h-8 [&>div]:border-0 [&>div]:rounded-md"
-              data-file-key="staged:{change.relativePath}"
-              in:receive|global={{ key: change.relativePath }}
-              out:send|global={{ key: change.relativePath }}
-            >
-              <FileRow
-                contextKey={workspaceId}
-                compact
-                file={toUIFileChange(change, true)}
-                showStageAction={isOwner}
-                active={isFileActive(change.relativePath, true)}
-                selected={isFileSelected(change.relativePath, true)}
-                focused={isFileFocused(change.relativePath, true)}
-                activeInPanel={panelState.isActive}
-                onFileClick={(path, commitHash, _staged, event) => {
-                  trackLastClicked(path, true);
-                  handleFileClick(path, commitHash, true, event);
-                }}
-                onSelectClick={(path, e) => handleSelectClick(path, true, e)}
-                onUnstage={handleUnstageFile}
-                onOpenFile={handleOpenFile}
-              />
-            </div>
-          {/each}
-        </div>
+                <!-- Files in group -->
+                {#if !isCollapsed}
+                  <div class="min-w-0" transition:slide={{ tier: 'moderate' }}>
+                    {#each entry.visibleFiles as file (file.path)}
+                      {@const panelState = getFilePanelState(file.path)}
+                      <div
+                        class="[&>div]:h-8 [&>div]:border-0 [&>div]:rounded-md"
+                        data-file-key="staged:{file.path}"
+                        in:receive|global={{ key: file.path }}
+                        out:send|global={{ key: file.path }}
+                      >
+                        <FileRow
+                          contextKey={workspaceId}
+                          compact
+                          {file}
+                          showStageAction={isOwner && !isLocked}
+                          locked={isLocked}
+                          active={isFileActive(file.path, true)}
+                          selected={isFileSelected(file.path, true)}
+                          focused={isFileFocused(file.path, true)}
+                          activeInPanel={panelState.isActive}
+                          onFileClick={(path, commitHash, _staged, event) => {
+                            trackLastClicked(path, true);
+                            handleFileClick(path, commitHash, true, event);
+                          }}
+                          onSelectClick={(path, e) => handleSelectClick(path, true, e)}
+                          onUnstage={handleUnstageFile}
+                          onOpenFile={handleOpenFile}
+                        />
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <!-- Flat view when no agent attribution -->
+          <div class="space-y-px">
+            {#each visibleStagedChanges as change (change.id)}
+              {@const panelState = getFilePanelState(change.relativePath)}
+              <div
+                class="[&>div]:h-8 [&>div]:border-0 [&>div]:rounded-md"
+                data-file-key="staged:{change.relativePath}"
+                in:receive|global={{ key: change.relativePath }}
+                out:send|global={{ key: change.relativePath }}
+              >
+                <FileRow
+                  contextKey={workspaceId}
+                  compact
+                  file={toUIFileChange(change, true)}
+                  showStageAction={isOwner}
+                  active={isFileActive(change.relativePath, true)}
+                  selected={isFileSelected(change.relativePath, true)}
+                  focused={isFileFocused(change.relativePath, true)}
+                  activeInPanel={panelState.isActive}
+                  onFileClick={(path, commitHash, _staged, event) => {
+                    trackLastClicked(path, true);
+                    handleFileClick(path, commitHash, true, event);
+                  }}
+                  onSelectClick={(path, e) => handleSelectClick(path, true, e)}
+                  onUnstage={handleUnstageFile}
+                  onOpenFile={handleOpenFile}
+                />
+              </div>
+            {/each}
+          </div>
+        {/if}
+        {#if stagedHiddenNotice}
+          <p
+            class="px-2 pt-2 type-caption text-muted-foreground"
+            data-testid="hidden-changes-notice-staged"
+          >
+            {stagedHiddenNotice}
+            {#if isOwner}
+              {m.workspace_fileChanges_hiddenFilesUnstageAll_hint()}
+            {/if}
+          </p>
+        {/if}
       {/if}
-      {#if stagedHiddenNotice}
-        <p
-          class="px-2 pt-2 type-caption text-muted-foreground"
-          data-testid="hidden-changes-notice-staged"
-        >
-          {stagedHiddenNotice}
-          {#if isOwner}
-            {m.workspace_fileChanges_hiddenFilesUnstageAll_hint()}
-          {/if}
-        </p>
-      {/if}
-    {/if}
-  </TimelineSection>
-</div>
+    </TimelineSection>
+  </div>
+{/if}

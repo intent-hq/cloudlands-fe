@@ -701,8 +701,7 @@
       variant="ghost"
       size="compact"
       wrapContent={false}
-      class="group/boundary relative h-auto min-h-8 w-full justify-start gap-2 px-1 py-2 {allCommits.length >
-      0
+      class="group/boundary relative h-8 w-full justify-start gap-2 px-2 {allCommits.length > 0
         ? 'mt-2'
         : ''}"
       disabled={$ftLoadingOlderCommits$}
@@ -717,7 +716,7 @@
       }}
     >
       <span
-        class="relative flex shrink-0 items-center gap-1.5 text-ui text-subtle select-none"
+        class="relative flex min-w-0 items-center gap-1.5 type-caption font-normal text-muted-foreground select-none"
         data-commit-boundary-label
       >
         {m.workspace_commitsTimeline_workspaceStart_label()}

@@ -6,6 +6,9 @@
     admittedOwner?: boolean;
     secondaryFiles?: boolean;
     prs?: 'single' | 'multiple' | 'many';
+    scenario?: 'single' | 'staged' | 'mixed' | 'empty' | 'many' | 'loading';
+    showRoots?: boolean;
+    readOnly?: boolean;
     onNavigation?: (action: { type: string; payload: unknown }) => void;
   }
   export const preview = definePreview<Props>({
@@ -18,6 +21,13 @@
       'single-pr': { props: { prs: 'single' } },
       'workspace-prs': { props: { prs: 'multiple', secondaryFiles: true } },
       'many-prs': { props: { prs: 'many' } },
+      'single-file': { props: { showRoots: false } },
+      staged: { props: { scenario: 'staged', showRoots: false } },
+      mixed: { props: { scenario: 'mixed', locked: true } },
+      empty: { props: { scenario: 'empty', showRoots: false } },
+      many: { props: { scenario: 'many', locked: true } },
+      loading: { props: { scenario: 'loading', showRoots: false } },
+      'read-only': { props: { readOnly: true, scenario: 'mixed', locked: true } },
     },
   });
 </script>
@@ -36,6 +46,7 @@
     setChangesData,
     setCommitsData,
     setHasLoadedInitialData,
+    setLoading,
   } from '$store/renderer/slices/changes/changes-slice';
   import { gitRootsUpdated } from '$store/renderer/slices/git-roots/git-roots-slice';
   import { setSecondaryRootGit } from '$store/renderer/slices/git/git-slice';
@@ -48,11 +59,14 @@
     admittedOwner = true,
     secondaryFiles = false,
     prs,
+    scenario = 'single',
+    showRoots = true,
+    readOnly = false,
     onNavigation,
   }: Props = $props();
   const workspaceId = 'changes-summary-preview';
   const timestamp = '2026-09-01T00:00:00Z';
-  const branch = 'feature/a-long-working-branch-for-sidebar-layout';
+  const branch = showRoots ? 'feature/a-long-working-branch-for-sidebar-layout' : 'polish-https';
   function pr(
     number: number,
     repo: string,
@@ -73,7 +87,7 @@
   const backendPR = pr(42, 'intentd', 'Document the workspace PR list', PullRequestStatus.Draft);
   const dispose = startRootStoreLifecycle(store, { startSagas: () => [] });
   const disposePreview = untrack(() =>
-    setupChangesSummaryPreview(workspaceId, branch, admittedOwner, onNavigation),
+    setupChangesSummaryPreview(workspaceId, branch, admittedOwner && !readOnly, onNavigation),
   );
   store.dispatch(
     setWorkspaceEntity({
@@ -81,7 +95,7 @@
       title: 'Changes summary',
       path: '/preview/workspace',
       repositoryPath: '/preview/repo',
-      myRole: 'owner',
+      myRole: readOnly ? 'collaborator' : 'owner',
       branch,
       baseRef: 'main',
       status: 'active',
@@ -118,27 +132,39 @@
         : [],
     } as never),
   );
-  store.dispatch(
-    setChangesData(
-      workspaceId,
-      [
-        {
-          id: 'change-1',
-          file: 'src/sidebar.ts',
-          relativePath: 'src/sidebar.ts',
-          status: 'modified',
-          stage: ChangeStage.Unstaged,
-          stats: { additions: 4, deletions: 1 },
+  const paths =
+    scenario === 'many'
+      ? Array.from(
+          { length: 36 },
+          (_, i) => `src/features/workspace/components/SidebarSection${i + 1}.svelte`,
+        )
+      : scenario === 'mixed'
+        ? [
+            'src/lib/components/workspace/sidebar/SidebarChangesPanel.svelte',
+            'src/lib/styles/tokens.css',
+            'yarn.lock',
+          ]
+        : ['yarn.lock'];
+  const changes =
+    scenario === 'empty' || scenario === 'loading'
+      ? []
+      : paths.map((path, index) => ({
+          id: `change-${index}`,
+          file: path,
+          relativePath: path,
+          status: 'modified' as const,
+          stage:
+            scenario === 'staged' || (scenario === 'mixed' && index > 0)
+              ? ChangeStage.Staged
+              : ChangeStage.Unstaged,
+          stats: { additions: 4 + index, deletions: 1 },
           attribution: { manual: true, timestamp: 0 },
-        },
-      ],
-      false,
-      1,
-    ),
-  );
-  store.dispatch(setHasLoadedInitialData(workspaceId, true));
+        }));
+  store.dispatch(setChangesData(workspaceId, changes, false, changes.length));
+  store.dispatch(setHasLoadedInitialData(workspaceId, scenario !== 'loading'));
+  store.dispatch(setLoading(workspaceId, scenario === 'loading'));
   store.dispatch(
-    gitRootsUpdated(workspaceId, [
+    gitRootsUpdated(workspaceId, showRoots ? [
       {
         id: 'summary-root',
         workspaceId,
@@ -167,7 +193,7 @@
             },
           ]
         : []),
-    ]),
+    ] : []),
   );
   store.dispatch(
     setSecondaryRootGit(workspaceId, 'summary-root', {
@@ -205,7 +231,7 @@
               } as never,
             ]
           : [],
-        null,
+        scenario === 'loading' ? null : '0123456789abcdef',
       ),
     );
   });
