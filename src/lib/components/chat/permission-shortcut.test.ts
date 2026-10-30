@@ -39,4 +39,22 @@ describe('shouldHandlePermissionShortcut', () => {
       false,
     );
   });
+
+  it('ignores shortcuts typed into a Monaco code editor (EditContext textbox)', () => {
+    const monaco = document.createElement('div');
+    monaco.setAttribute('role', 'textbox');
+    monaco.setAttribute('aria-multiline', 'true');
+    Object.defineProperty(monaco, 'editContext', { value: {}, configurable: true });
+    document.body.append(monaco);
+    expect(shouldHandlePermissionShortcut(keydown(monaco), true)).toBe(false);
+    monaco.remove();
+  });
+
+  it('still handles shortcuts from elements whose editContext is the null default', () => {
+    const plain = document.createElement('div');
+    Object.defineProperty(plain, 'editContext', { value: null, configurable: true });
+    document.body.append(plain);
+    expect(shouldHandlePermissionShortcut(keydown(plain), true)).toBe(true);
+    plain.remove();
+  });
 });

@@ -1,15 +1,4 @@
-function isEditableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof Element)) return false;
-  if (
-    target instanceof HTMLElement &&
-    (target.isContentEditable || target.contentEditable === 'true')
-  ) {
-    return true;
-  }
-  return Boolean(
-    target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])'),
-  );
-}
+import { isTextEntryTarget } from '$lib/utils/text-entry';
 
 export function shouldHandlePermissionShortcut(event: KeyboardEvent, enabled: boolean): boolean {
   return (
@@ -18,6 +7,6 @@ export function shouldHandlePermissionShortcut(event: KeyboardEvent, enabled: bo
     !event.metaKey &&
     !event.ctrlKey &&
     !event.altKey &&
-    !isEditableTarget(event.target)
+    !isTextEntryTarget(event.target)
   );
 }

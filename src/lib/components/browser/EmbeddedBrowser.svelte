@@ -11,6 +11,7 @@
    */
   import { onMount, tick, untrack } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
+  import { isTextEntryTarget } from '$lib/utils/text-entry';
   import { Button } from '$lib/components/ui/button';
   import { notify } from '$lib/components/patterns/notify';
   import type { BrowserTabViewport } from '$shared/ipc/workspace-command-payloads';
@@ -518,9 +519,7 @@
     // Keyboard shortcuts - use capture phase to intercept before panel shortcuts
     const handleKeydown = (e: KeyboardEvent) => {
       // Don't intercept shortcuts when typing in an input field
-      const target = e.target as HTMLElement;
-      const isInInput =
-        target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+      const isInInput = isTextEntryTarget(e.target);
 
       const isMod = e.metaKey || e.ctrlKey;
       const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
