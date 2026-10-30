@@ -1,5 +1,6 @@
 <script lang="ts">
   import DisclosureIcon from '$lib/components/icons/DisclosureIcon.svelte';
+  import HistoryBoundary from './HistoryBoundary.svelte';
 
   import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { Input } from '$lib/components/ui/input';
@@ -60,7 +61,6 @@
     faArrowUpFromBracket,
     faArrowUpRightFromSquare,
     faCloud,
-    faCodeCommit,
     faFlag,
     faRotateLeft,
   } from '@fortawesome/free-solid-svg-icons';
@@ -475,7 +475,7 @@
       {#each allCommits as commit, index (commit.hash)}
         <!-- Divider between local and pushed commits (only when remote exists) -->
         {#if hasRemote && commit.isPushed && index > 0 && !allCommits[index - 1].isPushed && commits.length > 0}
-          <div class="flex items-center gap-2 px-1 py-1.5">
+          <div class="flex items-center gap-2 px-2 py-1.5">
             <div class="flex-1 h-px bg-border"></div>
             <span class="text-xs text-subtle"
               >{m.workspace_commitsTimeline_pushedToRemote_label()}</span
@@ -502,9 +502,9 @@
             onkeydown={(e) => handleCommitContextMenu(e, commit.hash)}
           >
             <Button
-              variant="ghost-light"
-              size="compact"
-              class="h-6 shrink-0 gap-1 px-1 text-muted-foreground hover:text-foreground"
+              variant="ghost"
+              size="icon-compact"
+              class="shrink-0 text-muted-foreground hover:text-foreground"
               onclick={(e: MouseEvent) => {
                 e.stopPropagation();
                 toggleCommitExpanded(commit);
@@ -514,21 +514,12 @@
               title={m.workspace_prSection_toggleFileList_tooltip()}
             >
               <DisclosureIcon expanded={isExpanded} />
-              {#if commitFiles.length > 0}
-                <LineChangesBadge
-                  additions={commitFiles.reduce((sum, f) => sum + (f.additions || 0), 0)}
-                  deletions={commitFiles.reduce((sum, f) => sum + (f.deletions || 0), 0)}
-                  size="xs"
-                />
-              {/if}
             </Button>
 
             {#if commit.agentId}
               <span class="shrink-0 pointer-events-none">
                 <AgentAvatar agentId={commit.agentId} size={14} class="mr-[-2px]" />
               </span>
-            {:else}
-              <Fa icon={faCodeCommit} size="xs" class="text-ghost shrink-0" />
             {/if}
             <div class="relative flex min-w-0 flex-1 items-center">
               {#if commitEdit.hash === commit.hash}
@@ -547,17 +538,12 @@
                 <Button
                   variant="ghost"
                   type="button"
-                  class="relative z-10 flex h-8 min-w-0 flex-1 cursor-text items-center gap-2 px-0 font-normal text-left {commit.isPushed &&
-                  !commit.agentId
-                    ? 'pr-5'
-                    : ''}"
+                  class="relative z-10 flex h-8 min-w-0 flex-1 cursor-text items-center gap-2 px-0 font-normal text-left"
                   onclick={() => handleOpenCommitChangeset(commit.hash, commit.message)}
                   ondblclick={(e) => handleCommitMessageDoubleClick(e, commit, index)}
                 >
                   <span
-                    class="flex-1 truncate type-caption text-subtle {canAmendCommit(index)
-                      ? ''
-                      : ''}"
+                    class="flex-1 truncate type-caption text-muted-foreground"
                     use:truncatedTitle={commit.message}
                   >
                     {commit.message}
@@ -573,15 +559,23 @@
               ></span>
             </div>
 
+            {#if commitFiles.length > 0}
+              <LineChangesBadge
+                additions={commitFiles.reduce((sum, f) => sum + (f.additions || 0), 0)}
+                deletions={commitFiles.reduce((sum, f) => sum + (f.deletions || 0), 0)}
+                size="xs"
+              />
+            {/if}
+
             <!-- Right side: Cloud icon for pushed commits (fades on hover, only when remote exists) -->
             {#if hasRemote && commit.isPushed && !commit.agentId}
-              <span class="absolute right-0 shrink-0 group-hover:opacity-0 transition-opacity">
+              <span class="shrink-0 group-hover:opacity-0 transition-opacity">
                 <Fa icon={faCloud} class="text-ghost p-0.5" size={15} />
               </span>
             {/if}
 
             <div
-              class="absolute -right-1 pl-1 bg-sidebar flex items-center {isOperatingOnThis
+              class="absolute right-1 pl-1 bg-sidebar flex items-center {isOperatingOnThis
                 ? ''
                 : 'opacity-0 group-hover:opacity-100'} transition-opacity"
             >
@@ -667,13 +661,11 @@
 
           <!-- Expanded panel content -->
           {#if isExpanded}
-            <div
-              class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px"
-              transition:slide={{ tier: 'moderate' }}
-            >
+            <div class="pl-8 py-0.5 space-y-px" transition:slide={{ tier: 'moderate' }}>
               <!-- Files list -->
               {#each files as file (file.path)}
                 <FileRow
+                  compact
                   contextKey={`${workspaceId}:${commit.hash}`}
                   {file}
                   muted={true}
@@ -691,16 +683,10 @@
 
   <!-- Workspace start boundary marker + show previous toggle -->
   {#if $ftBoundarySha$}
-    <Button
-      variant="ghost"
-      size="compact"
-      wrapContent={false}
-      class="group/boundary relative h-8 w-full justify-start gap-2 px-2 {allCommits.length > 0
-        ? 'mt-2'
-        : ''}"
-      disabled={$ftLoadingOlderCommits$}
-      aria-expanded={olderCommits.length > 0}
-      aria-busy={$ftLoadingOlderCommits$}
+    <HistoryBoundary
+      label={m.workspace_commitsTimeline_workspaceStart_label()}
+      expanded={olderCommits.length > 0}
+      loading={$ftLoadingOlderCommits$}
       onclick={() => {
         if (olderCommits.length > 0) {
           appStore.dispatch(ftClearOlderCommits(workspaceId));
@@ -708,24 +694,7 @@
           appStore.dispatch(loadOlderCommitsRequested(workspaceId, $ftBoundarySha$));
         }
       }}
-    >
-      <span
-        class="relative flex min-w-0 items-center gap-1.5 type-caption font-normal text-muted-foreground select-none"
-        data-commit-boundary-label
-      >
-        {m.workspace_commitsTimeline_workspaceStart_label()}
-        {#if $ftLoadingOlderCommits$}
-          <IntentMarkLoader size={12} class="opacity-50" />
-        {:else}
-          <DisclosureIcon expanded={olderCommits.length > 0} />
-        {/if}
-      </span>
-      <span
-        class="relative h-px min-w-0 flex-1 bg-border"
-        aria-hidden="true"
-        data-commit-boundary-divider
-      ></span>
-    </Button>
+    />
   {/if}
 
   <!-- Older commits (dimmed, below boundary) -->
@@ -748,9 +717,9 @@
             onkeydown={(e) => handleCommitContextMenu(e, commit.hash)}
           >
             <Button
-              variant="ghost-light"
-              size="compact"
-              class="h-6 shrink-0 gap-1 px-1 text-muted-foreground hover:text-foreground"
+              variant="ghost"
+              size="icon-compact"
+              class="shrink-0 text-muted-foreground hover:text-foreground"
               onclick={(e: MouseEvent) => {
                 e.stopPropagation();
                 toggleCommitExpanded(commit);
@@ -760,16 +729,8 @@
               title={m.workspace_prSection_toggleFileList_tooltip()}
             >
               <DisclosureIcon expanded={isExpanded} />
-              {#if commitFiles.length > 0}
-                <LineChangesBadge
-                  additions={commitFiles.reduce((sum, f) => sum + (f.additions || 0), 0)}
-                  deletions={commitFiles.reduce((sum, f) => sum + (f.deletions || 0), 0)}
-                  size="xs"
-                />
-              {/if}
             </Button>
 
-            <Fa icon={faCodeCommit} size="xs" class="text-ghost shrink-0" />
             <Button
               variant="ghost"
               type="button"
@@ -783,15 +744,20 @@
                 {commit.message}
               </span>
             </Button>
+            {#if commitFiles.length > 0}
+              <LineChangesBadge
+                additions={commitFiles.reduce((sum, f) => sum + (f.additions || 0), 0)}
+                deletions={commitFiles.reduce((sum, f) => sum + (f.deletions || 0), 0)}
+                size="xs"
+              />
+            {/if}
           </div>
 
           {#if isExpanded}
-            <div
-              class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px"
-              transition:slide={{ tier: 'moderate' }}
-            >
+            <div class="pl-8 py-0.5 space-y-px" transition:slide={{ tier: 'moderate' }}>
               {#each files as file (file.path)}
                 <FileRow
+                  compact
                   contextKey={`${workspaceId}:${commit.hash}`}
                   {file}
                   muted={true}
@@ -811,7 +777,8 @@
   {#if olderCommits.length > 0}
     <Button
       variant="ghost"
-      class="w-full text-ui text-ghost hover:text-muted-foreground py-1 transition-colors cursor-pointer"
+      class="h-8 w-full justify-start px-2 type-caption font-normal text-muted-foreground hover:text-foreground"
+      wrapContent={false}
       disabled={$ftLoadingOlderCommits$}
       onclick={() => {
         const lastOlder = olderCommits[olderCommits.length - 1];

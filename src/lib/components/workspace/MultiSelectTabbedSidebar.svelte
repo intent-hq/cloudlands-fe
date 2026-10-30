@@ -955,8 +955,8 @@
           {/if}
           {#key workspaceId}
             <div
-              class="min-h-0 flex-1 pr-3 pb-2 {tabId === 'files' ? 'pl-1' : 'pl-3'} {tabId ===
-                'files' || tabId === 'changes'
+              class="min-h-0 flex-1 pb-2 {tabId === 'files' ? 'px-2' : 'px-3'} {tabId === 'files' ||
+              tabId === 'changes'
                 ? 'overflow-hidden'
                 : 'overflow-y-auto'}"
               data-sidebar-section-scroll={tabId}

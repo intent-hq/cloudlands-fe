@@ -609,7 +609,7 @@
         {:else if native.nativeMode}
           <NativeSidebarReview review={native} />
         {:else if $canAdministerHost$ && !$githubAuthIsAuthenticated$}
-          <GitHubAuthBanner onSuccess={() => {}} />
+          <GitHubAuthBanner compact onSuccess={() => {}} />
         {:else}
           {@const stagedDescription = hasStaged
             ? stagedChanges.length === 1
@@ -919,6 +919,7 @@
         {#if isOwner && !$githubAuthIsAuthenticated$}
           {#key authBannerKey}
             <GitHubAuthBanner
+              compact
               message={m.workspace_prSection_connectToGithub_label()}
               onSuccess={handleGitHubAuthSuccess}
               autoStart={authBannerKey > 0}
@@ -949,9 +950,9 @@
             >
               {#if hasPRFiles}
                 <Button
-                  variant="ghost-light"
-                  size="compact"
-                  class="h-6 shrink-0 gap-1 px-1 text-muted-foreground hover:text-foreground"
+                  variant="ghost"
+                  size="icon-compact"
+                  class="shrink-0 text-muted-foreground hover:text-foreground"
                   onclick={(e: MouseEvent) => {
                     e.stopPropagation();
                     togglePRExpanded(prKey(pr));
@@ -961,11 +962,6 @@
                   title={m.workspace_prSection_toggleFileList_tooltip()}
                 >
                   <DisclosureIcon expanded={isPRExpanded} />
-                  <LineChangesBadge
-                    additions={prTotalAdditions}
-                    deletions={prTotalDeletions}
-                    size="xs"
-                  />
                 </Button>
               {/if}
 
@@ -1006,6 +1002,14 @@
                 {/if}
               </Button>
 
+              {#if hasPRFiles}
+                <LineChangesBadge
+                  additions={prTotalAdditions}
+                  deletions={prTotalDeletions}
+                  size="xs"
+                />
+              {/if}
+
               <div
                 class="absolute -right-1 pl-1 bg-sidebar flex items-center opacity-0 group-hover:opacity-100 transition-opacity"
               >
@@ -1029,12 +1033,10 @@
 
             <!-- Expanded panel content - PR files -->
             {#if isPRExpanded}
-              <div
-                class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px"
-                transition:slide={{ tier: 'moderate' }}
-              >
+              <div class="pl-8 py-0.5 space-y-px" transition:slide={{ tier: 'moderate' }}>
                 {#each prFiles as file (file.path)}
                   <FileRow
+                    compact
                     contextKey={`${workspaceId}:${prKey(pr)}`}
                     {file}
                     muted={true}

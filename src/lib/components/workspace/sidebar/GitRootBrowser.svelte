@@ -109,7 +109,7 @@
       }}
     >
       <Select.Trigger
-        class="h-8 type-caption"
+        class="h-8 border-transparent bg-transparent px-0 type-caption shadow-none hover:bg-muted"
         aria-label={m.workspace_sidebarChanges_rootSelector_ariaLabel()}
       >
         <span class="truncate">

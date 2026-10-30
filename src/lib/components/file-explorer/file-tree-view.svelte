@@ -552,16 +552,18 @@
        virtualization by giving the inner scroll container an unconstrained height. -->
   <div class="flex-1 min-h-0 overflow-hidden">
     {#if $feError$}
-      <div class="flex flex-col items-start gap-2 px-2 py-2 text-left">
+      <div
+        class="flex flex-col items-start gap-2 px-[var(--file-tree-state-inset,var(--space-2))] py-2 text-left"
+      >
         <p class="type-caption text-danger">{$feError$}</p>
-        <Button variant="ghost" size="compact" onclick={retryInitialization}
+        <Button variant="ghost" size="compact" class="px-0" onclick={retryInitialization}
           >{m.fileExplorer_treeView_retry_label()}</Button
         >
       </div>
     {:else if $feIsLoading$ || externalLoading || !$feIsInitialized$}
       <!-- Skeleton loaders for file tree -->
       <ScrollArea class="h-full">
-        <div class="space-y-1 py-2 px-2 opacity-60">
+        <div class="space-y-1 py-2 px-[var(--file-tree-state-inset,var(--space-2))] opacity-60">
           {#each Array(6) as { }}
             <div class="flex items-center gap-2 py-1">
               <Skeleton class="h-3 w-3 rounded shrink-0" />
@@ -573,7 +575,7 @@
     {:else if searchQuery && searchQuery.trim()}
       <!-- Search results - flat list -->
       {#if isSearching}
-        <div class="space-y-1 py-2 px-2 opacity-60">
+        <div class="space-y-1 py-2 px-[var(--file-tree-state-inset,var(--space-2))] opacity-60">
           {#each Array(4) as { }}
             <div class="flex items-center gap-2 py-1">
               <Skeleton class="h-3 w-3 rounded shrink-0" />
@@ -582,7 +584,9 @@
           {/each}
         </div>
       {:else if searchResults.length === 0}
-        <div class="px-2 py-2 type-caption text-muted-foreground">
+        <div
+          class="px-[var(--file-tree-state-inset,var(--space-2))] py-2 type-caption text-muted-foreground"
+        >
           {m.fileExplorer_treeView_noFiles_label()}
         </div>
       {:else}

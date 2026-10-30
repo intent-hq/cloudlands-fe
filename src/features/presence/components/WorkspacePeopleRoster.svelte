@@ -43,7 +43,7 @@
 
 {#if rows.length > 0}
   <section data-people-roster aria-label={m.workspace_peopleTile_title()}>
-    <h3 class="px-2.5 py-1.5 type-caption text-muted-foreground">
+    <h3 class="px-2 py-1.5 type-caption text-muted-foreground">
       {m.workspace_peopleTile_title()}
     </h3>
     <ListView
@@ -55,7 +55,7 @@
       class="overflow-visible"
     >
       {#snippet row({ item })}
-        <ListRow class="min-h-9 gap-2.5 px-2.5 py-1.5" data-people-roster-id={item.key}>
+        <ListRow class="min-h-9 gap-2.5 px-2 py-1.5" data-people-roster-id={item.key}>
           {#snippet leading()}
             <PrincipalAvatar
               avatarUrl={item.avatarUrl}
