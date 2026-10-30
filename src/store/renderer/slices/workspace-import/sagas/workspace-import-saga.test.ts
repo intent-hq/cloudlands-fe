@@ -1,8 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn(), navigate: vi.fn() }));
-vi.mock('$lib/utils/navigation.client', () => ({ navigateToRoute: mocks.navigate }));
+const mocks = vi.hoisted(() => ({
+  invoke: vi.fn(),
+  showWorkspace: vi.fn(function* (_workspaceId: string): Generator<never, boolean> {
+    return true;
+  }),
+}));
+vi.mock('$lib/utils/show-workspace.client', () => ({ showWorkspaceSaga: mocks.showWorkspace }));
 
 import {
   closeImportModal,
@@ -37,7 +42,7 @@ function harness(seed: WorkspaceImportState = initialState) {
 describe('workspaceImportSaga', () => {
   afterEach(() => {
     mocks.invoke.mockReset();
-    mocks.navigate.mockReset();
+    mocks.showWorkspace.mockClear();
     vi.unstubAllGlobals();
   });
 
@@ -156,9 +161,8 @@ describe('workspaceImportSaga', () => {
     h.task.cancel();
   });
 
-  it('open-workspace navigates to the imported workspace and closes', async () => {
+  it('open-workspace shows the imported workspace with its tab and closes', async () => {
     stubBridge();
-    mocks.navigate.mockResolvedValue(undefined);
     let seed = workspaceImportReducer(initialState, importStartRequested({ reuseLastFile: false }));
     seed = workspaceImportReducer(
       seed,
@@ -173,7 +177,8 @@ describe('workspaceImportSaga', () => {
     h.channel.put(importOpenWorkspaceRequested());
     await settle();
 
-    expect(mocks.navigate).toHaveBeenCalledWith('/workspace/ws-1');
+    // The shared helper navigates and then opens the workspace tab.
+    expect(mocks.showWorkspace).toHaveBeenCalledWith('ws-1');
     expect(h.state().open).toBe(false);
     h.task.cancel();
   });

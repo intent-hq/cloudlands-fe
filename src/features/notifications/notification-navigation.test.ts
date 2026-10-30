@@ -12,7 +12,14 @@ import { handleNotificationNavigate } from './notification-navigation';
 const mocks = vi.hoisted(() => ({
   route: vi.fn<(route: string) => Promise<void>>(async () => {}),
 }));
-vi.mock('$lib/utils/navigation.client', () => ({ navigateToRoute: mocks.route }));
+// A resolved navigation lands on its route, as SvelteKit's goto does, so the
+// shared workspace helper sees the workspace showing and opens its tab.
+vi.mock('$lib/utils/navigation.client', () => ({
+  navigateToRoute: async (route: string) => {
+    await mocks.route(route);
+    window.history.replaceState({}, '', route);
+  },
+}));
 
 describe('handleNotificationNavigate', () => {
   let dispose: () => void;

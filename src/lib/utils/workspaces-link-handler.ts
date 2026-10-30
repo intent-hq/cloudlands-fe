@@ -416,16 +416,15 @@ export function createIntentLinkClickHandler() {
 }
 
 /**
- * Private: Open a workspace. The workspace route opens its tab on arrival, as
- * for cross-workspace note links.
+ * Private: Open a workspace and its tab (the helper no-ops in the HUD pop-out
+ * window — never leaves /hud).
  */
 async function navigateToWorkspace(workspaceId: string): Promise<void> {
   const { appClient } = await import('$lib/client');
   const workspace = await appClient.workspaces.get(workspaceId).catch(() => null);
   if (!workspace) throw new NotFoundError(m.workspace_loader_notFound_title());
-  const { navigateToRoute } = await import('./navigation.client');
-  // (navigateToRoute no-ops in the HUD pop-out window — never leaves /hud)
-  await navigateToRoute(`/workspace/${encodeURIComponent(workspaceId)}`);
+  const { openAndShowWorkspace } = await import('./show-workspace.client');
+  await openAndShowWorkspace(workspaceId);
 }
 
 /**
@@ -435,8 +434,6 @@ async function navigateToNote(
   info: WorkspacesLinkInfo,
   options: IntentLinkNavigationOptions,
 ): Promise<void> {
-  const { navigateToRoute } = await import('./navigation.client');
-
   const sourceWorkspaceId =
     options.workspaceId ?? selectCurrentWorkspaceTabId.select(appStore.state) ?? undefined;
 
@@ -456,9 +453,10 @@ async function navigateToNote(
     }
 
     if (isCrossWorkspace) {
-      // Navigate to the target workspace and note
-      // (navigateToRoute no-ops in the HUD pop-out window — never leaves /hud)
-      await navigateToRoute(`/workspace/${info.workspaceId}?note=${info.resourceId}`);
+      // Show the target workspace and its tab; the route's `?note=` deep link
+      // opens the note once the workspace is ready (no-op in the HUD window).
+      const { openAndShowWorkspace } = await import('./show-workspace.client');
+      await openAndShowWorkspace(info.workspaceId, { query: { note: info.resourceId } });
     } else {
       // Same workspace - navigate to the note directly
       appStore.dispatch(
@@ -510,10 +508,10 @@ async function navigateToFile(
     const isCrossWorkspace = !sourceWorkspaceId || info.workspaceId !== sourceWorkspaceId;
 
     if (isCrossWorkspace) {
-      // Navigate to the target workspace first, then open the file there
-      // (navigateToRoute no-ops in the HUD pop-out window — never leaves /hud)
-      const { navigateToRoute } = await import('./navigation.client');
-      await navigateToRoute(`/workspace/${info.workspaceId}`);
+      // Show the target workspace and its tab first, then open the file there.
+      // A navigation that did not land (HUD window, superseded) opens nothing.
+      const { openAndShowWorkspace } = await import('./show-workspace.client');
+      if (!(await openAndShowWorkspace(info.workspaceId))) return;
     }
 
     appStore.dispatch(

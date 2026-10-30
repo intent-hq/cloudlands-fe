@@ -12,6 +12,7 @@ import { CHIEF_WORKSPACE_ID, type WorkspaceId } from '$shared/types/branded-ids'
 import type { GithubLinkDefaultAction, LinkHandlerOptions } from '$shared/utils/link-helpers';
 import type { Workspace } from '$shared/types';
 import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 
 const TEST_WORKSPACE_ID = 'ws-1' as WorkspaceId;
@@ -1366,6 +1367,21 @@ describe('openLinkInApp', () => {
     expect(openBrowserPanelMock).toHaveBeenCalledWith(url, undefined, undefined, undefined);
     expect(order).toEqual(['goto', 'panel']);
     expect(invokeIpcMock).not.toHaveBeenCalled();
+  });
+
+  it('opens the owning workspace tab once entering the workspace lands', async () => {
+    gotoMock.mockImplementationOnce(async (route: string) => {
+      window.history.replaceState({}, '', route);
+    });
+
+    try {
+      expect(await openLinkInApp(url, TEST_WORKSPACE_ID, { openInWorkspace: true })).toBe(true);
+
+      expect(gotoMock).toHaveBeenCalledWith('/workspace/ws-1');
+      expect(reduxDispatchMock).toHaveBeenCalledWith(openWorkspaceTab(TEST_WORKSPACE_ID));
+    } finally {
+      window.history.replaceState({}, '', '/');
+    }
   });
 
   it('stays in the current workspace and opens beside the source panel', async () => {

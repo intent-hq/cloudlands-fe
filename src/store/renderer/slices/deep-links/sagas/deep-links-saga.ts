@@ -22,6 +22,7 @@ import { notify } from '$lib/components/patterns/notify';
 import { invoke, isElectron } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { navigateToRoute } from '$lib/utils/navigation.client';
+import { showWorkspaceSaga } from '$lib/utils/show-workspace.client';
 import { DEEP_LINK_CHANNELS } from '$shared/ipc/channels';
 import { m } from '$shared/paraglide/messages.js';
 import type { Workspace } from '$shared/types';
@@ -35,7 +36,6 @@ import {
 } from '../../principal/principal-slice';
 import { selectShowCreateModal } from '../../sidebar-nav/sidebar-nav-selectors';
 import { setShowCreateModal } from '../../sidebar-nav/sidebar-nav-slice';
-import { openWorkspaceTab } from '../../tab-state/tab-state-slice';
 import { selectUpdateChannel } from '../../user-preferences/user-preferences-selectors';
 import { setUpdateChannel } from '../../user-preferences/user-preferences-slice';
 import { workspaceClient } from '../../workspace/utils/workspace.client';
@@ -62,8 +62,7 @@ function* listWorkspaces(): SagaGenerator<Workspace[]> {
 }
 
 function* showWorkspace(workspaceId: string): SagaGenerator<void> {
-  yield* put(openWorkspaceTab(workspaceId));
-  yield* call(navigateToRoute, `/workspace/${encodeURIComponent(workspaceId)}`);
+  yield* call(showWorkspaceSaga, workspaceId);
 }
 
 function* openFolder(rawPath: string, alias?: string): SagaGenerator<void> {

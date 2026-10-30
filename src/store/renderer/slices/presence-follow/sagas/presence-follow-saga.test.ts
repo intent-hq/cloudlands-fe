@@ -151,16 +151,11 @@ beforeEach(() => {
       },
     );
   wire.hydrate.mockReset().mockResolvedValue(undefined);
-  wire.goto
-    .mockReset()
-    .mockImplementation(async (path: string, options: { state: App.PageState }) => {
-      store.dispatch(
-        openWorkspaceTab(
-          decodeURIComponent(path.split('/').at(-1)!),
-          options.state.presenceFollowRequestId,
-        ),
-      );
-    });
+  // The route lands; the shared workspace helper then opens the tab tagged
+  // with the follow's request id (the route projection the saga waits for).
+  wire.goto.mockReset().mockImplementation(async (path: string) => {
+    window.history.replaceState({}, '', path);
+  });
   store.dispatch(
     connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }),
   );
@@ -182,6 +177,7 @@ afterEach(() => {
   cancelCapture();
   dispose();
   vi.useRealTimers();
+  window.history.replaceState({}, '', '/');
 });
 function seedPresence(role: HostRole = 'member', people = ['person']) {
   admit(role);
@@ -223,6 +219,10 @@ describe('following authorized presence', () => {
       expect(wire.goto).toHaveBeenCalledWith('/workspace/closed', {
         state: { presenceFollowRequestId: 'click-1' },
       });
+      // The shared helper opens the followed workspace's tab, tagged with this
+      // click (an untagged selection would have cancelled the follow below).
+      expect(store.state.tabState.openTabs.closed).toBeDefined();
+      expect(store.state.tabState.currentTabId).toBe('closed');
       expect(views()).toEqual([
         openWorkspaceNote('closed', 'spec', {
           sourcePanelId: undefined,

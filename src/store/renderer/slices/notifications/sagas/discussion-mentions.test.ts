@@ -50,7 +50,14 @@ vi.mock('$lib/components/patterns/notify', () => ({ notify: { info: mocks.toast 
 vi.mock('$features/notifications/notification-sound-gate', () => ({
   playNotificationSoundPerSettings: mocks.sound,
 }));
-vi.mock('$lib/utils/navigation.client', () => ({ navigateToRoute: mocks.route }));
+// A resolved navigation lands on its route, as SvelteKit's goto does, so the
+// shared workspace helper sees the workspace showing and opens its tab.
+vi.mock('$lib/utils/navigation.client', () => ({
+  navigateToRoute: async (route: string) => {
+    await mocks.route(route);
+    window.history.replaceState({}, '', route);
+  },
+}));
 vi.mock('$features/discussions/discussion-navigation', () => ({
   openWorkspaceDiscussion: mocks.open,
 }));

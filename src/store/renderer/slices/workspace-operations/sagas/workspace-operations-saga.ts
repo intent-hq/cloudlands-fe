@@ -37,9 +37,9 @@ import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import { isBulkOperationProposal, isWorkspaceCreateProposal } from '$shared/types/proposal';
 import { navigateAwayIfViewing } from '$features/workspace/navigate-away-if-viewing';
-import { navigateToRoute } from '$lib/utils/navigation.client';
+import { showWorkspaceSaga } from '$lib/utils/show-workspace.client';
 import { removeRepo } from '../../known-repos/known-repos-slice';
-import { openWorkspaceTab, restoreWorkspaceTab } from '../../tab-state/tab-state-slice';
+import { restoreWorkspaceTab } from '../../tab-state/tab-state-slice';
 import {
   proposalApplyStarted,
   proposalApplySucceeded,
@@ -345,10 +345,9 @@ function* watchArchiveUndo(workspaceId: WorkspaceId, undo: Channel<true>): SagaG
         archived: false,
       });
       // The daemon `workspace:updated` event restores the tab in the background;
-      // an explicit undo also focuses the restored workspace.
-      yield* put(openWorkspaceTab(workspaceId));
+      // an explicit undo also shows and focuses the restored workspace.
       try {
-        yield* call(navigateToRoute, `/workspace/${workspaceId}`);
+        yield* call(showWorkspaceSaga, workspaceId);
       } catch (error) {
         logger.warn('Failed to navigate to the unarchived workspace', { workspaceId, error });
       }

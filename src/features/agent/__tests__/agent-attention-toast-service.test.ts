@@ -58,8 +58,13 @@ vi.mock('$lib/components/ui/toast', () => ({
   AgentAttentionToast: 'AgentAttentionToast',
 }));
 
+// A resolved navigation lands on its route, as SvelteKit's goto does, so the
+// shared workspace helper sees the workspace showing and opens its tab.
 vi.mock('$lib/utils/navigation.client', () => ({
-  navigateToRoute: navigateToRouteMock,
+  navigateToRoute: async (route: string) => {
+    await navigateToRouteMock(route);
+    window.history.replaceState({}, '', route);
+  },
   isHudWindowRenderer: () => false,
 }));
 
@@ -115,6 +120,7 @@ describe('agent-attention-toast-service', () => {
   afterEach(() => {
     vi.clearAllMocks();
     vi.restoreAllMocks();
+    window.history.replaceState({}, '', '/');
   });
 
   it('shows a STICKY toast (duration: Infinity) with a stable per-agent id', async () => {
@@ -393,7 +399,7 @@ describe('agent-attention-toast-service', () => {
     expect(lastCustomCall().componentProps.reason).toBe('Escalated to a blocker');
   });
 
-  it('Switch To activates the workspace before navigating and opening the agent tab', async () => {
+  it('Switch To navigates, then activates the workspace tab and opens the agent tab', async () => {
     await switchToAttentionAgent(WS, AGENT);
 
     expect(toastDismissMock).toHaveBeenCalledWith(agentAttentionToastId(AGENT));
@@ -404,13 +410,12 @@ describe('agent-attention-toast-service', () => {
     ]);
   });
 
-  it('Switch To still activates the workspace and opens the agent tab when navigation rejects', async () => {
+  it('Switch To leaves the tab strip alone but still opens the agent tab when navigation rejects', async () => {
     navigateToRouteMock.mockRejectedValueOnce(new Error('nav failed'));
 
     await switchToAttentionAgent(WS, AGENT);
 
     expect(dispatchMock.mock.calls.map(([action]) => action)).toEqual([
-      openWorkspaceTab(WS),
       openAgentTabRequested(WS, { agentId: AGENT }),
     ]);
   });
@@ -613,6 +618,7 @@ describe('agent-attention-toast-service lazy loading', () => {
   });
 
   afterEach(async () => {
+    window.history.replaceState({}, '', '/');
     notifyReady.resolve();
     componentReady.resolve();
     await vi.dynamicImportSettled();

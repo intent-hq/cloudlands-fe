@@ -38,8 +38,13 @@ vi.mock('$lib/components/ui/toast', () => ({
 vi.mock('$features/hardware-console/assignment/connected-key-slot', () => ({
   resolveConnectedWorkspaceKeySlot: mocks.keySlot,
 }));
+// A resolved navigation lands on its route, as SvelteKit's goto does, so the
+// shared workspace helper sees the workspace showing and opens its tab.
 vi.mock('$lib/utils/navigation.client', () => ({
-  navigateToRoute: mocks.navigateToRoute,
+  navigateToRoute: async (route: string) => {
+    await mocks.navigateToRoute(route);
+    window.history.replaceState(null, '', route);
+  },
   isHudWindowRenderer: () => false,
 }));
 vi.mock('$features/notifications/notification-navigation', () => ({
@@ -92,6 +97,7 @@ describe('showAgentIdleToast', () => {
     window.history.replaceState(null, '', '/');
   });
   afterEach(() => {
+    window.history.replaceState(null, '', '/');
     hasFocus.mockRestore();
     window.history.replaceState(null, '', '/');
   });

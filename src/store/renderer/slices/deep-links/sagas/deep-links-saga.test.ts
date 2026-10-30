@@ -4,7 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   isElectron: vi.fn(() => true),
   invoke: vi.fn(),
-  navigateToRoute: vi.fn(async () => undefined),
+  // Lands like a real navigation so the workspace helper opens the tab.
+  navigateToRoute: vi.fn(async (route: string) => {
+    window.history.replaceState({}, '', route);
+  }),
   list: vi.fn(),
   create: vi.fn(),
   notifyError: vi.fn(),
@@ -83,6 +86,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.clearAllMocks();
+  window.history.replaceState({}, '', '/');
 });
 
 describe('intent://open?path (the intent CLI)', () => {
@@ -96,8 +100,9 @@ describe('intent://open?path (the intent CLI)', () => {
     });
     const dispatched = await run({ type: 'open', params: { path: '/Users/me/' } });
     expect(mocks.create).not.toHaveBeenCalled();
-    expect(dispatched).toContainEqual(openWorkspaceTab('home'));
     expect(mocks.navigateToRoute).toHaveBeenCalledWith('/workspace/home');
+    // The tab opens once the navigation lands, through the shared helper.
+    expect(dispatched).toContainEqual(openWorkspaceTab('home'));
   });
 
   it('matches a workspace created through the symlinked path the CLI sends as alias', async () => {
@@ -163,6 +168,14 @@ describe('intent://open?id', () => {
     const dispatched = await run({ type: 'open', params: { id: 'ws-9' } });
     expect(dispatched).toContainEqual(openWorkspaceTab('ws-9'));
     expect(mocks.navigateToRoute).toHaveBeenCalledWith('/workspace/ws-9');
+  });
+
+  it('opens no tab when the navigation does not land', async () => {
+    mocks.navigateToRoute.mockImplementationOnce(async () => {});
+    mocks.list.mockResolvedValue({ ok: true, data: [workspace({ id: 'ws-9' })] });
+    const dispatched = await run({ type: 'open', params: { id: 'ws-9' } });
+    expect(mocks.navigateToRoute).toHaveBeenCalledWith('/workspace/ws-9');
+    expect(dispatched).not.toContainEqual(openWorkspaceTab('ws-9'));
   });
 
   it('shows an error for an unknown workspace id', async () => {

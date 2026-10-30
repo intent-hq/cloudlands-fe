@@ -49,6 +49,7 @@ import { selectChatAgentState } from '$store/renderer/slices/chat-state/chat-sta
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { dispatchWindowEvent } from './window-events';
 import { navigateToRoute } from './navigation.client';
+import { openAndShowWorkspace, workspaceRoute } from './show-workspace.client';
 
 const logger = new Logger('OpenMessage');
 
@@ -237,7 +238,7 @@ export async function openMessage(options: OpenMessageOptions): Promise<void> {
     appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, agentId));
     appStore.dispatch(openPanel('chief'));
   }
-  const targetPathname = isChiefMessage ? '/' : `/workspace/${workspaceId}`;
+  const targetPathname = isChiefMessage ? '/' : workspaceRoute(workspaceId);
 
   if (
     !options.contentAlreadyOpen &&
@@ -245,8 +246,10 @@ export async function openMessage(options: OpenMessageOptions): Promise<void> {
     window.location.pathname !== targetPathname
   ) {
     try {
-      // navigateToRoute no-ops in the HUD pop-out window (never leaves /hud).
-      await navigateToRoute(targetPathname);
+      // Both no-op in the HUD pop-out window (never leave /hud). A workspace
+      // jump also opens the workspace's tab once the route lands.
+      if (isChiefMessage) await navigateToRoute(targetPathname);
+      else await openAndShowWorkspace(workspaceId);
     } catch (error) {
       logger.warn('[openMessage] Workspace navigation failed', { workspaceId, error });
       return;

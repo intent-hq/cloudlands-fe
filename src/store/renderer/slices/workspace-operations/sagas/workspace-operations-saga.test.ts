@@ -199,10 +199,15 @@ describe('workspaceOperationsSaga', () => {
     vi.resetAllMocks();
     mocks.getActiveWorkNames.mockResolvedValue(noActiveWork);
     mocks.navigate.mockResolvedValue(undefined);
+    // Lands like a real navigation so the workspace helper opens the tab.
+    mocks.navigateToRoute.mockImplementation(async (route: string) => {
+      window.history.replaceState({}, '', route);
+    });
   });
   afterEach(() => {
     store.dispose();
     vi.useRealTimers();
+    window.history.replaceState({}, '', '/');
   });
 
   it.each([
@@ -894,7 +899,7 @@ describe('workspaceOperationsSaga', () => {
     );
     latestUndo()?.();
     await settle();
-    // Undo focuses the restored workspace: tab reopen + navigation
+    // Undo shows the restored workspace through the shared helper: navigation, then tab
     expect(run.dispatch.mock.calls.flat()).toContainEqual({
       type: 'tabState/openWorkspaceTab',
       payload: ['ws-1'],

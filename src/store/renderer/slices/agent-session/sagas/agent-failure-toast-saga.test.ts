@@ -5,7 +5,10 @@ const mocks = vi.hoisted(() => ({
   retry: vi.fn(),
   agentFailure: vi.fn(),
   dismiss: vi.fn(),
-  navigateToRoute: vi.fn(async () => {}),
+  // Lands like a real navigation so the workspace helper opens the tab.
+  navigateToRoute: vi.fn(async (route: string) => {
+    window.history.replaceState({}, '', route);
+  }),
   resolveKeySlot: vi.fn((workspaceId: string | undefined) => (workspaceId === 'ws-1' ? 3 : null)),
 }));
 vi.mock('$lib/client', () => ({ appClient: { agents: { retry: mocks.retry } } }));
@@ -29,6 +32,7 @@ import { AgentStatus } from '$shared/types';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { checkSingleProviderRequested } from '../../agent-availability/agent-availability-slice';
 import { openAgentTabRequested } from '../../app-layout/app-layout-slice';
+import { openWorkspaceTab } from '../../tab-state/tab-state-slice';
 import {
   initialState as providerCatalogInitialState,
   providerCatalogLoaded,
@@ -106,6 +110,7 @@ describe('agentFailureToastSaga', () => {
   afterEach(() => {
     clearAgentFailureRegistry();
     vi.clearAllMocks();
+    window.history.replaceState({}, '', '/');
   });
 
   it('suppresses current-workspace failures while preserving the registry and auth refresh', async () => {
@@ -362,9 +367,39 @@ describe('agentFailureToastSaga', () => {
     await settle();
 
     expect(mocks.navigateToRoute).toHaveBeenCalledWith('/workspace/ws-1');
-    expect(dispatch).toHaveBeenCalledWith(openAgentTabRequested('ws-1', { agentId: 'agent-1' }));
+    const actions = dispatch.mock.calls.map(([action]) => action);
+    const tabIndex = actions.findIndex(
+      (action) => JSON.stringify(action) === JSON.stringify(openWorkspaceTab('ws-1')),
+    );
+    const agentIndex = actions.findIndex(
+      (action) =>
+        JSON.stringify(action) ===
+        JSON.stringify(openAgentTabRequested('ws-1', { agentId: 'agent-1' })),
+    );
+    // The workspace tab opens before the agent tab, so an unopened workspace joins the strip.
+    expect(tabIndex).toBeGreaterThanOrEqual(0);
+    expect(agentIndex).toBeGreaterThan(tabIndex);
     expect(mocks.retry).not.toHaveBeenCalled();
     expect(getAgentFailureEntry('agent-1')).toBeDefined();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('Switch To opens no agent tab when the workspace navigation does not land', async () => {
+    mocks.navigateToRoute.mockImplementationOnce(async () => {});
+    const dispatch = vi.fn();
+    const task = runSaga({ dispatch, getState: state }, agentFailureToastSaga);
+    recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'boom' });
+    await settle();
+
+    lastToast('agent-failure:agent-1').componentProps.onSwitchTo();
+    await settle();
+
+    expect(mocks.navigateToRoute).toHaveBeenCalledWith('/workspace/ws-1');
+    expect(dispatch).not.toHaveBeenCalledWith(openWorkspaceTab('ws-1'));
+    expect(dispatch).not.toHaveBeenCalledWith(
+      openAgentTabRequested('ws-1', { agentId: 'agent-1' }),
+    );
     task.cancel();
     await task.toPromise();
   });

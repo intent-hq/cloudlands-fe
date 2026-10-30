@@ -7,11 +7,11 @@ const mocks = vi.hoisted(() => ({
   offById: vi.fn(),
   success: vi.fn(),
   error: vi.fn(),
-  navigate: vi.fn(() => Promise.resolve()),
+  show: vi.fn(() => Promise.resolve(true)),
   callbacks: {} as Record<string, (data?: any) => void>,
 }));
 vi.mock('$lib/electron-bridge', () => ({ isElectron: mocks.isElectron }));
-vi.mock('$lib/utils/navigation.client', () => ({ navigateToRoute: mocks.navigate }));
+vi.mock('$lib/utils/show-workspace.client', () => ({ openAndShowWorkspace: mocks.show }));
 vi.mock('$lib/components/patterns/notify', () => ({
   notify: { success: mocks.success, error: mocks.error },
 }));
@@ -135,7 +135,8 @@ describe('gitEventsIpcSaga', () => {
     ]);
     await successOptions.action.onClick();
     await errorOptions.action.onClick();
-    expect(mocks.navigate.mock.calls).toEqual([['/workspace/ws-2'], ['/workspace/ws-2']]);
+    // Open goes through the shared helper, which also opens the workspace tab.
+    expect(mocks.show.mock.calls).toEqual([['ws-2'], ['ws-2']]);
     task.cancel();
     await task.toPromise();
   });

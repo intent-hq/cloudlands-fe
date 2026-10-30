@@ -32,7 +32,6 @@ import {
 import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { selectGithubLinkDefaultAction } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
-import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import {
   focusPanel,
@@ -306,10 +305,9 @@ async function activateLinkWorkspace(
   options: LinkHandlerOptions,
 ): Promise<void> {
   if (!options.openInWorkspace || !workspaceId) return;
-  const { navigateToRoute } = await import('$lib/utils/navigation.client');
+  const { openAndShowWorkspace } = await import('$lib/utils/show-workspace.client');
   try {
-    await navigateToRoute(`/workspace/${encodeURIComponent(workspaceId)}`);
-    appStore.dispatch(openWorkspaceTab(workspaceId));
+    await openAndShowWorkspace(workspaceId);
   } catch (error) {
     notify.error(m.ui_linkHandler_navigationFailed_title(), {
       description: error instanceof Error ? error.message : m.ui_linkHandler_unknownError_label(),
