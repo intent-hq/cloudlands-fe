@@ -251,6 +251,7 @@
           {folderPath}
           {command}
           disabled={fieldsDisabled || signIn.status === 'waiting'}
+          {started}
           onSignIn={signInFromEdit}
         />
       {:else if kind === 'advanced'}

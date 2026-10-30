@@ -21,6 +21,8 @@
     /** The plain command Create & sign in runs (add mode). */
     command: string;
     disabled?: boolean;
+    /** Add mode after Create & sign in: the status panel shows the command instead. */
+    started?: boolean;
     /** Edit mode sign-in actions (Codex offers both methods). */
     onSignIn?: (method: ProfileSignInMethod) => void;
   }
@@ -32,6 +34,7 @@
     folderPath,
     command,
     disabled = false,
+    started = false,
     onSignIn,
   }: Props = $props();
 
@@ -110,12 +113,14 @@
           : m.settings_providerProfileKinds_startsFreshClaude_description()}
       </span>
     </p>
-    <p class="type-caption text-muted-foreground">
-      {m.settings_providerProfileKinds_createRuns_label()}
-      <code class="rounded bg-muted px-1.5 py-0.5 font-mono type-caption text-foreground"
-        >{command}</code
-      >
-    </p>
+    {#if !started}
+      <p class="type-caption text-muted-foreground">
+        {m.settings_providerProfileKinds_createRuns_label()}
+        <code class="rounded bg-muted px-1.5 py-0.5 font-mono type-caption text-foreground"
+          >{command}</code
+        >
+      </p>
+    {/if}
   {:else}
     <section class="space-y-2" data-testid="provider-profile-sign-in-actions">
       <p class="type-body text-muted-foreground">

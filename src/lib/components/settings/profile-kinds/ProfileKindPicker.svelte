@@ -64,7 +64,9 @@
     <Button
       variant="outline"
       {disabled}
-      class="h-auto items-start justify-start gap-3 whitespace-normal p-4 text-left"
+      truncateLabel={false}
+      labelClass="flex items-start gap-3"
+      class="h-auto justify-start gap-3 whitespace-normal p-4 text-left"
       data-testid={`provider-profile-kind-${card.kind}`}
       onclick={() => onPick(card.kind)}
     >
