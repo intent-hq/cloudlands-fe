@@ -23,6 +23,7 @@
     Menu,
   } from '$lib/components/patterns/settings/custom-controls';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
+  import { ListView } from '$lib/components/patterns/collection';
   import ProfileDeleteConfirm from './ProfileDeleteConfirm.svelte';
   import type { MockProfileRow, MockProfileStatus, ProfileKindProvider } from './profile-kind-mock';
 
@@ -92,8 +93,8 @@
   aria-label={m.settings_providerProfiles_section_ariaLabel({ provider: providerName })}
   data-testid="provider-profile-rows-mock"
 >
-  <ul class="divide-y divide-border rounded-lg border border-border">
-    <li class="px-3 py-2" data-testid="provider-default-row">
+  <div class="rounded-lg border border-border">
+    <div class="px-3 py-2" data-testid="provider-default-row">
       <div class="flex items-center justify-between gap-3">
         <div class="min-w-0">
           <span class="truncate type-body text-foreground"
@@ -105,90 +106,108 @@
           {@render statusLabel(defaultStatus)}
         </div>
       </div>
-    </li>
-    {#each rows as row (row.id)}
-      <li class="px-3 py-2" data-testid="provider-profile-row" data-kind={row.kind}>
-        <div class="flex items-center justify-between gap-3">
-          <div class="min-w-0">
-            <div class="flex min-w-0 items-center gap-2">
-              <span class="truncate type-body text-foreground" title={row.name}>{row.name}</span>
-              {#if row.backup}
-                <span class="shrink-0 rounded-full bg-muted px-2 py-0.5 type-caption text-subtle">
-                  {m.settings_providerProfiles_backupBadge_label()}
-                </span>
-              {/if}
+    </div>
+    <ListView
+      items={rows}
+      getKey={(row) => row.id}
+      getText={(row) => row.name}
+      virtualize={false}
+      ariaLabel={m.settings_providerProfiles_section_ariaLabel({ provider: providerName })}
+    >
+      {#snippet row({ item: row })}
+        <div
+          class="border-t border-border px-3 py-2"
+          data-testid="provider-profile-row"
+          data-kind={row.kind}
+        >
+          <div class="flex items-center justify-between gap-3">
+            <div class="min-w-0">
+              <div class="flex min-w-0 items-center gap-2">
+                <span class="truncate type-body text-foreground" title={row.name}>{row.name}</span>
+                {#if row.backup}
+                  <span class="shrink-0 rounded-full bg-muted px-2 py-0.5 type-caption text-subtle">
+                    {m.settings_providerProfiles_backupBadge_label()}
+                  </span>
+                {/if}
+              </div>
+              {@render identity(
+                provider === 'claude' && row.status === 'ready' ? row.email : undefined,
+              )}
             </div>
-            {@render identity(
-              provider === 'claude' && row.status === 'ready' ? row.email : undefined,
-            )}
-          </div>
-          <div class="flex shrink-0 items-center gap-2 type-caption">
-            {@render statusLabel(row.status)}
-            <Menu.Root
-              open={menuOpenFor === row.id}
-              staticPosition={staticMenus}
-              onOpenChange={(open: boolean) => menuOpenChange(row.id, open)}
-            >
-              <Menu.Trigger>
-                {#snippet child({ props })}
-                  <Button
-                    {...props}
-                    variant="ghost-light"
-                    size="icon-xs"
-                    aria-label={m.settings_providerProfiles_actions_ariaLabel({ name: row.name })}
-                  >
-                    <KebabIcon class="size-3.5" />
-                  </Button>
-                {/snippet}
-              </Menu.Trigger>
-              <Menu.Content
-                align="end"
-                aria-label={m.settings_providerProfiles_actions_ariaLabel({ name: row.name })}
+            <div class="flex shrink-0 items-center gap-2 type-caption">
+              {@render statusLabel(row.status)}
+              <Menu.Root
+                open={menuOpenFor === row.id}
+                staticPosition={staticMenus}
+                onOpenChange={(open: boolean) => menuOpenChange(row.id, open)}
               >
-                <div class="w-56" data-testid="provider-profile-row-menu">
-                  <Menu.Item class="cursor-pointer text-foreground" onSelect={() => onEdit?.(row)}>
-                    <span class="flex size-4 shrink-0 items-center justify-center">
-                      <Fa icon={faPen} class="size-3.5 text-muted-foreground" />
-                    </span>
-                    {m.settings_providerProfiles_edit_label()}
-                  </Menu.Item>
-                  {#if row.kind === 'differentLogin' && row.folderPath}
+                <Menu.Trigger>
+                  {#snippet child({ props })}
+                    <Button
+                      {...props}
+                      variant="ghost-light"
+                      size="icon-xs"
+                      aria-label={m.settings_providerProfiles_actions_ariaLabel({ name: row.name })}
+                    >
+                      <KebabIcon class="size-3.5" />
+                    </Button>
+                  {/snippet}
+                </Menu.Trigger>
+                <Menu.Content
+                  align="end"
+                  aria-label={m.settings_providerProfiles_actions_ariaLabel({ name: row.name })}
+                >
+                  <div class="w-56" data-testid="provider-profile-row-menu">
+                    <Menu.Item
+                      class="cursor-pointer text-foreground"
+                      onSelect={() => onEdit?.(row)}
+                    >
+                      <span class="flex size-4 shrink-0 items-center justify-center">
+                        <Fa icon={faPen} class="size-3.5 text-muted-foreground" />
+                      </span>
+                      {m.settings_providerProfiles_edit_label()}
+                    </Menu.Item>
+                    {#if row.kind === 'differentLogin' && row.folderPath}
+                      <Menu.Item
+                        class="cursor-pointer text-foreground"
+                        disabled={row.status === 'checking'}
+                        onSelect={() => logIn(row)}
+                        data-testid="provider-profile-row-log-in"
+                      >
+                        <span class="flex size-4 shrink-0 items-center justify-center">
+                          <Fa icon={faUser} class="size-3.5 text-muted-foreground" />
+                        </span>
+                        {m.settings_providerProfileKinds_logIn_label()}
+                      </Menu.Item>
+                    {/if}
                     <Menu.Item
                       class="cursor-pointer text-foreground"
                       disabled={row.status === 'checking'}
-                      onSelect={() => logIn(row)}
-                      data-testid="provider-profile-row-log-in"
                     >
                       <span class="flex size-4 shrink-0 items-center justify-center">
-                        <Fa icon={faUser} class="size-3.5 text-muted-foreground" />
+                        <Fa icon={faArrowsRotate} class="size-3.5 text-muted-foreground" />
                       </span>
-                      {m.settings_providerProfileKinds_logIn_label()}
+                      {m.settings_providers_recheck_label()}
                     </Menu.Item>
-                  {/if}
-                  <Menu.Item
-                    class="cursor-pointer text-foreground"
-                    disabled={row.status === 'checking'}
-                  >
-                    <span class="flex size-4 shrink-0 items-center justify-center">
-                      <Fa icon={faArrowsRotate} class="size-3.5 text-muted-foreground" />
-                    </span>
-                    {m.settings_providers_recheck_label()}
-                  </Menu.Item>
-                  <Menu.Separator />
-                  <Menu.Item class="cursor-pointer text-foreground" onSelect={() => askRemove(row)}>
-                    <span class="flex size-4 shrink-0 items-center justify-center">
-                      <Fa icon={faTrash} class="size-3.5 text-muted-foreground" />
-                    </span>
-                    {m.settings_providerProfiles_remove_label()}
-                  </Menu.Item>
-                </div>
-              </Menu.Content>
-            </Menu.Root>
+                    <Menu.Separator />
+                    <Menu.Item
+                      class="cursor-pointer text-foreground"
+                      onSelect={() => askRemove(row)}
+                    >
+                      <span class="flex size-4 shrink-0 items-center justify-center">
+                        <Fa icon={faTrash} class="size-3.5 text-muted-foreground" />
+                      </span>
+                      {m.settings_providerProfiles_remove_label()}
+                    </Menu.Item>
+                  </div>
+                </Menu.Content>
+              </Menu.Root>
+            </div>
           </div>
         </div>
-      </li>
-    {/each}
-  </ul>
+      {/snippet}
+    </ListView>
+  </div>
 </section>
 
 {#if removing}

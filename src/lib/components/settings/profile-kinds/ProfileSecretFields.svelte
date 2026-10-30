@@ -61,43 +61,21 @@
       : m.settings_providerProfileKinds_token_label(),
   );
 
-  const steps = $derived.by(() => {
+  /** Steps link: Anthropic Console (Claude API key) or OpenAI's token guide (Codex token). */
+  const stepsLink = $derived.by(() => {
     if (claudeApiKey) {
       return {
-        title: m.settings_providerProfileKinds_apiKeyClaudeSteps_label(),
-        items: [
-          m.settings_providerProfileKinds_apiKeyClaudeStep1_label(),
-          m.settings_providerProfileKinds_apiKeyClaudeStep2_label(),
-          m.settings_providerProfileKinds_apiKeyClaudeStep3_label(),
-        ],
-        link: {
-          href: ANTHROPIC_CONSOLE_KEYS_URL,
-          label: m.settings_providerProfileKinds_anthropicConsole_link(),
-        },
+        href: ANTHROPIC_CONSOLE_KEYS_URL,
+        label: m.settings_providerProfileKinds_anthropicConsole_link(),
       };
     }
-    if (provider === 'claude') {
+    if (provider === 'codex') {
       return {
-        title: m.settings_providerProfileKinds_tokenSteps_label(),
-        items: [
-          m.settings_providerProfileKinds_tokenClaudeStep1_label(),
-          m.settings_providerProfileKinds_tokenClaudeStep2_label(),
-          m.settings_providerProfileKinds_tokenClaudeStep3_label(),
-        ],
-        link: undefined,
-      };
-    }
-    return {
-      title: m.settings_providerProfileKinds_tokenSteps_label(),
-      items: [
-        m.settings_providerProfileKinds_tokenCodexStep1_label(),
-        m.settings_providerProfileKinds_tokenCodexStep2_label(),
-      ],
-      link: {
         href: OPENAI_ACCESS_TOKENS_URL,
         label: m.settings_providerProfileKinds_openAiAccessTokens_link(),
-      },
-    };
+      };
+    }
+    return undefined;
   });
 
   function cancelReplace() {
@@ -115,30 +93,43 @@
 
   {#if mode === 'add' || replacing}
     <section class="space-y-2" data-testid="provider-profile-secret-steps">
-      <h3 class="type-body font-medium! text-foreground">{steps.title}</h3>
+      <h3 class="type-body font-medium! text-foreground">
+        {claudeApiKey
+          ? m.settings_providerProfileKinds_apiKeyClaudeSteps_label()
+          : m.settings_providerProfileKinds_tokenSteps_label()}
+      </h3>
+      <!-- Fixed instruction copy per kind, not a data collection. -->
       <ol class="type-body list-decimal space-y-1 pl-5 text-muted-foreground">
-        {#each steps.items as step, index (index)}
+        {#if claudeApiKey}
+          <li>{m.settings_providerProfileKinds_apiKeyClaudeStep1_label()}</li>
+          <li>{m.settings_providerProfileKinds_apiKeyClaudeStep2_label()}</li>
+          <li>{m.settings_providerProfileKinds_apiKeyClaudeStep3_label()}</li>
+        {:else if provider === 'claude'}
           <li>
-            {step}
-            {#if provider === 'claude' && kind === 'token' && index === 0}
-              <span class="mt-1 flex items-center gap-2" data-testid="provider-profile-setup-token">
-                <code class="rounded bg-muted px-1.5 py-0.5 font-mono type-caption text-foreground"
-                  >{SETUP_TOKEN_COMMAND}</code
-                >
-                <CopyButton text={SETUP_TOKEN_COMMAND} size="sm" />
-              </span>
-            {/if}
+            {m.settings_providerProfileKinds_tokenClaudeStep1_label()}
+            <span class="mt-1 flex items-center gap-2" data-testid="provider-profile-setup-token">
+              <code
+                class="rounded border border-border bg-muted px-1.5 py-0.5 font-mono type-caption text-foreground"
+                >{SETUP_TOKEN_COMMAND}</code
+              >
+              <CopyButton text={SETUP_TOKEN_COMMAND} size="sm" />
+            </span>
           </li>
-        {/each}
+          <li>{m.settings_providerProfileKinds_tokenClaudeStep2_label()}</li>
+          <li>{m.settings_providerProfileKinds_tokenClaudeStep3_label()}</li>
+        {:else}
+          <li>{m.settings_providerProfileKinds_tokenCodexStep1_label()}</li>
+          <li>{m.settings_providerProfileKinds_tokenCodexStep2_label()}</li>
+        {/if}
       </ol>
-      {#if steps.link}
+      {#if stepsLink}
         <Button
           variant="link"
           size="sm"
-          href={steps.link.href}
+          href={stepsLink.href}
           target="_blank"
           rel="noopener noreferrer"
-          class="h-auto px-0">{steps.link.label}</Button
+          class="h-auto px-0">{stepsLink.label}</Button
         >
       {/if}
     </section>
