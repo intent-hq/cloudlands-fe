@@ -75,7 +75,7 @@
       variant="ghost"
       type="button"
       size="compact"
-      class="h-7 w-full flex items-center gap-1.5 px-2 flex-1 min-w-0 cursor-pointer text-left"
+      class="h-8 w-full flex items-center gap-2 px-2 flex-1 min-w-0 cursor-pointer text-left"
       onclick={() => handleSkillClick(skill)}
     >
       <div class="size-3.5 rounded flex items-center justify-center shrink-0">
@@ -86,7 +86,7 @@
         />
       </div>
       <div class="flex-1 min-w-0">
-        <span class="type-body font-normal truncate block text-foreground">
+        <span class="type-caption font-normal truncate block text-foreground">
           {skill.name}
         </span>
       </div>
@@ -95,7 +95,7 @@
 {/snippet}
 
 {#if $skills$.length > 0}
-  <div class="mt-3 {className ?? ''}">
+  <div class="mt-2 {className ?? ''}">
     <SidebarGroupHeader
       title={m.workspace_skills_title()}
       meta={formatInteger($skills$.length)}
@@ -105,7 +105,7 @@
     />
 
     {#if isExpanded}
-      <div class="space-y-0.5 mt-1" transition:slide={{ axis: 'y', tier: 'moderate' }}>
+      <div class="mt-0.5" transition:slide={{ axis: 'y', tier: 'moderate' }}>
         {#each sortedSkills as skill (skill.name)}
           {@render skillRow(skill)}
         {/each}

@@ -26,38 +26,22 @@ import { selectProviderDisplayName } from '$store/renderer/slices/provider-catal
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
 import { isProviderProfileRef, providerRefBaseId } from '$shared/provider-profiles';
+import type { GetModelsEnvelope, ProviderModelInfo } from '$shared/models/wire-model-info';
 
 const logger = createLogger('ProviderModelsClient');
 
 /** Model row shape shared by every provider's get-models envelope. */
-export interface ProviderModelEntry {
-  value: string;
-  label: string;
-  description?: string;
-  modelGroupPriority?: number;
-  costTier?: number;
-  badges?: Array<{ color: string; label: string; variant?: string }>;
-  effortLevels?: string[];
-  isDefault?: boolean;
-  isLegacyModel?: boolean;
-  priority?: number;
-}
+export type ProviderModelEntry = ProviderModelInfo;
 
-export interface ProviderModelsResult {
+/**
+ * The reply's optional labels (`warning`, `stale`, `warningKind`, …) exactly
+ * as the shared `toGetModelsEnvelope` builder set them, plus the model rows —
+ * derived from `GetModelsEnvelope` so a new label reaches callers without a
+ * client-side copy.
+ */
+export type ProviderModelsResult = Omit<GetModelsEnvelope, 'success' | 'data' | 'error'> & {
   models: ProviderModelEntry[];
-  /** Daemon-provided reason for fallback/stale/empty data (PROTOCOL §6.7). */
-  warning?: string;
-  /** Present and `true` when the daemon served last-good data after a failed probe. */
-  stale?: boolean;
-}
-
-interface GetModelsEnvelope {
-  success: boolean;
-  data?: ProviderModelEntry[];
-  warning?: string;
-  stale?: boolean;
-  error?: string;
-}
+};
 
 /**
  * The uniform `<provider>:get-models` channels. Recorded in
@@ -167,11 +151,8 @@ export async function getProviderModels(
       });
     }
 
-    const models = Array.isArray(result.data) ? result.data : [];
-    const outcome: ProviderModelsResult = { models };
-    if (result.warning) outcome.warning = result.warning;
-    if (result.stale === true) outcome.stale = true;
-    return outcome;
+    const { success: _success, data, error: _error, ...labels } = result;
+    return { ...labels, models: Array.isArray(data) ? data : [] };
   } catch (error) {
     logger.warn('Failed to get provider models', { providerId, error });
     throw toProviderError(providerId, toErrorMessage(error));

@@ -56,6 +56,9 @@ for (const mode of preferences) {
           await expect(component.locator(`[data-real-surface="${surface}"]`)).toBeVisible();
         }
         await expect(
+          component.locator('[data-real-surface="sidebar"] [data-tabs-indicator]'),
+        ).toBeVisible();
+        await expect(
           component.getByTestId('chat-transcript-scroll-viewport').first(),
         ).toBeVisible();
         await expect(component.getByTestId('composer-prompt-layer').first()).toBeVisible();
@@ -116,7 +119,7 @@ for (const mode of preferences) {
             chiefComposer: style(
               '[data-real-surface="chief"] [data-testid="composer-prompt-layer"]',
             ),
-            sidebar: style('[data-sidebar-card-surface]'),
+            sidebarSelection: style('[data-real-surface="sidebar"] [data-tabs-indicator]'),
             modelPicker: style('[data-real-surface="model-picker"] button'),
             avatar: style('[data-real-surface="avatar"] [data-agent-avatar-surface]'),
             note: style('[data-note-content-surface]'),
@@ -130,7 +133,7 @@ for (const mode of preferences) {
         expect(evidence.regularChat?.backgroundColor).toBe('rgba(0, 0, 0, 0)');
         expect(evidence.chiefTranscript?.backgroundColor).toBe('rgba(0, 0, 0, 0)');
         expect(evidence.chiefComposer?.backgroundColor).toBe('rgba(0, 0, 0, 0)');
-        expect(evidence.sidebar?.backgroundColor).toBe(expectedSidebar);
+        expect(evidence.sidebarSelection?.backgroundColor).toBe(expectedCanvas);
         expect(evidence.note?.backgroundColor).toBe(expectedCanvas);
         expect(evidence.emptyState?.backgroundColor).toBe(expectedSidebar);
         expect(evidence.avatar?.color).not.toBe(evidence.avatar?.backgroundColor);

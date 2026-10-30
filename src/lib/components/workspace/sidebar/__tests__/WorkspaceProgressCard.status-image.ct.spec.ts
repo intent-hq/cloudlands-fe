@@ -11,7 +11,7 @@ test.beforeEach(async ({ page }) => {
   );
 });
 
-test('sizes the status image button to the image and keeps following content below it', async ({
+test('keeps a compact status image in Context and following content below it', async ({
   mount,
   page,
 }) => {
@@ -19,15 +19,18 @@ test('sizes the status image button to the image and keeps following content bel
   const component = await mount(WorkspaceProgressCardStatusImageHost, {
     props: { statusImageAssetId: 'status-image-asset' },
   });
-  const button = component.getByRole('button', { name: 'View workspace status screenshot' });
+  await expect(component.locator('[data-workspace-title-section]').getByRole('img')).toHaveCount(0);
+  const button = component
+    .getByRole('region', { name: 'Context', exact: true })
+    .getByRole('button', { name: 'View workspace status screenshot' });
   const image = button.getByRole('img', { name: 'Workspace status screenshot' });
   await expect(image).toBeVisible();
   await expect.poll(() => image.evaluate((node: HTMLImageElement) => node.naturalWidth)).toBe(600);
 
   const buttonBox = (await button.boundingBox())!;
   const imageBox = (await image.boundingBox())!;
-  expect(imageBox.height).toBeGreaterThan(100);
-  expect(Math.abs(buttonBox.height - imageBox.height)).toBeLessThanOrEqual(1);
+  expect(imageBox.height).toBeGreaterThan(0);
+  expect(imageBox.height).toBeLessThanOrEqual(64);
   expect(imageBox.y).toBeGreaterThanOrEqual(buttonBox.y - 1);
   expect(imageBox.y + imageBox.height).toBeLessThanOrEqual(buttonBox.y + buttonBox.height + 1);
 

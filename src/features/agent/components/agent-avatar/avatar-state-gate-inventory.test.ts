@@ -37,8 +37,7 @@
 //    object-literal property fed by a `getAvatarState*` call; a `function`
 //    declared to return `AvatarState`; and any identifier compared to a literal
 //    that exists only in the ladder (`needs-permission`, `attention-*`), which
-//    reaches helpers such as `sidebar-launcher-preview.ts` that accept the
-//    state as `string`.
+//    reaches helpers that accept the state as `string`.
 //  - Flagged forms: `<ident> === '<literal>'` / `!==` in either operand order
 //    (member access such as `row.state` matches by property name),
 //    `switch (<ident>)`, and a direct `getAvatarState*(…)` or
@@ -99,9 +98,7 @@ const AGENT_AVATAR_WITH_STATE =
   'src/features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
 const AVATAR_STATE_LABEL = 'src/features/agent/components/agent-avatar/avatar-state-label.ts';
 const AGENT_CARD = 'src/lib/components/chat/AgentCard.svelte';
-const MULTI_SELECT_SIDEBAR = 'src/lib/components/workspace/MultiSelectTabbedSidebar.svelte';
 const WORKSPACE_HOVER_CARD = 'src/lib/components/workspace/WorkspaceHoverCard.svelte';
-const SIDEBAR_LAUNCHER_PREVIEW = 'src/lib/components/workspace/utils/sidebar-launcher-preview.ts';
 
 const ALLOWLIST: readonly AllowlistEntry[] = [
   {
@@ -159,48 +156,6 @@ const ALLOWLIST: readonly AllowlistEntry[] = [
     rationale: 'Amber shadow class for the waiting state.',
   },
   {
-    path: MULTI_SELECT_SIDEBAR,
-    comparison: "state === 'failed'",
-    kind: 'display',
-    rationale: 'Launcher status tone (danger) for the failed state.',
-  },
-  {
-    path: MULTI_SELECT_SIDEBAR,
-    comparison: "state === 'question'",
-    kind: 'display',
-    rationale: 'Launcher status tone (warning) for user-attention states.',
-  },
-  {
-    path: MULTI_SELECT_SIDEBAR,
-    comparison: "state === 'needs-permission'",
-    kind: 'display',
-    rationale: 'Launcher status tone (warning) for user-attention states.',
-  },
-  {
-    path: MULTI_SELECT_SIDEBAR,
-    comparison: "state === 'attention-blocker'",
-    kind: 'display',
-    rationale: 'Launcher status tone (warning) for user-attention states.',
-  },
-  {
-    path: MULTI_SELECT_SIDEBAR,
-    comparison: "state === 'attention-discussion'",
-    kind: 'display',
-    rationale: 'Launcher status tone (warning) for user-attention states.',
-  },
-  {
-    path: MULTI_SELECT_SIDEBAR,
-    comparison: "state === 'running'",
-    kind: 'display',
-    rationale: 'Launcher status tone (success); launcher membership is decided elsewhere.',
-  },
-  {
-    path: MULTI_SELECT_SIDEBAR,
-    comparison: "state === 'responding'",
-    kind: 'display',
-    rationale: 'Launcher status tone (success) for the declared-but-never-returned state.',
-  },
-  {
     path: WORKSPACE_HOVER_CARD,
     comparison: "canonicalState === 'question'",
     context: '? sessionPendingQuestions',
@@ -232,48 +187,6 @@ const ALLOWLIST: readonly AllowlistEntry[] = [
     rationale:
       'Picks the attention row group; the branch decides inclusion versus the final `return null`.',
     followUp: HOVER_CARD_GATE_FOLLOW_UP,
-  },
-  {
-    path: SIDEBAR_LAUNCHER_PREVIEW,
-    comparison: "state === 'failed'",
-    kind: 'display',
-    rationale: 'Launcher ordering rank (3) for the failed state.',
-  },
-  {
-    path: SIDEBAR_LAUNCHER_PREVIEW,
-    comparison: "state === 'question'",
-    kind: 'display',
-    rationale: 'Launcher ordering rank (2) for user-attention states.',
-  },
-  {
-    path: SIDEBAR_LAUNCHER_PREVIEW,
-    comparison: "state === 'needs-permission'",
-    kind: 'display',
-    rationale: 'Launcher ordering rank (2) for user-attention states.',
-  },
-  {
-    path: SIDEBAR_LAUNCHER_PREVIEW,
-    comparison: "state === 'attention-blocker'",
-    kind: 'display',
-    rationale: 'Launcher ordering rank (2) for user-attention states.',
-  },
-  {
-    path: SIDEBAR_LAUNCHER_PREVIEW,
-    comparison: "state === 'attention-discussion'",
-    kind: 'display',
-    rationale: 'Launcher ordering rank (2) for user-attention states.',
-  },
-  {
-    path: SIDEBAR_LAUNCHER_PREVIEW,
-    comparison: "state === 'running'",
-    kind: 'display',
-    rationale: 'Launcher ordering rank (1); the running flag is computed separately.',
-  },
-  {
-    path: SIDEBAR_LAUNCHER_PREVIEW,
-    comparison: "state === 'responding'",
-    kind: 'display',
-    rationale: 'Launcher ordering rank (1) for the declared-but-never-returned responding state.',
   },
 ];
 

@@ -1,6 +1,7 @@
 <script lang="ts">
   /* eslint-disable max-lines */
   import { onMount, onDestroy, mount, unmount, untrack } from 'svelte';
+  import { isTextEntryTarget } from '$lib/utils/text-entry';
   import { Popover } from 'bits-ui';
 
   import {
@@ -30,7 +31,8 @@
   import { getMentionSystem, type SearchContext } from '$lib/services/mentions';
   import type { Workspace } from '$shared/types';
   import { toPromptToken } from '$lib/services/mentions/format';
-  import { memberMentionLabel } from '$lib/utils/member-mention-token';
+  import { mentionChipDisplayLabel } from '$lib/utils/note-mention-label';
+  import { storeNoteTitleLookup } from '$lib/utils/store-note-title-lookup';
   import { noteUrl } from '$shared/constants/intent-links';
   import { createIntentLink } from '$lib/utils/tiptap-link-extension';
   import { Slice, Fragment } from '@tiptap/pm/model';
@@ -382,7 +384,7 @@
           if (
             activeElement !== focusOwner &&
             activeElement instanceof HTMLElement &&
-            activeElement.closest('input, textarea, select, [contenteditable="true"]') &&
+            isTextEntryTarget(activeElement) &&
             !focusEditor.view.dom.contains(activeElement)
           ) {
             return;
@@ -828,8 +830,13 @@
             },
             suggestion: mentionSuggestion,
             renderHTML({ node }: any) {
-              // Ensure we always have a non-empty label for the mention
-              const label = node.attrs.label || node.attrs.id || 'mention';
+              // Note chips show the note's live title; data-label and the
+              // saved token keep the original.
+              const displayLabel = mentionChipDisplayLabel(
+                node.attrs,
+                workspace?.id,
+                storeNoteTitleLookup,
+              );
               return [
                 'span',
                 {
@@ -842,7 +849,7 @@
                   class: 'mention-chip',
                   tabindex: '0',
                 },
-                node.attrs.type === 'member' ? memberMentionLabel(label) : label,
+                displayLabel,
               ];
             },
             // Ensure mentions serialize to canonical @-tokens when extracting text

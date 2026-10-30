@@ -20,7 +20,7 @@
   import { notify } from '$lib/components/patterns/notify';
 
   import { createWorkspacePageState } from './composables/workspace-page-state.svelte';
-  import { useCloseHandlers, usePanelShortcuts, useTabManagement } from './composables';
+  import { useCloseHandlers, useCreationTransition, usePanelShortcuts } from './composables';
   import {
     dispatchCreateFileRequest,
     handleCommandPaletteCreateFile,
@@ -487,14 +487,14 @@
   }
 
   // ============================================================================
-  // Tab Management
+  // Creation transition
   // ============================================================================
-  const tabManagement = useTabManagement({
+  // The page never opens its own workspace tab: callers jump with
+  // openAndShowWorkspace ($lib/utils/show-workspace), and +layout.svelte opens
+  // the boot route's tab.
+  const creationTransition = useCreationTransition({
     get workspaceId() {
       return workspaceId;
-    },
-    get workspaceState() {
-      return workspaceState;
     },
     get previousWorkspaceId() {
       return previousWorkspaceId;
@@ -506,7 +506,7 @@
   // ============================================================================
 
   // Track if we're in a transition to prevent skeleton loaders
-  let isInTransition = $derived(tabManagement.isInTransition);
+  let isInTransition = $derived(creationTransition.isInTransition);
 
   // Surface any workspace creation error captured before navigation.
   // Initial-agent activation and panel opening are owned by the daemon +
@@ -928,6 +928,7 @@
       >
         {#snippet children()}
           <WorkspaceLayout
+            {workspaceId}
             {active}
             sidebar={sidebarContent}
             content={mainContent}

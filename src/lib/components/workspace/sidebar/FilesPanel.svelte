@@ -404,6 +404,14 @@
     return fileTreeRef?.getHasExpandedDirectories() ?? false;
   }
 
+  export function revealPath(path: string): Promise<HTMLElement | null> {
+    return fileTreeRef?.revealPath(path) ?? Promise.resolve(null);
+  }
+
+  export function cancelReveal() {
+    fileTreeRef?.cancelReveal();
+  }
+
   // Export startCreatingFile for parent components to trigger inline file creation
   export function startCreatingFile(dirPath?: string) {
     fileTreeRef?.startCreatingFile(dirPath);
@@ -432,7 +440,9 @@
       />
     </div>
   {:else}
-    <div class="px-4 py-3 text-sm text-subtle">{m.workspace_filesPanel_noFolderLinked_label()}</div>
+    <p class="px-2 py-2 type-caption text-muted-foreground">
+      {m.workspace_filesPanel_noFolderLinked_label()}
+    </p>
   {/if}
 </div>
 

@@ -17,11 +17,18 @@
     dividerBefore?: boolean;
     variant?: 'default' | 'destructive';
     shortcut?: string;
+    /** Current value shown after the label, such as a submenu's selection. */
+    detail?: string;
+    detailTone?: 'danger';
     /** Marks the item as active/selected (renders a check indicator). */
     checked?: boolean;
     disabled?: boolean;
+    /** Why the item is unavailable; disables it and shows below the label. */
+    disabledReason?: string;
     /** Child menu items; `onClick` is ignored when set. */
     submenu?: MenuAction[];
+    /** Passive explanation shown below the submenu's choices. */
+    note?: string;
     /** Checked submenu children are one exclusive radio selection; commands stay separate. */
     selection?: 'single';
   }

@@ -145,6 +145,42 @@ afterEach(async () => {
 });
 
 describe('provider settings ordered ownership', () => {
+  it('saves a disable request even for the default provider with a saved model', async () => {
+    const h = harness();
+    h.send(loadProviderModelsFromStorage({ codex: 'balanced' }));
+    h.send(setProviderEnabled({ providerId: 'codex', enabled: false }, context('disable')));
+    await settle();
+    expect(mocks.update).toHaveBeenCalledWith([
+      { path: 'providers.enabled', value: { codex: false } },
+    ]);
+    expect(h.request('disable')?.status).toBe('success');
+    expect(mocks.error).not.toHaveBeenCalled();
+  });
+
+  it('shows a rejected disable and refreshes the saved enablement', async () => {
+    mocks.update.mockRejectedValueOnce(invalid());
+    const h = harness();
+    h.send(setProviderEnabled({ providerId: 'codex', enabled: false }, context('disable')));
+    await settle();
+    expect(h.request('disable')?.status).toBe('failure');
+    expect(mocks.error).toHaveBeenCalledWith('Cannot disable Codex', { description: 'invalid' });
+    expect(h.actions).toContainEqual(settingsFieldsRefreshRequested(['providers.enabled'], null));
+    expect(h.state().providerSettings.pendingEnablementOverrides).toEqual({});
+  });
+
+  it('does not show an obsolete disable failure after a newer enable request', async () => {
+    const first = deferred<unknown[]>();
+    mocks.update.mockReturnValueOnce(first.promise);
+    const h = harness();
+    h.send(setProviderEnabled({ providerId: 'codex', enabled: false }, context('disable')));
+    h.send(setProviderEnabled({ providerId: 'codex', enabled: true }, context('enable')));
+    first.reject(invalid());
+    await settle();
+    expect(mocks.error).not.toHaveBeenCalled();
+    expect(h.request('enable')?.status).toBe('success');
+    expect(h.state().providerSettings.enabledProviders.codex).toBe(true);
+  });
+
   it.each(['resolve', 'reject'] as const)(
     'ignores a previous connection provider %s after its UI request ledger is cleared',
     async (outcome) => {

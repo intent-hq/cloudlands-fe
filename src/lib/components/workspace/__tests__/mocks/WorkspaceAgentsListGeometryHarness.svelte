@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import AgentCard from '$lib/components/chat/AgentCard.svelte';
   import WorkspaceAgentsList from '../../WorkspaceAgentsList.svelte';
   import { store as appStore } from '$store/renderer/store';
   import {
@@ -18,12 +17,10 @@
     width = 220,
     zoom = 2,
     virtual = false,
-    showNonPanelControl = false,
   }: {
     width?: number;
     zoom?: number;
     virtual?: boolean;
-    showNonPanelControl?: boolean;
   } = $props();
 
   const workspaceId = WorkspaceId('workspace-agent-row-geometry');
@@ -118,9 +115,4 @@
     onLoadDelegated={virtual ? () => {} : undefined}
     onSelect={({ agentId }) => (selectedAgentId = agentId)}
   />
-  {#if showNonPanelControl}
-    <div data-non-panel-agent-card>
-      <AgentCard agentId="long-name" selected showBorder hidePreview readOnly />
-    </div>
-  {/if}
 </section>

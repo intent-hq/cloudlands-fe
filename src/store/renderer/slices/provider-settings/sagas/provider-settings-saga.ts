@@ -1,5 +1,8 @@
 import { isQuickActionProviderSwitchBlocked } from '../../background-agent-settings/quick-action-provider-switch';
-import { settingsChangesReceived } from '../../settings-events/settings-events-slice';
+import {
+  settingsChangesReceived,
+  settingsFieldsRefreshRequested,
+} from '../../settings-events/settings-events-slice';
 import { backgroundSettingsWriteLock } from '../../background-agent-settings/sagas/background-settings-write-lock';
 import { backgroundProviderSwitchBlocked } from '../../background-agent-settings/background-agent-settings-slice';
 import { selectBgSettings } from '../../background-agent-settings/background-agent-settings-selectors';
@@ -219,7 +222,7 @@ function* queueSeedWorker(
   yield* put(updates, { enabledSeed: action.payload[0] });
 }
 
-function* notifyOutcome(update: ProviderSettingsUpdate, success: boolean) {
+function* notifyOutcome(update: ProviderSettingsUpdate, success: boolean, error?: unknown) {
   if (
     !update.request ||
     !(yield* selectProviderSettingsSessionActive.effect(update.request.sessionId))
@@ -234,6 +237,11 @@ function* notifyOutcome(update: ProviderSettingsUpdate, success: boolean) {
   if (update.path) {
     if (success) yield* call(notify.success, m.settings_providerPath_saved());
     else yield* call(notify.error, m.settings_providerPath_saveError());
+  } else if (!success && update.enabledProviderDelta?.enabled === false) {
+    const name = yield* selectProviderDisplayName.effect(update.enabledProviderDelta.providerId);
+    yield* call(notify.error, m.settings_providers_cannotDisable({ name }), {
+      description: error instanceof Error ? error.message : undefined,
+    });
   } else if (success && update.activeProviderId) {
     const name = yield* selectProviderDisplayName.effect(update.activeProviderId);
     yield* call(notify.success, m.settings_providers_switchedTo({ name }));
@@ -347,14 +355,21 @@ function* persistProviderSettingsQueue(updates: Channel<ProviderSettingsUpdate>)
         );
         attempt += 1;
       }
-    } catch {
+    } catch (error) {
       logger.warn('Provider settings write failed');
-      if (update.enabledProviderDelta !== undefined)
+      if (update.enabledProviderDelta !== undefined) {
         yield* put(
           enablementPersistRejected(update.enabledProviderDelta.providerId, update.revision),
         );
+        yield* put(
+          settingsFieldsRefreshRequested(
+            ['providers.enabled'],
+            (yield* selectModelSelectionState.effect()).selectionConnection,
+          ),
+        );
+      }
       if (update.request) yield* put(providerSettingsRequestSettled(update.request.id, 'failure'));
-      yield* call(notifyOutcome, update, false);
+      yield* call(notifyOutcome, update, false, error);
     } finally {
       yield* put(backgroundSettingsWriteLock, true);
       if ((yield* cancelled()) && update.request)

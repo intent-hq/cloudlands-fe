@@ -1,16 +1,12 @@
 import { expect, test } from '../../../../test/ct-test';
 import FilesOpenMenuPreview from '../files-open-menu.preview.svelte';
-import {
-  measureCollapsedFilesTrigger,
-  measureInlinePath,
-  measureTextTrigger,
-} from './files-open-menu.assertions';
+import { measureInlinePath, measureTextTrigger } from './files-open-menu.assertions';
 
 test('Files menu has aligned icon and label slots for different label lengths', async ({
   mount,
   page,
 }) => {
-  const component = await mount(FilesOpenMenuPreview);
+  const component = await mount(FilesOpenMenuPreview, { props: { surface: 'inline' } });
   await component.locator('p').getByRole('button').click();
   const items = page.getByRole('menuitemradio');
   await expect(items).toHaveCount(5);
@@ -49,7 +45,7 @@ test('Files menu keyboard navigation executes each mock action once and restores
   mount,
   page,
 }) => {
-  const component = await mount(FilesOpenMenuPreview);
+  const component = await mount(FilesOpenMenuPreview, { props: { surface: 'inline' } });
   const trigger = component.locator('p').getByRole('button');
   const items = page.getByRole('menuitemradio');
   await trigger.focus();
@@ -110,7 +106,9 @@ for (const config of [
     mount,
     page,
   }) => {
-    const component = await mount(FilesOpenMenuPreview, { props: config });
+    const component = await mount(FilesOpenMenuPreview, {
+      props: { ...config, surface: 'inline' },
+    });
     await page.evaluate(() => document.fonts.ready);
     const metrics = await component.locator('p').evaluate(measureInlinePath);
     expect(metrics.overflow).toBeLessThanOrEqual(1);
@@ -126,7 +124,7 @@ for (const mode of ['remote', 'web'] as const) {
     mount,
     page,
   }) => {
-    const component = await mount(FilesOpenMenuPreview, { props: { mode } });
+    const component = await mount(FilesOpenMenuPreview, { props: { mode, surface: 'inline' } });
     const trigger = component.locator('p').getByRole('button');
     await trigger.click();
     await trigger.focus();
@@ -191,42 +189,25 @@ test('setup-card sidebar text trigger sizes to its path label instead of an icon
 });
 
 for (const width of [360, 248]) {
-  test(`collapsed Files launcher is a transparent aligned action at ${width}px`, async ({
+  test(`Files tab chooser routes keyboard actions and restores focus at ${width}px`, async ({
     mount,
     page,
   }) => {
     const component = await mount(FilesOpenMenuPreview, {
       props: { surface: 'collapsed', width },
     });
-    const files = component.locator('[data-sidebar-launcher="files"]');
+    await component.locator('[data-sidebar-section-tab="files"]').click();
+    const files = component.locator('[data-sidebar-section="files"]');
     const trigger = files.getByRole('button', { name: /Open in/ });
-    await page.evaluate(() => document.fonts.ready);
-    const assertGeometry = async () => {
-      const metrics = await trigger.evaluate(measureCollapsedFilesTrigger);
-      expect(Math.abs(metrics.rightInset)).toBeLessThanOrEqual(1);
-      expect(Math.abs(metrics.centerX)).toBeLessThanOrEqual(1);
-      expect(Math.abs(metrics.centerY)).toBeLessThanOrEqual(1);
-      expect(metrics.backgrounds.every((color) => color === 'rgba(0, 0, 0, 0)')).toBe(true);
-    };
-    await page.mouse.move(0, 0);
-    await assertGeometry();
-    await trigger.hover();
-    await assertGeometry();
-    await page.mouse.down();
-    await assertGeometry();
-    await page.mouse.up();
+    await trigger.click();
     await expect(page.getByRole('menu')).toBeVisible();
     await page.keyboard.press('Escape');
-    // Finish animated dismissal before checking the closed launcher's tab order.
+    // Wait for dismissal before checking the Files pane's tab order.
     await expect(page.getByRole('menu')).toHaveCount(0);
     await expect(trigger).toBeFocused();
     await page.keyboard.press('Tab');
     await page.keyboard.press('Shift+Tab');
     await expect(trigger).toBeFocused();
-    const focus = await trigger.evaluate(measureCollapsedFilesTrigger);
-    expect(focus.focusVisible).toBe(true);
-    expect(focus.outline).not.toBe('none');
-    expect(focus.outlineWidth).toBeGreaterThan(0);
     await page.keyboard.press('Enter');
     await expect(page.getByRole('menu')).toBeVisible();
     const items = page.getByRole('menuitemradio');
@@ -241,11 +222,5 @@ for (const width of [360, 248]) {
       .poll(async () => JSON.parse(await component.getByTestId('files-menu-requests').innerText()))
       .toEqual([{ channel: 'vscode:open', args: ['/tmp/intent-demo/worktrees/sample-project'] }]);
     await expect(files).toBeVisible();
-
-    const changes = component.locator('[data-sidebar-launcher="changes"]');
-    await expect(changes.locator('[data-sidebar-launcher-icons] svg')).toHaveCount(0);
-    const cards = await Promise.all([files.boundingBox(), changes.boundingBox()]);
-    expect(cards[1]!.height).toBe(cards[0]!.height);
-    expect(cards[1]!.y).toBe(cards[0]!.y);
   });
 }

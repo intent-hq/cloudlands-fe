@@ -13,6 +13,7 @@ import {
   setGithubLinkDefaultAction,
   setLabsGitLabEnabled,
   setLabsRemoteAgentsEnabled,
+  setPauseAnimationsWhenUnfocused,
   setShellTransparencyEnabled,
   setVolume,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
@@ -327,6 +328,53 @@ describe('settings-proposal-actions', () => {
       ).rejects.toThrow('Invalid value');
       expect(mocks.dispatch).not.toHaveBeenCalled();
       expect(mocks.settingsUpdate).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([true, false])(
+    'applies and reverses pause animations when unfocused = %s',
+    async (value) => {
+      mocks.getState.mockReturnValue(
+        makeState({
+          userPreferences: { ...userPreferencesInitialState, pauseAnimationsWhenUnfocused: !value },
+        }),
+      );
+      const result = await applySettingsProposalWork(
+        makeDetail(makeProposal('appearance.pauseAnimationsWhenUnfocused', value)),
+      );
+
+      expect(mocks.dispatch).toHaveBeenCalledExactlyOnceWith(
+        setPauseAnimationsWhenUnfocused(value),
+      );
+      expect(result.reverseChanges).toEqual([
+        {
+          path: 'appearance.pauseAnimationsWhenUnfocused',
+          value: !value,
+          apply: {
+            kind: 'redux-action',
+            action: 'userPreferences/setPauseAnimationsWhenUnfocused',
+          },
+        },
+      ]);
+
+      mocks.dispatch.mockClear();
+      await undoSettingsProposalWork(result.reverseChanges);
+
+      expect(mocks.dispatch).toHaveBeenCalledExactlyOnceWith(
+        setPauseAnimationsWhenUnfocused(!value),
+      );
+    },
+  );
+
+  it.each(['true', 1, null])(
+    'rejects invalid pause animations when unfocused proposals: %j',
+    async (value) => {
+      await expect(
+        applySettingsProposalWork(
+          makeDetail(makeProposal('appearance.pauseAnimationsWhenUnfocused', value)),
+        ),
+      ).rejects.toThrow('Invalid value');
+      expect(mocks.dispatch).not.toHaveBeenCalled();
     },
   );
 

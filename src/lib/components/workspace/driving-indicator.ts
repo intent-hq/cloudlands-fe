@@ -1,9 +1,9 @@
 /**
- * View model for the workspace "driving client" indicator (REV-2,
- * intent-hq/intent#461). The driving client is the browser-capable client
- * that hosts a workspace's agent browser tabs and tunnels — the workspace
- * pin when set, else the first eligible connection; re-pinning migrates the
- * workspace's claimed tabs to the new pin.
+ * View model for the workspace menu's primary client (REV-2,
+ * intent-hq/intent#461). The primary (driving) client is the browser-capable
+ * client that hosts a workspace's agent browser tabs and tunnels — the
+ * workspace pin when set, else the first eligible connection; re-pinning
+ * migrates the workspace's claimed tabs to the new pin.
  *
  * Presentational only: callers pass the eligible clients and the resolved
  * driving client; nothing here talks to the daemon.
@@ -28,18 +28,13 @@ export interface ResolvedBrowserClients {
   driving: BrowserClientSummary | null;
   /** Explicit workspace pin; a resolved default is not an explicit selection. */
   pinnedClientId?: string | null;
-}
-
-export interface DrivingClientInput extends ResolvedBrowserClients {
-  /** Whether the workspace has an agent-owned browser tab, visible or hidden. */
-  hasBrowserTabs: boolean;
-  /** Actual computer from an active desktop session, never a fallback name. */
-  activeComputerName?: string;
+  /** Rule that routed an unpinned workspace to `driving` (`desktop` / `tabs`), if any. */
+  routedVia?: string;
 }
 
 type DrivingClientMode = 'here' | 'elsewhere' | 'offline';
 
-export interface DrivingClientView {
+interface DrivingClientView {
   mode: DrivingClientMode;
   /** Display name of the driving client (falls back to a shortened id). */
   hostName: string;
@@ -72,20 +67,4 @@ export function resolveDrivingClientSwitch(clients: ResolvedBrowserClients): Dri
         : '',
     canSwitchHere: Boolean(own && pinnedClientId !== ownClientId),
   };
-}
-
-/** Offline pins offer recovery; agent activity shows its computer even with one client. */
-export function resolveDrivingClientView(input: DrivingClientInput): DrivingClientView | null {
-  if (!input.activeComputerName && !input.hasBrowserTabs && input.driving?.connected !== false)
-    return null;
-  if (!input.activeComputerName && !input.driving) return null;
-  const view = resolveDrivingClientSwitch(input);
-  if (input.activeComputerName) {
-    return {
-      ...view,
-      mode: view.mode === 'offline' ? 'elsewhere' : view.mode,
-      hostName: input.activeComputerName,
-    };
-  }
-  return view;
 }

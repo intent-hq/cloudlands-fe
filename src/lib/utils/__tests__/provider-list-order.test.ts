@@ -102,15 +102,33 @@ describe('groupProviderEntries', () => {
     expect(result.supported.map((provider) => provider.id)).toEqual(['supported-a', 'supported-z']);
   });
 
-  it('groups an available active provider as enabled even when it is not enabled explicitly', () => {
+  it.each([
+    [undefined, false, 'hidden'],
+    [false, false, 'hidden'],
+    [true, false, 'discovered'],
+    [undefined, true, 'enabled'],
+    [false, true, 'enabled'],
+    [true, true, 'enabled'],
+  ] as const)('groups Auggie installed=%s enabled=%s as %s', (installed, enabled, group) => {
+    const result = groupProviderEntries([entry('auggie', 'Augment Auggie')], {
+      isProviderEnabled: () => enabled,
+      availabilityByProviderId: installed === undefined ? {} : { auggie: { available: installed } },
+      activeProviderId: 'auggie',
+    });
+    expect(result.enabled.map((p) => p.id)).toEqual(group === 'enabled' ? ['auggie'] : []);
+    expect(result.discovered.map((p) => p.id)).toEqual(group === 'discovered' ? ['auggie'] : []);
+    expect(result.supported).toEqual([]);
+  });
+
+  it('groups a disabled default provider as discovered', () => {
     const result = groupProviderEntries([entry('auggie', 'Augment Auggie')], {
       isProviderEnabled: () => false,
       availabilityByProviderId: { auggie: { available: true } },
       activeProviderId: 'auggie',
     });
 
-    expect(result.enabled.map((provider) => provider.id)).toEqual(['auggie']);
-    expect(result.discovered).toEqual([]);
+    expect(result.enabled).toEqual([]);
+    expect(result.discovered.map((provider) => provider.id)).toEqual(['auggie']);
   });
 
   it('pins the active provider first while keeping the remaining enabled providers alphabetical', () => {

@@ -2,7 +2,7 @@ import { END, buffers, eventChannel, type EventChannel } from 'redux-saga';
 import { call, take } from 'typed-redux-saga';
 
 import { isElectron } from '$lib/electron-bridge';
-import { navigateToRoute } from '$lib/utils/navigation.client';
+import { openAndShowWorkspace } from '$lib/utils/show-workspace';
 
 type AgentAuthRequiredEvent = {
   workspaceId?: string;
@@ -65,7 +65,7 @@ async function showAgentEvent(event: AgentEvent): Promise<void> {
         label: 'Open Terminal',
         onClick: () => {
           if (data.workspaceId) {
-            void navigateToRoute(`/workspace/${data.workspaceId}?panel=terminal`);
+            void openAndShowWorkspace(data.workspaceId, { query: { panel: 'terminal' } });
           }
         },
       },

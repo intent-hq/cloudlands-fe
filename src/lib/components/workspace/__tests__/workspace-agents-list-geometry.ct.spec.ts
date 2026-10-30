@@ -2,17 +2,14 @@ import { expect, test } from '../../../../test/ct-test';
 import WorkspaceAgentsListGeometryHarness from './mocks/WorkspaceAgentsListGeometryHarness.svelte';
 
 const platformModifier = process.platform === 'darwin' ? 'Meta' : 'Control';
-const transparent = 'rgba(0, 0, 0, 0)';
-
-async function background(locator: import('@playwright/test').Locator) {
-  return locator.evaluate((node) => getComputedStyle(node).backgroundColor);
-}
 
 for (const zoom of [1, 2]) {
   test(`keeps Agents-panel rename fully text-editable at ${zoom * 100}%`, async ({
     mount,
     page,
   }) => {
+    // Keep the text-editing case tall enough for the zoomed context menu.
+    await page.setViewportSize({ width: 1280, height: 720 * zoom });
     const component = await mount(WorkspaceAgentsListGeometryHarness, {
       props: { width: 300, zoom },
       hooksConfig: {
@@ -98,19 +95,6 @@ test('keeps narrow 200% Agents-panel rows single-line and collision-free', async
   const rows = component.locator('[data-agent-panel-row]');
   await expect(rows).toHaveCount(5);
   for (const row of await rows.all()) {
-    const avatar = row.locator('[data-agent-avatar-with-state]');
-    await expect(avatar).toHaveAttribute('data-avatar-variant', 'emphasized');
-    const avatarGeometry = await avatar.evaluate((node) => {
-      const style = getComputedStyle(node);
-      return {
-        width: style.width,
-        height: style.height,
-        background: style.backgroundColor,
-        box: node.getBoundingClientRect().toJSON(),
-      };
-    });
-    expect(avatarGeometry.background).not.toBe('rgba(0, 0, 0, 0)');
-
     const geometry = await row.evaluate((node) => {
       const name = node.querySelector('[data-agent-row-name]')!.getBoundingClientRect();
       const trailing = node.querySelector('[data-agent-row-trailing]')!.getBoundingClientRect();
@@ -163,12 +147,12 @@ test('keeps narrow 200% Agents-panel rows single-line and collision-free', async
   );
 });
 
-test('keeps every Agents-panel row and disclosure transparent with accessible state cues', async ({
+test('keeps Agents-panel selection and disclosures keyboard accessible', async ({
   mount,
   page,
 }) => {
   const component = await mount(WorkspaceAgentsListGeometryHarness, {
-    props: { width: 320, zoom: 1, showNonPanelControl: true },
+    props: { width: 320, zoom: 1 },
   });
   await component.locator('[data-agent-delegation-toggle="coordinator"]').click();
   await component.locator('[data-agent-background-toggle]').click();
@@ -185,43 +169,30 @@ test('keeps every Agents-panel row and disclosure transparent with accessible st
   );
   await expect(active.locator('[data-panel-open-state]')).toHaveCount(0);
 
-  for (const theme of ['light', 'dark'] as const) {
-    await page.evaluate((value) => {
-      document.documentElement.classList.toggle('light', value === 'light');
-      document.documentElement.classList.toggle('dark', value === 'dark');
-    }, theme);
-    await page.mouse.move(1000, 700);
-    for (const row of await rows.all()) expect(await background(row)).toBe(transparent);
+  await active.focus();
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Shift+Tab');
+  await expect(active).toBeFocused();
+  const focus = await active.evaluate((node) => {
+    const style = getComputedStyle(node);
+    return { style: style.outlineStyle, width: Number.parseFloat(style.outlineWidth) };
+  });
+  expect(focus.style).not.toBe('none');
+  expect(focus.width).toBeGreaterThan(0);
+  await expect(selected).toHaveAttribute('aria-current', 'true');
 
-    await active.hover();
-    expect(await background(active)).toBe(transparent);
-    await active.focus();
-    await page.keyboard.press('Tab');
-    await page.keyboard.press('Shift+Tab');
-    await expect(active).toBeFocused();
-    expect(await background(active)).toBe(transparent);
-    const focus = await active.evaluate((node) => {
-      const style = getComputedStyle(node);
-      return { style: style.outlineStyle, width: style.outlineWidth };
-    });
-    expect(focus.style).toBe('solid');
-    expect(Number.parseFloat(focus.width)).toBeGreaterThan(0);
-
-    for (const selector of [
-      '[data-agent-delegation-toggle="coordinator"]',
-      '[data-agent-background-toggle]',
-      '[data-agent-retired-toggle]',
-    ]) {
-      const control = component.locator(selector);
-      await control.hover();
-      expect(await background(control)).toBe(transparent);
-      await control.focus();
-      expect(await background(control)).toBe(transparent);
-    }
-
-    expect(await background(component.locator('[data-non-panel-agent-card] button'))).not.toBe(
-      transparent,
-    );
+  for (const selector of [
+    '[data-agent-delegation-toggle="coordinator"]',
+    '[data-agent-background-toggle]',
+    '[data-agent-retired-toggle]',
+  ]) {
+    const control = component.locator(selector);
+    await control.focus();
+    await expect(control).toBeFocused();
+    await control.press('Space');
+    await expect(control).toHaveAttribute('aria-expanded', 'false');
+    await control.press('Enter');
+    await expect(control).toHaveAttribute('aria-expanded', 'true');
   }
 
   await page.emulateMedia({ forcedColors: 'active' });
@@ -229,7 +200,6 @@ test('keeps every Agents-panel row and disclosure transparent with accessible st
   await page.keyboard.press('Tab');
   await page.keyboard.press('Shift+Tab');
   await expect(selected).toBeFocused();
-  expect(await background(selected)).toMatch(/^rgba\(.+, 0\)$/);
   expect(await selected.evaluate((node) => getComputedStyle(node).outlineStyle)).toBe('solid');
   await page.emulateMedia({ forcedColors: 'none' });
 });
@@ -289,10 +259,7 @@ for (const zoom of [1, 2]) {
 
     await expect(component.locator('[data-testid="agent-card-preview"]')).toHaveCount(0);
     const row = component.locator('[data-agent-panel-row]').first();
-    expect(await background(row)).toBe(transparent);
-    await row.hover();
-    expect(await background(row)).toBe(transparent);
     await row.focus();
-    expect(await background(row)).toBe(transparent);
+    await expect(row).toBeFocused();
   });
 }

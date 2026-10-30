@@ -60,6 +60,8 @@ export type UserPreferencesState = {
   shellTransparencyEnabled: boolean;
   /** Whether motion is reduced while the machine runs on battery. */
   reduceMotionOnBattery: boolean;
+  /** Whether looping animations pause while the window is not focused. */
+  pauseAnimationsWhenUnfocused: boolean;
   /** Whether the experimental Labs tab is visible in Settings. */
   labsSettingsVisible: boolean;
   /**
@@ -148,6 +150,7 @@ export const initialState: UserPreferencesStoreState = {
   collapseToolRuns: false,
   shellTransparencyEnabled: true,
   reduceMotionOnBattery: false,
+  pauseAnimationsWhenUnfocused: false,
   labsSettingsVisible: false,
   labsMultiplayerEnabled: true,
   labsGitLabEnabled: false,
@@ -385,6 +388,18 @@ export const setReduceMotionOnBattery = reduceMotionOnBatteryPreference.setActio
 
 export const toggleReduceMotionOnBattery = reduceMotionOnBatteryPreference.toggleAction;
 
+const pauseAnimationsWhenUnfocusedPreference = createBooleanPreference<UserPreferencesStoreState>({
+  sliceName: 'userPreferences',
+  field: 'pauseAnimationsWhenUnfocused',
+  setActionName: 'setPauseAnimationsWhenUnfocused',
+  toggleActionName: 'togglePauseAnimationsWhenUnfocused',
+});
+
+export const setPauseAnimationsWhenUnfocused = pauseAnimationsWhenUnfocusedPreference.setAction;
+
+export const togglePauseAnimationsWhenUnfocused =
+  pauseAnimationsWhenUnfocusedPreference.toggleAction;
+
 const labsSettingsVisibilityPreference = createBooleanPreference<UserPreferencesStoreState>({
   sliceName: 'userPreferences',
   field: 'labsSettingsVisible',
@@ -552,6 +567,7 @@ chatAuroraPreference.register(userPreferencesReducer);
 collapseToolRunsPreference.register(userPreferencesReducer);
 shellTransparencyPreference.register(userPreferencesReducer);
 reduceMotionOnBatteryPreference.register(userPreferencesReducer);
+pauseAnimationsWhenUnfocusedPreference.register(userPreferencesReducer);
 labsSettingsVisibilityPreference.register(userPreferencesReducer);
 labsMultiplayerPreference.register(userPreferencesReducer);
 labsGitLabPreference.register(userPreferencesReducer);

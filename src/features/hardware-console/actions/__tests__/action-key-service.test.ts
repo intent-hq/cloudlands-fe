@@ -362,14 +362,14 @@ describe('handleActionKeyPress', () => {
       'agent-a': { id: 'agent-a', status: 'active', isProcessing: true, messages: [] } as never,
       'agent-b': { id: 'agent-b', status: 'active', isProcessing: true, messages: [] } as never,
     };
-    const navigate = vi.fn(() => Promise.resolve());
+    const showWorkspace = vi.fn(() => Promise.resolve(true));
     const focusComposer = vi.fn();
 
     mapCm2Act11To('cycle-in-progress-agents');
-    expect(handleActionKeyPress('ACT11', { navigate, focusComposer })).toBe(
+    expect(handleActionKeyPress('ACT11', { showWorkspace, focusComposer })).toBe(
       'cycle-in-progress-agents',
     );
-    expect(navigate).toHaveBeenCalledWith('/workspace/ws-1');
+    expect(showWorkspace).toHaveBeenCalledWith('ws-1');
     expect(focusComposer).toHaveBeenCalledWith('agent-a');
     expect(dispatched).toContainEqual(
       expect.objectContaining({

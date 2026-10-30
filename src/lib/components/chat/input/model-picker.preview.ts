@@ -38,6 +38,7 @@ import {
 import { normalizeAgent } from '$lib/client/live/live-agents-client';
 import { providerProfileSummaryStatusChanged } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 import ModelPickerPreview from './ModelPickerPreview.svelte';
+import type { ModelWarningKind } from '$shared/models/wire-model-info';
 
 const models = [
   {
@@ -62,6 +63,7 @@ function setupModels(
   degraded = false,
   diagnostic?: string,
   fallbackWarning?: string,
+  fallbackWarningKind?: ModelWarningKind,
 ) {
   return () => {
     activeCleanup?.();
@@ -72,7 +74,7 @@ function setupModels(
     const previousDefault = selectEffectiveDefaultProviderId.select(appStore.state);
     const previousCollapsed = selectModelPickerCollapsedGroups.select(appStore.state);
     const restoreProviders = setupPreviewProviders();
-    if (fallbackWarning) {
+    if (fallbackWarning || fallbackWarningKind) {
       // The daemon's Codex catalog entry carries this docs link; the notice
       // shows it as "Setup docs". restoreProviders() puts the old rows back.
       appStore.dispatch(
@@ -112,7 +114,13 @@ function setupModels(
       // a failed probe); Retry then gets the real rows.
       const failed =
         degraded || (diagnostic && providerId === 'codex')
-          ? { data: [], warning: diagnostic ?? 'Temporary model catalog failure' }
+          ? {
+              data: [],
+              warning: diagnostic ?? 'Temporary model catalog failure',
+              ...(providerId === 'codex' && fallbackWarningKind
+                ? { warningKind: fallbackWarningKind }
+                : {}),
+            }
           : undefined;
       restoreModelHandlers.push(setupModelPickerPreviewHandler(providerId, rows, warning, failed));
       if (providerId === 'codex')
@@ -256,6 +264,9 @@ export const preview = definePreview<ComponentProps<typeof ModelPickerPreview>>(
     open: {
       props: {
         initialOpen: true,
+        captureMenu: true,
+        portal: false,
+        collisionBoundary: 'body',
         selectedModel: null,
         defaultModelId: 'codex-preview-balanced',
         showDefaultOption: true,
@@ -268,6 +279,9 @@ export const preview = definePreview<ComponentProps<typeof ModelPickerPreview>>(
     reasoning: {
       props: {
         initialOpen: true,
+        captureMenu: true,
+        portal: false,
+        collisionBoundary: 'body',
         selectedModel: 'codex-preview-balanced',
         showReasoning: true,
         reasoningEffort: 'medium',
@@ -280,6 +294,9 @@ export const preview = definePreview<ComponentProps<typeof ModelPickerPreview>>(
     recovery: {
       props: {
         initialOpen: true,
+        captureMenu: true,
+        portal: false,
+        collisionBoundary: 'body',
         selectedModel: 'codex-preview-balanced',
         agentId: 'preview-recovery-agent',
         showReasoning: true,
@@ -321,8 +338,10 @@ export const preview = definePreview<ComponentProps<typeof ModelPickerPreview>>(
         ].join('\n'),
       ),
     },
-    // Codex CLI missing: the built-in list loads with a fallback warning, and
-    // the open menu's footer shows the install notice above Retry.
+    // Codex CLI missing, as the daemon reports it (§5.30): an empty Codex
+    // catalog with the real missing-CLI warning labeled `warningKind:
+    // "cli-missing"`; the open menu's footer shows the install notice above
+    // Retry, which (CLI installed) then loads the real rows.
     'codex-fallback': {
       props: {
         initialOpen: true,
@@ -339,8 +358,9 @@ export const preview = definePreview<ComponentProps<typeof ModelPickerPreview>>(
       setup: setupModels(
         true,
         false,
+        'codex: Install codex on the execution host and make it available on PATH, then retry. Intent requires the installed CLI; no bundled runtime replaces a missing one.',
         undefined,
-        'codex: Codex CLI not found; using the built-in model list',
+        'cli-missing',
       ),
     },
     'profiles-open': {

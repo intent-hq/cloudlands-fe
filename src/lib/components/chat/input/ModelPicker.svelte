@@ -75,9 +75,11 @@
     selectContextSelectedModel,
     selectContextProviderWarnings,
     selectContextProviderStaleFlags,
+    selectContextProviderWarningKinds,
     selectContextProviderEntries,
     selectContextModelProviderIds,
     selectContextAvailableProviderIds,
+    selectContextListedProviderIds,
     selectContextEnabledProviders,
     selectWorkspaceCatalogEpoch,
   } from '$store/renderer/slices/provider-catalog/workspace-catalog-selectors';
@@ -411,8 +413,10 @@
   const enabledProviders$ = selectContextEnabledProviders(workspaceIdStore);
   const selectedModel$ = selectContextSelectedModel(workspaceIdStore);
   const hasCheckedOnce$ = selectContextReadinessLoaded(workspaceIdStore);
+  const listedProviderIds$ = selectContextListedProviderIds(workspaceIdStore);
   const allProviderWarnings$ = selectContextProviderWarnings(workspaceIdStore);
   const allProviderStaleFlags$ = selectContextProviderStaleFlags(workspaceIdStore);
+  const allProviderWarningKinds$ = selectContextProviderWarningKinds(workspaceIdStore);
   const workspaceCatalogEpoch$ = selectWorkspaceCatalogEpoch();
   $effect(() => {
     // An open picker can outlive its workspace lifecycle subscription. Refresh
@@ -552,27 +556,14 @@
     isProviderEnabled($availableEnabledProviderIds$, effectiveProviderId),
   );
 
-  // An existing agent whose current provider was explicitly disabled in
-  // Settings > Agents (intent#5737). Read from `providers.enabled` alone — not
-  // the available+enabled set, which also drops providers whose probe failed,
-  // and not a daemon event — so the picker can warn before any message is
-  // sent. The daemon refuses to run the agent on a disabled provider and
-  // re-homes it on the next send, so unlike the cloudlands-fe#749 policy
-  // (keep a since-unavailable provider selectable) the model is reported as
-  // unavailable and the disabled provider's group is not offered. A
-  // guest-locked picker never sees the host's settings and stays read-only.
+  // Explicit disablement also gates cached rows in settings and specialist
+  // pickers. Failed probes alone do not; guests retain the host-owned receipt.
   const isEffectiveProviderDisabled = $derived(
-    !!agentId &&
-      !isGuestLocked &&
-      isProviderDisabledInSettings($enabledProviders$, effectiveProviderId),
+    !isGuestLocked && isProviderDisabledInSettings($enabledProviders$, effectiveProviderId),
   );
 
-  // Providers whose models the picker may offer. The available+enabled set
-  // always admits the default provider (`model.defaultProvider`) even when it
-  // was disabled in settings, so its catalog keeps loading for the fetch and
-  // warning paths — but the daemon refuses every turn on a disabled provider
-  // and a disabled default has no re-home target, so its rows must not be
-  // selectable (intent#5737). Same settings blind spot as above for guests.
+  // Disabled providers cannot supply selectable rows, including the default
+  // (intent#5737). Guest pickers use the host's enabled-provider receipt.
   const selectableProviderIds = $derived(
     $availableEnabledProviderIds$.filter(
       (pid) =>
@@ -870,7 +861,12 @@
       return;
     }
     const pick = model === undefined ? undefined : (picked ?? resolvePickedTriple(model));
-    if (pick && (!hasResolvedProvider(pick.providerId) || !canUseProviderModels(pick.providerId))) {
+    if (
+      pick &&
+      (!hasResolvedProvider(pick.providerId) ||
+        !canUseProviderModels(pick.providerId) ||
+        (!isGuestLocked && isProviderDisabledInSettings($enabledProviders$, pick.providerId)))
+    ) {
       dropdownValue = currentDropdownValue();
       return;
     }
@@ -1365,7 +1361,10 @@
       allProviderWarnings: $allProviderWarnings$,
       profiles: $providerProfiles$,
     }).filter(
-      (group) => group.key === 'default' || canUseProviderModels(group.parentKey ?? group.key),
+      (group) =>
+        group.key === 'default' ||
+        ($listedProviderIds$.includes(providerRefBaseId(group.parentKey ?? group.key)) &&
+          canUseProviderModels(group.parentKey ?? group.key)),
     );
   });
   let legacyModelsExpanded = $state(false);
@@ -1506,7 +1505,10 @@
   // A stale warning (PROTOCOL §5.30 `stale: true`) accompanies the daemon's
   // last-known-good list after a transient probe failure: the models on screen
   // are real and usable, so the notice would be wrong there.
-  // The notice stays for the degraded case (warning with no codex models).
+  // The notice shows only when the daemon labels the warning `warningKind:
+  // "cli-missing"` (§5.30); every other degraded warning — an adapter crash,
+  // a timeout, missing Node.js — keeps the generic failure row with Details
+  // and Retry, never an install prompt keyed on the warning text.
   // Named Codex profiles (§5.54) have their own catalogs and get the same rule.
   function hasCatalogModels(providerId: string): boolean {
     return (
@@ -1523,6 +1525,7 @@
     if (!$availableEnabledProviderIds$.some((id) => normalizeProviderId(id) === providerId))
       return null;
     if ($allProviderStaleFlags$[providerId] && hasCatalogModels(providerId)) return null;
+    if ($allProviderWarningKinds$[providerId] !== 'cli-missing') return null;
     return createProviderWarningNotice(providerId, $allProviderWarnings$[providerId]);
   });
   // The notice restates the catalog's fallback warning, so drop the generic

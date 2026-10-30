@@ -8,8 +8,8 @@ test('activity clicks reuse the current pane and keep the other pane and People 
 }) => {
   const component = await mount(PeopleSidebarHost);
   const navigation = component.locator('[data-people-navigation]');
-  await component.getByRole('button', { name: 'People', exact: true }).click();
-  const panel = component.locator('[data-sidebar-card-tab="people"]');
+  await component.getByRole('tab', { name: 'People', exact: true }).click();
+  const panel = component.getByRole('tabpanel', { name: 'People', exact: true });
   const note = panel.locator('[data-people-activity-id="people-activity-note"]');
   await note.click();
   await expect
@@ -33,8 +33,8 @@ test('activity clicks reuse the current pane and keep the other pane and People 
 
 test('keyboard activation reveals the recorded message in the current pane', async ({ mount }) => {
   const component = await mount(PeopleSidebarHost);
-  await component.getByRole('button', { name: 'People', exact: true }).click();
-  const panel = component.locator('[data-sidebar-card-tab="people"]');
+  await component.getByRole('tab', { name: 'People', exact: true }).click();
+  const panel = component.getByRole('tabpanel', { name: 'People', exact: true });
   const row = panel
     .locator('[data-slot="list-view-item"]')
     .filter({ hasText: 'Sam: Let’s keep the People panel open' });
@@ -61,15 +61,14 @@ test('keyboard activation reveals the recorded message in the current pane', asy
   await expect(panel).toBeVisible();
 });
 
-test('opens People, receives live human activity, and restores focus on close', async ({
+test('keyboard navigation keeps live People activity and discussion actions available', async ({
   mount,
-  page,
 }) => {
   const component = await mount(PeopleSidebarHost);
-  const launcher = component.getByRole('button', { name: 'People', exact: true });
-  await launcher.focus();
-  await launcher.press('Enter');
-  const panel = component.locator('[data-sidebar-card-tab="people"]');
+  const people = component.getByRole('tab', { name: 'People', exact: true });
+  await people.focus();
+  await people.press('Enter');
+  const panel = component.getByRole('tabpanel', { name: 'People', exact: true });
   await expect(panel).toBeVisible();
   await expect(panel).toContainText('Luke');
   await expect(panel).toContainText('Sidebar mockup');
@@ -78,22 +77,23 @@ test('opens People, receives live human activity, and restores focus on close', 
   await panel.locator('[data-sidebar-action="plus"]').click();
   await expect(component.locator('[data-share-dialog-open]')).toHaveText('false');
   await expect(component.locator('[data-people-navigation]')).toContainText('New discussion');
-  await panel.locator('[data-sidebar-close]').click();
-  await expect(panel).toHaveCount(0);
-  await expect(launcher).toBeFocused();
-  await launcher.press('Enter');
+  await people.focus();
+  await people.press('ArrowLeft');
+  await expect(panel).toBeHidden();
+  const agents = component.getByRole('tab', { name: 'Agents', exact: true });
+  await expect(agents).toBeFocused();
+  await agents.press('ArrowRight');
+  await expect(people).toBeFocused();
   await expect(panel).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(panel).toHaveCount(0);
-  await expect(launcher).toBeFocused();
+  await expect(panel).toContainText('Taylor');
 });
 
 test('guests can read the feed and lose the panel when multiplayer is disabled', async ({
   mount,
 }) => {
   const component = await mount(PeopleSidebarHost, { props: { guest: true } });
-  await component.getByRole('button', { name: 'People', exact: true }).click();
-  const panel = component.locator('[data-sidebar-card-tab="people"]');
+  await component.getByRole('tab', { name: 'People', exact: true }).click();
+  const panel = component.getByRole('tabpanel', { name: 'People', exact: true });
   await expect(panel).toContainText('Luke');
   await expect(panel.locator('[data-sidebar-action="plus"]')).toHaveCount(1);
   await component.getByRole('button', { name: 'Disable multiplayer', exact: true }).click();
@@ -106,8 +106,8 @@ for (const emptyOlder of [false, true]) {
     mount,
   }) => {
     const component = await mount(PeopleSidebarHost, { props: { older: true, emptyOlder } });
-    await component.getByRole('button', { name: 'People', exact: true }).click();
-    const panel = component.locator('[data-sidebar-card-tab="people"]');
+    await component.getByRole('tab', { name: 'People', exact: true }).click();
+    const panel = component.getByRole('tabpanel', { name: 'People', exact: true });
     if (emptyOlder)
       await expect(panel).toContainText('No activity from people in these recent events.');
     // The fixture's raw event cursor is exhausted, but People still has older pages.
@@ -125,7 +125,7 @@ test('discussion opens once in the focused pane and leaves People activity avail
   mount,
 }) => {
   const component = await mount(PeopleSidebarHost);
-  await component.getByRole('button', { name: 'People', exact: true }).click();
+  await component.getByRole('tab', { name: 'People', exact: true }).click();
   const row = component.locator('[data-workspace-discussion-open]');
   await row.click();
   const navigation = component.locator('[data-people-navigation]');
@@ -151,8 +151,8 @@ for (const guest of [false, true]) {
     mount,
   }) => {
     const component = await mount(PeopleSidebarHost, { props: { guest } });
-    await component.getByRole('button', { name: 'People', exact: true }).click();
-    const panel = component.locator('[data-sidebar-card-tab="people"]');
+    await component.getByRole('tab', { name: 'People', exact: true }).click();
+    const panel = component.getByRole('tabpanel', { name: 'People', exact: true });
     const items = panel.locator('[data-people-activity] [data-slot="list-view-item"]');
     const note = panel.locator(
       '[data-slot="list-view-item"]:has([data-people-activity-id="people-activity-note"])',
@@ -184,18 +184,18 @@ test('a named invitation exposes People before a second member joins and support
   mount,
 }) => {
   const component = await mount(PeopleSidebarHost, { props: { roster: 'pending' } });
-  const launcher = component.getByRole('button', { name: 'People', exact: true });
-  await expect(component.locator('[data-people-invited]')).toBeVisible();
-  await launcher.focus();
-  await launcher.press('Enter');
-  const panel = component.locator('[data-sidebar-card-tab="people"]');
+  const people = component.getByRole('tab', { name: 'People', exact: true });
+  await people.focus();
+  await people.press('Enter');
+  const panel = component.getByRole('tabpanel', { name: 'People', exact: true });
   const invitation = panel.locator('[data-people-roster-id="invite:amelia-invite"]');
+  await expect(invitation).toBeVisible();
   await expect(invitation).toContainText('@amelia');
   await expect(invitation).toContainText(/invited/i);
   await expect(invitation.getByRole('button')).toHaveCount(0);
-  await panel.locator('[data-sidebar-close]').click();
-  await expect(launcher).toBeFocused();
+  await expect(people).toBeFocused();
   await component.getByRole('button', { name: 'Disable multiplayer', exact: true }).click();
+  await expect(people).toHaveCount(0);
   await expect(component.locator('[data-sidebar-people-tile]')).toHaveCount(0);
 });
 
@@ -203,7 +203,7 @@ test('member rows stay keyboard reachable when workspace presence disconnects', 
   mount,
 }) => {
   const component = await mount(PeopleSidebarHost, { props: { roster: 'mixed' } });
-  await component.getByRole('button', { name: 'People', exact: true }).click();
+  await component.getByRole('tab', { name: 'People', exact: true }).click();
   const roster = component.locator('[data-people-roster]');
   const sam = roster.locator('[data-people-roster-id="member:person-0"]');
   const luke = roster.locator('[data-people-roster-id="member:person-1"]');

@@ -6,10 +6,11 @@ for (const scenario of [
   { name: 'narrow viewport', width: 280, mode: 'mixed' },
   { name: 'message-only workspace', width: 1100, mode: 'all' },
 ] as const) {
-  test(`keeps the summary visible without navigating message-only entries: ${scenario.name}`, async ({
-    mount,
-    page,
-  }, testInfo) => {
+  const behavior =
+    scenario.mode === 'all'
+      ? 'hides empty token usage'
+      : 'keeps the summary visible without navigating message-only entries';
+  test(`${behavior}: ${scenario.name}`, async ({ mount, page }, testInfo) => {
     await page.setViewportSize({ width: scenario.width, height: 720 });
     await page.emulateMedia({ reducedMotion: 'reduce' });
     const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
@@ -19,6 +20,13 @@ for (const scenario of [
         surroundingControls: true,
       },
     });
+    if (scenario.mode === 'all') {
+      await expect(component.getByTestId('token-usage-disclosure')).toHaveCount(0);
+      await component.getByTestId('preceding-workspace-control').focus();
+      await page.keyboard.press('Tab');
+      await expect(component.getByTestId('following-workspace-control')).toBeFocused();
+      return;
+    }
     await component.getByTestId('token-usage-disclosure').click();
     await page.evaluate(() => document.fonts.ready);
     const details = page.getByTestId('token-usage-details');
@@ -54,28 +62,22 @@ for (const scenario of [
         barVisible: true,
       });
     }
-    if (scenario.mode === 'mixed') {
-      for (const name of ['By agent', 'By model']) {
-        const group = details.getByRole('radiogroup', { name });
-        const control = group.getByRole('radio');
-        await expect(control).toHaveCount(1);
-        await control.focus();
-        for (const key of ['End', 'ArrowRight', 'Home', 'ArrowLeft']) {
-          await page.keyboard.press(key);
-          await expect(control).toBeFocused();
-          await expect(control).toBeChecked();
-        }
-        await control.click();
+    for (const name of ['By agent', 'By model']) {
+      const group = details.getByRole('radiogroup', { name });
+      const control = group.getByRole('radio');
+      await expect(control).toHaveCount(1);
+      await control.focus();
+      for (const key of ['End', 'ArrowRight', 'Home', 'ArrowLeft']) {
+        await page.keyboard.press(key);
+        await expect(control).toBeFocused();
         await expect(control).toBeChecked();
       }
-    } else {
-      await expect(details.getByRole('radiogroup')).toHaveCount(0);
+      await control.click();
+      await expect(control).toBeChecked();
     }
     await page.mouse.move(0, 0);
     await expect(details.locator('.message-composition-label .animated-number-value')).toHaveText(
-      scenario.mode === 'mixed'
-        ? '1,241 human and 1,697 agent messages'
-        : '100 human and 100 agent messages',
+      '1,241 human and 1,697 agent messages',
     );
     expect(await details.evaluate((element) => element.scrollTop)).toBe(0);
     const path = `.demo-artifacts/token-usage/without-icons-${scenario.mode}-${scenario.width}.png`;

@@ -101,6 +101,7 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectLoadError: () => mocks.readable(null),
   selectAllProviderWarnings: () => mocks.readable({}),
   selectAllProviderStaleFlags: () => mocks.readable({}),
+  selectAllProviderWarningKinds: () => mocks.readable({}),
   selectModelEffortLevels: {
     select: (_state: unknown, modelId: string | undefined) =>
       mocks.models.find((model) => model.value === modelId)?.effortLevels,
@@ -1227,6 +1228,7 @@ describe('NewSpaceModal model-picker composition', () => {
 });
 
 vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', async () => {
+  const { derived } = await import('svelte/store');
   const providers =
     await import('$store/renderer/slices/provider-settings/provider-settings-selectors');
   const models = await import('$store/renderer/slices/model/model-selectors');
@@ -1238,6 +1240,10 @@ vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', a
   return {
     selectWorkspaceCatalogEpoch: () => mocks.readable(0),
     selectContextProviderEntries: catalog.selectProviderCatalogEntries,
+    selectContextListedProviderIds: () =>
+      derived(catalog.selectProviderCatalogEntries(), (entries) =>
+        entries.map((entry) => entry.id),
+      ),
     selectContextDefaultProvider: providers.selectActiveProviderId,
     selectContextSelectedModel: models.selectSelectedModel,
     selectContextEnabledProviders: providers.selectEnabledProviders,
@@ -1246,6 +1252,7 @@ vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', a
     selectContextReadinessLoaded: availability.selectHasCheckedOnce,
     selectContextProviderWarnings: models.selectAllProviderWarnings,
     selectContextProviderStaleFlags: models.selectAllProviderStaleFlags,
+    selectContextProviderWarningKinds: models.selectAllProviderWarningKinds,
     selectContextSpecialists: specialists.selectSpecialists,
   };
 });

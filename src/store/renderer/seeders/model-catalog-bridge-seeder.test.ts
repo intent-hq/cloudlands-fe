@@ -16,16 +16,9 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { mockInvoke } from '$shared/ipc-mock-router';
+import type { GetModelsEnvelope as Envelope } from '$shared/models/wire-model-info';
 
 const mockedRequest = vi.mocked(backendRequest);
-
-type Envelope = {
-  success: boolean;
-  data?: Array<{ value: string; label: string; isDefault?: boolean; isLegacyModel?: boolean }>;
-  warning?: string;
-  stale?: boolean;
-  error?: string;
-};
 
 const ALL_CHANNELS: Array<[string, string]> = [
   ['antigravity', 'antigravity:get-models'],
@@ -145,6 +138,32 @@ describe('model-catalog-bridge-seeder', () => {
     ]);
     expect(response.warning).toBe('Codex not installed; using static model list');
     expect(response.stale).toBe(true);
+  });
+
+  it.each([
+    ['cli-missing', 'cli-missing'],
+    ['prerequisite-missing', 'prerequisite-missing'],
+    ['some-future-kind', undefined],
+  ] as const)('forwards a known daemon warningKind (%s)', async (wire, expected) => {
+    mockedRequest.mockResolvedValue({
+      providerId: 'codex',
+      models: [],
+      source: 'static',
+      warning: 'codex: Install codex on the execution host',
+      warningKind: wire,
+    });
+    const response = await mockInvoke<Envelope>('codex:get-models');
+    expect(response.warningKind).toBe(expected);
+  });
+
+  it('drops a warningKind that arrives without a warning', async () => {
+    mockedRequest.mockResolvedValue({
+      providerId: 'codex',
+      models: [],
+      warningKind: 'cli-missing',
+    });
+    const response = await mockInvoke<Envelope>('codex:get-models');
+    expect(response.warningKind).toBeUndefined();
   });
 
   it('returns an honest empty-with-warning envelope for a degraded static fallback', async () => {

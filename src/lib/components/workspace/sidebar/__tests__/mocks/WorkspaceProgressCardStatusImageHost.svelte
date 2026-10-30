@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import WorkspaceProgressCard from '../../WorkspaceProgressCard.svelte';
+  import ContextPanel from '../../ContextPanel.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
@@ -34,5 +35,8 @@
 
 <section data-testid="workspace-status-image-host" class="w-96 bg-sidebar p-6">
   <WorkspaceProgressCard {workspaceId} />
+  <section aria-label="Context">
+    <ContextPanel {workspaceId} notes={[]} showAddSection={false} />
+  </section>
   <div data-testid="next-sibling" class="h-10 bg-muted">Next panel</div>
 </section>

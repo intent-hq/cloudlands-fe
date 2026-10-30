@@ -100,7 +100,7 @@
 </script>
 
 {#if $hasSecondaryGitRoots$}
-  <div class="mb-2 mt-1" data-testid="git-root-selector">
+  <div class="mb-2 px-2" data-testid="git-root-selector">
     <Select.Root
       value={selectedRootKey}
       onchange={(value) => {
@@ -109,7 +109,7 @@
       }}
     >
       <Select.Trigger
-        class="py-1 h-7 text-ui"
+        class="h-8 type-caption"
         aria-label={m.workspace_sidebarChanges_rootSelector_ariaLabel()}
       >
         <span class="truncate">
@@ -133,7 +133,7 @@
   </div>
 
   {#if attributedAgentNames.length > 0}
-    <p class="mb-2 text-ui text-subtle leading-snug" data-testid="git-root-agents">
+    <p class="mb-2 px-2 type-caption text-subtle leading-snug" data-testid="git-root-agents">
       {m.workspace_sidebarChanges_rootAgents_label()}
       <!-- i18n-ignore (agent display names) -->
       <span class="text-foreground">{attributedAgentNames.join(', ')}</span>

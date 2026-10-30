@@ -176,10 +176,13 @@ describe('provider-settings selectors', () => {
       expect(ids).not.toContain('claude-code');
     });
 
-    it('should include the active provider even when explicitly disabled', () => {
-      const state = mockState({ 'claude-code': false }, 'claude-code');
-      expect(selectEnabledProviderIds.select(state)).toContain('claude-code');
-    });
+    it.each(['claude-code', 'claude-code@work'])(
+      'excludes the explicitly disabled default %s from model choices',
+      (providerId) => {
+        const state = mockState({ 'claude-code': false }, providerId);
+        expect(selectEnabledProviderIds.select(state)).not.toContain('claude-code');
+      },
+    );
   });
 
   describe('availability-gated selectors', () => {
@@ -335,12 +338,12 @@ describe('provider-settings selectors', () => {
       expect(selectQuotaRetryProviderIds.select(state, 'claude-code')).toEqual([]);
     });
 
-    it('excludes an explicitly disabled default provider that the model-picker gate still admits', () => {
+    it('excludes an explicitly disabled default provider from model and retry choices', () => {
       const state = mockState({ 'claude-code': true, codex: false }, 'codex', {
         'claude-code': { available: true, authenticated: true },
         codex: { available: true, authenticated: true },
       });
-      expect(selectAvailableEnabledProviderIds.select(state)).toContain('codex');
+      expect(selectAvailableEnabledProviderIds.select(state)).not.toContain('codex');
       expect(selectQuotaRetryProviderIds.select(state, 'claude-code')).toEqual([]);
     });
 

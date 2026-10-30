@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { parseSuggestedPromptsFromContentBlocks } from '$lib/utils/messageParser';
+import { suggestedPromptsFromBlocks } from '../prepare-message-blocks';
 import { derivePendingQuestions } from '../questions/pending-questions';
 import { buildAnswerMessageMetadata } from '../questions/answer-message';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
@@ -35,6 +35,7 @@ function computeSuggestedPrompts(
   showingPendingUserMessage = false,
   pendingQuestionsMessageId?: string,
   pendingQuestionRecoveryLoading = false,
+  reasoningAsText = false,
 ): SuggestedPrompt[] {
   // Mirrors ChatPanel.svelte suggestedPrompts derived gate.
   if (isRunning || pendingQuestionRecoveryLoading || messages.length === 0) {
@@ -63,7 +64,7 @@ function computeSuggestedPrompts(
   ) {
     return [];
   }
-  return parseSuggestedPromptsFromContentBlocks(lastAssistantMessage.contentBlocks || []).prompts;
+  return suggestedPromptsFromBlocks(lastAssistantMessage.contentBlocks || [], reasoningAsText);
 }
 
 function createAssistantMessage(content: string): AgentMessage {

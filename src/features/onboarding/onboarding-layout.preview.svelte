@@ -271,7 +271,10 @@
       ? provider.id === 'codex' || provider.id === 'claude-code'
       : provider.id !== 'opencode';
     appStore.dispatch(
-      checkSingleProviderSuccess(provider.id, { available: connected, authenticated: connected }),
+      checkSingleProviderSuccess(provider.id, {
+        available: connected || provider.id === 'auggie',
+        authenticated: connected,
+      }),
     );
   }
   appStore.dispatch(checkAllProvidersComplete());

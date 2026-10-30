@@ -4,7 +4,8 @@
 
 import { store } from '../../store';
 import type { StoreState } from '../../types';
-import type { AgentMessage, AgentSession } from '$shared/types';
+import type { AgentSession } from '$shared/types';
+import { agentActivityTimestamp } from '../workspace-agents/latest-active-agent';
 import { CHIEF_WORKSPACE_ID, type ChiefThreadSummary } from './sidebar-nav-types';
 import { getChiefThreadTitle } from './chief-thread-title';
 import { CHIEF_PROMPT_VERSION, CHIEF_SPECIALIST_ID } from '$shared/chief-agent-config';
@@ -28,19 +29,6 @@ import {
   selectWorkspaceUpdateContext,
 } from '../workspace/workspace-selectors';
 import { collectCustomWorkspaceLabels, isPinnedWorkspaceLabel } from './workspace-labels';
-
-function getMessageTimestamp(message: AgentMessage | undefined): number {
-  const value = message?.timestamp;
-  if (!value) return 0;
-  return new Date(value).getTime() || 0;
-}
-
-function getSessionTimestamp(session: AgentSession): number {
-  const value = session.lastActivity ?? session.updatedAt ?? session.createdAt;
-  const timestamp = new Date(value).getTime() || 0;
-  const latestMessage = session.messages.at(-1);
-  return Math.max(timestamp, getMessageTimestamp(latestMessage));
-}
 
 function getChiefSessions(state: StoreState): AgentSession[] {
   // When workspaceAgents has tracked agents for the Chief workspace, treat that as
@@ -219,7 +207,7 @@ export const selectStatsOverlayOpen = store.createSelector(
 export const selectChiefThreads = store.createSelector((state): ChiefThreadSummary[] =>
   getChiefSessions(state)
     .slice()
-    .sort((a, b) => getSessionTimestamp(b) - getSessionTimestamp(a))
+    .sort((a, b) => agentActivityTimestamp(b) - agentActivityTimestamp(a))
     .map(toChiefThreadSummary),
 );
 
@@ -227,7 +215,7 @@ export const selectChiefThreads = store.createSelector((state): ChiefThreadSumma
 export const selectCurrentChiefThread = store.createSelector((state): ChiefThreadSummary | null => {
   const current = getChiefSessions(state)
     .filter(hasCurrentChiefIdentity)
-    .sort((a, b) => getSessionTimestamp(b) - getSessionTimestamp(a))[0];
+    .sort((a, b) => agentActivityTimestamp(b) - agentActivityTimestamp(a))[0];
 
   return current ? toChiefThreadSummary(current) : null;
 });
@@ -242,7 +230,7 @@ export const selectReusableChiefThread = store.createSelector(
           !session.lastMessageId &&
           hasCurrentChiefIdentity(session),
       )
-      .sort((a, b) => getSessionTimestamp(b) - getSessionTimestamp(a))[0];
+      .sort((a, b) => agentActivityTimestamp(b) - agentActivityTimestamp(a))[0];
 
     return reusable ? toChiefThreadSummary(reusable) : null;
   },

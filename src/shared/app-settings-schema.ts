@@ -214,6 +214,17 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     apply: { kind: 'redux-action', action: 'userPreferences/setReduceMotionOnBattery' },
   },
   {
+    path: 'appearance.pauseAnimationsWhenUnfocused',
+    label: 'Pause animations when not in focus',
+    description: 'Whether looping animations pause while the app window is not focused.',
+    category: 'theme',
+    type: 'boolean',
+    source: 'local-storage',
+    storageKey: 'appearance:pauseAnimationsWhenUnfocused',
+    defaultValue: false,
+    apply: { kind: 'redux-action', action: 'userPreferences/setPauseAnimationsWhenUnfocused' },
+  },
+  {
     path: 'labs.gitlab',
     label: 'GitLab (Labs)',
     description: 'Whether the experimental GitLab lab is enabled.',

@@ -1,5 +1,6 @@
 import type { ProposalActionDetail, ProposalKind } from '$shared/types/proposal';
 import type { WorkspaceId } from '$shared/types/branded-ids';
+import type { WorkspaceCreateProposalOutcome } from '$shared/types';
 
 export type ProposalLifecycleStatus =
   | 'idle'
@@ -19,6 +20,12 @@ export type ProposalLifecycleAction = 'apply' | 'undo' | 'dismiss';
 // extend this shape with their own optional fields.
 export interface ProposalApplyResult {
   workspaceId?: WorkspaceId;
+  /**
+   * The daemon's handling of a workspace-create card's `origin` (PROTOCOL
+   * §5.1). Present → the daemon resolved (or deliberately declined) the card,
+   * so the client must not call `agent.resolveProposal` for it.
+   */
+  proposalOrigin?: WorkspaceCreateProposalOutcome;
   transfer?: {
     workspaceId: string;
     sourceWorkspacePath: string;

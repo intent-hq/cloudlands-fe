@@ -526,6 +526,14 @@ function* reconcileVisibility(
   }
 }
 
+/** Packaged-build breadcrumbs for agent background hosting (intent-hq/intent#7855). */
+const hostingLogger = createLogger('BrowserHosting');
+
+/** A URL-less shell (restored geometry) got its URL back from a registry row. */
+function logShellFilled(wsId: string, tabId: string, source: 'listing' | 'event'): void {
+  hostingLogger.info('registry filled URL-less tab', { wsId, tabId, source });
+}
+
 /**
  * Apply the daemon's rows for one settled workspace over the local layout.
  * A tab this client already hosts that still carries a URL is local truth
@@ -589,6 +597,7 @@ function* applyRows(
         toRehydrate.push({ tabId: row.tabId, requestedUrl, storedUrl: existing.tab.browserUrl });
       }
     } else {
+      if (!existing.tab.browserUrl && row.url) logShellFilled(wsId, row.tabId, 'listing');
       yield* effect(fence, applyBrowserTabRegistryRow(wsId, row.tabId, row));
       yield* call(reconcileVisibility, fence, existing, row);
       if (mine) applied(row);
@@ -987,6 +996,7 @@ function* applyRow(
     yield* effect(fence, acknowledgeBrowserTabHost(wsId, row.tabId, ownClientId));
     return;
   }
+  if (!existing.tab.browserUrl && row.url) logShellFilled(wsId, row.tabId, 'event');
   yield* effect(fence, applyBrowserTabRegistryRow(wsId, row.tabId, row));
   yield* call(reconcileVisibility, fence, existing, row);
   if (mine) {

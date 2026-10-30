@@ -128,6 +128,30 @@ jobs:
           node .cache/suggested-prompts-contract/scripts/suggested-prompts-contract.mjs verify
           --source-root .cache/suggested-prompts-contract --source-commit "$SOURCE_COMMIT"
           --component cloudlands-fe --component-root .
+      - name: Read turn-start events pin
+        id: turn-start-events
+        # bash implies pipefail, so a loader error is not hidden by tee.
+        shell: bash
+        run: node scripts/turn-start-fixtures.mjs | tee -a "$GITHUB_OUTPUT"
+      - name: Checkout pinned turn-start events
+        uses: actions/checkout@v7
+        with:
+          repository: intent-hq/intent
+          ref: ${{ steps.turn-start-events.outputs.sourceCommit }}
+          path: .cache/turn-start-contract
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/protocol/fixtures/turn-start/turn-start-events.json
+            /scripts/turn-start-contract.mjs
+            /scripts/lib/fixture-copy.mjs
+      - name: Verify turn-start events provenance
+        env:
+          SOURCE_COMMIT: ${{ steps.turn-start-events.outputs.sourceCommit }}
+        run: >-
+          node .cache/turn-start-contract/scripts/turn-start-contract.mjs verify
+          --source-root .cache/turn-start-contract --source-commit "$SOURCE_COMMIT"
+          --component cloudlands-fe --component-root .
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Generate IPC channels

@@ -77,8 +77,9 @@
 
   // Archiving (PROTOCOL §5.12). Archive is the only lifecycle action users
   // see; two automatic options sit in the Archiving section:
-  // - `workspace.autoArchiveIdleAfterDays`: archive idle workspaces. Absent
-  //   reads as the default 7 (on); `0` means off.
+  // - `workspace.autoArchiveIdleAfterDays`: archive idle workspaces. `0`
+  //   (the default) or absent means off; 7 is suggested when turning it on.
+  //   Reset writes the daemon's advertised default (older daemons: 7).
   // - `workspace.purgeArchivedAfterDays`: purge the folders of archived
   //   workspaces (the daemon's retire). Absent/null means off; 7 is suggested
   //   when turning it on.
@@ -94,7 +95,6 @@
   const autoArchiveSupported = $derived($entries$[AUTO_ARCHIVE_PATH] !== undefined);
   const autoArchiveDays = $derived.by(() => {
     const value = draftOrEntry(AUTO_ARCHIVE_PATH);
-    if (value === null || value === undefined) return DEFAULT_ARCHIVING_DAYS;
     return typeof value === 'number' && value > 0 ? value : null;
   });
   const autoArchiveOn = $derived(autoArchiveDays !== null);
@@ -127,6 +127,13 @@
       settingsFormDraftChanged(identity, PURGE_PATH, on ? DEFAULT_ARCHIVING_DAYS : null),
     );
     handleSave();
+  }
+
+  /** The daemon's advertised auto-archive default; `0` (off) when it has none. */
+  function autoArchiveDefault(advertised: unknown): number {
+    return typeof advertised === 'number' && Number.isInteger(advertised) && advertised >= 0
+      ? advertised
+      : 0;
   }
 
   /** A whole number of days, 1 or more; `null` = invalid. */
@@ -275,7 +282,9 @@
       ...(entries[SETTING_PATHS.exposeGitCredential]
         ? { [SETTING_PATHS.exposeGitCredential]: true }
         : {}),
-      ...(entries[AUTO_ARCHIVE_PATH] ? { [AUTO_ARCHIVE_PATH]: DEFAULT_ARCHIVING_DAYS } : {}),
+      ...(entries[AUTO_ARCHIVE_PATH]
+        ? { [AUTO_ARCHIVE_PATH]: autoArchiveDefault(entries[AUTO_ARCHIVE_PATH].defaultValue) }
+        : {}),
       ...(entries[PURGE_PATH] ? { [PURGE_PATH]: null } : {}),
     };
     for (const [path, value] of Object.entries(defaults))

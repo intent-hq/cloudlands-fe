@@ -76,16 +76,19 @@
   data-file-tree-preview
 >
   <div class="flex shrink-0 items-center gap-2 pb-2" data-file-tree-toolbar>
-    <ExpandableFileSearch bind:query onKeydown={(event) => tree?.handleKeydown(event)} />
-    <Button
-      variant="ghost"
-      size="icon-compact"
-      class="shrink-0 text-subtle"
-      aria-label="New file"
-      onclick={() => tree?.startCreatingFile()}
-    >
-      <Fa icon={faPlus} class="h-3 w-3" />
-    </Button>
+    <h6 class="min-w-0 truncate text-sm font-medium">Files</h6>
+    <div class="ml-auto flex min-w-0 items-center gap-1">
+      <ExpandableFileSearch bind:query onKeydown={(event) => tree?.handleKeydown(event)} />
+      <Button
+        variant="ghost"
+        size="icon-compact"
+        class="shrink-0 text-subtle"
+        aria-label="New file"
+        onclick={() => tree?.startCreatingFile()}
+      >
+        <Fa icon={faPlus} class="h-3 w-3" />
+      </Button>
+    </div>
   </div>
   <div class="min-h-0 flex-1">
     <VirtualizedFileTree

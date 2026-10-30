@@ -18,6 +18,7 @@ import { openWorkspaceDiscussion } from '$features/discussions/discussion-naviga
 import { selectDiscussionMentionAdmission } from '$store/renderer/slices/notifications/notifications-selectors';
 import type { DiscussionTarget } from '$store/renderer/slices/workspace-discussion/workspace-discussion-slice';
 import { navigateToRoute } from '$lib/utils/navigation.client';
+import { openAndShowWorkspace } from '$lib/utils/show-workspace';
 import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -39,8 +40,11 @@ export interface NotificationNavigatePayload {
 }
 
 /**
- * Route a notification click: `goto(/workspace/{workspaceId})`, guarding
- * null/missing payloads. Chief-of-staff payloads (`chief: true` or the chief
+ * Route a notification click through `openAndShowWorkspace`: navigate to the
+ * workspace, then activate its tab (adding it to the strip when it is not
+ * open), guarding null/missing payloads. A failed navigation leaves the strip
+ * untouched.
+ * Chief-of-staff payloads (`chief: true` or the chief
  * virtual workspace id) open the homepage Assistant and select the chat
  * thread instead — the chief workspace page is hidden. No-ops in the HUD
  * pop-out window so a stray `notification:navigate` IPC can never replace
@@ -70,7 +74,7 @@ export async function handleNotificationNavigate(
     };
     if (target.workspaceId !== data.workspaceId || !admitted()) return;
     try {
-      await navigateToRoute(`/workspace/${encodeURIComponent(target.workspaceId)}`);
+      if (!(await openAndShowWorkspace(target.workspaceId))) return;
       if (!admitted()) return;
       const ready = await appStore.dispatch(
         discussionNotificationLayoutRequested(target, messageId),
@@ -99,7 +103,7 @@ export async function handleNotificationNavigate(
   }
 
   try {
-    await navigateToRoute(`/workspace/${data.workspaceId}`);
+    await openAndShowWorkspace(data.workspaceId);
   } catch (error) {
     logger.warn('Failed to navigate from notification click', {
       workspaceId: data.workspaceId,

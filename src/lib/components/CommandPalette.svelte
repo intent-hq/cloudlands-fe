@@ -30,6 +30,7 @@
   import { backendRequest } from '$lib/client/live/backend-transport';
   import { openMessage } from '$lib/utils/open-message';
   import { openPaletteNote } from '$lib/utils/palette-note-navigation';
+  import { openAndShowWorkspace } from '$lib/utils/show-workspace';
   import { createTranscriptQuery } from '$lib/utils/palette-transcript-search';
   import { createLogger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
@@ -830,7 +831,9 @@
           break;
       }
     } else if ('_workspace' in item) {
-      goto(`/workspace/${item.id}`);
+      void openAndShowWorkspace(item.id).catch((error) =>
+        logger.warn('Failed to open workspace from palette', { workspaceId: item.id, error }),
+      );
     } else if (item.path) {
       onSelectFile?.({ path: item.path, line: item.line, openInAdjacentPanel });
       if (item.path) recordMRUFile(item.path);

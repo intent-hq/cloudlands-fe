@@ -175,13 +175,20 @@
       {#snippet message()}{m.workspace_peopleActivity_load_error()}{/snippet}
     </ErrorState>
   {:else if rows.length === 0 && ($loading$ || pendingInitial)}
-    <LoadingState density="compact" label={m.workspace_peopleActivity_loading_label()} count={3} />
+    <LoadingState
+      density="compact"
+      label={m.workspace_peopleActivity_loading_label()}
+      count={3}
+      class="opacity-60"
+    />
   {:else if rows.length === 0}
     <EmptyState density="compact">
       {#snippet description()}
-        {$endReached$
-          ? m.workspace_peopleActivity_empty_label()
-          : m.workspace_peopleActivity_recentEmpty_label()}
+        <span class="text-muted-foreground">
+          {$endReached$
+            ? m.workspace_peopleActivity_empty_label()
+            : m.workspace_peopleActivity_recentEmpty_label()}
+        </span>
       {/snippet}
     </EmptyState>
   {/if}

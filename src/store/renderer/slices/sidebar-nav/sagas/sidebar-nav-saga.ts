@@ -5,6 +5,7 @@ import {
   selectActiveBackendId,
 } from '../../../utils/backend-storage-namespace';
 import { getLocalStorageJSON, setLocalStorageJSON } from '../../../utils/safe-local-storage-saga';
+import { sidebarSectionNavigationSaga } from './sidebar-section-navigation-saga';
 import { connectionsListReceived } from '../../connections/connections-slice';
 import { workspaceMounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
@@ -15,6 +16,7 @@ import {
   selectWorkspaceNoteOrder,
 } from '../sidebar-nav-selectors';
 import {
+  cancelSidebarSectionNavigation,
   CHIEF_ACTIVE_AGENT_ID_KEY,
   hydrateSidebarNav,
   hydrateWorkspaceSidebarUi,
@@ -162,10 +164,11 @@ function* hydrateWorkspaceSidebarUiState(
   }
 }
 
-function* persistWorkspaceSelectedTabs(
+function* handleWorkspaceSelectedTabs(
   action: ReturnType<typeof setMultiSelectSidebarSelectedTabs>,
 ): SagaGenerator<void> {
   const [workspaceId] = action.payload;
+  yield* put(cancelSidebarSectionNavigation(workspaceId));
   try {
     yield* call(
       setLocalStorageJSON,
@@ -245,6 +248,7 @@ function* watchBackendSwitch(): SagaGenerator<void> {
 }
 
 export function* sidebarNavSaga(): SagaGenerator<void> {
+  yield* fork(sidebarSectionNavigationSaga);
   yield* call(hydrateSidebarNavState);
   yield* fork(watchBackendSwitch);
   yield* fork(watchPinLabelMigration);
@@ -253,7 +257,7 @@ export function* sidebarNavSaga(): SagaGenerator<void> {
   yield* takeEvery(setWorkspaceLabel, setWorkspaceLabelWorker);
   yield* takeEvery(setChiefActiveAgentId, persistChiefActiveAgentId);
   yield* takeEvery(workspaceMounted, hydrateWorkspaceSidebarUiState);
-  yield* takeEvery(setMultiSelectSidebarSelectedTabs, persistWorkspaceSelectedTabs);
+  yield* takeEvery(setMultiSelectSidebarSelectedTabs, handleWorkspaceSelectedTabs);
   yield* takeEvery(setWorkspaceNoteOrder, persistWorkspaceNoteOrder);
   yield* takeEvery(toggleWorkspaceCollapsedNote, persistWorkspaceCollapsedNotes);
 }

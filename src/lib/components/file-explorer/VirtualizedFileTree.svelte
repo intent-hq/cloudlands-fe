@@ -3,6 +3,8 @@
   import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
   import { onMount, tick, untrack } from 'svelte';
+  import { prefersReducedMotion } from '$lib/utils/reduced-motion';
+  import { computeRevealScrollTop } from './reveal-scroll';
   import { writable } from 'svelte/store';
   import type {
     FileExplorerDisplayNode as FileNode,
@@ -1097,14 +1099,71 @@
     return false;
   }
 
-  // Scroll to a specific file path
+  // Reveal a file path with the least movement: a row that is already fully
+  // visible stays put, so clicking it does not shift the list under the cursor.
+  let revealScrollInFlight = false;
+
   export function scrollToPath(path: string) {
     const index = effectiveNodes.findIndex((n) => pathMatches(n.node.path, path));
-    if (index >= 0 && scrollEl) {
-      const targetScrollTop = index * itemHeight - measuredHeight / 2 + itemHeight / 2;
-      scrollEl.scrollTo({ top: Math.max(0, targetScrollTop), behavior: 'smooth' });
+    if (index < 0 || !scrollEl) return;
+    const viewHeight = scrollEl.clientHeight;
+    const top = viewHeight
+      ? computeRevealScrollTop({ index, itemHeight, viewTop: scrollEl.scrollTop, viewHeight })
+      : // Not laid out yet (hidden or collapsed panel): visibility is unknowable, so center.
+        Math.max(0, index * itemHeight - measuredHeight / 2 + itemHeight / 2);
+    if (top === null) {
+      // Stop an earlier reveal animation that would carry this visible row away.
+      if (revealScrollInFlight) {
+        revealScrollInFlight = false;
+        scrollEl.scrollTo({ top: scrollEl.scrollTop, behavior: 'instant' });
+      }
+      return;
     }
+    const smooth = !prefersReducedMotion();
+    revealScrollInFlight = smooth;
+    scrollEl.scrollTo({ top, behavior: smooth ? 'smooth' : 'instant' });
   }
+
+  // A reveal target waits until expansion flattens its row into the rendered window.
+  let pendingReveal = $state.raw<{
+    path: string;
+    scrolled: boolean;
+    resolve: (row: HTMLElement | null) => void;
+  } | null>(null);
+
+  /** Resolves with the rendered row, or null when cancelled, replaced, or unmounted. */
+  export function revealPath(path: string): Promise<HTMLElement | null> {
+    cancelReveal();
+    return new Promise((resolve) => {
+      pendingReveal = { path, scrolled: false, resolve };
+    });
+  }
+
+  export function cancelReveal() {
+    const pending = pendingReveal;
+    pendingReveal = null;
+    pending?.resolve(null);
+  }
+
+  $effect(() => () => untrack(cancelReveal));
+
+  $effect(() => {
+    const pending = pendingReveal;
+    if (!pending || !scrollEl) return;
+    const index = effectiveNodes.findIndex((n) => pathMatches(n.node.path, pending.path));
+    if (index < 0) return;
+    if (!pending.scrolled) {
+      pending.scrolled = true;
+      scrollToPath(pending.path);
+    }
+    if (index < startIndex || index >= endIndex) return;
+    const row = scrollEl.querySelector<HTMLElement>(
+      `[data-file-path="${CSS.escape(effectiveNodes[index].node.path)}"]`,
+    );
+    if (!row) return;
+    pendingReveal = null;
+    pending.resolve(row);
+  });
 
   /**
    * Returns whether external files are currently being dragged over the tree.
@@ -1120,7 +1179,8 @@
   bind:this={treeContainer}
   class="relative h-full overflow-hidden outline-none transition-colors duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
   class:file-drop-root={isExternalFileDragOver && dropTargetPath === null}
-  style="contain: layout style;"
+  style="contain: layout style; height: var(--virtual-viewport-height, 100%); --virtual-content-height: {totalHeight}px;"
+  data-virtual-viewport
   tabindex="0"
   role="tree"
   aria-label={m.fileExplorer_tree_fileExplorer_ariaLabel()}
@@ -1136,6 +1196,7 @@
     class="h-full overflow-y-auto overflow-x-hidden"
     style="contain: content;"
     onscroll={handleScroll}
+    onscrollend={() => (revealScrollInFlight = false)}
   >
     <!-- Total height spacer for correct scrollbar -->
     <div class="relative" style="height: {totalHeight}px;">
@@ -1169,7 +1230,7 @@
                   onblur={saveCreate}
                   onkeydown={handleCreateKeydown}
                   placeholder={m.fileExplorer_tree_filename_placeholder()}
-                  class="flex-1 type-body font-normal bg-transparent border-none outline-none! ring-0! focus:ring-0! focus:outline-none! focus-visible:ring-0! focus-visible:outline-none! min-w-0"
+                  class="flex-1 type-caption font-normal bg-transparent border-none outline-none! ring-0! focus:ring-0! focus:outline-none! focus-visible:ring-0! focus-visible:outline-none! min-w-0"
                   onclick={(e) => e.stopPropagation()}
                 />
               </div>
@@ -1218,7 +1279,7 @@
                     depth * 16}px; padding-right: 0.5px; width: calc(100% - 0.5px);"
                 >
                   <span
-                    class={`shrink-0 flex items-center justify-center ${node.type === 'directory' ? `opacity-50 ${gitColor}` : `w-4 h-4 [&>svg]:w-full [&>svg]:h-full`}`}
+                    class={`w-4 h-4 shrink-0 flex items-center justify-center ${node.type === 'directory' ? `opacity-50 ${gitColor}` : `[&>svg]:w-full [&>svg]:h-full`}`}
                   >
                     {#if node.type === 'directory'}
                       <DisclosureIcon
@@ -1238,7 +1299,7 @@
                     onblur={saveEdit}
                     onkeydown={handleEditKeydown}
                     noFocusStyle
-                    class="inline-edit-input relative z-10 min-w-0 flex-1 border-none bg-transparent hover:bg-transparent type-body font-normal outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
+                    class="inline-edit-input relative z-10 min-w-0 flex-1 border-none bg-transparent hover:bg-transparent type-caption font-normal outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
                     onclick={(e) => e.stopPropagation()}
                   />
                 </div>
@@ -1248,9 +1309,9 @@
                   selected={isFocused}
                   tabindex={-1}
                   aria-expanded={flatNode.isExpanded}
-                  iconClass={`-ml-1 mr-1 w-3 text-muted-foreground ${gitColor}`}
+                  iconClass={`w-4 text-muted-foreground ${gitColor}`}
                   title={displayName}
-                  titleClass={`cursor-text type-body font-normal leading-(--text-body-line-height) ${gitColor}`}
+                  titleClass={`cursor-text type-caption font-normal leading-(--text-caption-line-height) ${gitColor}`}
                   onclick={(event) => handleItemClick(flatNode, absoluteIndex, event)}
                   size="sm"
                   indent={depth}
@@ -1272,7 +1333,6 @@
                   actionsVisible="hover"
                 >
                   {#snippet iconSnippet()}
-                    <!-- Extend into the row inset, keeping labels and hit areas unchanged. -->
                     <DisclosureIcon
                       size={12}
                       weight="regular"
@@ -1290,7 +1350,7 @@
                   tabindex={-1}
                   iconClass={gitColor}
                   title={displayName}
-                  titleClass={`cursor-text type-body font-normal leading-(--text-body-line-height) ${gitColor}`}
+                  titleClass={`cursor-text type-caption font-normal leading-(--text-caption-line-height) ${gitColor}`}
                   badge={isModified ? '•' : undefined}
                   badgeClass={isModified ? 'text-blue-500' : undefined}
                   onclick={(event) => handleItemClick(flatNode, absoluteIndex, event)}

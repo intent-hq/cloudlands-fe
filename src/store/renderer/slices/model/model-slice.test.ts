@@ -17,7 +17,11 @@ import {
   setModelPickerGroupCollapsed,
   setSelectedModel,
 } from './model-slice';
-import { selectAllProviderStaleFlags, selectAllProviderWarnings } from './model-selectors';
+import {
+  selectAllProviderStaleFlags,
+  selectAllProviderWarningKinds,
+  selectAllProviderWarnings,
+} from './model-selectors';
 
 const mockModels: AuggieModel[] = [
   { value: 'gpt5.4', label: 'GPT 5.4', description: 'Smart model' },
@@ -118,6 +122,46 @@ describe('modelReducer', () => {
     });
   });
 
+  it('carries any reply label by the default rule without a reducer edit', () => {
+    // A label the slice has never heard of, as a future GetModelsEnvelope field.
+    const withLabel = (
+      update: Parameters<typeof setLoadingStateForProvider>[0] & { futureLabel?: string },
+    ) => setLoadingStateForProvider(update);
+    const label = (state: typeof initialState) =>
+      (state.loadingState.codex as Record<string, unknown>).futureLabel;
+    const loaded = modelReducer(
+      initialState,
+      withLabel({ providerId: 'codex', status: 'success', futureLabel: 'a' }),
+    );
+    expect(label(loaded)).toBe('a');
+    const loading = modelReducer(
+      loaded,
+      setLoadingStateForProvider({ providerId: 'codex', status: 'loading' }),
+    );
+    expect(label(loading)).toBe('a');
+    const relabeled = modelReducer(
+      loading,
+      withLabel({ providerId: 'codex', status: 'loading', futureLabel: 'b' }),
+    );
+    expect(label(relabeled)).toBe('b');
+    const fresh = modelReducer(
+      relabeled,
+      setLoadingStateForProvider({ providerId: 'codex', status: 'success' }),
+    );
+    expect(fresh.loadingState.codex).not.toHaveProperty('futureLabel');
+    const failed = modelReducer(
+      loaded,
+      setLoadingStateForProvider({ providerId: 'codex', status: 'error', error: 'boom' }),
+    );
+    expect(failed.loadingState.codex).not.toHaveProperty('futureLabel');
+    // `stale: false` is never recorded.
+    const notStale = modelReducer(
+      initialState,
+      setLoadingStateForProvider({ providerId: 'codex', status: 'success', stale: false }),
+    );
+    expect(notStale.loadingState.codex).not.toHaveProperty('stale');
+  });
+
   it('tracks stale cached model warnings and clears staleness after a fresh result', () => {
     const staleState = modelReducer(
       initialState,
@@ -138,6 +182,58 @@ describe('modelReducer', () => {
       codex: 'probe timed out; serving last known model list',
     });
     expect(freshState.loadingState.codex.stale).toBeUndefined();
+  });
+
+  it('tracks the warning kind with its warning and clears it on a fresh or failed load', () => {
+    const missing = modelReducer(
+      initialState,
+      setLoadingStateForProvider({
+        providerId: 'codex',
+        status: 'success',
+        warning: 'Install codex on the execution host',
+        warningKind: 'cli-missing',
+      }),
+    );
+    expect(selectAllProviderWarningKinds.select({ model: missing })).toEqual({
+      codex: 'cli-missing',
+    });
+    // A loading update keeps the last answer's kind, like its warning.
+    const loading = modelReducer(
+      missing,
+      setLoadingStateForProvider({ providerId: 'codex', status: 'loading' }),
+    );
+    expect(loading.loadingState.codex.warningKind).toBe('cli-missing');
+    const fresh = modelReducer(
+      loading,
+      setLoadingStateForProvider({ providerId: 'codex', status: 'success' }),
+    );
+    expect(fresh.loadingState.codex.warningKind).toBeUndefined();
+    const failed = modelReducer(
+      missing,
+      setLoadingStateForProvider({ providerId: 'codex', status: 'error', error: 'boom' }),
+    );
+    expect(failed.loadingState.codex.warningKind).toBeUndefined();
+    // A new warning during loading never inherits the previous warning's kind.
+    const replaced = modelReducer(
+      missing,
+      setLoadingStateForProvider({
+        providerId: 'codex',
+        status: 'loading',
+        warning: 'adapter exited before reporting models',
+      }),
+    );
+    expect(replaced.loadingState.codex.warning).toBe('adapter exited before reporting models');
+    expect(replaced.loadingState.codex.warningKind).toBeUndefined();
+    // A kind never outlives (or arrives without) its warning.
+    const kindOnly = modelReducer(
+      initialState,
+      setLoadingStateForProvider({
+        providerId: 'codex',
+        status: 'success',
+        warningKind: 'cli-missing',
+      }),
+    );
+    expect(selectAllProviderWarningKinds.select({ model: kindOnly })).toEqual({});
   });
 
   it('tracks model-picker groups and fallback information independently of settings receipts', () => {

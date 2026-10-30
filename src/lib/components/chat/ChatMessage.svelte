@@ -56,6 +56,8 @@
   import { shouldShowStoppedIndicator as resolveShouldShowStoppedIndicator } from './message-display-utils';
   import { splitTextByUrls } from './message-link-utils';
   import { findInlineMentions } from './mention-match-utils';
+  import { parseNoteMention } from '$lib/utils/note-mention-token';
+  import { noteUrl } from '$shared/constants/intent-links';
   import { USER_MESSAGE_SURFACE_CLASS, USER_MESSAGE_TEXT_CLASS } from './user-message-surface';
   import {
     isQuestionOnlyContent,
@@ -94,6 +96,8 @@
     SUBSCRIPTION_WAKE_BODY_PADDING_CLASS,
   } from './subscription-disclosure';
   import QuestionsDismissedNotice from './QuestionsDismissedNotice.svelte';
+  import SecretRequestNotice from './secrets/SecretRequestNotice.svelte';
+  import { getSecretRequestNotice } from './secrets/secret-request-notice';
   import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
   import AutoUnarchivedNotice from './AutoUnarchivedNotice.svelte';
   import { getAutoUnarchivedNotice } from './auto-unarchived-notice';
@@ -366,6 +370,7 @@
   let effortChangeNotice = $derived(getEffortChangeNotice(message));
 
   let questionsDismissedNotice = $derived(getQuestionsDismissedNotice(message));
+  let secretRequestNotice = $derived(getSecretRequestNotice(message));
 
   // Daemon-persisted auto-unarchive transcript row (metadata type "auto_unarchived")
   let autoUnarchivedNotice = $derived(getAutoUnarchivedNotice(message));
@@ -427,6 +432,8 @@
         return m.chat_chatMessage_finishReasonRefusal_label();
       case 'max-tokens':
         return m.chat_chatMessage_finishReasonMaxTokens_label();
+      case 'cancelled-empty':
+        return m.chat_chatMessage_finishReasonCancelledEmpty_label();
       default: {
         // Compile-time exhaustiveness: a new descriptor kind is a type error
         // here; at runtime an unknown kind renders no notice.
@@ -625,7 +632,7 @@
   }
 
   // Parse text into segments with inline mentions rendered as chips
-  // Matches @note/..., @file paths, @context[...], etc.
+  // Matches @note[...], @note/..., @file paths, @context[...], etc.
   // refsByIdentifier: Map of identifier -> context reference (for URL lookup)
   function parseInlineMentions(
     text: string,
@@ -721,6 +728,30 @@
           icon,
           url,
         });
+      } else if (captured.startsWith('note[')) {
+        // Note mention: @note[({workspaceId}/){noteId}:{title}]. The id drives
+        // lookup/navigation; the saved title is the fallback label.
+        const note = parseNoteMention(captured);
+        if (!note) {
+          segments.push({ type: 'text', content: fullMatch });
+        } else {
+          const owningWsId = getOwningWorkspaceId() ?? '';
+          const crossWorkspace = !!note.workspaceId && note.workspaceId !== owningWsId;
+          const lookupWsId = crossWorkspace ? note.workspaceId! : owningWsId;
+          const matchingNote =
+            selectAllNotes.select(appStore.state, lookupWsId).find((n) => n.id === note.id) ?? null;
+          const isSpec = note.id === 'spec' && !crossWorkspace;
+
+          segments.push({
+            type: 'mention',
+            mentionType: isSpec ? 'spec' : 'note',
+            label: matchingNote?.title || note.title,
+            id: note.id,
+            icon: isSpec ? faClipboard : faNoteSticky,
+            noteId: note.id,
+            url: crossWorkspace && !readOnly ? noteUrl(note.id, note.workspaceId) : undefined,
+          });
+        }
       } else if (captured.startsWith('note/')) {
         // Note mention: @note/{noteId}
         const noteId = captured.slice(5); // Remove "note/" prefix
@@ -1549,6 +1580,8 @@
   />
 {:else if questionsDismissedNotice}
   <QuestionsDismissedNotice title={extractAllContent(message) || undefined} />
+{:else if secretRequestNotice}
+  <SecretRequestNotice notice={secretRequestNotice} />
 {:else if autoUnarchivedNotice}
   <!-- Daemon-persisted auto-unarchive notice row - centered inline divider -->
   <AutoUnarchivedNotice title={extractAllContent(message) || undefined} />
@@ -1974,8 +2007,10 @@
       {/if}
     {:else if role === 'assistant'}
       <!-- Assistant Message -->
-      <!-- Reserve toolbar height only for rendered prose, never empty or tool-only rows. -->
-      <div class="type-body has-[[data-assistant-prose]]:min-h-8 text-pretty text-foreground">
+      <!-- Reserve action space for prose and inline visual controls, never empty or tool-only rows. -->
+      <div
+        class="type-body has-[[data-assistant-prose]]:min-h-8 has-[[data-inline-html]]:pb-8 text-pretty text-foreground"
+      >
         <StreamingMessageContent
           content={combinedContent}
           {isStreaming}
@@ -2012,7 +2047,7 @@
           />
         {/if}
 
-        <!-- Abnormal-finish notice (refusal / token limit, PROTOCOL §7.3) -->
+        <!-- Abnormal-finish notice (refusal / token limit / empty cancel, PROTOCOL §7.3) -->
         {#if finishReasonNoticeLabel}
           <ChatOperationalRow
             leading={finishReasonLeading}

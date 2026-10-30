@@ -3,6 +3,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
+  import { prefersReducedMotion } from '$lib/utils/reduced-motion';
 
   const logger = createLogger('VirtualList');
 
@@ -51,7 +52,15 @@
     });
   }
 
-  // Scroll to specific index
+  /** Center an item in the viewport so its row renders. */
+  export function scrollToIndex(
+    index: number,
+    behavior: ScrollBehavior = prefersReducedMotion() ? 'instant' : 'smooth',
+  ) {
+    if (!scrollEl || index < 0 || index >= safeItems.length) return;
+    const top = index * itemHeight - (scrollEl.clientHeight - itemHeight) / 2;
+    scrollEl.scrollTo({ top: Math.max(0, top), behavior });
+  }
 
   onMount(() => {
     logger.debug('VirtualList mounted', {
@@ -69,7 +78,11 @@
   });
 </script>
 
-<div class="relative overflow-hidden" style="height: {containerHeight}px;">
+<div
+  class="relative overflow-hidden"
+  style="--virtual-container-height: {containerHeight}px; --virtual-content-height: {totalHeight}px; height: var(--virtual-viewport-height, var(--virtual-container-height));"
+  data-virtual-viewport
+>
   <div
     bind:this={scrollEl}
     class="virtual-list-scroll h-full overflow-y-auto overflow-x-hidden"

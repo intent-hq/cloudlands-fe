@@ -49,7 +49,7 @@
 {#if open}
   <div
     bind:this={panelRef}
-    class="relative z-10 basis-full w-[calc(100%_+_2.44rem)] min-w-[calc(100%_+_2.4rem)] px-5 pl-6.5 transform translate-y-[-1.44rem] pt-7 pb-6 ml-[-20px] bg-background border-y border-x border-border space-y-2 origin-top"
+    class="relative basis-full w-full min-w-0 space-y-3 px-2 py-2 type-caption font-normal origin-top"
     transition:slide={{ tier: 'moderate' }}
   >
     {#if children}

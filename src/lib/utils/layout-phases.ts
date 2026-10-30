@@ -20,7 +20,7 @@
 
 interface Task {
   fn: () => void;
-  cancelled: boolean;
+  pending: boolean;
 }
 
 /** Cancels the scheduled task. Safe to call after the task has run. */
@@ -30,9 +30,12 @@ let readTasks: Task[] = [];
 let writeTasks: Task[] = [];
 let frameId: number | null = null;
 let flushing = false;
+let pendingTasks = 0;
 
 function runTask(task: Task) {
-  if (task.cancelled) return;
+  if (!task.pending) return;
+  task.pending = false;
+  pendingTasks -= 1;
   try {
     task.fn();
   } catch (error) {
@@ -45,6 +48,18 @@ function runTask(task: Task) {
 
 const FRAME_PENDING = -1;
 let scheduledWith: typeof globalThis.requestAnimationFrame | null = null;
+
+function cancelTask(task: Task) {
+  if (!task.pending) return;
+  task.pending = false;
+  pendingTasks -= 1;
+  if (pendingTasks > 0 || flushing) return;
+  if (frameId !== null && frameId !== FRAME_PENDING) cancelAnimationFrame(frameId);
+  frameId = null;
+  scheduledWith = null;
+  readTasks = [];
+  writeTasks = [];
+}
 
 function ensureFrame() {
   const raf = globalThis.requestAnimationFrame;
@@ -80,7 +95,11 @@ function flush() {
     flushing = false;
   }
   // Reads queued during the write phase run next frame, against clean layout.
-  if (readTasks.length > 0 || writeTasks.length > 0) ensureFrame();
+  if (pendingTasks > 0) ensureFrame();
+  else {
+    readTasks = [];
+    writeTasks = [];
+  }
 }
 
 /**
@@ -88,15 +107,14 @@ function flush() {
  * Returns a cancel function.
  */
 export function scheduleLayoutRead(fn: () => void): CancelLayoutTask {
-  const task: Task = { fn, cancelled: false };
+  const task: Task = { fn, pending: true };
+  pendingTasks += 1;
   readTasks.push(task);
   // Mid-flush scheduling is handled by the flush itself: reads queued during
   // the read phase join it, reads queued during the write phase roll over to
   // the frame the flush tail schedules.
   if (!flushing) ensureFrame();
-  return () => {
-    task.cancelled = true;
-  };
+  return () => cancelTask(task);
 }
 
 /**
@@ -104,10 +122,9 @@ export function scheduleLayoutRead(fn: () => void): CancelLayoutTask {
  * frame. Returns a cancel function.
  */
 export function scheduleLayoutWrite(fn: () => void): CancelLayoutTask {
-  const task: Task = { fn, cancelled: false };
+  const task: Task = { fn, pending: true };
+  pendingTasks += 1;
   writeTasks.push(task);
   if (!flushing) ensureFrame();
-  return () => {
-    task.cancelled = true;
-  };
+  return () => cancelTask(task);
 }

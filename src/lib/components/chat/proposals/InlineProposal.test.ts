@@ -15,7 +15,10 @@ const state = vi.hoisted(() => ({
       status: 'idle' | 'applying' | 'applied' | 'undoing' | 'failed' | 'dismissed';
       error?: string;
       completedAt?: number;
-      result?: { workspaceId?: string };
+      result?: {
+        workspaceId?: string;
+        proposalOrigin?: { proposalId: string; outcome: string };
+      };
     }
   >,
   cardStatus: 'idle' as 'idle' | 'applying' | 'applied' | 'undoing' | 'failed',
@@ -31,6 +34,7 @@ const actionMocks = vi.hoisted(() => ({
   undoSpecialist: vi.fn(() => false),
   undoSettings: vi.fn(() => true),
   goto: vi.fn(),
+  showWorkspace: vi.fn(async () => true),
   loadDraft: vi.fn(() => null),
   saveDraft: vi.fn(),
   clearDraft: vi.fn(),
@@ -126,6 +130,9 @@ vi.mock('$store/renderer/store', () => ({
   },
 }));
 vi.mock('$app/navigation', () => ({ goto: actionMocks.goto }));
+vi.mock('$lib/utils/show-workspace', () => ({
+  openAndShowWorkspace: actionMocks.showWorkspace,
+}));
 vi.mock('$lib/components/workspace/initializer/RepoAndBranchPicker.svelte', async () => ({
   default: (await import('../../workspace/sidebar/__tests__/mocks/MockRepoAndBranchPicker.svelte'))
     .default,
@@ -307,7 +314,8 @@ describe('InlineProposal', () => {
     const link = screen.getByRole('link', { name: 'Open workspace' });
     expect(link.getAttribute('href')).toBe('/workspace/workspace-created');
     await fireEvent.click(link);
-    expect(actionMocks.goto).toHaveBeenCalledWith('/workspace/workspace-created');
+    // A proposal-created workspace may have no tab yet; the helper opens it.
+    expect(actionMocks.showWorkspace).toHaveBeenCalledWith('workspace-created');
     expect(actionMocks.resolve).toHaveBeenCalledWith(AGENT_ID, WORKSPACE_ID, {
       proposalId: 'tool-applied',
       outcome: 'applied',
@@ -420,6 +428,29 @@ describe('InlineProposal', () => {
         proposalId: title,
         outcome: 'applied',
       });
+    });
+  });
+
+  it('keeps a daemon-declined card pending and interactive (intent-hq/intent#8086)', async () => {
+    const proposal = makeWorkspaceProposal('tool-declined');
+    state.pendingProposals = [{ proposalId: 'tool-declined', messageId: 'message-inline' }];
+    state.lifecycle = {
+      'tool-declined': {
+        status: 'idle',
+        completedAt: 30,
+        result: {
+          workspaceId: 'ws-declined',
+          proposalOrigin: { proposalId: 'tool-declined', outcome: 'notResolved' },
+        },
+      },
+    };
+    renderProposal(proposal);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Dismiss proposal' }));
+    expect(actionMocks.resolve).toHaveBeenCalledWith(AGENT_ID, WORKSPACE_ID, {
+      proposalId: 'tool-declined',
+      outcome: 'dismissed',
     });
   });
 

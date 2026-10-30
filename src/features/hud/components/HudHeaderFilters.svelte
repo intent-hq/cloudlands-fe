@@ -231,8 +231,7 @@
     flex-direction: column;
   }
   :global(.hud-header-menu-sep) {
-    height: 1px;
-    background: hsl(var(--border) / 0.5);
+    border-top-color: hsl(var(--border) / 0.5);
     margin: 3px 6px;
   }
   :global(.hud-header-menu-row) {

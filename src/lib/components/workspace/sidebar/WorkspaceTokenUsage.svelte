@@ -3,7 +3,7 @@
   /**
    * Compact token disclosure with on-demand composition and agent/model details.
    * Reasoning tokens are display-only; accounting remains daemon-owned.
-   * Renders nothing until token data is available (no layout shift).
+   * Renders nothing until tokens have been used.
    */
   import { onMount, tick } from 'svelte';
   import { writable } from 'svelte/store';
@@ -84,15 +84,7 @@
   const processedTokens = $derived(tokenCount(totals));
   const crossFilterAvailable = $derived($crossFilterRows$ !== undefined);
   const crossFilterRows = $derived($crossFilterRows$ ?? []);
-  const crossFilterMessageCount = $derived(
-    crossFilterRows.reduce((sum, row) => sum + row.humanMessages + row.agentMessages, 0),
-  );
-  const hasData = $derived(
-    processedTokens > 0 ||
-      crossFilterMessageCount > 0 ||
-      totals.cost !== undefined ||
-      crossFilterRows.some((row) => row.totals.cost !== undefined),
-  );
+  const hasTokens = $derived(processedTokens > 0);
   const isUpdating = $derived($usage$.isStale);
   const detailsId = $derived(`workspace-token-usage-details-${workspaceId}`);
   const titleId = $derived(`workspace-token-usage-title-${workspaceId}`);
@@ -604,7 +596,7 @@
   });
 
   $effect(() => {
-    if (!hasData && expanded) closeOverlay();
+    if (!hasTokens && expanded) closeOverlay();
   });
 
   $effect(() => {
@@ -631,7 +623,7 @@
   });
 </script>
 
-{#if hasData}
+{#if hasTokens}
   <div
     class="token-usage-shell pointer-events-auto relative z-20 ml-auto shrink-0 text-xs"
     data-testid="workspace-token-usage"

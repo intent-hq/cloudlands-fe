@@ -44,6 +44,7 @@ import { browserPersistenceSaga } from './slices/browser/sagas/browser-persisten
 import { browserClientsSaga } from './slices/browser-clients/sagas/browser-clients-saga';
 import { chatReadSaga } from './slices/chat-state/sagas/chat-read-saga';
 import { chatScrollbackSaga } from './slices/chat-state/sagas/chat-scrollback-saga';
+import { inlineVisualsSaga } from './slices/inline-visuals/sagas/inline-visuals-saga';
 import { chatDraftsSaga } from './slices/chat-drafts/sagas/chat-drafts-saga';
 import { chatPanelUiSaga } from './slices/chat-panel-ui/sagas/chat-panel-ui-saga';
 import { chatSendSaga } from './slices/chat-state/sagas/chat-send-saga';
@@ -94,6 +95,7 @@ import { permissionResponseSaga } from './slices/permission/sagas/permission-res
 import { powerSaga } from './slices/power/sagas/power-saga';
 import { proposalLifecycleSaga } from './slices/proposal-lifecycle/sagas/proposal-lifecycle-saga';
 import { questionUiPersistenceSaga } from './slices/question-ui/sagas/question-ui-persistence-saga';
+import { secretRequestsSaga } from './slices/secret-requests/sagas/secret-requests-saga';
 import { providerSettingsSaga } from './slices/provider-settings/sagas/provider-settings-saga';
 import { antigravitySetupSaga } from './slices/antigravity-setup/sagas/antigravity-setup-saga';
 import { scriptMonitorSaga } from './slices/script-monitor/sagas/script-monitor-saga';
@@ -173,6 +175,7 @@ export const sagas = [
   chatSendSaga,
   chatScrollbackSaga,
   chatDraftsSaga,
+  inlineVisualsSaga,
   chatPanelUiSaga,
   switchTimingSaga,
   permissionResponseSaga,
@@ -233,6 +236,7 @@ export const sagas = [
   workspaceCatalogSaga,
   proposalLifecycleSaga,
   questionUiPersistenceSaga,
+  secretRequestsSaga,
   settingsProposalHistorySaga,
   specialistProposalHistorySaga,
   githubRepoSearchSaga,

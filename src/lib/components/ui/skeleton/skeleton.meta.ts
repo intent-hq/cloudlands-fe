@@ -16,6 +16,7 @@ export const skeletonMetadata = parseUiComponentMetadata({
     'src/features/discussions/components/DiscussionSkeleton.svelte',
     'src/features/file-tracking/components/diff/TrackedChangeDiffViewer.svelte',
     'src/features/home/HomeLoading.svelte',
+    'src/features/inline-html/InlineHtmlPreview.svelte',
     'src/features/layout/tab-types/FileTabType.svelte',
     'src/features/layout/tab-types/NoteTabType.svelte',
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',

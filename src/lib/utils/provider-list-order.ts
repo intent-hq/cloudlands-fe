@@ -6,6 +6,8 @@
  * name. Grouped lists additionally pin the active provider first in Enabled.
  */
 
+import { isProviderListed } from '$shared/provider-visibility';
+
 interface OrderableProviderEntry {
   id: string;
   displayName: string;
@@ -71,7 +73,10 @@ export function groupProviderEntries<T extends OrderableProviderEntry>(
   };
 
   for (const entry of orderProviderEntries(entries, hiddenProviderIds)) {
-    if (isProviderEnabled(entry.id) || (activeProviderId && entry.id === activeProviderId)) {
+    const enabled = isProviderEnabled(entry.id);
+    if (!isProviderListed(entry.id, availabilityByProviderId[entry.id]?.available, enabled))
+      continue;
+    if (enabled) {
       groups.enabled.push(entry);
     } else if (availabilityByProviderId[entry.id]?.available === true) {
       groups.discovered.push(entry);
