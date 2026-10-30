@@ -40,6 +40,25 @@ export interface ChatSearchMatch {
 export const chatSearchBlockPath = (blockIndex: number, childIndex?: number): string =>
   childIndex === undefined ? `b:${blockIndex}` : `b:${blockIndex}:c:${childIndex}`;
 
+/** A message's blocks, prepared and grouped exactly like its rendered rows. */
+function groupRenderedBlocks(
+  message: AgentMessage,
+  contentBlocks: NonNullable<AgentMessage['contentBlocks']>,
+  options: ChatSearchOptions,
+) {
+  const isStreaming = !!message.isStreaming;
+  return groupMessageBlocks(
+    prepareMessageBlocks(contentBlocks, {
+      role: message.role,
+      workspaceId: options.workspaceId,
+      isStreaming,
+      reasoningAsText: options.reasoningAsText,
+    }),
+    isStreaming,
+    !!options.collapseToolRuns,
+  );
+}
+
 /** `ownerPrincipalId` (`workspace.ownerPrincipalId`) gates the collaborator preamble strip. */
 function buildMessageSearchBlocks(
   message: AgentMessage,
@@ -65,17 +84,7 @@ function buildMessageSearchBlocks(
     ];
   }
 
-  const isStreaming = !!message.isStreaming;
-  const grouped = groupMessageBlocks(
-    prepareMessageBlocks(contentBlocks, {
-      role: message.role,
-      workspaceId: options.workspaceId,
-      isStreaming,
-      reasoningAsText: options.reasoningAsText,
-    }),
-    isStreaming,
-    !!options.collapseToolRuns,
-  );
+  const grouped = groupRenderedBlocks(message, contentBlocks, options);
   const toolResultClassification = classifyToolResults(grouped);
   const output: ChatSearchBlock[] = [];
   const addText = (text: string, blockPath: string, disclosurePath: string[]) => {
@@ -197,16 +206,7 @@ export function locateToolCall(
 ): Pick<ChatSearchMatch, 'blockPath' | 'disclosurePath'> | null {
   const contentBlocks = message.contentBlocks;
   if (message.role === 'user' || !contentBlocks?.length) return null;
-  const isStreaming = !!message.isStreaming;
-  const grouped = groupMessageBlocks(
-    prepareMessageBlocks(contentBlocks, {
-      role: message.role,
-      workspaceId: options.workspaceId,
-      isStreaming,
-    }),
-    isStreaming,
-    !!options.collapseToolRuns,
-  );
+  const grouped = groupRenderedBlocks(message, contentBlocks, options);
   for (const [blockIndex, block] of grouped.entries()) {
     if (block.type === 'tool_use' && block.toolCallId === toolCallId) {
       return { blockPath: chatSearchBlockPath(blockIndex), disclosurePath: [] };
