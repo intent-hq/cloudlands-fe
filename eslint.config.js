@@ -986,7 +986,7 @@ export default [
         'error',
         { allowlist: namedColorAllowlist, baseline: semanticColorBaseline },
       ],
-      'intent/no-button-compatibility-aliases': 'warn',
+      'intent/no-button-compatibility-aliases': 'error',
       'intent/icon-only-button-size': ['error', { baseline: iconOnlyButtonSizeBaseline }],
       'intent/no-dialog-root-outside-patterns': 'error',
       'intent/no-direct-toast': 'error',
