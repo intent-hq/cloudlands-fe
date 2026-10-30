@@ -1688,6 +1688,17 @@ export interface ContextLink {
   number: number;
 }
 
+/**
+ * `workspace.create` `origin` (PROTOCOL §5.1): the agent whose message carries
+ * the applied proposal and that proposal's pending key
+ * (`applyToolCallId ?? preview.title`).
+ */
+export interface WorkspaceCreateOrigin {
+  kind: 'proposal';
+  agentId: string;
+  proposalId: string;
+}
+
 export interface CreateWorkspaceRequest {
   repositoryCheckout?: import('./types/repository-checkout').CheckoutSelection;
   idempotencyKey?: string;
@@ -1706,6 +1717,13 @@ export interface CreateWorkspaceRequest {
   skipIsolation?: boolean; // If true, skip the isolated checkout (worktree or CoW clone) and work directly in the repo folder (wire: canonical for the deprecated skipWorktree alias)
   progressId?: string; // FE-minted correlation id echoed on git:clone:progress/done frames emitted during this create (PROTOCOL §5.1)
   contextLinks?: ContextLink[]; // Issue/PR context links persisted on the workspace row (PROTOCOL §5.1); omitted when there are none — older daemons ignore the field
+  /**
+   * The proposal card this create applies (PROTOCOL §5.1 "Proposal origin").
+   * The daemon resolves that pending proposal `applied` after a successful
+   * create, so the proposing agent is notified even when its chat is not open.
+   * Older daemons ignore the field.
+   */
+  origin?: WorkspaceCreateOrigin;
   initialAgent?: {
     placement?: AgentPlacement;
     /**

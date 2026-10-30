@@ -18,7 +18,7 @@ vi.mock('$store/renderer/store', () => ({
 
 vi.mock('./proposal-draft-storage', () => ({ clearProposalDraft: vi.fn() }));
 
-import { dismissProposal } from './proposal-action-handlers';
+import { applyProposal, dismissProposal } from './proposal-action-handlers';
 
 const proposal: WorkspaceCreateProposal = {
   kind: 'workspace-create',
@@ -48,5 +48,52 @@ describe('dismissProposal', () => {
     const types = mocks.dispatch.mock.calls.map(([action]) => (action as { type: string }).type);
     expect(types).toEqual(['agentSessions/resolveProposalRequested']);
     expect(types).not.toContain('workspaceInitializer/rememberRecentSpecialist');
+  });
+});
+
+describe('applyProposal', () => {
+  beforeEach(() => mocks.dispatch.mockClear());
+
+  const appliedPayload = () =>
+    (mocks.dispatch.mock.calls[0]?.[0] as { payload: [Record<string, unknown>] }).payload[0];
+
+  it('names the card as the workspace.create origin so the daemon resolves it (intent-hq/intent#8086)', () => {
+    applyProposal('agent-1', { proposal, editedFields: { title: 'Edited' } });
+
+    expect(mocks.dispatch).toHaveBeenCalledTimes(1);
+    expect(appliedPayload()).toMatchObject({
+      proposal,
+      editedFields: { title: 'Edited' },
+      origin: { kind: 'proposal', agentId: 'agent-1', proposalId: 'dismiss-create' },
+    });
+  });
+
+  it('falls back to the preview title as the pending key when the proposal has no tool call id', () => {
+    const { applyToolCallId: _drop, ...untitled } = proposal;
+    applyProposal('agent-1', { proposal: untitled });
+
+    expect(appliedPayload().origin).toEqual({
+      kind: 'proposal',
+      agentId: 'agent-1',
+      proposalId: 'Create workspace',
+    });
+  });
+
+  it('sends no origin without an agent id or for bulk proposals', () => {
+    applyProposal('', { proposal });
+    applyProposal('agent-1', {
+      proposal: {
+        kind: 'bulk-op',
+        payload: { operation: 'workspace.bulkArchive', ids: ['ws-1'] },
+        preview: { title: 'Bulk operation' },
+        applyToolCallId: 'tc-bulk',
+      },
+    });
+
+    for (const [action] of mocks.dispatch.mock.calls) {
+      expect((action as { payload: [Record<string, unknown>] }).payload[0]).not.toHaveProperty(
+        'origin',
+      );
+    }
   });
 });

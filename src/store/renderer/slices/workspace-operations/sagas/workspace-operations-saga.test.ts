@@ -1216,6 +1216,8 @@ describe('workspaceOperationsSaga', () => {
     });
     expect(mocks.create.mock.calls[0]?.[0]?.initialAgent?.specialist).toBeUndefined();
     expect(mocks.create.mock.calls[0]?.[0]?.initialAgent).not.toHaveProperty('agentId');
+    // No origin on the apply payload → none on the wire.
+    expect(mocks.create.mock.calls[0]?.[0]).not.toHaveProperty('origin');
     expect(getItem(run.state().workspace.workspaces, 'ws-created')).toBeDefined();
     expect(run.state().proposalLifecycle['create-success']).toMatchObject({
       status: 'applied',
@@ -1230,6 +1232,17 @@ describe('workspaceOperationsSaga', () => {
       errorCode: 'base-ref-unresolvable',
     });
     expect(mocks.notify.error).toHaveBeenCalledWith('cannot resolve base ref');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('forwards the card origin on workspace.create (intent-hq/intent#8086)', async () => {
+    mocks.create.mockResolvedValueOnce({ ok: true, data: { workspace: workspace('ws-origin') } });
+    const run = harness([]);
+    const origin = { kind: 'proposal' as const, agentId: 'agent-1', proposalId: 'create-origin' };
+    run.send(applyWorkspaceProposal({ proposal: createProposal('create-origin'), origin }));
+    await settle();
+    expect(mocks.create.mock.calls[0]?.[0]?.origin).toEqual(origin);
     run.task.cancel();
     await run.task.toPromise();
   });

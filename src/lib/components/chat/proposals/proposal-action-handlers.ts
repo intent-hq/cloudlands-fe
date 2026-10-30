@@ -53,7 +53,8 @@ export function getProposalLifecycleEntry(
 
 export function applyProposal(agentId: string, detail: ProposalActionDetail): void {
   const { proposal } = detail;
-  rememberProposalIdentity(agentId, pendingProposalKeyOf(proposal), proposal);
+  const proposalId = pendingProposalKeyOf(proposal);
+  rememberProposalIdentity(agentId, proposalId, proposal);
   if (proposal.kind === 'workspace-transfer') {
     appStore.dispatch(
       applyProposalRequested({ proposalId: getProposalId(proposal), kind: proposal.kind, detail }),
@@ -66,6 +67,11 @@ export function applyProposal(agentId: string, detail: ProposalActionDetail): vo
         proposal,
         editedFields: detail.editedFields,
         selectedBulkItemIds: detail.selectedBulkItemIds,
+        // The daemon resolves the card as part of the create (intent-hq/intent#8086),
+        // so the proposing agent hears about it even when this chat is closed.
+        ...(proposal.kind === 'workspace-create' && agentId && proposalId
+          ? { origin: { kind: 'proposal' as const, agentId, proposalId } }
+          : {}),
       }),
     );
     return;

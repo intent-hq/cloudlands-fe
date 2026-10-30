@@ -837,7 +837,7 @@ function* failProposal(proposalId: string, error: string, errorCode?: string): S
 }
 
 function* applyCreateProposal(payload: WorkspaceProposalApplyPayload): SagaGenerator<void> {
-  const { proposal, editedFields } = payload;
+  const { proposal, editedFields, origin } = payload;
   if (!isWorkspaceCreateProposal(proposal)) return;
   const proposalId = getProposalId(proposal);
   const lifecycle = yield* selectProposalLifecycleEntry.effect(proposalId);
@@ -851,6 +851,7 @@ function* applyCreateProposal(payload: WorkspaceProposalApplyPayload): SagaGener
       resolveAgentName: (specialistId) =>
         (specialistId ? specialists.find((s) => s.id === specialistId)?.name : undefined) ??
         m.workspace_fileChanges_agent_label(),
+      origin,
     });
     const result = yield* call([workspaceClient, workspaceClient.create], request);
     if (!result.ok) {

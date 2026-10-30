@@ -1,4 +1,4 @@
-import type { CreateWorkspaceRequest } from '$shared/types';
+import type { CreateWorkspaceRequest, WorkspaceCreateOrigin } from '$shared/types';
 import { createAgentTypeId } from '$shared/types/agent.types';
 import type { WorkspaceCreateProposal } from '$shared/types/proposal';
 
@@ -67,6 +67,12 @@ export interface BuildCreateWorkspaceRequestOptions {
    * no specialist (absent or `""`) — is renamed after what is actually applied.
    */
   resolveAgentName: (specialistId: string | undefined) => string;
+  /**
+   * The applying card's identity, sent as `workspace.create` `origin`
+   * (PROTOCOL §5.1). Any `origin` in the proposal payload is always dropped:
+   * only the client that applies the card may name it.
+   */
+  origin?: WorkspaceCreateOrigin;
 }
 
 export function buildCreateWorkspaceRequestFromProposal(
@@ -74,7 +80,8 @@ export function buildCreateWorkspaceRequestFromProposal(
   editedFields: Record<string, unknown> | undefined,
   options: BuildCreateWorkspaceRequestOptions,
 ): CreateWorkspaceRequest {
-  const params = (proposal.payload.params ?? {}) as Partial<CreateWorkspaceRequest>;
+  const { origin: _droppedOrigin, ...params } = (proposal.payload.params ??
+    {}) as Partial<CreateWorkspaceRequest>;
   const siblingScoped = proposal.preview.workspaceCreate?.mode === 'sibling';
   const initialAgent = recordValue(params.initialAgent) as Partial<InitialAgentRequest> | undefined;
   // An empty-string payload specialist names nothing: treat it as absent.
@@ -132,6 +139,7 @@ export function buildCreateWorkspaceRequestFromProposal(
       params.isNewRepo,
     ),
     scope: stringOverride(siblingScoped ? undefined : editedFields?.scope, params.scope),
+    ...(options.origin ? { origin: options.origin } : {}),
     initialAgent: {
       ...initialAgentFields,
       ...agentSetupOverrides(editedFields?.agentSetup, initialAgent),
