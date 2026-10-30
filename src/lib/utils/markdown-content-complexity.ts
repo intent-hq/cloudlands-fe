@@ -30,6 +30,7 @@ const needsProcessingPatterns = [
   /^\s*\d+\.\s/m, // Ordered lists
   // @-mentions and bare file paths that injectMentionSpans converts to mention chips
   /@note[/[]/, // @note[...] and legacy @note/... mentions
+  /@(?:terminal|script)\[/, // @terminal[...] / @script[...] mentions
   /@context\[/, // @context[...] mentions
   /@member\[/, // Persisted workspace member mentions
   /@\//, // @/absolute/path mentions

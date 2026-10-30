@@ -14,9 +14,15 @@ import {
   noteMentionChipAttrs,
   parseNoteMention,
 } from '$lib/utils/note-mention-token';
+import {
+  parseRuntimeMention,
+  RUNTIME_MENTION_BODY_SOURCE,
+  runtimeMentionChipAttrs,
+} from '$lib/utils/runtime-mention-token';
 
 // --- Regex patterns ---
 const noteBracketRe = new RegExp(`@${NOTE_MENTION_BODY_SOURCE}`, 'g');
+const runtimeRe = new RegExp(`@${RUNTIME_MENTION_BODY_SOURCE}`, 'g');
 const noteRe = /@note\/([A-Za-z0-9\-_]+)/g;
 const rulesRe = /@\.augment\/rules\/[^\s<>()'\"]+/g;
 const fileRe = /@\/[^\s<>()'\"]+/g;
@@ -35,6 +41,7 @@ const contextMentionRe = /@context\[([A-Za-z0-9+/=]+|[^\[\]]*(?:\[[^\]]*\][^\[\]
 const allPatterns: Array<{ re: RegExp; kind: string }> = [
   { re: /@member\[[^\]\s]*\]/g, kind: 'member' },
   { re: noteBracketRe, kind: 'note-bracket' },
+  { re: runtimeRe, kind: 'runtime' },
   { re: noteRe, kind: 'note' },
   { re: rulesRe, kind: 'rule' },
   { re: fileRe, kind: 'file' },
@@ -123,6 +130,10 @@ function matchToHtml(kind: string, value: string, groups: string[]): string {
     // Input is HTML text, so entities in the title are still escaped.
     const note = parseNoteMention(unescapeHtmlText(value));
     return note ? mentionSpanHtml(noteMentionChipAttrs(note)) : value;
+  } else if (kind === 'runtime') {
+    // Input is HTML text, so entities in the name are still escaped.
+    const mention = parseRuntimeMention(unescapeHtmlText(value));
+    return mention ? mentionSpanHtml(runtimeMentionChipAttrs(mention)) : value;
   } else if (kind === 'note') {
     const id = groups[0] || '';
     return mentionSpanHtml({ type: 'note', id, label: id });

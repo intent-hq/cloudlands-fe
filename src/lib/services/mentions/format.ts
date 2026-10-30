@@ -4,6 +4,7 @@
 import type { MentionCandidate, MentionType } from './types';
 import { serializeMemberMention } from '$lib/utils/member-mention-token';
 import { serializeNoteMention } from '$lib/utils/note-mention-token';
+import { serializeRuntimeMention } from '$lib/utils/runtime-mention-token';
 
 /**
  * Helper to strip leading @ from a path if present
@@ -66,13 +67,16 @@ export function toPromptToken(
       // whitespace-truncated `@note/<title>` chip pointing at the wrong note.
       return token ?? (item.label || item.id || '');
     }
-    case 'terminal': {
-      const terminalName = stripLeadingAt(item.label || item.id || 'terminal');
-      return `@terminal/${terminalName}`;
-    }
+    case 'terminal':
     case 'script': {
-      const scriptName = stripLeadingAt(item.label || item.id || 'script');
-      return `@script/${scriptName}`;
+      // `@terminal[<id>:<name>]` / `@script[<id>:<name>]`: the id survives and
+      // the name may contain spaces, which the legacy `@terminal/<name>` form
+      // cut at the first space.
+      const name = stripLeadingAt(item.label || item.id || type);
+      const token = serializeRuntimeMention({ kind: type, id: item.id, name });
+      // No token-safe id: emit the name as plain text rather than a token
+      // that readers would cut short.
+      return token ?? name;
     }
     case 'specialist': {
       const rawToken = meta.promptToken || item.id || item.label || 'specialist';
