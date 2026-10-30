@@ -17,6 +17,7 @@ import type { GetModelsEnvelope } from '$shared/models/wire-model-info';
 import { store } from '../../store';
 import { providerCatalogLoaded } from '../provider-catalog/provider-catalog-slice';
 import { providerModelsRequested } from '../provider-models/provider-models-slice';
+import { selectProviderModelsRequests } from '../provider-models/provider-models-selectors';
 import type { ProviderModelsFetchResult } from '../provider-models/provider-models-types';
 import { setLoadingStateForProvider } from './model-slice';
 import type { ModelLoadingState, ModelReplyLabels } from './model-types';
@@ -28,13 +29,16 @@ type ReplyWithFutureLabel = ProviderModelsResult & { futureLabel?: string };
 const fetchModels = vi.mocked(getProviderModels);
 const loadingState = (): Record<string, unknown> | undefined =>
   store.state.model.loadingState.codex;
-const settle = async () => {
-  for (let i = 0; i < 20; i++) await Promise.resolve();
-};
-const load = async (reply: ReplyWithFutureLabel) => {
-  fetchModels.mockResolvedValueOnce(reply);
+/** Request a forced reload and wait until its outcome reaches the loading state. */
+const load = async (reply: ReplyWithFutureLabel | Error) => {
+  if (reply instanceof Error) fetchModels.mockRejectedValueOnce(reply);
+  else fetchModels.mockResolvedValueOnce(reply);
+  const before = fetchModels.mock.calls.length;
   store.dispatch(providerModelsRequested('codex', 'refresh'));
-  await settle();
+  await vi.waitFor(() => expect(fetchModels.mock.calls.length).toBe(before + 1));
+  await vi.waitFor(() =>
+    expect(selectProviderModelsRequests.select(store.state).codex?.status).not.toBe('loading'),
+  );
 };
 
 let dispose: () => void;
@@ -96,9 +100,7 @@ describe('model reply labels', () => {
 
     // …and a failed load clears it.
     await load({ models, futureLabel: 'third' });
-    fetchModels.mockRejectedValueOnce(new Error('boom'));
-    store.dispatch(providerModelsRequested('codex', 'refresh'));
-    await settle();
+    await load(new Error('boom'));
     expect(loadingState()).toMatchObject({ status: 'error', error: 'boom' });
     expect(loadingState()).not.toHaveProperty('futureLabel');
   });
