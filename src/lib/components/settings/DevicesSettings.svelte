@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, untrack } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import { Button } from '$lib/components/patterns/settings/custom-controls';
   import { ListView } from '$lib/components/patterns/collection';
   import { Fa } from 'svelte-fa';
@@ -20,6 +20,9 @@
     connectionWorkflowCleared,
   } from '$store/renderer/slices/connections/connections-slice';
   import { store as appStore } from '$store/renderer/store';
+  import RemoteMachinesSection from '$features/remote-machines/RemoteMachinesSection.svelte';
+  import BackendsWithAccessSection from '$features/remote-machines/BackendsWithAccessSection.svelte';
+  import { remoteMachinesRefreshRequested } from '$features/remote-machines/remote-machines-slice';
 
   let { initialEditedMachine }: { initialEditedMachine?: string } = $props();
 
@@ -42,6 +45,7 @@
   );
   const removing = $derived(!!$workflow$ && $workflow$.phase !== 'settled');
   onDestroy(() => appStore.dispatch(connectionWorkflowCleared(consumerId)));
+  onMount(() => appStore.dispatch(remoteMachinesRefreshRequested()));
   $effect(() => {
     if ($workflow$?.outcome?.kind !== 'done') return;
     appStore.dispatch(connectionWorkflowCleared(consumerId));
@@ -141,6 +145,9 @@
       </Button>
     </div>
   {/if}
+
+  <RemoteMachinesSection />
+  <BackendsWithAccessSection />
 </div>
 
 <ConnectBackendModal bind:open={connectModalOpen} {defaultAccent} />
