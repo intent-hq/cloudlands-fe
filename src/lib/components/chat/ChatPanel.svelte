@@ -7868,7 +7868,7 @@
   <!-- Message Input with Aurora Background -->
   <div
     bind:this={composerElement}
-    class="conversation-composer pointer-events-none relative z-10 w-full"
+    class="conversation-composer relative z-10 w-full pointer-events-none"
     class:input-flash={showInputFlash}
     data-streaming={$agentSessionIsStreaming$}
     data-testid="chat-composer-shell"
