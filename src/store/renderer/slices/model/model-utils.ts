@@ -6,11 +6,12 @@
  * models for a provider different from the global active provider.
  */
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
-import type { ModelWarningKind } from '$shared/models/wire-model-info';
 import {
   getProviderModels,
   type ProviderModelEntry,
+  type ProviderModelsResult,
 } from '$features/providers/provider-models.client';
+import type { ProviderModelsFetchResult } from '../provider-models/provider-models-types';
 import { store as appStore } from '../../store';
 import { selectNormalizedProviderId } from '../provider-catalog/provider-catalog-selectors';
 /**
@@ -18,13 +19,6 @@ import { selectNormalizedProviderId } from '../provider-catalog/provider-catalog
  * shared by all eight providers (`models.list`, PROTOCOL §6.7).
  */
 export type ProviderModel = ProviderModelEntry;
-
-type ProviderModelsWithWarning = {
-  models: ProviderModel[];
-  warning?: string;
-  stale?: boolean;
-  warningKind?: ModelWarningKind;
-};
 
 /**
  * Fetch raw models for a specific provider through the uniform daemon-backed
@@ -34,7 +28,7 @@ type ProviderModelsWithWarning = {
 async function fetchProviderModelsWithWarning(
   providerId: string,
   options: { forceRefresh?: boolean; workspaceId?: string } = {},
-): Promise<ProviderModelsWithWarning> {
+): Promise<ProviderModelsResult> {
   const normalizedId = options.workspaceId
     ? providerId
     : selectNormalizedProviderId.select(appStore.state, providerId);
@@ -51,24 +45,19 @@ export async function fetchModelsForProvider(providerId: string): Promise<Provid
 export async function getModelsForProviderForLoadingState(
   providerId: string,
   options: { forceRefresh?: boolean; workspaceId?: string } = {},
-): Promise<{
-  models: AuggieModel[];
-  warning?: string;
-  stale?: boolean;
-  warningKind?: ModelWarningKind;
-}> {
+): Promise<ProviderModelsFetchResult> {
   const normalizedId = options.workspaceId
     ? providerId
     : selectNormalizedProviderId.select(appStore.state, providerId);
-  const result = await fetchProviderModelsWithWarning(normalizedId, options);
+  // Every reply label passes through untouched (no per-label copy), so a new
+  // `GetModelsEnvelope` label reaches the loading state without a store edit.
+  const { models, ...labels } = await fetchProviderModelsWithWarning(normalizedId, options);
   return {
+    ...labels,
     // Catalog rows keep their bare daemon-served ids; provider provenance is
     // carried separately by the caller (availableModelsProviderId / the
     // per-provider map key), never encoded into the id.
-    models: result.models as AuggieModel[],
-    warning: result.warning,
-    stale: result.stale,
-    ...(result.warningKind ? { warningKind: result.warningKind } : {}),
+    models: models as AuggieModel[],
   };
 }
 

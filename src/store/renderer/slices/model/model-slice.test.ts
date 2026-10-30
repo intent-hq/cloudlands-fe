@@ -122,6 +122,46 @@ describe('modelReducer', () => {
     });
   });
 
+  it('carries any reply label by the default rule without a reducer edit', () => {
+    // A label the slice has never heard of, as a future GetModelsEnvelope field.
+    const withLabel = (
+      update: Parameters<typeof setLoadingStateForProvider>[0] & { futureLabel?: string },
+    ) => setLoadingStateForProvider(update);
+    const label = (state: typeof initialState) =>
+      (state.loadingState.codex as Record<string, unknown>).futureLabel;
+    const loaded = modelReducer(
+      initialState,
+      withLabel({ providerId: 'codex', status: 'success', futureLabel: 'a' }),
+    );
+    expect(label(loaded)).toBe('a');
+    const loading = modelReducer(
+      loaded,
+      setLoadingStateForProvider({ providerId: 'codex', status: 'loading' }),
+    );
+    expect(label(loading)).toBe('a');
+    const relabeled = modelReducer(
+      loading,
+      withLabel({ providerId: 'codex', status: 'loading', futureLabel: 'b' }),
+    );
+    expect(label(relabeled)).toBe('b');
+    const fresh = modelReducer(
+      relabeled,
+      setLoadingStateForProvider({ providerId: 'codex', status: 'success' }),
+    );
+    expect(fresh.loadingState.codex).not.toHaveProperty('futureLabel');
+    const failed = modelReducer(
+      loaded,
+      setLoadingStateForProvider({ providerId: 'codex', status: 'error', error: 'boom' }),
+    );
+    expect(failed.loadingState.codex).not.toHaveProperty('futureLabel');
+    // `stale: false` is never recorded.
+    const notStale = modelReducer(
+      initialState,
+      setLoadingStateForProvider({ providerId: 'codex', status: 'success', stale: false }),
+    );
+    expect(notStale.loadingState.codex).not.toHaveProperty('stale');
+  });
+
   it('tracks stale cached model warnings and clears staleness after a fresh result', () => {
     const staleState = modelReducer(
       initialState,
