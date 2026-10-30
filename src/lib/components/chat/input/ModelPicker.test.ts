@@ -331,6 +331,7 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
 const hasCheckedOnce$ = writable(true);
 const workspaceCatalogEpoch$ = writable(0);
 const providerEntriesOverride$ = writable<ProviderCatalogEntry[] | null>(null);
+const listedProviderIdsOverride$ = writable<string[] | null>(null);
 vi.mock('$store/renderer/slices/agent-availability/agent-availability-selectors', () => ({
   selectHasCheckedOnce: () => hasCheckedOnce$,
 }));
@@ -478,6 +479,7 @@ afterEach(() => {
   agentModelEffortLevels$.set(undefined);
   workspaceCatalogEpoch$.set(0);
   providerEntriesOverride$.set(null);
+  listedProviderIdsOverride$.set(null);
   mockCatalogProfiles.current = [];
   mockDaemonAppOwned.current = true;
   mockProviderSettingsState.current = undefined;
@@ -3556,7 +3558,18 @@ describe('ModelPicker availability gating', () => {
     activeProviderId$.set('auggie');
   });
 
-  it('still renders the disabled effective provider group when the catalog was loaded for it', async () => {
+  it('hides cached Auggie models when Auggie is neither installed nor enabled', async () => {
+    listedProviderIdsOverride$.set(['codex']);
+    availableProviderOverride$.set(['codex']);
+    mockModelState.availableModels = [{ value: 'sonnet4.6', label: 'Sonnet 4.6' }];
+    mockModelState.availableModelsProviderId = 'auggie';
+    render(ModelPicker, { props: { portal: false } });
+    await fireEvent.click(screen.getByRole('button'));
+    expect(screen.queryByRole('option', { name: /Sonnet 4\.6/ })).toBeNull();
+    expect(screen.queryByRole('tab', { name: /Auggie/ })).toBeNull();
+  });
+
+  it('still renders an unavailable effective provider group when the catalog was loaded for it', async () => {
     // Positive control for the provenance gate: when the global catalog DOES
     // belong to the (unavailable) effective provider, the fallback group must
     // keep rendering so the selected model isn't orphaned.
@@ -4135,6 +4148,47 @@ describe('ModelPicker disabled agent provider (intent#5737)', () => {
     mockAgentSession$.set(undefined);
     enabledProvidersMap$.set({});
     activeProviderId$.set('auggie');
+  });
+
+  it.each([
+    ['codex', 'settings'],
+    ['auggie', 'settings'],
+    ['codex', 'specialist'],
+    ['auggie', 'specialist'],
+  ])('excludes cached disabled %s rows from a no-agent %s picker', async (provider, context) => {
+    const onModelChange = vi.fn();
+    activeProviderId$.set(provider);
+    mockModelState.defaultProviderId = provider;
+    mockModelState.availableModelsProviderId = provider;
+    mockModelState.availableModels = [{ value: 'cached-model', label: 'Cached disabled model' }];
+    enabledProviderIds$.set(['claude-code']);
+    enabledProvidersMap$.set({ [provider]: false, 'claude-code': true });
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+      models: [{ value: 'replacement-model', label: 'Enabled replacement model' }],
+    });
+    render(ModelPicker, {
+      props: {
+        selectedModel: `${provider}:cached-model`,
+        providerId: context === 'specialist' ? provider : undefined,
+        updateGlobalDefault: context === 'settings',
+        portal: false,
+        onModelChange,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    const replacement = await screen.findByRole('option', { name: /Enabled replacement model/ });
+    expect(screen.queryByRole('option', { name: /Cached disabled model/ })).toBeNull();
+    expect(
+      screen.queryByRole('tab', { name: provider === 'codex' ? /Codex/ : /Auggie/ }),
+    ).toBeNull();
+    expect(onModelChange).not.toHaveBeenCalled();
+    expect(dispatchedTypes()).not.toContain(selectModel.type);
+    await fireEvent.click(replacement);
+    expect(onModelChange).toHaveBeenCalledWith('replacement-model', {
+      providerId: 'claude-code',
+      modelId: 'replacement-model',
+    });
   });
 
   it('warns before any send when the agent provider is disabled in settings, without switching the model itself', async () => {
@@ -5850,6 +5904,11 @@ vi.mock(
       selectContextSelectedModel: () => readable(mockModelState.selectedModel),
       selectContextEnabledProviders: () => enabledProvidersMap$,
       selectContextAvailableProviderIds: () => availableEnabledProviderIds$,
+      selectContextListedProviderIds: () =>
+        derived(
+          [selectProviderCatalogEntries(), listedProviderIdsOverride$],
+          ([entries, override]) => override ?? entries.map((entry) => entry.id),
+        ),
       selectContextModelProviderIds: () =>
         derived(
           [hasCheckedOnce$, enabledProviderIds$, availableEnabledProviderIds$],
