@@ -8,6 +8,7 @@ import { EventEmitter } from 'node:events';
 import type { Duplex } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { classifyStartupReply, type DaemonStartupState } from '$shared/daemon-startup';
+import { AuthRejectedError } from './backend-connection';
 import { JsonRpcClient, type ConnectionStatus } from './json-rpc-client';
 
 class FakeSocket extends EventEmitter {
@@ -402,5 +403,102 @@ describe('JsonRpcClient daemon startup readiness', () => {
     expect(ticket.isDrained()).toBe(true);
     await vi.advanceTimersByTimeAsync(1_000);
     expect(sockets).toHaveLength(1);
+  });
+
+  it('reports connected before announcing that startup ended', async () => {
+    const { client, sockets } = make();
+    const order: string[] = [];
+    client.on('status', (status: ConnectionStatus) => order.push(`status:${status}`));
+    client.on('startup', (state: DaemonStartupState | null) =>
+      order.push(`startup:${state?.state ?? 'null'}:${client.getStatus()}`),
+    );
+    client.start();
+    await helloAnsweredStarting(sockets, 0);
+    sockets[0].close();
+    await vi.advanceTimersByTimeAsync(100);
+    sockets[1].open();
+    await vi.advanceTimersByTimeAsync(0);
+    sockets[1].result(sockets[1].last('client.hello').id, HELLO_OK);
+    await vi.advanceTimersByTimeAsync(0);
+    // No `connecting` broadcast ever carries a cleared startup state.
+    expect(order.filter((e) => e.startsWith('startup:null'))).toEqual(['startup:null:connected']);
+    expect(order.indexOf('status:connected')).toBeLessThan(order.indexOf('startup:null:connected'));
+    client.dispose();
+  });
+
+  it('refuses a hello snapshot read while starting instead of waiting for readiness', async () => {
+    const { client, sockets } = make();
+    client.start();
+    await helloAnsweredStarting(sockets, 0);
+    const error = await client.readHelloSnapshot().catch((e: unknown) => e);
+    expect(classifyStartupReply(error)?.kind).toBe('not-ready');
+    client.dispose();
+  });
+
+  it('lets requests after a failed start wait for the next attempt instead of refusing them', async () => {
+    const { client, sockets } = make();
+    client.start();
+    await helloAnsweredStarting(sockets, 0, startupFailed());
+    const pending = client.request('host.status');
+    await vi.advanceTimersByTimeAsync(100);
+    sockets[1].open();
+    await vi.advanceTimersByTimeAsync(0);
+    sockets[1].result(sockets[1].last('client.hello').id, HELLO_OK);
+    await vi.advanceTimersByTimeAsync(0);
+    sockets[1].result(sockets[1].last('host.status').id, { hostname: 'h' });
+    await expect(pending).resolves.toEqual({ hostname: 'h' });
+    client.dispose();
+  });
+
+  it('shows an authentication rejection instead of a latched startup failure', async () => {
+    const { client, sockets } = make();
+    client.start();
+    await helloAnsweredStarting(sockets, 0, startupFailed());
+    await vi.advanceTimersByTimeAsync(100);
+    sockets[1].emit('error', new AuthRejectedError(401));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(client.getStartupState()).toBeNull();
+    client.dispose();
+  });
+
+  it('backs off when a starting daemon never serves its status', async () => {
+    const { client, sockets } = make({ maxReconnectDelayMs: 400 });
+    client.start();
+    // Each cycle: hello not-ready, poll unknown method, then a delayed redial
+    // that doubles (100, 200, 400ms) instead of a fixed-rate loop.
+    for (const [attempt, delay] of [100, 200, 400].entries()) {
+      await helloAnsweredStarting(sockets, attempt);
+      await vi.advanceTimersByTimeAsync(1000);
+      const socket = sockets[attempt];
+      socket.error(socket.last('system.startupStatus').id, { code: -32601, message: 'nope' });
+      await vi.advanceTimersByTimeAsync(delay - 1);
+      expect(sockets).toHaveLength(attempt + 1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(sockets).toHaveLength(attempt + 2);
+    }
+    expect(client.getStatus()).toBe('connecting');
+    client.dispose();
+  });
+
+  it('republishes clock-only progress at most every 5s but phase changes at once', async () => {
+    const { client, sockets, startups } = make();
+    client.start();
+    await helloAnsweredStarting(sockets, 0);
+    const published = () => startups.length;
+    const base = published();
+    for (let i = 1; i <= 3; i++) {
+      await vi.advanceTimersByTimeAsync(1000);
+      sockets[0].result(
+        sockets[0].last('system.startupStatus').id,
+        snapshot('preparing', { elapsedMs: 1200 + i * 1000 }),
+      );
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    expect(published()).toBe(base);
+    await vi.advanceTimersByTimeAsync(1000);
+    sockets[0].result(sockets[0].last('system.startupStatus').id, snapshot('finalizing'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(published()).toBe(base + 1);
+    client.dispose();
   });
 });

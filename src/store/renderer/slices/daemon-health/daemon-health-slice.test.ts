@@ -1459,4 +1459,21 @@ describe('daemon startup state', () => {
     );
     expect(state.daemonStartup).toBeNull();
   });
+
+  it('keeps the posture when an unscoped push omits it, and drops it on a daemon switch', () => {
+    const transport = { mode: 'external-uds' as const, target: '/tmp/a.sock' };
+    let state = daemonHealthReducer(
+      initialState,
+      connectionStatusChanged('connecting', transport, {
+        daemonStartup: { state: 'starting', snapshot, available: true },
+      }),
+    );
+    state = daemonHealthReducer(state, connectionStatusChanged('connecting', transport));
+    expect(state.daemonStartup?.state).toBe('starting');
+    state = daemonHealthReducer(
+      state,
+      connectionStatusChanged('connecting', { mode: 'external-ws', target: 'wss:other:1' }),
+    );
+    expect(state.daemonStartup).toBeNull();
+  });
 });

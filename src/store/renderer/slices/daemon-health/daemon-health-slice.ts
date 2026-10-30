@@ -341,8 +341,14 @@ daemonHealthReducer.with(
         transport: transport ?? state.transport,
         hostLocality,
         reconnectAttempts: extras?.reconnectAttempts ?? state.reconnectAttempts,
-        // Every main broadcast carries the client's current startup posture.
-        daemonStartup: extras?.daemonStartup ?? null,
+        // Backend broadcasts carry the client's current startup posture; one
+        // that omits it (an unscoped push) keeps it for the same daemon.
+        daemonStartup:
+          extras?.daemonStartup !== undefined
+            ? extras.daemonStartup
+            : transportChanged
+              ? null
+              : state.daemonStartup,
         connectionLimited: extras?.connectionLimited ?? state.connectionLimited,
         connectionLimitRetryAfterMs:
           extras?.connectionLimited === undefined

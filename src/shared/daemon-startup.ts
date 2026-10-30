@@ -159,3 +159,162 @@ export function startupErrorShape(state: DaemonStartupState): {
     },
   };
 }
+
+/** Bound on one `system.startupStatus` read; an unanswered poll re-hellos instead. */
+export const STARTUP_POLL_TIMEOUT_MS = 5_000;
+
+// While only the clocks move, republish at most this often: every publish is
+// a full status broadcast to each window.
+const STARTUP_REPUBLISH_MS = 5_000;
+// Matches the progress screen's "count unchanged" threshold.
+const STARTUP_STALLED_MS = 30_000;
+
+/** What a transport supplies to {@link StartupPoller} for one bootstrap socket. */
+export interface StartupPollerHost {
+  /** Send `system.startupStatus` on the bootstrap socket. */
+  request(): Promise<unknown>;
+  /** Publish a new `starting` posture. */
+  publish(state: DaemonStartupState): void;
+  /**
+   * Leave the bootstrap socket and hello again on a fresh one. `ready` is true
+   * when the daemon reported ready; false when no usable status arrived.
+   */
+  handoff(ready: boolean): void;
+  /** The daemon reported a terminal startup failure. */
+  fail(message: string, snapshot: StartupSnapshot | null): void;
+  /** Optional ownership wrapper for each asynchronous poll. */
+  track?(poll: () => Promise<void>): void;
+}
+
+/** The parts of a posture worth an immediate publish (not the clocks). */
+function startupKey(state: DaemonStartupState): string {
+  const s = state.snapshot;
+  return JSON.stringify([
+    state.state,
+    state.available,
+    s?.attemptId,
+    s?.phase,
+    s?.finalizingStep,
+    s?.progress?.completedNotes,
+    s?.progress?.totalNotes,
+    s?.estimatedRemainingMs === undefined,
+    (s?.progressAgeMs ?? 0) >= STARTUP_STALLED_MS,
+  ]);
+}
+
+/**
+ * Polls one starting daemon, one request at a time, at the daemon's retry
+ * delay. Shared by the main JSON-RPC client and the browser WebSocket
+ * transport; each owns its socket, the handoff and the failure path.
+ * {@link stop} must run whenever the bootstrap socket is torn down.
+ */
+export class StartupPoller {
+  private generation = 0;
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private snapshot: StartupSnapshot | null = null;
+  private lastKey: string | null = null;
+  private lastPublishedAt = 0;
+
+  constructor(private readonly host: StartupPollerHost) {}
+
+  /** The hello was answered with daemon-not-ready: publish it and arm the first poll. */
+  start(reply: Extract<StartupReply, { kind: 'not-ready' }>): void {
+    this.stop();
+    this.snapshot = reply.snapshot ?? this.snapshot;
+    this.publish(
+      { state: 'starting', snapshot: this.snapshot, available: reply.snapshot !== null },
+      true,
+    );
+    this.schedule(reply.retryAfterMs);
+  }
+
+  /** Cancel the pending or in-flight poll. */
+  stop(): void {
+    this.generation++;
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+  }
+
+  /** Forget the previous attempt's snapshot (the daemon became ready or went away). */
+  reset(): void {
+    this.stop();
+    this.snapshot = null;
+    this.lastKey = null;
+    this.lastPublishedAt = 0;
+  }
+
+  private publish(state: DaemonStartupState, force = false): void {
+    const key = startupKey(state);
+    const now = Date.now();
+    if (!force && key === this.lastKey && now - this.lastPublishedAt < STARTUP_REPUBLISH_MS) return;
+    this.lastKey = key;
+    this.lastPublishedAt = now;
+    this.host.publish(state);
+  }
+
+  private schedule(delayMs: number): void {
+    const generation = this.generation;
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      if (generation !== this.generation) return;
+      const poll = () => this.poll(generation);
+      if (this.host.track) this.host.track(poll);
+      else void poll();
+    }, delayMs);
+  }
+
+  private async poll(generation: number): Promise<void> {
+    let snapshot: StartupSnapshot | null;
+    try {
+      snapshot = parseStartupSnapshot(await this.host.request());
+    } catch (error) {
+      if (generation !== this.generation) return;
+      const reply = classifyStartupReply(error);
+      if (reply?.kind === 'failed') {
+        this.stop();
+        this.host.fail(reply.message, reply.snapshot);
+        return;
+      }
+      if (reply?.kind === 'not-ready') {
+        this.snapshot = reply.snapshot ?? this.snapshot;
+        this.publish({
+          state: 'starting',
+          snapshot: this.snapshot,
+          available: reply.snapshot !== null,
+        });
+        this.schedule(reply.retryAfterMs);
+        return;
+      }
+      this.unavailable();
+      return;
+    }
+    if (generation !== this.generation) return;
+    if (snapshot === null) {
+      this.unavailable();
+      return;
+    }
+    this.snapshot = snapshot;
+    if (snapshot.phase === 'failed') {
+      this.stop();
+      this.host.fail(snapshot.failure?.message ?? '', snapshot);
+      return;
+    }
+    if (snapshot.phase === 'ready') {
+      this.stop();
+      this.publish({ state: 'starting', snapshot, available: true }, true);
+      this.host.handoff(true);
+      return;
+    }
+    this.publish({ state: 'starting', snapshot, available: true });
+    this.schedule(clampStartupRetryMs(snapshot.retryAfterMs));
+  }
+
+  /** No usable status (timeout, unknown method, malformed reply): hello again. */
+  private unavailable(): void {
+    this.stop();
+    this.publish({ state: 'starting', snapshot: this.snapshot, available: false }, true);
+    this.host.handoff(false);
+  }
+}

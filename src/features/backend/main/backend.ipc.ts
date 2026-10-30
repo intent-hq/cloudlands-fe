@@ -4181,8 +4181,9 @@ async function doPerformRestartOrphanedSidecar(): Promise<RestartOrphanedSidecar
     });
     if (result.ok) {
       const client = getLocalBackendClient();
-      // Unscoped broadcast: deliberately carries no daemon-update marker,
-      // which is a LOCAL-client fact and must not reach remote windows.
+      // Unscoped broadcast: deliberately carries no daemon-update marker or
+      // startup state, which are LOCAL-client facts and must not reach remote
+      // windows.
       broadcast(BACKEND.STATUS, {
         status: client.getStatus(),
         transport: formatTransportInfo(
@@ -4191,7 +4192,6 @@ async function doPerformRestartOrphanedSidecar(): Promise<RestartOrphanedSidecar
           client.getConnectedVia(),
         ),
         reconnectAttempts: client.getReconnectAttempts(),
-        daemonStartup: client.getStartupState?.() ?? null,
       });
     }
     return result;

@@ -15,10 +15,10 @@ import { StringDecoder } from 'node:string_decoder';
 import { parseProtocolVersion, type ProtocolVersion } from '$shared/protocol-version';
 import {
   classifyStartupReply,
-  clampStartupRetryMs,
   type DaemonStartupState,
-  parseStartupSnapshot,
+  STARTUP_POLL_TIMEOUT_MS,
   STARTUP_STATUS_METHOD,
+  StartupPoller,
   type StartupReply,
   type StartupSnapshot,
   startupErrorShape,
@@ -160,10 +160,6 @@ const MAX_HELLO_HANDSHAKE_TIMEOUT_MS = 30_000;
 // the burst ages out; a lost hello reply is still recovered by its timeout.
 const MAX_MALFORMED_FRAME_RECONNECTS = 3;
 const MALFORMED_FRAME_WINDOW_MS = 60_000;
-
-// A starting daemon answers only `system.startupStatus`, one poll at a time;
-// an unanswered poll falls back to a fresh socket and a new hello.
-const STARTUP_POLL_TIMEOUT_MS = 5_000;
 
 /**
  * A request that got no reply within its bound. `name` and `message` stay the
@@ -312,8 +308,14 @@ export class JsonRpcClient extends EventEmitter {
   private startupState: DaemonStartupState | null = null;
   /** The socket whose hello was answered with daemon-not-ready, while it is polled. */
   private startupIncarnation: object | null = null;
-  private startupPollTimer: ReturnType<typeof setTimeout> | null = null;
-  private startupPollGeneration = 0;
+  /** Polls the bootstrap socket; stopped whenever that socket is torn down. */
+  private readonly startupPoller = new StartupPoller({
+    request: () => this.sendNow(STARTUP_STATUS_METHOD, undefined, STARTUP_POLL_TIMEOUT_MS),
+    publish: (state) => this.updateStartup(state),
+    handoff: (ready) => this.startupHandoff(ready),
+    fail: (message, snapshot) => this.failStartup(message, snapshot),
+    track: (poll) => void this.own('startup-poll', poll),
+  });
 
   constructor(options: JsonRpcClientOptions = {}) {
     super();
@@ -357,6 +359,9 @@ export class JsonRpcClient extends EventEmitter {
     if (refused) return Promise.reject(refused);
     return this.own('hello-snapshot', async () => {
       if (this.disposed) throw new Error('JSON-RPC client disposed');
+      // No handshake exists until the daemon finishes starting.
+      if (this.startupState?.state === 'starting')
+        throw new JsonRpcError(startupErrorShape(this.startupState));
       await this.ensureConnected();
       if (this.status !== 'connected' || this.helloSnapshot === undefined)
         throw new Error('Current backend handshake is unavailable');
@@ -917,8 +922,9 @@ export class JsonRpcClient extends EventEmitter {
     if (this.disposed) return Promise.reject(new Error('JSON-RPC client disposed'));
     // A starting daemon rejects every ordinary request; refuse it here with the
     // same structured error instead of queueing it for minutes. Callers recover
-    // on `reconnected`, which fires once the daemon is ready.
-    if (this.startupState)
+    // on `reconnected`, which fires once the daemon is ready. After a failed
+    // start, requests still wait for (or start) the next connect attempt.
+    if (this.startupState?.state === 'starting')
       return Promise.reject(new JsonRpcError(startupErrorShape(this.startupState)));
     if (
       [
@@ -1276,9 +1282,12 @@ export class JsonRpcClient extends EventEmitter {
   }
 
   private finishConnect(): void {
-    this.stopStartupPoll();
+    this.startupPoller.reset();
     this.startupIncarnation = null;
-    if (this.startupState) this.updateStartup(null);
+    // Cleared before the `connected` broadcast, announced after it, so no
+    // window sees a `connecting` push without startup state in between.
+    const leftStartup = this.startupState !== null;
+    this.startupState = null;
     this.currentReconnectDelay = this.reconnectDelayMs;
     this.reconnectAttempts = 0;
     this.connectionLimited = false;
@@ -1286,6 +1295,7 @@ export class JsonRpcClient extends EventEmitter {
     this.hasBeenConnected = true;
     this.hasConnectionFailed = false;
     this.setStatus('connected');
+    if (leftStartup) this.emit('startup', null);
     this.flushWaiters();
     this.startHeartbeat();
     logger.info('Backend connected', {
@@ -1314,12 +1324,19 @@ export class JsonRpcClient extends EventEmitter {
         target: describeBackendConfig(this.config),
         reason: error.message,
       });
-      this.startupHandoff();
+      this.startupHandoff(true);
       return;
     }
     // Any other drop ends the wait: the daemon is gone, not starting. A
-    // startup failure stays latched until a new attempt or a connect.
-    if (this.startupState?.state === 'starting') this.updateStartup(null);
+    // startup failure stays latched until a new attempt or a connect, except
+    // that a credential rejection is the more useful thing to show.
+    if (
+      this.startupState?.state === 'starting' ||
+      (this.startupState && error instanceof AuthRejectedError)
+    ) {
+      this.startupPoller.reset();
+      this.updateStartup(null);
+    }
     this.lifecycle?.failures.push({
       owner: this.connectionOwner ?? null,
       kind: 'transport',
@@ -1646,7 +1663,7 @@ export class JsonRpcClient extends EventEmitter {
   }
 
   private teardownSocket(): void {
-    this.stopStartupPoll();
+    this.startupPoller.stop();
     this.startupIncarnation = null;
     this.protocolVersion = null;
     this.helloSnapshot = undefined;
@@ -1729,113 +1746,28 @@ export class JsonRpcClient extends EventEmitter {
       this.abandonStartup();
       return;
     }
-    const previous = this.startupState?.state === 'starting' ? this.startupState.snapshot : null;
     this.startupIncarnation = this.socketIncarnation;
-    const starting: DaemonStartupState = {
-      state: 'starting',
-      snapshot: reply.snapshot ?? previous,
-      available: reply.snapshot !== null,
-    };
-    this.updateStartup(starting);
     logger.info('Backend is starting; waiting until it is ready', {
       target: describeBackendConfig(this.config),
       phase: reply.snapshot?.phase,
       retryAfterMs: reply.retryAfterMs,
     });
-    this.failWaiters(new JsonRpcError(startupErrorShape(starting)));
-    this.scheduleStartupPoll(reply.retryAfterMs);
-  }
-
-  private scheduleStartupPoll(delayMs: number): void {
-    this.stopStartupPoll();
-    const generation = this.startupPollGeneration;
-    const incarnation = this.startupIncarnation;
-    this.startupPollTimer = setTimeout(() => {
-      this.startupPollTimer = null;
-      if (
-        generation !== this.startupPollGeneration ||
-        incarnation === null ||
-        incarnation !== this.socketIncarnation ||
-        this.disposed
-      )
-        return;
-      void this.own('startup-poll', () => this.pollStartup(generation, incarnation));
-    }, delayMs);
-  }
-
-  private stopStartupPoll(): void {
-    this.startupPollGeneration++;
-    if (this.startupPollTimer) {
-      clearTimeout(this.startupPollTimer);
-      this.startupPollTimer = null;
-    }
-  }
-
-  private async pollStartup(generation: number, incarnation: object): Promise<void> {
-    const current = () =>
-      generation === this.startupPollGeneration &&
-      incarnation === this.startupIncarnation &&
-      incarnation === this.socketIncarnation &&
-      !this.disposed;
-    const previous = this.startupState?.snapshot ?? null;
-    let snapshot: StartupSnapshot | null;
-    try {
-      snapshot = parseStartupSnapshot(
-        await this.sendNow(STARTUP_STATUS_METHOD, undefined, STARTUP_POLL_TIMEOUT_MS),
-      );
-    } catch (error) {
-      if (!current()) return;
-      const reply = classifyStartupReply(error);
-      if (reply?.kind === 'failed') {
-        this.failStartup(reply.message, reply.snapshot);
-        return;
-      }
-      if (reply?.kind === 'not-ready') {
-        this.updateStartup({
-          state: 'starting',
-          snapshot: reply.snapshot ?? previous,
-          available: reply.snapshot !== null,
-        });
-        this.scheduleStartupPoll(reply.retryAfterMs);
-        return;
-      }
-      // No usable status (timeout, unknown method, transport error): hello
-      // again on a fresh socket, which re-enters startup if still starting.
-      logger.warn('Backend startup status unavailable; reconnecting', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      this.updateStartup({ state: 'starting', snapshot: previous, available: false });
-      this.startupHandoff();
-      return;
-    }
-    if (!current()) return;
-    if (snapshot === null) {
-      logger.warn('Backend startup status was malformed; reconnecting');
-      this.updateStartup({ state: 'starting', snapshot: previous, available: false });
-      this.startupHandoff();
-      return;
-    }
-    if (snapshot.phase === 'failed') {
-      this.failStartup(snapshot.failure?.message ?? '', snapshot);
-      return;
-    }
-    this.updateStartup({ state: 'starting', snapshot, available: true });
-    if (snapshot.phase === 'ready') {
-      logger.info('Backend finished starting; reconnecting', {
-        target: describeBackendConfig(this.config),
-      });
-      this.startupHandoff();
-      return;
-    }
-    this.scheduleStartupPoll(clampStartupRetryMs(snapshot.retryAfterMs));
+    this.startupPoller.start(reply);
+    if (this.startupState) this.failWaiters(new JsonRpcError(startupErrorShape(this.startupState)));
   }
 
   /**
-   * Leave the bootstrap socket and dial one fresh connection after the base
-   * delay. Status stays `connecting`, so no connection-lost posture flashes;
-   * the fresh hello either confirms readiness or re-enters startup.
+   * Leave the bootstrap socket and dial one fresh connection. Status stays
+   * `connecting`, so no connection-lost posture flashes; the fresh hello
+   * either confirms readiness or re-enters startup. A ready daemon is redialed
+   * after the base delay; one whose status is unusable backs off like any
+   * other reconnect, so a daemon that never serves status cannot spin.
    */
-  private startupHandoff(): void {
+  private startupHandoff(ready: boolean): void {
+    if (!ready)
+      logger.warn('Backend startup status unavailable; reconnecting', {
+        target: describeBackendConfig(this.config),
+      });
     const refusal = this.startupState
       ? new JsonRpcError(startupErrorShape(this.startupState))
       : new Error('Connection closed');
@@ -1848,16 +1780,21 @@ export class JsonRpcClient extends EventEmitter {
       return;
     }
     this.clearReconnect();
-    this.currentReconnectDelay = this.reconnectDelayMs;
+    let delay = this.reconnectDelayMs;
+    if (ready) this.currentReconnectDelay = this.reconnectDelayMs;
+    else {
+      delay = this.currentReconnectDelay;
+      this.currentReconnectDelay = Math.min(delay * 2, this.maxReconnectDelayMs);
+    }
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       if (!this.disposed && !this.lifecycle?.stopping) this.connect();
-    }, this.reconnectDelayMs);
+    }, delay);
   }
 
   /** The daemon reported a terminal startup failure. */
   private failStartup(message: string, snapshot: StartupSnapshot | null): void {
-    this.stopStartupPoll();
+    this.startupPoller.stop();
     this.startupIncarnation = null;
     this.hasConnectionFailed = true;
     const failed: DaemonStartupState = {
