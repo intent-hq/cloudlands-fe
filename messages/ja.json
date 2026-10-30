@@ -4628,6 +4628,8 @@
   "settings_agentFeatures_saveError": "エージェント機能の設定を保存できませんでした: {error}",
   "settings_agentFeatures_scripts_description": "エージェントが保存済みのスクリプトやサービスを作成・実行できるようにします",
   "settings_agentFeatures_scripts_label": "保存済みスクリプト",
+  "settings_agentFeatures_secretRequests_description": "トップレベルエージェントが API キーなどのシークレットをリクエストできるようにします。値はコマンド用にメモリ内にのみ保持されます。ホストコマンド実行も必要です",
+  "settings_agentFeatures_secretRequests_label": "シークレットのリクエスト",
   "settings_agentFeatures_stateSnapshot_description": "各エージェントのターンの先頭に ws.agent.snapshot() のコンパクトな状態ダイジェストを付加します",
   "settings_agentFeatures_stateSnapshot_label": "状態スナップショット",
   "settings_agentFeatures_structuredQuestions_description": "エージェントが定義済みの選択肢を持つ構造化された確認質問をできるようにします",

@@ -4628,6 +4628,8 @@
   "settings_agentFeatures_saveError": "無法儲存智慧體功能設定：{error}",
   "settings_agentFeatures_scripts_description": "允許智慧體建立並執行已儲存的指令碼和服務",
   "settings_agentFeatures_scripts_label": "已儲存的指令碼",
+  "settings_agentFeatures_secretRequests_description": "允許頂層智慧體向你請求 API 金鑰等機密資訊，這些資訊僅保存在記憶體中供其命令使用。還需要開啟主機命令執行",
+  "settings_agentFeatures_secretRequests_label": "密鑰請求",
   "settings_agentFeatures_stateSnapshot_description": "在每個智慧體回合開頭附加簡潔的 ws.agent.snapshot() 狀態摘要",
   "settings_agentFeatures_stateSnapshot_label": "狀態快照",
   "settings_agentFeatures_structuredQuestions_description": "允許智慧體提出含預先定義選項的結構化釐清問題",
