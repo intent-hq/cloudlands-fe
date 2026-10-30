@@ -6507,4 +6507,65 @@ describe('startup status IPC ownership', () => {
       daemonStartup: null,
     });
   });
+
+  it('sends the full per-backend field set on every scoped status push', async () => {
+    const { mod } = await loadModule();
+    const { remoteSender, localSend, remoteSend } = installBackendWindows();
+    mod.registerBackendHandlers();
+    const remote = await mod.connectBackendClient('remote-1');
+    remote.isConnectionLimited = () => true;
+    remote.getConnectionLimitRetryAfterMs = () => 30_000;
+    localSend.mockClear();
+    remoteSend.mockClear();
+
+    remote.emit('status', 'connecting');
+    remote.emit('startup');
+    remote.emit('reconnected');
+
+    const payloads = remoteSend.mock.calls
+      .filter(([channel]) => channel === 'backend:status')
+      .map(([, payload]) => payload as Record<string, unknown>);
+    expect(payloads).toHaveLength(3);
+    for (const payload of payloads) {
+      expect(payload).toMatchObject({
+        transport: expect.any(Object),
+        reconnectAttempts: 0,
+        daemonStartup: null,
+        connectionLimited: true,
+        connectionLimitRetryAfterMs: 30_000,
+      });
+    }
+    // The `reconnected` push used to omit the connection-limit state.
+    expect(payloads[2]).toMatchObject({ status: 'connected', reconnected: true });
+    expect(localSend.mock.calls.some(([channel]) => channel === 'backend:status')).toBe(false);
+    expect(
+      await findHandler('backend:get-status')!({ sender: remoteSender }, undefined),
+    ).toMatchObject({ connectionLimited: true, connectionLimitRetryAfterMs: 30_000 });
+  });
+
+  it('keeps the unscoped orphan-restart push free of per-backend facts', async () => {
+    const { mod } = await loadModule();
+    const { localSend, remoteSend } = installBackendWindows();
+    mod.registerBackendHandlers();
+    await mod.connectBackendClient('remote-1');
+    const local = mod.getBackendClient();
+    local.getStartupState = () =>
+      ({ state: 'starting', available: true, snapshot: null }) as ReturnType<
+        typeof local.getStartupState
+      >;
+    local.isConnectionLimited = () => true;
+    localSend.mockClear();
+    remoteSend.mockClear();
+
+    mockRestartOrphanedSidecar.mockResolvedValueOnce({ ok: true, spawned: true });
+    await findHandler('backend:restart-orphaned-sidecar')!({}, undefined);
+
+    for (const send of [localSend, remoteSend]) {
+      const payloads = send.mock.calls
+        .filter(([channel]) => channel === 'backend:status')
+        .map(([, payload]) => payload as Record<string, unknown>);
+      expect(payloads).toHaveLength(1);
+      expect(Object.keys(payloads[0]).sort()).toEqual(['reconnectAttempts', 'status', 'transport']);
+    }
+  });
 });
