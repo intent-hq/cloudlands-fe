@@ -380,6 +380,7 @@ import { createNoteRequested } from '$store/renderer/slices/note-read-tracking/n
 import { commandPaletteNewFileRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import { setStatsOverlayOpen } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { openTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { terminalManager } from '$features/terminal/terminal-manager.svelte';
 
 // Actions that dispatch Redux actions directly (no window event intermediary)
@@ -980,6 +981,26 @@ describe('CommandPalette workspace activity recency', () => {
     expect(old.textContent).not.toContain('just now');
   });
 
+  it('shows a selected workspace and opens its tab', async () => {
+    workspaceItemsState.value = [
+      { id: 'current', title: 'Current Space', createdAt: '2025-01-01T00:00:00.000Z' },
+      { id: 'closed', title: 'Closed Space', createdAt: '2025-06-01T00:00:00.000Z' },
+    ];
+    try {
+      render(CommandPalette, {
+        props: { isOpen: true, workspaceId: 'current', onClose: vi.fn() },
+      });
+      await fireEvent.click(await screen.findByRole('button', { name: /Closed Space/i }));
+
+      await waitFor(() =>
+        expect(reduxDispatchMock).toHaveBeenCalledWith(openWorkspaceTab('closed')),
+      );
+      expect(gotoMock).toHaveBeenCalledWith('/workspace/closed');
+    } finally {
+      workspaceItemsState.value = [];
+    }
+  });
+
   it('lists purged (retired) workspaces with the Archived badge and opts in to loading them', async () => {
     workspaceItemsState.value = [
       {
@@ -1231,6 +1252,7 @@ describe('CommandPalette indexed notes', () => {
         ),
       );
       expect(gotoMock).toHaveBeenCalledWith('/workspace/other');
+      expect(reduxDispatchMock).toHaveBeenCalledWith(openWorkspaceTab('other'));
       expect(reduxDispatchMock).toHaveBeenCalledWith(
         recordPaletteMruItem('note', JSON.stringify(['other', 'spec']), expect.any(Number)),
       );

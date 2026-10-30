@@ -13,13 +13,6 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('./navigation.client', () => ({ navigateToRoute: mocks.route }));
 
-/** A navigation that lands: the window ends up on the requested route. */
-function landingNavigation() {
-  mocks.route.mockImplementation(async (route) => {
-    window.history.replaceState({}, '', route);
-  });
-}
-
 describe('workspaceRoute', () => {
   it('encodes the workspace id', () => {
     expect(workspaceRoute('a/b?c')).toBe('/workspace/a%2Fb%3Fc');
@@ -41,7 +34,7 @@ describe('openAndShowWorkspace', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    landingNavigation();
+    mocks.route.mockResolvedValue(undefined);
     window.history.replaceState({}, '', '/workspace/open-ws');
     dispose = store.init();
     store.dispatch(openWorkspaceTab('open-ws'));
@@ -54,9 +47,8 @@ describe('openAndShowWorkspace', () => {
 
   it('navigates, then opens and focuses the tab of a workspace that is not open', async () => {
     let tabsDuringNavigation: string[] = [];
-    mocks.route.mockImplementationOnce(async (route) => {
+    mocks.route.mockImplementationOnce(async () => {
       tabsDuringNavigation = [...selectWorkspaceTabOrder.select(store.state)];
-      window.history.replaceState({}, '', route);
     });
 
     await expect(openAndShowWorkspace('closed-ws')).resolves.toBe(true);
@@ -99,12 +91,12 @@ describe('openAndShowWorkspace', () => {
     expect(selectCurrentWorkspaceTabId.select(store.state)).toBe('open-ws');
   });
 
-  it('opens no tab when the navigation does not land (superseded or HUD no-op)', async () => {
-    mocks.route.mockImplementationOnce(async () => {});
-    window.history.replaceState({}, '', '/settings');
+  it('does nothing in the HUD window, which never navigates', async () => {
+    window.history.replaceState({}, '', '/hud');
 
     await expect(openAndShowWorkspace('closed-ws')).resolves.toBe(false);
 
+    expect(mocks.route).not.toHaveBeenCalled();
     expect(selectWorkspaceTabOrder.select(store.state)).toEqual(['open-ws']);
     expect(selectCurrentWorkspaceTabId.select(store.state)).toBe('open-ws');
   });
@@ -132,7 +124,7 @@ describe('openAndShowWorkspace', () => {
 describe('showWorkspaceSaga', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    landingNavigation();
+    mocks.route.mockResolvedValue(undefined);
     window.history.replaceState({}, '', '/');
   });
 
@@ -158,12 +150,13 @@ describe('showWorkspaceSaga', () => {
     expect(dispatched).toEqual([openWorkspaceTab('ws-1')]);
   });
 
-  it('puts nothing when the navigation does not land', async () => {
-    mocks.route.mockImplementationOnce(async () => {});
+  it('puts nothing in the HUD window', async () => {
+    window.history.replaceState({}, '', '/hud');
 
     const { result, dispatched } = await run('ws-1');
 
     expect(result).toBe(false);
+    expect(mocks.route).not.toHaveBeenCalled();
     expect(dispatched).toEqual([]);
   });
 

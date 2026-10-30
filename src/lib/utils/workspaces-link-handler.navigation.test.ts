@@ -143,7 +143,7 @@ describe('handleIntentLink panel navigation', () => {
     );
   });
 
-  it('opens no file when the cross-workspace navigation does not land', async () => {
+  it('opens no file when the helper skips the cross-workspace navigation (HUD window)', async () => {
     mocks.show.mockResolvedValueOnce(false);
     await handleIntentLink('intent://local/other-workspace/file/docs/guide.md', {
       workspaceId: 'owning-workspace',

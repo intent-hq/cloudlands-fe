@@ -17,7 +17,7 @@
     homePreviewEligibleAgents,
     resolveHomePreviewAgent,
   } from './home-preview-agent';
-  import { goto } from '$app/navigation';
+  import { openAndShowWorkspace } from '$lib/utils/show-workspace.client';
   import { Button } from '$lib/components/ui/button';
   import { Select } from '$lib/components/ui/select';
   import Fa from 'svelte-fa';
@@ -27,7 +27,6 @@
     faFolder,
     faArrowRight,
   } from '@fortawesome/free-solid-svg-icons';
-  import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { store } from '$store/renderer/store';
   import { ensureWorkspaceDetail } from '$features/workspace/workspace-detail-hydration';
   import { m } from '$shared/paraglide/messages.js';
@@ -83,8 +82,7 @@
     if (!preview) void loadDetail();
   });
   function openWorkspace() {
-    store.dispatch(openWorkspaceTab(workspace.id));
-    void goto(`/workspace/${encodeURIComponent(workspace.id)}`);
+    void openAndShowWorkspace(workspace.id);
   }
 </script>
 

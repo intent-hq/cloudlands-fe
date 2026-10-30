@@ -199,15 +199,10 @@ describe('workspaceOperationsSaga', () => {
     vi.resetAllMocks();
     mocks.getActiveWorkNames.mockResolvedValue(noActiveWork);
     mocks.navigate.mockResolvedValue(undefined);
-    // Lands like a real navigation so the workspace helper opens the tab.
-    mocks.navigateToRoute.mockImplementation(async (route: string) => {
-      window.history.replaceState({}, '', route);
-    });
   });
   afterEach(() => {
     store.dispose();
     vi.useRealTimers();
-    window.history.replaceState({}, '', '/');
   });
 
   it.each([

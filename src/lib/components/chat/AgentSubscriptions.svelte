@@ -97,9 +97,8 @@
   } from './subscription-disclosure';
   import { store as appStore } from '$store/renderer/store';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
-  import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
-  import { navigateToRoute } from '$lib/utils/navigation.client';
+  import { openAndShowWorkspace } from '$lib/utils/show-workspace.client';
   import { findSourcePanelId } from '$lib/utils/workspace-navigation';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
@@ -706,8 +705,7 @@
     if (!workspaceId) return;
     if (openAssistantAgentFromEvent(event, workspaceId, watchedAgentId)) return;
     if (selectCurrentWorkspaceTabId.select(appStore.state) !== workspaceId) {
-      appStore.dispatch(openWorkspaceTab(workspaceId));
-      void navigateToRoute(`/workspace/${workspaceId}`).catch((error) => {
+      void openAndShowWorkspace(workspaceId).catch((error) => {
         logger.warn('Failed to switch workspace for watched agent', { watchedAgentId, error });
       });
     }

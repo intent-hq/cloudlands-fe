@@ -20,6 +20,7 @@ const historySelectorState = vi.hoisted(() => ({
 
 const navigationMocks = vi.hoisted(() => ({
   goto: vi.fn(),
+  showWorkspace: vi.fn(async () => true),
 }));
 
 // The New Workspace modal's effective specialist (null = General), as the
@@ -165,6 +166,9 @@ vi.mock('$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-selectors'
 }));
 vi.mock('$app/navigation', () => ({
   goto: navigationMocks.goto,
+}));
+vi.mock('$lib/utils/show-workspace.client', () => ({
+  openAndShowWorkspace: navigationMocks.showWorkspace,
 }));
 vi.mock('$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-selectors', () => ({
   selectPrBranchLookupEntries: prBranchLookupState.selectPrBranchLookupEntries,
@@ -1542,7 +1546,8 @@ describe('ProposalCard', () => {
     expect(screen.queryByText(/proposal/i)).toBeNull();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Open workspace' }));
-    expect(navigationMocks.goto).toHaveBeenCalledWith('/workspace/ws-new');
+    // A proposal-created workspace may have no tab yet; the helper opens it.
+    expect(navigationMocks.showWorkspace).toHaveBeenCalledWith('ws-new');
   });
 
   it('renders the created workspace summary as non-editable (no form controls, no Discard button)', () => {

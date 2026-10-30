@@ -509,7 +509,7 @@ async function navigateToFile(
 
     if (isCrossWorkspace) {
       // Show the target workspace and its tab first, then open the file there.
-      // A navigation that did not land (HUD window, superseded) opens nothing.
+      // The HUD window never navigates, so it opens nothing.
       const { openAndShowWorkspace } = await import('./show-workspace.client');
       if (!(await openAndShowWorkspace(info.workspaceId))) return;
     }

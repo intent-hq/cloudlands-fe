@@ -4,10 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   isElectron: vi.fn(() => true),
   invoke: vi.fn(),
-  // Lands like a real navigation so the workspace helper opens the tab.
-  navigateToRoute: vi.fn(async (route: string) => {
-    window.history.replaceState({}, '', route);
-  }),
+  navigateToRoute: vi.fn(async () => undefined),
   list: vi.fn(),
   create: vi.fn(),
   notifyError: vi.fn(),
@@ -86,7 +83,6 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.clearAllMocks();
-  window.history.replaceState({}, '', '/');
 });
 
 describe('intent://open?path (the intent CLI)', () => {
@@ -101,7 +97,7 @@ describe('intent://open?path (the intent CLI)', () => {
     const dispatched = await run({ type: 'open', params: { path: '/Users/me/' } });
     expect(mocks.create).not.toHaveBeenCalled();
     expect(mocks.navigateToRoute).toHaveBeenCalledWith('/workspace/home');
-    // The tab opens once the navigation lands, through the shared helper.
+    // The tab opens once the navigation resolves, through the shared helper.
     expect(dispatched).toContainEqual(openWorkspaceTab('home'));
   });
 
@@ -170,12 +166,13 @@ describe('intent://open?id', () => {
     expect(mocks.navigateToRoute).toHaveBeenCalledWith('/workspace/ws-9');
   });
 
-  it('opens no tab when the navigation does not land', async () => {
-    mocks.navigateToRoute.mockImplementationOnce(async () => {});
+  it('opens no tab and reports the error when the navigation fails', async () => {
+    mocks.navigateToRoute.mockRejectedValueOnce(new Error('route rejected'));
     mocks.list.mockResolvedValue({ ok: true, data: [workspace({ id: 'ws-9' })] });
     const dispatched = await run({ type: 'open', params: { id: 'ws-9' } });
     expect(mocks.navigateToRoute).toHaveBeenCalledWith('/workspace/ws-9');
     expect(dispatched).not.toContainEqual(openWorkspaceTab('ws-9'));
+    expect(mocks.notifyError).toHaveBeenCalledTimes(1);
   });
 
   it('shows an error for an unknown workspace id', async () => {

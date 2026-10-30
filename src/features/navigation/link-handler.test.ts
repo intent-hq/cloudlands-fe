@@ -1369,19 +1369,11 @@ describe('openLinkInApp', () => {
     expect(invokeIpcMock).not.toHaveBeenCalled();
   });
 
-  it('opens the owning workspace tab once entering the workspace lands', async () => {
-    gotoMock.mockImplementationOnce(async (route: string) => {
-      window.history.replaceState({}, '', route);
-    });
+  it('opens the owning workspace tab once entering the workspace succeeds', async () => {
+    expect(await openLinkInApp(url, TEST_WORKSPACE_ID, { openInWorkspace: true })).toBe(true);
 
-    try {
-      expect(await openLinkInApp(url, TEST_WORKSPACE_ID, { openInWorkspace: true })).toBe(true);
-
-      expect(gotoMock).toHaveBeenCalledWith('/workspace/ws-1');
-      expect(reduxDispatchMock).toHaveBeenCalledWith(openWorkspaceTab(TEST_WORKSPACE_ID));
-    } finally {
-      window.history.replaceState({}, '', '/');
-    }
+    expect(gotoMock).toHaveBeenCalledWith('/workspace/ws-1');
+    expect(reduxDispatchMock).toHaveBeenCalledWith(openWorkspaceTab(TEST_WORKSPACE_ID));
   });
 
   it('stays in the current workspace and opens beside the source panel', async () => {

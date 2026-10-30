@@ -5,10 +5,7 @@ const mocks = vi.hoisted(() => ({
   retry: vi.fn(),
   agentFailure: vi.fn(),
   dismiss: vi.fn(),
-  // Lands like a real navigation so the workspace helper opens the tab.
-  navigateToRoute: vi.fn(async (route: string) => {
-    window.history.replaceState({}, '', route);
-  }),
+  navigateToRoute: vi.fn(async () => {}),
   resolveKeySlot: vi.fn((workspaceId: string | undefined) => (workspaceId === 'ws-1' ? 3 : null)),
 }));
 vi.mock('$lib/client', () => ({ appClient: { agents: { retry: mocks.retry } } }));
@@ -110,7 +107,6 @@ describe('agentFailureToastSaga', () => {
   afterEach(() => {
     clearAgentFailureRegistry();
     vi.clearAllMocks();
-    window.history.replaceState({}, '', '/');
   });
 
   it('suppresses current-workspace failures while preserving the registry and auth refresh', async () => {
@@ -385,8 +381,8 @@ describe('agentFailureToastSaga', () => {
     await task.toPromise();
   });
 
-  it('Switch To opens no agent tab when the workspace navigation does not land', async () => {
-    mocks.navigateToRoute.mockImplementationOnce(async () => {});
+  it('Switch To opens no workspace or agent tab when the workspace navigation fails', async () => {
+    mocks.navigateToRoute.mockRejectedValueOnce(new Error('navigation failed'));
     const dispatch = vi.fn();
     const task = runSaga({ dispatch, getState: state }, agentFailureToastSaga);
     recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'boom' });

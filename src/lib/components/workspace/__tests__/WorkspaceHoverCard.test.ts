@@ -445,7 +445,7 @@ describe('WorkspaceHoverCard', () => {
     expect(container.querySelector('[data-workspace-hover-card-pr-column]')).toBeNull();
   });
 
-  it('dispatches an agent-tab request when an agent row is clicked', async () => {
+  it('shows the workspace with its tab and opens the agent when an agent row is clicked', async () => {
     mocks.currentWorkspaceTabId = 'ws-2';
     mocks.agentSessionsByWorkspace['ws-1'] = [agent('active', 'Noah', 'running')];
     await renderHoverCard({ agentSummary: { agentIds: ['active'] } });
@@ -458,14 +458,17 @@ describe('WorkspaceHoverCard', () => {
 
     expect(stopPropagation).toHaveBeenCalledOnce();
     expect(mocks.dispatch).toHaveBeenCalledWith({
-      type: 'tabState/openWorkspaceTab',
-      payload: ['ws-1'],
-    });
-    expect(mocks.navigateToRoute).toHaveBeenCalledWith('/workspace/ws-1');
-    expect(mocks.dispatch).toHaveBeenCalledWith({
       type: 'appLayout/openAgentTabRequested',
       payload: ['ws-1', { agentId: 'active' }],
     });
+    // The shared helper opens the workspace tab once navigation resolves.
+    expect(mocks.navigateToRoute).toHaveBeenCalledWith('/workspace/ws-1');
+    await vi.waitFor(() =>
+      expect(mocks.dispatch).toHaveBeenCalledWith({
+        type: 'tabState/openWorkspaceTab',
+        payload: ['ws-1'],
+      }),
+    );
   });
 
   it('routes a pull request row through the link handler', async () => {

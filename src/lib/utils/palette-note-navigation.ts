@@ -16,12 +16,13 @@ export async function openPaletteNote(
   const targetPath = workspaceRoute(workspaceId);
   if (window.location.pathname !== targetPath) {
     try {
-      // Cancellation or a HUD no-op must not open a note in a hidden workspace.
-      if (!(await openAndShowWorkspace(workspaceId))) return false;
+      await openAndShowWorkspace(workspaceId);
     } catch (error) {
       logger.warn('Note workspace navigation failed', { workspaceId, error });
       return false;
     }
+    // Cancellation or a HUD no-op must not open a note in a hidden workspace.
+    if (window.location.pathname !== targetPath) return false;
   }
   appStore.dispatch(openWorkspaceNote(workspaceId, noteId, { openInAdjacentPanel }));
   appStore.dispatch(

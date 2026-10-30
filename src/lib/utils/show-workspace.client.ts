@@ -8,9 +8,10 @@
  * through this module instead; the `intent/no-raw-workspace-navigation` lint
  * rule flags hand-written workspace navigation elsewhere.
  *
- * The tab opens only once navigation resolves AND the window is on the
- * workspace route, so a failed, cancelled or HUD-suppressed navigation never
- * leaves a stray focused tab. Navigation errors are rethrown to the caller.
+ * The tab opens only once navigation resolves, so a failed navigation never
+ * leaves a stray focused tab; navigation errors are rethrown to the caller.
+ * The HUD pop-out window never navigates (see `navigateToRoute`), so the
+ * helper does nothing there.
  */
 import { call, put, type SagaGenerator } from 'typed-redux-saga';
 import { store as appStore } from '$store/renderer/store';
@@ -34,19 +35,9 @@ export function workspaceRoute(workspaceId: string, query?: ShowWorkspaceOptions
   return search ? `${path}?${search}` : path;
 }
 
-function decodeSegment(segment: string): string | null {
-  try {
-    return decodeURIComponent(segment);
-  } catch {
-    return null;
-  }
-}
-
-/** Whether this window currently shows `workspaceId`'s route. */
-function isShowingWorkspaceRoute(workspaceId: string): boolean {
-  if (typeof window === 'undefined') return false;
-  const match = (window.location?.pathname ?? '').match(/^\/workspace\/([^/]+)/);
-  return match ? decodeSegment(match[1]) === workspaceId : false;
+/** Same guard as `navigateToRoute`: the HUD pop-out window never leaves /hud. */
+function isHudWindow(): boolean {
+  return typeof window !== 'undefined' && (window.location?.pathname ?? '').startsWith('/hud');
 }
 
 /** The tab action, tagged with a presence-follow request id only when one is present. */
@@ -62,16 +53,15 @@ function navigate(route: string, state: App.PageState | undefined): Promise<void
 
 /**
  * Navigate to `workspaceId` and open its tab. Resolves `true` once the
- * workspace is showing with its tab focused; `false` when nothing happened
- * (empty id, HUD window, or the navigation was superseded).
+ * navigation resolved and the tab is focused; `false` when nothing happened
+ * (empty id or the HUD window).
  */
 export async function openAndShowWorkspace(
   workspaceId: string,
   options: ShowWorkspaceOptions = {},
 ): Promise<boolean> {
-  if (!workspaceId) return false;
+  if (!workspaceId || isHudWindow()) return false;
   await navigate(workspaceRoute(workspaceId, options.query), options.state);
-  if (!isShowingWorkspaceRoute(workspaceId)) return false;
   appStore.dispatch(openTabAction(workspaceId, options.state));
   return true;
 }
@@ -81,9 +71,8 @@ export function* showWorkspaceSaga(
   workspaceId: string,
   options: ShowWorkspaceOptions = {},
 ): SagaGenerator<boolean> {
-  if (!workspaceId) return false;
+  if (!workspaceId || isHudWindow()) return false;
   yield* call(navigate, workspaceRoute(workspaceId, options.query), options.state);
-  if (!isShowingWorkspaceRoute(workspaceId)) return false;
   yield* put(openTabAction(workspaceId, options.state));
   return true;
 }

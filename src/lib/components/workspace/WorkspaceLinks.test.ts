@@ -5,11 +5,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 
-vi.mock('$app/navigation', () => ({
-  goto: vi.fn(),
-}));
+const mocks = vi.hoisted(() => ({ show: vi.fn(async () => true) }));
+vi.mock('$lib/utils/show-workspace.client', () => ({ openAndShowWorkspace: mocks.show }));
 
-import { goto } from '$app/navigation';
 import { page } from '$app/stores';
 import WorkspaceLinks from '$lib/components/workspace/WorkspaceLinks.svelte';
 
@@ -24,7 +22,7 @@ describe('WorkspaceLinks', () => {
     });
   });
 
-  it('navigates using the workspace route as the source of truth', async () => {
+  it('shows the workspace and opens its tab through the shared helper', async () => {
     const workspaces = [
       {
         id: 'ws-1',
@@ -38,6 +36,6 @@ describe('WorkspaceLinks', () => {
     const button = getByRole('button', { name: /demo workspace/i });
     await fireEvent.click(button);
 
-    expect(goto).toHaveBeenCalledWith('/workspace/ws-1');
+    expect(mocks.show).toHaveBeenCalledWith('ws-1');
   });
 });

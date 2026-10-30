@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { goto } from '$app/navigation';
+  import { openAndShowWorkspace } from '$lib/utils/show-workspace.client';
   import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
   import type { Proposal } from '$shared/types/proposal';
@@ -104,7 +104,7 @@
   async function handleOpenWorkspace(event: MouseEvent): Promise<void> {
     if (!createdWorkspaceId) return;
     event.preventDefault();
-    await goto(`/workspace/${createdWorkspaceId}`);
+    await openAndShowWorkspace(createdWorkspaceId);
   }
 
   $effect(() => {

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { showAssistantContent } from '$features/home/assistant-panels';
-  import { goto } from '$app/navigation';
+  import { openAndShowWorkspace } from '$lib/utils/show-workspace.client';
   import { untrack } from 'svelte';
   import {
     faArrowUpRightFromSquare,
@@ -22,7 +22,6 @@
     selectActiveAgentId,
     selectWorkspaceForegroundAgentIds,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
-  import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import type { Workspace } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
@@ -89,13 +88,12 @@
     }
 
     try {
-      await goto(`/workspace/${workspaceId}`);
+      if (!(await openAndShowWorkspace(workspaceId))) return;
     } catch (error) {
       console.warn('Failed to navigate to workspace:', error);
       return;
     }
 
-    appStore.dispatch(openWorkspaceTab(workspaceId));
     const foregroundAgentIds = selectWorkspaceForegroundAgentIds
       .select(appStore.state, workspaceId)
       .map(String);

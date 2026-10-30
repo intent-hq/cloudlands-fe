@@ -16,7 +16,7 @@
   import HomeWorkspaceDetail from './HomeWorkspaceDetail.svelte';
   import { onDestroy, untrack, tick, type Snippet } from 'svelte';
   import { goto } from '$app/navigation';
-  import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
+  import { openAndShowWorkspace } from '$lib/utils/show-workspace.client';
   import { createHomeDoubleClickOpener } from './home-workspace-opening';
   import { handleLink } from '$features/navigation/link-handler';
   import { WorkspaceId } from '$shared/types/branded-ids';
@@ -278,8 +278,7 @@
     });
   }
   function goToWorkspace(id: string) {
-    appStore.dispatch(openWorkspaceTab(id));
-    void goto(`/workspace/${encodeURIComponent(id)}`);
+    void openAndShowWorkspace(id);
   }
   function linkedWorkspaceFor(item: { url: string }) {
     return $linkedWorkspaces$.find(

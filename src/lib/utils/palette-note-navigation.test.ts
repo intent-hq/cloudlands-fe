@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openWorkspaceNote } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 
-const mocks = vi.hoisted(() => ({ show: vi.fn(), dispatch: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  show: vi.fn<(workspaceId: string) => Promise<boolean>>(),
+  dispatch: vi.fn(),
+}));
 vi.mock('./show-workspace.client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./show-workspace.client')>()),
   openAndShowWorkspace: mocks.show,
@@ -27,8 +30,9 @@ describe('openPaletteNote', () => {
 
   it('shows another workspace (and its tab) before opening the note there', async () => {
     let shown = false;
-    mocks.show.mockImplementationOnce(async () => {
+    mocks.show.mockImplementationOnce(async (workspaceId: string) => {
       shown = true;
+      window.history.replaceState({}, '', `/workspace/${workspaceId}`);
       return true;
     });
     mocks.dispatch.mockImplementation(() => expect(shown).toBe(true));
@@ -51,7 +55,7 @@ describe('openPaletteNote', () => {
   });
 
   it.each([
-    ['does not land', () => mocks.show.mockResolvedValueOnce(false)],
+    ['is cancelled or skipped (route unchanged)', () => mocks.show.mockResolvedValueOnce(false)],
     ['fails', () => mocks.show.mockRejectedValueOnce(new Error('navigation failed'))],
   ])('opens nothing when the workspace navigation %s', async (_label, arrange) => {
     arrange();

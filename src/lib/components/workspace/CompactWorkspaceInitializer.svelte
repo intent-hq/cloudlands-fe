@@ -2365,6 +2365,7 @@
         draftCleared = true;
         clearForm(true);
         if (!active.current()) return;
+        // eslint-disable-next-line intent/no-raw-workspace-navigation -- the initialization saga's installWorkspace already opened this new workspace's tab.
         const navigation = goto(`/workspace/${outcome.workspaceId}`);
         if (active.current()) oncreate?.();
         await navigation;

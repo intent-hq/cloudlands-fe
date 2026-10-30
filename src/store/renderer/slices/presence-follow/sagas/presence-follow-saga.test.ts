@@ -151,11 +151,9 @@ beforeEach(() => {
       },
     );
   wire.hydrate.mockReset().mockResolvedValue(undefined);
-  // The route lands; the shared workspace helper then opens the tab tagged
-  // with the follow's request id (the route projection the saga waits for).
-  wire.goto.mockReset().mockImplementation(async (path: string) => {
-    window.history.replaceState({}, '', path);
-  });
+  // The shared workspace helper opens the tab tagged with the follow's request
+  // id once goto resolves (the route projection the saga waits for).
+  wire.goto.mockReset().mockResolvedValue(undefined);
   store.dispatch(
     connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }),
   );
@@ -177,7 +175,6 @@ afterEach(() => {
   cancelCapture();
   dispose();
   vi.useRealTimers();
-  window.history.replaceState({}, '', '/');
 });
 function seedPresence(role: HostRole = 'member', people = ['person']) {
   admit(role);

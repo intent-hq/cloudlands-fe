@@ -44,7 +44,7 @@ it('does not open an unrelated agent on missing identity or failed navigation', 
   await expect(navigateToDesktopAgent('space-a', 'agent-a')).rejects.toThrow('navigation failed');
   expect(mocks.dispatch).not.toHaveBeenCalled();
 });
-it('does not open the agent when the workspace navigation did not land', async () => {
+it('does not open the agent when the helper skips navigation (HUD window)', async () => {
   mocks.show.mockResolvedValueOnce(false);
   await navigateToDesktopAgent('space-a', 'agent-a');
   expect(mocks.dispatch).not.toHaveBeenCalled();

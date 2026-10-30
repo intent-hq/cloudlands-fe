@@ -58,13 +58,8 @@ vi.mock('$lib/components/ui/toast', () => ({
   AgentAttentionToast: 'AgentAttentionToast',
 }));
 
-// A resolved navigation lands on its route, as SvelteKit's goto does, so the
-// shared workspace helper sees the workspace showing and opens its tab.
 vi.mock('$lib/utils/navigation.client', () => ({
-  navigateToRoute: async (route: string) => {
-    await navigateToRouteMock(route);
-    window.history.replaceState({}, '', route);
-  },
+  navigateToRoute: navigateToRouteMock,
   isHudWindowRenderer: () => false,
 }));
 
@@ -120,7 +115,6 @@ describe('agent-attention-toast-service', () => {
   afterEach(() => {
     vi.clearAllMocks();
     vi.restoreAllMocks();
-    window.history.replaceState({}, '', '/');
   });
 
   it('shows a STICKY toast (duration: Infinity) with a stable per-agent id', async () => {
@@ -618,7 +612,6 @@ describe('agent-attention-toast-service lazy loading', () => {
   });
 
   afterEach(async () => {
-    window.history.replaceState({}, '', '/');
     notifyReady.resolve();
     componentReady.resolve();
     await vi.dynamicImportSettled();
