@@ -4310,6 +4310,195 @@ describe('daemonEventsBridge (queue drain-start — agent:queue:processing → c
   });
 });
 
+// PROTOCOL §6.5/§6.6: a queue-drained prompt turn emits no
+// `agent:stream:start`; `agent:queue:processing` is its explicit drain-start
+// signal. The bridge must open the Thinking/busy state on it — otherwise the
+// drained user row renders with no indicator until the model's first output.
+describe('daemonEventsBridge (queue drain-start — agent:queue:processing opens the turn UI)', () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    appStore.dispatch(clearAllSessions());
+    appStore.dispatch(chatReset(AGENT));
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    // The previous turn just ended (`agent:stream:end` cleared the flags).
+    seedSession({ status: AgentStatus.Idle, isStreaming: false, isProcessing: false });
+    markStandingChatSubscription(AGENT);
+    captureStreamUpdates();
+  });
+
+  afterEach(() => {
+    restoreDispatch();
+    clearAllStandingChatSubscriptions();
+    vi.clearAllMocks();
+  });
+
+  function processing(
+    handler: (n: { method: string; params?: unknown }) => void,
+    data: Record<string, unknown> = {},
+  ): void {
+    handler(
+      notification('agent:queue:processing', {
+        agentId: AGENT,
+        messageId: 'q-1',
+        content: 'queued follow-up',
+        turnId: 'turn-drain-1',
+        ...data,
+      }),
+    );
+  }
+
+  function statusEvent(handler: (n: { method: string; params?: unknown }) => void): void {
+    handler(
+      notification('agent:stream:status', {
+        agentId: AGENT,
+        phase: 'prompt',
+        message: 'Sent prompt…',
+        timestamp: 1000,
+      }),
+    );
+  }
+
+  it('opens the Thinking/busy state before any stream activity, without adding a user row', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+
+    processing(handler);
+
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
+    const session = readSession();
+    expect(session?.isStreaming).toBe(true);
+    expect(session?.isProcessing).toBe(true);
+    // The drained row arrives on its own `agent:message` echo; the drain-start
+    // signal never fabricates one.
+    expect((session?.messages ?? []).filter((m) => m.role === 'user')).toEqual([]);
+    expect(appStore.state.chatState.byAgentId[AGENT].streamingStartTime).toEqual(
+      expect.any(Number),
+    );
+  });
+
+  it('opens the turn for a batch flush carrying queuedMessages', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const row = (id: string, position: number) => ({
+      id,
+      turnId: `turn-${id}`,
+      content: id,
+      queuedAt: '2026-10-02T00:00:00Z',
+      position,
+    });
+
+    processing(handler, {
+      messageId: 'a',
+      turnId: 'turn-a',
+      content: 'a',
+      queuedMessages: [row('a', 0), row('b', 1)],
+    });
+
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
+  });
+
+  it('clears a stale failure banner from the previous turn', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    appStore.dispatch(chatSendFailed(AGENT, 'previous turn failed'));
+    expect(appStore.state.chatState.byAgentId[AGENT].error).toBe('previous turn failed');
+
+    processing(handler);
+
+    expect(appStore.state.chatState.byAgentId[AGENT].error).toBeNull();
+  });
+
+  it('a duplicate processing frame for the same turnId does not reset the Thinking timer or status lines', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    processing(handler);
+    statusEvent(handler);
+    const startedAt = appStore.state.chatState.byAgentId[AGENT].streamingStartTime;
+    const statusEventsBefore = readStatusEvents();
+    expect(statusEventsBefore.length).toBeGreaterThan(0);
+
+    // Recovery re-admission / replay of the same provider turn.
+    processing(handler, { messageId: 'q-recovered' });
+
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
+    expect(readStatusEvents()).toEqual(statusEventsBefore);
+    expect(appStore.state.chatState.byAgentId[AGENT].streamingStartTime).toBe(startedAt);
+  });
+
+  it('a later drain with a new turnId starts a fresh turn', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    processing(handler);
+    statusEvent(handler);
+    expect(readStatusEvents().length).toBeGreaterThan(0);
+
+    processing(handler, { messageId: 'q-2', turnId: 'turn-drain-2' });
+
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
+    expect(readStatusEvents()).toEqual([]);
+  });
+
+  it('a legacy frame without turnId still opens the turn', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    processing(handler, { turnId: undefined });
+
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
+  });
+
+  it('a malformed frame does not open the turn', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification('agent:queue:processing', { agentId: AGENT }));
+    processing(handler, { queuedMessages: [] });
+
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+  });
+
+  it('a drained turn that fails before streaming clears the busy state and shows the error', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    processing(handler);
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
+
+    handler(
+      notification('agent:failed', {
+        agentId: AGENT,
+        error: 'boom',
+        status: 'error',
+        turnId: 'turn-drain-1',
+      }),
+    );
+
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+    expect(appStore.state.chatState.byAgentId[AGENT].error).toBe('boom');
+  });
+
+  it('ignores a frame from a workspace that does not own the agent', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const foreign = notification('agent:queue:processing', {
+      agentId: AGENT,
+      messageId: 'q-1',
+      turnId: 'turn-foreign',
+    });
+    foreign.params.event.workspaceId = 'ws-other';
+
+    handler(foreign);
+
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+  });
+});
+
 describe('daemonEventsBridge (fan-out scope gate — subscriptionId-aware delivery)', () => {
   beforeAll(() => {
     appStore.init();

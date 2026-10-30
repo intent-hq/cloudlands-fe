@@ -446,6 +446,14 @@ const previewTurnMessageIdByAgent = new Map<string, string>();
 const previewTurnEndedMessageIdByAgent = new Map<string, string>();
 
 /**
+ * Provider turn (`turnId`) whose `agent:queue:processing` drain-start last
+ * opened the turn UI, per agent. Lets a replayed or recovered same-turn frame
+ * skip a second `chatSendStarted`, which would wipe the Thinking row's status
+ * lines and restart its elapsed timer mid-turn.
+ */
+const drainStartedTurnByAgent = new Map<string, string>();
+
+/**
  * `scopeCounts` nudge idempotency (§5.5 row scope): created ids already
  * counted by `handleAgentCreatedEvent`, and each agent's last applied
  * retire/restore transition (see `claimRetireTransition`).
@@ -1797,6 +1805,36 @@ function handleQueueProcessingEvent(event: WorkspaceEvent): void {
     observeSubmissionEvidence(agentId, event.workspaceId, 'processing', rows as QueuedMessage[]);
     appStore.dispatch(chatQueueProcessingReceived(agentId, turnId, rows as QueuedMessage[]));
   } else appStore.dispatch(chatQueueProcessingReceived(agentId, turnId));
+  openDrainedTurn(agentId, event.workspaceId, turnId);
+}
+
+/**
+ * Open the turn UI for a queue-drained prompt turn. Such a turn emits no
+ * `agent:stream:start` (PROTOCOL §6.6). This drain-start frame is its explicit
+ * start signal, and it arrives right after the previous turn's
+ * `agent:stream:end` cleared the busy flags. Without this dispatch the drained
+ * user row renders with no Thinking indicator until the model's first output.
+ * The dispatch mirrors the wake-turn path (`handleStreamStartEvent`):
+ * `chatSendStarted` only flips flags, starts the elapsed timer and clears a
+ * stale failure banner. It never adds a user row, because the drained row
+ * arrives on its own `agent:message` echo. Skipped when the same provider turn
+ * is still open, which covers at-least-once replay and recovery re-admission.
+ * A same-turn redrive after the turn ended (e.g. `agent.retry`) opens it again.
+ */
+function openDrainedTurn(agentId: string, workspaceId: string | undefined, turnId?: string): void {
+  const session = appStore.state.agentSessions?.byAgentId[agentId];
+  if (workspaceId && session?.workspaceId && workspaceId !== session.workspaceId) return;
+  if (!isAgentReadWorkspaceCurrent(agentId, workspaceId)) return;
+  if (
+    turnId !== undefined &&
+    drainStartedTurnByAgent.get(agentId) === turnId &&
+    session?.isStreaming === true &&
+    session.isProcessing === true
+  )
+    return;
+  if (turnId !== undefined) drainStartedTurnByAgent.set(agentId, turnId);
+  else drainStartedTurnByAgent.delete(agentId);
+  appStore.dispatch(chatSendStarted(agentId, workspaceId ?? session?.workspaceId));
 }
 
 /**
@@ -4969,6 +5007,7 @@ export function disposeDaemonEventsRoutingState(): void {
   streamsByAgent.clear();
   previewTurnMessageIdByAgent.clear();
   previewTurnEndedMessageIdByAgent.clear();
+  drainStartedTurnByAgent.clear();
   scopeCountedCreatedAgentIds.clear();
   lastAppliedRetireTransitionByAgent.clear();
 
