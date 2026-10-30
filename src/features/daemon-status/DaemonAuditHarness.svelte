@@ -13,6 +13,43 @@
   let { state = 'external', children }: { state?: string; children?: Snippet } = $props();
   onMount(() => {
     store.dispatch(connectionStatusChanged('connected'));
+    if (state === 'daemon-starting' || state === 'daemon-start-failed') {
+      const transport = { mode: 'external-uds' as const, target: '/tmp/startup-preview.sock' };
+      const snapshot = {
+        startupStatus: 1 as const,
+        attemptId: 'preview',
+        phase: 'indexing' as const,
+        elapsedMs: 74_000,
+        phaseElapsedMs: 70_000,
+        progressAgeMs: 0,
+        retryAfterMs: 1000,
+        estimatedRemainingMs: 142_000,
+        progress: {
+          completedNotes: 420_000,
+          totalNotes: 1_824_000,
+          processedSourceBytes: 40_000_000,
+          totalSourceBytes: 116_000_000,
+        },
+      };
+      store.dispatch(
+        connectionStatusChanged(
+          state === 'daemon-starting' ? 'connecting' : 'disconnected',
+          transport,
+          {
+            daemonStartup:
+              state === 'daemon-starting'
+                ? { state: 'starting', snapshot, available: true }
+                : {
+                    state: 'failed',
+                    snapshot: null,
+                    available: false,
+                    message: 'Daemon startup failed. Check daemon logs.',
+                  },
+          },
+        ),
+      );
+      return () => store.dispatch(connectionStatusChanged('connected'));
+    }
     if (state.startsWith('guest-') || state.startsWith('auth-')) {
       const connection = {
         id: 'audit-host',

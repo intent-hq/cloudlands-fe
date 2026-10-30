@@ -7919,5 +7919,18 @@
   "inlineHtml_preview_remove_label": "삭제",
   "inlineHtml_preview_exporting_label": "내보내는 중…",
   "inlineHtml_preview_exported_description": "{path}에 저장됨",
-  "inlineHtml_preview_export_error": "이 구성을 내보내지 못했습니다."
+  "inlineHtml_preview_export_error": "이 구성을 내보내지 못했습니다.",
+  "daemonStartup_preparing_label": "intentd 시작 중",
+  "daemonStartup_indexing_label": "노트 인덱스 다시 만드는 중",
+  "daemonStartup_finalizing_label": "시작 마무리 중",
+  "daemonStartup_failed_label": "데몬 시작 실패",
+  "daemonStartup_unavailable_label": "시작 상태를 확인할 수 없음",
+  "daemonStartup_elapsed_label": "경과 시간: {duration}",
+  "daemonStartup_notes_label": "인덱싱된 노트: {total}개 중 {completed}개",
+  "daemonStartup_remaining_label": "인덱싱 완료까지 약 {duration} 남음",
+  "daemonStartup_estimating_label": "남은 시간 계산 중",
+  "daemonStartup_unchanged_description": "인덱싱 중입니다. 완료된 노트 수는 변경되지 않았습니다",
+  "daemonStartup_finalizing_description": "데이터베이스 작업을 마무리하고 서비스를 시작하는 중입니다. 준비되면 앱이 자동으로 열립니다.",
+  "daemonStartup_failed_description": "자세한 내용은 데몬 로그를 확인하세요.",
+  "daemonStartup_unavailable_description": "최신 시작 상태를 받지 못했습니다. 다시 연결 중…"
 }

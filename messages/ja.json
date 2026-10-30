@@ -7919,5 +7919,18 @@
   "inlineHtml_preview_remove_label": "削除",
   "inlineHtml_preview_exporting_label": "書き出し中…",
   "inlineHtml_preview_exported_description": "{path} に保存しました",
-  "inlineHtml_preview_export_error": "この設定を書き出せませんでした。"
+  "inlineHtml_preview_export_error": "この設定を書き出せませんでした。",
+  "daemonStartup_preparing_label": "intentd を起動中",
+  "daemonStartup_indexing_label": "ノートのインデックスを再構築中",
+  "daemonStartup_finalizing_label": "起動を完了しています",
+  "daemonStartup_failed_label": "デーモンの起動に失敗しました",
+  "daemonStartup_unavailable_label": "起動状態を取得できません",
+  "daemonStartup_elapsed_label": "経過時間：{duration}",
+  "daemonStartup_notes_label": "インデックス済みのノート：{total} 件中 {completed} 件",
+  "daemonStartup_remaining_label": "インデックス作成の残り時間：約 {duration}",
+  "daemonStartup_estimating_label": "残り時間を推定中",
+  "daemonStartup_unchanged_description": "インデックス作成中です。完了したノート数は変わっていません",
+  "daemonStartup_finalizing_description": "データベース処理を完了し、サービスを起動しています。準備ができるとアプリが自動的に開きます。",
+  "daemonStartup_failed_description": "詳細はデーモンのログを確認してください。",
+  "daemonStartup_unavailable_description": "最新の起動状態を受信できませんでした。再接続中…"
 }
