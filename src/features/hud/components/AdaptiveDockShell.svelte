@@ -104,19 +104,13 @@
 
   let conversationRegions: DockPointerRect[] = [];
   let edgeState = $state({ held: false, reveal: 0, shell: null as DockPointerRect | null });
-  /**
-   * The clicked side entry, kept in terms that survive the window growing around the
-   * box: its hover card in screen DIP (the box grows from it and returns to it) and its
-   * centre as an offset from the rail's top (main anchors the box there). Cleared once
-   * the box has closed.
-   */
+  // Screen-space card and rail-relative anchor survive native window expansion.
   let edgeOrigin = $state<{
     workspaceId: string;
     card: DockPointerRect;
     radius: number;
     anchor: number;
   } | null>(null);
-  /** The same origin in the current window-local space. */
   const edgeCardOrigin = $derived<DockEdgeOpenOrigin | null>(
     edgeOrigin && {
       workspaceId: edgeOrigin.workspaceId,
@@ -389,6 +383,7 @@
   useDockShellResize(
     () => ({
       placement,
+      gestureHeld: gesture !== null || awaitingDragStart !== null,
       width: desiredWidth,
       height: heldHeight === null ? desiredHeight : Math.max(desiredHeight, heldHeight),
       railHeight,
@@ -510,8 +505,9 @@
   function enter(): void {
     pointerInside = true;
     clearTimeout(closeTimer);
-    if (pinned && !dragging && !gesture?.started) keyboardOpen = false;
-    if (edge || expanded || dragging || gesture?.started || awaitingDragStart !== null) return;
+    if (gesture || awaitingDragStart !== null || dragging) return;
+    if (pinned) keyboardOpen = false;
+    if (edge || expanded) return;
     keyboardOpen = false;
     clearTimeout(openTimer);
     if (surfaceExpanded) expandedByUser = true;
@@ -524,7 +520,7 @@
   function leave(event?: PointerEvent | FocusEvent): void {
     if (event instanceof PointerEvent) {
       pointerInside = false;
-      conversationFocus.pointerLeave(event);
+      if (!gesture && awaitingDragStart === null) conversationFocus.pointerLeave(event);
     }
     clearTimeout(openTimer);
     clearTimeout(closeTimer);
@@ -535,6 +531,7 @@
     )
       return;
     const close = () => {
+      if (gesture || awaitingDragStart !== null || dragging) return;
       if (!conversationFocus.keepsOverviewOpen(pointerInside, keyboardOpen)) {
         expandedByUser = false;
       }
@@ -621,6 +618,8 @@
       placement.captureHidden
     )
       return;
+    clearTimeout(openTimer);
+    clearTimeout(closeTimer);
     const gripBounds = gripElement?.getBoundingClientRect();
     const surfaceBounds = surfaceElement?.getBoundingClientRect();
     const visibleHeader = getDockHeaderBounds(placement, shown, floatingCompact, headerHeight);
@@ -681,6 +680,7 @@
     captureElement = null;
     if (dragFrame !== undefined) cancelAnimationFrame(dragFrame);
     dragFrame = undefined;
+    if (!disposed && !placement.captureHidden) pointerInside ? enter() : leave();
   }
   function pointerEnd(cancelled = false, event?: PointerEvent): void {
     if (event && event.pointerId !== gesture?.pointerId) return;

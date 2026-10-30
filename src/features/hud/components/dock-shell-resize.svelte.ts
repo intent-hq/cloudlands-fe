@@ -9,6 +9,7 @@ import type { DockConversationSize } from './dock-conversation-resize-context';
 
 interface DockShellResizeState {
   placement: DockPlacementSnapshot;
+  gestureHeld?: boolean;
   width: number;
   height: number;
   railHeight: number;
@@ -30,7 +31,7 @@ export function useDockShellResize(
   $effect(() => {
     const current = state();
     const { placement, width, height, railHeight, compactWingWidth } = current;
-    if (placement.captureHidden || placement.phase === 'dragging') return;
+    if (current.gestureHeld || placement.captureHidden || placement.phase === 'dragging') return;
     const request: DockPlacementCommand = {
       action: 'resize',
       width,

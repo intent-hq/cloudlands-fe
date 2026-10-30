@@ -5,7 +5,19 @@
  * CT browser bundle.
  */
 
-export const goto = async (): Promise<void> => {};
+/** Reflect a completed navigation without replacing the mounted CT component. */
+export const goto = async (
+  url: string | URL,
+  options: { replaceState?: boolean; state?: App.PageState } = {},
+): Promise<void> => {
+  if (typeof window === 'undefined') return;
+  const target = new URL(url, window.location.href);
+  if (target.origin !== window.location.origin) {
+    throw new Error('Component-test navigation must stay on the same origin');
+  }
+  const method = options.replaceState ? 'replaceState' : 'pushState';
+  window.history[method](options.state ?? {}, '', target.href);
+};
 export const invalidate = async (): Promise<void> => {};
 export const invalidateAll = async (): Promise<void> => {};
 export const afterNavigate = (): void => {};

@@ -430,27 +430,34 @@ for (const theme of ['light', 'dark'] as const) {
           (n) => (window as any).companionFixture.setUpdateWorkspaceCount(n, false),
           count,
         );
-        // Notch header 32 + overview (rows incl. Assistant, max 5 + 1, 52px each) + 8/12 frame padding.
+        const overview = page.getByTestId('dock-overview');
+        await expect(overview.locator('[data-dock-row]')).toHaveCount(count + 1);
+        const scroller = overview.locator('[data-dock-scroll]');
+        const lastWorkspace = scroller.locator('[data-dock-row]').last();
+        await lastWorkspace.focus();
+        await expect(lastWorkspace).toBeFocused();
+        // The focused workspace and pinned Assistant remain inside their live containers.
         await expect
-          .poll(async () => (await placement(page)).surface.height)
-          .toBe(32 + (Math.min(count, 5) + 1) * 52 + 20);
-        const rowsBox = async () => {
-          const p = await placement(page);
-          const bottoms = await page
-            .locator('[data-testid="dock-overview"] [data-dock-row]')
-            .evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().bottom));
-          // Rows below the frame are scrolled out of view; the last visible one ends the frame.
-          const limit = p.surface.y + p.surface.height;
-          return { p, lastBottom: Math.max(...bottoms.filter((bottom) => bottom <= limit + 0.5)) };
-        };
-        await expect
-          .poll(async () => {
-            const { p, lastBottom } = await rowsBox();
-            return Math.abs(p.surface.y + p.surface.height - lastBottom - 12) <= 1;
-          })
+          .poll(() =>
+            overview.evaluate((element) => {
+              const scroll = element.querySelector('[data-dock-scroll]')!;
+              const focused = document.activeElement!;
+              const assistant = element.querySelector('[data-workspace-id="dock:assistant"]')!;
+              const contains = (host: Element, child: Element) => {
+                const a = host.getBoundingClientRect();
+                const b = child.getBoundingClientRect();
+                return (
+                  b.left >= a.left - 1 &&
+                  b.right <= a.right + 1 &&
+                  b.top >= a.top - 1 &&
+                  b.bottom <= a.bottom + 1
+                );
+              };
+              return contains(scroll, focused) && contains(element, assistant);
+            }),
+          )
           .toBe(true);
-        const { p, lastBottom } = await rowsBox();
-        const bottomGap = p.surface.y + p.surface.height - lastBottom;
+        const p = await placement(page);
         const contrast = await page
           .locator('[data-testid="dock-overview"] [data-dock-row] .row-copy > :first-child')
           .first()
@@ -476,8 +483,6 @@ for (const theme of ['light', 'dark'] as const) {
         observations.push({
           label: `overview-${count}`,
           surface: p.surface,
-          lastBottom,
-          bottomGap,
           contrast,
         });
         await artifact(page, testInfo, `${theme}-content-${count}`);
@@ -533,8 +538,7 @@ test('motion refinement: reversible reveal, inert close and retained-envelope ro
   let frames: any[] = [];
   try {
     await page.emulateMedia({ reducedMotion: 'no-preference' });
-    await page.evaluate(() => (window as any).companionFixture.setUpdateWorkspaceCount(12));
-    await expect(page.locator('[data-dock-row]')).toHaveCount(13);
+    await page.evaluate(() => (window as any).companionFixture.setUpdateWorkspaceCount(12, false));
     await page.evaluate(() => (window as any).companionFixture.startMotionEvidence());
     const shell = page.getByTestId('dock-shell');
     const surface = page.getByTestId('dock-surface');
@@ -550,13 +554,14 @@ test('motion refinement: reversible reveal, inert close and retained-envelope ro
     await page.waitForTimeout(1500); // Deliberate recording pace; transition assertions follow.
     await hover(true, 'first-open');
     await settled(true);
+    await expect(page.locator('[data-dock-row]')).toHaveCount(13);
     const envelope = await placement(page);
     observations.push(await observe(app, page, 'open-envelope'));
     await page.evaluate(() => (window as any).companionFixture.setUpdateWorkspaceCount(2, false));
     await expect(page.locator('[data-dock-row]')).toHaveCount(3);
     await page.waitForTimeout(1600);
     await artifact(page, testInfo, 'motion-sparse-content');
-    await page.evaluate(() => (window as any).companionFixture.setUpdateWorkspaceCount(12));
+    await page.evaluate(() => (window as any).companionFixture.setUpdateWorkspaceCount(12, false));
     await expect
       .poll(async () => (await placement(page)).surface.height)
       .toBe(envelope.surface.height);
@@ -829,6 +834,15 @@ for (const geometry of ['notch', 'none', 'unknown'] as const) {
         );
         await page.mouse.move(point.x, point.y);
         await page.mouse.down();
+        const grabbed = await placement(page);
+        // A presence report can arrive while a button is held but before the first
+        // threshold move. Let that hover timer expire without changing the grab revision.
+        await page
+          .getByTestId('dock-surface')
+          .dispatchEvent('pointerenter', { pointerType: 'mouse' });
+        await page.waitForTimeout(400); // Deliberately cross the hover-open boundary.
+        expect((await placement(page)).revision).toBe(grabbed.revision);
+
         await page.mouse.move(point.x + 12, point.y + 12);
         await expect
           .poll(() =>
@@ -901,6 +915,7 @@ for (const geometry of ['notch', 'none', 'unknown'] as const) {
       await finish(app, page, testInfo, {
         ...(await provenance()),
         geometryFixture: geometry,
+        finalObservation: page.isClosed() ? null : await observe(app, page, 'compact-final'),
         observations,
       });
       await rm(profile, { recursive: true, force: true });
@@ -1150,6 +1165,8 @@ test('keyboard placements retain renderer identity, bounded content, and user ch
         const overview = first.page.getByTestId('dock-overview');
         const rows = overview.locator('[data-dock-row]');
         const scroller = overview.locator('[data-dock-scroll]');
+        const workspaceRows = scroller.locator('[data-dock-row]');
+        const assistant = overview.locator('[data-workspace-id="dock:assistant"]');
         // A native move leaves the dock compact; a keyboard user opens it by tabbing to the grip.
         await first.page.keyboard.press('Tab');
         await first.page.getByTestId('dock-drag-handle').focus();
@@ -1157,22 +1174,32 @@ test('keyboard placements retain renderer identity, bounded content, and user ch
         await expect(first.page.getByTestId('dock-overflow-button')).toHaveCount(0);
         // The shared twelve-overflow fixture contains 48 workspaces plus Assistant.
         await expect(rows).toHaveCount(49);
-        await expect(rows.last()).toHaveAttribute('data-workspace-id', 'dock-preview-workspace-48');
+        await expect(workspaceRows.last()).toHaveAttribute(
+          'data-workspace-id',
+          'dock-preview-workspace-48',
+        );
         await rows.first().focus();
         await rows.first().press('End');
-        await expect(rows.last()).toBeFocused();
+        await expect(assistant).toBeFocused();
+        await assistant.press('ArrowUp');
+        await expect(workspaceRows.last()).toBeFocused();
         await expect
           .poll(() =>
             scroller.evaluate((element) => {
               const bounds = element.getBoundingClientRect();
               const last = element.querySelectorAll('[data-dock-row]');
               const row = last[last.length - 1].getBoundingClientRect();
+              const assistant = element
+                .closest('[data-testid="dock-overview"]')!
+                .querySelector('[data-workspace-id="dock:assistant"]')!
+                .getBoundingClientRect();
               return {
                 scrollable: element.scrollHeight > element.clientHeight,
                 scrolled: element.scrollTop > 0,
                 bounded:
                   bounds.height > 0 && bounds.top >= 0 && bounds.bottom <= window.innerHeight + 1,
                 lastRowRevealed: row.top >= bounds.top - 1 && row.bottom <= bounds.bottom + 1,
+                assistantVisible: assistant.top >= 0 && assistant.bottom <= window.innerHeight + 1,
                 windowStayedStill: window.scrollX === 0 && window.scrollY === 0,
               };
             }),
@@ -1182,6 +1209,7 @@ test('keyboard placements retain renderer identity, bounded content, and user ch
             scrolled: true,
             bounded: true,
             lastRowRevealed: true,
+            assistantVisible: true,
             windowStayedStill: true,
           });
       }
