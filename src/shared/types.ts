@@ -1706,8 +1706,8 @@ export interface WorkspaceCreateOrigin {
  */
 export interface WorkspaceCreateProposalOutcome {
   proposalId: string;
-  /** `applied`, `dismissed` (an earlier resolution kept) or `notResolved`. */
-  outcome: string;
+  /** `dismissed` = an earlier resolution kept; `notResolved` = the daemon declined the origin. */
+  outcome: 'applied' | 'dismissed' | 'notResolved';
 }
 
 export interface CreateWorkspaceRequest {

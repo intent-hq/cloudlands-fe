@@ -84,6 +84,19 @@ describe('applyProposal', () => {
     });
   });
 
+  it('sends no origin when the pending key would fail the daemon id checks', () => {
+    const { applyToolCallId: _drop, ...titled } = proposal;
+    for (const title of ['   ', 'x'.repeat(257), 'é'.repeat(129)]) {
+      applyProposal('agent-1', { proposal: { ...titled, preview: { title } } });
+    }
+    expect(mocks.dispatch).toHaveBeenCalledTimes(3);
+    for (const [action] of mocks.dispatch.mock.calls) {
+      expect((action as { payload: [Record<string, unknown>] }).payload[0]).not.toHaveProperty(
+        'origin',
+      );
+    }
+  });
+
   it('sends no origin without an agent id or for bulk proposals', () => {
     applyProposal('', { proposal });
     applyProposal('agent-1', {

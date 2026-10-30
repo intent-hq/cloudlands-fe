@@ -51,6 +51,14 @@ export function getProposalLifecycleEntry(
   return { ...local, ...scoped, result: scoped.result ?? local.result };
 }
 
+// The daemon rejects a blank or over-256-byte origin id with -32602 before
+// creating anything (PROTOCOL §5.1 "Proposal origin"). A title-keyed card can
+// carry such a key; send no origin for it and keep the chat fallback instead.
+const MAX_ORIGIN_ID_BYTES = 256;
+function isSendableOriginId(id: string): boolean {
+  return id.trim() !== '' && new TextEncoder().encode(id).length <= MAX_ORIGIN_ID_BYTES;
+}
+
 export function applyProposal(agentId: string, detail: ProposalActionDetail): void {
   const { proposal } = detail;
   const proposalId = pendingProposalKeyOf(proposal);
@@ -69,7 +77,7 @@ export function applyProposal(agentId: string, detail: ProposalActionDetail): vo
         selectedBulkItemIds: detail.selectedBulkItemIds,
         // The daemon resolves the card as part of the create (intent-hq/intent#8086),
         // so the proposing agent hears about it even when this chat is closed.
-        ...(proposal.kind === 'workspace-create' && agentId && proposalId
+        ...(proposal.kind === 'workspace-create' && agentId && isSendableOriginId(proposalId)
           ? { origin: { kind: 'proposal' as const, agentId, proposalId } }
           : {}),
       }),

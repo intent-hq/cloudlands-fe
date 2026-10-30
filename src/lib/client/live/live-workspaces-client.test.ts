@@ -173,6 +173,19 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
     expect(result.proposalOrigin).toEqual({ proposalId: 'card-1', outcome: 'applied' });
   });
 
+  it('ignores a malformed proposalOrigin so the client fallback stays on', async () => {
+    const client = new LiveWorkspacesClient();
+    for (const proposalOrigin of [true, {}, 'x', { proposalId: 'card-1', outcome: 'maybe' }]) {
+      mockedRequest.mockResolvedValueOnce({
+        workspace: { id: 'ws-origin', title: 'Follow-up', branch: 'b', status: 'Active' },
+        proposalOrigin,
+      });
+      const result = await client.create({ title: 'Follow-up' } as CreateWorkspaceRequest);
+      expect(result.success).toBe(true);
+      expect(result).not.toHaveProperty('proposalOrigin');
+    }
+  });
+
   it('open sends the exact workspace.get request and unwraps the protocol response', async () => {
     const workspace = {
       id: '77777777-7777-4777-8777-777777777777',

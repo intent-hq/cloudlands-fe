@@ -178,6 +178,21 @@ function isPullRequestWorkspace(row: unknown): row is PullRequestWorkspace {
   );
 }
 
+const PROPOSAL_ORIGIN_OUTCOMES: readonly string[] = ['applied', 'dismissed', 'notResolved'];
+
+/**
+ * `workspace.create` result `proposalOrigin` (PROTOCOL §5.1), accepted only in
+ * its documented shape: its presence turns off the client-side resolve
+ * fallback, so a malformed value must not be mistaken for a daemon report.
+ */
+function parseProposalOrigin(value: unknown): WorkspaceCreateProposalOutcome | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const { proposalId, outcome } = value as Record<string, unknown>;
+  if (typeof proposalId !== 'string' || typeof outcome !== 'string') return undefined;
+  if (!PROPOSAL_ORIGIN_OUTCOMES.includes(outcome)) return undefined;
+  return { proposalId, outcome: outcome as WorkspaceCreateProposalOutcome['outcome'] };
+}
+
 export class LiveWorkspacesClient implements WorkspacesClient {
   beginNativeReview(
     owner: NativeReviewOwner,
@@ -295,7 +310,11 @@ export class LiveWorkspacesClient implements WorkspacesClient {
    */
   async create(request: CreateWorkspaceRequest): Promise<WorkspaceCreateResult> {
     try {
-      const result = await backendRequest<{ workspace?: unknown; initialAgent?: unknown }>(
+      const result = await backendRequest<{
+        workspace?: unknown;
+        initialAgent?: unknown;
+        proposalOrigin?: unknown;
+      }>(
         'workspace.create',
         {
           ...request,
@@ -305,8 +324,7 @@ export class LiveWorkspacesClient implements WorkspacesClient {
       );
       const raw = result?.workspace;
       const rawAgent = result?.initialAgent;
-      const proposalOrigin = (result as { proposalOrigin?: WorkspaceCreateProposalOutcome })
-        ?.proposalOrigin;
+      const proposalOrigin = parseProposalOrigin(result?.proposalOrigin);
       let initialAgent: ({ id: string } & Record<string, unknown>) | undefined;
       if (rawAgent !== undefined && rawAgent !== null) {
         // The daemon-assigned `initialAgent.id` is the only way callers can
