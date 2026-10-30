@@ -8,18 +8,19 @@
 //
 // `openAndShowWorkspace` / `showWorkspaceSaga` in
 // `src/lib/utils/show-workspace.ts` navigate and then open the tab. This
-// rule flags a hand-written `goto(...)`, `navigateToRoute(...)` or saga
-// `call(goto | navigateToRoute, ...)` whose route is built from a `/workspace/`
-// template or string concatenation (either branch of a ternary counts).
-// Constant routes such as '/workspace/new' are not workspace jumps and pass.
-// A route held in a variable is not traced.
+// rule flags a hand-written `goto(...)`, `navigateToRoute(...)`, injected
+// `navigate(...)` / `deps.navigate(...)` (the hardware encoder and action
+// keys once jumped this way) or saga `call(goto | navigateToRoute, ...)` whose
+// route is built from a `/workspace/` template or string concatenation (either
+// branch of a ternary counts). Constant routes such as '/workspace/new' are
+// not workspace jumps and pass. A route held in a variable is not traced.
 //
 // Navigation that deliberately must not open a tab (tab-close fallbacks whose
 // target tab is already open, creation flows whose tab the initialization saga
 // opens) uses `eslint-disable-next-line intent/no-raw-workspace-navigation --
 // <reason>`.
 
-const NAVIGATORS = new Set(['goto', 'navigateToRoute']);
+const NAVIGATORS = new Set(['goto', 'navigateToRoute', 'navigate']);
 const WORKSPACE_PREFIX = '/workspace/';
 
 const WRAPPER_TYPES = new Set([
@@ -65,17 +66,35 @@ function isDynamicWorkspaceRoute(node) {
   return false;
 }
 
-function isNavigator(node) {
+/**
+ * The navigator name of a `goto`, `navigate`, `deps.navigate` or
+ * `(deps.navigate ?? navigateToRoute)` callee, else null.
+ */
+function navigatorName(node) {
   const callee = unwrap(node);
-  return callee?.type === 'Identifier' && NAVIGATORS.has(callee.name);
+  if (callee?.type === 'Identifier') return NAVIGATORS.has(callee.name) ? callee.name : null;
+  if (callee?.type === 'LogicalExpression') {
+    return navigatorName(callee.left) ?? navigatorName(callee.right);
+  }
+  if (
+    callee?.type === 'MemberExpression' &&
+    !callee.computed &&
+    callee.property.type === 'Identifier' &&
+    NAVIGATORS.has(callee.property.name)
+  ) {
+    return callee.property.name;
+  }
+  return null;
 }
 
 /** The route argument of a navigation call, or null when `node` is not one. */
 function navigationRoute(node) {
   const callee = unwrap(node.callee);
-  if (isNavigator(callee)) return { navigator: callee.name, route: node.arguments[0] };
-  if (callee?.type === 'Identifier' && callee.name === 'call' && isNavigator(node.arguments[0])) {
-    return { navigator: unwrap(node.arguments[0]).name, route: node.arguments[1] };
+  const direct = navigatorName(callee);
+  if (direct) return { navigator: direct, route: node.arguments[0] };
+  if (callee?.type === 'Identifier' && callee.name === 'call') {
+    const wrapped = navigatorName(node.arguments[0]);
+    if (wrapped) return { navigator: wrapped, route: node.arguments[1] };
   }
   return null;
 }

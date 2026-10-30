@@ -53,7 +53,9 @@ tester.run('no-raw-workspace-navigation', rule, {
     { code: 'await goto(target);', filename: tsFile },
     { code: 'await goto(url.toString(), { replaceState: true });', filename: tsFile },
     { code: "await goto(isNew ? '/workspace/new' : '/');", filename: tsFile },
-    { code: 'void navigate(`/workspace/${id}`);', filename: tsFile },
+    { code: "void navigate('/');", filename: tsFile },
+    { code: 'void context.navigate(nextPath);', filename: tsFile },
+    { code: 'void router[`navigate`](`/workspace/${id}`);', filename: tsFile },
     { code: 'invoke(OPEN_NEW, { route: `/workspace/${id}` });', filename: tsFile },
     { code: 'yield* call(openWorkspace, `/workspace/${id}`);', filename: tsFile },
     svelte("  const open = () => goto('/workspace/new');"),
@@ -94,6 +96,17 @@ tester.run('no-raw-workspace-navigation', rule, {
       code: 'function* s() { yield call(goto, `/workspace/${id}`, { state }); }',
       filename: tsFile,
       errors: [error('goto')],
+    },
+    { code: 'void navigate(`/workspace/${id}`);', filename: tsFile, errors: [error('navigate')] },
+    {
+      code: 'void context.navigate(`/workspace/${next.wsId}`).catch(log);',
+      filename: tsFile,
+      errors: [error('navigate')],
+    },
+    {
+      code: "void (deps.navigate ?? navigateToRoute)('/workspace/' + id);",
+      filename: tsFile,
+      errors: [error('navigate')],
     },
     {
       ...svelte('  async function open(id: string) {\n    await goto(`/workspace/${id}`);\n  }'),
