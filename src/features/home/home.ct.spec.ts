@@ -715,14 +715,14 @@ test('Home grouping switches between status, repository and ungrouped in both vi
   await expect(component.getByRole('option')).toHaveCount(6);
   await component.getByRole('button', { name: 'Board view', exact: true }).click();
   const board = component.locator('[data-home-board]');
-  await expect(board.locator('section')).toHaveCount(1);
+  await expect(board.locator('section:not([data-home-set-aside])')).toHaveCount(1);
   await groupBy('Repository');
-  await expect(board.locator('section')).toHaveCount(2);
+  await expect(board.locator('section:not([data-home-set-aside])')).toHaveCount(2);
   await component.getByRole('searchbox').fill('onboarding');
   await expect(board.locator('[data-home-workspace]')).toHaveCount(1);
   await component.getByRole('searchbox').clear();
   await groupBy('Activity');
-  await expect(board.locator('section')).toHaveCount(4);
+  await expect(board.locator('section:not([data-home-set-aside])')).toHaveCount(4);
   const inactive = board.getByRole('region', { name: 'Done & idle', exact: true });
   await expect(inactive.locator('[data-home-workspace]')).toHaveCount(2);
   await expect(inactive.getByRole('img', { name: /^Done\./ })).toHaveCount(1);

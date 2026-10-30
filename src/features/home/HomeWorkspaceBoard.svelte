@@ -3,14 +3,7 @@
   import * as Tooltip from '$lib/components/ui/tooltip';
   import { Button } from '$lib/components/ui/button';
   import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
-  import {
-    faArrowDown,
-    faArrowUp,
-    faChevronDown,
-    faChevronRight,
-    faThumbtack,
-  } from '$lib/icons/phosphor-icons';
-  import { formatInteger } from '$lib/i18n/format';
+  import { faArrowDown, faArrowUp, faThumbtack } from '$lib/icons/phosphor-icons';
   import { HOME_SET_ASIDE_GROUP } from './home-set-aside';
   import HomeWorkspaceStatus from './HomeWorkspaceStatus.svelte';
   import HomeWorkspacePullBadge from './HomeWorkspacePullBadge.svelte';
@@ -35,8 +28,6 @@
     showRepositoryOwner = true,
     groups,
     aside = [],
-    asideExpanded = false,
-    onasideexpanded,
     ontoggleaside,
   }: {
     workspaces: Workspace[];
@@ -51,10 +42,7 @@
     showRepository?: boolean;
     showRepositoryOwner?: boolean;
     groups?: { id: string; label: string; items: Workspace[] }[];
-    /** Set-aside work in the current scope, shown in a collapsible shelf below the board. */
     aside?: Workspace[];
-    asideExpanded?: boolean;
-    onasideexpanded?: (expanded: boolean) => void;
     ontoggleaside?: (workspace: Workspace) => void;
   } = $props();
   const asideIds = $derived(new Set(aside.map((workspace) => workspace.id)));
@@ -82,12 +70,20 @@
           { id: 'inactive', label: m.home_board_done_idle() },
         ],
   );
-  const displayColumns = $derived(
+  const activeColumns = $derived(
     groups ??
       columns.map((group) => ({
         ...group,
         items: workspaces.filter((workspace) => column(workspace) === group.id),
       })),
+  );
+  const displayColumns = $derived(
+    archived
+      ? activeColumns
+      : [
+          ...activeColumns,
+          { id: HOME_SET_ASIDE_GROUP, label: m.home_setAside_action_label(), items: aside },
+        ],
   );
 </script>
 
@@ -223,9 +219,14 @@
   >
     {#each displayColumns as group (group.id)}
       {@const items = group.items}
-      <section class="flex min-w-0 flex-col self-stretch" aria-label={group.label}>
+      <section
+        class="flex min-w-0 flex-col self-stretch"
+        aria-label={group.label}
+        data-home-set-aside={group.id === HOME_SET_ASIDE_GROUP ? true : undefined}
+      >
         <h3
           class="sticky top-0 z-20 flex min-w-0 items-center gap-2 [overflow-wrap:anywhere] bg-background px-2 py-3 type-caption font-medium"
+          class:text-muted-foreground={group.id === HOME_SET_ASIDE_GROUP}
         >
           {group.label}
         </h3>
@@ -241,42 +242,4 @@
       </section>
     {/each}
   </div>
-  {#if aside.length > 0}
-    <section class="pt-3" data-home-set-aside aria-label={m.home_setAside_action_label()}>
-      <h3 class="flex min-h-8 items-center" data-home-group={HOME_SET_ASIDE_GROUP}>
-        <Button
-          variant="plain"
-          size="sm"
-          class="justify-start gap-1.5 px-2"
-          labelClass="flex-initial"
-          data-home-set-aside-toggle
-          aria-expanded={asideExpanded}
-          aria-label={m.home_setAside_action_label()}
-          onclick={() => onasideexpanded?.(!asideExpanded)}
-        >
-          <span class="text-left type-caption font-medium text-muted-foreground"
-            >{m.home_setAside_action_label()}</span
-          >
-          {#if !asideExpanded}<span class="type-caption tabular-nums text-muted-foreground"
-              >{formatInteger(aside.length)}</span
-            >{/if}
-          {#snippet trailingIcon()}<Fa
-              icon={asideExpanded ? faChevronDown : faChevronRight}
-              class="size-3 text-muted-foreground"
-            />{/snippet}
-        </Button>
-      </h3>
-      {#if asideExpanded}
-        <div
-          class="home-board-shelf grid w-full content-start gap-x-3 gap-y-2 pt-1"
-          style:--home-board-columns={Math.max(1, displayColumns.length)}
-          data-home-workspace-list
-        >
-          {#each aside as workspace (workspace.id)}
-            {@render card(workspace)}
-          {/each}
-        </div>
-      {/if}
-    </section>
-  {/if}
 </div>

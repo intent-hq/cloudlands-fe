@@ -183,7 +183,7 @@
     const neighbor = neighborHomeWorkspaceId(homeElement, workspace.id);
     if (asideSet.has(workspace.id)) bringBackHomeWorkspaceNow(workspace.id);
     else setHomeWorkspaceAsideWithUndo(workspace);
-    restoreHomeFocusAfterMove(() => homeElement, neighbor);
+    restoreHomeFocusAfterMove(() => homeElement, neighbor, workspace.id);
   }
   const workspaces$ = selectWorkspaceItems();
   const hasLoaded$ = selectWorkspaceHasLoaded();
@@ -244,7 +244,7 @@
     ),
   );
   const selectedRepository = $derived(repositoryGroups.find((repo) => repo.key === repoKey));
-  // Counts and triage describe active work; set-aside work waits on its shelf.
+  // Counts and triage describe active work.
   function isActive(workspace: Workspace): boolean {
     return matchesHomeFilter(workspace, 'all') && !asideSet.has(workspace.id);
   }
@@ -352,7 +352,7 @@
           compareHomeActivityDesc(a, b),
       ),
   );
-  // Archived is its own view; elsewhere set-aside rows leave the active list for the shelf.
+  // Archived is its own view; set-aside work has a separate collection.
   const filteredWorkspaces = $derived(
     filter === 'archived'
       ? matchedWorkspaces
@@ -983,8 +983,6 @@
                             oncontextmenu={showWorkspaceMenu}
                             archived={filter === 'archived'}
                             aside={asideWorkspaces}
-                            {asideExpanded}
-                            onasideexpanded={setAsideExpanded}
                             ontoggleaside={toggleAside}
                           />
                         {:else}

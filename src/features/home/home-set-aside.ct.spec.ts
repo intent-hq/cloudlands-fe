@@ -98,11 +98,14 @@ test('Board keeps background work running and returns a new question', async ({
   await page.setViewportSize({ width: 1200, height: 800 });
   await page.evaluate(() => document.documentElement.classList.add('dark'));
   await mount(Harness, { props: { view: 'board', height: 800 } });
+  const asideColumn = page.locator('[data-home-board] [data-home-set-aside]');
+  await expect(asideColumn).toBeVisible();
+  await expect(asideColumn.locator('[data-home-workspace]')).toHaveCount(0);
   await row(page, 'aside-running').hover();
   await capture(page, testInfo, 'before-dark-board');
   const before = (await snapshot(page)).workspaces.find((item) => item.id === 'aside-running');
   await aside(page, 'aside-running');
-  await expect(row(page, 'aside-running')).toHaveCount(0);
+  await expect(asideColumn.locator('[data-home-workspace="aside-running"]')).toBeVisible();
   await page.mouse.move(1190, 790);
   await capture(page, testInfo, 'after-dark-board');
   expect((await snapshot(page)).workspaces.find((item) => item.id === 'aside-running')).toEqual(
@@ -120,6 +123,7 @@ test('Board keeps background work running and returns a new question', async ({
   await page.evaluate(() =>
     window.__homeSetAside!.update('aside-running', { displayStatus: 'needs_attention' }),
   );
+  await expect(asideColumn.locator('[data-home-workspace="aside-running"]')).toHaveCount(0);
   await expect(row(page, 'aside-running')).toBeVisible();
   await expect.poll(async () => (await snapshot(page)).asideIds).not.toContain('aside-running');
   await page.locator('[data-home-set-aside-action="aside-running"]').focus();
@@ -131,6 +135,62 @@ test('Board keeps background work running and returns a new question', async ({
   expect(
     result.requests.filter(({ method }) => /archive|retire|stop|interrupt/i.test(method)),
   ).toEqual([]);
+});
+
+test('Board column supports Bring back, Undo, scopes and narrow layouts', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1200, height: 800 });
+  const component = await mount(Harness, { props: { view: 'board', height: 800 } });
+  const board = page.locator('[data-home-board]');
+  const asideColumn = board.locator('[data-home-set-aside]');
+  const asideCard = asideColumn.locator('[data-home-workspace="aside-idle"]');
+  await expect(asideColumn).toBeVisible();
+  await capture(page, testInfo, 'kanban-column-empty-light');
+  await aside(page, 'aside-idle');
+  await expect(asideCard).toBeVisible();
+  await expect(
+    board
+      .getByRole('region', { name: 'Done & idle', exact: true })
+      .locator('[data-home-workspace="aside-idle"]'),
+  ).toHaveCount(0);
+  await page.getByRole('button', { name: /^Undo/ }).click();
+  await expect(asideCard).toHaveCount(0);
+  await aside(page, 'aside-idle');
+  await page.locator('[data-home-set-aside-action="aside-idle"]').focus();
+  await page.keyboard.press('Enter');
+  await expect(asideCard).toHaveCount(0);
+  await expect(row(page, 'aside-idle')).toBeFocused();
+  await aside(page, 'aside-idle');
+  await page.evaluate(() => window.__homeSetAside!.configure({ groupBy: 'repository' }));
+  await expect(asideCard).toBeVisible();
+  await page.evaluate(() => window.__homeSetAside!.configure({ filter: 'archived' }));
+  await expect(asideColumn).toHaveCount(0);
+  await expect(row(page, 'aside-archived')).toBeVisible();
+  await page.evaluate(() =>
+    window.__homeSetAside!.configure({ filter: 'all', repoKey: 'acme/platform' }),
+  );
+  await expect(asideColumn).toBeVisible();
+  await expect(asideCard).toHaveCount(0);
+  await expect(row(page, 'aside-other-repo')).toBeVisible();
+  await page.evaluate(() => window.__homeSetAside!.configure({ repoKey: null, groupBy: 'status' }));
+  await expect(asideCard).toBeVisible();
+  await page.getByRole('searchbox').fill('Explore keyboard navigation');
+  await expect(asideCard).toBeVisible();
+  await expect(board.locator('[data-home-workspace]')).toHaveCount(1);
+  await page.getByRole('searchbox').clear();
+  await asideCard.hover();
+  await capture(page, testInfo, 'kanban-column-light');
+  await page.evaluate(() => document.documentElement.classList.add('dark'));
+  await capture(page, testInfo, 'kanban-column-dark');
+  await page.setViewportSize({ width: 390, height: 520 });
+  await component.update({ props: { view: 'board', height: 520 } });
+  await asideCard.scrollIntoViewIfNeeded();
+  await capture(page, testInfo, 'kanban-column-narrow-dark');
+  await page.evaluate(() => document.documentElement.classList.remove('dark'));
+  await capture(page, testInfo, 'kanban-column-narrow-light');
+  expect(await board.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 });
 
 test('Known attention stays aside until a new request, failure or review appears', async ({

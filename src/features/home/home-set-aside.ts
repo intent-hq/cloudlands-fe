@@ -70,23 +70,26 @@ export function neighborHomeWorkspaceId(
 }
 
 /**
- * Keep keyboard focus in place after a row moves between the active list and the shelf:
- * if focus was lost with the moved row, land on its old neighbor or the shelf toggle.
+ * Restore lost focus to the old neighbor, the moved card, or the list shelf toggle.
  */
 export function restoreHomeFocusAfterMove(
   getHomeElement: () => HTMLElement | null,
   neighborId: string | null,
+  workspaceId: string,
 ): void {
   requestAnimationFrame(() =>
     requestAnimationFrame(() => {
       const active = document.activeElement;
       if (active && active !== document.body && active.isConnected) return;
       const home = getHomeElement();
-      const row = neighborId
-        ? home
-            ?.querySelector<HTMLElement>(`[data-home-workspace="${CSS.escape(neighborId)}"]`)
-            ?.closest<HTMLElement>('[role="option"], button')
-        : null;
+      const row = [neighborId, workspaceId]
+        .filter((id): id is string => !!id)
+        .map((id) =>
+          home
+            ?.querySelector<HTMLElement>(`[data-home-workspace="${CSS.escape(id)}"]`)
+            ?.closest<HTMLElement>('[role="option"], button'),
+        )
+        .find(Boolean);
       (row ?? home?.querySelector<HTMLElement>('[data-home-set-aside-toggle]'))?.focus();
     }),
   );

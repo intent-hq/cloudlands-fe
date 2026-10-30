@@ -369,17 +369,3 @@
     transition: none;
   }
 }
-
-/* Shelf cards line up with the board columns above them, wrapping at the same width. */
-.home-board-shelf {
-  grid-template-columns: repeat(
-    auto-fill,
-    minmax(
-      max(
-        min(100%, 10rem),
-        calc((100% - (var(--home-board-columns) - 1) * 0.75rem) / var(--home-board-columns))
-      ),
-      1fr
-    )
-  );
-}
