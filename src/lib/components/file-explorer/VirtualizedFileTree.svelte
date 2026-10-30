@@ -1101,17 +1101,27 @@
 
   // Reveal a file path with the least movement: a row that is already fully
   // visible stays put, so clicking it does not shift the list under the cursor.
+  let revealScrollInFlight = false;
+
   export function scrollToPath(path: string) {
     const index = effectiveNodes.findIndex((n) => pathMatches(n.node.path, path));
     if (index < 0 || !scrollEl) return;
-    const top = computeRevealScrollTop({
-      index,
-      itemHeight,
-      viewTop: scrollEl.scrollTop,
-      viewHeight: scrollEl.clientHeight || measuredHeight,
-    });
-    if (top === null) return;
-    scrollEl.scrollTo({ top, behavior: prefersReducedMotion() ? 'instant' : 'smooth' });
+    const viewHeight = scrollEl.clientHeight;
+    const top = viewHeight
+      ? computeRevealScrollTop({ index, itemHeight, viewTop: scrollEl.scrollTop, viewHeight })
+      : // Not laid out yet (hidden or collapsed panel): visibility is unknowable, so center.
+        Math.max(0, index * itemHeight - measuredHeight / 2 + itemHeight / 2);
+    if (top === null) {
+      // Stop an earlier reveal animation that would carry this visible row away.
+      if (revealScrollInFlight) {
+        revealScrollInFlight = false;
+        scrollEl.scrollTo({ top: scrollEl.scrollTop, behavior: 'instant' });
+      }
+      return;
+    }
+    const smooth = !prefersReducedMotion();
+    revealScrollInFlight = smooth;
+    scrollEl.scrollTo({ top, behavior: smooth ? 'smooth' : 'instant' });
   }
 
   // A reveal target waits until expansion flattens its row into the rendered window.
@@ -1186,6 +1196,7 @@
     class="h-full overflow-y-auto overflow-x-hidden"
     style="contain: content;"
     onscroll={handleScroll}
+    onscrollend={() => (revealScrollInFlight = false)}
   >
     <!-- Total height spacer for correct scrollbar -->
     <div class="relative" style="height: {totalHeight}px;">

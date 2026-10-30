@@ -23,6 +23,11 @@ describe('computeRevealScrollTop', () => {
     expect(computeRevealScrollTop({ ...view, index: 2, viewTop: 500 })).toBe(0);
   });
 
+  it('treats a sub-pixel overlap from fractional zoom as visible', () => {
+    expect(computeRevealScrollTop({ ...view, index: 14, viewTop: 124.8 })).toBeNull();
+    expect(computeRevealScrollTop({ ...view, index: 5, viewTop: 125.4 })).toBeNull();
+  });
+
   it('never returns a negative scroll position', () => {
     expect(computeRevealScrollTop({ ...view, index: 0, viewTop: 300 })).toBe(0);
   });

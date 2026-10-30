@@ -37,10 +37,6 @@ async function reveal(page: Page, name: string) {
   );
 }
 
-test.beforeEach(async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-});
-
 test('clicking a fully visible file row does not scroll the tree', async ({ mount, page }) => {
   const component = await mount(VirtualizedFileTreeRevealScrollHost);
   await setScrollTop(component, 5 * ITEM_HEIGHT);
@@ -50,12 +46,24 @@ test('clicking a fully visible file row does not scroll the tree', async ({ moun
     .getByRole('tree')
     .locator('[data-file-path="/project/file-13.pdf"] [data-slot="list-item"]')
     .click();
-  await page.waitForTimeout(600);
+  // Watch every scroll event through the delayed reveal, not just the end state.
+  await scroller(component).evaluate((element) => {
+    const moves: number[] = [];
+    (window as unknown as { __treeScrollMoves: number[] }).__treeScrollMoves = moves;
+    element.addEventListener('scroll', () => moves.push(element.scrollTop));
+  });
+  await page.waitForTimeout(1000);
 
   await expect(scroller(component)).toHaveJSProperty('scrollTop', 5 * ITEM_HEIGHT);
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { __treeScrollMoves: number[] }).__treeScrollMoves,
+    ),
+  ).toEqual([]);
 });
 
-test('revealing an off-screen file scrolls it into view', async ({ mount, page }) => {
+test('revealing an off-screen file centers it', async ({ mount, page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(VirtualizedFileTreeRevealScrollHost);
   await setScrollTop(component, 0);
 
@@ -64,7 +72,7 @@ test('revealing an off-screen file scrolls it into view', async ({ mount, page }
   await expect
     .poll(async () => {
       const box = await rowBox(component, 'file-30.pdf');
-      return box.top >= 0 && box.bottom <= box.viewHeight;
+      return Math.abs((box.top + box.bottom) / 2 - box.viewHeight / 2) <= 1;
     })
     .toBe(true);
 });
@@ -73,6 +81,7 @@ test('revealing a row clipped at the bottom edge scrolls only enough to show it'
   mount,
   page,
 }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(VirtualizedFileTreeRevealScrollHost);
   // Rows 0-9 fill the first 250px; scrolling by 10px clips row 10 at the bottom.
   await setScrollTop(component, 10);

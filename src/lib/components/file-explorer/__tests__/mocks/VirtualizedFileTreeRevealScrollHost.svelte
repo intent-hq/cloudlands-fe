@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, tick } from 'svelte';
+  import { onDestroy } from 'svelte';
   import VirtualizedFileTree from '../../VirtualizedFileTree.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
@@ -19,11 +19,12 @@
   let tree: VirtualizedFileTree | null = $state(null);
   let selectedFile = $state('');
 
-  // Mirrors file-tree-view: a selection change reveals the selected row.
-  async function select(path: string) {
+  // Mirrors file-tree-view's selection effect: reveal after 100 ms + 50 ms + a frame.
+  function select(path: string) {
     selectedFile = path;
-    await tick();
-    tree?.scrollToPath(path);
+    setTimeout(() => {
+      setTimeout(() => requestAnimationFrame(() => tree?.scrollToPath(path)), 50);
+    }, 100);
   }
 
   (window as unknown as { __revealTreePath?: (path: string) => void }).__revealTreePath = (path) =>
@@ -33,10 +34,5 @@
 </script>
 
 <section class="w-80 bg-background" style="height: 250px;">
-  <VirtualizedFileTree
-    bind:this={tree}
-    {flattenedNodes}
-    {selectedFile}
-    onFileSelect={(path) => void select(path)}
-  />
+  <VirtualizedFileTree bind:this={tree} {flattenedNodes} {selectedFile} onFileSelect={select} />
 </section>

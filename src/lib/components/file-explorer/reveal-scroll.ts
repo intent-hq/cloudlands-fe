@@ -1,3 +1,5 @@
+const SUBPIXEL_TOLERANCE = 1;
+
 export interface RevealScrollInput {
   /** Row index in the flattened tree. */
   index: number;
@@ -27,8 +29,11 @@ export function computeRevealScrollTop({
   const rowBottom = rowTop + itemHeight;
   const viewBottom = viewTop + viewHeight;
 
-  if (rowTop >= viewTop && rowBottom <= viewBottom) return null;
-  if (rowBottom > viewTop && rowTop < viewTop) return Math.max(0, rowTop);
+  // Fractional zoom can leave scrollTop off by a sub-pixel from the row grid.
+  if (rowTop >= viewTop - SUBPIXEL_TOLERANCE && rowBottom <= viewBottom + SUBPIXEL_TOLERANCE) {
+    return null;
+  }
+  if (rowBottom > viewTop && rowTop < viewTop) return rowTop;
   if (rowTop < viewBottom && rowBottom > viewBottom) return Math.max(0, rowBottom - viewHeight);
   return Math.max(0, rowTop - viewHeight / 2 + itemHeight / 2);
 }
