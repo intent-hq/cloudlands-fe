@@ -51,8 +51,11 @@ export function toPromptToken(
       return `@${token}`;
     }
     case 'note': {
-      // Use the note's label (title) when available, falling back to ID
-      const noteName = stripLeadingAt(item.label || item.id);
+      // Serialize by note ID: every consumer (chat renderer, note editor
+      // injector) reads `@note/<x>` as an ID, and titles may contain spaces
+      // that the whitespace-delimited token cannot carry. Fall back to the
+      // label only when no ID is available.
+      const noteName = stripLeadingAt(item.id || item.label);
       return `@note/${noteName}`;
     }
     case 'terminal': {
