@@ -489,7 +489,9 @@ describe('workspace sidebar Open in submenu', () => {
 
     await fireEvent.keyDown(editor, { key: 'ArrowLeft' });
     await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('false'));
-    expect(screen.getByRole('menu')).toBe(root);
+    // Only the root menu remains once the submenu's exit finishes. Include hidden menus:
+    // jsdom's zero-size layout lets the floating layer hide the root after positioning.
+    await waitFor(() => expect(screen.getAllByRole('menu', { hidden: true })).toEqual([root]));
   });
 
   it.each([
@@ -567,7 +569,9 @@ describe('live WorkspaceProgressCard Open in submenu', () => {
 
     await fireEvent.keyDown(editor, { key: 'ArrowLeft' });
     await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('false'));
-    expect(screen.getByRole('menu')).toBe(root);
+    // Only the root menu remains once the submenu's exit finishes. Include hidden menus:
+    // jsdom's zero-size layout lets the floating layer hide the root after positioning.
+    await waitFor(() => expect(screen.getAllByRole('menu', { hidden: true })).toEqual([root]));
     await fireEvent.click(archive);
     expect(mockDispatch).toHaveBeenCalledWith(requestArchiveWorkspace('ws-local'));
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());

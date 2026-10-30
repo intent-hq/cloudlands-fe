@@ -301,7 +301,7 @@ describe('RepoSelector qualified GitLab choice', () => {
     const view = await openDropdown({ gitlab, gitlabSelected: true });
     await view.rerender({ gitlab: undefined });
     await waitFor(() => expect(screen.queryByRole('option')).toBeNull());
-    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(gitlab.onOpenChange).toHaveBeenLastCalledWith(false, gitlab.scopeKey);
   });
 

@@ -506,6 +506,8 @@ describe('DevicesSettings', () => {
   ) {
     await fireEvent.click(screen.getByRole('button', { name: `Actions for ${deviceName}` }));
     await fireEvent.click(await screen.findByRole('menuitem', { name }));
+    // Let the menu finish its exit so the next action cannot pick a stale item.
+    await waitFor(() => expect(screen.queryByRole('menu', { hidden: true })).toBeNull());
   }
 
   describe('behind-pin indicator and Update action', () => {

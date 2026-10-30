@@ -8,7 +8,7 @@
  * can be seeded per test and dispatches asserted.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/svelte';
+import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { StoreState } from '$store/renderer/types';
 import { initialState as initialConnectionsState } from '$store/renderer/slices/connections/connections-slice';
@@ -145,7 +145,7 @@ describe('HudBackendMenu', () => {
         asyncActionType: 'connections/open',
       }),
     );
-    expect(screen.queryByText('Connections')).toBeNull();
+    await waitFor(() => expect(screen.queryByText('Connections')).toBeNull());
   });
 
   it('surfaces a secret-unavailable open inline instead of reading as success (#3783)', async () => {
@@ -185,7 +185,7 @@ describe('HudBackendMenu', () => {
       ),
     );
     expect(screen.queryByTestId('hud-backend-menu-open-error')).toBeNull();
-    expect(screen.queryByText('Connections')).toBeNull();
+    await waitFor(() => expect(screen.queryByText('Connections')).toBeNull());
   });
 
   it('reopens with a retryable error on rejected open and clears it after retry', async () => {
@@ -220,7 +220,7 @@ describe('HudBackendMenu', () => {
       screen.getByText('Connect to another intentd…').closest('[role="menuitem"]')!,
     );
     expect(screen.getByRole('heading', { name: 'Connect to another intentd' })).toBeTruthy();
-    expect(screen.queryByText('Connections')).toBeNull();
+    await waitFor(() => expect(screen.queryByText('Connections')).toBeNull());
   });
 
   it('closes on Escape', async () => {
@@ -230,6 +230,6 @@ describe('HudBackendMenu', () => {
     await fireEvent.keyDown(screen.getByText('Connections').closest('[role="menu"]')!, {
       key: 'Escape',
     });
-    expect(screen.queryByText('Connections')).toBeNull();
+    await waitFor(() => expect(screen.queryByText('Connections')).toBeNull());
   });
 });

@@ -359,7 +359,7 @@ describe('Menu metadata and compatibility', () => {
       expect(screen.queryByRole('button', { name: 'First actions open' })).toBeNull(),
     );
     expect(screen.getByRole('button', { name: 'Second actions open' })).toBe(second);
-    expect(screen.getAllByRole('menu')).toHaveLength(1);
+    await waitFor(() => expect(screen.getAllByRole('menu')).toHaveLength(1));
   });
 
   it('runs a legacy action once and closes the menu', async () => {
