@@ -81,7 +81,7 @@
   import { selectWorkspacePeopleTilePeople } from '$store/renderer/slices/presence/presence-selectors';
   import { openWorkspaceDiscussion } from '$features/discussions/discussion-navigation';
   import WorkspaceTokenUsage from './sidebar/WorkspaceTokenUsage.svelte';
-  import SidebarPrDropdown from './sidebar/SidebarPrDropdown.svelte';
+  import WorkspacePullRequests from './sidebar/WorkspacePullRequests.svelte';
   import WorkspaceAgentsList from './WorkspaceAgentsList.svelte';
   import WorkspaceShellList from './WorkspaceShellList.svelte';
   import SidebarSectionTabs from './sidebar/SidebarSectionTabs.svelte';
@@ -809,6 +809,15 @@
         data-active={visibleTabIds.includes(tabId) || undefined}
       >
         {#if mountedTabIds.includes(tabId)}
+          {#if tabId === 'changes'}
+            <WorkspacePullRequests
+              {workspaceId}
+              active={active && visibleTabIds.includes(tabId)}
+              rows={workspacePrRows}
+              truncated={($workspace?.pullRequestsTotal ?? 0) >
+                ($workspace?.pullRequests?.length ?? 0)}
+            />
+          {/if}
           {#if tab && !tab.hideHeader}
             <div class="shrink-0 px-5 pt-3 pb-2" data-sidebar-section-header>
               <h6 class="flex min-h-7 items-center gap-2 text-sm font-medium text-foreground">
@@ -920,9 +929,6 @@
                     {/if}
                   {:else if tabId === 'changes'}
                     {@render changesRefreshAction?.()}
-                    {#if workspacePrRows.length > 0}
-                      <SidebarPrDropdown rows={workspacePrRows} {workspaceId} side="bottom" />
-                    {/if}
                   {/if}
                 </span>
               </h6>

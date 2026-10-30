@@ -5,7 +5,6 @@
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { m } from '$shared/paraglide/messages.js';
   import SidebarPrList from './SidebarPrList.svelte';
-  import TimelineSection from './TimelineSection.svelte';
   import type { WorkspacePRPresentationRow } from './workspace-pr-presentation';
 
   let {
@@ -52,8 +51,17 @@
 </script>
 
 {#if rows.length || truncated}
-  <section data-workspace-pull-requests aria-label={m.workspace_prSection_pullRequests_label()}>
-    <TimelineSection title={m.workspace_prSection_pullRequests_label()}>
+  <section
+    class="flex min-h-0 max-h-1/2 shrink-0 flex-col overflow-hidden rounded-(--radius-large) bg-selected ring-1 ring-inset ring-border/50 dark:bg-surface-4"
+    data-workspace-pull-requests
+    aria-label={m.workspace_prSection_pullRequests_label()}
+  >
+    <div class="shrink-0 px-5 pt-3 pb-2">
+      <h6 class="flex min-h-7 items-center text-sm font-medium text-foreground">
+        {m.workspace_prSection_pullRequests_label()}
+      </h6>
+    </div>
+    <div class="min-h-0 overflow-y-auto px-3 pb-2">
       <SidebarPrList
         {rows}
         inline
@@ -71,6 +79,6 @@
           {m.workspace_repoSelector_retrySuggestions_label()}
         </Button>
       {/if}
-    </TimelineSection>
+    </div>
   </section>
 {/if}

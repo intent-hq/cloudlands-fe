@@ -65,7 +65,6 @@
     constructPrUrl as constructPrUrlUtil,
     computeTotalStats,
     mapWorkspacePRs,
-    legacyWorkspacePullRequest,
     sectionPRs,
   } from './sidebar-changes-utils';
   import { selectReviewMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
@@ -82,8 +81,6 @@
   import FileChangesSection from './FileChangesSection.svelte';
   import PostMergeActions from './PostMergeActions.svelte';
   import PRSection from './PRSection.svelte';
-  import WorkspacePullRequests from './WorkspacePullRequests.svelte';
-  import { buildWorkspacePRPresentationModel } from './workspace-pr-presentation';
   import { store as appStore } from '$store/renderer/store';
   import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
 
@@ -231,17 +228,6 @@
   // Repository selection changes the file browser, not the workspace PR list.
   let selectedSecondaryRoot = $state<WorkspaceGitRootEntry | null>(null);
   const isBrowsingSecondaryRoot = $derived(selectedSecondaryRoot !== null);
-  const workspacePRRows = $derived(
-    buildWorkspacePRPresentationModel({
-      workspacePRs: $workspace?.pullRequests,
-      activePR: $activePullRequest$ ?? ($workspace ? legacyWorkspacePullRequest($workspace) : null),
-      monitors: $prMonitors$,
-      workspaceRepo,
-      secondaryRoots: $gitRoots$,
-      buildPrUrl: constructPrUrl,
-      getDisplayTitle: getPRDisplayTitle,
-    }),
-  );
 
   // Truncation state - when there are more changes than we can display
   // Only show truncation warning if there are actual working changes being truncated
@@ -886,12 +872,6 @@
         aria-label={m.workspace_sidebarChanges_fileChanges_ariaLabel()}
         onkeydown={handleChangesKeydown}
       >
-        <WorkspacePullRequests
-          {workspaceId}
-          {active}
-          rows={workspacePRRows}
-          truncated={($workspace?.pullRequestsTotal ?? 0) > ($workspace?.pullRequests?.length ?? 0)}
-        />
         <!-- Git root dropdown + read-only per-root browsing (monorepo#2053) -->
         <GitRootBrowser
           {workspaceId}

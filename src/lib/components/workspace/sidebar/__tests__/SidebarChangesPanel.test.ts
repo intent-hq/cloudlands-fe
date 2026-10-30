@@ -986,143 +986,6 @@ describe('SidebarChangesPanel', () => {
       });
     });
 
-    it('renders PR section with open PR', async () => {
-      const workspace = makeWorkspace({
-        pullRequests: [
-          {
-            number: 42,
-            title: 'My PR',
-            url: 'https://github.com/testorg/testrepo/pull/42',
-            status: 'Open',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          },
-        ],
-      });
-      mockWorkspaceStore.findById.mockReturnValue(workspace);
-
-      const { container } = await renderPanel();
-
-      await waitFor(() => {
-        const text = container.textContent;
-        expect(text).toContain('My PR');
-      });
-    });
-
-    it('orders PR rows newest-updated first in the primary view', async () => {
-      const workspace = makeWorkspace({
-        pullRequests: [
-          {
-            number: 41,
-            title: 'Older PR',
-            url: 'https://github.com/testorg/testrepo/pull/41',
-            status: 'Open',
-            createdAt: '2026-01-01T00:00:00Z',
-            updatedAt: '2026-01-02T00:00:00Z',
-          },
-          {
-            number: 42,
-            title: 'Newer PR',
-            url: 'https://github.com/testorg/testrepo/pull/42',
-            status: 'Open',
-            createdAt: '2026-01-01T00:00:00Z',
-            updatedAt: '2026-02-02T00:00:00Z',
-          },
-        ],
-      });
-      mockWorkspaceStore.findById.mockReturnValue(workspace);
-
-      const { container } = await renderPanel();
-
-      await waitFor(() => {
-        const text = container.textContent || '';
-        expect(text).toContain('Older PR');
-        expect(text).toContain('Newer PR');
-        // Recency sort: the newest-updated PR renders first
-        expect(text.indexOf('Newer PR')).toBeLessThan(text.indexOf('Older PR'));
-      });
-    });
-
-    it('renders PR section with merged PR', async () => {
-      const workspace = makeWorkspace({
-        pullRequests: [
-          {
-            number: 42,
-            title: 'Merged PR',
-            url: 'https://github.com/testorg/testrepo/pull/42',
-            status: 'Merged',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          },
-        ],
-      });
-      mockWorkspaceStore.findById.mockReturnValue(workspace);
-
-      const { container } = await renderPanel();
-
-      await waitFor(() => {
-        const text = container.textContent;
-        expect(text).toContain('Merged PR');
-      });
-    });
-
-    it('renders both a merged historical PR and a newly opened PR from workspace.pullRequests', async () => {
-      // Post-refresh shape: pr.refresh / pr:linked fold the daemon-owned
-      // per-branch list, which retains merged history alongside the new PR.
-      const workspace = makeWorkspace({
-        pullRequests: [
-          {
-            number: 299,
-            title: 'Old merged PR',
-            url: 'https://github.com/testorg/testrepo/pull/299',
-            status: 'Merged',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          },
-          {
-            number: 300,
-            title: 'Newly discovered PR',
-            url: 'https://github.com/testorg/testrepo/pull/300',
-            status: 'Open',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          },
-        ],
-      });
-      mockWorkspaceStore.findById.mockReturnValue(workspace);
-
-      const { container } = await renderPanel();
-
-      await waitFor(() => {
-        const text = container.textContent;
-        expect(text).toContain('Old merged PR');
-        expect(text).toContain('Newly discovered PR');
-      });
-    });
-
-    it('renders PR section with draft PR', async () => {
-      const workspace = makeWorkspace({
-        pullRequests: [
-          {
-            number: 42,
-            title: 'Draft PR',
-            url: 'https://github.com/testorg/testrepo/pull/42',
-            status: 'Draft',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          },
-        ],
-      });
-      mockWorkspaceStore.findById.mockReturnValue(workspace);
-
-      const { container } = await renderPanel();
-
-      await waitFor(() => {
-        const text = container.textContent;
-        expect(text).toContain('Draft PR');
-      });
-    });
-
     it('renders branch label from workspace', async () => {
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace({ branch: 'feature/my-branch' }));
       const { container } = await renderPanel();
@@ -2733,96 +2596,6 @@ describe('SidebarChangesPanel', () => {
       expect(viewText).not.toContain('Create PR');
     });
 
-    it('keeps the same workspace PRs when switching the selected repository', async () => {
-      // Workspace with its own PR + a secondary root on another repo with
-      // its own PR (from the root's wire row pullRequests).
-      mockWorkspaceStore.findById.mockReturnValue(
-        makeWorkspace({
-          pullRequests: [
-            {
-              number: 42,
-              title: 'Workspace PR',
-              url: 'https://github.com/testorg/testrepo/pull/42',
-              status: 'Open',
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            },
-          ],
-        }),
-      );
-      await seedGitRoots([
-        makeGitRoot({
-          repoOwner: 'testorg',
-          repoName: 'subrepo',
-          pullRequests: [
-            {
-              id: 'pr-sub',
-              number: 7,
-              title: 'Subrepo PR',
-              url: 'https://github.com/testorg/subrepo/pull/7',
-              status: 'Open',
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            },
-          ],
-        }),
-      ]);
-      mockRootGetStatus.mockResolvedValue({
-        ok: true,
-        data: {
-          branch: 'feature/sub',
-          ahead: 0,
-          behind: 0,
-          diverged: false,
-          files: [],
-          hasUncommittedChanges: false,
-          hasUntrackedFiles: false,
-        },
-      });
-      mockRootGetHistory.mockResolvedValue({ ok: true, data: { items: [] } });
-
-      const { container } = await renderPanel();
-
-      await waitFor(() => {
-        expect(container.querySelector('[data-testid="git-root-selector"]')).toBeTruthy();
-      });
-
-      await waitFor(() => {
-        const text = container.textContent || '';
-        expect(text).toContain('Workspace PR');
-        expect(text).toContain('Subrepo PR');
-      });
-      const identities = () =>
-        Array.from(
-          container.querySelectorAll('[data-workspace-pull-requests] [data-pr-identity]'),
-        ).map((row) => row.getAttribute('data-pr-identity'));
-      const beforeSelection = identities();
-      expect(beforeSelection).toHaveLength(2);
-
-      // Select the secondary root
-      const trigger = container.querySelector(
-        '[data-testid="git-root-selector"] button',
-      ) as HTMLButtonElement;
-      trigger.focus();
-      await fireEvent.keyDown(trigger, { key: 'Enter' });
-      await waitFor(() => {
-        expect(document.querySelector('[role="listbox"]')).toBeTruthy();
-      });
-      await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
-      await fireEvent.keyDown(trigger, { key: 'Enter' });
-
-      await waitFor(() => {
-        expect(container.querySelector('[data-testid="secondary-root-changes-view"]')).toBeTruthy();
-      });
-
-      await waitFor(() => {
-        expect(identities()).toEqual(beforeSelection);
-      });
-      const listText = container.textContent || '';
-      expect(listText).not.toContain('Create PR');
-      expect(listText).not.toContain('Merge');
-    });
-
     it('does not consume or replay root-owned auto-actions when changing the viewed git root', async () => {
       // Auto-actions are independent of the selected root and mounted child refs.
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
@@ -2991,7 +2764,6 @@ describe('SidebarChangesPanel', () => {
       const { container } = await renderPanel();
 
       await waitFor(() => {
-        expect(container.textContent).toContain('Shared PR');
         expect(container.textContent).toContain('feat: unpushed work');
       });
       for (const id of OWNER_ONLY_TESTIDS) {
@@ -3004,7 +2776,6 @@ describe('SidebarChangesPanel', () => {
       const { container } = await renderPanel();
 
       await waitFor(() => {
-        expect(container.textContent).toContain('Shared PR');
         expect(container.textContent).toContain('feat: unpushed work');
         expect(container.textContent).toContain('fix: pushed work');
       });
@@ -3117,7 +2888,7 @@ describe('SidebarChangesPanel', () => {
       await seedBehind('collaborator');
       const guest = await renderPanel();
       await waitFor(() => {
-        expect(guest.container.textContent).toContain('Shared PR');
+        expect(guest.container.querySelector('.sidebar-changes-container')).not.toBeNull();
       });
       expect(guest.container.querySelector('[data-testid="pr-pull-button"]')).toBeNull();
       (refreshAcceptChangesStatus as Mock).mockClear();
@@ -3154,7 +2925,7 @@ describe('SidebarChangesPanel', () => {
       await seedDiverged('collaborator');
       const { container } = await renderPanel();
       await waitFor(() => {
-        expect(container.textContent).toContain('Shared PR');
+        expect(container.querySelector('.sidebar-changes-container')).not.toBeNull();
       });
       expect(container.querySelector('[data-testid="pr-force-push-button"]')).toBeNull();
       expect(container.textContent).not.toContain('Force Push');
@@ -3212,7 +2983,7 @@ describe('SidebarChangesPanel', () => {
       );
       const { container } = await renderPanel();
       await waitFor(() => {
-        expect(container.textContent).toContain('Landed PR');
+        expect(container.querySelector('.sidebar-changes-container')).not.toBeNull();
       });
       expect(container.textContent).not.toContain('Reset');
       expect(container.textContent).not.toContain('Archive');

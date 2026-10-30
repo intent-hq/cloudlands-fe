@@ -1,6 +1,26 @@
 import { expect, test } from '../../../../../test/ct-test';
 import Preview from '../changes-summary.preview.svelte';
 
+test('keeps workspace PRs available when browsing a submodule', async ({ mount, page }) => {
+  await page.setViewportSize({ width: 420, height: 800 });
+  await mount(Preview, { props: { prs: 'multiple', secondaryFiles: true } });
+  const prs = page.locator('[data-workspace-pull-requests] [data-pr-identity]');
+  await expect(prs).toHaveCount(5);
+  const identities = await prs.evaluateAll((rows) =>
+    rows.map((row) => row.getAttribute('data-pr-identity')),
+  );
+  await page.getByRole('combobox', { name: 'Select git root' }).click();
+  await page.getByRole('option', { name: /^packages\/component/ }).click();
+  await expect(page.locator('[data-testid="secondary-root-changes-view"]')).toBeVisible();
+  await expect(prs).toHaveCount(5);
+  expect(
+    await prs.evaluateAll((rows) => rows.map((row) => row.getAttribute('data-pr-identity'))),
+  ).toEqual(identities);
+  await prs.last().focus();
+  await expect(prs.last()).toBeFocused();
+  await expect(prs.last()).toBeInViewport();
+});
+
 test('owner metadata cannot enable branch editing before connection admission', async ({
   mount,
   page,
