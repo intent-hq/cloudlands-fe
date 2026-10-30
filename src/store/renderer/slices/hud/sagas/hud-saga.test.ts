@@ -1316,6 +1316,48 @@ describe('HUD subscription (mock backend, real store)', () => {
     }
   });
 
+  it('leaves agentsLoaded to the full agent-list read: the partial HUD read stores rows without setting it', async () => {
+    const WS_PARTIAL_ID = '44444444-4444-4444-8444-444444444444';
+    const AGENT_ID = 'agent-44444444-aaaa-4aaa-8aaa-444444444444';
+    scriptHappyBackend(backend);
+    backend.onRequest('agent.list', (params) => {
+      const { workspaceId } = params as { workspaceId: string };
+      if (workspaceId !== WS_PARTIAL_ID) return { agents: [], retiredCount: 0 };
+      return {
+        agents: [
+          {
+            id: AGENT_ID,
+            workspaceId: WS_PARTIAL_ID,
+            name: 'Implementor',
+            status: 'idle',
+            messageCount: 1,
+            createdAt: '2026-07-30T10:00:00Z',
+            updatedAt: '2026-07-30T11:59:00Z',
+            metadata: { isBackground: false },
+          },
+        ],
+        retiredCount: 0,
+        scopeCounts: { topLevel: 1, delegated: 0, background: 0 },
+      };
+    });
+    appStore.dispatch(setWorkspaceEntity(makeHudWorkspace(WS_PARTIAL_ID)));
+    try {
+      stop = startHudSubscription();
+      await flush();
+      await flush();
+
+      const workspaceAgents = appStore.state.workspaceAgents?.byWorkspaceId[WS_PARTIAL_ID];
+      // The partial rows still land for the HUD card…
+      expect(workspaceAgents?.agentIds).toContain(AGENT_ID);
+      expect(appStore.state.agentSessions?.byAgentId[AGENT_ID]).toBeDefined();
+      // …but only the full read (requested via hydrateAgentsRequested, not run
+      // in this harness) may claim the list is loaded.
+      expect(workspaceAgents?.agentsLoaded).toBe(false);
+    } finally {
+      appStore.dispatch(removeWorkspaceEntity(WS_PARTIAL_ID));
+    }
+  });
+
   it('point-reads a busy background agent absent from the topLevel bin via agent.get and lands it in the store (intent#5531)', async () => {
     const WS_BG_ID = '55555555-5555-4555-8555-555555555555';
     const WS_OTHER_ID = '66666666-6666-4666-8666-666666666666';
