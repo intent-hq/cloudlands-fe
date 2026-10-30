@@ -926,8 +926,7 @@ function* toggleRecording({
     } catch {
       result = { ok: false, error: 'failed' };
     }
-    if (nativeService === service)
-      yield* finishClip(workspaceId, agentId, clip.id, result);
+    if (nativeService === service) yield* finishClip(workspaceId, agentId, clip.id, result);
     return;
   }
   // Each finished recording is its own attachment; a new one starts beside them.
@@ -962,7 +961,12 @@ function* toggleRecording({
   } catch {
     started = { ok: false, error: 'failed' };
   }
-  if (nativeService !== service || !activePair(workspaceId, agentId) || !clipOf(workspaceId, agentId, id)) return;
+  if (
+    nativeService !== service ||
+    !activePair(workspaceId, agentId) ||
+    !clipOf(workspaceId, agentId, id)
+  )
+    return;
   if (started.ok) stampRecordingInSpeech(workspaceId, agentId, id, false);
   if (!started.ok && started.error === 'permission' && activePair(workspaceId, agentId)) {
     yield* put(dockEvidenceCaptureFailed(workspaceId, agentId, 'permission'));

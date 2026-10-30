@@ -3,7 +3,10 @@
   import '$lib/styles/dock-tokens.css';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { store } from '$store/renderer/store';
-  import { closeDockConversationRequested, openDockConversationRequested } from '$store/renderer/slices/dock-conversation/dock-conversation-slice';
+  import {
+    closeDockConversationRequested,
+    openDockConversationRequested,
+  } from '$store/renderer/slices/dock-conversation/dock-conversation-slice';
   import DockConversation from './DockConversation.svelte';
   import DockConversationSurface from './DockConversationSurface.svelte';
   import {

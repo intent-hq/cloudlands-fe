@@ -1,6 +1,6 @@
 import { writeFile } from 'node:fs/promises';
 import type { Locator } from '@playwright/test';
-import { expect, test } from '../../../test/ct-test';
+import { expect, test, wheelUntilScrolled } from '../../../test/ct-test';
 import DockRailPreview from './dock-rail.preview.svelte';
 import ConversationPreview from './dock-conversation.preview.svelte';
 import ConversationWireHarness from './DockConversationWireHarness.svelte';
@@ -661,7 +661,7 @@ for (const mode of ['notch', 'side-left', 'side-right'] as const) {
       .poll(() => scroller.evaluate((el) => el.scrollHeight > el.clientHeight))
       .toBe(true);
     await scroller.hover();
-    await page.mouse.wheel(0, 1200);
+    await wheelUntilScrolled(scroller, { deltaY: 1200 });
     await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
     // Keyboard navigation must reveal the target itself, without a test scrollIntoView call.
     // The notch pins the assistant row below the scrolled list: End lands there, and

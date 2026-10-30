@@ -326,7 +326,7 @@ export const selectDockNativeScope = store.createSelector((state) => {
 /** Settled outcome of one explicit speech stop request; null while it is pending. */
 export const selectDockSpeechStopOutcome = store.createSelector(
   (state, requestId: string) =>
-    state.dockConversation.nativeSpeech.stops.find((row) => row.requestId === requestId) ?? null,
+    getItem(state.dockConversation.nativeSpeech.stops, requestId) ?? null,
 );
 
 /** Changes whenever the window's backend or its connection lifecycle changes. */

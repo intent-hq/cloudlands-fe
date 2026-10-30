@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getItem } from '@themislib/themis/utils/collections/collection-utils';
+import { createCollection, getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import {
   dockConversationReducer as reduce,
   openDockConversationRequested,
@@ -259,7 +259,7 @@ describe('native speech mirror', () => {
       pending: false,
       error: null,
       levels: [],
-      stops: [],
+      stops: createCollection('requestId'),
     });
     // Nothing installed: every mirror update is ignored.
     expect(reduce(state, dockNativeSpeechPatched('pair-a', { activeId: 's' }))).toBe(state);
@@ -278,18 +278,18 @@ describe('native speech mirror', () => {
     // Concurrent requests settle independently; a later one never overwrites an earlier one.
     state = reduce(state, dockNativeSpeechStopSettled('pair-a', 'req-1', false));
     state = reduce(state, dockNativeSpeechStopSettled('pair-a', 'req-2', true));
-    expect(state.nativeSpeech.stops).toEqual([
+    expect(getItems(state.nativeSpeech.stops)).toEqual([
       { requestId: 'req-1', ok: false },
       { requestId: 'req-2', ok: true },
     ]);
     for (let index = 0; index < 20; index += 1)
       state = reduce(state, dockNativeSpeechStopSettled('pair-a', `bulk-${index}`, true));
-    expect(state.nativeSpeech.stops).toHaveLength(16);
+    expect(getItems(state.nativeSpeech.stops)).toHaveLength(16);
     // Ending the session drops the meter; retiring resets the whole mirror.
     state = reduce(state, dockNativeSpeechPatched('pair-a', { activeId: null, pending: false }));
     expect(state.nativeSpeech.levels).toEqual([]);
     state = reduce(state, dockNativeSpeechSessionChanged(null, capability));
-    expect(state.nativeSpeech).toMatchObject({ pairId: null, capability: null, stops: [] });
+    expect(state.nativeSpeech).toMatchObject({ pairId: null, capability: null, stops: createCollection('requestId') });
   });
 
   it('retires only the explicitly rejected mark reference from queued narration', () => {

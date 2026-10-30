@@ -4,6 +4,7 @@
 </script>
 
 <script lang="ts">
+  import { catalogNow } from '$lib/component-catalog/catalog-clock';
   import { onDestroy } from 'svelte';
   import type { DockPointerRect } from '$shared/dock-layout';
   import {
@@ -126,7 +127,7 @@
         {
           id: `sent-${submissions.length}`,
           role: 'user',
-          timestamp: new Date().toISOString(),
+          timestamp: new Date(catalogNow()).toISOString(),
           contentBlocks: [{ type: 'text', text }],
         },
       ],

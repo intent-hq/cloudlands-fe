@@ -212,11 +212,16 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
     (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.holdPlacements(true),
   );
   await stopRecording.click();
-  await expect.poll(() => page.evaluate(() =>
-    (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.calls.filter(
-      (call) => call.method === 'file.placeAttachment' && 'sourcePath' in call.params,
-    ).length,
-  )).toBe(1);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.calls.filter(
+            (call) => call.method === 'file.placeAttachment' && 'sourcePath' in call.params,
+          ).length,
+      ),
+    )
+    .toBe(1);
   await page.evaluate(() =>
     (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.holdPlacements(false),
   );
@@ -318,7 +323,6 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
   if (video) await video.saveAs(resolve(ARTIFACTS, 'dock-composer-e2e.webm'));
 });
 
-
 test('closing retires transient media and preserves words and completed captures', async ({
   mount,
   page,
@@ -354,7 +358,9 @@ test('closing retires transient media and preserves words and completed captures
   await expect(tiles).toHaveCount(1);
   await expect(capture).toBeEnabled();
   await page.evaluate(() =>
-    (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.native.holdCaptures(false),
+    (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.native.holdCaptures(
+      false,
+    ),
   );
   await expect(tiles).toHaveCount(1);
   await capture.click();
@@ -365,9 +371,13 @@ test('closing retires transient media and preserves words and completed captures
     contentType: 'image/png',
   });
   await testInfo.attach('retired-draft-native-log', {
-    body: JSON.stringify(await page.evaluate(() =>
-      (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.native.log,
-    ), null, 2),
+    body: JSON.stringify(
+      await page.evaluate(
+        () => (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.native.log,
+      ),
+      null,
+      2,
+    ),
     contentType: 'application/json',
   });
 });

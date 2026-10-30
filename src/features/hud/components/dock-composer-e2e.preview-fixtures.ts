@@ -1,3 +1,4 @@
+import { catalogNow } from '$lib/component-catalog/catalog-clock';
 /**
  * Synthetic native boundary for the dock composer walkthrough. Everything above
  * the native adapter (controller, sagas, slice, editor, send) is production code;
@@ -173,12 +174,12 @@ function createSyntheticNative() {
     },
     startClip: async (clipId) => {
       log.clips.started.push(clipId);
-      clip = { id: clipId, startedAt: Date.now() };
+      clip = { id: clipId, startedAt: catalogNow() };
       return { ok: true, value: undefined };
     },
     stopClip: async (clipId) => {
       log.clips.stopped.push(clipId);
-      const durationMs = clip?.id === clipId ? Date.now() - clip.startedAt : 0;
+      const durationMs = clip?.id === clipId ? catalogNow() - clip.startedAt : 0;
       clip = null;
       const result = {
         ok: true as const,
@@ -254,7 +255,7 @@ function createSyntheticNative() {
             engine: 'analyzer',
             locale: 'en-US',
             onDevice: true,
-            startedAtEpochMs: Date.now(),
+            startedAtEpochMs: catalogNow(),
           }),
         );
         return { ok: true as const, value: undefined };
@@ -308,7 +309,7 @@ function createSyntheticNative() {
         geometry,
         element,
         ...(capture ? { capture } : {}),
-        ...(clip ? { clipMs: Date.now() - clip.startedAt } : {}),
+        ...(clip ? { clipMs: catalogNow() - clip.startedAt } : {}),
       });
     },
     /** Interim speech: each word advances the virtual audio clock. */

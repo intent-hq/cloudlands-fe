@@ -1599,8 +1599,7 @@
         type: 'file' as const,
         attachmentId: item.attachmentId!,
         // A recording shows 'Recording n' but is re-sent under its stored file name.
-        fileName:
-          typeof item.metadata?.fileName === 'string' ? item.metadata.fileName : item.label,
+        fileName: typeof item.metadata?.fileName === 'string' ? item.metadata.fileName : item.label,
         ...(item.attachmentMimeType ? { mimeType: item.attachmentMimeType } : {}),
         ...(item.attachmentSize !== undefined ? { size: item.attachmentSize } : {}),
       }));

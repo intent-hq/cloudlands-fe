@@ -1,4 +1,4 @@
-import { expect, test } from '../../../test/ct-test';
+import { expect, test, wheelUntilScrolled } from '../../../test/ct-test';
 import DockRailPreview from './dock-rail.preview.svelte';
 import { dockRailPreview } from './dock-rail.preview-fixtures';
 
@@ -87,7 +87,7 @@ test('Assistant and every workspace remain reachable in the bounded legacy rail'
   await last.press('Home');
   await expect(assistant).toBeFocused();
   await scroller.hover();
-  await page.mouse.wheel(0, 1000);
+  await wheelUntilScrolled(scroller, { deltaY: 1000 });
   await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
   await expect(assistant).toBeFocused();
   await page.keyboard.press('Escape');

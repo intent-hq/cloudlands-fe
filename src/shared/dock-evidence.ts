@@ -204,7 +204,7 @@ export interface DockParkedImage {
  * last), at its old creation index so redo gives it its old number. An entry also
  * holds the session image when that mark was its only one.
  */
-export interface DockAnnotationHistory {
+interface DockAnnotationHistory {
   sessionId: string;
   redo: { index: number; mark: DockMark; image?: DockParkedImage }[];
 }
@@ -224,7 +224,7 @@ export function dockClipReferenceId(clipId: string, end: boolean): string {
 }
 
 /** Recordings that can be sent, numbered 1… in start order (failed ones have no number). */
-export function numberDockClips(
+function numberDockClips(
   evidence: Pick<DockComposerEvidence, 'clips'> | undefined,
 ): { n: number; clip: DockEvidenceClip }[] {
   return (evidence?.clips ?? [])

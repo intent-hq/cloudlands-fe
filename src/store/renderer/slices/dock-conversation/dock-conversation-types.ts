@@ -29,7 +29,7 @@ export interface DockNativeSpeechState {
    * Settled explicit stop requests (the send's final-transcript barrier), newest last
    * and bounded. Kept per request so concurrent stops never overwrite each other.
    */
-  stops: { requestId: string; ok: boolean }[];
+  stops: Collection<{ requestId: string; ok: boolean }, 'requestId'>;
 }
 
 export interface DockConversationPrompt {

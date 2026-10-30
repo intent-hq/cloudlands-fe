@@ -84,8 +84,7 @@
 
   import SettingsSidebarBack from '$lib/components/settings/SettingsSidebarBack.svelte';
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
-  import { dockLabEnabled, setDockLabEnabled } from '$lib/dock-lab';
-  import DockLabIllustration from '$lib/components/settings/DockLabIllustration.svelte';
+  import DockLabSettings from '$lib/components/settings/DockLabSettings.svelte';
   import { getNavigatorHid } from '$features/hardware-console/device/platform';
   import { watchSupportedDevicePresence } from '$features/hardware-console/device/presence';
   import { getHardwareConsoleManager } from '$features/hardware-console/instance';
@@ -1191,32 +1190,7 @@
           {/if}
 
           {#if isElectronPlatform()}
-            <div id="labs" data-highlight-id="labs" use:highlightTarget>
-              <h2 class="type-title mb-3 text-foreground">{m.settings_section_labs()}</h2>
-              <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-                <section
-                  data-slot="settings-section-body"
-                  class="flex items-center gap-4 px-6 py-1"
-                >
-                  <DockLabIllustration />
-                  <SettingsFieldRow
-                    class="flex-1"
-                    id="settings-dockLab-label-field"
-                    label={m.settings_dockLab_label()}
-                    description={m.settings_dockLab_description()}
-                  >
-                    <Switch
-                      id="dock-lab-switch"
-                      size="sm"
-                      class="mb-auto"
-                      checked={$dockLabEnabled}
-                      onCheckedChange={(enabled) => void setDockLabEnabled(enabled)}
-                      ariaLabel={m.settings_dockLab_label()}
-                    />
-                  </SettingsFieldRow>
-                </section>
-              </div>
-            </div>
+            <DockLabSettings />
           {/if}
         {/if}
       </main>

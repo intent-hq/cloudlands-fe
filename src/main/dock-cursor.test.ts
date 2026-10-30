@@ -101,23 +101,20 @@ describe('dock native cursor contract', () => {
     controller.dispose();
   });
 
-  it.each([
-    'default',
-    'custom',
-    'ns-no-resize',
-    'col-resize',
-    'row-resize',
-  ])('releases ownership for %s instead of inventing a resize cursor', (input) => {
-    const controller = attachDockCursor(windowFixture() as unknown as BrowserWindow)!;
-    controller.update(state);
-    controller.cursorChanged('ew-resize');
-    controller.cursorChanged(input);
-    expect(fixture.update).toHaveBeenLastCalledWith(
-      { token: 'native' },
-      { ...state, kind: 'none' },
-    );
-    controller.dispose();
-  });
+  it.each(['default', 'custom', 'ns-no-resize', 'col-resize', 'row-resize'])(
+    'releases ownership for %s instead of inventing a resize cursor',
+    (input) => {
+      const controller = attachDockCursor(windowFixture() as unknown as BrowserWindow)!;
+      controller.update(state);
+      controller.cursorChanged('ew-resize');
+      controller.cursorChanged(input);
+      expect(fixture.update).toHaveBeenLastCalledWith(
+        { token: 'native' },
+        { ...state, kind: 'none' },
+      );
+      controller.dispose();
+    },
+  );
 
   it('retries a failed native update and stops writes after disposal', () => {
     const window = windowFixture() as unknown as BrowserWindow;

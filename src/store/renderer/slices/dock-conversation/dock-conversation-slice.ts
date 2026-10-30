@@ -3,6 +3,8 @@ import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   createCollection,
   getItem,
+  getItems,
+  removeItem,
   upsertItem,
 } from '@themislib/themis/utils/collections/collection-utils';
 import {
@@ -308,7 +310,7 @@ const emptyNativeSpeech: DockNativeSpeechState = {
   pending: false,
   error: null,
   levels: [],
-  stops: [],
+  stops: createCollection('requestId'),
 };
 
 export const dockConversationReducer = createReducer<DockConversationState>({
@@ -374,10 +376,13 @@ dockConversationReducer.with(
           ...state,
           nativeSpeech: {
             ...state.nativeSpeech,
-            stops: [
-              ...state.nativeSpeech.stops.filter((row) => row.requestId !== requestId),
-              { requestId, ok },
-            ].slice(-DOCK_SPEECH_STOPS),
+            stops: createCollection(
+              'requestId',
+              [
+                ...getItems(removeItem(state.nativeSpeech.stops, requestId)),
+                { requestId, ok },
+              ].slice(-DOCK_SPEECH_STOPS),
+            ),
           },
         }
       : state,
@@ -616,7 +621,8 @@ dockConversationReducer.with(
     withEvidence(state, ws, agent, (e) => {
       // Use normal removal so queued speech loses references to cancelled clips.
       const settled = e.clips.reduce(
-        (current, clip) => clip.status === 'recording' ? setDockClip(current, clip.id, null) : current,
+        (current, clip) =>
+          clip.status === 'recording' ? setDockClip(current, clip.id, null) : current,
         e,
       );
       const parts = settled.dictation?.interim;

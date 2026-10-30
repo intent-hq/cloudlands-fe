@@ -172,7 +172,10 @@ test('side conversation is one box beside the unchanged rail, unclipped, with no
 });
 
 test.describe('side shell motion', () => {
-  test('side shell grows from the entry and shrinks back on close', async ({ mount, page }, testInfo) => {
+  test('side shell grows from the entry and shrinks back on close', async ({
+    mount,
+    page,
+  }, testInfo) => {
     await page.emulateMedia({ reducedMotion: 'no-preference', colorScheme: 'dark' });
     await page.clock.install();
     const side = await mountSide(mount, page);

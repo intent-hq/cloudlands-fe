@@ -145,7 +145,10 @@ test('the on-screen tool bar sits next to the dock and follows it, switches tool
   );
   await bar.getByRole('button', { name: 'Pen' }).hover();
   await expect(bar.getByRole('tooltip').filter({ hasText: 'Pen' })).toHaveCSS('opacity', '1');
-  const sideShot = await page.screenshot();
+  await testInfo.attach('side toolbar', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
 
   // The tool bar follows the dock without overlapping its new location.
   const notch = { shape: 'notch', rect: { x: 440, y: 0, width: 400, height: 56 } } as const;
@@ -163,7 +166,10 @@ test('the on-screen tool bar sits next to the dock and follows it, switches tool
   expect(tipBox.y).toBeGreaterThanOrEqual(25);
   expect(tipBox.x).toBeGreaterThanOrEqual(0);
   expect(tipBox.x + tipBox.width).toBeLessThanOrEqual(1280);
-  const notchShot = await page.screenshot();
+  await testInfo.attach('notch toolbar', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
 
   // Mouse mode: the session stays, nothing is a gesture; a tool resumes annotating.
   await bar.getByRole('button', { name: 'Mouse' }).click();

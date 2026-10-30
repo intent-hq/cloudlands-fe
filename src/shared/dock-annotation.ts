@@ -87,7 +87,7 @@ export interface DockAnnotationOverlayState {
 }
 
 /** One composer media button as the tool bar shows it (strings already localized). */
-export interface DockAnnotationMediaButton {
+interface DockAnnotationMediaButton {
   label: string;
   tooltip: string;
   disabled: boolean;

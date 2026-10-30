@@ -4,6 +4,7 @@
 </script>
 
 <script lang="ts">
+  import { catalogNow } from '$lib/component-catalog/catalog-clock';
   import DockConversationPanel from './DockConversationPanel.svelte';
   import type { DockConversationMessage } from '$store/renderer/slices/dock-conversation/dock-conversation-types';
   import {
@@ -82,7 +83,7 @@
       {
         id: `preview-sent-${submissions.length}`,
         role: 'user',
-        timestamp: new Date().toISOString(),
+        timestamp: new Date(catalogNow()).toISOString(),
         contentBlocks: [{ type: 'text', text }],
       },
     ];
