@@ -65,7 +65,7 @@ import {
   recordingDockClip,
   dockClipReferenceId,
 } from '$shared/dock-evidence';
-import { readDockLastTool, rememberDockLastTool } from '../dock-composer-last-tool';
+import { rememberDockLastTool } from '../dock-composer-last-tool';
 import {
   annotationIssueNotice,
   annotationStartNotice,
@@ -87,7 +87,6 @@ import {
   dockEvidenceServerCapabilitiesProbeRequested,
   openDockConversationRequested,
   dockEvidenceAnnotationToggleRequested,
-  dockEvidenceToolRemembered,
   dockEvidenceCaptureFailed,
   dockEvidenceCaptureRequested,
   dockEvidenceCaptureStarted,
@@ -1322,10 +1321,7 @@ function* observeServerCapabilities(): SagaGenerator<void> {
 
 export function* dockEvidenceSaga(): SagaGenerator<void> {
   yield* fork(watchNative);
-  yield* takeLatest(
-    [openDockConversationRequested, dockEvidenceServerCapabilitiesProbeRequested],
-    observeServerCapabilities,
-  );
+  yield* takeLatest(dockEvidenceServerCapabilitiesProbeRequested, observeServerCapabilities);
   // A backend switch or reconnect invalidates what was observed; read the new connection.
   yield* takeLatestFromSelector(selectDockBackendBinding, observeServerCapabilities);
   yield* takeEvery(dockEvidenceCaptureRequested, capture);
@@ -1349,11 +1345,6 @@ export function* dockEvidenceSaga(): SagaGenerator<void> {
     } catch {
       // The session already ended natively.
     }
-  });
-  // First annotate ever uses pick; afterwards the last tool per workspace survives restarts.
-  yield* takeEvery(openDockConversationRequested, function* ({ payload: [workspaceId] }) {
-    const tool = readDockLastTool(appStore.state.connections.windowBackendId, workspaceId);
-    if (tool) yield* put(dockEvidenceToolRemembered(workspaceId, tool));
   });
   yield* takeEvery(dockEvidenceToolSet, function* ({ payload: [workspaceId, tool] }) {
     yield* call(

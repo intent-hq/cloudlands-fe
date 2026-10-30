@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { createCollection, getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
+import {
+  createCollection,
+  getItem,
+  getItems,
+} from '@themislib/themis/utils/collections/collection-utils';
 import {
   dockConversationReducer as reduce,
   openDockConversationRequested,
@@ -289,7 +293,11 @@ describe('native speech mirror', () => {
     state = reduce(state, dockNativeSpeechPatched('pair-a', { activeId: null, pending: false }));
     expect(state.nativeSpeech.levels).toEqual([]);
     state = reduce(state, dockNativeSpeechSessionChanged(null, capability));
-    expect(state.nativeSpeech).toMatchObject({ pairId: null, capability: null, stops: createCollection('requestId') });
+    expect(state.nativeSpeech).toMatchObject({
+      pairId: null,
+      capability: null,
+      stops: createCollection('requestId'),
+    });
   });
 
   it('retires only the explicitly rejected mark reference from queued narration', () => {

@@ -1,3 +1,4 @@
+import { readDockLastTool } from '../dock-composer-last-tool';
 import {
   extractAttachmentBlocks,
   buildWorkspaceContextString,
@@ -100,6 +101,8 @@ import {
   sendDockConversationRequested,
   retryDockConversationSendRequested,
   dockConversationContextSet,
+  dockEvidenceServerCapabilitiesProbeRequested,
+  dockEvidenceToolRemembered,
   dockConversationLoaded,
   dockConversationFailed,
   dockConversationDraftChanged,
@@ -761,7 +764,17 @@ export function* dockConversationSaga(): SagaGenerator<void> {
       selectDockConversationAgentRequested,
       reloadDockConversationRequested,
     ],
-    conversationLifetime,
+    function* (action) {
+      if (action.type === openDockConversationRequested.type) {
+        const workspaceId = appStore.state.dockConversation.workspaceId;
+        if (workspaceId) {
+          const tool = readDockLastTool(appStore.state.connections.windowBackendId, workspaceId);
+          if (tool) yield* put(dockEvidenceToolRemembered(workspaceId, tool));
+        }
+        yield* put(dockEvidenceServerCapabilitiesProbeRequested());
+      }
+      yield* conversationLifetime();
+    },
   );
   // Each generation owns its synchronous sending guard; an older target
   // awaiting validation must not suppress a newly selected target's send.
