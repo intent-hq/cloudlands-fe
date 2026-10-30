@@ -11,6 +11,7 @@
    * Escape that closes the menu.
    */
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
+  import { isTextEntryTarget } from '$lib/utils/text-entry';
   import { notify } from '$lib/components/patterns/notify';
   import { Button } from '$lib/components/ui/button';
   import * as Menu from '$lib/components/ui/menu';
@@ -219,16 +220,7 @@
         event.isComposing)
     )
       return false;
-    const target = event.target;
-    if (
-      (target instanceof Element &&
-        (target.closest(
-          'input, textarea, select, [role="textbox"], [contenteditable]:not([contenteditable="false"])',
-        ) ||
-          (target instanceof HTMLElement && target.isContentEditable))) ||
-      document.getSelection()?.toString()
-    )
-      return false;
+    if (isTextEntryTarget(event.target) || document.getSelection()?.toString()) return false;
 
     event.preventDefault();
     event.stopPropagation();

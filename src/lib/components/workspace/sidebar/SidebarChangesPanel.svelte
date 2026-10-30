@@ -4,6 +4,7 @@
     gitRootsConsumerUnmounted,
   } from '$store/renderer/slices/git-roots/git-roots-slice';
   import { setPendingAutoAction } from '$store/renderer/slices/changes/changes-slice';
+  import { isTextEntryTarget } from '$lib/utils/text-entry';
   import { Button } from '$lib/components/ui/button';
   /**
    * SidebarChangesPanel - Timeline-based changes panel
@@ -571,11 +572,9 @@
   function handleChangesKeydown(e: KeyboardEvent) {
     // Secondary-root controls own their keyboard actions; the primary list is hidden.
     if (isBrowsingSecondaryRoot) return;
-    // Don't handle if we're in an input or textarea
+    // Text entry (inputs, contenteditable, code editors) owns its own keys.
+    if (isTextEntryTarget(e.target)) return;
     const target = e.target as HTMLElement;
-    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
-      return;
-    }
     // Summary controls own their native button and picker keyboard interactions.
     if (
       target.closest(

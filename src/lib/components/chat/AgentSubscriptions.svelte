@@ -1,5 +1,6 @@
 <script lang="ts">
   import { openAssistantAgentFromEvent } from '$lib/utils/assistant-agent-link';
+  import { isTextEntryTarget } from '$lib/utils/text-entry';
   import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
   /**
    * AgentSubscriptions Component
@@ -667,11 +668,7 @@
         // These are automatic reveal retries, not a new user focus request.
         // Preserve a Find field, composer, or other editable control the user
         // has focused since opening the watched agent (intent-hq/intent#6395).
-        const activeElement = document.activeElement;
-        if (
-          activeElement instanceof HTMLElement &&
-          activeElement.closest('input, textarea, select, [contenteditable="true"]')
-        ) {
+        if (isTextEntryTarget(document.activeElement)) {
           clearWatchedAgentFocusTimers();
           return;
         }

@@ -237,16 +237,21 @@ describe('TipTapEditor deferred focus ownership', () => {
     },
   );
 
-  it.each(['input', 'textarea', 'select', 'contenteditable'] as const)(
+  it.each(['input', 'textarea', 'select', 'contenteditable', 'code-editor'] as const)(
     'does not steal %s focus acquired after the composer focus request',
     async (kind) => {
       const view = render(TipTapEditor, { value: 'draft' });
       await waitFor(() => expect(view.container.querySelector('.ProseMirror')).toBeTruthy());
-      const outside = document.createElement(kind === 'contenteditable' ? 'div' : kind);
-      if (kind === 'contenteditable') {
-        outside.setAttribute('contenteditable', 'true');
-        outside.tabIndex = 0;
+      const isDiv = kind === 'contenteditable' || kind === 'code-editor';
+      const outside = document.createElement(isDiv ? 'div' : kind);
+      if (kind === 'contenteditable') outside.setAttribute('contenteditable', 'true');
+      if (kind === 'code-editor') {
+        // Monaco's EditContext focus target: an ARIA textbox, not contenteditable.
+        outside.setAttribute('role', 'textbox');
+        outside.setAttribute('aria-multiline', 'true');
+        Object.defineProperty(outside, 'editContext', { value: {}, configurable: true });
       }
+      if (isDiv) outside.tabIndex = 0;
       document.body.append(outside);
       const frames: FrameRequestCallback[] = [];
       const raf = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
