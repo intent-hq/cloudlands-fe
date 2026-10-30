@@ -33,7 +33,7 @@ export const WILDCARD_EFFECTS = new Set([
   'actionChannel',
   'ownedActionChannel',
 ]);
-const EFFECTS = new Set([...WILDCARD_EFFECTS, 'fork', 'spawn', 'call', 'put', 'cancel']);
+const EFFECTS = new Set([...WILDCARD_EFFECTS, 'fork', 'spawn', 'call', 'all', 'put', 'cancel']);
 const ACTION_FACTORIES = new Set(['createAction', 'createAsyncAction']);
 const DUPLICATE_WATCHER_EXCEPTIONS = [
   {
@@ -492,14 +492,27 @@ function watcherWorker(effect, call) {
 const SELECTOR_WATCHER_SOURCE = '@themislib/themis/saga';
 const SELECTOR_WATCHER = /^take(?:Every|Latest|Leading)FromSelector$/;
 
-/** The call expression a `yield` / `yield*` expression statement runs, if any. */
+/**
+ * The `yield` / `yield*` expression a statement runs: an expression statement, or a
+ * variable statement whose single initializer yields (`const x = yield* call(...)`).
+ */
+function yieldedBy(statement) {
+  let expression;
+  if (ts.isExpressionStatement(statement)) expression = statement.expression;
+  else if (ts.isVariableStatement(statement)) {
+    const [declaration, ...rest] = statement.declarationList.declarations;
+    if (!declaration || rest.length > 0) return undefined;
+    expression = declaration.initializer;
+  }
+  while (expression && ts.isParenthesizedExpression(expression)) expression = expression.expression;
+  if (!expression || !ts.isYieldExpression(expression) || !expression.expression) return undefined;
+  return expression;
+}
+
+/** The effect call a statement yields, if any. */
 function yieldedCall(statement) {
-  if (!ts.isExpressionStatement(statement)) return undefined;
-  let expression = statement.expression;
-  while (ts.isParenthesizedExpression(expression)) expression = expression.expression;
-  if (!ts.isYieldExpression(expression) || !expression.expression) return undefined;
-  const yielded = expression.expression;
-  return ts.isCallExpression(yielded) ? yielded : undefined;
+  const yielded = yieldedBy(statement)?.expression;
+  return yielded && ts.isCallExpression(yielded) ? yielded : undefined;
 }
 
 function isForeverLoop(statement) {
@@ -521,12 +534,22 @@ function canExitLoop(loop) {
   return exits;
 }
 
+/** The elements of `all([...])` / `race([...])` / `all({ ... })`. */
+function combinatorElements(argument) {
+  if (!argument) return [];
+  if (ts.isArrayLiteralExpression(argument)) return [...argument.elements];
+  if (ts.isObjectLiteralExpression(argument))
+    return argument.properties.filter(ts.isPropertyAssignment).map((item) => item.initializer);
+  return [];
+}
+
 /**
- * Same-file generator declarations that never return once called: their body runs
- * a non-blocking watcher (whose attached fork outlives the caller's `call`), loops
- * forever on `take()`, or `call()`s another never-returning generator. `call()`
- * waits for a generator and all of its attached forks, so any statement after such
- * a call is dead (cloudlands-fe#3874).
+ * Same-file generator declarations that never return once called. `call()` waits
+ * for a generator and all of its attached forks, so a generator never returns once
+ * it runs (in its body, before any `return`) a non-blocking watcher — directly or
+ * inside `all([...])` — attaches a fork of, delegates to, or calls a never-returning
+ * generator, or loops forever on a yield. Any statement after a `call` to one is
+ * dead (cloudlands-fe#3874).
  */
 function neverReturningGenerators(source, effectNames, effectNamespaces) {
   const selectorWatchers = new Set(
@@ -543,29 +566,33 @@ function neverReturningGenerators(source, effectNames, effectNamespaces) {
       generators.set(statement.name.text, statement);
   }
   const effectOf = (call) => effectForExpression(call.expression, effectNames, effectNamespaces);
-  const takesInLoop = (loop, owner) => {
-    let takes = false;
-    visit(loop.statement, (child) => {
-      if (
-        ts.isCallExpression(child) &&
-        ['take', 'takeMaybe'].includes(effectOf(child)) &&
-        enclosingFunction(child) === owner
-      )
-        takes = true;
-    });
-    return takes;
-  };
   const never = new Set();
+  const neverTarget = (expression) =>
+    expression && ts.isIdentifier(expression) && never.has(expression.text);
+  // Whether evaluating this yielded effect leaves the generator unable to return.
+  const effectBlocks = (call, delegated) => {
+    const effect = effectOf(call);
+    if (WATCHERS.has(effect)) return true;
+    if (ts.isIdentifier(call.expression) && selectorWatchers.has(call.expression.text)) return true;
+    if (effect === 'call' || effect === 'fork') return neverTarget(call.arguments[0]);
+    if (effect === 'all')
+      return combinatorElements(call.arguments[0]).some(
+        (element) => ts.isCallExpression(element) && effectBlocks(element, false),
+      );
+    return delegated && !effect && neverTarget(call.expression);
+  };
+  const yieldsInLoop = (loop, owner) => {
+    let yields = false;
+    visit(loop.statement, (child) => {
+      if (ts.isYieldExpression(child) && enclosingFunction(child) === owner) yields = true;
+    });
+    return yields;
+  };
   const blocks = (statement, owner) => {
-    const call = yieldedCall(statement);
-    if (call) {
-      const effect = effectOf(call);
-      if (WATCHERS.has(effect)) return true;
-      if (ts.isIdentifier(call.expression) && selectorWatchers.has(call.expression.text))
-        return true;
-      if (blockingCallTarget(call, effect, never)) return true;
-    }
-    if (isForeverLoop(statement)) return !canExitLoop(statement) && takesInLoop(statement, owner);
+    const yielded = yieldedBy(statement);
+    if (yielded && ts.isCallExpression(yielded.expression))
+      return effectBlocks(yielded.expression, Boolean(yielded.asteriskToken));
+    if (isForeverLoop(statement)) return !canExitLoop(statement) && yieldsInLoop(statement, owner);
     if (ts.isTryStatement(statement)) return statementsBlock(statement.tryBlock.statements, owner);
     return false;
   };
@@ -594,19 +621,36 @@ function neverReturningGenerators(source, effectNames, effectNamespaces) {
 }
 
 /**
- * The never-returning generator a `call(gen)` blocks on, if any. Delegation
- * (`yield* gen()`) is not blocking: it runs inline, so a watcher fork attaches to
- * the delegating saga and the delegation returns at once.
+ * The never-returning generator a yielded `call(gen)` or `all([call(gen), ...])`
+ * blocks on, if any. A fork does not block its caller, and neither does delegation
+ * (`yield* gen()`): it runs inline, so a watcher fork attaches to the delegating saga
+ * and the delegation returns at once.
  */
-function blockingCallTarget(call, effect, never) {
-  if (effect !== 'call') return undefined;
-  const target = call.arguments[0];
-  return target && ts.isIdentifier(target) && never.has(target.text) ? target.text : undefined;
+function blockingCallTarget(call, effectOf, never) {
+  const effect = effectOf(call);
+  if (effect === 'call') {
+    const target = call.arguments[0];
+    return target && ts.isIdentifier(target) && never.has(target.text) ? target.text : undefined;
+  }
+  if (effect !== 'all') return undefined;
+  for (const element of combinatorElements(call.arguments[0])) {
+    const target = ts.isCallExpression(element)
+      ? blockingCallTarget(element, effectOf, never)
+      : undefined;
+    if (target) return target;
+  }
+  return undefined;
 }
 
+/** A bare `break;` / `return;` or empty statement does no work when skipped. */
+const isInert = (statement) =>
+  ts.isEmptyStatement(statement) ||
+  (ts.isBreakStatement(statement) && !statement.label) ||
+  (ts.isReturnStatement(statement) && !statement.expression);
+
 /**
- * Whether a statement follows `statement` in an enclosing block of the same function.
- * A trailing `finally` is not a following statement: it runs on cancellation.
+ * Whether a statement that does work can run after `statement` in the same function. A trailing `finally` is not a following statement: it runs on
+ * cancellation.
  */
 function hasFollowingStatements(statement) {
   for (
@@ -619,7 +663,34 @@ function hasFollowingStatements(statement) {
       ts.isBlock(parent) || ts.isCaseClause(parent) || ts.isDefaultClause(parent)
         ? parent.statements
         : undefined;
-    if (siblings && siblings.indexOf(current) < siblings.length - 1) return true;
+    if (!siblings) continue;
+    const rest = siblings.slice(siblings.indexOf(current) + 1);
+    if (rest.some((item) => !isInert(item))) return true;
+    // A bare `return` leaves the function; a bare `break` only leaves the switch/loop.
+    if (rest.some(ts.isReturnStatement)) return false;
+  }
+  return false;
+}
+
+/** Whether `name` is rebound by a parameter or local declaration in an enclosing function. */
+function isShadowed(node, name) {
+  for (let owner = enclosingFunction(node); owner; owner = enclosingFunction(owner)) {
+    if (owner.parent && ts.isSourceFile(owner.parent) && owner.name?.text === name) continue;
+    let bound = owner.parameters.some(
+      (parameter) => ts.isIdentifier(parameter.name) && parameter.name.text === name,
+    );
+    if (!bound && owner.body)
+      visit(owner.body, (child) => {
+        if (
+          (ts.isVariableDeclaration(child) || ts.isFunctionDeclaration(child)) &&
+          child.name &&
+          ts.isIdentifier(child.name) &&
+          child.name.text === name &&
+          enclosingFunction(child) === owner
+        )
+          bound = true;
+      });
+    if (bound) return true;
   }
   return false;
 }
@@ -627,13 +698,13 @@ function hasFollowingStatements(statement) {
 function blockingWatcherCallViolations(source, filePath, effectNames, effectNamespaces) {
   const never = neverReturningGenerators(source, effectNames, effectNamespaces);
   if (never.size === 0) return [];
+  const effectOf = (call) => effectForExpression(call.expression, effectNames, effectNamespaces);
   const violations = [];
   visit(source, (node) => {
     const call = yieldedCall(node);
     if (!call) return;
-    const effect = effectForExpression(call.expression, effectNames, effectNamespaces);
-    const target = blockingCallTarget(call, effect, never);
-    if (!target || !hasFollowingStatements(node)) return;
+    const target = blockingCallTarget(call, effectOf, never);
+    if (!target || isShadowed(node, target) || !hasFollowingStatements(node)) return;
     violations.push(
       `${filePath}:${lineFor(source, node)}: blocking call to never-returning watcher ${target}; later statements never run — fork it instead`,
     );

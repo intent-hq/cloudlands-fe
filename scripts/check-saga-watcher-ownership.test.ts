@@ -581,10 +581,10 @@ describe('saga watcher ownership guard', () => {
         {
           path: 'src/store/renderer/slices/life/sagas/life-saga.ts',
           content: [
-            "import { all, call, delay, fork, take, takeEvery, takeLatest } from 'typed-redux-saga';",
+            "import { all, call, delay, fork, spawn, take, takeEvery, takeLatest } from 'typed-redux-saga';",
             "import { takeLatestFromSelector } from '@themislib/themis/saga';",
             "import { takeLatestByWorkspace } from '$store/renderer/utils/context-saga-effects';",
-            "import { apply, undo, persist, load, flush } from '../slice';",
+            "import { apply, undo, persist, load, flush, reset } from '../slice';",
             'function* persistWorker() { yield* delay(1); }',
             'function* selectorWatcher() { yield* takeLatestFromSelector(selectMap, persistWorker); }',
             'function* nativeWatcher() { const ready = 1; yield* takeLatest(persist, persistWorker); }',
@@ -594,6 +594,10 @@ describe('saga watcher ownership guard', () => {
             'function* hydrate() { yield* call(persistWorker); }',
             'function* exitingLoop() { while (true) { const next = yield* take(channel); if (!next) return; } }',
             'function* earlyReturn() { if (disabled) return; yield* takeEvery(flush, persistWorker); }',
+            'function* allWatcher() { yield* all([takeEvery(reset, persistWorker), call(persistWorker)]); }',
+            'function* forksWatcher() { yield* fork(selectorWatcher); }',
+            'function* delegatesWatcher() { yield* selectorWatcher(); }',
+            'function* pollLoop() { while (true) { yield* delay(1000); yield* call(persistWorker); } }',
             `export function* lifecycleSaga() { ${body} }`,
           ].join('\n'),
         },
@@ -607,6 +611,7 @@ describe('saga watcher ownership guard', () => {
           'persist',
           'load',
           'flush',
+          'reset',
         ]),
       ]).violations;
 
@@ -632,6 +637,10 @@ describe('saga watcher ownership guard', () => {
       ['a context watcher', 'contextWatcher'],
       ['a forever take() loop', 'channelLoop'],
       ['a generator that calls a watcher', 'wrapsWatcher'],
+      ['a watcher inside all()', 'allWatcher'],
+      ['a generator that forks a watcher', 'forksWatcher'],
+      ['a generator that delegates to a watcher', 'delegatesWatcher'],
+      ['a forever polling loop', 'pollLoop'],
     ])('rejects a call to %s with statements after it', (_name, watcher) => {
       expect(inspect(`yield* call(${watcher}); yield* takeEvery(apply, persistWorker);`)).toEqual([
         expect.stringContaining(`never-returning watcher ${watcher}`),
@@ -651,6 +660,15 @@ describe('saga watcher ownership guard', () => {
         'before a trailing try',
         'yield* call(selectorWatcher); try { yield* call(hydrate); } finally {}',
       ],
+      ['inside all()', 'yield* all([call(selectorWatcher), call(hydrate)]); yield* call(hydrate);'],
+      [
+        'whose result is assigned',
+        'const done = yield* call(selectorWatcher); yield* call(hydrate);',
+      ],
+      [
+        'in a switch case that breaks before more work',
+        'switch (mode) { case 1: yield* call(selectorWatcher); break; } yield* call(hydrate);',
+      ],
     ])('rejects a blocking watcher call %s', (_name, body) => {
       expect(inspect(body)).toEqual([expect.stringContaining('never-returning watcher')]);
     });
@@ -669,9 +687,18 @@ describe('saga watcher ownership guard', () => {
         'when delegated inline with yield*',
         'yield* selectorWatcher(); yield* takeEvery(apply, persistWorker);',
       ],
+      ['when spawned', 'yield* spawn(selectorWatcher); yield* takeEvery(apply, persistWorker);'],
       [
-        'inside all()',
-        'yield* all([call(selectorWatcher), call(contextWatcher)]); yield* call(hydrate);',
+        'before a bare return',
+        'if (enabled) { yield* call(selectorWatcher); return; } yield* call(hydrate);',
+      ],
+      [
+        'before a trailing break',
+        'switch (mode) { case 1: yield* call(selectorWatcher); break; default: yield* call(hydrate); }',
+      ],
+      [
+        'for a parameter that shadows a watcher name',
+        'const run = function* (selectorWatcher) { yield* call(selectorWatcher); yield* call(hydrate); }; yield* call(run, persistWorker);',
       ],
       ['for an ordinary worker', 'yield* call(hydrate); yield* takeEvery(apply, persistWorker);'],
       [
