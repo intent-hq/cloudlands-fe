@@ -191,6 +191,42 @@ const FIXTURES: Fixture[] = [
     expected: { type: 'script', id: 'dev-server', label: 'Dev server' },
   },
   {
+    // HTML character references in a name must not become token delimiters
+    // once the note editor parses its Markdown into HTML.
+    name: 'terminal whose name contains HTML character references',
+    provider: 'terminal',
+    candidate: {
+      type: 'terminal',
+      id: 'pty-1',
+      label: 'Build &#93; server &amp; logs',
+      meta: { workspaceId: CURRENT_WS },
+    },
+    expected: { type: 'terminal', id: 'pty-1', label: 'Build &#93 server &amp logs' },
+  },
+  {
+    name: 'script whose name contains HTML character references',
+    provider: 'script',
+    candidate: {
+      type: 'script',
+      id: 's-2',
+      label: 'R&D &#x5b;x',
+      meta: { workspaceId: CURRENT_WS },
+    },
+    expected: { type: 'script', id: 's-2', label: 'R&D &#x5bx' },
+  },
+  {
+    name: 'note whose title contains HTML character references',
+    provider: 'note',
+    candidate: {
+      type: 'note',
+      id: 'n-3',
+      label: 'Plan &#93; review',
+      meta: { workspaceId: CURRENT_WS },
+    },
+    expected: { type: 'note', id: 'n-3', label: 'Plan &#93 review' },
+    click: { kind: 'note', id: 'n-3' },
+  },
+  {
     name: 'agent',
     provider: 'agent',
     candidate: {

@@ -29,6 +29,18 @@ describe('runtime mention tokens', () => {
     ).toBe('@terminal[t1:a b c d http x]');
   });
 
+  it('drops the ; of HTML character references so no reader decodes them', () => {
+    expect(
+      serializeRuntimeMention({ kind: 'terminal', id: 't1', name: 'a &#93; b &#x5B; &amp; R&D' }),
+    ).toBe('@terminal[t1:a &#93 b &#x5B &amp R&D]');
+  });
+
+  it('keeps disarming when dropping one ; completes another reference', () => {
+    expect(serializeRuntimeMention({ kind: 'script', id: 's1', name: 'x &ab;c; y' })).toBe(
+      '@script[s1:x &abc y]',
+    );
+  });
+
   it('falls back to the id when the name is empty after sanitizing', () => {
     expect(serializeRuntimeMention({ kind: 'script', id: 's1', name: '[]' })).toBe(
       '@script[s1:s1]',
