@@ -519,6 +519,33 @@ describe('DevConsoleCaptureService', () => {
     expect(JSON.stringify(snapshot)).not.toContain('never-capture-secret');
   });
 
+  it.each([
+    [
+      'executor.mint',
+      { backendId: 'head', backendName: 'Box' },
+      { credentialId: 'c', token: 'mint-secret-token' },
+    ],
+    [
+      'remoteMachines.add',
+      { machineId: 'm', token: 'mint-secret-token' },
+      { machine: { id: 'm' } },
+    ],
+  ])(
+    'never captures an executor token from %s, even under full capture',
+    async (method, params, result) => {
+      const service = new DevConsoleCaptureService();
+      const { client, socket } = connect(service);
+      const session = service.openSession('local');
+      service.setFullCapture('local', session.sessionId, { ...requestSelection, method }, true);
+      const pending = client.request(method, params);
+      socket.receive({ id: 1, result });
+      await expect(pending).resolves.toEqual(result);
+      const snapshot = service.getSnapshot('local', session.sessionId)!;
+      expect(snapshot.records[0].method).toBe(method);
+      expect(JSON.stringify(snapshot)).not.toContain('mint-secret-token');
+    },
+  );
+
   it('isolates observer failures and subscriber failures from live RPC behavior', async () => {
     const service = new DevConsoleCaptureService();
     const { socket, client } = connect(service);
