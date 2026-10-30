@@ -10,6 +10,11 @@ import {
 } from '$lib/components/workspace/utils/workspace-grouping';
 import { store } from '$store/renderer/store';
 export const selectHomeWorkspaceView = store.createSelector((state) => state.homeWorkspaces);
+/** The agent the user explicitly picked in this workspace's Home preview, if any. */
+export const selectHomePreviewAgentId = store.createSelector(
+  (state, workspaceId: string): string | null =>
+    state.homeWorkspaces?.previewAgentIds?.[workspaceId] ?? null,
+);
 export const selectHomeWorkspaceError = store.createSelector((state) => state.workspace.error);
 
 import { selectPrincipalSnapshot } from '$store/renderer/slices/principal/principal-selectors';

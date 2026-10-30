@@ -6,11 +6,17 @@
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { selectWorkspaceDetailHydrated } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
-    selectActiveAgentId,
     selectAllWorkspaceAgents,
-    resolveCanonicalInitialAgent,
+    selectAgentsReadRevision,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { setActiveAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { selectHomePreviewAgentId } from './home-workspaces-selectors';
+  import { setHomePreviewAgent } from './home-workspaces-slice';
+  import {
+    createHomePreviewDefault,
+    homePreviewEligibleAgents,
+    resolveHomePreviewAgent,
+  } from './home-preview-agent';
   import { goto } from '$app/navigation';
   import { Button } from '$lib/components/ui/button';
   import { Select } from '$lib/components/ui/select';
@@ -44,15 +50,21 @@
   // Home keys this panel by workspace ID, matching the chat's subscription lifetime.
   const workspaceId = untrack(() => workspace.id);
   const agents$ = selectAllWorkspaceAgents(workspaceId);
-  const activeId$ = selectActiveAgentId(workspaceId);
-  const agents = $derived(
-    $agents$.filter(
-      (agent) => !agent.retiredAt && !agent.pendingDeleteAt && agent.status !== 'deleted',
-    ),
-  );
-  const activeAgent = $derived(
-    agents.find((agent) => agent.id === $activeId$) ?? resolveCanonicalInitialAgent(agents),
-  );
+  const readRevision$ = selectAgentsReadRevision(workspaceId);
+  // The chat refreshes the agent list on mount; a read that lands after opening proves
+  // the activity data is current.
+  const openedAtRevision = untrack(() => $readRevision$);
+  const pickedId$ = selectHomePreviewAgentId(workspaceId);
+  const agents = $derived(homePreviewEligibleAgents($agents$));
+  // The preview opens on the most recently active top-level agent and keeps it while
+  // open; an agent the user picks here wins.
+  const resolveDefaultAgent = createHomePreviewDefault();
+  const defaultAgent = $derived(resolveDefaultAgent(agents, $readRevision$ > openedAtRevision));
+  const activeAgent = $derived(resolveHomePreviewAgent(agents, $pickedId$, defaultAgent));
+  function pickAgent(agentId: string) {
+    store.dispatch(setHomePreviewAgent(workspaceId, agentId));
+    store.dispatch(setActiveAgentId(workspaceId, agentId));
+  }
   const repositoryLabel = $derived(
     [workspace.repositoryOwner, workspace.repositoryName].filter(Boolean).join('/') ||
       workspace.repositoryPath,
@@ -163,7 +175,7 @@
         value={activeAgent?.id ?? ''}
         onchange={(value) => {
           const agent = agents.find((candidate) => candidate.id === value);
-          if (agent) store.dispatch(setActiveAgentId(workspaceId, agent.id));
+          if (agent) pickAgent(agent.id);
         }}
       >
         <Select.Trigger
@@ -205,6 +217,6 @@
     </div>
   {/if}
   <div class="min-h-0 min-w-0 flex-1">
-    {#key workspace.id}<HomeWorkspaceChat {workspace} {preview} />{/key}
+    {#key workspace.id}<HomeWorkspaceChat {workspace} {preview} agent={activeAgent} />{/key}
   </div>
 </section>
