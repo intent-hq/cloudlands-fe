@@ -50,14 +50,33 @@ describe('isTextEntryTarget', () => {
     expect(isTextEntryTarget(element('div', { contenteditable: 'false' }))).toBe(false);
   });
 
-  it('does not treat a button in a contenteditable="false" island of an editor as text entry', () => {
-    const editor = element('div', { contenteditable: 'true' });
+  it.each([
+    ['a contenteditable editor', { contenteditable: 'true' }],
+    [
+      'a role="textbox" contenteditable editor (TipTap)',
+      { contenteditable: 'true', role: 'textbox' },
+    ],
+  ])('does not treat a button in a non-editable island of %s as text entry', (_, attributes) => {
+    const editor = element('div', attributes);
     const island = document.createElement('div');
     island.setAttribute('contenteditable', 'false');
     const button = document.createElement('button');
     island.append(button);
     editor.append(island);
     expect(isTextEntryTarget(button)).toBe(false);
+  });
+
+  it('still treats native controls and textboxes inside a non-editable island as text entry', () => {
+    const editor = element('div', { contenteditable: 'true', role: 'textbox' });
+    const island = document.createElement('div');
+    island.setAttribute('contenteditable', 'false');
+    const input = document.createElement('input');
+    const nested = document.createElement('div');
+    nested.setAttribute('role', 'textbox');
+    island.append(input, nested);
+    editor.append(island);
+    expect(isTextEntryTarget(input)).toBe(true);
+    expect(isTextEntryTarget(nested)).toBe(true);
   });
 
   it('recognizes a Monaco-style EditContext owner', () => {

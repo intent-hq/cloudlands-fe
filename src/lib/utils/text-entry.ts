@@ -49,9 +49,13 @@ export function isTextEntryTarget(target: EventTarget | Element | null | undefin
   if (!element) return false;
   if (isContentEditableElement(element)) return true;
   if (hasAttachedEditContext(element)) return true;
-  if (element.closest(`${NATIVE_FORM_CONTROL}, [role="textbox"]`)) return true;
-  // The nearest contenteditable host decides: a contenteditable="false" island
-  // (e.g. a TipTap node-view toolbar) is not text entry even inside an editor.
+  if (element.closest(NATIVE_FORM_CONTROL)) return true;
+  // A contenteditable="false" island (e.g. a TipTap node-view toolbar) is a
+  // boundary: editors outside it — including a role="textbox" editor root —
+  // do not make its controls text entry. Textboxes inside the island still count.
+  const island = element.closest('[contenteditable="false"]');
+  const textbox = element.closest('[role="textbox"]');
+  if (textbox && (!island || island.contains(textbox))) return true;
   const editableHost = element.closest('[contenteditable]');
   return editableHost !== null && editableHost.getAttribute('contenteditable') !== 'false';
 }
