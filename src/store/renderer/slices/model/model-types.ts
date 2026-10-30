@@ -1,27 +1,23 @@
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
-import type { ModelWarningKind } from '$shared/models/wire-model-info';
+import type { ProviderModelsResult } from '$features/providers/provider-models.client';
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 
 export type ModelLoadingStatus = 'success' | 'loading' | 'error';
 
-export type ModelLoadingState = {
+/**
+ * The model-list reply's optional labels (`warning`, `stale`, `warningKind`,
+ * …), derived from the shared `GetModelsEnvelope` through the client's
+ * `ProviderModelsResult` — the store's single declaration, so a new reply
+ * label reaches the loading state (and the model picker) without a store edit.
+ * See `GetModelsEnvelope` (PROTOCOL §6.7, §5.30) for each label's meaning;
+ * `buildLoadingState` owns how labels carry across loading states.
+ */
+export type ModelReplyLabels = Omit<ProviderModelsResult, 'models'>;
+
+export type ModelLoadingState = ModelReplyLabels & {
   status: ModelLoadingStatus;
   retryAttempt: number;
   error?: string;
-  warning?: string;
-  /**
-   * Whether `warning` accompanies a last-known-good model list served from the
-   * daemon's cache (PROTOCOL §5.30 `stale: true`) rather than a degraded
-   * static fallback. Consumers use it to tell a transient probe failure apart
-   * from a genuinely missing CLI.
-   */
-  stale?: boolean;
-  /**
-   * Machine-readable cause of `warning` (PROTOCOL §5.30 "Warning kind"); only
-   * `cli-missing` warrants the "install the CLI" notice. Absent for every
-   * other failure, so it is never inferred from the warning text.
-   */
-  warningKind?: ModelWarningKind;
 };
 
 export type ModelFallbackInfo = {
