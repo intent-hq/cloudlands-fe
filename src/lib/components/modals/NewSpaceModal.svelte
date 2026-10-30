@@ -112,9 +112,9 @@
       > [data-slot='dialog-header']
       > [data-slot='dialog-title']
   ) {
-    font-size: var(--text-body-size);
-    line-height: var(--text-body-line-height);
-    font-weight: var(--text-body-strong-weight);
+    font-size: var(--text-sm);
+    line-height: 1.25rem;
+    font-weight: var(--text-body-weight);
   }
 
   :global([data-new-space-modal] > .dialog-layout > [data-slot='dialog-body']) {
@@ -123,15 +123,15 @@
   }
 
   :global([data-new-space-modal] > .dialog-close-button) {
-    top: calc(anchor(--dialog-title top, 1rem) + var(--text-body-line-height) / 2);
+    top: calc(anchor(--dialog-title top, 1rem) + 1.25rem / 2);
   }
 
   .workspace-form :global(.prompt-pane) {
-    padding-block: 0;
+    padding-block: 0 0.5rem;
   }
 
   .workspace-form :global(.settings-pane) {
-    padding: 0 0 0 2rem;
+    padding: 0 0 0.5rem 2rem;
   }
 
   .workspace-sidebar-surface {
@@ -158,6 +158,10 @@
   }
 
   @container (max-width: 47.99rem) {
+    .workspace-form :global(.prompt-pane) {
+      padding-block: 0;
+    }
+
     .workspace-form :global(.initializer-layout.expanded) {
       row-gap: 1rem;
     }
@@ -165,7 +169,7 @@
     .workspace-form :global(.settings-pane) {
       margin-inline: -1.5rem;
       margin-bottom: -1rem;
-      padding: 1rem 1.5rem 1rem 2rem;
+      padding: 1rem 1.5rem 1.5rem 2rem;
       border-end-start-radius: var(--radius-medium);
       border-end-end-radius: var(--radius-medium);
     }
