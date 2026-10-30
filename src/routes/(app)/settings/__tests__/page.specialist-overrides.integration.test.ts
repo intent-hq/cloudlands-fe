@@ -90,7 +90,7 @@ describe('settings collapsed built-in override chrome', () => {
   it('shows Reset only for the winning built-in override', async () => {
     const implementor = SPECIALISTS.find(({ id }) => id === 'implementor')!;
     const specWriter = SPECIALISTS.find(({ id }) => id === 'spec-writer')!;
-    const verifier = SPECIALISTS.find(({ id }) => id === 'verifier')!;
+    const developer = SPECIALISTS.find(({ id }) => id === 'developer')!;
     const custom = {
       id: 'alpha-custom',
       name: 'Alpha Custom',
@@ -110,7 +110,7 @@ describe('settings collapsed built-in override chrome', () => {
       filePath: '/Users/test/.intent/specialists/implementor.md',
       source: 'user' as const,
     };
-    appStore.dispatch(setBundledSpecialists([specWriter, verifier]));
+    appStore.dispatch(setBundledSpecialists([specWriter, developer]));
     appStore.dispatch(setFileSpecialists([override, custom]));
 
     render(SettingsPage, { context: new Map([['redux-store-context', storeContext]]) });
@@ -122,7 +122,7 @@ describe('settings collapsed built-in override chrome', () => {
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Reset' })).toBeTruthy());
 
-    appStore.dispatch(setBundledSpecialists([specWriter, implementor, verifier]));
+    appStore.dispatch(setBundledSpecialists([specWriter, implementor, developer]));
     appStore.dispatch(setFileSpecialists([custom]));
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Reset' })).toBeNull());
   });

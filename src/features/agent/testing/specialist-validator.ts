@@ -1,13 +1,12 @@
 /**
  * Specialist Validator for Testing
  *
- * Validates that specialist agents (spec-writer, implementor, verifier)
+ * Validates that specialist agents
  * behave according to their roles and delegate properly.
  *
  * Key validations:
- * - Spec-writer delegates tasks in waves, doesn't implement directly
+ * - Lead can implement directly or delegate
  * - Implementor focuses on assigned tasks, doesn't expand scope
- * - Verifier reviews and validates, doesn't modify code
  */
 
 import type { Specialist } from '$lib/constants/specialists';
@@ -44,7 +43,7 @@ export interface SpecialistBehavior {
   id: Specialist['id'];
   expectedActions: string[];
   forbiddenActions: string[];
-  delegationExpected: boolean;
+  delegationExpected?: boolean;
   implementationExpected: boolean;
 }
 
@@ -52,9 +51,8 @@ const SPECIALIST_BEHAVIORS: SpecialistBehavior[] = [
   {
     id: 'spec-writer',
     expectedActions: ['read_note', 'delegate_task', 'create_agent', 'add_to_note', 'edit_note'],
-    forbiddenActions: ['write_file', 'edit_file', 'apply_diff'],
-    delegationExpected: true,
-    implementationExpected: false,
+    forbiddenActions: [],
+    implementationExpected: true,
   },
   {
     id: 'implementor',
@@ -62,13 +60,6 @@ const SPECIALIST_BEHAVIORS: SpecialistBehavior[] = [
     forbiddenActions: ['delegate_task', 'create_agent'],
     delegationExpected: false,
     implementationExpected: true,
-  },
-  {
-    id: 'verifier',
-    expectedActions: ['read_file', 'run_command', 'run_tests', 'add_comment'],
-    forbiddenActions: ['write_file', 'edit_file', 'apply_diff'],
-    delegationExpected: false,
-    implementationExpected: false,
   },
   {
     id: 'pr-reviewer',
@@ -96,8 +87,7 @@ const SPECIALIST_BEHAVIORS: SpecialistBehavior[] = [
       'add_to_note',
       'edit_note',
     ],
-    forbiddenActions: ['delegate_task', 'create_agent'],
-    delegationExpected: false,
+    forbiddenActions: [],
     implementationExpected: true,
   },
 ];
@@ -152,7 +142,7 @@ export function validateAgentActions(
   if (behavior.delegationExpected && !hasDelegation) {
     violations.push(`${specialistId} agent was expected to delegate but didn't`);
   }
-  if (!behavior.delegationExpected && hasDelegation) {
+  if (behavior.delegationExpected === false && hasDelegation) {
     violations.push(`${specialistId} agent was not expected to delegate but did`);
   }
 
@@ -174,10 +164,7 @@ export function validateAgentActions(
 /**
  * Validate wave-based execution pattern
  *
- * Spec-writers should delegate in waves:
- * - Wave 1: Foundation tasks (stores, utilities)
- * - Wave 2: Building tasks (components using Wave 1 outputs)
- * - Wave 3: Verification tasks (testing, review)
+ * Check ordering when a scenario explicitly groups delegations into waves.
  */
 export function validateWaveExecution(delegations: DelegationRecord[]): {
   valid: boolean;

@@ -603,16 +603,16 @@ describe('agentCreationSaga', () => {
     task.cancel();
   });
 
-  it.each([undefined, 'removed', 'chief-of-staff', 'pr-reviewer'])(
+  it.each([undefined, 'removed', 'verifier', 'chief-of-staff', 'pr-reviewer'])(
     'falls back to the configured specialist for unavailable preference %s',
     async (specialistId) => {
       mocks.backendRequest.mockResolvedValue({ specialistId });
       mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
-      const { channel, task } = start(() => state('verifier'));
+      const { channel, task } = start(() => state('developer'));
       channel.put(createAgentRequested(WS));
       await settle();
       expect(mocks.createAgent.mock.calls[0][1]).toMatchObject({
-        metadata: { specialist: 'verifier' },
+        metadata: { specialist: 'developer' },
       });
       task.cancel();
     },
@@ -621,7 +621,7 @@ describe('agentCreationSaga', () => {
   it('keeps explicit General distinct from an unset preference', async () => {
     mocks.backendRequest.mockResolvedValue({ specialistId: null });
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
-    const { channel, task } = start(() => state('verifier'));
+    const { channel, task } = start(() => state('developer'));
     channel.put(createAgentRequested(WS));
     await settle();
     expect(mocks.createAgent.mock.calls[0][1]).toMatchObject({
@@ -636,12 +636,12 @@ describe('agentCreationSaga', () => {
   it('uses an explicit picker choice without reading or overwriting it from memory', async () => {
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
     const { channel, task } = start();
-    channel.put(createAgentWithSpecialistRequested(WS, 'verifier'));
+    channel.put(createAgentWithSpecialistRequested(WS, 'developer'));
     await settle();
     expect(mocks.backendRequest).not.toHaveBeenCalled();
     expect(mocks.createAgent.mock.calls[0][1]).toMatchObject({
       rememberSpecialist: true,
-      metadata: { specialist: 'verifier' },
+      metadata: { specialist: 'developer' },
     });
     task.cancel();
   });
@@ -661,7 +661,7 @@ describe('agentCreationSaga', () => {
 
   it('re-reads each workspace preference when switching back and forth', async () => {
     mocks.backendRequest.mockImplementation(async (_method, { workspaceId }) => ({
-      specialistId: workspaceId === WS ? 'verifier' : null,
+      specialistId: workspaceId === WS ? 'developer' : null,
     }));
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
     const current = state();
@@ -688,9 +688,9 @@ describe('agentCreationSaga', () => {
       await settle();
     }
     expect(mocks.createAgent.mock.calls.map(([, config]) => config.metadata?.specialist)).toEqual([
-      'verifier',
+      'developer',
       undefined,
-      'verifier',
+      'developer',
     ]);
     expect(mocks.backendRequest.mock.calls.map(([, params]) => params.workspaceId)).toEqual([
       WS,
@@ -1008,7 +1008,7 @@ describe('agentCreationSaga', () => {
 
   it('runs a task note with the daemon specialists.default setting when set', async () => {
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
-    const { channel, task } = start(() => state('verifier'));
+    const { channel, task } = start(() => state('developer'));
     channel.put(runAgentForNoteRequested(WS, NOTE, 'Task note'));
     await settle();
 
@@ -1019,7 +1019,7 @@ describe('agentCreationSaga', () => {
         source: 'task-metadata-bar-run',
         provider: 'augment',
         model: undefined,
-        metadata: { taskNoteId: NOTE, source: 'task-run', specialist: 'verifier' },
+        metadata: { taskNoteId: NOTE, source: 'task-run', specialist: 'developer' },
       }),
     );
     task.cancel();
