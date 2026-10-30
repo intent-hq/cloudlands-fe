@@ -23,12 +23,20 @@ const codex = { ...claude, provider: 'codex', providerName: 'Codex' } as const;
 afterEach(() => cleanup());
 
 describe('ProviderProfileKindDialog (mock-up)', () => {
-  it('shows the four kind cards, with the Codex token card naming Business or Enterprise', () => {
+  it('shows three Codex kind cards (no API key), with the token card naming Business or Enterprise', () => {
     render(ProviderProfileKindDialog, { props: { ...codex, mode: 'add' } });
+    for (const kind of ['differentLogin', 'token', 'advanced']) {
+      expect(screen.getByTestId(`provider-profile-kind-${kind}`)).toBeTruthy();
+    }
+    expect(screen.queryByTestId('provider-profile-kind-apiKey')).toBeNull();
+    expect(screen.getByText(m.settings_providerProfileKinds_tokenCodex_description())).toBeTruthy();
+  });
+
+  it('shows all four kind cards for Claude, including API key', () => {
+    render(ProviderProfileKindDialog, { props: { ...claude, mode: 'add' } });
     for (const kind of ['differentLogin', 'apiKey', 'token', 'advanced']) {
       expect(screen.getByTestId(`provider-profile-kind-${kind}`)).toBeTruthy();
     }
-    expect(screen.getByText(m.settings_providerProfileKinds_tokenCodex_description())).toBeTruthy();
   });
 
   it('moves from a card to its screen and live-previews the folder from the name', async () => {
@@ -66,7 +74,7 @@ describe('ProviderProfileKindDialog (mock-up)', () => {
     expect(screen.queryByTestId('provider-profile-sign-in-status')).toBeNull();
   });
 
-  it('offers both Codex sign-in methods on the Different-login edit screen', async () => {
+  it('offers only Sign in with ChatGPT on the Codex Different-login edit screen', async () => {
     const onSignIn = vi.fn();
     render(ProviderProfileKindDialog, {
       props: {
@@ -82,13 +90,12 @@ describe('ProviderProfileKindDialog (mock-up)', () => {
     expect((screen.getByTestId('provider-profile-folder-path') as HTMLInputElement).value).toBe(
       '~/intent/profiles/codex/personal-7h2m',
     );
+    const actions = screen.getByTestId('provider-profile-sign-in-actions');
+    expect(actions.querySelectorAll('button')).toHaveLength(1);
     await fireEvent.click(
-      screen.getByRole('button', { name: m.settings_providerProfileKinds_signInApiKey_label() }),
-    );
-    expect(onSignIn).toHaveBeenCalledWith('apiKey');
-    expect(
       screen.getByRole('button', { name: m.settings_providerProfileKinds_signInChatGpt_label() }),
-    ).toBeTruthy();
+    );
+    expect(onSignIn).toHaveBeenCalledTimes(1);
     expect(
       screen.getByRole('button', {
         name: m.settings_providerProfileKinds_switchToAdvanced_label(),
@@ -124,15 +131,6 @@ describe('ProviderProfileKindDialog (mock-up)', () => {
     expect(screen.getByText(m.settings_providerProfileKinds_signedIn_label())).toBeTruthy();
   });
 
-  it('shows the Codex API-key instructions with no key field', () => {
-    render(ProviderProfileKindDialog, {
-      props: { ...codex, mode: 'add', step: 'details', kind: 'apiKey', name: 'Key' },
-    });
-    expect(screen.getByTestId('provider-profile-api-key-steps')).toBeTruthy();
-    expect(screen.getAllByRole('textbox')).toHaveLength(1);
-    expect(screen.getByText('codex login --with-api-key')).toBeTruthy();
-  });
-
   it('shows a saved-profile error with Try again when the folder could not be created', () => {
     render(ProviderProfileKindDialog, {
       props: {
@@ -160,9 +158,8 @@ describe('profile-kind mock helpers', () => {
   });
 
   it('builds plain sign-in commands', () => {
-    expect(signInCommand('claude', 'chatgpt', true)).toBe('claude auth login');
-    expect(signInCommand('codex', 'chatgpt', false)).toBe('codex login');
-    expect(signInCommand('codex', 'chatgpt', true)).toBe('codex login --device-auth');
-    expect(signInCommand('codex', 'apiKey', true)).toBe('codex login --with-api-key');
+    expect(signInCommand('claude', true)).toBe('claude auth login');
+    expect(signInCommand('codex', false)).toBe('codex login');
+    expect(signInCommand('codex', true)).toBe('codex login --device-auth');
   });
 });

@@ -1,7 +1,7 @@
 <script lang="ts">
   /**
-   * Step 1 of Add profile: four large cards (Different login, API key, Token,
-   * Advanced). Presentational: picking a card only calls `onPick`.
+   * Step 1 of Add profile: large cards for Different login, API key (Claude
+   * only), Token and Advanced. Presentational: picking a card only calls `onPick`.
    */
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import { faKey, faSliders, faTicket, faUserPlus } from '@fortawesome/free-solid-svg-icons';
@@ -27,15 +27,16 @@
       title: m.settings_providerProfileKinds_differentLogin_label(),
       description: m.settings_providerProfileKinds_differentLogin_description(),
     },
-    {
-      kind: 'apiKey',
-      icon: faKey,
-      title: m.settings_providerProfileKinds_apiKey_label(),
-      description:
-        provider === 'codex'
-          ? m.settings_providerProfileKinds_apiKeyCodex_description()
-          : m.settings_providerProfileKinds_apiKeyClaude_description(),
-    },
+    ...(provider === 'claude'
+      ? [
+          {
+            kind: 'apiKey' as const,
+            icon: faKey,
+            title: m.settings_providerProfileKinds_apiKey_label(),
+            description: m.settings_providerProfileKinds_apiKeyClaude_description(),
+          },
+        ]
+      : []),
     {
       kind: 'token',
       icon: faTicket,

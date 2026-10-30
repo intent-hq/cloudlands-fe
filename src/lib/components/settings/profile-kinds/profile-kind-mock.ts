@@ -9,20 +9,16 @@ import {
   profileFoldersParent,
   slugifyProfileName,
   type ProfileKind,
-  type ProfileLoginMode,
   type ProfileProvider,
 } from '$lib/provider-profile-kinds';
 
 export type ProfileKindProvider = ProfileProvider;
 
-/** The four cards on step 1. */
+/** The cards on step 1 (Codex has no API key card). */
 export type ProfileKindChoice = ProfileKind;
 
 /** Where the dialog is in the add flow. */
 export type ProfileKindStep = 'pick' | 'details';
-
-/** Which sign-in the edit screen (or ⋯ → Log In) starts. */
-export type ProfileSignInMethod = ProfileLoginMode;
 
 /** The terminal sign-in the dialog is waiting on, as shown to the user. */
 export type ProfileSignInState =
@@ -52,12 +48,8 @@ export function previewProfileFolder(
 }
 
 /** The plain terminal command for a sign-in; the folder goes in `env`, never here. */
-export function signInCommand(
-  provider: ProfileKindProvider,
-  method: ProfileSignInMethod,
-  remoteDaemon: boolean,
-): string {
-  return loginCommand(provider, method, !remoteDaemon);
+export function signInCommand(provider: ProfileKindProvider, remoteDaemon: boolean): string {
+  return loginCommand(provider, !remoteDaemon);
 }
 
 /** A profile row's status, as ProviderProfiles shows it ('error' reads "Signed out"). */

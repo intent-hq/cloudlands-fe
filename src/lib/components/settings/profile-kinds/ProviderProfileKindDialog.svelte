@@ -41,7 +41,6 @@
     type ProfileKindProvider,
     type ProfileKindStep,
     type ProfileSetupError,
-    type ProfileSignInMethod,
     type ProfileSignInState,
   } from './profile-kind-mock';
   import { isJwtShaped, randomSuffix } from '$lib/provider-profile-kinds';
@@ -67,8 +66,6 @@
     /** The daemon is not the app's own sidecar (Codex device auth, restart wording). */
     remoteDaemon?: boolean;
     signIn?: ProfileSignInState;
-    /** The sign-in method `signIn` is tracking (Codex edit offers both). */
-    signInMethod?: ProfileSignInMethod;
     nameError?: string;
     setupError?: ProfileSetupError;
     busy?: boolean;
@@ -94,7 +91,7 @@
     /** API key / Token create (the parent then drives `signIn` through the key check). */
     onCreate?: () => void;
     onSave?: () => void;
-    onSignIn?: (method: ProfileSignInMethod) => void;
+    onSignIn?: () => void;
     onRetry?: () => void;
     onSwitchToAdvanced?: () => void;
   }
@@ -114,7 +111,6 @@
     savedFolderPath = '',
     remoteDaemon = false,
     signIn = $bindable({ status: 'idle' }),
-    signInMethod = $bindable('chatgpt'),
     nameError,
     setupError = $bindable(),
     busy = false,
@@ -142,21 +138,12 @@
   }: Props = $props();
 
   const picking = $derived(mode === 'add' && step === 'pick');
-  /** Codex API key is a folder profile signed in with `codex login --with-api-key`. */
-  const codexApiKey = $derived(provider === 'codex' && kind === 'apiKey');
-  const folderKind = $derived(kind === 'differentLogin' || codexApiKey);
+  const folderKind = $derived(kind === 'differentLogin');
   /** Claude API key and Token (both providers): a pasted secret plus the key check. */
-  const secretKind = $derived(
-    (kind === 'apiKey' && provider === 'claude') || kind === 'token' ? kind : null,
-  );
+  const secretKind = $derived(kind === 'apiKey' || kind === 'token' ? kind : null);
   let localSecretError = $state<string | undefined>();
   const shownSecretError = $derived(secretError ?? localSecretError);
-  const apiKeySignIn = $derived(
-    codexApiKey || (mode === 'edit' && provider === 'codex' && signInMethod === 'apiKey'),
-  );
-  const command = $derived(
-    signInCommand(provider, apiKeySignIn ? 'apiKey' : 'chatgpt', remoteDaemon),
-  );
+  const command = $derived(signInCommand(provider, remoteDaemon));
   const folderPath = $derived(
     mode === 'edit' ? savedFolderPath : previewProfileFolder(provider, name, folderSuffix),
   );
@@ -187,11 +174,7 @@
   );
   const description = $derived.by(() => {
     if (picking) return m.settings_providerProfileKinds_pick_description();
-    if (folderKind) {
-      return codexApiKey
-        ? m.settings_providerProfileKinds_apiKeyCodexDialog_description()
-        : m.settings_providerProfileKinds_differentLoginDialog_description();
-    }
+    if (folderKind) return m.settings_providerProfileKinds_differentLoginDialog_description();
     if (secretKind === 'apiKey')
       return m.settings_providerProfileKinds_apiKeyClaudeDialog_description();
     if (secretKind === 'token') {
@@ -281,9 +264,8 @@
     else startWaiting();
   }
 
-  function signInFromEdit(method: ProfileSignInMethod) {
-    signInMethod = method;
-    if (onSignIn) onSignIn(method);
+  function signInFromEdit() {
+    if (onSignIn) onSignIn();
     else startWaiting();
   }
 
@@ -370,7 +352,6 @@
         <ProfileFolderLoginFields
           {provider}
           {mode}
-          apiKey={codexApiKey}
           {folderPath}
           {command}
           disabled={fieldsDisabled || signIn.status === 'waiting'}
@@ -412,7 +393,7 @@
         </p>
       {/if}
 
-      <ProfileSignInStatus {provider} state={signIn} {command} apiKey={apiKeySignIn} />
+      <ProfileSignInStatus {provider} state={signIn} {command} />
 
       {#if envErrors.general}
         <p class="type-body text-danger" role="alert">{envErrors.general}</p>

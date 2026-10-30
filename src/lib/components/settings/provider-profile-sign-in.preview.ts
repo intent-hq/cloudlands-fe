@@ -43,9 +43,6 @@ export const preview = definePreview<ComponentProps<typeof ProviderProfileKindDi
         signIn: { status: 'waiting', deviceAuth: true },
       },
     },
-    'codex-edit-api-key-waiting': {
-      props: { ...codexEdit, signInMethod: 'apiKey', signIn: { status: 'waiting' } },
-    },
   },
 });
 

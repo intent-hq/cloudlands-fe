@@ -23,9 +23,6 @@ export type ProfileKind = 'differentLogin' | 'apiKey' | 'token' | 'advanced';
 /** Every kind with its own screen (Advanced is the raw env editor). */
 export type SpecializedProfileKind = Exclude<ProfileKind, 'advanced'>;
 
-/** How a Codex sign-in authenticates: browser/device ChatGPT login or a pasted API key. */
-export type ProfileLoginMode = 'chatgpt' | 'apiKey';
-
 /** The value a masked `set` entry reads as (protocol `EnvEntryRead`). */
 export const MASKED_ENV_VALUE = '********';
 
@@ -50,8 +47,7 @@ interface KindKeys {
 
 /**
  * The brief's "Edit opens the matching screen" and "Unset rows" tables.
- * Codex has no API-key row: a Codex API-key profile is a folder profile and
- * matches Different login.
+ * Codex has no API-key kind.
  */
 const PROFILE_KIND_TABLE: Record<
   ProfileProvider,
@@ -90,10 +86,9 @@ const PROFILE_KIND_TABLE: Record<
 
 const DETECTION_ORDER: readonly SpecializedProfileKind[] = ['differentLogin', 'apiKey', 'token'];
 
-/** The table row a kind saves with; a Codex API-key profile saves as Different login. */
+/** The table row a kind saves with; throws for a kind the provider lacks (Codex API key). */
 function kindKeys(provider: ProfileProvider, kind: SpecializedProfileKind): KindKeys {
-  const effective = provider === 'codex' && kind === 'apiKey' ? 'differentLogin' : kind;
-  const keys = PROFILE_KIND_TABLE[provider][effective];
+  const keys = PROFILE_KIND_TABLE[provider][kind];
   if (!keys) throw new Error(`No ${kind} kind for ${provider}`);
   return keys;
 }
@@ -242,7 +237,7 @@ export function pickUnusedFolder(
 export interface ProfileKindForm {
   name: string;
   backup?: boolean;
-  /** Different login / Codex API key: the `~/…` path from `pickUnusedFolder`. */
+  /** Different login: the `~/…` path from `pickUnusedFolder`. */
   folder?: string;
   /** Claude API key. */
   apiKey?: string;
@@ -274,7 +269,7 @@ export function buildCreatePayload(
 ): ProviderProfileCreateParams {
   const keys = kindKeys(provider, kind);
   const set: EnvEntryWrite[] = [];
-  if (kind === 'differentLogin' || (provider === 'codex' && kind === 'apiKey')) {
+  if (kind === 'differentLogin') {
     set.push({
       key: folderVariableFor(provider),
       kind: 'set',
@@ -336,7 +331,7 @@ export function buildUpdateEnv(
   };
 
   const env: EnvEntryWrite[] = [];
-  if (kind === 'differentLogin' || (provider === 'codex' && kind === 'apiKey')) {
+  if (kind === 'differentLogin') {
     env.push(secret(folderVariableFor(provider), undefined));
   } else if (kind === 'apiKey') {
     env.push(secret('ANTHROPIC_API_KEY', edits.apiKey));
@@ -368,12 +363,7 @@ export function isJwtShaped(value: string): boolean {
  * auth unless the daemon is the app's own sidecar (the browser callback to the
  * daemon host's localhost can't reach a remote daemon).
  */
-export function loginCommand(
-  provider: ProfileProvider,
-  mode: ProfileLoginMode,
-  isDaemonAppOwned: boolean,
-): string {
+export function loginCommand(provider: ProfileProvider, isDaemonAppOwned: boolean): string {
   if (provider === 'claude') return 'claude auth login';
-  if (mode === 'apiKey') return 'codex login --with-api-key';
   return isDaemonAppOwned ? 'codex login' : 'codex login --device-auth';
 }

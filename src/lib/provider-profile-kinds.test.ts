@@ -302,14 +302,14 @@ describe('buildCreatePayload', () => {
     expect(payload.env).toEqual(codexFolderEnv);
   });
 
-  it('Codex API key is a folder profile (no key passes through Intent)', () => {
-    const payload = buildCreatePayload('apiKey', 'codex', {
-      name: 'W',
-      folder: '~/intent/profiles/codex/w-aaaa',
-      apiKey: 'sk-ignored',
-    });
-    expect(payload.env).toEqual(codexFolderEnv);
-    expect(detectProfileKind('codex', payload.env as EnvEntryRead[])).toBe('differentLogin');
+  it('has no Codex API-key kind', () => {
+    expect(() =>
+      buildCreatePayload('apiKey', 'codex', {
+        name: 'W',
+        folder: '~/intent/profiles/codex/w-aaaa',
+        apiKey: 'sk',
+      }),
+    ).toThrow(/No apiKey kind for codex/);
   });
 
   it('Codex Token', () => {
@@ -407,10 +407,9 @@ describe('buildUpdateEnv', () => {
     ]);
   });
 
-  it('treats a Codex API-key edit as Different login', () => {
-    const saved = [set('CODEX_HOME', '~/c')];
-    expect(buildUpdateEnv('apiKey', 'codex', saved)).toEqual(
-      buildUpdateEnv('differentLogin', 'codex', saved),
+  it('has no Codex API-key edit', () => {
+    expect(() => buildUpdateEnv('apiKey', 'codex', [set('CODEX_HOME', '~/c')])).toThrow(
+      /No apiKey kind for codex/,
     );
   });
 
@@ -436,13 +435,11 @@ describe('isJwtShaped', () => {
 });
 
 describe('loginCommand', () => {
-  it('returns the plain sign-in command for each provider and mode', () => {
-    expect(loginCommand('claude', 'chatgpt', true)).toBe('claude auth login');
-    expect(loginCommand('claude', 'chatgpt', false)).toBe('claude auth login');
-    expect(loginCommand('codex', 'chatgpt', true)).toBe('codex login');
-    expect(loginCommand('codex', 'chatgpt', false)).toBe('codex login --device-auth');
-    expect(loginCommand('codex', 'apiKey', true)).toBe('codex login --with-api-key');
-    expect(loginCommand('codex', 'apiKey', false)).toBe('codex login --with-api-key');
+  it('returns the plain sign-in command for each provider', () => {
+    expect(loginCommand('claude', true)).toBe('claude auth login');
+    expect(loginCommand('claude', false)).toBe('claude auth login');
+    expect(loginCommand('codex', true)).toBe('codex login');
+    expect(loginCommand('codex', false)).toBe('codex login --device-auth');
   });
 });
 

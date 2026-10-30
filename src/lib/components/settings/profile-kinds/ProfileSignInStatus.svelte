@@ -2,7 +2,7 @@
   /**
    * The sign-in progress panel shown after Create & sign in or Log In:
    * waiting (browser or Codex device code), still waiting, signed in, and the
-   * Codex API-key check. Presentational: the parent owns the state.
+   * key check. Presentational: the parent owns the state.
    */
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import { faCircleCheck, faCircleExclamation, faClock } from '@fortawesome/free-solid-svg-icons';
@@ -16,11 +16,9 @@
     state: ProfileSignInState;
     /** The plain command running in the bottom terminal. */
     command: string;
-    /** Codex API-key sign-in (paste instructions while waiting). */
-    apiKey?: boolean;
   }
 
-  let { provider, state, command, apiKey = false }: Props = $props();
+  let { provider, state, command }: Props = $props();
 
   type Tone = 'progress' | 'success' | 'warning' | 'danger';
   const view = $derived.by((): { tone: Tone; title: string; description?: string } | null => {
@@ -38,9 +36,7 @@
         return {
           tone: 'progress',
           title: m.settings_providerProfileKinds_waiting_label(),
-          description: apiKey
-            ? m.settings_providerProfileKinds_waitingApiKey_description()
-            : m.settings_providerProfileKinds_waitingBrowser_description(),
+          description: m.settings_providerProfileKinds_waitingBrowser_description(),
         };
       case 'stillWaiting':
         return {

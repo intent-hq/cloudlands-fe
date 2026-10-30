@@ -54,14 +54,6 @@ export const codexEdit = {
   savedFolderPath: '~/intent/profiles/codex/personal-7h2m',
 } as const;
 
-export const codexApiKeyAdd = {
-  ...codexBase,
-  mode: 'add',
-  step: 'details',
-  kind: 'apiKey',
-  name: 'OpenAI key',
-} as const;
-
 export const FAKE_EMAIL = 'work@acme.com';
 
 /** A fake key/token typed into a field (never a real credential). */
