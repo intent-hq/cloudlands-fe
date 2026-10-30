@@ -593,13 +593,11 @@
           <AdministratorSettings tab={activeTab} workspaceId={settingsWorkspaceId} />
         {/if}
 
-        <!-- Machines -->
         {#if activeTab === 'devices'}
           <div id="devices" class="scroll-mt-20">
             <DevicesSettings />
           </div>
 
-          <!-- Backend sync (iCloud Keychain) -->
           <div id="backend-sync" class="scroll-mt-20">
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_backendSync()}
@@ -1190,7 +1188,9 @@
           {/if}
 
           {#if isElectronPlatform()}
-            <DockLabSettings />
+            <div id="labs" data-highlight-id="labs" use:highlightTarget>
+              <DockLabSettings />
+            </div>
           {/if}
         {/if}
       </main>

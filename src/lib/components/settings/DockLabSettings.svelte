@@ -1,6 +1,5 @@
 <script lang="ts">
   import { SettingsForm, defineSettings } from '$lib/components/patterns/settings';
-  import { highlightTarget } from '$lib/components/ui/highlight/highlight-target';
   import { m } from '$shared/paraglide/messages.js';
   import { dockLabEnabled, setDockLabEnabled } from '$lib/dock-lab';
   import DockLabIllustration from './DockLabIllustration.svelte';
@@ -28,7 +27,7 @@
   );
 </script>
 
-<div id="labs" data-highlight-id="labs" use:highlightTarget>
+<div>
   <h2 class="type-title mb-3 text-foreground">{m.settings_section_labs()}</h2>
   <div class="flex items-center gap-4 rounded-xl bg-card px-6 py-1">
     <DockLabIllustration />

@@ -1470,7 +1470,7 @@ describe('dock screen evidence through the canonical send', () => {
   });
 
   it('does not admit when advertised retention returns no echo, then resumes the same keys exactly once', async () => {
-    // Keyed placement (protocol ≥ 9.13) and an acknowledged retention capability.
+    // Keyed placement with an acknowledged rawScreenshotRetention capability.
     appStore.dispatch(
       systemStatusSuccess(
         {
