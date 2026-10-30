@@ -18,7 +18,11 @@
   import { selectHydratedBlocks } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import { selectCollapseToolRuns } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { groupMessageBlocks } from './operational-run-collapse';
-  import { prepareMessageBlocks, renderedBlockText } from './prepare-message-blocks';
+  import {
+    prepareMessageBlocks,
+    renderedBlockText,
+    rendersReasoningAsText,
+  } from './prepare-message-blocks';
   import { getProposalFromBlock } from '$shared/types/proposal-resource';
   import { getContentBlockText } from '$shared/utils/content-block-helpers';
   import type { DiagramPrimitive } from '$shared/types/notes-primitives';
@@ -215,6 +219,7 @@
       workspaceId,
       isStreaming,
       hideToolCalls,
+      reasoningAsText: rendersReasoningAsText($mediaAgent$),
     });
     if (isStreaming && prepared.some((b) => b.type === 'tool_use')) {
       logger.debug('[StreamingMessageContent] blocks derived - has tool_use', {
