@@ -6,6 +6,7 @@ import {
   join,
   put,
   race,
+  spawn,
   take,
   takeLatest,
   type SagaGenerator,
@@ -156,11 +157,15 @@ function* followPerson(
         if (store.state.tabState.currentTabId !== target.workspaceId) {
           yield* put(presenceFollowRouteStarted(requestId, target.workspaceId));
           routing = true;
+          // Navigates, then opens the tab tagged with this request id. Spawned
+          // (detached) because cancelling this follow cannot stop the `goto`
+          // it started: if the route still lands on the workspace, its tab
+          // must open. The helper skips the tab when the jump was overtaken.
+          const route = yield* spawn(showWorkspaceSaga, target.workspaceId, {
+            state: { presenceFollowRequestId: requestId },
+          });
           const navigated = yield* race({
-            // Navigates, then opens the tab tagged with this request id.
-            navigated: call(showWorkspaceSaga, target.workspaceId, {
-              state: { presenceFollowRequestId: requestId },
-            }),
+            navigated: join(route),
             changed: take(changed),
           });
           routing = false;

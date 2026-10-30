@@ -709,6 +709,9 @@ describe('following authorized presence', () => {
     finish();
     await settle();
     expect(views()).toEqual([]);
+    // The follow was cancelled, but the goto it started still landed on the
+    // workspace, so the workspace still gets its tab.
+    expect(store.state.tabState.openTabs.closed).toBeDefined();
   });
   it('discards every frame and action on disconnect and rehydrates only after readmission', async () => {
     start();

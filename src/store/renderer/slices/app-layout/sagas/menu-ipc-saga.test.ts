@@ -101,6 +101,18 @@ describe('menuIpcSaga', () => {
     await task.toPromise();
   });
 
+  it('keeps the query and hash of a workspace route', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+
+    await emit('navigate', '/workspace/ws-1?panel=terminal#log');
+
+    expect(mocks.navigateToRoute.mock.calls).toEqual([['/workspace/ws-1?panel=terminal#log']]);
+    expect(actions).toEqual([{ type: 'tabState/openWorkspaceTab', payload: ['ws-1'] }]);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('opens no tab when a Recent Workspaces navigation fails', async () => {
     const actions: unknown[] = [];
     const failure = new Error('goto stalled');
