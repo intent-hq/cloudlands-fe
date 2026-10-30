@@ -89,7 +89,7 @@ function subscribeToStore(listener: () => void): () => void {
  * yields a candidate.
  *
  * Tier 3 waits for {@link areAgentsLoaded}: mid-hydration the foreground list
- * lands before the sessions carrying the tier 1/2 signals, so falling back
+ * can land before the sessions carrying the tier 1/2 signals, so falling back
  * early would settle for the first agent while the actually-unread one was
  * still in flight. Tiers 1 and 2 are deliberately *not* gated — they only ever
  * match on evidence, so acting on the first one to arrive is right. The
@@ -117,25 +117,13 @@ export function findFirstUnreadForegroundAgentId(workspaceId: string): string | 
 }
 
 /**
- * True once the workspace's agent hydration has actually landed in the store.
- *
- * `agentsLoaded` alone is not enough: `hydrateWorkspaceAgents` (and the boot
- * `agents-seeder`) dispatch `setAgentsLoaded(wsId, true)` *before* `setAgents`
- * and `bulkUpsertSessions`, and the store notifies synchronously per dispatch —
- * so the flag flips while `foregroundAgentIds` and the sessions carrying
- * `lastMessageRole` are still absent. The watch must therefore also see the
- * foreground list populated and a session for every foreground agent; until
- * then the only exit is the timeout (which is also what a genuinely
- * agent-less workspace falls back to, dispatching nothing either way).
+ * True once the workspace's agent hydration has landed in the store. Every
+ * agent-list read sets `agentsLoaded` only after its rows and sessions are
+ * stored, so the flag alone is enough. Until then the only exit is the
+ * timeout, which is also what a genuinely agent-less workspace falls back to.
  */
 function areAgentsLoaded(workspaceId: string): boolean {
-  const state = appStore.state;
-  const workspaceState = state.workspaceAgents?.byWorkspaceId[workspaceId];
-  if (workspaceState?.agentsLoaded !== true) return false;
-  const foregroundAgentIds = workspaceState.foregroundAgentIds ?? [];
-  if (foregroundAgentIds.length === 0) return false;
-  const sessions = state.agentSessions?.byAgentId ?? {};
-  return foregroundAgentIds.every((agentId) => sessions[agentId] !== undefined);
+  return appStore.state.workspaceAgents?.byWorkspaceId[workspaceId]?.agentsLoaded === true;
 }
 
 /** The workspace's currently selected agent, or null when none is set. */

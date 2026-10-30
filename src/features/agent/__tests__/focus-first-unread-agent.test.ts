@@ -136,10 +136,10 @@ describe('findFirstUnreadForegroundAgentId', () => {
   });
 
   it('withholds the first-agent fallback until hydration lands', () => {
-    // Mid-hydration the foreground list is populated but the sessions carrying
-    // the tier 1/2 signals are not, so falling back now could miss the agent
-    // that is actually unread.
-    seedAgents(['agent-a', 'agent-b'], true);
+    // Mid-hydration the foreground list can be populated while the sessions
+    // carrying the tier 1/2 signals are not; `agentsLoaded` stays false until
+    // they land, so falling back now could miss the agent that is actually unread.
+    seedAgents(['agent-a', 'agent-b'], false);
     seedSessions({ 'agent-a': { lastMessageRole: 'user' } });
     expect(findFirstUnreadForegroundAgentId(WS)).toBeNull();
   });
@@ -266,28 +266,42 @@ describe('focusFirstUnreadAgent', () => {
     const seam = createSubscribeSeam();
     focusFirstUnreadAgent(WS, true, seam);
 
-    // `setAgentsLoaded(wsId, true)` lands first, before setAgents /
-    // bulkUpsertSessions — the watch must not stop here.
-    seedAgents([], true);
+    // `setAgents` populates the foreground list; `agentsLoaded` is still false.
+    seedAgents(['agent-a', 'agent-b'], false);
     seam.notify();
     expect(dispatched).toEqual([]);
 
-    // `setAgents` populates the foreground list; sessions are still missing.
-    seedAgents(['agent-a', 'agent-b'], true);
-    seam.notify();
-    expect(dispatched).toEqual([]);
-
-    // `bulkUpsertSessions` lands the sessions carrying lastMessageRole.
+    // `bulkUpsertSessions` lands sessions with no unread evidence; the flag is
+    // still false, so the tier-3 fallback must keep waiting.
     seedSessions({
       'agent-a': { lastMessageRole: 'user' },
-      'agent-b': { lastMessageRole: 'assistant' },
+      'agent-b': { lastMessageRole: 'user' },
     });
+    seam.notify();
+    expect(dispatched).toEqual([]);
+
+    // `setAgentsLoaded(wsId, true)` lands last, once rows and sessions are stored.
+    seedAgents(['agent-a', 'agent-b'], true);
     seam.notify();
 
     expect(dispatchedTypes()).toEqual([
       'workspaceAgents/setActiveAgentId',
       'appLayout/openAgentTabRequested',
     ]);
+    expect(dispatched[0].payload).toEqual([WS, 'agent-a']);
+  });
+
+  it('acts on tier 2 evidence that lands before the loaded flag', () => {
+    const seam = createSubscribeSeam();
+    focusFirstUnreadAgent(WS, true, seam);
+
+    seedAgents(['agent-a', 'agent-b'], false);
+    seedSessions({
+      'agent-a': { lastMessageRole: 'user' },
+      'agent-b': { lastMessageRole: 'assistant' },
+    });
+    seam.notify();
+
     expect(dispatched[0].payload).toEqual([WS, 'agent-b']);
   });
 
@@ -422,7 +436,8 @@ describe('focusFirstUnreadAgent', () => {
     const seam = createSubscribeSeam();
     focusFirstUnreadAgent(WS, true, seam);
 
-    seedAgents(['agent-a'], true);
+    // Mid-hydration: rows landed, sessions and the loaded flag have not.
+    seedAgents(['agent-a'], false);
     seam.notify();
     expect(dispatched).toEqual([]);
     expect(seam.unsubscribeCalls()).toBe(0);
@@ -462,7 +477,7 @@ describe('focusFirstUnreadAgent', () => {
     focusFirstUnreadAgent(WS, true, seam);
 
     mockState.tabState.currentTabId = WS;
-    seedAgents(['agent-a'], true);
+    seedAgents(['agent-a'], false);
     seam.notify();
     expect(seam.unsubscribeCalls()).toBe(0);
 
@@ -530,8 +545,8 @@ describe('focusFirstUnreadAgent', () => {
   });
 
   it('holds the watch to the timeout on an agent-less workspace, dispatching nothing', () => {
-    // `areAgentsLoaded` is unsatisfiable without foreground agents, so the only
-    // exit is the timeout. Harmless, but pinned so the held subscription is a
+    // With no foreground agents there is never a candidate, so the only exit
+    // is the timeout. Harmless, but pinned so the held subscription is a
     // known cost rather than a surprise.
     vi.useFakeTimers();
     try {
