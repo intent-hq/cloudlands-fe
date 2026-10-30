@@ -361,7 +361,7 @@ describe('subscribePrMonitors (prMonitor:* events.subscribe + fold)', () => {
 
   const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-  it('preserves cached rows and reports when the initial prMonitor.list seed fails', async () => {
+  it('preserves cached rows and does not report a single failed prMonitor.list seed', async () => {
     mockedRequest.mockRejectedValueOnce(new Error('list failed'));
     const seen: ReviewMonitorRow[][] = [];
     const statuses: string[] = [];
@@ -372,8 +372,10 @@ describe('subscribePrMonitors (prMonitor:* events.subscribe + fold)', () => {
     );
     await flush();
 
-    expect(seen.at(-1)).toEqual([]);
-    expect(statuses).toEqual(['failed']);
+    // No empty emission: it would mark the snapshot ready and drop retained
+    // rows. One transient failure is retried, not surfaced as a load error.
+    expect(seen).toEqual([]);
+    expect(statuses).toEqual([]);
     dispose();
   });
 
@@ -683,6 +685,124 @@ describe('subscribePrMonitors (prMonitor:* events.subscribe + fold)', () => {
     expect(mockedRequest).toHaveBeenNthCalledWith(3, 'prMonitor.list', { workspaceId: 'ws-1' });
     expect(seen.at(-1)).toEqual([refreshed]);
     dispose();
+  });
+});
+
+describe('subscribePrMonitors transient-failure retry', () => {
+  const mockedCapture = vi.mocked(capturePrMonitorSession);
+  const listCalls = () =>
+    mockedRequest.mock.calls.filter(([method]) => method === 'prMonitor.list');
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    mockedSubscribe.mockResolvedValue({ subscriptionId: 'ws-sub-7' });
+  });
+
+  afterEach(() => {
+    for (const lease of leases.splice(0)) lease.dispose();
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  function subscribe() {
+    const seen: ReviewMonitorRow[][] = [];
+    const statuses: string[] = [];
+    const lease = subscribePrMonitors(
+      'ws-1',
+      (monitors) => seen.push(monitors),
+      (status) => statuses.push(status),
+    );
+    leases.push(lease);
+    return { seen, statuses, lease };
+  }
+
+  it('retries a failed prMonitor.list on a fresh session and never reports one transient failure', async () => {
+    mockedRequest
+      .mockRejectedValueOnce(new Error('timeout'))
+      .mockResolvedValue({ monitors: [makeMonitor()] });
+    const { seen, statuses } = subscribe();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(seen.at(-1)).not.toEqual([makeMonitor()]);
+    expect(mockedCapture).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(mockedCapture).toHaveBeenCalledTimes(2);
+    expect(seen.at(-1)).toEqual([makeMonitor()]);
+    expect(statuses).toEqual([]);
+  });
+
+  it('retries a failed session capture (backend reconnecting) without reporting it', async () => {
+    mockedCapture.mockRejectedValueOnce(new Error('Monitor connection unavailable'));
+    mockedRequest.mockResolvedValue({ monitors: [makeMonitor()] });
+    const { seen, statuses } = subscribe();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(listCalls()).toHaveLength(0);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(mockedCapture).toHaveBeenCalledTimes(2);
+    expect(seen.at(-1)).toEqual([makeMonitor()]);
+    expect(statuses).toEqual([]);
+  });
+
+  it('reports failed only after repeated failures, backs off, and recovers on its own', async () => {
+    const unavailable = new Error('Monitor connection unavailable');
+    mockedCapture
+      .mockRejectedValueOnce(unavailable)
+      .mockRejectedValueOnce(unavailable)
+      .mockRejectedValueOnce(unavailable);
+    mockedRequest.mockResolvedValue({ monitors: [makeMonitor()] });
+    const { seen, statuses } = subscribe();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mockedCapture).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(mockedCapture).toHaveBeenCalledTimes(2);
+    expect(statuses).toEqual([]);
+
+    // Exponential backoff: the third attempt waits 2s, not 1s.
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(mockedCapture).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(mockedCapture).toHaveBeenCalledTimes(3);
+    expect(statuses).toEqual(['failed']);
+    expect(seen).toEqual([]);
+
+    // Background retries continue; the next success emits rows (→ ready).
+    await vi.advanceTimersByTimeAsync(4_000);
+
+    expect(mockedCapture).toHaveBeenCalledTimes(4);
+    expect(seen.at(-1)).toEqual([makeMonitor()]);
+    expect(statuses).toEqual(['failed']);
+  });
+
+  it('caps the retry backoff at 30 seconds', async () => {
+    mockedCapture.mockRejectedValue(new Error('Monitor connection unavailable'));
+    subscribe();
+    await vi.advanceTimersByTimeAsync(0);
+    // Attempts at 0, 1s, 3s, 7s, 15s, 31s, then every 30s.
+    await vi.advanceTimersByTimeAsync(31_000);
+    expect(mockedCapture).toHaveBeenCalledTimes(6);
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(mockedCapture).toHaveBeenCalledTimes(6);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(mockedCapture).toHaveBeenCalledTimes(7);
+  });
+
+  it('cancels pending retries on dispose', async () => {
+    mockedCapture.mockRejectedValue(new Error('Monitor connection unavailable'));
+    const { lease, seen, statuses } = subscribe();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mockedCapture).toHaveBeenCalledTimes(1);
+
+    lease.dispose();
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    expect(mockedCapture).toHaveBeenCalledTimes(1);
+    expect(seen).toEqual([]);
+    expect(statuses).toEqual([]);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 
