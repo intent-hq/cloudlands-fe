@@ -236,6 +236,8 @@
 
   import SuggestedPrompts from './SuggestedPrompts.svelte';
   import QuestionWizard, { type QuestionAnswer } from './questions/QuestionWizard.svelte';
+  import SecretRequestCards from './secrets/SecretRequestCards.svelte';
+  import { deriveSecretRequestTranscript } from './secrets/pending-secret-requests';
   import QuestionComposer from './questions/QuestionComposer.svelte';
   import {
     getChatAttentionFocusAction,
@@ -1268,6 +1270,13 @@
   // Legacy queues omit transcript-stamped drains. Correlated full snapshots
   // remain authoritative: a restored retry may legitimately share history aliases.
   const admittedPrincipal$ = selectPrincipalSnapshot();
+
+  // Agent secret requests (PROTOCOL §5.56), shown as composer-slot cards
+  // only when the daemon advertises `secretRequests: 1`.
+  const secretRequestsSupported = $derived($admittedPrincipal$?.capabilities.secretRequests === 1);
+  const secretRequestTranscript = $derived(
+    secretRequestsSupported ? deriveSecretRequestTranscript($agentMessages$) : null,
+  );
   const visibleQueuedMessages = $derived(
     $admittedPrincipal$?.capabilities.submissionCorrelation === 1
       ? $queuedMessages$.filter(isUserQueuedMessage)
@@ -7938,6 +7947,13 @@
                   {m.chat_proposalTray_title()}
                 </Button>
               </div>
+            {/if}
+            {#if workspace && agentId && secretRequestTranscript}
+              <SecretRequestCards
+                transcript={secretRequestTranscript}
+                workspaceId={workspace.id}
+                {agentId}
+              />
             {/if}
             <QuestionComposer
               expanded={!!pendingQuestions && !questionWizardCollapsed}

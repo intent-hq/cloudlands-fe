@@ -9,6 +9,8 @@
   import BlockerReportNotice from './BlockerReportNotice.svelte';
   import TurnFailureNotice from './TurnFailureNotice.svelte';
   import QuestionsDismissedNotice from './QuestionsDismissedNotice.svelte';
+  import SecretRequestNotice from './secrets/SecretRequestNotice.svelte';
+  import { getSecretRequestNotice } from './secrets/secret-request-notice';
   import AutoUnarchivedNotice from './AutoUnarchivedNotice.svelte';
   import ProviderRehomedNotice from './ProviderRehomedNotice.svelte';
   import { getModelChangeNotice } from './model-change-notice';
@@ -126,6 +128,7 @@
     {@const modelChangeNotice = getModelChangeNotice(message)}
     {@const effortChangeNotice = getEffortChangeNotice(message)}
     {@const questionsDismissedNotice = getQuestionsDismissedNotice(message)}
+    {@const secretRequestNotice = getSecretRequestNotice(message)}
     {@const autoUnarchivedNotice = getAutoUnarchivedNotice(message)}
     {@const providerRehomedNotice = getProviderRehomedNotice(message)}
     {@const providerFailoverNotice = getProviderSwitchNotice(message)}
@@ -161,6 +164,9 @@
              Discriminated on metadata type before role branching so it renders
              regardless of the exact role the daemon persists. -->
         <QuestionsDismissedNotice title={extractAllContent(message) || undefined} />
+      {:else if secretRequestNotice}
+        <!-- Daemon-delivered secret-request notice (§5.56) - compact chip. -->
+        <SecretRequestNotice notice={secretRequestNotice} />
       {:else if autoUnarchivedNotice}
         <!-- Daemon-persisted auto-unarchive notice - centered inline divider.
              Discriminated on metadata type before role branching so it renders

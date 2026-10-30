@@ -1,5 +1,6 @@
 import type { AgentMessage, ContentBlock } from '$shared/types';
 import { isQuestionResourceBlock } from '$shared/types/question-resource';
+import { isSecretRequestResourceBlock } from '$shared/types/secret-request-resource';
 import { parseSuggestedPromptsFromContentBlocks } from '$lib/utils/messageParser';
 
 const stoppedStopReasons = new Set([
@@ -108,19 +109,20 @@ export function resolveFinishReasonNotice(message?: AgentMessage): FinishReasonN
 }
 
 /**
- * Agent Q&A wizard-only rendering: true when the blocks contain at least one
- * question resource block and NOTHING else that would render in the
- * transcript (text blocks that are empty or suggested-prompts-only count as
- * nothing). ChatMessage suppresses the whole assistant bubble for such turns
- * — the composer-slot QuestionWizard is the sole rendering surface.
+ * Composer-slot-only rendering: true when the blocks contain at least one
+ * question or secret-request resource block and NOTHING else that would
+ * render in the transcript (text blocks that are empty or
+ * suggested-prompts-only count as nothing). ChatMessage suppresses the whole
+ * assistant bubble for such turns — the composer-slot QuestionWizard and
+ * secret-request cards are the sole rendering surfaces.
  */
 export function isQuestionOnlyContent(blocks: readonly ContentBlock[]): boolean {
   if (blocks.length === 0) return false;
   const parsedBlocks = parseSuggestedPromptsFromContentBlocks(blocks).contentBlocks;
-  let hasQuestion = false;
+  let hasSlotBlock = false;
   for (const block of parsedBlocks) {
-    if (isQuestionResourceBlock(block)) {
-      hasQuestion = true;
+    if (isQuestionResourceBlock(block) || isSecretRequestResourceBlock(block)) {
+      hasSlotBlock = true;
       continue;
     }
     if (block.type === 'text') {
@@ -129,5 +131,5 @@ export function isQuestionOnlyContent(blocks: readonly ContentBlock[]): boolean 
     }
     return false;
   }
-  return hasQuestion;
+  return hasSlotBlock;
 }

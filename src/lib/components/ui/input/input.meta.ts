@@ -45,6 +45,7 @@ export const inputMetadata = parseUiComponentMetadata({
     'src/lib/components/chat/input/SimpleRichInput.svelte',
     'src/lib/components/chat/input/mention-results.preview.svelte',
     'src/lib/components/chat/proposals/ProposalCard.svelte',
+    'src/lib/components/chat/secrets/SecretRequestCard.svelte',
     'src/lib/components/code-review/walkthrough/WalkthroughCommentThread.svelte',
     'src/lib/components/code-review/walkthrough/WalkthroughInlineComment.svelte',
     'src/lib/components/debug/DebugPanel.svelte',

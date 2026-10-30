@@ -95,6 +95,7 @@ import { permissionResponseSaga } from './slices/permission/sagas/permission-res
 import { powerSaga } from './slices/power/sagas/power-saga';
 import { proposalLifecycleSaga } from './slices/proposal-lifecycle/sagas/proposal-lifecycle-saga';
 import { questionUiPersistenceSaga } from './slices/question-ui/sagas/question-ui-persistence-saga';
+import { secretRequestsSaga } from './slices/secret-requests/sagas/secret-requests-saga';
 import { providerSettingsSaga } from './slices/provider-settings/sagas/provider-settings-saga';
 import { antigravitySetupSaga } from './slices/antigravity-setup/sagas/antigravity-setup-saga';
 import { scriptMonitorSaga } from './slices/script-monitor/sagas/script-monitor-saga';
@@ -235,6 +236,7 @@ export const sagas = [
   workspaceCatalogSaga,
   proposalLifecycleSaga,
   questionUiPersistenceSaga,
+  secretRequestsSaga,
   settingsProposalHistorySaga,
   specialistProposalHistorySaga,
   githubRepoSearchSaga,
