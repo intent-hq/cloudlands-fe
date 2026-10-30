@@ -132,3 +132,16 @@ export function visibleSecretRequests(
   }
   return visible;
 }
+
+/**
+ * Whether the stack shows as the collapsed chip: the user hid it and every
+ * card now showing was already showing then. A new request expands it, so
+ * it is never missed; answered ones leaving keep it collapsed.
+ */
+export function isSecretStackCollapsed(
+  visibleRequestIds: readonly string[],
+  collapsedRequestIds: readonly string[] | undefined,
+): boolean {
+  if (!collapsedRequestIds || visibleRequestIds.length === 0) return false;
+  return visibleRequestIds.every((requestId) => collapsedRequestIds.includes(requestId));
+}

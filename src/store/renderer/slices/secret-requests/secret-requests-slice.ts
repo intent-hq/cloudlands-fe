@@ -3,7 +3,7 @@ import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { SecretListing } from '$shared/types/secret-request-resource';
 import type { SecretAnswerStatus, SecretRequestsState } from './secret-requests-types';
 
-const initialState: SecretRequestsState = { listings: {}, answers: {}, hidden: {} };
+const initialState: SecretRequestsState = { listings: {}, answers: {}, hidden: {}, collapsed: {} };
 
 /**
  * Refresh one agent's names-only `secret.list` (PROTOCOL §5.56). `requestIds`
@@ -56,6 +56,16 @@ export const secretRequestHidden = createAction<[requestId: string]>(
   'secretRequests/secretRequestHidden',
 );
 
+/** Collapse one agent's card stack (like the Q&A card's Hide). */
+export const secretRequestsCollapsed = createAction<[agentId: string, requestIds: string[]]>(
+  'secretRequests/secretRequestsCollapsed',
+);
+
+/** Expand one agent's card stack again. */
+export const secretRequestsExpanded = createAction<[agentId: string]>(
+  'secretRequests/secretRequestsExpanded',
+);
+
 export const secretRequestsReducer = createReducer<SecretRequestsState>(initialState);
 secretRequestsReducer.with(
   secretListLoaded,
@@ -106,3 +116,14 @@ secretRequestsReducer.with(secretRequestHidden, (state, { payload: [requestId] }
   ...state,
   hidden: { ...state.hidden, [requestId]: true },
 }));
+secretRequestsReducer.with(
+  secretRequestsCollapsed,
+  (state, { payload: [agentId, requestIds] }) => ({
+    ...state,
+    collapsed: { ...state.collapsed, [agentId]: requestIds },
+  }),
+);
+secretRequestsReducer.with(secretRequestsExpanded, (state, { payload: [agentId] }) => {
+  const { [agentId]: _expanded, ...collapsed } = state.collapsed;
+  return { ...state, collapsed };
+});

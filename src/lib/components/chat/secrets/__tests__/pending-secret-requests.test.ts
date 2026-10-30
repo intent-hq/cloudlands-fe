@@ -9,6 +9,7 @@ import {
 import { prepareMessageBlocks } from '../../prepare-message-blocks';
 import {
   deriveSecretRequestTranscript,
+  isSecretStackCollapsed,
   secretRequestCardState,
   visibleSecretRequests,
 } from '../pending-secret-requests';
@@ -223,5 +224,18 @@ describe('getSecretRequestNotice', () => {
     };
     expect(getSecretRequestNotice(blockOnly as never)?.outcome).toBe('provided');
     expect(getSecretRequestNotice({ metadata: { type: 'question_answers' } })).toBeNull();
+  });
+});
+
+describe('isSecretStackCollapsed', () => {
+  it('stays collapsed while every showing request was showing when hidden', () => {
+    expect(isSecretStackCollapsed(['a', 'b'], undefined)).toBe(false);
+    expect(isSecretStackCollapsed(['a', 'b'], ['a', 'b'])).toBe(true);
+    expect(isSecretStackCollapsed(['a'], ['a', 'b'])).toBe(true);
+  });
+
+  it('expands for a new request and never collapses an empty stack', () => {
+    expect(isSecretStackCollapsed(['a', 'c'], ['a', 'b'])).toBe(false);
+    expect(isSecretStackCollapsed([], ['a'])).toBe(false);
   });
 });
