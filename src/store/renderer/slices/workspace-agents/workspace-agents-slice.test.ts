@@ -56,6 +56,7 @@ import {
   adjustRetiredCount,
   adjustScopeCount,
   agentsLoaded,
+  agentsReadSettled,
   createAgentRequested,
   createAgentWithSpecialistRequested,
   emptyWorkspaceAgentState,
@@ -354,6 +355,16 @@ describe('workspaceAgentsReducer', () => {
       agentsLoaded: true,
       initialAgentId: 'agent-1',
     });
+  });
+
+  it('counts settled full agent-list reads per workspace', () => {
+    expect(initialState.byWorkspaceId[WS_1]?.agentsReadRevision ?? 0).toBe(0);
+    let state = workspaceAgentsReducer(initialState, agentsReadSettled(WS_1));
+    state = workspaceAgentsReducer(state, agentsReadSettled(WS_1));
+    state = workspaceAgentsReducer(state, agentsReadSettled(WS_2));
+
+    expect(state.byWorkspaceId[WS_1].agentsReadRevision).toBe(2);
+    expect(state.byWorkspaceId[WS_2].agentsReadRevision).toBe(1);
   });
 
   it('tracks the lazy retired-bin state per workspace (§5.5 retiredCount)', () => {

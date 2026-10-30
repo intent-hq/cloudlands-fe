@@ -3071,6 +3071,8 @@ describe('lifecycleReadSaga', () => {
         type: 'agentSessions/bulkUpsertSessions',
         payload: [[background, kept], { listProjection: true }],
       },
+      // Settles only after the sessions land, so freshness consumers see current rows.
+      { type: 'workspaceAgents/agentsReadSettled', payload: [WS] },
       { type: 'workspaceAgents/setActiveAgentId', payload: [WS, 'agent-keep'] },
     ]);
     await stop(run.task);
@@ -3277,6 +3279,7 @@ describe('lifecycleReadSaga', () => {
       { type: 'workspaceAgents/setScopeCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setDelegatedCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setAgents', payload: [WS, []] },
+      { type: 'workspaceAgents/agentsReadSettled', payload: [WS] },
     ]);
     await stop(run.task);
   });
@@ -3520,6 +3523,7 @@ describe('lifecycleReadSaga', () => {
       { type: 'workspaceAgents/setDelegatedCounts', payload: [WS, DELEGATED_COUNTS] },
       { type: 'workspaceAgents/setAgents', payload: [WS, [top]] },
       { type: 'agentSessions/bulkUpsertSessions', payload: [[top], { listProjection: true }] },
+      { type: 'workspaceAgents/agentsReadSettled', payload: [WS] },
       { type: 'workspaceAgents/setActiveAgentId', payload: [WS, 'agent-top'] },
     ]);
     await stop(run.task);
@@ -4777,6 +4781,7 @@ describe('lifecycleReadSaga', () => {
       { type: 'workspaceAgents/setScopeCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setDelegatedCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setAgents', payload: [WS, []] },
+      { type: 'workspaceAgents/agentsReadSettled', payload: [WS] },
     ]);
     await stop(run.task);
   });
@@ -4817,6 +4822,7 @@ describe('lifecycleReadSaga', () => {
       { type: 'workspaceAgents/setScopeCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setDelegatedCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setAgents', payload: [WS, []] },
+      { type: 'workspaceAgents/agentsReadSettled', payload: [WS] },
     ]);
     await stop(run.task);
   });

@@ -45,7 +45,6 @@ describe('resolveLatestActiveTopLevelAgent', () => {
       'metadata.createdByAgentId',
       { metadata: { createdByAgentId: 'parent' } as AgentSession['metadata'] },
     ],
-    ['parentSessionId', { parentSessionId: 'parent' as AgentId }],
   ])('skips a newer agent that is not top-level (%s)', (_name, overrides) => {
     const topLevel = agent('top', { lastActivity: at(1) });
     const nested = agent('nested', { lastActivity: at(9), ...overrides });
@@ -90,6 +89,15 @@ describe('resolveLatestActiveTopLevelAgent', () => {
     const valid = agent('valid', { lastActivity: at(1) });
 
     expect(resolveLatestActiveTopLevelAgent([broken, valid])?.id).toBe('valid');
+  });
+
+  // The fork marker parentSessionId references a session, not a parent agent, so a
+  // forked agent is top-level (agent-scope.ts).
+  it('treats a forked agent as top-level', () => {
+    const original = agent('original', { lastActivity: at(1) });
+    const fork = agent('fork', { parentSessionId: 'original' as AgentId, lastActivity: at(4) });
+
+    expect(resolveLatestActiveTopLevelAgent([original, fork])?.id).toBe('fork');
   });
 
   it('breaks activity ties by the newer creation time, then by id', () => {

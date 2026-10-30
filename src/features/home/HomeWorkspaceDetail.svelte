@@ -7,7 +7,7 @@
   import { selectWorkspaceDetailHydrated } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     selectAllWorkspaceAgents,
-    selectAgentsLoaded,
+    selectAgentsReadRevision,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { setActiveAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { selectHomePreviewAgentId } from './home-workspaces-selectors';
@@ -50,13 +50,16 @@
   // Home keys this panel by workspace ID, matching the chat's subscription lifetime.
   const workspaceId = untrack(() => workspace.id);
   const agents$ = selectAllWorkspaceAgents(workspaceId);
-  const loaded$ = selectAgentsLoaded(workspaceId);
+  const readRevision$ = selectAgentsReadRevision(workspaceId);
+  // The chat refreshes the agent list on mount; a read that lands after opening proves
+  // the activity data is current.
+  const openedAtRevision = untrack(() => $readRevision$);
   const pickedId$ = selectHomePreviewAgentId(workspaceId);
   const agents = $derived(homePreviewEligibleAgents($agents$));
   // The preview opens on the most recently active top-level agent and keeps it while
   // open; an agent the user picks here wins.
   const resolveDefaultAgent = createHomePreviewDefault();
-  const defaultAgent = $derived(resolveDefaultAgent(agents, $loaded$));
+  const defaultAgent = $derived(resolveDefaultAgent(agents, $readRevision$ > openedAtRevision));
   const activeAgent = $derived(resolveHomePreviewAgent(agents, $pickedId$, defaultAgent));
   function pickAgent(agentId: string) {
     store.dispatch(setHomePreviewAgent(workspaceId, agentId));
@@ -214,11 +217,6 @@
     </div>
   {/if}
   <div class="min-h-0 min-w-0 flex-1">
-    {#key workspace.id}<HomeWorkspaceChat
-        {workspace}
-        {preview}
-        agent={activeAgent}
-        onpick={pickAgent}
-      />{/key}
+    {#key workspace.id}<HomeWorkspaceChat {workspace} {preview} agent={activeAgent} />{/key}
   </div>
 </section>

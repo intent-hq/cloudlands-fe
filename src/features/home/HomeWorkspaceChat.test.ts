@@ -3,7 +3,7 @@ import { tick } from 'svelte';
 import { writable } from 'svelte/store';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ dispatch: vi.fn(), onpick: vi.fn() }));
+const mocks = vi.hoisted(() => ({ dispatch: vi.fn() }));
 const agents$ = writable<Array<Record<string, unknown>>>([]);
 const loaded$ = writable(true);
 
@@ -17,6 +17,8 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
 }));
 
 import HomeWorkspaceChat from './HomeWorkspaceChat.svelte';
+import { setHomePreviewAgent } from './home-workspaces-slice';
+import { setActiveAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { MARK_AGENT_SEEN_DEBOUNCE_MS } from '$features/agent/mark-agent-seen';
 import type { AgentSession, Workspace } from '$shared/types';
 
@@ -28,7 +30,6 @@ const renderChat = (props: { agent?: AgentSession | null; preview?: boolean } = 
   render(HomeWorkspaceChat, {
     workspace,
     agent: agent('a1'),
-    onpick: mocks.onpick,
     ...props,
   });
 
@@ -45,7 +46,6 @@ const flushDeferred = () => vi.advanceTimersByTimeAsync(0);
 beforeEach(() => {
   vi.useFakeTimers();
   mocks.dispatch.mockClear();
-  mocks.onpick.mockClear();
   agents$.set([agent('a1'), agent('a2')] as unknown as Array<Record<string, unknown>>);
   loaded$.set(true);
 });
@@ -114,7 +114,8 @@ describe('Home workspace chat attention focus', () => {
     const view = renderChat();
     await tick();
     (view.component as unknown as { focusAttention: (id: string) => void }).focusAttention('a2');
-    expect(mocks.onpick).toHaveBeenCalledWith('a2');
+    expect(mocks.dispatch).toHaveBeenCalledWith(setHomePreviewAgent('ws-1', 'a2'));
+    expect(mocks.dispatch).toHaveBeenCalledWith(setActiveAgentId('ws-1', 'a2'));
   });
 
   it('ignores an attention item for an agent the preview cannot show', async () => {
@@ -125,6 +126,6 @@ describe('Home workspace chat attention focus', () => {
     const view = renderChat();
     await tick();
     (view.component as unknown as { focusAttention: (id: string) => void }).focusAttention('gone');
-    expect(mocks.onpick).not.toHaveBeenCalled();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(setHomePreviewAgent('ws-1', 'gone'));
   });
 });

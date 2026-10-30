@@ -5,7 +5,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 
 const mocks = vi.hoisted(() => ({ dispatch: vi.fn() }));
 const agents$ = writable<Array<Record<string, unknown>>>([]);
-const loaded$ = writable(true);
+const readRevision$ = writable(3);
 const pickedId$ = writable<string | null>(null);
 
 vi.mock('./HomeWorkspaceChat.svelte', async () => ({
@@ -26,7 +26,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAllWorkspaceAgents: () => agents$,
-  selectAgentsLoaded: () => loaded$,
+  selectAgentsReadRevision: () => readRevision$,
 }));
 vi.mock('./home-workspaces-selectors', () => ({
   selectHomePreviewAgentId: () => pickedId$,
@@ -61,7 +61,7 @@ beforeAll(() => {
 });
 beforeEach(() => {
   mocks.dispatch.mockClear();
-  loaded$.set(true);
+  readRevision$.set(3);
   pickedId$.set(null);
   agents$.set([
     agent('initial', { isInitialAgent: true, lastActivity: at(1) }),
@@ -80,8 +80,10 @@ describe('Home workspace preview agent choice', () => {
     expect(screen.getByRole('combobox').textContent).toContain('Agent recent');
   });
 
-  it('keeps the shown agent when another agent becomes more active', async () => {
+  it('keeps the shown agent once a fresh read has landed', async () => {
     renderDetail();
+    await tick();
+    readRevision$.set(4);
     await tick();
     agents$.set([
       agent('initial', { isInitialAgent: true, lastActivity: at(10) }),
@@ -90,6 +92,27 @@ describe('Home workspace preview agent choice', () => {
     await tick();
 
     expect(shownAgent()).toBe('recent');
+  });
+
+  it("follows newer activity until the preview's own read lands, then locks", async () => {
+    renderDetail();
+    await tick();
+    const refreshed = [
+      agent('initial', { isInitialAgent: true, lastActivity: at(8) }),
+      agent('recent', { lastActivity: at(5) }),
+    ];
+    agents$.set(refreshed);
+    await tick();
+    expect(shownAgent()).toBe('initial');
+
+    readRevision$.set(4);
+    await tick();
+    agents$.set([
+      agent('initial', { lastActivity: at(8) }),
+      agent('recent', { lastActivity: at(9) }),
+    ]);
+    await tick();
+    expect(shownAgent()).toBe('initial');
   });
 
   it('resolves the latest agent again for a newly opened preview', async () => {

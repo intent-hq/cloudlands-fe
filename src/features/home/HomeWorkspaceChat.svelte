@@ -9,7 +9,11 @@
     selectAgentsLoaded,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { homePreviewEligibleAgents } from './home-preview-agent';
-  import { hydrateAgentsRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import {
+    hydrateAgentsRequested,
+    setActiveAgentId,
+  } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { setHomePreviewAgent } from './home-workspaces-slice';
   import { chatViewEnded } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
   import { MARK_AGENT_SEEN_DEBOUNCE_MS } from '$features/agent/mark-agent-seen';
   import type { ChatAttentionFocusRequest } from '$lib/components/chat/chat-attention-focus';
@@ -20,14 +24,11 @@
     workspace,
     preview = false,
     agent,
-    onpick,
   }: {
     workspace: Workspace;
     preview?: boolean;
     /** The agent the preview shows; the parent decides which one. */
     agent: AgentSession | null;
-    /** Records an explicit choice of agent, e.g. from an attention item. */
-    onpick: (agentId: string) => void;
   } = $props();
   // The parent keys this component by workspace ID, keeping subscriptions and drafts scoped.
   const workspaceId = untrack(() => workspace.id);
@@ -60,7 +61,8 @@
   export function focusAttention(agentId: string, questionMessageId?: string) {
     if (preview || !eligibleAgents.some((candidate) => candidate.id === agentId)) return;
     attentionFocus = { agentId, questionMessageId, requestId: ++nextFocusRequest };
-    onpick(agentId);
+    store.dispatch(setHomePreviewAgent(workspaceId, agentId));
+    store.dispatch(setActiveAgentId(workspaceId, agentId));
   }
   let timedOut = $state(false);
   let timeout: ReturnType<typeof setTimeout> | undefined;
