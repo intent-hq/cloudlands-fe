@@ -7,6 +7,8 @@
   import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
   import { handleLink } from '$features/navigation/link-handler';
   import { noteUrl } from '$shared/constants/intent-links';
+  import { relabelNoteChipsInHtml } from '$lib/utils/note-mention-label';
+  import { storeNoteTitleLookup } from '$lib/utils/store-note-title-lookup';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
   import MarkdownMediaPreview from './MarkdownMediaPreview.svelte';
   import ImageActionsMenu from '$lib/components/ui/ImageActionsMenu.svelte';
@@ -103,8 +105,13 @@
   const renderedContent = $derived(
     filterFileMedia(processedContent, allowFileMedia && canOpenFile?.() !== false),
   );
+  // Note chips show the note's current title at render time; an unchanged
+  // label keeps the same string, so {@html} does not re-render.
+  const labeledContent = $derived(
+    relabelNoteChipsInHtml(renderedContent, workspaceId, storeNoteTitleLookup),
+  );
   // Keep a stable root while media fallbacks replace child nodes.
-  const contentHtml = $derived(`<div class="markdown-content">${renderedContent}</div>`);
+  const contentHtml = $derived(`<div class="markdown-content">${labeledContent}</div>`);
   // Ignore obsolete worker results, including after streaming ends or unmount.
   let renderVersion = 0;
   const STREAMING_THROTTLE_MS = 150;
