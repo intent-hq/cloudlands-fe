@@ -4,6 +4,21 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.254.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.253.2...v2.254.0) (2026-10-30)
+
+
+### 🚀 Features
+
+* **home:** open workspace previews on the latest active top-level agent ([#3847](https://github.com/intent-hq/cloudlands-fe/issues/3847)) ([2b7fb65](https://github.com/intent-hq/cloudlands-fe/commit/2b7fb65b63e6b8c859889f796ab53877e5f417a1))
+
+
+### 🐛 Bug Fixes
+
+* allow provider disabling and hide uninstalled Auggie ([#3842](https://github.com/intent-hq/cloudlands-fe/issues/3842)) ([ff30bba](https://github.com/intent-hq/cloudlands-fe/commit/ff30bbadff47583b9d68e2f0f4532ac16757a959))
+* bump intentd sidecar to v0.11.79 ([#3858](https://github.com/intent-hq/cloudlands-fe/issues/3858)) ([290e0e9](https://github.com/intent-hq/cloudlands-fe/commit/290e0e915ce8e32e12484ea8d2950d978ac41809))
+* **chat:** show Claude agents' reasoning updates as chat text ([#3841](https://github.com/intent-hq/cloudlands-fe/issues/3841)) ([08f69c4](https://github.com/intent-hq/cloudlands-fe/commit/08f69c41bed1208b807bd606d1750b03f45c5c62))
+* **notifications:** open the workspace tab when a notification is clicked ([#3850](https://github.com/intent-hq/cloudlands-fe/issues/3850)) ([4afb8cc](https://github.com/intent-hq/cloudlands-fe/commit/4afb8cc9dc67b5fed57a0db7aa5b8dcca9f9b181))
+
 ## [2.253.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.253.1...v2.253.2) (2026-10-30)
 
 
