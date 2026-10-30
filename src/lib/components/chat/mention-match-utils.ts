@@ -6,6 +6,7 @@
  * - @context[provider|identifier|title] — context mentions (Linear, GitHub, etc.)
  * - @note[({workspaceId}/){noteId}:{title}] — note mentions (current form)
  * - @note/{noteId} — legacy note mentions
+ * - @terminal[{id}:{name}], @script[{id}:{name}] — terminal and script mentions
  * - @{path} — file/folder mentions (paths with / or file extensions)
  *
  * The `@` must not be preceded by an email-local-part character (letters,
@@ -24,6 +25,11 @@ import {
   parseNoteMention,
   type NoteMention,
 } from '$lib/utils/note-mention-token';
+import {
+  parseRuntimeMention,
+  RUNTIME_MENTION_BODY_SOURCE,
+  type RuntimeMention,
+} from '$lib/utils/runtime-mention-token';
 import { m } from '$shared/paraglide/messages.js';
 import { parseFilePathLineSuffix } from '$shared/utils/link-helpers';
 
@@ -39,6 +45,8 @@ export interface InlineMentionMatch {
 const MENTION_REGEX = new RegExp(
   String.raw`(?<![A-Za-z0-9._%+-])@(member\[[^\]\s]*\]|context\[[^\]]+\]|` +
     NOTE_MENTION_BODY_SOURCE +
+    '|' +
+    RUNTIME_MENTION_BODY_SOURCE +
     String.raw`|note\/[^\s]+|[^\s@]+\.[a-zA-Z]+(?::\d+(?::\d+)?|#L\d+(?:-\d+)?|:L\d+(?:-\d+)?)?|[^\s@]*\/[^\s]+(?::\d+(?::\d+)?|#L\d+(?:-\d+)?)?)`,
   'g',
 );
@@ -66,6 +74,7 @@ export type DecodedInlineMention =
   | { kind: 'context'; provider: string; identifier: string; title: string; url?: string }
   /** `legacy` is the whitespace-delimited `@note/<id>` form (no saved title). */
   | { kind: 'note'; note: NoteMention; legacy: boolean }
+  | { kind: 'runtime'; mention: RuntimeMention }
   | { kind: 'file'; path: string; line?: number; label: string };
 
 function decodeContextMention(captured: string): DecodedInlineMention {
@@ -106,6 +115,10 @@ export function decodeInlineMention(match: InlineMentionMatch): DecodedInlineMen
   if (captured.startsWith('note[')) {
     const note = parseNoteMention(captured);
     return note ? { kind: 'note', note, legacy: false } : { kind: 'text' };
+  }
+  if (captured.startsWith('terminal[') || captured.startsWith('script[')) {
+    const mention = parseRuntimeMention(captured);
+    return mention ? { kind: 'runtime', mention } : { kind: 'text' };
   }
   if (captured.startsWith('note/')) {
     const id = captured.slice(5);

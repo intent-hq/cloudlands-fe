@@ -14,12 +14,11 @@
     faSquare,
     faCircleExclamation,
     faUser,
+    faTerminal,
+    faPlay,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import {
-    memberMentionLabel,
-    memberMentionSubtitle,
-  } from '$lib/utils/member-mention-token';
+  import { memberMentionLabel, memberMentionSubtitle } from '$lib/utils/member-mention-token';
   import { Button } from '$lib/components/ui/button';
   import { onDestroy } from 'svelte';
   import StreamingMessageContent from './StreamingMessageContent.svelte';
@@ -706,6 +705,16 @@
           icon: isSpec ? faClipboard : faNoteSticky,
           noteId: note.id,
           url: crossWorkspace && !readOnly ? noteUrl(note.id, note.workspaceId) : undefined,
+        });
+      } else if (decoded.kind === 'runtime') {
+        // Terminal/script chips name a live resource; there is no click target.
+        const { mention } = decoded;
+        segments.push({
+          type: 'mention',
+          mentionType: mention.kind,
+          label: mention.name,
+          id: mention.id,
+          icon: mention.kind === 'terminal' ? faTerminal : faPlay,
         });
       } else {
         segments.push({

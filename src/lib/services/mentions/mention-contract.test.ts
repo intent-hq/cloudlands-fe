@@ -298,6 +298,8 @@ function readChat(decoded: DecodedInlineMention): ReadBack | { type: string } {
         label: decoded.member.label,
         workspaceId: decoded.member.meta?.workspaceId,
       };
+    case 'runtime':
+      return { type: decoded.mention.kind, id: decoded.mention.id, label: decoded.mention.name };
     case 'file':
       return { type: 'file', id: decoded.path, label: decoded.label };
     default:

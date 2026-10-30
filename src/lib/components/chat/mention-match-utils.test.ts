@@ -149,6 +149,28 @@ describe('decodeInlineMention', () => {
     });
   });
 
+  it('decodes terminal and script mentions with spaces in their names', () => {
+    expect(decodeOne('@terminal[pty-0:Build server] next')).toEqual({
+      kind: 'runtime',
+      mention: { kind: 'terminal', id: 'pty-0', name: 'Build server' },
+    });
+    expect(decodeOne('@script[dev-server:Dev server]')).toEqual({
+      kind: 'runtime',
+      mention: { kind: 'script', id: 'dev-server', name: 'Dev server' },
+    });
+  });
+
+  it('renders a legacy @terminal/<name> token as it did before', () => {
+    const [match] = findInlineMentions('@terminal/Build server');
+    expect(match.fullMatch).toBe('@terminal/Build');
+    expect(decodeInlineMention(match)).toEqual({
+      kind: 'file',
+      path: 'terminal/Build',
+      line: undefined,
+      label: 'Build',
+    });
+  });
+
   it('treats a malformed member token as text', () => {
     expect(decodeOne('@member[notbase64!]')).toEqual({ kind: 'text' });
   });

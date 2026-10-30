@@ -32,8 +32,11 @@ export const NOTE_MENTION_BODY_SOURCE = String.raw`note\[(?:[A-Za-z0-9_-]+\/)?[A
 
 const PARSE_RE = /^@?note\[(?:([A-Za-z0-9_-]+)\/)?([A-Za-z0-9_-]+):([^[\]\n]*)\]$/;
 
-/** Strip delimiter and markdown-significant characters; collapse whitespace. */
-function sanitizeTitle(title: string): string {
+/**
+ * Strip delimiter and markdown-significant characters; collapse whitespace.
+ * Shared by the other bracketed mention tokens (runtime-mention-token.ts).
+ */
+export function sanitizeMentionTitle(title: string): string {
   return title
     .replace(/[[\]|*_`~\\<>@]/g, ' ')
     .replace(/:\/\//g, ' ')
@@ -51,7 +54,7 @@ export function serializeNoteMention(mention: NoteMention): string | null {
   // An unsafe workspace id must not silently degrade into a same-workspace
   // token that would resolve the wrong note.
   if (mention.workspaceId && !SAFE_ID.test(mention.workspaceId)) return null;
-  const title = sanitizeTitle(mention.title) || mention.id;
+  const title = sanitizeMentionTitle(mention.title) || mention.id;
   const ws = mention.workspaceId ? `${mention.workspaceId}/` : '';
   return `@note[${ws}${mention.id}:${title}]`;
 }
