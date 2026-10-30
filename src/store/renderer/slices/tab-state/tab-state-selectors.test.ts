@@ -38,6 +38,7 @@ const tabState: TabState = {
   mountedBrowserTabLeases: {},
   browserTabRecoveryRequests: {},
   browserTabNavigations: {},
+  browserTabsAgentDrawing: {},
 };
 
 const state = { tabState } as unknown as StoreState;
