@@ -152,13 +152,17 @@ describe('profile rows and delete confirmation (mock-up)', () => {
         folderPath: '~/intent/profiles/claude/work-account-k3f9',
       },
     });
-    expect(
-      screen.getByText(
-        m.settings_providerProfileKinds_removeFolder_description({
-          path: '~/intent/profiles/claude/work-account-k3f9',
-        }),
-      ),
-    ).toBeTruthy();
+    expect(screen.getByTestId('provider-profile-remove-folder-description').textContent).toBe(
+      m.settings_providerProfileKinds_removeFolder_description({
+        path: '~/intent/profiles/claude/work-account-k3f9',
+      }),
+    );
+    const path = screen.getByTestId('provider-profile-remove-folder-path');
+    expect(path.tagName).toBe('CODE');
+    // The path splits into `/`-ended segments with a <wbr> break point only between them.
+    const segments = [...path.querySelectorAll('span')].map((span) => span.textContent);
+    expect(segments).toEqual(['~/', 'intent/', 'profiles/', 'claude/', 'work-account-k3f9']);
+    expect(path.querySelectorAll('wbr')).toHaveLength(4);
   });
 
   it('shows Signed in as <email> on ready Claude rows only', () => {
