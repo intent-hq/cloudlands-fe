@@ -58,7 +58,7 @@ vi.mock('./composables/workspace-page-state.svelte', () => ({
 vi.mock('./composables', () => ({
   useCloseHandlers: vi.fn(),
   usePanelShortcuts: mocks.usePanelShortcuts,
-  useTabManagement: () => ({ isInTransition: false }),
+  useCreationTransition: () => ({ isInTransition: false }),
 }));
 
 vi.mock('$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-selectors', () => {
