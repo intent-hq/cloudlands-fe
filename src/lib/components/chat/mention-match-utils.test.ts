@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findInlineMentions } from './mention-match-utils';
+import { decodeInlineMention, findInlineMentions } from './mention-match-utils';
 
 describe('findInlineMentions', () => {
   it('does not match the domain of an email address (regression)', () => {
@@ -95,5 +95,61 @@ describe('findInlineMentions', () => {
 
   it('returns an empty array for text without mentions', () => {
     expect(findInlineMentions('plain text with no at-signs')).toEqual([]);
+  });
+});
+
+describe('decodeInlineMention', () => {
+  const decodeOne = (text: string) => {
+    const [match] = findInlineMentions(text);
+    return decodeInlineMention(match);
+  };
+
+  it('decodes a bracketed note with its workspace', () => {
+    expect(decodeOne('@note[ws-2/n1:Meeting with Andre]')).toEqual({
+      kind: 'note',
+      note: { id: 'n1', title: 'Meeting with Andre', workspaceId: 'ws-2' },
+      legacy: false,
+    });
+  });
+
+  it('decodes a legacy @note/<id> with the id as its title', () => {
+    expect(decodeOne('@note/spec')).toEqual({
+      kind: 'note',
+      note: { id: 'spec', title: 'spec' },
+      legacy: true,
+    });
+  });
+
+  it('decodes a pipe context mention', () => {
+    expect(decodeOne('@context[linear|AU-1|Fix login]')).toEqual({
+      kind: 'context',
+      provider: 'linear',
+      identifier: 'AU-1',
+      title: 'Fix login',
+    });
+  });
+
+  it('decodes a base64 context mention', () => {
+    const json = btoa(JSON.stringify({ provider: 'github', identifier: '#12', url: 'https://x' }));
+    expect(decodeOne(`@context[${json}]`)).toEqual({
+      kind: 'context',
+      provider: 'github',
+      identifier: '#12',
+      title: '#12',
+      url: 'https://x',
+    });
+  });
+
+  it('decodes a file path with a line suffix', () => {
+    expect(decodeOne('@src/lib/a.ts:12')).toEqual({
+      kind: 'file',
+      path: 'src/lib/a.ts',
+      line: 12,
+      label: 'a.ts:12',
+    });
+  });
+
+  it('treats a malformed member token as text', () => {
+    expect(decodeOne('@member[notbase64!]')).toEqual({ kind: 'text' });
   });
 });
