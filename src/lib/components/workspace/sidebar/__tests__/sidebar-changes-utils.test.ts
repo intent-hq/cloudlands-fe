@@ -37,6 +37,9 @@ import {
   monitorDisplayStatus,
   monitorPillStatus,
   toPullRequestStatus,
+  SIDEBAR_CHANGES_DISPLAY_LIMIT,
+  limitDisplayedChanges,
+  formatHiddenChangesNotice,
 } from '../sidebar-changes-utils';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -2120,5 +2123,53 @@ describe('monitorPillStatus', () => {
       PullRequestStatus.Draft,
     );
     expect(monitorPillStatus(makeMonitor())).toBe(PullRequestStatus.Open);
+  });
+});
+
+describe('limitDisplayedChanges', () => {
+  it('caps the sidebar list at 500 rows', () => {
+    expect(SIDEBAR_CHANGES_DISPLAY_LIMIT).toBe(500);
+  });
+
+  it('returns the list unchanged when it fits', () => {
+    const items = [1, 2, 3];
+    const result = limitDisplayedChanges(items, 3);
+    expect(result.visible).toBe(items);
+    expect(result.total).toBe(3);
+    expect(result.hiddenCount).toBe(0);
+  });
+
+  it('keeps the first items in order and counts the rest as hidden', () => {
+    const items = Array.from({ length: 5000 }, (_, i) => i);
+    const result = limitDisplayedChanges(items);
+    expect(result.visible).toHaveLength(500);
+    expect(result.visible[0]).toBe(0);
+    expect(result.visible[499]).toBe(499);
+    expect(result.total).toBe(5000);
+    expect(result.hiddenCount).toBe(4500);
+  });
+
+  it('handles empty lists', () => {
+    expect(limitDisplayedChanges([])).toEqual({ visible: [], total: 0, hiddenCount: 0 });
+  });
+});
+
+describe('formatHiddenChangesNotice', () => {
+  it('is empty when nothing is hidden', () => {
+    expect(formatHiddenChangesNotice(limitDisplayedChanges([1, 2], 5))).toBe('');
+  });
+
+  it('uses the singular form for one hidden file', () => {
+    const notice = formatHiddenChangesNotice(limitDisplayedChanges([1, 2, 3], 2));
+    expect(notice).toBe(
+      'Showing 2 of 3 files. 1 more file is hidden to keep the panel responsive.',
+    );
+  });
+
+  it('uses the plural form with grouped counts', () => {
+    const items = Array.from({ length: 5123 }, (_, i) => i);
+    expect(formatHiddenChangesNotice(limitDisplayedChanges(items))).toBe(
+      'Showing 500 of 5,123 files. 4,623 more files are hidden to keep the panel responsive.',
+    );
   });
 });

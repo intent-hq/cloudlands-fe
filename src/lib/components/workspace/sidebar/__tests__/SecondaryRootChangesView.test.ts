@@ -406,6 +406,35 @@ describe('SecondaryRootChangesView', () => {
     expect(mocks.commitDetails).not.toHaveBeenCalled();
   });
 
+  it('renders at most 500 changed files and says how many are hidden', async () => {
+    const status = makeStatus('main');
+    status.files = Array.from({ length: 600 }, (_, i) => ({
+      path: `src/f${i}.ts`,
+      status: 'M',
+      staged: false,
+    }));
+    mocks.getStatus.mockResolvedValue({ ok: true, data: status });
+
+    const { getAllByTestId, getByTestId } = await renderView(makeEntry('main', 'root-big'));
+
+    const notice = await waitFor(() => getByTestId('secondary-root-hidden-files'));
+    expect(getAllByTestId('secondary-root-file-open')).toHaveLength(500);
+    expect(notice.textContent?.trim()).toBe(
+      'Showing 500 of 600 files. 100 more files are hidden to keep the panel responsive.',
+    );
+  });
+
+  it('omits the hidden-files notice when every changed file fits', async () => {
+    const status = makeStatus('main');
+    status.files = [{ path: 'src/working.ts', status: 'M', staged: false }];
+    mocks.getStatus.mockResolvedValue({ ok: true, data: status });
+
+    const { getAllByTestId, queryByTestId } = await renderView(makeEntry('main', 'root-small'));
+
+    await waitFor(() => expect(getAllByTestId('secondary-root-file-open')).toHaveLength(1));
+    expect(queryByTestId('secondary-root-hidden-files')).toBeNull();
+  });
+
   it('shows the summary for commit-only changes after registration', async () => {
     mocks.getStatus.mockResolvedValue({ ok: true, data: makeStatus('main') });
     mocks.getHistory.mockResolvedValue({

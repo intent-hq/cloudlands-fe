@@ -60,6 +60,8 @@
     isFileFocused as isFileFocusedUtil,
     isAgentGroupCollapsed as isAgentGroupCollapsedUtil,
     toUIFileChange,
+    limitDisplayedChanges,
+    formatHiddenChangesNotice,
   } from './sidebar-changes-utils';
   import TimelineDivider from './TimelineDivider.svelte';
   import TimelineSection from './TimelineSection.svelte';
@@ -141,6 +143,16 @@
   const hasUnstaged = $derived(unstagedChanges.length > 0);
   const hasStaged = $derived(stagedChanges.length > 0);
 
+  // Rendering every row freezes the panel on workspaces with thousands of
+  // changes, so each section renders at most SIDEBAR_CHANGES_DISPLAY_LIMIT
+  // rows. Bulk and per-agent group actions still use the full lists above.
+  const unstagedDisplay = $derived(limitDisplayedChanges(unstagedChanges));
+  const stagedDisplay = $derived(limitDisplayedChanges(stagedChanges));
+  const visibleUnstagedChanges = $derived(unstagedDisplay.visible);
+  const visibleStagedChanges = $derived(stagedDisplay.visible);
+  const unstagedHiddenNotice = $derived(formatHiddenChangesNotice(unstagedDisplay));
+  const stagedHiddenNotice = $derived(formatHiddenChangesNotice(stagedDisplay));
+
   // Get panel layout manager for opening file tabs
   const panelLayoutManager = $derived(getPanelLayoutManager(workspaceId));
 
@@ -152,7 +164,8 @@
     });
   }
 
-  // Agent grouping
+  // Agent grouping: full groups back the group actions; visible groups only
+  // hold the rendered (capped) rows.
   const unstagedByAgent = $derived<AgentChangeGroup[]>(
     groupFilesByAgent(unstagedChanges.map((c) => toUIFileChange(c, false))),
   );
@@ -160,6 +173,27 @@
   const stagedByAgent = $derived<AgentChangeGroup[]>(
     groupFilesByAgent(stagedChanges.map((c) => toUIFileChange(c, true))),
   );
+
+  const visibleUnstagedByAgent = $derived<AgentChangeGroup[]>(
+    unstagedDisplay.hiddenCount > 0
+      ? groupFilesByAgent(visibleUnstagedChanges.map((c) => toUIFileChange(c, false)))
+      : unstagedByAgent,
+  );
+
+  const visibleStagedByAgent = $derived<AgentChangeGroup[]>(
+    stagedDisplay.hiddenCount > 0
+      ? groupFilesByAgent(visibleStagedChanges.map((c) => toUIFileChange(c, true)))
+      : stagedByAgent,
+  );
+
+  /** Resolve a rendered (possibly capped) group to its full file list. */
+  function resolveFullGroup(
+    group: AgentChangeGroup,
+    section: 'unstaged' | 'staged',
+  ): AgentChangeGroup {
+    const groups = section === 'staged' ? stagedByAgent : unstagedByAgent;
+    return groups.find((g) => g.agentId === group.agentId) ?? group;
+  }
 
   const hasAnyAgentAttribution = $derived(
     unstagedChanges.some((c) => c.attribution?.agent) ||
@@ -465,7 +499,8 @@
     }
   }
 
-  function handleStageGroup(group: AgentChangeGroup) {
+  function handleStageGroup(visibleGroup: AgentChangeGroup) {
+    const group = resolveFullGroup(visibleGroup, 'unstaged');
     if (group.agentId && group.agentId in $lockedAgentIds$) {
       logger.warn('Cannot stage locked agent group', { agentId: group.agentId });
       return;
@@ -480,7 +515,8 @@
     );
   }
 
-  function handleUnstageGroup(group: AgentChangeGroup) {
+  function handleUnstageGroup(visibleGroup: AgentChangeGroup) {
+    const group = resolveFullGroup(visibleGroup, 'staged');
     if (group.agentId && group.agentId in $lockedAgentIds$) {
       logger.warn('Cannot unstage locked agent group', { agentId: group.agentId });
       return;
@@ -496,7 +532,8 @@
   }
 
   // --- Group commit queue ---
-  function enqueueGroupCommit(group: AgentChangeGroup, section: 'unstaged' | 'staged') {
+  function enqueueGroupCommit(visibleGroup: AgentChangeGroup, section: 'unstaged' | 'staged') {
+    const group = resolveFullGroup(visibleGroup, section);
     const key = getGroupKey(group, section);
     if (getGroupCommitState(group, section) !== 'idle') return;
     if (group.agentId && group.agentId in $lockedAgentIds$) return;
@@ -581,7 +618,7 @@
       {#if hasAnyAgentAttribution}
         <!-- Grouped view with agent headers -->
         <div class="space-y-1">
-          {#each unstagedByAgent as group (group.agentId ?? 'manual')}
+          {#each visibleUnstagedByAgent as group (group.agentId ?? 'manual')}
             {@const isCollapsed = isAgentGroupCollapsed(group.agentId)}
             {@const isLocked = isAgentGroupLocked(group.agentId)}
             {@const commitState = getGroupCommitState(group, 'unstaged')}
@@ -747,7 +784,7 @@
       {:else}
         <!-- Flat view when no agent attribution -->
         <div class="space-y-px">
-          {#each unstagedChanges as change (change.id)}
+          {#each visibleUnstagedChanges as change (change.id)}
             {@const panelState = getFilePanelState(change.relativePath)}
             <div
               class="[&>div]:h-8 [&>div]:border-0 [&>div]:rounded-md"
@@ -780,6 +817,17 @@
             </div>
           {/each}
         </div>
+      {/if}
+      {#if unstagedHiddenNotice}
+        <p
+          class="px-2 pt-2 type-caption text-muted-foreground"
+          data-testid="hidden-changes-notice-unstaged"
+        >
+          {unstagedHiddenNotice}
+          {#if isOwner}
+            {m.workspace_fileChanges_hiddenFilesStageAll_hint()}
+          {/if}
+        </p>
       {/if}
     {/if}
   </TimelineSection>
@@ -826,7 +874,7 @@
       {#if hasAnyAgentAttribution}
         <!-- Grouped view with agent headers -->
         <div class="space-y-1">
-          {#each stagedByAgent as group (group.agentId ?? 'manual')}
+          {#each visibleStagedByAgent as group (group.agentId ?? 'manual')}
             {@const isCollapsed = isAgentGroupCollapsed(group.agentId)}
             {@const isLocked = isAgentGroupLocked(group.agentId)}
             {@const commitState = getGroupCommitState(group, 'staged')}
@@ -979,7 +1027,7 @@
       {:else}
         <!-- Flat view when no agent attribution -->
         <div class="space-y-px">
-          {#each stagedChanges as change (change.id)}
+          {#each visibleStagedChanges as change (change.id)}
             {@const panelState = getFilePanelState(change.relativePath)}
             <div
               class="[&>div]:h-8 [&>div]:border-0 [&>div]:rounded-md"
@@ -1007,6 +1055,17 @@
             </div>
           {/each}
         </div>
+      {/if}
+      {#if stagedHiddenNotice}
+        <p
+          class="px-2 pt-2 type-caption text-muted-foreground"
+          data-testid="hidden-changes-notice-staged"
+        >
+          {stagedHiddenNotice}
+          {#if isOwner}
+            {m.workspace_fileChanges_hiddenFilesUnstageAll_hint()}
+          {/if}
+        </p>
       {/if}
     {/if}
   </TimelineSection>

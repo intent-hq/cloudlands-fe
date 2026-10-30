@@ -1537,6 +1537,32 @@ describe('SidebarChangesPanel', () => {
       expect(panel!.isConnected).toBe(true);
     });
 
+    it('keyboard navigation skips unstaged files hidden by the display cap', async () => {
+      mockFileTrackingStore.unstagedChanges = Array.from({ length: 600 }, (_, i) =>
+        makeChange({ relativePath: `u/f${i}.ts` }),
+      );
+      mockFileTrackingStore.stagedChanges = [
+        makeChange({ relativePath: 's/f0.ts', stage: ChangeStage.Staged }),
+      ];
+      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
+
+      const { container } = await renderPanel();
+      await waitFor(() => {
+        expect(container.querySelector('[data-file-path="s/f0.ts"]')).not.toBeNull();
+      });
+      const panel = container.querySelector('[tabindex]') || container.firstElementChild;
+      const focusedPaths = () =>
+        Array.from(container.querySelectorAll('[data-testid="file-row"][data-focused="true"]')).map(
+          (row) => row.getAttribute('data-file-path'),
+        );
+
+      await fireEvent.keyDown(panel!, { key: 'End' });
+      await waitFor(() => expect(focusedPaths()).toEqual(['s/f0.ts']));
+
+      await fireEvent.keyDown(panel!, { key: 'ArrowUp' });
+      await waitFor(() => expect(focusedPaths()).toEqual(['u/f499.ts']));
+    });
+
     it('handles keyboard ArrowUp navigation on changes panel', async () => {
       const unstaged = [
         makeChange({ relativePath: 'src/a.ts' }),

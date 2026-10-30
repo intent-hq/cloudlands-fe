@@ -879,3 +879,49 @@ export function toUIFileChange(change: TrackedChange, staged: boolean): UIFileCh
       : undefined,
   };
 }
+
+/**
+ * Maximum number of file rows a single changes list renders. Each row is a
+ * full `FileRow` (tooltips, actions, transitions), so a workspace with
+ * thousands of changed files would otherwise freeze the sidebar. Bulk actions
+ * (Stage all, group stage/commit) still operate on the full list.
+ */
+export const SIDEBAR_CHANGES_DISPLAY_LIMIT = 500;
+
+export interface DisplayLimitedList<T> {
+  /** The first `limit` items, in their original order. */
+  visible: readonly T[];
+  /** Length of the full list. */
+  total: number;
+  /** How many items are not rendered (`total - visible.length`). */
+  hiddenCount: number;
+}
+
+/** Keep only the first `limit` items of a changes list for rendering. */
+export function limitDisplayedChanges<T>(
+  items: readonly T[],
+  limit: number = SIDEBAR_CHANGES_DISPLAY_LIMIT,
+): DisplayLimitedList<T> {
+  const cap = Math.max(0, Math.floor(limit));
+  if (items.length <= cap) {
+    return { visible: items, total: items.length, hiddenCount: 0 };
+  }
+  return { visible: items.slice(0, cap), total: items.length, hiddenCount: items.length - cap };
+}
+
+/**
+ * "Showing X of Y files…" notice for a truncated changes list; empty string
+ * when nothing is hidden.
+ */
+export function formatHiddenChangesNotice(list: DisplayLimitedList<unknown>): string {
+  if (list.hiddenCount <= 0) return '';
+  const shown = formatInteger(list.visible.length);
+  const total = formatInteger(list.total);
+  return list.hiddenCount === 1
+    ? m.workspace_fileChanges_hiddenFiles_one({ shown, total })
+    : m.workspace_fileChanges_hiddenFiles_many({
+        shown,
+        total,
+        count: formatInteger(list.hiddenCount),
+      });
+}
