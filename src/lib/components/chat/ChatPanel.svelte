@@ -6636,6 +6636,7 @@
       class="flex-1 {CHAT_TRANSCRIPT_OVERFLOW_CLASS}"
       class:agent-font-monospace={$isAgentMonospace}
       style="scrollbar-gutter: stable;"
+      style:padding-bottom="var(--chat-composer-gap)"
       style:mask-image={distanceFromBottom > SCROLL_BOTTOM_BUTTON_EPSILON
         ? `linear-gradient(to bottom, black calc(100% - ${Math.min(40, distanceFromBottom)}px), transparent)`
         : undefined}
@@ -7856,6 +7857,7 @@
     {#if isActive && showScrollToBottom && !deferTranscriptReveal}
       <div
         class="pointer-events-none absolute inset-x-0 bottom-3 z-40 flex justify-center"
+        style:margin-bottom="var(--chat-composer-gap)"
         style:padding-inline-end="{scrollbarGutterWidth}px"
       >
         <div class="pointer-events-auto">

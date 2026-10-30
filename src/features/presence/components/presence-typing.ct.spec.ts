@@ -33,6 +33,9 @@ for (const scenario of [
       prompt: await prompt.boundingBox(),
       transcript: await transcript.boundingBox(),
     };
+    expect(
+      Math.abs(before.transcript!.y + before.transcript!.height - before.prompt!.y),
+    ).toBeLessThanOrEqual(1);
 
     for (const multiple of [false, true]) {
       await component.update({ props: { ...props, typing: true, multiple } });
@@ -46,7 +49,6 @@ for (const scenario of [
         }))
         .toEqual(before);
       const typingBox = (await indicator.boundingBox())!;
-      expect(typingBox.y).toBeGreaterThanOrEqual(before.transcript!.y + before.transcript!.height);
       expect(typingBox.y).toBeGreaterThanOrEqual(before.monitor!.y + before.monitor!.height);
       expect(typingBox.y + typingBox.height).toBeLessThanOrEqual(before.prompt!.y);
     }
