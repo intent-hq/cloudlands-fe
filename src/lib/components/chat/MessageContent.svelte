@@ -18,7 +18,11 @@
   import { selectHydratedBlocks } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import { selectCollapseToolRuns } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { groupMessageBlocks } from './operational-run-collapse';
-  import { prepareMessageBlocks, renderedBlockText } from './prepare-message-blocks';
+  import {
+    prepareMessageBlocks,
+    renderedBlockText,
+    rendersReasoningAsText,
+  } from './prepare-message-blocks';
   import { getProposalFromBlock } from '$shared/types/proposal-resource';
   import { getContentBlockText } from '$shared/utils/content-block-helpers';
   import type { DiagramPrimitive } from '$shared/types/notes-primitives';
@@ -146,7 +150,12 @@
   // One shared preparation step (also used by chat search) so search block
   // paths always address the rendered rows.
   const blocks = $derived(
-    prepareMessageBlocks(hydratedContent, { role, workspaceId, isStreaming }),
+    prepareMessageBlocks(hydratedContent, {
+      role,
+      workspaceId,
+      isStreaming,
+      reasoningAsText: rendersReasoningAsText($mediaAgent$),
+    }),
   );
 
   // Group content blocks by <group:Name> tags at the ContentBlock level.

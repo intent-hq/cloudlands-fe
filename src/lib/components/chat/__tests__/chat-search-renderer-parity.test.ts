@@ -134,3 +134,71 @@ describe('chat search and renderer block path parity', () => {
     },
   );
 });
+
+const CLAUDE_AGENT = 'claude-parity-agent';
+const claudeContent = [
+  { type: 'thinking', text: 'golf needle in a Claude update' },
+  tool('read-f'),
+  { type: 'thinking', text: '   ' },
+  { type: 'text', text: 'hotel needle after the update' },
+  { type: 'thinking', text: '', content: 'india needle in a legacy Claude update' },
+] as ContentBlock[];
+const claudeMessage = {
+  id: 'claude-parity-message',
+  role: 'assistant',
+  timestamp: '2026-01-01T00:00:00.000Z',
+  contentBlocks: claudeContent,
+} as AgentMessage;
+
+const claudeRenderers = {
+  MessageContent: async () =>
+    render((await import('../MessageContent.svelte')).default, {
+      props: {
+        content: claudeContent,
+        isStreaming: false,
+        role: 'assistant',
+        workspaceId: WORKSPACE_ID,
+        agentId: CLAUDE_AGENT,
+      },
+    }),
+  StreamingMessageContent: async () =>
+    render((await import('../StreamingMessageContent.svelte')).default, {
+      props: {
+        content: claudeContent,
+        isStreaming: false,
+        role: 'assistant',
+        workspaceId: WORKSPACE_ID,
+        agentId: CLAUDE_AGENT,
+      },
+    }),
+};
+
+describe('chat search and renderer parity for Claude updates shown as text', () => {
+  it.each(cases)(
+    'search finds each update where $renderer shows it (collapseToolRuns: $collapseToolRuns)',
+    async ({ renderer, collapseToolRuns }) => {
+      storeState.current = {
+        theme: { name: 'light' },
+        userPreferences: { collapseToolRuns },
+        agentSessions: {
+          byAgentId: { [CLAUDE_AGENT]: { id: CLAUDE_AGENT, provider: 'claude-code' } },
+        },
+      };
+      const view = await claudeRenderers[renderer]();
+      const matches = findChatSearchMatches([claudeMessage], 'needle', new Map(), null, {
+        collapseToolRuns,
+        workspaceId: WORKSPACE_ID,
+        reasoningAsText: true,
+      });
+
+      expect(matches.map((match) => match.disclosurePath)).toEqual([[], [], []]);
+      const located = matches.map((match) => {
+        const element = view.container.querySelector(
+          `[data-chat-search-block-path="${match.blockPath}"]`,
+        );
+        return element?.textContent?.match(/(\w+) needle/)?.[1] ?? null;
+      });
+      expect(located).toEqual(['golf', 'hotel', 'india']);
+    },
+  );
+});

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { ContentBlock } from '$shared/types';
-import { prepareMessageBlocks } from './prepare-message-blocks';
+import {
+  prepareMessageBlocks,
+  rendersReasoningAsText,
+  suggestedPromptsFromBlocks,
+} from './prepare-message-blocks';
 
 const block = (value: unknown) => value as ContentBlock;
 
@@ -90,5 +94,73 @@ describe('prepareMessageBlocks', () => {
       { ...assistant, hideToolCalls: true },
     );
     expect(result.map((b) => b.type)).toEqual(['video']);
+  });
+});
+
+const thinking = (value: string) => block({ type: 'thinking', text: value });
+const PROMPTS = '<!-- suggested-prompts\nShip it.\nHold off.\n-->';
+
+describe('rendersReasoningAsText', () => {
+  it('is on for claude-code agents, including backup profiles', () => {
+    expect(rendersReasoningAsText({ provider: 'claude-code' })).toBe(true);
+    expect(rendersReasoningAsText({ provider: 'claude-code@backup-1' })).toBe(true);
+  });
+
+  it('is off for other providers and before the session loads', () => {
+    expect(rendersReasoningAsText({ provider: 'codex' })).toBe(false);
+    expect(rendersReasoningAsText({ provider: 'augment' })).toBe(false);
+    expect(rendersReasoningAsText(undefined)).toBe(false);
+    expect(rendersReasoningAsText(null)).toBe(false);
+  });
+});
+
+describe('prepareMessageBlocks reasoningAsText', () => {
+  it('keeps thinking as reasoning by default', () => {
+    const result = prepareMessageBlocks([thinking('an update'), text('after')], assistant);
+    expect(result.map((b) => b.type)).toEqual(['thinking', 'text']);
+  });
+
+  it('renders non-empty thinking as text, including legacy content-only blocks', () => {
+    const result = prepareMessageBlocks(
+      [thinking('an update'), block({ type: 'thinking', content: 'legacy update' })],
+      { ...assistant, reasoningAsText: true },
+    );
+    expect(result.map((b) => [b.type, b.text])).toEqual([
+      ['text', 'an update'],
+      ['text', 'legacy update'],
+    ]);
+  });
+
+  it('leaves empty and whitespace-only thinking as reasoning', () => {
+    const result = prepareMessageBlocks([thinking(''), thinking('  \n'), text('after')], {
+      ...assistant,
+      reasoningAsText: true,
+    });
+    expect(result.map((b) => b.type)).toEqual(['thinking', 'thinking', 'text']);
+  });
+
+  it('strips a suggested-prompts block carried by converted thinking', () => {
+    const result = prepareMessageBlocks([thinking(`Done.\n${PROMPTS}`)], {
+      ...assistant,
+      reasoningAsText: true,
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0].text?.trim()).toBe('Done.');
+  });
+});
+
+describe('suggestedPromptsFromBlocks', () => {
+  it('reads prompts from text blocks', () => {
+    const prompts = suggestedPromptsFromBlocks([text(`Done.\n${PROMPTS}`)], false);
+    expect(prompts).toEqual(['Ship it.', 'Hold off.']);
+  });
+
+  it('reads prompts from thinking the renderer shows as text', () => {
+    const prompts = suggestedPromptsFromBlocks([thinking(`Done.\n${PROMPTS}`)], true);
+    expect(prompts).toEqual(['Ship it.', 'Hold off.']);
+  });
+
+  it('ignores prompts inside thinking that stays a reasoning row', () => {
+    expect(suggestedPromptsFromBlocks([thinking(`Done.\n${PROMPTS}`)], false)).toEqual([]);
   });
 });
