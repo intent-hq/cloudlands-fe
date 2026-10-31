@@ -7,10 +7,13 @@ import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   CT_CONTRACT_PATHS,
+  CT_HARNESS_ENTRY,
+  CT_PREVIEW_REGISTRY_GLOB,
   changedFiles,
   ctRequired,
   isCtContractPath,
   main,
+  sourceReferences,
 } from './ct-contract-paths.mjs';
 
 const CLI = resolve('scripts/ct-contract-paths.mjs');
@@ -411,9 +414,8 @@ describe('CT spec fixture dependencies', () => {
     'src/lib/components/chat/input/__tests__/UnreferencedHost.svelte',
     'src/lib/components/chat/input/__tests__/unit-only-fixture.ts',
     'src/lib/components/chat/input/production.svelte',
-    'src/lib/components/chat/input/__tests__/nested.ts',
     'src/lib/components/chat/input/__tests__/unused/index.ts',
-  ])('does not select unrelated files or traverse the application graph: %s', (file) => {
+  ])('does not select files no CT run can load: %s', (file) => {
     const root = fixtureRepository();
     commitFile(root, host, "<script>import value from './nested';</script>");
     commitFile(
@@ -462,7 +464,10 @@ describe('CT spec fixture dependencies', () => {
   it.each([
     "const host = import('./' + name);",
     'const host = import(`./${name}.svelte`);',
-    "const hosts = import.meta.glob('./*.svelte');",
+    'const hosts = import.meta.glob(pattern);',
+    "const hosts = import.meta.glob('!./*.svelte');",
+    "const hosts = import.meta.glob('./[ab].svelte');",
+    "const hosts = import.meta.globEager('./*.svelte');",
     "const host = require('./Host.svelte');",
     "import Host from '$custom/Host.svelte';",
   ])('fails safe for unsupported dependency syntax: %s', (imports) => {
@@ -508,7 +513,7 @@ describe('CT spec fixture dependencies', () => {
     "const host = import // fixture\n ('./' + name);",
     'const host = import /* fixture */ (`./${name}.svelte`);',
     "const host = require /* fixture */ ('./MemberMentionsHost.svelte');",
-    "const hosts = import /* fixture */ .meta /* fixture */ .glob('./*.svelte');",
+    'const hosts = import /* fixture */ .meta /* fixture */ .glob(`./*.svelte`);',
     "import Host from /* fixture */ '$custom/Host.svelte';",
     String.raw`import Host from './H\u006fst.svelte';`,
   ])('fails safe for unsupported imports with comments or escapes: %s', (imports) => {
@@ -672,5 +677,284 @@ describe('CT spec fixture dependencies', () => {
     expect(logs).toEqual(['ct_required=true']);
     expect(warnings.join('\n')).toContain('cannot read CT spec tree');
     expect(warnings.join('\n')).toContain('fail-safe');
+  });
+});
+
+describe('transitive CT dependencies', () => {
+  const spec = 'src/features/home/home-opening.ct.spec.ts';
+  const preview = 'src/features/home/home.preview.svelte';
+  const page = 'src/features/home/HomePage.svelte';
+  const helper = 'src/lib/utils/show-workspace.ts';
+
+  // The cloudlands-fe#3876 shape: spec -> preview harness -> page -> helper.
+  function homeRepository() {
+    const root = gitRepository();
+    commitFile(
+      root,
+      helper,
+      "import { open } from './workspace-navigation';\nexport const show = open;",
+    );
+    commitFile(root, 'src/lib/utils/workspace-navigation.ts', 'export const open = () => {};');
+    commitFile(
+      root,
+      page,
+      '<script lang="ts">\n  import { show } from \'$lib/utils/show-workspace\';\n</script>\n<button onclick={() => show()}>Open</button>',
+    );
+    commitFile(
+      root,
+      preview,
+      '<script module lang="ts">\n  export const preview = {};\n</script>\n<script lang="ts">\n  import HomePage from \'./HomePage.svelte\';\n</script>\n<HomePage />',
+    );
+    commitFile(
+      root,
+      spec,
+      "import { test } from '../../test/ct-test';\nimport Preview from './home.preview.svelte';\ntest('opens', async ({ mount }) => { await mount(Preview); });",
+    );
+    return root;
+  }
+
+  it.each([page, helper, 'src/lib/utils/workspace-navigation.ts'])(
+    'requires CT for a change %s levels below a spec',
+    (file) => {
+      const root = homeRepository();
+      branch(root, 'change', file);
+      expect(runCli(root, '--diff', 'main', 'change')).toEqual({
+        status: 0,
+        stdout: 'ct_required=true\n',
+        stderr: '',
+      });
+    },
+  );
+
+  it('does not select a module only an unmounted file imports', () => {
+    const root = homeRepository();
+    commitFile(root, 'src/features/home/home-open.test.ts', "import './unit-only';");
+    commitFile(
+      root,
+      'src/features/other/Other.svelte',
+      "<script>import './other-helper';</script>",
+    );
+    branch(
+      root,
+      'unrelated',
+      'src/features/home/unit-only.ts',
+      'src/features/other/other-helper.ts',
+    );
+    expect(runCli(root, '--diff', 'main', 'unrelated').stdout).toBe('ct_required=false\n');
+  });
+
+  it('requires CT when a deeper module is newly imported or removed', () => {
+    const root = homeRepository();
+    branch(root, 'new-import');
+    commitFile(root, page, "<script>import './NewChild.svelte';</script>");
+    commitFile(root, 'src/features/home/NewChild.svelte', '<p>child</p>');
+    const base = git(root, 'rev-parse', 'HEAD~1');
+    expect(runCli(root, '--diff', base, 'HEAD').stdout).toBe('ct_required=true\n');
+    branch(root, 'removed');
+    git(root, 'rm', '-q', 'src/lib/utils/workspace-navigation.ts');
+    git(root, 'commit', '-q', '-m', 'remove');
+    expect(runCli(root, '--diff', 'main', 'removed').stdout).toBe('ct_required=true\n');
+  });
+
+  it('terminates on import cycles', () => {
+    const root = homeRepository();
+    commitFile(root, 'src/lib/utils/workspace-navigation.ts', "import './show-workspace';");
+    branch(root, 'cycle', helper);
+    expect(runCli(root, '--diff', 'main', 'cycle').stdout).toBe('ct_required=true\n');
+  });
+
+  it.each([
+    [
+      'markup dynamic import',
+      "{#await import('./Lazy.svelte') then m}<m.default />{/await}",
+      'src/features/home/Lazy.svelte',
+    ],
+    ['style @import', "<style>\n  @import './home.css';\n</style>", 'src/features/home/home.css'],
+    [
+      'runes module',
+      "<script>import { state } from './state.svelte';</script>",
+      'src/features/home/state.svelte.ts',
+    ],
+    [
+      'TypeScript .js specifier',
+      "<script>import { x } from './x.js';</script>",
+      'src/features/home/x.ts',
+    ],
+    [
+      'package alias',
+      "<script>import Fa from 'svelte-fa';</script>",
+      'src/lib/components/shared/icons/fa-proxy.ts',
+    ],
+    [
+      'inline type specifier',
+      "<script>import { type T, value } from './values';</script>",
+      'src/features/home/values.ts',
+    ],
+  ])('follows a %s from a mounted component', (_kind, source, dependency) => {
+    const root = homeRepository();
+    commitFile(root, page, source);
+    branch(root, 'change', dependency);
+    expect(runCli(root, '--diff', 'main', 'change').stdout).toBe('ct_required=true\n');
+  });
+
+  it('follows CSS @import chains', () => {
+    const root = homeRepository();
+    commitFile(root, page, "<script>import './home.css';</script>");
+    commitFile(root, 'src/features/home/home.css', "@import 'tokens.css';");
+    branch(root, 'change', 'src/features/home/tokens.css');
+    expect(runCli(root, '--diff', 'main', 'change').stdout).toBe('ct_required=true\n');
+  });
+
+  it.each([
+    "<script>export type { T }\nimport { value } from './types'</script>",
+    "<script>import type from './types';</script>",
+    "<script>export type T = string\nexport { value } from './types'</script>",
+  ])('keeps a runtime edge next to type syntax: %s', (source) => {
+    const root = homeRepository();
+    commitFile(root, page, source);
+    branch(root, 'change', 'src/features/home/types.ts');
+    expect(runCli(root, '--diff', 'main', 'change').stdout).toBe('ct_required=true\n');
+  });
+
+  it.each([
+    "<script>import type { T } from './types';</script>",
+    "<script>export type { T } from './types';</script>",
+    "<script>import type * as T from './types';</script>",
+    "<script>import type T from './types';</script>",
+  ])('ignores type-only edges, which load nothing: %s', (source) => {
+    const root = homeRepository();
+    commitFile(root, page, source);
+    branch(root, 'change', 'src/features/home/types.ts');
+    expect(runCli(root, '--diff', 'main', 'change').stdout).toBe('ct_required=false\n');
+  });
+
+  it.each([
+    [
+      "import.meta.glob('./scenes/*.svelte')",
+      'src/features/home/scenes/a.svelte',
+      'src/features/home/b.svelte',
+    ],
+    [
+      "import.meta.glob<Loader>(['./a/*.ts', './b/**/*.{ts,svelte}'], { eager: true })",
+      'src/features/home/b/x/y.svelte',
+      'src/features/home/b/y.css',
+    ],
+    [
+      "import.meta.glob('/src/assets/*.mp3', { query: '?url' })",
+      'src/assets/cue.mp3',
+      'src/assets/cue.wav',
+    ],
+  ])('resolves literal glob %s against the tree', (glob, matched, unmatched) => {
+    const root = homeRepository();
+    commitFile(root, page, `<script lang="ts">const modules = ${glob};</script>`);
+    commitFile(root, matched, '// base');
+    commitFile(root, unmatched, '// base');
+    branch(root, 'matched', matched);
+    expect(runCli(root, '--diff', 'main', 'matched').stdout).toBe('ct_required=true\n');
+    branch(root, 'unmatched', unmatched);
+    expect(runCli(root, '--diff', 'main', 'unmatched').stdout).toBe('ct_required=false\n');
+  });
+
+  it('follows a preview mounted by previewScene name without an import', () => {
+    const root = gitRepository();
+    commitFile(
+      root,
+      'src/lib/status.ct.spec.ts',
+      "import Indicator from './Indicator.svelte';\ntest('s', async ({ mount }) => mount(Indicator, { hooksConfig: { previewScene: { scene: 'status-indicator', state: 'ok' } } }));",
+    );
+    commitFile(root, 'src/lib/Indicator.svelte', '<p>indicator</p>');
+    commitFile(
+      root,
+      'src/lib/layout/status-indicator.preview.ts',
+      "import { data } from './status-data';",
+    );
+    commitFile(root, 'src/lib/layout/other.preview.ts', "import { data } from './other-data';");
+    branch(root, 'scene', 'src/lib/layout/status-data.ts');
+    expect(runCli(root, '--diff', 'main', 'scene').stdout).toBe('ct_required=true\n');
+    branch(root, 'other', 'src/lib/layout/other-data.ts');
+    expect(runCli(root, '--diff', 'main', 'other').stdout).toBe('ct_required=false\n');
+  });
+
+  it.each([
+    'mount(Host, { hooksConfig: { previewScene: config } });',
+    'mount(Host, { hooksConfig: { previewScene: { scene: name, state } } });',
+    'mount(Host, { hooksConfig: { previewScene } });',
+  ])('fails safe for a computed previewScene: %s', (source) => {
+    const root = gitRepository();
+    commitFile(root, 'src/lib/host.ct.spec.ts', source);
+    const result = runCli(root, '--diff', 'main', 'main');
+    expect(result.stdout).toBe('ct_required=false\n');
+    branch(root, 'change', 'src/lib/unrelated.ts');
+    const changed = runCli(root, '--diff', 'main', 'change');
+    expect(changed.stdout).toBe('ct_required=true\n');
+    expect(changed.stderr).toContain('previewScene');
+    expect(changed.stderr).toContain('fail-safe');
+  });
+
+  it("follows the mount harness's imports but not its lazy preview registry", () => {
+    const root = gitRepository();
+    commitFile(
+      root,
+      'playwright/index.ts',
+      "import { store } from '../src/store/configured-store';\nconst loaders = import.meta.glob<Definition>(\n  '../src/**/*.preview.{ts,svelte}',\n  { import: 'preview' },\n);",
+    );
+    commitFile(root, 'src/store/configured-store.ts', "import { reducers } from './reducer';");
+    commitFile(root, 'src/store/reducer.ts', 'export const reducers = {};');
+    commitFile(
+      root,
+      'src/lib/unmounted.preview.svelte',
+      "<script>import './unmounted-data';</script>",
+    );
+    branch(root, 'store', 'src/store/reducer.ts');
+    expect(runCli(root, '--diff', 'main', 'store').stdout).toBe('ct_required=true\n');
+    branch(root, 'registry', 'src/lib/unmounted-data.ts');
+    expect(runCli(root, '--diff', 'main', 'registry').stdout).toBe('ct_required=false\n');
+  });
+
+  it.each([
+    '{#await import(name) then m}<m.default />{/await}',
+    '<script>const m = import.meta.glob(`./${dir}/*.svelte`);</script>',
+  ])('fails safe for computed imports anywhere in a mounted component: %s', (source) => {
+    const root = homeRepository();
+    commitFile(root, page, source);
+    branch(root, 'change', 'src/features/unrelated.ts');
+    const result = runCli(root, '--diff', 'main', 'change');
+    expect(result.stdout).toBe('ct_required=true\n');
+    expect(result.stderr).toContain('fail-safe');
+  });
+});
+
+// The repository's own graph: the closure must resolve without falling back,
+// or every queue entry would run CT and hide a scanner regression.
+describe('this repository', () => {
+  function decide(files: string[]) {
+    const logs: string[] = [];
+    const warnings: string[] = [];
+    main(['--diff', 'HEAD', 'HEAD'], {
+      diff: () => files,
+      log: (line: string) => logs.push(line),
+      warn: (line: string) => warnings.push(line),
+    });
+    return { logs, warnings };
+  }
+
+  it.each(['src/features/home/HomePage.svelte', 'src/lib/utils/show-workspace.ts'])(
+    'requires CT for a %s change (cloudlands-fe#3876)',
+    (file) => {
+      expect(decide([file])).toEqual({ logs: ['ct_required=true'], warnings: [] });
+    },
+  );
+
+  // The walk skips exactly this registry glob in the harness. If the harness
+  // renames it, the walk would treat every preview as mounted.
+  it('finds the lazy preview registry it skips in the real mount harness', () => {
+    const harness = readFileSync(resolve(CT_HARNESS_ENTRY), 'utf8');
+    expect(sourceReferences(harness, CT_HARNESS_ENTRY).globs).toContainEqual([
+      CT_PREVIEW_REGISTRY_GLOB,
+    ]);
+  });
+
+  it('does not require CT for main-process code no CT run mounts', () => {
+    expect(decide(['src/main/index.ts'])).toEqual({ logs: ['ct_required=false'], warnings: [] });
   });
 });
