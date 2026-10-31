@@ -92,7 +92,14 @@ function pathSuffixOf(item: SerializableMention): string {
 }
 
 const serializeFile: Serializer = (item) => `@${pathOf(item)}${pathSuffixOf(item)}`;
-const serializeFolder: Serializer = (item) => `@${pathOf(item)}`;
+/**
+ * `@<path>/`: the trailing slash marks a folder, so readers can chip it
+ * without also chipping plain text like `@user/repo` or `and/or`.
+ */
+const serializeFolder: Serializer = (item) => {
+  const path = pathOf(item).replace(/\/+$/, '');
+  return path ? `@${path}/` : '@';
+};
 
 /** Tokens saved as `@<promptToken>` (specialists, commands, everything else). */
 function promptTokenSerializer(fallback?: string): Serializer {
@@ -203,6 +210,8 @@ export type ParsedMention =
   | { kind: 'note'; form: 'workspace-path'; note: NoteMention; fullPath: string }
   | { kind: 'runtime'; mention: RuntimeMention }
   | { kind: 'rule'; path: string }
+  /** `@<path>/`: `path` has no trailing slash; `target` is the matched text without the `@`. */
+  | { kind: 'folder'; path: string; target: string }
   | { kind: 'personality'; token: string }
   | {
       kind: 'path';
@@ -232,6 +241,12 @@ const ALL: readonly MentionSurface[] = ['chat', 'markdown', 'preview'];
 const CHAT_AND_MARKDOWN: readonly MentionSurface[] = ['chat', 'markdown'];
 const MARKDOWN: readonly MentionSurface[] = ['markdown'];
 const CHAT: readonly MentionSurface[] = ['chat'];
+
+/** An escaped character such as `&quot;` or `&#160;`. */
+const HTML_ENTITY_SOURCE = String.raw`&(?:[A-Za-z]+|#\d+|#x[0-9A-Fa-f]+);`;
+
+/** One folder name in a `@<path>/` token. */
+const FOLDER_SEGMENT_SOURCE = String.raw`[^\s<>()'"\/\[\]@:]+`;
 
 const FILE_EXTENSIONS =
   'json|js|ts|tsx|jsx|md|mdx|yaml|yml|svelte|html|css|scss|py|go|rs|rb|java|kt|swift|m|mm|hpp|h|hh|c|cc|cpp|sh|toml|lock|ini|conf|txt|csv|sql';
@@ -353,7 +368,7 @@ const CONTEXT_ENTRY: MentionTokenEntry = {
 
 /**
  * Every token form, in precedence order (earlier wins at the same position):
- * member, note, terminal/script, legacy note, then the path heuristics.
+ * member, note, terminal/script, folder, legacy note, then the path heuristics.
  */
 export const MENTION_TOKEN_ENTRIES: readonly MentionTokenEntry[] = [
   {
@@ -384,6 +399,21 @@ export const MENTION_TOKEN_ENTRIES: readonly MentionTokenEntry[] = [
     parse: (text) => {
       const mention = parseRuntimeMention(text);
       return mention ? { kind: 'runtime', mention } : null;
+    },
+  },
+  {
+    // `@src/lib/`: relative segments ending in `/`, then only end-of-sentence
+    // punctuation before whitespace, a delimiter, an HTML entity (the string
+    // injector scans escaped HTML) or the end. Listed before legacy notes so
+    // `@note/assets/` is a folder; legacy `@src/lib` (no slash) is left to the
+    // path entries below, as before.
+    name: 'folder',
+    source: String.raw`(?:${FOLDER_SEGMENT_SOURCE}\/)+(?=[.,;:!?]*(?:$|[\s<>()'"\]]|${HTML_ENTITY_SOURCE}))`,
+    at: true,
+    surfaces: CHAT_AND_MARKDOWN,
+    parse: (text) => {
+      const target = text.slice(1);
+      return { kind: 'folder', path: target.replace(/\/+$/, ''), target };
     },
   },
   {
@@ -626,6 +656,13 @@ export function mentionChipAttrs(parsed: ParsedMention): MentionChipAttrs | null
         id: parsed.path,
         label: parsed.path.split('/').pop() || parsed.path,
         meta: { path: parsed.path },
+      };
+    case 'folder':
+      return {
+        type: 'folder',
+        id: parsed.path,
+        label: parsed.target,
+        meta: { fullPath: parsed.path },
       };
     case 'personality':
       return {

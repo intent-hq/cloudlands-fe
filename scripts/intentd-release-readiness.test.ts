@@ -262,7 +262,25 @@ process.stdout.write(payload);
   );
   writeFileSync(
     join(directory, 'date'),
-    '#!/usr/bin/env bash\nif [[ "$*" == "+%s" ]]; then if [[ -f "$READINESS_SLEPT" ]]; then exec /usr/bin/date -d "2026-09-26T06:16:00Z" +%s; else exec /usr/bin/date -d "2026-09-26T06:00:00Z" +%s; fi; fi\nexec /usr/bin/date "$@"\n',
+    // The real workflow uses only epoch-now and ISO timestamp-to-epoch conversion.
+    // Model those at the clock boundary without depending on GNU/BSD date behavior.
+    `#!/usr/bin/env node
+const {existsSync} = require('node:fs');
+const args = process.argv.slice(2);
+let timestamp;
+if (args.length === 1 && args[0] === '+%s') {
+  timestamp = existsSync(process.env.READINESS_SLEPT)
+    ? '2026-09-26T06:16:00Z' : '2026-09-26T06:00:00Z';
+} else if (args.length === 3 && args[0] === '-d' && args[2] === '+%s') {
+  timestamp = args[1];
+} else {
+  process.stderr.write('Unexpected date arguments: ' + JSON.stringify(args) + '\\n');
+  process.exit(2);
+}
+const epoch = Date.parse(timestamp);
+if (!Number.isFinite(epoch)) process.exit(1);
+process.stdout.write(String(Math.floor(epoch / 1000)) + '\\n');
+`,
     { mode: 0o755 },
   );
   const step = steps.find((s) => s.name === stepName)!;

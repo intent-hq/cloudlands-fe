@@ -3,6 +3,21 @@ import Fixture from './DevConsoleFixture.svelte';
 import type { Locator, Page } from '@playwright/test';
 import { nestedRequestText, nestedResponseText } from './traffic-fixture';
 
+if (process.platform === 'darwin') {
+  test.use({
+    // Monaco derives shortcuts from the UA; native clipboard shortcuts use the host OS.
+    // Keep the configured browser version while aligning its platform before Monaco loads.
+    userAgent: async ({}, use, testInfo) => {
+      await use(
+        testInfo.project.use.userAgent?.replace(
+          '(Windows NT 10.0; Win64; x64)',
+          '(Macintosh; Intel Mac OS X 10_15_7)',
+        ),
+      );
+    },
+  });
+}
+
 const viewer = (page: Page, label: string) =>
   page.locator('[data-payload-viewer]').and(page.getByRole('region', { name: label, exact: true }));
 const lines = (region: Locator) => region.locator('.view-lines');

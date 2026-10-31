@@ -14,7 +14,9 @@ import {
   workspaceReminderStatus,
   workspaceReminderDismissed,
 } from '$shared/utils/workspace-attention-reminder';
+import { isRecentDockConversation } from '$features/hud/utils/dock-recency';
 import { store } from '../../store';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { StoreState } from '../../types';
 import { sumHudUsageTotals, type HudFeedEntry } from './hud-slice';
@@ -1452,3 +1454,112 @@ export const selectHudTakeoverView = store.createSelector(
     };
   },
 );
+
+export type DockWorkspaceBadgeKind = 'failure' | 'blocker' | 'question' | 'review' | 'none';
+
+type DockWorkspacePriorityGroup = 'action' | 'unread' | 'active';
+
+/** One workspace shown in the dock, projected from the existing workspace and HUD views. */
+export interface DockWorkspaceView {
+  workspace: Workspace;
+  badgeKind: DockWorkspaceBadgeKind;
+  priorityGroup: DockWorkspacePriorityGroup;
+  isUnread: boolean;
+  isRunning: boolean;
+  isWaiting: boolean;
+}
+
+const DOCK_ACTION_CATEGORIES: ReadonlySet<WorkspaceTabStatusCategory> = new Set([
+  'failed',
+  'blocker',
+  'question',
+  'discussion',
+  'needs_input',
+  'review',
+]);
+
+function dockBadgeKind(status: WorkspaceTabStatus | undefined): DockWorkspaceBadgeKind {
+  for (const item of status?.categories ?? []) {
+    switch (item.category) {
+      case 'failed':
+        return 'failure';
+      case 'blocker':
+        return 'blocker';
+      case 'question':
+        return 'question';
+      case 'review':
+        return 'review';
+    }
+  }
+  return 'none';
+}
+
+/** Workspace grouping, admitted and ordered only by recent human conversation. */
+export const selectDockWorkspaces = store.createSelector((state): DockWorkspaceView[] => {
+  const cards = selectHudWorkspaceCards.select(state);
+  const statuses = selectWorkspaceTabStatuses.select(state);
+  const workspacesById = new Map(
+    selectHudWorkspaces.select(state).map((workspace) => [String(workspace.id), workspace]),
+  );
+  const groups: Record<DockWorkspacePriorityGroup, DockWorkspaceView[]> = {
+    action: [],
+    unread: [],
+    active: [],
+  };
+
+  for (const card of cards) {
+    const workspace = workspacesById.get(card.workspaceId);
+    if (!workspace || workspace.id === CHIEF_WORKSPACE_ID) continue;
+    if (
+      !isRecentDockConversation(
+        state.hud.dockConversationAtByWorkspaceId[card.workspaceId],
+        state.hud.dockRecencyNow,
+      )
+    )
+      continue;
+    const status = statuses[card.workspaceId];
+    const categories = status?.categories ?? [];
+    const hasAction = categories.some((item) => DOCK_ACTION_CATEGORIES.has(item.category));
+    const isUnread = card.isUnread;
+    const isRunning = categories.some((item) => item.category === 'running');
+    const priorityGroup: DockWorkspacePriorityGroup | null = hasAction
+      ? 'action'
+      : isUnread
+        ? 'unread'
+        : 'active';
+    if (!priorityGroup) continue;
+    groups[priorityGroup].push({
+      workspace,
+      badgeKind: dockBadgeKind(status),
+      priorityGroup,
+      isUnread,
+      isRunning,
+      isWaiting: card.isWaiting,
+    });
+  }
+
+  return [...groups.action, ...groups.unread, ...groups.active].sort(
+    (left, right) =>
+      state.hud.dockConversationAtByWorkspaceId[String(right.workspace.id)] -
+        state.hud.dockConversationAtByWorkspaceId[String(left.workspace.id)] ||
+      String(left.workspace.id).localeCompare(String(right.workspace.id)),
+  );
+});
+
+export const selectDockPlacement = store.createSelector((state) => state.hud.dockPlacement);
+export const selectDockPlacementError = store.createSelector(
+  (state) => state.hud.dockPlacementError,
+);
+export const selectDockFocusRequest = store.createSelector((state) => state.hud.dockFocusRequest);
+
+export const selectDockDragStartResult = store.createSelector(
+  (state) => state.hud.dockDragStartResult,
+);
+export const selectDockResizeStartResult = store.createSelector(
+  (state) => state.hud.dockResizeStartResult,
+);
+
+export const selectDockMachineSwitch = store.createSelector((state) => ({
+  pending: state.hud.dockMachineSwitching,
+  error: state.hud.dockMachineSwitchError,
+}));

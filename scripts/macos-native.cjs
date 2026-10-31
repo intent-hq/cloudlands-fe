@@ -72,6 +72,15 @@ function binaryMatchesArchitecture(file, arch) {
   }
 }
 
+// Dock composer helpers (screen recorder, streaming dictation, element picker),
+// relative to Resources in both the staging tree and the packaged app. They are
+// required in every Mac package and signed individually by sign-sidecar.js.
+const DOCK_COMPOSER_HELPERS = Object.freeze([
+  'dock-helper/intent-dock-recorder',
+  'speech-helper/intent-dock-speech',
+  'dock-helper/intent-dock-element-pick',
+]);
+
 function helperPaths(resources, sidecarDirectory, includeKeychain = true) {
   return [
     path.join(resources, sidecarDirectory, 'intentd'),
@@ -84,6 +93,7 @@ function helperPaths(resources, sidecarDirectory, includeKeychain = true) {
           ),
         ]
       : []),
+    ...DOCK_COMPOSER_HELPERS.map((helper) => path.join(resources, helper)),
   ];
 }
 
@@ -96,6 +106,10 @@ function validateStagedMacBinaries(root, arch) {
     path.join(root, 'node_modules/node-pty/build/Release/spawn-helper'),
   ];
   for (const file of required) assertBinaryArchitecture(file, arch);
+  const dockHelper = path.join(resources, 'dock-helper/intent-dock-helper');
+  if (fs.existsSync(dockHelper)) assertBinaryArchitecture(dockHelper, arch);
+  const dockCursor = path.join(resources, 'dock-helper/intent-dock-cursor.node');
+  if (fs.existsSync(dockCursor)) assertBinaryArchitecture(dockCursor, arch);
 }
 
 function validatePackagedMacBinaries(appPath, arch) {
@@ -132,6 +146,8 @@ function validatePackagedMacBinaries(appPath, arch) {
     path.join(resources, 'app.asar.unpacked/node_modules/node-pty/build/Release/spawn-helper'),
   ];
   for (const file of required) assertBinaryArchitecture(file, arch);
+  const dockHelper = path.join(resources, 'dock-helper/intent-dock-helper');
+  if (fs.existsSync(dockHelper)) assertBinaryArchitecture(dockHelper, arch);
   // Check Electron, frameworks, third-party helpers and all unpacked native addons too.
   // Follow framework symlinks once; leave scripts and non-native resources alone.
   const seen = new Set();
@@ -155,6 +171,7 @@ function builderMacArch(context) {
 }
 
 module.exports = {
+  DOCK_COMPOSER_HELPERS,
   assertNativeMacArch,
   binaryArchitectures,
   assertBinaryArchitecture,

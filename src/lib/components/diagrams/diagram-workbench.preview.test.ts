@@ -31,6 +31,60 @@ afterEach(() => {
   overwriteGetLocale(originalGetLocale);
 });
 
+describe('diagram workbench case scope', () => {
+  afterEach(() => window.history.replaceState({}, '', '/'));
+
+  function mount(id: keyof typeof preview.states, search = '') {
+    window.history.replaceState({}, '', `/sandbox/diagram-workbench${search}`);
+    return render(DiagramWorkbenchPreview, { props: preview.states[id].props });
+  }
+
+  const mountedCases = (container: HTMLElement) =>
+    [...container.querySelectorAll<HTMLElement>('[data-diagram-case]')].map(
+      (element) => element.dataset.diagramCase,
+    );
+
+  it('mounts every case without a scope attribute by default', () => {
+    const { container } = mount('custom-architecture', '?state=custom-architecture');
+    const workbench = container.querySelector<HTMLElement>('[data-diagram-workbench]')!;
+
+    expect(mountedCases(container)).toEqual(
+      DIAGRAM_WORKBENCH_CASE_GROUPS.flatMap(({ caseIds }) => caseIds),
+    );
+    expect(workbench.hasAttribute('data-diagram-workbench-scope')).toBe(false);
+  });
+
+  it('mounts only the requested case under its own group with cases=target', () => {
+    const { container } = mount('custom-architecture', '?state=custom-architecture&cases=target');
+    const workbench = container.querySelector<HTMLElement>('[data-diagram-workbench]')!;
+    const group = DIAGRAM_WORKBENCH_CASE_GROUPS.find(({ caseIds }) =>
+      (caseIds as readonly string[]).includes('custom-architecture'),
+    )!;
+
+    expect(mountedCases(container)).toEqual(['custom-architecture']);
+    expect(workbench.dataset.diagramWorkbenchScope).toBe('target');
+    expect([...container.querySelectorAll('.case-group h2')].map((heading) => heading.id)).toEqual([
+      `diagram-group-${group.id}`,
+    ]);
+  });
+
+  it('gates readiness on the requested case alone with cases=target', async () => {
+    const scoped = mount('mermaid-loading', '?state=mermaid-loading&cases=target');
+    const scopedWorkbench = scoped.container.querySelector<HTMLElement>(
+      '[data-diagram-workbench]',
+    )!;
+    await vi.waitFor(() => expect(scopedWorkbench.dataset.diagramWorkbenchReady).toBe('true'));
+    expect(scopedWorkbench.dataset.diagramWorkbenchGeneration).toBe('1');
+    cleanup();
+
+    // The default page still waits for every renderer, which the mocks never mount.
+    const full = mount('mermaid-loading', '?state=mermaid-loading');
+    const fullWorkbench = full.container.querySelector<HTMLElement>('[data-diagram-workbench]')!;
+    await Promise.resolve();
+    expect(fullWorkbench.dataset.diagramWorkbenchReady).toBe('false');
+  });
+});
+
 describe('diagram workbench fixtures', () => {
   it('declares the exact all-case readiness contract and initialization budget', () => {
     expect(preview.captureReadiness).toEqual({

@@ -13,6 +13,10 @@ let server: ViteDevServer | undefined;
 // per-visit budget sits above the workbench's own 45 s `readinessTimeoutMs` so a slow
 // visit surfaces the preview's readiness error rather than a bare expect timeout.
 const WORKBENCH_READY_TIMEOUT_MS = 60_000;
+// Visits that touch only their own case mount just that case (`cases=target`), so their
+// readiness no longer waits on every serial Mermaid render (intent-hq/intent#8188).
+type WorkbenchScope = 'target' | 'all';
+const scopeQuery = (scope: WorkbenchScope) => (scope === 'target' ? '&cases=target' : '');
 test.describe.configure({ mode: 'default', timeout: 90_000 });
 
 test.beforeAll(async ({}, workerInfo) => {
@@ -90,6 +94,12 @@ type Frame = {
   motionPhase: string;
   cameraAnimationCount: number;
   cameraDurations: number[];
+  /** Finite renderer animations still playing; the product gates each stage on these. */
+  finiteAnimationCount: number;
+  /** Designed end time (delay + active duration) of each playing finite animation. */
+  finiteAnimationEndTimes: number[];
+  /** Designed start delay of each label reveal animation, including finished `fill: both` ones. */
+  labelEntryDelays: number[];
   entranceOpacity: number;
   nodeEntryOpacity: number;
   groupEntryOpacity: number;
@@ -100,10 +110,15 @@ type Frame = {
   exitingReveal: number | null;
 };
 
-async function openMotionFixture(page: Page, state: string, reduced = false) {
+async function openMotionFixture(
+  page: Page,
+  state: string,
+  reduced = false,
+  scope: WorkbenchScope = 'target',
+) {
   await page.emulateMedia({ reducedMotion: reduced ? 'reduce' : 'no-preference' });
   const motion = reduced ? 'reduced' : 'full';
-  const url = `${baseUrl}/sandbox/diagram-workbench?state=${state}&theme=light&width=960&motion=${motion}`;
+  const url = `${baseUrl}/sandbox/diagram-workbench?state=${state}&theme=light&width=960&motion=${motion}${scopeQuery(scope)}`;
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   const scene = page.getByTestId('catalog-scene');
   await expect(scene).toHaveAttribute('data-preview-ready', 'true', {
@@ -113,7 +128,7 @@ async function openMotionFixture(page: Page, state: string, reduced = false) {
 
 async function openSystemMotionFixture(page: Page, state: string, reduced: boolean) {
   await page.emulateMedia({ reducedMotion: reduced ? 'reduce' : 'no-preference' });
-  const url = `${baseUrl}/sandbox/diagram-workbench?state=${state}&theme=light&width=960`;
+  const url = `${baseUrl}/sandbox/diagram-workbench?state=${state}&theme=light&width=960${scopeQuery('target')}`;
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
     timeout: WORKBENCH_READY_TIMEOUT_MS,
@@ -752,6 +767,24 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
           cameraDurations: cameraAnimations.map((animation) =>
             Number(animation.effect?.getTiming().duration),
           ),
+          ...(() => {
+            const endTimes = renderer
+              .getAnimations({ subtree: true })
+              .filter(
+                (animation) => animation.playState !== 'finished' && animation.playState !== 'idle',
+              )
+              .map((animation) => Number(animation.effect?.getComputedTiming().endTime))
+              .filter((endTime) => Number.isFinite(endTime));
+            return { finiteAnimationCount: endTimes.length, finiteAnimationEndTimes: endTimes };
+          })(),
+          labelEntryDelays: renderer
+            .getAnimations({ subtree: true })
+            .filter(
+              (animation) =>
+                animation instanceof CSSAnimation &&
+                animation.animationName.includes('revealLabel'),
+            )
+            .map((animation) => Number(animation.effect?.getTiming().delay)),
           entranceOpacity: Math.max(...entryOpacities),
           nodeEntryOpacity: entryOpacities[0],
           groupEntryOpacity: entryOpacities[1],
@@ -770,7 +803,10 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
       const afterClick = frame();
       await Promise.resolve();
       await nextFrame();
-      const deadline = performance.now() + 2_000;
+      // A hang guard, not a speed check: designed motion takes about 0.6 s, and timing is
+      // asserted from animations and frames below. A loaded runner stretched the old 2 s
+      // deadline past a correct transition (intent-hq/intent#8188).
+      const deadline = performance.now() + 10_000;
       let start = frame();
       while (start.motionPhase === 'camera' && start.cameraAnimationCount === 0) {
         if (performance.now() > deadline) throw new Error('Diagram camera animation did not start');
@@ -886,7 +922,7 @@ test('keeps the bundled sandbox font through theme changes and repeated document
     ['custom-architecture', 'custom-architecture'],
   ] as const) {
     await page.goto(
-      `${baseUrl}/sandbox/diagram-workbench?state=${state}&theme=light&width=960&motion=full`,
+      `${baseUrl}/sandbox/diagram-workbench?state=${state}&theme=light&width=960&motion=full${scopeQuery('target')}`,
       { waitUntil: 'domcontentloaded' },
     );
     await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
@@ -960,9 +996,27 @@ function expectCameraBeforeScene(
       ),
     ).toBe(0);
     expect(stage.after.motionPhase).not.toBe('camera');
+    // Wall-clock time only stretches under load, so the lower bound stays a reliable
+    // proof that the camera really animated instead of jumping.
     const elapsedMs = stage.after.elapsedMs - stage.before.elapsedMs;
     expect(elapsedMs).toBeGreaterThanOrEqual(120);
-    expect(elapsedMs).toBeLessThanOrEqual(450);
+    // The upper bound is checked in load-independent terms (intent-hq/intent#8188): the
+    // stage is driven by designed animation time, and it hands over to the scene within
+    // two sampled frames once those animations finish, with no extra hold.
+    const stageEndTimes = stage.frames.flatMap((frame) => frame.finiteAnimationEndTimes);
+    expect(Math.max(...stageEndTimes), JSON.stringify(stageEndTimes)).toBeLessThanOrEqual(450);
+    const lastAnimatedFrame = stage.frames.findLastIndex((frame) => frame.finiteAnimationCount > 0);
+    expect(lastAnimatedFrame).toBeGreaterThanOrEqual(0);
+    const heldFrames = stage.frames.length - 1 - lastAnimatedFrame;
+    expect(
+      heldFrames,
+      JSON.stringify(
+        stage.frames.map(({ elapsedMs, finiteAnimationCount }) => ({
+          elapsedMs,
+          finiteAnimationCount,
+        })),
+      ),
+    ).toBeLessThanOrEqual(2);
   }
   const firstVisibleFrame = (key: keyof Frame) =>
     transition.samples.findIndex((frame) => Number(frame[key]) > 0.01);
@@ -976,9 +1030,24 @@ function expectCameraBeforeScene(
     expect(Math.abs(routeFrame - sceneFrame)).toBeLessThanOrEqual(1);
   if (routeFrame >= 0 && labelFrame >= 0) {
     expect(labelFrame).toBeGreaterThanOrEqual(routeFrame);
+    // Labels follow their route after a designed 60 ms delay. Assert that designed delay
+    // from the reveal animations themselves, which a loaded runner cannot stretch
+    // (intent-hq/intent#8188), instead of the wall-clock gap between sampled frames.
+    const labelDelays = transition.samples.flatMap((frame) => frame.labelEntryDelays);
+    expect(labelDelays.length).toBeGreaterThan(0);
+    expect(Math.max(...labelDelays), JSON.stringify(labelDelays)).toBeLessThanOrEqual(100);
+    // Bound the observed lag in frames too, so a label held back by other means still
+    // fails: eight frames is about 130 ms at 60 Hz, and slower frames only lower the count.
     expect(
-      transition.samples[labelFrame].elapsedMs - transition.samples[routeFrame].elapsedMs,
-    ).toBeLessThanOrEqual(100);
+      labelFrame - routeFrame,
+      JSON.stringify(
+        transition.samples.map(({ elapsedMs, routeEntryOpacity, labelEntryOpacity }) => ({
+          elapsedMs,
+          routeEntryOpacity,
+          labelEntryOpacity,
+        })),
+      ),
+    ).toBeLessThanOrEqual(8);
   }
 }
 
@@ -998,19 +1067,46 @@ function expectCameraInterpolation(transition: Awaited<ReturnType<typeof recordT
   ).toBe(true);
   expect(transition.cameraStages.length).toBeGreaterThan(0);
   for (const stage of transition.cameraStages) {
+    // Include the geometry-origin rebase and use this camera stage's own endpoints.
+    // Sampled frames land wherever a loaded runner schedules them, and the eased camera
+    // crosses its middle in a few dozen milliseconds, so prove interpolation from every
+    // sample instead of requiring one inside a fixed progress window (intent-hq/intent#8188):
+    // each pose lies on the straight path between the endpoints, and at least one is
+    // strictly between them.
+    const poses = stage.frames.map((frame) => ({
+      elapsedMs: frame.elapsedMs,
+      ...cameraPathPosition(stage.before, frame, stage.after),
+    }));
+    const diagnostics = JSON.stringify({
+      before: stage.before.cameraPose,
+      afterCamera: stage.after.cameraPose,
+      cameraFrames: stage.frames.map(({ elapsedMs, cameraPose }) => ({ elapsedMs, cameraPose })),
+      poses,
+    });
+    for (const pose of poses) {
+      expect(pose.progress, diagnostics).toBeGreaterThanOrEqual(-0.02);
+      expect(pose.progress, diagnostics).toBeLessThanOrEqual(1.02);
+      expect(pose.offPath, diagnostics).toBeLessThanOrEqual(0.02);
+    }
     expect(
-      stage.frames.some((frame) => {
-        // Include the geometry-origin rebase and use this camera stage's own endpoints.
-        const progress = cameraProgress(stage.before, frame, stage.after);
-        return progress > 0.15 && progress < 0.85;
-      }),
-      JSON.stringify({
-        before: stage.before.cameraPose,
-        afterCamera: stage.after.cameraPose,
-        cameraFrames: stage.frames.map(({ elapsedMs, cameraPose }) => ({ elapsedMs, cameraPose })),
-      }),
+      poses.some((pose) => pose.progress > 0.001 && pose.progress < 0.999),
+      diagnostics,
     ).toBe(true);
   }
+}
+
+/** Progress along, and distance off, the straight start-to-end pose path, both relative to its length. */
+function cameraPathPosition(start: Frame, current: Frame, end: Frame) {
+  const from = cameraMatrix(start);
+  const at = cameraMatrix(current);
+  const to = cameraMatrix(end);
+  const delta = to.map((value, index) => value - from[index]);
+  const length = Math.hypot(...delta);
+  const progress = cameraProgress(start, current, end);
+  const offPath =
+    Math.hypot(...at.map((value, index) => value - (from[index] + progress * delta[index]))) /
+    length;
+  return { progress, offPath };
 }
 
 test('animates real clicks by default without a motion query', async ({ page }) => {
@@ -1150,7 +1246,7 @@ test('hydrates a saved full motion choice and persists a reduced override', asyn
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await seedStoredCatalogPreferences(page, { motion: 'full' });
   await page.goto(
-    `${baseUrl}/sandbox/diagram-workbench?state=custom-architecture&theme=light&width=960`,
+    `${baseUrl}/sandbox/diagram-workbench?state=custom-architecture&theme=light&width=960${scopeQuery('target')}`,
   );
   await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
     timeout: WORKBENCH_READY_TIMEOUT_MS,
@@ -1177,7 +1273,7 @@ test('hydrates a saved reduced motion choice on a later stepped fixture', async 
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await seedStoredCatalogPreferences(page, { motion: 'reduced' });
   await page.goto(
-    `${baseUrl}/sandbox/diagram-workbench?state=custom-delivery-walkthrough&theme=light&width=960`,
+    `${baseUrl}/sandbox/diagram-workbench?state=custom-delivery-walkthrough&theme=light&width=960${scopeQuery('target')}`,
   );
   // This visit checks saved policy hydration, not another gallery transition.
   await expect(page.getByTestId('catalog-shell')).toHaveAttribute(
@@ -1548,7 +1644,7 @@ for (const width of [960, 320]) {
   test(`keeps the short ownership kind label on one line at ${width}px`, async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     await page.goto(
-      `${baseUrl}/sandbox/diagram-workbench?state=custom-walkthrough&theme=light&width=${width}&motion=full`,
+      `${baseUrl}/sandbox/diagram-workbench?state=custom-walkthrough&theme=light&width=${width}&motion=full${scopeQuery('target')}`,
       { waitUntil: 'domcontentloaded' },
     );
     await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
@@ -1808,6 +1904,7 @@ test('interpolates a retained route with its moving endpoints in diagram coordin
 test('keeps explicit full motion active for every stepped sandbox control', async ({ page }) => {
   test.setTimeout(180_000);
   await page.emulateMedia({ reducedMotion: 'reduce' });
+  // Steps every stepped fixture on one page, so it needs the full workbench.
   await page.goto(
     `${baseUrl}/sandbox/diagram-workbench?state=custom-architecture&theme=light&width=960&motion=full`,
   );
@@ -1979,7 +2076,8 @@ test('keeps explicit full motion active for every stepped sandbox control', asyn
 test('settles every stepped sandbox control without finite reduced-motion animations', async ({
   page,
 }) => {
-  await openMotionFixture(page, 'custom-architecture', true);
+  // Steps every stepped fixture on one page, so it needs the full workbench.
+  await openMotionFixture(page, 'custom-architecture', true, 'all');
   await expect(page.getByTestId('catalog-shell')).toHaveAttribute('data-catalog-motion', 'reduced');
   await expect(page.locator('html')).toHaveClass(/catalog-reduced-motion/);
 
@@ -2026,7 +2124,7 @@ test('shows continuous Redux walkthrough motion when the system requests reduced
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(
-    `${baseUrl}/sandbox/diagram-workbench?state=custom-walkthrough&theme=light&width=960&motion=full`,
+    `${baseUrl}/sandbox/diagram-workbench?state=custom-walkthrough&theme=light&width=960&motion=full${scopeQuery('target')}`,
   );
   await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
     timeout: WORKBENCH_READY_TIMEOUT_MS,
@@ -2295,6 +2393,7 @@ for (const appearance of framingAppearances) {
         theme: appearance.theme,
         width: String(width.value),
         motion: 'reduced',
+        cases: 'target',
       });
       if ('colorTheme' in appearance) params.set('colorTheme', appearance.colorTheme);
       await page.goto(`${baseUrl}/sandbox/diagram-workbench?${params}`);

@@ -151,6 +151,10 @@ static/generated/
 /core
 /core.[0-9]*
 
+/resources/dock-helper/intent-dock-helper
+/resources/dock-helper/intent-dock-cursor.node
+/resources/dock-helper/intent-dock-recorder
+/resources/dock-helper/intent-dock-element-pick
 # Python bytecode from the CI policy scripts
 __pycache__/
 *.pyc

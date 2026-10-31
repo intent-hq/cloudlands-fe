@@ -91,6 +91,11 @@ export interface TransferFinalizeParams {
    * the step-3 "restart in-flight agents" toggle.
    */
   restartAgents?: boolean;
+  /**
+   * Server destination: after a successful finalize, open or focus a window
+   * for the target backend and show the transferred workspace there.
+   */
+  openTarget?: boolean;
 }
 
 /** `transfer:finalize` result. */
@@ -101,6 +106,8 @@ export interface TransferFinalizeResult {
   code?: SessionOwnershipErrorCode;
   /** Agent ids the target failed to resume (fail-soft, never blocks finalize). */
   resumeFailed?: string[];
+  /** `openTarget` was requested but the target window could not be opened. */
+  targetOpenFailed?: boolean;
 }
 
 /** `transfer:cancel` result. */

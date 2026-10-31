@@ -137,7 +137,9 @@ const FIXTURES: Fixture[] = [
       label: 'lib',
       meta: { path: 'src/lib', fullPath: 'src/lib' },
     },
-    expected: { type: 'file', id: 'src/lib', label: 'src/lib' },
+    // Saved as `@src/lib/`: the trailing slash marks a folder. Chat shows it
+    // as a path chip; rich text rebuilds a folder chip.
+    expected: { type: 'folder', id: 'src/lib', label: 'src/lib/' },
   },
   {
     name: 'note with spaces in its title',
@@ -272,8 +274,6 @@ const PATH_GAP = 'Path tokens are whitespace-delimited, so readers cut the path 
 const AGENT_GAP = 'Agent tokens save only the name (`@Build agent`), no id; no reader parses them.';
 const SPECIALIST_GAP =
   '`@specialist/<id>` has no reader of its own; chat reads it as a file path, the note editor as text.';
-const FOLDER_GAP =
-  'The note editor only chips relative paths with a file extension, so `@src/lib` stays plain text.';
 
 /**
  * Known gaps: `<fixture name>/<reader>` → why it fails today. Each runs with
@@ -284,8 +284,6 @@ const KNOWN_GAPS: Record<string, string> = {
   'file path with a space/injector': PATH_GAP,
   'file path with a space/note-editor': PATH_GAP,
   'file path with a space/click': PATH_GAP,
-  'folder/injector': FOLDER_GAP,
-  'folder/note-editor': FOLDER_GAP,
   'agent/chat': AGENT_GAP,
   'agent/injector': AGENT_GAP,
   'agent/note-editor': AGENT_GAP,
@@ -295,7 +293,7 @@ const KNOWN_GAPS: Record<string, string> = {
   'specialist/preview': SPECIALIST_GAP,
 };
 
-/** Path-like tokens: the token text is the path, and readers cannot tell a folder from a file. */
+/** Path-like tokens: the token text is the path (a folder's ends in `/`). */
 const PATH_TYPES = new Set(['file', 'folder']);
 
 /**
@@ -307,7 +305,13 @@ const PATH_TYPES = new Set(['file', 'folder']);
 function expectedFor(reader: Reader, fixture: Fixture, token: string): ReadBack {
   if (!PATH_TYPES.has(fixture.expected.type)) return fixture.expected;
   if (reader === 'chat') {
-    return { ...fixture.expected, label: token.slice(1).split('/').pop() ?? '' };
+    // Chat reads every path token, folders included, as a path chip.
+    const path = fixture.expected.id;
+    return {
+      type: 'file',
+      id: path,
+      label: `${path.split('/').pop()}${token.slice(1 + path.length).replace(/^\/$/, '')}`,
+    };
   }
   return { ...fixture.expected, label: token.slice(1) };
 }

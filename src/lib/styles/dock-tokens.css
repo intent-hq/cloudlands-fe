@@ -1,0 +1,113 @@
+/* Hardware chrome and annotation controls share the camera palette. */
+[data-dock-surface='notch'],
+[data-annotation-surface] {
+  --dock-surface: 0 0% 0%;
+  --dock-raised: 0 0% 8%;
+  --dock-foreground: 0 0% 96%;
+  --dock-muted-foreground: 0 0% 64%;
+  --dock-border: 0 0% 18%;
+  --dock-hover: 0 0% 12%;
+  --dock-active: 0 0% 16%;
+  --dock-shoulder: 8px;
+}
+
+[data-annotation-surface] {
+  --foreground: var(--dock-foreground);
+  --muted-foreground: var(--dock-muted-foreground);
+  --popover: var(--dock-surface);
+  --border: var(--dock-border);
+  --hover: var(--dock-hover);
+  --active: var(--dock-active);
+  /* Tailwind aliases otherwise inherit values resolved at the app theme root. */
+  --color-foreground: hsl(var(--dock-foreground));
+  --color-muted-foreground: hsl(var(--dock-muted-foreground));
+  --color-popover: hsl(var(--dock-surface));
+  --color-popover-foreground: hsl(var(--dock-foreground));
+  --color-border: hsl(var(--dock-border));
+  --color-hover: hsl(var(--dock-hover));
+  --color-active: hsl(var(--dock-active));
+}
+
+/* Notch chrome, including the conversation header, keeps the camera palette. Detached shells keep the app theme. */
+[data-dock-surface='notch'],
+[data-dock-surface='notch'] [data-dock-chrome] {
+  --background: var(--dock-surface);
+  --card: var(--dock-surface);
+  --popover: var(--dock-surface);
+  --foreground: var(--dock-foreground);
+  --card-foreground: var(--dock-foreground);
+  --popover-foreground: var(--dock-foreground);
+  --secondary-foreground: var(--dock-foreground);
+  --accent-foreground: var(--dock-foreground);
+  --muted-foreground: var(--dock-muted-foreground);
+  --muted: var(--dock-raised);
+  --secondary: var(--dock-raised);
+  --accent: var(--dock-active);
+  --selected: var(--dock-active);
+  --border: var(--dock-border);
+  /* Sidebar semantics stay shared (tokens.css); only their Tailwind aliases, which
+     resolve at the theme root, follow the notch palette below. */
+  /* App interaction fills are complete colors, not HSL channels. */
+  --hover: hsl(var(--dock-hover));
+  --active: hsl(var(--dock-active));
+  --color-background: hsl(var(--dock-surface));
+  --color-card: hsl(var(--dock-surface));
+  --color-popover: hsl(var(--dock-surface));
+  --color-sidebar: hsl(var(--dock-surface));
+  --color-app-background: hsl(var(--dock-surface));
+  --color-foreground: hsl(var(--dock-foreground));
+  --color-card-foreground: hsl(var(--dock-foreground));
+  --color-popover-foreground: hsl(var(--dock-foreground));
+  --color-sidebar-foreground: hsl(var(--dock-foreground));
+  --color-secondary-foreground: hsl(var(--dock-foreground));
+  --color-accent-foreground: hsl(var(--dock-foreground));
+  --color-muted-foreground: hsl(var(--dock-muted-foreground));
+  --color-muted: hsl(var(--dock-raised));
+  --color-secondary: hsl(var(--dock-raised));
+  --color-accent: hsl(var(--dock-active));
+  --color-selected: hsl(var(--dock-active));
+  --color-border: hsl(var(--dock-border));
+  --color-sidebar-border: hsl(var(--dock-border));
+  --color-hover: hsl(var(--dock-hover));
+  --color-active: hsl(var(--dock-active));
+}
+
+/* The conversation body matches the full app chat; only the notch chrome stays black. */
+[data-dock-surface='notch'] [data-dock-app-palette] {
+  --background: var(--theme-background);
+  --card: var(--theme-card);
+  --popover: var(--theme-popover);
+  --foreground: var(--theme-foreground);
+  --card-foreground: var(--theme-card-foreground);
+  --popover-foreground: var(--theme-popover-foreground);
+  --secondary-foreground: var(--theme-secondary-foreground);
+  --accent-foreground: var(--theme-accent-foreground);
+  --muted-foreground: var(--theme-muted-foreground);
+  --muted: var(--theme-muted);
+  --secondary: var(--theme-secondary);
+  --accent: var(--theme-accent);
+  --selected: var(--theme-selected);
+  --border: var(--theme-border);
+  --hover: var(--theme-hover);
+  --active: var(--theme-active);
+  --color-background: hsl(var(--background));
+  --color-card: hsl(var(--card));
+  --color-popover: hsl(var(--popover));
+  --color-sidebar: hsl(var(--sidebar));
+  --color-app-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-secondary: hsl(var(--secondary));
+  --color-accent: hsl(var(--accent));
+  --color-selected: hsl(var(--selected));
+  --color-border: hsl(var(--border));
+  --color-sidebar-border: hsl(var(--sidebar-border));
+  --color-hover: var(--hover);
+  --color-active: var(--active);
+}

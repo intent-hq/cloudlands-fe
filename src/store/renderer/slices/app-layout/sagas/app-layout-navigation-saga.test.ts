@@ -14,6 +14,9 @@ import type { OpenAgentTabDetail } from '../app-layout-types';
 import { focusBrowserTabRequested, openAgentTabRequested } from '../app-layout-slice';
 import { appLayoutNavigationSaga } from './app-layout-navigation-saga';
 
+const dockMocks = vi.hoisted(() => ({ invoke: vi.fn() }));
+vi.mock('$lib/electron-bridge', () => ({ invoke: dockMocks.invoke }));
+
 const panelLayoutReducer = withPanelLayoutInvariants(rawPanelLayoutReducer);
 
 const settle = async () => {
@@ -22,6 +25,28 @@ const settle = async () => {
 };
 
 describe('appLayoutNavigationSaga', () => {
+  it('hands a dock attribution link to the exact visible conversation without mutating dock layout', async () => {
+    window.history.replaceState({}, '', '/dock');
+    dockMocks.invoke.mockResolvedValue({ success: true });
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga({ channel, dispatch, getState: () => ({}) }, appLayoutNavigationSaga);
+    try {
+      channel.put(openAgentTabRequested('ws-one', { agentId: 'agent-two' }));
+      await vi.waitFor(() =>
+        expect(dockMocks.invoke).toHaveBeenCalledWith('window:open-new', {
+          route: '/workspace/ws-one',
+          reuseExistingWorkspace: true,
+          agentId: 'agent-two',
+        }),
+      );
+      expect(dispatch).not.toHaveBeenCalled();
+    } finally {
+      task.cancel();
+      await task.toPromise();
+      window.history.replaceState({}, '', '/');
+    }
+  });
   const agentOpenCases: Array<{
     name: string;
     detail: OpenAgentTabDetail;

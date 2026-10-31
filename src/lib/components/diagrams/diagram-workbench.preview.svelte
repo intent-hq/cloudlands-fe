@@ -13,13 +13,26 @@
     fixture: DiagramWorkbenchCase;
   }
 
-  const caseCount = Object.keys(DIAGRAM_WORKBENCH_CASES).length;
-  const mermaidCaseCount = Object.values(DIAGRAM_WORKBENCH_CASES).filter(
-    ({ kind }) => kind === 'mermaid',
-  ).length;
-  const customCaseCount = Object.values(DIAGRAM_WORKBENCH_CASES).filter(
-    ({ kind }) => kind === 'custom',
-  ).length;
+  /**
+   * Opt-in `?cases=target` mounts only the requested state's case. The default page
+   * mounts every case and waits for all of them, whose serial Mermaid renders exceed
+   * a loaded runner's readiness budget for specs that need one custom case
+   * (intent-hq/intent#8188).
+   */
+  export const DIAGRAM_WORKBENCH_TARGET_SCOPE_PARAM = 'cases';
+  export const DIAGRAM_WORKBENCH_TARGET_SCOPE_VALUE = 'target';
+
+  function countCases(ids: readonly DiagramWorkbenchCaseId[]) {
+    return {
+      cases: ids.length,
+      mermaid: ids.filter((id) => DIAGRAM_WORKBENCH_CASES[id].kind === 'mermaid').length,
+      custom: ids.filter((id) => DIAGRAM_WORKBENCH_CASES[id].kind === 'custom').length,
+    };
+  }
+
+  const allCaseCounts = countCases(
+    Object.keys(DIAGRAM_WORKBENCH_CASES) as DiagramWorkbenchCaseId[],
+  );
 
   export const preview = definePreview<DiagramWorkbenchPreviewProps>({
     id: 'diagram-workbench',
@@ -52,6 +65,18 @@
   let allCasesReady = $state(false);
   let readinessGeneration = $state(0);
   let bindingTargets = $state<Partial<Record<DiagramWorkbenchCaseId, string>>>({});
+  const targetOnly =
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get(DIAGRAM_WORKBENCH_TARGET_SCOPE_PARAM) ===
+      DIAGRAM_WORKBENCH_TARGET_SCOPE_VALUE;
+  const visibleGroups = $derived(
+    targetOnly
+      ? DIAGRAM_WORKBENCH_CASE_GROUPS.filter((group) =>
+          (group.caseIds as readonly DiagramWorkbenchCaseId[]).includes(caseId),
+        ).map((group) => ({ ...group, caseIds: [caseId] }))
+      : DIAGRAM_WORKBENCH_CASE_GROUPS,
+  );
+  const expectedCounts = $derived(targetOnly ? countCases([caseId]) : allCaseCounts);
 
   function groupTitle(groupId: (typeof DIAGRAM_WORKBENCH_CASE_GROUPS)[number]['id']): string {
     if (groupId === 'mermaid') return m.sandbox_diagramWorkbench_mermaidCases_title();
@@ -87,9 +112,9 @@
         (renderer) => renderer.dataset.diagramSettled === 'true',
       );
       const ready = !(
-        cases.length !== caseCount ||
-        mermaidRenderers.length !== mermaidCaseCount ||
-        customRenderers.length !== customCaseCount ||
+        cases.length !== expectedCounts.cases ||
+        mermaidRenderers.length !== expectedCounts.mermaid ||
+        customRenderers.length !== expectedCounts.custom ||
         !mermaidReady ||
         !customReady
       );
@@ -154,6 +179,7 @@
   data-target-kind={fixture.kind}
   data-diagram-workbench-ready={allCasesReady ? 'true' : 'false'}
   data-diagram-workbench-generation={readinessGeneration}
+  data-diagram-workbench-scope={targetOnly ? DIAGRAM_WORKBENCH_TARGET_SCOPE_VALUE : undefined}
   bind:this={workbenchElement}
 >
   <header class="page-header">
@@ -161,7 +187,7 @@
     <p>{m.sandbox_diagramWorkbench_description()}</p>
   </header>
 
-  {#each DIAGRAM_WORKBENCH_CASE_GROUPS as group (group.id)}
+  {#each visibleGroups as group (group.id)}
     <section class="case-group" aria-labelledby={`diagram-group-${group.id}`}>
       <header class="group-header">
         <h2 id={`diagram-group-${group.id}`}>{groupTitle(group.id)}</h2>

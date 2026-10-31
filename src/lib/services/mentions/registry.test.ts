@@ -312,3 +312,86 @@ describe('serializers', () => {
     ).toBe('@src/a.ts');
   });
 });
+
+describe('folder tokens', () => {
+  const folders = (text: string, surface: MentionSurface) =>
+    scanMentions(text, surface)
+      .filter((match) => match.parsed?.kind === 'folder')
+      .map((match) => match.text);
+
+  it('saves a folder with a trailing slash, once', () => {
+    for (const fullPath of ['src/lib', 'src/lib/', 'src']) {
+      expect(
+        toPromptToken({ type: 'folder', id: 'x', label: 'lib', meta: { fullPath } as never }),
+      ).toBe(fullPath === 'src' ? '@src/' : '@src/lib/');
+    }
+    expect(
+      toPromptToken({
+        type: 'source-folder',
+        id: 'x',
+        label: 'lib',
+        meta: { path: 'a/b' } as never,
+      }),
+    ).toBe('@a/b/');
+  });
+
+  it('reads a folder token as a folder chip that saves back the same token', () => {
+    const match = only('see @src/lib/ now', 'markdown');
+    expect(match.parsed).toEqual({ kind: 'folder', path: 'src/lib', target: 'src/lib/' });
+    const chip = mentionChipAttrs(match.parsed!)!;
+    expect(chip).toEqual({
+      type: 'folder',
+      id: 'src/lib',
+      label: 'src/lib/',
+      meta: { fullPath: 'src/lib' },
+    });
+    expect(toPromptToken({ ...chip, id: chip.id! })).toBe('@src/lib/');
+  });
+
+  it('reads one-segment folders and folders before sentence punctuation', () => {
+    for (const surface of ['chat', 'markdown'] as const) {
+      expect(folders('in @src/, then @src/lib/. Also (@docs/)', surface)).toEqual([
+        '@src/',
+        '@src/lib/',
+        '@docs/',
+      ]);
+    }
+  });
+
+  it('does not chip plain text or legacy extensionless paths as folders', () => {
+    for (const surface of ['chat', 'markdown'] as const) {
+      expect(
+        folders(
+          'and/or @user/repo @src/lib @src/lib/a.ts @src/lib/.hidden x/y/ git@github.com:org/repo/',
+          surface,
+        ),
+      ).toEqual([]);
+    }
+    expect(hasMentionToken('and/or, either/or', 'markdown')).toBe(false);
+    expect(hasMentionToken('ping @user/repo', 'markdown')).toBe(false);
+  });
+
+  it('reads a folder under note/ as a folder, and keeps legacy @note/<id>', () => {
+    for (const surface of ['chat', 'markdown'] as const) {
+      expect(only('@note/assets/', surface).parsed).toEqual({
+        kind: 'folder',
+        path: 'note/assets',
+        target: 'note/assets/',
+      });
+      expect(only('@note/abc', surface).parsed).toMatchObject({ kind: 'note', form: 'legacy' });
+    }
+  });
+
+  it('ends a folder token at an HTML-escaped delimiter', () => {
+    expect(folders('@docs/&quot; @src/&nbsp;next @a/&#160;b @lib/&lt;', 'markdown')).toEqual([
+      '@docs/',
+      '@src/',
+      '@a/',
+      '@lib/',
+    ]);
+  });
+
+  it('leaves a folder token as written in previews', () => {
+    expect(mentionTokensToText('look in @src/lib/ please')).toBe('look in @src/lib/ please');
+  });
+});

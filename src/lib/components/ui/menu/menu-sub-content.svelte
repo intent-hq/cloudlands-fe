@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getOwnedPopupContext, getOwnedPopupClose } from '$lib/components/ui/owned-popup-context';
   import { DropdownMenu as MenuPrimitive } from 'bits-ui';
   import { getContext, tick } from 'svelte';
   import { cn } from '$lib/utils.js';
@@ -14,6 +15,12 @@
   import { createMenuLayout } from './menu-layout-context.svelte';
 
   const uid = $props.id();
+  const popupOwner = getOwnedPopupContext();
+  const closeOwnedPopup = getOwnedPopupClose();
+  $effect(() => {
+    if (!ref || !popupOwner) return;
+    return popupOwner.register(ref, closeOwnedPopup);
+  });
 
   let {
     id = `${uid}-sub-content`,
@@ -153,7 +160,7 @@
     {@render children?.()}
   </MenuPrimitive.SubContentStatic>
 {:else if portal}
-  <MenuPrimitive.Portal {...portalProps}>
+  <MenuPrimitive.Portal {...portalProps} to={portalProps?.to ?? popupOwner?.target()}>
     <MenuPrimitive.SubContent
       bind:ref
       {id}

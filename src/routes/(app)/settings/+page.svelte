@@ -84,6 +84,7 @@
 
   import SettingsSidebarBack from '$lib/components/settings/SettingsSidebarBack.svelte';
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
+  import DockLabSettings from '$lib/components/settings/DockLabSettings.svelte';
   import { getNavigatorHid } from '$features/hardware-console/device/platform';
   import { watchSupportedDevicePresence } from '$features/hardware-console/device/presence';
   import { getHardwareConsoleManager } from '$features/hardware-console/instance';
@@ -189,6 +190,7 @@
     'workspace-api': 'advanced',
     'agent-features': 'agent-behavior',
     'agent-backend': 'advanced',
+    labs: 'advanced',
     'utility-default-model': 'providers',
     hardware: 'advanced',
     connection: 'advanced',
@@ -591,13 +593,11 @@
           <AdministratorSettings tab={activeTab} workspaceId={settingsWorkspaceId} />
         {/if}
 
-        <!-- Machines -->
         {#if activeTab === 'devices'}
           <div id="devices" class="scroll-mt-20">
             <DevicesSettings />
           </div>
 
-          <!-- Backend sync (iCloud Keychain) -->
           <div id="backend-sync" class="scroll-mt-20">
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_backendSync()}
@@ -1184,6 +1184,12 @@
                   </div>
                 </section>
               </div>
+            </div>
+          {/if}
+
+          {#if isElectronPlatform()}
+            <div id="labs" data-highlight-id="labs" use:highlightTarget>
+              <DockLabSettings />
             </div>
           {/if}
         {/if}

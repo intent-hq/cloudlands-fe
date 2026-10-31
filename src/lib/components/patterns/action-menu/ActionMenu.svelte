@@ -18,6 +18,7 @@
     contextMenu,
     returnFocus: menuReturnFocus,
     onOpenChange,
+    onInteractOutside,
     ariaLabel,
     open = $bindable(false),
     align = 'start',
@@ -30,6 +31,7 @@
     contextMenu?: { x: number; y: number; returnFocus?: HTMLElement | null };
     returnFocus?: HTMLElement | null;
     onOpenChange?: (open: boolean) => void;
+    onInteractOutside?: (event: PointerEvent) => void;
     ariaLabel: string;
     open?: boolean;
     align?: 'start' | 'center' | 'end';
@@ -289,7 +291,7 @@
           aria-label={ariaLabel}
           aria-hidden="true"
           tabindex={-1}
-          class="pointer-events-none fixed size-px opacity-0"
+          class="pointer-events-none fixed size-px p-0 opacity-0"
           style={`left: ${contextMenu.x}px; top: ${contextMenu.y}px;`}
         ></Button>
       {:else}
@@ -307,6 +309,7 @@
     aria-label={ariaLabel}
     data-action-menu-owner={uid}
     onCloseAutoFocus={restoreMenuFocus}
+    {onInteractOutside}
     onkeydown={handleContextKeydown}
     class={className}
   >

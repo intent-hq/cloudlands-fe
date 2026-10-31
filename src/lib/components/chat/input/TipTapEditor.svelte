@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getOwnedPopupContext } from '$lib/components/ui/owned-popup-context';
   /* eslint-disable max-lines */
   import { onMount, onDestroy, mount, unmount, untrack } from 'svelte';
   import { readMentionChip } from '$lib/services/mentions/chip';
@@ -22,6 +23,23 @@
     type ContextMentionAttributes,
   } from '$lib/components/tiptap/ContextMention';
   import { PasteChip } from '$lib/components/tiptap/PasteChip';
+  import { ScreenReference } from '$lib/components/tiptap/ScreenReference';
+  import type {
+    EditorScreenReference,
+    DockEvidenceInsertion,
+    DockInsertionPart,
+    DockReferenceEdit,
+  } from '$shared/dock-evidence';
+  import { ScreenInterimExtension, screenInterimKey } from './screen-interim-extension';
+  import {
+    hydrateScreenReferences,
+    hydrateScreenTokens,
+    synchronizeScreenReferences,
+    screenReferenceEdit,
+    insertScreenEvidence,
+    SCREEN_EVIDENCE_INSERTION,
+    SCREEN_REFERENCE_SYNC,
+  } from './screen-reference-editor';
   import { SkillCommand } from '$lib/components/tiptap/SkillCommand';
   import { createLogger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
@@ -141,6 +159,11 @@
     value?: string;
     ariaLabel?: string;
     placeholder?: string;
+    /**
+     * Opt-in: follow later `placeholder` changes (state-dependent hints). By
+     * default the placeholder is fixed when the editor is created.
+     */
+    reactivePlaceholder?: boolean;
     class?: string;
     disabled?: boolean;
     editableWhileDisabled?: boolean;
@@ -153,7 +176,8 @@
     repoPath?: string;
     editorClassName?: string;
     autoFocus?: boolean;
-    onUpdate?: (content: string) => void;
+    /** `programmatic`: a screen-reference sync (renumber/removal), not a user edit. */
+    onUpdate?: (content: string, change?: { programmatic: boolean }) => void;
     onSubmit?: () => void;
     onForceSubmit?: () => void; // ⌘Enter - interrupt streaming and send immediately
     onEscape?: () => void; // Escape key - for cancel in edit mode
@@ -168,6 +192,16 @@
     skillsLoading?: boolean;
     skillsError?: string | null;
     onSkillsRetry?: () => void;
+    screenReferences?: readonly EditorScreenReference[];
+    screenInsertions?: readonly DockEvidenceInsertion[];
+    screenInterim?: readonly DockInsertionPart[];
+    /** Dictation is live: its words keep landing at one speech point captured at the start. */
+    screenSpeechActive?: boolean;
+    onScreenInsertionApplied?: (id: string, text: string) => void;
+    onCompositionChange?: (composing: boolean) => void;
+    onUserTextInput?: () => void;
+    /** A user edit deleted or brought back reference chips (marks follow their chips). */
+    onScreenReferencesEdited?: (edit: DockReferenceEdit) => void;
     minHeight?: number;
     maxHeight?: number;
   }
@@ -176,6 +210,7 @@
     value = '',
     ariaLabel = m.chat_richInput_editor_ariaLabel(),
     placeholder = m.chat_richInput_askAnything_placeholder(),
+    reactivePlaceholder = false,
     disabled = false,
     editableWhileDisabled = false,
     inputLocked = false,
@@ -200,12 +235,26 @@
     skillsLoading = false,
     skillsError = null,
     onSkillsRetry,
+    screenReferences,
+    screenInsertions = [],
+    screenInterim = [],
+    screenSpeechActive = false,
+    onScreenInsertionApplied,
+    onCompositionChange,
+    onUserTextInput,
+    onScreenReferencesEdited,
     minHeight = 80,
     maxHeight = 300,
   }: Props = $props();
 
   // `inputLocked` is an editability-only lock — it never routes through the
   // `disabled` styling, so the placeholder keeps rendering while it is on.
+  const popupOwner = getOwnedPopupContext();
+  let slashContent = $state<HTMLDivElement | null>(null);
+  $effect(() => {
+    if (!slashContent || !popupOwner) return;
+    return popupOwner.register(slashContent, () => dismissSlashMenu());
+  });
   const isEditable = $derived((!disabled || editableWhileDisabled) && !inputLocked);
   // Placeholder is configured with `showOnlyWhenEditable: false` for the lock,
   // which would otherwise also surface it in the plain-disabled state. The
@@ -214,8 +263,97 @@
 
   let element = $state<HTMLDivElement>();
   let editor: Editor | null = $state(null);
+  let composing = $state(false);
+  const appliedScreenInsertions = new Set<string>();
+
+  export function flushScreenEvidence(): boolean {
+    const current = editor;
+    if (!current || composing || current.view.composing) return false;
+    if (!screenReferences) return true;
+    synchronizeScreenReferences(current, screenReferences);
+    // A restored draft's tokens may have arrived before its references: chip them now.
+    hydrateScreenTokens(current, screenReferences);
+    // One commit advances the draft revision. Let the controlled owner echo that
+    // revision before attempting the next event in the queue.
+    for (const insertion of screenInsertions.slice(0, 1)) {
+      if (appliedScreenInsertions.has(insertion.id)) {
+        if (!onScreenInsertionApplied) return false;
+        onScreenInsertionApplied(insertion.id, serializeEditorText(current));
+        continue;
+      }
+      const speechPoint = screenInterimKey.getState(current.state)?.anchor;
+      if (
+        !onScreenInsertionApplied ||
+        !insertScreenEvidence(current, insertion, screenReferences, speechPoint)
+      )
+        return false;
+      appliedScreenInsertions.add(insertion.id);
+      onScreenInsertionApplied(insertion.id, serializeEditorText(current));
+    }
+    return screenInsertions.length <= 1;
+  }
+
+  // Placeholder decorations redraw only on a transaction; nudge one when the hint changes.
+  $effect(() => {
+    void placeholder;
+    const current = editor;
+    if (!reactivePlaceholder || !current || current.isDestroyed) return;
+    untrack(() => current.view.dispatch(current.state.tr.setMeta('placeholder-refresh', true)));
+  });
+  $effect(() => {
+    void screenReferences;
+    void screenInsertions;
+    if (!editor || composing || !isEditable) return;
+    untrack(() => flushScreenEvidence());
+  });
+  $effect(() => {
+    const current = editor;
+    const parts = screenInterim;
+    const references = screenReferences;
+    // The speech point lives while dictation runs or its words are still landing.
+    const keepPoint = screenSpeechActive || screenInsertions.length > 0;
+    if (!current || !references || composing || current.view.composing) return;
+    untrack(() => {
+      const previous = screenInterimKey.getState(current.state);
+      const tr = current.state.tr.setMeta(
+        screenInterimKey,
+        parts.length || keepPoint
+          ? {
+              parts,
+              references,
+              anchor: previous?.anchor ?? current.state.selection.from,
+              ariaLabel: m.hardwareConsole_ptt_listening_label(),
+            }
+          : null,
+      );
+      // Keep the caret (just after the live words) in view as they grow.
+      current.view.dispatch(parts.length ? tr.scrollIntoView() : tr);
+      // "Before" and "after" the live words are the same document position, so the
+      // editor keeps whichever DOM caret it had. Draw it after the words explicitly.
+      const live = current.view.dom.querySelector('[data-screen-interim]');
+      const { selection } = current.state;
+      if (
+        live?.parentNode &&
+        current.view.hasFocus() &&
+        selection.empty &&
+        selection.from === screenInterimKey.getState(current.state)?.anchor
+      ) {
+        const index = Array.prototype.indexOf.call(live.parentNode.childNodes, live);
+        window.getSelection()?.collapse(live.parentNode, index + 1);
+      }
+    });
+  });
   let hoverPreview: any = null;
   let hoverPreviewContainer: HTMLDivElement | null = null;
+  let unregisterHoverPreview: (() => void) | undefined;
+  function closeOwnedHoverPreview(): void {
+    unregisterHoverPreview?.();
+    unregisterHoverPreview = undefined;
+    if (hoverPreview) unmount(hoverPreview);
+    hoverPreviewContainer?.remove();
+    hoverPreview = null;
+    hoverPreviewContainer = null;
+  }
   let isClearing = false;
   $effect(() => {
     if (editor) editor.view.dom.setAttribute('aria-label', ariaLabel);
@@ -321,10 +459,11 @@
   }
 
   function editorHTML(text: string): string {
-    return plainTextToEditorHTML(
+    const html = plainTextToEditorHTML(
       text,
       skills.map((skill) => skill.name),
     );
+    return screenReferences ? hydrateScreenReferences(html, screenReferences) : html;
   }
 
   function handleSlashMenuKeyDown(event: KeyboardEvent): boolean {
@@ -727,7 +866,7 @@
 
     render: () => {
       // Use the new renderer that handles updates more efficiently
-      return createMentionSuggestionRenderer();
+      return createMentionSuggestionRenderer(popupOwner);
     },
 
     command: ({ editor, range, props }: any) => {
@@ -769,6 +908,12 @@
       editor = new Editor({
         element: editorElement,
         extensions: [
+          ...(screenReferences
+            ? [
+                ScreenReference.configure({ references: () => screenReferences ?? [] }),
+                ScreenInterimExtension,
+              ]
+            : []),
           StarterKit.configure({
             heading: false,
             codeBlock: false,
@@ -811,7 +956,12 @@
             },
           }),
           Placeholder.configure({
-            placeholder,
+            // A function is read on every redraw, so it sees the current prop.
+            // Live dictation words count as content: the hint never sits under them.
+            placeholder: reactivePlaceholder
+              ? ({ editor: current }) =>
+                  screenInterimKey.getState(current.state)?.parts.length ? '' : placeholder
+              : placeholder,
             emptyEditorClass: 'is-editor-empty text-subtle',
             // `inputLocked` turns editability off; the placeholder must survive
             // it, otherwise a gated draft restore blanks the composer.
@@ -923,6 +1073,8 @@
           // so its preview cannot survive a clear or describe a replacement chip.
           if (transaction.docChanged && hoverPreview && hoverPreviewContainer) {
             unmount(hoverPreview);
+            unregisterHoverPreview?.();
+            unregisterHoverPreview = undefined;
             hoverPreviewContainer.remove();
             hoverPreview = null;
             hoverPreviewContainer = null;
@@ -930,9 +1082,15 @@
         },
         onUpdate: ({ editor, transaction }) => {
           // Don't call onUpdate if this is an external update (from $effect) or if we're clearing
-          if (transaction.getMeta('external-update') || isClearing) {
+          if (
+            transaction.getMeta('external-update') ||
+            transaction.getMeta(SCREEN_EVIDENCE_INSERTION) ||
+            isClearing
+          ) {
             return;
           }
+          const referenceEdit = onScreenReferencesEdited ? screenReferenceEdit(transaction) : null;
+          if (referenceEdit) onScreenReferencesEdited?.(referenceEdit);
           const text = serializeEditorText(editor);
           // A paste must not pop the slash menu even when it leaves the cursor
           // in a "/"-leading token; typing afterwards changes the context key
@@ -940,7 +1098,8 @@
           refreshSlashContext(editor, {
             dismissNewContext: transaction.getMeta('uiEvent') === 'paste',
           });
-          onUpdate?.(text);
+          if (transaction.getMeta(SCREEN_REFERENCE_SYNC)) onUpdate?.(text, { programmatic: true });
+          else onUpdate?.(text);
         },
         onSelectionUpdate: ({ editor, transaction }) => {
           refreshSlashContext(editor, {
@@ -972,6 +1131,34 @@
           });
         },
         editorProps: {
+          handleDOMEvents: {
+            compositionstart: () => {
+              untrack(() => {
+                composing = true;
+              });
+              onCompositionChange?.(true);
+              return false;
+            },
+            compositionend: () => {
+              // ProseMirror schedules its final DOM-observer flush after this handler.
+              // A second microtask lets that transaction commit before inserting evidence.
+              queueMicrotask(() => {
+                queueMicrotask(() => {
+                  if (!editor || editor.isDestroyed) return;
+                  untrack(() => {
+                    composing = false;
+                  });
+                  onCompositionChange?.(false);
+                  flushScreenEvidence();
+                });
+              });
+              return false;
+            },
+            beforeinput: () => {
+              onUserTextInput?.();
+              return false;
+            },
+          },
           attributes: {
             class: `tiptap-editor ${editorClassName}`,
             role: 'textbox',
@@ -1035,6 +1222,9 @@
             return isFileDragEvent(event);
           },
           handleKeyDown: (view, event) => {
+            // IME confirmation belongs to text composition, not app shortcuts.
+            // Safari may report the final composing key only through keyCode 229.
+            if (view.composing || event.isComposing || event.keyCode === 229) return false;
             if (handleSlashMenuKeyDown(event)) {
               return true;
             }
@@ -1340,7 +1530,7 @@
       // Show hover preview
       if (!hoverPreviewContainer) {
         hoverPreviewContainer = document.createElement('div');
-        document.body.appendChild(hoverPreviewContainer);
+        (popupOwner?.target() ?? document.body).appendChild(hoverPreviewContainer);
 
         const type = (chip.type as any) || 'file';
         const label = chip.label || target.textContent || '';
@@ -1375,6 +1565,8 @@
             onClose: () => {
               if (hoverPreview && hoverPreviewContainer) {
                 unmount(hoverPreview);
+                unregisterHoverPreview?.();
+                unregisterHoverPreview = undefined;
                 hoverPreviewContainer.remove();
                 hoverPreview = null;
                 hoverPreviewContainer = null;
@@ -1382,6 +1574,10 @@
             },
           },
         });
+
+        const previewElement = hoverPreviewContainer.firstElementChild;
+        if (previewElement instanceof HTMLElement)
+          unregisterHoverPreview = popupOwner?.register(previewElement, closeOwnedHoverPreview);
 
         // Add mouseout listener to preview container for immediate dismiss
         hoverPreviewContainer.addEventListener('mouseout', handlePreviewMouseOut);
@@ -1402,6 +1598,8 @@
       // Hide hover preview immediately
       if (hoverPreview && hoverPreviewContainer) {
         unmount(hoverPreview);
+        unregisterHoverPreview?.();
+        unregisterHoverPreview = undefined;
         hoverPreviewContainer.remove();
         hoverPreview = null;
         hoverPreviewContainer = null;
@@ -1420,6 +1618,8 @@
     // Hide preview immediately when mouse leaves
     if (hoverPreview && hoverPreviewContainer) {
       unmount(hoverPreview);
+      unregisterHoverPreview?.();
+      unregisterHoverPreview = undefined;
       hoverPreviewContainer.remove();
       hoverPreview = null;
       hoverPreviewContainer = null;
@@ -1549,6 +1749,8 @@
     }
     if (hoverPreview && hoverPreviewContainer) {
       unmount(hoverPreview);
+      unregisterHoverPreview?.();
+      unregisterHoverPreview = undefined;
       hoverPreviewContainer.remove();
     }
   });
@@ -1588,6 +1790,9 @@
       if (!editor || requestId !== valueUpdateRequestId) {
         return;
       }
+      // A local transaction (e.g. committed dictation) landed meanwhile: this echo
+      // is older than the editor and must not overwrite it; a newer value re-runs.
+      if (serializeEditorText(editor) !== currentText) return;
 
       editor
         .chain()
@@ -1643,8 +1848,9 @@
 
 <div class="tiptap-root">
   <Popover.Root bind:open={() => slashMenuOpen, (open) => !open && dismissSlashMenu()}>
-    <Popover.Portal>
+    <Popover.Portal to={popupOwner?.target()}>
       <Popover.Content
+        bind:ref={slashContent}
         customAnchor={element ?? null}
         side="top"
         align="start"
@@ -1678,6 +1884,31 @@
 </div>
 
 <style>
+  :global(.tiptap-editor .screen-interim) {
+    color: hsl(var(--muted-foreground));
+    pointer-events: none;
+    white-space: pre-wrap;
+  }
+
+  :global(.tiptap-editor .screen-reference-chip) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    vertical-align: baseline;
+    min-width: 18px;
+    height: 18px;
+    padding-inline: 2px;
+    border-radius: var(--radius-full);
+    background: var(--color-primary);
+    color: var(--color-primary-foreground);
+    font-size: var(--text-caption-size);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  /* A recording's start or end point reads as a short label pill, not a number disc. */
+  :global(.tiptap-editor .screen-reference-chip[data-reference-kind]) {
+    padding-inline: 6px;
+  }
   .tiptap-root {
     position: relative;
     width: 100%;

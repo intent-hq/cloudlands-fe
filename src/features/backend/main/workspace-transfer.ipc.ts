@@ -22,7 +22,11 @@ import type {
   TransferProgressEvent,
   TransferStartParams,
 } from '../../../shared/types/workspace-transfer';
-import { buildConfigForConnection, getBackendClientForIpcEvent } from './backend.ipc';
+import {
+  buildConfigForConnection,
+  getBackendClientForIpcEvent,
+  openBackendWindow,
+} from './backend.ipc';
 import { JsonRpcClient } from './json-rpc-client';
 import { getOrCreateClientId } from './client-identity';
 import {
@@ -104,6 +108,18 @@ async function openFileSink(filePath: string): Promise<FileSink> {
   };
 }
 
+/**
+ * Connect the target backend, open or focus its window (restoring its saved
+ * layout when every window for it was closed), then show the transferred
+ * workspace in it. `window.ts` is imported lazily so this module (and its
+ * tests) does not pull the window layer in at load time.
+ */
+async function openTargetWorkspace(connectionId: string, workspaceId: string): Promise<void> {
+  await openBackendWindow(connectionId);
+  const { showWorkspaceInBackendWindow } = await import('../../../main/window');
+  showWorkspaceInBackendWindow(connectionId, workspaceId);
+}
+
 /** A session owner is gone once its WebContents no longer exists (window
  * closed) — its leftover session is then released for other windows. */
 function isOwnerGone(ownerId: number): boolean {
@@ -119,6 +135,7 @@ function getRelay(): WorkspaceTransferRelay {
       openFileSink,
       broadcastProgress,
       isOwnerGone,
+      openTargetWorkspace,
       logger: {
         info: (msg, meta) => logger.info(msg, meta),
         warn: (msg, meta) => logger.warn(msg, meta),

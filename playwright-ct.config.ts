@@ -93,6 +93,9 @@ export default defineConfig({
 
     /* Vite configuration for component testing */
     ctViteConfig: {
+      // CI does not need the bundle-size table: measuring gzip and source maps
+      // concurrently exhausted the prebuild heap. Keep emitted maps and warnings.
+      logLevel: process.env.CI ? 'warn' : 'info',
       // CT roots Vite in playwright/, outside the app's Svelte config discovery.
       // Reuse its compiler compatibility so mounted components retain $set.
       plugins: [svelte({ configFile: resolve(__dirname, 'svelte.config.js') })],
