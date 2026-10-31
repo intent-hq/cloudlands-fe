@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.259.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.259.0...v2.259.1) (2026-10-31)
+
+
+### 🐛 Bug Fixes
+
+* build backend:status payloads in one typed place, scoped per backend ([#3910](https://github.com/intent-hq/cloudlands-fe/issues/3910)) ([304824d](https://github.com/intent-hq/cloudlands-fe/commit/304824d53051494cd7de0ce9e963e5da031990df))
+
 ## [2.259.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.258.2...v2.259.0) (2026-10-31)
 
 
