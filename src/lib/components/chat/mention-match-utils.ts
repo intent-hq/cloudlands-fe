@@ -7,7 +7,8 @@
  * - @note[({workspaceId}/){noteId}:{title}] — note mentions (current form)
  * - @note/{noteId} — legacy note mentions
  * - @terminal[{id}:{name}], @script[{id}:{name}] — terminal and script mentions
- * - @{path} — file/folder mentions (paths with / or file extensions)
+ * - @{path} — file mentions (paths with / or file extensions)
+ * - @{path}/ — folder mentions (a trailing slash marks the folder)
  *
  * The `@` must not be preceded by an email-local-part character (letters,
  * digits, `._%+-`), so email addresses like clement@shv.com and URL userinfo
@@ -101,6 +102,13 @@ export function decodeInlineMention(match: InlineMentionMatch): DecodedInlineMen
         label: `${fileName}${parsed.target.slice(parsed.path.length)}`,
       };
     }
+    case 'folder':
+      // Folder mention: @path/to/dir/, shown like a legacy @path/to/dir chip.
+      return {
+        kind: 'file',
+        path: parsed.path,
+        label: parsed.path.split('/').pop() || parsed.path,
+      };
     default:
       return { kind: 'text' };
   }
