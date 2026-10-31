@@ -2696,6 +2696,7 @@
   "home_navigation_label": "Startseite",
   "home_needs_you_badge_many": "{count} Arbeitsbereiche benötigen Ihre Aufmerksamkeit",
   "home_needs_you_badge_one": "{count} Arbeitsbereich benötigt Ihre Aufmerksamkeit",
+  "home_new_chat": "Neuer Chat",
   "home_new_workspace": "Neuer Arbeitsbereich",
   "home_no_matches": "Keine passenden Arbeitsbereiche",
   "home_no_matches_description": "Versuchen Sie eine andere Suche, ein anderes Repository oder einen anderen Aufmerksamkeitsfilter.",

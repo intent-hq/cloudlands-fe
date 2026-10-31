@@ -2696,6 +2696,7 @@
   "home_navigation_label": "Inicio",
   "home_needs_you_badge_many": "{count} espacios de trabajo requieren su atención",
   "home_needs_you_badge_one": "{count} espacio de trabajo requiere su atención",
+  "home_new_chat": "Chat nuevo",
   "home_new_workspace": "Nuevo espacio de trabajo",
   "home_no_matches": "No hay espacios de trabajo coincidentes",
   "home_no_matches_description": "Pruebe otra búsqueda, otro repositorio u otro filtro de atención.",

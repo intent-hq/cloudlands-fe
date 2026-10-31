@@ -7,16 +7,19 @@ import { setupHomeIntegrationsFixtures } from './home-integrations-browser-fixtu
 import { setupHomeAssistantActivityFixtures } from './home-assistant-activity-browser-fixtures';
 import { setupHomeDismissFixtures } from './home-dismiss-browser-fixtures';
 import { setupHomeAssistantRenameFixtures } from './home-assistant-rename-browser-fixtures';
+import { setupHomeAssistantNewChatFixtures } from './home-assistant-new-chat-browser-fixtures';
 
 export function startHomePreviewFixtures(extraFixtures: () => Array<() => void> = () => []) {
   return startHomePreview(() => {
     const stopIntegrations = setupHomeIntegrationsFixtures(store);
     const stopActivity = setupHomeAssistantActivityFixtures();
     const stopRenames = setupHomeAssistantRenameFixtures();
+    const stopNewChats = setupHomeAssistantNewChatFixtures();
     const extraStops = extraFixtures();
     return [
       () => {
         extraStops.forEach((stop) => stop());
+        stopNewChats();
         stopRenames();
         stopActivity();
         stopIntegrations();

@@ -112,6 +112,7 @@ const FULL_RISK_FILES = new Set([
   'svelte.config.js',
   'vite.config.mjs',
   'vitest.config.ts',
+  'scripts/vitest-native-deps.mjs',
 ]);
 // Files that decide which root specs playwright.config.ts runs: the config and the
 // modules it reads its testDir/testMatch/testIgnore from (root-spec-pattern.mjs
