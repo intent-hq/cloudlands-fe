@@ -844,7 +844,7 @@ describe('shared browser jobs and nightly routing', () => {
     expect(field(ct, 'fail-fast')).toBe('false');
     expect(jobField(ct, 'timeout-minutes')).toBe('50');
     expect(field(step(ct, 'Build CT bundle'), 'NODE_OPTIONS').replaceAll("'", '')).toBe(
-      '--max-old-space-size=8192',
+      '--max-old-space-size=12288',
     );
     expect(field(step(ct, 'Component tests'), 'NODE_OPTIONS').replaceAll("'", '')).toBe(
       '--max-old-space-size=4096',
