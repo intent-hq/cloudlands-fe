@@ -1,5 +1,5 @@
 export { toast } from 'svelte-sonner';
-export type { ExternalToast } from 'svelte-sonner';
+export type { ExternalToast, ToastT } from 'svelte-sonner';
 export { default as AgentAttentionToast } from './AgentAttentionToast.svelte';
 export { default as AgentFailureToast } from './AgentFailureToast.svelte';
 export { default as AgentIdleToast } from './AgentIdleToast.svelte';

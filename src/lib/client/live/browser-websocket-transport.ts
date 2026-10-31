@@ -636,6 +636,9 @@ export class BrowserWebSocketTransport implements BackendTransport {
                   localNodeIsolation: capabilities?.localNodeIsolation === 1 ? 1 : 0,
                   agentPlatformRouting: capabilities?.agentPlatformRouting === 1 ? 1 : 0,
                   workspaceMembershipEvents: capabilities?.workspaceMembershipEvents === 1 ? 1 : 0,
+                  // Dock evidence placement (strict integer advertisement).
+                  rawScreenshotRetention: capabilities?.rawScreenshotRetention === 1 ? 1 : 0,
+                  chiefAttachments: capabilities?.chiefAttachments === 1 ? 1 : 0,
                   // Truncated note reads (§5.2): gates maxContentBytes / baseContentBytes.
                   noteTruncatedRead: capabilities?.noteTruncatedRead === 1 ? 1 : 0,
                 });

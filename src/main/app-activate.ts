@@ -52,6 +52,7 @@ export function createBootWindowsGate(): BootWindowsGate {
 
 export interface ActivateDeps<W extends ActivateWindow> {
   whenBootWindowsReady: () => Promise<void>;
+  shouldIgnoreActivation?: () => boolean;
   getAllWindows: () => readonly W[];
   getMainWindow: () => W | null | undefined;
   /** A window that just claimed focus (e.g. a notification click target). */
@@ -69,8 +70,14 @@ let pendingZeroWindowActivation: Promise<ZeroWindowOutcome> | null = null;
 
 export async function handleActivate<W extends ActivateWindow>(
   deps: ActivateDeps<W>,
-): Promise<'focused' | ZeroWindowOutcome> {
+): Promise<'focused' | 'ignored' | ZeroWindowOutcome> {
+  // Capture the origin before yielding: capture may close while boot is pending.
+  if (deps.shouldIgnoreActivation?.()) return 'ignored';
   await deps.whenBootWindowsReady();
+
+  // Focusing capture controls or the dock can activate the process on macOS.
+  // That interaction must not reveal a normal workspace behind the capture.
+  if (deps.shouldIgnoreActivation?.()) return 'ignored';
 
   const liveWindows = deps.getAllWindows().filter((w) => !w.isDestroyed());
   if (liveWindows.length > 0) {

@@ -1,4 +1,5 @@
-import { put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { call, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { isDockRenderer, openDockMessageTarget } from '$features/hud/dock-navigation';
 
 import { m } from '$shared/paraglide/messages.js';
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
@@ -20,6 +21,11 @@ import { focusBrowserTabRequested, openAgentTabRequested } from '../app-layout-s
 function* openAgentTab(action: ReturnType<typeof openAgentTabRequested>): SagaGenerator<void> {
   const [workspaceId, detail] = action.payload;
   if (!workspaceId || !detail?.agentId) return;
+
+  if (isDockRenderer()) {
+    yield* call(openDockMessageTarget, workspaceId, detail.agentId);
+    return;
+  }
 
   yield* put(ensureAgentSessionLoaded(workspaceId, detail.agentId));
   const agent = yield* selectAgentSession.effect(detail.agentId);

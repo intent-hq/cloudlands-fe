@@ -1,4 +1,5 @@
 import { call, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { isDockRenderer, openDockMessageTarget } from '$features/hud/dock-navigation';
 
 import type { TrackedChange } from '$features/file-tracking/types';
 import {
@@ -10,6 +11,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import { isBinaryExtension } from '$shared/binary-file-extensions';
 import { m } from '$shared/paraglide/messages.js';
 import { parseFilePathLineSuffix } from '$shared/utils/link-helpers';
+import type { WorkspaceWindowTarget } from '$shared/workspace-window-target';
 import {
   openTab,
   openTabInAdjacentOrSplit,
@@ -42,6 +44,26 @@ function* openWorkspaceTab(
   sourcePanelId?: string,
   allowDuplicate?: boolean,
 ): SagaGenerator<void> {
+  if (isDockRenderer() && tab.type === 'file' && tab.filePath) {
+    const data = tab.data;
+    const target: WorkspaceWindowTarget = {
+      type: 'file',
+      filePath: tab.filePath,
+      ...(typeof data?.line === 'number' ? { line: data.line } : {}),
+      ...(typeof data?.gitRootId === 'string' ? { gitRootId: data.gitRootId } : {}),
+      ...(typeof data?.gitRootPath === 'string' ? { gitRootPath: data.gitRootPath } : {}),
+    };
+    yield* call(openDockMessageTarget, workspaceId, undefined, target);
+    return;
+  }
+  if (isDockRenderer() && tab.type === 'note' && tab.noteId) {
+    const target: WorkspaceWindowTarget = {
+      type: 'note',
+      noteId: tab.noteId,
+    };
+    yield* call(openDockMessageTarget, workspaceId, undefined, target);
+    return;
+  }
   if (adjacent) {
     yield* put(
       openTabInAdjacentOrSplit(workspaceId, tab, sourcePanelId, {

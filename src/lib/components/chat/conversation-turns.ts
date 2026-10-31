@@ -115,7 +115,10 @@ function isInlineSystemNotice(message: AgentMessage): boolean {
   );
 }
 
-export function groupIntoTurns(messages: AgentMessage[]): ConversationTurn[] {
+export function groupIntoTurns(
+  messages: AgentMessage[],
+  { preserveSystemRows = false }: { preserveSystemRows?: boolean } = {},
+): ConversationTurn[] {
   const turns: ConversationTurn[] = [];
   let currentTurn: ConversationTurn | null = null;
 
@@ -137,6 +140,15 @@ export function groupIntoTurns(messages: AgentMessage[]): ConversationTurn[] {
           userMessage: null,
           bodyMessages: [message],
           assistantMessages: [message],
+          noticeMessages: [],
+        });
+    } else if (preserveSystemRows && message.role === 'system') {
+      if (currentTurn) currentTurn.bodyMessages.push(message);
+      else
+        turns.push({
+          userMessage: null,
+          bodyMessages: [message],
+          assistantMessages: [],
           noticeMessages: [],
         });
     } else if (isTurnNotice(message)) {

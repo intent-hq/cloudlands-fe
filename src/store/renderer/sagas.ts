@@ -1,3 +1,4 @@
+import { dockConversationSaga } from './slices/dock-conversation/sagas/dock-conversation-saga';
 import { desktopControlSaga } from './slices/desktop-control/sagas/desktop-control-saga';
 import { workspaceDiscussionSaga } from './slices/workspace-discussion/sagas/workspace-discussion-saga';
 import { homeWorkspacesSaga } from '$features/home/home-workspaces-saga';
@@ -230,6 +231,7 @@ export const sagas = [
   setupPromptSaga,
   backgroundHooksSaga,
   hostOwnerServicesSaga,
+  dockConversationSaga,
   themeSaga,
   powerSaga,
   autoUpdateSaga,

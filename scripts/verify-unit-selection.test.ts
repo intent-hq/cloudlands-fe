@@ -7,6 +7,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -27,7 +28,7 @@ const roots: string[] = [];
 afterEach(() => roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true })));
 afterEach(() => vi.unstubAllEnvs());
 function fixture() {
-  const root = mkdtempSync(join(tmpdir(), 'resolved-unit-'));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'resolved-unit-')));
   roots.push(root);
   vi.stubEnv('NODE_COMPILE_CACHE', join(root, 'compile-cache'));
   const write = (file: string, content: string) => {

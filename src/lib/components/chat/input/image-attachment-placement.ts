@@ -18,6 +18,7 @@ import {
   placeAttachment,
   sendAttachmentUploadChunk,
   type PlaceAttachmentResult,
+  type RawScreenshotPlacement,
 } from './context-api';
 import {
   assertPlacementCurrent,
@@ -30,31 +31,12 @@ import {
   UPLOAD_CHUNK_BYTES,
 } from './attachment-placement';
 
-/**
- * Inline image block (bytes on the wire — the legacy arm). The optional
- * `placement*` fields are client-side only: `toImageReferenceBlocks` tags a
- * block that failed to place with the `idempotencyKey` and requested file
- * name of its attempt, so the retry (which resends these blocks) replays
- * the same placement instead of minting a new identity. They never reach
- * the wire — a tagged block is always converted to a reference first.
- */
-interface InlineImageBlock {
-  type: 'image';
-  data: string;
-  mimeType: string;
-  placementIdempotencyKey?: string;
-  placementFileName?: string;
-}
-
-/** Attachment-registry reference image block (PROTOCOL §5.5, monorepo#3338). */
-export interface ImageReferenceBlock {
-  type: 'image';
-  attachmentId: string;
-  mimeType?: string;
-}
-
-/** Either arm of an image block as accepted by the daemon. */
-export type WireImageBlock = InlineImageBlock | ImageReferenceBlock;
+import type {
+  InlineImageBlock,
+  ImageReferenceBlock,
+  WireImageBlock,
+} from '$shared/types/wire-image-block';
+export type { ImageReferenceBlock, WireImageBlock } from '$shared/types/wire-image-block';
 
 /** Decode raw base64 (no data-URL prefix) into bytes. */
 function base64ToBytes(b64: string): Uint8Array {
@@ -131,11 +113,20 @@ const defaultApi: ImagePlacementApi = {
 export async function placeImageAttachment(
   workspaceId: string,
   fileName: string,
-  source: { data: string; mimeType?: string; idempotencyKey?: string },
+  source: {
+    data: string;
+    mimeType?: string;
+    idempotencyKey?: string;
+    /** Raw-retention association (requires `idempotencyKey`); omitted for ordinary images. */
+    rawScreenshot?: RawScreenshotPlacement;
+  },
   api: ImagePlacementApi = defaultApi,
 ): Promise<PlaceAttachmentResult> {
   const { idempotencyKey } = source;
-  const keyed = idempotencyKey !== undefined ? { idempotencyKey } : {};
+  const keyed = {
+    ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
+    ...(source.rawScreenshot !== undefined ? { rawScreenshot: source.rawScreenshot } : {}),
+  };
   const recover = async (error: unknown): Promise<PlaceAttachmentResult | undefined> =>
     shouldRecoverPlacement(error, idempotencyKey)
       ? recoverPlacementByKey(workspaceId, idempotencyKey, api.getAttachmentInfo)

@@ -1,4 +1,8 @@
 <script lang="ts">
+  import {
+    getOwnedPopupContext,
+    createOwnedPopupRegistration,
+  } from '$lib/components/ui/owned-popup-context';
   import { flushSync, onDestroy, untrack, type Snippet } from 'svelte';
   import { Combobox as ComboboxPrimitive } from 'bits-ui';
   import { Button } from '$lib/components/ui/button';
@@ -16,6 +20,11 @@
   import { useDialogPortalTarget } from '$lib/components/ui/dialog';
 
   const uid = $props.id();
+  const popupOwner = getOwnedPopupContext();
+  const registerOwnedPopup = createOwnedPopupRegistration(() => {
+    open = false;
+    handleOpenChange(false);
+  });
 
   interface Props {
     value?: string | string[];
@@ -679,7 +688,7 @@
   <!-- i18n-ignore (snippet parameter type annotation, not UI text) -->
   {#snippet staticContentChild({ props }: StaticContentChildProps)}
     {@const contentProps = withoutListboxSemantics(props)}
-    <div {...contentProps}>
+    <div {...contentProps} use:registerOwnedPopup>
       {@render contentBody()}
     </div>
   {/snippet}
@@ -688,7 +697,7 @@
   {#snippet contentChild({ props, wrapperProps }: ContentChildProps)}
     {@const contentProps = withoutListboxSemantics(props)}
     <div {...wrapperProps}>
-      <div {...contentProps}>
+      <div {...contentProps} use:registerOwnedPopup>
         {@render contentBody()}
       </div>
     </div>
@@ -709,7 +718,7 @@
       portal === undefined || portal === 'dialog' ? dialogPortalTarget() : undefined}
     <ComboboxPrimitive.Portal
       disabled={portal === false || (portal === 'dialog' && !dialogTarget)}
-      to={dialogTarget}
+      to={dialogTarget ?? popupOwner?.target()}
     >
       <ComboboxPrimitive.Content
         {side}

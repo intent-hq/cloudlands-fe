@@ -36,6 +36,7 @@ export const toastMetadata = parseUiComponentMetadata({
   category: 'pattern',
   owner: '007-B1',
   callers: [
+    'src/features/hud/components/DockConversationNotifications.svelte',
     'src/lib/component-catalog/renderers/ToastCatalogPreview.svelte',
     'src/lib/components/layout/DaemonStatusIndicator.svelte',
     'src/lib/components/patterns/notify/index.ts',

@@ -53,6 +53,23 @@ async function readDocumentOnDisk(): Promise<unknown> {
 }
 
 describe('local-prefs', () => {
+  it('rejects a failed Labs write and permits retry without losing the persisted setting', async () => {
+    let fail = false;
+    await mockFsRename(async (rename, ...args) => {
+      if (fail) throw new Error('disk unavailable');
+      await rename(...args);
+    });
+    const { setDockLabEnabledLocalPref, getDockLabEnabledLocalPref } =
+      await import('../local-prefs');
+    await setDockLabEnabledLocalPref(true);
+    fail = true;
+    await expect(setDockLabEnabledLocalPref(false)).rejects.toThrow('disk unavailable');
+    expect(await getDockLabEnabledLocalPref()).toBe(true);
+    fail = false;
+    await setDockLabEnabledLocalPref(false);
+    expect(await getDockLabEnabledLocalPref()).toBe(false);
+  });
+
   it('getLocalPref returns undefined for missing file/key', async () => {
     const { getLocalPref, hasLocalPref } = await import('../local-prefs');
     expect(await getLocalPref('anything')).toBeUndefined();
