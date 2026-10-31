@@ -1230,6 +1230,8 @@ export interface TerminalCreateParams {
   rows: number;
   cwd?: string;
   command?: string;
+  /** Layered onto the daemon's inherited environment (later keys override). */
+  env?: Record<string, string>;
 }
 
 /** Decoded `terminal:data` payload — `chunk` is the UTF-8 string the daemon base64-encoded. */
