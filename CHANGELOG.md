@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.263.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.262.2...v2.263.0) (2026-10-31)
+
+
+### 🚀 Features
+
+* add adaptive dock and live screen feedback ([#3794](https://github.com/intent-hq/cloudlands-fe/issues/3794)) ([ab5f75b](https://github.com/intent-hq/cloudlands-fe/commit/ab5f75bfeeba2205516df8c3083f6e5ba55ccc25))
+
 ## [2.262.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.262.1...v2.262.2) (2026-10-31)
 
 
