@@ -13,6 +13,10 @@ let server: ViteDevServer | undefined;
 // per-visit budget sits above the workbench's own 45 s `readinessTimeoutMs` so a slow
 // visit surfaces the preview's readiness error rather than a bare expect timeout.
 const WORKBENCH_READY_TIMEOUT_MS = 60_000;
+// Visits that touch only their own case mount just that case (`cases=target`), so their
+// readiness no longer waits on every serial Mermaid render (intent-hq/intent#8188).
+type WorkbenchScope = 'target' | 'all';
+const scopeQuery = (scope: WorkbenchScope) => (scope === 'target' ? '&cases=target' : '');
 test.describe.configure({ mode: 'default', timeout: 90_000 });
 
 test.beforeAll(async ({}, workerInfo) => {
@@ -100,10 +104,15 @@ type Frame = {
   exitingReveal: number | null;
 };
 
-async function openMotionFixture(page: Page, state: string, reduced = false) {
+async function openMotionFixture(
+  page: Page,
+  state: string,
+  reduced = false,
+  scope: WorkbenchScope = 'target',
+) {
   await page.emulateMedia({ reducedMotion: reduced ? 'reduce' : 'no-preference' });
   const motion = reduced ? 'reduced' : 'full';
-  const url = `${baseUrl}/sandbox/diagram-workbench?state=${state}&theme=light&width=960&motion=${motion}`;
+  const url = `${baseUrl}/sandbox/diagram-workbench?state=${state}&theme=light&width=960&motion=${motion}${scopeQuery(scope)}`;
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   const scene = page.getByTestId('catalog-scene');
   await expect(scene).toHaveAttribute('data-preview-ready', 'true', {
@@ -113,7 +122,7 @@ async function openMotionFixture(page: Page, state: string, reduced = false) {
 
 async function openSystemMotionFixture(page: Page, state: string, reduced: boolean) {
   await page.emulateMedia({ reducedMotion: reduced ? 'reduce' : 'no-preference' });
-  const url = `${baseUrl}/sandbox/diagram-workbench?state=${state}&theme=light&width=960`;
+  const url = `${baseUrl}/sandbox/diagram-workbench?state=${state}&theme=light&width=960${scopeQuery('target')}`;
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
     timeout: WORKBENCH_READY_TIMEOUT_MS,
@@ -1979,7 +1988,8 @@ test('keeps explicit full motion active for every stepped sandbox control', asyn
 test('settles every stepped sandbox control without finite reduced-motion animations', async ({
   page,
 }) => {
-  await openMotionFixture(page, 'custom-architecture', true);
+  // Steps every stepped fixture on one page, so it needs the full workbench.
+  await openMotionFixture(page, 'custom-architecture', true, 'all');
   await expect(page.getByTestId('catalog-shell')).toHaveAttribute('data-catalog-motion', 'reduced');
   await expect(page.locator('html')).toHaveClass(/catalog-reduced-motion/);
 
