@@ -11,6 +11,7 @@
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import {
     faArrowUpRightFromSquare,
+    faEllipsis,
     faExclamationTriangle,
     faWindowMaximize,
     faPlay,
@@ -168,6 +169,7 @@
                 class="flex h-full min-w-0 flex-1 cursor-pointer items-center justify-start gap-2 px-0 py-0 text-left"
                 onclick={() => openTerminalInPanel(terminal.id, terminalName)}
               >
+                <span class="size-2 shrink-0" aria-hidden="true"></span>
                 <span class="min-w-0 truncate type-caption font-normal text-foreground"
                   >{terminalName}</span
                 >
@@ -234,7 +236,8 @@
     <div class="flex items-center gap-1 pr-2">
       <div class="min-w-0 flex-1">
         <SidebarGroupHeader
-          title={m.workspace_devScripts_title()}
+          title={m.terminal_quakeOverlay_scripts_title()}
+          label={m.workspace_devScripts_title()}
           expanded={scriptsExpanded}
           onclick={() => (scriptsExpanded = !scriptsExpanded)}
         />
@@ -313,11 +316,11 @@
                         size="icon-compact"
                         iconOnly
                         class="size-(--row-action-target-compact)"
-                        tooltip={m.ui_openCombo_openInApp_tooltip()}
-                        aria-label={m.ui_openCombo_openInApp_tooltip()}
+                        tooltip={m.ui_menu_actions_ariaLabel()}
+                        aria-label={m.ui_menu_actions_ariaLabel()}
                         tooltipSide="left"
                       >
-                        <Fa icon={faArrowUpRightFromSquare} class="size-3" />
+                        <Fa icon={faEllipsis} class="size-3" />
                       </Button>
                     {/snippet}
                   </Menu.Trigger>
@@ -350,52 +353,42 @@
                         {m.workspace_shell_showInBottomBar_tooltip()}
                       </Menu.Item>
                     {/if}
+                    {#if live}
+                      <Menu.Separator />
+                      <Menu.Item
+                        disabled={operation?.pending ?? false}
+                        aria-busy={operation?.pending && operation.action === 'restart'
+                          ? true
+                          : undefined}
+                        onclick={(event) => runScript(script.id, 'restart', event)}
+                        data-script-action="restart"
+                      >
+                        {#snippet leading()}<Fa icon={faRotateRight} class="size-3" />{/snippet}
+                        {m.workspace_devScripts_restart_ariaLabel({ name: script.name })}
+                      </Menu.Item>
+                    {/if}
                   </Menu.Content>
                 </Menu.Root>
               </div>
               {#if live}
                 {@const stopLabel = m.terminal_quakeOverlay_stop_label()}
-                {@const restartLabel = m.workspace_devScripts_restart_ariaLabel({
-                  name: script.name,
-                })}
                 <Button
                   variant="ghost"
                   size="icon-compact"
                   iconOnly
                   class="size-(--row-action-target-compact) shrink-0 text-danger hover:text-danger active:bg-accent/80"
                   disabled={operation?.pending ?? false}
-                  aria-busy={operation?.pending && operation.action === 'stop' ? true : undefined}
+                  aria-busy={operation?.pending || undefined}
                   aria-label={stopLabel}
                   tooltip={stopLabel}
                   tooltipSide="left"
                   onclick={(event) => runScript(script.id, 'stop', event)}
                   data-script-action="stop"
                 >
-                  {#if operation?.pending && operation.action === 'stop'}
+                  {#if operation?.pending}
                     <IntentMarkLoader size={12} />
                   {:else}
                     <Fa icon={faStop} class="size-3" />
-                  {/if}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon-compact"
-                  iconOnly
-                  class="size-(--row-action-target-compact) shrink-0 active:bg-accent/80"
-                  disabled={operation?.pending ?? false}
-                  aria-busy={operation?.pending && operation.action === 'restart'
-                    ? true
-                    : undefined}
-                  aria-label={restartLabel}
-                  tooltip={restartLabel}
-                  tooltipSide="left"
-                  onclick={(event) => runScript(script.id, 'restart', event)}
-                  data-script-action="restart"
-                >
-                  {#if operation?.pending && operation.action === 'restart'}
-                    <IntentMarkLoader size={12} />
-                  {:else}
-                    <Fa icon={faRotateRight} class="size-3" />
                   {/if}
                 </Button>
               {:else}

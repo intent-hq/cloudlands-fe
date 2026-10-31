@@ -956,7 +956,7 @@
                   <RelativeTime
                     date={updatedAt}
                     compact
-                    class="{panelRow ? 'type-caption tabular-nums' : 'text-ui'} text-subtle"
+                    class="{panelRow ? 'text-[11px] tabular-nums' : 'text-ui'} text-subtle"
                   />
                 </span>
               {/if}

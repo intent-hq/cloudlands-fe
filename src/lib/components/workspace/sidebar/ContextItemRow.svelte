@@ -182,7 +182,7 @@
 
     <!-- Content -->
     <div class="flex-1 flex items-baseline gap-2 min-w-0">
-      <div class="min-w-0 flex items-center gap-1.5">
+      <div class="min-w-0 flex flex-1 items-center gap-1.5">
         <span class="type-caption font-normal truncate">{displayTitle()}</span>
         {#if item.type === 'note' && item.isSpec}
           <span class="type-caption px-1 rounded bg-muted text-muted-foreground font-normal"
@@ -191,7 +191,9 @@
         {/if}
       </div>
       {#if subtitle()}
-        <div class="type-caption text-muted-foreground truncate">{subtitle()}</div>
+        <div class="max-w-[40%] shrink truncate text-[11px] text-muted-foreground">
+          {subtitle()}
+        </div>
       {/if}
     </div>
 
@@ -200,9 +202,8 @@
     {/if}
   </Button>
 
-  <!-- Action buttons -->
   <div
-    class="absolute right-1 rounded bg-inherit px-1 flex items-center gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
+    class="flex shrink-0 items-center opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
   >
     {#if hasExternalLink}
       <Tooltip
@@ -223,18 +224,6 @@
         </Button>
       </Tooltip>
     {/if}
-    <!-- {#if canDelete}
-      <Tooltip content="Remove from context" side="top" delayDuration={300}>
-        <Button
-        variant="ghost"
-          type="button"
-          class="p-1 rounded hover:bg-danger-background/10 transition-colors cursor-pointer"
-          onclick={handleDeleteClick}
-        >
-          <Fa icon={faTrash} size="xs" class="text-ghost hover:text-danger" />
-        </Button>
-      </Tooltip>
-    {/if} -->
   </div>
 </div>
 

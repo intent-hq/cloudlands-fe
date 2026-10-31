@@ -584,11 +584,11 @@
 
 <div class="mb-2 flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-1">
   {#if summary}
-    <div class="min-w-24 flex-1">{@render summary()}</div>
+    <div class="min-w-0 flex-1">{@render summary()}</div>
   {/if}
   {#if isOwner}
     <div
-      class="ml-auto flex shrink-0 items-center justify-end gap-2"
+      class="ml-auto flex shrink-0 items-center justify-end gap-1.5"
       data-testid="auto-commit-toggle"
     >
       <Tooltip
@@ -597,11 +597,11 @@
           : m.workspace_fileChanges_autoCommitOff_tooltip()}
         side="right"
         contentClass="w-[12rem]"
-        class="min-w-0 items-center justify-end gap-2"
+        class="min-w-0 items-center justify-end gap-1.5"
         disableHoverableContent={false}
         disableCloseOnTriggerClick={true}
       >
-        <span class="type-caption min-w-0 truncate text-subtle">
+        <span class="min-w-0 truncate text-[11px] text-subtle">
           {m.workspace_commitDrawer_autoCommit_label()}
         </span>
         <Switch

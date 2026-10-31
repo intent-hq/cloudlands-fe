@@ -5,12 +5,13 @@
   interface Props {
     [attribute: `data-${string}`]: string | undefined;
     title: string;
+    label?: string;
     meta?: string;
     expanded: boolean;
     onclick: () => void;
   }
 
-  let { title, meta, expanded, onclick, ...restProps }: Props = $props();
+  let { title, label, meta, expanded, onclick, ...restProps }: Props = $props();
 </script>
 
 <Button
@@ -19,6 +20,7 @@
   size="compact"
   class="h-8 w-full justify-start gap-2 px-2 type-caption font-normal text-muted-foreground hover:text-foreground"
   aria-expanded={expanded}
+  aria-label={label}
   {onclick}
   data-sidebar-group-header
 >

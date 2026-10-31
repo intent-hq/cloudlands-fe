@@ -646,20 +646,24 @@
           toggleDelegation(agent.id);
         }}
         aria-expanded={isExpanded}
-        aria-label={isExpanded
-          ? m.ui_vscodePanel_collapse_ariaLabel()
-          : m.ui_vscodePanel_expand_ariaLabel()}
-        data-agent-delegation-toggle={agent.id}
-      >
-        <span class="truncate text-left">
-          {#if !isExpanded && row.running > 0}
-            {m.workspace_agentsList_delegatedRunning_label({
+        aria-label={!isExpanded && row.running > 0
+          ? m.workspace_agentsList_delegatedRunning_label({
               running: formatInteger(row.running),
               total: formatInteger(row.total),
-            })}
-          {:else}
-            {m.workspace_agentsList_delegated_label({ count: formatInteger(row.total) })}
-          {/if}
+            })
+          : m.workspace_agentsList_delegated_label({ count: formatInteger(row.total) })}
+        data-agent-delegation-toggle={agent.id}
+      >
+        <span class="min-w-0 flex-1 truncate text-left"
+          >{m.workspace_agentsList_delegatedGroup_label()}</span
+        >
+        <span class="shrink-0 text-[11px] leading-none tabular-nums">
+          {!isExpanded && row.running > 0
+            ? m.workspace_agentsList_runningCount_label({
+                running: formatInteger(row.running),
+                total: formatInteger(row.total),
+              })
+            : formatInteger(row.total)}
         </span>
         <DisclosureIcon expanded={isExpanded} class="ml-auto" />
       </Button>
@@ -747,7 +751,14 @@
        `orphaned`; expanding lazy-loads the orphaned rows, listed below. -->
   <div class="container w-full min-w-0 pt-2">
     <SidebarGroupHeader
-      title={!showDelegatedAgents && runningDelegatedCount > 0
+      title={m.workspace_agentsList_delegatedGroup_label()}
+      meta={!showDelegatedAgents && runningDelegatedCount > 0
+        ? m.workspace_agentsList_runningCount_label({
+            running: formatInteger(runningDelegatedCount),
+            total: formatInteger(displayedDelegatedCount),
+          })
+        : formatInteger(displayedDelegatedCount)}
+      label={!showDelegatedAgents && runningDelegatedCount > 0
         ? m.workspace_agentsList_delegatedAgentsRunning_label({
             running: formatInteger(runningDelegatedCount),
             total: formatInteger(displayedDelegatedCount),
@@ -783,7 +794,14 @@
 {#if !loading && hasBackgroundBin}
   <div class="container w-full min-w-0 pt-2">
     <SidebarGroupHeader
-      title={!showBackgroundAgents && runningBackgroundCount > 0
+      title={m.workspace_agentsList_backgroundGroup_label()}
+      meta={!showBackgroundAgents && runningBackgroundCount > 0
+        ? m.workspace_agentsList_runningCount_label({
+            running: formatInteger(runningBackgroundCount),
+            total: formatInteger(displayedBackgroundCount),
+          })
+        : formatInteger(displayedBackgroundCount)}
+      label={!showBackgroundAgents && runningBackgroundCount > 0
         ? m.workspace_agentsList_backgroundAgentsRunning_label({
             running: formatInteger(runningBackgroundCount),
             total: formatInteger(displayedBackgroundCount),
@@ -824,7 +842,9 @@
 {#if !loading && hasRetiredBin}
   <div class="container w-full min-w-0 pt-2">
     <SidebarGroupHeader
-      title={m.workspace_agentsList_retiredAgents_label({
+      title={m.workspace_agentsList_retiredGroup_label()}
+      meta={formatInteger(displayedRetiredCount)}
+      label={m.workspace_agentsList_retiredAgents_label({
         count: formatInteger(displayedRetiredCount),
       })}
       expanded={showRetiredAgents}

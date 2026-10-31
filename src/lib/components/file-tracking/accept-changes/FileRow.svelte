@@ -276,14 +276,16 @@
         <Fa icon={faFileAlt} class="h-3! w-3! text-ghost shrink-0" />
       {/if}
       <span
-        class="{compact ? 'type-caption' : 'text-ui'} max-w-full shrink-0 truncate {muted
+        class="{compact ? 'type-caption' : 'text-ui'} min-w-0 shrink truncate {muted
           ? 'text-muted-foreground'
           : 'text-foreground'} {changeType === 'deleted' ? 'file-deleted' : ''}"
       >
         {fileName}
       </span>
       {#if dirPath}
-        <span class="{compact ? 'type-caption' : 'text-ui'} text-subtle truncate">{dirPath}</span>
+        <span class="{compact ? 'type-caption' : 'text-ui'} min-w-0 flex-1 text-subtle truncate"
+          >{dirPath}</span
+        >
       {/if}
     </div>
   </Button>

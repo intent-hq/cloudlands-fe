@@ -43,9 +43,6 @@
 
 {#if rows.length > 0}
   <section data-people-roster aria-label={m.workspace_peopleTile_title()}>
-    <h3 class="px-2 py-1.5 type-caption text-muted-foreground">
-      {m.workspace_peopleTile_title()}
-    </h3>
     <ListView
       items={rows}
       getKey={(row) => row.key}
