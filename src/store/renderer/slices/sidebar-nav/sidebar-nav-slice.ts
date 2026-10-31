@@ -70,6 +70,14 @@ export const setWorkspaceAutoArchiveDisabled = createAction<
 export const autoArchiveIdleAfterDaysHydrated = createAction<[days: number]>(
   'sidebarNav/autoArchiveIdleAfterDaysHydrated',
 );
+/**
+ * Forget the hydrated auto-archive setting when the settings authority (host
+ * connection or owner admission) changes, so the previous host's value never
+ * drives the menu while the new snapshot is read.
+ */
+export const autoArchiveIdleAfterDaysCleared = createAction(
+  'sidebarNav/autoArchiveIdleAfterDaysCleared',
+);
 export const setMultiSelectSidebarSelectedTabs = createAction<
   [workspaceId: string, tabIds: string[]]
 >('sidebarNav/setMultiSelectSidebarSelectedTabs');
@@ -137,6 +145,10 @@ sidebarNavReducer.with(togglePinWorkspace, (state, { payload: [id] }) => {
 sidebarNavReducer.with(autoArchiveIdleAfterDaysHydrated, (state, { payload: [days] }) => ({
   ...state,
   autoArchiveIdleAfterDays: days,
+}));
+sidebarNavReducer.with(autoArchiveIdleAfterDaysCleared, (state) => ({
+  ...state,
+  autoArchiveIdleAfterDays: null,
 }));
 sidebarNavReducer.with(
   setMultiSelectSidebarSelectedTabs,
