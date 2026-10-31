@@ -45,7 +45,7 @@
     groups?: { id: string; label: string; items: Workspace[] }[];
     aside?: Workspace[];
     dragScope?: string | null;
-    ontoggleaside?: (workspace: Workspace, focusMoved?: boolean) => void;
+    ontoggleaside?: (workspace: Workspace, focusMoved?: boolean, expectedScope?: string) => void;
   } = $props();
   const asideIds = $derived(new Set(aside.map((workspace) => workspace.id)));
   const CARD_DRAG_TYPE = 'application/x-intent-home-workspace';
@@ -134,12 +134,13 @@
   }
   function dropWorkspace(event: DragEvent) {
     const workspace = draggedWorkspace;
+    const scope = drag?.scope;
     const valid = workspace && drag && event.dataTransfer?.getData(CARD_DRAG_TYPE) === drag.token;
     finishDrag();
     event.preventDefault();
-    if (!valid) return;
+    if (!valid || !scope) return;
     event.stopPropagation();
-    ontoggleaside?.(workspace, true);
+    ontoggleaside?.(workspace, true, scope);
   }
   const columns = $derived(
     archived

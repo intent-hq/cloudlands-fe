@@ -40,6 +40,7 @@
   } from '$lib/components/workspace/utils/workspace-grouping';
   import {
     selectWorkspaceItems,
+    selectWorkspaceById,
     selectWorkspaceHasLoaded,
     selectIsCollaboratorOnlyClient,
   } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -89,6 +90,7 @@
     selectHomeWorkspaceView,
     selectHomeWorkspaceError,
     selectHomeSetAsideWorkspaceIds,
+    selectHomeWorkspaceIsSetAside,
     selectHomePersistenceScope,
   } from './home-workspaces-selectors';
   import {
@@ -177,11 +179,25 @@
   // moves when it left with the row.
   function isLive(workspace: Workspace): boolean {
     return (
+      workspace.status !== WorkspaceStatusEnum.Deleted &&
       workspace.status !== WorkspaceStatusEnum.Archived &&
-      workspace.status !== WorkspaceStatusEnum.Retired
+      workspace.status !== WorkspaceStatusEnum.Retired &&
+      !workspace.pendingDeleteAt
     );
   }
-  function toggleAside(workspace: Workspace, focusMoved = false) {
+  function toggleAside(workspace: Workspace, focusMoved = false, expectedScope?: string) {
+    if (expectedScope !== undefined) {
+      const state = store.state;
+      const live = selectWorkspaceById.select(state, workspace.id);
+      if (
+        selectHomePersistenceScope.select(state) !== expectedScope ||
+        selectHomeWorkspaceIsSetAside.select(state, workspace.id) ||
+        !live ||
+        !isLive(live)
+      )
+        return;
+      workspace = live;
+    }
     const neighbor = focusMoved ? null : neighborHomeWorkspaceId(homeElement, workspace.id);
     if (asideSet.has(workspace.id)) bringBackHomeWorkspaceNow(workspace.id);
     else setHomeWorkspaceAsideWithUndo(workspace);
