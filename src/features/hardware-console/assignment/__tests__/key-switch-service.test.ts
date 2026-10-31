@@ -137,6 +137,7 @@ beforeEach(() => {
   mockState.panelLayout.byWorkspaceId = {};
   mockState.agentSessions.byAgentId = {};
   mockState.workspaceAgents.byWorkspaceId = {};
+  window.history.replaceState(null, '', '/');
   vi.clearAllMocks();
 });
 
@@ -255,6 +256,7 @@ describe('focusWorkspaceSlot — first press (workspace not active)', () => {
 describe('focusWorkspaceSlot — subsequent presses (workspace active)', () => {
   beforeEach(() => {
     mockState.tabState.currentTabId = WS;
+    window.history.replaceState(null, '', '/workspace/ws-1');
   });
 
   it('uses the current workspace tab to cycle the focused panel', () => {
@@ -341,6 +343,135 @@ describe('focusWorkspaceSlot — subsequent presses (workspace active)', () => {
     expect(dispatched).toHaveLength(0);
     expect(focusComposer).not.toHaveBeenCalled();
   });
+});
+
+describe('focusWorkspaceSlot — workspace tab still current but another route is showing', () => {
+  beforeEach(() => {
+    // Leaving a workspace for Home or Settings keeps it as the current tab.
+    mockState.tabState.currentTabId = WS;
+  });
+
+  it.each(['/', '/settings'])(
+    'navigates back to the workspace from %s instead of cycling',
+    (path) => {
+      seedLayout('panel-1', { 'panel-1': 't1', 'panel-2': 't4' });
+
+      focusWorkspaceSlot(WS, { getCurrentPath: () => path });
+
+      expect(navigateToRoute).toHaveBeenCalledWith('/workspace/ws-1');
+      // Lands on the tab the user left, without advancing to the next one.
+      expect(setActiveTabCalls()).toEqual([]);
+    },
+  );
+
+  it('reads the live window route by default (Home at /)', () => {
+    seedLayout('panel-1', { 'panel-1': 't1', 'panel-2': 't4' });
+    mockState.agentSessions.byAgentId = { 'agent-b': { attentionRequestKind: 'discussion' } };
+
+    focusWorkspaceSlot(WS);
+
+    expect(navigateToRoute).toHaveBeenCalledWith('/workspace/ws-1');
+    expect(setActiveTabCalls()).toEqual([
+      expect.objectContaining({ wsId: WS, tabId: 't3', panelId: 'panel-1' }),
+    ]);
+  });
+
+  it('does not treat a different workspace route sharing the id prefix as active', () => {
+    seedLayout('panel-1', { 'panel-1': 't1', 'panel-2': 't4' });
+
+    focusWorkspaceSlot(WS, { getCurrentPath: () => '/workspace/ws-10' });
+
+    expect(navigateToRoute).toHaveBeenCalledWith('/workspace/ws-1');
+    expect(setActiveTabCalls()).toEqual([]);
+  });
+
+  it('still cycles tabs when the workspace route is showing', () => {
+    seedLayout('panel-1', { 'panel-1': 't1', 'panel-2': 't4' });
+
+    focusWorkspaceSlot(WS, { getCurrentPath: () => '/workspace/ws-1' });
+
+    expect(navigateToRoute).not.toHaveBeenCalled();
+    expect(setActiveTabCalls()).toEqual([
+      expect.objectContaining({ wsId: WS, tabId: 't2', panelId: 'panel-1' }),
+    ]);
+  });
+});
+
+describe('focusWorkspaceSlot — second press while the first navigation is in flight', () => {
+  it('cycles tabs instead of re-navigating, then re-navigates once the route settled elsewhere', async () => {
+    seedLayout('panel-1', { 'panel-1': 't1', 'panel-2': 't4' });
+    let settle: () => void = () => {};
+    const navigate = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    // The route has not committed yet: still on the previous workspace.
+    const getCurrentPath = () => '/workspace/ws-other';
+
+    focusWorkspaceSlot(WS, { navigate, getCurrentPath });
+    expect(navigate).toHaveBeenCalledTimes(1);
+    // The openWorkspaceTab reducer makes ws-1 the current tab synchronously.
+    mockState.tabState.currentTabId = WS;
+    dispatched.length = 0;
+
+    focusWorkspaceSlot(WS, { navigate, getCurrentPath });
+
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(setActiveTabCalls()).toEqual([
+      expect.objectContaining({ wsId: WS, tabId: 't2', panelId: 'panel-1' }),
+    ]);
+
+    settle();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Navigation settled; the user is now on Home, so the press navigates again.
+    focusWorkspaceSlot(WS, { navigate, getCurrentPath: () => '/' });
+    expect(navigate).toHaveBeenCalledTimes(2);
+    settle();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  it.each(['resolves', 'rejects'] as const)(
+    'an older navigation to the same workspace that %s does not clear the newest one (A → B → A)',
+    async (outcome) => {
+      seedLayout('panel-1', { 'panel-1': 't1', 'panel-2': 't4' });
+      const attempts: { resolve: () => void; reject: (error: Error) => void }[] = [];
+      const navigate = vi.fn(
+        () =>
+          new Promise<void>((resolve, reject) => {
+            attempts.push({ resolve, reject });
+          }),
+      );
+      // No route commits during the sequence.
+      const getCurrentPath = () => '/';
+
+      focusWorkspaceSlot(WS, { navigate, getCurrentPath });
+      mockState.tabState.currentTabId = WS;
+      focusWorkspaceSlot('ws-2', { navigate, getCurrentPath });
+      mockState.tabState.currentTabId = 'ws-2';
+      focusWorkspaceSlot(WS, { navigate, getCurrentPath });
+      mockState.tabState.currentTabId = WS;
+      expect(navigate).toHaveBeenCalledTimes(3);
+
+      // The first A navigation settles while the newest A one is still pending.
+      if (outcome === 'resolves') attempts[0].resolve();
+      else attempts[0].reject(new Error('superseded'));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      dispatched.length = 0;
+
+      focusWorkspaceSlot(WS, { navigate, getCurrentPath });
+
+      expect(navigate).toHaveBeenCalledTimes(3);
+      expect(setActiveTabCalls()).toEqual([
+        expect.objectContaining({ wsId: WS, tabId: 't2', panelId: 'panel-1' }),
+      ]);
+
+      for (const attempt of attempts.slice(1)) attempt.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    },
+  );
 });
 
 describe('handleAgentKeyEvent', () => {

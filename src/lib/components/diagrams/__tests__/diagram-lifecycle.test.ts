@@ -61,10 +61,6 @@ beforeEach(() => {
     configurable: true,
     value: scrollTo,
   });
-  Object.defineProperty(Element.prototype, 'getAnimations', {
-    configurable: true,
-    value: () => [],
-  });
 });
 
 afterEach(() => {

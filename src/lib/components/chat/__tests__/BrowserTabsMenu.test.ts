@@ -301,7 +301,7 @@ describe('permanent close actions (intent#4762)', () => {
       panelId: 'browser',
       destroy: true,
     });
-    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(setActiveTabMock).not.toHaveBeenCalled();
     expect(focusPanelMock).not.toHaveBeenCalled();
   });
@@ -347,6 +347,10 @@ describe('permanent close actions (intent#4762)', () => {
     await fireEvent.click(screen.getAllByTestId('browser-tab-close')[0]);
 
     expect(tabActions().some((a) => a.type === closeTabType)).toBe(false);
+    // The chooser plays its exit while the confirmation opens.
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: '2 browser tabs' })).toBeNull(),
+    );
     const dialog = screen.getByRole('dialog');
     expect(dialog.getAttribute('aria-modal')).toBe('true');
 
@@ -362,6 +366,9 @@ describe('permanent close actions (intent#4762)', () => {
     renderMenu();
     await fireEvent.click(screen.getByTestId('browser-tabs-trigger'));
     await fireEvent.click(screen.getByTestId('browser-tabs-close-hidden'));
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: '2 browser tabs' })).toBeNull(),
+    );
     expect(screen.getByRole('dialog')).toBeTruthy();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Cancel', exact: true }));
@@ -385,7 +392,9 @@ describe('permanent close actions (intent#4762)', () => {
 
       const confirm = await screen.findByRole('button', { name: 'Close tab', exact: true });
       await waitFor(() => expect(document.activeElement).toBe(confirm));
-      expect(screen.queryByRole('dialog', { name: '2 browser tabs' })).toBeNull();
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog', { name: '2 browser tabs' })).toBeNull(),
+      );
       if (dismissal === 'escape') await fireEvent.keyDown(confirm, { key: 'Escape' });
       else {
         await fireEvent.click(

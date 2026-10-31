@@ -155,6 +155,27 @@ describe('Sidebar', () => {
     expect(sidebar.getAttribute('data-state')).toBe('expanded');
   });
 
+  it('leaves the bare shortcut to a focused code editor inside its provider', async () => {
+    stubMatchMedia(false);
+    const { container } = render(SidebarHarness);
+    const sidebar = container.querySelector<HTMLElement>('[data-slot="sidebar"][data-state]')!;
+    const wrapper = container.querySelector<HTMLElement>('[data-slot="sidebar-wrapper"]')!;
+    // Monaco's EditContext focus target: an ARIA textbox, not contenteditable.
+    const codeEditor = document.createElement('div');
+    codeEditor.setAttribute('role', 'textbox');
+    codeEditor.setAttribute('aria-multiline', 'true');
+    codeEditor.tabIndex = 0;
+    Object.defineProperty(codeEditor, 'editContext', { value: {}, configurable: true });
+    wrapper.append(codeEditor);
+    const before = sidebar.getAttribute('data-state');
+    codeEditor.focus();
+    const event = new KeyboardEvent('keydown', { key: '[', bubbles: true, cancelable: true });
+    codeEditor.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(sidebar.getAttribute('data-state')).toBe(before);
+    codeEditor.remove();
+  });
+
   it('peeks without persisting and dismisses on Escape or outside press', async () => {
     stubMatchMedia(false);
     const { container } = render(SidebarHarness, { props: { peek: 'click' } });

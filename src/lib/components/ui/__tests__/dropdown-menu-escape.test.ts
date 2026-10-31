@@ -12,7 +12,7 @@
  * browser — bits-ui's Escape handling does not work reliably in jsdom.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/svelte';
+import { render, screen, cleanup, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { pushEscapeLayer } from '$lib/utils/escapeLayers';
 import DropdownMenu from '../dropdown-menu.svelte';
@@ -78,7 +78,7 @@ describe('DropdownMenu Escape handling (escape-layer stack)', () => {
 
       await rerender({ open: false });
       await tick();
-      expect(screen.queryByRole('menu')).toBeFalsy();
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeFalsy());
 
       dispatchEscape();
 

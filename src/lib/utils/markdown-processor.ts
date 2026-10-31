@@ -18,6 +18,11 @@ import {
   parseNoteMention,
 } from '$lib/utils/note-mention-token';
 import { memberMentionLabel, parseMemberMention } from '$lib/utils/member-mention-token';
+import {
+  parseRuntimeMention,
+  RUNTIME_MENTION_BODY_SOURCE,
+  runtimeMentionChipAttrs,
+} from '$lib/utils/runtime-mention-token';
 import { NotesPrimitivesSerializer } from './notes-primitives-serializer';
 import type { MarkdownWorkerResponse } from './markdown-worker';
 import { decodeDiffContent } from './diff-patch-utils';
@@ -903,6 +908,7 @@ function injectMentionSpans(html: string): string {
   };
 
   const noteBracketRe = new RegExp(`@${NOTE_MENTION_BODY_SOURCE}`, 'g');
+  const runtimeRe = new RegExp(`@${RUNTIME_MENTION_BODY_SOURCE}`, 'g');
   const noteRe = /@note\/([A-Za-z0-9\-_]+)/g;
   const rulesRe = /@\.augment\/rules\/[^\s<>()'\"]+/g;
   const fileRe = /@\/[^\s<>()'\"]+(?::\d+(?::\d+)?|#L\d+(?:-\d+)?)?/g; // '@/absolute/path' until whitespace or delimiter
@@ -970,6 +976,8 @@ function injectMentionSpans(html: string): string {
       if (member) cands.push({ ...member, kind: 'member' });
       const nb = find(noteBracketRe);
       if (nb) cands.push({ ...nb, kind: 'note-bracket' });
+      const rt = find(runtimeRe);
+      if (rt) cands.push({ ...rt, kind: 'runtime' });
       const n = find(noteRe);
       if (n) cands.push({ ...n, kind: 'note' });
       const r = find(rulesRe);
@@ -1012,6 +1020,13 @@ function injectMentionSpans(html: string): string {
         const note = parseNoteMention(m.value);
         frag.appendChild(
           note ? createMentionSpan(noteMentionChipAttrs(note)) : document.createTextNode(m.value),
+        );
+      } else if (m.type === 'runtime') {
+        const mention = parseRuntimeMention(m.value);
+        frag.appendChild(
+          mention
+            ? createMentionSpan(runtimeMentionChipAttrs(mention))
+            : document.createTextNode(m.value),
         );
       } else if (m.type === 'note') {
         const id = m.groups?.[0] || '';

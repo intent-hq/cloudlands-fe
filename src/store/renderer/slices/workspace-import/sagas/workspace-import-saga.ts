@@ -13,7 +13,7 @@
 import { all, call, put, takeEvery, takeLeading, type SagaGenerator } from 'typed-redux-saga';
 
 import { createLogger } from '$lib/utils/client-logger';
-import { navigateToRoute } from '$lib/utils/navigation.client';
+import { showWorkspaceSaga } from '$lib/utils/show-workspace';
 import { m } from '$shared/paraglide/messages.js';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import type {
@@ -115,14 +115,14 @@ function* cancelImportOnClose(): SagaGenerator<void> {
   }
 }
 
-/** Success screen: navigate to the imported workspace and close the wizard. */
+/** Success screen: show the imported workspace (and its tab) and close the wizard. */
 function* openImportedWorkspace(): SagaGenerator<void> {
   const runStatus = yield* selectImportRunStatus.effect();
   const workspaceId = yield* selectImportWorkspaceId.effect();
   if (runStatus !== 'succeeded' || !workspaceId) return;
   yield* put(closeImportModal());
   try {
-    yield* call(navigateToRoute, `/workspace/${workspaceId}`);
+    yield* call(showWorkspaceSaga, workspaceId);
   } catch (error) {
     logger.warn('Failed to navigate to the imported workspace', { workspaceId, error });
   }

@@ -183,10 +183,6 @@ describe('panel task demand uses displayed menu and zoom visibility', () => {
   }
   beforeEach(() => {
     vi.useFakeTimers();
-    Object.defineProperty(HTMLElement.prototype, 'getAnimations', {
-      configurable: true,
-      value: () => [],
-    });
     vi.stubGlobal(
       'ResizeObserver',
       class {
@@ -236,7 +232,6 @@ describe('panel task demand uses displayed menu and zoom visibility', () => {
     cleanup();
     stop();
     dispose();
-    Reflect.deleteProperty(HTMLElement.prototype, 'getAnimations');
     __resetDaemonEventsBridgeForTests();
     resetMockBackend();
     vi.useRealTimers();

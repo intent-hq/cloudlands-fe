@@ -42,7 +42,7 @@ import { webNotificationSaga, notificationIpcSaga } from './notifications-saga';
 const mocks = vi.hoisted(() => ({
   toast: vi.fn(),
   sound: vi.fn(),
-  route: vi.fn(async () => {}),
+  route: vi.fn(async (_route: string) => {}),
   open: vi.fn(),
   electron: vi.fn(() => false),
 }));
@@ -50,7 +50,11 @@ vi.mock('$lib/components/patterns/notify', () => ({ notify: { info: mocks.toast 
 vi.mock('$features/notifications/notification-sound-gate', () => ({
   playNotificationSoundPerSettings: mocks.sound,
 }));
-vi.mock('$lib/utils/navigation.client', () => ({ navigateToRoute: mocks.route }));
+vi.mock('$lib/utils/navigation.client', async () => {
+  const { landingNavigation } =
+    await import('$store/renderer/utils/test-helpers/landing-navigation');
+  return { navigateToRoute: landingNavigation(mocks.route) };
+});
 vi.mock('$features/discussions/discussion-navigation', () => ({
   openWorkspaceDiscussion: mocks.open,
 }));

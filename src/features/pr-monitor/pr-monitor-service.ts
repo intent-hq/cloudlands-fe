@@ -220,6 +220,11 @@ export interface PrMonitorsSubscription {
 }
 export type PrMonitorServiceStatus = 'failed' | 'reconnecting';
 
+/** Consecutive failed capture/list attempts before the load error surfaces. */
+export const PR_MONITOR_FAILURE_REPORT_THRESHOLD = 3;
+const RETRY_BASE_DELAY_MS = 1_000;
+const RETRY_MAX_DELAY_MS = 30_000;
+
 /** Same seed/fold/refetch flow, scoped to one captured document/socket lifetime. */
 export function subscribePrMonitors(
   workspaceId: string,
@@ -230,8 +235,30 @@ export function subscribePrMonitors(
   let disposed = false;
   let epoch = 0;
   let active: { refetch(): void; dispose(): void } | undefined;
+  // A capture refused mid-reconnect or a timed-out list is usually transient:
+  // retry with capped exponential backoff (a failed capture re-captures; a
+  // failed list re-lists on the same live session) and report `failed` once,
+  // when a run of attempts has failed. Retries continue after that, so the
+  // first success clears the error without waiting for another event.
+  let failures = 0;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  const cancelRetry = () => {
+    clearTimeout(retryTimer);
+    retryTimer = undefined;
+  };
+  const recordFailure = (retry: () => void) => {
+    failures++;
+    if (failures === PR_MONITOR_FAILURE_REPORT_THRESHOLD) statusHandler?.('failed');
+    cancelRetry();
+    const delay = Math.min(RETRY_BASE_DELAY_MS * 2 ** (failures - 1), RETRY_MAX_DELAY_MS);
+    retryTimer = setTimeout(() => {
+      retryTimer = undefined;
+      if (!disposed) retry();
+    }, delay);
+  };
   const register = async () => {
     const registration = ++epoch;
+    cancelRetry();
     active?.dispose();
     active = undefined;
     let session: PrMonitorSession;
@@ -240,7 +267,7 @@ export function subscribePrMonitors(
     } catch (error) {
       if (!disposed && registration === epoch) {
         logger.warn('Monitor capture failed', { workspaceId, error });
-        statusHandler?.('failed');
+        recordFailure(() => void register());
       }
       return;
     }
@@ -278,13 +305,18 @@ export function subscribePrMonitors(
           for (const id of locallyCancelled)
             if (!fetched.some((row) => row.monitorId === id)) locallyCancelled.delete(id);
           monitors = fetched.filter((row) => !locallyCancelled.has(row.monitorId));
+          failures = 0;
+          cancelRetry();
           emit();
         })
         .catch((error) => {
           if (!current()) return;
           logger.warn('prMonitor.list failed', { workspaceId, error });
-          emit();
-          statusHandler?.('failed');
+          // Emit nothing: an empty emission would mark the snapshot ready and
+          // drop retained rows while the retry is still pending. Keep the
+          // session (and its event stream) for row actions; a retired one
+          // re-registers through its own retirement/reconnect path.
+          recordFailure(() => (current() ? refetch() : void register()));
         })
         .finally(() => {
           inFlight = false;
@@ -351,6 +383,7 @@ export function subscribePrMonitors(
   };
   const offReconnected = onMonitorReconnected(() => {
     if (disposed) return;
+    failures = 0;
     handler([]);
     statusHandler?.('reconnecting');
     void register();
@@ -361,6 +394,7 @@ export function subscribePrMonitors(
     dispose: () => {
       disposed = true;
       ++epoch;
+      cancelRetry();
       offReconnected();
       active?.dispose();
     },

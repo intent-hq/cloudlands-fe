@@ -35,10 +35,6 @@ class TestResizeObserver {
 
 beforeEach(() => {
   vi.stubGlobal('ResizeObserver', TestResizeObserver);
-  Object.defineProperty(HTMLElement.prototype, 'getAnimations', {
-    configurable: true,
-    value: () => [],
-  });
   vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(0);
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1200);
   storeContext = initAppStore(appStore);

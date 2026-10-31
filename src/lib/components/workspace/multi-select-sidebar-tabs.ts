@@ -114,5 +114,19 @@ export function normalizeSelectedTabs(
         !(tabId === 'shell' && canOperateScripts)
       ),
   );
-  return new Set([(normalized[0] as TabId | undefined) ?? 'agents']);
+  return new Set(normalized.length > 0 ? (normalized as TabId[]) : ['agents']);
+}
+
+/** Selected tab ids in sidebar order. */
+export function orderSelectedTabs(selected: Iterable<TabId>): TabId[] {
+  const ids = new Set(selected);
+  return TAB_DEFINITIONS.flatMap(({ id }) => (ids.has(id) ? [id] : []));
+}
+
+/** Shift-click: add a pane, or remove it unless it is the last one. */
+export function toggleSelectedTab(selected: Iterable<TabId>, tabId: TabId): TabId[] {
+  const ids = new Set(selected);
+  if (!ids.has(tabId)) ids.add(tabId);
+  else if (ids.size > 1) ids.delete(tabId);
+  return orderSelectedTabs(ids);
 }

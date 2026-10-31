@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { gitignoreDirExcludes } from './scripts/gitignore-dir-excludes.mjs';
 import { PARAGLIDE_STALE_MESSAGE, ensureRepoParaglide } from './scripts/paraglide-inputs-hash.mjs';
 import { FORK_EXEC_ARGV } from './scripts/vitest-fork-exec-argv.mjs';
+import { nativeLoadedGeneratedModules } from './scripts/vitest-native-deps.mjs';
 import { defaultTestTimeoutMs, isCiEnv } from './scripts/vitest-timeouts.mjs';
 
 // CI-only tuning for shared self-hosted runners (intent-hq/monorepo#3082; the
@@ -107,6 +108,12 @@ export default defineConfig(async () => {
       // a deterministic CI-only failure of tests that pass locally. `'false'`
       // matches the local default (a watch Program over the probe's own text).
       env: { TSESTREE_SINGLE_RUN: 'false' },
+      // Hand the 31 MB generated paraglide bundle to Node's native loader: Vitest
+      // spends 5-30+ s transforming it per cold fork, which tests that reset
+      // modules and then import translated code paid inside a hook or test
+      // (cloudlands-fe#3859). Caveats for mocks and locale state: see
+      // scripts/vitest-native-deps.mjs.
+      server: { deps: { external: nativeLoadedGeneratedModules(__dirname) } },
       exclude: [
         '**/node_modules/**',
         '**/dist/**',

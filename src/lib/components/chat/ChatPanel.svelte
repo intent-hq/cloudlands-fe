@@ -5,6 +5,7 @@
     type InlineVisualDraftDetail,
   } from '$features/inline-html/inline-visual-handoff';
   import { isInlineVisualSnapshot } from '$features/inline-html/inline-visual-types';
+  import { isTextEntryTarget } from '$lib/utils/text-entry';
   import { selectInlineVisualDrafts } from '$store/renderer/slices/inline-visuals/inline-visuals-selectors';
   import {
     inlineVisualDraftRequested,
@@ -4508,17 +4509,10 @@
   });
 
   // ── Auto-focus on mount (used by Chief of Staff) ──
-  function isEditableElement(element: Element | null): boolean {
-    if (!element) return false;
-    if (!(element instanceof HTMLElement)) return false;
-    if (element.isContentEditable) return true;
-    return Boolean(element.closest('input, textarea, select, [contenteditable="true"]'));
-  }
-
   function shouldSkipPromptAutoFocus(): boolean {
     if (typeof document === 'undefined') return true;
     const activeElement = document.activeElement;
-    return isEditableElement(activeElement) && !panelElement?.contains(activeElement);
+    return isTextEntryTarget(activeElement) && !panelElement?.contains(activeElement);
   }
 
   onMount(() => {
@@ -6571,7 +6565,7 @@
   {/if}
 
   <!-- Messages Area -->
-  <div class="w-full relative flex-1 flex flex-col min-h-0 z-10">
+  <div class="chat-transcript-area w-full relative flex-1 flex flex-col min-h-0 z-10">
     <!-- Inline-end padding compensates the scroll container's scrollbar gutter
          so the lane's box matches the conversation column's box. -->
     <div
@@ -6642,6 +6636,10 @@
       class="flex-1 {CHAT_TRANSCRIPT_OVERFLOW_CLASS}"
       class:agent-font-monospace={$isAgentMonospace}
       style="scrollbar-gutter: stable;"
+      style:padding-bottom="var(--chat-composer-gap)"
+      style:mask-image={distanceFromBottom > SCROLL_BOTTOM_BUTTON_EPSILON
+        ? `linear-gradient(to bottom, black calc(100% - ${Math.min(40, distanceFromBottom)}px), transparent)`
+        : undefined}
       data-testid="chat-transcript-scroll-viewport"
       data-message-controls-root
     >
@@ -7859,6 +7857,7 @@
     {#if isActive && showScrollToBottom && !deferTranscriptReveal}
       <div
         class="pointer-events-none absolute inset-x-0 bottom-3 z-40 flex justify-center"
+        style:margin-bottom="var(--chat-composer-gap)"
         style:padding-inline-end="{scrollbarGutterWidth}px"
       >
         <div class="pointer-events-auto">
@@ -7871,7 +7870,7 @@
   <!-- Message Input with Aurora Background -->
   <div
     bind:this={composerElement}
-    class="conversation-composer relative z-10 w-full"
+    class="conversation-composer relative z-10 w-full pointer-events-none"
     class:input-flash={showInputFlash}
     data-streaming={$agentSessionIsStreaming$}
     data-testid="chat-composer-shell"
@@ -7906,7 +7905,7 @@
         data-testid="chat-composer-lane"
       >
         <div
-          class="w-full min-w-0"
+          class="pointer-events-auto w-full min-w-0"
           data-testid="chat-composer-controls-inner"
           onfocusout={flushPendingDraftWrite}
         >
@@ -7987,7 +7986,7 @@
                     <PresenceTypingIndicator
                       workspaceId={workspace.id}
                       {agentId}
-                      class="pointer-events-none absolute inset-x-0 bottom-full mb-1"
+                      class="pointer-events-none absolute inset-x-0 bottom-full mb-1 bg-background"
                     />
                   {/if}
                   <SimpleRichInput
@@ -8032,7 +8031,12 @@
 
 <style>
   .chat-panel-container {
+    --chat-composer-gap: 1.25rem;
     container: chat-panel / inline-size;
+  }
+
+  .chat-transcript-area {
+    margin-bottom: calc(-1 * var(--chat-composer-gap));
   }
 
   .workspace-setup-card-alignment {
@@ -8118,10 +8122,9 @@
     animation: input-flash calc(var(--spring-slow) * 2.5) var(--spring-exit-ease);
   }
 
-  /* Reserve the status outside the scroll viewport even while nobody is typing.
-     Presence never resizes the composer or overlays scrolled transcript text. */
+  /* Keep the prompt fixed while the transcript fades through the typing-status gap. */
   .composer-prompt-lane {
-    padding-block: 1.25rem var(--chat-content-inset);
+    padding-block: var(--chat-composer-gap) var(--chat-content-inset);
   }
 
   .chief-chat-panel .composer-prompt-lane {

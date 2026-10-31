@@ -30,6 +30,7 @@ import {
 import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
 import { navigateToRoute } from '$lib/utils/navigation.client';
+import { openAndShowWorkspace } from '$lib/utils/show-workspace';
 import { dispatchWindowEvent } from '$lib/utils/window-events';
 import { m } from '$shared/paraglide/messages.js';
 import type { HardwareConsoleManager } from '../device/device-manager';
@@ -79,8 +80,10 @@ function getToast() {
 }
 
 export interface ActionKeyDeps {
-  /** Navigate the app to a route. Defaults to `navigateToRoute`. */
+  /** Navigate the app to a non-workspace route. Defaults to `navigateToRoute`. */
   navigate?: (route: string) => Promise<void>;
+  /** Jump to a workspace and open its tab. Defaults to `openAndShowWorkspace`. */
+  showWorkspace?: (workspaceId: string) => Promise<unknown>;
   /** Show the subtle unavailable-action hint. Defaults to a small toast. */
   showUnavailableHint?: (message: string) => void;
   /** Focus an agent tab's chat composer. Defaults to `focusAgentComposer`. */
@@ -158,6 +161,7 @@ function buildContext(deps: ActionKeyDeps): ActionKeyContext {
     )(),
     dispatch: (action) => appStore.dispatch(action as { type: string }),
     navigate: deps.navigate ?? navigateToRoute,
+    showWorkspace: deps.showWorkspace ?? openAndShowWorkspace,
     focusComposer: deps.focusComposer ?? focusAgentComposer,
     showHint: deps.showUnavailableHint ?? ((hint: string) => void showUnavailableToast(hint)),
   };

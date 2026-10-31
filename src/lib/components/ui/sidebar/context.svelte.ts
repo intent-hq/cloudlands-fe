@@ -1,4 +1,5 @@
 import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
+import { isTextEntryTarget } from '$lib/utils/text-entry';
 import { getContext, setContext } from 'svelte';
 
 type Getter<T> = () => T;
@@ -83,12 +84,8 @@ class SidebarState {
       return;
     }
     if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
-    const target = e.target;
-    if (
-      target instanceof HTMLElement &&
-      target.matches('input, textarea, select, [contenteditable="true"]')
-    )
-      return;
+    // Text entry, including Monaco's EditContext textbox, owns bare keys.
+    if (isTextEntryTarget(e.target)) return;
     const active = document.activeElement as HTMLElement | null;
     const focusedProvider = active?.closest<HTMLElement>('[data-slot="sidebar-wrapper"]');
     if (!this.providerElement || focusedProvider !== this.providerElement) return;

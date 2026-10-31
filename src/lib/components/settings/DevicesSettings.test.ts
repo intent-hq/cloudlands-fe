@@ -505,7 +505,11 @@ describe('DevicesSettings', () => {
     deviceName = 'Studio Mac',
   ) {
     await fireEvent.click(screen.getByRole('button', { name: `Actions for ${deviceName}` }));
-    await fireEvent.click(await screen.findByRole('menuitem', { name }));
+    const item = await screen.findByRole('menuitem', { name });
+    const menu = item.closest('[role="menu"]');
+    await fireEvent.click(item);
+    // Let this menu finish its exit so the next action cannot pick a stale item.
+    await waitFor(() => expect(menu?.isConnected).toBe(false));
   }
 
   describe('behind-pin indicator and Update action', () => {

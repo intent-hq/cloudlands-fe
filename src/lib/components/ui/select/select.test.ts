@@ -42,7 +42,7 @@ describe('Select', () => {
 
     await waitFor(() => expect(screen.getByTestId('select-value').textContent).toBe('banana'));
     expect(trigger.textContent).toContain('Banana');
-    expect(screen.queryByRole('listbox')).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
     expect(document.activeElement).toBe(trigger);
   });
 

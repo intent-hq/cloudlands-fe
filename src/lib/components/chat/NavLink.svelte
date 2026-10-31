@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
+  import { navigateToAppRoute } from '$lib/utils/show-workspace';
   import { store as appStore } from '$store/renderer/store';
   import { requestUiHighlight } from '$store/renderer/slices/ui-highlight/ui-highlight-slice';
   import { isResolvableNavTarget, resolveHashToTarget } from '$shared/app-ui-targets';
@@ -48,7 +48,8 @@
       return;
     }
 
-    await goto(target);
+    // A workspace route also opens the workspace's tab.
+    await navigateToAppRoute(target);
     const highlightId = getHighlightIdFromTarget(target);
     if (highlightId) {
       requestAnimationFrame(() => appStore.dispatch(requestUiHighlight(highlightId)));

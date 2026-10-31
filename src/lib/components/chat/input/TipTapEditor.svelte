@@ -1,6 +1,7 @@
 <script lang="ts">
   /* eslint-disable max-lines */
   import { onMount, onDestroy, mount, unmount, untrack } from 'svelte';
+  import { isTextEntryTarget } from '$lib/utils/text-entry';
   import { Popover } from 'bits-ui';
 
   import {
@@ -383,7 +384,7 @@
           if (
             activeElement !== focusOwner &&
             activeElement instanceof HTMLElement &&
-            activeElement.closest('input, textarea, select, [contenteditable="true"]') &&
+            isTextEntryTarget(activeElement) &&
             !focusEditor.view.dom.contains(activeElement)
           ) {
             return;

@@ -177,6 +177,15 @@ async function mount() {
 }
 /** Open the card menu and its primary-client submenu. */
 async function openPrimaryMenu(container: HTMLElement) {
+  // A previous menu may still be playing its exit; wait for both its levels to leave so
+  // the queries below find the newly opened items.
+  await waitFor(() =>
+    expect(
+      document.querySelector(
+        '[data-action-id="primary-client"], [data-action-id="primary-client-this-app"]',
+      ),
+    ).toBeNull(),
+  );
   await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
   await fireEvent.click(
     await waitFor(() => document.querySelector<HTMLElement>('[data-action-id="primary-client"]')!),

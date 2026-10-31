@@ -3,6 +3,7 @@
   import './app-layout.css';
   import { m } from '$shared/paraglide/messages.js';
   import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
+  import { navigateToAppRoute } from '$lib/utils/show-workspace';
   import { page } from '$app/stores';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
 
@@ -462,7 +463,8 @@
     const initialRoute = urlParams.get('initialRoute');
     if (initialRoute) {
       // Navigate to the specified route
-      goto(initialRoute)
+      // A workspace route also opens the workspace's tab.
+      navigateToAppRoute(initialRoute)
         .then(() => {
           // Clear the query parameter from the URL without reloading
           const newUrl = new URL(window.location.href);
@@ -727,7 +729,8 @@
       action: () => {
         const isOnSettings = $page.url.pathname.startsWith('/settings');
         if (isOnSettings) {
-          goto(lastNonSettingsPath);
+          // The workspace may have been closed while Settings was open.
+          void navigateToAppRoute(lastNonSettingsPath);
         } else {
           navigateToSettings();
         }

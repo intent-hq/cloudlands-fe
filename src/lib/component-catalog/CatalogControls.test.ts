@@ -32,7 +32,7 @@ describe('CatalogControls', () => {
     await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
     await fireEvent.keyDown(trigger, { key: 'Enter' });
     await waitFor(() => expect(trigger.textContent).toContain('Dracula'));
-    expect(screen.queryByRole('listbox')).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
 
     const system = within(screen.getByRole('group', { name: 'Theme' })).getByRole('radio', {
       name: 'System',

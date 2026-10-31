@@ -1585,32 +1585,23 @@ describe('SidebarChangesPanel', () => {
       await fireEvent.keyDown(panel!, { key: 'End' });
       await waitFor(() => expect(focusedPaths()).toEqual(['u/f499.ts']));
 
-      // A refresh inserts a file ahead of it, pushing it past the cap. The
-      // reorder runs the rows' animate:flip, which needs getAnimations (absent
-      // in jsdom).
-      const proto = Element.prototype as Element & { getAnimations?: () => Animation[] };
-      const originalGetAnimations = proto.getAnimations;
-      proto.getAnimations = () => [];
-      try {
-        mockFileTrackingStore.unstagedChanges = [
-          makeChange({ relativePath: 'u/new.ts' }),
-          ...mockFileTrackingStore.unstagedChanges,
-        ];
-        flushFtSelectors();
-        await waitFor(() => {
-          expect(container.querySelector('[data-file-path="u/new.ts"]')).not.toBeNull();
-        });
+      // A refresh inserts a file ahead of it, pushing it past the cap.
+      mockFileTrackingStore.unstagedChanges = [
+        makeChange({ relativePath: 'u/new.ts' }),
+        ...mockFileTrackingStore.unstagedChanges,
+      ];
+      flushFtSelectors();
+      await waitFor(() => {
+        expect(container.querySelector('[data-file-path="u/new.ts"]')).not.toBeNull();
+      });
 
-        // The hidden file must not be opened by Enter with no visible focused row.
-        await fireEvent.keyDown(panel!, { key: 'Enter' });
-        expect(onOpenChange).not.toHaveBeenCalled();
+      // The hidden file must not be opened by Enter with no visible focused row.
+      await fireEvent.keyDown(panel!, { key: 'Enter' });
+      expect(onOpenChange).not.toHaveBeenCalled();
 
-        // Navigation restarts from a rendered row.
-        await fireEvent.keyDown(panel!, { key: 'ArrowDown' });
-        await waitFor(() => expect(focusedPaths()).toEqual(['u/new.ts']));
-      } finally {
-        proto.getAnimations = originalGetAnimations;
-      }
+      // Navigation restarts from a rendered row.
+      await fireEvent.keyDown(panel!, { key: 'ArrowDown' });
+      await waitFor(() => expect(focusedPaths()).toEqual(['u/new.ts']));
     });
 
     it('handles keyboard ArrowUp navigation on changes panel', async () => {

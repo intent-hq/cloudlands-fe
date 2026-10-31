@@ -16,6 +16,7 @@
 import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
 import { navigateToRoute } from '$lib/utils/navigation.client';
+import { openAndShowWorkspace } from '$lib/utils/show-workspace';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import {
@@ -40,8 +41,10 @@ const logger = createLogger('HardwareConsoleEncoder');
 export const ENCODER_HUD_HIDE_MS = 1200;
 
 export interface EncoderDeps {
-  /** Navigate the app to a route. Defaults to `navigateToRoute`. */
+  /** Navigate the app to a non-workspace route (Home). Defaults to `navigateToRoute`. */
   navigate?: (route: string) => Promise<void>;
+  /** Jump to a workspace and open its tab. Defaults to `openAndShowWorkspace`. */
+  showWorkspace?: (workspaceId: string) => Promise<unknown>;
   /** Dispatch into the app store. Defaults to `appStore.dispatch`. */
   dispatch?: (action: unknown) => void;
   /** Console-owner gate (#1928). Defaults to the store-backed `isConsoleOwner`. */
@@ -53,6 +56,7 @@ export interface EncoderDeps {
 function resolveDeps(deps: EncoderDeps): Required<EncoderDeps> {
   return {
     navigate: deps.navigate ?? navigateToRoute,
+    showWorkspace: deps.showWorkspace ?? openAndShowWorkspace,
     dispatch: deps.dispatch ?? ((action: unknown) => appStore.dispatch(action as never)),
     isOwner: deps.isOwner ?? isConsoleOwner,
     getCurrentWorkspaceId:
@@ -69,9 +73,11 @@ function cyclableWorkspaces() {
 
 function navigateToWorkspace(
   workspaceId: string,
-  navigate: (route: string) => Promise<void>,
+  showWorkspace: (workspaceId: string) => Promise<unknown>,
 ): void {
-  void navigate(`/workspace/${workspaceId}`).catch((error: unknown) => {
+  // Each detent jumps; the helper only tabs the workspace the rotation lands
+  // on, because a newer jump supersedes the earlier ones.
+  void showWorkspace(workspaceId).catch((error: unknown) => {
     logger.warn('Failed to switch workspace from encoder', { workspaceId, error });
   });
 }
@@ -82,7 +88,7 @@ function navigateToWorkspace(
  * clamps at the ends of the activity-ordered list).
  */
 function handleEncoderRotate(direction: EncoderDirection, deps: EncoderDeps = {}): string | null {
-  const { navigate, dispatch, getCurrentWorkspaceId } = resolveDeps(deps);
+  const { showWorkspace, dispatch, getCurrentWorkspaceId } = resolveDeps(deps);
   const state = appStore.state;
 
   const ordered = orderWorkspacesForCycling(cyclableWorkspaces());
@@ -94,7 +100,7 @@ function handleEncoderRotate(direction: EncoderDirection, deps: EncoderDeps = {}
   );
   if (target === null) return null;
   dispatch(encoderHudShown(target));
-  navigateToWorkspace(target, navigate);
+  navigateToWorkspace(target, showWorkspace);
   return target;
 }
 

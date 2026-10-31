@@ -77,7 +77,7 @@ describe('Combobox behavior', () => {
     await fireEvent.keyDown(input, { key: 'Home' });
     await fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => expect(screen.getByTestId('combobox-value').textContent).toBe('"grace"'));
-    expect(screen.queryByRole('listbox')).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
     expect(document.activeElement).toBe(input);
   });
 

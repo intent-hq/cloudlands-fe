@@ -5,7 +5,9 @@
  * (`onRawMessage` — includes the CM2's bare joystick objects that never
  * reach `onNotification`) and, on agent-key presses, focuses the workspace
  * resolved for that key ({@link focusWorkspaceSlot}):
- * - first press (workspace not currently active): navigate to
+ * - first press (workspace not currently showing — not the current
+ *   workspace tab, or another route such as Home or Settings is open):
+ *   navigate to
  *   `/workspace/{id}` and land on the first agent tab needing attention
  *   (pending discussion/blocker request or wizard question — the LED
  *   engine's attention definition via `sessionNeedsAttention`); when none
@@ -41,6 +43,7 @@ import { setActiveAgentId } from '$store/renderer/slices/workspace-agents/worksp
 import { sessionNeedsAttention } from '../actions/agent-cycle';
 import { focusAgentComposer } from '../actions/action-key-service';
 import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
+import { currentRoutePath, isWorkspaceRoutePath } from '$features/workspace/utils/workspace-route';
 
 const logger = createLogger('HardwareConsoleKeySwitch');
 
@@ -53,7 +56,18 @@ export interface KeySwitchDeps {
   isOwner?: () => boolean;
   /** Current workspace-tab seam. */
   getCurrentWorkspaceId?: () => string | null;
+  /** Current route path seam. Defaults to `window.location.pathname` (null without a DOM). */
+  getCurrentPath?: () => string | null;
 }
+
+/**
+ * The latest key-triggered navigation, while still in flight. The route only
+ * commits once `goto` settles, so a second press in that window must count as
+ * "already showing" and cycle tabs instead of re-navigating. Each attempt is a
+ * fresh object so an older navigation to the same workspace (A → B → A) cannot
+ * clear the newest one when it settles.
+ */
+let pendingNavigation: { workspaceId: string } | null = null;
 
 function resolveSlotWorkspaceId(slot: number): string | null {
   const state = appStore.state;
@@ -131,9 +145,10 @@ function openFirstTopLevelAgent(workspaceId: string, deps: KeySwitchDeps): boole
 }
 
 /**
- * Focus the workspace behind a hardware key slot. Reusable behavior shared
- * with the Settings device graphic:
- * - workspace not active: navigate to it and land on the first agent tab
+ * Focus the workspace behind a hardware key slot:
+ * - workspace not showing (not the current workspace tab, or the current
+ *   tab while another route such as Home or Settings is open): navigate to
+ *   it and land on the first agent tab
  *   requiring attention; with none pending, keep the workspace's current
  *   tab (or activate the first open tab when no tab is active yet);
  * - workspace already active: cycle to the next open tab in order (wrap);
@@ -145,16 +160,31 @@ export function focusWorkspaceSlot(workspaceId: string, deps: KeySwitchDeps = {}
   const focusedPanelId = layout?.focusedPanelId ?? null;
   const activeTabId = focusedPanelId ? (layout?.panels[focusedPanelId]?.activeTabId ?? null) : null;
 
-  const activeWorkspaceId = (
+  const currentWorkspaceTabId = (
     deps.getCurrentWorkspaceId ?? (() => selectCurrentWorkspaceTabId.select(appStore.state))
   )();
-  if (activeWorkspaceId !== workspaceId) {
-    // Open the workspace tab before route navigation.
+  const currentPath = (deps.getCurrentPath ?? currentRoutePath)();
+  // Home and Settings keep the last workspace as the current tab, so the tab
+  // id alone does not prove the workspace is on screen.
+  const isShowing =
+    currentWorkspaceTabId === workspaceId &&
+    ((currentPath !== null && isWorkspaceRoutePath(currentPath, workspaceId)) ||
+      pendingNavigation?.workspaceId === workspaceId);
+  if (!isShowing) {
+    // Open the workspace tab before route navigation, so a quick second press
+    // already sees the workspace as active and cycles its tabs.
     appStore.dispatch(openWorkspaceTab(workspaceId));
     const navigate = deps.navigate ?? navigateToRoute;
-    void navigate(`/workspace/${workspaceId}`).catch((error: unknown) => {
-      logger.warn('Failed to switch workspace from agent key', { workspaceId, error });
-    });
+    const attempt = { workspaceId };
+    pendingNavigation = attempt;
+    // eslint-disable-next-line intent/no-raw-workspace-navigation -- the tab was opened just above, before navigating, so a quick second key press cycles tabs instead of re-jumping.
+    void navigate(`/workspace/${workspaceId}`)
+      .catch((error: unknown) => {
+        logger.warn('Failed to switch workspace from agent key', { workspaceId, error });
+      })
+      .finally(() => {
+        if (pendingNavigation === attempt) pendingNavigation = null;
+      });
     if (tabs.length === 0) {
       openFirstTopLevelAgent(workspaceId, deps);
       return;

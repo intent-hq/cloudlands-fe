@@ -5,7 +5,7 @@
   import { homeWorkspaceMotion } from './home-workspace-motion.svelte';
   import { homeSidebarMotion } from './home-sidebar-motion';
   import './home.css';
-  import { goto } from '$app/navigation';
+  import { openAndShowWorkspace } from '$lib/utils/show-workspace';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import SidebarOverflowMenu from '$lib/components/ui/sidebar-context-menu/SidebarOverflowMenu.svelte';
   import {
@@ -19,7 +19,6 @@
     selectWorkspaceLabelsInUse,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { buildHomeListGroups } from './home-workspace-labels';
-  import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import {
     createHomeDoubleClickOpener,
     openHomeWorkspaceFromEvent,
@@ -116,8 +115,7 @@
   let contextMenu = $state<(SidebarContextPosition & { workspace: Workspace }) | null>(null);
   function openWorkspace(id: string) {
     contextMenu = null;
-    store.dispatch(openWorkspaceTab(id));
-    void goto(`/workspace/${encodeURIComponent(id)}`);
+    void openAndShowWorkspace(id);
   }
   function openSelectedWorkspace(id: string) {
     updateView({ selectedId: id });
@@ -599,7 +597,7 @@
         class="flex min-h-0 flex-1 flex-col"
       >
         {#if !$collaborator$}
-          <div class="home-sidebar-header flex shrink-0 items-center">
+          <div class="home-sidebar-header flex shrink-0 items-end">
             <Tabs.List
               aria-label={m.layout_sidebarPanel_tabs_ariaLabel()}
               class="home-sidebar-tabs grid h-9 w-full shrink-0 grid-cols-2 items-center rounded-lg bg-background p-1"

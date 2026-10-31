@@ -339,7 +339,7 @@ describe('RepoSelector recent hydration and refresh ownership', () => {
       expect(recents()).toEqual([saved]);
       expect(writes()).toHaveLength(0);
       if (change === 'store') expect(store.dispatch).not.toHaveBeenCalled();
-      expect(screen.queryByText(DROPDOWN_HEADING)).toBeNull();
+      await waitFor(() => expect(screen.queryByText(DROPDOWN_HEADING)).toBeNull());
       rendered.unmount();
     },
   );
