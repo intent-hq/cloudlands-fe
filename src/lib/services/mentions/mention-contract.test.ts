@@ -5,7 +5,7 @@
  * saved through the real serializer, then read back by every reader. Each
  * reader must recover the same type, id, label and workspace.
  *
- * Why: the readers each carry their own copy of the token grammar. They
+ * Why: the readers used to carry their own copies of the token grammar. They
  * drifted apart in cloudlands-fe#3845 (note titles saved, ids read back cut at
  * the first space), and the review found the broken readers one round at a
  * time. This test names them all in one place:
@@ -17,16 +17,16 @@
  * - preview: plain-text previews (`stripUserMessagePrefixes`, queued messages).
  * - click: the note editor's click handler run on the rebuilt chip. The chat
  *   composer (TipTapEditor) and MarkdownViewer click handlers live in .svelte
- *   files; the chip attributes they read (data-type, data-id, data-meta) are
- *   checked by the injector and note-editor readers.
+ *   files; all three read chips through `readMentionChip`, which the injector
+ *   and note-editor readers use to check the rebuilt chip.
  *
  * Known gaps are listed in KNOWN_GAPS and run with `it.fails`. When a fix
  * makes one pass, its `it.fails` fails: delete the entry so the case becomes
  * a normal passing test. A new default mention provider without a fixture
  * fails the coverage test below.
  *
- * Seed for a typed mention registry: the fixture table and the read-back
- * helpers are what one registry entry per type would own.
+ * Every reader takes its patterns and parsing from the mention registry
+ * (registry.ts); this test checks the readers still agree end to end.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -37,10 +37,11 @@ import {
 import { createEditorConfig, mentionRenderText } from '$lib/utils/editor-config';
 import { injectMentionSpans } from '$lib/utils/markdown-mention-injector';
 import { processHTMLToMarkdown, processMarkdownToHTML } from '$lib/utils/markdown-processor';
-import { mentionTokensToText, stripUserMessagePrefixes } from '$lib/utils/text-utils';
+import { stripUserMessagePrefixes } from '$lib/utils/text-utils';
 import { noteUrl } from '$shared/constants/intent-links';
 import { initAppStore, store } from '$store/renderer/store';
-import { toPromptToken } from './format';
+import { readMentionChip } from './chip';
+import { mentionTokensToText, toPromptToken } from './registry';
 import { providerRegistry } from './providers';
 import type { MentionCandidate } from './types';
 
@@ -136,7 +137,9 @@ const FIXTURES: Fixture[] = [
       label: 'lib',
       meta: { path: 'src/lib', fullPath: 'src/lib' },
     },
-    expected: { type: 'file', id: 'src/lib', label: 'src/lib' },
+    // Saved as `@src/lib/`: the trailing slash marks a folder. Chat shows it
+    // as a path chip; rich text rebuilds a folder chip.
+    expected: { type: 'folder', id: 'src/lib', label: 'src/lib/' },
   },
   {
     name: 'note with spaces in its title',
@@ -271,25 +274,16 @@ const PATH_GAP = 'Path tokens are whitespace-delimited, so readers cut the path 
 const AGENT_GAP = 'Agent tokens save only the name (`@Build agent`), no id; no reader parses them.';
 const SPECIALIST_GAP =
   '`@specialist/<id>` has no reader of its own; chat reads it as a file path, the note editor as text.';
-const FOLDER_GAP =
-  'The note editor only chips relative paths with a file extension, so `@src/lib` stays plain text.';
-const RANGE_GAP =
-  'Readers only accept `:<line>` / `#L<a>-<b>` suffixes, not the `:L<a>-<b>` range the serializer writes.';
 
 /**
  * Known gaps: `<fixture name>/<reader>` → why it fails today. Each runs with
  * `it.fails`; delete the entry once a fix makes the case pass.
  */
 const KNOWN_GAPS: Record<string, string> = {
-  'file range/chat': RANGE_GAP,
-  'file range/injector': RANGE_GAP,
-  'file range/note-editor': RANGE_GAP,
   'file path with a space/chat': PATH_GAP,
   'file path with a space/injector': PATH_GAP,
   'file path with a space/note-editor': PATH_GAP,
   'file path with a space/click': PATH_GAP,
-  'folder/injector': FOLDER_GAP,
-  'folder/note-editor': FOLDER_GAP,
   'agent/chat': AGENT_GAP,
   'agent/injector': AGENT_GAP,
   'agent/note-editor': AGENT_GAP,
@@ -299,19 +293,27 @@ const KNOWN_GAPS: Record<string, string> = {
   'specialist/preview': SPECIALIST_GAP,
 };
 
-/** Path-like tokens: the token text is the path, and readers cannot tell a folder from a file. */
+/** Path-like tokens: the token text is the path (a folder's ends in `/`). */
 const PATH_TYPES = new Set(['file', 'folder']);
 
 /**
  * Per-type display rules (one rule per type, not per reader):
  * - chat shows a path chip by its last path segment (with any line suffix);
+ * - rich-text chips show a path token as written (line suffix included);
  * - previews show a path token as-is, and every other token as `@<label>`.
  */
 function expectedFor(reader: Reader, fixture: Fixture, token: string): ReadBack {
-  if (reader === 'chat' && PATH_TYPES.has(fixture.expected.type)) {
-    return { ...fixture.expected, label: token.slice(1).split('/').pop() ?? '' };
+  if (!PATH_TYPES.has(fixture.expected.type)) return fixture.expected;
+  if (reader === 'chat') {
+    // Chat reads every path token, folders included, as a path chip.
+    const path = fixture.expected.id;
+    return {
+      type: 'file',
+      id: path,
+      label: `${path.split('/').pop()}${token.slice(1 + path.length).replace(/^\/$/, '')}`,
+    };
   }
-  return fixture.expected;
+  return { ...fixture.expected, label: token.slice(1) };
 }
 
 function previewFor(fixture: Fixture, token: string): string {
@@ -343,18 +345,14 @@ function readChat(decoded: DecodedInlineMention): ReadBack | { type: string } {
   }
 }
 
-/** Read a rebuilt chip the way the click handlers do (data-type, data-id, data-meta). */
+/** Read a rebuilt chip the way the click handlers do (`readMentionChip`). */
 function readChip(chip: Element): ReadBack {
-  const meta = JSON.parse(chip.getAttribute('data-meta') || '{}');
-  const type = chip.getAttribute('data-type') || '';
-  const dataId = chip.getAttribute('data-id') || '';
-  // MarkdownViewer opens `meta.fullPath || meta.path || meta.filename || id`.
-  const id = type === 'file' ? meta.fullPath || meta.path || meta.filename || dataId : dataId;
+  const read = readMentionChip(chip)!;
   return {
-    type,
-    id,
-    label: chip.getAttribute('data-label') || '',
-    workspaceId: meta.workspaceId || undefined,
+    type: read.type,
+    id: read.filePath ?? read.note?.id ?? read.id,
+    label: read.label,
+    workspaceId: read.meta.workspaceId || undefined,
   };
 }
 

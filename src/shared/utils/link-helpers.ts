@@ -65,6 +65,12 @@ export function parseFilePathLineSuffix(path: string): ParsedFilePathLineSuffix 
     };
   }
 
+  // `:L<a>-<b>` is the range form mention tokens are saved with.
+  const rangeMatch = path.match(/^(.+?):L(\d+)(?:-\d+)?$/);
+  if (rangeMatch && (rangeMatch[1].includes('.') || rangeMatch[1].includes('/'))) {
+    return { path: rangeMatch[1], line: Number.parseInt(rangeMatch[2], 10) };
+  }
+
   const colonMatch = path.match(/^(.+?):(\d+)(?::(\d+))?$/);
   if (
     colonMatch &&

@@ -55,6 +55,8 @@ export type ProviderProfilesState = {
   revision: number;
   loadStatus: 'idle' | 'success' | 'failure';
   status: Record<string, ProviderProfileStatus>;
+  /** Signed-in account email per profile (Claude reports `identity`), from its last check. */
+  identity: Record<string, string>;
   /** Last env activation per profile (running processes on earlier settings). */
   activation: Record<string, ProfileActivation>;
   /**
@@ -63,6 +65,51 @@ export type ProviderProfilesState = {
    */
   defaults: Record<string, ProviderDefaultConfig>;
   mutations: Collection<ProviderProfileMutation, 'id'>;
+  /** Add-dialog setups after Create (Different-login sign-in or key check), by setup id. */
+  setups: Record<string, ProviderProfileSetup>;
+};
+
+/**
+ * Where one setup is. Different login: saving → openingTerminal → waiting →
+ * signedIn | stillWaiting (the dialog closes at `waiting` and the profile row
+ * tracks the rest). API key / Token: saving → checkingKey → keyWorks |
+ * keyRejected. `failed` carries why.
+ */
+type ProviderProfileSetupPhase =
+  | 'saving'
+  | 'openingTerminal'
+  | 'waiting'
+  | 'stillWaiting'
+  | 'signedIn'
+  | 'checkingKey'
+  | 'keyWorks'
+  | 'keyRejected'
+  | 'failed';
+
+/** A save failure leaves no profile; folder and terminal failures leave it saved. */
+type ProviderProfileSetupFailure =
+  | { kind: 'saveFailed'; failure: ProviderProfileFailure }
+  | { kind: 'folderFailed'; path: string }
+  | { kind: 'terminalFailed' };
+
+/** Never holds a secret: the folder path is not one (the daemon returns it unmasked). */
+export type ProviderProfileSetup = {
+  id: string;
+  phase: ProviderProfileSetupPhase;
+  /** Set once the profile is saved. */
+  profileId?: string;
+  /** Different login: the `~/…` folder saved on the profile. */
+  folder?: string;
+  /** Codex sign-in uses `codex login --device-auth` (daemon is not the app's sidecar). */
+  deviceAuth?: boolean;
+  /** Claude identity reported once signed in. */
+  email?: string;
+  failure?: ProviderProfileSetupFailure;
+  /**
+   * The add dialog closed once the sign-in terminal opened and handed the
+   * wait to the profile row (ProviderProfiles tracks and dismisses it).
+   */
+  onRow?: boolean;
 };
 
 export type ProviderSettingsState = {

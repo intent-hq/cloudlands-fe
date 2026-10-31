@@ -12,6 +12,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { stripVTControlCharacters } from 'node:util';
 import { dirname, join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -118,6 +119,102 @@ writeFileSync('plan-result.json', JSON.stringify({ lines, error }));`,
     status: child.status,
   };
 }
+
+// Runs a failing practice check through the real runner in a child process and
+// returns what reached that process's own stdout, where an inherited Vitest
+// child would print its FAIL lines into the parent suite's log.
+function practiceRunOutput(root: string, underVitest: boolean) {
+  const driver = join(root, 'practice-run.mjs');
+  const failing = plan(check('vitest-direct', 'run', 'failure.test.ts'));
+  writeFileSync(
+    driver,
+    `import { writeFileSync } from 'node:fs';
+import { runVerificationPlan } from ${JSON.stringify(plannerUrl)};
+let error = null;
+try { await runVerificationPlan(${JSON.stringify(failing)}, process.cwd(), { log() {} }); }
+catch (cause) { error = { message: cause.message, output: cause.output ?? null }; }
+writeFileSync('practice-result.json', JSON.stringify(error));`,
+  );
+  const env = { ...process.env };
+  delete env.VITEST;
+  delete env.TEST;
+  delete env.NODE_ENV;
+  if (underVitest) env.VITEST = 'true';
+  const child = spawnSync(process.execPath, [driver], {
+    cwd: root,
+    env,
+    encoding: 'utf8',
+    timeout: 30_000,
+  });
+  expect(child.error, child.stdout + child.stderr).toBeUndefined();
+  const result = JSON.parse(readFileSync(join(root, 'practice-result.json'), 'utf8'));
+  // CI colors Vitest output; compare text, not escape codes.
+  const plain = (text: string | null) => (text === null ? null : stripVTControlCharacters(text));
+  const error = result && { message: plain(result.message), output: plain(result.output) };
+  return { stdout: stripVTControlCharacters(child.stdout + child.stderr), error };
+}
+
+describe('practice check output', () => {
+  it('keeps a failing practice run out of the parent log under Vitest but in the failure', () => {
+    const { root, write } = fixture();
+    write(
+      'failure.test.ts',
+      "import { it, expect } from 'vitest'; it('fails', () => expect(1).toBe(2));",
+    );
+    const { stdout, error } = practiceRunOutput(root, true);
+    expect(stdout, stdout).not.toMatch(/FAIL|failure\.test\.ts|Test Files/);
+    expect(error?.message).toMatch(/vitest-direct failed with exit code 1/);
+    expect(error?.message).toMatch(
+      /captured output of vitest-direct[\s\S]*FAIL[\s\S]*failure\.test\.ts/,
+    );
+    expect(error?.output).toMatch(/Test Files\s+1 failed/);
+  });
+
+  it('does not wait on a grandchild that keeps a captured pipe open', async () => {
+    const { root } = fixture();
+    const lingering = `const { spawn } = require('node:child_process');
+const child = spawn(process.execPath, ['-e', 'setInterval(() => process.stdout.write("."), 200); setTimeout(() => process.exit(), 60000)'], { stdio: 'inherit' });
+require('node:fs').writeFileSync('lingering.pid', String(child.pid));
+console.log('FAIL lingering practice output');
+process.exit(3);`;
+    try {
+      const error = await runVerificationPlan(
+        plan({
+          ...check('lingering', 'run'),
+          executable: process.execPath,
+          args: ['-e', lingering],
+        }),
+        root,
+        { log() {} },
+      ).catch((cause: Error & { exitCode?: number; output?: string }) => cause);
+      // The grandchild lives 60s; waiting on it would exceed the test timeout.
+      expect(error).toMatchObject({ exitCode: 3 });
+      expect(stripVTControlCharacters((error as { output?: string }).output ?? '')).toContain(
+        'FAIL lingering practice output',
+      );
+    } finally {
+      // The grandchild also exits on EPIPE once its pipe is destroyed.
+      const pidFile = join(root, 'lingering.pid');
+      if (existsSync(pidFile)) {
+        try {
+          process.kill(Number(readFileSync(pidFile, 'utf8')));
+        } catch {}
+      }
+    }
+  });
+
+  it('still streams check output to the terminal for a real verify:changed run', () => {
+    const { root, write } = fixture();
+    write(
+      'failure.test.ts',
+      "import { it, expect } from 'vitest'; it('fails', () => expect(1).toBe(2));",
+    );
+    const { stdout, error } = practiceRunOutput(root, false);
+    expect(stdout).toMatch(/FAIL[\s\S]*failure\.test\.ts/);
+    expect(error?.message).toBe('vitest-direct failed with exit code 1');
+    expect(error?.output).toBeNull();
+  });
+});
 
 describe('resolved unit selections with installed Vitest', () => {
   it('resolves direct, transitive alias-related and declared paths without executing bodies, and counts their union', async () => {

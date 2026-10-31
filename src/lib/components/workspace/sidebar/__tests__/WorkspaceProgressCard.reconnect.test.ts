@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { waitForClosingLayers } from '../../../../../test/layer-exit';
 import { tick } from 'svelte';
 import type { BackendNotification } from '$lib/client/live/backend-transport';
 import type { Workspace } from '$shared/types';
@@ -179,20 +180,14 @@ async function mount() {
 async function openPrimaryMenu(container: HTMLElement) {
   // A previous menu may still be playing its exit; wait for both its levels to leave so
   // the queries below find the newly opened items.
-  await waitFor(() =>
-    expect(
-      document.querySelector(
-        '[data-action-id="primary-client"], [data-action-id="primary-client-this-app"]',
-      ),
-    ).toBeNull(),
-  );
+  await waitForClosingLayers();
   await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
   await fireEvent.click(
     await waitFor(() => document.querySelector<HTMLElement>('[data-action-id="primary-client"]')!),
   );
   await waitFor(() => primary());
 }
-// jsdom has no layout, so the positioned submenu reads as hidden to role queries.
+// The submenu item carries a stable action id; its role and name depend on the resolution.
 const primary = () => {
   const item = document.querySelector<HTMLElement>('[data-action-id="primary-client-this-app"]');
   if (!item) throw new Error('The primary-client submenu is not open');

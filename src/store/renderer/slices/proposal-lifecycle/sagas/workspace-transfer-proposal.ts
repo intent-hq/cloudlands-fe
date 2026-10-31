@@ -5,10 +5,24 @@ import { IPC_CHANNELS } from '$shared/ipc-registry';
 import type { ProposalActionDetail } from '$shared/types/proposal';
 import type { TransferFinalizeResult, TransferStartResult } from '$shared/types/workspace-transfer';
 import { selectCurrentConnectionId } from '../../connections/connections-selectors';
+import { transferConnectionLabel } from '$features/workspace-transfer/utils/proposal-destination';
+import { createLogger } from '$lib/utils/client-logger';
 import { selectTransferTargetConnections } from '../../workspace-transfer/workspace-transfer-selectors';
 import { proposalTransferCheckpoint } from '../proposal-lifecycle-slice';
 import type { ProposalApplyResult } from '../proposal-lifecycle-types';
 import { persistProposalLifecycleSaga } from './proposal-lifecycle-saga';
+
+const logger = createLogger('WorkspaceTransferProposal');
+
+/** Fail-soft warning when the transfer succeeded but main could not open the target. */
+async function showOpenTargetFailedToast(label: string): Promise<void> {
+  try {
+    const { notify } = await import('$lib/components/patterns/notify');
+    notify.warning(m.workspace_transfer_openTargetFailed_message({ label }));
+  } catch (error) {
+    logger.warn('Failed to surface open-target failure toast', { error });
+  }
+}
 
 async function invokeTransfer<T>(channel: string, params: unknown): Promise<T> {
   if (!isElectronPlatform() || !window.electronAPI?.invoke) {
@@ -85,7 +99,16 @@ export function* applyWorkspaceTransferProposal(
       proposalId,
       archiveSource: true,
       restartAgents: false,
+      openTarget: true,
     },
   );
   if (!finalized.success) throw new Error(finalized.error || m.workspace_transfer_unknown_error());
+  if (finalized.targetOpenFailed) {
+    const connections = yield* selectTransferTargetConnections.effect();
+    const target = connections.find((c) => c.id === transfer.destinationConnectionId);
+    yield* call(
+      showOpenTargetFailedToast,
+      target ? transferConnectionLabel(target) : transfer.destinationConnectionId,
+    );
+  }
 }

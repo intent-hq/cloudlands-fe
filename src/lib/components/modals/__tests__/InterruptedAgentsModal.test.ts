@@ -149,7 +149,7 @@ describe('InterruptedAgentsModal', () => {
     expect(onAbandonAll).toHaveBeenCalledWith(['a1', 'a2']);
   });
 
-  it('focuses the dialog on open so Escape works without clicking inside', async () => {
+  it('moves focus into the dialog on open so Escape works without clicking inside', async () => {
     const onClose = vi.fn();
     const InterruptedAgentsModal = (await import('../InterruptedAgentsModal.svelte')).default;
 
@@ -160,8 +160,10 @@ describe('InterruptedAgentsModal', () => {
 
     render(InterruptedAgentsModal, { props: { open: true, agents: AGENTS, onClose } });
 
-    const dialogEl = await screen.findByRole('alertdialog', { name: 'Agents were interrupted' });
-    await waitFor(() => expect(document.activeElement).toBe(dialogEl));
+    await screen.findByRole('alertdialog', { name: 'Agents were interrupted' });
+    // The shared dialog focuses its enabled primary action, as in a browser.
+    const resume = screen.getByRole('button', { name: 'Resume selected' });
+    await waitFor(() => expect(document.activeElement).toBe(resume));
 
     // Escape dispatched at the focused element (no prior click inside).
     await fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
@@ -175,8 +177,9 @@ describe('InterruptedAgentsModal', () => {
 
     const { rerender } = render(InterruptedAgentsModal, { props: { open: true, agents: AGENTS } });
 
-    const dialogEl = await screen.findByRole('alertdialog', { name: 'Agents were interrupted' });
-    await waitFor(() => expect(document.activeElement).toBe(dialogEl));
+    await screen.findByRole('alertdialog', { name: 'Agents were interrupted' });
+    const resume = screen.getByRole('button', { name: 'Resume selected' });
+    await waitFor(() => expect(document.activeElement).toBe(resume));
 
     // A surviving row retains focus when a different workspace is pruned.
     const option = screen.getByRole('checkbox', { name: /Alpha/ });
@@ -184,7 +187,7 @@ describe('InterruptedAgentsModal', () => {
     expect(document.activeElement).toBe(option);
 
     // …then a cross-window prune replaces the agents array mid-open. The
-    // focus effect must not re-run and yank focus back to the container.
+    // focus effect must not re-run and yank focus back to the primary action.
     await rerender({ open: true, agents: [AGENTS[0]] });
 
     expect(document.activeElement).toBe(option);

@@ -1,4 +1,5 @@
 import type { EditorOptions } from '@tiptap/core';
+import { readMentionChip } from '$lib/services/mentions/chip';
 import { Extension } from '@tiptap/core';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import StarterKit from '@tiptap/starter-kit';
@@ -37,7 +38,7 @@ import {
 } from '$store/renderer/slices/comments/comments-selectors';
 import { createMentionSuggestionRenderer } from '$lib/components/chat/input/mention-suggestion-renderer';
 import { getMentionSystem, type SearchContext } from '$lib/services/mentions';
-import { toPromptToken } from '$lib/services/mentions/format';
+import { toPromptToken } from '$lib/services/mentions/registry';
 import { noteUrl } from '$shared/constants/intent-links';
 import { mentionChipDisplayLabel } from '$lib/utils/note-mention-label';
 import { storeNoteTitleLookup } from '$lib/utils/store-note-title-lookup';
@@ -1104,70 +1105,42 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
 
         // Check for mention clicks
         const mentionEl = target.closest('[data-mention]') as HTMLElement;
-        if (mentionEl) {
+        const chip = readMentionChip(mentionEl);
+        if (chip) {
           event.preventDefault();
           event.stopPropagation();
-          const mentionType = mentionEl.getAttribute('data-type');
-          const mentionId = mentionEl.getAttribute('data-id');
-          const mentionLabel = mentionEl.getAttribute('data-label');
-          const textContent = mentionEl.textContent?.trim() || '';
-          const metaStr = mentionEl.getAttribute('data-meta');
-          const meta = metaStr ? JSON.parse(metaStr) : {};
 
           // Check if cmd/ctrl was held - opens in adjacent panel
-          const openInAdjacentPanel =
-            mentionType === 'note' || mentionType === 'note-range'
-              ? true
-              : event.metaKey || event.ctrlKey;
+          const openInAdjacentPanel = chip.note ? true : event.metaKey || event.ctrlKey;
 
           // Find the source panel for opening in adjacent (needed for split behavior)
           const panelElement = mentionEl.closest('[data-panel-id]');
           const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
 
-          if (mentionType === 'file' || mentionType === 'file-range') {
+          if (chip.filePath !== undefined) {
             // Open file in main content area
-            // Try multiple sources for the file path, preferring the most complete one:
-            // 1. meta.fullPath - explicitly stored full path
-            // 2. data-label - often contains the display path
-            // 3. textContent - the visible text (usually @path/to/file)
-            // 4. data-id - may only have filename in legacy data
-            let filePath = meta.fullPath || mentionLabel || mentionId;
-
-            // If filePath is just a filename but textContent has a path, use textContent
-            if (filePath && !filePath.includes('/') && textContent.includes('/')) {
-              filePath = textContent;
-            }
-
-            // Strip leading @ if present (cleanup for legacy data or corrupted mentions)
-            if (filePath?.startsWith('@')) {
-              filePath = filePath.slice(1);
-            }
-            if (filePath && workspace?.id) {
+            if (workspace?.id) {
               appStore.dispatch(
-                openWorkspaceFile(workspace.id, filePath, {
-                  line: meta.startLine,
+                openWorkspaceFile(workspace.id, chip.filePath, {
+                  line: chip.line,
                   openInAdjacentPanel,
                   sourcePanelId,
                 }),
               );
             }
-          } else if (mentionType === 'note' || mentionType === 'note-range') {
+          } else if (chip.note) {
             // A chip rebuilt from `@note[<ws>/<id>:<title>]` names a sibling
             // workspace: route through its workspace-qualified link.
-            if (
-              mentionId &&
-              meta.isExternalLink &&
-              meta.workspaceId &&
-              meta.workspaceId !== workspace?.id
-            ) {
-              handleLink(noteUrl(mentionId, meta.workspaceId), {
+            const { id: noteId, workspaceId: noteWorkspaceId } = chip.note;
+            if (noteWorkspaceId && noteWorkspaceId !== workspace?.id) {
+              handleLink(noteUrl(noteId, noteWorkspaceId), {
                 workspaceId: workspace?.id,
                 sourcePanelId,
                 event,
               });
-            } else if (mentionId && workspace?.id) {
+            } else if (workspace?.id) {
               appStore.dispatch(
-                openWorkspaceNote(workspace.id, mentionId, {
+                openWorkspaceNote(workspace.id, noteId, {
                   openInAdjacentPanel,
                   openInNewAdjacentPanel: true,
                   sourcePanelId,

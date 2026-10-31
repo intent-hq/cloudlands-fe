@@ -397,6 +397,9 @@ export const IPC_CHANNELS = {
     CREATE: 'window:create',
     OPEN_NEW: 'window:open-new',
     SET_THEME: 'window:set-theme',
+    // Renderer → main invoke: mirror the "Translucent window" preference onto
+    // the native macOS window blur ({ enabled: boolean })
+    SET_TRANSLUCENCY: 'window:set-translucency',
     GET_ZOOM_FACTOR: 'window:get-zoom-factor',
     SET_TITLE: 'window:set-title',
     SET_IN_WORKSPACE: 'window:set-in-workspace',
@@ -596,8 +599,8 @@ export const IPC_CHANNELS = {
     CAPTURE_DRAWING: 'browser:capture-drawing',
     /**
      * An agent is (active: true) / is no longer (active: false) acting on an
-     * agent-owned tab, so its offscreen webview gets a larger (8x8, still
-     * invisible) box and draws at full frame rate (main->renderer event)
+     * agent-owned tab, so its offscreen webview's box is drawn at a near-zero
+     * (still invisible) opacity and draws at full frame rate (main->renderer event)
      */
     AGENT_DRAWING: 'browser:agent-drawing',
     /** Report the workspaces this window hosts in the background (renderer->main) */

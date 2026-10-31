@@ -10,7 +10,7 @@ import unittest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-LIGHT = {'route', 'release-fast-path', 'pr-static', 'pr-title', 'conflict-markers', 'monorepo-consumer-checks'}
+LIGHT = {'route', 'release-fast-path', 'pr-static', 'pr-title', 'docs-pr-scope', 'conflict-markers', 'monorepo-consumer-checks'}
 HEAVY = {'checks', 'build-web', 'test', 'test-integration', 'test-portable-fixtures', 'test-ct', 'test-playwright', 'test-electron'}
 PR_SUITES = {'checks', 'test'}
 QUEUE_ONLY = HEAVY - PR_SUITES
@@ -69,7 +69,7 @@ class EventPolicy(unittest.TestCase):
         cls.workflow = yaml.safe_load((ROOT / '.github/workflows/intent-pr.yml').read_text())
 
     def test_pr_runs_type_check_and_unit_tests_and_queue_retains_all_suites(self):
-        for event, expected in [('pull_request', LIGHT | PR_SUITES), ('merge_group', (LIGHT - {'pr-static', 'pr-title', 'conflict-markers'}) | HEAVY)]:
+        for event, expected in [('pull_request', LIGHT | PR_SUITES), ('merge_group', (LIGHT - {'pr-static', 'pr-title', 'docs-pr-scope', 'conflict-markers'}) | HEAVY)]:
             results = schedule(self.workflow, event)
             self.assertEqual({n for n, r in results.items() if r == 'success'}, expected | {'gate'})
             self.assertTrue(gate(self.workflow, event, results))

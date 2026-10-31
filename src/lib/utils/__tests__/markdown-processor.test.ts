@@ -310,7 +310,12 @@ Some additional notes here.
         const mention = container.querySelector<HTMLElement>('[data-mention][data-type="file"]');
 
         expect(mention?.textContent).toBe(label);
-        expect(JSON.parse(mention?.dataset.meta || '{}')).toEqual({ [pathKey]: path, line });
+        // `lineSuffix` lets the note editor save the token back with its suffix.
+        expect(JSON.parse(mention?.dataset.meta || '{}')).toEqual({
+          [pathKey]: path,
+          line,
+          lineSuffix: label.slice(path.length),
+        });
         expect(container.textContent).toContain(
           `${label}${markdown.slice(markdown.indexOf(label) + label.length)}`,
         );

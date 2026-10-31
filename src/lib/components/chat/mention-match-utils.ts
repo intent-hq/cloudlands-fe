@@ -7,7 +7,8 @@
  * - @note[({workspaceId}/){noteId}:{title}] — note mentions (current form)
  * - @note/{noteId} — legacy note mentions
  * - @terminal[{id}:{name}], @script[{id}:{name}] — terminal and script mentions
- * - @{path} — file/folder mentions (paths with / or file extensions)
+ * - @{path} — file mentions (paths with / or file extensions)
+ * - @{path}/ — folder mentions (a trailing slash marks the folder)
  *
  * The `@` must not be preceded by an email-local-part character (letters,
  * digits, `._%+-`), so email addresses like clement@shv.com and URL userinfo
@@ -16,22 +17,19 @@
  * `(@note/spec)` or `"@src/foo.rs"` (which the input typeahead can produce)
  * still chip. Runs BEFORE URL linkification (splitTextByUrls), which handles
  * the remaining text segments.
+ *
+ * Patterns and parsing come from the mention registry (`chat` surface).
  */
 
+import {
+  scanMentions,
+  type ContextMention,
+  type ParsedMention,
+} from '$lib/services/mentions/registry';
 import type { MentionCandidate } from '$lib/services/mentions/types';
-import { parseMemberMention } from '$lib/utils/member-mention-token';
-import {
-  NOTE_MENTION_BODY_SOURCE,
-  parseNoteMention,
-  type NoteMention,
-} from '$lib/utils/note-mention-token';
-import {
-  parseRuntimeMention,
-  RUNTIME_MENTION_BODY_SOURCE,
-  type RuntimeMention,
-} from '$lib/utils/runtime-mention-token';
+import type { NoteMention } from '$lib/utils/note-mention-token';
+import type { RuntimeMention } from '$lib/utils/runtime-mention-token';
 import { m } from '$shared/paraglide/messages.js';
-import { parseFilePathLineSuffix } from '$shared/utils/link-helpers';
 
 export interface InlineMentionMatch {
   /** Index of the `@` in the source text. */
@@ -42,24 +40,16 @@ export interface InlineMentionMatch {
   captured: string;
 }
 
-const MENTION_REGEX = new RegExp(
-  String.raw`(?<![A-Za-z0-9._%+-])@(member\[[^\]\s]*\]|context\[[^\]]+\]|` +
-    NOTE_MENTION_BODY_SOURCE +
-    '|' +
-    RUNTIME_MENTION_BODY_SOURCE +
-    String.raw`|note\/[^\s]+|[^\s@]+\.[a-zA-Z]+(?::\d+(?::\d+)?|#L\d+(?:-\d+)?|:L\d+(?:-\d+)?)?|[^\s@]*\/[^\s]+(?::\d+(?::\d+)?|#L\d+(?:-\d+)?)?)`,
-  'g',
-);
+/** What the registry parsed each found match as (null when malformed). */
+const parsedMatches = new WeakMap<InlineMentionMatch, ParsedMention | null>();
 
 /** Find all inline @mentions in `text`, in order of appearance. */
 export function findInlineMentions(text: string): InlineMentionMatch[] {
-  const matches: InlineMentionMatch[] = [];
-  MENTION_REGEX.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = MENTION_REGEX.exec(text)) !== null) {
-    matches.push({ index: match.index, fullMatch: match[0], captured: match[1] });
-  }
-  return matches;
+  return scanMentions(text, 'chat').map((match) => {
+    const inline = { index: match.index, fullMatch: match.text, captured: match.text.slice(1) };
+    parsedMatches.set(inline, match.parsed);
+    return inline;
+  });
 }
 
 /**
@@ -77,55 +67,49 @@ export type DecodedInlineMention =
   | { kind: 'runtime'; mention: RuntimeMention }
   | { kind: 'file'; path: string; line?: number; label: string };
 
-function decodeContextMention(captured: string): DecodedInlineMention {
-  // @context[provider|identifier|title] or @context[base64JSON]
-  const inner = captured.slice(8, -1);
-  const fromPipes = () => {
-    const parts = inner.split('|');
-    const identifier = parts[1] || '';
-    return { provider: parts[0] || 'browser', identifier, title: parts[2] || identifier };
+function decodeContext(context: ContextMention): DecodedInlineMention {
+  return {
+    kind: 'context',
+    provider: context.provider,
+    identifier: context.identifier,
+    title: context.title || context.identifier || m.chat_shared_context_fallback(),
+    ...(context.url ? { url: context.url } : {}),
   };
-  // Base64-encoded JSON starts with `eyJ` (`{"`).
-  if (inner.startsWith('eyJ')) {
-    try {
-      const json = JSON.parse(atob(inner));
-      const identifier = json.identifier || '';
-      return {
-        kind: 'context',
-        provider: json.provider || 'browser',
-        identifier,
-        title: json.title || identifier || m.chat_shared_context_fallback(),
-        url: json.url,
-      };
-    } catch {
-      return { kind: 'context', ...fromPipes() };
-    }
-  }
-  return { kind: 'context', ...fromPipes() };
 }
 
 /** Decode one {@link findInlineMentions} match into the mention it names. */
 export function decodeInlineMention(match: InlineMentionMatch): DecodedInlineMention {
-  const { captured, fullMatch } = match;
-  if (captured.startsWith('member[')) {
-    const member = parseMemberMention(fullMatch);
-    return member ? { kind: 'member', member } : { kind: 'text' };
+  const parsed = parsedMatches.has(match)
+    ? parsedMatches.get(match)
+    : (scanMentions(match.fullMatch, 'chat')[0]?.parsed ?? null);
+  if (!parsed) return { kind: 'text' };
+  switch (parsed.kind) {
+    case 'member':
+      return { kind: 'member', member: parsed.member };
+    case 'context':
+      return decodeContext(parsed.context);
+    case 'note':
+      return { kind: 'note', note: parsed.note, legacy: parsed.form === 'legacy' };
+    case 'runtime':
+      return { kind: 'runtime', mention: parsed.mention };
+    case 'path': {
+      // File/folder mention: @path/to/file.ext(:line), labelled by its last segment.
+      const fileName = parsed.path.split('/').pop() || parsed.path;
+      return {
+        kind: 'file',
+        path: parsed.path,
+        ...(parsed.line !== undefined ? { line: parsed.line } : {}),
+        label: `${fileName}${parsed.target.slice(parsed.path.length)}`,
+      };
+    }
+    case 'folder':
+      // Folder mention: @path/to/dir/, shown like a legacy @path/to/dir chip.
+      return {
+        kind: 'file',
+        path: parsed.path,
+        label: parsed.path.split('/').pop() || parsed.path,
+      };
+    default:
+      return { kind: 'text' };
   }
-  if (captured.startsWith('context[')) return decodeContextMention(captured);
-  if (captured.startsWith('note[')) {
-    const note = parseNoteMention(captured);
-    return note ? { kind: 'note', note, legacy: false } : { kind: 'text' };
-  }
-  if (captured.startsWith('terminal[') || captured.startsWith('script[')) {
-    const mention = parseRuntimeMention(captured);
-    return mention ? { kind: 'runtime', mention } : { kind: 'text' };
-  }
-  if (captured.startsWith('note/')) {
-    const id = captured.slice(5);
-    return { kind: 'note', note: { id, title: id }, legacy: true };
-  }
-  // File/folder mention: @path/to/file.ext(:line)
-  const { path, line } = parseFilePathLineSuffix(captured);
-  const fileName = path.split('/').pop() || path;
-  return { kind: 'file', path, line, label: `${fileName}${captured.slice(path.length)}` };
 }

@@ -29,7 +29,6 @@ import type {
   TransferStartResult,
 } from '$shared/types/workspace-transfer';
 import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
-import { openConnectionRequested } from '../../connections/connections-slice';
 import {
   closeTransferModal,
   transferFinalizeFailed,
@@ -156,6 +155,16 @@ async function showResumeFailedToast(count: number): Promise<void> {
   }
 }
 
+/** Fail-soft warning toast when main could not open the destination window. */
+async function showOpenTargetFailedToast(label: string): Promise<void> {
+  try {
+    const { notify } = await import('$lib/components/patterns/notify');
+    notify.warning(m.workspace_transfer_openTargetFailed_message({ label }));
+  } catch (error) {
+    logger.warn('Failed to surface open-target failure toast', { error });
+  }
+}
+
 /** Human label for the final status message ("Transferred to <target> …"). */
 function* resolveDestinationLabel(): SagaGenerator<string> {
   const destination = yield* selectTransferDestinationValue.effect();
@@ -172,7 +181,8 @@ function* resolveDestinationLabel(): SagaGenerator<string> {
   );
 }
 
-/** Step 4: settle the source, optionally resume target agents + open target. */
+/** Step 4: settle the source, optionally resume target agents + open the
+ * transferred workspace on the target. */
 function* finalizeTransfer(
   action: ReturnType<typeof transferFinalizeRequested>,
 ): SagaGenerator<void> {
@@ -194,6 +204,9 @@ function* finalizeTransfer(
       // leaves the workspace in place, so the flag is forced off there.
       archiveSource: destination?.kind === 'server' ? archiveSource : false,
       restartAgents: destination?.kind === 'server' ? restartAgents : false,
+      // Main opens/focuses the target backend's window and shows the
+      // transferred workspace there once the source is settled.
+      ...(openTarget && destination?.kind === 'server' ? { openTarget: true } : {}),
       ...(finalStatusMessage ? { finalStatusMessage } : {}),
     });
     if (!result.success) {
@@ -208,10 +221,10 @@ function* finalizeTransfer(
     if (resumeFailed.length > 0) {
       yield* call(showResumeFailedToast, resumeFailed.length);
     }
-    yield* put(closeTransferModal());
-    if (openTarget && destination?.kind === 'server') {
-      yield* put(openConnectionRequested(destination.connectionId));
+    if (result.targetOpenFailed) {
+      yield* call(showOpenTargetFailedToast, label);
     }
+    yield* put(closeTransferModal());
   } catch (error) {
     logger.error('transfer:finalize failed', { error });
     yield* put(transferFinalizeFailed(toMessage(error)));

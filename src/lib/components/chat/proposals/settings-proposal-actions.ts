@@ -1,5 +1,4 @@
 import type { AppSettingApplyPlan, AppSettingDefinition } from '$shared/app-settings-schema';
-import { findAppSettingDefinition } from '$shared/app-settings-schema';
 import { m } from '$shared/paraglide/messages.js';
 import type { ProposalActionDetail, SettingsChangeProposal } from '$shared/types/proposal';
 import { isGithubLinkDefaultAction } from '$shared/utils/link-helpers';
@@ -144,6 +143,10 @@ import {
   setOpenAction,
 } from '$store/renderer/slices/external-editors/external-editors-slice';
 import { getProposalId } from './proposal-id';
+import {
+  resolveProposalSetting,
+  type ResolvedProposalSetting,
+} from './settings-proposal-definitions';
 
 type SettingsChangePayload = { path: string; value: unknown; apply?: AppSettingApplyPlan };
 
@@ -155,10 +158,13 @@ function getPayload(proposal: SettingsChangeProposal): { changes: SettingsChange
   return proposal.payload;
 }
 
-function parseEditedValue(detail: ProposalActionDetail, change: SettingsChangePayload): unknown {
+function parseEditedValue(
+  detail: ProposalActionDetail,
+  change: SettingsChangePayload,
+  definition: AppSettingDefinition | undefined,
+): unknown {
   const edited = detail.editedFields[change.path];
   if (edited === undefined) return change.value;
-  const definition = findAppSettingDefinition(change.path);
   if (definition?.nullable === true && edited === '') return null;
   if (!definition || definition.type === 'string' || definition.type === 'enum') return edited;
   if (definition.type === 'boolean') return edited === true || edited === 'true';
@@ -269,6 +275,15 @@ async function writeDaemonSetting(
   valuePath: string | undefined,
   value: unknown,
 ): Promise<void> {
+  if (!valuePath && value === null) {
+    // `null` is the unset value: the daemon rejects an explicit null for keys
+    // with a default (absent-means-auto keys such as agents.memoryBudgetMb
+    // read null) and for string/object keys, so unset by removing the key.
+    if (!(await appClient.settings.reset(path))) {
+      throw new Error(`Could not clear setting "${path}"`);
+    }
+    return;
+  }
   if (!valuePath) {
     await appClient.settings.update([{ path, value }]);
     return;
@@ -289,7 +304,13 @@ function writeLocalStorageValue(key: string, value: unknown): void {
   window.localStorage.setItem(storageKey, JSON.stringify(value));
 }
 
-async function readCurrentSettingValue(definition: AppSettingDefinition): Promise<unknown> {
+async function readCurrentSettingValue(
+  resolved: Exclude<ResolvedProposalSetting, { kind: 'unknown' }>,
+): Promise<unknown> {
+  const { definition } = resolved;
+  // A generic daemon setting rolls back to exactly what the daemon reported,
+  // including `null` (unset) — never the advertised default.
+  if (resolved.kind === 'daemon') return resolved.entry.value ?? null;
   const state = appStore.state;
   switch (definition.path) {
     case 'preferences.updateChannel':
@@ -377,6 +398,9 @@ async function readCurrentSettingValue(definition: AppSettingDefinition): Promis
     case 'mcp.disabledServers':
       return Object.keys(selectMcpDisabledServers.select(state));
     default:
+      if (resolved.kind === 'app-daemon' && resolved.entry) {
+        return deepGet(resolved.entry.value, definition.valuePath) ?? definition.defaultValue;
+      }
       if (definition.source === 'daemon-settings') return readDaemonSettingValue(definition);
       if (definition.source === 'local-storage') return readLocalStorageValue(definition);
       return definition.defaultValue;
@@ -619,18 +643,29 @@ async function applyPersistedSetting(
   throw new Error(m.chat_settingsProposalActions_unsupportedPlan_error({ path, kind: apply.kind }));
 }
 
+type ParseChangeValue = (
+  change: SettingsChangePayload,
+  definition: AppSettingDefinition | undefined,
+) => unknown;
+
 async function prepareSettingsChange(
   change: SettingsChangePayload,
+  parseValue: ParseChangeValue,
 ): Promise<PreparedSettingsChange> {
-  const definition = findAppSettingDefinition(change.path);
-  // A payload-supplied plan only applies to paths outside the schema (legacy
-  // reverse changes); a known path always uses its own definition so a
-  // proposal cannot smuggle a plan past the read-only/unsupported guards.
-  if (!definition) return { ...change, rollback: null };
+  const resolved = await resolveProposalSetting(change.path);
+  // A payload-supplied plan only applies to paths neither the schema nor the
+  // daemon knows (legacy reverse changes); a known path always uses its own
+  // definition so a proposal cannot smuggle a plan past the read-only,
+  // not-proposable or unsupported guards.
+  if (resolved.kind === 'unknown') {
+    return { ...change, value: parseValue(change, undefined), rollback: null };
+  }
+  const { definition } = resolved;
   const apply = definition.apply;
-  const currentValue = await readCurrentSettingValue(definition);
+  const currentValue = await readCurrentSettingValue(resolved);
   return {
     ...change,
+    value: parseValue(change, definition),
     apply,
     rollback: {
       path: change.path,
@@ -673,14 +708,16 @@ function assertSettingProviderSwitchAllowed(path: string, value: unknown): void 
 async function applySettingsTransaction(
   changes: SettingsChangePayload[],
   failurePrefix: string,
+  parseValue: ParseChangeValue = (change) => change.value,
 ): Promise<SettingsProposalReverseChange[]> {
   const prepared: PreparedSettingsChange[] = [];
-  for (const change of changes) {
-    prepared.push(await prepareSettingsChange(change));
-  }
-
   const applied: PreparedSettingsChange[] = [];
   try {
+    // Resolve every change before the first mutation, so a refused setting
+    // fails the whole proposal without writing anything.
+    for (const change of changes) {
+      prepared.push(await prepareSettingsChange(change, parseValue));
+    }
     // Check all provider switches before the first mutation, irrespective of
     // proposal order. Recheck at dispatch in case an awaited change altered state.
     for (const change of prepared) {
@@ -723,11 +760,9 @@ export async function applySettingsProposalWork(
   // data cannot direct writes at arbitrary persistence targets. Stored
   // reverse changes keep their plan via undoSettingsProposalChanges.
   const reverseChanges = await applySettingsTransaction(
-    changes.map((change) => ({
-      path: change.path,
-      value: parseEditedValue(detail, change),
-    })),
+    changes.map((change) => ({ path: change.path, value: change.value })),
     m.chat_settingsProposalActions_applyFailed_label(),
+    (change, definition) => parseEditedValue(detail, change, definition),
   );
   return {
     reverseChanges,

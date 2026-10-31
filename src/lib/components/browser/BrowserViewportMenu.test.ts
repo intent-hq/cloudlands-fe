@@ -1,4 +1,5 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { waitForLayerExit } from '../../../test/layer-exit';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import BrowserViewportMenu from './BrowserViewportMenu.svelte';
 
@@ -29,9 +30,10 @@ describe('BrowserViewportMenu', () => {
     });
 
     await fireEvent.click(screen.getByTestId('browser-viewport-trigger'));
-    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Custom…' }));
+    const custom = await screen.findByRole('menuitem', { name: 'Custom…' });
+    await fireEvent.click(custom);
     expect(screen.getByRole('dialog')).toBeTruthy();
-    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    await waitForLayerExit(custom);
     const width = screen.getByRole('spinbutton', { name: 'Width' });
     const height = screen.getByRole('spinbutton', { name: 'Height' });
     await fireEvent.input(width, { target: { value: '319' } });

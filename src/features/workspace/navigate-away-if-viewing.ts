@@ -11,7 +11,7 @@
  */
 import { store as appStore } from '$store/renderer/store';
 import { resolveEmptyWindowDestination } from './utils/empty-window-destination';
-import { currentRoutePath, isWorkspaceRoutePath } from './utils/workspace-route';
+import { currentRoutePath, isWorkspaceRoutePath } from '$lib/utils/workspace-route-path';
 
 function isViewingWorkspace(workspaceId: string): boolean {
   const path = currentRoutePath();
