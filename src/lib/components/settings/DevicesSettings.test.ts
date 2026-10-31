@@ -10,6 +10,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/svelte';
+import { waitForLayerExit } from '../../../test/layer-exit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComponentProps } from 'svelte';
 import { m } from '$shared/paraglide/messages.js';
@@ -506,10 +507,9 @@ describe('DevicesSettings', () => {
   ) {
     await fireEvent.click(screen.getByRole('button', { name: `Actions for ${deviceName}` }));
     const item = await screen.findByRole('menuitem', { name });
-    const menu = item.closest('[role="menu"]');
     await fireEvent.click(item);
     // Let this menu finish its exit so the next action cannot pick a stale item.
-    await waitFor(() => expect(menu?.isConnected).toBe(false));
+    await waitForLayerExit(item);
   }
 
   describe('behind-pin indicator and Update action', () => {

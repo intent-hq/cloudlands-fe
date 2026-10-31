@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { waitForLayerExit } from '../../test/layer-exit';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import CatalogControls from './CatalogControls.svelte';
@@ -29,10 +30,11 @@ describe('CatalogControls', () => {
       expect(screen.getByRole('option', { name })).not.toBeNull();
     }
 
+    const listbox = screen.getByRole('listbox');
     await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
     await fireEvent.keyDown(trigger, { key: 'Enter' });
     await waitFor(() => expect(trigger.textContent).toContain('Dracula'));
-    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+    await waitForLayerExit(listbox);
 
     const system = within(screen.getByRole('group', { name: 'Theme' })).getByRole('radio', {
       name: 'System',

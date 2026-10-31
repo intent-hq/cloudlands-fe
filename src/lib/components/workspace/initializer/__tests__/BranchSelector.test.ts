@@ -8,6 +8,7 @@
  * fabricated ['main','master',...] fallback.
  */
 import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/svelte';
+import { waitForLayerExit } from '../../../../../test/layer-exit';
 import { flushSync } from 'svelte';
 import { describe, expect, it, vi, beforeEach, beforeAll, afterEach } from 'vitest';
 
@@ -1183,9 +1184,7 @@ describe('BranchSelector (server-side prefix search, github.branches.list prefix
     // the search-result list entry must be dropped.
     await fireEvent.pointerUp(match, { pointerType: 'mouse' });
     // Reopen only after the closing dropdown has finished its exit.
-    await waitFor(() =>
-      expect(screen.queryByPlaceholderText('Search or enter branch name...')).toBeNull(),
-    );
+    await waitForLayerExit(searchInput);
     await openDropdown(container);
     await waitFor(() => expect(screen.getByText('main')).toBeTruthy());
     expect(screen.getAllByText('feat/beyond-page')).toHaveLength(1);
