@@ -12,6 +12,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { stripVTControlCharacters } from 'node:util';
 import { dirname, join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -146,8 +147,11 @@ writeFileSync('practice-result.json', JSON.stringify(error));`,
     timeout: 30_000,
   });
   expect(child.error, child.stdout + child.stderr).toBeUndefined();
-  const error = JSON.parse(readFileSync(join(root, 'practice-result.json'), 'utf8'));
-  return { stdout: child.stdout + child.stderr, error };
+  const result = JSON.parse(readFileSync(join(root, 'practice-result.json'), 'utf8'));
+  // CI colors Vitest output; compare text, not escape codes.
+  const plain = (text: string | null) => (text === null ? null : stripVTControlCharacters(text));
+  const error = result && { message: plain(result.message), output: plain(result.output) };
+  return { stdout: stripVTControlCharacters(child.stdout + child.stderr), error };
 }
 
 describe('practice check output', () => {
@@ -185,7 +189,9 @@ process.exit(3);`;
       ).catch((cause: Error & { exitCode?: number; output?: string }) => cause);
       // The grandchild lives 60s; waiting on it would exceed the test timeout.
       expect(error).toMatchObject({ exitCode: 3 });
-      expect((error as { output?: string }).output).toContain('FAIL lingering practice output');
+      expect(stripVTControlCharacters((error as { output?: string }).output ?? '')).toContain(
+        'FAIL lingering practice output',
+      );
     } finally {
       // The grandchild also exits on EPIPE once its pipe is destroyed.
       const pidFile = join(root, 'lingering.pid');
