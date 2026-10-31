@@ -6560,12 +6560,14 @@ describe('startup status IPC ownership', () => {
     mockRestartOrphanedSidecar.mockResolvedValueOnce({ ok: true, spawned: true });
     await findHandler('backend:restart-orphaned-sidecar')!({}, undefined);
 
-    for (const send of [localSend, remoteSend]) {
-      const payloads = send.mock.calls
+    const statusPayloads = (send: typeof localSend) =>
+      send.mock.calls
         .filter(([channel]) => channel === 'backend:status')
         .map(([, payload]) => payload as Record<string, unknown>);
-      expect(payloads).toHaveLength(1);
-      expect(Object.keys(payloads[0]).sort()).toEqual(['reconnectAttempts', 'status', 'transport']);
+    expect(statusPayloads(localSend)).toHaveLength(1);
+    // Whatever a window receives from this push carries no per-backend facts.
+    for (const payload of [...statusPayloads(localSend), ...statusPayloads(remoteSend)]) {
+      expect(Object.keys(payload).sort()).toEqual(['reconnectAttempts', 'status', 'transport']);
     }
   });
 });

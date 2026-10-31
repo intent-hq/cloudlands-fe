@@ -76,10 +76,10 @@ import {
 import {
   buildBackendStatusPayload,
   buildUnscopedBackendStatusPayload,
-  type BackendStatusExtras,
   type BackendStatusPayload,
   type BackendStatusSnapshot,
   type BackendStatusSource,
+  type BuildBackendStatusOptions,
   type DaemonUpdateMarker,
   type UnscopedBackendStatusPayload,
 } from './backend-status-payload';
@@ -2323,7 +2323,9 @@ export function onAnyBackendStatus(
  * {@link broadcastBackendStatus} / {@link broadcastUnscopedBackendStatus}.
  */
 function broadcast<C extends string>(
-  channel: C & (C extends typeof BACKEND.STATUS ? never : unknown),
+  // A literal channel other than `backend:status`; a widened `string` is
+  // refused too, since it could carry the status channel past this guard.
+  channel: C & (string extends C ? never : C extends typeof BACKEND.STATUS ? never : unknown),
   payload: unknown,
   backendId?: string,
 ): void {
@@ -2346,6 +2348,9 @@ function sendToWindows(channel: string, payload: unknown, backendId?: string): v
   }
 }
 
+/** Per-push overrides: the event's own status and its markers. */
+type BackendStatusEventOptions = Pick<BuildBackendStatusOptions, 'status' | 'extras'>;
+
 /**
  * The `backend:status` payload for one backend's windows: the client's live
  * state plus this backend's daemon-update marker. Every scoped status push and
@@ -2354,7 +2359,7 @@ function sendToWindows(channel: string, payload: unknown, backendId?: string): v
 function backendStatusPayload(
   backendId: string,
   client: BackendStatusSource,
-  options: { status?: BackendStatusPayload['status']; extras?: BackendStatusExtras } = {},
+  options: BackendStatusEventOptions = {},
 ): BackendStatusPayload {
   return buildBackendStatusPayload(client, {
     pinnedVersion: getPinnedVersion(),
@@ -2367,7 +2372,7 @@ function backendStatusPayload(
 function broadcastBackendStatus(
   backendId: string,
   client: BackendStatusSource,
-  options?: { status?: BackendStatusPayload['status']; extras?: BackendStatusExtras },
+  options?: BackendStatusEventOptions,
 ): void {
   sendToWindows(BACKEND.STATUS, backendStatusPayload(backendId, client, options), backendId);
 }

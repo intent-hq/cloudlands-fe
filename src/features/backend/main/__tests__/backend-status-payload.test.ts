@@ -75,15 +75,14 @@ describe('buildBackendStatusPayload', () => {
     expect(payload).toMatchObject({ sidecarGaveUp: true, reason: 'crash loop' });
   });
 
-  it('defaults the optional getters for partial clients', () => {
-    const payload = buildBackendStatusPayload(
-      source({
-        getStartupState: undefined,
-        isConnectionLimited: undefined,
-        getConnectionLimitRetryAfterMs: undefined,
-      }),
-      { pinnedVersion: null, updateMarker: {} },
-    );
+  it('defaults the per-backend getters a partial IPC test double omits', () => {
+    const partial = {
+      ...source(),
+      getStartupState: undefined,
+      isConnectionLimited: undefined,
+      getConnectionLimitRetryAfterMs: undefined,
+    } as unknown as BackendStatusSource;
+    const payload = buildBackendStatusPayload(partial, { pinnedVersion: null, updateMarker: {} });
     expect(payload).toMatchObject({
       daemonStartup: null,
       connectionLimited: false,

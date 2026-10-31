@@ -18,15 +18,19 @@ import type { BackendConnectionConfig, ConnectedVia } from './backend-connection
 import type { ConnectionStatus } from './json-rpc-client';
 import { formatTransportInfo, type TransportInfo } from './transport-info';
 
-/** Client surface the builders read. Optional getters tolerate partial test doubles. */
+/**
+ * Client surface the builders read (satisfied by `JsonRpcClient`). Every getter
+ * is required so a renamed client method fails to type-check; the builder still
+ * calls the per-backend getters defensively because IPC test doubles omit them.
+ */
 export interface BackendStatusSource {
   getStatus(): ConnectionStatus;
   getConfig(): BackendConnectionConfig;
   getConnectedVia(): ConnectedVia | null;
   getReconnectAttempts(): number;
-  getStartupState?(): DaemonStartupState | null;
-  isConnectionLimited?(): boolean;
-  getConnectionLimitRetryAfterMs?(): number | null;
+  getStartupState(): DaemonStartupState | null;
+  isConnectionLimited(): boolean;
+  getConnectionLimitRetryAfterMs(): number | null;
 }
 
 /** Event-specific markers a single push may add on top of the live client state. */
@@ -61,24 +65,17 @@ export interface BackendStatusSnapshot extends BackendStatusPayload {
   sidecarStartupFailedReason?: string;
 }
 
+type UnscopedBackendStatusKey = 'status' | 'transport' | 'reconnectAttempts';
+
 /**
- * A `backend:status` payload delivered to EVERY window. Only facts that are
- * safe for any backend's window; per-backend fields are `never` so adding one
- * is a compile error.
+ * A `backend:status` payload delivered to EVERY window. Every other field of
+ * the scoped snapshot is mapped to `never` — including fields added later —
+ * so a per-backend fact cannot be added here or smuggled in via a scoped
+ * payload without a compile error.
  */
-export interface UnscopedBackendStatusPayload {
-  status: ConnectionStatus;
-  transport: TransportInfo;
-  reconnectAttempts: number;
-  daemonStartup?: never;
-  daemonUpdateDisconnectedAt?: never;
-  connectionLimited?: never;
-  connectionLimitRetryAfterMs?: never;
-  reconnected?: never;
-  sidecarGaveUp?: never;
-  sidecarStartupFailed?: never;
-  reason?: never;
-}
+export type UnscopedBackendStatusPayload = Pick<BackendStatusPayload, UnscopedBackendStatusKey> & {
+  [K in Exclude<keyof BackendStatusSnapshot, UnscopedBackendStatusKey>]?: never;
+};
 
 export interface BuildBackendStatusOptions {
   /** The intentd.version pin reported in the transport info. */
