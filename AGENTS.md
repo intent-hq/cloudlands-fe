@@ -139,6 +139,10 @@ corepack pnpm run test:playwright
 A test that budgets wall time (perf guards, alignment work bounds) must fit its timeout
 under CI runner load, not just in isolation — the local 30 s `testTimeout` by default
 (`vitest.config.ts` raises it to 60 s on CI, from `scripts/vitest-timeouts.mjs`) or the documented per-test budget; catalog contract entries derive theirs from their snapshot size (`src/lib/component-catalog/catalog-contract-budget.ts`).
+Testing Library waits (`waitFor`, `findBy*`) and `vi.waitFor` / `vi.waitUntil` default to half
+that budget (`src/test-setup.ts`; the 1 s library default ejected cloudlands-fe#3915 from the
+merge queue), so do not pass a `timeout` to lengthen a wait; pass a short one only when the
+test expects the wait to fail.
 `intent/no-wall-clock-assertions-in-tests` (in `pnpm run lint`) flags a raw
 `performance.now()` / `Date.now()` elapsed-time assertion against a millisecond budget and
 names the alternatives; today's offenders are baselined under
