@@ -230,7 +230,11 @@
 >
   {#each entries as entry (entry.tabId)}
     {@const agentDrawing = $agentDrawing$[entry.tabId] === true}
-    <!-- Box size and opacity are behavioural (Chromium frame scheduling), so they are inline styles. -->
+    <!--
+      Opacity is behavioural (Chromium frame scheduling). The 1x1 clip keeps a
+      guest drawn at opacity 0.01 to a single pixel; its size has no effect on
+      the frame rate. Both are inline styles so tests can pin them.
+    -->
     <div
       class="absolute left-0 top-0 overflow-hidden"
       style:width="1px"

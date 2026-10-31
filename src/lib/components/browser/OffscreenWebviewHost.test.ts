@@ -957,6 +957,7 @@ describe('OffscreenWebviewHost', () => {
     expect(host.style.left).not.toBe('-10000px');
     expect(host.className).toContain('left-0');
     expect(host.className).toContain('top-0');
+    // No inline opacity on the shared layer: it would throttle every guest.
     expect(host.style.opacity).toBe('');
     expect(host.className).toContain('pointer-events-none');
     // inert keeps the focusable webviews out of the tab order.
