@@ -158,9 +158,9 @@ describe('getAvatarState attention-request states', () => {
         },
       }),
     ).toBe('attention-discussion');
-    expect(
-      dockWorkspaceAvatarState({ workspace: { ...workspace, displayStatus: 'failed' } }),
-    ).toBe('failed');
+    expect(dockWorkspaceAvatarState({ workspace: { ...workspace, displayStatus: 'failed' } })).toBe(
+      'failed',
+    );
     expect(
       dockWorkspaceAvatarState({ workspace: { ...workspace, displayStatus: 'blocked' } }),
     ).toBe('attention-blocker');
