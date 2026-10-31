@@ -700,6 +700,84 @@ describe('settings-proposal-actions', () => {
     ]);
   });
 
+  // Regression: the daemon catalog lets the assistant propose these archive
+  // settings, but the card rejected them as "Unknown or unsupported setting"
+  // because the renderer schema had no apply plan for them.
+  it('applies and reverses the archived-workspace purge window', async () => {
+    mocks.settingsGet.mockResolvedValueOnce({
+      path: 'workspace.purgeArchivedAfterDays',
+      value: 14,
+    });
+    const proposal = makeProposal('workspace.purgeArchivedAfterDays', 3);
+
+    const result = await applySettingsProposalWork(makeDetail(proposal));
+
+    expect(mocks.settingsGet).toHaveBeenCalledWith('workspace.purgeArchivedAfterDays');
+    expect(mocks.settingsUpdate).toHaveBeenCalledWith([
+      { path: 'workspace.purgeArchivedAfterDays', value: 3 },
+    ]);
+    expect(result.reverseChanges).toEqual([
+      {
+        path: 'workspace.purgeArchivedAfterDays',
+        value: 14,
+        apply: { kind: 'daemon-settings-update', path: 'workspace.purgeArchivedAfterDays' },
+      },
+    ]);
+  });
+
+  it('reverses a purge window that was off back to null (off)', async () => {
+    mocks.settingsGet.mockResolvedValueOnce({
+      path: 'workspace.purgeArchivedAfterDays',
+      value: null,
+    });
+    const proposal = makeProposal('workspace.purgeArchivedAfterDays', 7);
+
+    const result = await applySettingsProposalWork(makeDetail(proposal));
+
+    expect(mocks.settingsUpdate).toHaveBeenCalledWith([
+      { path: 'workspace.purgeArchivedAfterDays', value: 7 },
+    ]);
+    expect(result.reverseChanges[0]?.value).toBeNull();
+  });
+
+  it('turns the purge window off when the card field is cleared', async () => {
+    mocks.settingsGet.mockResolvedValueOnce({
+      path: 'workspace.purgeArchivedAfterDays',
+      value: 14,
+    });
+    const proposal = makeProposal('workspace.purgeArchivedAfterDays', 3);
+    const detail = makeDetail(proposal);
+    detail.editedFields['workspace.purgeArchivedAfterDays'] = '';
+
+    await applySettingsProposalWork(detail);
+
+    expect(mocks.settingsUpdate).toHaveBeenCalledWith([
+      { path: 'workspace.purgeArchivedAfterDays', value: null },
+    ]);
+  });
+
+  it('applies and reverses the auto-archive idle window', async () => {
+    mocks.settingsGet.mockResolvedValueOnce({
+      path: 'workspace.autoArchiveIdleAfterDays',
+      value: 0,
+    });
+    const proposal = makeProposal('workspace.autoArchiveIdleAfterDays', 7);
+
+    const result = await applySettingsProposalWork(makeDetail(proposal));
+
+    expect(mocks.settingsGet).toHaveBeenCalledWith('workspace.autoArchiveIdleAfterDays');
+    expect(mocks.settingsUpdate).toHaveBeenCalledWith([
+      { path: 'workspace.autoArchiveIdleAfterDays', value: 7 },
+    ]);
+    expect(result.reverseChanges).toEqual([
+      {
+        path: 'workspace.autoArchiveIdleAfterDays',
+        value: 0,
+        apply: { kind: 'daemon-settings-update', path: 'workspace.autoArchiveIdleAfterDays' },
+      },
+    ]);
+  });
+
   // Backend scoping: a local-storage-set write against a per-backend key must
   // not touch the local machine's bare key when a remote backend is active.
   it('namespaces backend-scoped localStorage writes under the active remote backend', async () => {
