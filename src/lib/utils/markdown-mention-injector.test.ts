@@ -24,6 +24,18 @@ describe('injectMentionSpans without a DOM', () => {
     }
   });
 
+  it('chips a folder token followed by an escaped delimiter', () => {
+    for (const [html, rest] of [
+      ['<p>@docs/&quot;</p>', '&quot;</p>'],
+      ['<p>@docs/&nbsp;next</p>', '&nbsp;next</p>'],
+    ]) {
+      expect(injectMentionSpans(html)).toBe(
+        '<p><span data-mention="true" data-type="folder" data-id="docs" data-label="docs/" data-meta="{&quot;fullPath&quot;:&quot;docs&quot;}" class="mention-chip">docs/</span>' +
+          rest,
+      );
+    }
+  });
+
   it('keeps malformed tokens and non-note links as text', () => {
     const html = '<p>@member[bm90LWpzb24=] intent://local/workspace/w1</p>';
     expect(injectMentionSpans(html)).toBe(html);

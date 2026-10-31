@@ -242,6 +242,9 @@ const CHAT_AND_MARKDOWN: readonly MentionSurface[] = ['chat', 'markdown'];
 const MARKDOWN: readonly MentionSurface[] = ['markdown'];
 const CHAT: readonly MentionSurface[] = ['chat'];
 
+/** An escaped character such as `&quot;` or `&#160;`. */
+const HTML_ENTITY_SOURCE = String.raw`&(?:[A-Za-z]+|#\d+|#x[0-9A-Fa-f]+);`;
+
 /** One folder name in a `@<path>/` token. */
 const FOLDER_SEGMENT_SOURCE = String.raw`[^\s<>()'"\/\[\]@:]+`;
 
@@ -365,7 +368,7 @@ const CONTEXT_ENTRY: MentionTokenEntry = {
 
 /**
  * Every token form, in precedence order (earlier wins at the same position):
- * member, note, terminal/script, legacy note, then the path heuristics.
+ * member, note, terminal/script, folder, legacy note, then the path heuristics.
  */
 export const MENTION_TOKEN_ENTRIES: readonly MentionTokenEntry[] = [
   {
@@ -399,6 +402,21 @@ export const MENTION_TOKEN_ENTRIES: readonly MentionTokenEntry[] = [
     },
   },
   {
+    // `@src/lib/`: relative segments ending in `/`, then only end-of-sentence
+    // punctuation before whitespace, a delimiter, an HTML entity (the string
+    // injector scans escaped HTML) or the end. Listed before legacy notes so
+    // `@note/assets/` is a folder; legacy `@src/lib` (no slash) is left to the
+    // path entries below, as before.
+    name: 'folder',
+    source: String.raw`(?:${FOLDER_SEGMENT_SOURCE}\/)+(?=[.,;:!?]*(?:$|[\s<>()'"\]]|${HTML_ENTITY_SOURCE}))`,
+    at: true,
+    surfaces: CHAT_AND_MARKDOWN,
+    parse: (text) => {
+      const target = text.slice(1);
+      return { kind: 'folder', path: target.replace(/\/+$/, ''), target };
+    },
+  },
+  {
     name: 'legacy-note',
     source: String.raw`note\/[A-Za-z0-9_-]+`,
     at: true,
@@ -414,19 +432,6 @@ export const MENTION_TOKEN_ENTRIES: readonly MentionTokenEntry[] = [
     at: true,
     surfaces: MARKDOWN,
     parse: (text) => ({ kind: 'rule', path: text.slice(1) }),
-  },
-  {
-    // `@src/lib/`: relative segments ending in `/`, then only end-of-sentence
-    // punctuation before whitespace or the end. Legacy `@src/lib` (no slash)
-    // is left to the path entries below, as before.
-    name: 'folder',
-    source: String.raw`(?:${FOLDER_SEGMENT_SOURCE}\/)+(?=[.,;:!?]*(?:$|[\s<>()'"\]]))`,
-    at: true,
-    surfaces: CHAT_AND_MARKDOWN,
-    parse: (text) => {
-      const target = text.slice(1);
-      return { kind: 'folder', path: target.replace(/\/+$/, ''), target };
-    },
   },
   {
     name: 'absolute-path',

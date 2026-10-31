@@ -371,6 +371,26 @@ describe('folder tokens', () => {
     expect(hasMentionToken('ping @user/repo', 'markdown')).toBe(false);
   });
 
+  it('reads a folder under note/ as a folder, and keeps legacy @note/<id>', () => {
+    for (const surface of ['chat', 'markdown'] as const) {
+      expect(only('@note/assets/', surface).parsed).toEqual({
+        kind: 'folder',
+        path: 'note/assets',
+        target: 'note/assets/',
+      });
+      expect(only('@note/abc', surface).parsed).toMatchObject({ kind: 'note', form: 'legacy' });
+    }
+  });
+
+  it('ends a folder token at an HTML-escaped delimiter', () => {
+    expect(folders('@docs/&quot; @src/&nbsp;next @a/&#160;b @lib/&lt;', 'markdown')).toEqual([
+      '@docs/',
+      '@src/',
+      '@a/',
+      '@lib/',
+    ]);
+  });
+
   it('leaves a folder token as written in previews', () => {
     expect(mentionTokensToText('look in @src/lib/ please')).toBe('look in @src/lib/ please');
   });
