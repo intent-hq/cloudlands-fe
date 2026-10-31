@@ -8,6 +8,7 @@ import type {
 } from '$lib/components/ui/sidebar-context-menu/types';
 import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
 import { m } from '$shared/paraglide/messages.js';
+import { resolveBackendTransport } from '$lib/client/live/backend-transport-factory';
 import { store } from '$store/renderer/store';
 import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
 import { selectWorkspaceUpdateContext } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -219,6 +220,28 @@ export function createHomeWorkspaceMenu(
     // Per-workspace opt-out from the daemon's auto-archive sweep (PROTOCOL
     // §5.1); owner-only, offered on daemons that advertise it.
     if (selectCanSetWorkspaceAutoArchive.select(store.state, workspace.id)) {
+      const admission = selectWorkspaceUpdateContext.select(store.state, workspace.id, [
+        'id',
+        'autoArchiveDisabled',
+      ]);
+      const transport = resolveBackendTransport();
+      const ownsAutoArchive = () => {
+        try {
+          return (
+            store.dispatch === dispatch &&
+            resolveBackendTransport() === transport &&
+            admission !== null &&
+            selectCanSetWorkspaceAutoArchive.select(store.state, workspace.id) &&
+            admission ===
+              selectWorkspaceUpdateContext.select(store.state, workspace.id, [
+                'id',
+                'autoArchiveDisabled',
+              ])
+          );
+        } catch {
+          return false;
+        }
+      };
       items.push({
         id: 'disable-auto-archive',
         label: m.home_workspace_disableAutoArchive_label(),
@@ -226,6 +249,7 @@ export function createHomeWorkspaceMenu(
         closeOnSelect: true,
         onClick: () => {
           onClose();
+          if (!ownsAutoArchive()) return;
           // Read at click time: the flag may have changed while the menu was open.
           const disabled = selectWorkspaceAutoArchiveDisabled.select(store.state, workspace.id);
           store.dispatch(setWorkspaceAutoArchiveDisabled(workspace.id, !disabled));

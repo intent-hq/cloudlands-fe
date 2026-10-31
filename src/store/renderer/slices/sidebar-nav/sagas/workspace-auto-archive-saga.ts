@@ -15,13 +15,21 @@ import { notify } from '$lib/components/patterns/notify';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import type { WorkspaceId } from '$shared/types/branded-ids';
+import { resolveBackendTransport } from '$lib/client/live/backend-transport-factory';
+import { store } from '../../../store';
 import { workspaceClient } from '../../workspace/utils/workspace.client';
-import { selectWorkspaceById } from '../../workspace/workspace-selectors';
+import {
+  selectWorkspaceById,
+  selectWorkspaceUpdateContext,
+} from '../../workspace/workspace-selectors';
 import {
   bulkUpdateWorkspaceEntities,
   updateWorkspaceEntity,
 } from '../../workspace/workspace-slice';
-import { selectWorkspaceAutoArchiveDisabled } from '../sidebar-nav-selectors';
+import {
+  selectCanSetWorkspaceAutoArchive,
+  selectWorkspaceAutoArchiveDisabled,
+} from '../sidebar-nav-selectors';
 import type { setWorkspaceAutoArchiveDisabled } from '../sidebar-nav-slice';
 
 const logger = createLogger('WorkspaceAutoArchiveSaga');
@@ -42,8 +50,48 @@ function applyAutoArchiveDisabled(workspaceId: string, disabled: boolean) {
  * In-flight writes per workspace: the latest token, the value it applied
  * optimistically, and the value to roll back to if it fails.
  */
-const pendingWrites = new Map<string, { token: number; optimistic: boolean; previous: boolean }>();
+interface AutoArchiveOwner {
+  admission: string;
+  dispatch: typeof store.dispatch;
+  transport: ReturnType<typeof resolveBackendTransport>;
+}
+
+const pendingWrites = new Map<
+  string,
+  { owner: AutoArchiveOwner; token: number; optimistic: boolean; previous: boolean }
+>();
 let nextWriteToken = 0;
+
+function sameOwner(
+  a: AutoArchiveOwner | null | undefined,
+  b: AutoArchiveOwner | null | undefined,
+): boolean {
+  return (
+    !!a &&
+    !!b &&
+    a.admission === b.admission &&
+    a.dispatch === b.dispatch &&
+    a.transport === b.transport
+  );
+}
+
+function* autoArchiveOwner(workspaceId: string): SagaGenerator<AutoArchiveOwner | null> {
+  if (!(yield* selectCanSetWorkspaceAutoArchive.effect(workspaceId))) return null;
+  const admission = yield* selectWorkspaceUpdateContext.effect(workspaceId, [
+    'id',
+    'autoArchiveDisabled',
+  ]);
+  if (admission === null) return null;
+  try {
+    return { admission, dispatch: store.dispatch, transport: resolveBackendTransport() };
+  } catch {
+    return null;
+  }
+}
+
+function forgetOwnWrite(workspaceId: string, token: number): void {
+  if (pendingWrites.get(workspaceId)?.token === token) pendingWrites.delete(workspaceId);
+}
 
 /** Test-only reset of the module-level pending-write bookkeeping. */
 export function resetWorkspaceAutoArchiveWritesForTest(): void {
@@ -63,7 +111,11 @@ export function* watchAuthoritativeAutoArchiveDisabled(): SagaGenerator<void> {
     for (const update of action.payload[0]) {
       const [workspaceId, changes] = update.payload;
       const pending = pendingWrites.get(workspaceId);
-      if (pending && 'autoArchiveDisabled' in changes) {
+      if (
+        pending &&
+        'autoArchiveDisabled' in changes &&
+        sameOwner(pending.owner, yield* call(autoArchiveOwner, workspaceId))
+      ) {
         pending.previous = changes.autoArchiveDisabled === true;
       }
     }
@@ -74,28 +126,44 @@ export function* setWorkspaceAutoArchiveDisabledWorker(
   action: ReturnType<typeof setWorkspaceAutoArchiveDisabled>,
 ): SagaGenerator<void> {
   const [workspaceId, disabled] = action.payload;
+  const owner = yield* call(autoArchiveOwner, workspaceId);
+  if (!owner) return;
   const workspace = yield* selectWorkspaceById.effect(workspaceId);
   if (!workspace) return;
   const current = workspace.autoArchiveDisabled === true;
-  const pending = pendingWrites.get(workspaceId);
+  const candidate = pendingWrites.get(workspaceId);
+  const pending = sameOwner(candidate?.owner, owner) ? candidate : undefined;
   if (!pending && current === disabled) return;
 
   const token = ++nextWriteToken;
   // Inherit the earlier write's rollback value only while the row still shows
   // that write's optimistic value; anything else is newer and authoritative.
   const previous = pending && current === pending.optimistic ? pending.previous : current;
-  pendingWrites.set(workspaceId, { token, optimistic: disabled, previous });
-  yield* put(applyAutoArchiveDisabled(workspaceId, disabled));
-
-  let error: string | undefined;
+  pendingWrites.set(workspaceId, { owner, token, optimistic: disabled, previous });
   try {
-    const result = yield* call([workspaceClient, workspaceClient.update], {
-      id: workspaceId as WorkspaceId,
-      autoArchiveDisabled: disabled,
-    });
-    if (result.ok) {
+    if (!sameOwner(owner, yield* call(autoArchiveOwner, workspaceId))) return;
+    yield* put(applyAutoArchiveDisabled(workspaceId, disabled));
+    // An optimistic put can retire admission before the actual RPC starts.
+    if (!sameOwner(owner, yield* call(autoArchiveOwner, workspaceId))) return;
+
+    let error: string | undefined;
+    let caught: unknown;
+    let result: Awaited<ReturnType<typeof workspaceClient.update>> | undefined;
+    try {
+      result = yield* call([workspaceClient, workspaceClient.update], {
+        id: workspaceId as WorkspaceId,
+        autoArchiveDisabled: disabled,
+      });
+      if (!result.ok) error = result.error;
+    } catch (failure) {
+      caught = failure;
+    }
+    // A retired reply belongs to its original caller, including failures.
+    if (!sameOwner(owner, yield* call(autoArchiveOwner, workspaceId))) return;
+    const latest = pendingWrites.get(workspaceId);
+    if (!sameOwner(latest?.owner, owner)) return;
+    if (result?.ok) {
       const served = result.data.autoArchiveDisabled === true;
-      const latest = pendingWrites.get(workspaceId);
       if (latest?.token === token) {
         pendingWrites.delete(workspaceId);
         // Re-apply even when it equals the request: a stale row may have
@@ -107,16 +175,17 @@ export function* setWorkspaceAutoArchiveDisabledWorker(
       }
       return;
     }
-    error = result.error;
-  } catch (caught) {
-    logger.error('Failed to set workspace auto-archive opt-out', { workspaceId, error: caught });
+    if (caught)
+      logger.error('Failed to set workspace auto-archive opt-out', { workspaceId, error: caught });
+    if (latest?.token !== token) return;
+    pendingWrites.delete(workspaceId);
+    if ((yield* selectWorkspaceAutoArchiveDisabled.effect(workspaceId)) === disabled) {
+      yield* put(applyAutoArchiveDisabled(workspaceId, latest.previous));
+    }
+    if (sameOwner(owner, yield* call(autoArchiveOwner, workspaceId))) {
+      notify.error(error?.trim() || m.workspace_client_updateFailed_error());
+    }
+  } finally {
+    forgetOwnWrite(workspaceId, token);
   }
-
-  const latest = pendingWrites.get(workspaceId);
-  if (latest?.token !== token) return;
-  pendingWrites.delete(workspaceId);
-  if ((yield* selectWorkspaceAutoArchiveDisabled.effect(workspaceId)) === disabled) {
-    yield* put(applyAutoArchiveDisabled(workspaceId, latest.previous));
-  }
-  notify.error(error?.trim() || m.workspace_client_updateFailed_error());
 }
