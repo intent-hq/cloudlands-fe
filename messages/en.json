@@ -5327,7 +5327,7 @@
   "settings_providerProfileKinds_token_label": "Token",
   "settings_providerProfileKinds_tryAgain_label": "Try again",
   "settings_providerProfileKinds_waitingBrowser_description": "Finish signing in in the browser window that opens, or paste the code into the bottom terminal.",
-  "settings_providerProfileKinds_waitingDeviceAuth_description": "This daemon runs on another machine, so Codex shows a one-time code in the bottom terminal. Open the link it shows, sign in, and enter the code. You may first need to allow device sign-in in ChatGPT's security settings.",
+  "settings_providerProfileKinds_waitingDeviceAuth_description": "This daemon runs on another machine, so Codex shows a one-time code in the bottom terminal. First turn on device code login in ChatGPT → Settings → Security (or ask your workspace admin to allow it). Then open the link it shows, sign in, and enter the code. The code expires in 15 minutes.",
   "settings_providerProfileKinds_waiting_label": "Waiting for sign-in…",
   "settings_providerProfiles_actions_ariaLabel": "Actions for {name}",
   "settings_providerProfiles_addTitle_label": "New {provider} profile",

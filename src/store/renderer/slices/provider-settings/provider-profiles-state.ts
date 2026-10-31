@@ -26,6 +26,7 @@ import {
 } from '$shared/provider-profiles';
 import type {
   ProviderProfileMutation,
+  ProviderProfileSetup,
   ProviderProfileStatus,
   ProviderProfilesState,
 } from './provider-settings-types';
@@ -56,6 +57,7 @@ export const initialProfilesState: ProviderProfilesState = {
   activation: {},
   defaults: {},
   mutations: createCollection<ProviderProfileMutation, 'id'>('id'),
+  setups: {},
 };
 
 type Handler<P extends unknown[]> = (
@@ -295,6 +297,22 @@ export const profileHandlers = {
       : { ...state, status: { ...state.status, [profileId]: status } }) as Handler<
     [string, ProviderProfileStatus]
   >,
+  /** Start, or move along, one add-dialog setup (a patch without `phase` keeps it). */
+  setupChanged: ((state, [setupId, patch]) => {
+    const previous = state.setups[setupId];
+    const phase = patch.phase ?? previous?.phase;
+    if (!phase) return state;
+    return {
+      ...state,
+      setups: { ...state.setups, [setupId]: { ...previous, ...patch, id: setupId, phase } },
+    };
+  }) as Handler<[string, Partial<Omit<ProviderProfileSetup, 'id'>>]>,
+  setupDismissed: ((state, [setupId]) => {
+    if (!(setupId in state.setups)) return state;
+    const setups = { ...state.setups };
+    delete setups[setupId];
+    return { ...state, setups };
+  }) as Handler<[string]>,
   activationDismissed: ((state, [profileId]) => {
     if (!(profileId in state.activation)) return state;
     const activation = { ...state.activation };

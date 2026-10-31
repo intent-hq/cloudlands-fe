@@ -5327,7 +5327,7 @@
   "settings_providerProfileKinds_token_label": "Token de acceso",
   "settings_providerProfileKinds_tryAgain_label": "Reintentar",
   "settings_providerProfileKinds_waitingBrowser_description": "Termina de iniciar sesión en la ventana del navegador que se abre, o pega el código en el terminal inferior.",
-  "settings_providerProfileKinds_waitingDeviceAuth_description": "Este daemon se ejecuta en otra máquina, así que Codex muestra un código de un solo uso en el terminal inferior. Abre el enlace que aparece, inicia sesión e introduce el código. Puede que antes tengas que permitir el inicio de sesión por dispositivo en los ajustes de seguridad de ChatGPT.",
+  "settings_providerProfileKinds_waitingDeviceAuth_description": "Este daemon se ejecuta en otra máquina, así que Codex muestra un código de un solo uso en el terminal inferior. Primero activa el inicio de sesión con código de dispositivo en ChatGPT → Configuración → Seguridad (o pide al administrador de tu espacio de trabajo que lo permita). Después abre el enlace que aparece, inicia sesión e introduce el código. El código caduca en 15 minutos.",
   "settings_providerProfileKinds_waiting_label": "Esperando el inicio de sesión…",
   "settings_providerProfiles_actions_ariaLabel": "Acciones de {name}",
   "settings_providerProfiles_addTitle_label": "Nuevo perfil de {provider}",

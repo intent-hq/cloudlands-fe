@@ -5327,7 +5327,7 @@
   "settings_providerProfileKinds_token_label": "トークン",
   "settings_providerProfileKinds_tryAgain_label": "もう一度試す",
   "settings_providerProfileKinds_waitingBrowser_description": "開いたブラウザーウィンドウでサインインを完了するか、下部のターミナルにコードを貼り付けてください。",
-  "settings_providerProfileKinds_waitingDeviceAuth_description": "このデーモンは別のマシンで動いているため、Codex は下部のターミナルにワンタイムコードを表示します。表示されたリンクを開いてサインインし、コードを入力してください。先に ChatGPT のセキュリティ設定でデバイスによるサインインを許可する必要がある場合があります。",
+  "settings_providerProfileKinds_waitingDeviceAuth_description": "このデーモンは別のマシンで動いているため、Codex は下部のターミナルにワンタイムコードを表示します。まず ChatGPT → 設定 → セキュリティでデバイスコードによるログインをオンにしてください（またはワークスペース管理者に許可を依頼してください）。次に表示されたリンクを開いてサインインし、コードを入力します。コードの有効期限は 15 分です。",
   "settings_providerProfileKinds_waiting_label": "サインインを待っています…",
   "settings_providerProfiles_actions_ariaLabel": "{name} の操作",
   "settings_providerProfiles_addTitle_label": "新しい {provider} プロファイル",

@@ -67,6 +67,8 @@
   import ProviderPathConfig from './ProviderPathConfig.svelte';
   import ProviderProfiles from './ProviderProfiles.svelte';
   import ProviderProfileDialog from './ProviderProfileDialog.svelte';
+  import ProviderProfileAddDialog from './ProviderProfileAddDialog.svelte';
+  import { profileProviderFromBaseId } from '$lib/provider-profile-kinds';
   import ProviderFastModeMenuItems from './ProviderFastModeMenuItems.svelte';
   import { providerProfilesRequested } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import AgentProviderIcon from '$features/agent/components/AgentProviderIcon.svelte';
@@ -679,11 +681,24 @@
 </div>
 
 {#if addProfileTarget}
-  <ProviderProfileDialog
-    bind:open={addProfileOpen}
-    providerId={addProfileTarget.providerId}
-    providerName={addProfileTarget.providerName}
-  />
+  {@const kindProvider = profileProviderFromBaseId(addProfileTarget.providerId)}
+  {#if kindProvider}
+    <!-- Claude Code and Codex: pick a kind (Different login, API key, Token, Advanced). -->
+    {#key addProfileTarget.providerId}
+      <ProviderProfileAddDialog
+        bind:open={addProfileOpen}
+        providerId={addProfileTarget.providerId}
+        providerName={addProfileTarget.providerName}
+        provider={kindProvider}
+      />
+    {/key}
+  {:else}
+    <ProviderProfileDialog
+      bind:open={addProfileOpen}
+      providerId={addProfileTarget.providerId}
+      providerName={addProfileTarget.providerName}
+    />
+  {/if}
 {/if}
 
 {#if defaultTarget}

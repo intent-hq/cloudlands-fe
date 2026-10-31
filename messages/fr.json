@@ -5327,7 +5327,7 @@
   "settings_providerProfileKinds_token_label": "Jeton",
   "settings_providerProfileKinds_tryAgain_label": "Réessayer",
   "settings_providerProfileKinds_waitingBrowser_description": "Terminez la connexion dans la fenêtre du navigateur qui s'ouvre, ou collez le code dans le terminal du bas.",
-  "settings_providerProfileKinds_waitingDeviceAuth_description": "Ce daemon tourne sur une autre machine : Codex affiche donc un code à usage unique dans le terminal du bas. Ouvrez le lien affiché, connectez-vous et saisissez le code. Vous devrez peut-être d'abord autoriser la connexion par appareil dans les réglages de sécurité de ChatGPT.",
+  "settings_providerProfileKinds_waitingDeviceAuth_description": "Ce daemon tourne sur une autre machine : Codex affiche donc un code à usage unique dans le terminal du bas. Activez d'abord la connexion par code d'appareil dans ChatGPT → Paramètres → Sécurité (ou demandez à l'administrateur de votre espace de travail de l'autoriser). Ouvrez ensuite le lien affiché, connectez-vous et saisissez le code. Le code expire au bout de 15 minutes.",
   "settings_providerProfileKinds_waiting_label": "En attente de connexion…",
   "settings_providerProfiles_actions_ariaLabel": "Actions pour {name}",
   "settings_providerProfiles_addTitle_label": "Nouveau profil {provider}",

@@ -5327,7 +5327,7 @@
   "settings_providerProfileKinds_token_label": "토큰",
   "settings_providerProfileKinds_tryAgain_label": "다시 시도",
   "settings_providerProfileKinds_waitingBrowser_description": "열리는 브라우저 창에서 로그인을 마치거나 하단 터미널에 코드를 붙여넣으세요.",
-  "settings_providerProfileKinds_waitingDeviceAuth_description": "이 데몬은 다른 컴퓨터에서 실행되므로 Codex가 하단 터미널에 일회용 코드를 표시합니다. 표시된 링크를 열어 로그인하고 코드를 입력하세요. 먼저 ChatGPT 보안 설정에서 기기 로그인을 허용해야 할 수도 있습니다.",
+  "settings_providerProfileKinds_waitingDeviceAuth_description": "이 데몬은 다른 컴퓨터에서 실행되므로 Codex가 하단 터미널에 일회용 코드를 표시합니다. 먼저 ChatGPT → 설정 → 보안에서 기기 코드 로그인을 켜세요(또는 워크스페이스 관리자에게 허용을 요청하세요). 그런 다음 표시된 링크를 열어 로그인하고 코드를 입력하세요. 코드는 15분 후에 만료됩니다.",
   "settings_providerProfileKinds_waiting_label": "로그인을 기다리는 중…",
   "settings_providerProfiles_actions_ariaLabel": "{name} 작업",
   "settings_providerProfiles_addTitle_label": "새 {provider} 프로필",

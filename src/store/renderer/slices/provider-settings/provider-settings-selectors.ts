@@ -11,6 +11,7 @@ import {
 import { selectProviderCatalogEntries } from '../provider-catalog/provider-catalog-selectors';
 import type {
   ProviderProfileMutation,
+  ProviderProfileSetup,
   ProviderProfileStatus,
   ProviderProfilesState,
 } from './provider-settings-types';
@@ -258,6 +259,13 @@ export const selectProviderProfileActivationMap = store.createSelector(
 export const selectProviderProfileMutations = store.createSelector(
   (state): Record<string, ProviderProfileMutation> =>
     Object.fromEntries(getItems(profilesState(state).mutations).map((item) => [item.id, item])),
+);
+
+const NO_SETUPS: Record<string, ProviderProfileSetup> = {};
+
+/** Add-dialog setups by setup id (Different-login sign-in, key check). */
+export const selectProviderProfileSetups = store.createSelector(
+  (state): Record<string, ProviderProfileSetup> => profilesState(state).setups ?? NO_SETUPS,
 );
 
 /** True while any Settings → Providers panel is open. */
