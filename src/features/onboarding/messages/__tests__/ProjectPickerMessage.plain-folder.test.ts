@@ -67,8 +67,10 @@ import ProjectPickerMessage, { type ProjectSelection } from '../ProjectPickerMes
 const backendRequestMock = vi.mocked(backendRequest);
 const toggleName = () => m.workspace_plainFolder_initializeGit_label();
 
-function mockDaemon(newProjectStatus: Record<string, unknown> = { exists: false }) {
-  backendRequestMock.mockImplementation(((method: string) => {
+function mockDaemon(
+  statusFor: (path: string) => Record<string, unknown> = () => ({ exists: false }),
+) {
+  backendRequestMock.mockImplementation(((method: string, params?: { path?: string }) => {
     if (method === 'host.directoryStatus')
       return Promise.resolve({
         exists: false,
@@ -76,8 +78,8 @@ function mockDaemon(newProjectStatus: Record<string, unknown> = { exists: false 
         isEmpty: true,
         isGitRepo: false,
         isSubdirectoryOfGitRepo: false,
-        path: '',
-        ...newProjectStatus,
+        path: params?.path ?? '',
+        ...statusFor(params?.path ?? ''),
       });
     if (method === 'host.checkGit') return Promise.resolve({ available: true });
     return Promise.resolve(undefined);
@@ -216,5 +218,32 @@ describe('ProjectPickerMessage — plain-folder toggle (Labs)', () => {
         isValid: true,
       }),
     );
+  });
+
+  it('keeps a new project inside a git repository a git workspace', async () => {
+    // The target does not exist; its parent is a git repository.
+    mockDaemon((path) =>
+      path === '~/Documents'
+        ? { exists: true, isDirectory: true, isEmpty: false, isGitRepo: true }
+        : { exists: false },
+    );
+    setPlainFolderLabs(true);
+    settleForgeAuth();
+    loadWorkspaces([]);
+    const selections = renderPicker();
+    await screen.findByRole('switch', { name: toggleName() });
+
+    await fireEvent.click(
+      screen.getByRole('tab', { name: m.onboarding_projectPicker_new_label() }),
+    );
+    await waitFor(() =>
+      expect(selections.at(-1)).toMatchObject({
+        type: 'new',
+        repoPath: '~/Documents/my-project',
+        isValid: true,
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(selections.at(-1)).not.toHaveProperty('plainFolder');
   });
 });

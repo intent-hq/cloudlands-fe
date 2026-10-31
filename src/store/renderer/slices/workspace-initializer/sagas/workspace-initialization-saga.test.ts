@@ -1166,6 +1166,32 @@ describe('plain-folder creates (Labs, workspace.create plainFolder)', () => {
     },
   );
 
+  it('does not attach a previously picked PR to a plain-folder workspace', async () => {
+    const update = vi.spyOn(workspaceClient, 'update').mockResolvedValue({ ok: true } as never);
+    create.mockResolvedValue({
+      ok: true,
+      data: { workspace, initialAgent: { id: 'agent-1' } },
+    } as never);
+    const action = workspaceInitializationSubmitted(
+      compactSubmission({
+        repoType: 'local',
+        repoPath: '/Users/me/Documents/notes',
+        remoteSetup: null,
+        branch: '',
+        plainFolder: 'existing',
+        selectedPrNumber: 42,
+        selectedPRBranch: 'feature/pr',
+        selectedPRTargetBranch: 'main',
+      }),
+      consumer,
+    );
+    appStore.dispatch(action);
+
+    await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(update.mock.calls.filter(([params]) => 'prNumber' in (params as object))).toEqual([]);
+  });
+
   it('does not remember a plain folder as the next form repository', async () => {
     const completionActions: RecordedAction[] = [];
     stops.push(

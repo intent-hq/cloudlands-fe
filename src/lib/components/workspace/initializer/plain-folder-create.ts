@@ -141,3 +141,25 @@ export function buildPlainFolderCreateRequest(base: PlainFolderCreateBase): Crea
     ...(base.initialAgent ? { initialAgent: base.initialAgent } : {}),
   };
 }
+
+export interface PlainFolderTargetStatus {
+  exists: boolean;
+  isDirectory: boolean;
+  isGitRepo: boolean;
+  isSubdirectoryOfGitRepo?: boolean;
+}
+
+/**
+ * Plain-folder kind for a create target with "Initialize as git repository"
+ * off, or null to keep today's git flow. A missing target reports no
+ * repository, so `parentInGitRepo` (null while unknown) decides whether the
+ * new folder would sit inside one — the daemon would reject that plain create.
+ */
+export function classifyPlainFolderTarget(
+  status: PlainFolderTargetStatus | null | undefined,
+  parentInGitRepo: boolean | null,
+): 'existing' | 'new' | null {
+  if (!status || status.isGitRepo || status.isSubdirectoryOfGitRepo) return null;
+  if (!status.exists) return parentInGitRepo === false ? 'new' : null;
+  return status.isDirectory ? 'existing' : null;
+}

@@ -4,6 +4,7 @@ import type { ContextLink } from '$shared/types';
 import {
   INITIALIZE_GIT_CHOICE_STORAGE_KEY,
   buildPlainFolderCreateRequest,
+  classifyPlainFolderTarget,
   hasGitWorkspace,
   newProjectDefaultParent,
   readRememberedInitializeGit,
@@ -210,5 +211,33 @@ describe('buildPlainFolderCreateRequest', () => {
     for (const key of ['branch', 'baseRef', 'isNewRepo', 'githubUrl', 'setupScript', 'scope']) {
       expect(request).not.toHaveProperty(key);
     }
+  });
+});
+
+describe('classifyPlainFolderTarget', () => {
+  const missing = { exists: false, isDirectory: false, isGitRepo: false };
+  it('keeps a missing folder whose parent is a git repository on the git flow', () => {
+    expect(classifyPlainFolderTarget(missing, true)).toBeNull();
+  });
+
+  it('creates a missing folder outside any repository as a new plain folder', () => {
+    expect(classifyPlainFolderTarget(missing, false)).toBe('new');
+  });
+
+  it('waits for the parent probe before classifying a missing folder', () => {
+    expect(classifyPlainFolderTarget(missing, null)).toBeNull();
+  });
+
+  it.each([
+    [{ exists: true, isDirectory: true, isGitRepo: false }, 'existing'],
+    [{ exists: true, isDirectory: true, isGitRepo: true }, null],
+    [{ exists: true, isDirectory: true, isGitRepo: false, isSubdirectoryOfGitRepo: true }, null],
+    [{ exists: true, isDirectory: false, isGitRepo: false }, null],
+  ] as const)('classifies an existing target %j as %s', (status, expected) => {
+    expect(classifyPlainFolderTarget(status, false)).toBe(expected);
+  });
+
+  it('is null without a status', () => {
+    expect(classifyPlainFolderTarget(null, false)).toBeNull();
   });
 });

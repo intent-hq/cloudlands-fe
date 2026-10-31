@@ -2026,6 +2026,8 @@
     plainFolderPick = event.detail.plainFolder
       ? { path: event.detail.path, kind: event.detail.plainFolder }
       : null;
+    // A plain folder has no PR context; drop one picked before switching.
+    if (plainFolderPick) selectedPRNumber = null;
     isNewRepo = event.detail.isNewRepo || false;
     isValidPath = event.detail.isValidPath ?? false;
     scope = event.detail.scope || '';

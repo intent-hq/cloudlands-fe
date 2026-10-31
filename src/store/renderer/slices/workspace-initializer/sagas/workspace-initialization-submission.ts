@@ -423,7 +423,9 @@ export function* prepareCompactWorkspaceInitialization(
       !s.isNewRepo
         ? { repoPath: s.repoPath, branch: baseBranch }
         : undefined,
-    selectedPrNumber: !repositoryCheckout && s.selectedPrNumber ? s.selectedPrNumber : undefined,
+    // A plain folder never carries PR context, even one picked before switching.
+    selectedPrNumber:
+      !plainFolder && !repositoryCheckout && s.selectedPrNumber ? s.selectedPrNumber : undefined,
     recentGitHubRepository: ghInfo
       ? {
           repository: `${ghInfo.owner}/${ghInfo.repo}`,

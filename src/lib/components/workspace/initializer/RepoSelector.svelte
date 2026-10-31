@@ -63,7 +63,7 @@
   import { selectIsFeatureEnabled } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
   import { initializeGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
-  import { newProjectDefaultParent } from './plain-folder-create';
+  import { classifyPlainFolderTarget, newProjectDefaultParent } from './plain-folder-create';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import {
     loadGithubRepos,
@@ -493,11 +493,35 @@
   );
   // Plain-folder kind for the new tab's target: null keeps today's git flow
   // (an existing repository, or a folder inside one).
-  const newRepoPlainFolderKind = $derived.by((): 'existing' | 'new' | null => {
-    if (!plainFolderMode || !newRepoPathStatus) return null;
-    if (newRepoPathStatus.isGitRepo || newRepoPathStatus.isSubdirectoryOfGitRepo) return null;
-    if (!newRepoPathStatus.exists) return 'new';
-    return newRepoPathStatus.isDirectory ? 'existing' : null;
+  let newRepoParentGitProbe = $state<{ parent: string; inRepo: boolean } | null>(null);
+  const newRepoPlainFolderKind = $derived(
+    plainFolderMode
+      ? classifyPlainFolderTarget(
+          newRepoPathStatus,
+          newRepoParentGitProbe?.parent === newRepoParentPath ? newRepoParentGitProbe.inRepo : null,
+        )
+      : null,
+  );
+
+  // A missing target reports no repository; probe its parent so a new folder
+  // inside a git repository stays on the git flow (plain-folder mode only).
+  $effect(() => {
+    const parent = newRepoParentPath;
+    if (!plainFolderMode || !parent) return;
+    if (newRepoParentGitProbe?.parent === parent) return;
+    let cancelled = false;
+    void invoke<any>('file:getDirectoryStatus', { path: parent })
+      .then(
+        (result) =>
+          !!(result?.success && (result.data?.isGitRepo || result.data?.isSubdirectoryOfGitRepo)),
+      )
+      .catch(() => false)
+      .then((inRepo) => {
+        if (!cancelled) newRepoParentGitProbe = { parent, inRepo };
+      });
+    return () => {
+      cancelled = true;
+    };
   });
   const isCheckingNewRepoPath = $derived(
     $directoryStatusCheck$?.admission === $admission$ &&

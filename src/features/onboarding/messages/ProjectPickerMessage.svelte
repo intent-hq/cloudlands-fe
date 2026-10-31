@@ -133,9 +133,22 @@
       : '',
   );
 
+  async function parentIsInGitRepo(parent: string): Promise<boolean> {
+    try {
+      const result = await invoke<any>('file:getDirectoryStatus', { path: parent });
+      return !!(
+        result?.success &&
+        (result.data?.isGitRepo || result.data?.isSubdirectoryOfGitRepo)
+      );
+    } catch {
+      return false;
+    }
+  }
+
   // Check directory status when new project path changes
   $effect(() => {
     const targetPath = newProjectFullPath;
+    void plainFolderMode; // The parent probe depends on the mode.
     if (!targetPath) {
       newProjectDirStatus = null;
       return;
@@ -152,7 +165,13 @@
           path: targetPath,
         });
         if (result.success && result.data) {
-          newProjectDirStatus = result.data;
+          // A missing folder reports no repository; its parent decides whether
+          // the new folder would sit inside one (then it stays a git workspace).
+          const parentInRepo =
+            !result.data.exists && plainFolderMode ? await parentIsInGitRepo(parentPath) : false;
+          newProjectDirStatus = parentInRepo
+            ? { ...result.data, isSubdirectoryOfGitRepo: true }
+            : result.data;
         } else {
           newProjectDirStatus = null;
         }
