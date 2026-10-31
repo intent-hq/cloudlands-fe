@@ -827,37 +827,45 @@ describe('dock composer keyboard shortcuts', () => {
     await controller.dispose();
   });
 
-  it('switches tools only with the field unfocused and undoes the last mark from the field', async () => {
-    // Undo and redo run in the evidence saga (they also move the image's composer item).
-    cleanups.push(appStore.runSaga(dockEvidenceSaga));
-    const controller = createDockComposerController(scope(), {
-      ...deps(),
-      mac: () => true,
-    });
-    annotateWithMark();
-    const spy = vi.spyOn(appStore, 'dispatch');
-    const field = document.createElement('textarea');
-    document.body.append(field);
-    field.focus();
-    expect(controller.handleKey(key({ key: '2' }, field))).toBe(false);
-    field.blur();
-    expect(controller.handleKey(key({ key: '2' }))).toBe(true);
-    expect(controller.handleKey(key({ key: '2', repeat: true }))).toBe(false);
-    // Sessions never take focus from the field, so undo works while it is focused.
-    field.focus();
-    expect(controller.handleKey(key({ key: 'z', metaKey: true }, field))).toBe(true);
-    await vi.waitFor(() => expect(view().evidence?.marks).toEqual([]));
-    // Nothing left to undo: the chord stays with the platform (text undo).
-    expect(controller.handleKey(key({ key: 'z', metaKey: true }))).toBe(false);
-    // Cmd+Shift+Z brings the mark back with its number.
-    expect(controller.handleKey(key({ key: 'z', metaKey: true, shiftKey: true }))).toBe(true);
-    await vi.waitFor(() => expect(view().evidence?.marks.map((row) => row.id)).toEqual(['mark-1']));
-    expect(controller.handleKey(key({ key: 'z', metaKey: true, shiftKey: true }))).toBe(false);
-    expect(dispatched()).toContain('dockConversation/evidenceToolSelectRequested');
-    field.remove();
-    spy.mockRestore();
-    await controller.dispose();
-  });
+  it.each(['native', 'aria', 'edit-context'])(
+    'switches tools only with the %s field unfocused and undoes the last mark from the field',
+    async (kind) => {
+      // Undo and redo run in the evidence saga (they also move the image's composer item).
+      cleanups.push(appStore.runSaga(dockEvidenceSaga));
+      const controller = createDockComposerController(scope(), {
+        ...deps(),
+        mac: () => true,
+      });
+      annotateWithMark();
+      const spy = vi.spyOn(appStore, 'dispatch');
+      const field = document.createElement(kind === 'native' ? 'textarea' : 'div');
+      field.tabIndex = 0;
+      if (kind === 'aria') field.setAttribute('role', 'textbox');
+      if (kind === 'edit-context') Object.defineProperty(field, 'editContext', { value: {} });
+      document.body.append(field);
+      field.focus();
+      expect(controller.handleKey(key({ key: '2' }, field))).toBe(false);
+      field.blur();
+      expect(controller.handleKey(key({ key: '2' }))).toBe(true);
+      expect(controller.handleKey(key({ key: '2', repeat: true }))).toBe(false);
+      // Sessions never take focus from the field, so undo works while it is focused.
+      field.focus();
+      expect(controller.handleKey(key({ key: 'z', metaKey: true }, field))).toBe(true);
+      await vi.waitFor(() => expect(view().evidence?.marks).toEqual([]));
+      // Nothing left to undo: the chord stays with the platform (text undo).
+      expect(controller.handleKey(key({ key: 'z', metaKey: true }))).toBe(false);
+      // Cmd+Shift+Z brings the mark back with its number.
+      expect(controller.handleKey(key({ key: 'z', metaKey: true, shiftKey: true }))).toBe(true);
+      await vi.waitFor(() =>
+        expect(view().evidence?.marks.map((row) => row.id)).toEqual(['mark-1']),
+      );
+      expect(controller.handleKey(key({ key: 'z', metaKey: true, shiftKey: true }))).toBe(false);
+      expect(dispatched()).toContain('dockConversation/evidenceToolSelectRequested');
+      field.remove();
+      spy.mockRestore();
+      await controller.dispose();
+    },
+  );
 
   it('backs out one level per Escape: live speech first, then annotation, then nothing', async () => {
     const native = fakeNative();

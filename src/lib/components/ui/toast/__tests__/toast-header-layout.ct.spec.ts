@@ -19,7 +19,7 @@ const contracts = [
   { status: 'downloading', width: 420 },
   { status: 'error', width: 420 },
   { status: 'standard', width: 420 },
-  // Narrow plain toasts move their two actions to the footer; see the 320px contract below.
+  // Narrow plain toasts adapt their action placement; see the 320px contract below.
   { status: 'plain', width: 420 },
 ] as const;
 
@@ -88,7 +88,10 @@ for (const { status, width } of contracts) {
   });
 }
 
-test('plain toast moves both actions below its description at 320px', async ({ mount, page }) => {
+test('plain toast keeps copy and both actions separate and operable at 320px', async ({
+  mount,
+  page,
+}, testInfo) => {
   await page.setViewportSize({ width: 320, height: 800 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await mount(Preview, { props: { status: 'plain' } });
@@ -97,10 +100,8 @@ test('plain toast moves both actions below its description at 320px', async ({ m
   const show = async () => {
     await page.getByRole('button', { name: 'Show fixture toast', exact: true }).click();
     await settle(page, toast);
-    await expect(toast).toHaveAttribute('data-toast-footer', '');
   };
   await settle(page, toast);
-  await expect(toast).toHaveAttribute('data-toast-footer', '');
   const geometry = await toast.evaluate((node) => {
     const box = (selector: string) =>
       node.querySelector(selector)?.getBoundingClientRect().toJSON();
@@ -125,12 +126,35 @@ test('plain toast moves both actions below its description at 320px', async ({ m
     expect(control!.bottom).toBeLessThan(geometry.description.top);
   }
   expect(geometry.description.left).toBeCloseTo(geometry.title.left, 0);
-  // Footer: Later then Review on one row below the description, from its left edge.
-  for (const button of [geometry.cancel, geometry.action]) {
-    expect(button.top).toBeGreaterThanOrEqual(geometry.description.bottom);
-    expect(button.right).toBeLessThanOrEqual(geometry.root.right);
+  expect(geometry.description.top).toBeGreaterThanOrEqual(geometry.title.bottom);
+  // Both adaptive layouts must keep every control separate from the copy.
+  // Font metrics decide whether the actions fit beside the title or below the description.
+  if (geometry.cancel.top >= geometry.description.bottom) {
+    for (const button of [geometry.cancel, geometry.action]) {
+      expect(button.top).toBeGreaterThanOrEqual(geometry.description.bottom);
+    }
+    expect(geometry.cancel.left).toBeCloseTo(geometry.description.left, 0);
+  } else {
+    for (const button of [geometry.cancel, geometry.action]) {
+      expect(button.bottom).toBeLessThan(geometry.description.top);
+      expect(Math.abs(button.top + button.height / 2 - center)).toBeLessThanOrEqual(1);
+    }
+    expect(geometry.cancel.left - geometry.title.right).toBeGreaterThanOrEqual(8);
+    expect(geometry.close.left - geometry.action.right).toBeGreaterThanOrEqual(0);
   }
-  expect(geometry.cancel.left).toBeCloseTo(geometry.description.left, 0);
+  for (const element of [
+    geometry.title,
+    geometry.description,
+    geometry.cancel,
+    geometry.action,
+    geometry.close,
+  ]) {
+    expect(element.left).toBeGreaterThanOrEqual(geometry.root.left);
+    expect(element.right).toBeLessThanOrEqual(geometry.root.right);
+    expect(element.top).toBeGreaterThanOrEqual(geometry.root.top);
+    expect(element.bottom).toBeLessThanOrEqual(geometry.root.bottom);
+    expect(element.height).toBeGreaterThan(0);
+  }
   expect(
     Math.abs(
       geometry.cancel.top +
@@ -147,9 +171,15 @@ test('plain toast moves both actions below its description at 320px', async ({ m
     expect(button.width).toBeGreaterThanOrEqual(24);
   }
 
-  // Each footer action and the header close stay operable; the fixture re-shows between them.
+  await testInfo.attach('plain-toast-320-layout.json', {
+    body: Buffer.from(JSON.stringify(geometry, null, 2)),
+    contentType: 'application/json',
+  });
+
+  // Both actions and the close stay operable; the fixture re-shows between them.
   const review = toast.getByRole('button', { name: 'Review', exact: true });
   await review.focus();
+  await expect(review).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('toast-header-actions')).toHaveText('1');
   await expect(toast).toHaveCount(0);
@@ -161,6 +191,7 @@ test('plain toast moves both actions below its description at 320px', async ({ m
   await show();
   const close = toast.locator('[data-close-button]');
   await close.focus();
+  await expect(close).toBeFocused();
   await page.keyboard.press('Space');
   await expect(dismissals).toHaveText(String(dismissedBeforeLater + 2));
   await expect(toast).toHaveCount(0);

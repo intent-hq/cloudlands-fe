@@ -1,3 +1,4 @@
+import { isTextEntryTarget } from '$lib/utils/text-entry';
 /**
  * UI-side owner for one dock draft pair (workspace + agent + authority).
  *
@@ -107,13 +108,6 @@ const TOOL_KEYS: Record<string, DockMarkTool> = {
 };
 /** Owners of their own Escape/arrow handling (menus, suggestion lists, dialogs). */
 const KEY_OWNERS = '[role="listbox"], [role="menu"], [role="dialog"], [role="alertdialog"]';
-
-function isEditable(node: Element | null): boolean {
-  return (
-    node instanceof HTMLElement &&
-    (node.isContentEditable || node.matches('input, textarea, select'))
-  );
-}
 
 export function createDockComposerController(
   scope: DockComposerScope,
@@ -372,7 +366,7 @@ export function createDockComposerController(
       return false;
     const target = event.target instanceof Element ? event.target : null;
     if (target?.closest(KEY_OWNERS)) return false;
-    const fieldFocused = isEditable(document.activeElement) || isEditable(target);
+    const fieldFocused = isTextEntryTarget(document.activeElement) || isTextEntryTarget(target);
     const mac = deps.mac();
     const view = evidence();
     const caps = view.capabilities;

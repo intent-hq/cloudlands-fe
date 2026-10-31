@@ -1280,8 +1280,9 @@ test('conversation horizontal collapse preserves drafts and restores origin in n
         const host = window as unknown as { __laneFrames: unknown[]; __laneStop: boolean };
         host.__laneFrames = [];
         host.__laneStop = false;
-        // Content inset from the visible conversation edge (any surface gutter + lane
-        // padding), beside the lane's own padding: equal means no gutter was added.
+        // Keep raw content insets to detect handle-induced shifts. Independently
+        // measure native scrollbar reservation: classic scrollbars reserve layout
+        // space with scrollbar-gutter: stable, while overlay scrollbars do not.
         const inset = (surface: Element, lane: Element | null) => {
           if (!lane) return null;
           const style = getComputedStyle(lane);
@@ -1295,7 +1296,18 @@ test('conversation horizontal collapse preserves drafts and restores origin in n
             left: inner.left + own.left - outer.left,
             right: outer.right - (inner.right - own.right),
           };
-          return { content, own };
+          const scroller = lane.closest<HTMLElement>('.transcript-scroll');
+          const scrollbar: Inset = { left: 0, right: 0 };
+          if (scroller) {
+            const scrollStyle = getComputedStyle(scroller);
+            scrollbar.left = scroller.clientLeft - parseFloat(scrollStyle.borderLeftWidth);
+            scrollbar.right =
+              scroller.offsetWidth -
+              scroller.clientWidth -
+              scroller.clientLeft -
+              parseFloat(scrollStyle.borderRightWidth);
+          }
+          return { content, own, scrollbar };
         };
         const sample = () => {
           const surface = document.querySelector('[data-testid="dock-conversation-surface"]');
@@ -1323,7 +1335,7 @@ test('conversation horizontal collapse preserves drafts and restores origin in n
       await expect(panel.locator('[data-dock-resize="e"]')).toHaveCount(1);
       await page.waitForTimeout(300);
       type Inset = { left: number; right: number };
-      type LaneInset = { content: Inset; own: Inset };
+      type LaneInset = { content: Inset; own: Inset; scrollbar: Inset };
       const frames = await page.evaluate(() => {
         const host = window as unknown as {
           __laneFrames: {
@@ -1338,7 +1350,12 @@ test('conversation horizontal collapse preserves drafts and restores origin in n
         host.__laneStop = true;
         return host.__laneFrames;
       });
-      await writeFile(testInfo.outputPath('notch-expand-lane-frames.json'), JSON.stringify(frames));
+      const laneFramesPath = testInfo.outputPath('notch-expand-lane-frames.json');
+      await writeFile(laneFramesPath, JSON.stringify(frames));
+      await testInfo.attach('notch-expand-lane-frames', {
+        path: laneFramesPath,
+        contentType: 'application/json',
+      });
       const first = frames[0];
       const settled = frames.at(-1);
       if (!first?.transcript || !first.composer || !settled?.transcript || !settled.composer)
@@ -1351,8 +1368,13 @@ test('conversation horizontal collapse preserves drafts and restores origin in n
       expect(first.header).toBe(settled.header);
       expect(first.transcript.content).toEqual(settled.transcript.content);
       expect(first.composer.content).toEqual(settled.composer.content);
-      // Overlay handles take no layout space: the settled inset is only the lane padding.
-      expect(settled.transcript.content).toEqual(settled.transcript.own);
+      // Overlay handles take no layout space. Only lane padding and the scrollport's
+      // independently measured native scrollbar reservation can inset the transcript.
+      expect(first.transcript.scrollbar).toEqual(settled.transcript.scrollbar);
+      expect(settled.transcript.content).toEqual({
+        left: settled.transcript.own.left + settled.transcript.scrollbar.left,
+        right: settled.transcript.own.right + settled.transcript.scrollbar.right,
+      });
       expect(settled.composer.content).toEqual(settled.composer.own);
       // The east handle overlays the edge without covering the transcript scrollbar thumb.
       // Headless Chromium hides scrollbars, so hit-test the thumb's ink column instead: the
