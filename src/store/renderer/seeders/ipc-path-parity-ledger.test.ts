@@ -176,7 +176,7 @@ const DIVERGENT: ReadonlyMap<string, string> = new Map([
   ],
   [
     'shell:openExternal',
-    'Forwards a scheme-checked `{ url }` to main via `openExternalUrl()` (the only field main reads); without a bridge it falls back to `window.open`.',
+    'Forwards a scheme-checked `{ url }` to main via `openExternalUrl()` (the only field main reads). Replies differ: when main reports `success: false` the seeder falls back to `window.open` and still answers `{ success: true }`.',
   ],
   [
     'external-editors:open-with-other',

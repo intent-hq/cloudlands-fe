@@ -78,7 +78,7 @@ function calls(method: string) {
 beforeEach(async () => {
   vi.clearAllMocks();
   resetMockIpcRouter();
-  for (const channel of ['agent:get-active-streams', 'workspace:list', 'auto-update:get-state']) {
+  for (const channel of ['workspace:list', 'auto-update:get-state']) {
     registerMockIpcHandler(channel, () => new Promise(() => {}));
   }
   handlers = new Map();

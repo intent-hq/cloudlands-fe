@@ -91,7 +91,6 @@ beforeEach(() => {
     windowBackendId: 'local',
   }));
   registerMockIpcHandler(G.LIST, () => ({ sessions: [guest], openIds: [], connectedIds: [] }));
-  registerMockIpcHandler('agent:get-active-streams', () => new Promise(() => {}));
   registerMockIpcHandler('workspace:list', () => new Promise(() => {}));
   invoke = vi.fn((channel: string, ...args: unknown[]) =>
     channel.startsWith('connections:') ||
