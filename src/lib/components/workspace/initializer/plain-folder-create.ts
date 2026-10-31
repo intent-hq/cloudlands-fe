@@ -170,3 +170,43 @@ export function classifyPlainFolderTarget(
   if (!status.exists) return parentInGitRepo === false ? 'new' : null;
   return status.isDirectory ? 'existing' : null;
 }
+
+export interface GitOptionalInput {
+  labsEnabled: boolean;
+  protocolVersion: ProtocolVersion | null | undefined;
+  githubConnected: boolean;
+  githubSettled: boolean;
+  githubFailed: boolean;
+  gitlabConnected: boolean;
+  gitlabSettled: boolean;
+  gitlabFailed: boolean;
+}
+
+/**
+ * Git is not required to finish onboarding (Labs) when plain folders can be
+ * created and both forge status reads settled with nothing connected. A
+ * connected, unread or failed forge keeps today's requirement.
+ */
+export function isGitOptionalWithoutForge(input: GitOptionalInput): boolean {
+  return (
+    input.labsEnabled &&
+    supportsPlainFolderCreate(input.protocolVersion) &&
+    input.githubSettled &&
+    input.gitlabSettled &&
+    !input.githubFailed &&
+    !input.gitlabFailed &&
+    !input.githubConnected &&
+    !input.gitlabConnected
+  );
+}
+
+/**
+ * A git project (anything but a plain folder) needs Git; prompt to install it
+ * once the host check confirmed Git is missing.
+ */
+export function needsGitInstallForProject(
+  selection: { plainFolder?: 'existing' | 'new' } | null | undefined,
+  git: { checked: boolean; available: boolean },
+): boolean {
+  return !!selection && !selection.plainFolder && git.checked && !git.available;
+}

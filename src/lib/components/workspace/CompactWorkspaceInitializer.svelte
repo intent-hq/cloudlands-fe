@@ -830,6 +830,8 @@
   // 'unknown' = the probe couldn't run (transport failure / daemon unreachable)
   const gitAvailability$ = selectWorkspaceInitializerGitAvailability();
   const gitAvailable = $derived($gitAvailability$);
+  // A plain-folder create needs no git, so it never shows the git banners or hint.
+  const gitNoticeAvailability = $derived(plainFolderCreate ? true : gitAvailable);
 
   // GitHub auth state - tracks if user needs to authenticate for private repos
   let githubAuthNeeded = $state<'none' | 'not-authenticated' | 'no-access'>('none');
@@ -3396,7 +3398,7 @@
   {#if isExpanded}
     <div class="mt-4 mb-1 w-full min-w-0" transition:slide={{ axis: 'y', tier: 'moderate' }}>
       <!-- Git not installed banner -->
-      {#if gitAvailable === false}
+      {#if gitNoticeAvailability === false}
         <div
           class="mx-0 mb-3 px-4 py-3 bg-danger-background/10 border border-danger/30 rounded-md text-sm"
           transition:slide={{ axis: 'y', tier: 'moderate' }}
@@ -3426,7 +3428,7 @@
             </div>
           </div>
         </div>
-      {:else if gitAvailable === 'unknown'}
+      {:else if gitNoticeAvailability === 'unknown'}
         <!-- Non-blocking notice: the git probe couldn't run (transport failure) -->
         <div
           class="mx-0 mb-3 px-4 py-3 bg-warning/10 border border-warning/30 rounded-md text-sm"
@@ -3587,14 +3589,14 @@
         {/if}
       {/if}
       <!-- Validation hint -->
-      {#if repoType !== 'gitlab' && isExpanded && !isValid && !isCreating && !error && (gitAvailable !== true || !repoPath || !isValidPath || (repoType === 'github' && githubAuthNeeded !== 'none'))}
+      {#if repoType !== 'gitlab' && isExpanded && !isValid && !isCreating && !error && (gitNoticeAvailability !== true || !repoPath || !isValidPath || (repoType === 'github' && githubAuthNeeded !== 'none'))}
         <div
           class="mt-2 px-4.5 text-sm text-subtle"
           transition:slide={{ axis: 'y', tier: 'moderate' }}
         >
-          {#if gitAvailable === false}
+          {#if gitNoticeAvailability === false}
             {m.workspace_compactInitializer_gitRequiredHint_label()}
-          {:else if gitAvailable === null}
+          {:else if gitNoticeAvailability === null}
             {m.workspace_compactInitializer_checkingDependencies_label()}
           {:else if !repoPath}
             {m.workspace_compactInitializer_selectRepoHint_label()}

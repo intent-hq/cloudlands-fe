@@ -6,6 +6,8 @@ import {
   buildPlainFolderCreateRequest,
   classifyPlainFolderTarget,
   hasGitWorkspace,
+  isGitOptionalWithoutForge,
+  needsGitInstallForProject,
   newProjectDefaultParent,
   readRememberedInitializeGit,
   resolveInitializeGitDefault,
@@ -248,5 +250,61 @@ describe('classifyPlainFolderTarget', () => {
 
   it('is null without a status', () => {
     expect(classifyPlainFolderTarget(null, false)).toBeNull();
+  });
+});
+
+describe('isGitOptionalWithoutForge (Git not required without a forge, Labs)', () => {
+  const noForge = {
+    labsEnabled: true,
+    protocolVersion: parseProtocolVersion('15.3'),
+    githubConnected: false,
+    githubSettled: true,
+    githubFailed: false,
+    gitlabConnected: false,
+    gitlabSettled: true,
+    gitlabFailed: false,
+  };
+
+  it('is optional with Labs on, a supporting daemon and no forge connected', () => {
+    expect(isGitOptionalWithoutForge(noForge)).toBe(true);
+  });
+
+  it('stays required with Labs off', () => {
+    expect(isGitOptionalWithoutForge({ ...noForge, labsEnabled: false })).toBe(false);
+  });
+
+  it('stays required on a daemon that cannot create plain folders', () => {
+    expect(
+      isGitOptionalWithoutForge({ ...noForge, protocolVersion: parseProtocolVersion('15.2') }),
+    ).toBe(false);
+    expect(isGitOptionalWithoutForge({ ...noForge, protocolVersion: null })).toBe(false);
+  });
+
+  it('stays required with GitHub or GitLab connected', () => {
+    expect(isGitOptionalWithoutForge({ ...noForge, githubConnected: true })).toBe(false);
+    expect(isGitOptionalWithoutForge({ ...noForge, gitlabConnected: true })).toBe(false);
+  });
+
+  it('stays required until both forge reads settle, and when a read fails', () => {
+    expect(isGitOptionalWithoutForge({ ...noForge, githubSettled: false })).toBe(false);
+    expect(isGitOptionalWithoutForge({ ...noForge, gitlabSettled: false })).toBe(false);
+    expect(isGitOptionalWithoutForge({ ...noForge, githubFailed: true })).toBe(false);
+    expect(isGitOptionalWithoutForge({ ...noForge, gitlabFailed: true })).toBe(false);
+  });
+});
+
+describe('needsGitInstallForProject', () => {
+  it('prompts for Git only when a git project is chosen and Git is confirmed missing', () => {
+    const missing = { checked: true, available: false };
+    expect(needsGitInstallForProject({ plainFolder: undefined }, missing)).toBe(true);
+    expect(needsGitInstallForProject({ plainFolder: 'new' }, missing)).toBe(false);
+    expect(needsGitInstallForProject({ plainFolder: 'existing' }, missing)).toBe(false);
+    expect(needsGitInstallForProject(null, missing)).toBe(false);
+    expect(
+      needsGitInstallForProject({ plainFolder: undefined }, { checked: true, available: true }),
+    ).toBe(false);
+    expect(
+      needsGitInstallForProject({ plainFolder: undefined }, { checked: false, available: false }),
+    ).toBe(false);
   });
 });

@@ -9,7 +9,7 @@ import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
  */
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceInitializationOutcome } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
 import { createWorkspaceInitializationDispatchAdapter } from './workspace-initialization-dispatch.test-helper';
 
@@ -33,6 +33,7 @@ const plainFolder = vi.hoisted(() => {
   return {
     available$: writable(false),
     defaultState$: writable<'on' | 'off' | 'pending'>('pending'),
+    gitAvailable$: writable<boolean | null | 'unknown'>(true),
     confirm: vi.fn(async (_folder: string, _workspaces: unknown[]) => true),
   };
 });
@@ -128,12 +129,7 @@ vi.mock('$store/renderer/store', async () => {
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
   selectWorkspaceInitializerAgentForRepo: { select: () => null },
-  selectWorkspaceInitializerGitAvailability: () => ({
-    subscribe(run: (value: boolean) => void) {
-      run(true);
-      return () => {};
-    },
-  }),
+  selectWorkspaceInitializerGitAvailability: () => plainFolder.gitAvailable$,
   selectWorkspaceInitializerHydrated: () => mocks.hydrated$,
   selectCompactWorkspaceInitializerFormState: () => mocks.compactFormState$,
   selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(() => null),
@@ -321,23 +317,6 @@ const gitOnlyKeys = [
 ];
 
 describe('New Workspace — plain-folder toggle (Labs)', () => {
-  const originalScrollIntoView = Object.getOwnPropertyDescriptor(
-    HTMLElement.prototype,
-    'scrollIntoView',
-  );
-  beforeAll(() => {
-    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
-      configurable: true,
-      writable: true,
-      value: vi.fn(),
-    });
-  });
-  afterAll(() => {
-    if (originalScrollIntoView)
-      Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', originalScrollIntoView);
-    else delete (HTMLElement.prototype as Partial<HTMLElement>).scrollIntoView;
-  });
-
   let root: string;
   let folder: string;
 
@@ -346,6 +325,7 @@ describe('New Workspace — plain-folder toggle (Labs)', () => {
     vi.mocked(localStorage.getItem).mockImplementation(() => null);
     plainFolder.available$.set(false);
     plainFolder.defaultState$.set('pending');
+    plainFolder.gitAvailable$.set(true);
     plainFolder.confirm.mockResolvedValue(true);
     mocks.initializationOutcome$.set(undefined);
     mocks.dispatch.mockImplementation(
@@ -565,5 +545,41 @@ describe('New Workspace — plain-folder toggle (Labs)', () => {
       githubUrl: 'https://github.com/acme/app',
     });
     await waitFor(() => expect(toggle()).toBeNull());
+  });
+
+  describe('Git not installed (Git not required without a forge)', () => {
+    const gitBanner = () => screen.queryByText('Git is not installed');
+
+    it('hides the banner and allows a plain-folder create with the toggle off', async () => {
+      plainFolder.gitAvailable$.set(false);
+      plainFolder.available$.set(true);
+      plainFolder.defaultState$.set('off');
+      mountDialog();
+      await waitFor(() => expect(toggle()).toBeTruthy());
+      await waitFor(() => expect(gitBanner()).toBeNull());
+      await pick({ path: folder, plainFolder: 'existing' });
+      expect(gitBanner()).toBeNull();
+      await submit();
+      await waitFor(() => expect(mocks.create).toHaveBeenCalled());
+    });
+
+    it('prompts to install Git for a git workspace (toggle on)', async () => {
+      plainFolder.gitAvailable$.set(false);
+      plainFolder.available$.set(true);
+      plainFolder.defaultState$.set('on');
+      mountDialog();
+      await waitFor(() => expect(toggle()).toBeTruthy());
+      expect(gitBanner()).toBeTruthy();
+      expect(screen.getByText('Download Git →')).toBeTruthy();
+      const create = document.querySelector<HTMLButtonElement>('[data-dialog-primary-action]');
+      expect(create?.disabled).toBe(true);
+    });
+
+    it('keeps the banner with Labs off', async () => {
+      plainFolder.gitAvailable$.set(false);
+      mountDialog();
+      await waitFor(() => expect(picker()).toBeTruthy());
+      expect(gitBanner()).toBeTruthy();
+    });
   });
 });

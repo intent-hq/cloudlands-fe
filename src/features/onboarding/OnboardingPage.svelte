@@ -67,9 +67,13 @@
 
   import OnboardingPromptStep from '$features/onboarding/steps/OnboardingPromptStep.svelte';
   import OnboardingForgeStep from '$features/onboarding/steps/OnboardingForgeStep.svelte';
+  import { onboardingForgeCopy } from '$features/onboarding/utils/onboarding-forge-copy';
+  import OnboardingGitRequiredNotice from '$features/onboarding/steps/OnboardingGitRequiredNotice.svelte';
+  import { needsGitInstallForProject } from '$lib/components/workspace/initializer/plain-folder-create';
   import OnboardingRequirementsStep from '$features/onboarding/steps/OnboardingRequirementsStep.svelte';
   import {
     selectAllRequirementsMet,
+    selectGitRequirement,
     selectHostRequirementsHasCheckedOnce,
   } from '$store/renderer/slices/host-requirements/host-requirements-selectors';
   import {
@@ -179,6 +183,7 @@
   const workspaceInitializerHydrated$ = selectWorkspaceInitializerHydrated();
   const allRequirementsMet$ = selectAllRequirementsMet();
   const requirementsCheckedOnce$ = selectHostRequirementsHasCheckedOnce();
+  const gitRequirement$ = selectGitRequirement();
   const hostRole$ = selectHostRole();
   const providerCatalogEntries$ = selectProviderCatalogEntries();
 
@@ -869,6 +874,11 @@
   const isForgeStep = $derived($onboardingStep$ === 'forge');
   const gitlabEnabled$ = selectLabsGitLabEnabled();
   const gitlabConfigured$ = selectGitLabAuthIsConfigured();
+  const forgeCopy = $derived(onboardingForgeCopy($gitlabEnabled$ || $gitlabConfigured$));
+  // Git may be skipped at the requirements gate (Labs, no forge); a git
+  // project then prompts to install it instead of advancing.
+  const projectNeedsGit = $derived(needsGitInstallForProject(projectSelection, $gitRequirement$));
+  const canAdvanceFromProject = $derived(!!projectSelection?.isValid && !projectNeedsGit);
   const isProjectStep = $derived($onboardingStep$ === 'project');
   const isConfiguringStep = $derived(
     $onboardingStep$ === 'configuring' || $onboardingStep$ === 'ready',
@@ -1168,7 +1178,7 @@
         appStore.dispatch(cancelGitLabAuth());
       }
       appStore.dispatch(goToStep('project'));
-    } else if (isProjectStep && projectSelection?.isValid) {
+    } else if (isProjectStep && canAdvanceFromProject) {
       e.preventDefault();
       appStore.dispatch(goToStep('configuring'));
     }
@@ -1261,6 +1271,10 @@
   async function handleOnboardingSubmit() {
     const prompt = onboardingInputValue.trim();
     if (!prompt || isOnboardingCreating || !projectSelection?.isValid) return;
+    if (projectNeedsGit) {
+      appStore.dispatch(goToStep('project'));
+      return;
+    }
     const admission = selectPrincipalActionContext.select(appStore.state);
     if (admission === null || !selectWorkspaceCreationVisible.select(appStore.state)) return;
     const generation = ++onboardingInitializationGeneration;
@@ -1560,14 +1574,12 @@
                         <div in:fly={{ tier: 'slow', distance: 10 }} style="order: 2">
                           <div class="space-y-3">
                             <h2 class="text-5xl font-semibold tracking-tight leading-tight">
-                              {$gitlabEnabled$ || $gitlabConfigured$
-                                ? m.onboarding_page_connectForge_title()
-                                : m.onboarding_forgeStep_connectGithub_label()}
+                              {forgeCopy.title}
                             </h2>
                             <p class="text-lg text-muted-foreground">
-                              {m.onboarding_page_connectForge_before()}
+                              {forgeCopy.before}
                               <br />
-                              {m.onboarding_page_connectForge_after()}
+                              {forgeCopy.after}
                             </p>
                           </div>
                         </div>
@@ -1738,7 +1750,7 @@
                           <ProjectPickerMessage
                             onProjectChange={handleOnboardingProjectChange}
                             onSelectAndAdvance={() => {
-                              if (projectSelection?.isValid) {
+                              if (canAdvanceFromProject) {
                                 appStore.dispatch(goToStep('configuring'));
                               }
                             }}
@@ -1748,8 +1760,8 @@
                             <Button
                               class="group/button"
                               size="xl"
-                              variant={!projectSelection?.isValid ? 'outline' : 'primary'}
-                              disabled={!projectSelection?.isValid}
+                              variant={!canAdvanceFromProject ? 'outline' : 'primary'}
+                              disabled={!canAdvanceFromProject}
                               onclick={() => appStore.dispatch(goToStep('configuring'))}
                             >
                               {#if projectName}
@@ -1757,11 +1769,13 @@
                               {:else}
                                 {m.onboarding_page_letsGo_label()}
                               {/if}
-                              {#if projectSelection?.isValid}
+                              {#if canAdvanceFromProject}
                                 <span class="ml-1 opacity-50">⌘↵</span>
                               {/if}
                             </Button>
-                            {#if !projectSelection?.isValid}
+                            {#if projectNeedsGit}
+                              <OnboardingGitRequiredNotice />
+                            {:else if !projectSelection?.isValid}
                               <p class="text-xs text-muted-foreground">
                                 {#if projectSelection?.type === 'local'}
                                   {m.onboarding_page_pickProject_label()}
