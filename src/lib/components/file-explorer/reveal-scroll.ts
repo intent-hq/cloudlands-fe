@@ -1,3 +1,5 @@
+import { pathsMatch } from '$lib/utils/file-utils';
+
 const SUBPIXEL_TOLERANCE = 1;
 
 export interface RevealScrollInput {
@@ -36,4 +38,25 @@ export function computeRevealScrollTop({
   if (rowBottom > viewTop && rowTop < viewTop) return rowTop;
   if (rowTop < viewBottom && rowBottom > viewBottom) return Math.max(0, rowBottom - viewHeight);
   return Math.max(0, rowTop - viewHeight / 2 + itemHeight / 2);
+}
+
+const trimSlashes = (path: string) => path.replace(/\/+$/, '');
+
+/**
+ * Index of the row a reveal should land on. An exact path wins over a suffix
+ * match, so `lib/` finds the root `lib` even when an expanded `app/lib` sorts
+ * first; otherwise the first suffix match (for paths given relative to some
+ * other root) is used. -1 when no row matches yet.
+ */
+export function findRevealIndex(
+  nodePaths: readonly string[],
+  targetPath: string,
+  workspacePath: string | null | undefined,
+): number {
+  const target = trimSlashes(targetPath);
+  const exact = new Set([target]);
+  if (workspacePath) exact.add(`${trimSlashes(workspacePath)}/${target}`);
+  const exactIndex = nodePaths.findIndex((path) => exact.has(trimSlashes(path)));
+  if (exactIndex >= 0) return exactIndex;
+  return nodePaths.findIndex((path) => pathsMatch(path, target));
 }

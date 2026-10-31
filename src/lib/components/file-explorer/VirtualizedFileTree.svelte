@@ -4,7 +4,7 @@
   /* eslint-disable max-lines */
   import { onMount, tick, untrack } from 'svelte';
   import { prefersReducedMotion } from '$lib/utils/reduced-motion';
-  import { computeRevealScrollTop } from './reveal-scroll';
+  import { computeRevealScrollTop, findRevealIndex } from './reveal-scroll';
   import { writable } from 'svelte/store';
   import type {
     FileExplorerDisplayNode as FileNode,
@@ -1104,7 +1104,11 @@
   let revealScrollInFlight = false;
 
   export function scrollToPath(path: string) {
-    const index = effectiveNodes.findIndex((n) => pathMatches(n.node.path, path));
+    const index = findRevealIndex(
+      effectiveNodes.map((n) => n.node.path),
+      path,
+      $fileExplorerWorkspacePath,
+    );
     if (index < 0 || !scrollEl) return;
     const viewHeight = scrollEl.clientHeight;
     const top = viewHeight
@@ -1150,7 +1154,11 @@
   $effect(() => {
     const pending = pendingReveal;
     if (!pending || !scrollEl) return;
-    const index = effectiveNodes.findIndex((n) => pathMatches(n.node.path, pending.path));
+    const index = findRevealIndex(
+      effectiveNodes.map((n) => n.node.path),
+      pending.path,
+      $fileExplorerWorkspacePath,
+    );
     if (index < 0) return;
     if (!pending.scrolled) {
       pending.scrolled = true;
