@@ -219,6 +219,7 @@
   "onboarding_newProjectTab_projectName_placeholder": ["zh-CN", "zh-TW", "ja", "ko"],
   "onboarding_promptStep_setupEnvWith_after": ["fr", "es"],
   "onboarding_requirementsStep_ghOptional_label": ["de"],
+  "onboarding_requirementsStep_gitOptional_label": ["de"],
   "onboarding_setupCard_ranSetupIn_middle": ["de"],
   "presence_avatarStack_more_label": "*",
   "presence_person_forge_label": ["de", "es", "fr", "ko", "zh-CN", "zh-TW"],
