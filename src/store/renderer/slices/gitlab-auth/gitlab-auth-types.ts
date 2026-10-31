@@ -6,6 +6,8 @@ export type GitLabAuthChangedStatus = 'authorized' | 'expired' | 'denied' | 'err
 export type GitLabAuthState = {
   /** Canonical status belongs to the current owner admission; pending is not a host. */
   statusReady: boolean;
+  /** The latest `sourceControl.authStatus` read failed, so the connection is unknown. */
+  statusFailed?: boolean;
   /** GitLab instance host the connection targets (defaults to gitlab.com) */
   host: string;
   /** Null until an explicit root or the daemon's configured root is known. */

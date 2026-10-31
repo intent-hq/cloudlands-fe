@@ -26,11 +26,10 @@ export const selectPlainFolderCreationAvailable = store.createSelector(
 );
 
 /**
- * Store-derived toggle default (before the remembered choice):
- * `'off-unless-gitlab'` is off once the GitLab status is read or its bounded
- * wait elapses; `'pending'` cannot be decided yet.
+ * Store-derived toggle default (before the remembered choice); `'pending'`
+ * until both forge status reads settle and the workspace list loads.
  */
-export type InitializeGitDefaultState = 'on' | 'off' | 'off-unless-gitlab' | 'pending';
+export type InitializeGitDefaultState = 'on' | 'off' | 'pending';
 
 export const selectInitializeGitDefaultState = store.createSelector(
   (state): InitializeGitDefaultState => {
@@ -39,17 +38,19 @@ export const selectInitializeGitDefaultState = store.createSelector(
           (workspace) => workspace.id !== CHIEF_WORKSPACE_ID,
         )
       : [];
+    const gitlabFailed = state.gitlabAuth?.statusFailed === true;
     const decided = resolveInitializeGitDefault({
       rememberedChoice: null,
       workspacesLoaded: state.workspace?.hasLoaded === true,
       hasGitWorkspace: hasGitWorkspace(rows),
       githubConnected: state.githubAuth?.isAuthenticated === true,
       githubSettled: state.githubAuth?.statusSettled === true,
+      githubFailed: state.githubAuth?.statusFailed === true,
       gitlabConnected: state.gitlabAuth?.isConfigured === true,
-      gitlabSettled: true,
+      gitlabSettled: state.gitlabAuth?.statusReady === true || gitlabFailed,
+      gitlabFailed,
     });
     if (decided === null) return 'pending';
-    if (decided) return 'on';
-    return state.gitlabAuth?.statusReady === true ? 'off' : 'off-unless-gitlab';
+    return decided ? 'on' : 'off';
   },
 );

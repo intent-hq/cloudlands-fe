@@ -41,10 +41,13 @@ export interface InitializeGitDefaultInput {
   hasGitWorkspace: boolean;
   /** Daemon-resolved GitHub auth (secrets store, GITHUB_TOKEN/GH_TOKEN or `gh` login). */
   githubConnected: boolean;
+  /** A GitHub status read has completed (success or failure). */
   githubSettled: boolean;
+  /** The GitHub status read failed, so the connection is unknown. */
+  githubFailed: boolean;
   gitlabConnected: boolean;
-  /** GitLab status read, or the bounded wait for it elapsed. */
   gitlabSettled: boolean;
+  gitlabFailed: boolean;
 }
 
 /**
@@ -52,13 +55,16 @@ export interface InitializeGitDefaultInput {
  * hidden and the create behaves as today). Callers latch the first non-null
  * value so the toggle never flips while visible.
  *
- * Order: remembered choice; on for any git workspace or connected forge
- * (upgrade safety — existing users never silently flip to plain folders);
- * otherwise off once auth and the workspace list have loaded.
+ * Order: remembered choice; on for any git workspace or connected forge, and
+ * on when a forge status read failed (upgrade safety — existing users never
+ * silently flip to plain folders); otherwise off, but only once both forge
+ * statuses and the workspace list have loaded. There is no timeout: a slow
+ * status read keeps the toggle hidden until it settles.
  */
 export function resolveInitializeGitDefault(input: InitializeGitDefaultInput): boolean | null {
   if (input.rememberedChoice !== null) return input.rememberedChoice;
   if (input.hasGitWorkspace || input.githubConnected || input.gitlabConnected) return true;
+  if (input.githubFailed || input.gitlabFailed) return true;
   if (!input.workspacesLoaded || !input.githubSettled || !input.gitlabSettled) return null;
   return false;
 }

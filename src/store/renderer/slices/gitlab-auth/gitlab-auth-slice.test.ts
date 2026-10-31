@@ -17,6 +17,7 @@ import {
   gitlabAuthCancelled,
   gitlabAuthCompleted,
   gitlabAuthReducer,
+  gitlabAuthStatusUnavailable,
   gitlabDeviceGrantUnsupported,
   gitlabLogoutCompleted,
   initialState,
@@ -43,6 +44,23 @@ const user = {
 };
 
 describe('gitlabAuthReducer', () => {
+  it('marks a failed status read as unknown until a status hydrates or admission resets', () => {
+    const failed = gitlabAuthReducer(initialState, gitlabAuthStatusUnavailable());
+    expect(failed).toMatchObject({ statusFailed: true, statusReady: false, isConfigured: false });
+    const read = gitlabAuthReducer(
+      failed,
+      setGitLabAuthStatus({
+        host: 'gitlab.com',
+        isConfigured: false,
+        deviceGrantSupported: true,
+        user: null,
+        method: null,
+      }),
+    );
+    expect(read).toMatchObject({ statusFailed: false, statusReady: true });
+    expect(gitlabAuthReducer(failed, resetGitLabAdmission()).statusFailed).toBe(false);
+  });
+
   it('starts unconfigured on gitlab.com with device-grant support not yet reported', () => {
     expect(gitlabAuthReducer(undefined, { type: '@@init' })).toEqual(initialState);
     expect(initialState.host).toBe('gitlab.com');

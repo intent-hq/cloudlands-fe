@@ -2,6 +2,12 @@ import { flushSync } from 'svelte';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Workspace } from '$shared/types';
 import { store as appStore } from '$store/renderer/store';
+import { githubAuthStatusUnavailable } from '$store/renderer/slices/github-auth/github-auth-slice';
+import {
+  gitlabAuthStatusUnavailable,
+  resetGitLabAdmission,
+  setGitLabAuthStatus,
+} from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
 import {
   createInitializeGitChoice,
   type InitializeGitChoice,
@@ -29,10 +35,10 @@ function memoryStorage(initial: Record<string, string> = {}): Storage {
 }
 
 let cleanup: (() => void) | undefined;
-function mount(storage: Storage, gitlabWaitMs = 60_000): InitializeGitChoice {
+function mount(storage: Storage): InitializeGitChoice {
   let choice!: InitializeGitChoice;
   cleanup = $effect.root(() => {
-    choice = createInitializeGitChoice({ storage, gitlabWaitMs });
+    choice = createInitializeGitChoice({ storage });
   });
   flushSync();
   return choice;
@@ -141,17 +147,61 @@ describe('createInitializeGitChoice', () => {
     expect(mount(storage).initializeGit).toBe(false);
   });
 
-  it('decides without a GitLab status read once the bounded wait elapses', () => {
-    vi.useFakeTimers();
+  it('waits for a slow GitLab status and then defaults on when it is connected', async () => {
     setPlainFolderLabs(true);
     settleForgeAuth();
     loadWorkspaces([]);
-    appStore.dispatch({ type: 'gitlabAuth/resetAdmission' });
-    const choice = mount(memoryStorage(), 1_000);
-    expect(choice.visible).toBe(false);
-    vi.advanceTimersByTime(1_000);
+    appStore.dispatch(resetGitLabAdmission());
+    vi.useFakeTimers();
+    const choice = mount(memoryStorage());
+    // However long the GitLab read takes, nothing is decided without it.
+    vi.advanceTimersByTime(30_000);
     flushSync();
-    expect(choice.visible).toBe(true);
+    expect(choice.visible).toBe(false);
+    expect(choice.initializeGit).toBe(true);
+    vi.useRealTimers();
+
+    appStore.dispatch(
+      setGitLabAuthStatus({
+        host: 'gitlab.com',
+        isConfigured: true,
+        deviceGrantSupported: null,
+        user: null,
+        method: null,
+      }),
+    );
+    await vi.waitFor(() => {
+      flushSync();
+      expect(choice.visible).toBe(true);
+    });
+    expect(choice.initializeGit).toBe(true);
+  });
+
+  it.each([
+    ['GitHub', () => appStore.dispatch(githubAuthStatusUnavailable())],
+    ['GitLab', () => appStore.dispatch(gitlabAuthStatusUnavailable())],
+  ])('defaults on when the %s status read fails (upgrade safety)', async (_label, fail) => {
+    setPlainFolderLabs(true);
+    settleForgeAuth();
+    loadWorkspaces([]);
+    fail();
+    const choice = mount(memoryStorage());
+    await vi.waitFor(() => {
+      flushSync();
+      expect(choice.visible).toBe(true);
+    });
+    expect(choice.initializeGit).toBe(true);
+  });
+
+  it('defaults off once both forges are read as disconnected and there are no git workspaces', async () => {
+    setPlainFolderLabs(true);
+    settleForgeAuth();
+    loadWorkspaces([]);
+    const choice = mount(memoryStorage());
+    await vi.waitFor(() => {
+      flushSync();
+      expect(choice.visible).toBe(true);
+    });
     expect(choice.initializeGit).toBe(false);
   });
 });

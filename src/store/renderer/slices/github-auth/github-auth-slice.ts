@@ -13,6 +13,7 @@ export const initialState: GitHubAuthState = {
   isDisconnecting: false,
   isAuthenticated: false,
   statusSettled: false,
+  statusFailed: false,
   requiresDaemonAuth: false,
   user: null,
   isAuthenticating: false,
@@ -69,7 +70,7 @@ export const setGitHubAuthState = createAction(
   }) => params,
 );
 
-/** The `github.authStatus` read failed; the status is settled as not connected. */
+/** The `github.authStatus` read failed; the status is settled but unknown. */
 export const githubAuthStatusUnavailable = createAction('githubAuth/statusUnavailable');
 
 /** Set authenticating flag and clear error */
@@ -158,10 +159,12 @@ githubAuthReducer.with(setGitHubDisconnecting, (state, { payload: [isDisconnecti
 githubAuthReducer.with(githubAuthStatusUnavailable, (state) => ({
   ...state,
   statusSettled: true,
+  statusFailed: true,
 }));
 githubAuthReducer.with(setGitHubAuthState, (state, { payload }) => ({
   ...state,
   statusSettled: payload.statusSettled ?? true,
+  statusFailed: false,
   isAuthenticated: payload.isAuthenticated,
   requiresDaemonAuth: payload.requiresDaemonAuth,
   user: payload.user,

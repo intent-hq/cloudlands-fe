@@ -6,12 +6,6 @@ import {
 import { safeLocalStorage } from '$lib/utils/safe-storage';
 import { readRememberedInitializeGit, writeRememberedInitializeGit } from './plain-folder-create';
 
-/**
- * GitLab's status read has no failure signal, so after this wait an unread
- * status counts as "not connected" instead of hiding the toggle forever.
- */
-const GITLAB_STATUS_WAIT_MS = 3_000;
-
 export interface InitializeGitChoice {
   /** Labs flag on and the daemon accepts plain-folder creates. */
   readonly available: boolean;
@@ -31,29 +25,20 @@ type ChoiceStorage = Pick<Storage, 'getItem' | 'setItem'>;
  * the first decided default is latched, so the toggle never flips while visible.
  */
 export function createInitializeGitChoice(
-  options: { storage?: ChoiceStorage | null; gitlabWaitMs?: number } = {},
+  options: { storage?: ChoiceStorage | null } = {},
 ): InitializeGitChoice {
   const storage = options.storage === undefined ? safeLocalStorage : options.storage;
   const available = fromStore(selectPlainFolderCreationAvailable());
   const defaultState = fromStore(selectInitializeGitDefaultState());
 
   let value = $state<boolean | null>(readRememberedInitializeGit(storage));
-  let gitlabWaitElapsed = $state(false);
 
-  $effect(() => {
-    if (value !== null || !available.current) return;
-    const timer = setTimeout(
-      () => (gitlabWaitElapsed = true),
-      options.gitlabWaitMs ?? GITLAB_STATUS_WAIT_MS,
-    );
-    return () => clearTimeout(timer);
-  });
-
+  // Decided only once the forge statuses and workspace list have loaded.
   $effect(() => {
     if (value !== null || !available.current) return;
     const state = defaultState.current;
     if (state === 'on') value = true;
-    else if (state === 'off' || (state === 'off-unless-gitlab' && gitlabWaitElapsed)) value = false;
+    else if (state === 'off') value = false;
   });
 
   return {

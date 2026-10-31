@@ -48,6 +48,7 @@ import {
   setGitLabCancelOutcome,
   setGitLabAuthError,
   setGitLabAuthStatus,
+  gitlabAuthStatusUnavailable,
   setGitLabDeviceFlowInfo,
   setGitLabHost,
   startGitLabDeviceAuth,
@@ -291,7 +292,12 @@ function* initialize(
     if (host !== undefined) yield* put(setGitLabHost(host));
     const target = host ?? (yield* selectGitLabAuthTarget.effect());
     const status = yield* call(readStatus, host);
-    if (!status || superseded(fence, generation) || fence.statusRevision !== statusRevision) return;
+    if (superseded(fence, generation) || fence.statusRevision !== statusRevision) return;
+    if (!status) {
+      // No usable read: the connection is unknown (never "disconnected").
+      yield* put(gitlabAuthStatusUnavailable());
+      return;
+    }
     const payload = statusPayload(status, target, host === undefined);
     if (!payload) return;
     if (!sameHost(payload.instanceBaseUrl ?? payload.host, target)) bumpIntent(fence);
@@ -319,6 +325,7 @@ function* initialize(
     }
   } catch (error) {
     logger.error('Failed to initialize GitLab auth', error);
+    yield* put(gitlabAuthStatusUnavailable());
   }
 }
 

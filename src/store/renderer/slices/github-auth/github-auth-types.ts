@@ -23,6 +23,8 @@ export type GitHubAuthState = {
    * pre-hydration `isAuthenticated: false`.
    */
   statusSettled?: boolean;
+  /** The latest `github.authStatus` read failed, so the connection is unknown. */
+  statusFailed?: boolean;
   /** Whether user needs to authenticate with the daemon first */
   requiresDaemonAuth: boolean;
   /** GitHub user info (if available) */

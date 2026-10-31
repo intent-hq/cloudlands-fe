@@ -32,7 +32,7 @@ const plainFolder = vi.hoisted(() => {
   }
   return {
     available$: writable(false),
-    defaultState$: writable<'on' | 'off' | 'off-unless-gitlab' | 'pending'>('pending'),
+    defaultState$: writable<'on' | 'off' | 'pending'>('pending'),
     confirm: vi.fn(async (_folder: string, _workspaces: unknown[]) => true),
   };
 });

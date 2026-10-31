@@ -21,8 +21,10 @@ const loadedNoForge: InitializeGitDefaultInput = {
   hasGitWorkspace: false,
   githubConnected: false,
   githubSettled: true,
+  githubFailed: false,
   gitlabConnected: false,
   gitlabSettled: true,
+  gitlabFailed: false,
 };
 
 describe('resolveInitializeGitDefault', () => {
@@ -35,6 +37,13 @@ describe('resolveInitializeGitDefault', () => {
     ['GitLab', { gitlabConnected: true }],
     ['an existing git workspace', { hasGitWorkspace: true }],
   ])('defaults on with %s', (_label, overrides) => {
+    expect(resolveInitializeGitDefault({ ...loadedNoForge, ...overrides })).toBe(true);
+  });
+
+  it.each([
+    ['GitHub', { githubFailed: true }],
+    ['GitLab', { gitlabFailed: true }],
+  ])('defaults on when the %s status read failed (upgrade safety)', (_label, overrides) => {
     expect(resolveInitializeGitDefault({ ...loadedNoForge, ...overrides })).toBe(true);
   });
 
