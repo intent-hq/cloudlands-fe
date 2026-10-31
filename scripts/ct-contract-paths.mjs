@@ -351,21 +351,30 @@ function moduleReferences(source, file) {
 }
 
 const SVELTE_BLOCK = /<(script|style)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi;
-const CSS_IMPORT = /@import\s+(?:url\(\s*)?(['"])([^'"\r\n]*)\1/g;
+const CSS_COMMENT = /\/\*[\s\S]*?\*\//g;
+const CSS_IMPORT = /@import\b\s*/g;
+// `'x'`, `"x"`, `url('x')`, `url("x")` or unquoted `url(x)`.
+const CSS_IMPORT_TARGET =
+  /^(?:(['"])([^'"\r\n]*)\1|url\(\s*(?:(['"])([^'"\r\n]*)\3|([^'"()\s]+))\s*\))/;
 const MARKUP_IMPORT = /\bimport\s*\(\s*(?:(['"])([^'"\\\r\n]*)\1\s*[),])?/g;
 
-function cssImports(source) {
-  return [...source.matchAll(CSS_IMPORT)].map((match) => match[2]);
+function cssImports(source, file) {
+  const css = source.replace(CSS_COMMENT, ' ');
+  return [...css.matchAll(CSS_IMPORT)].map((match) => {
+    const target = CSS_IMPORT_TARGET.exec(css.slice(match.index + match[0].length));
+    if (!target) throw new Error(`unsupported CT dependency syntax in ${file}: CSS @import`);
+    return target[2] ?? target[4] ?? target[5];
+  });
 }
 
 // Literal references a module can load: `{ imports, cssImports, globs, scenes }`.
 export function sourceReferences(source, file) {
   if (/\.css$/i.test(file))
-    return { imports: [], cssImports: cssImports(source), globs: [], scenes: [] };
+    return { imports: [], cssImports: cssImports(source, file), globs: [], scenes: [] };
   if (!/\.svelte$/i.test(file)) return { ...moduleReferences(source, file), cssImports: [] };
   const references = { imports: [], cssImports: [], globs: [], scenes: [] };
   const markup = source.replace(SVELTE_BLOCK, (_block, tag, body) => {
-    if (tag.toLowerCase() === 'style') references.cssImports.push(...cssImports(body));
+    if (tag.toLowerCase() === 'style') references.cssImports.push(...cssImports(body, file));
     else {
       const script = moduleReferences(body, file);
       references.imports.push(...script.imports);
@@ -421,9 +430,14 @@ export function globMatcher(file, pattern) {
   if (pattern.startsWith('!') || /[[\]()!+@\\]/.test(pattern)) {
     throw new Error(`unsupported CT dependency glob in ${file}: ${pattern}`);
   }
-  const path = pattern.startsWith('/')
-    ? posix.normalize(pattern.slice(1))
-    : posix.join(posix.dirname(file), pattern);
+  // Vite globs are relative (`./`, `../`), root-absolute (`/`) or a resolve alias.
+  const alias = Object.entries(IMPORT_ALIASES).find(([prefix]) => pattern.startsWith(prefix));
+  let path;
+  if (alias) path = posix.join(alias[1], pattern.slice(alias[0].length));
+  else if (pattern.startsWith('/')) path = posix.normalize(pattern.slice(1));
+  else if (pattern.startsWith('./') || pattern.startsWith('../')) {
+    path = posix.join(posix.dirname(file), pattern);
+  } else throw new Error(`unsupported CT dependency glob in ${file}: ${pattern}`);
   if (path === '..' || path.startsWith('../')) return () => false;
   let source = '';
   let braces = 0;

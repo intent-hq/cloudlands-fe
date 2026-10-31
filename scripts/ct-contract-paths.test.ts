@@ -771,6 +771,16 @@ describe('transitive CT dependencies', () => {
     ],
     ['style @import', "<style>\n  @import './home.css';\n</style>", 'src/features/home/home.css'],
     [
+      'style unquoted url() @import',
+      '<style>\n  @import url(./home.css);\n</style>',
+      'src/features/home/home.css',
+    ],
+    [
+      'style quoted url() @import',
+      '<style>\n  @import url("./home.css") layer(base);\n</style>',
+      'src/features/home/home.css',
+    ],
+    [
       'runes module',
       "<script>import { state } from './state.svelte';</script>",
       'src/features/home/state.svelte.ts',
@@ -797,13 +807,18 @@ describe('transitive CT dependencies', () => {
     expect(runCli(root, '--diff', 'main', 'change').stdout).toBe('ct_required=true\n');
   });
 
-  it('follows CSS @import chains', () => {
-    const root = homeRepository();
-    commitFile(root, page, "<script>import './home.css';</script>");
-    commitFile(root, 'src/features/home/home.css', "@import 'tokens.css';");
-    branch(root, 'change', 'src/features/home/tokens.css');
-    expect(runCli(root, '--diff', 'main', 'change').stdout).toBe('ct_required=true\n');
-  });
+  it.each(["@import 'tokens.css';", '@import url(tokens.css) screen;'])(
+    'follows CSS @import chains: %s',
+    (rule) => {
+      const root = homeRepository();
+      commitFile(root, page, "<script>import './home.css';</script>");
+      commitFile(root, 'src/features/home/home.css', `/* @import is documented here */\n${rule}`);
+      branch(root, 'change', 'src/features/home/tokens.css');
+      const result = runCli(root, '--diff', 'main', 'change');
+      expect(result.stdout).toBe('ct_required=true\n');
+      expect(result.stderr).not.toContain('fail-safe');
+    },
+  );
 
   it.each([
     "<script>export type { T }\nimport { value } from './types'</script>",
@@ -838,6 +853,11 @@ describe('transitive CT dependencies', () => {
       "import.meta.glob<Loader>(['./a/*.ts', './b/**/*.{ts,svelte}'], { eager: true })",
       'src/features/home/b/x/y.svelte',
       'src/features/home/b/y.css',
+    ],
+    [
+      "import.meta.glob('$lib/fixtures/*.ts', { eager: true })",
+      'src/lib/fixtures/a.ts',
+      'src/lib/fixtures/a.css',
     ],
     [
       "import.meta.glob('/src/assets/*.mp3', { query: '?url' })",
@@ -914,6 +934,9 @@ describe('transitive CT dependencies', () => {
   it.each([
     '{#await import(name) then m}<m.default />{/await}',
     '<script>const m = import.meta.glob(`./${dir}/*.svelte`);</script>',
+    "<script>const m = import.meta.glob('$unknown/*.ts');</script>",
+    "<script>const m = import.meta.glob('fixtures/*.ts');</script>",
+    '<style>@import theme;</style>',
   ])('fails safe for computed imports anywhere in a mounted component: %s', (source) => {
     const root = homeRepository();
     commitFile(root, page, source);
