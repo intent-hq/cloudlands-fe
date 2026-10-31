@@ -23,7 +23,7 @@
  * Typed secrets are staged (provider-profiles-state) and never enter state,
  * actions or logs. Dismissing a setup stops its work; the profile stays saved.
  */
-import { all, call, delay, put, race, take, takeEvery } from 'typed-redux-saga';
+import { all, call, delay, put, race, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 type Action = { type: string; payload?: unknown };
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { invoke } from '$lib/electron-bridge';
@@ -35,7 +35,11 @@ import {
   PROVIDER_AUTH_STATUS_METHOD,
   type ProviderAuthStatusResponse,
 } from '$shared/provider-auth-status';
-import type { EnvEntryWrite, ProviderProfile } from '$shared/provider-profiles';
+import type {
+  EnvEntryWrite,
+  ProviderProfile,
+  ProviderProfileFailure,
+} from '$shared/provider-profiles';
 import { invalidateProviderAuthStatus } from '$features/providers/provider-auth-status.client';
 import { runProviderTestPrompt } from '$features/providers/provider-test-prompt.client';
 import {
@@ -169,19 +173,25 @@ const changed = (setupId: string, patch: Parameters<typeof providerProfileSetupC
  * Wait for the create/update mutation `requestId` to settle, then dismiss it
  * (the setup records the outcome). Returns the saved profile or the failure.
  */
-function* awaitMutation(requestId: string) {
+type MutationOutcome = {
+  profile: ProviderProfile | undefined;
+  failure: ProviderProfileFailure | undefined;
+};
+
+function* awaitMutation(requestId: string): SagaGenerator<MutationOutcome> {
   try {
     while (true) {
-      const settled = yield* take([
-        providerProfileMutationSucceeded,
-        providerProfileMutationFailed,
-      ]);
-      if (settled.payload[0] !== requestId) continue;
-      if (settled.type === providerProfileMutationSucceeded.type) {
-        const [, result] = (settled as ReturnType<typeof providerProfileMutationSucceeded>).payload;
-        return { profile: result.profile as ProviderProfile | undefined };
-      }
-      return { failure: (settled as ReturnType<typeof providerProfileMutationFailed>).payload[1] };
+      const { succeeded, failed } = yield* race({
+        succeeded: take(providerProfileMutationSucceeded),
+        failed: take(providerProfileMutationFailed),
+      });
+      if (succeeded?.payload[0] === requestId)
+        return {
+          profile: succeeded.payload[1].profile as ProviderProfile | undefined,
+          failure: undefined,
+        };
+      if (failed?.payload[0] === requestId)
+        return { profile: undefined, failure: failed.payload[1] };
     }
   } finally {
     // Also when the setup is dismissed mid-save, so the record never lingers.
