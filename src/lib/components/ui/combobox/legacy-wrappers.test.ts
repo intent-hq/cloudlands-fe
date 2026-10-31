@@ -1,17 +1,12 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import axe from 'axe-core';
 import LegacyWrappersHarness from './legacy-wrappers.test-harness.svelte';
 import type { ComboboxOption } from './types';
 
 describe('legacy searchable and grouped compatibility wrappers', () => {
-  const originalScrollIntoView = Element.prototype.scrollIntoView;
-  beforeEach(() => {
-    Element.prototype.scrollIntoView = vi.fn();
-  });
   afterEach(() => {
     cleanup();
-    Element.prototype.scrollIntoView = originalScrollIntoView;
   });
 
   it('preserves searchable-select async search and custom-value entry', async () => {

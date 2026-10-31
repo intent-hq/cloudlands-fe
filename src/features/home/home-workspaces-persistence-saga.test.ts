@@ -4,6 +4,10 @@ const mocks = vi.hoisted(() => ({ values: new Map<string, string>(), failWrite: 
 vi.mock('$lib/utils/safe-storage', () => ({
   safeLocalStorage: {
     getItem: (key: string) => mocks.values.get(key) ?? null,
+    getItemWithStatus: (key: string) => ({
+      value: mocks.values.get(key) ?? null,
+      hadError: false,
+    }),
     getJSON: (key: string) => {
       const value = mocks.values.get(key);
       return value ? JSON.parse(value) : undefined;

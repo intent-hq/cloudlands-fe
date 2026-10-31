@@ -1,5 +1,5 @@
 import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { m } from '$shared/paraglide/messages.js';
 import { AgentStatus, type AgentSession } from '$shared/types';
@@ -13,10 +13,6 @@ import {
 import { guestSessionsListReceived } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import ChiefCard from '../cards/ChiefCard.svelte';
 import { deleteAgentWithUndoRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
-
-beforeAll(() => {
-  Element.prototype.scrollIntoView = vi.fn();
-});
 
 vi.mock('$lib/components/chat/ChatPanel.svelte', async () => ({
   default: (await import('./mocks/MockChiefChatPanel.svelte')).default,

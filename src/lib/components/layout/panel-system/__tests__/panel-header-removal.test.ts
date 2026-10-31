@@ -27,7 +27,6 @@ beforeEach(() => {
       disconnect() {}
     },
   );
-  Element.prototype.scrollIntoView = vi.fn();
   context = initAppStore(store);
   store.dispatch(
     initializeLayout('header-removal', {

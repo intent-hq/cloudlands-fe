@@ -84,6 +84,13 @@ function compactJsonSnippet(value: unknown): string {
 export function formatSettingValue(definition: AppSettingDefinition, value: unknown): string {
   if (value === null || value === undefined || value === '')
     return definition.nullLabel ?? '(none)';
+  // Daemon proposal previews stringify the current value: an absent nullable
+  // setting arrives as "null" and a TOML number as e.g. "14.0".
+  if (definition.nullable === true && value === 'null') return definition.nullLabel ?? '(none)';
+  if (definition.type === 'number' && typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return String(parsed);
+  }
   if (definition.type === 'enum' && typeof value === 'string') {
     return definition.enumLabels?.[value] ?? value;
   }
@@ -363,7 +370,9 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     source: 'daemon-settings',
     storageKey: 'context.auggiePath',
     defaultValue: '',
-    apply: { kind: 'daemon-settings-update', path: 'context.auggiePath' },
+    // Security-relevant (an executable, credential or data location): the
+    // daemon refuses chat changes too, so a card cannot change it.
+    apply: { kind: 'read-only' },
   },
   {
     path: 'providers.paths.claude-code',
@@ -375,7 +384,9 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     storageKey: 'providers.paths',
     valuePath: 'claude-code',
     defaultValue: '',
-    apply: { kind: 'daemon-settings-update', path: 'providers.paths', valuePath: 'claude-code' },
+    // Security-relevant (an executable, credential or data location): the
+    // daemon refuses chat changes too, so a card cannot change it.
+    apply: { kind: 'read-only' },
   },
   {
     path: 'providers.paths.codex',
@@ -387,7 +398,9 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     storageKey: 'providers.paths',
     valuePath: 'codex',
     defaultValue: '',
-    apply: { kind: 'daemon-settings-update', path: 'providers.paths', valuePath: 'codex' },
+    // Security-relevant (an executable, credential or data location): the
+    // daemon refuses chat changes too, so a card cannot change it.
+    apply: { kind: 'read-only' },
   },
   {
     path: 'workspace.branchPrefix',
@@ -409,7 +422,9 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     source: 'daemon-settings',
     storageKey: 'workspace.worktreesLocation',
     defaultValue: '',
-    apply: { kind: 'daemon-settings-update', path: 'workspace.worktreesLocation' },
+    // Security-relevant (an executable, credential or data location): the
+    // daemon refuses chat changes too, so a card cannot change it.
+    apply: { kind: 'read-only' },
   },
   {
     path: 'workspace.sshKeyPath',
@@ -421,7 +436,9 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     storageKey: 'workspace.sshKeyPath',
     defaultValue: '',
     sensitive: true,
-    apply: { kind: 'daemon-settings-update', path: 'workspace.sshKeyPath' },
+    // Security-relevant (an executable, credential or data location): the
+    // daemon refuses chat changes too, so a card cannot change it.
+    apply: { kind: 'read-only' },
   },
   {
     path: 'workspace.defaultShell',
@@ -432,7 +449,40 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     source: 'daemon-settings',
     storageKey: 'workspace.defaultShell',
     defaultValue: 'auto',
-    apply: { kind: 'daemon-settings-update', path: 'workspace.defaultShell' },
+    // Security-relevant (an executable, credential or data location): the
+    // daemon refuses chat changes too, so a card cannot change it.
+    apply: { kind: 'read-only' },
+  },
+  {
+    // PROTOCOL §5.12: absent means 0 (off); turning it off is an explicit 0,
+    // never null.
+    path: 'workspace.autoArchiveIdleAfterDays',
+    label: 'Auto-archive idle workspaces (days)',
+    description:
+      'Archive workspaces after this many days without activity. 0 turns automatic archiving off.',
+    category: 'workspace',
+    type: 'number',
+    min: 0,
+    source: 'daemon-settings',
+    storageKey: 'workspace.autoArchiveIdleAfterDays',
+    defaultValue: 0,
+    apply: { kind: 'daemon-settings-update', path: 'workspace.autoArchiveIdleAfterDays' },
+  },
+  {
+    // PROTOCOL §5.12: absent (null) means off; zero is rejected.
+    path: 'workspace.purgeArchivedAfterDays',
+    label: 'Purge archived workspace folders (days)',
+    description:
+      'Delete the folders of workspaces archived longer than this many days; notes, conversations and branches are kept. Empty turns automatic purging off.',
+    category: 'workspace',
+    type: 'number',
+    min: 1,
+    source: 'daemon-settings',
+    storageKey: 'workspace.purgeArchivedAfterDays',
+    defaultValue: null,
+    nullable: true,
+    nullLabel: 'Off',
+    apply: { kind: 'daemon-settings-update', path: 'workspace.purgeArchivedAfterDays' },
   },
   {
     path: 'workspace.autoCommit',

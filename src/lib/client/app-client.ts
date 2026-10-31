@@ -1335,6 +1335,12 @@ export interface SettingDefinitionWithValue {
   max?: number;
   defaultValue?: unknown;
   sensitive?: boolean;
+  /**
+   * Whether an Assistant chat settings-change card may change this setting.
+   * Always present on daemons that support it; absent on older daemons, which
+   * clients treat as not proposable for settings outside their own schema.
+   */
+  proposable?: boolean;
   /** Approximate prompt-token cost of the gated feature (e.g. "~620 tokens/session"); absent when unannotated. */
   tokenImpact?: string;
   value: unknown;
