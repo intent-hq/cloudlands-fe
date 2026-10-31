@@ -895,7 +895,7 @@ test('keeps the bundled sandbox font through theme changes and repeated document
     ['custom-architecture', 'custom-architecture'],
   ] as const) {
     await page.goto(
-      `${baseUrl}/sandbox/diagram-workbench?state=${state}&theme=light&width=960&motion=full`,
+      `${baseUrl}/sandbox/diagram-workbench?state=${state}&theme=light&width=960&motion=full${scopeQuery('target')}`,
       { waitUntil: 'domcontentloaded' },
     );
     await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
@@ -1159,7 +1159,7 @@ test('hydrates a saved full motion choice and persists a reduced override', asyn
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await seedStoredCatalogPreferences(page, { motion: 'full' });
   await page.goto(
-    `${baseUrl}/sandbox/diagram-workbench?state=custom-architecture&theme=light&width=960`,
+    `${baseUrl}/sandbox/diagram-workbench?state=custom-architecture&theme=light&width=960${scopeQuery('target')}`,
   );
   await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
     timeout: WORKBENCH_READY_TIMEOUT_MS,
@@ -1186,7 +1186,7 @@ test('hydrates a saved reduced motion choice on a later stepped fixture', async 
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await seedStoredCatalogPreferences(page, { motion: 'reduced' });
   await page.goto(
-    `${baseUrl}/sandbox/diagram-workbench?state=custom-delivery-walkthrough&theme=light&width=960`,
+    `${baseUrl}/sandbox/diagram-workbench?state=custom-delivery-walkthrough&theme=light&width=960${scopeQuery('target')}`,
   );
   // This visit checks saved policy hydration, not another gallery transition.
   await expect(page.getByTestId('catalog-shell')).toHaveAttribute(
@@ -1557,7 +1557,7 @@ for (const width of [960, 320]) {
   test(`keeps the short ownership kind label on one line at ${width}px`, async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     await page.goto(
-      `${baseUrl}/sandbox/diagram-workbench?state=custom-walkthrough&theme=light&width=${width}&motion=full`,
+      `${baseUrl}/sandbox/diagram-workbench?state=custom-walkthrough&theme=light&width=${width}&motion=full${scopeQuery('target')}`,
       { waitUntil: 'domcontentloaded' },
     );
     await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
@@ -1817,6 +1817,7 @@ test('interpolates a retained route with its moving endpoints in diagram coordin
 test('keeps explicit full motion active for every stepped sandbox control', async ({ page }) => {
   test.setTimeout(180_000);
   await page.emulateMedia({ reducedMotion: 'reduce' });
+  // Steps every stepped fixture on one page, so it needs the full workbench.
   await page.goto(
     `${baseUrl}/sandbox/diagram-workbench?state=custom-architecture&theme=light&width=960&motion=full`,
   );
@@ -2036,7 +2037,7 @@ test('shows continuous Redux walkthrough motion when the system requests reduced
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(
-    `${baseUrl}/sandbox/diagram-workbench?state=custom-walkthrough&theme=light&width=960&motion=full`,
+    `${baseUrl}/sandbox/diagram-workbench?state=custom-walkthrough&theme=light&width=960&motion=full${scopeQuery('target')}`,
   );
   await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
     timeout: WORKBENCH_READY_TIMEOUT_MS,
@@ -2305,6 +2306,7 @@ for (const appearance of framingAppearances) {
         theme: appearance.theme,
         width: String(width.value),
         motion: 'reduced',
+        cases: 'target',
       });
       if ('colorTheme' in appearance) params.set('colorTheme', appearance.colorTheme);
       await page.goto(`${baseUrl}/sandbox/diagram-workbench?${params}`);
