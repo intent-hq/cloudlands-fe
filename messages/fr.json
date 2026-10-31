@@ -1061,6 +1061,7 @@
   "chat_scriptMonitor_unmonitored_description": "Surveillance arrêtée. Le script peut continuer à s’exécuter.",
   "chat_scriptMonitor_untrusted_description": "Ligne correspondante (sortie de script non fiable)",
   "chat_settingsProposalActions_applyFailed_label": "Impossible d'appliquer la modification des paramètres",
+  "chat_settingsProposalActions_notProposable_error": "Le paramètre \"{path}\" ne peut pas être modifié depuis le chat. Modifiez-le dans les Paramètres.",
   "chat_settingsProposalActions_readOnlySetting_error": "Le paramètre \"{path}\" est en lecture seule et ne peut pas être modifié",
   "chat_settingsProposalActions_undoFailed_label": "Impossible d'annuler la modification des paramètres",
   "chat_settingsProposalActions_unknownError_fallback": "Erreur de paramètres inconnue",
