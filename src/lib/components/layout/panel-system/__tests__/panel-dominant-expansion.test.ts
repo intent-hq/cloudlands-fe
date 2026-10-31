@@ -125,10 +125,6 @@ async function mount(workspaceId: string, contained = false) {
 
 beforeEach(() => {
   vi.stubGlobal('ResizeObserver', TestResizeObserver);
-  Object.defineProperty(HTMLElement.prototype, 'getAnimations', {
-    configurable: true,
-    value: () => [],
-  });
   vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function () {
     return this.classList.contains('panel-split-handle-wrapper')
       ? GUTTER

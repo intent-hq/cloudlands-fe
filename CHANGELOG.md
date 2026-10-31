@@ -4,6 +4,33 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.259.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.259.0...v2.259.1) (2026-10-31)
+
+
+### 🐛 Bug Fixes
+
+* build backend:status payloads in one typed place, scoped per backend ([#3910](https://github.com/intent-hq/cloudlands-fe/issues/3910)) ([304824d](https://github.com/intent-hq/cloudlands-fe/commit/304824d53051494cd7de0ce9e963e5da031990df))
+
+## [2.259.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.258.2...v2.259.0) (2026-10-31)
+
+
+### 🚀 Features
+
+* **browser:** keep agent tabs drawing at full frame rate while in use ([#3877](https://github.com/intent-hq/cloudlands-fe/issues/3877)) ([cfd84f7](https://github.com/intent-hq/cloudlands-fe/commit/cfd84f7000a378331441581166cdd93e53200600))
+* **home:** Disable auto-archive toggle in the Home workspace menu ([#3863](https://github.com/intent-hq/cloudlands-fe/issues/3863)) ([896956f](https://github.com/intent-hq/cloudlands-fe/commit/896956f7ef084db7d23f2d8da07213dc06bd9afc))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.88 ([#3919](https://github.com/intent-hq/cloudlands-fe/issues/3919)) ([de0871f](https://github.com/intent-hq/cloudlands-fe/commit/de0871f72e82f32556cedaf132f37521f589ff1d))
+
+## [2.258.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.258.1...v2.258.2) (2026-10-31)
+
+
+### 🐛 Bug Fixes
+
+* **hardware-console:** return to the workspace from Home on a micro key press ([#3887](https://github.com/intent-hq/cloudlands-fe/issues/3887)) ([18bf414](https://github.com/intent-hq/cloudlands-fe/commit/18bf4142d370e1e31eefcf56f8f0e3a99320b569))
+
 ## [2.258.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.258.0...v2.258.1) (2026-10-31)
 
 

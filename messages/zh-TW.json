@@ -2739,6 +2739,7 @@
   "home_views": "主頁檢視",
   "home_workspace_details": "工作區預覽",
   "home_workspace_view": "工作區檢視",
+  "home_workspace_disableAutoArchive_label": "停用自動歸檔",
   "home_workspaceLabel_menu_label": "標籤",
   "home_workspaceLabel_new_label": "新增標籤…",
   "home_workspaceLabel_remove_label": "移除標籤",

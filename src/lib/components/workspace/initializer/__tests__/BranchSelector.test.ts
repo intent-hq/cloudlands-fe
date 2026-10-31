@@ -1182,6 +1182,10 @@ describe('BranchSelector (server-side prefix search, github.branches.list prefix
     // 'feat/beyond-page' occurrence is the trigger's selected-branch label —
     // the search-result list entry must be dropped.
     await fireEvent.pointerUp(match, { pointerType: 'mouse' });
+    // Reopen only after the closing dropdown has finished its exit.
+    await waitFor(() =>
+      expect(screen.queryByPlaceholderText('Search or enter branch name...')).toBeNull(),
+    );
     await openDropdown(container);
     await waitFor(() => expect(screen.getByText('main')).toBeTruthy());
     expect(screen.getAllByText('feat/beyond-page')).toHaveLength(1);

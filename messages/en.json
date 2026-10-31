@@ -2739,6 +2739,7 @@
   "home_views": "Home views",
   "home_workspace_details": "Workspace preview",
   "home_workspace_view": "Workspace view",
+  "home_workspace_disableAutoArchive_label": "Disable auto-archive",
   "home_workspaceLabel_menu_label": "Label",
   "home_workspaceLabel_new_label": "New label…",
   "home_workspaceLabel_remove_label": "Remove label",

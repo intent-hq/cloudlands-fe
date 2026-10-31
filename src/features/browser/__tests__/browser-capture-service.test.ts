@@ -47,6 +47,7 @@ vi.mock('../main/embedded-browser-cdp-service', () => ({
     waitForTabLoad: vi.fn().mockResolvedValue({ loading: false, url: '' }),
     // The capture flows under test run as the tab's owner (#2857).
     resolveTabOwner: vi.fn().mockResolvedValue('agent-1'),
+    beginAgentDrawing: vi.fn(),
     setTabOwner: vi.fn(),
     getAccessibilityTree: vi.fn().mockResolvedValue(''),
     listAllTabs: vi.fn().mockResolvedValue({

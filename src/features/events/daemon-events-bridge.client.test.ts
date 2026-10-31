@@ -9985,6 +9985,27 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     expect(ws.branch).toBe('main');
   });
 
+  it('applies and clears the auto-archive opt-out delta (PROTOCOL §5.1)', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(updatedNotification({ autoArchiveDisabled: true }));
+    expect((await readWorkspace()).autoArchiveDisabled).toBe(true);
+
+    // A delta without the key leaves the flag untouched.
+    handler(updatedNotification({ title: 'Renamed' }));
+    expect((await readWorkspace()).autoArchiveDisabled).toBe(true);
+
+    // `false` turns it off; the entity keeps the wire shape (absent while off).
+    handler(updatedNotification({ autoArchiveDisabled: false }));
+    expect((await readWorkspace()).autoArchiveDisabled).toBeUndefined();
+
+    // A non-boolean value is ignored.
+    handler(updatedNotification({ autoArchiveDisabled: 'yes' }));
+    expect((await readWorkspace()).autoArchiveDisabled).toBeUndefined();
+  });
+
   it('clears statusImageAssetId on an explicit null in the delta', async () => {
     await seedWorkspace();
     await primeBridge();

@@ -107,6 +107,12 @@ async function chooseAudience(provider: 'anyone' | 'github' | 'gitlab') {
     }),
     { pointerType: 'mouse' },
   );
+  // Let the audience list finish its exit so its options do not mix with later queries.
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('option', { name: 'Anyone with the link', exact: true, hidden: true }),
+    ).toBeNull(),
+  );
 }
 async function recipientField(provider: 'github' | 'gitlab'): Promise<HTMLInputElement> {
   const name = provider === 'github' ? 'Search GitHub users' : 'GitLab username';
@@ -888,7 +894,7 @@ describe('ShareWorkspaceDialog — pin typeahead', () => {
     expect(screen.getAllByRole('option')).toHaveLength(1);
 
     await fireEvent.keyDown(input, { key: 'Escape' });
-    expect(screen.queryByTestId('share-pin-suggestions')).toBeNull();
+    await waitFor(() => expect(screen.queryByTestId('share-pin-suggestions')).toBeNull());
     expect(onClose).not.toHaveBeenCalled();
 
     await fireEvent.keyDown(input, { key: 'Escape' });

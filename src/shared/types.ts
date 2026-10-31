@@ -370,6 +370,10 @@ export interface Workspace {
    *  1–64 character string, omitted while unset. The reserved value `"pinned"`
    *  is the built-in Pinned label. Gated on `workspaceLabels: 1`. */
   label?: string;
+  /** Per-workspace auto-archive opt-out (PROTOCOL §5.1 "Auto-archive opt-out"):
+   *  `true` exempts the workspace from the daemon's automatic archive sweep.
+   *  Omitted while off. Gated on `workspaceAutoArchiveOptOut: 1`. */
+  autoArchiveDisabled?: boolean;
   /** BE-derived in-flight agent state (green dot). Read-only; computed from agent runtime. */
   activity?: 'idle' | 'agent_running';
   /** BE-owned current-cycle display status (intent-hq/intentd#600). Precedence is
@@ -1815,6 +1819,8 @@ export interface UpdateWorkspaceRequest {
   statusMessage?: string;
   /** Workspace label: missing = untouched, `null` = clear, string = set. */
   label?: string | null;
+  /** Auto-archive opt-out: missing = untouched, boolean = set. */
+  autoArchiveDisabled?: boolean;
   tags?: string[];
   prUrl?: string | null;
   prNumber?: number | null;
