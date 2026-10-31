@@ -279,9 +279,11 @@ import {
 } from '$store/renderer/slices/repository-checkout/repository-checkout-slice';
 import {
   hydrateWorkspaceInitializer,
+  workspaceInitializationResumeRequested,
   workspaceInitializerDraftOwnerReleased,
   workspaceInitializerDraftRestoreRequested,
 } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+import { defaultTestTimeoutMs } from '../../../../../scripts/vitest-timeouts.mjs';
 let dispose: () => void;
 let stopGit: () => void;
 let stopInitialization: () => void;
@@ -387,9 +389,16 @@ describe('actual initializer submission admission', () => {
   });
 });
 
+// The first create in a fresh worker loads installWorkspace's lazily imported layout and
+// storage modules, and on a loaded CI runner that cold path alone can outlast waitFor's 1s
+// default (the cloudlands-fe#3915 merge-queue ejection). These waits keep polling the same
+// condition for half the test budget, leaving the test timeout to report a real hang.
+const coldPathWait = { timeout: defaultTestTimeoutMs() / 2 };
+
 it.each([false, true])(
   'failed attachment retry retains its original admission (readmission=%s)',
   async (readmission) => {
+    const dispatch = vi.spyOn(store, 'dispatch');
     mocks.create.mockResolvedValue({
       ok: true,
       data: {
@@ -418,10 +427,10 @@ it.each([false, true])(
       },
     });
     const button = view.container.querySelector<HTMLButtonElement>('[data-dialog-primary-action]')!;
-    await waitFor(() => expect(button.disabled).toBe(false));
+    await waitFor(() => expect(button.disabled).toBe(false), coldPathWait);
     await fireEvent.click(button);
-    await waitFor(() => expect(mocks.placement).toHaveBeenCalledTimes(1));
-    await screen.findByTestId('attachment-retry');
+    await waitFor(() => expect(mocks.placement).toHaveBeenCalledTimes(1), coldPathWait);
+    await screen.findByTestId('attachment-retry', undefined, coldPathWait);
     if (readmission) {
       store.dispatch(backendReconnected());
       admitLegacyPrincipal();
@@ -431,8 +440,19 @@ it.each([false, true])(
       fileName: 'notes.txt',
       path: '/owned/placed',
     });
+    const beforeRetry = dispatch.mock.calls.length;
     await fireEvent.click(screen.getByTestId('attachment-retry'));
-    await new Promise((r) => setTimeout(r, 20));
+    // A retry the initializer admits dispatches its resume from the click handler. Wait for
+    // each resume's saga to settle instead of sleeping, so the counts below are final whether
+    // the retry was admitted (readmission=false) or dropped (readmission=true).
+    const resumes = dispatch.mock.calls
+      .slice(beforeRetry)
+      .map(([action]) => action)
+      .filter(
+        (action): action is ReturnType<typeof workspaceInitializationResumeRequested> =>
+          action.type === workspaceInitializationResumeRequested.type,
+      );
+    await Promise.allSettled(resumes.map((resume) => resume.promise));
     expect(mocks.placement).toHaveBeenCalledTimes(readmission ? 1 : 2);
     expect(mocks.send).toHaveBeenCalledTimes(readmission ? 0 : 1);
     expect(mocks.create).toHaveBeenCalledTimes(1);
