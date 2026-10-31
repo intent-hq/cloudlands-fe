@@ -106,13 +106,3 @@ export function noteMentionChipAttrs(note: NoteMention): {
       : {}),
   };
 }
-
-const NOTE_MENTION_GLOBAL = new RegExp(`@${NOTE_MENTION_BODY_SOURCE}`, 'g');
-
-/** Plain-text previews: render each `@note[...]` token as `@<title>`. */
-export function noteMentionsToText(text: string): string {
-  return text.replace(NOTE_MENTION_GLOBAL, (token) => {
-    const note = parseNoteMention(token);
-    return note ? `@${note.title}` : token;
-  });
-}

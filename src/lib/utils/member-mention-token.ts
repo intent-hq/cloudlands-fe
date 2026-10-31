@@ -1,5 +1,8 @@
 import type { MentionCandidate } from '$lib/services/mentions/types';
 
+/** Regex source (no flags, no groups) matching a whole token body after the `@`. */
+export const MEMBER_MENTION_BODY_SOURCE = String.raw`member\[[^\]\s]*\]`;
+
 /** A text-only persistence format, distinct from file and attached context tokens. */
 export function serializeMemberMention(member: Pick<MentionCandidate, 'label' | 'meta'>): string {
   const json = JSON.stringify({
@@ -66,14 +69,6 @@ export function parseMemberMention(token: string): MentionCandidate | null {
 
 export function memberMentionLabel(label: string): string {
   return `@${label.replace(/^@/, '')}`;
-}
-
-/** Plain-text previews retain the handle without exposing persistence metadata. */
-export function memberMentionsToText(text: string): string {
-  return text.replace(/@member\[[^\]\s]*\]/g, (token) => {
-    const member = parseMemberMention(token);
-    return member ? memberMentionLabel(member.label) : token;
-  });
 }
 
 export function memberMentionSubtitle(member: Pick<MentionCandidate, 'meta'>): string {

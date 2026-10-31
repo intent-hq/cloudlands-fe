@@ -38,17 +38,24 @@ describe('link-helpers', () => {
       ['src/a.ts#L10', { path: 'src/a.ts', line: 10 }],
       ['src/a.ts#L10-20', { path: 'src/a.ts', line: 10 }],
       ['src/a.ts#L10C5', { path: 'src/a.ts', line: 10, column: 5 }],
+      ['src/a.ts:L3-7', { path: 'src/a.ts', line: 3 }],
+      ['src/a.ts:L3', { path: 'src/a.ts', line: 3 }],
       ['C:/repo/src/a.ts:10', { path: 'C:/repo/src/a.ts', line: 10 }],
     ])('parses %s', (path, expected) => {
       expect(parseFilePathLineSuffix(path)).toEqual(expected);
     });
 
-    it.each(['foo:1', ':1', '#L10', 'C:/repo/src/a.ts', 'src/a.ts:line', 'src/a.ts:10:5:2'])(
-      'leaves ambiguous or invalid path unchanged: %s',
-      (path) => {
-        expect(parseFilePathLineSuffix(path)).toEqual({ path });
-      },
-    );
+    it.each([
+      'foo:1',
+      'foo:L3',
+      ':1',
+      '#L10',
+      'C:/repo/src/a.ts',
+      'src/a.ts:line',
+      'src/a.ts:10:5:2',
+    ])('leaves ambiguous or invalid path unchanged: %s', (path) => {
+      expect(parseFilePathLineSuffix(path)).toEqual({ path });
+    });
   });
 
   describe('parseGitHubIssueOrPrUrl', () => {
