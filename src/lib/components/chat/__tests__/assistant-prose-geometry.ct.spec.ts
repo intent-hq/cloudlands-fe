@@ -176,7 +176,14 @@ for (const theme of ['light', 'dark'] as const) {
           await expect
             .poll(() =>
               row.locator('[data-response-group-motion="animated-height"]').evaluate((wrapper) => {
-                const content = wrapper.firstElementChild as HTMLElement | null;
+                // Measure the element animatedHeight measures: the last nested
+                // height target, else the first child.
+                const targets = wrapper.querySelectorAll<HTMLElement>(
+                  '[data-animated-height-target]',
+                );
+                const content =
+                  targets.item(targets.length - 1) ??
+                  (wrapper.firstElementChild as HTMLElement | null);
                 const target = content?.offsetHeight ?? 0;
                 return Math.abs((wrapper as HTMLElement).offsetHeight - target) <= 1;
               }),
