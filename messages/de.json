@@ -5294,6 +5294,8 @@
   "settings_providerProfileKinds_keyWorks_description": "Ein Testprompt war mit diesem Schlüssel erfolgreich.",
   "settings_providerProfileKinds_keyWorks_label": "Schlüssel funktioniert",
   "settings_providerProfileKinds_logIn_label": "Anmelden",
+  "settings_providerProfileKinds_logInFailed_error": "Die Anmeldung konnte nicht gestartet werden. Versuche es erneut über das ⋯-Menü des Profils → Anmelden.",
+  "settings_providerProfileKinds_logInFolderFailed_error": "Der Ordner {path} konnte nicht erstellt werden. Versuche es erneut über das ⋯-Menü des Profils → Anmelden.",
   "settings_providerProfileKinds_openAiAccessTokens_link": "OpenAI-Anleitung zu Zugriffstoken lesen",
   "settings_providerProfileKinds_pick_description": "Wähle, wie sich dieses Profil anmeldet.",
   "settings_providerProfileKinds_picker_ariaLabel": "Profiltyp",

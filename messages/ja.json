@@ -5294,6 +5294,8 @@
   "settings_providerProfileKinds_keyWorks_description": "このキーでテストプロンプトが成功しました。",
   "settings_providerProfileKinds_keyWorks_label": "キーは有効です",
   "settings_providerProfileKinds_logIn_label": "ログイン",
+  "settings_providerProfileKinds_logInFailed_error": "サインインを開始できませんでした。プロファイルの ⋯ メニュー → ログイン からもう一度お試しください。",
+  "settings_providerProfileKinds_logInFolderFailed_error": "フォルダ {path} を作成できませんでした。プロファイルの ⋯ メニュー → ログイン からもう一度お試しください。",
   "settings_providerProfileKinds_openAiAccessTokens_link": "OpenAI のアクセストークンガイドを読む",
   "settings_providerProfileKinds_pick_description": "このプロファイルのサインイン方法を選びます。",
   "settings_providerProfileKinds_picker_ariaLabel": "プロファイルの種類",

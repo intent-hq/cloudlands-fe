@@ -5294,6 +5294,8 @@
   "settings_providerProfileKinds_keyWorks_description": "Une requête de test a réussi avec cette clé.",
   "settings_providerProfileKinds_keyWorks_label": "La clé fonctionne",
   "settings_providerProfileKinds_logIn_label": "Se connecter",
+  "settings_providerProfileKinds_logInFailed_error": "Impossible de lancer la connexion. Réessayez depuis le menu ⋯ du profil → Se connecter.",
+  "settings_providerProfileKinds_logInFolderFailed_error": "Impossible de créer le dossier {path}. Réessayez depuis le menu ⋯ du profil → Se connecter.",
   "settings_providerProfileKinds_openAiAccessTokens_link": "Lire le guide des jetons d'accès d'OpenAI",
   "settings_providerProfileKinds_pick_description": "Choisissez comment ce profil se connecte.",
   "settings_providerProfileKinds_picker_ariaLabel": "Type de profil",

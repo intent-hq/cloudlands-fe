@@ -5294,6 +5294,8 @@
   "settings_providerProfileKinds_keyWorks_description": "使用此金鑰的測試提示成功。",
   "settings_providerProfileKinds_keyWorks_label": "金鑰可用",
   "settings_providerProfileKinds_logIn_label": "登入",
+  "settings_providerProfileKinds_logInFailed_error": "無法開始登入。請從設定檔的 ⋯ 選單 → 登入 再試一次。",
+  "settings_providerProfileKinds_logInFolderFailed_error": "無法建立資料夾 {path}。請從設定檔的 ⋯ 選單 → 登入 再試一次。",
   "settings_providerProfileKinds_openAiAccessTokens_link": "閱讀 OpenAI 的存取權杖指南",
   "settings_providerProfileKinds_pick_description": "選擇此設定檔的登入方式。",
   "settings_providerProfileKinds_picker_ariaLabel": "設定檔類型",

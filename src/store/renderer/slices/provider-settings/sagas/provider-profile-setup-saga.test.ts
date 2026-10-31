@@ -32,10 +32,13 @@ vi.mock('$features/providers/provider-test-prompt.client', () => ({
 import {
   initialState,
   providerProfileFolderSetupRequested,
+  providerProfileSavedFolderSignInRequested,
+  providerProfileSecretEditRequested,
   providerProfileSecretRetryRequested,
   providerProfileSecretSetupRequested,
   providerProfileSetupDismissed,
   providerProfileSignInRetryRequested,
+  providerProfilesLoaded,
   providerSettingsReducer,
   providerSettingsSessionOpened,
 } from '../provider-settings-slice';
@@ -533,5 +536,108 @@ describe('API key / Token setup', () => {
     await settle();
     expect(mocks.create.mock.calls[0][0]).toMatchObject({ backup: true });
     expect(selectProviderProfileSetups.select(h.state()).s1.phase).toBe('keyRejected');
+  });
+});
+
+describe('Edit: replaced key and saved-folder sign-in', () => {
+  it('saves a replaced key with name/backup, then runs the key check', async () => {
+    const h = harness({ deps: { testPrompt: vi.fn().mockResolvedValueOnce(false) } });
+    task = h.task;
+    const env = [
+      { key: 'ANTHROPIC_API_KEY', kind: 'set' as const, value: 'sk-replaced' },
+      { key: 'ANTHROPIC_AUTH_TOKEN', kind: 'unset' as const },
+      { key: 'CLAUDE_CODE_OAUTH_TOKEN', kind: 'unset' as const },
+    ];
+    h.dispatch(
+      providerProfileSecretEditRequested({
+        setupId: 'e1',
+        profileId: 'p1',
+        name: 'Renamed',
+        backup: true,
+        env,
+      }),
+    );
+    await settle();
+    expect(mocks.update).toHaveBeenCalledWith({
+      profileId: 'p1',
+      name: 'Renamed',
+      backup: true,
+      env,
+    });
+    expect(h.deps.testPrompt).toHaveBeenCalledWith('claude-code@p1');
+    expect(selectProviderProfileSetups.select(h.state()).e1).toMatchObject({
+      phase: 'keyRejected',
+      profileId: 'p1',
+    });
+    expect(JSON.stringify(h.dispatched)).not.toContain('sk-replaced');
+    expect(selectProviderProfileMutations.select(h.state()).e1).toBeUndefined();
+  });
+
+  it('a rejected edit save records the failure and runs no key check', async () => {
+    const h = harness();
+    task = h.task;
+    mocks.update.mockRejectedValueOnce({
+      data: {
+        code: 'invalid-params',
+        fieldErrors: [{ field: 'name', code: 'duplicate', message: 'taken' }],
+      },
+    });
+    h.dispatch(
+      providerProfileSecretEditRequested({
+        setupId: 'e1',
+        profileId: 'p1',
+        env: [{ key: 'CODEX_ACCESS_TOKEN', kind: 'set', value: 'a.b.c' }],
+      }),
+    );
+    await settle();
+    expect(selectProviderProfileSetups.select(h.state()).e1).toMatchObject({
+      phase: 'failed',
+      failure: { kind: 'saveFailed' },
+    });
+    expect(h.deps.testPrompt).not.toHaveBeenCalled();
+  });
+
+  it('signs in to the folder saved on the profile (never a new one)', async () => {
+    const h = harness({ appOwned: false });
+    task = h.task;
+    h.dispatch(
+      providerProfilesLoaded(
+        [savedProfile('p9', 'codex', [{ key: 'CODEX_HOME', kind: 'set', value: '~/.codex-work' }])],
+        1,
+      ),
+    );
+    h.dispatch(providerProfileSavedFolderSignInRequested({ setupId: 'e1', profileId: 'p9' }));
+    await settle();
+    expect(h.log).toEqual([
+      ['createDirectory', '~/.codex-work'],
+      ['openTerminal', 'codex login --device-auth', { CODEX_HOME: '/home/me/.codex-work' }],
+    ]);
+    expect(h.deps.listDirectory).not.toHaveBeenCalled();
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(selectProviderProfileSetups.select(h.state()).e1).toMatchObject({
+      phase: 'waiting',
+      profileId: 'p9',
+      folder: '~/.codex-work',
+      deviceAuth: true,
+    });
+  });
+
+  it('a masked folder (older daemon) fails without opening a terminal', async () => {
+    const h = harness();
+    task = h.task;
+    h.dispatch(
+      providerProfilesLoaded(
+        [
+          savedProfile('p9', 'claude-code', [
+            { key: 'CLAUDE_CONFIG_DIR', kind: 'set', value: '********' },
+          ]),
+        ],
+        1,
+      ),
+    );
+    h.dispatch(providerProfileSavedFolderSignInRequested({ setupId: 'e1', profileId: 'p9' }));
+    await settle();
+    expect(h.log).toEqual([]);
+    expect(selectProviderProfileSetups.select(h.state()).e1.phase).toBe('failed');
   });
 });

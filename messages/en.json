@@ -5294,6 +5294,8 @@
   "settings_providerProfileKinds_keyWorks_description": "A test prompt succeeded with this key.",
   "settings_providerProfileKinds_keyWorks_label": "Key works",
   "settings_providerProfileKinds_logIn_label": "Log In",
+  "settings_providerProfileKinds_logInFailed_error": "Couldn't start the sign-in. Try again from the profile's ⋯ menu → Log In.",
+  "settings_providerProfileKinds_logInFolderFailed_error": "Couldn't create the folder {path}. Try again from the profile's ⋯ menu → Log In.",
   "settings_providerProfileKinds_openAiAccessTokens_link": "Read OpenAI's access token guide",
   "settings_providerProfileKinds_pick_description": "Choose how this profile signs in.",
   "settings_providerProfileKinds_picker_ariaLabel": "Profile type",

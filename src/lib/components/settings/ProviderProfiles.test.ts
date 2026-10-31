@@ -1167,3 +1167,173 @@ describe('Default configuration dialog (§5.54)', () => {
     );
   });
 });
+
+describe('ProviderProfiles row Log In, identity and delete confirmation', () => {
+  const CODEX_FOLDER: ProviderProfile = {
+    ...WORK,
+    env: [
+      { key: 'CODEX_HOME', kind: 'set', value: '~/intent/profiles/codex/work-k3f9' },
+      { key: 'OPENAI_API_KEY', kind: 'unset' },
+    ],
+  };
+  const CLAUDE_FOLDER: ProviderProfile = {
+    ...WORK,
+    id: 'pclaude',
+    providerRef: 'claude-code@pclaude',
+    baseProviderId: 'claude-code',
+    name: 'Work',
+    env: [{ key: 'CLAUDE_CONFIG_DIR', kind: 'set', value: '~/intent/profiles/claude/work-a1b2' }],
+  };
+  const CLAUDE_TOKEN: ProviderProfile = {
+    ...CLAUDE_FOLDER,
+    id: 'ptoken',
+    providerRef: 'claude-code@ptoken',
+    env: [{ key: 'CLAUDE_CODE_OAUTH_TOKEN', kind: 'set', value: '********' }],
+  };
+
+  async function renderRows(profiles: ProviderProfile[], providerId: string) {
+    await seed({ profiles });
+    const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
+    return render(ProviderProfiles, { providerId, providerName: 'P', onEditDefault });
+  }
+
+  async function openActions() {
+    await fireEvent.click(
+      screen.getByRole('button', {
+        name: m.settings_providerProfiles_actions_ariaLabel({ name: 'Work' }),
+      }),
+    );
+    return screen.findByRole('menu');
+  }
+
+  const logInItem = (menu: HTMLElement) =>
+    within(menu).queryByRole('menuitem', { name: m.settings_providerProfileKinds_logIn_label() });
+
+  async function dispatchStore(action: { type: string; payload?: unknown }) {
+    const { store } = await import('$store/renderer/store');
+    (store as unknown as { dispatch(a: unknown): void }).dispatch(action);
+  }
+
+  it('offers Log In on a Codex Different-login row and signs in to the saved folder', async () => {
+    await renderRows([CODEX_FOLDER], 'codex');
+    const item = logInItem(await openActions());
+    expect(item).toBeTruthy();
+    await fireEvent.click(item!);
+    const request = lastOf('providerProfiles/savedFolderSignInRequested');
+    // The saga reads the folder saved on this profile; no new folder is picked.
+    expect(request?.payload).toEqual([
+      { setupId: expect.stringContaining('pwork'), profileId: 'pwork' },
+    ]);
+    expect(lastOf('providerProfiles/folderSetupRequested')).toBeUndefined();
+    // A Log In first stops any earlier sign-in wait for this row.
+    const dismissed = lastOf('providerProfiles/setupDismissed');
+    expect(dismissed?.payload).toEqual([(request!.payload as [{ setupId: string }])[0].setupId]);
+  });
+
+  it('offers Log In on a Claude Different-login row', async () => {
+    await renderRows([CLAUDE_FOLDER], 'claude-code');
+    expect(logInItem(await openActions())).toBeTruthy();
+  });
+
+  it('has no Log In for other kinds or a masked folder from an older daemon', async () => {
+    await renderRows([CLAUDE_TOKEN], 'claude-code');
+    expect(logInItem(await openActions())).toBeNull();
+    cleanup();
+    // WORK's CODEX_HOME is masked: it reads as Advanced.
+    await renderRows([WORK], 'codex');
+    expect(logInItem(await openActions())).toBeNull();
+  });
+
+  it('shows Waiting for sign-in while the row sign-in runs, then rechecks after a timeout', async () => {
+    await renderRows([CODEX_FOLDER], 'codex');
+    await fireEvent.click(logInItem(await openActions())!);
+    const setupId = (
+      lastOf('providerProfiles/savedFolderSignInRequested')!.payload as [{ setupId: string }]
+    )[0].setupId;
+    const { providerProfileSetupChanged } =
+      await import('$store/renderer/slices/provider-settings/provider-settings-slice');
+    await dispatchStore(providerProfileSetupChanged(setupId, { phase: 'waiting' }));
+    const row = screen.getByTestId('provider-profile-row');
+    await waitFor(() =>
+      expect(within(row).getByText(m.settings_providerProfileKinds_waiting_label())).toBeTruthy(),
+    );
+    mocks.dispatched.length = 0;
+    await dispatchStore(providerProfileSetupChanged(setupId, { phase: 'stillWaiting' }));
+    await waitFor(() =>
+      expect(lastOf('providerProfiles/checkRequested')?.payload).toEqual(['pwork']),
+    );
+    expect(lastOf('providerProfiles/setupDismissed')?.payload).toEqual([setupId]);
+  });
+
+  it('reports a folder that could not be created', async () => {
+    await renderRows([CODEX_FOLDER], 'codex');
+    await fireEvent.click(logInItem(await openActions())!);
+    const setupId = (
+      lastOf('providerProfiles/savedFolderSignInRequested')!.payload as [{ setupId: string }]
+    )[0].setupId;
+    const { providerProfileSetupChanged } =
+      await import('$store/renderer/slices/provider-settings/provider-settings-slice');
+    await dispatchStore(
+      providerProfileSetupChanged(setupId, {
+        phase: 'failed',
+        failure: { kind: 'folderFailed', path: '~/intent/profiles/codex/work-k3f9' },
+      }),
+    );
+    await waitFor(() =>
+      expect(mocks.notify.error).toHaveBeenCalledWith(
+        m.settings_providerProfileKinds_logInFolderFailed_error({
+          path: '~/intent/profiles/codex/work-k3f9',
+        }),
+      ),
+    );
+  });
+
+  it('shows Signed in as <email> on a ready Claude row and Signed out when signed out', async () => {
+    await renderRows([CLAUDE_FOLDER], 'claude-code');
+    const { providerProfileIdentityChanged, providerProfileStatusChanged } =
+      await import('$store/renderer/slices/provider-settings/provider-settings-slice');
+    await dispatchStore(providerProfileStatusChanged('pclaude', 'ready'));
+    await dispatchStore(providerProfileIdentityChanged('pclaude', 'work@acme.com'));
+    await waitFor(() =>
+      expect(screen.getByTestId('provider-profile-identity').textContent).toContain(
+        m.settings_providerProfileKinds_signedInAs_label({ email: 'work@acme.com' }),
+      ),
+    );
+    await dispatchStore(providerProfileStatusChanged('pclaude', 'error'));
+    await waitFor(() => expect(screen.queryByTestId('provider-profile-identity')).toBeNull());
+    const row = screen.getByTestId('provider-profile-row');
+    expect(within(row).getByText(m.settings_providerProfileKinds_signedOut_label())).toBeTruthy();
+  });
+
+  it('shows no identity on Codex rows', async () => {
+    await renderRows([CODEX_FOLDER], 'codex');
+    const { providerProfileIdentityChanged, providerProfileStatusChanged } =
+      await import('$store/renderer/slices/provider-settings/provider-settings-slice');
+    await dispatchStore(providerProfileStatusChanged('pwork', 'ready'));
+    await dispatchStore(providerProfileIdentityChanged('pwork', 'me@example.com'));
+    await waitFor(() =>
+      expect(
+        screen.getByTestId('provider-profile-row').querySelector('[data-profile-status]'),
+      ).toHaveProperty('dataset.profileStatus', 'ready'),
+    );
+    expect(screen.queryByTestId('provider-profile-identity')).toBeNull();
+  });
+
+  it('names the folder left on disk when removing a Different-login profile', async () => {
+    await renderRows([CODEX_FOLDER], 'codex');
+    await chooseMenuItem(m.settings_providerProfiles_remove_label());
+    const path = await screen.findByTestId('provider-profile-remove-folder-path');
+    expect(path.textContent).toBe('~/intent/profiles/codex/work-k3f9');
+    expect(mocks.confirm).not.toHaveBeenCalled();
+    expect(lastOf('providerProfiles/deleteRequested')).toBeUndefined();
+    const dialog = screen.getByRole('dialog');
+    await fireEvent.click(
+      within(dialog).getByRole('button', { name: m.settings_providerProfiles_remove_label() }),
+    );
+    await waitFor(() =>
+      expect(lastOf('providerProfiles/deleteRequested')?.payload).toEqual([
+        expect.objectContaining({ profileId: 'pwork' }),
+      ]),
+    );
+  });
+});

@@ -58,6 +58,7 @@ export const initialProfilesState: ProviderProfilesState = {
   defaults: {},
   mutations: createCollection<ProviderProfileMutation, 'id'>('id'),
   setups: {},
+  identity: {},
 };
 
 type Handler<P extends unknown[]> = (
@@ -108,6 +109,9 @@ const onLoaded: Handler<[ProviderProfile[], number, ProviderDefaultConfig[]?]> =
     status: Object.fromEntries(
       profiles.map((profile) => [profile.id, state.status[profile.id] ?? 'configured']),
     ),
+    identity: Object.fromEntries(
+      Object.entries(state.identity ?? {}).filter(([id]) => ids.has(id)),
+    ),
     activation,
     defaults: Object.fromEntries((defaults ?? []).map((d) => [d.baseProviderId, d])),
   };
@@ -152,6 +156,7 @@ const onSucceeded: Handler<[string, ProfileMutationResult]> = (
   let items = state.items;
   const status = { ...state.status };
   const activations = { ...state.activation };
+  const identity = { ...state.identity };
   // An older result than the list already shown must not resurrect stale data.
   if (revision > state.revision) {
     if (profile) {
@@ -162,6 +167,7 @@ const onSucceeded: Handler<[string, ProfileMutationResult]> = (
       items = removeItem(items, deletedProfileId);
       delete status[deletedProfileId];
       delete activations[deletedProfileId];
+      delete identity[deletedProfileId];
     }
   }
   if (profile && activation?.envChanged) {
@@ -176,6 +182,7 @@ const onSucceeded: Handler<[string, ProfileMutationResult]> = (
     ...state,
     items,
     status,
+    identity,
     activation: activations,
     revision: Math.max(state.revision, revision),
     mutations: updateItem(state.mutations, { id: requestId, status: 'success', activation }),
@@ -297,6 +304,16 @@ export const profileHandlers = {
       : { ...state, status: { ...state.status, [profileId]: status } }) as Handler<
     [string, ProviderProfileStatus]
   >,
+  /** A profile's signed-in email from its latest check; `undefined` clears it. */
+  identityChanged: ((state, [profileId, email]) => {
+    const current = state.identity ?? {};
+    if (current[profileId] === email) return state;
+    if (!getItem(state.items, profileId) && email !== undefined) return state;
+    const identity = { ...current };
+    if (email === undefined) delete identity[profileId];
+    else identity[profileId] = email;
+    return { ...state, identity };
+  }) as Handler<[string, string | undefined]>,
   /** Start, or move along, one add-dialog setup (a patch without `phase` keeps it). */
   setupChanged: ((state, [setupId, patch]) => {
     const previous = state.setups[setupId];

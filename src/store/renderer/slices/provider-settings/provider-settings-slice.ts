@@ -474,6 +474,11 @@ export const providerProfileActivationDismissed = createAction<[profileId: strin
   'providerProfiles/activationDismissed',
 );
 
+/** A profile's signed-in account email (Claude `identity`); `undefined` clears it. */
+export const providerProfileIdentityChanged = createAction<
+  [profileId: string, email: string | undefined]
+>('providerProfiles/identityChanged');
+
 // ---------------------------------------------------------------------------
 // Add-dialog setups for the Different login, API key and Token kinds. A setup
 // id doubles as its create request id. Typed secrets are staged like any
@@ -515,6 +520,35 @@ export const providerProfileSecretSetupRequested = createAction(
     envRef: stageProfileEnv(input.env),
   }),
 );
+
+/**
+ * Edit an API key / Token profile whose key was replaced: save the update,
+ * then run the key check. The setup id doubles as the update request id.
+ */
+export const providerProfileSecretEditRequested = createAction(
+  'providerProfiles/secretEditRequested',
+  (input: {
+    setupId: string;
+    profileId: string;
+    name?: string;
+    backup?: boolean;
+    env: EnvEntryWrite[];
+  }) => ({
+    setupId: input.setupId,
+    profileId: input.profileId,
+    ...(input.name !== undefined ? { name: input.name } : {}),
+    ...(input.backup !== undefined ? { backup: input.backup } : {}),
+    envRef: stageProfileEnv(input.env),
+  }),
+);
+
+/**
+ * Sign in to the folder saved on an existing Different-login profile (edit
+ * screen, row ⋯ → Log In): create the folder, open the terminal sign-in, wait.
+ */
+export const providerProfileSavedFolderSignInRequested = createAction<
+  [payload: { setupId: string; profileId: string }]
+>('providerProfiles/savedFolderSignInRequested');
 
 /** After "Key was rejected": save the pasted replacement and check again. */
 export const providerProfileSecretRetryRequested = createAction(
@@ -594,4 +628,7 @@ providerSettingsReducer.with(providerProfileSetupChanged, (state, { payload }) =
 );
 providerSettingsReducer.with(providerProfileSetupDismissed, (state, { payload }) =>
   withProfiles(state, profileHandlers.setupDismissed(state.profiles, payload)),
+);
+providerSettingsReducer.with(providerProfileIdentityChanged, (state, { payload }) =>
+  withProfiles(state, profileHandlers.identityChanged(state.profiles, payload)),
 );

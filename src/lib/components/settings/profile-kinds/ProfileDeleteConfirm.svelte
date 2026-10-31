@@ -36,6 +36,21 @@
           .split(PATH_SLOT)
       : [],
   );
+  // The folder sentence renders in the details slot (to show the path as
+  // code), so point the dialog's accessible description at it.
+  const descriptionId = `provider-profile-remove-folder-${crypto.randomUUID()}`;
+  function describesDialog(node: HTMLElement) {
+    const dialog = node.closest('[role="dialog"], [role="alertdialog"]');
+    if (!dialog) return;
+    const previous = dialog.getAttribute('aria-describedby');
+    dialog.setAttribute('aria-describedby', node.id);
+    return () => {
+      if (dialog.getAttribute('aria-describedby') !== node.id) return;
+      if (previous === null) dialog.removeAttribute('aria-describedby');
+      else dialog.setAttribute('aria-describedby', previous);
+    };
+  }
+
   // Wrap only after a `/`, never at the hyphens inside a folder name.
   const pathSegments = $derived(
     folderPath
@@ -64,6 +79,8 @@
 
 {#snippet folderDescription()}
   <p
+    id={descriptionId}
+    {@attach describesDialog}
     class="type-caption break-words text-muted-foreground"
     data-testid="provider-profile-remove-folder-description"
   >

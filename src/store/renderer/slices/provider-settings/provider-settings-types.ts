@@ -55,6 +55,8 @@ export type ProviderProfilesState = {
   revision: number;
   loadStatus: 'idle' | 'success' | 'failure';
   status: Record<string, ProviderProfileStatus>;
+  /** Signed-in account email per profile (Claude reports `identity`), from its last check. */
+  identity: Record<string, string>;
   /** Last env activation per profile (running processes on earlier settings). */
   activation: Record<string, ProfileActivation>;
   /**

@@ -12,6 +12,12 @@
    * it cannot be moved and nothing can be dropped above it. It shows its saved
    * name, plus a Default pill unless that name is already "Default". The app's
    * default model/provider is not labelled here (Default model owns it).
+   *
+   * A Different-login profile (its folder variable readable, so not an older
+   * daemon's masked read) has ⋯ → Log In: the terminal sign-in on the folder
+   * saved on that profile, tracked as a setup until it settles. Claude rows
+   * show "Signed in as <email>" from the last check's `identity`. Removing a
+   * Different-login profile names the folder that stays on disk.
    */
   import {
     faArrowsRotate,
@@ -20,6 +26,7 @@
     faPen,
     faTrash,
     faTriangleExclamation,
+    faUser,
     faXmark,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -36,6 +43,11 @@
   import type { ProviderProfileStatus } from '$store/renderer/slices/provider-settings/provider-settings-types';
   import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
   import { describeInUse, runningProcessesNotice } from '$features/settings/profile-env-form';
+  import {
+    detectProfileKind,
+    profileProviderFromBaseId,
+    savedFolderPath,
+  } from '$lib/provider-profile-kinds';
   import { onDestroy } from 'svelte';
   import { store as appStore } from '$store/renderer/store';
   import {
@@ -44,12 +56,16 @@
     providerProfileDeleteRequested,
     providerProfileMutationDismissed,
     providerProfileReorderRequested,
+    providerProfileSavedFolderSignInRequested,
+    providerProfileSetupDismissed,
     providerProfilesRequested,
   } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import {
     selectProviderDefaultConfig,
     selectProviderProfileActivationMap,
+    selectProviderProfileIdentityMap,
     selectProviderProfileMutations,
+    selectProviderProfileSetups,
     selectProviderProfilesForBase,
     selectProviderProfilesLoadStatus,
     selectProviderProfileStatusMap,
@@ -64,6 +80,7 @@
   import { selectIsDaemonAppOwned } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import ProviderProfileDialog from './ProviderProfileDialog.svelte';
   import ProviderFastModeMenuItems from './ProviderFastModeMenuItems.svelte';
+  import ProfileDeleteConfirm from './profile-kinds/ProfileDeleteConfirm.svelte';
 
   interface Props {
     providerId: string;
@@ -87,6 +104,10 @@
   const providerLoadingMap$ = selectProviderLoadingMap();
   const appOwned$ = selectIsDaemonAppOwned();
   const fastModeProviders$ = selectFastModeSupportedProviders();
+  const identity$ = selectProviderProfileIdentityMap();
+  const setups$ = selectProviderProfileSetups();
+  // svelte-ignore state_referenced_locally
+  const kindProvider = profileProviderFromBaseId(providerId);
   // Each profile has its own Fast mode / service tier, offered exactly when
   // the base provider's is.
   const offersFastMode = $derived($fastModeProviders$.includes(providerId));
@@ -121,6 +142,60 @@
     return isProviderAuthenticationReady(providerId, status.authenticated) ? 'ready' : 'configured';
   });
   let deleteRequests = $state<Record<string, { profileName: string }>>({});
+  let removing = $state<{ profile: ProviderProfile; folder: string } | undefined>(undefined);
+  let removeConfirmOpen = $state(false);
+
+  /** The folder saved on a Different-login profile; undefined for other kinds or a masked read. */
+  function loginFolder(profile: ProviderProfile): string | undefined {
+    if (!kindProvider || detectProfileKind(kindProvider, profile.env) !== 'differentLogin')
+      return undefined;
+    return savedFolderPath(kindProvider, profile.env);
+  }
+
+  // Row ⋯ → Log In runs as a setup keyed by profile (one per row at a time).
+  const LOG_IN_PREFIX = `profile-row-log-in:${providerId}:`;
+  const logInSetupId = (profileId: string) => `${LOG_IN_PREFIX}${profileId}`;
+  const signingIn = (profileId: string) => {
+    const phase = $setups$[logInSetupId(profileId)]?.phase;
+    return phase === 'openingTerminal' || phase === 'waiting';
+  };
+
+  function logIn(profile: ProviderProfile) {
+    const setupId = logInSetupId(profile.id);
+    // A second Log In restarts the sign-in (stops the previous wait first).
+    appStore.dispatch(providerProfileSetupDismissed(setupId));
+    appStore.dispatch(
+      providerProfileSavedFolderSignInRequested({ setupId, profileId: profile.id }),
+    );
+  }
+
+  $effect(() => {
+    for (const setup of Object.values($setups$)) {
+      if (!setup.id.startsWith(LOG_IN_PREFIX)) continue;
+      const profileId = setup.id.slice(LOG_IN_PREFIX.length);
+      if (setup.phase === 'signedIn') {
+        // The sign-in wait already marked the profile Ready with its account.
+        appStore.dispatch(providerProfileSetupDismissed(setup.id));
+      } else if (setup.phase === 'stillWaiting') {
+        appStore.dispatch(providerProfileSetupDismissed(setup.id));
+        appStore.dispatch(providerProfileCheckRequested(profileId));
+      } else if (setup.phase === 'failed') {
+        appStore.dispatch(providerProfileSetupDismissed(setup.id));
+        const failure = setup.failure;
+        notify.error(
+          failure?.kind === 'folderFailed' && failure.path
+            ? m.settings_providerProfileKinds_logInFolderFailed_error({ path: failure.path })
+            : m.settings_providerProfileKinds_logInFailed_error(),
+        );
+      }
+    }
+  });
+
+  onDestroy(() => {
+    // Leaving Settings stops this row's sign-in waits; the next list rechecks.
+    for (const id of Object.keys(selectProviderProfileSetups.select(appStore.state)))
+      if (id.startsWith(LOG_IN_PREFIX)) appStore.dispatch(providerProfileSetupDismissed(id));
+  });
   let reorderRequests = $state<string[]>([]);
 
   const canReorder = $derived($profiles$.length > 1);
@@ -321,6 +396,12 @@
       });
       return;
     }
+    const folder = loginFolder(profile);
+    if (folder) {
+      removing = { profile, folder };
+      removeConfirmOpen = true;
+      return;
+    }
     const confirmed = await confirm({
       title: m.settings_providerProfiles_removeTitle_label({ name: profile.name }),
       description: m.settings_providerProfiles_remove_description(),
@@ -328,6 +409,10 @@
       destructive: true,
     });
     if (!confirmed) return;
+    requestDelete(profile);
+  }
+
+  function requestDelete(profile: ProviderProfile) {
     const requestId = crypto.randomUUID();
     deleteRequests = { ...deleteRequests, [requestId]: { profileName: profile.name } };
     appStore.dispatch(providerProfileDeleteRequested({ requestId, profileId: profile.id }));
@@ -430,6 +515,10 @@
           {@const activation = $activation$[profile.id]}
           {@const inUseReason = $inUse$[profile.providerRef] ?? null}
           {@const deleting = deletingIds.has(profile.id)}
+          {@const folder = loginFolder(profile)}
+          {@const waitingForSignIn = signingIn(profile.id)}
+          {@const email =
+            kindProvider === 'claude' && status === 'ready' ? $identity$[profile.id] : undefined}
           <!-- svelte-ignore a11y_no_noninteractive_element_interactions (keyboard reordering is on the nested handle) -->
           <li
             class="relative px-3 py-2 transition-colors data-[dragging=true]:opacity-60"
@@ -470,20 +559,44 @@
                     <Fa icon={faGripLines} class="size-3" />
                   </Button>
                 {/if}
-                <span class="truncate type-body text-foreground" title={profile.name}
-                  >{profile.name}</span
-                >
-                {#if profile.backup === true}
-                  <span
-                    class="shrink-0 rounded-full bg-muted px-2 py-0.5 type-caption text-subtle"
-                    data-testid="provider-profile-backup-badge"
-                  >
-                    {m.settings_providerProfiles_backupBadge_label()}
-                  </span>
-                {/if}
+                <div class="min-w-0">
+                  <div class="flex min-w-0 items-center gap-2">
+                    <span class="truncate type-body text-foreground" title={profile.name}
+                      >{profile.name}</span
+                    >
+                    {#if profile.backup === true}
+                      <span
+                        class="shrink-0 rounded-full bg-muted px-2 py-0.5 type-caption text-subtle"
+                        data-testid="provider-profile-backup-badge"
+                      >
+                        {m.settings_providerProfiles_backupBadge_label()}
+                      </span>
+                    {/if}
+                  </div>
+                  {#if email}
+                    <p
+                      class="truncate type-caption text-muted-foreground"
+                      title={email}
+                      data-testid="provider-profile-identity"
+                    >
+                      {m.settings_providerProfileKinds_signedInAs_label({ email })}
+                    </p>
+                  {/if}
+                </div>
               </div>
               <div class="flex shrink-0 items-center gap-2 type-caption">
-                {@render statusLabel(status)}
+                {#if waitingForSignIn}
+                  <span
+                    role="status"
+                    class="flex items-center gap-1 text-subtle"
+                    data-profile-status="signingIn"
+                  >
+                    <IntentMarkLoader size={12} class="text-muted-foreground" />
+                    {m.settings_providerProfileKinds_waiting_label()}
+                  </span>
+                {:else}
+                  {@render statusLabel(status, true)}
+                {/if}
                 <Menu.Root>
                   <Menu.Trigger>
                     {#snippet child({ props })}
@@ -520,6 +633,19 @@
                         </span>
                         {m.settings_providerProfiles_edit_label()}
                       </Menu.Item>
+                      {#if folder}
+                        <Menu.Item
+                          class="cursor-pointer text-foreground"
+                          disabled={status === 'checking'}
+                          onSelect={() => logIn(profile)}
+                          data-testid="provider-profile-row-log-in"
+                        >
+                          <span class="flex size-4 shrink-0 items-center justify-center">
+                            <Fa icon={faUser} class="size-3.5 text-muted-foreground" />
+                          </span>
+                          {m.settings_providerProfileKinds_logIn_label()}
+                        </Menu.Item>
+                      {/if}
                       <Menu.Item
                         class="cursor-pointer text-foreground"
                         disabled={status === 'checking'}
@@ -584,7 +710,21 @@
 
 <ProviderProfileDialog bind:open={dialogOpen} {providerId} {providerName} profile={editing} />
 
-{#snippet statusLabel(status: ProviderProfileStatus)}
+{#if removing}
+  {@const target = removing.profile}
+  <ProfileDeleteConfirm
+    bind:open={removeConfirmOpen}
+    profileName={target.name}
+    folderPath={removing.folder}
+    onConfirm={() => {
+      requestDelete(target);
+      removing = undefined;
+    }}
+    onCancel={() => (removing = undefined)}
+  />
+{/if}
+
+{#snippet statusLabel(status: ProviderProfileStatus, profileRow = false)}
   <span
     role="status"
     class="flex items-center gap-1 {status === 'error' ? 'text-warning-ink' : 'text-subtle'}"
@@ -598,7 +738,9 @@
       {m.settings_providerProfiles_statusReady_label()}
     {:else if status === 'error'}
       <Fa icon={faTriangleExclamation} class="size-3" />
-      {m.settings_providerProfiles_statusError_label()}
+      {profileRow
+        ? m.settings_providerProfileKinds_signedOut_label()
+        : m.settings_providerProfiles_statusError_label()}
     {:else}
       {m.settings_providerProfiles_statusConfigured_label()}
     {/if}

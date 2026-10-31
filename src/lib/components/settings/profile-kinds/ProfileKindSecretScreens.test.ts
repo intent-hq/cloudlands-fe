@@ -163,6 +163,9 @@ describe('profile rows and delete confirmation (mock-up)', () => {
     const segments = [...path.querySelectorAll('span')].map((span) => span.textContent);
     expect(segments).toEqual(['~/', 'intent/', 'profiles/', 'claude/', 'work-account-k3f9']);
     expect(path.querySelectorAll('wbr')).toHaveLength(4);
+    // The path-bearing sentence is the dialog's accessible description.
+    const description = screen.getByTestId('provider-profile-remove-folder-description');
+    expect(screen.getByRole('dialog').getAttribute('aria-describedby')).toBe(description.id);
   });
 
   it('shows Signed in as <email> on ready Claude rows only', () => {

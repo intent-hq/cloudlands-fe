@@ -5294,6 +5294,8 @@
   "settings_providerProfileKinds_keyWorks_description": "使用此密钥的测试提示成功。",
   "settings_providerProfileKinds_keyWorks_label": "密钥可用",
   "settings_providerProfileKinds_logIn_label": "登录",
+  "settings_providerProfileKinds_logInFailed_error": "无法开始登录。请从配置文件的 ⋯ 菜单 → 登录 重试。",
+  "settings_providerProfileKinds_logInFolderFailed_error": "无法创建文件夹 {path}。请从配置文件的 ⋯ 菜单 → 登录 重试。",
   "settings_providerProfileKinds_openAiAccessTokens_link": "阅读 OpenAI 的访问令牌指南",
   "settings_providerProfileKinds_pick_description": "选择此配置文件的登录方式。",
   "settings_providerProfileKinds_picker_ariaLabel": "配置文件类型",

@@ -261,6 +261,13 @@ export const selectProviderProfileMutations = store.createSelector(
     Object.fromEntries(getItems(profilesState(state).mutations).map((item) => [item.id, item])),
 );
 
+const NO_IDENTITY: Record<string, string> = {};
+
+/** Signed-in account email by profile id (Claude profiles that reported `identity`). */
+export const selectProviderProfileIdentityMap = store.createSelector(
+  (state): Record<string, string> => profilesState(state).identity ?? NO_IDENTITY,
+);
+
 const NO_SETUPS: Record<string, ProviderProfileSetup> = {};
 
 /** Add-dialog setups by setup id (Different-login sign-in, key check). */

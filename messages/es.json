@@ -5294,6 +5294,8 @@
   "settings_providerProfileKinds_keyWorks_description": "Una consulta de prueba funcionó con esta clave.",
   "settings_providerProfileKinds_keyWorks_label": "La clave funciona",
   "settings_providerProfileKinds_logIn_label": "Iniciar sesión",
+  "settings_providerProfileKinds_logInFailed_error": "No se pudo iniciar el inicio de sesión. Vuelve a intentarlo desde el menú ⋯ del perfil → Iniciar sesión.",
+  "settings_providerProfileKinds_logInFolderFailed_error": "No se pudo crear la carpeta {path}. Vuelve a intentarlo desde el menú ⋯ del perfil → Iniciar sesión.",
   "settings_providerProfileKinds_openAiAccessTokens_link": "Leer la guía de tokens de acceso de OpenAI",
   "settings_providerProfileKinds_pick_description": "Elige cómo inicia sesión este perfil.",
   "settings_providerProfileKinds_picker_ariaLabel": "Tipo de perfil",

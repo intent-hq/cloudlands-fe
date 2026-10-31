@@ -14,6 +14,9 @@
  *   terminal) or 10 minutes pass ("Still waiting?").
  * - API key / Token: create, then `host.providerTestPrompt` → "Key works" or
  *   "Key was rejected"; a rejected key can be replaced and checked again.
+ * - Edit: a replaced key/token is saved with `providers.profiles.update` and
+ *   checked the same way; a saved Different-login profile signs in to the
+ *   folder saved on it (also row ⋯ → Log In).
  *
  * Typed secrets are staged (provider-profiles-state) and never enter state,
  * actions or logs. Dismissing a setup stops its work; the profile stays saved.
@@ -37,8 +40,11 @@ import {
   buildCreatePayload,
   folderVariableFor,
   loginCommand,
+  MASKED_ENV_VALUE,
   pickUnusedFolder,
   profileFoldersParent,
+  profileProviderFromBaseId,
+  savedFolderPath,
   slugifyProfileName,
   type ProfileProvider,
   type RandomSource,
@@ -47,9 +53,12 @@ import {
   providerProfileCheckRequested,
   providerProfileCreateRequested,
   providerProfileFolderSetupRequested,
+  providerProfileIdentityChanged,
   providerProfileMutationDismissed,
   providerProfileMutationFailed,
   providerProfileMutationSucceeded,
+  providerProfileSavedFolderSignInRequested,
+  providerProfileSecretEditRequested,
   providerProfileSecretRetryRequested,
   providerProfileSecretSetupRequested,
   providerProfileSetupChanged,
@@ -191,8 +200,10 @@ function* waitForSignIn(
       yield* put(
         changed(setupId, { phase: 'signedIn', ...(verdict.email ? { email: verdict.email } : {}) }),
       );
-      if (yield* selectProviderProfile.effect(profile.id))
+      if (yield* selectProviderProfile.effect(profile.id)) {
         yield* put(providerProfileStatusChanged(profile.id, 'ready'));
+        yield* put(providerProfileIdentityChanged(profile.id, verdict.email));
+      }
       const terminal = yield* selectWorkspaceTerminalState.effect(ROOT_WORKSPACE_ID);
       if (terminal.isOpen && terminal.activeTerminalId === terminalId && !terminal.selectedScriptId)
         yield* put(closeTerminalOverlay(ROOT_WORKSPACE_ID));
@@ -343,6 +354,67 @@ function* runSecretSetup(
   yield* call(checkKey, deps, setupId, saved.profile);
 }
 
+function* runSecretEdit(
+  deps: ProviderProfileSetupDeps,
+  action: ReturnType<typeof providerProfileSecretEditRequested>,
+) {
+  const { setupId, profileId, name, backup, envRef } = action.payload;
+  const env = takeEnv(envRef);
+  if (!env) {
+    yield* put(
+      changed(setupId, {
+        phase: 'failed',
+        failure: { kind: 'saveFailed', failure: { kind: 'other' } },
+      }),
+    );
+    return;
+  }
+  yield* put(changed(setupId, { phase: 'saving', profileId, failure: undefined }));
+  yield* put(
+    providerProfileUpdateRequested({
+      requestId: setupId,
+      profileId,
+      env,
+      ...(name !== undefined ? { name } : {}),
+      ...(backup !== undefined ? { backup } : {}),
+    }),
+  );
+  const saved = yield* call(awaitMutation, setupId);
+  if (!saved.profile) {
+    yield* put(
+      changed(setupId, {
+        phase: 'failed',
+        failure: { kind: 'saveFailed', failure: saved.failure ?? { kind: 'other' } },
+      }),
+    );
+    return;
+  }
+  yield* call(checkKey, deps, setupId, saved.profile);
+}
+
+/** Edit screen Sign in, or row ⋯ → Log In: the folder saved on the profile. */
+function* runSavedFolderSignIn(
+  deps: ProviderProfileSetupDeps,
+  action: ReturnType<typeof providerProfileSavedFolderSignInRequested>,
+) {
+  const [{ setupId, profileId }] = action.payload;
+  const profile = yield* selectProviderProfile.effect(profileId);
+  const provider = profile ? profileProviderFromBaseId(profile.baseProviderId) : undefined;
+  const folder = profile && provider ? savedFolderPath(provider, profile.env) : undefined;
+  if (!profile || !provider || !folder || folder === MASKED_ENV_VALUE) {
+    yield* put(
+      changed(setupId, {
+        phase: 'failed',
+        profileId,
+        failure: { kind: 'folderFailed', path: folder ?? '' },
+      }),
+    );
+    return;
+  }
+  yield* put(changed(setupId, { phase: 'openingTerminal', profileId, folder }));
+  yield* call(signIn, deps, setupId, provider, profile, folder);
+}
+
 function* runSecretRetry(
   deps: ProviderProfileSetupDeps,
   action: ReturnType<typeof providerProfileSecretRetryRequested>,
@@ -383,12 +455,16 @@ function* runSignInRetry(
 const setupIdOf = (action: Action): string | undefined => {
   if (action.type === providerProfileFolderSetupRequested.type)
     return (action as ReturnType<typeof providerProfileFolderSetupRequested>).payload[0].setupId;
+  if (action.type === providerProfileSavedFolderSignInRequested.type)
+    return (action as ReturnType<typeof providerProfileSavedFolderSignInRequested>).payload[0]
+      .setupId;
   if (action.type === providerProfileSignInRetryRequested.type)
     return (action as ReturnType<typeof providerProfileSignInRetryRequested>).payload[0];
   return (
     action as
       | ReturnType<typeof providerProfileSecretSetupRequested>
       | ReturnType<typeof providerProfileSecretRetryRequested>
+      | ReturnType<typeof providerProfileSecretEditRequested>
   ).payload.setupId;
 };
 
@@ -421,5 +497,7 @@ export function* providerProfileSetupSaga(
     takeEvery(providerProfileSecretSetupRequested, cancellable(runSecretSetup, deps)),
     takeEvery(providerProfileSecretRetryRequested, cancellable(runSecretRetry, deps)),
     takeEvery(providerProfileSignInRetryRequested, cancellable(runSignInRetry, deps)),
+    takeEvery(providerProfileSecretEditRequested, cancellable(runSecretEdit, deps)),
+    takeEvery(providerProfileSavedFolderSignInRequested, cancellable(runSavedFolderSignIn, deps)),
   ]);
 }
