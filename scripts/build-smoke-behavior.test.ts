@@ -1,5 +1,5 @@
 // @verify-changed-triggers: e2e/build-smoke-helpers.ts, e2e/mock-acp-agent.js
-import { readFileSync, rmSync, mkdtempSync, mkdirSync, symlinkSync } from 'node:fs';
+import { readFileSync, realpathSync, rmSync, mkdtempSync, mkdirSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
@@ -25,7 +25,7 @@ it('passes the separate parent/child fixture through the file actually read by d
 });
 
 it('records only actual worktrees inside the fixture root and rejects sibling or symlink escapes', async () => {
-  const temp = mkdtempSync(join(tmpdir(), 'smoke-worktree-control-'));
+  const temp = realpathSync(mkdtempSync(join(tmpdir(), 'smoke-worktree-control-')));
   const root = join(temp, 'home/intent/workspaces');
   const worktree = join(root, 'child/repo');
   mkdirSync(worktree, { recursive: true });

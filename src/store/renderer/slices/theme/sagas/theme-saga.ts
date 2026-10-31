@@ -86,7 +86,13 @@ function snapshotThemeManager(manager: ThemeManager): ThemeManagerSnapshot {
 }
 
 function* syncWindowTheme(preference: ThemePreference) {
-  if (!isElectron()) return;
+  // Electron's nativeTheme is process-wide. Fixed auxiliary dark appearance
+  // must not change other windows or their OS-theme resolution.
+  if (
+    !isElectron() ||
+    ['dock', 'dock-annotation'].includes(document.documentElement.dataset.auxiliaryWindow ?? '')
+  )
+    return;
   try {
     yield* call(invoke, WINDOW_CHANNELS.SET_THEME, { theme: preference });
   } catch (error) {

@@ -110,17 +110,21 @@ import {
   chatQueuedRetryRecordSet,
   chatLastAttemptedMessageSet,
   chatSendFailed,
+  chatReset,
   initialState as chatInitialState,
   chatStateReducer,
   refreshChatTranscriptRequested,
   sendMessage,
   streamActivityReceived,
   streamStatusReceived,
+  transcriptHydrationFailed,
+  transcriptHydrationStarted,
   transcriptHydrationSettled,
 } from '../chat-state-slice';
 import { selectChatError } from '../chat-state-selectors';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 import { chatSendSaga } from './chat-send-saga';
+import { admitChatMessage } from '$features/agent/chat-submission';
 
 const WS = 'ws-send';
 const AGENT = 'agent-send';
@@ -247,6 +251,16 @@ function harness(
     settleTranscript: (agentId = AGENT) => {
       chatState = chatStateReducer(chatState, transcriptHydrationSettled(agentId));
     },
+    hydration: (
+      action:
+        | ReturnType<typeof transcriptHydrationStarted>
+        | ReturnType<typeof transcriptHydrationSettled>
+        | ReturnType<typeof transcriptHydrationFailed>
+        | ReturnType<typeof chatReset>,
+    ) => {
+      chatState = chatStateReducer(chatState, action);
+      channel.put(action);
+    },
   };
 }
 
@@ -254,6 +268,100 @@ describe('chatSendSaga', () => {
   afterEach(() => {
     vi.clearAllMocks();
     __resetAgentQueueReadServiceForTests();
+  });
+
+  it.each(['failed', 'settled', 'reset'] as const)(
+    'does not strand a first send when history hydration finishes %s during refresh dispatch',
+    async (outcome) => {
+      mocks.send.mockResolvedValue(undefined);
+      const run = harness(session({ messages: [] }));
+      run.hydration(transcriptHydrationStarted(AGENT));
+      const dispatch = run.dispatch.getMockImplementation()!;
+      run.dispatch.mockImplementation((action) => {
+        const result = dispatch(action);
+        if (action.type === refreshChatTranscriptRequested.type) {
+          run.hydration(
+            outcome === 'reset'
+              ? chatReset(AGENT)
+              : outcome === 'failed'
+                ? transcriptHydrationFailed(AGENT)
+                : transcriptHydrationSettled(AGENT),
+          );
+        }
+        return result;
+      });
+      try {
+        run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'First notch reply' }));
+        if (outcome !== 'settled') {
+          await vi.waitFor(() => expect(selectChatError.select(run.state(), AGENT)).toBeTruthy());
+          expect(mocks.send).not.toHaveBeenCalled();
+        } else {
+          await vi.waitFor(() => expect(mocks.send).toHaveBeenCalledTimes(1));
+          expect(mocks.send).toHaveBeenCalledWith(
+            AGENT,
+            'First notch reply',
+            expect.objectContaining({ id: WS }),
+            expect.any(Object),
+          );
+        }
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
+
+  it('rejects a pre-wire submission after history failure and releases the following send', async () => {
+    mocks.send.mockResolvedValue(undefined);
+    const run = harness(session({ messages: [] }), undefined, {
+      id: WS,
+      name: 'Workspace',
+      path: '/repo',
+      myRole: 'owner',
+    } as Workspace);
+    run.hydration(transcriptHydrationStarted(AGENT));
+    const payload = { wsId: WS, text: 'First notch reply' };
+    const admitted = admitChatMessage(
+      {
+        get state() {
+          return run.state();
+        },
+        dispatch: run.dispatch,
+      },
+      AGENT,
+      payload,
+    );
+    expect(admitted).not.toBeNull();
+    try {
+      run.channel.put(
+        sendMessage(AGENT, {
+          ...payload,
+          submission: { scope: admitted!.scope, id: admitted!.submission.id },
+        }),
+      );
+      await settle();
+      expect(mocks.send).not.toHaveBeenCalled();
+      run.hydration(transcriptHydrationFailed(OTHER_AGENT));
+      await settle();
+      expect(selectChatError.select(run.state(), AGENT)).toBeNull();
+      run.hydration(transcriptHydrationFailed(AGENT));
+      await vi.waitFor(() => expect(selectChatError.select(run.state(), AGENT)).toBeTruthy());
+      expect(mocks.send).not.toHaveBeenCalled();
+      expect(mocks.queue).not.toHaveBeenCalled();
+      const entry = run.state().pendingSubmissions.byAgentId[AGENT]!;
+      expect(getItem(entry.tombstones, admitted!.submission.id)?.reason).toBe('rejected');
+      expect(getItem(entry.submissions, admitted!.submission.id)).toBeUndefined();
+      expect(run.dispatch).toHaveBeenCalledWith(
+        chatLastAttemptedMessageSet(AGENT, expect.objectContaining({ text: payload.text })),
+      );
+      run.settleTranscript();
+      run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'Following reply' }));
+      await vi.waitFor(() => expect(mocks.send).toHaveBeenCalledTimes(1));
+      expect(mocks.send.mock.calls[0][1]).toBe('Following reply');
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
   });
 
   it.each([

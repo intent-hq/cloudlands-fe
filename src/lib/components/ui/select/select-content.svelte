@@ -7,7 +7,14 @@
   import { clampSurface, setSurface, useSurface } from '$lib/components/ui/surface-context';
   import { OPTION_LIST_CONTAINER_CLASS } from '$lib/styles/option-list-row';
   import { OVERLAY_VIEWPORT_GUTTER } from '$lib/components/ui/overlay-positioning';
+  import {
+    createOwnedPopupRegistration,
+    getOwnedPopupContext,
+  } from '$lib/components/ui/owned-popup-context';
   import { useDialogPortalTarget } from '$lib/components/ui/dialog';
+
+  const popupOwner = getOwnedPopupContext();
+  const registerOwnedPopup = createOwnedPopupRegistration();
 
   let {
     wrapperId,
@@ -80,7 +87,7 @@
 <!-- i18n-ignore (snippet parameter type annotation, not UI text) -->
 {#snippet staticContentChild({ props }: StaticContentChildProps)}
   {@const contentProps = withoutListboxSemantics(props)}
-  <div {...contentProps} {...wrapperId ? { id: wrapperId } : {}}>
+  <div use:registerOwnedPopup {...contentProps} {...wrapperId ? { id: wrapperId } : {}}>
     {@render contentBody()}
   </div>
 {/snippet}
@@ -89,7 +96,7 @@
 {#snippet contentChild({ props, wrapperProps }: ContentChildProps)}
   {@const contentProps = withoutListboxSemantics(props)}
   <div {...wrapperProps} {...wrapperId ? { id: wrapperId } : {}}>
-    <div {...contentProps}>{@render contentBody()}</div>
+    <div use:registerOwnedPopup {...contentProps}>{@render contentBody()}</div>
   </div>
 {/snippet}
 
@@ -106,7 +113,10 @@
   />
 {:else}
   {@const dialogTarget = portal === undefined && !dropUp ? dialogPortalTarget() : undefined}
-  <SelectPrimitive.Portal disabled={!usePortal && !dialogTarget} to={dialogTarget}>
+  <SelectPrimitive.Portal
+    disabled={!usePortal && !dialogTarget}
+    to={dialogTarget ?? popupOwner?.target()}
+  >
     <SelectPrimitive.Content
       strategy={dialogTarget ? 'absolute' : 'fixed'}
       hideWhenDetached={dialogTarget !== undefined}

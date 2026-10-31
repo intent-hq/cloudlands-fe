@@ -218,9 +218,9 @@ describe('native review through rendered Store, root saga, Live client and contr
     await waitFor(() =>
       expect(fixture.releases).toContainEqual({ id: fixture.captures[0].id, root: nativeRoot }),
     );
-    expect((screen.getByRole('button', { name: 'Create' }) as HTMLButtonElement).disabled).toBe(
-      true,
-    );
+    expect(
+      ((await screen.findByRole('button', { name: 'Create' })) as HTMLButtonElement).disabled,
+    ).toBe(true);
     fixture.captures[1].finish();
     await waitFor(() =>
       expect((screen.getByRole('button', { name: 'Create' }) as HTMLButtonElement).disabled).toBe(

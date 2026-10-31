@@ -27,6 +27,7 @@ files:
   - '!resources/tailcat/**'
   # Speech helper ships via mac.extraResources (speech-helper/), not asar.
   - '!resources/speech-helper/**'
+  - '!resources/dock-helper/**'
   # Keychain helper ships via mac.extraResources (keychain-helper/), not asar.
   - '!resources/keychain-helper/**'
   - '!resources/desktop-helper/**'
@@ -102,6 +103,12 @@ mac:
   # The pre-signed bundle is sealed as-is into the outer app signature.
   signIgnore:
     - 'Resources/keychain-helper/intent-keychain-helper\.app'
+    # Dock composer helpers are signed by the afterPack hook with per-helper
+    # entitlements (microphone for recorder/speech, none for the element
+    # picker); the deep-sign pass would replace them with the full app set.
+    - 'Resources/dock-helper/intent-dock-recorder$'
+    - 'Resources/speech-helper/intent-dock-speech$'
+    - 'Resources/dock-helper/intent-dock-element-pick$'
   # Bundle the macOS speech transcription helper (built by
   # scripts/build-speech-helper.cjs; signed by the afterPack hook).
   # Runtime path: process.resourcesPath/speech-helper/intent-speech-helper
@@ -113,6 +120,8 @@ mac:
     # Runtime Dock icon. Finder and Applications continue to use Assets.car/icon.icns.
     - from: src/assets/icons/app-icon/Icon-1024.png
       to: app-icon.png
+    - from: resources/dock-helper
+      to: dock-helper
     - from: resources/speech-helper
       to: speech-helper
     # Bundle the iCloud-keychain sync helper (built by

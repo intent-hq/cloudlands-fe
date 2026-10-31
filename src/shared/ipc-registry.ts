@@ -407,10 +407,45 @@ export const IPC_CHANNELS = {
     SET_BROWSER_FOCUSED: 'window:set-browser-focused',
     SET_FULL_SCREEN: 'window:set-full-screen',
     GET_FULL_SCREEN: 'window:get-full-screen',
+    SET_DOCK_POINTER_REGION: 'window:set-dock-pointer-region',
+    FOCUS_DOCK: 'window:focus-dock',
+    GET_DOCK_PLACEMENT: 'window:get-dock-placement',
+    UPDATE_DOCK_PLACEMENT: 'window:update-dock-placement',
+    SWITCH_DOCK_BACKEND: 'window:switch-dock-backend',
+    DOCK_BACKEND_SWITCH_FAILED: 'window:dock-backend-switch-failed',
+    DOCK_PLACEMENT_CHANGED: 'window:dock-placement-changed',
+    // Main's cursor poll: { inside, x, y, revision } when the pointer enters or leaves
+    // the dock's interactive regions; backs up hover delivery to the non-key window.
+    DOCK_POINTER_PRESENCE_CHANGED: 'window:dock-pointer-presence-changed',
+    // One-shot from the dock document: hydrated, presence subscribed and first regions
+    // published. Main shows the hidden dock (never focused) only after this.
+    DOCK_RENDERER_READY: 'window:dock-renderer-ready',
+    // Experimental dock Labs setting, owned by main: get → { enabled },
+    // set({ enabled }) → { enabled }, and a { enabled } push to every window.
+    GET_DOCK_LAB: 'window:get-dock-lab',
+    SET_DOCK_LAB: 'window:set-dock-lab',
+    DOCK_LAB_CHANGED: 'window:dock-lab-changed',
     // Renderer → main invoke: focus the next open app window (wraps; skips
     // destroyed, hidden, and HUD pop-out windows; minimized windows are
     // restored) → { cycled: boolean, windowCount: number }
     CYCLE_FOCUS: 'window:cycle-focus',
+  },
+
+  DOCK_EVIDENCE: {
+    BEGIN: 'dock-evidence:begin',
+    CAPTURE: 'dock-evidence:capture',
+    CANCEL: 'dock-evidence:cancel',
+    CONTROL: 'dock-evidence:control',
+    EVENT: 'dock-evidence:event',
+  },
+
+  DOCK_ANNOTATION: {
+    READY: 'dock-annotation:ready',
+    POINTER: 'dock-annotation:pointer',
+    GESTURE: 'dock-annotation:gesture',
+    GET_STILL: 'dock-annotation:get-still',
+    STATE: 'dock-annotation:state',
+    TOOLBAR: 'dock-annotation:toolbar',
   },
 
   // Power (Electron powerMonitor → renderer)
@@ -1121,6 +1156,8 @@ export const IPC_CHANNELS = {
 
 // Event channels that are sent from main to renderer
 export const EVENT_CHANNELS = [
+  IPC_CHANNELS.DOCK_EVIDENCE.EVENT,
+  IPC_CHANNELS.DOCK_ANNOTATION.STATE,
   IPC_CHANNELS.BACKEND.REPOSITORY_CHECKOUT.RETIRED,
   IPC_CHANNELS.BACKEND.REPOSITORY.RETIRED,
   IPC_CHANNELS.BACKEND.REPOSITORY_SELECTION.RETIRED,
@@ -1136,6 +1173,11 @@ export const EVENT_CHANNELS = [
   'event:agent:scroll-to-turn',
   'exchange:update',
   'exchange:autonomous',
+  'window:focus-dock',
+  'window:dock-placement-changed',
+  'window:dock-pointer-presence-changed',
+  'window:dock-lab-changed',
+  'window:dock-backend-switch-failed',
   'workspace:created',
   'workspace:updated',
   'workspace:deleted',

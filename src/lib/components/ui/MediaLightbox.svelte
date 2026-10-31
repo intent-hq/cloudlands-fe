@@ -1,6 +1,10 @@
 <!-- @catalog-exempt: portal-mounted full-screen dialog covered by __tests__/MediaLightbox.test.ts; no catalog fixtures yet -->
 
 <script lang="ts">
+  import {
+    getOwnedPopupContext,
+    createOwnedPopupRegistration,
+  } from '$lib/components/ui/owned-popup-context';
   import type { Snippet } from 'svelte';
   import { fade } from '$lib/motion';
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
@@ -35,10 +39,13 @@
     onCopy,
   }: Props = $props();
 
+  const popupOwner = getOwnedPopupContext();
+  const registerOwnedPopup = createOwnedPopupRegistration(close);
   let dialogElement: HTMLDivElement | null = $state(null);
   let closeButtonElement: HTMLButtonElement | null = $state(null);
 
   function close() {
+    if (!open) return;
     open = false;
     onClose?.();
     if (openerElement?.isConnected) openerElement.focus({ preventScroll: true });
@@ -84,7 +91,7 @@
 </script>
 
 {#if open}
-  <Portal target="body" zIndex={1000}>
+  <Portal target={popupOwner?.target() ?? 'body'} zIndex={1000}>
     <div
       bind:this={dialogElement}
       data-media-lightbox-root
@@ -100,7 +107,7 @@
       tabindex="-1"
       transition:fade={{ tier: 'moderate' }}
     >
-      <div class="absolute right-4 top-4 z-[1002] flex items-center gap-1">
+      <div use:registerOwnedPopup class="absolute right-4 top-4 z-[1002] flex items-center gap-1">
         {#if actions}
           {@render actions()}
         {/if}
@@ -116,7 +123,7 @@
         </Button>
       </div>
 
-      <div class="flex min-h-0 w-full flex-1 items-center justify-center">
+      <div use:registerOwnedPopup class="flex min-h-0 w-full flex-1 items-center justify-center">
         {@render children()}
       </div>
       {#if caption}

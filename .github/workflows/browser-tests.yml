@@ -209,7 +209,33 @@ jobs:
         # which don't change between steps) under a much smaller heap.
         env:
           NODE_OPTIONS: '--max-old-space-size=8192'
-        run: pnpm run test:ct --only-changed=HEAD --pass-with-no-tests --reporter=list
+        run: |
+          set -euo pipefail
+          (
+            # Diagnostics must survive transient probe failures and never fail the build.
+            set +e +o pipefail
+            for field in memory.max memory.high memory.swap.max; do
+              if [ -r "/sys/fs/cgroup/$field" ]; then
+                printf '[mem] cgroup %s=' "$field"
+                cat "/sys/fs/cgroup/$field"
+              fi
+            done
+            while true; do
+              # free reports the host; cgroup files report this runner container.
+              echo "[mem] $(date -u +%H:%M:%S) host $(free -m | awk '/^Mem:/{printf "used=%sMiB free=%sMiB avail=%sMiB", $3, $4, $7}')"
+              for field in memory.current memory.peak memory.events; do
+                if [ -r "/sys/fs/cgroup/$field" ]; then
+                  echo "[mem] cgroup $field (bytes or event counts):"
+                  cat "/sys/fs/cgroup/$field"
+                fi
+              done
+              ps -eo rss,comm --sort=-rss | head -4 | tail -3 | awk '{printf "[mem]   top-rss: %s %dMiB\n", $2, $1/1024}'
+              sleep 15
+            done
+          ) &
+          SAMPLER_PID=$!
+          trap 'CT_BUILD_EXIT=$?; kill "$SAMPLER_PID" 2>/dev/null || true; exit "$CT_BUILD_EXIT"' EXIT
+          pnpm run test:ct --only-changed=HEAD --pass-with-no-tests --reporter=list
       - name: Component tests
         id: tests
         # list for readable logs; html feeds the failure artifact below (it
@@ -503,6 +529,11 @@ jobs:
           pnpm run generate:build-config
           pnpm run generate:ipc-channels
           xvfb-run -a pnpm exec playwright test --config test/fixtures/repository-checkout/playwright.config.ts
+      - name: Companion placement geometry and request schemas
+        # These portable cases exercise production geometry and validation without
+        # launching Electron or synthesizing OS pointer input. Physical placement
+        # and drag cases in the same fixture still require a native desktop.
+        run: pnpm exec playwright test --config test/fixtures/dock-placement-native/playwright.config.ts --grep 'conversation handoff wire:|side conversation geometry:|floating geometry:|floating drop geometry:|conversation resize geometry:'
       - name: Electron monitor document tests
         # Controlled peer proves main/preload/document routing, not provider authority.
         run: |
