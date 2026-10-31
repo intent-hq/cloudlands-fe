@@ -9,6 +9,46 @@ const buildPrUrl = (number: number, fallback?: string) =>
   fallback ?? `https://github.com/${workspaceRepo}/pull/${number}`;
 const getDisplayTitle = (pr: PullRequestInfo) => pr.title;
 
+it('combines submodule PRs with workspace and monitor records without number collisions', () => {
+  const submodulePR = makePR({ url: 'https://github.com/acme/backend/pull/1', isDraft: true });
+  const rows = buildWorkspacePRPresentationModel({
+    workspacePRs: [makePR(), submodulePR],
+    activePR: null,
+    workspaceRepo,
+    buildPrUrl,
+    getDisplayTitle,
+    monitors: [makeMonitor({ repo: 'acme/backend', url: submodulePR.url })],
+    secondaryRoots: [{ repoOwner: 'acme', repoName: 'backend', pullRequests: [submodulePR] }],
+  });
+  expect(rows).toHaveLength(2);
+  expect(rows.map((row) => [row.repo, row.number, row.status])).toEqual([
+    ['acme/backend', 1, 'draft'],
+    ['acme/widgets', 1, 'open'],
+  ]);
+  expect(rows[0].monitorAgentId).toBe('agent-1');
+});
+
+it('keeps root PR identity when the primary workspace has no remote', () => {
+  const rows = buildWorkspacePRPresentationModel({
+    workspacePRs: [],
+    activePR: null,
+    workspaceRepo: undefined,
+    buildPrUrl,
+    getDisplayTitle,
+    monitors: [],
+    secondaryRoots: ['frontend', 'backend'].map((repoName) => ({
+      repoOwner: 'acme',
+      repoName,
+      pullRequests: [makePR({ url: '', isDraft: true })],
+    })),
+  });
+  expect(rows).toHaveLength(2);
+  expect(new Set(rows.map((row) => row.url))).toEqual(
+    new Set(['https://github.com/acme/frontend/pull/1', 'https://github.com/acme/backend/pull/1']),
+  );
+  expect(rows.every((row) => row.status === 'draft')).toBe(true);
+});
+
 function makePR(overrides: Partial<PullRequestInfo> = {}): PullRequestInfo {
   return {
     id: 'pr-1',
@@ -241,7 +281,7 @@ describe('buildWorkspacePRPresentationModel', () => {
     });
 
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ identity: '3', status: 'draft' });
+    expect(rows[0]).toMatchObject({ identity: 'acme/widgets#3', status: 'draft' });
     expect(rows[0].details).toContain('Changes requested');
   });
 
