@@ -1073,8 +1073,11 @@ async function runCheck(check, root, { heldLock = null, output = checkOutputMode
     const collect = (chunk) => {
       captured = (captured + chunk).slice(-CAPTURED_OUTPUT_LIMIT);
     };
-    child.stdout?.on('data', collect);
-    child.stderr?.on('data', collect);
+    for (const stream of [child.stdout, child.stderr]) {
+      // Decode per stream so a multibyte character split across chunks survives.
+      stream?.setEncoding('utf8');
+      stream?.on('data', collect);
+    }
     activeChildren.add(child);
     child.on('error', (error) => {
       activeChildren.delete(child);

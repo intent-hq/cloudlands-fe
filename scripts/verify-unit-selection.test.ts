@@ -169,7 +169,7 @@ describe('practice check output', () => {
   it('does not wait on a grandchild that keeps a captured pipe open', async () => {
     const { root } = fixture();
     const lingering = `const { spawn } = require('node:child_process');
-const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'inherit' });
+const child = spawn(process.execPath, ['-e', 'setInterval(() => process.stdout.write("."), 200); setTimeout(() => process.exit(), 60000)'], { stdio: 'inherit' });
 require('node:fs').writeFileSync('lingering.pid', String(child.pid));
 console.log('FAIL lingering practice output');
 process.exit(3);`;
@@ -187,10 +187,13 @@ process.exit(3);`;
       expect(error).toMatchObject({ exitCode: 3 });
       expect((error as { output?: string }).output).toContain('FAIL lingering practice output');
     } finally {
-      const pid = Number(readFileSync(join(root, 'lingering.pid'), 'utf8'));
-      try {
-        process.kill(pid);
-      } catch {}
+      // The grandchild also exits on EPIPE once its pipe is destroyed.
+      const pidFile = join(root, 'lingering.pid');
+      if (existsSync(pidFile)) {
+        try {
+          process.kill(Number(readFileSync(pidFile, 'utf8')));
+        } catch {}
+      }
     }
   });
 
