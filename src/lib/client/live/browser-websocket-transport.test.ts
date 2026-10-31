@@ -947,6 +947,7 @@ describe('observational node capabilities', () => {
             agentPlatformRouting: 1,
             workspaceMembershipEvents: 1,
             noteTruncatedRead: 1,
+            remoteMachines: 1,
           },
         },
       },
@@ -959,6 +960,7 @@ describe('observational node capabilities', () => {
           agentPlatformRouting: 1,
           workspaceMembershipEvents: 1,
           noteTruncatedRead: 1,
+          remoteMachines: 1,
         },
       },
     });
@@ -989,6 +991,7 @@ describe('observational node capabilities', () => {
             agentNodes: '1',
             workspaceMembershipEvents: true,
             noteTruncatedRead: '1',
+            remoteMachines: '1',
           },
         },
       },
@@ -1001,6 +1004,7 @@ describe('observational node capabilities', () => {
           agentPlatformRouting: 0,
           workspaceMembershipEvents: 0,
           noteTruncatedRead: 0,
+          remoteMachines: 0,
         },
       },
     });
@@ -1038,6 +1042,7 @@ describe('observational node capabilities', () => {
           agentPlatformRouting: 0,
           workspaceMembershipEvents: 0,
           noteTruncatedRead: 0,
+          remoteMachines: 0,
         },
       },
     });
@@ -1262,6 +1267,7 @@ describe('monitor replacement hello admission', () => {
                 agentPlatformRouting: 0,
                 workspaceMembershipEvents: 0,
                 noteTruncatedRead: 0,
+                remoteMachines: 0,
               },
             },
           });
