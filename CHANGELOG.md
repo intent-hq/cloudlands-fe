@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.258.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.258.1...v2.258.2) (2026-10-31)
+
+
+### 🐛 Bug Fixes
+
+* **hardware-console:** return to the workspace from Home on a micro key press ([#3887](https://github.com/intent-hq/cloudlands-fe/issues/3887)) ([18bf414](https://github.com/intent-hq/cloudlands-fe/commit/18bf4142d370e1e31eefcf56f8f0e3a99320b569))
+
 ## [2.258.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.258.0...v2.258.1) (2026-10-31)
 
 
