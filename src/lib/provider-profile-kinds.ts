@@ -105,6 +105,11 @@ export function profileProviderFromBaseId(baseProviderId: string): ProfileProvid
   return undefined;
 }
 
+/** The variable an API key / Token profile saves its secret in. */
+export function secretKeyFor(kind: 'apiKey' | 'token', provider: ProfileProvider): string {
+  return kindKeys(provider, kind).set[0];
+}
+
 /** The variable that picks a provider's account folder. */
 export function folderVariableFor(provider: ProfileProvider): string {
   return FOLDER_VARIABLES[provider];

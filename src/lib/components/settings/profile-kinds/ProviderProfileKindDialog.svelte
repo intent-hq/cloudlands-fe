@@ -422,7 +422,12 @@
       {/snippet}
       {#snippet secondary()}
         {#if !startedFooter.done}
-          <Button variant="ghost-light" disabled={busy} onclick={() => (open = false)}>
+          <!-- Edit (like today's dialog) can be cancelled mid-save; the outcome still toasts. -->
+          <Button
+            variant="ghost-light"
+            disabled={busy && mode === 'add'}
+            onclick={() => (open = false)}
+          >
             {started
               ? m.settings_providerProfileKinds_close_label()
               : m.modals_bulkActionConfirm_cancel_label()}

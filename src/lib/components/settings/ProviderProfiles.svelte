@@ -43,11 +43,7 @@
   import type { ProviderProfileStatus } from '$store/renderer/slices/provider-settings/provider-settings-types';
   import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
   import { describeInUse, runningProcessesNotice } from '$features/settings/profile-env-form';
-  import {
-    detectProfileKind,
-    profileProviderFromBaseId,
-    savedFolderPath,
-  } from '$lib/provider-profile-kinds';
+  import { detectProfileKind, savedFolderPath } from '$lib/provider-profile-kinds';
   import { onDestroy } from 'svelte';
   import { store as appStore } from '$store/renderer/store';
   import {
@@ -79,6 +75,8 @@
   import { checkSingleProviderRequested } from '$store/renderer/slices/agent-availability/agent-availability-slice';
   import { selectIsDaemonAppOwned } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import ProviderProfileDialog from './ProviderProfileDialog.svelte';
+  import ProviderProfileEditDialog from './ProviderProfileEditDialog.svelte';
+  import { profileProviderFromBaseId } from '$lib/provider-profile-kinds';
   import ProviderFastModeMenuItems from './ProviderFastModeMenuItems.svelte';
   import ProfileDeleteConfirm from './profile-kinds/ProfileDeleteConfirm.svelte';
 
@@ -708,7 +706,19 @@
   </section>
 {/if}
 
-<ProviderProfileDialog bind:open={dialogOpen} {providerId} {providerName} profile={editing} />
+{#if editing && kindProvider}
+  <!-- Claude Code and Codex: the matching kind screen (Advanced when nothing matches). -->
+  {#key editing.id}
+    <ProviderProfileEditDialog
+      bind:open={dialogOpen}
+      {providerName}
+      provider={kindProvider}
+      profile={editing}
+    />
+  {/key}
+{:else}
+  <ProviderProfileDialog bind:open={dialogOpen} {providerId} {providerName} profile={editing} />
+{/if}
 
 {#if removing}
   {@const target = removing.profile}
