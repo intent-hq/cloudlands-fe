@@ -397,6 +397,9 @@ export const IPC_CHANNELS = {
     CREATE: 'window:create',
     OPEN_NEW: 'window:open-new',
     SET_THEME: 'window:set-theme',
+    // Renderer → main invoke: mirror the "Translucent window" preference onto
+    // the native macOS window blur ({ enabled: boolean })
+    SET_TRANSLUCENCY: 'window:set-translucency',
     GET_ZOOM_FACTOR: 'window:get-zoom-factor',
     SET_TITLE: 'window:set-title',
     SET_IN_WORKSPACE: 'window:set-in-workspace',

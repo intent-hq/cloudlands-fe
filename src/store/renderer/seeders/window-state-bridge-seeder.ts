@@ -1,6 +1,7 @@
 /**
  * Window workspace-state invoke bridge — forwards `window:set-in-workspace`,
  * `window:set-open-workspace-tabs`, `window:set-theme`, `window:set-title`,
+ * `window:set-translucency`,
  * `window:set-browser-focused`, `window:set-full-screen`,
  * `window:get-full-screen`, `window:cycle-focus`, and `window:close` to the
  * real Electron preload bridge (`window.electronAPI.invoke`) when present.
@@ -42,6 +43,7 @@ const WINDOW_STATE_INVOKE_CHANNELS = [
   IPC_CHANNELS.WINDOW.SET_THEME,
   IPC_CHANNELS.WINDOW.SET_TITLE,
   IPC_CHANNELS.WINDOW.SET_BROWSER_FOCUSED,
+  IPC_CHANNELS.WINDOW.SET_TRANSLUCENCY,
 ] as const;
 
 /** Forward the selected app theme to Electron's registered main-process handler. */
