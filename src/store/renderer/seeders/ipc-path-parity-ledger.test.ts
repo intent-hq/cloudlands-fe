@@ -33,7 +33,12 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 vi.mock('$lib/electron-bridge', async (importOriginal) => importOriginal());
 
 import './index';
-import { getRegisteredMockIpcChannels, mockInvoke } from '$shared/ipc-mock-router';
+import {
+  getRegisteredMockIpcChannels,
+  mockInvoke,
+  registerMockIpcHandler,
+  unregisterMockIpcHandler,
+} from '$shared/ipc-mock-router';
 import {
   collectGroupAliases,
   resolveChannelArgument,
@@ -178,9 +183,13 @@ const sharedChannels = [...mainScan.handled.keys()].filter((c) => rendererChanne
  * Probe whether the seeder for `channel` forwards verbatim to main: stub the
  * preload bridge, invoke with a unique payload, and require the same channel
  * and payload to reach `electronAPI.invoke` and its result to come back.
+ * The payload is frozen (an in-place edit throws) and what reaches main is
+ * compared with an independently built original, so a seeder that drops or
+ * adds a field cannot pass as a forwarder.
  */
 async function forwardsVerbatimToMain(channel: string): Promise<boolean> {
-  const payload = { parityProbe: channel };
+  const payload = Object.freeze({ parityProbe: channel });
+  const original = JSON.stringify({ parityProbe: channel });
   const sentinel = { parityProbeResult: channel };
   const forwarded: unknown[][] = [];
   const bridge = (window as unknown as { electronAPI: { invoke: unknown } }).electronAPI;
@@ -199,7 +208,9 @@ async function forwardsVerbatimToMain(channel: string): Promise<boolean> {
   }
   return (
     result === sentinel &&
-    forwarded.some((args) => args[0] === channel && args.length === 2 && args[1] === payload)
+    forwarded.some(
+      (args) => args[0] === channel && args.length === 2 && JSON.stringify(args[1]) === original,
+    )
   );
 }
 
@@ -249,6 +260,48 @@ describe('IPC path-parity ledger (main handler vs renderer mock-router seeder)',
     ).toEqual([]);
     expect(mainScan.handled.size).toBeGreaterThan(250);
     expect(sharedChannels).toContain('terminal:createWithCommand');
+  });
+
+  it('probe rejects a seeder that edits the payload before forwarding it', async () => {
+    const forward = (channel: string, payload: unknown) =>
+      (
+        window as unknown as { electronAPI: { invoke: (...a: unknown[]) => unknown } }
+      ).electronAPI.invoke(channel, payload);
+    const cases: [string, (payload: Record<string, unknown>) => unknown, boolean][] = [
+      ['parity-probe:verbatim', (payload) => forward('parity-probe:verbatim', payload), true],
+      [
+        'parity-probe:drops-field-in-place',
+        (payload) => {
+          delete payload.parityProbe;
+          return forward('parity-probe:drops-field-in-place', payload);
+        },
+        false,
+      ],
+      [
+        'parity-probe:adds-field-in-place',
+        (payload) => {
+          payload.extra = true;
+          return forward('parity-probe:adds-field-in-place', payload);
+        },
+        false,
+      ],
+      [
+        'parity-probe:forwards-a-reshaped-copy',
+        () => forward('parity-probe:forwards-a-reshaped-copy', {}),
+        false,
+      ],
+    ];
+    try {
+      for (const [channel, handler] of cases) {
+        registerMockIpcHandler(channel, (payload) => handler(payload as Record<string, unknown>));
+      }
+      const verdicts = [];
+      for (const [channel] of cases)
+        verdicts.push([channel, await forwardsVerbatimToMain(channel)]);
+      expect(verdicts).toEqual(cases.map(([channel, , expected]) => [channel, expected]));
+    } finally {
+      for (const [channel] of cases) unregisterMockIpcHandler(channel);
+    }
   });
 
   it('probe sanity: detects known verbatim forwarders', () => {
