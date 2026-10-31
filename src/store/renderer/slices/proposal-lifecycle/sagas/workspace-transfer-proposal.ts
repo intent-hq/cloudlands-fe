@@ -85,6 +85,7 @@ export function* applyWorkspaceTransferProposal(
       proposalId,
       archiveSource: true,
       restartAgents: false,
+      openTarget: true,
     },
   );
   if (!finalized.success) throw new Error(finalized.error || m.workspace_transfer_unknown_error());

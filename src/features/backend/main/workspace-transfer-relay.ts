@@ -67,6 +67,12 @@ export interface TransferRelayDeps {
   /** True when the session-owning window no longer exists (closed/destroyed),
    * releasing its session for takeover/cleanup by other windows. */
   isOwnerGone(ownerId: number): boolean;
+  /**
+   * Open (or focus) a window for the target backend and show the transferred
+   * workspace there. Called after a successful finalize that asked for it;
+   * failures are logged, never surfaced as a finalize failure.
+   */
+  openTargetWorkspace?(connectionId: string, workspaceId: string): Promise<void>;
   logger: {
     info(msg: string, meta?: Record<string, unknown>): void;
     warn(msg: string, meta?: Record<string, unknown>): void;
@@ -119,6 +125,8 @@ interface RelaySession {
   /** Set while chunks are staging on the target (cleared after commit). */
   importId?: string;
   targetConnectionId?: string;
+  /** The imported workspace's id on the target (from `workspace.import.commit`). */
+  targetWorkspaceId?: string;
   interruptedAgents: string[];
   committed: boolean;
   cancelled: boolean;
@@ -523,7 +531,10 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
           chunksTotal: ready.totalChunks,
           chunksDone: ready.totalChunks,
         });
-        const commit = await target.request<{ interruptedAgents?: string[] }>(
+        const commit = await target.request<{
+          workspace?: { id?: unknown };
+          interruptedAgents?: string[];
+        }>(
           'workspace.import.commit',
           { importId: begin.importId },
           { timeoutMs: COMMIT_TIMEOUT_MS },
@@ -540,6 +551,8 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
           throw new Error('cancelled');
         }
         current.committed = true;
+        current.targetWorkspaceId =
+          typeof commit.workspace?.id === 'string' ? commit.workspace.id : workspaceId;
         current.interruptedAgents = Array.isArray(commit.interruptedAgents)
           ? commit.interruptedAgents
           : [];
@@ -630,6 +643,20 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
     }
   }
 
+  /** Fire-and-forget: the source is already settled, so opening the target
+   * must neither delay nor fail the finalize reply. */
+  function openTargetWorkspace(current: RelaySession): void {
+    const connectionId = current.targetConnectionId;
+    const workspaceId = current.targetWorkspaceId;
+    if (!connectionId || !workspaceId || !deps.openTargetWorkspace) return;
+    void deps.openTargetWorkspace(connectionId, workspaceId).catch((error: unknown) => {
+      deps.logger.warn('Could not open the transferred workspace on the target', {
+        workspaceId,
+        error: errText(error),
+      });
+    });
+  }
+
   async function finalize(
     params: TransferFinalizeParams,
     ownerId: number,
@@ -709,6 +736,7 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
       }
     }
     if (session === current) session = null;
+    if (params.openTarget) openTargetWorkspace(current);
     return { success: true, ...(resumeFailed.length > 0 ? { resumeFailed } : {}) };
   }
 

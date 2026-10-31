@@ -840,11 +840,11 @@ describe('workspace transfer proposals', () => {
         ],
         [
           'transfer:finalize',
-          { proposalId: 'transfer-p', archiveSource: true, restartAgents: false },
+          { proposalId: 'transfer-p', archiveSource: true, restartAgents: false, openTarget: true },
         ],
         [
           'transfer:finalize',
-          { proposalId: 'transfer-p', archiveSource: true, restartAgents: false },
+          { proposalId: 'transfer-p', archiveSource: true, restartAgents: false, openTarget: true },
         ],
       ]);
       await h.run();

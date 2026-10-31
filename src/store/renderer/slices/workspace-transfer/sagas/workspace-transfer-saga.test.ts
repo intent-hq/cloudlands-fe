@@ -242,7 +242,7 @@ describe('workspaceTransferSaga — steps 3–4', () => {
     h.task.cancel();
   });
 
-  it('finalize sends archive/restart flags, closes the modal, and opens the target when asked', async () => {
+  it('finalize sends archive/restart flags, closes the modal, and asks main to open the target workspace', async () => {
     mocks.invoke.mockResolvedValue({ success: true });
     let state = workspaceTransferReducer(
       confirmLoadedState({ kind: 'server', connectionId: 'conn-1' }),
@@ -262,14 +262,40 @@ describe('workspaceTransferSaga — steps 3–4', () => {
       expect.objectContaining({
         archiveSource: true,
         restartAgents: false,
+        openTarget: true,
         finalStatusMessage: expect.stringContaining('devbox'),
       }),
     );
     expect(h.dispatch).toHaveBeenCalledWith(closeTransferModal());
+    // Main owns opening the target window + workspace; the renderer no longer
+    // opens the bare connection itself.
     const openAction = h.dispatch.mock.calls
       .map(([action]) => action)
       .find((action) => action.type === openConnectionRequested('conn-1').type);
-    expect(openAction?.payload).toEqual(['conn-1']);
+    expect(openAction).toBeUndefined();
+    h.task.cancel();
+  });
+
+  it('finalize without "open target" does not ask main to open the target', async () => {
+    mocks.invoke.mockResolvedValue({ success: true });
+    let state = workspaceTransferReducer(
+      confirmLoadedState({ kind: 'server', connectionId: 'conn-1' }),
+      transferStartRequested(),
+    );
+    state = workspaceTransferReducer(
+      state,
+      transferRunSucceeded({ interruptedAgents: [], downloadFilePath: null }),
+    );
+    const h = harness(state);
+
+    h.channel.put(transferFinalizeRequested({ openTarget: false }));
+    await settle();
+
+    const params = mocks.invoke.mock.calls.find(
+      ([channel]) => channel === 'transfer:finalize',
+    )?.[1];
+    expect(params).toBeDefined();
+    expect(params).not.toHaveProperty('openTarget');
     h.task.cancel();
   });
 

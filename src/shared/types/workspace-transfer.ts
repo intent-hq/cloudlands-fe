@@ -91,6 +91,11 @@ export interface TransferFinalizeParams {
    * the step-3 "restart in-flight agents" toggle.
    */
   restartAgents?: boolean;
+  /**
+   * Server destination: after a successful finalize, open or focus a window
+   * for the target backend and show the transferred workspace there.
+   */
+  openTarget?: boolean;
 }
 
 /** `transfer:finalize` result. */

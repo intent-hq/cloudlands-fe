@@ -29,7 +29,6 @@ import type {
   TransferStartResult,
 } from '$shared/types/workspace-transfer';
 import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
-import { openConnectionRequested } from '../../connections/connections-slice';
 import {
   closeTransferModal,
   transferFinalizeFailed,
@@ -172,7 +171,8 @@ function* resolveDestinationLabel(): SagaGenerator<string> {
   );
 }
 
-/** Step 4: settle the source, optionally resume target agents + open target. */
+/** Step 4: settle the source, optionally resume target agents + open the
+ * transferred workspace on the target. */
 function* finalizeTransfer(
   action: ReturnType<typeof transferFinalizeRequested>,
 ): SagaGenerator<void> {
@@ -194,6 +194,9 @@ function* finalizeTransfer(
       // leaves the workspace in place, so the flag is forced off there.
       archiveSource: destination?.kind === 'server' ? archiveSource : false,
       restartAgents: destination?.kind === 'server' ? restartAgents : false,
+      // Main opens/focuses the target backend's window and shows the
+      // transferred workspace there once the source is settled.
+      ...(openTarget && destination?.kind === 'server' ? { openTarget: true } : {}),
       ...(finalStatusMessage ? { finalStatusMessage } : {}),
     });
     if (!result.success) {
@@ -209,9 +212,6 @@ function* finalizeTransfer(
       yield* call(showResumeFailedToast, resumeFailed.length);
     }
     yield* put(closeTransferModal());
-    if (openTarget && destination?.kind === 'server') {
-      yield* put(openConnectionRequested(destination.connectionId));
-    }
   } catch (error) {
     logger.error('transfer:finalize failed', { error });
     yield* put(transferFinalizeFailed(toMessage(error)));
