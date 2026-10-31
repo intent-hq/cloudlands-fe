@@ -1039,19 +1039,46 @@ function expectCameraInterpolation(transition: Awaited<ReturnType<typeof recordT
   ).toBe(true);
   expect(transition.cameraStages.length).toBeGreaterThan(0);
   for (const stage of transition.cameraStages) {
+    // Include the geometry-origin rebase and use this camera stage's own endpoints.
+    // Sampled frames land wherever a loaded runner schedules them, and the eased camera
+    // crosses its middle in a few dozen milliseconds, so prove interpolation from every
+    // sample instead of requiring one inside a fixed progress window (intent-hq/intent#8188):
+    // each pose lies on the straight path between the endpoints, and at least one is
+    // strictly between them.
+    const poses = stage.frames.map((frame) => ({
+      elapsedMs: frame.elapsedMs,
+      ...cameraPathPosition(stage.before, frame, stage.after),
+    }));
+    const diagnostics = JSON.stringify({
+      before: stage.before.cameraPose,
+      afterCamera: stage.after.cameraPose,
+      cameraFrames: stage.frames.map(({ elapsedMs, cameraPose }) => ({ elapsedMs, cameraPose })),
+      poses,
+    });
+    for (const pose of poses) {
+      expect(pose.progress, diagnostics).toBeGreaterThanOrEqual(-0.02);
+      expect(pose.progress, diagnostics).toBeLessThanOrEqual(1.02);
+      expect(pose.offPath, diagnostics).toBeLessThanOrEqual(0.02);
+    }
     expect(
-      stage.frames.some((frame) => {
-        // Include the geometry-origin rebase and use this camera stage's own endpoints.
-        const progress = cameraProgress(stage.before, frame, stage.after);
-        return progress > 0.15 && progress < 0.85;
-      }),
-      JSON.stringify({
-        before: stage.before.cameraPose,
-        afterCamera: stage.after.cameraPose,
-        cameraFrames: stage.frames.map(({ elapsedMs, cameraPose }) => ({ elapsedMs, cameraPose })),
-      }),
+      poses.some((pose) => pose.progress > 0.001 && pose.progress < 0.999),
+      diagnostics,
     ).toBe(true);
   }
+}
+
+/** Progress along, and distance off, the straight start-to-end pose path, both relative to its length. */
+function cameraPathPosition(start: Frame, current: Frame, end: Frame) {
+  const from = cameraMatrix(start);
+  const at = cameraMatrix(current);
+  const to = cameraMatrix(end);
+  const delta = to.map((value, index) => value - from[index]);
+  const length = Math.hypot(...delta);
+  const progress = cameraProgress(start, current, end);
+  const offPath =
+    Math.hypot(...at.map((value, index) => value - (from[index] + progress * delta[index]))) /
+    length;
+  return { progress, offPath };
 }
 
 test('animates real clicks by default without a motion query', async ({ page }) => {
