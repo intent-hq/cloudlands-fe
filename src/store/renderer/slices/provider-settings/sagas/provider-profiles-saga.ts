@@ -302,7 +302,6 @@ function* mutationLoop(deps: ProviderProfilesSagaDeps) {
       providerProfileCreateRequested,
       providerProfileUpdateRequested,
       providerProfileDeleteRequested,
-      providerProfileIdentityChanged,
       providerProfileReorderRequested,
       providerDefaultUpdateRequested,
     ],

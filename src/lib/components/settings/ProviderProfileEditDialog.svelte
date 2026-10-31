@@ -227,6 +227,8 @@
       setup?.phase === 'checkingKey' ||
       (activeRequestId !== null && $mutations$[activeRequestId]?.status === 'pending'),
   );
+  /** A replaced key reports its save and check only here, so it can't be cancelled. */
+  const closeLocked = $derived(setup?.phase === 'saving' || setup?.phase === 'checkingKey');
 
   /** The screen's edits for `buildUpdateEnv` (an untouched key is `keep`). */
   function screenEdits(): ProfileKindEdits {
@@ -344,6 +346,7 @@
   {signIn}
   nameError={errors.name}
   {busy}
+  {closeLocked}
   bind:secret
   secretSaved={facts.secretSaved}
   bind:replacingSecret

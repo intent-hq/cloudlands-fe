@@ -74,6 +74,11 @@
     nameError?: string;
     setupError?: ProfileSetupError;
     busy?: boolean;
+    /**
+     * Keep the dialog open (no Cancel, close button or Escape) while a step
+     * whose outcome only this dialog reports is running. Defaults to busy add.
+     */
+    closeLocked?: boolean;
     /** API key / Token: the typed secret (never a saved value). */
     secret?: string;
     /** Edit: the profile has a saved key or token. */
@@ -121,6 +126,7 @@
     nameError,
     setupError = $bindable(),
     busy = false,
+    closeLocked,
     secret = $bindable(''),
     secretSaved = false,
     replacingSecret = $bindable(false),
@@ -157,6 +163,7 @@
   /** After Create & sign in the add form is locked: the profile is saved. */
   const started = $derived(mode === 'add' && (signIn.status !== 'idle' || !!setupError));
   const fieldsDisabled = $derived(busy || started);
+  const lockClose = $derived(closeLocked ?? (busy && mode === 'add'));
   /** After "Key was rejected" the user can paste another key and try again. */
   const secretDisabled = $derived(busy || (started && signIn.status !== 'keyRejected'));
 
@@ -309,6 +316,8 @@
   {title}
   {description}
   dismissOnInteractOutside={false}
+  showCloseButton={!lockClose}
+  escapeKeydownBehavior={lockClose ? 'ignore' : 'close'}
   onSubmit={submit}
 >
   {#if picking}
@@ -422,12 +431,8 @@
       {/snippet}
       {#snippet secondary()}
         {#if !startedFooter.done}
-          <!-- Edit (like today's dialog) can be cancelled mid-save; the outcome still toasts. -->
-          <Button
-            variant="ghost-light"
-            disabled={busy && mode === 'add'}
-            onclick={() => (open = false)}
-          >
+          <!-- A plain edit can be cancelled mid-save (the outcome still toasts); a key save cannot. -->
+          <Button variant="ghost-light" disabled={lockClose} onclick={() => (open = false)}>
             {started
               ? m.settings_providerProfileKinds_close_label()
               : m.modals_bulkActionConfirm_cancel_label()}

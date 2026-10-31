@@ -170,15 +170,22 @@ const changed = (setupId: string, patch: Parameters<typeof providerProfileSetupC
  * (the setup records the outcome). Returns the saved profile or the failure.
  */
 function* awaitMutation(requestId: string) {
-  while (true) {
-    const settled = yield* take([providerProfileMutationSucceeded, providerProfileMutationFailed]);
-    if (settled.payload[0] !== requestId) continue;
-    yield* put(providerProfileMutationDismissed(requestId));
-    if (settled.type === providerProfileMutationSucceeded.type) {
-      const [, result] = (settled as ReturnType<typeof providerProfileMutationSucceeded>).payload;
-      return { profile: result.profile as ProviderProfile | undefined };
+  try {
+    while (true) {
+      const settled = yield* take([
+        providerProfileMutationSucceeded,
+        providerProfileMutationFailed,
+      ]);
+      if (settled.payload[0] !== requestId) continue;
+      if (settled.type === providerProfileMutationSucceeded.type) {
+        const [, result] = (settled as ReturnType<typeof providerProfileMutationSucceeded>).payload;
+        return { profile: result.profile as ProviderProfile | undefined };
+      }
+      return { failure: (settled as ReturnType<typeof providerProfileMutationFailed>).payload[1] };
     }
-    return { failure: (settled as ReturnType<typeof providerProfileMutationFailed>).payload[1] };
+  } finally {
+    // Also when the setup is dismissed mid-save, so the record never lingers.
+    yield* put(providerProfileMutationDismissed(requestId));
   }
 }
 
@@ -192,6 +199,11 @@ function* waitForSignIn(
   const startedAt = deps.now();
   while (true) {
     yield* delay(SIGN_IN_POLL_MS);
+    if (!(yield* selectProviderProfile.effect(profile.id))) {
+      // The profile was removed while waiting: stop polling and drop the setup.
+      yield* put(providerProfileSetupDismissed(setupId));
+      return;
+    }
     let verdict: { authenticated?: boolean; email?: string } = {};
     try {
       verdict = yield* call([deps, deps.authStatus], profile.providerRef);
@@ -424,13 +436,26 @@ function* runSecretRetry(
   const { setupId, envRef } = action.payload;
   const env = takeEnv(envRef);
   const setup = (yield* selectProviderProfileSetups.effect())[setupId];
-  if (!env || !setup?.profileId) return;
+  if (!env || !setup?.profileId) {
+    yield* put(
+      changed(setupId, {
+        phase: 'failed',
+        failure: { kind: 'saveFailed', failure: { kind: 'other' } },
+      }),
+    );
+    return;
+  }
   yield* put(changed(setupId, { phase: 'checkingKey', failure: undefined }));
   const requestId = `${setupId}:retry:${deps.now()}`;
   yield* put(providerProfileUpdateRequested({ requestId, profileId: setup.profileId, env }));
   const saved = yield* call(awaitMutation, requestId);
   if (!saved.profile) {
-    yield* put(changed(setupId, { phase: 'keyRejected' }));
+    yield* put(
+      changed(setupId, {
+        phase: 'failed',
+        failure: { kind: 'saveFailed', failure: saved.failure ?? { kind: 'other' } },
+      }),
+    );
     return;
   }
   yield* call(checkKey, deps, setupId, saved.profile);
@@ -444,12 +469,7 @@ function* runSignInRetry(
   const setup = (yield* selectProviderProfileSetups.effect())[setupId];
   if (!setup?.profileId || !setup.folder) return;
   const profile = yield* selectProviderProfile.effect(setup.profileId);
-  const provider: ProfileProvider | undefined =
-    profile?.baseProviderId === 'claude-code'
-      ? 'claude'
-      : profile?.baseProviderId === 'codex'
-        ? 'codex'
-        : undefined;
+  const provider = profile ? profileProviderFromBaseId(profile.baseProviderId) : undefined;
   if (!profile || !provider) return;
   yield* call(signIn, deps, setupId, provider, profile, setup.folder);
 }

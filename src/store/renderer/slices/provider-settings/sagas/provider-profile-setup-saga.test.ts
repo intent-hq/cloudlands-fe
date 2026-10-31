@@ -460,6 +460,29 @@ describe('Different login setup', () => {
     expect(h.deps.authStatus).not.toHaveBeenCalled();
     expect(selectProviderProfileSetups.select(h.state()).s1).toBeUndefined();
   });
+
+  it('stops waiting and drops the setup when the profile is removed mid-wait', async () => {
+    const h = harness();
+    task = h.task;
+    h.dispatch(
+      providerProfilesLoaded(
+        [
+          savedProfile('p9', 'claude-code', [
+            { key: 'CLAUDE_CONFIG_DIR', kind: 'set', value: '~/intent/profiles/claude/w-1' },
+          ]),
+        ],
+        1,
+      ),
+    );
+    h.dispatch(providerProfileSavedFolderSignInRequested({ setupId: 'e1', profileId: 'p9' }));
+    await settle();
+    expect(selectProviderProfileSetups.select(h.state()).e1.phase).toBe('waiting');
+    h.dispatch(providerProfilesLoaded([], 2));
+    await vi.advanceTimersByTimeAsync(SIGN_IN_POLL_MS * 4);
+    await settle();
+    expect(h.deps.authStatus).not.toHaveBeenCalled();
+    expect(selectProviderProfileSetups.select(h.state()).e1).toBeUndefined();
+  });
 });
 
 describe('API key / Token setup', () => {
@@ -521,6 +544,36 @@ describe('API key / Token setup', () => {
     expect(JSON.stringify(h.dispatched)).not.toContain('sk-new');
   });
 
+  it('a failed replacement save reports a save failure, not Key was rejected', async () => {
+    const h = harness({ deps: { testPrompt: vi.fn().mockResolvedValueOnce(false) } });
+    task = h.task;
+    h.dispatch(
+      providerProfileSecretSetupRequested({
+        setupId: 's1',
+        baseProviderId: 'claude-code',
+        name: 'Key',
+        backup: false,
+        env: claudeKeyEnv,
+      }),
+    );
+    await settle();
+    expect(selectProviderProfileSetups.select(h.state()).s1.phase).toBe('keyRejected');
+    mocks.update.mockRejectedValueOnce(new Error('network down'));
+    h.dispatch(
+      providerProfileSecretRetryRequested({
+        setupId: 's1',
+        env: [{ key: 'ANTHROPIC_API_KEY', kind: 'set', value: 'sk-new' }],
+      }),
+    );
+    await settle();
+    expect(selectProviderProfileSetups.select(h.state()).s1).toMatchObject({
+      phase: 'failed',
+      failure: { kind: 'saveFailed' },
+    });
+    expect(h.deps.testPrompt).toHaveBeenCalledTimes(1);
+    expect(Object.keys(selectProviderProfileMutations.select(h.state()))).toHaveLength(0);
+  });
+
   it('a test prompt that throws reads as Key was rejected', async () => {
     const h = harness({ deps: { testPrompt: vi.fn().mockRejectedValue(new Error('gone')) } });
     task = h.task;
@@ -571,6 +624,28 @@ describe('Edit: replaced key and saved-folder sign-in', () => {
     });
     expect(JSON.stringify(h.dispatched)).not.toContain('sk-replaced');
     expect(selectProviderProfileMutations.select(h.state()).e1).toBeUndefined();
+  });
+
+  it('dismissing a replaced-key edit mid-save leaves no mutation record behind', async () => {
+    const h = harness();
+    task = h.task;
+    let finish: (value: unknown) => void = () => {};
+    mocks.update.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+    h.dispatch(
+      providerProfileSecretEditRequested({
+        setupId: 'e1',
+        profileId: 'p1',
+        env: [{ key: 'ANTHROPIC_API_KEY', kind: 'set', value: 'sk-replaced' }],
+      }),
+    );
+    await settle();
+    expect(selectProviderProfileMutations.select(h.state()).e1).toBeDefined();
+    h.dispatch(providerProfileSetupDismissed('e1'));
+    finish({ profile: savedProfile('p1', 'claude-code', []), revision: 3 });
+    await settle();
+    expect(selectProviderProfileMutations.select(h.state()).e1).toBeUndefined();
+    expect(selectProviderProfileSetups.select(h.state()).e1).toBeUndefined();
+    expect(h.deps.testPrompt).not.toHaveBeenCalled();
   });
 
   it('a rejected edit save records the failure and runs no key check', async () => {

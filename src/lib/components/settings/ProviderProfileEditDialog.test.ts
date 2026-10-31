@@ -278,6 +278,29 @@ describe('ProviderProfileEditDialog: saving', () => {
     );
   });
 
+  it('a replaced-key save cannot be cancelled until its check settles', async () => {
+    await openEdit(CLAUDE_KEY);
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.settings_providerProfileKinds_replace_label() }),
+    );
+    await fireEvent.input(screen.getByTestId('provider-profile-secret-input'), {
+      target: { value: 'sk-ant-new' },
+    });
+    await save();
+    const { providerProfileSecretEditRequested, providerProfileSetupChanged } = await slice();
+    const setupId = lastOf(providerProfileSecretEditRequested.type)!.payload.setupId;
+    const cancel = () =>
+      screen.getByRole('button', { name: m.modals_bulkActionConfirm_cancel_label() });
+    for (const phase of ['saving', 'checkingKey'] as const) {
+      await dispatch(providerProfileSetupChanged(setupId, { phase, profileId: 'p1' }));
+      expect((cancel() as HTMLButtonElement).disabled).toBe(true);
+      await fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+      expect(screen.getByTestId('provider-profile-kind-details')).toBeTruthy();
+    }
+    await dispatch(providerProfileSetupChanged(setupId, { phase: 'keyRejected' }));
+    expect((cancel() as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it('an empty replacement is blocked inline', async () => {
     await openEdit(CODEX_TOKEN);
     await fireEvent.click(
