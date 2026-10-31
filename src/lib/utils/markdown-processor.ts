@@ -11,7 +11,9 @@ import {
   workspaceFileImageUrlToIntentFileUrl,
   workspaceFileMediaUrlToIntentFileUrl,
 } from './workspace-file-image';
+import { readMentionChip } from '$lib/services/mentions/chip';
 import { mentionElement, scanMentions, toPromptToken } from '$lib/services/mentions/registry';
+import type { MentionType } from '$lib/services/mentions/types';
 import { NotesPrimitivesSerializer } from './notes-primitives-serializer';
 import type { MarkdownWorkerResponse } from './markdown-worker';
 import { decodeDiffContent } from './diff-patch-utils';
@@ -1065,26 +1067,16 @@ export function processHTMLToMarkdown(
         } else if (mathSource) {
           result += mathSource;
         } else if (childEl.tagName === 'SPAN') {
-          if (childEl.hasAttribute('data-mention')) {
+          const chip = readMentionChip(childEl);
+          if (chip) {
             // Preserve canonical @-token using mention metadata
-            const type = childEl.getAttribute('data-type') || '';
-            const id = childEl.getAttribute('data-id') || '';
-            const label = childEl.getAttribute('data-label') || childEl.textContent || '';
-            const metaStr = childEl.getAttribute('data-meta');
-            let meta: any = {};
-            if (metaStr) {
-              try {
-                meta = JSON.parse(metaStr);
-              } catch {
-                meta = {};
-              }
-            }
+            const label = chip.label || childEl.textContent || '';
             try {
               result += toPromptToken({
-                type: type as any,
-                id: id || label || '',
-                label: label || '',
-                meta,
+                type: chip.type as MentionType,
+                id: chip.id || label,
+                label,
+                meta: chip.meta,
               });
             } catch {
               // Fallback if formatter fails

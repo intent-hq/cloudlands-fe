@@ -52,6 +52,19 @@ describe('readMentionChip', () => {
     ).toMatchObject({ filePath: 'src/lib/a.ts' });
   });
 
+  it('prefers an id that names a directory over a base-name label', () => {
+    expect(
+      readMentionChip(
+        chip({
+          'data-mention': 'true',
+          'data-type': 'file',
+          'data-id': 'src/lib/foo.ts',
+          'data-label': 'foo.ts',
+        }),
+      ),
+    ).toMatchObject({ filePath: 'src/lib/foo.ts' });
+  });
+
   it('reads the line from startLine or a composer range', () => {
     expect(
       readMentionChip(

@@ -171,6 +171,34 @@ describe('scanMentions', () => {
   });
 });
 
+describe('reader regressions', () => {
+  it('keeps a #L<line>C<column> suffix through a chip round trip', () => {
+    const chip = mentionChipAttrs(only('@/abs/a.ts#L3C5', 'markdown').parsed!)!;
+    expect(chip.meta).toEqual({ fullPath: '/abs/a.ts', line: 3, lineSuffix: '#L3C5' });
+    expect(toPromptToken({ type: 'file', id: chip.id!, label: chip.label, meta: chip.meta })).toBe(
+      '@/abs/a.ts#L3C5',
+    );
+  });
+
+  it('keeps an unsupported suffix as part of the path', () => {
+    expect(only('@/abs/a.ts#Lx', 'markdown').parsed).toEqual({
+      kind: 'path',
+      path: '/abs/a.ts#Lx',
+      target: '/abs/a.ts#Lx',
+      metaKey: 'fullPath',
+    });
+  });
+
+  it('reads and strips legacy context tokens with an unbalanced bracket', () => {
+    const token = '@context[github|1|Fix [WIP thing]';
+    expect(only(`see ${token} now`, 'chat').parsed).toMatchObject({
+      kind: 'context',
+      context: { provider: 'github', identifier: '1', title: 'Fix [WIP thing' },
+    });
+    expect(stripContextMentions(`see ${token} now`)).toBe('see  now');
+  });
+});
+
 describe('parsePathSuffix', () => {
   it('splits the serializer range form and the link forms', () => {
     expect(parsePathSuffix('a.ts:L3-7')).toEqual({ path: 'a.ts', line: 3 });

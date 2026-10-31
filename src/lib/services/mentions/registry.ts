@@ -66,8 +66,11 @@ function stripLeadingAt(path: string | null | undefined): string {
   return path.startsWith('@') ? path.slice(1) : path;
 }
 
-/** Line suffixes a path token may carry: `:12`, `:12:3`, `:L3-7`, `#L3-7`. */
-const PATH_SUFFIX_SOURCE = String.raw`(?::L\d+(?:-\d+)?|:\d+(?::\d+)?|#L\d+(?:-\d+)?)`;
+/**
+ * Line suffixes a path token may carry: `:12`, `:12:3`, `:L3-7`, `#L3-7`,
+ * `#L3C5`; the forms `parseFilePathLineSuffix` splits off.
+ */
+const PATH_SUFFIX_SOURCE = String.raw`(?::L\d+(?:-\d+)?|:\d+(?::\d+)?|#L\d+(?:-\d+|C\d+)?)`;
 const PATH_SUFFIX_RE = new RegExp(`^${PATH_SUFFIX_SOURCE}$`);
 
 function rawMeta(item: SerializableMention): Record<string, any> {
@@ -233,12 +236,15 @@ const CHAT: readonly MentionSurface[] = ['chat'];
 const FILE_EXTENSIONS =
   'json|js|ts|tsx|jsx|md|mdx|yaml|yml|svelte|html|css|scss|py|go|rs|rb|java|kt|swift|m|mm|hpp|h|hh|c|cc|cpp|sh|toml|lock|ini|conf|txt|csv|sql';
 
-/** Split a path token's line suffix off; `:L<a>-<b>` is the serializer's own range form. */
+/**
+ * Split a path token's line suffix off. Only a suffix the serializer can
+ * write back is split, so a chip always saves the text it was read from.
+ */
 export function parsePathSuffix(target: string): { path: string; line?: number } {
-  const range = /^(.+?):L(\d+)(?:-\d+)?$/.exec(target);
-  if (range) return { path: range[1], line: Number.parseInt(range[2], 10) };
   const { path, line } = parseFilePathLineSuffix(target);
-  return line === undefined ? { path } : { path, line };
+  if (line === undefined || !PATH_SUFFIX_RE.test(target.slice(path.length)))
+    return { path: target };
+  return { path, line };
 }
 
 function pathMention(
@@ -337,8 +343,9 @@ function parseIntentNoteUrl(url: string): ParsedMention | null {
 /** `@context[...]` attachments; also used to strip them from previews. */
 const CONTEXT_ENTRY: MentionTokenEntry = {
   name: 'context',
-  // Base64 JSON, or the legacy pipe form whose title may hold one level of brackets.
-  source: String.raw`context\[(?:[A-Za-z0-9+/=]+|[^[\]]*(?:\[[^\]]*\][^[\]]*)*)\]`,
+  // Base64 JSON; the legacy pipe form whose title may hold one level of
+  // brackets; or, for older tokens with an unbalanced `[`, anything to the first `]`.
+  source: String.raw`context\[(?:[A-Za-z0-9+/=]+|[^[\]]*(?:\[[^\]]*\][^[\]]*)*|[^\]]*)\]`,
   at: true,
   surfaces: CHAT_AND_MARKDOWN,
   parse: parseContextMention,
@@ -398,7 +405,8 @@ export const MENTION_TOKEN_ENTRIES: readonly MentionTokenEntry[] = [
   },
   {
     name: 'absolute-path',
-    source: String.raw`\/[^\s<>()'"]+${PATH_SUFFIX_SOURCE}?`,
+    // Greedy to the next delimiter; parsePathSuffix splits any line suffix.
+    source: String.raw`\/[^\s<>()'"]+`,
     at: true,
     surfaces: MARKDOWN,
     parse: (text) => pathMention(text.slice(1), 'fullPath'),

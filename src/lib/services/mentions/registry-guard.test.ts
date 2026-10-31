@@ -32,12 +32,14 @@ const EXEMPT: Record<string, string> = {
  * `@`-led escaped token heads as they appear in a regex (`@member\[`,
  * `@note\/`, `@(?:terminal|script)\[`; URL paths like `terminal\/` are not
  * tokens), the unescaped classifier form `@note[/[]`, and
- * the token modules' exported body sources.
+ * the token modules' exported body sources and the file-name heuristic.
  */
 const FORBIDDEN: Array<[string, RegExp]> = [
   ['mention token regex', /@\(?(?:\?:)?(?:member|context|note|terminal|script)[|a-z]*\)?\\[[/]/],
   ['mention token regex', /@note\[\/\[\]/],
   ['token body source', /\b[A-Z]+_MENTION_BODY_SOURCE\b/],
+  // The bare file-name heuristic's extension list.
+  ['file-name heuristic', /json\|js\|ts\|tsx/],
 ];
 
 function sourceFiles(dir: string): string[] {
@@ -72,6 +74,7 @@ describe('mention registry guard', () => {
       String.raw`/@(?:terminal|script)\[/`,
       '/@note[/[]/',
       'new RegExp(`@${NOTE_MENTION_BODY_SOURCE}`)',
+      String.raw`/\b([A-Za-z0-9._-]+\.(?:json|js|ts|tsx|jsx|md))\b/g`,
     ];
     for (const sample of samples) {
       expect(

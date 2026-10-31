@@ -52,11 +52,10 @@ function stripAt(value: string): string {
 function chipFilePath(meta: Record<string, any>, label: string, id: string, text: string) {
   const stored = meta.fullPath || meta.path || meta.filename;
   if (stored) return stripAt(String(stored));
-  // Older chips may carry the path only in their label or visible text,
+  // Older chips may carry the path only in their id, label or visible text,
   // possibly with a line suffix; prefer whichever names a directory.
-  let fallback = stripAt(label || id);
-  const visible = stripAt(text.trim());
-  if (fallback && !fallback.includes('/') && visible.includes('/')) fallback = visible;
+  const candidates = [id, label, text.trim()].map(stripAt).filter(Boolean);
+  const fallback = candidates.find((value) => value.includes('/')) ?? candidates[0];
   return fallback ? parsePathSuffix(fallback).path : undefined;
 }
 
