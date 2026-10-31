@@ -63,6 +63,7 @@
   import { selectIsFeatureEnabled } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
   import { initializeGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
+  import { newProjectDefaultParent } from './plain-folder-create';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import {
     loadGithubRepos,
@@ -156,6 +157,8 @@
     isValidPath?: boolean;
     scope?: string; // Relative path from git root for scoped subdirectories
     remoteSetup?: RemoteSetup;
+    /** Plain-folder pick (Labs): an existing non-git folder, or a new folder to create. */
+    plainFolder?: 'existing' | 'new';
   }
 
   interface Props {
@@ -178,6 +181,13 @@
     /** Qualified GitLab state supplied by the checkout owner. */
     gitlab?: GitLabProjectPickerProps;
     gitlabSelected?: boolean;
+    /**
+     * "Initialize as git repository" is off (Labs): a non-git folder is picked
+     * as a plain folder instead of offering git initialization, and the new
+     * tab creates a plain folder. Git repositories and their subfolders still
+     * pick as git.
+     */
+    plainFolderMode?: boolean;
   }
 
   let {
@@ -199,6 +209,7 @@
     onClear,
     gitlab,
     gitlabSelected = false,
+    plainFolderMode = false,
   }: Props = $props();
 
   function onchangeWithTracking(detail: RepoChangeDetail) {
@@ -432,8 +443,18 @@
 
   // Load default parent path from Redux; persistence is handled by the saga.
   function getDefaultParentPath(): string {
-    return $defaultParentPath$ || '~/Developer';
+    return newProjectDefaultParent($defaultParentPath$, plainFolderMode);
   }
+
+  // Follow the mode's built-in fallback parent until the user picks one.
+  $effect(() => {
+    const plain = plainFolderMode;
+    const saved = $defaultParentPath$;
+    untrack(() => {
+      if (newRepoParentPath === newProjectDefaultParent(saved, !plain))
+        newRepoParentPath = newProjectDefaultParent(saved, plain);
+    });
+  });
 
   function saveDefaultParentPath(path: string) {
     appStore.dispatch(setWorkspaceInitializerDefaultParentPath(path));
@@ -470,6 +491,14 @@
       ? $directoryStatusCheck$.result
       : null,
   );
+  // Plain-folder kind for the new tab's target: null keeps today's git flow
+  // (an existing repository, or a folder inside one).
+  const newRepoPlainFolderKind = $derived.by((): 'existing' | 'new' | null => {
+    if (!plainFolderMode || !newRepoPathStatus) return null;
+    if (newRepoPathStatus.isGitRepo || newRepoPathStatus.isSubdirectoryOfGitRepo) return null;
+    if (!newRepoPathStatus.exists) return 'new';
+    return newRepoPathStatus.isDirectory ? 'existing' : null;
+  });
   const isCheckingNewRepoPath = $derived(
     $directoryStatusCheck$?.admission === $admission$ &&
       $directoryStatusCheck$.path === newRepoFullPath &&
@@ -1170,6 +1199,10 @@
         !directoryStatus?.isGitRepo &&
         !directoryStatus?.isSubdirectoryOfGitRepo
       ) {
+        if (plainFolderMode) {
+          selectPlainFolder(path, 'existing');
+          return;
+        }
         nonGitFolderPath = path;
         showNonGitFolderPrompt = true;
         // Don't close dropdown - let user decide what to do
@@ -1233,6 +1266,15 @@
     // If the path exists and is a git repo, treat it as existing (will create worktree)
     // Otherwise treat it as a new repo to be created
     const existingGitRepo = newRepoPathStatus?.exists && newRepoPathStatus?.isGitRepo;
+    // Plain-folder mode: a folder outside any git repository is created (or
+    // used, when it already exists) without git.
+    const plainKind = newRepoPlainFolderKind;
+    if (plainKind) {
+      // The git default location is not changed by a plain-folder pick.
+      selectPlainFolder(fullPath, plainKind);
+      showCreateNewMode = false;
+      return;
+    }
     isNewRepo = !existingGitRepo;
 
     const detail: RepoChangeDetail = {
@@ -1345,6 +1387,28 @@
     };
     onchangeWithTracking(detail);
 
+    showNonGitFolderPrompt = false;
+    nonGitFolderPath = '';
+    isOpen = false;
+  }
+
+  // Select a plain folder (Labs): no git initialization, no branch.
+  function selectPlainFolder(path: string, kind: 'existing' | 'new') {
+    selectedValue = path;
+    inputValue = path;
+    confirmedGithubUrl = '';
+    selectedRepoType = kind === 'new' ? 'new' : 'local';
+    isNewRepo = false;
+    isValidPath = true;
+    validationMessage = '';
+    directoryStatus = null;
+    onchangeWithTracking({
+      path,
+      type: 'local',
+      isNewRepo: false,
+      isValidPath: true,
+      plainFolder: kind,
+    });
     showNonGitFolderPrompt = false;
     nonGitFolderPath = '';
     isOpen = false;
@@ -1557,7 +1621,7 @@
           >
             {m.workspace_repoSelector_pickARepo_tab()}
           </Tabs.Trigger>
-          {#each [{ id: 'local' as TabId, label: m.workspace_repoSelector_copyLocalRepo_tab() }, { id: 'new' as TabId, label: m.workspace_repoSelector_newRepo_tab() }, ...($remoteWorkspacesEnabled$ ? [{ id: 'remote' as TabId, label: m.workspace_repoSelector_remoteServer_tab() }] : [])] as tab}
+          {#each [{ id: 'local' as TabId, label: m.workspace_repoSelector_copyLocalRepo_tab() }, { id: 'new' as TabId, label: plainFolderMode ? m.workspace_repoSelector_newFolder_tab() : m.workspace_repoSelector_newRepo_tab() }, ...($remoteWorkspacesEnabled$ ? [{ id: 'remote' as TabId, label: m.workspace_repoSelector_remoteServer_tab() }] : [])] as tab}
             <Tabs.Trigger
               value={tab.id}
               class="flex-1 min-w-0 h-auto min-h-(--control-height-medium) px-2 py-1.5 text-sm whitespace-normal rounded-md cursor-pointer transition-all {activeTab ===
@@ -1745,6 +1809,29 @@
                       </span>
                       <Button size="sm" onclick={handleConfirmNewRepo} class="shrink-0"
                         >{m.workspace_repoSelector_select_label()}</Button
+                      >
+                    </div>
+                  {:else if newRepoPlainFolderKind === 'existing'}
+                    <!-- Plain-folder mode: an existing non-git folder is used as-is -->
+                    <div class="flex items-center justify-between gap-2">
+                      <span class="text-sm text-subtle">
+                        {m.onboarding_localRepoTab_plainFolder_description()}
+                      </span>
+                      <Button size="sm" onclick={handleConfirmNewRepo} class="shrink-0"
+                        >{m.workspace_repoSelector_select_label()}</Button
+                      >
+                    </div>
+                  {:else if newRepoPlainFolderKind === 'new'}
+                    <!-- Plain-folder mode: a new folder without git -->
+                    <div class="flex items-center justify-between gap-2">
+                      <span class="text-sm text-subtle"
+                        >{m.workspace_repoSelector_newFolderWillBeCreated_label()}</span
+                      >
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        onclick={handleConfirmNewRepo}
+                        class="shrink-0">{m.workspace_repoSelector_create_label()}</Button
                       >
                     </div>
                   {:else if newRepoPathStatus?.exists && !newRepoPathStatus?.isGitRepo}

@@ -328,6 +328,12 @@ interface WorkspaceInitializationSubmissionBase {
   branchBehind: number;
   pullEnabled: boolean;
   skipIsolation: boolean;
+  /**
+   * Plain-folder create (Labs, PROTOCOL §5.1): `'existing'` works in an
+   * existing non-git folder, `'new'` has the daemon create the folder. Absent
+   * or null keeps today's git create.
+   */
+  plainFolder?: 'existing' | 'new' | null;
   selectedPrNumber: number | null;
   draft: NonNullable<WorkspaceInitializationCompletion['draft']>;
 }

@@ -89,6 +89,8 @@
   } from '$features/onboarding/utils/onboarding-test-prompt';
   import type { ProjectSelection } from '$features/onboarding/messages/ProjectPickerMessage.svelte';
   import { shouldTreatAsNewRepo } from '$features/onboarding/utils/treat-as-new-repo';
+  import { confirmPlainFolderInPlace } from '$lib/components/workspace/initializer/plain-folder-confirm';
+  import { selectWorkspaceItems as selectPlainFolderWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import { parseRuntimeMentions } from '$features/onboarding/utils/parse-context-references';
   import { hasBlockingAttachments, type ContextItem } from '$lib/components/chat/input/context-api';
   import {
@@ -601,6 +603,7 @@
   }
 
   let isOnboardingCreating = $state(false);
+  let isConfirmingPlainFolder = false;
   let onboardingCreationError = $state<string | null>(null);
   // Daemon-authored machine-readable code from the clone failure taxonomy
   // (`error.data.code`, PROTOCOL §9.1, monorepo#826); accompanies
@@ -1299,12 +1302,30 @@
       return;
     }
 
+    // Agents edit an existing plain folder in place with no undo: confirm
+    // first. Cancel creates nothing.
+    const plainFolder = projectSelection.plainFolder ?? null;
+    if (plainFolder === 'existing') {
+      if (isConfirmingPlainFolder) return;
+      isConfirmingPlainFolder = true;
+      let confirmed = false;
+      try {
+        confirmed = await confirmPlainFolderInPlace(
+          projectSelection.repoPath,
+          selectPlainFolderWorkspaceItems.select(appStore.state),
+        );
+      } finally {
+        isConfirmingPlainFolder = false;
+      }
+      if (!confirmed || !current() || isOnboardingCreating || !projectSelection?.isValid) return;
+    }
+
     const treatAsNewRepo = shouldTreatAsNewRepo(projectSelection);
     const effectiveBranch =
       selectedPRBranch && projectSelection.branch !== selectedPRBranch && !treatAsNewRepo
         ? selectedPRBranch
         : projectSelection.branch;
-    if (!treatAsNewRepo && !effectiveBranch.trim()) {
+    if (!plainFolder && !treatAsNewRepo && !effectiveBranch.trim()) {
       notify.error(m.onboarding_page_branchRequired_toast());
       return;
     }
@@ -1370,6 +1391,7 @@
         branchBehind: onboardingBranchBehind,
         pullEnabled: onboardingShouldPullBeforeCreate,
         skipIsolation: onboardingSkipIsolation,
+        plainFolder,
         selectedPrNumber: selectedPRNumber ?? null,
         draft: {
           ownerId: onboardingDraftOwnerId,

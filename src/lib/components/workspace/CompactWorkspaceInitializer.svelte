@@ -132,6 +132,10 @@
     type IssueSelectionData,
   } from './initializer/IssueSuggestions.svelte';
   import RepoAndBranchPicker from './initializer/RepoAndBranchPicker.svelte';
+  import InitializeGitToggle from './initializer/InitializeGitToggle.svelte';
+  import { createInitializeGitChoice } from './initializer/initialize-git-choice.svelte';
+  import { confirmPlainFolderInPlace } from './initializer/plain-folder-confirm';
+  import { selectWorkspaceItems as selectPlainFolderWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import type {
     GitLabProjectPickerProps,
     GitLabBranchPickerProps,
@@ -532,6 +536,22 @@
   let branch = $state(savedState?.branch ?? '');
   let isNewRepo = $state(savedState?.isNewRepo ?? false);
   let isValidPath = $state(savedState?.isValidPath ?? false);
+  // Plain-folder workspaces (Labs). The pick is bound to its path, so any other
+  // repo change (restore, prefill, new pick) drops it.
+  const initializeGitChoice = createInitializeGitChoice();
+  const plainFolderMode = $derived(!initializeGitChoice.initializeGit);
+  let plainFolderPick = $state<{ path: string; kind: 'existing' | 'new' } | null>(null);
+  let isConfirmingPlainFolder = $state(false);
+  const plainFolder = $derived(
+    plainFolderMode && repoType === 'local' && plainFolderPick && plainFolderPick.path === repoPath
+      ? plainFolderPick.kind
+      : null,
+  );
+  // With the toggle off, git-only controls are hidden until a git repo is picked.
+  const plainFolderCreate = $derived(
+    plainFolderMode && repoType === 'local' && (plainFolder !== null || !repoPath),
+  );
+  const plainFolderWorkspaces$ = selectPlainFolderWorkspaceItems();
   const checkoutFormId = uuidv4();
   const labsGitLab$ = selectLabsGitLabEnabled();
   const gitlabInstance$ = selectGitLabAuthInstanceBaseUrl();
@@ -1862,19 +1882,46 @@
   // A failed/placing attachment pill also blocks (retry or remove to proceed).
   const isValid = $derived(
     $canCreateWorkspace$ &&
-      (gitAvailable === true || gitAvailable === 'unknown') &&
-      (repoType === 'gitlab'
-        ? $checkoutCanCreate$
-        : !!repoPath &&
-          isValidPath &&
-          // No worktree on a local folder needs no branch (it may not be a repo).
-          (isNewRepo ||
-            !!branch ||
-            repoType === 'remote' ||
-            (skipIsolation && repoType === 'local')) &&
-          (repoType !== 'github' || githubAuthNeeded === 'none')) &&
+      // A plain folder needs no git.
+      (plainFolder !== null || gitAvailable === true || gitAvailable === 'unknown') &&
+      (plainFolder !== null
+        ? !!repoPath && isValidPath
+        : repoType === 'gitlab'
+          ? $checkoutCanCreate$
+          : !!repoPath &&
+            isValidPath &&
+            // No worktree on a local folder needs no branch (it may not be a repo).
+            (isNewRepo ||
+              !!branch ||
+              repoType === 'remote' ||
+              (skipIsolation && repoType === 'local')) &&
+            (repoType !== 'github' || githubAuthNeeded === 'none')) &&
       !hasBlockingAttachments(contextItems),
   );
+
+  // The git repository a git pick belongs to (a subfolder pick carries its scope).
+  const plainFolderRepoRoot = $derived.by(() => {
+    if (!scope) return repoPath;
+    const suffix = scope.replace(/^[\\/]+|[\\/]+$/g, '');
+    const trimmed = repoPath.replace(/[\\/]+$/, '');
+    return suffix && trimmed.endsWith(suffix)
+      ? trimmed.slice(0, -suffix.length).replace(/[\\/]+$/, '') || repoPath
+      : repoPath;
+  });
+
+  /** The user flipped "Initialize as git repository": drop a pick made for the other mode. */
+  function handleInitializeGitChange(value: boolean) {
+    initializeGitChoice.set(value);
+    if (repoType !== 'local' || !repoPath) return;
+    if (plainFolderPick?.path === repoPath || isNewRepo) {
+      repoPath = '';
+      isNewRepo = false;
+      isValidPath = false;
+      branch = '';
+      scope = '';
+      plainFolderPick = null;
+    }
+  }
 
   // Derived GitHub repo info for IssueSuggestions
   const githubRepoInfo = $derived.by(() => {
@@ -1970,11 +2017,15 @@
       isValidPath?: boolean;
       scope?: string;
       remoteSetup?: any;
+      plainFolder?: 'existing' | 'new';
     }>,
   ) {
     appStore.dispatch(checkoutClosed(checkoutFormId));
     repoPath = event.detail.path;
     repoType = event.detail.type === 'remote' ? 'remote' : event.detail.type;
+    plainFolderPick = event.detail.plainFolder
+      ? { path: event.detail.path, kind: event.detail.plainFolder }
+      : null;
     isNewRepo = event.detail.isNewRepo || false;
     isValidPath = event.detail.isValidPath ?? false;
     scope = event.detail.scope || '';
@@ -2072,6 +2123,22 @@
       hasBlockingAttachments(contextItems)
     )
       return;
+    // Agents edit an existing plain folder in place with no undo: confirm first.
+    // Cancel creates nothing.
+    if (!continuation && plainFolder === 'existing') {
+      if (isConfirmingPlainFolder) return;
+      const confirmedPath = repoPath;
+      isConfirmingPlainFolder = true;
+      let confirmed = false;
+      try {
+        confirmed = await confirmPlainFolderInPlace(confirmedPath, $plainFolderWorkspaces$);
+      } finally {
+        isConfirmingPlainFolder = false;
+      }
+      if (!confirmed || !mounted || plainFolder !== 'existing' || repoPath !== confirmedPath)
+        return;
+      if (!isValid || isCreating) return;
+    }
     const repositoryCheckout =
       repoType === 'gitlab' ? selectCheckoutSelection.select(appStore.state, checkoutFormId) : null;
     if (repoType === 'gitlab' && !repositoryCheckout) return;
@@ -2268,6 +2335,7 @@
         branchBehind,
         pullEnabled: shouldPullBeforeCreate,
         skipIsolation,
+        plainFolder,
         selectedPrNumber: selectedPRNumber,
         draft: {
           ownerId: draftOwnerId,
@@ -2430,6 +2498,14 @@
     if (isNewRepo && repoPath) {
       isNewRepo = false;
       isValidPath = true;
+    }
+    // A plain folder is not reopened: the next form starts from the toggle again.
+    if (!preserveSubmission && plainFolder !== null) {
+      repoPath = '';
+      isValidPath = false;
+      branch = '';
+      scope = '';
+      plainFolderPick = null;
     }
     if (
       !preserveSubmission &&
@@ -3210,11 +3286,13 @@
         class="linear-row flex items-center gap-2 px-2.5 pt-1 pb-2.5 overflow-x-auto relative"
         transition:slide={{ axis: 'y', tier: 'moderate' }}
       >
-        <IssueSuggestions
-          onSelect={handleIssueSelect}
-          repositoryOwner={githubRepoInfo?.owner}
-          repositoryName={githubRepoInfo?.repo}
-        />
+        {#if !plainFolderCreate}
+          <IssueSuggestions
+            onSelect={handleIssueSelect}
+            repositoryOwner={githubRepoInfo?.owner}
+            repositoryName={githubRepoInfo?.repo}
+          />
+        {/if}
 
         <!-- Mic latch button: click starts dictation, click again (Esc
              cancels) stops and transcribes into this prompt at the caret. -->
@@ -3389,6 +3467,8 @@
                 {remoteSetup}
                 {detectedGitHubOwner}
                 {detectedGitHubRepo}
+                {plainFolderMode}
+                {plainFolder}
                 suggestedBranch={selectedPRBranch}
                 onRepoChange={handleRepoChange}
                 onBranchChange={handleBranchChange}
@@ -3454,6 +3534,21 @@
           {/if}
         </div>
       </div>
+
+      {#if isExpanded && initializeGitChoice.visible && (repoType === 'local' || !repoPath)}
+        <div class="mt-3 px-1" transition:slide={{ axis: 'y', tier: 'moderate' }}>
+          <InitializeGitToggle
+            checked={initializeGitChoice.initializeGit}
+            disabled={isCreating}
+            onCheckedChange={handleInitializeGitChange}
+          />
+          {#if plainFolderMode && repoType === 'local' && repoPath && plainFolder === null && !isNewRepo}
+            <p class="mt-2 text-sm text-subtle" role="status" data-testid="plain-folder-git-notice">
+              {m.workspace_plainFolder_gitRepoNotice_label({ repo: plainFolderRepoRoot })}
+            </p>
+          {/if}
+        </div>
+      {/if}
 
       {#if isExpanded && repoType === 'gitlab' && ($checkoutForm$?.status === 'unavailable' || $checkoutForm$?.warmStatus === 'warming' || $checkoutForm$?.contextUrl)}
         <div class="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-sm">
@@ -3552,8 +3647,12 @@
             bind:selectedProvider
           />
         </div>
-        <!-- Setup script -->
-        <div class="space-y-2">
+        <!-- Setup script (git workspaces only) -->
+        <div
+          class="space-y-2"
+          class:hidden={plainFolderCreate}
+          data-testid="initializer-setup-script"
+        >
           <SetupScriptTrigger
             value={setupScriptDisplayName(setupScriptName, setupScriptNameSource)}
             loading={isRepoConfigLoading}

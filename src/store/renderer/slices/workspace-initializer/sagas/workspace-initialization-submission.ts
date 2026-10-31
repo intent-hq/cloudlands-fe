@@ -7,6 +7,7 @@ import {
   heldImageBlocks,
 } from '$lib/components/workspace/initializer/staged-attachments';
 import { shouldPullSourceRepositoryBeforeCreate } from '$lib/components/workspace/initializer/workspace-create-pull-policy';
+import { buildPlainFolderCreateRequest } from '$lib/components/workspace/initializer/plain-folder-create';
 import { resolveSubmitModelAndProvider } from '$lib/utils/effective-model-resolution';
 import {
   parseGitHubUrl,
@@ -111,7 +112,8 @@ function setupScriptRecord(
 function compactCompletionFormState(
   s: CompactWorkspaceInitializationSubmission,
 ): NonNullable<WorkspaceInitializationRequest['completion']>['compactFormState'] {
-  const remote = s.repoType === 'remote';
+  // A plain-folder selection resets like a remote one: it is not a repository to reopen.
+  const remote = s.repoType === 'remote' || (s.repoType === 'local' && !!s.plainFolder);
   const repoPath = remote ? '' : s.repoPath;
   const repoType = remote ? 'local' : s.repoType;
   const scope = remote ? '' : s.scope;
@@ -185,10 +187,13 @@ export function* prepareCompactWorkspaceInitialization(
   s: CompactWorkspaceInitializationSubmission,
   isCurrent: () => boolean,
 ): SagaGenerator<PreparedWorkspaceInitialization | null> {
+  // A plain folder (Labs) is local only and never carries git options.
+  const plainFolder =
+    s.repoType === 'local' && !s.repositoryCheckout ? (s.plainFolder ?? null) : null;
   const repositoryCheckout = s.repositoryCheckout;
   // No worktree on a local folder works in place: a branch is optional there
   // (a plain non-git folder has none), but one that is given is still checked.
-  const branchOptional = s.skipIsolation && s.repoType === 'local' && !s.branch;
+  const branchOptional = (s.skipIsolation && s.repoType === 'local' && !s.branch) || !!plainFolder;
   if (!repositoryCheckout && !s.isNewRepo && s.repoType !== 'remote' && !branchOptional) {
     const branchValidation = validateBranchName(s.branch);
     if (!branchValidation.valid) throw new Error(branchValidation.error);
@@ -199,6 +204,16 @@ export function* prepareCompactWorkspaceInitialization(
   // GitHub picks validate the URL; remote paths live on the remote server.
   if (s.repoType === 'github' && s.githubUrl) {
     const repoValidation = yield* call(validateRepoPath, s.githubUrl, false);
+    if (!isCurrent()) return null;
+    if (!repoValidation.valid) throw new Error(repoValidation.error);
+  } else if (plainFolder) {
+    // An existing folder is used as-is; a new one may not exist yet.
+    const repoValidation = yield* call(
+      validateRepoPath,
+      s.repoPath,
+      plainFolder === 'new',
+      plainFolder === 'existing',
+    );
     if (!isCurrent()) return null;
     if (!repoValidation.valid) throw new Error(repoValidation.error);
   } else if (!repositoryCheckout && s.repoType !== 'remote') {
@@ -323,7 +338,7 @@ export function* prepareCompactWorkspaceInitialization(
   };
 
   const isGithubPick = s.repoType === 'github' && !!s.githubUrl;
-  if (s.repoConfigUnavailable)
+  if (s.repoConfigUnavailable && !plainFolder)
     throw new Error(m.workspace_setupScript_configUnavailable_description());
   // The shown script runs as-is, except the unedited repo-config script (PROTOCOL §5.1).
   const setupScriptParam = resolveSetupScriptParam({
@@ -345,44 +360,53 @@ export function* prepareCompactWorkspaceInitialization(
         }
       : undefined,
   );
-  const createRequest = {
-    title: s.prefillTitle || '',
-    ...(repositoryCheckout
-      ? { repositoryCheckout }
-      : {
-          repositoryPath: isGithubPick
-            ? undefined
-            : String(remoteSetup?.workspacePath || s.repoPath),
-          githubUrl: s.repoType === 'github' && s.githubUrl ? s.githubUrl : undefined,
-          branch: prBranchActive ? s.selectedPRBranch : undefined,
-          baseRef: prBranchActive
-            ? s.selectedPRTargetBranch || undefined
-            : s.skipIsolation && !baseBranch
-              ? undefined
-              : String(baseBranch),
-          environmentConfig,
-          isNewRepo: Boolean(s.isNewRepo),
-          skipIsolation: s.skipIsolation || undefined,
-        }),
-    contextLinks: requestContextLinks,
-    setupScript: setupScriptParam,
-    scope: s.scope || undefined,
-    initialAgent,
-  };
+  const createRequest = plainFolder
+    ? buildPlainFolderCreateRequest({
+        title: s.prefillTitle || '',
+        repositoryPath: s.repoPath,
+        contextLinks: requestContextLinks,
+        initialAgent,
+      })
+    : {
+        title: s.prefillTitle || '',
+        ...(repositoryCheckout
+          ? { repositoryCheckout }
+          : {
+              repositoryPath: isGithubPick
+                ? undefined
+                : String(remoteSetup?.workspacePath || s.repoPath),
+              githubUrl: s.repoType === 'github' && s.githubUrl ? s.githubUrl : undefined,
+              branch: prBranchActive ? s.selectedPRBranch : undefined,
+              baseRef: prBranchActive
+                ? s.selectedPRTargetBranch || undefined
+                : s.skipIsolation && !baseBranch
+                  ? undefined
+                  : String(baseBranch),
+              environmentConfig,
+              isNewRepo: Boolean(s.isNewRepo),
+              skipIsolation: s.skipIsolation || undefined,
+            }),
+        contextLinks: requestContextLinks,
+        setupScript: setupScriptParam,
+        scope: s.scope || undefined,
+        initialAgent,
+      };
   const ghInfo = isGithubPick ? parseGitHubUrl(s.githubUrl) : null;
   const request: WorkspaceInitializationRequest = {
     entrypoint: 'compact',
     admission: s.admission,
     createRequest: createRequest as WorkspaceInitializationRequest['createRequest'],
-    pull: shouldPullSourceRepositoryBeforeCreate({
-      branchBehind: s.branchBehind,
-      isLocalRepository: s.repoType === 'local',
-      isNewRepository: s.isNewRepo,
-      skipIsolation: s.skipIsolation,
-      pullEnabled: s.pullEnabled,
-    })
-      ? { repositoryPath: s.repoPath, branch: s.branch }
-      : undefined,
+    pull:
+      !plainFolder &&
+      shouldPullSourceRepositoryBeforeCreate({
+        branchBehind: s.branchBehind,
+        isLocalRepository: s.repoType === 'local',
+        isNewRepository: s.isNewRepo,
+        skipIsolation: s.skipIsolation,
+        pullEnabled: s.pullEnabled,
+      })
+        ? { repositoryPath: s.repoPath, branch: s.branch }
+        : undefined,
     agentTitle: agentName,
     coordinator:
       specialistId !== undefined && specialistId === selectOrchestratorSpecialist.select(state)?.id,
@@ -391,7 +415,12 @@ export function* prepareCompactWorkspaceInitialization(
     lastSubmittedAgent: s.agent,
     rememberAgentRepoKey: s.rememberAgentRepoKey,
     rememberBranch:
-      !repositoryCheckout && s.formPersistence && s.repoPath && baseBranch && !s.isNewRepo
+      !plainFolder &&
+      !repositoryCheckout &&
+      s.formPersistence &&
+      s.repoPath &&
+      baseBranch &&
+      !s.isNewRepo
         ? { repoPath: s.repoPath, branch: baseBranch }
         : undefined,
     selectedPrNumber: !repositoryCheckout && s.selectedPrNumber ? s.selectedPrNumber : undefined,
@@ -403,19 +432,25 @@ export function* prepareCompactWorkspaceInitialization(
           githubUrl: `https://github.com/${ghInfo.owner}/${ghInfo.repo}`,
         }
       : undefined,
-    setupScriptRecord: setupScriptRecord(
-      s,
-      s.setupScriptRepoKey,
-      s.repoType === 'github' ? s.githubUrl : undefined,
-      m.workspace_setupScriptEditor_customScript_name(),
-      s.setupScriptProbeKey,
-    ),
+    setupScriptRecord: plainFolder
+      ? undefined
+      : setupScriptRecord(
+          s,
+          s.setupScriptRepoKey,
+          s.repoType === 'github' ? s.githubUrl : undefined,
+          m.workspace_setupScriptEditor_customScript_name(),
+          s.setupScriptProbeKey,
+        ),
     completion: {
       draft: s.draft,
       compactFormState: compactCompletionFormState(s),
       // A newly created repository now exists, so the next form opens it as an existing repo.
+      // A plain folder is not remembered: the next form starts from the toggle again.
       lastSelectedRepo:
-        s.formPersistence && s.repoPath && (s.repoType === 'local' || s.repoType === 'github')
+        !plainFolder &&
+        s.formPersistence &&
+        s.repoPath &&
+        (s.repoType === 'local' || s.repoType === 'github')
           ? {
               path: s.repoPath,
               type: s.repoType,
@@ -474,48 +509,73 @@ export function* prepareOnboardingWorkspaceInitialization(
   });
   const isGithubPick = project.type === 'github' && !!project.githubUrl;
   const hasStagedFiles = hasStagedFileItems(fileItems as ContextItem[]) || imageBlocks.length > 0;
+  // A plain folder (Labs) never comes from the GitHub tab and never carries git options.
+  const plainFolder = project.type !== 'github' ? (s.plainFolder ?? null) : null;
+  if (plainFolder) {
+    const repoValidation = yield* call(
+      validateRepoPath,
+      project.repoPath,
+      plainFolder === 'new',
+      plainFolder === 'existing',
+    );
+    if (!isCurrent()) return null;
+    if (!repoValidation.valid) throw new Error(repoValidation.error);
+  }
+  const initialAgent: NonNullable<WorkspaceInitializationRequest['createRequest']>['initialAgent'] =
+    {
+      name: agentName,
+      model,
+      prompt: hasStagedFiles ? undefined : prompt,
+      agentType: createAgentTypeId('workspace'),
+      specialist: specialistId ?? undefined,
+      behaviorPrompt,
+      provider,
+      contextReferences:
+        !hasStagedFiles && contextReferences.length > 0 ? contextReferences : undefined,
+      imageBlocks: !hasStagedFiles && imageBlocks.length > 0 ? imageBlocks : undefined,
+      metadata: {
+        source: 'onboarding',
+        isInitialAgent: true,
+        specialist: specialistId ?? undefined,
+      },
+    };
   const request: WorkspaceInitializationRequest = {
     entrypoint: 'onboarding',
     admission: s.admission,
-    pull: shouldPullSourceRepositoryBeforeCreate({
-      branchBehind: s.branchBehind,
-      isLocalRepository: project.type === 'local',
-      isNewRepository: treatAsNewRepo,
-      skipIsolation: s.skipIsolation,
-      pullEnabled: s.pullEnabled,
-    })
-      ? { repositoryPath: project.repoPath, branch: project.branch }
-      : undefined,
-    createRequest: {
-      title: '',
-      repositoryPath: isGithubPick ? undefined : project.repoPath,
-      githubUrl: project.githubUrl,
-      baseRef: treatAsNewRepo ? 'main' : effectiveBranch,
-      isNewRepo: treatAsNewRepo,
-      skipIsolation: s.skipIsolation || undefined,
-      scope: project.scope || undefined,
-      setupScript: setupScriptParam,
-      contextLinks: buildContextLinks(s.contextMentions),
-      linearIssue: extractLinearIssue(contextReferences),
-      sentryIssue: extractSentryIssue(contextReferences),
-      initialAgent: {
-        name: agentName,
-        model,
-        prompt: hasStagedFiles ? undefined : prompt,
-        agentType: createAgentTypeId('workspace'),
-        specialist: specialistId ?? undefined,
-        behaviorPrompt,
-        provider,
-        contextReferences:
-          !hasStagedFiles && contextReferences.length > 0 ? contextReferences : undefined,
-        imageBlocks: !hasStagedFiles && imageBlocks.length > 0 ? imageBlocks : undefined,
-        metadata: {
-          source: 'onboarding',
-          isInitialAgent: true,
-          specialist: specialistId ?? undefined,
-        },
-      },
-    } as WorkspaceInitializationRequest['createRequest'],
+    pull:
+      !plainFolder &&
+      shouldPullSourceRepositoryBeforeCreate({
+        branchBehind: s.branchBehind,
+        isLocalRepository: project.type === 'local',
+        isNewRepository: treatAsNewRepo,
+        skipIsolation: s.skipIsolation,
+        pullEnabled: s.pullEnabled,
+      })
+        ? { repositoryPath: project.repoPath, branch: project.branch }
+        : undefined,
+    createRequest: plainFolder
+      ? buildPlainFolderCreateRequest({
+          title: '',
+          repositoryPath: project.repoPath,
+          contextLinks: buildContextLinks(s.contextMentions),
+          linearIssue: extractLinearIssue(contextReferences),
+          sentryIssue: extractSentryIssue(contextReferences),
+          initialAgent,
+        })
+      : ({
+          title: '',
+          repositoryPath: isGithubPick ? undefined : project.repoPath,
+          githubUrl: project.githubUrl,
+          baseRef: treatAsNewRepo ? 'main' : effectiveBranch,
+          isNewRepo: treatAsNewRepo,
+          skipIsolation: s.skipIsolation || undefined,
+          scope: project.scope || undefined,
+          setupScript: setupScriptParam,
+          contextLinks: buildContextLinks(s.contextMentions),
+          linearIssue: extractLinearIssue(contextReferences),
+          sentryIssue: extractSentryIssue(contextReferences),
+          initialAgent,
+        } as WorkspaceInitializationRequest['createRequest']),
     agentTitle: agentName,
     coordinator: specialistId !== null,
     stagedItems: s.stagedItems,
@@ -531,16 +591,18 @@ export function* prepareOnboardingWorkspaceInitialization(
       selectedProvider: s.selectedProvider,
     },
     rememberBranch:
-      !treatAsNewRepo && project.repoPath && effectiveBranch.trim()
+      !plainFolder && !treatAsNewRepo && project.repoPath && effectiveBranch.trim()
         ? { repoPath: project.repoPath, branch: effectiveBranch }
         : undefined,
-    selectedPrNumber: s.selectedPrNumber ?? undefined,
-    setupScriptRecord: setupScriptRecord(
-      s,
-      project.repoPath,
-      project.type === 'github' ? project.githubUrl : undefined,
-      m.onboarding_page_customScript_label(),
-    ),
+    selectedPrNumber: plainFolder ? undefined : (s.selectedPrNumber ?? undefined),
+    setupScriptRecord: plainFolder
+      ? undefined
+      : setupScriptRecord(
+          s,
+          project.repoPath,
+          project.type === 'github' ? project.githubUrl : undefined,
+          m.onboarding_page_customScript_label(),
+        ),
     completion: { draft: s.draft, onboarding: true },
   };
   return {

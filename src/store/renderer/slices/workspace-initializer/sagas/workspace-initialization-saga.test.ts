@@ -6,7 +6,13 @@ const mocks = vi.hoisted(() => ({
   send: vi.fn(),
   clearLayout: vi.fn(),
   resolveOnboardingModel: vi.fn(),
+  validateRepoPath: vi.fn(),
 }));
+vi.mock('$lib/utils/workspace-validation', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$lib/utils/workspace-validation')>();
+  mocks.validateRepoPath.mockImplementation(actual.validateRepoPath);
+  return { ...actual, validateRepoPath: mocks.validateRepoPath };
+});
 vi.mock('$lib/components/workspace/initializer/staged-attachments', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   redeemStagedAttachments: mocks.redeem,
@@ -1093,5 +1099,177 @@ describe('workspaceInitializerSaga (registered production owner, reducer-backed 
       entrypoint: 'compact',
       status: 'pending',
     });
+  });
+});
+
+describe('plain-folder creates (Labs, workspace.create plainFolder)', () => {
+  beforeEach(() => {
+    mocks.validateRepoPath.mockResolvedValueOnce({ valid: true, isNewRepo: false });
+  });
+  const gitOnlyKeys = [
+    'githubUrl',
+    'repositoryCheckout',
+    'clonePath',
+    'isNewRepo',
+    'baseRef',
+    'branch',
+    'worktreePath',
+    'isRemote',
+    'skipIsolation',
+    'setupScript',
+    'scope',
+    'environmentConfig',
+  ];
+
+  it.each(['existing', 'new'] as const)(
+    'sends plainFolder: true with only the allowed fields for a %s compact folder',
+    async (kind) => {
+      const action = workspaceInitializationSubmitted(
+        compactSubmission({
+          repoType: 'local',
+          repoPath: '/Users/me/Documents/notes',
+          remoteSetup: null,
+          branch: '',
+          plainFolder: kind,
+          // Git-only state left over in the form never reaches the wire.
+          skipIsolation: true,
+          scope: 'sub',
+          setupScript: 'npm install',
+          setupScriptName: 'Custom',
+          setupScriptNameSource: 'custom',
+          setupScriptExplicit: true,
+          pullEnabled: true,
+          branchBehind: 3,
+        }),
+        consumer,
+      );
+      appStore.dispatch(action);
+
+      await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+      // An existing folder is accepted as-is; a new one may not exist yet.
+      expect(mocks.validateRepoPath).toHaveBeenCalledWith(
+        '/Users/me/Documents/notes',
+        kind === 'new',
+        kind === 'existing',
+      );
+      expect(pull).not.toHaveBeenCalled();
+      expect(create).toHaveBeenCalledTimes(1);
+      const params = create.mock.calls[0][0] as Record<string, unknown>;
+      expect(params).toMatchObject({
+        title: 'Work',
+        repositoryPath: '/Users/me/Documents/notes',
+        plainFolder: true,
+        initialAgent: { prompt: 'hello', provider: 'claude-code' },
+      });
+      for (const key of gitOnlyKeys) expect(params).not.toHaveProperty(key);
+      expect(outcome()).toMatchObject({ status: 'success', prepared: { pull: false } });
+    },
+  );
+
+  it('does not remember a plain folder as the next form repository', async () => {
+    const completionActions: RecordedAction[] = [];
+    stops.push(
+      appStore.runSaga(function* () {
+        while (true) {
+          completionActions.push(
+            (yield* take([
+              setWorkspaceInitializerLastSelectedRepo,
+              setCompactWorkspaceInitializerFormState,
+            ])) as RecordedAction,
+          );
+        }
+      }),
+    );
+    const action = workspaceInitializationSubmitted(
+      compactSubmission({
+        repoType: 'local',
+        repoPath: '/Users/me/Documents/notes',
+        remoteSetup: null,
+        branch: '',
+        plainFolder: 'existing',
+        formPersistence: true,
+      }),
+      consumer,
+    );
+    appStore.dispatch(action);
+
+    await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+    await vi.waitFor(() => expect(completionActions).toHaveLength(1));
+    expect(completionActions[0]).toMatchObject({
+      type: setCompactWorkspaceInitializerFormState.type,
+      payload: expect.arrayContaining([expect.objectContaining({ repoPath: '' })]),
+    });
+  });
+
+  it('ignores a stale plain-folder flag on a forge clone pick', async () => {
+    const action = workspaceInitializationSubmitted(
+      compactSubmission({
+        repoType: 'github',
+        repoPath: 'acme/app',
+        githubUrl: 'https://github.com/acme/app',
+        remoteSetup: null,
+        plainFolder: 'existing',
+      }),
+      consumer,
+    );
+    appStore.dispatch(action);
+
+    await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+    const params = create.mock.calls[0][0] as Record<string, unknown>;
+    expect(params).not.toHaveProperty('plainFolder');
+    expect(params).toMatchObject({ githubUrl: 'https://github.com/acme/app', baseRef: 'main' });
+  });
+
+  it.each([
+    {
+      kind: 'new' as const,
+      project: { type: 'new', repoPath: '~/Documents/my-project', branch: '' },
+    },
+    {
+      kind: 'existing' as const,
+      project: { type: 'local', repoPath: '/Users/me/notes', branch: '' },
+    },
+  ])('sends plainFolder: true for an onboarding $kind folder', async ({ kind, project }) => {
+    const onboardingConsumer = { id: 'onboarding-plain', resourceId: 'resource-plain' };
+    const action = workspaceInitializationSubmitted(
+      onboardingSubmission({
+        project,
+        plainFolder: kind,
+        treatAsNewRepo: false,
+        effectiveBranch: '',
+        setupScript: 'npm install',
+        setupScriptName: 'Custom',
+        setupScriptNameSource: 'custom',
+        pullEnabled: true,
+        branchBehind: 2,
+      }),
+      onboardingConsumer,
+    );
+    appStore.dispatch(action);
+
+    await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+    expect(pull).not.toHaveBeenCalled();
+    expect(create.mock.calls).toEqual([
+      [
+        {
+          title: '',
+          repositoryPath: project.repoPath,
+          plainFolder: true,
+          initialAgent: {
+            name: 'Developer',
+            model: 'sonnet',
+            prompt: 'hello onboarding',
+            agentType: 'workspace',
+            specialist: 'developer',
+            behaviorPrompt: undefined,
+            provider: 'claude-code',
+            contextReferences: undefined,
+            imageBlocks: undefined,
+            metadata: { source: 'onboarding', isInitialAgent: true, specialist: 'developer' },
+          },
+          progressId: action.payload.progressId,
+        },
+      ],
+    ]);
   });
 });

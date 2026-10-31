@@ -9,7 +9,7 @@
    *   - triggers sidebar slide-in
    *   - reveals Message 3
    */
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { createLogger } from '$lib/utils/client-logger';
   import { invoke } from '$shared/generated/ipc-client';
@@ -17,6 +17,9 @@
   import LocalRepoTab from './LocalRepoTab.svelte';
   import GitHubRepoTab from './GitHubRepoTab.svelte';
   import NewProjectTab from './NewProjectTab.svelte';
+  import InitializeGitToggle from '$lib/components/workspace/initializer/InitializeGitToggle.svelte';
+  import { createInitializeGitChoice } from '$lib/components/workspace/initializer/initialize-git-choice.svelte';
+  import { newProjectDefaultParent } from '$lib/components/workspace/initializer/plain-folder-create';
   import {
     selectWorkspaceInitializerBranchByRepo,
     selectWorkspaceInitializerDefaultParentPath,
@@ -33,13 +36,17 @@
   const lastSelectedRepo$ = selectWorkspaceInitializerLastSelectedRepo();
   const branchByRepo$ = selectWorkspaceInitializerBranchByRepo();
 
+  // "Initialize as git repository" (Labs, plain-folder workspaces).
+  const initializeGitChoice = createInitializeGitChoice();
+  const plainFolderMode = $derived(!initializeGitChoice.initializeGit);
+
   /**
    * Resolve the default on-disk location for the "New project" parent
    * folder. Prefers a previously saved value from Redux hydrated
-   * persistence, falling back to `~/Developer`.
+   * persistence, falling back to `~/Developer` (`~/Documents` for a plain folder).
    */
   function getDefaultLocation(): string {
-    return $defaultParentPath$ || '~/Developer';
+    return newProjectDefaultParent($defaultParentPath$, plainFolderMode);
   }
 
   type TabId = 'local' | 'github' | 'new';
@@ -54,6 +61,11 @@
     isValid: boolean;
     /** Local folder exists but has no Git repo; the daemon must initialize it. */
     initGit?: boolean;
+    /**
+     * Plain-folder workspace (Labs): `'existing'` uses a non-git folder as-is,
+     * `'new'` creates the folder without git. Never set with `initGit`.
+     */
+    plainFolder?: 'existing' | 'new';
   }
 
   interface Props {
@@ -110,6 +122,7 @@
     isDirectory: boolean;
     isEmpty: boolean;
     isGitRepo: boolean;
+    isSubdirectoryOfGitRepo?: boolean;
   } | null>(null);
   let isCheckingNewProjectDir = $state(false);
 
@@ -240,13 +253,17 @@
   // to avoid $effect → callback → state change → $effect infinite loops.
   function buildSelection(): ProjectSelection {
     if (activeTab === 'local') {
+      // A non-git folder outside any repository is git-initialized, or used as
+      // a plain folder when "Initialize as git repository" is off.
+      const plain = localInitGit && plainFolderMode;
       return {
         type: 'local',
         repoPath: localRepoPath,
-        branch: localBranch,
+        branch: plain ? '' : localBranch,
         scope: localScope,
         isValid: !!localRepoPath,
-        ...(localInitGit ? { initGit: true } : {}),
+        ...(localInitGit && !plain ? { initGit: true } : {}),
+        ...(plain ? { plainFolder: 'existing' as const } : {}),
       };
     } else if (activeTab === 'github') {
       // Branch is chosen in the prompt/configuration step via the shared
@@ -274,13 +291,20 @@
         parentPath && projectName && !hasError
           ? `${parentPath.replace(/\/$/, '')}/${projectName}`
           : '';
+      // Plain-folder mode: a folder outside any git repository is created without git.
+      const plain =
+        plainFolderMode &&
+        !!fullPath &&
+        !newProjectDirStatus?.isGitRepo &&
+        !newProjectDirStatus?.isSubdirectoryOfGitRepo;
       return {
         type: 'new',
         repoPath: fullPath,
-        branch: 'main',
+        branch: plain ? '' : 'main',
         projectName,
         isValid: !!parentPath && !!projectName && !hasError && !isCheckingNewProjectDir,
-      };
+        ...(plain ? { plainFolder: newProjectDirStatus?.exists ? 'existing' : 'new' } : {}),
+      } as ProjectSelection;
     }
   }
 
@@ -292,6 +316,17 @@
   // Notify parent once on mount with pre-filled persisted values (if any)
   onMount(() => {
     notifyParent();
+  });
+
+  // The selection depends on the toggle (git init vs plain folder); the new
+  // project location follows the mode's built-in fallback until the user picks one.
+  $effect(() => {
+    const plain = plainFolderMode;
+    untrack(() => {
+      if (parentPath === newProjectDefaultParent($defaultParentPath$, !plain))
+        parentPath = newProjectDefaultParent($defaultParentPath$, plain);
+      notifyParent();
+    });
   });
 
   const tabs: { id: TabId; label: string }[] = [
@@ -344,6 +379,14 @@
       {/each}
     </Tabs.List>
 
+    {#if initializeGitChoice.visible && activeTab !== 'github'}
+      <InitializeGitToggle
+        class="mt-4"
+        checked={initializeGitChoice.initializeGit}
+        onCheckedChange={(value) => initializeGitChoice.set(value)}
+      />
+    {/if}
+
     <!-- Tab content -->
     <div class="min-h-[120px]" in:fly={{ tier: 'slow', distance: 10 }}>
       {#key activeTab}
@@ -351,6 +394,7 @@
           {#if activeTab === 'local'}
             <LocalRepoTab
               selectedPath={localRepoPath}
+              {plainFolderMode}
               onSelect={(path, scope, initGit) => {
                 localRepoPath = path;
                 localScope = scope;

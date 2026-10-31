@@ -26,6 +26,7 @@ const {
   multiplayerState,
   gitlabState,
   remoteAgentsState,
+  plainFolderState,
   storeEvents,
 } = vi.hoisted(() => {
   const createSelectorReadable = <TArg, TValue>(arg: TArg, resolver: (value: any) => TValue) => ({
@@ -150,6 +151,7 @@ const {
     multiplayerState: { enabled: false },
     gitlabState: { enabled: undefined as boolean | undefined },
     remoteAgentsState: { enabled: undefined as boolean | undefined },
+    plainFolderState: { enabled: undefined as boolean | undefined },
     storeEvents: { emit: () => {} },
   };
 });
@@ -269,6 +271,7 @@ vi.mock('$store/renderer/store', async () => {
         labsMultiplayerEnabled: multiplayerState.enabled,
         labsGitLabEnabled: gitlabState.enabled,
         labsRemoteAgentsEnabled: remoteAgentsState.enabled,
+        labsPlainFolderWorkspacesEnabled: plainFolderState.enabled,
       },
     }),
     dispatch: reduxDispatchMock,
@@ -413,6 +416,7 @@ describe('CommandPalette new actions', () => {
     multiplayerState.enabled = false;
     gitlabState.enabled = undefined;
     remoteAgentsState.enabled = undefined;
+    plainFolderState.enabled = undefined;
   });
 
   it.each([
@@ -614,6 +618,36 @@ describe('CommandPalette new actions', () => {
       });
       expect(invokeMock).not.toHaveBeenCalled();
       expect(backendRequestMock).not.toHaveBeenCalled();
+      expect(onClose).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each([undefined, false, true])(
+    'changes experimental plain-folder workspaces from saved=%s',
+    async (enabled) => {
+      plainFolderState.enabled = enabled;
+      const onClose = vi.fn();
+      render(CommandPalette, { props: { isOpen: true, initialQuery: 'plain-folder', onClose } });
+      const command = await screen.findByRole('button', {
+        name: enabled
+          ? /Disable experimental plain-folder workspaces/i
+          : /Enable experimental plain-folder workspaces/i,
+      });
+      expect(
+        screen.queryByRole('button', {
+          name: enabled
+            ? /Enable experimental plain-folder workspaces/i
+            : /Disable experimental plain-folder workspaces/i,
+        }),
+      ).toBeNull();
+
+      reduxDispatchMock.mockClear();
+      await fireEvent.click(command);
+
+      expect(reduxDispatchMock).toHaveBeenCalledExactlyOnceWith({
+        type: 'userPreferences/setLabsPlainFolderWorkspacesEnabled',
+        payload: [!enabled],
+      });
       expect(onClose).toHaveBeenCalledOnce();
     },
   );

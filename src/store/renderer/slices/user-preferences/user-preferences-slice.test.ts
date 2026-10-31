@@ -32,6 +32,7 @@ import {
   setLabsMultiplayerEnabled,
   setLabsGitLabEnabled,
   setLabsRemoteAgentsEnabled,
+  setLabsPlainFolderWorkspacesEnabled,
   setLabsSettingsVisible,
   setNotificationEnabled,
   setNoteFontStyle,
@@ -55,6 +56,7 @@ import {
   toggleLabsMultiplayer,
   toggleLabsGitLab,
   toggleLabsRemoteAgents,
+  toggleLabsPlainFolderWorkspaces,
   toggleLabsSettingsVisibility,
   toggleReduceMotionOnBattery,
   toggleShowArchived,
@@ -633,6 +635,17 @@ describe('userPreferencesReducer', () => {
       const disabled = userPreferencesReducer(enabled, toggleLabsRemoteAgents());
       expect(enabled.labsRemoteAgentsEnabled).toBe(true);
       expect(disabled.labsRemoteAgentsEnabled).toBe(false);
+    });
+
+    it('defaults the plain-folder workspaces lab to disabled and sets/toggles it', () => {
+      expect(initialState.labsPlainFolderWorkspacesEnabled).toBe(false);
+      const enabled = userPreferencesReducer(
+        initialState,
+        setLabsPlainFolderWorkspacesEnabled(true),
+      );
+      const disabled = userPreferencesReducer(enabled, toggleLabsPlainFolderWorkspaces());
+      expect(enabled.labsPlainFolderWorkspacesEnabled).toBe(true);
+      expect(disabled.labsPlainFolderWorkspacesEnabled).toBe(false);
     });
 
     it('has no Provider profiles lab preference: profiles are always on', () => {

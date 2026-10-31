@@ -52,8 +52,10 @@ import {
   userPreferencesHydrated,
   setLabsGitLabEnabled,
   setLabsRemoteAgentsEnabled,
+  setLabsPlainFolderWorkspacesEnabled,
   toggleLabsGitLab,
   toggleLabsRemoteAgents,
+  toggleLabsPlainFolderWorkspaces,
   setLabsSettingsVisible,
   setLanguagePreference,
   setNoteFontStyle,
@@ -220,6 +222,7 @@ describe('userPreferencesPersistenceSaga', () => {
       'labs:settingsVisible': true,
       'labs:gitlabEnabled': true,
       'labs:remoteAgentsEnabled': true,
+      'labs:plainFolderWorkspacesEnabled': true,
       'agent-font-settings': { fontStyle: 'monospace' },
       'note-font-settings': { fontStyle: 'sans' },
       'code-font-settings': { fontFamily: 'Monaco' },
@@ -250,6 +253,7 @@ describe('userPreferencesPersistenceSaga', () => {
       [setLabsSettingsVisible(true)],
       [setLabsGitLabEnabled(true)],
       [setLabsRemoteAgentsEnabled(true)],
+      [setLabsPlainFolderWorkspacesEnabled(true)],
       [setAgentFontStyle('monospace')],
       [setNoteFontStyle('sans')],
       [setCodeFontFamily('Monaco')],
@@ -414,6 +418,38 @@ describe('userPreferencesPersistenceSaga', () => {
       await restarted.stop();
     },
   );
+
+  it.each([undefined, null, 'true', 1, {}])(
+    'keeps the plain-folder lab off for missing or invalid storage: %j',
+    async (stored) => {
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === 'labs:plainFolderWorkspacesEnabled' ? stored : undefined,
+      );
+      const run = startPreferenceStore();
+      await settle();
+      expect(run.getUserPreferences().labsPlainFolderWorkspacesEnabled).toBe(false);
+      await run.stop();
+    },
+  );
+
+  it.each([true, false])('persists the plain-folder lab %s across restart', async (enabled) => {
+    const storage: Record<string, unknown> = {};
+    mocks.getJSON.mockImplementation((key: string) => storage[key]);
+    mocks.setJSON.mockImplementation((key: string, value: unknown) => {
+      storage[key] = value;
+    });
+    const first = startPreferenceStore();
+    await settle();
+    first.dispatch(setLabsPlainFolderWorkspacesEnabled(!enabled));
+    first.dispatch(toggleLabsPlainFolderWorkspaces());
+    await settle();
+    expect(storage['labs:plainFolderWorkspacesEnabled']).toBe(enabled);
+    await first.stop();
+    const restarted = startPreferenceStore();
+    await settle();
+    expect(restarted.getUserPreferences().labsPlainFolderWorkspacesEnabled).toBe(enabled);
+    await restarted.stop();
+  });
 
   it('ignores a leftover Provider profiles lab value and never writes it', async () => {
     mocks.getJSON.mockImplementation((key: string) =>
