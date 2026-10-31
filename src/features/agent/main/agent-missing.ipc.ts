@@ -14,7 +14,6 @@ import { Logger } from '$shared/logger';
 import { agentCircuitBreaker, type CircuitStatus } from '$shared/services/agent-circuit-breaker';
 import { getWindowIdsForWorkspace } from '../../system/main/system.ipc';
 import { ANY_HOST } from '../../system/main/window-workspace-tracking';
-import { getBackendClient } from '../../backend/main/backend.ipc';
 import { m } from '../../../shared/paraglide/messages.js';
 
 const logger = new Logger('AgentMissing-IPC');
@@ -76,28 +75,6 @@ const UniversalAgentEnhancePromptSchema = z.object({
     .optional(),
 });
 
-interface ActiveStream {
-  agentId: string;
-  sessionId: string;
-  workspaceId: string;
-  startTime: number;
-}
-
-interface AgentListActiveResult {
-  streams: ActiveStream[];
-}
-
-/**
- * Last successfully resolved active-streams snapshot from the daemon's
- * `agent.listActive` probe. Served back on ANY `agent.listActive` failure —
- * including a `-32601` METHOD_NOT_FOUND — so a slow/overloaded daemon degrades
- * to a stale read instead of issuing more RPCs. The former
- * `workspace.list` → `agent.list` per-workspace fan-out was removed: every
- * supported daemon serves `agent.listActive`, and fanning out O(workspaces)
- * `agent.list` calls on a failure only amplified load (monorepo#1395).
- */
-let lastKnownActiveStreams: ActiveStream[] = [];
-
 // Note: Agent context schemas are defined in agent-context.ipc.ts
 
 /**
@@ -105,11 +82,7 @@ let lastKnownActiveStreams: ActiveStream[] = [];
  */
 export function registerMissingAgentHandlers(): void {
   // Remove only the handlers registered by this module before re-registering.
-  const handlers = [
-    'agent:get-active-streams',
-    'agent:circuit-breaker:reset',
-    'universal-agent:enhancePrompt',
-  ];
+  const handlers = ['agent:circuit-breaker:reset', 'universal-agent:enhancePrompt'];
 
   // Ignore channels that have not been registered yet.
   for (const channel of handlers) {
@@ -119,51 +92,6 @@ export function registerMissingAgentHandlers(): void {
       // Handler might not exist, that's ok
     }
   }
-
-  // Cross-workspace active-streams probe used by the renderer tracker — one
-  // daemon-global `agent.listActive` request, never a per-workspace fan-out.
-  ipcMain.handle('agent:get-active-streams', async () => {
-    try {
-      const client = getBackendClient();
-      let activeStreams: ActiveStream[];
-      try {
-        const result = await client.request<AgentListActiveResult>('agent.listActive');
-        activeStreams = result.streams.map(({ agentId, sessionId, workspaceId, startTime }) => ({
-          agentId,
-          sessionId,
-          workspaceId,
-          startTime,
-        }));
-      } catch (error) {
-        // Any failure (timeout, connection drop, internal error, method not
-        // found) — serve the last known snapshot rather than issuing more
-        // RPCs against a daemon that is already struggling.
-        logger.warn('agent.listActive failed; returning last known active streams', {
-          error: error instanceof Error ? error.message : String(error),
-        });
-        return { success: true, data: lastKnownActiveStreams };
-      }
-
-      logger.debug('agent:get-active-streams called', {
-        count: activeStreams.length,
-        agentIds: activeStreams.map((s) => s.agentId),
-      });
-
-      lastKnownActiveStreams = activeStreams;
-
-      return {
-        success: true,
-        data: activeStreams,
-      };
-    } catch (error) {
-      logger.error('Failed to get active streams', error as Error);
-      return {
-        success: false,
-        error: (error as Error).message || m.agent_ipc_activeStreamsFailed_error(),
-        data: [],
-      };
-    }
-  });
 
   // Manually reset a tripped circuit breaker for a workspace so the user can
   // recover without restarting the app. The resulting status change is

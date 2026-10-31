@@ -47,11 +47,23 @@ import {
 
 const SRC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
+const PROVIDER_MODELS_PARITY = 'features/providers/provider-models-ipc-path-parity.test.ts';
+
 /** Shared channel → parity suite (path relative to `src/`) that calls `describeParity(channel, …)`. */
 const PARITY_SUITES: ReadonlyMap<string, string> = new Map([
   ['terminal:createWithCommand', 'features/terminal/terminal-ipc-path-parity.test.ts'],
   ['terminal:professional:write', 'features/terminal/terminal-ipc-path-parity.test.ts'],
   ['system:execute-command', 'features/system/system-ipc-path-parity.test.ts'],
+  ['antigravity:get-models', PROVIDER_MODELS_PARITY],
+  ['auggie:get-models', PROVIDER_MODELS_PARITY],
+  ['claude-code:get-models', PROVIDER_MODELS_PARITY],
+  ['codex:get-models', PROVIDER_MODELS_PARITY],
+  ['cortex:get-models', PROVIDER_MODELS_PARITY],
+  ['droid:get-models', PROVIDER_MODELS_PARITY],
+  ['grok:get-models', PROVIDER_MODELS_PARITY],
+  ['opencode:get-models', PROVIDER_MODELS_PARITY],
+  ['pi:get-models', PROVIDER_MODELS_PARITY],
+  ['unsloth:get-models', PROVIDER_MODELS_PARITY],
 ]);
 
 /** Shared channels whose paths differ on purpose; each reason says why that is safe. */
@@ -70,6 +82,114 @@ const DIVERGENT: ReadonlyMap<string, string> = new Map([
     'window:open-new',
     'Forwards a sanitized `{ route, requestId }` to main — every WindowOpenNewSchema field.',
   ],
+  [
+    'backend:get-status',
+    'Desktop callers invoke main directly through `window.electronAPI` (daemon-health-saga, splash-gate, interrupted-agents-service); the seeder only answers the browser mock and tests, which have no main-process daemon client.',
+  ],
+  [
+    'backend:node-capabilities',
+    'Desktop callers invoke main directly through `window.electronAPI` (electron-ipc-transport); the seeder only answers the browser mock and tests, which have no main-process daemon client.',
+  ],
+  [
+    'backend:read-principal',
+    'Desktop callers invoke main directly through `window.electronAPI` (electron-ipc-transport); the seeder only answers the browser mock and tests, which have no main-process daemon client.',
+  ],
+  [
+    'backend:spawn-sidecar',
+    'Desktop callers invoke main directly through `window.electronAPI` (daemon-health-saga); the seeder only answers the browser mock and tests, which cannot spawn or inspect the sidecar.',
+  ],
+  [
+    'backend:open-local-and-spawn',
+    'Desktop callers invoke main directly through `window.electronAPI` (daemon-health-saga); the seeder only answers the browser mock and tests, which cannot spawn or inspect the sidecar.',
+  ],
+  [
+    'backend:restart-orphaned-sidecar',
+    'Desktop callers invoke main directly through `window.electronAPI` (daemon-health-saga); the seeder only answers the browser mock and tests, which cannot spawn or inspect the sidecar.',
+  ],
+  [
+    'backend:get-sidecar-run-log',
+    'Desktop callers invoke main directly through `window.electronAPI` (daemon-health-saga); the seeder only answers the browser mock and tests, which cannot spawn or inspect the sidecar.',
+  ],
+  [
+    'connections:add',
+    'Desktop callers invoke main directly through `window.electronAPI` (connections-saga); the seeder only answers the browser mock and tests, which have no encrypted connection store.',
+  ],
+  [
+    'connections:capture-fingerprint',
+    'Desktop callers invoke main directly through `window.electronAPI` (connections-saga); the seeder only answers the browser mock and tests, which have no encrypted connection store.',
+  ],
+  [
+    'connections:forget',
+    'Desktop callers invoke main directly through `window.electronAPI` (connections-saga); the seeder only answers the browser mock and tests, which have no encrypted connection store.',
+  ],
+  [
+    'connections:list',
+    'Desktop callers invoke main directly through `window.electronAPI` (connections-saga); the seeder only answers the browser mock and tests, which have no encrypted connection store.',
+  ],
+  [
+    'connections:publish-self',
+    'Desktop callers invoke main directly through `window.electronAPI` (connections-saga); the seeder only answers the browser mock and tests, which have no encrypted connection store.',
+  ],
+  [
+    'connections:refresh-self',
+    'Desktop callers invoke main directly through `window.electronAPI` (connections-saga); the seeder only answers the browser mock and tests, which have no encrypted connection store.',
+  ],
+  [
+    'connections:self-published-state',
+    'Desktop callers invoke main directly through `window.electronAPI` (connections-saga); the seeder only answers the browser mock and tests, which have no encrypted connection store.',
+  ],
+  [
+    'connections:sync-get-state',
+    'Desktop callers invoke main directly through `window.electronAPI` (connections-saga); the seeder only answers the browser mock and tests, which have no encrypted connection store.',
+  ],
+  [
+    'connections:sync-set-enabled',
+    'Desktop callers invoke main directly through `window.electronAPI` (connections-saga); the seeder only answers the browser mock and tests, which have no encrypted connection store.',
+  ],
+  [
+    'connections:unpublish-self',
+    'Desktop callers invoke main directly through `window.electronAPI` (connections-saga); the seeder only answers the browser mock and tests, which have no encrypted connection store.',
+  ],
+  [
+    'connections:update-backend',
+    'Desktop callers invoke main directly through `window.electronAPI` (connections-saga); the seeder only answers the browser mock and tests, which have no encrypted connection store.',
+  ],
+  [
+    'guest-sessions:leave',
+    'Desktop callers invoke main directly through `window.electronAPI` (guest-sessions-saga); the seeder only answers the browser mock and tests, which have no guest session store.',
+  ],
+  [
+    'guest-sessions:leave-workspace',
+    'Desktop callers invoke main directly through `window.electronAPI` (guest-sessions-saga); the seeder only answers the browser mock and tests, which have no guest session store.',
+  ],
+  [
+    'guest-sessions:list',
+    'Desktop callers invoke main directly through `window.electronAPI` (guest-sessions-saga); the seeder only answers the browser mock and tests, which have no guest session store.',
+  ],
+  [
+    'panel-layout:load',
+    'Desktop callers invoke main directly through `window.electronAPI` (panel-layout-history.client); the seeder only answers the browser mock and tests, which have no layout history on disk.',
+  ],
+  [
+    'panel-layout:save',
+    'Desktop callers invoke main directly through `window.electronAPI` (panel-layout-history.client); the seeder only answers the browser mock and tests, which have no layout history on disk.',
+  ],
+  [
+    'shell:openExternal',
+    'Forwards a scheme-checked `{ url }` to main via `openExternalUrl()` (the only field main reads); without a bridge it falls back to `window.open`.',
+  ],
+  [
+    'external-editors:open-with-other',
+    'Forwards a sanitized `{ path }` to main (the only field main reads); the native app chooser exists only in main.',
+  ],
+  [
+    'file:read',
+    'Base64 host-file reads forward verbatim to main (the daemon `file.read` is UTF-8 and workspace-bound); workspace text reads go to the daemon `file.read`.',
+  ],
+  [
+    'providers:check-single',
+    'Only the env-gated `mock` provider forwards to main (renderer cannot read main env); every real provider is probed on the daemon host.',
+  ],
 ]);
 
 /**
@@ -77,80 +197,25 @@ const DIVERGENT: ReadonlyMap<string, string> = new Map([
  * parity suite yet, snapshotted when this check landed. FROZEN: never add an
  * entry. Remove one by writing a parity suite, making the seeder forward to
  * main, retiring one side, or moving it to DIVERGENT with a confirmed reason.
- * Many are likely by-design differences (bridge-less stand-ins that return
- * "not available in this build", or main handlers that use local OS
- * resources the renderer reaches through the daemon); the best parity
- * candidates are the channels where both sides call the daemon, such as
- * `presence:report` (presence.update) and the provider `*:get-models`
- * channels.
+ * Most remaining entries are renderer reimplementations whose main copy only
+ * the generated `invoke()` would reach — and it never does, so the main copy
+ * is dead and can be deleted. Check for direct `window.electronAPI.invoke`
+ * callers first (including e2e build-smoke helpers: `workspace:get` and
+ * `providers:get-availability` are called that way).
  */
 const UNCHECKED_LEGACY: ReadonlySet<string> = new Set([
-  'agent:get-active-streams',
-  'antigravity:get-models',
-  'auggie:authenticate',
-  'auggie:get-models',
-  'auggie:install',
-  'backend:get-sidecar-run-log',
-  'backend:get-status',
-  'backend:node-capabilities',
-  'backend:open-local-and-spawn',
-  'backend:read-principal',
-  'backend:restart-orphaned-sidecar',
-  'backend:spawn-sidecar',
-  'claude-code:check-availability',
-  'claude-code:get-models',
-  'codex:check-availability',
-  'codex:get-models',
-  'connections:add',
-  'connections:capture-fingerprint',
-  'connections:forget',
-  'connections:list',
-  'connections:publish-self',
-  'connections:refresh-self',
-  'connections:self-published-state',
-  'connections:sync-get-state',
-  'connections:sync-set-enabled',
-  'connections:unpublish-self',
-  'connections:update-backend',
-  'cortex:check-availability',
-  'cortex:get-models',
-  'droid:check-availability',
-  'droid:get-models',
   'external-editors:detect-installed',
   'external-editors:open',
-  'external-editors:open-with-other',
-  'feature-codes:activate',
-  'feature-codes:deactivate',
-  'feature-codes:get-active',
-  'feature-codes:restart-app',
   'file:copy',
   'file:delete',
   'file:exists',
   'file:getDirectoryStatus',
   'file:move',
-  'file:read',
   'file:write',
-  'grok:get-models',
-  'guest-sessions:leave',
-  'guest-sessions:leave-workspace',
-  'guest-sessions:list',
   'jetbrains:open',
-  'opencode:check-availability',
-  'opencode:get-models',
-  'panel-layout:load',
-  'panel-layout:save',
-  'pi:get-models',
-  'presence:report',
-  'providers:check-single',
   'providers:get-availability',
   'providers:get-paths',
-  'shell:openExternal',
   'shell:showItemInFolder',
-  'system:check-gh',
-  'system:check-git',
-  'system:check-node',
-  'system:check-rtk',
-  'unsloth:get-models',
   'vscode:open',
   'vscode:open-git-diff',
   'vscode:openFile',
@@ -168,7 +233,7 @@ const UNCHECKED_LEGACY: ReadonlySet<string> = new Set([
 ]);
 
 /** Ceiling for UNCHECKED_LEGACY — lower it as entries leave; never raise it. */
-const UNCHECKED_LEGACY_CEILING = 80;
+const UNCHECKED_LEGACY_CEILING = 26;
 
 /** How long the probe waits for a seeder handler before treating it as not forwarding. */
 const PROBE_TIMEOUT_MS = 500;
