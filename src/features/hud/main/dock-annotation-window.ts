@@ -1553,35 +1553,35 @@ export function setupDockAnnotationIPC(
   controller: DockAnnotationController = dockAnnotationController,
 ): () => void {
   const allowed = (event: IpcMainInvokeEvent) => controller.isOverlaySender(event);
-  const handlers: [string, Parameters<typeof ipcMain.handle>[1]][] = [
-    [
-      DOCK_ANNOTATION_CHANNELS.READY,
-      (event, request: DockAnnotationReadyRequest) =>
-        allowed(event) ? controller.handleReady(request) : null,
-    ],
-    [
-      DOCK_ANNOTATION_CHANNELS.GET_STILL,
-      (event, request: { sessionId?: unknown }) =>
-        allowed(event) ? controller.handleStill(request) : null,
-    ],
-    [
-      DOCK_ANNOTATION_CHANNELS.TOOLBAR,
-      (event, request: DockAnnotationToolbarRequest) =>
-        allowed(event) ? controller.handleToolbar(request) : false,
-    ],
-    [
-      DOCK_ANNOTATION_CHANNELS.POINTER,
-      (event, request: DockAnnotationPointerRequest) =>
-        allowed(event) ? controller.handlePointer(request) : reject('stale'),
-    ],
-    [
-      DOCK_ANNOTATION_CHANNELS.GESTURE,
-      (event, request: DockAnnotationGestureRequest) =>
-        allowed(event) ? controller.handleGesture(request) : reject('stale'),
-    ],
-  ];
-  for (const [channel, handler] of handlers) ipcMain.handle(channel, handler);
+  ipcMain.handle(DOCK_ANNOTATION_CHANNELS.READY, (event, request: DockAnnotationReadyRequest) =>
+    allowed(event) ? controller.handleReady(request) : null,
+  );
+  ipcMain.handle(DOCK_ANNOTATION_CHANNELS.GET_STILL, (event, request: { sessionId?: unknown }) =>
+    allowed(event) ? controller.handleStill(request) : null,
+  );
+  ipcMain.handle(
+    DOCK_ANNOTATION_CHANNELS.TOOLBAR,
+    (event, request: DockAnnotationToolbarRequest) =>
+      allowed(event) ? controller.handleToolbar(request) : false,
+  );
+  ipcMain.handle(
+    DOCK_ANNOTATION_CHANNELS.POINTER,
+    (event, request: DockAnnotationPointerRequest) =>
+      allowed(event) ? controller.handlePointer(request) : reject('stale'),
+  );
+  ipcMain.handle(
+    DOCK_ANNOTATION_CHANNELS.GESTURE,
+    (event, request: DockAnnotationGestureRequest) =>
+      allowed(event) ? controller.handleGesture(request) : reject('stale'),
+  );
   return () => {
-    for (const [channel] of handlers) ipcMain.removeHandler(channel);
+    for (const channel of [
+      DOCK_ANNOTATION_CHANNELS.READY,
+      DOCK_ANNOTATION_CHANNELS.GET_STILL,
+      DOCK_ANNOTATION_CHANNELS.TOOLBAR,
+      DOCK_ANNOTATION_CHANNELS.POINTER,
+      DOCK_ANNOTATION_CHANNELS.GESTURE,
+    ])
+      ipcMain.removeHandler(channel);
   };
 }
