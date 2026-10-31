@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   applySpecialistProposalWork: vi.fn(),
   undoSpecialistProposalWork: vi.fn(),
   toastError: vi.fn(),
+  toastWarning: vi.fn(),
   getJSON: vi.fn(),
   setJSON: vi.fn(),
 }));
@@ -20,7 +21,9 @@ vi.mock('$lib/components/chat/proposals/specialist-proposal-actions', () => ({
   applySpecialistProposalWork: mocks.applySpecialistProposalWork,
   undoSpecialistProposalWork: mocks.undoSpecialistProposalWork,
 }));
-vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: mocks.toastError } }));
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: mocks.toastError, warning: mocks.toastWarning },
+}));
 vi.mock('$lib/utils/safe-storage', () => ({
   safeLocalStorage: {
     getJSON: mocks.getJSON,
@@ -811,6 +814,26 @@ describe('workspace transfer proposals', () => {
       },
     };
   }
+  it('applies and warns with the target label when main could not open the target', async () => {
+    const invoke = vi
+      .fn()
+      .mockResolvedValueOnce({ success: true })
+      .mockResolvedValueOnce({ success: true, targetOpenFailed: true });
+    mocks.toastWarning.mockClear();
+    const previousWindow = globalThis.window;
+    vi.stubGlobal('window', { electronAPI: { invoke } });
+    try {
+      const h = await harness();
+      await h.run();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(h.entry.status).toBe('applied');
+      expect(mocks.toastWarning).toHaveBeenCalledOnce();
+      expect(mocks.toastWarning.mock.calls[0][0]).toContain('Target');
+    } finally {
+      vi.stubGlobal('window', previousWindow);
+    }
+  });
+
   it('starts only on approval and only retries finalize after import succeeds', async () => {
     const invoke = vi
       .fn()

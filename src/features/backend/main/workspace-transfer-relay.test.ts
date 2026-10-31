@@ -875,13 +875,37 @@ describe('workspace-transfer relay — finalize', () => {
     await startPromise;
 
     const result = await relay.finalize({ archiveSource: true, openTarget: true });
-    await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(result).toEqual({ success: true });
+    expect(result).toEqual({ success: true, targetOpenFailed: true });
     expect(deps.logger.warn).toHaveBeenCalledWith(
       'Could not open the transferred workspace on the target',
-      expect.objectContaining({ workspaceId: 'ws-1' }),
+      expect.objectContaining({ connectionId: 'conn-1', workspaceId: 'ws-1' }),
     );
+  });
+
+  it('does not hold the finalize reply on a slow target open', async () => {
+    vi.useFakeTimers();
+    try {
+      const openTargetWorkspace = vi.fn(() => new Promise<void>(() => undefined));
+      const source = makeSource();
+      const target = makeTarget();
+      const { deps } = makeDeps(source, target, { openTargetWorkspace });
+      const relay = makeRelay(deps);
+      const startPromise = relay.start(
+        { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+        source.client,
+      );
+      await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
+      await startPromise;
+
+      const finalize = relay.finalize({ archiveSource: true, openTarget: true });
+      await vi.advanceTimersByTimeAsync(15_000);
+
+      await expect(finalize).resolves.toEqual({ success: true });
+      expect(openTargetWorkspace).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('propagates a finalize failure', async () => {

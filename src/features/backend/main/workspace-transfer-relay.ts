@@ -69,8 +69,9 @@ export interface TransferRelayDeps {
   isOwnerGone(ownerId: number): boolean;
   /**
    * Open (or focus) a window for the target backend and show the transferred
-   * workspace there. Called after a successful finalize that asked for it;
-   * failures are logged, never surfaced as a finalize failure.
+   * workspace there. Called after a successful finalize that asked for it; a
+   * rejection is logged and reported as `targetOpenFailed`, never as a
+   * finalize failure.
    */
   openTargetWorkspace?(connectionId: string, workspaceId: string): Promise<void>;
   logger: {
@@ -106,6 +107,8 @@ const COMMIT_TIMEOUT_MS = 600_000;
 /** Waiting for the source's archive build (`:ready`/`:failed`) is unbounded
  * by RPC — bound it so a wedged daemon cannot hang the wizard forever. */
 const BUILD_TIMEOUT_MS = 600_000;
+/** How long finalize waits for the target window to open before replying. */
+const OPEN_TARGET_WAIT_MS = 15_000;
 
 /** One in-flight/settled transfer awaiting finalize. */
 interface RelaySession {
@@ -643,18 +646,36 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
     }
   }
 
-  /** Fire-and-forget: the source is already settled, so opening the target
-   * must neither delay nor fail the finalize reply. */
-  function openTargetWorkspace(current: RelaySession): void {
+  /**
+   * Open the transferred workspace on the target once the source is settled.
+   * Never fails the finalize: resolves true only when the open failed, so the
+   * renderer can warn. A slow open is not awaited past
+   * {@link OPEN_TARGET_WAIT_MS}; it keeps running and is treated as opened.
+   */
+  async function openTargetWorkspace(current: RelaySession): Promise<boolean> {
     const connectionId = current.targetConnectionId;
     const workspaceId = current.targetWorkspaceId;
-    if (!connectionId || !workspaceId || !deps.openTargetWorkspace) return;
-    void deps.openTargetWorkspace(connectionId, workspaceId).catch((error: unknown) => {
-      deps.logger.warn('Could not open the transferred workspace on the target', {
-        workspaceId,
-        error: errText(error),
-      });
+    if (!connectionId || !workspaceId || !deps.openTargetWorkspace) return false;
+    const open = deps.openTargetWorkspace(connectionId, workspaceId).then(
+      () => false,
+      (error: unknown) => {
+        deps.logger.warn('Could not open the transferred workspace on the target', {
+          connectionId,
+          workspaceId,
+          error: errText(error),
+        });
+        return true;
+      },
+    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const slow = new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => resolve(false), OPEN_TARGET_WAIT_MS);
     });
+    try {
+      return await Promise.race([open, slow]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   async function finalize(
@@ -736,8 +757,12 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
       }
     }
     if (session === current) session = null;
-    if (params.openTarget) openTargetWorkspace(current);
-    return { success: true, ...(resumeFailed.length > 0 ? { resumeFailed } : {}) };
+    const targetOpenFailed = params.openTarget ? await openTargetWorkspace(current) : false;
+    return {
+      success: true,
+      ...(resumeFailed.length > 0 ? { resumeFailed } : {}),
+      ...(targetOpenFailed ? { targetOpenFailed: true } : {}),
+    };
   }
 
   async function cancel(ownerId: number): Promise<TransferCancelResult> {

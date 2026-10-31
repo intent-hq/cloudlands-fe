@@ -155,6 +155,16 @@ async function showResumeFailedToast(count: number): Promise<void> {
   }
 }
 
+/** Fail-soft warning toast when main could not open the destination window. */
+async function showOpenTargetFailedToast(label: string): Promise<void> {
+  try {
+    const { notify } = await import('$lib/components/patterns/notify');
+    notify.warning(m.workspace_transfer_openTargetFailed_message({ label }));
+  } catch (error) {
+    logger.warn('Failed to surface open-target failure toast', { error });
+  }
+}
+
 /** Human label for the final status message ("Transferred to <target> …"). */
 function* resolveDestinationLabel(): SagaGenerator<string> {
   const destination = yield* selectTransferDestinationValue.effect();
@@ -210,6 +220,9 @@ function* finalizeTransfer(
     const resumeFailed = result.resumeFailed ?? [];
     if (resumeFailed.length > 0) {
       yield* call(showResumeFailedToast, resumeFailed.length);
+    }
+    if (result.targetOpenFailed) {
+      yield* call(showOpenTargetFailedToast, label);
     }
     yield* put(closeTransferModal());
   } catch (error) {

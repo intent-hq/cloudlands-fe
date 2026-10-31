@@ -106,6 +106,8 @@ export interface TransferFinalizeResult {
   code?: SessionOwnershipErrorCode;
   /** Agent ids the target failed to resume (fail-soft, never blocks finalize). */
   resumeFailed?: string[];
+  /** `openTarget` was requested but the target window could not be opened. */
+  targetOpenFailed?: boolean;
 }
 
 /** `transfer:cancel` result. */

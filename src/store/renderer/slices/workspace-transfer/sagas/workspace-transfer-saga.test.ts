@@ -276,6 +276,30 @@ describe('workspaceTransferSaga — steps 3–4', () => {
     h.task.cancel();
   });
 
+  it('finalize warns when main could not open the target, and still closes', async () => {
+    mocks.invoke.mockResolvedValue({ success: true, targetOpenFailed: true });
+    mocks.toastWarning.mockClear();
+    let state = workspaceTransferReducer(
+      confirmLoadedState({ kind: 'server', connectionId: 'conn-1' }),
+      transferStartRequested(),
+    );
+    state = workspaceTransferReducer(
+      state,
+      transferRunSucceeded({ interruptedAgents: [], downloadFilePath: null }),
+    );
+    const h = harness(state);
+
+    h.channel.put(transferFinalizeRequested({ openTarget: true }));
+    await settle();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await settle();
+
+    expect(mocks.toastWarning).toHaveBeenCalledOnce();
+    expect(mocks.toastWarning.mock.calls[0][0]).toContain('devbox');
+    expect(h.dispatch).toHaveBeenCalledWith(closeTransferModal());
+    h.task.cancel();
+  });
+
   it('finalize without "open target" does not ask main to open the target', async () => {
     mocks.invoke.mockResolvedValue({ success: true });
     let state = workspaceTransferReducer(
@@ -324,6 +348,7 @@ describe('workspaceTransferSaga — steps 3–4', () => {
 
   it('finalize success with resumeFailed surfaces a warning toast and still closes', async () => {
     mocks.invoke.mockResolvedValue({ success: true, resumeFailed: ['agent-1', 'agent-2'] });
+    mocks.toastWarning.mockClear();
     let state = workspaceTransferReducer(
       confirmLoadedState({ kind: 'server', connectionId: 'conn-1' }),
       transferStartRequested(),
