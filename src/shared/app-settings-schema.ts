@@ -370,7 +370,9 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     source: 'daemon-settings',
     storageKey: 'context.auggiePath',
     defaultValue: '',
-    apply: { kind: 'daemon-settings-update', path: 'context.auggiePath' },
+    // Security-relevant (an executable, credential or data location): the
+    // daemon refuses chat changes too, so a card cannot change it.
+    apply: { kind: 'read-only' },
   },
   {
     path: 'providers.paths.claude-code',
@@ -382,7 +384,9 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     storageKey: 'providers.paths',
     valuePath: 'claude-code',
     defaultValue: '',
-    apply: { kind: 'daemon-settings-update', path: 'providers.paths', valuePath: 'claude-code' },
+    // Security-relevant (an executable, credential or data location): the
+    // daemon refuses chat changes too, so a card cannot change it.
+    apply: { kind: 'read-only' },
   },
   {
     path: 'providers.paths.codex',
@@ -394,7 +398,9 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     storageKey: 'providers.paths',
     valuePath: 'codex',
     defaultValue: '',
-    apply: { kind: 'daemon-settings-update', path: 'providers.paths', valuePath: 'codex' },
+    // Security-relevant (an executable, credential or data location): the
+    // daemon refuses chat changes too, so a card cannot change it.
+    apply: { kind: 'read-only' },
   },
   {
     path: 'workspace.branchPrefix',
@@ -416,7 +422,9 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     source: 'daemon-settings',
     storageKey: 'workspace.worktreesLocation',
     defaultValue: '',
-    apply: { kind: 'daemon-settings-update', path: 'workspace.worktreesLocation' },
+    // Security-relevant (an executable, credential or data location): the
+    // daemon refuses chat changes too, so a card cannot change it.
+    apply: { kind: 'read-only' },
   },
   {
     path: 'workspace.sshKeyPath',
@@ -428,7 +436,9 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     storageKey: 'workspace.sshKeyPath',
     defaultValue: '',
     sensitive: true,
-    apply: { kind: 'daemon-settings-update', path: 'workspace.sshKeyPath' },
+    // Security-relevant (an executable, credential or data location): the
+    // daemon refuses chat changes too, so a card cannot change it.
+    apply: { kind: 'read-only' },
   },
   {
     path: 'workspace.defaultShell',
@@ -439,7 +449,9 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     source: 'daemon-settings',
     storageKey: 'workspace.defaultShell',
     defaultValue: 'auto',
-    apply: { kind: 'daemon-settings-update', path: 'workspace.defaultShell' },
+    // Security-relevant (an executable, credential or data location): the
+    // daemon refuses chat changes too, so a card cannot change it.
+    apply: { kind: 'read-only' },
   },
   {
     // PROTOCOL §5.12: absent means 0 (off); turning it off is an explicit 0,

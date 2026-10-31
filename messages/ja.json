@@ -1061,6 +1061,7 @@
   "chat_scriptMonitor_unmonitored_description": "監視を終了しました。スクリプトは引き続き実行できます。",
   "chat_scriptMonitor_untrusted_description": "一致した行（信頼できないスクリプト出力）",
   "chat_settingsProposalActions_applyFailed_label": "設定の変更を適用できませんでした",
+  "chat_settingsProposalActions_notProposable_error": "設定「{path}」はチャットから変更できません。設定画面で変更してください。",
   "chat_settingsProposalActions_readOnlySetting_error": "設定「{path}」は読み取り専用のため変更できません",
   "chat_settingsProposalActions_undoFailed_label": "設定の変更を元に戻せませんでした",
   "chat_settingsProposalActions_unknownError_fallback": "不明な設定エラー",
