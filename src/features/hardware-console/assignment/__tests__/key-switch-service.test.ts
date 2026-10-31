@@ -387,6 +387,8 @@ describe('focusWorkspaceSlot — workspace tab still current but another route i
 
   it('does not treat a different workspace route sharing the id prefix as active', () => {
     seedLayout('panel-1', { 'panel-1': 't1', 'panel-2': 't4' });
+    // No tab selected, so the route alone decides; ws-10 must not read as ws-1.
+    mockState.tabState.currentTabId = null;
 
     at('/workspace/ws-10');
 

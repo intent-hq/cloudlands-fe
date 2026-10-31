@@ -34,8 +34,13 @@ describe('resolveVisibleWorkspaceId', () => {
     expect(resolveVisibleWorkspaceId('ws-1', path)).toBe(expected);
   });
 
-  it('follows the route before its tab is selected (show-workspace opens it after landing)', () => {
-    expect(resolveVisibleWorkspaceId('ws-1', '/workspace/ws-2')).toBe('ws-2');
+  it('keeps the tab as the source of truth while tab and route briefly disagree', () => {
+    // A tab-strip click selects its tab before navigating; show-workspace opens
+    // the tab only after landing. Either way the tab is the latest choice.
+    expect(resolveVisibleWorkspaceId('ws-1', '/workspace/ws-2')).toBe('ws-1');
+  });
+
+  it('falls back to the route workspace when no tab is selected', () => {
     expect(resolveVisibleWorkspaceId(null, '/workspace/ws-1')).toBe('ws-1');
     expect(resolveVisibleWorkspaceId('', '/workspace/ws-1/files')).toBe('ws-1');
   });

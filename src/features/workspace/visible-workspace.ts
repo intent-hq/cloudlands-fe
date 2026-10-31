@@ -7,12 +7,16 @@
  * workspace is visible. In order:
  * 1. A navigation that already selected its tab and is still in flight wins:
  *    the route only commits once `goto` settles, and a quick follow-up press
- *    in that window must act on the workspace being opened, not on the page
- *    being left.
- * 2. Otherwise the route decides: the workspace that owns it (sub-routes
- *    included), even before its tab is selected — `show-workspace` opens the
- *    tab only after the navigation lands.
- * 3. A non-workspace route (Home, Settings) shows no workspace.
+ *    from Home must act on the workspace being opened.
+ * 2. On a non-workspace route (Home, Settings, `/workspace/new`) no workspace
+ *    is visible.
+ * 3. On a workspace route (sub-routes included) the current tab stays the
+ *    source of truth for which workspace is active, as everywhere else in the
+ *    renderer. Tab and route briefly disagree mid-navigation in both
+ *    directions (a tab-strip click selects its tab before navigating;
+ *    `show-workspace` opens the tab only after landing), and the tab already
+ *    carries the user's latest choice. With no tab yet, the route's
+ *    workspace is used.
  *
  * When the route is unknown (no DOM), the current tab is trusted, matching
  * `show-workspace`'s landing check.
@@ -40,7 +44,9 @@ export function resolveVisibleWorkspaceId(
   const tabId = typeof currentTabId === 'string' && currentTabId.length > 0 ? currentTabId : null;
   if (tabId !== null && pendingWorkspaceId === tabId) return tabId;
   if (path === null) return tabId;
-  return workspaceIdOwningPath(path);
+  const routeWorkspaceId = workspaceIdOwningPath(path);
+  if (routeWorkspaceId === null) return null;
+  return tabId ?? routeWorkspaceId;
 }
 
 /** The workspace on screen now, or null on Home, Settings and other routes. */

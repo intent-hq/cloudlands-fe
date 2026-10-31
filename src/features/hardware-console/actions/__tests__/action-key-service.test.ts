@@ -1142,8 +1142,9 @@ describe('workspace-scoped actions from Home or Settings', () => {
 });
 
 describe('workspace-scoped actions while a jump is landing', () => {
-  it('targets the workspace whose route landed before its tab opens', () => {
-    // openAndShowWorkspace opens the tab only after the route commits.
+  it('keeps targeting the selected tab until the landed jump opens its tab', () => {
+    // openAndShowWorkspace opens the tab only after the route commits; in that
+    // gap the action still has a workspace (the selected tab), never none.
     window.history.replaceState({}, '', '/workspace/ws-2');
     mockState.workspace.workspaces = createCollection('id', [
       { id: 'ws-1' } as never,
@@ -1151,7 +1152,7 @@ describe('workspace-scoped actions while a jump is landing', () => {
     ]);
     expect(handleActionKeyPress('ACT08')).toBe('see-spec');
     expect(dispatched).toContainEqual(
-      expect.objectContaining({ payload: expect.arrayContaining(['ws-2']) }),
+      expect.objectContaining({ payload: expect.arrayContaining(['ws-1']) }),
     );
   });
 });
