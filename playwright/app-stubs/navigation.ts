@@ -5,17 +5,13 @@
  * CT browser bundle.
  */
 
-/**
- * Land same-origin routes without loading a page or unmounting the CT component.
- */
+/** Model arrival without invoking a router that would unmount the CT preview. */
 export const goto = async (
   url: string | URL,
   options: { replaceState?: boolean; state?: App.PageState } = {},
 ): Promise<void> => {
-  const target = new URL(url, window.location.href);
-  if (target.origin !== window.location.origin) return;
   const method = options.replaceState ? 'replaceState' : 'pushState';
-  window.history[method](options.state ?? {}, '', target);
+  window.history[method](options.state ?? {}, '', url);
 };
 export const invalidate = async (): Promise<void> => {};
 export const invalidateAll = async (): Promise<void> => {};

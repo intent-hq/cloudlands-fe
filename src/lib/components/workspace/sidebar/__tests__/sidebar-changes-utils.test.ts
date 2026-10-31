@@ -816,10 +816,10 @@ describe('mapWorkspacePRs', () => {
     expect(result[0].crossRepo).toBeUndefined();
   });
 
-  it('leaves crossRepo unset when the workspace repo is unknown', () => {
+  it('preserves the PR repository when the workspace repo is unknown', () => {
     const prs = [makePR({ number: 1, url: 'https://github.com/other/repo/pull/1' })];
     const result = mapWorkspacePRs(prs, null, buildUrl, getTitle);
-    expect(result[0].crossRepo).toBeUndefined();
+    expect(result[0].crossRepo).toBe('other/repo');
   });
 });
 

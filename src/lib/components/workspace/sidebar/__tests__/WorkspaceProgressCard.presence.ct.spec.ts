@@ -2,8 +2,8 @@ import { expect, test } from '../../../../../test/ct-test';
 import WorkspacePresenceFollowHost from './mocks/WorkspacePresenceFollowHost.svelte';
 
 // The real sidebar, authority selectors, transport channel, follow saga and
-// navigation reducer run here. CT's shared goto stub only lands the URL;
-// route invocation and async route races are covered by the saga suite.
+// navigation reducer run here. CT's shared goto stub changes the URL without
+// unmounting this host; async route races are covered by the saga suite.
 for (const width of [360, 960]) {
   test(`presence tooltip and keyboard follow at ${width}px`, async ({ mount, page }, testInfo) => {
     await page.setViewportSize({ width, height: 640 });
@@ -20,6 +20,10 @@ for (const width of [360, 960]) {
       0,
     );
     await avatar.press('Enter');
+    await expect(page).toHaveURL(/\/workspace\/destination$/);
+    expect(await page.evaluate(() => window.history.state.presenceFollowRequestId)).toEqual(
+      expect.any(String),
+    );
     await expect(
       component.getByRole('heading', { name: 'Project plan', exact: true }),
     ).toBeVisible();

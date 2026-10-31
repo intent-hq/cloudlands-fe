@@ -4,6 +4,25 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.260.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.259.2...v2.260.0) (2026-10-31)
+
+
+### 🚀 Features
+
+* show workspace pull requests above Changes ([#3893](https://github.com/intent-hq/cloudlands-fe/issues/3893)) ([1455747](https://github.com/intent-hq/cloudlands-fe/commit/1455747b48ff7b7f25d964aeba63d2437ef96c33))
+
+
+### 🐛 Bug Fixes
+
+* model navigation arrival in component test fixtures ([#3904](https://github.com/intent-hq/cloudlands-fe/issues/3904)) ([face8cd](https://github.com/intent-hq/cloudlands-fe/commit/face8cdbce7289179a3a7d95045fedf81000f74d))
+
+## [2.259.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.259.1...v2.259.2) (2026-10-31)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.89 ([#3923](https://github.com/intent-hq/cloudlands-fe/issues/3923)) ([70b0ffb](https://github.com/intent-hq/cloudlands-fe/commit/70b0ffb172ed2d68951e7d240dc1968a40b6f5df))
+
 ## [2.259.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.259.0...v2.259.1) (2026-10-31)
 
 
