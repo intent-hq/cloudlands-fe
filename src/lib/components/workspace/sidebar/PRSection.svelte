@@ -945,7 +945,7 @@
           <div>
             <!-- PR header -->
             <div
-              class="relative flex h-8 min-w-0 items-center gap-2 group w-full rounded-md px-2 hover:bg-muted"
+              class="relative flex h-7 min-w-0 items-center gap-1 group w-full rounded-md px-2 hover:bg-muted"
               title={getPRStatusTooltip(pr)}
             >
               {#if hasPRFiles}
@@ -969,7 +969,7 @@
               <Button
                 variant="ghost"
                 type="button"
-                class="flex h-8 items-center gap-2 flex-1 min-w-0 px-2 -mx-2 type-caption font-normal text-left cursor-pointer"
+                class="flex h-7 items-center gap-2 flex-1 min-w-0 px-2 -mx-2 type-caption font-normal text-left cursor-pointer"
                 onclick={onOpenFullPanel}
               >
                 <span class="type-caption text-subtle truncate flex-1">
@@ -1033,7 +1033,7 @@
 
             <!-- Expanded panel content - PR files -->
             {#if isPRExpanded}
-              <div class="pl-8 py-0.5 space-y-px" transition:slide={{ tier: 'moderate' }}>
+              <div class="pl-8 space-y-px" transition:slide={{ tier: 'moderate' }}>
                 {#each prFiles as file (file.path)}
                   <FileRow
                     compact

@@ -396,15 +396,20 @@
           <Button
             type="button"
             variant="plain"
-            class="h-8 w-full justify-start px-2 type-caption font-normal text-muted-foreground hover:text-foreground"
+            class="h-7 w-full justify-start gap-1 px-2 type-caption font-normal text-muted-foreground hover:text-foreground"
             data-testid="secondary-root-show-more"
             wrapContent={false}
             disabled={loading}
             onclick={load}
           >
-            {#if loading}
-              <IntentMarkLoader size={12} class="mr-1" />
-            {/if}
+            <span
+              class="flex size-(--control-height-compact) shrink-0 items-center justify-center"
+              aria-hidden="true"
+            >
+              {#if loading}
+                <IntentMarkLoader size={12} />
+              {/if}
+            </span>
             {m.workspace_sidebarChanges_rootShowMoreCommits_label()}
           </Button>
         {/if}
@@ -429,7 +434,7 @@
   })) as UIFileChange[]}
   <li class="min-w-0">
     <div
-      class="relative flex h-8 min-w-0 items-center gap-2 group w-full rounded-md px-2 hover:bg-muted"
+      class="relative flex h-7 min-w-0 items-center gap-1 group w-full rounded-md px-2 hover:bg-muted"
     >
       <Button
         variant="ghost"
@@ -455,7 +460,7 @@
       <Button
         type="button"
         variant="plain"
-        class="flex h-8 items-center gap-2 flex-1 min-w-0 cursor-pointer justify-start px-0 type-caption font-normal text-left"
+        class="flex h-7 items-center gap-2 flex-1 min-w-0 cursor-pointer justify-start px-0 type-caption font-normal text-left"
         onclick={() => openCommitChangeset(commit)}
         data-testid="secondary-root-commit-open"
       >
@@ -479,7 +484,7 @@
 
     <!-- Expanded lazy file list (read-only; clicking a file opens the same changeset) -->
     {#if isExpanded}
-      <div class="pl-8 py-0.5 space-y-px" transition:slide={{ tier: 'moderate' }}>
+      <div class="pl-8 space-y-px" transition:slide={{ tier: 'moderate' }}>
         {#each files as file (file.path)}
           <FileRow
             compact

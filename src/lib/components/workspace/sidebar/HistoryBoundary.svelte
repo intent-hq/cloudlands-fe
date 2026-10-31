@@ -25,21 +25,24 @@
   variant="ghost"
   size="compact"
   wrapContent={false}
-  class="my-1 h-8 w-full justify-start gap-2 px-2 type-caption font-normal text-muted-foreground"
+  class="h-7 w-full justify-start gap-1 px-2 type-caption font-normal text-muted-foreground"
   aria-label={ariaLabel}
   aria-expanded={expanded}
   aria-busy={loading}
   disabled={loading}
   {onclick}
 >
-  <span class="flex min-w-0 items-center gap-1.5" data-commit-boundary-label>
-    <span class="truncate">{label}</span>
+  <span
+    class="flex size-(--control-height-compact) shrink-0 items-center justify-center"
+    aria-hidden="true"
+  >
     {#if loading}
       <IntentMarkLoader size={12} />
     {:else}
       <DisclosureIcon {expanded} />
     {/if}
   </span>
+  <span class="min-w-0 truncate" data-commit-boundary-label>{label}</span>
   <span class="h-px min-w-4 flex-1 bg-border" aria-hidden="true" data-commit-boundary-divider
   ></span>
 </Button>

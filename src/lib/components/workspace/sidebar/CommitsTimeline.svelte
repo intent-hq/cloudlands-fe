@@ -497,7 +497,7 @@
           <!-- Commit header -->
           <div
             role="group"
-            class="relative flex h-8 min-w-0 items-center gap-2 group w-full rounded-md px-2 hover:bg-muted"
+            class="relative flex h-7 min-w-0 items-center gap-1 group w-full rounded-md px-2 hover:bg-muted"
             oncontextmenu={(e) => handleCommitContextMenu(e, commit.hash)}
             onkeydown={(e) => handleCommitContextMenu(e, commit.hash)}
           >
@@ -531,14 +531,14 @@
                   onblur={saveCommitEdit}
                   onkeydown={handleCommitEditKeydown}
                   noFocusStyle
-                  class="inline-edit-input relative z-10 min-w-0 flex-1 border-none bg-transparent hover:bg-transparent text-ui text-subtle outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
+                  class="inline-edit-input relative z-10 h-7 min-w-0 flex-1 border-none bg-transparent hover:bg-transparent type-caption text-subtle outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
                   onclick={(e) => e.stopPropagation()}
                 />
               {:else}
                 <Button
                   variant="ghost"
                   type="button"
-                  class="relative z-10 flex h-8 min-w-0 flex-1 cursor-text items-center gap-2 px-0 font-normal text-left"
+                  class="relative z-10 flex h-7 min-w-0 flex-1 cursor-text items-center gap-2 px-0 font-normal text-left"
                   onclick={() => handleOpenCommitChangeset(commit.hash, commit.message)}
                   ondblclick={(e) => handleCommitMessageDoubleClick(e, commit, index)}
                 >
@@ -661,7 +661,7 @@
 
           <!-- Expanded panel content -->
           {#if isExpanded}
-            <div class="pl-8 py-0.5 space-y-px" transition:slide={{ tier: 'moderate' }}>
+            <div class="pl-8 space-y-px" transition:slide={{ tier: 'moderate' }}>
               <!-- Files list -->
               {#each files as file (file.path)}
                 <FileRow
@@ -712,7 +712,7 @@
         <div>
           <div
             role="group"
-            class="relative flex h-8 min-w-0 items-center gap-2 group w-full rounded-md px-2 hover:bg-muted"
+            class="relative flex h-7 min-w-0 items-center gap-1 group w-full rounded-md px-2 hover:bg-muted"
             oncontextmenu={(e) => handleCommitContextMenu(e, commit.hash)}
             onkeydown={(e) => handleCommitContextMenu(e, commit.hash)}
           >
@@ -734,7 +734,7 @@
             <Button
               variant="ghost"
               type="button"
-              class="flex h-8 items-center gap-2 flex-1 min-w-0 px-0 font-normal text-left cursor-pointer"
+              class="flex h-7 items-center gap-2 flex-1 min-w-0 px-0 font-normal text-left cursor-pointer"
               onclick={() => handleOpenCommitChangeset(commit.hash, commit.message)}
             >
               <span
@@ -754,7 +754,7 @@
           </div>
 
           {#if isExpanded}
-            <div class="pl-8 py-0.5 space-y-px" transition:slide={{ tier: 'moderate' }}>
+            <div class="pl-8 space-y-px" transition:slide={{ tier: 'moderate' }}>
               {#each files as file (file.path)}
                 <FileRow
                   compact
@@ -777,18 +777,24 @@
   {#if olderCommits.length > 0}
     <Button
       variant="ghost"
-      class="h-8 w-full justify-start px-2 type-caption font-normal text-muted-foreground hover:text-foreground"
+      class="h-7 w-full justify-start gap-1 px-2 type-caption font-normal text-muted-foreground hover:text-foreground"
       wrapContent={false}
+      aria-label={m.workspace_commitsTimeline_showMorePrevious_label()}
       disabled={$ftLoadingOlderCommits$}
       onclick={() => {
         const lastOlder = olderCommits[olderCommits.length - 1];
         if (lastOlder) appStore.dispatch(loadOlderCommitsRequested(workspaceId, lastOlder.hash));
       }}
     >
-      {#if $ftLoadingOlderCommits$}
-        <IntentMarkLoader size={12} class="mr-1" />
-      {/if}
-      {m.workspace_commitsTimeline_showMorePrevious_label()}
+      <span
+        class="flex size-(--control-height-compact) shrink-0 items-center justify-center"
+        aria-hidden="true"
+      >
+        {#if $ftLoadingOlderCommits$}
+          <IntentMarkLoader size={12} />
+        {/if}
+      </span>
+      {m.workspace_sidebarChanges_rootShowMoreCommits_label()}
     </Button>
   {/if}
 </TimelineSection>
