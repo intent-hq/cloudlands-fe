@@ -1,14 +1,14 @@
 /**
  * Specialist Delegation Tests
  *
- * Tests that specialist agents (spec-writer, implementor, verifier)
+ * Tests that specialist agents (Lead and Implementor)
  * are used properly and delegate correctly.
  *
  * Uses actual prompts from the codebase to ensure tests stay in sync.
  */
 
 import { describe, it, expect } from 'vitest';
-import { getSpecialists, getSpecialist, validateSpecialistPrompt } from './prompt-loader';
+import { getSpecialists, getSpecialist } from './prompt-loader';
 import {
   validateAgentActions,
   validateWaveExecution,
@@ -21,11 +21,10 @@ describe('Specialist Prompts', () => {
   describe('Prompt Loading', () => {
     it('should load all specialist prompts', () => {
       const specialists = getSpecialists();
-      expect(specialists).toHaveLength(8);
+      expect(specialists).toHaveLength(7);
       expect(specialists.map((s) => s.id)).toEqual([
         'spec-writer',
         'implementor',
-        'verifier',
         'pr-reviewer',
         'ui-designer',
         'vulnerability-scanner',
@@ -47,66 +46,37 @@ describe('Specialist Prompts', () => {
       expect(implementor!.defaultBehaviorPrompt).toBeDefined();
       expect(implementor!.defaultBehaviorPrompt.length).toBeGreaterThan(100);
     });
-
-    it('should load verifier behavior prompt', () => {
-      const verifier = getSpecialist('verifier');
-      expect(verifier).toBeDefined();
-      expect(verifier!.defaultBehaviorPrompt).toBeDefined();
-      expect(verifier!.defaultBehaviorPrompt.length).toBeGreaterThan(100);
-    });
-  });
-
-  describe('Prompt Content Validation', () => {
-    it('spec-writer prompt should mention delegation', () => {
-      const specWriter = getSpecialist('spec-writer');
-      const result = validateSpecialistPrompt('spec-writer', specWriter!.defaultBehaviorPrompt);
-      expect(result.valid).toBe(true);
-    });
-
-    it('implementor prompt should mention implementation', () => {
-      const implementor = getSpecialist('implementor');
-      const result = validateSpecialistPrompt('implementor', implementor!.defaultBehaviorPrompt);
-      expect(result.valid).toBe(true);
-    });
-
-    it('verifier prompt should mention verification', () => {
-      const verifier = getSpecialist('verifier');
-      const result = validateSpecialistPrompt('verifier', verifier!.defaultBehaviorPrompt);
-      expect(result.valid).toBe(true);
-    });
   });
 });
 
 describe('Specialist Behavior Validation', () => {
-  describe('Spec-Writer Behavior', () => {
-    it('should expect delegation from spec-writer', () => {
+  describe('Lead Behavior', () => {
+    it('allows optional delegation and direct implementation from Lead', () => {
       const behavior = getSpecialistBehavior('spec-writer');
       expect(behavior).toBeDefined();
-      expect(behavior!.delegationExpected).toBe(true);
-      expect(behavior!.implementationExpected).toBe(false);
+      expect(behavior!.delegationExpected).toBeUndefined();
+      expect(behavior!.implementationExpected).toBe(true);
     });
 
-    it('should flag spec-writer writing files as violation', () => {
+    it.each(['spec-writer', 'developer'])('allows %s to implement without delegation', (id) => {
       const actions: AgentAction[] = [
         { agentId: 'agent-1', actionType: 'tool_call', toolName: 'read_note', timestamp: 1 },
         { agentId: 'agent-1', actionType: 'tool_call', toolName: 'write_file', timestamp: 2 },
       ];
 
-      const result = validateAgentActions('spec-writer', actions);
-      expect(result.valid).toBe(false);
-      expect(result.violations).toContain(
-        'spec-writer agent performed forbidden action: write_file',
-      );
+      const result = validateAgentActions(id, actions);
+      expect(result.valid).toBe(true);
+      expect(result.violations).toEqual([]);
     });
 
-    it('should pass when spec-writer only delegates', () => {
+    it.each(['spec-writer', 'developer'])('allows %s to delegate', (id) => {
       const actions: AgentAction[] = [
         { agentId: 'agent-1', actionType: 'tool_call', toolName: 'read_note', timestamp: 1 },
         { agentId: 'agent-1', actionType: 'tool_call', toolName: 'delegate_task', timestamp: 2 },
         { agentId: 'agent-1', actionType: 'delegation', timestamp: 3 },
       ];
 
-      const result = validateAgentActions('spec-writer', actions);
+      const result = validateAgentActions(id, actions);
       expect(result.valid).toBe(true);
     });
   });
@@ -142,46 +112,14 @@ describe('Specialist Behavior Validation', () => {
       expect(result.valid).toBe(true);
     });
   });
-
-  describe('Verifier Behavior', () => {
-    it('should not expect implementation from verifier', () => {
-      const behavior = getSpecialistBehavior('verifier');
-      expect(behavior).toBeDefined();
-      expect(behavior!.delegationExpected).toBe(false);
-      expect(behavior!.implementationExpected).toBe(false);
-    });
-
-    it('should flag verifier modifying files as violation', () => {
-      const actions: AgentAction[] = [
-        { agentId: 'agent-1', actionType: 'tool_call', toolName: 'read_file', timestamp: 1 },
-        { agentId: 'agent-1', actionType: 'tool_call', toolName: 'edit_file', timestamp: 2 },
-      ];
-
-      const result = validateAgentActions('verifier', actions);
-      expect(result.valid).toBe(false);
-      expect(result.violations).toContain('verifier agent performed forbidden action: edit_file');
-    });
-
-    it('should pass when verifier only reads and comments', () => {
-      const actions: AgentAction[] = [
-        { agentId: 'agent-1', actionType: 'tool_call', toolName: 'read_file', timestamp: 1 },
-        { agentId: 'agent-1', actionType: 'tool_call', toolName: 'run_tests', timestamp: 2 },
-        { agentId: 'agent-1', actionType: 'tool_call', toolName: 'add_comment', timestamp: 3 },
-        { agentId: 'agent-1', actionType: 'completion', timestamp: 4 },
-      ];
-
-      const result = validateAgentActions('verifier', actions);
-      expect(result.valid).toBe(true);
-    });
-  });
 });
 
 describe('Edge Cases', () => {
   describe('Empty Inputs', () => {
     it('should handle empty actions array', () => {
       const result = validateAgentActions('spec-writer', []);
-      // Empty actions means no delegation happened, which is a violation for spec-writer
-      expect(result.violations.some((v) => v.includes('expected to delegate'))).toBe(true);
+      expect(result.valid).toBe(true);
+      expect(result.violations).toEqual([]);
     });
 
     it('should handle unknown specialist ID with warning', () => {
@@ -309,7 +247,7 @@ describe('Wave Execution Validation', () => {
         fromAgentId: 'a1',
         toAgentId: 'a3',
         taskNoteId: 't2',
-        specialist: 'verifier',
+        specialist: 'implementor',
         waitMode: 'none',
         wave: 2,
         timestamp: 200,

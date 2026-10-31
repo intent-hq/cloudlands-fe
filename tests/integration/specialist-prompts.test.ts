@@ -71,12 +71,11 @@ describe('Specialist Prompts Verification', () => {
   });
 
   describe('Specialist Definitions', () => {
-    it('should have exactly 8 specialists defined', () => {
-      expect(SPECIALISTS).toHaveLength(8);
+    it('includes the current bundled specialists', () => {
+      expect(SPECIALISTS).toHaveLength(7);
       expect(SPECIALISTS.map((s) => s.id)).toEqual([
         'spec-writer',
         'implementor',
-        'verifier',
         'pr-reviewer',
         'ui-designer',
         'vulnerability-scanner',
@@ -85,44 +84,15 @@ describe('Specialist Prompts Verification', () => {
       ]);
     });
 
-    it('spec-writer should have coordinator behavior', () => {
-      const specWriter = getSpecialistById('spec-writer');
-      expect(specWriter).toBeDefined();
-      expect(specWriter!.defaultBehaviorPrompt).toContain('Coordinator');
-      expect(specWriter!.defaultBehaviorPrompt).toContain('delegate');
-      expect(specWriter!.defaultBehaviorPrompt).toContain('do NOT implement code yourself');
-    });
-
-    it('implementor should be constrained to assigned tasks only', () => {
-      const implementor = getSpecialistById('implementor');
-      expect(implementor).toBeDefined();
-      // Tests updated to match optimized specialists.ts content
-      expect(implementor!.defaultBehaviorPrompt).toContain('assigned task');
-      expect(implementor!.defaultBehaviorPrompt).toContain('nothing more');
-      expect(implementor!.defaultBehaviorPrompt).toContain('No scope creep');
-      expect(implementor!.defaultBehaviorPrompt).toContain('No refactors');
-    });
-
-    it('verifier should focus on thorough verification', () => {
-      const verifier = getSpecialistById('verifier');
-      expect(verifier).toBeDefined();
-      // Tests updated to match current specialists.ts content
-      expect(verifier!.defaultBehaviorPrompt).toContain('verify');
-      expect(verifier!.defaultBehaviorPrompt).toContain('Acceptance Criteria');
-      expect(verifier!.defaultBehaviorPrompt).toContain('VERIFIED');
-    });
-
     it('should not pin a model on any built-in specialist', () => {
       // Absent defaultModel means inherit the global default.
       const specWriter = getSpecialistById('spec-writer');
       const implementor = getSpecialistById('implementor');
-      const verifier = getSpecialistById('verifier');
       const prReviewer = getSpecialistById('pr-reviewer');
       const uiDesigner = getSpecialistById('ui-designer');
 
       expect(specWriter!.defaultModel).toBeUndefined();
       expect(implementor!.defaultModel).toBeUndefined();
-      expect(verifier!.defaultModel).toBeUndefined();
       expect(prReviewer!.defaultModel).toBeUndefined();
       expect(uiDesigner!.defaultModel).toBeUndefined();
     });
@@ -175,11 +145,9 @@ describe('Specialist Prompts Verification', () => {
 
       expect(formatted).toContain('## Agent Specialists');
       expect(formatted).toContain('Implementor');
-      expect(formatted).toContain('Verifier');
       expect(formatted).toContain('implementor');
-      expect(formatted).toContain('verifier');
+      expect(formatted).not.toContain('`verifier`');
       // All specialists should be included so agents know about them
-      expect(formatted).toContain('Coordinator');
       expect(formatted).toContain('spec-writer');
       expect(formatted).toContain(
         '| **Vulnerability Scanner** | `vulnerability-scanner` | Finds real, exploitable security vulnerabilities in code |',

@@ -582,27 +582,31 @@ Prompt.`;
   });
 
   describe('role/teamAgents/icon frontmatter (PROTOCOL §5.11 lenient reads)', () => {
-    it('should parse known role values and the icon scalar', () => {
-      const content = `---
+    it.each(['lead', 'orchestrator', 'internal'])(
+      'should parse the %s role and the icon scalar',
+      (role) => {
+        const content = `---
 name: "Orchestrator"
 description: "Coordinates"
-role: "orchestrator"
+role: "${role}"
 teamAgents: ["implementor","verifier"]
 icon: "coordinator"
 ---
 
 Prompt.`;
 
-      const result = parseSpecialistFile('/path/to/orchestrator.md', content);
-      expect('error' in result).toBe(false);
-      if (!('error' in result)) {
-        expect(result.frontmatter.role).toBe('orchestrator');
-        expect(result.frontmatter.teamAgents).toEqual(['implementor', 'verifier']);
-        expect(result.frontmatter.icon).toBe('coordinator');
-      }
-    });
+        const result = parseSpecialistFile('/path/to/orchestrator.md', content);
+        expect('error' in result).toBe(false);
+        if (!('error' in result)) {
+          expect(result.frontmatter.role).toBe(role);
+          expect(result.frontmatter.teamAgents).toEqual(['implementor', 'verifier']);
+          expect(result.frontmatter.icon).toBe('coordinator');
+        }
+      },
+    );
 
     it('should read unknown role values as an omitted key (never rejects)', () => {
+      expect(parseRoleScalar('lead')).toBe('lead');
       expect(parseRoleScalar('orchestrator')).toBe('orchestrator');
       expect(parseRoleScalar('internal')).toBe('internal');
       expect(parseRoleScalar('sidekick')).toBeUndefined();

@@ -53,14 +53,14 @@ export interface SpecialistModelOption {
 
 /**
  * Orchestration role of a specialist (PROTOCOL §5.11 `role`):
- * - 'orchestrator': powers the New Workspace modal's team-mode card.
+ * - 'lead' and legacy 'orchestrator': power the New Workspace modal's team-mode card.
  * - 'internal': excluded from the modal's single-agent dropdown ONLY; still
  *   visible in-workspace (SpecialistDropdown) and in Settings, unlike
  *   `hidden` which hides from all pickers.
  * Absent (undefined) means a standard specialist. Unknown values read as
  * absent (lenient parse).
  */
-export type SpecialistRole = 'orchestrator' | 'internal';
+export type SpecialistRole = 'lead' | 'orchestrator' | 'internal';
 
 /**
  * YAML frontmatter fields for specialist markdown files

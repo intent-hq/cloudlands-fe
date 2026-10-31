@@ -89,7 +89,6 @@ describe('Specialist Configuration', () => {
       const specialist = getSpecialistById('spec-writer');
       expect(specialist).toBeDefined();
       expect(specialist!.id).toBe('spec-writer');
-      expect(specialist!.name).toBe('Coordinator');
     });
 
     it('should return implementor specialist', () => {
@@ -99,11 +98,8 @@ describe('Specialist Configuration', () => {
       expect(specialist!.name).toBe('Implementor');
     });
 
-    it('should return verifier specialist', () => {
-      const specialist = getSpecialistById('verifier');
-      expect(specialist).toBeDefined();
-      expect(specialist!.id).toBe('verifier');
-      expect(specialist!.name).toBe('Verifier');
+    it('does not include verifier in the built-in catalog', () => {
+      expect(getSpecialistById('verifier')).toBeUndefined();
     });
 
     it('should return undefined for unknown specialist', () => {
@@ -170,71 +166,11 @@ describe('Specialist Configuration', () => {
     });
   });
 
-  describe('Specialist Behavior Prompts', () => {
-    it('spec-writer has delegation-focused behavior', () => {
-      const specialist = getSpecialistById('spec-writer');
-      const prompt = specialist!.defaultBehaviorPrompt;
-
-      // Should focus on planning and delegation - tests updated to match optimized content
-      expect(prompt).toContain('Coordinator');
-      expect(prompt).toContain('delegate');
-      expect(prompt).toMatch(/wave/i);
-
-      // Should NOT implement code - tests updated to match optimized content
-      expect(prompt).toContain('do NOT implement code yourself');
-    });
-
-    it('implementor has execution-focused behavior', () => {
-      const specialist = getSpecialistById('implementor');
-      const prompt = specialist!.defaultBehaviorPrompt;
-
-      // Should focus on assigned task only - tests updated to match optimized content
-      expect(prompt).toContain('assigned task');
-      expect(prompt).toContain('nothing more');
-
-      // Should avoid scope creep - tests updated to match optimized content
-      expect(prompt).toContain('No scope creep');
-      expect(prompt).toContain('No refactors');
-    });
-
-    it('verifier has verification-focused behavior', () => {
-      const specialist = getSpecialistById('verifier');
-      const prompt = specialist!.defaultBehaviorPrompt;
-
-      // Should focus on verification - tests updated to match current content
-      expect(prompt).toContain('verify');
-      expect(prompt).toContain('Acceptance Criteria');
-      expect(prompt).toContain('edge cases');
-
-      // Should provide evidence with structured output format
-      expect(prompt).toContain('VERIFIED');
-      expect(prompt).toContain('DEVIATION');
-      expect(prompt).toContain('MISSING');
-    });
-  });
-
-  describe('Specialist Wave Execution', () => {
-    it('spec-writer should contain wave execution instructions', () => {
-      const specialist = getSpecialistById('spec-writer');
-      const prompt = specialist!.defaultBehaviorPrompt;
-
-      // Wave structure - tests updated to match optimized content
-      expect(prompt).toMatch(/wave/i);
-
-      // Wait mode
-      expect(prompt).toContain('waitMode: "after_all"');
-
-      // Workflow instructions
-      expect(prompt).toContain('Workflow');
-    });
-  });
-
   describe('Specialist ID Validation', () => {
     it('all specialists have valid IDs matching type constraints', () => {
       const validIds = [
         'spec-writer',
         'implementor',
-        'verifier',
         'pr-reviewer',
         'vulnerability-scanner',
         'ui-designer',
@@ -315,7 +251,7 @@ describe('Specialist Configuration', () => {
       // Other specialists should still be present
       expect(ids).toContain('spec-writer');
       expect(ids).toContain('implementor');
-      expect(ids).toContain('verifier');
+      expect(ids).not.toContain('verifier');
     });
 
     it('should show pr-reviewer when GitHub is authenticated', async () => {

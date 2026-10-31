@@ -74,6 +74,17 @@ describe('LiveSpecialistsClient (fake transport)', () => {
     expect(defs).toEqual([COORDINATOR_DEF, USER_DEF]);
   });
 
+  it.each(['lead', 'orchestrator', 'internal'] as const)(
+    'preserves the %s role from the daemon catalog',
+    async (role) => {
+      const definition: SpecialistDef = { ...COORDINATOR_DEF, role };
+      mockedRequest.mockResolvedValueOnce({ specialists: [definition] });
+
+      expect(await new LiveSpecialistsClient().list()).toEqual([definition]);
+      expect(mockedRequest).toHaveBeenCalledWith('specialist.list');
+    },
+  );
+
   it.each([undefined, 'codex'])(
     'list forwards optional provider %j and preserves its resolved effort',
     async (provider) => {

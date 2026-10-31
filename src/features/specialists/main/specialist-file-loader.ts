@@ -409,7 +409,7 @@ export function parseModelOptionsScalar(
  * Exported for testing purposes.
  */
 export function parseRoleScalar(raw: string | undefined): SpecialistRole | undefined {
-  return raw === 'orchestrator' || raw === 'internal' ? raw : undefined;
+  return raw === 'lead' || raw === 'orchestrator' || raw === 'internal' ? raw : undefined;
 }
 
 /**

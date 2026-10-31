@@ -237,7 +237,7 @@ export const selectSpecialists = store.createSelector(
 );
 /**
  * The specialist that powers the New Workspace modal's team-mode card: the
- * first `role: 'orchestrator'` entry ranked with bundled specialist ids before
+ * first `role: 'lead'` or legacy `role: 'orchestrator'` entry ranked with bundled specialist ids before
  * non-bundled ids, then by id order within each rank. The shipped catalog is
  * consulted for ranking because the daemon reports only the winning override
  * tier; it never adds missing entries to the roster. A same-id file override
@@ -245,7 +245,9 @@ export const selectSpecialists = store.createSelector(
  * then hides the team card and defaults to single-agent mode.
  */
 export const selectOrchestratorSpecialist = store.createSelector((state): Specialist | null => {
-  const orchestrators = selectSpecialists.select(state).filter((s) => s.role === 'orchestrator');
+  const orchestrators = selectSpecialists
+    .select(state)
+    .filter((s) => s.role === 'lead' || s.role === 'orchestrator');
   if (orchestrators.length === 0) return null;
   const bundledIds = new Set([
     ...SPECIALISTS.map(({ id }) => id),

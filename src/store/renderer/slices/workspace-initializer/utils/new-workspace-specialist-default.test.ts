@@ -104,7 +104,9 @@ describe('resolveNewWorkspaceSpecialistDefault', () => {
 });
 
 describe('selectNewWorkspaceDefaultSpecialist', () => {
-  const catalogOrchestratorId = SPECIALISTS.find((s) => s.role === 'orchestrator')?.id;
+  const catalogOrchestratorId = SPECIALISTS.find(
+    (s) => s.role === 'lead' || s.role === 'orchestrator',
+  )?.id;
 
   function mockState(workspaceInitializer: Partial<WorkspaceInitializerState>): StoreState {
     return {
