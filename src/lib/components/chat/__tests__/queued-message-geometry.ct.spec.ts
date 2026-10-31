@@ -245,6 +245,7 @@ test('opens the compact pencil action by keyboard without changing row geometry'
   const component = await mount(QueuedMessageGeometryHost, {
     props: { width: 240, messageCount: 3 },
   });
+  await page.evaluate(() => document.fonts.ready);
   const rows = component.getByTestId('queued-message-row');
   const row = rows.nth(1);
   const initial = (await row.boundingBox())!;

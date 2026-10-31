@@ -30,6 +30,7 @@ vi.mock('$lib/utils/client-logger', () => ({
 }));
 
 import { BackendError } from '$lib/client/live/backend-transport-types';
+import { autoArchiveIdleAfterDaysCleared } from '../../sidebar-nav/sidebar-nav-slice';
 import { initialState as modelInitialState } from '../../model/model-slice';
 import type { Workspace, WorkspaceId } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
@@ -407,6 +408,52 @@ describe('settingsHydrationSaga', () => {
 
     task.cancel();
     await task.toPromise();
+  });
+
+  it('clears the cached auto-archive setting whenever the settings authority changes', async () => {
+    const clears = () =>
+      sagaIO.dispatch.mock.calls.filter(
+        ([action]) => action.type === autoArchiveIdleAfterDaysCleared.type,
+      ).length;
+    mocks.listSnapshot = vi.fn().mockReturnValue(new Promise(() => {}));
+    const input = stdChannel();
+    const task = runSaga({ ...sagaIO, channel: input }, settingsHydrationSaga);
+    await settle();
+    expect(clears()).toBe(1);
+
+    // Another host: the previous host's value must not drive the menu while
+    // the new read is pending or authority is still unresolved.
+    send(input, {
+      type: 'connections/listReceived',
+      payload: [{ connections: [], activeId: 'new', windowBackendId: 'new' }],
+    });
+    await settle();
+    expect(clears()).toBe(2);
+    confirmOwner();
+    await settle();
+    expect(clears()).toBe(3);
+
+    // Revoked owner authority clears it too.
+    send(
+      input,
+      hostMembershipChanged({
+        revision: 1,
+        principalId: 'principal',
+        action: 'removed',
+        hostRole: 'guest',
+      }),
+    );
+    await settle();
+    expect(clears()).toBe(4);
+
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('clears the cached auto-archive setting before a one-shot hydration', async () => {
+    storeState = BOOT_STATE;
+    await runSaga(sagaIO, hydrateSettingsOnceSaga).toPromise();
+    expect(sagaIO.dispatch).toHaveBeenCalledWith(autoArchiveIdleAfterDaysCleared());
   });
 
   it('buffers changes during boot hydration and applies each bundle atomically in order', async () => {

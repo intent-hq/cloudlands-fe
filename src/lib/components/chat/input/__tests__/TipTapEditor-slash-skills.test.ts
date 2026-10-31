@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { waitForLayerExit } from '../../../../../test/layer-exit';
 import { tick } from 'svelte';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -244,10 +245,10 @@ describe('TipTapEditor slash skills', () => {
     const onEscape = vi.fn();
     const { component, editor } = await mountEditor({ onEscape });
     component.insertText('/');
-    await waitFor(() => expect(screen.getByRole('listbox')).toBeTruthy());
+    const listbox = await screen.findByRole('listbox');
 
     await fireEvent.keyDown(editor, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+    await waitForLayerExit(listbox);
     expect(onEscape).not.toHaveBeenCalled();
     expect(component.getTextContent()).toBe('/');
     expect(document.activeElement).toBe(editor);
@@ -272,10 +273,10 @@ describe('TipTapEditor slash skills', () => {
     try {
       const { component, editor } = await mountEditor();
       component.insertText('/');
-      await screen.findByRole('listbox');
+      const listbox = await screen.findByRole('listbox');
 
       await fireEvent.keyDown(editor, { key: 'Escape' });
-      await waitFor(() => expect(screen.queryByTestId('slash-skill-menu')).toBeNull());
+      await waitForLayerExit(listbox);
       expect(closeParent).not.toHaveBeenCalled();
       expect(document.activeElement).toBe(editor);
       expect(component.getTextContent()).toBe('/');
@@ -291,10 +292,10 @@ describe('TipTapEditor slash skills', () => {
     const onSubmit = vi.fn();
     const { component, editor } = await mountEditor({ onSubmit });
     component.insertText('/');
-    await screen.findByRole('listbox');
+    const listbox = await screen.findByRole('listbox');
 
     component.insertText('tmp');
-    await waitFor(() => expect(screen.queryByTestId('slash-skill-menu')).toBeNull());
+    await waitForLayerExit(listbox);
     expect(editor.hasAttribute('aria-controls')).toBe(false);
     expect(editor.hasAttribute('aria-activedescendant')).toBe(false);
     await fireEvent.keyDown(editor, { key: 'Enter' });
@@ -309,9 +310,9 @@ describe('TipTapEditor slash skills', () => {
     expect(screen.queryByTestId('slash-skill-menu')).toBeNull();
 
     await view.rerender({ skills });
-    await screen.findByRole('option', { name: 'research' });
+    const option = await screen.findByRole('option', { name: 'research' });
     await view.rerender({ skills: [] });
-    await waitFor(() => expect(screen.queryByTestId('slash-skill-menu')).toBeNull());
+    await waitForLayerExit(option);
   });
 
   it('reacts to skill prop updates and supports pointer selection', async () => {

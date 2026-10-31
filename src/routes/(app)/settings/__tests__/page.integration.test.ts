@@ -163,10 +163,6 @@ beforeEach(() => {
     window.localStorage.getItem as unknown as { mockReturnValue(value: string | null): void }
   ).mockReturnValue(null);
   Object.defineProperty(Element.prototype, 'scrollTo', { value: vi.fn(), configurable: true });
-  Object.defineProperty(Element.prototype, 'scrollIntoView', {
-    value: vi.fn(),
-    configurable: true,
-  });
   appStore.dispatch(simulateSetState({ status: 'idle' }));
   // No sagas run here: settle the window's guest/owner identity as an owner
   // (multiplayer w4) so the administrator-only tabs are rendered.

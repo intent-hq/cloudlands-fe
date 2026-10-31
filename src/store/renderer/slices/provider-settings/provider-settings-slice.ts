@@ -24,7 +24,7 @@ import type {
   ProviderProfile,
   ProviderProfileFailure,
 } from '$shared/provider-profiles';
-import type { ProviderProfileStatus } from './provider-settings-types';
+import type { ProviderProfileSetup, ProviderProfileStatus } from './provider-settings-types';
 import type {
   ProviderFastModeState,
   ProviderPaths,
@@ -474,6 +474,105 @@ export const providerProfileActivationDismissed = createAction<[profileId: strin
   'providerProfiles/activationDismissed',
 );
 
+/** A profile's signed-in account email (Claude `identity`); `undefined` clears it. */
+export const providerProfileIdentityChanged = createAction<
+  [profileId: string, email: string | undefined]
+>('providerProfiles/identityChanged');
+
+// ---------------------------------------------------------------------------
+// Add-dialog setups for the Different login, API key and Token kinds. A setup
+// id doubles as its create request id. Typed secrets are staged like any
+// other env write and never ride on an action.
+// ---------------------------------------------------------------------------
+
+/**
+ * Different login: list `~/intent/profiles/<provider>/`, pick an unused
+ * folder (`<slug>-<suffix>` when free), save the profile with it, create the
+ * folder and open the terminal sign-in, then wait for it.
+ */
+export const providerProfileFolderSetupRequested = createAction<
+  [
+    payload: {
+      setupId: string;
+      provider: 'claude' | 'codex';
+      name: string;
+      backup: boolean;
+      /** The suffix the dialog previewed; used when that folder is free. */
+      suffix: string;
+    },
+  ]
+>('providerProfiles/folderSetupRequested');
+
+/** API key / Token: save the profile, then run the key check. */
+export const providerProfileSecretSetupRequested = createAction(
+  'providerProfiles/secretSetupRequested',
+  (input: {
+    setupId: string;
+    baseProviderId: string;
+    name: string;
+    backup: boolean;
+    env: EnvEntryWrite[];
+  }) => ({
+    setupId: input.setupId,
+    baseProviderId: input.baseProviderId,
+    name: input.name,
+    backup: input.backup,
+    envRef: stageProfileEnv(input.env),
+  }),
+);
+
+/**
+ * Edit an API key / Token profile whose key was replaced: save the update,
+ * then run the key check. The setup id doubles as the update request id.
+ */
+export const providerProfileSecretEditRequested = createAction(
+  'providerProfiles/secretEditRequested',
+  (input: {
+    setupId: string;
+    profileId: string;
+    name?: string;
+    backup?: boolean;
+    env: EnvEntryWrite[];
+  }) => ({
+    setupId: input.setupId,
+    profileId: input.profileId,
+    ...(input.name !== undefined ? { name: input.name } : {}),
+    ...(input.backup !== undefined ? { backup: input.backup } : {}),
+    envRef: stageProfileEnv(input.env),
+  }),
+);
+
+/**
+ * Sign in to the folder saved on an existing Different-login profile (edit
+ * screen, row ⋯ → Log In): create the folder, open the terminal sign-in, wait.
+ */
+export const providerProfileSavedFolderSignInRequested = createAction<
+  [payload: { setupId: string; profileId: string }]
+>('providerProfiles/savedFolderSignInRequested');
+
+/** After "Key was rejected": save the pasted replacement and check again. */
+export const providerProfileSecretRetryRequested = createAction(
+  'providerProfiles/secretRetryRequested',
+  (input: { setupId: string; env: EnvEntryWrite[] }) => ({
+    setupId: input.setupId,
+    envRef: stageProfileEnv(input.env),
+  }),
+);
+
+/** "Still waiting? Try again" (or a folder/terminal failure): sign in to the saved folder again. */
+export const providerProfileSignInRetryRequested = createAction<[setupId: string]>(
+  'providerProfiles/signInRetryRequested',
+);
+
+export const providerProfileSetupChanged = createAction<
+  [setupId: string, patch: Partial<Omit<ProviderProfileSetup, 'id'>>]
+>('providerProfiles/setupChanged');
+
+/** The dialog is done with a setup: stops its sign-in wait and forgets it. */
+export const providerProfileSetupDismissed = createAction<[setupId: string]>(
+  'providerProfiles/setupDismissed',
+);
+
 // Registration: state slice `profiles`, handlers in provider-profiles-state.
 const withProfiles = (
   state: ProviderSettingsState,
@@ -523,4 +622,13 @@ providerSettingsReducer.with(providerProfileSummaryStatusChanged, (state, { payl
 );
 providerSettingsReducer.with(providerProfileActivationDismissed, (state, { payload }) =>
   withProfiles(state, profileHandlers.activationDismissed(state.profiles, payload)),
+);
+providerSettingsReducer.with(providerProfileSetupChanged, (state, { payload }) =>
+  withProfiles(state, profileHandlers.setupChanged(state.profiles, payload)),
+);
+providerSettingsReducer.with(providerProfileSetupDismissed, (state, { payload }) =>
+  withProfiles(state, profileHandlers.setupDismissed(state.profiles, payload)),
+);
+providerSettingsReducer.with(providerProfileIdentityChanged, (state, { payload }) =>
+  withProfiles(state, profileHandlers.identityChanged(state.profiles, payload)),
 );

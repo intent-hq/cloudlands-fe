@@ -32,13 +32,20 @@ function setup({
   target = labelWorkspace('ws-target'),
   supported = true,
   role = 'owner',
+  autoArchiveIdleAfterDays = 7,
 }: {
   target?: Workspace;
   supported?: boolean;
   role?: 'owner' | 'guest';
+  autoArchiveIdleAfterDays?: number | null;
 } = {}) {
   dispose = store.init(
-    workspaceLabelsState({ workspaces: [target], role, autoArchiveOptOut: supported }),
+    workspaceLabelsState({
+      workspaces: [target],
+      role,
+      autoArchiveOptOut: supported,
+      autoArchiveIdleAfterDays,
+    }),
   );
   applyAction = store.dispatch;
   dispatch = vi.spyOn(store, 'dispatch').mockImplementation(() => undefined as never);
@@ -140,6 +147,41 @@ describe('Home workspace Disable auto-archive toggle', () => {
     close.mockImplementationOnce(readmitSamePrincipal);
     current.onClick();
     expect(dispatch).not.toHaveBeenCalled();
+
+    const onToggle = vi.fn();
+    const personal = item(
+      createHomeWorkspaceMenu(labelWorkspace('ws-target'), {
+        pinned: false,
+        microConnected: false,
+        onOpen: vi.fn(),
+        onClose: close,
+        expandGroup: vi.fn(),
+        getHomeElement: () => null,
+        aside: { setAside: false, onToggle },
+      }),
+      'set-aside',
+    )!;
+    personal.onClick();
+    expect(onToggle).toHaveBeenCalledTimes(1);
+    readmitSamePrincipal();
+    personal.onClick();
+    expect(onToggle).toHaveBeenCalledTimes(1);
+
+    const closing = item(
+      createHomeWorkspaceMenu(labelWorkspace('ws-target'), {
+        pinned: false,
+        microConnected: false,
+        onOpen: vi.fn(),
+        onClose: close,
+        expandGroup: vi.fn(),
+        getHomeElement: () => null,
+        aside: { setAside: false, onToggle },
+      }),
+      'set-aside',
+    )!;
+    close.mockImplementationOnce(readmitSamePrincipal);
+    closing.onClick();
+    expect(onToggle).toHaveBeenCalledTimes(1);
   });
 
   it('is hidden on remote workspaces, which are never auto-archived', () => {
@@ -155,6 +197,25 @@ describe('Home workspace Disable auto-archive toggle', () => {
     const entries = setup({ supported: false });
     expect(item(entries, 'disable-auto-archive')).toBeUndefined();
     expect(item(entries, 'archive')).toBeDefined();
+  });
+
+  it('is hidden while idle auto-archive is turned off in Settings', () => {
+    const entries = setup({ autoArchiveIdleAfterDays: 0 });
+    expect(item(entries, 'disable-auto-archive')).toBeUndefined();
+    expect(item(entries, 'archive')).toBeDefined();
+  });
+
+  it('is hidden even for an opted-out workspace while auto-archive is off', () => {
+    const entries = setup({
+      target: labelWorkspace('ws-target', { autoArchiveDisabled: true }),
+      autoArchiveIdleAfterDays: 0,
+    });
+    expect(item(entries, 'disable-auto-archive')).toBeUndefined();
+  });
+
+  it('is hidden until the auto-archive setting has been read', () => {
+    const entries = setup({ autoArchiveIdleAfterDays: null });
+    expect(item(entries, 'disable-auto-archive')).toBeUndefined();
   });
 
   it('is hidden for a collaborator who does not own the workspace', () => {

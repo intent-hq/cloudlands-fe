@@ -40,6 +40,8 @@ import {
   faBoxOpen,
   faTrash,
   faArrowRight,
+  faArrowDown,
+  faArrowUp,
   faHardDrive,
 } from '@fortawesome/free-solid-svg-icons';
 
@@ -52,6 +54,8 @@ interface HomeWorkspaceMenuOptions {
   /** Expand a Home list group (`pinned` or `label:<name>`). */
   expandGroup: (key: string) => void;
   getHomeElement: () => HTMLElement | null;
+  /** Personal Home shelf state; omit to hide Set aside / Bring back. */
+  aside?: { setAside: boolean; onToggle: () => void };
 }
 
 /** Return focus to a workspace's Home row once it has re-rendered (possibly in a new group). */
@@ -207,6 +211,23 @@ export function createHomeWorkspaceMenu(
     });
   }
   if (canSetLabel) items.push(createLabelSubmenu(workspace, options));
+  // Set aside is personal Home organization, so collaborators may use it too;
+  // archived work already lives in its own view.
+  const live =
+    workspace.status !== WorkspaceStatusEnum.Archived &&
+    workspace.status !== WorkspaceStatusEnum.Retired;
+  if (options.aside && live) {
+    const { setAside, onToggle } = options.aside;
+    items.push({
+      id: 'set-aside',
+      label: setAside ? m.home_setAside_bringBack_label() : m.home_setAside_action_label(),
+      icon: setAside ? faArrowUp : faArrowDown,
+      onClick: () => {
+        onClose();
+        onToggle();
+      },
+    });
+  }
   items.push(...createWorkspaceMicroKeyMenu(workspace.id, { connected: microConnected, onClose }));
   if (!selectHidesOwnerWorkspaceActions.select(store.state, workspace.id)) {
     // Archive is the only lifecycle action users see. A Retired workspace
@@ -218,7 +239,8 @@ export function createHomeWorkspaceMenu(
     const archived = retired || workspace.status === WorkspaceStatusEnum.Archived;
     items.push({ type: 'separator' });
     // Per-workspace opt-out from the daemon's auto-archive sweep (PROTOCOL
-    // §5.1); owner-only, offered on daemons that advertise it.
+    // §5.1); owner-only, offered on daemons that advertise it, and only while
+    // idle auto-archive is turned on in Settings.
     if (selectCanSetWorkspaceAutoArchive.select(store.state, workspace.id)) {
       const admission = selectWorkspaceUpdateContext.select(store.state, workspace.id, [
         'id',

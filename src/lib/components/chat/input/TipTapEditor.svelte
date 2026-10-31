@@ -1,6 +1,7 @@
 <script lang="ts">
   /* eslint-disable max-lines */
   import { onMount, onDestroy, mount, unmount, untrack } from 'svelte';
+  import { readMentionChip } from '$lib/services/mentions/chip';
   import { isTextEntryTarget } from '$lib/utils/text-entry';
   import { Popover } from 'bits-ui';
 
@@ -30,7 +31,7 @@
   import { createMentionSuggestionRenderer } from './mention-suggestion-renderer';
   import { getMentionSystem, type SearchContext } from '$lib/services/mentions';
   import type { Workspace } from '$shared/types';
-  import { toPromptToken } from '$lib/services/mentions/format';
+  import { toPromptToken } from '$lib/services/mentions/registry';
   import { mentionChipDisplayLabel } from '$lib/utils/note-mention-label';
   import { storeNoteTitleLookup } from '$lib/utils/store-note-title-lookup';
   import { noteUrl } from '$shared/constants/intent-links';
@@ -1332,17 +1333,17 @@
 
   function handleMentionHover(event: MouseEvent) {
     const target = event.target as HTMLElement;
-    if (target.hasAttribute('data-mention')) {
+    const chip = readMentionChip(target);
+    if (chip) {
       const position = target.getBoundingClientRect();
-      const meta = JSON.parse(target.getAttribute('data-meta') || '{}');
 
       // Show hover preview
       if (!hoverPreviewContainer) {
         hoverPreviewContainer = document.createElement('div');
         document.body.appendChild(hoverPreviewContainer);
 
-        const type = (target.getAttribute('data-type') as any) || 'file';
-        const label = target.getAttribute('data-label') || target.textContent || '';
+        const type = (chip.type as any) || 'file';
+        const label = chip.label || target.textContent || '';
 
         // Choose appropriate icon based on type
         const iconMap: Record<string, string> = {
@@ -1360,11 +1361,11 @@
           target: hoverPreviewContainer,
           props: {
             mention: {
-              id: target.getAttribute('data-id') || '',
+              id: chip.id,
               type,
               label,
-              uri: target.getAttribute('data-uri') || '',
-              meta,
+              uri: chip.uri,
+              meta: chip.meta,
               icon: iconMap[type] || '📄',
             },
             position: {
@@ -1430,61 +1431,40 @@
    * Supports intent:// URLs and note references
    */
   async function handleMentionClick(event: MouseEvent) {
-    const target = event.target as HTMLElement;
-    if (!target.hasAttribute('data-mention')) return;
-
-    const type = target.getAttribute('data-type');
+    const chip = readMentionChip(event.target as HTMLElement);
+    if (!chip) return;
     // A person is an inline reference, not a file or a navigable context attachment.
-    if (type === 'member') return;
-    const id = target.getAttribute('data-id');
-    const uri = target.getAttribute('data-uri');
-    const meta = JSON.parse(target.getAttribute('data-meta') || '{}');
+    if (chip.type === 'member') return;
 
-    // Handle intent:// URLs (stored in uri or meta.fullUrl)
-    // Check both uri and meta.fullUrl for the intent URL
-    const intentUrl = uri?.startsWith('intent://')
-      ? uri
-      : meta.fullUrl?.startsWith('intent://')
-        ? meta.fullUrl
-        : null;
-    if (intentUrl) {
+    // Handle intent:// URLs (stored in data-uri or meta.fullUrl)
+    if (chip.intentUrl) {
       event.preventDefault();
       event.stopPropagation();
       const { handleIntentLink } = await import('$lib/utils/workspaces-link-handler');
-      await handleIntentLink(intentUrl);
+      await handleIntentLink(chip.intentUrl);
       return;
     }
 
-    // Handle external note references (notes in other workspaces) via meta.workspaceId
-    // This covers the case where a note mention has a workspaceId in meta, indicating
-    // it's a cross-workspace reference that should use intent navigation
-    if (type === 'note' && id && meta.workspaceId && meta.isExternalLink) {
+    if (chip.type === 'note' && chip.note) {
       event.preventDefault();
       event.stopPropagation();
-      // Build intent URL from meta using shared constants
-      const builtIntentUrl = noteUrl(id, meta.workspaceId);
-      const { handleIntentLink } = await import('$lib/utils/workspaces-link-handler');
-      await handleIntentLink(builtIntentUrl);
-      return;
-    }
-
-    // Handle note references within the current workspace
-    if (type === 'note' && id) {
-      event.preventDefault();
-      event.stopPropagation();
-      const { navigateToNote } = await import('$lib/utils/workspace-navigation');
-      await navigateToNote(id);
+      if (chip.note.workspaceId) {
+        // A note in another workspace: navigate through its intent link.
+        const { handleIntentLink } = await import('$lib/utils/workspaces-link-handler');
+        await handleIntentLink(noteUrl(chip.note.id, chip.note.workspaceId));
+      } else {
+        const { navigateToNote } = await import('$lib/utils/workspace-navigation');
+        await navigateToNote(chip.note.id);
+      }
       return;
     }
 
     // Handle file references - open file in main content area
-    if (type === 'file' && (meta.fullPath || meta.path)) {
+    if (chip.type === 'file' && chip.filePath) {
       event.preventDefault();
       event.stopPropagation();
       const { navigateToFile } = await import('$lib/utils/workspace-navigation');
-      // Use fullPath (absolute) if available, otherwise use path (relative)
-      const filePath = meta.fullPath || meta.path;
-      await navigateToFile(filePath);
+      await navigateToFile(chip.filePath);
       return;
     }
   }

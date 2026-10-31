@@ -56,13 +56,3 @@ export function runtimeMentionChipAttrs(mention: RuntimeMention): {
 } {
   return { type: mention.kind, id: mention.id, label: mention.name };
 }
-
-const RUNTIME_MENTION_GLOBAL = new RegExp(`@${RUNTIME_MENTION_BODY_SOURCE}`, 'g');
-
-/** Plain-text previews: render each terminal/script token as `@<name>`. */
-export function runtimeMentionsToText(text: string): string {
-  return text.replace(RUNTIME_MENTION_GLOBAL, (token) => {
-    const mention = parseRuntimeMention(token);
-    return mention ? `@${mention.name}` : token;
-  });
-}

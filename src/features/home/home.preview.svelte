@@ -41,6 +41,7 @@
   interface Props {
     scenario?:
       | 'populated'
+      | 'set-aside'
       | 'untitled'
       | 'status-icons'
       | 'status-grouping'
@@ -77,6 +78,7 @@
     defaultState: 'populated',
     states: {
       populated: { props: { scenario: 'populated' } },
+      'set-aside': { props: { scenario: 'set-aside' } },
       untitled: { props: { scenario: 'untitled' } },
       'status-icons': { props: { scenario: 'status-icons' } },
       'status-grouping': { props: { scenario: 'status-grouping' } },
@@ -480,6 +482,7 @@
     hydrateHomeWorkspaceSettings,
     resetHomeWorkspaceView,
     updateHomeWorkspaceView,
+    setHomeWorkspaceAside,
   } from './home-workspaces-slice';
   import { persistedHomeState, readHomePersistence } from './home-workspaces-persistence';
   import { selectShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
@@ -699,7 +702,7 @@
             })),
       ),
     );
-    store.dispatch(setWorkspaceHasLoaded(true));
+    store.dispatch(setWorkspaceHasLoaded(true, store.state.connections.windowBackendId));
     store.dispatch(
       setWorkspaceError(scenario === 'error' ? 'The daemon connection was interrupted.' : null),
     );
@@ -799,6 +802,10 @@
       );
     }
     if (scenario === 'status-icons') store.dispatch(updateHomeWorkspaceView({ groupBy: 'none' }));
+    if (scenario === 'set-aside') {
+      store.dispatch(setHomeWorkspaceAside('home-running'));
+      store.dispatch(setHomeWorkspaceAside('home-complete'));
+    }
     if (scenario === 'prs') store.dispatch(updateHomeWorkspaceView({ tab: 'prs' }));
     if (['linear', 'integration-error', 'disconnected'].includes(scenario))
       store.dispatch(updateHomeWorkspaceView({ tab: 'linear' }));

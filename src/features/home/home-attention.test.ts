@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { AgentSession } from '$shared/types';
+import type { AgentSession, Workspace } from '$shared/types';
 import { AgentStatus } from '$shared/types/agent.types';
+import { WorkspaceId } from '$shared/types/branded-ids';
+import { createMockWorkspace } from '../../test/factories/workspace.factory';
 import { getHomeAttentionRequests, getHomeStatusCause } from './home-attention';
 import { homeDismissQuestionAction, homeRetryAgentAction } from './home-attention-actions';
 import { getHomeTriageGroup, type HomeTriageInput } from './home-model';
+import { decideHomeSetAside, homeSetAsideAttention } from './home-set-aside-attention';
 
 // Failure cases: dismissed questions reappear; stale confirmation dismisses a new
 // set; unrelated agents/workspaces are targeted; deleted/delegated/muted requests
@@ -18,6 +21,12 @@ const agent = (changes: Partial<AgentSession> = {}) =>
     metadata: { pendingQuestionsMessageId: 'question-1' },
     ...changes,
   }) as AgentSession;
+
+const asideRecord = (workspace: Workspace, agents: AgentSession[] = []) => ({
+  at: 0,
+  known: homeSetAsideAttention(workspace, agents).map(({ token }) => token),
+  knownAt: 0,
+});
 
 describe('Home actionable attention', () => {
   it('keeps live request reason and timestamp without inferring from prose', () => {
@@ -43,6 +52,26 @@ describe('Home actionable attention', () => {
     expect(
       getHomeAttentionRequests('ws-1', [agent({ metadata: {}, digest: 'Blocked: ask me' })]),
     ).toEqual([]);
+
+    const workspace = createMockWorkspace({
+      id: WorkspaceId('ws-1'),
+      displayStatus: 'needs_attention',
+      attention: 'review_required',
+      attentionReminder: {
+        reasons: [{ id: 'opaque-reminder', revision: 'opaque-first' }],
+        dismissed: false,
+        displayStatus: 'needs_attention',
+      },
+    });
+    // A private hold or invalidation can omit the projection without changing raw status.
+    expect(
+      decideHomeSetAside(
+        asideRecord(workspace),
+        homeSetAsideAttention({ ...workspace, attentionReminder: undefined }, []),
+        new Set(),
+        1,
+      ).kind,
+    ).toBe('return');
   });
 
   it('retires a dismissed question but keeps an independent blocker', () => {
@@ -78,6 +107,51 @@ describe('Home actionable attention', () => {
         }),
       ])[0].questionMessageId,
     ).toBe('question-2');
+
+    const settled = createMockWorkspace({
+      id: WorkspaceId('ws-1'),
+      displayStatus: 'idle',
+      attention: 'none',
+      attentionReminder: { reasons: [], dismissed: false, displayStatus: 'idle' },
+    });
+    const personallyDismissed: Workspace = {
+      ...settled,
+      displayStatus: 'needs_attention',
+      attention: 'review_required',
+      attentionReminder: {
+        reasons: [{ id: 'opaque-reminder', revision: 'opaque-first' }],
+        dismissed: true,
+        displayStatus: 'waiting',
+      },
+    };
+    expect(
+      decideHomeSetAside(
+        asideRecord(settled),
+        homeSetAsideAttention(personallyDismissed, []),
+        new Set(),
+        1,
+      ).kind,
+    ).toBe('unchanged');
+    for (const displayStatus of ['blocked', 'failed'] as const)
+      expect(
+        decideHomeSetAside(
+          asideRecord(settled),
+          homeSetAsideAttention({ ...personallyDismissed, displayStatus }, []),
+          new Set(),
+          1,
+        ).kind,
+      ).toBe('return');
+    // Session requests have their own baseline: a stale projection must not hide a new question.
+    expect(
+      decideHomeSetAside(
+        asideRecord(personallyDismissed, [agent()]),
+        homeSetAsideAttention(personallyDismissed, [
+          agent({ metadata: { pendingQuestionsMessageId: 'question-2' } }),
+        ]),
+        new Set(['agent-1']),
+        1,
+      ).kind,
+    ).toBe('return');
   });
 
   it.each([
@@ -146,6 +220,7 @@ describe('Home actionable attention', () => {
         scriptsRunning: true,
       }),
     ).toBe('running');
+
     expect(getHomeStatusCause({ displayStatus: 'pr_ready', scriptsRunning: true })).toBe(
       'pr_ready',
     );
@@ -166,6 +241,36 @@ describe('Home actionable attention', () => {
         backgroundTasksRunning: true,
       }),
     ).toBe('running');
+    const first = createMockWorkspace({
+      displayStatus: 'needs_attention',
+      attention: 'review_required',
+      attentionReminder: {
+        reasons: [{ id: 'opaque-reminder', revision: 'opaque-first' }],
+        dismissed: false,
+        displayStatus: 'needs_attention',
+      },
+    });
+    const record = asideRecord(first);
+    expect(decideHomeSetAside(record, homeSetAsideAttention(first, []), new Set(), 1).kind).toBe(
+      'unchanged',
+    );
+    expect(
+      decideHomeSetAside(
+        record,
+        homeSetAsideAttention(
+          {
+            ...first,
+            attentionReminder: {
+              ...first.attentionReminder!,
+              reasons: [{ id: 'opaque-reminder', revision: 'opaque-second' }],
+            },
+          },
+          [],
+        ),
+        new Set(),
+        1,
+      ).kind,
+    ).toBe('return');
   });
 });
 

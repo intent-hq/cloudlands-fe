@@ -88,13 +88,19 @@ function createSubscribeSeam(): SubscribeSeam {
   };
 }
 
+/** Select `workspaceId`'s tab with its route on screen. */
+function onWorkspace(workspaceId: string): void {
+  mockState.tabState.currentTabId = workspaceId;
+  window.history.replaceState(null, '', `/workspace/${workspaceId}`);
+}
+
 function dispatchedTypes(): string[] {
   return dispatched.map((action) => action.type);
 }
 
 beforeEach(() => {
   dispatched.length = 0;
-  mockState.tabState.currentTabId = WS;
+  onWorkspace(WS);
   mockState.workspaceAgents.byWorkspaceId = {};
   mockState.agentSessions.byAgentId = {};
 });
@@ -428,7 +434,7 @@ describe('focusFirstUnreadAgent', () => {
     const seam = createSubscribeSeam();
     focusFirstUnreadAgent(WS, true, seam);
 
-    mockState.tabState.currentTabId = 'ws-other';
+    onWorkspace('ws-other');
     seedAgents(['agent-a'], true);
     seedSessions({ 'agent-a': { lastMessageRole: 'assistant' } });
     seam.notify();
@@ -441,7 +447,7 @@ describe('focusFirstUnreadAgent', () => {
     // The watch arms right after `goto()` is invoked, so the store still
     // reports the previous workspace: emissions in that gap must not read as a
     // navigation away.
-    mockState.tabState.currentTabId = 'ws-previous';
+    onWorkspace('ws-previous');
     const seam = createSubscribeSeam();
     focusFirstUnreadAgent(WS, true, seam);
 
@@ -452,7 +458,7 @@ describe('focusFirstUnreadAgent', () => {
     expect(seam.unsubscribeCalls()).toBe(0);
 
     // Navigation lands, then hydration completes.
-    mockState.tabState.currentTabId = WS;
+    onWorkspace(WS);
     seedSessions({ 'agent-a': { lastMessageRole: 'assistant' } });
     seam.notify();
 
@@ -467,11 +473,11 @@ describe('focusFirstUnreadAgent', () => {
     // never latches, so the guard must key off "no longer on the workspace we
     // departed from" or the watch would survive to mutate A's tab in the
     // background once A's agents hydrate.
-    mockState.tabState.currentTabId = 'ws-previous';
+    onWorkspace('ws-previous');
     const seam = createSubscribeSeam();
     focusFirstUnreadAgent(WS, true, seam);
 
-    mockState.tabState.currentTabId = 'ws-other';
+    onWorkspace('ws-other');
     seedAgents(['agent-a'], true);
     seedSessions({ 'agent-a': { lastMessageRole: 'assistant' } });
     seam.notify();
@@ -481,17 +487,17 @@ describe('focusFirstUnreadAgent', () => {
   });
 
   it('abandons the watch when the user leaves after the navigation landed', () => {
-    mockState.tabState.currentTabId = 'ws-previous';
+    onWorkspace('ws-previous');
     const seam = createSubscribeSeam();
     focusFirstUnreadAgent(WS, true, seam);
 
-    mockState.tabState.currentTabId = WS;
+    onWorkspace(WS);
     seedAgents(['agent-a'], false);
     seam.notify();
     expect(seam.unsubscribeCalls()).toBe(0);
 
     // User navigates away before hydration finished.
-    mockState.tabState.currentTabId = 'ws-other';
+    onWorkspace('ws-other');
     seedSessions({ 'agent-a': { lastMessageRole: 'assistant' } });
     seam.notify();
 
@@ -575,4 +581,27 @@ describe('focusFirstUnreadAgent', () => {
       vi.useRealTimers();
     }
   });
+});
+
+describe('focusFirstUnreadAgent from Home or Settings', () => {
+  // Home and Settings keep the last workspace as the current tab, so leaving
+  // from there departs from no visible workspace, not from that hidden tab.
+  it.each(['/', '/settings'])(
+    'abandons the watch when the user opens the last-tab workspace from %s',
+    (path) => {
+      mockState.tabState.currentTabId = 'ws-last';
+      window.history.replaceState(null, '', path);
+      const seam = createSubscribeSeam();
+      focusFirstUnreadAgent(WS, true, seam);
+
+      // The user opens the hidden last tab before WS's navigation lands.
+      window.history.replaceState(null, '', '/workspace/ws-last');
+      seedAgents(['agent-a'], true);
+      seedSessions({ 'agent-a': { lastMessageRole: 'assistant' } });
+      seam.notify();
+
+      expect(dispatched).toEqual([]);
+      expect(seam.unsubscribeCalls()).toBe(1);
+    },
+  );
 });

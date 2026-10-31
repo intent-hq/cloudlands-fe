@@ -23,6 +23,7 @@ interface HomeWorkspaceActionsOptions {
   consumerId: string;
   dismissalRequestId: () => string | undefined;
   onOpen: (id: string) => void;
+  aside?: (workspace: Workspace) => { setAside: boolean; onToggle: () => void };
 }
 
 /** UI-local menus and focus; mutations and their outcomes remain Redux-owned. */
@@ -172,6 +173,7 @@ export function createHomeWorkspaceActions(options: HomeWorkspaceActionsOptions)
       expandGroup: options.expandGroup,
       getHomeElement: options.root,
       onPin: () => pinWorkspace(workspace.id),
+      aside: options.aside?.(workspace),
     });
     if (snapshot.reasons.length && snapshot.principalContext)
       items.splice(2, 0, {

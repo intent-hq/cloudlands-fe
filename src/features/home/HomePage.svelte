@@ -1,6 +1,5 @@
 <script lang="ts">
   import { microConnectedReadable } from '$features/hardware-console/device/connection-status';
-  import WorkspaceMicroKeySlot from '$features/hardware-console/components/WorkspaceMicroKeySlot.svelte';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import { createHomeWorkspaceActions } from './home-workspace-actions.svelte';
   import { homeWorkspaceMotion } from './home-workspace-motion.svelte';
@@ -8,7 +7,6 @@
   import './home.css';
   import { openAndShowWorkspace } from '$lib/utils/show-workspace';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
-  import SidebarOverflowMenu from '$lib/components/ui/sidebar-context-menu/SidebarOverflowMenu.svelte';
   import { selectAttentionDismissalResult } from '$store/renderer/slices/workspace-operations/workspace-operations-selectors';
   import {
     selectLabelsSupported,
@@ -20,29 +18,25 @@
     createHomeDoubleClickOpener,
     openHomeWorkspaceFromEvent,
   } from './home-workspace-opening';
-  import { faThumbtack } from '@fortawesome/free-solid-svg-icons';
   import { tick, untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import HomeWorkspaceSettings from './HomeWorkspaceSettings.svelte';
   import HomeWorkspaceControls from './HomeWorkspaceControls.svelte';
   import * as Tabs from '$lib/components/ui/tabs';
-  import { ListRow, ListView, SectionedList } from '$lib/components/patterns/collection';
   import { Screen, EmptyState, ErrorState } from '$lib/components/patterns/screen';
   import HomeLoading from './HomeLoading.svelte';
   import { springIn, crispOut, animatedHeight } from '$lib/motion';
   import ChiefCard from '$lib/components/layout/sidebar-nav/cards/ChiefCard.svelte';
   import HomeAssistantThreads from './HomeAssistantThreads.svelte';
   import HomeAssistantPanels from './HomeAssistantPanels.svelte';
-  import HomeActivityTime from './HomeActivityTime.svelte';
   import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
-  import HomeWorkspaceStatus from './HomeWorkspaceStatus.svelte';
-  import HomeWorkspaceRepositoryLabel from './HomeWorkspaceRepositoryLabel.svelte';
   import {
     buildRepoPathLookup,
     groupWorkspacesByRepository,
   } from '$lib/components/workspace/utils/workspace-grouping';
   import {
     selectWorkspaceItems,
+    selectWorkspaceById,
     selectWorkspaceHasLoaded,
     selectIsCollaboratorOnlyClient,
   } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -71,7 +65,6 @@
     faCodePullRequest,
     faHourglass,
     faPlus,
-    faChevronDown,
     faChevronRight,
   } from '@fortawesome/free-solid-svg-icons';
   import {
@@ -85,13 +78,27 @@
   import HomeWorkspaceDetail from './HomeWorkspaceDetail.svelte';
   import HomePreviewPane from './HomePreviewPane.svelte';
   import HomeWorkspaceBoard from './HomeWorkspaceBoard.svelte';
+  import HomeWorkspaceList from './HomeWorkspaceList.svelte';
   import { groupHomeWorkspacesByStatus } from './home-workspace-status-groups';
-  import HomeWorkspacePullBadge from './HomeWorkspacePullBadge.svelte';
   import GitHubIcon from '$lib/components/icons/GitHubIcon.svelte';
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
   import ResizablePanel from '$lib/components/layout/ResizablePanel.svelte';
   import { openHomeIntegrationUrl } from './home-integrations-slice';
-  import { selectHomeWorkspaceView, selectHomeWorkspaceError } from './home-workspaces-selectors';
+  import {
+    selectHomeWorkspaceView,
+    selectHomeWorkspaceError,
+    selectHomeSetAsideWorkspaceIds,
+    selectHomeWorkspaceIsSetAside,
+    selectHomePersistenceScope,
+  } from './home-workspaces-selectors';
+  import {
+    HOME_SET_ASIDE_GROUP,
+    bringBackHomeWorkspaceNow,
+    neighborHomeWorkspaceId,
+    restoreHomeFocusAfterMove,
+    setHomeWorkspaceAsideWithUndo,
+  } from './home-set-aside';
+  import { handleHomeSetAsideShortcut } from './home-set-aside-shortcut';
   import { updateHomeWorkspaceView } from './home-workspaces-slice';
   import { loadWorkspacesRequested } from '$store/renderer/slices/workspace/workspace-slice';
   import { homeRetiredWorkspaces } from './home-retired-workspaces.svelte';
@@ -119,6 +126,10 @@
     consumerId: dismissalConsumerId,
     dismissalRequestId: () => $dismissalResult$?.requestId,
     onOpen: openWorkspace,
+    aside: (workspace) => ({
+      setAside: asideSet.has(workspace.id),
+      onToggle: () => toggleAside(workspace),
+    }),
   });
   const labelsInUse$ = selectWorkspaceLabelsInUse();
   const labelsSupported$ = selectLabelsSupported();
@@ -134,6 +145,58 @@
   function openModifiedWorkspace(event: MouseEvent | KeyboardEvent, id: string) {
     if (event instanceof MouseEvent) doubleClick.arm(event, id);
     openHomeWorkspaceFromEvent(event, id, openWorkspace);
+  }
+  function showListMenu(
+    event: MouseEvent | KeyboardEvent,
+    workspace: Workspace,
+    option?: HTMLElement,
+  ) {
+    workspaceActions.showMenu(event, workspace);
+    if (
+      workspaceActions.contextMenu &&
+      option &&
+      event instanceof KeyboardEvent &&
+      (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10'))
+    ) {
+      const bounds = option.getBoundingClientRect();
+      workspaceActions.contextMenu = {
+        ...workspaceActions.contextMenu,
+        x: bounds.left,
+        y: bounds.bottom,
+        returnFocus: option,
+      };
+    }
+  }
+  const asideIds$ = selectHomeSetAsideWorkspaceIds();
+  const persistenceScope$ = selectHomePersistenceScope();
+  const asideSet = $derived(new Set($asideIds$));
+  // Moving a row keeps the selection (and its mounted preview and drafts); focus only
+  // moves when it left with the row.
+  function isLive(workspace: Workspace): boolean {
+    return (
+      workspace.status !== WorkspaceStatusEnum.Deleted &&
+      workspace.status !== WorkspaceStatusEnum.Archived &&
+      workspace.status !== WorkspaceStatusEnum.Retired &&
+      !workspace.pendingDeleteAt
+    );
+  }
+  function toggleAside(workspace: Workspace, focusMoved = false, expectedScope?: string) {
+    if (expectedScope !== undefined) {
+      const state = store.state;
+      const live = selectWorkspaceById.select(state, workspace.id);
+      if (
+        selectHomePersistenceScope.select(state) !== expectedScope ||
+        selectHomeWorkspaceIsSetAside.select(state, workspace.id) ||
+        !live ||
+        !isLive(live)
+      )
+        return;
+      workspace = live;
+    }
+    const neighbor = focusMoved ? null : neighborHomeWorkspaceId(homeElement, workspace.id);
+    if (asideSet.has(workspace.id)) bringBackHomeWorkspaceNow(workspace.id);
+    else setHomeWorkspaceAsideWithUndo(workspace);
+    restoreHomeFocusAfterMove(() => homeElement, neighbor, workspace.id);
   }
   const workspaces$ = selectWorkspaceItems();
   const hasLoaded$ = selectWorkspaceHasLoaded();
@@ -194,8 +257,9 @@
     ),
   );
   const selectedRepository = $derived(repositoryGroups.find((repo) => repo.key === repoKey));
+  // Counts and triage describe active work.
   function isActive(workspace: Workspace): boolean {
-    return matchesHomeFilter(workspace, 'all');
+    return matchesHomeFilter(workspace, 'all') && !asideSet.has(workspace.id);
   }
   function countNeedsYou(items: readonly Workspace[]): number {
     return items.filter((workspace) => isActive(workspace) && needsAttention(workspace)).length;
@@ -249,11 +313,12 @@
       ] as const satisfies readonly { id: HomeFilter; label: string; icon: unknown }[]
     ).map((item) => ({
       ...item,
-      count: dateScopedWorkspaces.filter((workspace) => matchesHomeFilter(workspace, item.id))
-        .length,
+      count: dateScopedWorkspaces.filter(
+        (workspace) => matchesHomeFilter(workspace, item.id) && !asideSet.has(workspace.id),
+      ).length,
     })),
   );
-  const filteredWorkspaces = $derived(
+  const matchedWorkspaces = $derived(
     dateScopedWorkspaces
       .filter(
         (workspace) =>
@@ -276,14 +341,42 @@
           compareHomeActivityDesc(a, b),
       ),
   );
+  // Archived is its own view; set-aside work has a separate collection.
+  const filteredWorkspaces = $derived(
+    filter === 'archived'
+      ? matchedWorkspaces
+      : matchedWorkspaces.filter((workspace) => !asideSet.has(workspace.id)),
+  );
+  const asideWorkspaces = $derived(
+    filter === 'archived'
+      ? []
+      : matchedWorkspaces
+          .filter((workspace) => asideSet.has(workspace.id))
+          .sort(compareHomeActivityDesc),
+  );
   const selectedWorkspace = $derived(
     filteredWorkspaces.find((workspace) => workspace.id === selectedId) ??
+      asideWorkspaces.find((workspace) => workspace.id === selectedId) ??
       (workspaceActions.retainedSelection === selectedId
         ? dateScopedWorkspaces.find(
             (workspace) => workspace.id === selectedId && matchesHomeFilter(workspace, 'all'),
           )
         : undefined),
   );
+  // The shelf starts collapsed; a search opens it so matching work is never hidden.
+  let asideCollapsedForQuery = $state<string | null>(null);
+  const asideExpanded = $derived(
+    query.trim()
+      ? asideCollapsedForQuery !== query.trim()
+      : $view$.expandedGroups[HOME_SET_ASIDE_GROUP] === true,
+  );
+  function setAsideExpanded(expanded: boolean) {
+    if (query.trim()) {
+      asideCollapsedForQuery = expanded ? null : query.trim();
+      return;
+    }
+    updateView({ expandedGroups: { ...$view$.expandedGroups, [HOME_SET_ASIDE_GROUP]: expanded } });
+  }
   const triageOrder = ['needs-you', 'pr-ready', 'running', 'waiting', 'inactive'] as const;
   // Hiding a group that holds the selected workspace also closes the preview;
   // otherwise the selection would keep the group open and the button inert.
@@ -467,7 +560,14 @@
   }
   homeWorkspaceMotion(
     () => homeElement ?? undefined,
-    () => [listGroups, boardGroups, filteredWorkspaces, $view$.view],
+    () => [
+      listGroups,
+      boardGroups,
+      filteredWorkspaces,
+      asideWorkspaces,
+      asideExpanded,
+      $view$.view,
+    ],
     () => tab,
   );
   // New space resolves the selected Home repository itself
@@ -479,6 +579,15 @@
 
 <svelte:window
   onkeydown={(event) => {
+    if (
+      destination === 'workspaces' &&
+      tab === 'workspaces' &&
+      handleHomeSetAsideShortcut(event, (id) => {
+        const workspace = workspaces.find((candidate) => candidate.id === id);
+        if (workspace && isLive(workspace)) toggleAside(workspace);
+      })
+    )
+      return;
     if (
       event.key === 'Escape' &&
       !event.defaultPrevented &&
@@ -839,7 +948,7 @@
                             view={$view$.view}
                             grouped={$view$.groupBy !== 'none'}
                           />
-                        {:else if filteredWorkspaces.length === 0}
+                        {:else if filteredWorkspaces.length === 0 && asideWorkspaces.length === 0}
                           <EmptyState class="flex-1" emphasis="prominent">
                             {#snippet title()}<h2>
                                 {workspaces.length === 0
@@ -883,247 +992,30 @@
                             {doubleClick}
                             oncontextmenu={workspaceActions.showMenu}
                             archived={filter === 'archived'}
+                            aside={asideWorkspaces}
+                            dragScope={$persistenceScope$}
+                            ontoggleaside={toggleAside}
                           />
                         {:else}
-                          {#snippet workspaceRow({ item }: { item: Workspace })}
-                            {@const displayTitle = item.title.trim()
-                              ? item.title
-                              : m.workspace_links_untitled_label()}
-                            {@const pullRequestCount =
-                              item.pullRequestsTotal ?? item.pullRequests?.length ?? 0}
-                            <ListRow
-                              class="home-list-row h-12 items-center border-b border-border px-3 py-1"
-                              data-home-workspace={item.id}
-                              onclick={(event) => openModifiedWorkspace(event, item.id)}
-                              oncontextmenu={(event) => workspaceActions.showMenu(event, item)}
-                            >
-                              {#snippet leading()}
-                                <span class="flex items-center gap-2">
-                                  <WorkspaceMicroKeySlot workspaceId={item.id} />
-                                  {#if !selectedRepository && item.repositoryOwner}
-                                    <Tooltip.Provider
-                                      ><Tooltip.Root
-                                        ><Tooltip.Trigger
-                                          >{#snippet child({ props: homeTooltipProps })}<span
-                                              {...homeTooltipProps}
-                                            >
-                                              <GitHubAvatar
-                                                identity={item.repositoryOwner ?? ''}
-                                                size={20}
-                                                class="shrink-0 rounded-sm"
-                                              />
-                                            </span>{/snippet}</Tooltip.Trigger
-                                        ><Tooltip.Content
-                                          >{[item.repositoryOwner, item.repositoryName]
-                                            .filter(Boolean)
-                                            .join('/')}</Tooltip.Content
-                                        ></Tooltip.Root
-                                      ></Tooltip.Provider
-                                    >
-                                  {:else if !selectedRepository && (item.repositoryPath || item.repositoryName)}
-                                    <Tooltip.Provider
-                                      ><Tooltip.Root
-                                        ><Tooltip.Trigger
-                                          >{#snippet child({ props: homeTooltipProps })}<span
-                                              {...homeTooltipProps}
-                                              class="flex size-5 items-center justify-center text-muted-foreground"
-                                              ><Fa icon={faFolder} /></span
-                                            >{/snippet}</Tooltip.Trigger
-                                        ><Tooltip.Content
-                                          >{item.repositoryName ||
-                                            item.repositoryPath}</Tooltip.Content
-                                        ></Tooltip.Root
-                                      ></Tooltip.Provider
-                                    >
-                                  {/if}
-                                </span>
-                              {/snippet}
-                              {#snippet title()}
-                                <span class="home-row-line">
-                                  <Tooltip.Provider
-                                    ><Tooltip.Root
-                                      ><Tooltip.Trigger
-                                        >{#snippet child({ props: homeTooltipProps })}<span
-                                            {...homeTooltipProps}
-                                            class="home-row-title truncate font-medium"
-                                            >{displayTitle}</span
-                                          >{/snippet}</Tooltip.Trigger
-                                      ><Tooltip.Content>{displayTitle}</Tooltip.Content
-                                      ></Tooltip.Root
-                                    ></Tooltip.Provider
-                                  >
-                                  <span
-                                    class="home-row-description flex min-w-0 items-center gap-2"
-                                  >
-                                    <HomeWorkspacePullBadge workspace={item} />
-                                    {#if pullRequestCount > 1}
-                                      <span
-                                        class="shrink-0 rounded-full border border-border px-2 py-0.5 type-caption tabular-nums"
-                                        >+{formatInteger(pullRequestCount - 1)}</span
-                                      >
-                                    {/if}
-                                    <Tooltip.Provider
-                                      ><Tooltip.Root
-                                        ><Tooltip.Trigger
-                                          >{#snippet child({ props: homeTooltipProps })}<span
-                                              {...homeTooltipProps}
-                                              class="home-workspace-summary min-w-0 truncate type-caption"
-                                              >{item.statusMessage || ''}</span
-                                            >{/snippet}</Tooltip.Trigger
-                                        ><Tooltip.Content
-                                          >{item.statusMessage || ''}</Tooltip.Content
-                                        ></Tooltip.Root
-                                      ></Tooltip.Provider
-                                    >
-                                  </span>
-                                  {#if !selectedRepository}
-                                    <HomeWorkspaceRepositoryLabel
-                                      workspace={item}
-                                      showOwner={!selectedOrg}
-                                    />
-                                  {/if}
-                                </span>
-                              {/snippet}
-                              {#snippet trailing()}<span
-                                  class="workspace-row-meta flex shrink-0 items-center gap-2 text-muted-foreground"
-                                >
-                                  {#if $pinnedIds$.includes(item.id)}<Tooltip.Provider
-                                      ><Tooltip.Root
-                                        ><Tooltip.Trigger
-                                          >{#snippet child({ props: homeTooltipProps })}<span
-                                              {...homeTooltipProps}
-                                              aria-label={m.layout_activeCard_pinned_header()}
-                                              ><Fa icon={faThumbtack} /></span
-                                            >{/snippet}</Tooltip.Trigger
-                                        ><Tooltip.Content
-                                          >{m.layout_activeCard_pinned_header()}</Tooltip.Content
-                                        ></Tooltip.Root
-                                      ></Tooltip.Provider
-                                    >{/if}
-                                  <HomeWorkspaceStatus workspace={item} />
-                                  <span
-                                    class="inline-flex min-w-6 shrink-0 justify-end whitespace-nowrap type-caption tabular-nums"
-                                    data-home-row-time
-                                  >
-                                    <HomeActivityTime workspace={item} />
-                                  </span>
-                                  <SidebarOverflowMenu
-                                    items={workspaceActions.overflowMenu(item)}
-                                    onOpenChange={(open) =>
-                                      workspaceActions.setOverflowOpen(item, open)}
-                                    ariaLabel={m.workspace_sidebarHeader_actions_ariaLabel()}
-                                  />
-                                </span>{/snippet}
-                            </ListRow>
-                          {/snippet}
-                          {#snippet workspaceList(
-                            items: Workspace[],
-                            label: string,
-                            scroll: boolean,
-                          )}
-                            <ListView
-                              onkeydowncapture={(event) => {
-                                const option =
-                                  event.target instanceof HTMLElement
-                                    ? event.target.closest<HTMLElement>('[role="option"]')
-                                    : null;
-                                const id =
-                                  option?.querySelector<HTMLElement>('[data-home-workspace]')
-                                    ?.dataset.homeWorkspace;
-                                if (id) openModifiedWorkspace(event, id);
-                              }}
-                              onkeydown={(event) => {
-                                const option =
-                                  event.target instanceof HTMLElement
-                                    ? event.target.closest<HTMLElement>('[role="option"]')
-                                    : null;
-                                const id =
-                                  option?.querySelector<HTMLElement>('[data-home-workspace]')
-                                    ?.dataset.homeWorkspace;
-                                const workspace = items.find((item) => item.id === id);
-                                if (workspace) {
-                                  workspaceActions.showMenu(event, workspace);
-                                  if (
-                                    workspaceActions.contextMenu &&
-                                    option &&
-                                    (event.key === 'ContextMenu' ||
-                                      (event.shiftKey && event.key === 'F10'))
-                                  ) {
-                                    const bounds = option.getBoundingClientRect();
-                                    workspaceActions.contextMenu = {
-                                      ...workspaceActions.contextMenu,
-                                      x: bounds.left,
-                                      y: bounds.bottom,
-                                      returnFocus: option,
-                                    };
-                                  }
-                                }
-                              }}
-                              {items}
-                              rowHeight={48}
-                              virtualize={scroll ? 'auto' : false}
-                              getKey={(workspace) => workspace.id}
-                              getText={(workspace) =>
-                                workspace.title.trim()
-                                  ? workspace.title
-                                  : m.workspace_links_untitled_label()}
-                              selectable="single"
-                              selectedKeys={selectedWorkspace ? [selectedWorkspace.id] : []}
-                              onSelectedKeysChange={(keys) =>
-                                updateView({ selectedId: keys[0] ? String(keys[0]) : null })}
-                              ariaLabel={label}
-                              class={scroll
-                                ? 'min-h-0 flex-1 overflow-y-auto px-5 pb-4'
-                                : 'overflow-visible'}
-                              row={workspaceRow}
-                            />
-                          {/snippet}
-                          {#if listGroups.length > 0}
-                            <div class="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
-                              <SectionedList
-                                sections={listGroups}
-                                getKey={(group) => group.id}
-                                inset={false}
-                              >
-                                {#snippet header(group)}
-                                  <h3
-                                    class="home-group-header flex min-h-8 items-center gap-2 px-2"
-                                    data-home-group={group.id}
-                                  >
-                                    <Button
-                                      variant="plain"
-                                      size="sm"
-                                      class="w-full justify-start gap-1.5 px-2"
-                                      labelClass="flex-initial"
-                                      aria-expanded={group.expanded}
-                                      aria-label={group.label}
-                                      onclick={() =>
-                                        setGroupExpanded(group.id, !group.expanded, group.items)}
-                                    >
-                                      <span class="text-left font-medium text-foreground"
-                                        >{group.label}</span
-                                      >
-                                      {#snippet trailingIcon()}<Fa
-                                          icon={group.expanded ? faChevronDown : faChevronRight}
-                                          class="size-3 text-muted-foreground"
-                                        />{/snippet}
-                                    </Button>
-                                  </h3>
-                                {/snippet}
-                                {#snippet children(group)}
-                                  {#if group.expanded}
-                                    {@render workspaceList(group.items, group.label, false)}
-                                  {/if}
-                                {/snippet}
-                              </SectionedList>
-                            </div>
-                          {:else}
-                            {@render workspaceList(
-                              filteredWorkspaces,
-                              m.home_tab_workspaces(),
-                              true,
-                            )}
-                          {/if}
+                          <HomeWorkspaceList
+                            workspaces={filteredWorkspaces}
+                            groups={listGroups}
+                            aside={asideWorkspaces}
+                            {asideExpanded}
+                            pinnedIds={$pinnedIds$}
+                            selectedId={selectedWorkspace?.id ?? null}
+                            showRepository={!selectedRepository}
+                            showRepositoryOwner={!selectedOrg}
+                            menu={workspaceActions.overflowMenu}
+                            onoverflowchange={(workspace, open) =>
+                              workspaceActions.setOverflowOpen(workspace, open)}
+                            onopen={openModifiedWorkspace}
+                            onmenu={showListMenu}
+                            onselect={(id) => updateView({ selectedId: id })}
+                            ongroupexpanded={setGroupExpanded}
+                            onasideexpanded={setAsideExpanded}
+                            ontoggleaside={toggleAside}
+                          />
                         {/if}
                       </section>
                       {#if selectedWorkspace}

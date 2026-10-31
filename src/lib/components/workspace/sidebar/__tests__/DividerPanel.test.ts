@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { cleanup, render } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
 import DividerPanel from '../DividerPanel.svelte';
@@ -11,17 +11,14 @@ const children = createRawSnippet(() => ({
 }));
 
 describe('DividerPanel delayed focus', () => {
+  let scrollIntoView: MockInstance<Element['scrollIntoView']>;
   beforeEach(() => {
     vi.useFakeTimers();
-    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
-      configurable: true,
-      value: vi.fn(),
-    });
+    scrollIntoView = vi.spyOn(Element.prototype, 'scrollIntoView');
   });
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
-    Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView');
     vi.restoreAllMocks();
   });
 
@@ -63,7 +60,7 @@ describe('DividerPanel delayed focus', () => {
     await view.rerender({ open: false });
     await vi.advanceTimersByTimeAsync(180);
     expect(focus).not.toHaveBeenCalled();
-    expect(HTMLElement.prototype.scrollIntoView).not.toHaveBeenCalled();
+    expect(scrollIntoView).not.toHaveBeenCalled();
   });
 
   it('preserves a focus change that returns to the opening target', async () => {
@@ -77,7 +74,7 @@ describe('DividerPanel delayed focus', () => {
       outside.focus();
       await vi.advanceTimersByTimeAsync(180);
       expect(document.activeElement).toBe(outside);
-      expect(HTMLElement.prototype.scrollIntoView).not.toHaveBeenCalled();
+      expect(scrollIntoView).not.toHaveBeenCalled();
     } finally {
       outside.remove();
     }
@@ -93,7 +90,7 @@ describe('DividerPanel delayed focus', () => {
       outside.blur();
       await vi.advanceTimersByTimeAsync(180);
       expect(document.activeElement).toBe(document.body);
-      expect(HTMLElement.prototype.scrollIntoView).not.toHaveBeenCalled();
+      expect(scrollIntoView).not.toHaveBeenCalled();
     } finally {
       outside.remove();
     }

@@ -1,6 +1,7 @@
 import { expect, test } from '../../../../test/ct-test';
 import type { Locator, Page } from '@playwright/test';
 import TooltipHarness from './TooltipHarness.svelte';
+import TooltipEnableHarness from './TooltipEnableHarness.svelte';
 
 test.use({ viewport: { width: 1280, height: 800 }, colorScheme: 'light', reducedMotion: 'reduce' });
 
@@ -139,3 +140,20 @@ for (const target of [
     await page.mouse.move(1200, 700);
   });
 }
+
+test('help enabled after keyboard focus lands opens without refocusing (intent#8081)', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(TooltipEnableHarness, { props: { disabled: true } });
+  await page.mouse.move(1200, 700);
+  const trigger = page.getByRole('button', { name: 'Show measured help', exact: true });
+  const tooltip = page.getByRole('tooltip', { name: 'Measured full name help', exact: true });
+  await tabTo(page, trigger);
+  await expect(tooltip).toHaveCount(0);
+  await component.update({ props: { disabled: false } });
+  await expectRelationship(trigger, tooltip, 'Measured full name help');
+  await expect(trigger).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expectDismissed(trigger, tooltip);
+});

@@ -8,7 +8,8 @@
  * can be seeded per test and dispatches asserted.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, screen, fireEvent } from '@testing-library/svelte';
+import { waitForLayerExit } from '../../../test/layer-exit';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { StoreState } from '$store/renderer/types';
 import { initialState as initialConnectionsState } from '$store/renderer/slices/connections/connections-slice';
@@ -135,6 +136,7 @@ describe('HudBackendMenu', () => {
 
   it('dispatches openConnectionRequested for the clicked backend and closes the menu', async () => {
     await renderAndOpen();
+    const menu = screen.getByRole('menu');
 
     await fireEvent.click(screen.getByText('desk:4180').closest('[role="menuitem"]')!);
 
@@ -145,7 +147,7 @@ describe('HudBackendMenu', () => {
         asyncActionType: 'connections/open',
       }),
     );
-    await waitFor(() => expect(screen.queryByText('Connections')).toBeNull());
+    await waitForLayerExit(menu);
   });
 
   it('surfaces a secret-unavailable open inline instead of reading as success (#3783)', async () => {
@@ -176,6 +178,7 @@ describe('HudBackendMenu', () => {
       return action;
     });
     await renderAndOpen();
+    const menu = screen.getByRole('menu');
 
     await fireEvent.click(screen.getByText('desk:4180').closest('[role="menuitem"]')!);
 
@@ -185,7 +188,7 @@ describe('HudBackendMenu', () => {
       ),
     );
     expect(screen.queryByTestId('hud-backend-menu-open-error')).toBeNull();
-    await waitFor(() => expect(screen.queryByText('Connections')).toBeNull());
+    await waitForLayerExit(menu);
   });
 
   it('reopens with a retryable error on rejected open and clears it after retry', async () => {
@@ -215,21 +218,23 @@ describe('HudBackendMenu', () => {
 
   it('opens the add-backend modal from the add entry', async () => {
     await renderAndOpen();
+    const menu = screen.getByRole('menu');
 
     await fireEvent.click(
       screen.getByText('Connect to another intentd…').closest('[role="menuitem"]')!,
     );
     expect(screen.getByRole('heading', { name: 'Connect to another intentd' })).toBeTruthy();
-    await waitFor(() => expect(screen.queryByText('Connections')).toBeNull());
+    await waitForLayerExit(menu);
   });
 
   it('closes on Escape', async () => {
     await renderAndOpen();
+    const menu = screen.getByRole('menu');
     expect(screen.getByText('Connections')).toBeTruthy();
 
-    await fireEvent.keyDown(screen.getByText('Connections').closest('[role="menu"]')!, {
+    await fireEvent.keyDown(menu, {
       key: 'Escape',
     });
-    await waitFor(() => expect(screen.queryByText('Connections')).toBeNull());
+    await waitForLayerExit(menu);
   });
 });

@@ -8,8 +8,14 @@ import { setupHomeAssistantActivityFixtures } from './home-assistant-activity-br
 import { setupHomeDismissFixtures } from './home-dismiss-browser-fixtures';
 import { setupHomeAssistantRenameFixtures } from './home-assistant-rename-browser-fixtures';
 import { setupHomeAssistantNewChatFixtures } from './home-assistant-new-chat-browser-fixtures';
+import { homeWorkspacesSaga } from './home-workspaces-saga';
 
-export function startHomePreviewFixtures(extraFixtures: () => Array<() => void> = () => []) {
+export function startHomePreviewFixtures(
+  optionsOrExtra: { homePreferences?: boolean } | (() => Array<() => void>) = {},
+) {
+  const extraFixtures = typeof optionsOrExtra === 'function' ? optionsOrExtra : () => [];
+  const homePreferences =
+    typeof optionsOrExtra === 'function' ? true : (optionsOrExtra.homePreferences ?? true);
   return startHomePreview(() => {
     const stopIntegrations = setupHomeIntegrationsFixtures(store);
     const stopActivity = setupHomeAssistantActivityFixtures();
@@ -17,6 +23,7 @@ export function startHomePreviewFixtures(extraFixtures: () => Array<() => void> 
     const stopNewChats = setupHomeAssistantNewChatFixtures();
     const extraStops = extraFixtures();
     return [
+      ...(homePreferences ? [store.runSaga(homeWorkspacesSaga)] : []),
       () => {
         extraStops.forEach((stop) => stop());
         stopNewChats();

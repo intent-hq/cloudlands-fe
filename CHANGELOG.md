@@ -4,6 +4,56 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.262.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.261.2...v2.262.0) (2026-10-31)
+
+
+### 🚀 Features
+
+* add personal workspace Set aside controls ([#3903](https://github.com/intent-hq/cloudlands-fe/issues/3903)) ([10b7760](https://github.com/intent-hq/cloudlands-fe/commit/10b7760280df4251892dac924764503ee22d4983))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.93 ([#3949](https://github.com/intent-hq/cloudlands-fe/issues/3949)) ([e4966b9](https://github.com/intent-hq/cloudlands-fe/commit/e4966b958b1bb9b2a9e7ba4268f5992a1d0e4bf5))
+* open clipped-name tooltips enabled after keyboard focus ([#3936](https://github.com/intent-hq/cloudlands-fe/issues/3936)) ([2bccfca](https://github.com/intent-hq/cloudlands-fe/commit/2bccfca8f5ae8e1ee426feb33d044a4d1898ada9))
+* **settings:** apply proposable daemon settings from chat cards ([#3942](https://github.com/intent-hq/cloudlands-fe/issues/3942)) ([9f0cb5b](https://github.com/intent-hq/cloudlands-fe/commit/9f0cb5bdc9c7587ce6b97efaa4573f5f2a1d5fe2))
+* **window:** stop the always-on macOS window blur ([#3940](https://github.com/intent-hq/cloudlands-fe/issues/3940)) ([664cc00](https://github.com/intent-hq/cloudlands-fe/commit/664cc005a515f8d2911c86869a28165cad6f2ed0))
+
+## [2.261.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.261.1...v2.261.2) (2026-10-31)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.92 ([#3943](https://github.com/intent-hq/cloudlands-fe/issues/3943)) ([d2b8217](https://github.com/intent-hq/cloudlands-fe/commit/d2b82171ba95f41cd6cb2e2e09e29e409212ba24))
+
+## [2.261.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.261.0...v2.261.1) (2026-10-31)
+
+
+### 🐛 Bug Fixes
+
+* **home:** show Disable auto-archive only while auto-archive is on ([#3928](https://github.com/intent-hq/cloudlands-fe/issues/3928)) ([8330490](https://github.com/intent-hq/cloudlands-fe/commit/83304905bc9b3cc69b1a7f15ce5da74cb09d27a3))
+
+## [2.261.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.260.1...v2.261.0) (2026-10-31)
+
+
+### 🚀 Features
+
+* **settings:** guided add/edit for Codex and Claude Code provider profiles ([#3918](https://github.com/intent-hq/cloudlands-fe/issues/3918)) ([a00cc30](https://github.com/intent-hq/cloudlands-fe/commit/a00cc3058507ed60796a54fa6435b4a720aa704c))
+
+
+### 🐛 Bug Fixes
+
+* act on the visible workspace, not the last tab, from Home and Settings ([#3926](https://github.com/intent-hq/cloudlands-fe/issues/3926)) ([cf5124c](https://github.com/intent-hq/cloudlands-fe/commit/cf5124cd150fc61b3a9d66031a54794cfd4f9f5a))
+* **browser:** draw agent tabs at near-zero opacity, not a bigger box ([#3925](https://github.com/intent-hq/cloudlands-fe/issues/3925)) ([99cda23](https://github.com/intent-hq/cloudlands-fe/commit/99cda236056fba204fdc0480731b252adc56e00b))
+* bump intentd sidecar to v0.11.91 ([#3937](https://github.com/intent-hq/cloudlands-fe/issues/3937)) ([9f4bf4e](https://github.com/intent-hq/cloudlands-fe/commit/9f4bf4e88e63e3f2a554a7cd59390ccace9bf620))
+
+## [2.260.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.260.0...v2.260.1) (2026-10-31)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.90 ([#3932](https://github.com/intent-hq/cloudlands-fe/issues/3932)) ([08a5a83](https://github.com/intent-hq/cloudlands-fe/commit/08a5a83a94237a8ec8d7c3602d62cb1bdb4f67b3))
+
 ## [2.260.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.259.2...v2.260.0) (2026-10-31)
 
 

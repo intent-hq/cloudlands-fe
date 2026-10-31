@@ -9,11 +9,6 @@ import { prWorkflowReducer } from '$store/renderer/slices/pr-workflow/pr-workflo
 import { acceptWorkflowReducer } from '$store/renderer/slices/accept-workflow/accept-workflow-slice';
 import { repositoryContextReducer } from '$store/renderer/slices/repository-context/repository-context-slice';
 
-// Polyfill scrollIntoView for jsdom
-if (typeof Element.prototype.scrollIntoView !== 'function') {
-  Element.prototype.scrollIntoView = vi.fn();
-}
-
 // ─── Mock stores and services ───────────────────────────────────────────────
 
 const { mockFileTrackingStore, createMockFtSelector, flushFtSelectors } = vi.hoisted(() => {

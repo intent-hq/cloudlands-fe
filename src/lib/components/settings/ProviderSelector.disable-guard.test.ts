@@ -59,7 +59,12 @@ async function buildState(fileSpecialists: object[]) {
     providerCatalogReducer,
   } = await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
   const { MOCK_PROVIDER_CATALOG } = await import('../../../test/fixtures/provider-catalog.fixture');
+  const { initialState: daemonHealthInitialState } =
+    await import('$store/renderer/slices/daemon-health/daemon-health-slice');
   return {
+    // The add-profile dialog reads the daemon transport; the real store always
+    // registers this slice.
+    daemonHealth: { ...daemonHealthInitialState },
     antigravitySetup: { ...setupInitialState },
     providerCatalog: providerCatalogReducer(
       providerCatalogInitialState,
@@ -490,6 +495,9 @@ describe('ProviderSelector profiles entry point', () => {
       within(menu).getByRole('menuitem', { name: m.settings_providerProfiles_add_label() }),
     );
     const dialog = await waitFor(() => result.getByRole('dialog'));
+    // The add flow opens on the kind picker; choosing a kind shows its form.
+    expect(within(dialog).getByTestId('provider-profile-kind-picker')).toBeTruthy();
+    await fireEvent.click(within(dialog).getByTestId('provider-profile-kind-advanced'));
     expect(
       within(dialog).getByRole('button', { name: m.settings_providerProfiles_create_label() }),
     ).toBeTruthy();
@@ -502,6 +510,7 @@ describe('ProviderSelector profiles entry point', () => {
       within(menu).getByRole('menuitem', { name: m.settings_providerProfiles_add_label() }),
     );
     const dialog = await waitFor(() => result.getByRole('dialog'));
+    await fireEvent.click(within(dialog).getByTestId('provider-profile-kind-advanced'));
     const name = within(dialog).getByLabelText(m.settings_providerProfiles_name_label(), {
       selector: 'input[required]',
     }) as HTMLInputElement;

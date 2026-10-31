@@ -390,6 +390,22 @@ jobs:
             ci
             perf
 
+  # Docs-title scope guard: a `docs:` title whose diff changes files that are
+  # not documentation fails, naming them and suggesting a type (test:, fix:,
+  # ...); the docs-with-code-intended label skips it. intentd#2839 ("docs:
+  # explain sidebar multi-pane selection") also carried a flaky-test fix, and a
+  # later search for that fix missed it by title. The check lives in the
+  # monorepo (scripts/check-docs-pr-scope.mjs) and reads the current title and
+  # labels from the API, so after a retitle or label change re-run this job.
+  # Same-repo PRs only (see fork-PR hardening note above); PR-metadata check,
+  # skipped on merge_group like pr-title (the gate accepts the skip there).
+  docs-pr-scope:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: intent-hq/intent/.github/workflows/docs-pr-scope.yml@main
+
   # Conflict-marker guard: fails the PR if any changed file contains committed
   # git conflict markers (ported from intent-hq/intentd#591; the intentd#588
   # incident: release-plz pushed a branch with '<' x7 / '>' x7 marker lines in
@@ -469,8 +485,8 @@ jobs:
   # The same checkout + base fetch also computes CT relevance: ct_required
   # is 'true' when the PR diff touches a CT-contract path (the one list in
   # scripts/ct-contract-paths.mjs, shared with verify:changed), a CT spec,
-  # or a direct local import of a discovered CT spec in either
-  # base or head (same module). Fixture changes keep focused local selection
+  # or any local module a discovered CT spec or the mount harness transitively
+  # imports in either base or head (same module). Fixture changes keep focused local selection
   # but require the hosted suite (see test-ct / gate). Fail-safe the other
   # way round from fast_path: the script prints ct_required=true on any
   # internal error, and the step writes 'true' if the script exits non-zero
@@ -1221,6 +1237,7 @@ jobs:
         release-fast-path,
         pr-static,
         pr-title,
+        docs-pr-scope,
         conflict-markers,
         checks,
         build-web,
@@ -1253,9 +1270,9 @@ jobs:
             echo "release-fast-path must succeed so skips are backed by a classified diff"
             exit 1
           fi
-          # pr-title / conflict-markers are PR-metadata checks that only run
-          # on pull_request; on merge_group they skip (already validated on
-          # the PR) and the gate accepts that.
+          # pr-title / docs-pr-scope / conflict-markers are PR-metadata
+          # checks that only run on pull_request; on merge_group they skip
+          # (already validated on the PR) and the gate accepts that.
           if [ "${{ github.event_name }}" = "merge_group" ]; then
             check_pr_meta() {
               if [ "$2" != "success" ] && [ "$2" != "skipped" ]; then
@@ -1272,6 +1289,7 @@ jobs:
             }
           fi
           check_pr_meta "pr-title" "${{ needs.pr-title.result }}"
+          check_pr_meta "docs-pr-scope" "${{ needs.docs-pr-scope.result }}"
           check_pr_meta "conflict-markers" "${{ needs.conflict-markers.result }}"
           # Heavy jobs required on this event: success, or skipped ONLY via the
           # release-PR fast path. Shared by the PR suites and the queue jobs.

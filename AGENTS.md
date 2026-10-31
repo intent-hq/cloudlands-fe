@@ -633,8 +633,8 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   tracking issue and an owner. Quarantined tests still run as an advisory step on shard 1;
   the PR that fixes the flake removes the tag.
 - **Browser suites never run on PR updates** (PRs run type/lint, unit tests and static
-  checks). Merge-queue entries touching CT-contract paths, specs or their direct local
-  imports (`scripts/ct-contract-paths.mjs`, shared with `verify:changed`) run the four CT
+  checks). Merge-queue entries touching CT-contract paths, specs or anything they
+  transitively import (`scripts/ct-contract-paths.mjs`, shared with `verify:changed`) run the four CT
   shards; root Playwright and Electron lifetime test/harness/config changes run their
   suites. Everything also runs nightly at 02:17 UTC (`nightly-browser-tests.yml`) and on
   manual dispatch, so application changes can reveal browser regressions in the queue or
@@ -701,6 +701,7 @@ Reuse the existing infrastructure instead of inventing parallel harnesses:
 | `src/shared/ipc/request-validation.ts` (+ schemas) | Zod schemas + `validateIpcRequest` / `tryValidateIpcRequest` to assert the request matches contract. |
 | `src/shared/ipc/__tests__/contracts.test.ts`       | Reference pattern for asserting IPC contracts and request schemas — extend it for new methods.       |
 | `src/test-setup.ts`                                | Vitest global setup (Electron mocks, jsdom shims, temp workspace dir). New suites get this for free. |
+| `src/test/layer-exit.ts`                           | Unit tests closing menus/dialogs: `waitForLayerExit(el)`, `pressOutsideLayer(el)` (jsdom-safe).      |
 
 Run the targeted suite with `pnpm vitest run <files>` (see [Verification](#verification)
 above) before opening a PR.

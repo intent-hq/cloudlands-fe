@@ -9,8 +9,8 @@
  * `verify:changed` consumes the list locally; the PR workflow must consume the
  * same module so `test-ct` runs on `pull_request` when the diff touches a
  * CT-contract path (cloudlands-fe#2441 was ejected from the merge queue with 40
- * CT failures after green PR CI), a CT spec, or a direct fixture dependency
- * of a discovered spec.
+ * CT failures after green PR CI), a CT spec, or a module a discovered spec or
+ * the mount harness transitively imports.
  * The step script and the gate script are
  * extracted from the workflow and executed under bash across a scenario table,
  * and the `test-ct` `if:` expression is evaluated the same way, so the
@@ -449,7 +449,7 @@ describe('test-ct runs on merge_group when ct_required is true', () => {
     route: 'success',
   };
   it.each<[string, Partial<Context>, boolean]>([
-    ['CT-relevant queue (contract path, spec, or direct import)', {}, true],
+    ['CT-relevant queue (contract path, spec, or mounted import)', {}, true],
     ['ordinary queue', { ctRequired: 'false' }, false],
     ['release-shaped queue touching package.json', { fastPath: 'true' }, false],
     ['queue whose relevance output is empty (fork / failed job)', { ctRequired: '' }, false],
@@ -1178,6 +1178,7 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
     RESULT_release_fast_path: 'success',
     RESULT_test_electron: 'skipped',
     RESULT_pr_title: event === 'merge_group' ? 'skipped' : 'success',
+    RESULT_docs_pr_scope: event === 'merge_group' ? 'skipped' : 'success',
     RESULT_conflict_markers: event === 'merge_group' ? 'skipped' : 'success',
     RESULT_checks: 'success',
     RESULT_build_web: 'success',
@@ -1507,6 +1508,36 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
         CT_REQUIRED: '',
       },
       1,
+    ],
+    [
+      'pull_request, docs-pr-scope passed',
+      { ...results('success', 'pull_request'), FAST_PATH: 'false', CT_REQUIRED: 'true' },
+      0,
+    ],
+    [
+      'pull_request, docs-pr-scope failed',
+      {
+        ...results('success', 'pull_request'),
+        RESULT_docs_pr_scope: 'failure',
+        FAST_PATH: 'false',
+        CT_REQUIRED: 'true',
+      },
+      1,
+    ],
+    [
+      'pull_request, docs-pr-scope skipped',
+      {
+        ...results('success', 'pull_request'),
+        RESULT_docs_pr_scope: 'skipped',
+        FAST_PATH: 'false',
+        CT_REQUIRED: 'true',
+      },
+      1,
+    ],
+    [
+      'merge_group, docs-pr-scope skipped',
+      { ...results('success', 'merge_group'), FAST_PATH: 'false', CT_REQUIRED: 'true' },
+      0,
     ],
     [
       'PR, CT passed, no test/ path, root Playwright skipped',

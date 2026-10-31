@@ -41,6 +41,7 @@ import noOneShotAnimationCountRule from './eslint-rules/no-one-shot-animation-co
 import noUnarmedOutsideClickInCtRule from './eslint-rules/no-unarmed-outside-click-in-ct.js';
 import noRawMouseWheelInCtRule from './eslint-rules/no-raw-mouse-wheel-in-ct.js';
 import noHandWrittenTypingCheckRule from './eslint-rules/no-hand-written-typing-check.js';
+import noScrollIntoViewPrototypeStubRule from './eslint-rules/no-scroll-into-view-prototype-stub.js';
 import noDirectReducedMotionQueryRule, {
   SOURCE_OF_TRUTH_FILES as reducedMotionSourceOfTruthFiles,
   TEST_FILE_GLOBS as reducedMotionTestFileGlobs,
@@ -72,6 +73,7 @@ const intentPlugin = {
     'no-direct-reduced-motion-query': noDirectReducedMotionQueryRule,
     'no-raw-workspace-navigation': noRawWorkspaceNavigationRule,
     'no-hand-written-typing-check': noHandWrittenTypingCheckRule,
+    'no-scroll-into-view-prototype-stub': noScrollIntoViewPrototypeStubRule,
   },
 };
 
@@ -727,6 +729,19 @@ export default [
         'error',
         { baseline: classNameAssertionsBaseline },
       ],
+    },
+  },
+  // jsdom has no Element.prototype.scrollIntoView; src/test-setup.ts installs the shared
+  // no-op (cloudlands-fe#3921). About thirty test files had kept their own prototype stub,
+  // and new tests copied the pattern. Spy with vi.spyOn instead. No baseline.
+  {
+    files: ['src/**/*.{js,mjs,ts}'],
+    ignores: ['src/test-setup.ts'],
+    plugins: {
+      intent: intentPlugin,
+    },
+    rules: {
+      'intent/no-scroll-into-view-prototype-stub': 'error',
     },
   },
   // Ban synchronous child_process calls in Electron main process code.

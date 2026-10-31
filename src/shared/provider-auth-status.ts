@@ -50,6 +50,8 @@ export interface ProviderAuthVerdict {
   authenticated: boolean | undefined;
   /** {@link formatProviderIdentity} of the wire identity, when it yields text. */
   authDetails?: string;
+  /** The wire identity's email alone, when reported. */
+  email?: string;
 }
 
 /**
@@ -117,6 +119,7 @@ export function toAuthVerdictMap(
     const verdict: ProviderAuthVerdict = { authenticated: entry.authenticated ?? undefined };
     const authDetails = formatProviderIdentity(entry.identity);
     if (authDetails !== undefined) verdict.authDetails = authDetails;
+    if (entry.identity?.email) verdict.email = entry.identity.email;
     map[entry.id] = verdict;
   }
   return map;

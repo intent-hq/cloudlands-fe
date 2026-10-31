@@ -12,8 +12,7 @@
     isQueuedMessageReadyForBatch,
     queuedMessagePermissions,
   } from '$lib/utils/queued-message-permissions';
-  import { memberMentionsToText } from '$lib/utils/member-mention-token';
-  import { mentionTokensToText } from '$lib/utils/text-utils';
+  import { hasParsedMention, mentionTokensToText } from '$lib/services/mentions/registry';
   import { presentQueuedMessageText } from '$lib/utils/collaborator-sender-attribution';
   import Fa from 'svelte-fa';
   import { faCheck, faArrowUp } from '@fortawesome/free-solid-svg-icons';
@@ -253,9 +252,7 @@
   let editTextarea = $state<HTMLTextAreaElement>();
   let editRichEditor = $state<TipTapEditor>();
   let editRichContainer = $state<HTMLDivElement>();
-  const editHasMembers = $derived(
-    memberMentionsToText(editPresentedContent) !== editPresentedContent,
-  );
+  const editHasMembers = $derived(hasParsedMention(editPresentedContent, 'preview', 'member'));
 
   /** Display/edit copy of queued text; the queued entry itself is never changed. */
   function presentedQueuedText(
