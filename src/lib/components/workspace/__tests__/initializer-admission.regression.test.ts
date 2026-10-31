@@ -316,10 +316,6 @@ beforeEach(() => {
   mocks.validate.mockResolvedValue({ valid: true });
   mocks.settled.mockResolvedValue(undefined);
   mocks.realSetupScriptProbe = false;
-  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
-    configurable: true,
-    value: vi.fn(),
-  });
 });
 afterEach(() => {
   cleanup();

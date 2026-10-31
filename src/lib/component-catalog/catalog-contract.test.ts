@@ -243,10 +243,8 @@ function renderCase(testCase: ContractCase) {
 }
 
 const originalResizeObserver = globalThis.ResizeObserver;
-const originalScrollIntoView = Element.prototype.scrollIntoView;
 
 beforeAll(() => {
-  Element.prototype.scrollIntoView = vi.fn();
   globalThis.ResizeObserver = class ResizeObserverMock {
     observe() {}
     unobserve() {}
@@ -255,7 +253,6 @@ beforeAll(() => {
 });
 
 afterAll(() => {
-  Element.prototype.scrollIntoView = originalScrollIntoView;
   globalThis.ResizeObserver = originalResizeObserver;
 });
 

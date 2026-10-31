@@ -143,10 +143,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   (globalThis as typeof globalThis & { __APP_VERSION__: string }).__APP_VERSION__ = '2.0.10';
   Object.defineProperty(Element.prototype, 'scrollTo', { value: vi.fn(), configurable: true });
-  Object.defineProperty(Element.prototype, 'scrollIntoView', {
-    value: vi.fn(),
-    configurable: true,
-  });
 });
 
 afterEach(() => {
