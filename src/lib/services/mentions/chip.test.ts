@@ -27,6 +27,30 @@ describe('readMentionChip', () => {
     expect(read).toMatchObject({ type: 'file', filePath: 'src/a.ts', line: 12 });
   });
 
+  it('reads a folder chip path without its trailing slash', () => {
+    const saved = readMentionChip(
+      chip({
+        'data-mention': 'true',
+        'data-type': 'folder',
+        'data-id': 'src/lib',
+        'data-label': 'src/lib/',
+        'data-meta': JSON.stringify({ fullPath: 'src/lib' }),
+      }),
+    );
+    expect(saved).toMatchObject({ type: 'folder', folderPath: 'src/lib' });
+    expect(saved?.filePath).toBeUndefined();
+
+    const picked = readMentionChip(
+      chip({
+        'data-mention': 'true',
+        'data-type': 'source-folder',
+        'data-label': 'lib',
+        'data-meta': JSON.stringify({ path: 'src/lib/' }),
+      }),
+    );
+    expect(picked).toMatchObject({ folderPath: 'src/lib' });
+  });
+
   it('prefers meta.path and meta.filename over the label', () => {
     const byName = readMentionChip(
       chip({
