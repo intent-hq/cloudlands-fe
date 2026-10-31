@@ -172,11 +172,7 @@ describe('ChatMessageNavigator', () => {
     trigger.blur();
     trigger.focus();
     await fireEvent.focus(trigger);
-    // The reopened tooltip has been positioned by now, and jsdom's zero-size layout makes
-    // the floating layer hide it (visibility: hidden), which empties its accessible name.
-    // Match on text content instead.
-    const tooltip = await screen.findByRole('tooltip', { hidden: true });
-    expect(tooltip.textContent).toContain('Browse user messages');
+    await screen.findByRole('tooltip', { name: 'Browse user messages' });
   });
 
   it('toggles with Space and Enter only from the trigger', async () => {

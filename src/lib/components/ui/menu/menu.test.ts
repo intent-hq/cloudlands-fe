@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { tick } from 'svelte';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { pressOutsideLayer, waitForLayerExit } from '../../../../test/layer-exit';
 import MenuTestHarness from './MenuTestHarness.svelte';
 import LegacyMenuHarness from './LegacyMenuHarness.svelte';
 import DropdownMenu from '../dropdown-menu.svelte';
@@ -114,13 +115,14 @@ describe('Menu keyboard and focus behavior', () => {
     expect(document.activeElement).toBe(trigger);
   });
 
-  it('dismisses on an outside pointer interaction and restores focus', async () => {
+  it('dismisses on an outside pointer interaction without pulling focus back', async () => {
     render(MenuTestHarness);
     const trigger = await openMenu();
-    await fireEvent.pointerDown(document.body, { pointerType: 'mouse' });
-    await fireEvent.click(document.body);
-    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
-    expect(document.activeElement).toBe(trigger);
+    const menu = screen.getByRole('menu');
+    await pressOutsideLayer(menu);
+    await waitForLayerExit(menu);
+    // bits-ui leaves focus with whatever the user pressed instead of the trigger.
+    expect(document.activeElement).not.toBe(trigger);
   });
 
   it('opens a submenu with ArrowRight and returns with ArrowLeft', async () => {
@@ -353,13 +355,15 @@ describe('Menu metadata and compatibility', () => {
 
     await fireEvent.click(first);
     await screen.findByRole('button', { name: 'First actions open' });
+    const firstMenu = screen.getByRole('menu');
     await fireEvent.keyDown(second, { key: 'Enter' });
 
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: 'First actions open' })).toBeNull(),
     );
     expect(screen.getByRole('button', { name: 'Second actions open' })).toBe(second);
-    await waitFor(() => expect(screen.getAllByRole('menu')).toHaveLength(1));
+    await waitForLayerExit(firstMenu);
+    expect(screen.getAllByRole('menu')).toHaveLength(1);
   });
 
   it('runs a legacy action once and closes the menu', async () => {

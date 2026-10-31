@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { waitForLayerExit } from '../../../../test/layer-exit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type {
@@ -95,24 +96,18 @@ async function chooseAudience(provider: 'anyone' | 'github' | 'gitlab') {
   const trigger = screen.getByTestId('share-audience-trigger');
   trigger.focus();
   await fireEvent.keyDown(trigger, { key: 'Enter' });
-  await fireEvent.pointerUp(
-    await screen.findByRole('option', {
-      name:
-        provider === 'anyone'
-          ? 'Anyone with the link'
-          : provider === 'github'
-            ? 'A specific GitHub user'
-            : 'A specific GitLab user',
-      exact: true,
-    }),
-    { pointerType: 'mouse' },
-  );
+  const option = await screen.findByRole('option', {
+    name:
+      provider === 'anyone'
+        ? 'Anyone with the link'
+        : provider === 'github'
+          ? 'A specific GitHub user'
+          : 'A specific GitLab user',
+    exact: true,
+  });
+  await fireEvent.pointerUp(option, { pointerType: 'mouse' });
   // Let the audience list finish its exit so its options do not mix with later queries.
-  await waitFor(() =>
-    expect(
-      screen.queryByRole('option', { name: 'Anyone with the link', exact: true, hidden: true }),
-    ).toBeNull(),
-  );
+  await waitForLayerExit(option);
 }
 async function recipientField(provider: 'github' | 'gitlab'): Promise<HTMLInputElement> {
   const name = provider === 'github' ? 'Search GitHub users' : 'GitLab username';
@@ -892,9 +887,10 @@ describe('ShareWorkspaceDialog — pin typeahead', () => {
     const input = await pinField();
     await fireEvent.input(input, { target: { value: 'octo' } });
     expect(screen.getAllByRole('option')).toHaveLength(1);
+    const suggestions = screen.getByTestId('share-pin-suggestions');
 
     await fireEvent.keyDown(input, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByTestId('share-pin-suggestions')).toBeNull());
+    await waitForLayerExit(suggestions);
     expect(onClose).not.toHaveBeenCalled();
 
     await fireEvent.keyDown(input, { key: 'Escape' });

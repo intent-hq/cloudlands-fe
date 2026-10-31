@@ -150,6 +150,13 @@ const budgets = new Map(
 const budgetMs = ({ key }: ContractCase) => budgets.get(key)!;
 
 const intentionalAxeAllowlist: Record<string, ReadonlyArray<{ rule: string; reason: string }>> = {
+  'pattern:action-menu:action-menu-states': [
+    {
+      rule: 'region',
+      reason:
+        'The open menu state portals its menu to the document body, outside the preview landmark, as every app popup does.',
+    },
+  ],
   'pattern:collection:collection-states': [
     {
       rule: 'nested-interactive',
