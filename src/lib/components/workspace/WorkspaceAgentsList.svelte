@@ -579,11 +579,8 @@
      already bounds the mounted rows). Each row root is exactly one row tall. -->
 {#snippet listRow(row: WorkspaceAgentListRow, lazy: boolean)}
   {#if row.kind === 'header'}
-    <div
-      class={row.section === 'coordinator' ? 'w-full pt-1 pb-0.5' : 'w-full pt-2.5 pb-0.5'}
-      data-agent-list-row="header"
-    >
-      <p class="flex h-8 items-center px-2 type-caption font-normal text-muted-foreground">
+    <div class="flex h-9 w-full items-center" data-agent-list-row="header">
+      <p class="flex h-7 items-center px-2 type-caption font-normal text-muted-foreground">
         {row.section === 'coordinator'
           ? m.workspace_agentsList_coordinator_label()
           : m.workspace_overviewTimeline_yourAgents_label()}
@@ -632,15 +629,15 @@
     {@const agent = row.parent}
     {@const isExpanded = row.expanded}
     <div
-      class="w-full py-1"
+      class="flex h-9 w-full items-start"
       style:padding-left={indentFor(row.depth)}
       data-agent-list-row="delegatedGroup"
     >
       <Button
         variant="ghost"
         size="compact"
-        class="flex h-8 w-full items-center gap-2 px-2 type-caption font-normal text-muted-foreground hover:text-foreground"
-        style="padding-left: calc(var(--agent-avatar-emphasized-surface-size) + 0.5rem);"
+        class="flex h-7 w-full items-center gap-2 px-2 type-caption font-normal text-muted-foreground hover:text-foreground"
+        style="padding-left: calc(var(--agent-avatar-emphasized-surface-size) + 1rem);"
         onclick={(event) => {
           event.stopPropagation();
           toggleDelegation(agent.id);
@@ -672,8 +669,8 @@
     <!-- Per-parent read in flight (or about to start): skeleton rows under the
          parent. The whole-bin read shows the bin's skeleton below instead. -->
     <div
-      class="flex h-10 w-full items-center gap-2 rounded-md px-2"
-      style:padding-left={indentFor(row.depth)}
+      class="flex h-9 w-full items-center gap-2 rounded-md px-2"
+      style:padding-left={`calc(${indentFor(row.depth)} + 0.5rem)`}
       data-agent-list-row="delegatedSkeleton"
       data-agent-delegation-loading={row.parentId}
     >
@@ -706,7 +703,7 @@
 {#if loading}
   <div class="space-y-2 py-2 opacity-60">
     {#each [1, 2, 3] as { }}
-      <div class="flex h-10 items-center gap-2 rounded-md px-2">
+      <div class="flex h-9 items-center gap-2 rounded-md px-2">
         <Skeleton class="size-6 shrink-0 rounded-md" />
         <Skeleton class="h-3.5 w-24" />
       </div>
@@ -743,185 +740,198 @@
   </div>
 {/if}
 
-{#if !loading && hasDelegatedBin}
-  <!-- Workspace-level Delegated bin (lazy-bin mode only). Whole-bin mode:
+{#if !loading && (hasDelegatedBin || hasBackgroundBin || hasRetiredBin)}
+  <div class="mt-1 flex flex-col">
+    {#if hasDelegatedBin}
+      <!-- Workspace-level Delegated bin (lazy-bin mode only). Whole-bin mode:
        renders from `scopeCounts.delegated` while collapsed; expanding lazy-loads
        the delegated rows, which then nest under their parents in the tree
        above. Orphan-only mode (`delegatedCounts.orphaned`): renders from
        `orphaned`; expanding lazy-loads the orphaned rows, listed below. -->
-  <div class="container w-full min-w-0 pt-2">
-    <SidebarGroupHeader
-      title={m.workspace_agentsList_delegatedGroup_label()}
-      meta={!showDelegatedAgents && runningDelegatedCount > 0
-        ? m.workspace_agentsList_runningCount_label({
-            running: formatInteger(runningDelegatedCount),
-            total: formatInteger(displayedDelegatedCount),
-          })
-        : formatInteger(displayedDelegatedCount)}
-      label={!showDelegatedAgents && runningDelegatedCount > 0
-        ? m.workspace_agentsList_delegatedAgentsRunning_label({
-            running: formatInteger(runningDelegatedCount),
-            total: formatInteger(displayedDelegatedCount),
-          })
-        : m.workspace_agentsList_delegatedAgents_label({
-            count: formatInteger(displayedDelegatedCount),
-          })}
-      expanded={showDelegatedAgents}
-      onclick={toggleDelegatedBin}
-      data-agent-delegated-toggle=""
-    />
-  </div>
+      <div class="w-full min-w-0">
+        <SidebarGroupHeader
+          title={m.workspace_agentsList_delegatedGroup_label()}
+          meta={!showDelegatedAgents && runningDelegatedCount > 0
+            ? m.workspace_agentsList_runningCount_label({
+                running: formatInteger(runningDelegatedCount),
+                total: formatInteger(displayedDelegatedCount),
+              })
+            : formatInteger(displayedDelegatedCount)}
+          label={!showDelegatedAgents && runningDelegatedCount > 0
+            ? m.workspace_agentsList_delegatedAgentsRunning_label({
+                running: formatInteger(runningDelegatedCount),
+                total: formatInteger(displayedDelegatedCount),
+              })
+            : m.workspace_agentsList_delegatedAgents_label({
+                count: formatInteger(displayedDelegatedCount),
+              })}
+          expanded={showDelegatedAgents}
+          onclick={toggleDelegatedBin}
+          data-agent-delegated-toggle=""
+        />
+      </div>
 
-  {#if showDelegatedSkeleton}
-    <div class="space-y-2 py-2 opacity-60" data-agent-delegated-loading>
-      {#each [1, 2] as { }}
-        <div class="flex h-10 items-center gap-2 rounded-md px-2">
-          <Skeleton class="size-6 shrink-0 rounded-md" />
-          <Skeleton class="h-3.5 w-24" />
+      {#if showDelegatedSkeleton}
+        <div class="space-y-2 py-2 opacity-60" data-agent-delegated-loading>
+          {#each [1, 2] as { }}
+            <div class="flex h-9 items-center gap-2 rounded-md px-2">
+              <Skeleton class="size-6 shrink-0 rounded-md" />
+              <Skeleton class="h-3.5 w-24" />
+            </div>
+          {/each}
         </div>
-      {/each}
-    </div>
-  {:else if delegatedRowsVisible && delegatedSectionAgents.length > 0}
-    <!-- Delegated rows whose parent is not rendered (Background parent not
+      {:else if delegatedRowsVisible && delegatedSectionAgents.length > 0}
+        <!-- Delegated rows whose parent is not rendered (Background parent not
          loaded or its bin collapsed, or a retired parent) list here so the bin
          still holds them; while the parent row renders they nest under it. -->
-    <div class="flex flex-col gap-0.5 pt-1" data-agent-delegated-section>
-      {@render rowList(delegatedSectionRows)}
-    </div>
-  {/if}
-{/if}
-
-{#if !loading && hasBackgroundBin}
-  <div class="container w-full min-w-0 pt-2">
-    <SidebarGroupHeader
-      title={m.workspace_agentsList_backgroundGroup_label()}
-      meta={!showBackgroundAgents && runningBackgroundCount > 0
-        ? m.workspace_agentsList_runningCount_label({
-            running: formatInteger(runningBackgroundCount),
-            total: formatInteger(displayedBackgroundCount),
-          })
-        : formatInteger(displayedBackgroundCount)}
-      label={!showBackgroundAgents && runningBackgroundCount > 0
-        ? m.workspace_agentsList_backgroundAgentsRunning_label({
-            running: formatInteger(runningBackgroundCount),
-            total: formatInteger(displayedBackgroundCount),
-          })
-        : m.workspace_agentsList_backgroundAgents_label({
-            count: formatInteger(displayedBackgroundCount),
-          })}
-      expanded={showBackgroundAgents}
-      onclick={toggleBackgroundBin}
-      data-agent-background-toggle=""
-    />
-  </div>
-
-  {#if showBackgroundSkeleton}
-    <div class="space-y-2 py-2 opacity-60" data-agent-background-loading>
-      {#each [1, 2] as { }}
-        <div class="flex h-10 items-center gap-2 rounded-md px-2">
-          <Skeleton class="size-6 shrink-0 rounded-md" />
-          <Skeleton class="h-3.5 w-24" />
-        </div>
-      {/each}
-    </div>
-  {/if}
-
-  <div class="flex flex-col gap-0.5 pt-1">
-    {#each standaloneBackgroundAgents as agent (agent.id)}
-      {#if hasActiveSearch || showBackgroundAgents || isAgentRunning(agent.id)}
-        <!-- Rendered through the shared rows so a background parent's
-             delegated children nest under it (revealed by the Delegated bin). -->
-        <div transition:slide={{ axis: 'y', tier: 'moderate' }}>
-          {@render rowList(buildRows([agent]))}
+        <div class="flex flex-col gap-0.5 pt-1" data-agent-delegated-section>
+          {@render rowList(delegatedSectionRows)}
         </div>
       {/if}
-    {/each}
-  </div>
-{/if}
+    {/if}
 
-{#if !loading && hasRetiredBin}
-  <div class="container w-full min-w-0 pt-2">
-    <SidebarGroupHeader
-      title={m.workspace_agentsList_retiredGroup_label()}
-      meta={formatInteger(displayedRetiredCount)}
-      label={m.workspace_agentsList_retiredAgents_label({
-        count: formatInteger(displayedRetiredCount),
-      })}
-      expanded={showRetiredAgents}
-      onclick={toggleRetiredBin}
-      data-agent-retired-toggle=""
-    />
-  </div>
+    {#if hasBackgroundBin}
+      <div class="w-full min-w-0">
+        <SidebarGroupHeader
+          title={m.workspace_agentsList_backgroundGroup_label()}
+          meta={!showBackgroundAgents && runningBackgroundCount > 0
+            ? m.workspace_agentsList_runningCount_label({
+                running: formatInteger(runningBackgroundCount),
+                total: formatInteger(displayedBackgroundCount),
+              })
+            : formatInteger(displayedBackgroundCount)}
+          label={!showBackgroundAgents && runningBackgroundCount > 0
+            ? m.workspace_agentsList_backgroundAgentsRunning_label({
+                running: formatInteger(runningBackgroundCount),
+                total: formatInteger(displayedBackgroundCount),
+              })
+            : m.workspace_agentsList_backgroundAgents_label({
+                count: formatInteger(displayedBackgroundCount),
+              })}
+          expanded={showBackgroundAgents}
+          onclick={toggleBackgroundBin}
+          data-agent-background-toggle=""
+        />
+      </div>
 
-  {#if (hasActiveSearch || showRetiredAgents) && !retiredAgentsLoaded && retiredAgents.length === 0}
-    <!-- Lazy retired-only read in flight (or about to start): skeleton rows.
-         Rows already in state (e.g. retired live via agent:retired) render
-         immediately below instead — late-loaded rows merge into them. -->
-    <div class="space-y-2 py-2 opacity-60" data-agent-retired-loading>
-      {#each [1, 2] as { }}
-        <div class="flex h-10 items-center gap-2 rounded-md px-2">
-          <Skeleton class="size-6 shrink-0 rounded-md" />
-          <Skeleton class="h-3.5 w-24" />
-        </div>
-      {/each}
-    </div>
-  {:else if shouldVirtualizeRetired}
-    {#if hasActiveSearch || showRetiredAgents}
-      <!-- Virtual scrolling for large retired sets (flat, uniform-height rows) -->
-      <div class="max-h-150 overflow-hidden pt-1" data-agent-retired-section>
-        <VirtualList
-          bind:this={retiredVirtualList}
-          items={retiredAgents}
-          {itemHeight}
-          {containerHeight}
-          getKey={(agent: AgentSession) => agent.id}
-        >
-          {#snippet children({ item: agent }: { item: AgentSession })}
-            <div class="w-full opacity-70">
-              <AgentCard
-                agentId={agent.id}
-                agentName={agent.name}
-                isBackground={isBackgroundAgent(agent)}
-                selected={agent.id === selectedAgentId}
-                updatedAt={agent.updatedAt}
-                hidePreview
-                panelRow
-                onclick={(event) => handleAgentClick(agent.id, event)}
-              >
-                {#snippet headerActions()}
-                  {@render retiredActions(agent.id)}
-                {/snippet}
-              </AgentCard>
+      {#if showBackgroundSkeleton}
+        <div class="space-y-2 py-2 opacity-60" data-agent-background-loading>
+          {#each [1, 2] as { }}
+            <div class="flex h-9 items-center gap-2 rounded-md px-2">
+              <Skeleton class="size-6 shrink-0 rounded-md" />
+              <Skeleton class="h-3.5 w-24" />
             </div>
-          {/snippet}
-        </VirtualList>
+          {/each}
+        </div>
+      {/if}
+
+      <div
+        class="flex flex-col gap-0.5 {hasActiveSearch ||
+        showBackgroundAgents ||
+        runningBackgroundCount > 0
+          ? 'pt-1'
+          : ''}"
+      >
+        {#each standaloneBackgroundAgents as agent (agent.id)}
+          {#if hasActiveSearch || showBackgroundAgents || isAgentRunning(agent.id)}
+            <!-- Rendered through the shared rows so a background parent's
+             delegated children nest under it (revealed by the Delegated bin). -->
+            <div transition:slide={{ axis: 'y', tier: 'moderate' }}>
+              {@render rowList(buildRows([agent]))}
+            </div>
+          {/if}
+        {/each}
       </div>
     {/if}
-  {:else}
-    <div class="flex flex-col gap-0.5 pt-1" data-agent-retired-section>
-      {#each retiredAgents as agent (agent.id)}
+
+    {#if hasRetiredBin}
+      <div class="w-full min-w-0">
+        <SidebarGroupHeader
+          title={m.workspace_agentsList_retiredGroup_label()}
+          meta={formatInteger(displayedRetiredCount)}
+          label={m.workspace_agentsList_retiredAgents_label({
+            count: formatInteger(displayedRetiredCount),
+          })}
+          expanded={showRetiredAgents}
+          onclick={toggleRetiredBin}
+          data-agent-retired-toggle=""
+        />
+      </div>
+
+      {#if (hasActiveSearch || showRetiredAgents) && !retiredAgentsLoaded && retiredAgents.length === 0}
+        <!-- Lazy retired-only read in flight (or about to start): skeleton rows.
+         Rows already in state (e.g. retired live via agent:retired) render
+         immediately below instead — late-loaded rows merge into them. -->
+        <div class="space-y-2 py-2 opacity-60" data-agent-retired-loading>
+          {#each [1, 2] as { }}
+            <div class="flex h-9 items-center gap-2 rounded-md px-2">
+              <Skeleton class="size-6 shrink-0 rounded-md" />
+              <Skeleton class="h-3.5 w-24" />
+            </div>
+          {/each}
+        </div>
+      {:else if shouldVirtualizeRetired}
         {#if hasActiveSearch || showRetiredAgents}
-          {#snippet rowActions()}
-            {@render retiredActions(agent.id)}
-          {/snippet}
-          <div transition:slide={{ axis: 'y', tier: 'moderate' }} class="opacity-70">
-            <LazyAgentCard
-              cacheKey={agent.id}
-              agentId={agent.id}
-              agentName={agent.name}
-              isBackground={isBackgroundAgent(agent)}
-              selected={agent.id === selectedAgentId}
-              updatedAt={agent.updatedAt}
-              hidePreview
-              panelRow
-              onclick={(event) => handleAgentClick(agent.id, event)}
-              headerActions={rowActions}
-            />
+          <!-- Virtual scrolling for large retired sets (flat, uniform-height rows) -->
+          <div class="max-h-150 overflow-hidden pt-1" data-agent-retired-section>
+            <VirtualList
+              bind:this={retiredVirtualList}
+              items={retiredAgents}
+              {itemHeight}
+              {containerHeight}
+              getKey={(agent: AgentSession) => agent.id}
+            >
+              {#snippet children({ item: agent }: { item: AgentSession })}
+                <div class="w-full opacity-70">
+                  <AgentCard
+                    agentId={agent.id}
+                    agentName={agent.name}
+                    isBackground={isBackgroundAgent(agent)}
+                    selected={agent.id === selectedAgentId}
+                    updatedAt={agent.updatedAt}
+                    hidePreview
+                    panelRow
+                    onclick={(event) => handleAgentClick(agent.id, event)}
+                  >
+                    {#snippet headerActions()}
+                      {@render retiredActions(agent.id)}
+                    {/snippet}
+                  </AgentCard>
+                </div>
+              {/snippet}
+            </VirtualList>
           </div>
         {/if}
-      {/each}
-    </div>
-  {/if}
+      {:else}
+        <div
+          class="flex flex-col gap-0.5 {hasActiveSearch || showRetiredAgents ? 'pt-1' : ''}"
+          data-agent-retired-section
+        >
+          {#each retiredAgents as agent (agent.id)}
+            {#if hasActiveSearch || showRetiredAgents}
+              {#snippet rowActions()}
+                {@render retiredActions(agent.id)}
+              {/snippet}
+              <div transition:slide={{ axis: 'y', tier: 'moderate' }} class="opacity-70">
+                <LazyAgentCard
+                  cacheKey={agent.id}
+                  agentId={agent.id}
+                  agentName={agent.name}
+                  isBackground={isBackgroundAgent(agent)}
+                  selected={agent.id === selectedAgentId}
+                  updatedAt={agent.updatedAt}
+                  hidePreview
+                  panelRow
+                  onclick={(event) => handleAgentClick(agent.id, event)}
+                  headerActions={rowActions}
+                />
+              </div>
+            {/if}
+          {/each}
+        </div>
+      {/if}
+    {/if}
+  </div>
 {/if}
 
 {#snippet retiredActions(agentId: string)}

@@ -99,7 +99,6 @@ describe('WorkspaceAgentsList single-line rows', () => {
     expect(view.container.textContent).not.toContain('preview for');
 
     for (const row of view.container.querySelectorAll<HTMLElement>('[data-agent-panel-row]')) {
-      expect(row.className).toContain('h-10');
       expect(row.querySelector('[data-avatar-variant="emphasized"]')).toBeTruthy();
       expect(row.querySelector('[data-agent-row-trailing]')).toBeTruthy();
     }

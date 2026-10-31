@@ -12,9 +12,9 @@ export interface FlatWorkspaceAgentRow {
 /** Threshold above which a top-level foreground list switches to virtual scrolling. */
 export const WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD = 20;
 /** Stable height for every row in the Agents panel (selectable rows, group bars, skeletons). */
-export const WORKSPACE_AGENT_ROW_HEIGHT = 40;
+export const WORKSPACE_AGENT_ROW_HEIGHT = 36;
 /** Horizontal indent of one nesting level in the Agents panel. */
-export const WORKSPACE_AGENT_ROW_INDENT = 26;
+export const WORKSPACE_AGENT_ROW_INDENT = 32;
 /** Placeholder rows shown under a parent whose delegated children are still loading. */
 const DELEGATION_SKELETON_ROWS = 2;
 
