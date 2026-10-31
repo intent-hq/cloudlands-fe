@@ -42,8 +42,10 @@ import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-lay
 import { setActiveAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { sessionNeedsAttention } from '../actions/agent-cycle';
 import { focusAgentComposer } from '../actions/action-key-service';
-import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
-import { currentRoutePath, isWorkspaceRoutePath } from '$features/workspace/utils/workspace-route';
+import {
+  beginVisibleWorkspaceNavigation,
+  getVisibleWorkspaceId,
+} from '$features/workspace/visible-workspace';
 
 const logger = createLogger('HardwareConsoleKeySwitch');
 
@@ -54,20 +56,13 @@ export interface KeySwitchDeps {
   focusComposer?: (agentId: string) => void;
   /** Console-owner gate (#1928). Defaults to the store-backed `isConsoleOwner`. */
   isOwner?: () => boolean;
-  /** Current workspace-tab seam. */
+  /**
+   * Visible-workspace seam. Defaults to `getVisibleWorkspaceId`: null on Home
+   * and Settings (which keep the last tab selected), and the target workspace
+   * while a key-triggered navigation to it is still in flight.
+   */
   getCurrentWorkspaceId?: () => string | null;
-  /** Current route path seam. Defaults to `window.location.pathname` (null without a DOM). */
-  getCurrentPath?: () => string | null;
 }
-
-/**
- * The latest key-triggered navigation, while still in flight. The route only
- * commits once `goto` settles, so a second press in that window must count as
- * "already showing" and cycle tabs instead of re-navigating. Each attempt is a
- * fresh object so an older navigation to the same workspace (A → B → A) cannot
- * clear the newest one when it settles.
- */
-let pendingNavigation: { workspaceId: string } | null = null;
 
 function resolveSlotWorkspaceId(slot: number): string | null {
   const state = appStore.state;
@@ -160,31 +155,20 @@ export function focusWorkspaceSlot(workspaceId: string, deps: KeySwitchDeps = {}
   const focusedPanelId = layout?.focusedPanelId ?? null;
   const activeTabId = focusedPanelId ? (layout?.panels[focusedPanelId]?.activeTabId ?? null) : null;
 
-  const currentWorkspaceTabId = (
-    deps.getCurrentWorkspaceId ?? (() => selectCurrentWorkspaceTabId.select(appStore.state))
-  )();
-  const currentPath = (deps.getCurrentPath ?? currentRoutePath)();
-  // Home and Settings keep the last workspace as the current tab, so the tab
-  // id alone does not prove the workspace is on screen.
-  const isShowing =
-    currentWorkspaceTabId === workspaceId &&
-    ((currentPath !== null && isWorkspaceRoutePath(currentPath, workspaceId)) ||
-      pendingNavigation?.workspaceId === workspaceId);
+  const isShowing = (deps.getCurrentWorkspaceId ?? getVisibleWorkspaceId)() === workspaceId;
   if (!isShowing) {
-    // Open the workspace tab before route navigation, so a quick second press
-    // already sees the workspace as active and cycles its tabs.
+    // Open the workspace tab and mark the navigation in flight before it
+    // starts: the route only commits once `goto` settles, so a quick second
+    // press must already see the workspace as visible and cycle its tabs.
     appStore.dispatch(openWorkspaceTab(workspaceId));
     const navigate = deps.navigate ?? navigateToRoute;
-    const attempt = { workspaceId };
-    pendingNavigation = attempt;
+    const settle = beginVisibleWorkspaceNavigation(workspaceId);
     // eslint-disable-next-line intent/no-raw-workspace-navigation -- the tab was opened just above, before navigating, so a quick second key press cycles tabs instead of re-jumping.
     void navigate(`/workspace/${workspaceId}`)
       .catch((error: unknown) => {
         logger.warn('Failed to switch workspace from agent key', { workspaceId, error });
       })
-      .finally(() => {
-        if (pendingNavigation === attempt) pendingNavigation = null;
-      });
+      .finally(settle);
     if (tabs.length === 0) {
       openFirstTopLevelAgent(workspaceId, deps);
       return;

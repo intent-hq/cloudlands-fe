@@ -28,6 +28,7 @@ import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-sli
 import { isHudWindowRenderer } from './hud-window';
 import { navigateToRoute } from './navigation.client';
 import { bumpNavigationEpoch, navigationEpoch } from './navigation-epoch';
+import { currentRoutePath, parseWorkspaceRoute } from './workspace-route-path';
 
 export interface ShowWorkspaceOptions {
   /** Search params for the workspace route (e.g. `{ note: id }`, `{ panel: 'terminal' }`). */
@@ -46,23 +47,6 @@ export function workspaceRoute(workspaceId: string, query?: ShowWorkspaceOptions
   return search ? `${path}?${search}` : path;
 }
 
-/**
- * The decoded workspace id of an in-app workspace page route
- * (`/workspace/<id>`, optional trailing slash, search and hash), or null for
- * other routes, sub-routes and the `/workspace/new` creation page.
- */
-export function parseWorkspaceRoute(route: string): string | null {
-  const match = /^\/workspace\/([^/?#]+)\/?(?:[?#].*)?$/.exec(route);
-  if (!match) return null;
-  let workspaceId: string;
-  try {
-    workspaceId = decodeURIComponent(match[1]);
-  } catch {
-    return null;
-  }
-  return workspaceId === 'new' ? null : workspaceId;
-}
-
 /** The tab action, tagged with a presence-follow request id only when one is present. */
 function openTabAction(workspaceId: string, state: App.PageState | undefined) {
   const requestId = state?.presenceFollowRequestId;
@@ -72,10 +56,6 @@ function openTabAction(workspaceId: string, state: App.PageState | undefined) {
 /** Navigate with `goto` page state only when there is some (keeps plain calls plain). */
 function navigate(route: string, state: App.PageState | undefined): Promise<void> {
   return state ? navigateToRoute(route, { state }) : navigateToRoute(route);
-}
-
-function currentPathname(): string | null {
-  return typeof window === 'undefined' ? null : (window.location?.pathname ?? null);
 }
 
 type TabStateLike = { tabState?: { currentTabId?: string | null } } | undefined;
@@ -129,7 +109,7 @@ function skipJump(workspaceId: string): boolean {
 function jumpLanded(jump: Jump, tabId: string | null): boolean {
   if (navigationEpoch() !== jump.epoch) return false;
   if (tabId !== jump.startTabId && tabId !== jump.workspaceId) return false;
-  const pathname = currentPathname();
+  const pathname = currentRoutePath();
   return pathname === null || parseWorkspaceRoute(pathname) === jump.workspaceId;
 }
 

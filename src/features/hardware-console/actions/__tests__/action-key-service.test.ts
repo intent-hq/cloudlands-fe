@@ -141,7 +141,7 @@ function makeFakeManager(initialStatus: HardwareConsoleStatus = 'disconnected') 
 }
 
 beforeEach(() => {
-  window.history.replaceState({}, '', '/');
+  window.history.replaceState({}, '', '/workspace/ws-1');
   dispatched.length = 0;
   mockState.hardwareConsole.actionMappingByModel = normalizeActionMappingsByModel(undefined);
   mockState.hardwareConsole.cycleScopeByFamily = normalizeCycleScopeByFamily(undefined);
@@ -1085,5 +1085,57 @@ describe('action-key persist helpers on a failed bag read', () => {
     (appClient.settings.get as ReturnType<typeof vi.fn>).mockResolvedValue(null);
     await expect(persistHardwareConsoleCycleScopes({})).rejects.toThrow('hardwareConsole.state');
     expect(appClient.settings.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('workspace-scoped actions from Home or Settings', () => {
+  // Home and Settings keep the last workspace as the current workspace tab,
+  // so the tab id alone must not make that (off-screen) workspace the target.
+  it.each(['/', '/settings'])('treats no workspace as visible on %s', (path) => {
+    window.history.replaceState({}, '', path);
+    const showUnavailableHint = vi.fn();
+    // Slot 2 (ACT08) = see-spec.
+    expect(handleActionKeyPress('ACT08', { showUnavailableHint })).toBeNull();
+    expect(showUnavailableHint).toHaveBeenCalledWith(
+      m.hardwareConsole_actionKey_unavailable_message({
+        label: m.hardwareConsole_actionKey_seeSpec_label(),
+      }),
+    );
+    expect(dispatched).toHaveLength(0);
+  });
+
+  it('does not stop the off-screen workspace agent from Home', () => {
+    window.history.replaceState({}, '', '/');
+    mockState.workspaceAgents.byWorkspaceId = {
+      'ws-1': { agentIds: ['a-1'], foregroundAgentIds: ['a-1'], activeAgentId: 'a-1' },
+    };
+    mockState.agentSessions.byAgentId = {
+      'a-1': { id: 'a-1', status: 'active', isProcessing: true, messages: [] } as never,
+    };
+    mapCm2Act11To('stop-agent');
+    const showUnavailableHint = vi.fn();
+    expect(handleActionKeyPress('ACT11', { showUnavailableHint })).toBeNull();
+    expect(dispatched).toHaveLength(0);
+  });
+
+  it('keeps workspace sub-routes visible', () => {
+    window.history.replaceState({}, '', '/workspace/ws-1/files');
+    expect(handleActionKeyPress('ACT08')).toBe('see-spec');
+  });
+
+  it('navigates to the last-tab workspace when a cycle lands there from Home', () => {
+    window.history.replaceState({}, '', '/');
+    mockState.workspaceAgents.byWorkspaceId = {
+      'ws-1': { agentIds: ['a-1'], foregroundAgentIds: ['a-1'], activeAgentId: null },
+    };
+    mockState.agentSessions.byAgentId = {
+      'a-1': { id: 'a-1', status: 'active', isProcessing: true, messages: [] } as never,
+    };
+    mapCm2Act11To('cycle-in-progress-agents');
+    const showWorkspace = vi.fn(() => Promise.resolve(true));
+    expect(handleActionKeyPress('ACT11', { showWorkspace, focusComposer: vi.fn() })).toBe(
+      'cycle-in-progress-agents',
+    );
+    expect(showWorkspace).toHaveBeenCalledWith('ws-1');
   });
 });

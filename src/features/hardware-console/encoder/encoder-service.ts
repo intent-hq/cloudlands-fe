@@ -33,7 +33,7 @@ import { isConsoleOwner } from '../owner-gate';
 import { closePanel } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { updateHomeWorkspaceView } from '$features/home/home-workspaces-slice';
 import { cycleWorkspaceId, orderWorkspacesForCycling } from './workspace-cycle';
-import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
+import { getVisibleWorkspaceId } from '$features/workspace/visible-workspace';
 
 const logger = createLogger('HardwareConsoleEncoder');
 
@@ -49,7 +49,11 @@ export interface EncoderDeps {
   dispatch?: (action: unknown) => void;
   /** Console-owner gate (#1928). Defaults to the store-backed `isConsoleOwner`. */
   isOwner?: () => boolean;
-  /** Current workspace-tab seam. */
+  /**
+   * Visible-workspace seam. Defaults to `getVisibleWorkspaceId`: null on
+   * Home and Settings, so rotation never steps from (or tunes the effort of)
+   * the hidden last workspace tab.
+   */
   getCurrentWorkspaceId?: () => string | null;
 }
 
@@ -59,8 +63,7 @@ function resolveDeps(deps: EncoderDeps): Required<EncoderDeps> {
     showWorkspace: deps.showWorkspace ?? openAndShowWorkspace,
     dispatch: deps.dispatch ?? ((action: unknown) => appStore.dispatch(action as never)),
     isOwner: deps.isOwner ?? isConsoleOwner,
-    getCurrentWorkspaceId:
-      deps.getCurrentWorkspaceId ?? (() => selectCurrentWorkspaceTabId.select(appStore.state)),
+    getCurrentWorkspaceId: deps.getCurrentWorkspaceId ?? getVisibleWorkspaceId,
   };
 }
 
