@@ -165,7 +165,8 @@ export function createHomeWorkspaceMenu(
     const archived = retired || workspace.status === WorkspaceStatusEnum.Archived;
     items.push({ type: 'separator' });
     // Per-workspace opt-out from the daemon's auto-archive sweep (PROTOCOL
-    // §5.1); owner-only, offered on daemons that advertise it.
+    // §5.1); owner-only, offered on daemons that advertise it, and only while
+    // idle auto-archive is turned on in Settings.
     if (selectCanSetWorkspaceAutoArchive.select(store.state, workspace.id)) {
       items.push({
         id: 'disable-auto-archive',

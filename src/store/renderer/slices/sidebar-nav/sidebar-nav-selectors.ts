@@ -130,6 +130,15 @@ const selectAutoArchiveOptOutSupported = store.createSelector(
     selectPrincipalSnapshot.select(state)?.capabilities.workspaceAutoArchiveOptOut === 1,
 );
 
+/**
+ * Whether the daemon's idle auto-archive sweep is on
+ * (`workspace.autoArchiveIdleAfterDays` > 0). False until the settings
+ * snapshot has been read.
+ */
+const selectAutoArchiveIdleOn = store.createSelector(
+  (state): boolean => (state.sidebarNav.autoArchiveIdleAfterDays ?? 0) > 0,
+);
+
 /** Whether a workspace has opted out of auto-archive (the daemon omits `false`). */
 export const selectWorkspaceAutoArchiveDisabled = store.createSelector<
   [workspaceId: string],
@@ -151,6 +160,8 @@ export const selectCanSetWorkspaceAutoArchive = store.createSelector<
   boolean
 >((state, workspaceId) => {
   if (!selectAutoArchiveOptOutSupported.select(state)) return false;
+  // The opt-out only matters while idle auto-archive is on.
+  if (!selectAutoArchiveIdleOn.select(state)) return false;
   const workspace = selectWorkspaceById.select(state, workspaceId);
   if (!workspace || workspace.isRemote === true || workspace.environmentConfig?.type === 'remote')
     return false;

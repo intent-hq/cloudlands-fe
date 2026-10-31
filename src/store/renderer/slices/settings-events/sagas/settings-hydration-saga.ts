@@ -18,6 +18,7 @@ import {
 } from '../../principal/principal-selectors';
 import { notificationVolumeHydrationStarted } from '../../user-preferences/user-preferences-slice';
 import { selectModelSelectionState } from '../../model/model-selectors';
+import { autoArchiveIdleAfterDaysCleared } from '../../sidebar-nav/sidebar-nav-slice';
 
 import {
   fastModeHydrationStarted,
@@ -86,6 +87,7 @@ function* readSettingsSnapshotSaga() {
 }
 
 export function* hydrateSettingsOnceSaga() {
+  yield* put(autoArchiveIdleAfterDaysCleared());
   yield* put(notificationVolumeHydrationStarted());
   yield* put(fastModeHydrationStarted());
   const snapshot = yield* call(readSettingsSnapshotSaga);
@@ -163,6 +165,9 @@ export function* settingsHydrationSaga() {
   yield* takeLatestFromSelector(
     selectHostAdministrationContext,
     function* ({ payload: context }: SelectorChannelPayload<string | null>) {
+      // Settings-derived UI must not keep another host's (or a revoked
+      // owner's) value while the new snapshot is read.
+      yield* put(autoArchiveIdleAfterDaysCleared());
       if (!context) return;
       yield* all([
         call(settingsMigrationsSaga),
