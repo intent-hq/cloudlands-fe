@@ -2737,6 +2737,7 @@
   "home_views": "홈 보기",
   "home_workspace_details": "워크스페이스 미리보기",
   "home_workspace_view": "워크스페이스 보기",
+  "home_workspace_disableAutoArchive_label": "자동 보관 사용 안 함",
   "home_workspaceLabel_menu_label": "라벨",
   "home_workspaceLabel_new_label": "새 라벨…",
   "home_workspaceLabel_remove_label": "라벨 제거",
