@@ -72,6 +72,7 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
   import OnboardingPage from './OnboardingPage.svelte';
+  import { ConfirmHost } from '$lib/components/patterns/confirm';
   import GitLabAuthConnection from '$lib/components/settings/GitLabAuthConnection.svelte';
   import { overrideMockIpcHandler } from '$shared/ipc-mock-router';
   import CompactWorkspaceInitializer from '$lib/components/workspace/CompactWorkspaceInitializer.svelte';
@@ -347,6 +348,10 @@
   });
 </script>
 
+{#if plainFolder}
+  <!-- Hosts the plain-folder in-place warning (mounted by the app layout outside previews). -->
+  <ConfirmHost />
+{/if}
 <div class="relative h-[720px] w-full" data-onboarding-layout-fixture>
   {#if settings}
     <div class="p-6"><GitLabAuthConnection /></div>
