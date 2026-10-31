@@ -4,21 +4,25 @@ Quick routing guide for AI agents. Start here, then open the smallest relevant d
 
 **Assistant app guide:** a user-facing change updates the affected section of
 [`packages/intentd/crates/intent-services/resources/assistant-app-guide.md`](../intentd/crates/intent-services/resources/assistant-app-guide.md)
-in the same change, with a companion intentd PR (also from standalone frontend checkouts).
-The full rule is in the monorepo root [`AGENTS.md`](../../AGENTS.md).
+in the same change, coordinating the companion intentd change (also from standalone
+frontend checkouts; companion merges need not be simultaneous). Do not promote unfinished,
+Labs-only or unreleased features as normal options. Before opening a PR, record the
+affected guide section or explain why there is no user-help impact. Full rule:
+[root `AGENTS.md`](https://github.com/intent-hq/intent/blob/main/AGENTS.md).
 
 > **Merge permission**: never merge a PR or arm auto-merge without explicit permission
 > from a human — approved + green is not enough. See the monorepo root
-> [`AGENTS.md`](../../AGENTS.md) (resolves in a monorepo checkout) for the full rule.
+> [`AGENTS.md`](https://github.com/intent-hq/intent/blob/main/AGENTS.md#conventions) for the full rule.
 
 ## Tech stack
 
 - Electron + SvelteKit + TypeScript desktop app
 - Svelte 5 runes for UI rendering only; ALL shared/domain state MUST use Redux + sagas
-- Svelte stores (`*.store.svelte.ts`) are **DEPRECATED** — do not create or expand them;
-  ephemeral component-local UI state is fine without Redux. Follow the
-  [Migration Guide](src/store/renderer/docs/MIGRATION_GUIDE.md) when you touch one
-  (`../../docs/fe/STATE_MANAGEMENT.md`).
+- Svelte stores (`*.store.svelte.ts`) are **DEPRECATED** — every one is a migration
+  target. Do not create, expand or entrench them (including new reads of an existing one);
+  ephemeral component-local UI state is fine without Redux. Move toward removal with the
+  [Migration Guide](src/store/renderer/docs/MIGRATION_GUIDE.md) and
+  [`STATE_MANAGEMENT.md`](../../docs/fe/STATE_MANAGEMENT.md).
 - Use `pnpm`, not `npm`; create agents via `agentFactory.createAgent()`.
 
 ## UI rules
@@ -93,9 +97,12 @@ in a monorepo checkout, where this repo mounts at `packages/cloudlands-fe/`.
 - **Never import from a feature's **`main/`** subtree in renderer code** (or vice-versa).
 - **Don't export utility functions from orchestration modules** — extract to a dedicated `utils/` file.
 - **Keep utilities dependency-light** — no stores, services, or side effects.
-- **Never quote the literal breaking-change footer token** in commit messages, PR
-  titles/bodies, or review comments (it caused a false v3.0.0); see the root
-  [`AGENTS.md`](../../AGENTS.md) → Conventions.
+- **Never quote the literal breaking-change footer token** — release-please treats
+  `BREAKING CHANGE:` / `BREAKING-CHANGE:` (and `Release-As:`) anywhere in a commit body,
+  including any branch commit folded into the squash body, as a real footer (this cut a
+  false v3.0.0, intent-hq/intent#2988). Never write the literal token in commit messages, PR
+  titles/bodies, or review comments unless a breaking change is intended; write "the
+  breaking-change footer token" instead ([root `AGENTS.md`](https://github.com/intent-hq/intent/blob/main/AGENTS.md#conventions)).
 
 ## Internationalization (i18n)
 
@@ -344,12 +351,17 @@ authorization; ending Intel support does not authorize stranding native Apple Si
 
 ## Verification
 
-Use `pnpm run verify:changed -- <paths...>` during local work. With no paths it verifies
-the working-tree changes or, on a clean committed branch ahead of `origin/main`, the
-commits since the merge-base (`--base <ref>` overrides); an empty change set exits 2.
-`--dry-run` lists the commands, `--resolved-plan` prints every selected unit-test file per
-lane without running checks, and `--max-unit-files N` rejects (never truncates) a plan over
-N files. `pnpm run test:unit --maxWorkers=1` runs the full unit suite.
+Use `pnpm run verify:changed -- <paths...>` during local work. With no paths it reads
+staged, unstaged, deleted, and untracked frontend files, plus the commits since
+`git merge-base <ref> HEAD` when `--base <ref>` is given. When that working-tree set is
+empty and `HEAD` is ahead of `origin/main`, it defaults to `--base origin/main`, so the bare
+command is correct on a committed PR branch; a change set empty either way exits 2.
+`--dry-run` lists the commands. `--resolved-plan` runs prerequisites and Vitest discovery
+only, printing every selected unit-test file per lane; normal runs resolve the same plan
+first, and discovery failures stop before any check (fix the reported config or source
+error and retry). `--max-unit-files N` rejects (never truncates) a plan over N files —
+combine it with `--resolved-plan` for a budgeted preview, then raise or omit the limit.
+`pnpm run test:unit --maxWorkers=1` runs the full unit suite.
 
 Each run prints `record: <path>` for its attempt under `.dev/verify-changed/attempts/`
 and passes only when every check and resolved unit file is satisfied. To continue after a
@@ -662,8 +674,10 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   context, because ct-core's per-worker context reuse raced the next `mount()` (a
   pass-on-retry "Execution context was destroyed" at `mount(`). `CT_CONTEXT_REUSE=1` is
   for local wall-time measurement only, never CI. If the auto _Guard_ fixture fails with
-  `browser context <id> was already used …`, fix the module, not the spec; on other
-  failures the _Recorder_ attaches `cdp-lifecycle.json` to the HTML report. How to read
+  `browser context <id> was already used …`, fix the module, not the spec. A
+  destroyed-context failure with the guard passing is a residual incident to investigate,
+  never to quarantine or retry away; the _Recorder_ attaches `cdp-lifecycle.json` to the
+  HTML report for it. How to read
   both: [Component test fresh-context guard](../../docs/fe/DEVELOPER_GUIDE.md#component-test-fresh-context-guard).
 
 ### Testing — every feature/fix against a mock BE
@@ -694,6 +708,10 @@ above) before opening a PR.
 ## Filing issues
 
 File bugs on [intent-hq/intent](https://github.com/intent-hq/intent/issues) with labels
-`component:fe` + `agent-filed`; never track issues in markdown files. Reference the fix
-with `Fixes intent-hq/intent#N` on every fix PR — see the root [`AGENTS.md`](../../AGENTS.md)
-→ Filing Issues and Phase 1 for dedup and why a plain mention earns no release comment.
+`component:fe` + `agent-filed`; never track issues in markdown files. Put `Fixes
+intent-hq/intent#N` on every fix PR: the release notifier
+(`scripts/notify-fixed-issues.sh`) comments on a closed issue only once at least one
+linked fix PR has merged, every merged one across cloudlands-fe and intentd is in a
+release, and none is still open (PRs closed without merging are ignored); a plain mention
+never earns a comment. Dedup and cross-referencing: [root `AGENTS.md` → Filing
+Issues](https://github.com/intent-hq/intent/blob/main/AGENTS.md#filing-issues).
