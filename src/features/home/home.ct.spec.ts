@@ -558,11 +558,7 @@ test('Home sidebar keeps an empty Assistant usable', async ({ mount, page }, tes
   const sidebar = component.getByRole('navigation', { name: 'Home', exact: true });
   await sidebar.getByRole('tab', { name: 'Assistant', exact: true }).click();
   await expect(sidebar.getByRole('status')).toContainText('No Assistant threads');
-  await expect(
-    component
-      .locator('[data-chief-header-row]')
-      .getByRole('button', { name: 'New Assistant thread', exact: true }),
-  ).toBeEnabled();
+  await expect(sidebar.getByRole('button', { name: 'New chat', exact: true })).toBeEnabled();
   await testInfo.attach('home-sidebar-empty-assistant', {
     body: await page.screenshot({ path: testInfo.outputPath('home-sidebar-empty-assistant.png') }),
     contentType: 'image/png',
@@ -571,6 +567,65 @@ test('Home sidebar keeps an empty Assistant usable', async ({ mount, page }, tes
   await expect(
     component.locator('.home-header').getByRole('button', { name: 'New workspace', exact: true }),
   ).toBeVisible();
+});
+
+test('Home sidebar New chat starts one Assistant chat and reuses it while blank', async ({
+  mount,
+  page,
+}, testInfo) => {
+  const component = await mount(Preview, { props: { scenario: 'assistant' } });
+  const sidebar = component.getByRole('navigation', { name: 'Home', exact: true });
+  await sidebar.getByRole('tab', { name: 'Assistant', exact: true }).click();
+  const header = component.locator('[data-chief-header-row]');
+  await expect(header.getByRole('heading')).toHaveText('Plan the next release');
+  await expect(header.getByRole('button', { name: 'New Assistant thread' })).toHaveCount(0);
+  const threads = sidebar.getByRole('listbox');
+  await expect(threads.getByRole('option')).toHaveCount(3);
+  const newChat = sidebar.getByRole('button', { name: 'New chat', exact: true });
+  const createCalls = () => page.evaluate(() => window.__homeAssistantNewChat!.calls);
+
+  await page.evaluate(() => window.__homeAssistantNewChat!.holdNext());
+  await newChat.click();
+  await expect(newChat).toHaveAttribute('aria-busy', 'true');
+  await newChat.press('Enter');
+  await expect(newChat).toBeFocused();
+  await expect.poll(createCalls).toHaveLength(1);
+  const [request] = await createCalls();
+  expect(request).toMatchObject({
+    workspaceId: '__chief__',
+    nameExplicitlySet: false,
+    specialistId: 'chief-of-staff',
+    metadata: {
+      source: 'chief-card',
+      chiefWorkspace: true,
+      specialist: 'chief-of-staff',
+      chiefPromptVersion: expect.any(Number),
+    },
+  });
+  expect(request.behaviorPrompt).toEqual(expect.any(String));
+  await testInfo.attach('home-sidebar-new-chat-request', {
+    body: JSON.stringify(request, null, 2),
+    contentType: 'application/json',
+  });
+
+  await page.evaluate(() => window.__homeAssistantNewChat!.release());
+  await expect(newChat).not.toHaveAttribute('aria-busy');
+  await expect(threads.getByRole('option')).toHaveCount(4);
+  await expect(threads.getByRole('option').first()).toHaveAttribute('aria-selected', 'true');
+  const created = await threads.getByRole('option').first().textContent();
+  await expect(header.getByRole('heading')).toHaveText(created!.trim());
+  await testInfo.attach('home-sidebar-new-chat', {
+    body: await page.screenshot({ path: testInfo.outputPath('home-sidebar-new-chat.png') }),
+    contentType: 'image/png',
+  });
+
+  await threads.getByRole('option', { name: 'Review open pull requests', exact: true }).click();
+  await expect(header.getByRole('heading')).toHaveText('Review open pull requests');
+  await newChat.click();
+  await expect(threads.getByRole('option').first()).toHaveAttribute('aria-selected', 'true');
+  await expect(header.getByRole('heading')).toHaveText(created!.trim());
+  await expect(threads.getByRole('option')).toHaveCount(4);
+  expect(await createCalls()).toHaveLength(1);
 });
 
 test('Home sidebar scrolls long thread history and keeps narrow tabs usable', async ({
@@ -592,10 +647,9 @@ test('Home sidebar scrolls long thread history and keeps narrow tabs usable', as
   );
   await threads.getByRole('option', { name: /^Find the workspaces/ }).click();
   await expect(
-    component
-      .locator('[data-chief-header-row]')
-      .getByRole('button', { name: 'New Assistant thread', exact: true }),
-  ).toBeVisible();
+    component.locator('[data-chief-header-row]').getByRole('button', { name: /^Delete thread/ }),
+  ).toBeInViewport();
+  await expect(sidebar.getByRole('button', { name: 'New chat', exact: true })).toBeInViewport();
   await testInfo.attach('home-sidebar-long-title', {
     body: await page.screenshot({ path: testInfo.outputPath('home-sidebar-long-title.png') }),
     contentType: 'image/png',

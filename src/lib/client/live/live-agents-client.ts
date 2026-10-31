@@ -41,6 +41,11 @@ import type {
   UserMessageIndexResult,
 } from '../app-client';
 import { backendRequest } from './backend-transport';
+import {
+  parseSecretListing,
+  type SecretAnswerResult,
+  type SecretListing,
+} from '$shared/types/secret-request-resource';
 import { isForbiddenErrorResponse } from './backend-transport-types';
 import { createDeltaSubscription } from './delta-subscription';
 import {
@@ -191,6 +196,29 @@ function readParentCounts(entry: unknown): AgentDelegatedParentCounts | undefine
   const { total, running } = entry as Record<string, unknown>;
   if (typeof total !== 'number' || typeof running !== 'number') return undefined;
   return { total, running };
+}
+
+/**
+ * Send a `secret.provide` / `secret.dismiss` request and fold the outcome.
+ * `secret-request-unknown` means the request was already answered or lost on
+ * restart. The error text never echoes request params.
+ */
+async function answerSecretRequest(
+  method: 'secret.provide' | 'secret.dismiss',
+  params: Record<string, string>,
+): Promise<SecretAnswerResult> {
+  try {
+    await backendRequest(method, params);
+    return { ok: true };
+  } catch (error) {
+    const data = (error as { data?: unknown } | null)?.data;
+    const expired =
+      !!data &&
+      typeof data === 'object' &&
+      (data as { code?: unknown }).code === 'secret-request-unknown';
+    const message = error instanceof Error ? error.message : String(error);
+    return { ok: false, expired, error: message };
+  }
 }
 
 export class LiveAgentsClient implements AgentsClient {
@@ -775,6 +803,42 @@ export class LiveAgentsClient implements AgentsClient {
       agentId: params.agentId,
       workspaceId: params.workspaceId,
       messageId: params.messageId,
+    });
+  }
+  async secretList(params: {
+    workspaceId: string;
+    agentId: string;
+  }): Promise<SecretListing | null> {
+    try {
+      return parseSecretListing(
+        await backendRequest('secret.list', {
+          workspaceId: params.workspaceId,
+          agentId: params.agentId,
+        }),
+      );
+    } catch {
+      return null;
+    }
+  }
+  async secretProvide(params: {
+    workspaceId: string;
+    requestId: string;
+    value: string;
+  }): Promise<SecretAnswerResult> {
+    // `secret.provide` (§5.56): the value is sent once and never kept here.
+    return answerSecretRequest('secret.provide', {
+      workspaceId: params.workspaceId,
+      requestId: params.requestId,
+      value: params.value,
+    });
+  }
+  async secretDismiss(params: {
+    workspaceId: string;
+    requestId: string;
+  }): Promise<SecretAnswerResult> {
+    return answerSecretRequest('secret.dismiss', {
+      workspaceId: params.workspaceId,
+      requestId: params.requestId,
     });
   }
   async resolveProposal(params: {

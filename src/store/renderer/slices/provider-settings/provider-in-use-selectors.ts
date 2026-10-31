@@ -9,8 +9,8 @@ import { isProviderProfileRef } from '$shared/provider-profiles';
 import { formatInteger } from '$lib/i18n/format';
 
 /**
- * Map of providerId -> human-readable reason why the provider is "in use"
- * and therefore cannot be disabled.
+ * Saved provider references used to explain why a named profile cannot be
+ * removed. These references do not prevent disabling the base provider.
  *
  * A provider counts as in use when it is explicitly pinned by:
  * - the global default model (the active selection in `model.providerModels`,
@@ -34,12 +34,10 @@ export const selectProviderInUseReasons = store.createSelector((state): Record<s
   };
 
   // Only an explicitly selected global model counts as a pin. The
-  // catalog-derived default fallback used by selectSelectedModel is implicit
-  // and must not permanently block the default provider. providerModels
+  // catalog-derived default fallback used by selectSelectedModel is implicit.
+  // providerModels
   // values are bare ids keyed by provider, so the pinned provider is the
-  // default provider itself. ProviderSelector already hides Disable for the
-  // default provider; the pin is defense in depth for callers that bypass
-  // that UI (e.g. toggles or agent-driven settings proposals).
+  // default provider itself.
   const defaultProviderId = selectEffectiveDefaultProviderId.select(state);
   const activeProviderId = selectActiveProviderId.select(state);
   const globalModel = selectProviderModels.select(state)[activeProviderId];
@@ -132,7 +130,7 @@ export const selectProviderInUseReasons = store.createSelector((state): Record<s
   );
 });
 
-/** Reason a provider cannot be disabled, or null when it is not in use. */
+/** Saved uses that block profile removal, or null when the reference is unused. */
 export const selectProviderInUseReason = store.createSelector(
   (state, providerId: string): string | null => {
     return selectProviderInUseReasons.select(state)[providerId] ?? null;

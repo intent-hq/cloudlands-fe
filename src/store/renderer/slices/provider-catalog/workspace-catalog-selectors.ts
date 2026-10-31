@@ -1,4 +1,5 @@
 import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
+import { isProviderListed } from '$shared/provider-visibility';
 import type { ModelWarningKind } from '$shared/models/wire-model-info';
 import {
   selectAllProviderWarnings,
@@ -83,6 +84,18 @@ export const selectContextModelProviderIds = store.createSelector(
           (p.id !== 'antigravity' ||
             isProviderAuthenticationReady(p.id, readiness[p.id]?.authenticated)),
       )
+      .map((p) => p.id);
+  },
+);
+export const selectContextListedProviderIds = store.createSelector(
+  (state, workspaceId?: string): string[] => {
+    const enabled = selectContextEnabledProviders.select(state, workspaceId);
+    const status = workspaceId
+      ? (selectWorkspaceCatalog.select(state, workspaceId)?.readiness ?? {})
+      : selectProviderStatusMap.select(state);
+    return selectContextProviderEntries
+      .select(state, workspaceId)
+      .filter((p) => isProviderListed(p.id, status[p.id]?.available, enabled[p.id] === true))
       .map((p) => p.id);
   },
 );

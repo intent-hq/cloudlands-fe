@@ -88,15 +88,8 @@ export function* providerModelsSaga() {
             yield* put(providerModelsLoaded(providerId, result, request.epoch, workspaceId));
           }
           if (!workspaceId && (request.mode !== 'silentRetry' || result.models.length > 0)) {
-            yield* put(
-              setLoadingStateForProvider({
-                providerId,
-                status: 'success',
-                warning: result.warning,
-                stale: result.stale,
-                warningKind: result.warningKind,
-              }),
-            );
+            const { models: _models, ...labels } = result;
+            yield* put(setLoadingStateForProvider({ ...labels, providerId, status: 'success' }));
           }
           yield* put(providerModelsRequestSettled({ ...request, status: 'success' }));
           if (request.mode === 'silentRetry' && result.models.length === 0)

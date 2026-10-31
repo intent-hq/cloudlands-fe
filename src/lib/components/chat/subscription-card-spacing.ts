@@ -1,8 +1,8 @@
 import { extractAllContent, type AgentMessage } from '$shared/types';
 import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
 import { getAutomatedWakePresentation } from './automated-wake-presentation';
-import { parseSuggestedPromptsFromContentBlocks } from '$lib/utils/messageParser';
 import {
+  hasVisibleMessageBlocks,
   isQuestionOnlyContent,
   resolveFinishReasonNotice,
   shouldShowStoppedIndicator,
@@ -36,9 +36,7 @@ export function hasVisibleTurnBody({
     }
     const blocks = message.contentBlocks ?? [];
     if (isQuestionOnlyContent(blocks)) return false;
-    return parseSuggestedPromptsFromContentBlocks(blocks).contentBlocks.some(
-      (block) => block.type !== 'text' || Boolean((block.text || block.content || '').trim()),
-    );
+    return hasVisibleMessageBlocks(blocks);
   });
 }
 

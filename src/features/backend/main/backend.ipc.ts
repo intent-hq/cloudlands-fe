@@ -32,6 +32,7 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import { Logger } from '$shared/logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { isLoopbackHost } from '$shared/loopback-host';
+import { classifyStartupReply } from '$shared/daemon-startup';
 import { cancelInflightHostExecStreamsForBackendSwitch } from '$shared/main/host-exec-stream';
 import {
   AuthRejectedError,
@@ -1704,6 +1705,7 @@ function replayReconnectOnceConnected(id: string, rebuilt: JsonRpcClient): void 
           rebuilt.getConnectedVia(),
         ),
         reconnectAttempts: rebuilt.getReconnectAttempts(),
+        daemonStartup: rebuilt.getStartupState?.() ?? null,
         ...daemonUpdateMarker(id),
       },
       id,
@@ -2015,6 +2017,7 @@ function createAdditionalBackendClient(
                     instance.getConnectedVia(),
                   ),
                   reconnectAttempts: instance.getReconnectAttempts(),
+                  daemonStartup: instance.getStartupState?.() ?? null,
                   ...daemonUpdateMarker(id),
                 },
                 id,
@@ -2097,6 +2100,7 @@ function createAdditionalBackendClient(
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        daemonStartup: instance.getStartupState?.() ?? null,
         connectionLimited: instance.isConnectionLimited(),
         connectionLimitRetryAfterMs: instance.getConnectionLimitRetryAfterMs(),
         ...daemonUpdateMarker(id),
@@ -2105,6 +2109,29 @@ function createAdditionalBackendClient(
     );
     backendStatusForwarder.emit('status', id, status);
     refreshConnectionsForStatusChange();
+  });
+  // Startup progress changes while the status stays `connecting` (or after a
+  // failed start leaves it `disconnected`): re-broadcast the current status
+  // with the new startup state so every window's overlay follows it.
+  instance.on('startup', () => {
+    if (backendClients.get(id) !== instance) return;
+    broadcast(
+      BACKEND.STATUS,
+      {
+        status: instance.getStatus(),
+        transport: formatTransportInfo(
+          instance.getConfig(),
+          getPinnedVersion(),
+          instance.getConnectedVia(),
+        ),
+        reconnectAttempts: instance.getReconnectAttempts(),
+        daemonStartup: instance.getStartupState(),
+        connectionLimited: instance.isConnectionLimited(),
+        connectionLimitRetryAfterMs: instance.getConnectionLimitRetryAfterMs(),
+        ...daemonUpdateMarker(id),
+      },
+      id,
+    );
   });
   instance.on('reconnected', () => {
     if (backendClients.get(id) !== instance) return;
@@ -2120,6 +2147,7 @@ function createAdditionalBackendClient(
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        daemonStartup: instance.getStartupState?.() ?? null,
         ...daemonUpdateMarker(id),
       },
       id,
@@ -3078,6 +3106,7 @@ async function captureLocalUpdateSupportedOriginal(owner?: PoolOwner): Promise<v
               client.getConnectedVia(),
             ),
             reconnectAttempts: client.getReconnectAttempts(),
+            daemonStartup: client.getStartupState?.() ?? null,
             ...daemonUpdateMarker(LOCAL_CONNECTION_ID),
           },
           LOCAL_CONNECTION_ID,
@@ -3948,6 +3977,8 @@ function enqueueConnectionOperation<T>(fn: (owner?: PoolOwner) => Promise<T>): P
  * The LOCAL open keeps strict probe semantics: one authenticated
  * `host.status` completes before the window is created, and a failure
  * rejects — {@link openLocalAndSpawn}'s deadline/retry loop depends on it.
+ * The one exception is a daemon that is still starting: its window opens
+ * right away to show startup progress.
  * `options.probeTimeoutMs` bounds that local probe for a single call (used by
  * deadline-driven callers whose budget is shorter than the 30s client
  * default); it is ignored for a remote, which issues no probe.
@@ -3983,10 +4014,19 @@ async function performOpenBackendWindowOriginal(
       // creating a renderer, so the common healthy open never flashes the
       // connection-lost overlay. A failure rejects: openLocalAndSpawn's
       // deadline loop retries on it, and a local window without a daemon has
-      // no client reconnect posture worth showing.
-      await observeStatus(target, 'performOpenBackendWindow', owner, () =>
-        target.request('host.status', undefined, { timeoutMs: options?.probeTimeoutMs }),
-      );
+      // no client reconnect posture worth showing. A daemon that is still
+      // starting cannot answer yet: open the window so it shows startup
+      // progress instead of failing the open at the deadline.
+      if (target.getStartupState?.()?.state !== 'starting') {
+        try {
+          await observeStatus(target, 'performOpenBackendWindow', owner, () =>
+            target.request('host.status', undefined, { timeoutMs: options?.probeTimeoutMs }),
+          );
+        } catch (error) {
+          // The connect-time hello can discover startup while this probe waits.
+          if (classifyStartupReply(error)?.kind !== 'not-ready') throw error;
+        }
+      }
     } else {
       // Label the remote by its hostname once it connects (T14). Reuses the
       // live client's `host.status`; fire-and-forget so a slow remote never
@@ -4065,6 +4105,7 @@ async function performSpawnSidecar(): Promise<{
             client.getConnectedVia(),
           ),
           reconnectAttempts: client.getReconnectAttempts(),
+          daemonStartup: client.getStartupState?.() ?? null,
           ...daemonUpdateMarker(LOCAL_CONNECTION_ID),
         },
         LOCAL_CONNECTION_ID,
@@ -4140,8 +4181,9 @@ async function doPerformRestartOrphanedSidecar(): Promise<RestartOrphanedSidecar
     });
     if (result.ok) {
       const client = getLocalBackendClient();
-      // Unscoped broadcast: deliberately carries no daemon-update marker,
-      // which is a LOCAL-client fact and must not reach remote windows.
+      // Unscoped broadcast: deliberately carries no daemon-update marker or
+      // startup state, which are LOCAL-client facts and must not reach remote
+      // windows.
       broadcast(BACKEND.STATUS, {
         status: client.getStatus(),
         transport: formatTransportInfo(
@@ -4555,6 +4597,7 @@ export function registerBackendHandlers(): void {
         status: client.getStatus(),
         transport,
         reconnectAttempts: client.getReconnectAttempts(),
+        daemonStartup: client.getStartupState?.() ?? null,
         sidecarStartupFailed: true as const,
         sidecarStartupFailedReason: startupFailure.reason,
         ...daemonUpdateMarker(backendId),
@@ -4564,6 +4607,7 @@ export function registerBackendHandlers(): void {
       status: client.getStatus(),
       transport,
       reconnectAttempts: client.getReconnectAttempts(),
+      daemonStartup: client.getStartupState?.() ?? null,
       connectionLimited: client.isConnectionLimited(),
       connectionLimitRetryAfterMs: client.getConnectionLimitRetryAfterMs(),
       ...daemonUpdateMarker(backendId),
@@ -4612,6 +4656,7 @@ export function registerBackendHandlers(): void {
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        daemonStartup: instance.getStartupState?.() ?? null,
         ...daemonUpdateMarker(LOCAL_CONNECTION_ID),
       },
       LOCAL_CONNECTION_ID,
@@ -4641,6 +4686,7 @@ export function registerBackendHandlers(): void {
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        daemonStartup: instance.getStartupState?.() ?? null,
         ...daemonUpdateMarker(LOCAL_CONNECTION_ID),
       },
       LOCAL_CONNECTION_ID,

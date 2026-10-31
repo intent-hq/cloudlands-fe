@@ -41,6 +41,7 @@ import {
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { navigateToRoute } from '$lib/utils/navigation.client';
+import { showWorkspaceSaga } from '$lib/utils/show-workspace';
 import { m } from '$shared/paraglide/messages.js';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { selectProviderLoadingMap } from '../../agent-availability/agent-availability-selectors';
@@ -296,7 +297,7 @@ function* navigateToFailedAgent(entry: AgentFailureEntry): SagaGenerator<void> {
       yield* call(navigateToRoute, '/');
       return;
     }
-    yield* call(navigateToRoute, `/workspace/${entry.workspaceId}`);
+    if (!(yield* call(showWorkspaceSaga, entry.workspaceId))) return;
     yield* put(openAgentTabRequested(entry.workspaceId, { agentId: entry.agentId }));
   } catch (error) {
     logger.warn('Failed to navigate to failed agent', {

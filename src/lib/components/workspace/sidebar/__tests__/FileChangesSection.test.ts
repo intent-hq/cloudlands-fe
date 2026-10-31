@@ -418,4 +418,144 @@ describe('FileChangesSection', () => {
     // handleFileClick dispatches onOpenChange via parent prop, not openTab. So check no crash.
     expect(mocks.openTab).not.toHaveBeenCalled();
   });
+
+  describe('display cap for large change lists', () => {
+    const manyChanges = (
+      count: number,
+      prefix: string,
+      overrides: Parameters<typeof makeChange>[1] = {},
+    ) => Array.from({ length: count }, (_, i) => makeChange(`${prefix}/f${i}.ts`, overrides));
+
+    const rowPaths = (container: HTMLElement, prefix: string) =>
+      Array.from(container.querySelectorAll('[data-testid="file-row"]'))
+        .map((row) => row.getAttribute('data-file-path') ?? '')
+        .filter((path) => path.startsWith(`${prefix}/`));
+
+    it('renders at most 500 unstaged rows and explains how many are hidden', async () => {
+      mocks.unstaged.push(...manyChanges(600, 'u'));
+      const { container, getByTestId } = await renderSection();
+
+      const paths = rowPaths(container, 'u');
+      expect(paths).toHaveLength(500);
+      expect(paths[0]).toBe('u/f0.ts');
+      expect(paths[499]).toBe('u/f499.ts');
+      expect(getByTestId('hidden-changes-notice-unstaged').textContent?.trim()).toMatch(
+        /^Showing 500 of 600 files\. 100 more files are hidden to keep the panel responsive\.\s+Stage all still includes them\.$/,
+      );
+    });
+
+    it('shows no notice when a section fits within the cap', async () => {
+      mocks.unstaged.push(...manyChanges(500, 'u'));
+      const { container, queryByTestId } = await renderSection();
+      expect(rowPaths(container, 'u')).toHaveLength(500);
+      expect(queryByTestId('hidden-changes-notice-unstaged')).toBeNull();
+      expect(queryByTestId('hidden-changes-notice-staged')).toBeNull();
+    });
+
+    it('caps each section independently', async () => {
+      mocks.unstaged.push(...manyChanges(3, 'u'));
+      mocks.staged.push(...manyChanges(501, 's', { stage: ChangeStage.Staged }));
+      const { container, getByTestId, queryByTestId } = await renderSection();
+
+      expect(rowPaths(container, 'u')).toHaveLength(3);
+      expect(rowPaths(container, 's')).toHaveLength(500);
+      expect(queryByTestId('hidden-changes-notice-unstaged')).toBeNull();
+      expect(getByTestId('hidden-changes-notice-staged').textContent).toContain(
+        'Showing 500 of 501 files. 1 more file is hidden to keep the panel responsive.',
+      );
+      expect(getByTestId('hidden-changes-notice-staged').textContent).toContain(
+        'Unstage all still includes them.',
+      );
+    });
+
+    it('Stage all still stages hidden files', async () => {
+      const changes = manyChanges(600, 'u');
+      mocks.unstaged.push(...changes);
+      const { getByText } = await renderSection();
+      await fireEvent.click(getByText('Stage all'));
+      expectWrite(
+        'stage',
+        changes.map((c) => c.relativePath),
+      );
+    });
+
+    it('caps the agent-grouped view in rendered order, keeping the newest agent visible', async () => {
+      const older = manyChanges(2000, 'm');
+      const newest = manyChanges(300, 'a2', {
+        agentId: 'agent-2',
+        agentName: 'A2',
+        attribution: {
+          timestamp: Date.now() + 60_000,
+          agent: { agentId: 'agent-2', agentName: 'A2' },
+        } as TrackedChange['attribution'],
+      });
+      mocks.unstaged.push(...older, ...newest);
+      const { container, getAllByTestId, getByTestId } = await renderSection();
+
+      // The newest agent's group sorts first, so its rows survive the cap even
+      // though they come last in store order; manual changes are trimmed.
+      expect(rowPaths(container, 'a2')).toHaveLength(300);
+      expect(rowPaths(container, 'm')).toHaveLength(200);
+      expect(getByTestId('hidden-changes-notice-unstaged').textContent).toContain(
+        'Showing 500 of 2,300 files. 1,800 more files are hidden',
+      );
+
+      // Group commit still sends every file of the group, hidden ones included.
+      await fireEvent.click(getAllByTestId('group-commit-button')[1]);
+      expect(mocks.reduxDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: gitWriteRequested.type,
+          payload: [
+            'ws-1',
+            expect.any(String),
+            expect.objectContaining({
+              kind: 'partialCommit',
+              section: 'unstaged',
+              agentId: null,
+              paths: older.map((c) => c.relativePath),
+            }),
+          ],
+        }),
+      );
+    });
+
+    it('frees the cap for other groups when a large group is collapsed', async () => {
+      const big = manyChanges(480, 'a1', {
+        agentId: 'agent-1',
+        attribution: {
+          timestamp: Date.now() + 60_000,
+          agent: { agentId: 'agent-1', agentName: 'A1' },
+        } as TrackedChange['attribution'],
+      });
+      const next = manyChanges(300, 'a2', { agentId: 'agent-2', agentName: 'A2' });
+      mocks.unstaged.push(...big, ...next);
+      mocks.setAgents([
+        { id: 'agent-1', name: 'Big agent' },
+        { id: 'agent-2', name: 'Next agent' },
+      ]);
+      const onVisibleFilesChange = vi.fn();
+      const { container, getByText, queryByTestId } = await renderSection({
+        onVisibleFilesChange,
+      });
+      expect(rowPaths(container, 'a2')).toHaveLength(20);
+      expect(onVisibleFilesChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ length: 500 }),
+      );
+
+      await fireEvent.click(getByText('Big agent'));
+      await waitFor(() => expect(rowPaths(container, 'a2')).toHaveLength(300));
+      expect(queryByTestId('hidden-changes-notice-unstaged')).toBeNull();
+      const reported = onVisibleFilesChange.mock.lastCall?.[0] as Array<{ path: string }>;
+      expect(reported).toHaveLength(300);
+      expect(reported[0]).toEqual({ path: 'a2/f0.ts', staged: false });
+    });
+
+    it('omits the Stage all hint for read-only collaborators', async () => {
+      mocks.unstaged.push(...manyChanges(501, 'u'));
+      const { getByTestId } = await renderSection({ isOwner: false });
+      const notice = getByTestId('hidden-changes-notice-unstaged').textContent ?? '';
+      expect(notice).toContain('1 more file is hidden');
+      expect(notice).not.toContain('Stage all');
+    });
+  });
 });

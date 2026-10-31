@@ -15,10 +15,12 @@
  *      when the variable is unset and reports `available: true` when set
  *      (e.g. Mock (E2E) in E2E builds with `MOCK_AGENT_SCRIPT_PATH`).
  *
+ * Auggie additionally requires an installed CLI or an enabled preference.
  * Inputs are plain values / callbacks so this stays a dependency-light pure
  * function suitable for unit testing.
  */
 import { isProviderProfileRef } from '$shared/provider-profiles';
+import { isProviderListed } from '$shared/provider-visibility';
 
 export interface IsOnboardingProviderVisibleInput {
   /** Gating fields from the provider's `ACPProviderConfig`. */
@@ -27,6 +29,7 @@ export interface IsOnboardingProviderVisibleInput {
   isFeatureEnabled: (featureCode: string) => boolean;
   /** Availability status reported for the provider; undefined = not checked yet. */
   status?: { available?: boolean };
+  enabled?: boolean;
 }
 
 export function isOnboardingProviderVisible(input: IsOnboardingProviderVisibleInput): boolean {
@@ -38,5 +41,5 @@ export function isOnboardingProviderVisible(input: IsOnboardingProviderVisibleIn
   if (provider.requiresEnvVar && status?.available !== true) {
     return false;
   }
-  return true;
+  return isProviderListed(provider.id, status?.available, input.enabled);
 }

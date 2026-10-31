@@ -2,6 +2,7 @@
  * Keyboard shortcuts management for chat interfaces
  */
 import { matchesShortcut } from './shortcut-bindings';
+import { isTextEntryTarget } from './text-entry';
 
 /**
  * Check if the currently focused element is within an xterm terminal.
@@ -57,31 +58,14 @@ export function isFocusInEditableElement(target?: Element | null): boolean {
     return false;
   }
 
-  const tagName = activeElement.tagName?.toUpperCase();
-
-  // Standard form elements
-  if (tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT') {
+  // Native controls, contenteditable, EditContext owners (Monaco), ARIA textboxes.
+  if (isTextEntryTarget(activeElement)) {
     return true;
   }
 
-  // Contenteditable elements (covers TipTap and other rich text editors)
   // Note: In Electron, activeElement might be a WebViewElement or other non-standard
-  // element that doesn't have the closest() or getAttribute() methods, so we check for their existence
+  // element that doesn't have the closest() method, so we check for its existence
   const hasClosest = typeof activeElement.closest === 'function';
-  const hasGetAttribute = typeof activeElement.getAttribute === 'function';
-  if (
-    (activeElement instanceof HTMLElement && activeElement.isContentEditable) ||
-    (hasGetAttribute && activeElement.getAttribute('contenteditable') === 'true') ||
-    (hasClosest && activeElement.closest('[contenteditable="true"]'))
-  ) {
-    return true;
-  }
-
-  // ARIA textbox role (custom text inputs)
-  const role = hasGetAttribute ? activeElement.getAttribute('role') : null;
-  if (role === 'textbox' || (hasClosest && activeElement.closest('[role="textbox"]'))) {
-    return true;
-  }
 
   // Monaco editor - check for monaco-specific classes
   if (

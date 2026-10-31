@@ -1245,6 +1245,7 @@
       onHoldActiveChange(true);
       onFadingOutChange(false);
       if (!active.current()) return;
+      // eslint-disable-next-line intent/no-raw-workspace-navigation -- the initialization saga's installWorkspace already opened this new workspace's tab.
       await goto(`/workspace/${outcome.workspaceId}`, { replaceState: true });
     } finally {
       releaseInitialization(active.seq);

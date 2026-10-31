@@ -149,9 +149,11 @@ export function focusWorkspaceSlot(workspaceId: string, deps: KeySwitchDeps = {}
     deps.getCurrentWorkspaceId ?? (() => selectCurrentWorkspaceTabId.select(appStore.state))
   )();
   if (activeWorkspaceId !== workspaceId) {
-    // Open the workspace tab before route navigation.
+    // Open the workspace tab before route navigation, so a quick second press
+    // already sees the workspace as active and cycles its tabs.
     appStore.dispatch(openWorkspaceTab(workspaceId));
     const navigate = deps.navigate ?? navigateToRoute;
+    // eslint-disable-next-line intent/no-raw-workspace-navigation -- the tab was opened just above, before navigating, so a quick second key press cycles tabs instead of re-jumping.
     void navigate(`/workspace/${workspaceId}`).catch((error: unknown) => {
       logger.warn('Failed to switch workspace from agent key', { workspaceId, error });
     });

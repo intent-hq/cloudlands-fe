@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
+  import {
+    hydrateDefaultProvider,
+    setAvailableModels,
+  } from '$store/renderer/slices/model/model-slice';
   import { onDestroy, untrack } from 'svelte';
   import ModelPicker from '../ModelPicker.svelte';
   import * as Dialog from '$lib/components/ui/dialog';
@@ -24,6 +27,7 @@
     reasoningOutcome = 'accept',
     settleDelayMs = 0,
     multipleProviders = false,
+    defaultProviderDisabled = false,
     diagnostic,
   }: {
     placement?: 'settings' | 'composer' | 'modal';
@@ -32,6 +36,7 @@
     reasoningOutcome?: 'accept' | 'reject';
     settleDelayMs?: number;
     multipleProviders?: boolean;
+    defaultProviderDisabled?: boolean;
     diagnostic?: string;
   } = $props();
   let model = $state('reasoning-model');
@@ -89,6 +94,10 @@
     // eslint-disable-next-line intent/no-component-async-data-fetch -- CT-only in-memory catalog
     registerMockIpcHandler('claude-code:get-models', () => ({ success: true, data: otherModels }));
   }
+  if (defaultProviderDisabled) {
+    store.dispatch(setAvailableModels(models, 'codex'));
+    store.dispatch(setProviderEnabled({ providerId: 'codex', enabled: false }));
+  }
   onDestroy(() => {
     // eslint-disable-next-line intent/no-component-async-data-fetch -- clean up the CT-only catalog handler
     unregisterMockIpcHandler('codex:get-models');
@@ -102,7 +111,7 @@
   <div data-testid="model-picker-host">
     <ModelPicker
       selectedModel={model}
-      providerId="codex"
+      providerId={defaultProviderDisabled ? undefined : 'codex'}
       size={placement === 'composer' ? 'xs' : 'sm'}
       showReasoning
       reasoningEffort={effort}

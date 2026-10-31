@@ -37,12 +37,13 @@ import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import { isBulkOperationProposal, isWorkspaceCreateProposal } from '$shared/types/proposal';
 import { navigateAwayIfViewing } from '$features/workspace/navigate-away-if-viewing';
-import { navigateToRoute } from '$lib/utils/navigation.client';
+import { showWorkspaceSaga } from '$lib/utils/show-workspace';
 import { removeRepo } from '../../known-repos/known-repos-slice';
-import { openWorkspaceTab, restoreWorkspaceTab } from '../../tab-state/tab-state-slice';
+import { restoreWorkspaceTab } from '../../tab-state/tab-state-slice';
 import {
   proposalApplyStarted,
   proposalApplySucceeded,
+  proposalCreateOutcomeReported,
   proposalFailed,
 } from '../../proposal-lifecycle/proposal-lifecycle-slice';
 import { selectProposalLifecycleEntry } from '../../proposal-lifecycle/proposal-lifecycle-selectors';
@@ -344,10 +345,9 @@ function* watchArchiveUndo(workspaceId: WorkspaceId, undo: Channel<true>): SagaG
         archived: false,
       });
       // The daemon `workspace:updated` event restores the tab in the background;
-      // an explicit undo also focuses the restored workspace.
-      yield* put(openWorkspaceTab(workspaceId));
+      // an explicit undo also shows and focuses the restored workspace.
       try {
-        yield* call(navigateToRoute, `/workspace/${workspaceId}`);
+        yield* call(showWorkspaceSaga, workspaceId);
       } catch (error) {
         logger.warn('Failed to navigate to the unarchived workspace', { workspaceId, error });
       }
@@ -837,7 +837,7 @@ function* failProposal(proposalId: string, error: string, errorCode?: string): S
 }
 
 function* applyCreateProposal(payload: WorkspaceProposalApplyPayload): SagaGenerator<void> {
-  const { proposal, editedFields } = payload;
+  const { proposal, editedFields, origin } = payload;
   if (!isWorkspaceCreateProposal(proposal)) return;
   const proposalId = getProposalId(proposal);
   const lifecycle = yield* selectProposalLifecycleEntry.effect(proposalId);
@@ -851,6 +851,7 @@ function* applyCreateProposal(payload: WorkspaceProposalApplyPayload): SagaGener
       resolveAgentName: (specialistId) =>
         (specialistId ? specialists.find((s) => s.id === specialistId)?.name : undefined) ??
         m.workspace_fileChanges_agent_label(),
+      origin,
     });
     const result = yield* call([workspaceClient, workspaceClient.create], request);
     if (!result.ok) {
@@ -865,12 +866,23 @@ function* applyCreateProposal(payload: WorkspaceProposalApplyPayload): SagaGener
     // Show the new workspace in the tab strip without focusing it: the user
     // stays in the conversation that proposed it.
     yield* put(restoreWorkspaceTab(result.data.workspace.id));
+    const { proposalOrigin } = result.data;
+    const applyResult = {
+      workspaceId: result.data.workspace.id,
+      ...(proposalOrigin ? { proposalOrigin } : {}),
+    };
+    // The workspace exists; the card follows the daemon's reported outcome
+    // (PROTOCOL §5.1). No report (an older daemon) keeps the applied state and
+    // the chat fallback resolves the card.
     yield* put(
-      proposalApplySucceeded({
-        proposalId,
-        completedAt: Date.now(),
-        result: { workspaceId: result.data.workspace.id },
-      }),
+      proposalOrigin
+        ? proposalCreateOutcomeReported({
+            proposalId,
+            completedAt: Date.now(),
+            outcome: proposalOrigin.outcome,
+            result: applyResult,
+          })
+        : proposalApplySucceeded({ proposalId, completedAt: Date.now(), result: applyResult }),
     );
   } catch (error) {
     yield* failProposal(proposalId, error instanceof Error ? error.message : String(error));

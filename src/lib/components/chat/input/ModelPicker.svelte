@@ -79,6 +79,7 @@
     selectContextProviderEntries,
     selectContextModelProviderIds,
     selectContextAvailableProviderIds,
+    selectContextListedProviderIds,
     selectContextEnabledProviders,
     selectWorkspaceCatalogEpoch,
   } from '$store/renderer/slices/provider-catalog/workspace-catalog-selectors';
@@ -412,6 +413,7 @@
   const enabledProviders$ = selectContextEnabledProviders(workspaceIdStore);
   const selectedModel$ = selectContextSelectedModel(workspaceIdStore);
   const hasCheckedOnce$ = selectContextReadinessLoaded(workspaceIdStore);
+  const listedProviderIds$ = selectContextListedProviderIds(workspaceIdStore);
   const allProviderWarnings$ = selectContextProviderWarnings(workspaceIdStore);
   const allProviderStaleFlags$ = selectContextProviderStaleFlags(workspaceIdStore);
   const allProviderWarningKinds$ = selectContextProviderWarningKinds(workspaceIdStore);
@@ -554,27 +556,14 @@
     isProviderEnabled($availableEnabledProviderIds$, effectiveProviderId),
   );
 
-  // An existing agent whose current provider was explicitly disabled in
-  // Settings > Agents (intent#5737). Read from `providers.enabled` alone — not
-  // the available+enabled set, which also drops providers whose probe failed,
-  // and not a daemon event — so the picker can warn before any message is
-  // sent. The daemon refuses to run the agent on a disabled provider and
-  // re-homes it on the next send, so unlike the cloudlands-fe#749 policy
-  // (keep a since-unavailable provider selectable) the model is reported as
-  // unavailable and the disabled provider's group is not offered. A
-  // guest-locked picker never sees the host's settings and stays read-only.
+  // Explicit disablement also gates cached rows in settings and specialist
+  // pickers. Failed probes alone do not; guests retain the host-owned receipt.
   const isEffectiveProviderDisabled = $derived(
-    !!agentId &&
-      !isGuestLocked &&
-      isProviderDisabledInSettings($enabledProviders$, effectiveProviderId),
+    !isGuestLocked && isProviderDisabledInSettings($enabledProviders$, effectiveProviderId),
   );
 
-  // Providers whose models the picker may offer. The available+enabled set
-  // always admits the default provider (`model.defaultProvider`) even when it
-  // was disabled in settings, so its catalog keeps loading for the fetch and
-  // warning paths — but the daemon refuses every turn on a disabled provider
-  // and a disabled default has no re-home target, so its rows must not be
-  // selectable (intent#5737). Same settings blind spot as above for guests.
+  // Disabled providers cannot supply selectable rows, including the default
+  // (intent#5737). Guest pickers use the host's enabled-provider receipt.
   const selectableProviderIds = $derived(
     $availableEnabledProviderIds$.filter(
       (pid) =>
@@ -872,7 +861,12 @@
       return;
     }
     const pick = model === undefined ? undefined : (picked ?? resolvePickedTriple(model));
-    if (pick && (!hasResolvedProvider(pick.providerId) || !canUseProviderModels(pick.providerId))) {
+    if (
+      pick &&
+      (!hasResolvedProvider(pick.providerId) ||
+        !canUseProviderModels(pick.providerId) ||
+        (!isGuestLocked && isProviderDisabledInSettings($enabledProviders$, pick.providerId)))
+    ) {
       dropdownValue = currentDropdownValue();
       return;
     }
@@ -1367,7 +1361,10 @@
       allProviderWarnings: $allProviderWarnings$,
       profiles: $providerProfiles$,
     }).filter(
-      (group) => group.key === 'default' || canUseProviderModels(group.parentKey ?? group.key),
+      (group) =>
+        group.key === 'default' ||
+        ($listedProviderIds$.includes(providerRefBaseId(group.parentKey ?? group.key)) &&
+          canUseProviderModels(group.parentKey ?? group.key)),
     );
   });
   let legacyModelsExpanded = $state(false);

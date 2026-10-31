@@ -38,8 +38,10 @@ import { workspaceOperationsReducer } from './slices/workspace-operations/worksp
 import { workspaceAgentsReducer } from './slices/workspace-agents/workspace-agents-slice';
 import { agentMutationUiReducer } from './slices/agent-mutation-ui/agent-mutation-ui-slice';
 import { chatPanelUiReducer } from './slices/chat-panel-ui/chat-panel-ui-slice';
+import { inlineVisualsReducer } from './slices/inline-visuals/inline-visuals-slice';
 import { chatDraftsReducer } from './slices/chat-drafts/chat-drafts-slice';
 import { questionUiReducer } from './slices/question-ui/question-ui-slice';
+import { secretRequestsReducer } from './slices/secret-requests/secret-requests-slice';
 import { workspaceNavigationReducer } from './slices/workspace-navigation/workspace-navigation-slice';
 import { workspaceNotesReducer } from './slices/workspace-notes/workspace-notes-slice';
 import { workspaceTasksReducer } from './slices/workspace-tasks/workspace-tasks-slice';
@@ -163,7 +165,9 @@ export const reducers = {
   agentMutationUi: agentMutationUiReducer,
   chatPanelUi: chatPanelUiReducer,
   chatDrafts: chatDraftsReducer,
+  inlineVisuals: inlineVisualsReducer,
   questionUi: questionUiReducer,
+  secretRequests: secretRequestsReducer,
   workspaceNavigation: workspaceNavigationReducer,
   workspaceNotes: workspaceNotesReducer,
   workspaceTasks: workspaceTasksReducer,

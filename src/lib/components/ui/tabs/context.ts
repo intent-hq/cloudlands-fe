@@ -8,6 +8,8 @@ export const TABS_CONTEXT = Symbol('tabs');
 export interface TabsContext {
   state: ChoiceGroupState;
   readonly value: string;
+  readonly selectedValues: readonly string[];
+  readonly multiple: boolean;
   readonly variant: TabsVariant;
   readonly size: UiSize;
   readonly disabled: boolean;

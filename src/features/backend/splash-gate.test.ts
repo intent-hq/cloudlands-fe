@@ -93,6 +93,20 @@ describe('startSplashGate', () => {
     expect(dismiss).toHaveBeenCalledTimes(1);
   });
 
+  it('dismisses on a status push reporting a starting daemon, so startup progress shows', async () => {
+    const { api, emit } = makeMockApi({ status: 'connecting' });
+    const dismiss = vi.fn();
+    startSplashGate(dismiss, { api });
+
+    await vi.waitFor(() => expect(api.invoke).toHaveBeenCalledWith(BACKEND.GET_STATUS));
+    expect(dismiss).not.toHaveBeenCalled();
+    emit(BACKEND.STATUS, {
+      status: 'connecting',
+      daemonStartup: { state: 'starting', snapshot: null, available: false },
+    });
+    expect(dismiss).toHaveBeenCalledTimes(1);
+  });
+
   it('dismisses after the bounded fallback timeout when the daemon never connects', async () => {
     const { api } = makeMockApi({ status: 'connecting' });
     const dismiss = vi.fn();

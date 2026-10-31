@@ -2,6 +2,7 @@
 import './electron-browser-lifetime-dev-console.fixture';
 import './electron-browser-lifetime-dev-console-ui.fixture';
 import './electron-browser-capture.fixture';
+import './electron-inline-html-preview.fixture';
 /** Real Electron guest identity evidence; never launches Intent or a daemon. */
 import {
   _electron as electron,

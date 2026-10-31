@@ -1,27 +1,29 @@
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
-import type { ModelWarningKind } from '$shared/models/wire-model-info';
+import type { GetModelsEnvelope } from '$shared/models/wire-model-info';
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 
 export type ModelLoadingStatus = 'success' | 'loading' | 'error';
 
-export type ModelLoadingState = {
+/**
+ * The model-list reply's optional labels (`warning`, `stale`, `warningKind`,
+ * …), derived from the shared `GetModelsEnvelope` — the store's single
+ * declaration, so a new reply label reaches the loading state (and the model
+ * picker) without a store edit. `buildLoadingState` owns how labels carry
+ * across loading states.
+ *
+ * - `stale`: `warning` accompanies a last-known-good list served from the
+ *   daemon's cache (PROTOCOL §5.30) rather than a degraded static fallback, so
+ *   consumers can tell a transient probe failure from a missing CLI.
+ * - `warningKind`: machine-readable cause of `warning` (PROTOCOL §5.30
+ *   "Warning kind"); only `cli-missing` warrants the "install the CLI" notice.
+ *   Absent for every other failure — never infer it from the warning text.
+ */
+export type ModelReplyLabels = Omit<GetModelsEnvelope, 'success' | 'data' | 'error'>;
+
+export type ModelLoadingState = ModelReplyLabels & {
   status: ModelLoadingStatus;
   retryAttempt: number;
   error?: string;
-  warning?: string;
-  /**
-   * Whether `warning` accompanies a last-known-good model list served from the
-   * daemon's cache (PROTOCOL §5.30 `stale: true`) rather than a degraded
-   * static fallback. Consumers use it to tell a transient probe failure apart
-   * from a genuinely missing CLI.
-   */
-  stale?: boolean;
-  /**
-   * Machine-readable cause of `warning` (PROTOCOL §5.30 "Warning kind"); only
-   * `cli-missing` warrants the "install the CLI" notice. Absent for every
-   * other failure, so it is never inferred from the warning text.
-   */
-  warningKind?: ModelWarningKind;
 };
 
 export type ModelFallbackInfo = {

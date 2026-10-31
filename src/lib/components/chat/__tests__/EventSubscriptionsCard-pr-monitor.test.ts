@@ -174,7 +174,14 @@ describe('Chief PR-monitor subscription ownership', () => {
 
   it('preserves real errors rather than treating a failed read as an empty snapshot', async () => {
     vi.mocked(backendRequest).mockRejectedValue(new Error('list unavailable'));
-    render(EventSubscriptionsCard, { workspaceId: CHIEF_WORKSPACE_ID, agentId: AGENT });
+    // The service retries with backoff and reports only a run of failures.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true });
+    try {
+      render(EventSubscriptionsCard, { workspaceId: CHIEF_WORKSPACE_ID, agentId: AGENT });
+      await vi.advanceTimersByTimeAsync(10_000);
+    } finally {
+      vi.useRealTimers();
+    }
     await waitFor(() => {
       expect(screen.getByTestId('pr-monitors-snapshot-status').getAttribute('role')).toBe('alert');
       expect(screen.getByTestId('subscription-utility-area').dataset.hasSubscriptions).toBe('true');

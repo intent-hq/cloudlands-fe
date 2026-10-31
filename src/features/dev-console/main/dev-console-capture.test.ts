@@ -496,6 +496,29 @@ describe('DevConsoleCaptureService', () => {
     expect(service.clearSession('local', session.sessionId)).toBe(false);
   });
 
+  it('never captures a secret.provide value, even under full capture', async () => {
+    const service = new DevConsoleCaptureService();
+    const { client, socket } = connect(service);
+    const session = service.openSession('local');
+    service.setFullCapture(
+      'local',
+      session.sessionId,
+      { ...requestSelection, method: 'secret.provide' },
+      true,
+    );
+    const pending = client.request('secret.provide', {
+      workspaceId: 'w',
+      requestId: 'sec-1',
+      value: 'never-capture-secret',
+    });
+    expect(JSON.parse(socket.writes[0]).params.value).toBe('never-capture-secret');
+    socket.receive({ id: 1, result: { ok: true, requestId: 'sec-1', name: 'KEY' } });
+    await pending;
+    const snapshot = service.getSnapshot('local', session.sessionId)!;
+    expect(snapshot.records[0].method).toBe('secret.provide');
+    expect(JSON.stringify(snapshot)).not.toContain('never-capture-secret');
+  });
+
   it('isolates observer failures and subscriber failures from live RPC behavior', async () => {
     const service = new DevConsoleCaptureService();
     const { socket, client } = connect(service);

@@ -1020,10 +1020,13 @@ describe('ModelPicker trigger label regressions', () => {
 });
 
 vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', async () => {
+  const { derived } = await import('svelte/store');
   const { selectProviderCatalogEntries } =
     await import('$store/renderer/slices/provider-catalog/provider-catalog-selectors');
   return {
     selectContextProviderEntries: selectProviderCatalogEntries,
+    selectContextListedProviderIds: () =>
+      derived(selectProviderCatalogEntries(), (entries) => entries.map((entry) => entry.id)),
     selectContextDefaultProvider: () => readable('auggie'),
     selectContextSelectedModel: () => selectedModel$,
     selectContextEnabledProviders: () => readable({}),

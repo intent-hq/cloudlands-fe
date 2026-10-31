@@ -4,7 +4,8 @@
  *
  * Matches:
  * - @context[provider|identifier|title] — context mentions (Linear, GitHub, etc.)
- * - @note/{noteId} — note mentions
+ * - @note[({workspaceId}/){noteId}:{title}] — note mentions (current form)
+ * - @note/{noteId} — legacy note mentions
  * - @{path} — file/folder mentions (paths with / or file extensions)
  *
  * The `@` must not be preceded by an email-local-part character (letters,
@@ -16,6 +17,8 @@
  * the remaining text segments.
  */
 
+import { NOTE_MENTION_BODY_SOURCE } from '$lib/utils/note-mention-token';
+
 export interface InlineMentionMatch {
   /** Index of the `@` in the source text. */
   index: number;
@@ -25,8 +28,12 @@ export interface InlineMentionMatch {
   captured: string;
 }
 
-const MENTION_REGEX =
-  /(?<![A-Za-z0-9._%+-])@(member\[[^\]\s]*\]|context\[[^\]]+\]|note\/[^\s]+|[^\s@]+\.[a-zA-Z]+(?::\d+(?::\d+)?|#L\d+(?:-\d+)?|:L\d+(?:-\d+)?)?|[^\s@]*\/[^\s]+(?::\d+(?::\d+)?|#L\d+(?:-\d+)?)?)/g;
+const MENTION_REGEX = new RegExp(
+  String.raw`(?<![A-Za-z0-9._%+-])@(member\[[^\]\s]*\]|context\[[^\]]+\]|` +
+    NOTE_MENTION_BODY_SOURCE +
+    String.raw`|note\/[^\s]+|[^\s@]+\.[a-zA-Z]+(?::\d+(?::\d+)?|#L\d+(?:-\d+)?|:L\d+(?:-\d+)?)?|[^\s@]*\/[^\s]+(?::\d+(?::\d+)?|#L\d+(?:-\d+)?)?)`,
+  'g',
+);
 
 /** Find all inline @mentions in `text`, in order of appearance. */
 export function findInlineMentions(text: string): InlineMentionMatch[] {

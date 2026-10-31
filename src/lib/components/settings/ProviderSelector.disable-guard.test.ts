@@ -115,7 +115,7 @@ const availability = {
 warmImport(() => import('../workspace/sidebar/__tests__/mocks/MockSimple.svelte'));
 warmImport(() => import('./ProviderSelector.svelte'));
 
-describe('ProviderSelector disable guard', () => {
+describe('ProviderSelector disable action', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     mocks.state.current = await buildState([
@@ -166,23 +166,24 @@ describe('ProviderSelector disable guard', () => {
     return await waitFor(() => result.getByRole('menuitem', { name: 'Disable' }));
   }
 
-  it('disables the Disable control for an in-use provider with a reason', async () => {
+  it('allows disabling a provider used by a saved specialist', async () => {
     const result = await renderSelector();
     const claudeButton = (await getDisableButton(
       result,
       'Anthropic Claude Code',
     )) as HTMLButtonElement;
-    expect(claudeButton.getAttribute('aria-disabled')).toBe('true');
-    expect(claudeButton.getAttribute('title')).toBeTruthy();
+    expect(claudeButton.getAttribute('aria-disabled')).not.toBe('true');
     mocks.dispatch.mockClear();
     await fireEvent.click(claudeButton);
-    expect(mocks.dispatch).not.toHaveBeenCalled();
-
-    await fireEvent.click(
-      result.getByRole('button', { name: 'Provider actions for Anthropic Claude Code' }),
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'providerSettings/setProviderEnabled',
+        payload: [
+          { providerId: 'claude-code', enabled: false },
+          { id: expect.any(String), sessionId: expect.any(String) },
+        ],
+      }),
     );
-    const codexButton = (await getDisableButton(result, 'OpenAI Codex')) as HTMLButtonElement;
-    expect(codexButton.getAttribute('aria-disabled')).not.toBe('true');
   });
 
   it('still dispatches setProviderEnabled(false) for providers not in use', async () => {
@@ -200,12 +201,23 @@ describe('ProviderSelector disable guard', () => {
     );
   });
 
-  it('blocks disabling an in-use provider even if the click fires', async () => {
+  it('allows disabling the configured default provider', async () => {
+    const base = await buildState([]);
+    mocks.state.current = {
+      ...base,
+      model: { ...base.model, defaultProviderId: 'codex' },
+    };
     const result = await renderSelector();
-    const claudeButton = await getDisableButton(result, 'Anthropic Claude Code');
-    await fireEvent.click(claudeButton);
-    expect(mocks.dispatch).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'providerSettings/setProviderEnabled' }),
+    const codexButton = await getDisableButton(result, 'OpenAI Codex');
+    await fireEvent.click(codexButton);
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'providerSettings/setProviderEnabled',
+        payload: [
+          { providerId: 'codex', enabled: false },
+          { id: expect.any(String), sessionId: expect.any(String) },
+        ],
+      }),
     );
   });
 

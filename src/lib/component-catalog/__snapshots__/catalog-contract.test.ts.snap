@@ -123,7 +123,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:action-menu:
             "Requires access"
       <span class="sr-only" id="c<id>-locked-reason">
         "Requires access"
-      <div class="-mx-1 bg-border h-px my-1.5" data-dropdown-menu-separator="" data-slot="menu-separator" id="bits-<id>" role="group">
+      <div class="-mx-1 border-border border-t my-1.5" data-dropdown-menu-separator="" data-slot="menu-separator" id="bits-<id>" role="group">
       <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:focus:text-danger data-[destructive]:text-danger data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-action-id="delete" data-destructive="" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
         <span aria-hidden="true" class="first-line-icon w-(--menu-icon-size)" data-slot="menu-item-leading">
           <svg aria-hidden="true" class="size-4 text-current" data-icon="trash" data-weight="regular" role="img">
@@ -18216,6 +18216,13 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                               "Rich chat blocks"
                                           <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                                             "Prompt agents to emit rich chat blocks (Mermaid diagrams, CLI commands, code references, navigation links)"
+                                      <div class="[&_.truncate]:whitespace-normal flex gap-3 items-start min-h-0 min-w-0 px-0 py-0" data-density="default" data-enabled="false" data-feature="secretRequests" data-slot="list-row" data-testid="harness-feature-state" role="listitem">
+                                        <div class="flex-1 min-w-0">
+                                          <div class="flex gap-2 items-baseline min-w-0">
+                                            <div class="min-w-0 text-foreground truncate type-caption" data-slot="list-row-title">
+                                              "Secret requests"
+                                          <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
+                                            "Let top-level agents ask you for secrets such as API keys, held in memory only for their commands. Also needs Host command execution"
                                       <div class="[&_.truncate]:whitespace-normal flex gap-3 items-start min-h-0 min-w-0 px-0 py-0" data-density="default" data-enabled="false" data-feature="attentionRequests" data-slot="list-row" data-testid="harness-feature-state" role="listitem">
                                         <div class="flex-1 min-w-0">
                                           <div class="flex gap-2 items-baseline min-w-0">
@@ -19053,7 +19060,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                     <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:focus:text-danger data-[destructive]:text-danger data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-destructive="" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
                       <span aria-hidden="true" class="first-line-icon w-(--menu-icon-size)" data-slot="menu-item-leading">
                       "Delete workspace"
-                    <div class="-mx-1 bg-border h-px my-1.5" data-dropdown-menu-separator="" data-slot="menu-separator" id="bits-<id>" role="group">
+                    <div class="-mx-1 border-border border-t my-1.5" data-dropdown-menu-separator="" data-slot="menu-separator" id="bits-<id>" role="group">
                     <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:focus:text-danger data-[destructive]:text-danger data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
                       <span aria-hidden="true" class="first-line-icon w-(--menu-icon-size)" data-slot="menu-item-leading">
                       "After separator"

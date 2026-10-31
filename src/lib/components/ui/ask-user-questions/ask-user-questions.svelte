@@ -1,5 +1,6 @@
 <script module lang="ts">
   import type { AskUserAnswer, AskUserOption, AskUserQuestionsProps } from './types';
+  import { isTextEntryTarget } from '$lib/utils/text-entry';
 
   const mountedInstances: HTMLElement[] = [];
   const DEFAULT_FREE_TEXT_PLACEHOLDER = 'Type your answer…'; // i18n-ignore (public primitive API default from reference)
@@ -400,8 +401,7 @@
       return;
     }
     if (event.metaKey || event.ctrlKey || event.altKey) return;
-    if (target && (['INPUT', 'TEXTAREA'].includes(target.tagName) || target.isContentEditable))
-      return;
+    if (isTextEntryTarget(target)) return;
     if (event.key < '1' || event.key > '9') return;
     const optionIndex = Number.parseInt(event.key, 10) - 1;
     if (optionIndex < options.length) {

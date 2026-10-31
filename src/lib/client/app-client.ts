@@ -2,6 +2,7 @@ import type { WorkspaceId } from '$shared/types/branded-ids';
 import type { MergeQueueEntry } from '$lib/utils/merge-queue';
 import type { SubmissionCorrelation } from '$shared/types/agent-message';
 import type { AgentPlacement } from '$shared/types/agent-node';
+import type { SecretAnswerResult, SecretListing } from '$shared/types/secret-request-resource';
 import type {
   ScriptArchiveFilter,
   ScriptListPage,
@@ -59,6 +60,7 @@ import type {
   WorkspaceDiskUsage,
   WorkspaceTask,
   WorkspaceTaskStats,
+  WorkspaceCreateProposalOutcome,
 } from '$shared/types';
 import type { CommitInfo, TrackedChange } from '$features/file-tracking/types';
 import type { WorkspaceEvent } from '$features/events/types';
@@ -378,6 +380,8 @@ export interface WorkspaceUpdateResult extends MutationResult {
 export interface WorkspaceCreateResult extends MutationResult {
   workspace?: Workspace;
   initialAgent?: { id: string } & Record<string, unknown>;
+  /** The daemon's handling of the request's `origin` (PROTOCOL §5.1). */
+  proposalOrigin?: WorkspaceCreateProposalOutcome;
   /**
    * Machine-readable code for a failed create, surfaced from the transport
    * error's `data.code`. Only daemon-authored codes (e.g.
@@ -917,6 +921,24 @@ export interface AgentsClient {
     workspaceId: string;
     messageId: string;
   }): Promise<MutationResult>;
+  /**
+   * Names of one agent's memory-held secrets and its pending / answered
+   * secret requests (`secret.list`, PROTOCOL §5.56). Never returns values.
+   * `null` when the read fails.
+   */
+  secretList(params: { workspaceId: string; agentId: string }): Promise<SecretListing | null>;
+  /**
+   * Answer a pending secret request with its value (`secret.provide`,
+   * §5.56). The value goes straight to the daemon, which holds it in memory
+   * for the requesting agent only; callers must not store, log or echo it.
+   */
+  secretProvide(params: {
+    workspaceId: string;
+    requestId: string;
+    value: string;
+  }): Promise<SecretAnswerResult>;
+  /** Decline a pending secret request (`secret.dismiss`, §5.56). */
+  secretDismiss(params: { workspaceId: string; requestId: string }): Promise<SecretAnswerResult>;
   /**
    * Resolve one pending proposal (`agent.resolveProposal`, §5.5). The daemon
    * removes `proposalId` from the session-metadata `pendingProposals` set,

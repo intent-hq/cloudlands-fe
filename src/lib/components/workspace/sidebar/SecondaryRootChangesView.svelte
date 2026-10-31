@@ -49,6 +49,7 @@
   import Fa from 'svelte-fa';
   import type { Snippet } from 'svelte';
   import ChangesRefreshAction from './ChangesRefreshAction.svelte';
+  import { formatHiddenChangesNotice, limitDisplayedChanges } from './sidebar-changes-utils';
   import { slide } from '$lib/motion';
   import { notify } from '$lib/components/patterns/notify';
 
@@ -74,6 +75,9 @@
   const rootGitRoots$ = selectSecondaryRootGitRoots(workspaceId);
   const rootGit = $derived($rootGitRoots$[gitRootId] ?? emptySecondaryRootState);
   const status = $derived(rootGit.status);
+  // Same render cap as the main changes list: huge roots would freeze the panel.
+  const displayedFiles = $derived(limitDisplayedChanges(status?.files ?? []));
+  const hiddenFilesNotice = $derived(formatHiddenChangesNotice(displayedFiles));
   const commits = $derived(rootGit.commits);
   const nextToken = $derived(rootGit.nextToken);
   const loading = $derived(rootGit.loading);
@@ -312,7 +316,7 @@
       </p>
       {#if status && status.files.length > 0}
         <ul class="flex flex-col">
-          {#each status.files as file (`${file.staged}:${file.path}`)}
+          {#each displayedFiles.visible as file (`${file.staged}:${file.path}`)}
             <li class="min-w-0">
               <Button
                 type="button"
@@ -341,6 +345,11 @@
             </li>
           {/each}
         </ul>
+        {#if hiddenFilesNotice}
+          <p class="mt-1 text-xs text-muted-foreground" data-testid="secondary-root-hidden-files">
+            {hiddenFilesNotice}
+          </p>
+        {/if}
       {:else}
         <p class="text-xs text-ghost">{m.workspace_sidebarChanges_rootNoChanges_label()}</p>
       {/if}

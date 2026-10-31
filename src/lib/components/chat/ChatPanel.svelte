@@ -1,4 +1,17 @@
 <script lang="ts">
+  import {
+    INLINE_VISUAL_DRAFT_EVENT,
+    appendInlineVisualDraft,
+    type InlineVisualDraftDetail,
+  } from '$features/inline-html/inline-visual-handoff';
+  import { isInlineVisualSnapshot } from '$features/inline-html/inline-visual-types';
+  import { isTextEntryTarget } from '$lib/utils/text-entry';
+  import { selectInlineVisualDrafts } from '$store/renderer/slices/inline-visuals/inline-visuals-selectors';
+  import {
+    inlineVisualDraftRequested,
+    inlineVisualDraftConsumed,
+    inlineVisualDraftOwnerReleased,
+  } from '$store/renderer/slices/inline-visuals/inline-visuals-slice';
   import { submitChatMessage } from '$features/agent/chat-submission';
   import { requestChatMessageRetry } from '$features/agent/chat-submission-retry';
   import {
@@ -224,6 +237,8 @@
 
   import SuggestedPrompts from './SuggestedPrompts.svelte';
   import QuestionWizard, { type QuestionAnswer } from './questions/QuestionWizard.svelte';
+  import SecretRequestCards from './secrets/SecretRequestCards.svelte';
+  import { deriveSecretRequestTranscript } from './secrets/pending-secret-requests';
   import QuestionComposer from './questions/QuestionComposer.svelte';
   import {
     getChatAttentionFocusAction,
@@ -323,7 +338,6 @@
     mergeUserMessageNavigationItems,
     type ChatNavigationState,
   } from './chat-message-navigation';
-  import { parseSuggestedPromptsFromContentBlocks } from '$lib/utils/messageParser';
   import { isBatchedDeliverySeam } from '$lib/utils/queue-info';
   import { isEventWakeMessage } from './event-wake-summary';
   import {
@@ -415,6 +429,7 @@
 
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
+  import { rendersReasoningAsText, suggestedPromptsFromBlocks } from './prepare-message-blocks';
   import ModelChangeNotice from './ModelChangeNotice.svelte';
   import EffortChangeNotice from './EffortChangeNotice.svelte';
   import { getModelChangeNotice } from './model-change-notice';
@@ -548,6 +563,9 @@
   // Broad selector rationale: ChatPanel passes the materialized session to
   // helpers/components that need model, metadata, provider, and prompt-handled state.
   const agentSession$ = selectAgentSession(agentIdStore);
+  // Claude Code agents' thinking renders as prose (see rendersReasoningAsText);
+  // search, prompt chips and operational spacing follow the same rule.
+  const reasoningAsText = $derived(rendersReasoningAsText($agentSession$));
   const agentSessionIsStreaming$ = selectAgentSessionIsStreaming(agentIdStore);
   const agentMessages$ = selectAgentMessages(agentIdStore);
   const submissionDisplay$ = selectAgentSubmissionDisplay(agentIdStore, workspaceIdStore);
@@ -778,6 +796,7 @@
   // DEBUG: Unique instance ID to detect duplicate ChatPanel mounts
   const instanceId = Math.random().toString(36).substring(2, 8);
   const questionUiConsumer$ = selectQuestionUiConsumer(instanceId);
+  const inlineVisualDrafts$ = selectInlineVisualDrafts(instanceId);
   const userMessageIndexUi$ = selectUserMessageIndexUi(workspace?.id ?? '', instanceId);
   let wizardPersistenceRequest: {
     messageId: string;
@@ -1093,7 +1112,7 @@
     if (pendingQuestions) {
       return [];
     }
-    return parseSuggestedPromptsFromContentBlocks(lastAssistantMessage.contentBlocks ?? []).prompts;
+    return suggestedPromptsFromBlocks(lastAssistantMessage.contentBlocks ?? [], reasoningAsText);
   });
 
   // Agent Q&A: the daemon's pending marker is authoritative when present, so
@@ -1252,6 +1271,13 @@
   // Legacy queues omit transcript-stamped drains. Correlated full snapshots
   // remain authoritative: a restored retry may legitimately share history aliases.
   const admittedPrincipal$ = selectPrincipalSnapshot();
+
+  // Agent secret requests (PROTOCOL §5.56), shown as composer-slot cards
+  // only when the daemon advertises `secretRequests: 1`.
+  const secretRequestsSupported = $derived($admittedPrincipal$?.capabilities.secretRequests === 1);
+  const secretRequestTranscript = $derived(
+    secretRequestsSupported ? deriveSecretRequestTranscript($agentMessages$) : null,
+  );
   const visibleQueuedMessages = $derived(
     $admittedPrincipal$?.capabilities.submissionCorrelation === 1
       ? $queuedMessages$.filter(isUserQueuedMessage)
@@ -1501,6 +1527,7 @@
   const chatSearchOptions: ChatSearchOptions = $derived({
     collapseToolRuns: $collapseToolRuns$,
     workspaceId: workspace?.id ? String(workspace.id) : undefined,
+    reasoningAsText,
   });
   const allSearchMatches = $derived.by(() => {
     return findChatSearchMatches(
@@ -2175,6 +2202,68 @@
     onSaveError: (err) => {
       logger.warn('[ChatPanel] Failed to save draft', { error: String(err) });
     },
+  });
+
+  // The event travels only through the originating transcript's DOM ancestors.
+  // Queue until this exact panel has completed its draft restore; never send.
+  $effect(() => {
+    const element = panelElement;
+    if (!element) return;
+    const receive = (event: Event) => {
+      event.stopPropagation();
+      const detail = (event as CustomEvent<InlineVisualDraftDetail>).detail;
+      if (
+        !detail ||
+        detail.workspaceId !== workspace?.id ||
+        detail.agentId !== agentId ||
+        !isActive ||
+        isRetiredSession ||
+        $agentSession$?.id !== agentId ||
+        !isInlineVisualSnapshot(detail.snapshot)
+      )
+        return;
+      appStore.dispatch(
+        inlineVisualDraftRequested({
+          id: crypto.randomUUID(),
+          ownerId: instanceId,
+          workspaceId: detail.workspaceId,
+          agentId: detail.agentId,
+          snapshot: detail.snapshot,
+        }),
+      );
+    };
+    element.addEventListener(INLINE_VISUAL_DRAFT_EVENT, receive);
+    return () => element.removeEventListener(INLINE_VISUAL_DRAFT_EVENT, receive);
+  });
+
+  $effect(() => {
+    const pending = $inlineVisualDrafts$;
+    if (
+      !isActive ||
+      !inputComponent ||
+      draftManager.gateActive ||
+      draftManager.restorePending ||
+      isRetiredSession ||
+      $agentSession$?.id !== agentId ||
+      !workspace?.id
+    )
+      return;
+    const targeted = pending.filter(
+      (item) => item.workspaceId === workspace.id && item.agentId === agentId,
+    );
+    if (!targeted.length) return;
+    untrack(() => {
+      let text = inputValue;
+      for (const item of targeted) {
+        text = appendInlineVisualDraft(text, item.snapshot);
+        appStore.dispatch(inlineVisualDraftConsumed(item.id));
+      }
+      // Preserve contextItems and let the existing draft manager persist them.
+      inputValue = text;
+      commitDraftWrite(text);
+      void inputComponent?.setContent?.(text);
+      void tick().then(() => inputComponent?.focus?.());
+    });
   });
 
   $effect(() => {
@@ -4420,17 +4509,10 @@
   });
 
   // ── Auto-focus on mount (used by Chief of Staff) ──
-  function isEditableElement(element: Element | null): boolean {
-    if (!element) return false;
-    if (!(element instanceof HTMLElement)) return false;
-    if (element.isContentEditable) return true;
-    return Boolean(element.closest('input, textarea, select, [contenteditable="true"]'));
-  }
-
   function shouldSkipPromptAutoFocus(): boolean {
     if (typeof document === 'undefined') return true;
     const activeElement = document.activeElement;
-    return isEditableElement(activeElement) && !panelElement?.contains(activeElement);
+    return isTextEntryTarget(activeElement) && !panelElement?.contains(activeElement);
   }
 
   onMount(() => {
@@ -5473,6 +5555,7 @@
       );
       wizardPersistenceRequest = null;
     }
+    appStore.dispatch(inlineVisualDraftOwnerReleased(instanceId));
     if (workspace?.id) appStore.dispatch(chatPanelUiReleased(workspace.id, instanceId));
     transferPanelInterestLease(null);
     flushPendingDraftWrite();
@@ -6482,7 +6565,7 @@
   {/if}
 
   <!-- Messages Area -->
-  <div class="w-full relative flex-1 flex flex-col min-h-0 z-10">
+  <div class="chat-transcript-area w-full relative flex-1 flex flex-col min-h-0 z-10">
     <!-- Inline-end padding compensates the scroll container's scrollbar gutter
          so the lane's box matches the conversation column's box. -->
     <div
@@ -6553,6 +6636,10 @@
       class="flex-1 {CHAT_TRANSCRIPT_OVERFLOW_CLASS}"
       class:agent-font-monospace={$isAgentMonospace}
       style="scrollbar-gutter: stable;"
+      style:padding-bottom="var(--chat-composer-gap)"
+      style:mask-image={distanceFromBottom > SCROLL_BOTTOM_BUTTON_EPSILON
+        ? `linear-gradient(to bottom, black calc(100% - ${Math.min(40, distanceFromBottom)}px), transparent)`
+        : undefined}
       data-testid="chat-transcript-scroll-viewport"
       data-message-controls-root
     >
@@ -7150,6 +7237,7 @@
                   {@const compactOperationalTurnBoundary = hasOperationalAssistantTurnBoundary(
                     turn,
                     nextTurn,
+                    reasoningAsText,
                   )}
                   {@const zeroOperationalTurnBoundary = compactOperationalTurnBoundary}
                   {@const attentionQuestionAnswerTurnSeam = isAttentionQuestionAnswerSeam(
@@ -7381,10 +7469,12 @@
                         hasOperationalAssistantMessageBoundary(
                           turn.bodyMessages[bodyIndex - 1],
                           message,
+                          reasoningAsText,
                         )}
                       {@const compactNextMessageBoundary = hasOperationalAssistantMessageBoundary(
                         message,
                         turn.bodyMessages[bodyIndex + 1],
+                        reasoningAsText,
                       )}
                       {@const turnNumber = getMessageTurnNumber(message.id)}
                       {@const globalIndex = getMessageIndex(message.id)}
@@ -7767,6 +7857,7 @@
     {#if isActive && showScrollToBottom && !deferTranscriptReveal}
       <div
         class="pointer-events-none absolute inset-x-0 bottom-3 z-40 flex justify-center"
+        style:margin-bottom="var(--chat-composer-gap)"
         style:padding-inline-end="{scrollbarGutterWidth}px"
       >
         <div class="pointer-events-auto">
@@ -7779,7 +7870,7 @@
   <!-- Message Input with Aurora Background -->
   <div
     bind:this={composerElement}
-    class="conversation-composer relative z-10 w-full"
+    class="conversation-composer relative z-10 w-full pointer-events-none"
     class:input-flash={showInputFlash}
     data-streaming={$agentSessionIsStreaming$}
     data-testid="chat-composer-shell"
@@ -7814,7 +7905,7 @@
         data-testid="chat-composer-lane"
       >
         <div
-          class="w-full min-w-0"
+          class="pointer-events-auto w-full min-w-0"
           data-testid="chat-composer-controls-inner"
           onfocusout={flushPendingDraftWrite}
         >
@@ -7856,6 +7947,13 @@
                 </Button>
               </div>
             {/if}
+            {#if workspace && agentId && secretRequestTranscript}
+              <SecretRequestCards
+                transcript={secretRequestTranscript}
+                workspaceId={workspace.id}
+                {agentId}
+              />
+            {/if}
             <QuestionComposer
               expanded={!!pendingQuestions && !questionWizardCollapsed}
               active={isActive && isChatFocused}
@@ -7888,7 +7986,7 @@
                     <PresenceTypingIndicator
                       workspaceId={workspace.id}
                       {agentId}
-                      class="pointer-events-none absolute inset-x-0 bottom-full mb-1"
+                      class="pointer-events-none absolute inset-x-0 bottom-full mb-1 bg-background"
                     />
                   {/if}
                   <SimpleRichInput
@@ -7933,7 +8031,12 @@
 
 <style>
   .chat-panel-container {
+    --chat-composer-gap: 1.25rem;
     container: chat-panel / inline-size;
+  }
+
+  .chat-transcript-area {
+    margin-bottom: calc(-1 * var(--chat-composer-gap));
   }
 
   .workspace-setup-card-alignment {
@@ -8019,10 +8122,9 @@
     animation: input-flash calc(var(--spring-slow) * 2.5) var(--spring-exit-ease);
   }
 
-  /* Reserve the status outside the scroll viewport even while nobody is typing.
-     Presence never resizes the composer or overlays scrolled transcript text. */
+  /* Keep the prompt fixed while the transcript fades through the typing-status gap. */
   .composer-prompt-lane {
-    padding-block: 1.25rem var(--chat-content-inset);
+    padding-block: var(--chat-composer-gap) var(--chat-content-inset);
   }
 
   .chief-chat-panel .composer-prompt-lane {

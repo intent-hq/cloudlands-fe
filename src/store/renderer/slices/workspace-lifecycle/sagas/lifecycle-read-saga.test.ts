@@ -3062,7 +3062,6 @@ describe('lifecycleReadSaga', () => {
     const kept = agent('agent-keep', { messages: existing.messages });
     const background = agent('agent-bg', { isBackground: true });
     expect(run.actions).toEqual([
-      { type: 'workspaceAgents/setAgentsLoaded', payload: [WS, true] },
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
       { type: 'workspaceAgents/setScopeCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setDelegatedCounts', payload: [WS, null] },
@@ -3071,8 +3070,64 @@ describe('lifecycleReadSaga', () => {
         type: 'agentSessions/bulkUpsertSessions',
         payload: [[background, kept], { listProjection: true }],
       },
+      // Loaded and settled only after the sessions land, so readers see current rows.
+      { type: 'workspaceAgents/setAgentsLoaded', payload: [WS, true] },
+      { type: 'workspaceAgents/agentsReadSettled', payload: [WS] },
       { type: 'workspaceAgents/setActiveAgentId', payload: [WS, 'agent-keep'] },
     ]);
+    await stop(run.task);
+  });
+
+  it('sets agentsLoaded only after the rows, counts and sessions are stored', async () => {
+    mocks.agents.listWithMeta.mockResolvedValue({
+      agents: [agent('agent-a'), agent('agent-b')],
+      retiredCount: 2,
+    });
+    const run = start();
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+
+    const types = run.actions.map((action) => action.type);
+    const loadedAt = types.indexOf(setAgentsLoaded.type);
+    expect(loadedAt).toBeGreaterThan(-1);
+    for (const stored of [
+      'workspaceAgents/setRetiredCount',
+      'workspaceAgents/setScopeCounts',
+      'workspaceAgents/setDelegatedCounts',
+      'workspaceAgents/setAgents',
+      'agentSessions/bulkUpsertSessions',
+    ]) {
+      expect(types.indexOf(stored)).toBeGreaterThan(-1);
+      expect(types.indexOf(stored)).toBeLessThan(loadedAt);
+    }
+    expect(types[loadedAt + 1]).toBe('workspaceAgents/agentsReadSettled');
+    await stop(run.task);
+  });
+
+  it('sets agentsLoaded after the empty snapshot when the workspace has no agents', async () => {
+    mocks.agents.listWithMeta.mockResolvedValue({ agents: [], retiredCount: 0 });
+    const run = start();
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+
+    expect(run.actions.map((action) => action.type)).toEqual([
+      'workspaceAgents/setRetiredCount',
+      'workspaceAgents/setScopeCounts',
+      'workspaceAgents/setDelegatedCounts',
+      'workspaceAgents/setAgents',
+      setAgentsLoaded.type,
+      'workspaceAgents/agentsReadSettled',
+    ]);
+    await stop(run.task);
+  });
+
+  it('leaves agentsLoaded unset when the agent-list read fails', async () => {
+    mocks.agents.listWithMeta.mockRejectedValue(new Error('offline'));
+    const run = start();
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+
+    expect(run.actions.filter((action) => action.type === setAgentsLoaded.type)).toEqual([]);
     await stop(run.task);
   });
 
@@ -3272,11 +3327,12 @@ describe('lifecycleReadSaga', () => {
     await settle();
 
     expect(run.actions).toEqual([
-      { type: 'workspaceAgents/setAgentsLoaded', payload: [WS, true] },
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
       { type: 'workspaceAgents/setScopeCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setDelegatedCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setAgents', payload: [WS, []] },
+      { type: 'workspaceAgents/setAgentsLoaded', payload: [WS, true] },
+      { type: 'workspaceAgents/agentsReadSettled', payload: [WS] },
     ]);
     await stop(run.task);
   });
@@ -3514,12 +3570,13 @@ describe('lifecycleReadSaga', () => {
     expect(mocks.agents.listWithMeta.mock.calls).toEqual([[WS, TOP_LEVEL]]);
     expect(mocks.agents.list).not.toHaveBeenCalled();
     expect(run.actions).toEqual([
-      { type: 'workspaceAgents/setAgentsLoaded', payload: [WS, true] },
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
       { type: 'workspaceAgents/setScopeCounts', payload: [WS, COUNTS] },
       { type: 'workspaceAgents/setDelegatedCounts', payload: [WS, DELEGATED_COUNTS] },
       { type: 'workspaceAgents/setAgents', payload: [WS, [top]] },
       { type: 'agentSessions/bulkUpsertSessions', payload: [[top], { listProjection: true }] },
+      { type: 'workspaceAgents/setAgentsLoaded', payload: [WS, true] },
+      { type: 'workspaceAgents/agentsReadSettled', payload: [WS] },
       { type: 'workspaceAgents/setActiveAgentId', payload: [WS, 'agent-top'] },
     ]);
     await stop(run.task);
@@ -4772,11 +4829,12 @@ describe('lifecycleReadSaga', () => {
       [WS, TOP_LEVEL],
     ]);
     expect(run.actions).toEqual([
-      setAgentsLoaded(WS, true),
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
       { type: 'workspaceAgents/setScopeCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setDelegatedCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setAgents', payload: [WS, []] },
+      setAgentsLoaded(WS, true),
+      { type: 'workspaceAgents/agentsReadSettled', payload: [WS] },
     ]);
     await stop(run.task);
   });
@@ -4812,11 +4870,12 @@ describe('lifecycleReadSaga', () => {
       [WS, TOP_LEVEL],
     ]);
     expect(run.actions).toEqual([
-      setAgentsLoaded(WS, true),
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
       { type: 'workspaceAgents/setScopeCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setDelegatedCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setAgents', payload: [WS, []] },
+      setAgentsLoaded(WS, true),
+      { type: 'workspaceAgents/agentsReadSettled', payload: [WS] },
     ]);
     await stop(run.task);
   });

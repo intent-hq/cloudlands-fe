@@ -54,6 +54,22 @@ try {
   // not via the renderer build output.
   copyRecursiveSync(SOURCE_DIR, DEST_DIR, ['sidecar']);
 
+  // Author previews share the renderer's actual tokens and bundled font.
+  const previewDir = path.join(DEST_DIR, 'inline-html');
+  fs.mkdirSync(previewDir, { recursive: true });
+  fs.copyFileSync(
+    path.join(__dirname, '..', 'src/lib/styles/tokens.css'),
+    path.join(previewDir, 'tokens.css'),
+  );
+  fs.copyFileSync(
+    path.join(
+      __dirname,
+      '..',
+      'node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2',
+    ),
+    path.join(previewDir, 'inter.woff2'),
+  );
+
   console.log('✅ Resources copied successfully (excluded sidecar)');
 } catch (error) {
   console.error('❌ Failed to copy resources:', error);

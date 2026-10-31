@@ -266,9 +266,14 @@ async function rewriteScreenshotAssets(
 ): Promise<void> {
   await Promise.all(
     result.results.map(async (actionResult) => {
-      if (actionResult.action !== 'screenshot' || !actionResult.success) return;
+      if (!['screenshot', 'previewHtml'].includes(actionResult.action) || !actionResult.success)
+        return;
       const data = actionResult.result as
-        { base64?: string; width?: number; height?: number } | undefined;
+        | ({ base64?: string; width?: number; height?: number; mimeType?: string } & Record<
+            string,
+            unknown
+          >)
+        | undefined;
       if (!data?.base64) return;
       const saveBudgetMs = Math.min(SCREENSHOT_ASSET_SAVE_TIMEOUT_MS, deadline - Date.now());
       if (saveBudgetMs <= 0) {
@@ -283,8 +288,8 @@ async function rewriteScreenshotAssets(
           saveAsset({
             workspaceId,
             data: data.base64,
-            mimeType: 'image/jpeg',
-            originalName: `screenshot-${Date.now()}.jpg`,
+            mimeType: data.mimeType === 'image/png' ? 'image/png' : 'image/jpeg',
+            originalName: `${actionResult.action}-${Date.now()}.${data.mimeType === 'image/png' ? 'png' : 'jpg'}`,
           }),
           new Promise<never>((_, reject) => {
             timer = setTimeout(
@@ -304,10 +309,10 @@ async function rewriteScreenshotAssets(
         // `url`, and dropping the base64 in that case would leave the caller
         // with neither the inline blob nor a fetchable URL.
         if (saved?.url) {
+          const { base64: _base64, ...metadata } = data;
           actionResult.result = {
+            ...metadata,
             assetUrl: saved.url,
-            width: data.width,
-            height: data.height,
           };
         } else {
           logger.warn('saveAsset returned no url; keeping base64 in screenshot result', {

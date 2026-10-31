@@ -18,13 +18,18 @@
   import { selectHydratedBlocks } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import { selectCollapseToolRuns } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { groupMessageBlocks } from './operational-run-collapse';
-  import { prepareMessageBlocks, renderedBlockText } from './prepare-message-blocks';
+  import {
+    prepareMessageBlocks,
+    renderedBlockText,
+    rendersReasoningAsText,
+  } from './prepare-message-blocks';
   import { getProposalFromBlock } from '$shared/types/proposal-resource';
   import { getContentBlockText } from '$shared/utils/content-block-helpers';
   import type { DiagramPrimitive } from '$shared/types/notes-primitives';
   import ToolCall from './ToolCall.svelte';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
+  import InlineHtmlBlock from '$features/inline-html/InlineHtmlBlock.svelte';
   import AugmentCodeSnippet from '$lib/components/editor/AugmentCodeSnippet.svelte';
   import DigestCard from './DigestCard.svelte';
   import DetectedScriptsCard from './DetectedScriptsCard.svelte';
@@ -169,11 +174,7 @@
     cleanupFunctions = [];
   });
 
-  /**
-   * Set of block keys that have already been animated.
-   * Prevents the slide-up animation from replaying when Svelte
-   * recreates DOM elements due to reactive content updates.
-   */
+  // Stable keys prevent entrance motion replay during reactive updates.
   const animatedKeys = new Set<string>();
 
   // Existing rows must not replay their entrance when a live transcript mounts.
@@ -218,6 +219,7 @@
       workspaceId,
       isStreaming,
       hideToolCalls,
+      reasoningAsText: rendersReasoningAsText($mediaAgent$),
     });
     if (isStreaming && prepared.some((b) => b.type === 'tool_use')) {
       logger.debug('[StreamingMessageContent] blocks derived - has tool_use', {
@@ -538,13 +540,26 @@
   isLastBlock: boolean,
   insetProse = false,
   media: TextBlockMedia | undefined = undefined,
+  contentBlockKey = '',
 )}
   {#if insetProse}
     <div class={OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}>
-      {@render renderParsedContentBlockBody(parsedBlock, isLastBlock, insetProse, media)}
+      {@render renderParsedContentBlockBody(
+        parsedBlock,
+        isLastBlock,
+        insetProse,
+        media,
+        contentBlockKey,
+      )}
     </div>
   {:else}
-    {@render renderParsedContentBlockBody(parsedBlock, isLastBlock, insetProse, media)}
+    {@render renderParsedContentBlockBody(
+      parsedBlock,
+      isLastBlock,
+      insetProse,
+      media,
+      contentBlockKey,
+    )}
   {/if}
 {/snippet}
 
@@ -553,6 +568,7 @@
   isLastBlock: boolean,
   insetProse: boolean,
   media: TextBlockMedia | undefined,
+  contentBlockKey: string,
 )}
   {#if parsedBlock.type === 'augment_code_snippet'}
     <AugmentCodeSnippet
@@ -633,6 +649,15 @@
     <ChatCliBlock command={cliData.command} />
   {:else if parsedBlock.type === 'agent_action' && parsedBlock.metadata?.agentActionData}
     <ChatAgentActionBlock goal={parsedBlock.metadata.agentActionData.goal} />
+  {:else if parsedBlock.type === 'html'}
+    <InlineHtmlBlock
+      block={parsedBlock}
+      {role}
+      {workspaceId}
+      {agentId}
+      {messageId}
+      {contentBlockKey}
+    />
   {:else if parsedBlock.type === 'code'}
     <CodeBlock
       code={parsedBlock.content || ''}
@@ -717,6 +742,7 @@
             isLastBlock && parsedBlockIndex === parsedResult.blocks.length - 1,
             !nested,
             block.media,
+            block.id ?? parsedKey,
           )}
         {/each}
       {:else}

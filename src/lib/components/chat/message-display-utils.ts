@@ -1,5 +1,6 @@
 import type { AgentMessage, ContentBlock } from '$shared/types';
 import { isQuestionResourceBlock } from '$shared/types/question-resource';
+import { isSecretRequestResourceBlock } from '$shared/types/secret-request-resource';
 import { parseSuggestedPromptsFromContentBlocks } from '$lib/utils/messageParser';
 
 const stoppedStopReasons = new Set([
@@ -92,8 +93,28 @@ export function resolveStoppedIndicatorLabel(message?: AgentMessage): StoppedInd
  * resolver returns a descriptor rather than localized text so ChatMessage owns
  * the Paraglide message calls; unknown future reasons render no notice.
  * `max_turn_requests` (per-turn request cap) shares the limit-reached wording.
+ *
+ * `cancelled` gets a notice only on an output-free row that is not a user
+ * stop: the provider cancelled the turn before it produced anything (e.g. a
+ * late cancel from a preempted turn) and the daemon's one silent redrive did
+ * not recover it. Without the notice the user's message looks silently
+ * ignored. A user stop (`interrupted`) keeps its own Stopped badge, and a
+ * cancelled row with visible content needs no extra notice. The label states
+ * what happened without telling the user to resend — the row may sit in
+ * history above a later reply, and Regenerate is on the same bubble.
  */
-export type FinishReasonNotice = { kind: 'refusal' } | { kind: 'max-tokens' };
+export type FinishReasonNotice =
+  { kind: 'refusal' } | { kind: 'max-tokens' } | { kind: 'cancelled-empty' };
+
+/**
+ * Whether message blocks carry anything a reader would see: any non-text
+ * block, or text that is non-blank once suggested-prompts markup is removed.
+ */
+export function hasVisibleMessageBlocks(blocks: readonly ContentBlock[]): boolean {
+  return parseSuggestedPromptsFromContentBlocks(blocks).contentBlocks.some(
+    (block) => block.type !== 'text' || Boolean((block.text || block.content || '').trim()),
+  );
+}
 
 export function resolveFinishReasonNotice(message?: AgentMessage): FinishReasonNotice | undefined {
   switch (message?.metadata?.finishReason) {
@@ -102,25 +123,31 @@ export function resolveFinishReasonNotice(message?: AgentMessage): FinishReasonN
     case 'max_tokens':
     case 'max_turn_requests':
       return { kind: 'max-tokens' };
+    case 'cancelled':
+      if (message.metadata?.interrupted === true) return undefined;
+      return hasVisibleMessageBlocks(message.contentBlocks ?? [])
+        ? undefined
+        : { kind: 'cancelled-empty' };
     default:
       return undefined;
   }
 }
 
 /**
- * Agent Q&A wizard-only rendering: true when the blocks contain at least one
- * question resource block and NOTHING else that would render in the
- * transcript (text blocks that are empty or suggested-prompts-only count as
- * nothing). ChatMessage suppresses the whole assistant bubble for such turns
- * — the composer-slot QuestionWizard is the sole rendering surface.
+ * Composer-slot-only rendering: true when the blocks contain at least one
+ * question or secret-request resource block and NOTHING else that would
+ * render in the transcript (text blocks that are empty or
+ * suggested-prompts-only count as nothing). ChatMessage suppresses the whole
+ * assistant bubble for such turns — the composer-slot QuestionWizard and
+ * secret-request cards are the sole rendering surfaces.
  */
 export function isQuestionOnlyContent(blocks: readonly ContentBlock[]): boolean {
   if (blocks.length === 0) return false;
   const parsedBlocks = parseSuggestedPromptsFromContentBlocks(blocks).contentBlocks;
-  let hasQuestion = false;
+  let hasSlotBlock = false;
   for (const block of parsedBlocks) {
-    if (isQuestionResourceBlock(block)) {
-      hasQuestion = true;
+    if (isQuestionResourceBlock(block) || isSecretRequestResourceBlock(block)) {
+      hasSlotBlock = true;
       continue;
     }
     if (block.type === 'text') {
@@ -129,5 +156,5 @@ export function isQuestionOnlyContent(blocks: readonly ContentBlock[]): boolean 
     }
     return false;
   }
-  return hasQuestion;
+  return hasSlotBlock;
 }

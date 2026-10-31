@@ -23,6 +23,7 @@ import type { BrowserWindow } from 'electron';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import { Logger } from '../../../shared/logger';
 import { isHudWindow, isTrackedHudWindow } from '../../../main/hud-window';
+import { isOffscreenWindow } from '../../../main/offscreen-window';
 
 const logger = new Logger('HardwareConsoleOwner');
 
@@ -138,8 +139,12 @@ export function setupConsoleOwnerTracking(): ConsoleOwnerTracker<BrowserWindow> 
   const tracker = new ConsoleOwnerTracker<BrowserWindow>(
     (win) => isHudWindow(win) || isTrackedHudWindow(win),
   );
-  app.on('browser-window-created', (_event, window) => tracker.registerWindow(window));
-  app.on('browser-window-focus', (_event, window) => tracker.handleFocus(window));
+  app.on('browser-window-created', (_event, window) => {
+    if (!isOffscreenWindow(window)) tracker.registerWindow(window);
+  });
+  app.on('browser-window-focus', (_event, window) => {
+    if (!isOffscreenWindow(window)) tracker.handleFocus(window);
+  });
   ipcMain.handle(GET_OWNER_STATUS_CHANNEL, (event) => ({
     isOwner: tracker.isOwnerWebContentsId(event.sender.id),
   }));

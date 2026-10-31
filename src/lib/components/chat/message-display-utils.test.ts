@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentMessage, ContentBlock } from '$shared/types';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
+import { SECRET_REQUEST_RESOURCE_MIME_TYPE } from '$shared/types/secret-request-resource';
 import {
   isQuestionOnlyContent,
   resolveFinishReasonNotice,
@@ -218,6 +219,35 @@ describe('resolveFinishReasonNotice', () => {
   it('returns undefined for a normal end_turn completion', () => {
     expect(resolveFinishReasonNotice(finished('end_turn'))).toBeUndefined();
   });
+
+  // A provider `cancelled` the daemon did not request (e.g. a late cancel from
+  // a preempted turn) leaves an empty marker row. Without a notice the user's
+  // message looks silently ignored.
+  it('resolves cancelled-empty for an output-free cancelled row', () => {
+    const row = assistant({ contentBlocks: [], metadata: { finishReason: 'cancelled' } });
+    expect(resolveFinishReasonNotice(row)).toEqual({ kind: 'cancelled-empty' });
+  });
+
+  it('treats whitespace-only text as output-free for cancelled rows', () => {
+    const row = assistant({
+      contentBlocks: [{ type: 'text', text: '  ' }],
+      metadata: { finishReason: 'cancelled' },
+    });
+    expect(resolveFinishReasonNotice(row)).toEqual({ kind: 'cancelled-empty' });
+  });
+
+  it('returns undefined for a cancelled row that has visible content', () => {
+    const row = assistant({ metadata: { finishReason: 'cancelled' } });
+    expect(resolveFinishReasonNotice(row)).toBeUndefined();
+  });
+
+  it('returns undefined for a cancelled row the user stopped (Stopped badge owns it)', () => {
+    const row = assistant({
+      contentBlocks: [],
+      metadata: { finishReason: 'cancelled', interrupted: true },
+    });
+    expect(resolveFinishReasonNotice(row)).toBeUndefined();
+  });
 });
 
 // Agent Q&A wizard-only rendering: a turn whose only content is question
@@ -285,6 +315,22 @@ describe('isQuestionOnlyContent', () => {
   it('false for empty content and for content with no question blocks', () => {
     expect(isQuestionOnlyContent([])).toBe(false);
     expect(isQuestionOnlyContent([{ type: 'text', text: 'hello' } as ContentBlock])).toBe(false);
+  });
+
+  it('true for secret-request cards alone or with questions (composer-slot surfaces)', () => {
+    const secret = {
+      type: 'resource',
+      resource: {
+        uri: 'intent-secret-request://sec-1',
+        mimeType: SECRET_REQUEST_RESOURCE_MIME_TYPE,
+        text: '{"requestId":"sec-1","agentId":"a","name":"KEY","reason":"r"}',
+      },
+    } as unknown as ContentBlock;
+    expect(isQuestionOnlyContent([secret])).toBe(true);
+    expect(isQuestionOnlyContent([question(), secret])).toBe(true);
+    expect(
+      isQuestionOnlyContent([{ type: 'text', text: 'Need a key' } as ContentBlock, secret]),
+    ).toBe(false);
   });
 
   it('true for a malformed question-MIME block (missing uri/text) — the MIME-only strip must still suppress it', () => {

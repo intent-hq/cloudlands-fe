@@ -1128,8 +1128,10 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
   const stopReason = typeof data?.stopReason === 'string' ? data.stopReason : undefined;
   // Optional abnormal finish reason (PROTOCOL §7.3): the turn-worker terminal
   // emit carries `finishReason` when the turn completed with a non-`end_turn`
-  // ACP stop reason (`refusal` | `max_tokens` | `max_turn_requests`); absent
-  // on normal completions. The same value is persisted on the assistant row
+  // ACP stop reason (`refusal` | `max_tokens` | `max_turn_requests`, or
+  // `cancelled` when the provider cancelled a turn the daemon never asked to
+  // cancel and its one silent redrive did not recover it); absent on normal
+  // completions. The same value is persisted on the assistant row
   // as `metadata.finishReason`, so stamping it here just makes the notice
   // render live without waiting for a reconcile.
   const finishReason = typeof data?.finishReason === 'string' ? data.finishReason : undefined;
@@ -1797,6 +1799,37 @@ function handleQueueProcessingEvent(event: WorkspaceEvent): void {
     observeSubmissionEvidence(agentId, event.workspaceId, 'processing', rows as QueuedMessage[]);
     appStore.dispatch(chatQueueProcessingReceived(agentId, turnId, rows as QueuedMessage[]));
   } else appStore.dispatch(chatQueueProcessingReceived(agentId, turnId));
+  openDrainedTurn(event, agentId);
+}
+
+/**
+ * Mark a queue-drained prompt turn live as soon as it starts. Such a turn emits
+ * no `agent:stream:start` (PROTOCOL §6.6), and an end-of-turn drain arrives
+ * right after the previous turn's `agent:stream:end` cleared the busy flags,
+ * with no `agent:status-changed` running edge in between. Without this the
+ * drained user row renders with no Thinking indicator until the turn's first
+ * `agent:stream:activity` ping opens liveness, which happens only on the model's
+ * first output.
+ *
+ * Open the same sticky `liveTurnOpen` bit that the running status fold and
+ * that first ping set, stamped with this frame's daemon timestamp. The
+ * chat-subscribe snapshot guard reads that timestamp: an old-turn terminal
+ * snapshot that lands after the drain predates it and cannot close the new
+ * turn. This is daemon-owned evidence, not a local send, so nothing here
+ * touches the send-path bookkeeping (`chatSendStarted`, the Thinking timer).
+ * `agent:idle`, `agent:failed` and the turn's own terminal close it as usual.
+ * Idempotent, so replayed or re-admitted frames are harmless.
+ */
+function openDrainedTurn(event: WorkspaceEvent, agentId: string): void {
+  const eventTimestamp = (event as { timestamp?: unknown }).timestamp;
+  withHydratedSession(agentId, event.workspaceId, () => {
+    appStore.dispatch(
+      updateSession(agentId, {
+        liveTurnOpen: true,
+        ...(typeof eventTimestamp === 'string' ? { liveTurnOpenedAt: eventTimestamp } : {}),
+      }),
+    );
+  });
 }
 
 /**
