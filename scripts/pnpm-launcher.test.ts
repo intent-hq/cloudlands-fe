@@ -97,6 +97,40 @@ describe('pnpm-launcher', () => {
     expect(invocation).toEqual({ executable: 'pnpm', args: ['exec', 'tsc'], shell: false });
   });
 
+  it('ignores an npm_execpath that points at npm under pnpm exec', () => {
+    const invocation = pnpmInvocation(['exec', 'tsc'], {
+      env: { ...PNPM_ENV, npm_execpath: '/usr/lib/node_modules/npm/bin/npm-cli.js' },
+      platform: 'linux',
+      execPath: '/node',
+    });
+    expect(invocation).toEqual({ executable: 'pnpm', args: ['exec', 'tsc'], shell: false });
+  });
+
+  it('ignores a Windows npm_execpath that points at npm', () => {
+    const invocation = pnpmInvocation(['exec', 'tsc'], {
+      env: {
+        ...PNPM_ENV,
+        npm_execpath: 'C:\\Program Files\\nodejs\\node_modules\\npm\\bin\\npm-cli.js',
+      },
+      platform: 'win32',
+      execPath: 'C:\\node\\node.exe',
+    });
+    expect(invocation).toEqual({ executable: 'pnpm', args: ['^"exec^"', '^"tsc^"'], shell: true });
+  });
+
+  it('accepts a pnpm entry whose directory is not named after pnpm', () => {
+    const invocation = pnpmInvocation(['exec', 'tsc'], {
+      env: { ...PNPM_ENV, npm_execpath: 'C:\\tools\\bin\\PNPM.mjs' },
+      platform: 'win32',
+      execPath: 'node.exe',
+    });
+    expect(invocation).toEqual({
+      executable: 'node.exe',
+      args: ['C:\\tools\\bin\\PNPM.mjs', 'exec', 'tsc'],
+      shell: false,
+    });
+  });
+
   it('ignores an npm_execpath that node cannot run directly', () => {
     const invocation = pnpmInvocation(['exec', 'tsc'], {
       env: { ...PNPM_ENV, npm_execpath: '/usr/local/bin/pnpm' },
