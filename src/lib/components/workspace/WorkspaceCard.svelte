@@ -56,6 +56,8 @@
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectReviewMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import { constructPrUrl } from '$lib/components/workspace/sidebar/sidebar-changes-utils';
+  import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
+  import PlainFolderLabel from './PlainFolderLabel.svelte';
   import {
     buildWorkspacePRPresentationModel,
     type WorkspacePRPresentationRow,
@@ -423,8 +425,10 @@
       updatedAt: workspace.updatedAt,
     };
   });
+  // Plain folders have no branch, PRs or transfer.
+  const plainFolder = $derived(isPlainFolderWorkspace(workspace));
   const workspacePrRows = $derived.by(() => {
-    if (!workspace) return [];
+    if (!workspace || plainFolder) return [];
     const ws = workspace;
     const workspaceRepo =
       ws.repositoryOwner && ws.repositoryName
@@ -648,17 +652,18 @@
 
     if ($hidesOwnerActions$) return items;
 
-    items.push({
-      id: 'transfer',
-      label: m.workspace_card_transfer_label(),
-      icon: faRightLeft,
-      onClick: () => {
-        appStore.dispatch(
-          openTransferModal({ workspaceId: workspace.id, workspaceTitle: workspace.title }),
-        );
-        closeContextMenu();
-      },
-    });
+    if (!plainFolder)
+      items.push({
+        id: 'transfer',
+        label: m.workspace_card_transfer_label(),
+        icon: faRightLeft,
+        onClick: () => {
+          appStore.dispatch(
+            openTransferModal({ workspaceId: workspace.id, workspaceTitle: workspace.title }),
+          );
+          closeContextMenu();
+        },
+      });
 
     items.push({
       id: 'archive',
@@ -698,8 +703,9 @@
         stats.pr.hasOpen ||
         stats.pr.hasMerged),
   );
+  let headerBranch = $derived(plainFolder ? undefined : _branch);
   let statusPrLabel = $derived.by(() => {
-    if (!stats) return '';
+    if (!stats || plainFolder) return '';
     if (stats.pr.hasMerged)
       return m.workspace_card_prMerged_label({ number: stats.pr.number ?? '' });
     if (stats.pr.hasOpen)
@@ -876,6 +882,10 @@
         >
           {trailingLabel}
         </span>
+      {/if}
+
+      {#if plainFolder}
+        <PlainFolderLabel />
       {/if}
 
       {#if primaryPr}
@@ -1107,11 +1117,11 @@
     {#if _title}
       <div class="text-sm font-semibold truncate">{_title}</div>
     {/if}
-    {#if _repoName || _branch}
+    {#if _repoName || headerBranch}
       <div class="flex items-center gap-1 truncate text-xs text-muted-foreground">
         {#if _repoName}<span class="truncate">{_repoName}</span>{/if}
-        {#if _repoName && _branch}<span class="text-muted-foreground">·</span>{/if}
-        {#if _branch}<span class="truncate">{_branch}</span>{/if}
+        {#if _repoName && headerBranch}<span class="text-muted-foreground">·</span>{/if}
+        {#if headerBranch}<span class="truncate">{headerBranch}</span>{/if}
       </div>
     {/if}
     <div class="flex items-center gap-2 text-xs">

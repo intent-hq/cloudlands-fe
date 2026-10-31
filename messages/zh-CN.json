@@ -2594,6 +2594,8 @@
   "workspace_plainFolder_gitRepoNotice_label": "此文件夹属于 Git 仓库 {repo}，因此工作区将使用 Git。",
   "workspace_plainFolder_initializeGit_description": "关闭后将在没有版本控制的普通文件夹中工作。",
   "workspace_plainFolder_initializeGit_label": "初始化为 Git 仓库",
+  "workspace_plainFolder_label": "普通文件夹",
+  "workspace_plainFolder_label_tooltip": "无 git：代理会直接编辑这些文件，没有版本控制，也无法撤销。",
   "workspace_purge_menu_label": "清除工作区文件夹",
   "workspace_purge_confirm_title": "清除“{title}”的文件夹？",
   "workspace_purge_confirm_description": "将从磁盘删除该工作区的文件夹以释放空间，包括未提交的更改和未跟踪的文件。对话、笔记、任务和 git 分支会保留。之后取消归档时，将从全新的检出开始。",

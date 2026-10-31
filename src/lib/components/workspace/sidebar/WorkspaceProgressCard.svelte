@@ -28,6 +28,8 @@
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import CheckoutModePill from '$lib/components/workspace/CheckoutModePill.svelte';
+  import PlainFolderLabel from '$lib/components/workspace/PlainFolderLabel.svelte';
+  import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
   import Button from '$lib/components/ui/button/button.svelte';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
@@ -121,6 +123,8 @@
   const sidebarSide$ = selectSidebarSide();
   const notes = selectAllNotes(workspaceIdStore);
   const workspace = selectWorkspaceById(workspaceIdStore);
+  // Plain folders have no branch, git workflow actions or transfer.
+  const plainFolder = $derived(isPlainFolderWorkspace($workspace));
   // Owner-only actions (Transfer/Download, Archive, Delete) are refused by the
   // daemon for collaborators (`require_owner`), so the menu hides them up front.
   const hidesOwnerActions$ = selectHidesOwnerWorkspaceActions(workspaceIdStore);
@@ -437,7 +441,7 @@
   );
 
   const transferAction: MenuAction | null = $derived(
-    $workspace && !$hidesOwnerActions$
+    $workspace && !plainFolder && !$hidesOwnerActions$
       ? {
           id: 'transfer-workspace',
           label: m.workspace_card_transfer_label(),
@@ -733,7 +737,9 @@
   // require onAcceptChanges are hidden when no handler is provided. The
   // `view-pr` action is intentionally not rendered here: the Changes launcher's
   // PR dropdown (SidebarPrDropdown) is the single PR surface in the sidebar.
-  const displayAction = $derived($progressActions$.find((action) => action.url || onAcceptChanges));
+  const displayAction = $derived(
+    plainFolder ? undefined : $progressActions$.find((action) => action.url || onAcceptChanges),
+  );
   const workflowAction = $derived(displayAction?.id === 'view-pr' ? undefined : displayAction);
 </script>
 
@@ -890,7 +896,7 @@
           contentContainerClass="p-0! space-y-0!"
           showArrow={false}
           interactive
-          class={`h-5 min-w-0 cursor-copy items-center overflow-hidden border-none bg-transparent p-0 text-left font-inherit text-muted-foreground outline-none hover:underline focus:outline-none focus-visible:outline-none ${$workspace?.branch ? 'shrink' : 'flex-1'}`}
+          class={`h-5 min-w-0 cursor-copy items-center overflow-hidden border-none bg-transparent p-0 text-left font-inherit text-muted-foreground outline-none hover:underline focus:outline-none focus-visible:outline-none ${$workspace?.branch || plainFolder ? 'shrink' : 'flex-1'}`}
           bind:open={repoTooltipOpen}
           onOpenChange={handleRepoTooltipOpenChange}
           disableCloseOnTriggerClick
@@ -946,7 +952,9 @@
             </div>
           {/snippet}
         </TooltipRich>
-        {#if $workspace?.branch}
+        {#if plainFolder}
+          <PlainFolderLabel />
+        {:else if $workspace?.branch}
           <TooltipRich
             side="bottom"
             align="start"

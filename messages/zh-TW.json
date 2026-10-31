@@ -2594,6 +2594,8 @@
   "workspace_plainFolder_gitRepoNotice_label": "此資料夾屬於 Git 儲存庫 {repo}，因此工作區將使用 Git。",
   "workspace_plainFolder_initializeGit_description": "關閉後將在沒有版本控制的一般資料夾中工作。",
   "workspace_plainFolder_initializeGit_label": "初始化為 Git 儲存庫",
+  "workspace_plainFolder_label": "一般資料夾",
+  "workspace_plainFolder_label_tooltip": "無 git：代理程式會直接編輯這些檔案，沒有版本控制，也無法復原。",
   "workspace_purge_menu_label": "清除工作區資料夾",
   "workspace_purge_confirm_title": "要清除「{title}」的資料夾嗎？",
   "workspace_purge_confirm_description": "將從磁碟刪除此工作區的資料夾以釋放空間，包括未提交的變更與未追蹤的檔案。對話、筆記、工作與 git 分支會保留。之後取消封存時，將從全新的簽出開始。",

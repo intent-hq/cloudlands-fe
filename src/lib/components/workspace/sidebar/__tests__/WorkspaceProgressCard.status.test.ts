@@ -1317,3 +1317,61 @@ describe('WorkspaceProgressCard primary browser client', () => {
     },
   );
 });
+
+describe('WorkspaceProgressCard plain-folder workspaces', () => {
+  beforeEach(() => {
+    mocks.dispatch.mockClear();
+    mocks.notes.length = 0;
+    mocks.progressActions.length = 0;
+    mocks.progressActions.push({
+      id: 'merge-pr',
+      label: 'Merge PR',
+      iconKey: 'code-pull-request',
+      url: 'https://github.com/augment/intent/pull/7',
+    });
+    mocks.storeState.browserClients = browserClientsInitialState;
+    mocks.storeState.userPreferences = undefined;
+    mocks.role.hidesOwnerActions = false;
+  });
+
+  it('hides the branch, git workflow action and Transfer, and shows the Plain folder label', async () => {
+    const { container } = await renderProgressCard({
+      plainFolder: true,
+      branch: '',
+      baseRef: undefined,
+      repositoryOwner: undefined,
+      repositoryName: undefined,
+      repositoryPath: '/Users/me/Documents/Notes',
+    });
+
+    expect(container.querySelector('[data-sidebar-branch-control]')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Merge PR' })).toBeNull();
+    expect(container.querySelector('[data-plain-folder-label]')?.textContent?.trim()).toBe(
+      'Plain folder',
+    );
+    expect(screen.getByRole('button', { name: 'Notes' })).toBeTruthy();
+
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+    expect(screen.queryByRole('button', { name: 'Transfer/Download…' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Archive Workspace' })).toBeTruthy();
+  });
+
+  it('keeps the branch, git workflow action and Transfer for a git workspace', async () => {
+    const { container } = await renderProgressCard({
+      plainFolder: undefined,
+      branch: 'feature/status',
+      repositoryOwner: 'augment',
+      repositoryName: 'intent',
+      repositoryPath: undefined,
+    });
+
+    expect(container.querySelector('[data-sidebar-branch-control]')?.textContent).toContain(
+      'feature/status',
+    );
+    expect(screen.getByRole('button', { name: 'Merge PR' })).toBeTruthy();
+    expect(container.querySelector('[data-plain-folder-label]')).toBeNull();
+
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+    expect(screen.getByRole('button', { name: 'Transfer/Download…' })).toBeTruthy();
+  });
+});

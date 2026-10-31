@@ -2594,6 +2594,8 @@
   "workspace_plainFolder_gitRepoNotice_label": "This folder belongs to the git repository {repo}, so the workspace uses git.",
   "workspace_plainFolder_initializeGit_description": "Turn off to work in a plain folder without version control.",
   "workspace_plainFolder_initializeGit_label": "Initialize as git repository",
+  "workspace_plainFolder_label": "Plain folder",
+  "workspace_plainFolder_label_tooltip": "No git: agents edit these files in place, with no version control or undo.",
   "workspace_purge_menu_label": "Purge workspace folder",
   "workspace_purge_confirm_title": "Purge the folder of “{title}”?",
   "workspace_purge_confirm_description": "This deletes the workspace's folder on disk to free space, including uncommitted changes and untracked files. Conversations, notes, tasks and the git branch are kept. Unarchiving it later starts from a fresh checkout.",

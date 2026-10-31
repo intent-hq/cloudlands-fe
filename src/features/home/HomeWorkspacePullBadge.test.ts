@@ -171,3 +171,27 @@ describe('Home workspace PR status', () => {
     expect(view.getByText('Queued')).toBeTruthy();
   });
 });
+
+describe('Home workspace row badge for plain-folder workspaces', () => {
+  it('shows the Plain folder label instead of a PR badge', () => {
+    const view = render(HomeWorkspacePullBadge, {
+      workspace: workspace({ plainFolder: true, branch: '' }),
+    });
+    expect(view.queryByText('Open')).toBeNull();
+    expect(view.getByText('Plain folder')).toBeTruthy();
+  });
+
+  it('keeps the PR badge and no label for a git workspace', () => {
+    const view = render(HomeWorkspacePullBadge, { workspace: workspace() });
+    expect(view.getByText('Open')).toBeTruthy();
+    expect(view.queryByText('Plain folder')).toBeNull();
+  });
+
+  it('carries plainFolder from the workspace wire row', async () => {
+    vi.spyOn(backendTransport, 'backendRequest').mockResolvedValue({
+      workspaces: [workspace({ plainFolder: true, branch: '' })],
+    });
+    const rows = await new LiveWorkspacesClient().list();
+    expect(rows.map((row) => row.plainFolder)).toEqual([true]);
+  });
+});

@@ -2594,6 +2594,8 @@
   "workspace_plainFolder_gitRepoNotice_label": "Esta carpeta pertenece al repositorio de Git {repo}, así que el espacio de trabajo usa Git.",
   "workspace_plainFolder_initializeGit_description": "Desactívalo para trabajar en una carpeta simple sin control de versiones.",
   "workspace_plainFolder_initializeGit_label": "Inicializar como repositorio de Git",
+  "workspace_plainFolder_label": "Carpeta simple",
+  "workspace_plainFolder_label_tooltip": "Sin git: los agentes editan estos archivos directamente, sin control de versiones ni deshacer.",
   "workspace_purge_menu_label": "Purgar la carpeta del espacio de trabajo",
   "workspace_purge_confirm_title": "¿Purgar la carpeta de «{title}»?",
   "workspace_purge_confirm_description": "Se elimina del disco la carpeta del espacio de trabajo para liberar espacio, incluidos los cambios sin confirmar y los archivos sin seguimiento. Se conservan las conversaciones, notas, tareas y la rama de git. Al desarchivarlo, se empezará desde una copia de trabajo nueva.",

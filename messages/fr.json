@@ -2594,6 +2594,8 @@
   "workspace_plainFolder_gitRepoNotice_label": "Ce dossier appartient au dépôt Git {repo} ; l'espace de travail utilise donc Git.",
   "workspace_plainFolder_initializeGit_description": "Désactivez pour travailler dans un dossier simple sans gestion de versions.",
   "workspace_plainFolder_initializeGit_label": "Initialiser comme dépôt Git",
+  "workspace_plainFolder_label": "Dossier simple",
+  "workspace_plainFolder_label_tooltip": "Sans git : les agents modifient ces fichiers sur place, sans gestion de versions ni annulation.",
   "workspace_purge_menu_label": "Purger le dossier de l'espace de travail",
   "workspace_purge_confirm_title": "Purger le dossier de « {title} » ?",
   "workspace_purge_confirm_description": "Le dossier de l'espace de travail est supprimé du disque pour libérer de l'espace, y compris les modifications non validées et les fichiers non suivis. Les conversations, notes, tâches et la branche git sont conservées. Le désarchiver repartira d'une copie de travail neuve.",

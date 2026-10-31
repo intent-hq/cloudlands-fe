@@ -35,6 +35,7 @@
   import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import WorkspaceStatusIcon from './WorkspaceStatusIcon.svelte';
   import { constructPrUrl } from './sidebar/sidebar-changes-utils';
+  import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
   import {
     buildWorkspacePRPresentationModel,
     type WorkspacePRPresentationRow,
@@ -297,7 +298,8 @@
     );
   });
   let workspacePrRows = $derived.by(() => {
-    if (!workspace) return [];
+    // Plain folders have no PRs.
+    if (!workspace || isPlainFolderWorkspace(workspace)) return [];
     const workspaceRepo =
       workspace.repositoryOwner && workspace.repositoryName
         ? `${workspace.repositoryOwner}/${workspace.repositoryName}`

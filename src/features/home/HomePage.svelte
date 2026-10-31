@@ -89,6 +89,7 @@
   import HomeWorkspaceBoard from './HomeWorkspaceBoard.svelte';
   import { groupHomeWorkspacesByStatus } from './home-workspace-status-groups';
   import HomeWorkspacePullBadge from './HomeWorkspacePullBadge.svelte';
+  import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
   import GitHubIcon from '$lib/components/icons/GitHubIcon.svelte';
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
   import ResizablePanel from '$lib/components/layout/ResizablePanel.svelte';
@@ -905,8 +906,9 @@
                             {@const displayTitle = item.title.trim()
                               ? item.title
                               : m.workspace_links_untitled_label()}
-                            {@const pullRequestCount =
-                              item.pullRequestsTotal ?? item.pullRequests?.length ?? 0}
+                            {@const pullRequestCount = isPlainFolderWorkspace(item)
+                              ? 0
+                              : (item.pullRequestsTotal ?? item.pullRequests?.length ?? 0)}
                             <ListRow
                               class="home-list-row h-12 items-center border-b border-border px-3 py-1"
                               data-home-workspace={item.id}

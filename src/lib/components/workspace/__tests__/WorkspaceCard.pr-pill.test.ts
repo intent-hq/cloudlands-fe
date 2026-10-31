@@ -423,3 +423,24 @@ describe('WorkspaceCard PR items', () => {
     expect(workspaceCardSource).not.toContain('wc-pr-list wc-secondary');
   });
 });
+
+describe('WorkspaceCard plain-folder workspaces', () => {
+  it('shows the Plain folder label and no PR badge for a plain-folder workspace', () => {
+    const workspace = makeWorkspaceWithPr({ plainFolder: true, branch: '' });
+    mocks.monitors.push(makeMonitor({ workspaceId: workspace.id }));
+
+    const { container } = render(WorkspaceCard, { props: { workspace } });
+
+    expect(container.querySelector('[data-workspace-card-pr-list]')).toBeNull();
+    expect(container.querySelector('[data-plain-folder-label]')?.textContent?.trim()).toBe(
+      'Plain folder',
+    );
+  });
+
+  it('keeps the PR badge and no label for a git workspace', () => {
+    const { container } = render(WorkspaceCard, { props: { workspace: makeWorkspaceWithPr() } });
+
+    expect(container.querySelector('[data-workspace-card-pr-list]')).toBeTruthy();
+    expect(container.querySelector('[data-plain-folder-label]')).toBeNull();
+  });
+});

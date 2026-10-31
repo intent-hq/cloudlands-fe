@@ -6,6 +6,7 @@
  */
 import type { CreateWorkspaceRequest, Workspace } from '$shared/types';
 import { protocolVersionAtLeast, type ProtocolVersion } from '$shared/protocol-version';
+import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
 
 /** First daemon protocol that accepts `workspace.create { plainFolder: true }`. */
 const PLAIN_FOLDER_MIN_PROTOCOL = { major: 15, minor: 3 } as const;
@@ -30,7 +31,7 @@ export function supportsPlainFolderCreate(version: ProtocolVersion | null | unde
 
 /** Any existing workspace that is not a plain folder counts as a git workspace. */
 export function hasGitWorkspace(workspaces: readonly Pick<Workspace, 'plainFolder'>[]): boolean {
-  return workspaces.some((workspace) => workspace.plainFolder !== true);
+  return workspaces.some((workspace) => !isPlainFolderWorkspace(workspace));
 }
 
 export interface InitializeGitDefaultInput {

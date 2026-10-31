@@ -558,3 +558,56 @@ describe('WorkspaceSidebarHeader status message', () => {
     expect(screen.getByRole('button', { name: 'Move sidebar to right' })).toBeTruthy();
   });
 });
+
+describe('WorkspaceSidebarHeader plain-folder workspaces', () => {
+  beforeEach(() => {
+    mocks.dispatch.mockClear();
+    mocks.role.hidesOwnerActions = false;
+  });
+
+  async function openMenu() {
+    await fireEvent.keyDown(screen.getByRole('button', { name: 'Workspace actions' }), {
+      key: 'Enter',
+    });
+    await screen.findByRole('menu');
+  }
+
+  it('hides the branch and Transfer and shows the Plain folder label', async () => {
+    const { container } = await renderHeader({
+      plainFolder: true,
+      branch: '',
+      repositoryOwner: undefined,
+      repositoryName: undefined,
+      repositoryPath: '/Users/me/Documents/Notes',
+    });
+
+    expect(container.querySelector('[data-sidebar-branch-metadata]')).toBeNull();
+    expect(screen.queryByText('No branch')).toBeNull();
+    expect(container.querySelector('[data-plain-folder-label]')?.textContent?.trim()).toBe(
+      'Plain folder',
+    );
+    expect(screen.getByText('Notes')).toBeTruthy();
+
+    await openMenu();
+    expect(screen.queryByRole('button', { name: 'Transfer/Download…' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Delete Workspace…' })).toBeTruthy();
+  });
+
+  it('keeps the branch and Transfer for a git workspace without the label', async () => {
+    const { container } = await renderHeader();
+
+    expect(container.querySelector('[data-sidebar-branch-metadata]')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'feature/status' })).toBeTruthy();
+    expect(container.querySelector('[data-plain-folder-label]')).toBeNull();
+
+    await openMenu();
+    expect(screen.getByRole('button', { name: 'Transfer/Download…' })).toBeTruthy();
+  });
+
+  it('treats an empty branch without the flag as a git workspace', async () => {
+    const { container } = await renderHeader({ branch: '' });
+
+    expect(container.querySelector('[data-sidebar-branch-metadata]')).toBeTruthy();
+    expect(container.querySelector('[data-plain-folder-label]')).toBeNull();
+  });
+});

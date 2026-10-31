@@ -2594,6 +2594,8 @@
   "workspace_plainFolder_gitRepoNotice_label": "このフォルダーは Git リポジトリ {repo} に属しているため、ワークスペースは Git を使用します。",
   "workspace_plainFolder_initializeGit_description": "オフにすると、バージョン管理なしのプレーンフォルダーで作業します。",
   "workspace_plainFolder_initializeGit_label": "Git リポジトリとして初期化",
+  "workspace_plainFolder_label": "通常フォルダー",
+  "workspace_plainFolder_label_tooltip": "Git なし: エージェントはこれらのファイルを直接編集します。バージョン管理や元に戻す機能はありません。",
   "workspace_purge_menu_label": "ワークスペースフォルダーを削除",
   "workspace_purge_confirm_title": "「{title}」のフォルダーを削除しますか？",
   "workspace_purge_confirm_description": "空き容量を確保するため、ワークスペースのフォルダーをディスクから削除します。コミットされていない変更や追跡されていないファイルも削除されます。会話、ノート、タスク、git ブランチは保持されます。後でアーカイブを解除すると、新しいチェックアウトから始まります。",

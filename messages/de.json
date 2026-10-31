@@ -2594,6 +2594,8 @@
   "workspace_plainFolder_gitRepoNotice_label": "Dieser Ordner gehört zum Git-Repository {repo}, daher verwendet der Arbeitsbereich Git.",
   "workspace_plainFolder_initializeGit_description": "Ausschalten, um in einem einfachen Ordner ohne Versionskontrolle zu arbeiten.",
   "workspace_plainFolder_initializeGit_label": "Als Git-Repository initialisieren",
+  "workspace_plainFolder_label": "Einfacher Ordner",
+  "workspace_plainFolder_label_tooltip": "Kein Git: Agenten bearbeiten diese Dateien direkt, ohne Versionskontrolle und ohne Rückgängig.",
   "workspace_purge_menu_label": "Arbeitsbereichsordner bereinigen",
   "workspace_purge_confirm_title": "Ordner von „{title}“ bereinigen?",
   "workspace_purge_confirm_description": "Der Ordner des Arbeitsbereichs wird von der Festplatte gelöscht, um Speicherplatz freizugeben, einschließlich nicht committeter Änderungen und nicht verfolgter Dateien. Unterhaltungen, Notizen, Aufgaben und der Git-Branch bleiben erhalten. Beim späteren Wiederherstellen aus dem Archiv wird ein frischer Checkout verwendet.",
