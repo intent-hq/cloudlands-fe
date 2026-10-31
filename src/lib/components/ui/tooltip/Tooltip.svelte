@@ -60,7 +60,7 @@
 
   // Keep the ID on the rendered node; the floating layer drops it (intent#5201).
   const contentId = $props.id();
-  const triggerId = `${contentId}-trigger`;
+  let triggerRef = $state<HTMLElement | null>(null);
   const tether = TooltipPrimitive.createTether();
 
   // Variant styles
@@ -121,10 +121,10 @@
   function openForKeyboardFocusedTrigger() {
     if (!content || open) return;
     const focused = document.activeElement;
-    const trigger = document.getElementById(triggerId);
-    if (!(focused instanceof HTMLElement) || !trigger?.contains(focused)) return;
+    const trigger = triggerRef;
+    if (!trigger?.id || !(focused instanceof HTMLElement) || !trigger.contains(focused)) return;
     if (!focused.matches(':focus-visible')) return;
-    tether.open(triggerId);
+    tether.open(trigger.id);
   }
 </script>
 
@@ -140,7 +140,7 @@
     {tether}
   >
     <TooltipPrimitive.Trigger
-      id={triggerId}
+      bind:ref={triggerRef}
       class={cn('inline-flex', className)}
       {disabled}
       {onclick}
