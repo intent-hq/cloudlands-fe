@@ -10,10 +10,6 @@
  * `providers:check-single`) is bridged to real daemon probes in
  * `provider-status-bridge-seeder.ts` — this module no longer seeds fake
  * provider status.
- *
- * `agent:get-active-streams` is bridged to real daemon data in
- * `active-streams-bridge-seeder.ts` via the cross-workspace `agent.listActive`
- * RPC, which is registered via the seeder barrel before agents-seeder runs.
  */
 import { registerMockSeeder } from '../mock-bootstrap';
 import type { AgentSession } from '$shared/types';

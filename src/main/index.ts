@@ -314,7 +314,7 @@ import { setupDroidIPC } from '../features/droid/main/droid.ipc';
 import { setupGrokIPC } from '../features/grok/main/grok.ipc';
 import { setupUnslothIPC } from '../features/unsloth/main/unsloth.ipc';
 import { setupAntigravityIPC } from '../features/antigravity/main/antigravity.ipc';
-import { setupFeatureCodesIPC } from '../features/feature-codes/main/feature-codes.ipc';
+import { featureCodesService } from '../features/feature-codes/main/feature-codes.service';
 import { setupProviderAvailabilityIPC } from '../features/providers/main/provider-availability.service';
 import { setupConfigIPC, getConfigManager } from '../features/config/main/config.ipc';
 
@@ -1561,11 +1561,12 @@ const bootFlow = app.whenReady().then(async () => {
   setupGrokIPC(); // Needed for grok:get-models
   setupUnslothIPC(); // Needed for unsloth:get-models
   setupAntigravityIPC(); // Needed for antigravity:get-models
-  // Feature codes for gating experimental features; registers handlers after an
-  // async service init, so it is not awaited on the startup critical path.
-  setupFeatureCodesIPC().catch((error: unknown) =>
-    logger.error('Failed to set up feature codes IPC:', error as Error),
-  );
+  // Feature codes gate experimental providers in provider availability. The
+  // service init is async, so it is not awaited on the startup critical path.
+  // (The feature-codes:* channels are answered by the renderer bridge seeder.)
+  featureCodesService
+    .init()
+    .catch((error: unknown) => logger.error('Failed to initialize feature codes:', error as Error));
   setupProviderAvailabilityIPC(); // Needed for providers:get-availability
   setupEventsIPC(); // Needed for events:query
   registerSetupScriptsHandlers(); // Needed for onboarding setup scripts
