@@ -11,7 +11,6 @@
   import Fa from 'svelte-fa';
   import {
     faExternalLink,
-    faChevronRight,
     faTrash,
     faArrowUpRightFromSquare,
   } from '@fortawesome/free-solid-svg-icons';
@@ -24,6 +23,7 @@
   } from '$lib/components/ui/sidebar-context-menu/types';
   import { m } from '$shared/paraglide/messages.js';
   import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
+  import DisclosureIcon from '$lib/components/icons/DisclosureIcon.svelte';
 
   interface Props {
     item: ContextItem;
@@ -198,7 +198,7 @@
     </div>
 
     {#if item.type === 'note'}
-      <Fa icon={faChevronRight} size="xs" class="text-muted-foreground" />
+      <DisclosureIcon expanded={false} />
     {/if}
   </Button>
 
