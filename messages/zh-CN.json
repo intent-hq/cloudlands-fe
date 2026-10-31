@@ -7740,6 +7740,7 @@
   "workspace_transfer_notTransferred_message": "事件历史、终端会话和服务器设置将保留在源端，不会被传输。",
   "workspace_transfer_ofEstimate_label": "/ {bytes}",
   "workspace_transfer_openTarget_label": "打开 {label}",
+  "workspace_transfer_openTargetFailed_message": "已转移，但无法打开 {label}。请在设置 → 计算机中打开。",
   "workspace_transfer_phase_committing": "正在目标端导入…",
   "workspace_transfer_phase_downloading": "正在下载归档…",
   "workspace_transfer_phase_relaying": "正在传输归档…",

@@ -833,6 +833,28 @@ export async function openOrFocusWindowsForBackend(backendId: string): Promise<v
   }
 }
 
+/**
+ * Show `workspaceId` in `backendId`'s app window: queue an `open` deep link
+ * for it (drained by that window's deep-links saga once its daemon has
+ * admitted it, so a just-restored window still picks it up) and bring the
+ * window to the front. Call after the backend's window was opened or focused
+ * (see `openOrFocusWindowsForBackend`). Returns false when no app window is
+ * bound to the backend.
+ */
+export function showWorkspaceInBackendWindow(backendId: string, workspaceId: string): boolean {
+  const window = findAppWindowForBackend(backendId);
+  if (!window) {
+    logger.warn('No window for backend to show workspace in', { backendId, workspaceId });
+    return false;
+  }
+  queueDeepLinkForWindow(window, { type: 'open', params: { id: workspaceId } });
+  if (window.isMinimized()) window.restore();
+  window.show();
+  window.focus();
+  setMainWindow(window);
+  return true;
+}
+
 /** Ensure closing one backend cannot destroy the app's final live window. */
 export async function ensureLocalWindowBeforeClosingBackend(backendId: string): Promise<void> {
   const liveWindows = getAppWindows().filter((window) => !window.isDestroyed());

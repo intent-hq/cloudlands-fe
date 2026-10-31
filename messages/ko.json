@@ -7740,6 +7740,7 @@
   "workspace_transfer_notTransferred_message": "이벤트 기록, 터미널 세션, 서버 설정은 원본에 남으며 전송되지 않습니다.",
   "workspace_transfer_ofEstimate_label": "/ {bytes}",
   "workspace_transfer_openTarget_label": "{label} 열기",
+  "workspace_transfer_openTargetFailed_message": "전송했지만 {label}을(를) 열 수 없습니다. 설정 → 컴퓨터에서 여세요.",
   "workspace_transfer_phase_committing": "대상에서 가져오는 중…",
   "workspace_transfer_phase_downloading": "아카이브 다운로드 중…",
   "workspace_transfer_phase_relaying": "아카이브 전송 중…",
