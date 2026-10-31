@@ -92,7 +92,7 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('ProviderProfileAddDialog', () => {
-  it('Different login: requests the folder setup with the previewed suffix, then shows the sign-in', async () => {
+  it('Different login: requests the folder setup, then closes and hands the wait to the row once the terminal opens', async () => {
     await seed();
     await openDialog('claude');
     await fireEvent.click(screen.getByTestId('provider-profile-kind-differentLogin'));
@@ -103,7 +103,11 @@ describe('ProviderProfileAddDialog', () => {
     await fireEvent.click(
       screen.getByRole('button', { name: m.settings_providerProfileKinds_createAndSignIn_label() }),
     );
-    const { providerProfileFolderSetupRequested, providerProfileSetupChanged } = await slice();
+    const {
+      providerProfileFolderSetupRequested,
+      providerProfileSetupChanged,
+      providerProfileSetupDismissed,
+    } = await slice();
     const request = lastOf(providerProfileFolderSetupRequested.type)!;
     const [{ setupId, provider, name, backup, suffix }] = request.payload;
     expect({ provider, name, backup }).toEqual({
@@ -113,30 +117,30 @@ describe('ProviderProfileAddDialog', () => {
     });
     expect(preview.endsWith(`-${suffix}`)).toBe(true);
 
-    await dispatch(providerProfileSetupChanged(setupId, { phase: 'waiting', deviceAuth: false }));
-    expect(screen.getByTestId('provider-profile-sign-in-status').dataset.status).toBe('waiting');
-
+    // Saved, terminal still opening: the dialog stays (errors would show here).
     await dispatch(
-      providerProfileSetupChanged(setupId, { phase: 'signedIn', email: 'work@acme.com' }),
+      providerProfileSetupChanged(setupId, { phase: 'openingTerminal', profileId: 'p1' }),
     );
-    expect(
-      screen.getByText(
-        m.settings_providerProfileKinds_signedInAs_label({ email: 'work@acme.com' }),
-      ),
-    ).toBeTruthy();
-    expect(mocks.notify.success).toHaveBeenCalledTimes(1);
-    expect(mocks.notify.success).toHaveBeenCalledWith(
-      m.settings_providerProfiles_created_label({ name: 'Work account' }),
-      { description: m.settings_providerProfileKinds_signedInAs_label({ email: 'work@acme.com' }) },
+    expect(screen.getByTestId('provider-profile-kind-details')).toBeTruthy();
+
+    await dispatch(providerProfileSetupChanged(setupId, { phase: 'waiting', deviceAuth: false }));
+    await waitFor(() => expect(screen.queryByTestId('provider-profile-kind-details')).toBeNull());
+    const { selectProviderProfileSetups } =
+      await import('$store/renderer/slices/provider-settings/provider-settings-selectors');
+    expect(selectProviderProfileSetups.select(mocks.state.current as never)[setupId]).toMatchObject(
+      { phase: 'waiting', onRow: true, profileId: 'p1' },
     );
+    expect(lastOf(providerProfileSetupDismissed.type)).toBeUndefined();
+    expect(mocks.notify.success).not.toHaveBeenCalled();
   });
 
-  it('Codex on a remote daemon shows the device-code instructions; Still waiting offers Try again', async () => {
+  it('a terminal that fails to open keeps the error in the dialog with Try again', async () => {
     await seed([], 'remote-tcp');
     await openDialog('codex');
     expect(screen.queryByTestId('provider-profile-kind-apiKey')).toBeNull();
     await fireEvent.click(screen.getByTestId('provider-profile-kind-differentLogin'));
     await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'Work' } });
+    expect(screen.getByText('codex login --device-auth')).toBeTruthy();
     await fireEvent.click(
       screen.getByRole('button', { name: m.settings_providerProfileKinds_createAndSignIn_label() }),
     );
@@ -146,13 +150,16 @@ describe('ProviderProfileAddDialog', () => {
       providerProfileSignInRetryRequested,
     } = await slice();
     const [{ setupId }] = lastOf(providerProfileFolderSetupRequested.type)!.payload;
-    await dispatch(providerProfileSetupChanged(setupId, { phase: 'waiting', deviceAuth: true }));
-    expect(
-      screen.getByText(m.settings_providerProfileKinds_waitingDeviceAuth_description()),
-    ).toBeTruthy();
-    expect(screen.getByText('codex login --device-auth')).toBeTruthy();
-
-    await dispatch(providerProfileSetupChanged(setupId, { phase: 'stillWaiting' }));
+    await dispatch(
+      providerProfileSetupChanged(setupId, {
+        phase: 'failed',
+        profileId: 'p1',
+        failure: { kind: 'terminalFailed' },
+      }),
+    );
+    expect(screen.getByTestId('provider-profile-setup-error').textContent).toContain(
+      m.settings_providerProfileKinds_terminalFailed_error(),
+    );
     await fireEvent.click(
       screen.getByRole('button', { name: m.settings_providerProfileKinds_tryAgain_label() }),
     );
@@ -316,7 +323,7 @@ describe('ProviderProfileAddDialog', () => {
     });
   });
 
-  it('closing the dialog dismisses its setup (the profile stays saved)', async () => {
+  it('closing the dialog before the terminal opens dismisses its setup (the profile stays saved)', async () => {
     await seed();
     const view = await openDialog('claude');
     await fireEvent.click(screen.getByTestId('provider-profile-kind-differentLogin'));
@@ -330,7 +337,7 @@ describe('ProviderProfileAddDialog', () => {
       providerProfileSetupChanged,
     } = await slice();
     const [{ setupId }] = lastOf(providerProfileFolderSetupRequested.type)!.payload;
-    await dispatch(providerProfileSetupChanged(setupId, { phase: 'waiting' }));
+    await dispatch(providerProfileSetupChanged(setupId, { phase: 'openingTerminal' }));
     await view.rerender({ open: false });
     await waitFor(() =>
       expect(lastOf(providerProfileSetupDismissed.type)?.payload).toEqual([setupId]),

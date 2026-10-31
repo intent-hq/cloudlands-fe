@@ -12,7 +12,13 @@ const mocks = vi.hoisted(() => ({
   reducers: {} as Record<string, (state: unknown, action: unknown) => unknown>,
   dispatched: [] as Array<{ type: string; payload: unknown }>,
   emit: { current: () => {} },
-  notify: { success: vi.fn(), warning: vi.fn(), error: vi.fn() },
+  notify: {
+    success: vi.fn(),
+    warning: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+    dismiss: vi.fn(),
+  },
   confirm: vi.fn(),
 }));
 
@@ -1244,25 +1250,158 @@ describe('ProviderProfiles row Log In, identity and delete confirmation', () => 
     expect(logInItem(await openActions())).toBeNull();
   });
 
-  it('shows Waiting for sign-in while the row sign-in runs, then rechecks after a timeout', async () => {
-    await renderRows([CODEX_FOLDER], 'codex');
+  async function startRowLogIn() {
     await fireEvent.click(logInItem(await openActions())!);
     const setupId = (
       lastOf('providerProfiles/savedFolderSignInRequested')!.payload as [{ setupId: string }]
     )[0].setupId;
-    const { providerProfileSetupChanged } =
-      await import('$store/renderer/slices/provider-settings/provider-settings-slice');
-    await dispatchStore(providerProfileSetupChanged(setupId, { phase: 'waiting' }));
+    const slice = await import('$store/renderer/slices/provider-settings/provider-settings-slice');
+    return { setupId, ...slice };
+  }
+
+  it('shows Waiting for sign-in on the row and keeps the device-code steps in a toast', async () => {
+    await renderRows([CODEX_FOLDER], 'codex');
+    const { setupId, providerProfileSetupChanged } = await startRowLogIn();
+    await dispatchStore(
+      providerProfileSetupChanged(setupId, {
+        phase: 'waiting',
+        profileId: 'pwork',
+        deviceAuth: true,
+      }),
+    );
     const row = screen.getByTestId('provider-profile-row');
     await waitFor(() =>
       expect(within(row).getByText(m.settings_providerProfileKinds_waiting_label())).toBeTruthy(),
     );
+    expect(mocks.notify.info).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.info).toHaveBeenCalledWith(
+      m.settings_providerProfileKinds_waiting_label(),
+      expect.objectContaining({
+        description: m.settings_providerProfileKinds_waitingDeviceAuth_description(),
+        duration: Number.POSITIVE_INFINITY,
+      }),
+    );
+  });
+
+  it('toasts Signed in as <email> for Claude and clears the waiting toast', async () => {
+    await renderRows([CLAUDE_FOLDER], 'claude-code');
+    const { setupId, providerProfileSetupChanged } = await startRowLogIn();
+    await dispatchStore(providerProfileSetupChanged(setupId, { phase: 'waiting' }));
+    await waitFor(() => expect(mocks.notify.info).toHaveBeenCalledTimes(1));
+    const waitKey = mocks.notify.info.mock.calls[0][1].key;
+    mocks.dispatched.length = 0;
+    await dispatchStore(
+      providerProfileSetupChanged(setupId, { phase: 'signedIn', email: 'work@acme.com' }),
+    );
+    await waitFor(() =>
+      expect(mocks.notify.success).toHaveBeenCalledWith(
+        m.settings_providerProfileKinds_signedInAs_label({ email: 'work@acme.com' }),
+        { description: 'Work' },
+      ),
+    );
+    expect(mocks.notify.dismiss).toHaveBeenCalledWith(waitKey);
+    expect(lastOf('providerProfiles/setupDismissed')?.payload).toEqual([setupId]);
+    expect(
+      within(screen.getByTestId('provider-profile-row')).queryByText(
+        m.settings_providerProfileKinds_waiting_label(),
+      ),
+    ).toBeNull();
+  });
+
+  it('toasts plain Signed in for Codex', async () => {
+    await renderRows([CODEX_FOLDER], 'codex');
+    const { setupId, providerProfileSetupChanged } = await startRowLogIn();
+    await dispatchStore(providerProfileSetupChanged(setupId, { phase: 'signedIn' }));
+    await waitFor(() =>
+      expect(mocks.notify.success).toHaveBeenCalledWith(
+        m.settings_providerProfileKinds_signedIn_label(),
+        { description: 'Work' },
+      ),
+    );
+  });
+
+  it('after 10 minutes stops waiting, rechecks, and toasts Try again that reopens the sign-in', async () => {
+    await renderRows([CODEX_FOLDER], 'codex');
+    const { setupId, providerProfileSetupChanged } = await startRowLogIn();
+    await dispatchStore(providerProfileSetupChanged(setupId, { phase: 'waiting' }));
     mocks.dispatched.length = 0;
     await dispatchStore(providerProfileSetupChanged(setupId, { phase: 'stillWaiting' }));
     await waitFor(() =>
       expect(lastOf('providerProfiles/checkRequested')?.payload).toEqual(['pwork']),
     );
     expect(lastOf('providerProfiles/setupDismissed')?.payload).toEqual([setupId]);
+    expect(mocks.notify.warning).toHaveBeenCalledTimes(1);
+    const [title, options] = mocks.notify.warning.mock.calls[0];
+    expect(title).toBe(m.settings_providerProfileKinds_stillWaiting_label());
+    expect(options.description).toBe(
+      m.settings_providerProfileKinds_stillWaitingProfile_description({ name: 'Work' }),
+    );
+    expect(options.action.label).toBe(m.settings_providerProfileKinds_tryAgain_label());
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId('provider-profile-row')).queryByText(
+          m.settings_providerProfileKinds_waiting_label(),
+        ),
+      ).toBeNull(),
+    );
+
+    mocks.dispatched.length = 0;
+    options.action.onClick();
+    expect(lastOf('providerProfiles/savedFolderSignInRequested')?.payload).toEqual([
+      { setupId, profileId: 'pwork' },
+    ]);
+  });
+
+  it('tracks a Create & sign in handed over by the add dialog the same way', async () => {
+    await renderRows([CLAUDE_FOLDER], 'claude-code');
+    const { providerProfileSetupChanged } =
+      await import('$store/renderer/slices/provider-settings/provider-settings-slice');
+    await dispatchStore(
+      providerProfileSetupChanged('add-setup-1', {
+        phase: 'waiting',
+        profileId: 'pclaude',
+        onRow: true,
+      }),
+    );
+    const row = screen.getByTestId('provider-profile-row');
+    await waitFor(() =>
+      expect(within(row).getByText(m.settings_providerProfileKinds_waiting_label())).toBeTruthy(),
+    );
+    await dispatchStore(
+      providerProfileSetupChanged('add-setup-1', { phase: 'signedIn', email: 'work@acme.com' }),
+    );
+    await waitFor(() =>
+      expect(mocks.notify.success).toHaveBeenCalledWith(
+        m.settings_providerProfileKinds_signedInAs_label({ email: 'work@acme.com' }),
+        { description: 'Work' },
+      ),
+    );
+    expect(lastOf('providerProfiles/setupDismissed')?.payload).toEqual(['add-setup-1']);
+  });
+
+  it('ignores an add-dialog setup that was not handed over', async () => {
+    await renderRows([CLAUDE_FOLDER], 'claude-code');
+    const { providerProfileSetupChanged } =
+      await import('$store/renderer/slices/provider-settings/provider-settings-slice');
+    await dispatchStore(
+      providerProfileSetupChanged('add-setup-2', {
+        phase: 'openingTerminal',
+        profileId: 'pclaude',
+      }),
+    );
+    await dispatchStore(
+      providerProfileSetupChanged('add-setup-2', {
+        phase: 'failed',
+        failure: { kind: 'terminalFailed' },
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mocks.notify.error).not.toHaveBeenCalled();
+    expect(
+      within(screen.getByTestId('provider-profile-row')).queryByText(
+        m.settings_providerProfileKinds_waiting_label(),
+      ),
+    ).toBeNull();
   });
 
   it('reports a folder that could not be created', async () => {

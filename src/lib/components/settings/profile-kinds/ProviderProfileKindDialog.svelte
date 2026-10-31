@@ -5,8 +5,13 @@
    * shows that kind's screen. Edit opens straight on the screen for `kind`.
    *
    * Every callback is optional: without one, the mock-up advances its own
-   * local state (e.g. Create & sign in shows "Waiting for sign-in…") so the
-   * sandbox is clickable. Wiring passes real handlers and drives `signIn`.
+   * local state so the sandbox is clickable. Wiring passes real handlers and
+   * drives `signIn` (the key check).
+   *
+   * Different login: Create & sign in (and edit's Log In) close the dialog
+   * once the bottom terminal opens, so the terminal can be used; the profile
+   * row shows "Waiting for sign-in…" and toasts the outcome. Failures before
+   * the terminal opens stay here (`setupError`) with Try again.
    *
    * Claude API key and Token (both providers) save a secret and then run the
    * key check ("Key works" / "Key was rejected"); Advanced reuses today's env
@@ -87,10 +92,12 @@
     envRows?: EnvRow[];
     /** Advanced: field errors keyed like today's dialog (`<rowId>.key`, `env`, …). */
     envErrors?: Record<string, string>;
+    /** Different login create; the parent closes the dialog once the terminal opens. */
     onCreateAndSignIn?: () => void;
     /** API key / Token create (the parent then drives `signIn` through the key check). */
     onCreate?: () => void;
     onSave?: () => void;
+    /** Edit Different login: sign in to the saved folder (the parent closes the dialog). */
     onSignIn?: () => void;
     onRetry?: () => void;
     onSwitchToAdvanced?: () => void;
@@ -229,9 +236,10 @@
     return true;
   }
 
-  function startWaiting() {
+  /** Mock terminal sign-in: the dialog closes so the bottom terminal can be used. */
+  function closeForSignIn() {
     setupError = undefined;
-    signIn = { status: 'waiting', deviceAuth: provider === 'codex' && remoteDaemon };
+    open = false;
   }
 
   function pick(next: ProfileKindChoice) {
@@ -261,19 +269,19 @@
       return;
     }
     if (onCreateAndSignIn) onCreateAndSignIn();
-    else startWaiting();
+    else closeForSignIn();
   }
 
   function signInFromEdit() {
     if (onSignIn) onSignIn();
-    else startWaiting();
+    else closeForSignIn();
   }
 
   function retry() {
     if (secretKind && !validateSecret()) return;
     if (onRetry) onRetry();
     else if (secretKind) startKeyCheck();
-    else startWaiting();
+    else closeForSignIn();
   }
 
   /** Name and backup are bound state, so the unsaved values carry over. */
@@ -286,19 +294,11 @@
     kind = 'advanced';
   }
 
-  /** Footer once the add flow has started a sign-in (or failed after saving). */
+  /** Footer once the add flow has saved (key check result, or a sign-in failure). */
   const startedFooter = $derived.by((): { retry: boolean; done: boolean } => {
-    if (setupError) return { retry: true, done: false };
-    switch (signIn.status) {
-      case 'stillWaiting':
-      case 'keyRejected':
-        return { retry: true, done: false };
-      case 'signedIn':
-      case 'keyWorks':
-        return { retry: false, done: true };
-      default:
-        return { retry: false, done: false };
-    }
+    if (setupError || signIn.status === 'keyRejected') return { retry: true, done: false };
+    if (signIn.status === 'keyWorks') return { retry: false, done: true };
+    return { retry: false, done: false };
   });
 </script>
 
@@ -354,7 +354,7 @@
           {mode}
           {folderPath}
           {command}
-          disabled={fieldsDisabled || signIn.status === 'waiting'}
+          disabled={fieldsDisabled}
           {started}
           onSignIn={signInFromEdit}
         />
@@ -393,7 +393,7 @@
         </p>
       {/if}
 
-      <ProfileSignInStatus {provider} state={signIn} {command} />
+      <ProfileSignInStatus state={signIn} />
 
       {#if envErrors.general}
         <p class="type-body text-danger" role="alert">{envErrors.general}</p>

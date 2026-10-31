@@ -15,7 +15,11 @@
    *
    * A Different-login profile (its folder variable readable, so not an older
    * daemon's masked read) has ⋯ → Log In: the terminal sign-in on the folder
-   * saved on that profile, tracked as a setup until it settles. Claude rows
+   * saved on that profile, tracked as a setup until it settles. The add
+   * dialog's Create & sign in and the edit dialog's sign-in close their dialog
+   * and land on the same tracking: the row shows "Waiting for sign-in…" and
+   * toasts the waiting instructions (kept open for Codex device auth),
+   * "Signed in", or after 10 minutes "Still waiting?" with Try again. Claude rows
    * show "Signed in as <email>" from the last check's `identity`. Removing a
    * Different-login profile names the folder that stays on disk.
    */
@@ -40,11 +44,15 @@
   } from '$lib/components/patterns/settings/custom-controls';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import type { ProviderProfile } from '$shared/provider-profiles';
-  import type { ProviderProfileStatus } from '$store/renderer/slices/provider-settings/provider-settings-types';
+  import type {
+    ProviderProfileSetup,
+    ProviderProfileStatus,
+  } from '$store/renderer/slices/provider-settings/provider-settings-types';
   import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
   import { describeInUse, runningProcessesNotice } from '$features/settings/profile-env-form';
   import { detectProfileKind, savedFolderPath } from '$lib/provider-profile-kinds';
   import { onDestroy } from 'svelte';
+  import { get } from 'svelte/store';
   import { store as appStore } from '$store/renderer/store';
   import {
     providerProfileActivationDismissed,
@@ -150,35 +158,96 @@
     return savedFolderPath(kindProvider, profile.env);
   }
 
-  // Row ⋯ → Log In runs as a setup keyed by profile (one per row at a time).
+  // Row ⋯ → Log In runs as a setup keyed by profile (one per row at a time);
+  // the add dialog hands its Create & sign in setup over (`onRow`) once the
+  // terminal opens. Both are tracked here the same way.
   const LOG_IN_PREFIX = `profile-row-log-in:${providerId}:`;
   const logInSetupId = (profileId: string) => `${LOG_IN_PREFIX}${profileId}`;
-  const signingIn = (profileId: string) => {
-    const phase = $setups$[logInSetupId(profileId)]?.phase;
-    return phase === 'openingTerminal' || phase === 'waiting';
-  };
+  const waitToastKey = (setupId: string) => `provider-profile-sign-in:${setupId}`;
+  /** The profile a row-tracked setup signs in, or undefined when not this list's. */
+  function rowSetupProfileId(
+    setup: ProviderProfileSetup,
+    profileIds: ReadonlySet<string>,
+  ): string | undefined {
+    if (setup.id.startsWith(LOG_IN_PREFIX)) return setup.id.slice(LOG_IN_PREFIX.length);
+    if (setup.onRow === true && setup.profileId && profileIds.has(setup.profileId))
+      return setup.profileId;
+    return undefined;
+  }
+  const rowSetups = $derived.by(() => {
+    const ids = new Set($profiles$.map((profile) => profile.id));
+    return Object.values($setups$).flatMap((setup) => {
+      const profileId = rowSetupProfileId(setup, ids);
+      return profileId ? [{ setup, profileId }] : [];
+    });
+  });
+  const signingIn = (profileId: string) =>
+    rowSetups.some(
+      (row) =>
+        row.profileId === profileId &&
+        (row.setup.phase === 'openingTerminal' || row.setup.phase === 'waiting'),
+    );
+  /** Setups whose waiting toast is showing (so it shows once per wait). */
+  const waitToasted = new Set<string>();
+
+  function stopTracking(setupId: string) {
+    appStore.dispatch(providerProfileSetupDismissed(setupId));
+    if (waitToasted.delete(setupId)) notify.dismiss(waitToastKey(setupId));
+  }
 
   function logIn(profile: ProviderProfile) {
-    const setupId = logInSetupId(profile.id);
     // A second Log In restarts the sign-in (stops the previous wait first).
-    appStore.dispatch(providerProfileSetupDismissed(setupId));
+    for (const row of rowSetups) if (row.profileId === profile.id) stopTracking(row.setup.id);
+    const setupId = logInSetupId(profile.id);
+    stopTracking(setupId);
     appStore.dispatch(
       providerProfileSavedFolderSignInRequested({ setupId, profileId: profile.id }),
     );
   }
 
   $effect(() => {
-    for (const setup of Object.values($setups$)) {
-      if (!setup.id.startsWith(LOG_IN_PREFIX)) continue;
-      const profileId = setup.id.slice(LOG_IN_PREFIX.length);
-      if (setup.phase === 'signedIn') {
+    for (const { setup, profileId } of rowSetups) {
+      const profile = $profiles$.find((item) => item.id === profileId);
+      if (setup.phase === 'waiting') {
+        if (waitToasted.has(setup.id)) continue;
+        waitToasted.add(setup.id);
+        // Codex device auth needs its instructions (turn on device code login)
+        // for the whole wait; the browser hint can fade.
+        notify.info(m.settings_providerProfileKinds_waiting_label(), {
+          key: waitToastKey(setup.id),
+          description: setup.deviceAuth
+            ? m.settings_providerProfileKinds_waitingDeviceAuth_description()
+            : m.settings_providerProfileKinds_waitingBrowser_description(),
+          ...(setup.deviceAuth ? { duration: Number.POSITIVE_INFINITY } : {}),
+        });
+      } else if (setup.phase === 'signedIn') {
         // The sign-in wait already marked the profile Ready with its account.
-        appStore.dispatch(providerProfileSetupDismissed(setup.id));
+        stopTracking(setup.id);
+        notify.success(
+          kindProvider === 'claude' && setup.email
+            ? m.settings_providerProfileKinds_signedInAs_label({ email: setup.email })
+            : m.settings_providerProfileKinds_signedIn_label(),
+          profile ? { description: profile.name } : undefined,
+        );
       } else if (setup.phase === 'stillWaiting') {
-        appStore.dispatch(providerProfileSetupDismissed(setup.id));
+        stopTracking(setup.id);
         appStore.dispatch(providerProfileCheckRequested(profileId));
+        notify.warning(m.settings_providerProfileKinds_stillWaiting_label(), {
+          description: m.settings_providerProfileKinds_stillWaitingProfile_description({
+            name: profile?.name ?? '',
+          }),
+          duration: Number.POSITIVE_INFINITY,
+          ...(profile
+            ? {
+                action: {
+                  label: m.settings_providerProfileKinds_tryAgain_label(),
+                  onClick: () => logIn(profile),
+                },
+              }
+            : {}),
+        });
       } else if (setup.phase === 'failed') {
-        appStore.dispatch(providerProfileSetupDismissed(setup.id));
+        stopTracking(setup.id);
         const failure = setup.failure;
         notify.error(
           failure?.kind === 'folderFailed' && failure.path
@@ -190,9 +259,10 @@
   });
 
   onDestroy(() => {
-    // Leaving Settings stops this row's sign-in waits; the next list rechecks.
-    for (const id of Object.keys(selectProviderProfileSetups.select(appStore.state)))
-      if (id.startsWith(LOG_IN_PREFIX)) appStore.dispatch(providerProfileSetupDismissed(id));
+    // Leaving Settings stops this list's sign-in waits; the next list rechecks.
+    const ids = new Set(get(profiles$).map((profile) => profile.id));
+    for (const setup of Object.values(selectProviderProfileSetups.select(appStore.state)))
+      if (rowSetupProfileId(setup, ids)) stopTracking(setup.id);
   });
   let reorderRequests = $state<string[]>([]);
 
@@ -709,11 +779,13 @@
 {#if editing && kindProvider}
   <!-- Claude Code and Codex: the matching kind screen (Advanced when nothing matches). -->
   {#key editing.id}
+    {@const editedProfile = editing}
     <ProviderProfileEditDialog
       bind:open={dialogOpen}
       {providerName}
       provider={kindProvider}
-      profile={editing}
+      profile={editedProfile}
+      onLogIn={() => logIn(editedProfile)}
     />
   {/key}
 {:else}

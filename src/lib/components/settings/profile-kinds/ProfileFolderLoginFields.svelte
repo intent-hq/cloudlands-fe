@@ -19,7 +19,7 @@
     /** The plain command Create & sign in runs (add mode). */
     command: string;
     disabled?: boolean;
-    /** Add mode after Create & sign in: the status panel shows the command instead. */
+    /** Add mode after the profile was saved (a sign-in failure with Try again). */
     started?: boolean;
     /** Edit mode sign-in action (Log In, or Sign in with ChatGPT for Codex). */
     onSignIn?: () => void;

@@ -114,7 +114,11 @@ const CODEX_TOKEN = profileOf('codex', [
   { key: 'OPENAI_API_KEY', kind: 'unset' },
 ]);
 
-async function openEdit(profile: ProviderProfile, transportMode = 'sidecar-uds') {
+async function openEdit(
+  profile: ProviderProfile,
+  transportMode = 'sidecar-uds',
+  onLogIn?: () => void,
+) {
   await seed([profile], transportMode);
   const provider = profile.baseProviderId === 'codex' ? 'codex' : 'claude';
   const { default: Dialog } = await import('./ProviderProfileEditDialog.svelte');
@@ -125,6 +129,7 @@ async function openEdit(profile: ProviderProfile, transportMode = 'sidecar-uds')
       provider,
       providerName: provider === 'codex' ? 'Codex' : 'Claude Code',
       profile,
+      ...(onLogIn ? { onLogIn } : {}),
     },
   });
   return screen.getByTestId('provider-profile-kind-details');
@@ -303,25 +308,17 @@ describe('ProviderProfileEditDialog: saving', () => {
     ).toBeTruthy();
   });
 
-  it('Sign in on Different login signs in to the saved folder', async () => {
-    await openEdit(CLAUDE_FOLDER);
+  it('Log In on Different login closes the dialog and runs the row Log In', async () => {
+    const onLogIn = vi.fn();
+    await openEdit(CLAUDE_FOLDER, 'sidecar-uds', onLogIn);
     await fireEvent.click(
       screen.getByRole('button', { name: m.settings_providerProfileKinds_logIn_label() }),
     );
-    const { providerProfileSavedFolderSignInRequested, providerProfileSetupChanged } =
-      await slice();
-    const [{ setupId, profileId }] = lastOf(
-      providerProfileSavedFolderSignInRequested.type,
-    )!.payload;
-    expect(profileId).toBe('p1');
-    await dispatch(
-      providerProfileSetupChanged(setupId, { phase: 'signedIn', email: 'work@acme.com' }),
-    );
-    expect(
-      screen.getByText(
-        m.settings_providerProfileKinds_signedInAs_label({ email: 'work@acme.com' }),
-      ),
-    ).toBeTruthy();
+    expect(onLogIn).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.queryByTestId('provider-profile-kind-details')).toBeNull());
+    const { providerProfileSavedFolderSignInRequested } = await slice();
+    // The row starts the sign-in (one tracking path for row and edit).
+    expect(lastOf(providerProfileSavedFolderSignInRequested.type)).toBeUndefined();
   });
 });
 

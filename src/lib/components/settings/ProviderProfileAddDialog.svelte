@@ -5,14 +5,18 @@
    * Token / Advanced) wired to the store.
    *
    * - Different login: `providerProfileFolderSetupRequested` (folder pick,
-   *   save, folder, terminal sign-in, wait); "Try again" reopens the sign-in.
+   *   save, folder, terminal sign-in). Once the bottom terminal opens the
+   *   dialog closes and hands the wait to the profile row (`onRow`), which
+   *   shows "Waiting for sign-in…" and toasts the outcome. A folder or
+   *   terminal failure stays here with "Try again".
    * - API key / Token: `providerProfileSecretSetupRequested` (save, key
    *   check); after "Key was rejected" a pasted replacement is saved and
    *   checked again.
    * - Advanced: today's create (`providerProfileCreateRequested`).
    *
    * Save failures land on the name field or as a general error, and the form
-   * can be resubmitted. Closing the dialog stops the wait; the profile stays.
+   * can be resubmitted. Closing the dialog earlier stops the setup; the
+   * profile stays.
    */
   import { untrack } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -40,6 +44,7 @@
     providerProfileMutationDismissed,
     providerProfileSecretRetryRequested,
     providerProfileSecretSetupRequested,
+    providerProfileSetupChanged,
     providerProfileSetupDismissed,
     providerProfileSignInRetryRequested,
   } from '$store/renderer/slices/provider-settings/provider-settings-slice';
@@ -150,7 +155,8 @@
     };
   }
 
-  // Save failures reopen the form with the errors; success toasts once.
+  // Save failures reopen the form with the errors; the open terminal hands
+  // the sign-in wait to the profile row; "Key works" toasts once.
   $effect(() => {
     const current = setup;
     if (!current) return;
@@ -161,17 +167,16 @@
         setupId = null;
         return;
       }
+      if (current.phase === 'waiting' && current.profileId) {
+        appStore.dispatch(providerProfileSetupChanged(current.id, { onRow: true }));
+        // Forget it before closing so closing does not dismiss the row's wait.
+        setupId = null;
+        open = false;
+        return;
+      }
       const key = `${current.id}:${current.phase}`;
       if (toasted.has(key)) return;
-      if (current.phase === 'signedIn') {
-        toasted.add(key);
-        notify.success(m.settings_providerProfiles_created_label({ name: name.trim() }), {
-          description:
-            provider === 'claude' && current.email
-              ? m.settings_providerProfileKinds_signedInAs_label({ email: current.email })
-              : m.settings_providerProfileKinds_signedIn_label(),
-        });
-      } else if (current.phase === 'keyWorks') {
+      if (current.phase === 'keyWorks') {
         toasted.add(key);
         notify.success(m.settings_providerProfiles_created_label({ name: name.trim() }));
       }
@@ -198,13 +203,6 @@
 
   const signIn = $derived.by((): ProfileSignInState => {
     switch (setup?.phase) {
-      case 'openingTerminal':
-      case 'waiting':
-        return { status: 'waiting', deviceAuth: setup.deviceAuth === true };
-      case 'stillWaiting':
-        return { status: 'stillWaiting' };
-      case 'signedIn':
-        return { status: 'signedIn', ...(setup.email ? { email: setup.email } : {}) };
       case 'checkingKey':
         return { status: 'checkingKey' };
       case 'keyWorks':
@@ -224,7 +222,9 @@
   const advancedPending = $derived(
     advancedRequest !== null && $mutations$[advancedRequest.id]?.status !== 'failure',
   );
-  const busy = $derived(setup?.phase === 'saving' || advancedPending);
+  const busy = $derived(
+    setup?.phase === 'saving' || setup?.phase === 'openingTerminal' || advancedPending,
+  );
 
   function startSetup(): string {
     dismissSetup();

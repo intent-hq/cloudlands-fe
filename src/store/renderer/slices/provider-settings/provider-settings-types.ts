@@ -70,9 +70,10 @@ export type ProviderProfilesState = {
 };
 
 /**
- * Where one add-dialog setup is. Different login: saving → openingTerminal →
- * waiting → signedIn | stillWaiting. API key / Token: saving → checkingKey →
- * keyWorks | keyRejected. `failed` carries why.
+ * Where one setup is. Different login: saving → openingTerminal → waiting →
+ * signedIn | stillWaiting (the dialog closes at `waiting` and the profile row
+ * tracks the rest). API key / Token: saving → checkingKey → keyWorks |
+ * keyRejected. `failed` carries why.
  */
 type ProviderProfileSetupPhase =
   | 'saving'
@@ -104,6 +105,11 @@ export type ProviderProfileSetup = {
   /** Claude identity reported once signed in. */
   email?: string;
   failure?: ProviderProfileSetupFailure;
+  /**
+   * The add dialog closed once the sign-in terminal opened and handed the
+   * wait to the profile row (ProviderProfiles tracks and dismisses it).
+   */
+  onRow?: boolean;
 };
 
 export type ProviderSettingsState = {

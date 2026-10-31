@@ -20,14 +20,12 @@ export type ProfileKindChoice = ProfileKind;
 /** Where the dialog is in the add flow. */
 export type ProfileKindStep = 'pick' | 'details';
 
-/** The terminal sign-in the dialog is waiting on, as shown to the user. */
+/**
+ * The key check the dialog shows after an API key / Token save. A terminal
+ * sign-in is not shown here: the dialog closes and the profile row tracks it.
+ */
 export type ProfileSignInState =
   | { status: 'idle' }
-  /** `deviceAuth`: Codex on a non-sidecar daemon (`codex login --device-auth`). */
-  | { status: 'waiting'; deviceAuth?: boolean }
-  | { status: 'stillWaiting' }
-  /** `email` is the Claude identity; Codex reports none. */
-  | { status: 'signedIn'; email?: string }
   | { status: 'checkingKey' }
   | { status: 'keyWorks' }
   | { status: 'keyRejected' };

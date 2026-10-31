@@ -11,7 +11,9 @@
  *   the plain login command with the folder variable in `env` (never in the
  *   command string) → `host.providerAuthStatus { force: true }` every 2.5 s
  *   until signed in (then the terminal panel hides if it still shows that
- *   terminal) or 10 minutes pass ("Still waiting?").
+ *   terminal) or 10 minutes pass (`stillWaiting`). Once the terminal opens
+ *   the add dialog closes and the profile row tracks the wait and toasts the
+ *   outcome, the same as row ⋯ → Log In.
  * - API key / Token: create, then `host.providerTestPrompt` → "Key works" or
  *   "Key was rejected"; a rejected key can be replaced and checked again.
  * - Edit: a replaced key/token is saved with `providers.profiles.update` and
@@ -77,7 +79,7 @@ const logger = createLogger('ProviderProfileSetupSaga');
 
 /** How often the sign-in wait re-checks the profile (brief: every 2–3 s). */
 export const SIGN_IN_POLL_MS = 2_500;
-/** When the dialog offers "Still waiting? Try again". */
+/** When the row stops waiting and toasts "Still waiting?" with Try again. */
 export const SIGN_IN_TIMEOUT_MS = 10 * 60_000;
 
 export interface ProviderProfileSetupDeps {

@@ -7,9 +7,10 @@
    * older daemon that masks the folder path opens Advanced. A saved key or
    * token reads "Saved ••••" and is sent as `keep` unless replaced; saving a
    * specialized screen re-adds any missing unsets. A replaced key or token is
-   * saved and checked (`providerProfileSecretEditRequested`); the
-   * Different-login screen signs in to the saved folder
-   * (`providerProfileSavedFolderSignInRequested`). Switch to Advanced keeps
+   * saved and checked (`providerProfileSecretEditRequested`). The
+   * Different-login screen's sign-in closes the dialog and runs the row's
+   * ⋯ → Log In (`onLogIn`), so the bottom terminal can be used while the row
+   * waits. Switch to Advanced keeps
    * the unsaved name and backup, and carries a typed key or Custom endpoint
    * into the raw rows.
    */
@@ -41,7 +42,6 @@
   import { store as appStore } from '$store/renderer/store';
   import {
     providerProfileMutationDismissed,
-    providerProfileSavedFolderSignInRequested,
     providerProfileSecretEditRequested,
     providerProfileSetupDismissed,
     providerProfileUpdateRequested,
@@ -53,11 +53,7 @@
   import type { ProviderProfileSetup } from '$store/renderer/slices/provider-settings/provider-settings-types';
   import { selectIsDaemonAppOwned } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import ProviderProfileKindDialog from './profile-kinds/ProviderProfileKindDialog.svelte';
-  import type {
-    BaseUrlAction,
-    ProfileSetupError,
-    ProfileSignInState,
-  } from './profile-kinds/profile-kind-mock';
+  import type { BaseUrlAction, ProfileSignInState } from './profile-kinds/profile-kind-mock';
   import { advancedRowsFromEdit, editEnvChanges, editScreenFacts } from './provider-profile-edit';
 
   interface Props {
@@ -67,6 +63,8 @@
     profile: ProviderProfile;
     /** Render in place instead of as a modal overlay (component previews). */
     static?: boolean;
+    /** Different login: the row's ⋯ → Log In (terminal sign-in tracked on the row). */
+    onLogIn?: () => void;
   }
 
   let {
@@ -75,6 +73,7 @@
     provider,
     profile,
     static: staticPosition = false,
+    onLogIn,
   }: Props = $props();
 
   const setups$ = selectProviderProfileSetups();
@@ -94,7 +93,7 @@
   let errors = $state<Record<string, string>>({});
   /** The saved env this opening was seeded from (Advanced rows and the change warning). */
   let savedEnv = $state<EnvEntryRead[]>([]);
-  /** Key check or saved-folder sign-in this opening drives. */
+  /** Key check this opening drives. */
   let setupId = $state<string | null>(null);
   /** The plain `providers.profiles.update` this opening waits on. */
   let activeRequestId = $state<string | null>(null);
@@ -213,13 +212,6 @@
 
   const signIn = $derived.by((): ProfileSignInState => {
     switch (setup?.phase) {
-      case 'openingTerminal':
-      case 'waiting':
-        return { status: 'waiting', deviceAuth: setup.deviceAuth === true };
-      case 'stillWaiting':
-        return { status: 'stillWaiting' };
-      case 'signedIn':
-        return { status: 'signedIn', ...(setup.email ? { email: setup.email } : {}) };
       case 'checkingKey':
         return { status: 'checkingKey' };
       case 'keyWorks':
@@ -229,12 +221,6 @@
       default:
         return { status: 'idle' };
     }
-  });
-  const setupError = $derived.by((): ProfileSetupError | undefined => {
-    const failure = setup?.phase === 'failed' ? setup.failure : undefined;
-    if (failure?.kind === 'folderFailed') return { kind: 'folderFailed', path: failure.path };
-    if (failure?.kind === 'terminalFailed') return { kind: 'terminalFailed' };
-    return undefined;
   });
   const busy = $derived(
     setup?.phase === 'saving' ||
@@ -313,14 +299,10 @@
     );
   }
 
+  /** Close first so the bottom terminal is usable; the row tracks the sign-in. */
   function signInToSavedFolder() {
-    dismissSetup();
-    errors = {};
-    const id = crypto.randomUUID();
-    setupId = id;
-    appStore.dispatch(
-      providerProfileSavedFolderSignInRequested({ setupId: id, profileId: profile.id }),
-    );
+    open = false;
+    onLogIn?.();
   }
 
   /** Name and backup are shared state; typed secrets carry into the raw rows. */
@@ -361,7 +343,6 @@
   remoteDaemon={!$appOwned$}
   {signIn}
   nameError={errors.name}
-  {setupError}
   {busy}
   bind:secret
   secretSaved={facts.secretSaved}
