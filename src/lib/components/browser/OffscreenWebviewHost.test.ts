@@ -1012,6 +1012,31 @@ describe('OffscreenWebviewHost', () => {
     expect(container.querySelector('[data-offscreen-webview-tab="tab-a"]')).toBe(webviewA);
   });
 
+  // The layer stays lifted while any held tab is mounted here, and drops
+  // back as soon as the last one is released or leaves the host while its
+  // hold is still on (closed, or moved out of the offscreen set).
+  it('lifts the layer until the last mounted held tab is released or leaves', async () => {
+    layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-a' }, { id: 'tab-b' }]) });
+    const { container } = render(OffscreenWebviewHost, {
+      props: { excludedWorkspaceIds: new Set() },
+    });
+    await waitFor(() => expect(mountedTabIds(container).sort()).toEqual(['tab-a', 'tab-b']));
+    const host = container.querySelector('[data-offscreen-webview-host]') as HTMLElement;
+
+    agentDrawingStore.set({ 'tab-a': true, 'tab-b': true });
+    await tick();
+    expect(host.style.opacity).toBe('');
+
+    agentDrawingStore.set({ 'tab-b': true });
+    await tick();
+    expect(host.style.opacity).toBe('');
+
+    // tab-b leaves the host while its hold is still on.
+    layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-a' }]) });
+    await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-a']));
+    expect(host.style.opacity).toBe('0');
+  });
+
   // A hold on a tab this host does not mount (shown in a panel, or not
   // mounted at all) must not lift the layer's opacity: that would only make
   // every idle guest here draw at ~30 fps for nothing.
