@@ -214,6 +214,7 @@ describe('selectAllRequirementsMet — Git not required without a forge (Labs)',
     return {
       hostRequirements: options.hostRequirements ?? noGit,
       userPreferences: { labsPlainFolderWorkspacesEnabled: options.labs ?? true },
+      // fixture-protocol-version: plain-folder creation gate (15.3 accepts plainFolder)
       daemonHealth: { stats: { protocolVersion: parseProtocolVersion('15.3') } },
       githubAuth: {
         isAuthenticated: options.github ?? false,

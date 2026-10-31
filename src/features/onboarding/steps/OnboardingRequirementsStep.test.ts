@@ -224,6 +224,7 @@ describe('OnboardingRequirementsStep', () => {
     function noForgeLabs(options: { github?: boolean } = {}) {
       mocks.daemonHealthStats.value = {
         ...(mocks.daemonHealthStats.value as object),
+        // fixture-protocol-version: plain-folder creation gate (15.3 accepts plainFolder)
         protocolVersion: parseProtocolVersion('15.3'),
       };
       mocks.extraState.value = {

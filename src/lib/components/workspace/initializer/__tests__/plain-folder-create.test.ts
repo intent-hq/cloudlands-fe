@@ -256,6 +256,7 @@ describe('classifyPlainFolderTarget', () => {
 describe('isGitOptionalWithoutForge (Git not required without a forge, Labs)', () => {
   const noForge = {
     labsEnabled: true,
+    // fixture-protocol-version: plain-folder creation gate (15.3 accepts plainFolder)
     protocolVersion: parseProtocolVersion('15.3'),
     githubConnected: false,
     githubSettled: true,
@@ -275,6 +276,7 @@ describe('isGitOptionalWithoutForge (Git not required without a forge, Labs)', (
 
   it('stays required on a daemon that cannot create plain folders', () => {
     expect(
+      // fixture-protocol-version: daemon older than the plain-folder gate
       isGitOptionalWithoutForge({ ...noForge, protocolVersion: parseProtocolVersion('15.2') }),
     ).toBe(false);
     expect(isGitOptionalWithoutForge({ ...noForge, protocolVersion: null })).toBe(false);
