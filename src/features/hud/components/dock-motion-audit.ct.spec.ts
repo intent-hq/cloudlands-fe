@@ -92,7 +92,11 @@ async function stopSampler(page: Page) {
   return page.evaluate(() => {
     const state = (window as any).__motionAudit;
     state.running = false;
-    return { frames: state.frames as Frame[], longTasks: state.longTasks as unknown[] };
+    return {
+      frames: state.frames as Frame[],
+      longTasks: state.longTasks as unknown[],
+      reopeningStart: state.reopeningStart as number | undefined,
+    };
   });
 }
 
@@ -235,7 +239,12 @@ async function audit(
   name: string,
   selector: string,
   run: () => Promise<void>,
-): Promise<ReturnType<typeof summarize> & Record<string, unknown>> {
+  closingEndpoint?: Exclude<Rect, null>,
+): Promise<
+  ReturnType<typeof summarize> & {
+    reopening: ReturnType<typeof summarize> | null;
+  } & Record<string, unknown>
+> {
   const browser = page.context().browser()!;
   await startSampler(page, selector);
   await page.waitForTimeout(100);
@@ -249,11 +258,31 @@ async function audit(
   await run();
   await page.waitForTimeout(400);
   const trace = await browser.stopTracing();
-  const { frames, longTasks } = await stopSampler(page);
+  const { frames, longTasks, reopeningStart } = await stopSampler(page);
   const durations = (longTasks as { duration: number }[]).map((task) => task.duration);
+  const raw = summarize(frames);
+  // A closing shell unmounts at its endpoint, so the final visible-to-visible step
+  // is not its terminal step. Measure the residual to the independent warm origin.
+  const disappeared = closingEndpoint
+    ? frames.findIndex((frame, index) => index > 0 && !frame.rect && !!frames[index - 1].rect)
+    : -1;
+  if (closingEndpoint) expect(disappeared, `${name} disappearance sample`).toBeGreaterThan(0);
+  const terminal =
+    disappeared > 0 && closingEndpoint
+      ? {
+          endStepPx: Math.max(
+            ...closingEndpoint.map((value, index) =>
+              Math.abs(value - frames[disappeared - 1].rect![index]),
+            ),
+          ),
+          endGapMs: frames[disappeared].t - frames[disappeared - 1].t,
+        }
+      : {};
   const stats = {
     name,
-    ...summarize(frames),
+    ...raw,
+    ...terminal,
+    reopening: reopeningStart === undefined ? null : summarize(frames.slice(reopeningStart)),
     longTasks: longTasks.length,
     longTaskMaxMs: Math.round(Math.max(0, ...durations)),
     layouts: layoutsInFrames(trace),
@@ -261,7 +290,10 @@ async function audit(
   };
   const info = test.info();
   const path = info.outputPath(`motion-${PHASE}-${name}.json`);
-  await writeFile(path, JSON.stringify({ stats, frames }, null, 2));
+  await writeFile(
+    path,
+    JSON.stringify({ stats, raw, frames, closingEndpoint, reopeningStart }, null, 2),
+  );
   await info.attach(name, { path, contentType: 'application/json' });
   return stats;
 }
@@ -429,10 +461,16 @@ test('motion audit: edge conversation open, close and interrupted close', async 
     await entry.click();
     await settle(shellBox, 'data-reveal', '1');
   });
-  const close = await audit(page, 'edge-close', SHELL, async () => {
-    await page.keyboard.press('Escape');
-    await expect(shellBox).toHaveCount(0);
-  });
+  const close = await audit(
+    page,
+    'edge-close',
+    SHELL,
+    async () => {
+      await page.keyboard.press('Escape');
+      await expect(shellBox).toHaveCount(0);
+    },
+    [baselineOrigin.x, baselineOrigin.y, baselineOrigin.width, baselineOrigin.height],
+  );
   // Reverse mid-way: reopen while closing and require a continuous path.
   const interruptedOrigin = await warmOrigin();
   await test.info().attach('edge-motion-origins.json', {
@@ -448,21 +486,26 @@ test('motion audit: edge conversation open, close and interrupted close', async 
   await settle(shellBox, 'data-reveal', '1');
   const interrupted = await audit(page, 'edge-interrupted', SHELL, async () => {
     await page.keyboard.press('Escape');
-    // Click in the observed browser frame: Playwright's stability wait can otherwise
-    // consume the entire close, turning this into a second ordinary open.
+    // Click after layout in the observed frame: actionability waits can consume the
+    // close, while clicking inside rAF makes the input handler force layout itself.
     const reversalReveal = await page.evaluate(async () => {
       const deadline = performance.now() + 2000;
       while (performance.now() < deadline) {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
         const shell = document.querySelector('[data-testid="dock-edge-shell"]');
         const reveal = Number(shell?.getAttribute('data-reveal') ?? 0);
         if (reveal <= 0.2) throw new Error('Missed the mid-flight reversal window');
         if (reveal < 0.7) {
           const button = document.querySelector<HTMLButtonElement>('[data-dock-entry]');
           if (!button || button.disabled) throw new Error('Side entry is unavailable');
+          const sampler = (window as any).__motionAudit;
+          if (!sampler.frames.length) throw new Error('Missing pre-reversal motion sample');
+          // Keep the last PRE-click frame, including the boundary to the first post-click
+          // frame: an origin teleport on reversal must remain visible to the assertion.
+          sampler.reopeningStart = sampler.frames.length - 1;
           button.click();
           return reveal;
         }
-        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       }
       throw new Error('Side shell did not start closing');
     });
@@ -477,8 +520,10 @@ test('motion audit: edge conversation open, close and interrupted close', async 
   for (const stats of [open, close]) expectContinuous(stats);
   // The box appears near the start of its reveal, even though mounting the panel is heavy.
   expect(open.firstReveal ?? 0, open.name).toBeLessThanOrEqual(0.35);
-  // Reversing mid-way never moves further in one frame than a plain open or close.
-  expect(interrupted.maxSteadyStepPx, interrupted.name).toBeLessThanOrEqual(
+  // Compare the reopening and its boundary, not differently phased ordinary closing
+  // samples before the click. The full interrupted motion remains in the raw artifact.
+  expect(interrupted.reopening).not.toBeNull();
+  expect(interrupted.reopening!.maxSteadyStepPx, interrupted.name).toBeLessThanOrEqual(
     Math.max(open.maxStepPx, close.maxStepPx) + 1,
   );
   expectNoRailReflow(interrupted);

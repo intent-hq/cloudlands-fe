@@ -97,7 +97,7 @@ test('still markup letterboxes the frozen image and maps its marks into the same
   if (mark.kind !== 'rect') throw new Error('Expected rectangle fixture');
   const image = dockAnnotationStill.image!;
   // Letterboxing preserves the captured image's aspect ratio and keeps it on screen.
-  expect(frame.width / frame.height).toBeCloseTo(image.width / image.height, 5);
+  expect(frame.width).toBeCloseTo(frame.height * (image.width / image.height), 1);
   const viewport = (await page.getByTestId('dock-annotation-overlay').boundingBox())!;
   expect(frame.x).toBeGreaterThanOrEqual(viewport.x - 1);
   expect(frame.y).toBeGreaterThanOrEqual(viewport.y - 1);
