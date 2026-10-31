@@ -803,7 +803,10 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
       const afterClick = frame();
       await Promise.resolve();
       await nextFrame();
-      const deadline = performance.now() + 2_000;
+      // A hang guard, not a speed check: designed motion takes about 0.6 s, and timing is
+      // asserted from animations and frames below. A loaded runner stretched the old 2 s
+      // deadline past a correct transition (intent-hq/intent#8188).
+      const deadline = performance.now() + 10_000;
       let start = frame();
       while (start.motionPhase === 'camera' && start.cameraAnimationCount === 0) {
         if (performance.now() > deadline) throw new Error('Diagram camera animation did not start');
