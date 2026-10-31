@@ -254,14 +254,16 @@ describe('DockAnnotationController', () => {
       expect(stopNavigation).toHaveBeenCalledTimes(1);
       await t.start('live', 'box', 's2');
       expect(t.host.watchNavigation).toHaveBeenCalledTimes(2);
-      await t.gesture(
-        [
-          { x: -1200, y: 0 },
-          { x: -1000, y: 100 },
-        ],
-        'box',
-        's2',
-      );
+      await expect(
+        t.gesture(
+          [
+            { x: 100, y: 50 },
+            { x: 300, y: 150 },
+          ],
+          'box',
+          's2',
+        ),
+      ).resolves.toEqual({ ok: true });
       expect(marks(t.events).length).toBeGreaterThan(0);
     },
   );

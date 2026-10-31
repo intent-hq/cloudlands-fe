@@ -70,8 +70,8 @@ describe('editorial conversation presentation contract', () => {
     expect(lane).toContain("cn('chat-content-measure mx-auto w-full min-w-0', className)");
     expect(lane).toMatch(/\.chat-content-measure\s*\{[^}]*max-width: 140em;/);
     expect(lane).toContain('class:composer-prompt-lane={composer}');
-    expect(panel).toContain(
-      '<ChatContentLane data-testid="chat-composer-lane" chief={isChiefWorkspace} composer>',
+    expect(panel).toMatch(
+      /<ChatContentLane\s+data-testid="chat-composer-lane"\s+chief=\{isChiefWorkspace\}\s+composer\s+operational\s*>/,
     );
     expect(panel).not.toContain('max-w-[var(--content-measure-wide)]');
     expect(panel).toContain('<QuestionComposer');
