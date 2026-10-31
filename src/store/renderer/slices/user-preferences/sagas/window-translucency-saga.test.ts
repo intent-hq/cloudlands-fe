@@ -25,9 +25,9 @@ const settle = async () => {
 describe('windowTranslucencySaga', () => {
   let tasks: Task[];
 
-  function start() {
+  function start(preferences: Partial<typeof initialState> = {}) {
     const channel = stdChannel();
-    let userPreferences = initialState;
+    let userPreferences = { ...initialState, ...preferences };
     const getState = () => ({ userPreferences });
     const dispatch = (action: unknown) => {
       userPreferences = userPreferencesReducer(userPreferences, action as never);
@@ -56,6 +56,23 @@ describe('windowTranslucencySaga', () => {
 
   afterEach(() => {
     for (const task of tasks) task.cancel();
+  });
+
+  it('reports a saved setting that was hydrated before the saga started', async () => {
+    start({ shellTransparencyEnabled: false, preferencesHydrated: true });
+    await settle();
+
+    expect(mocks.invoke).toHaveBeenCalledOnce();
+    expect(mocks.invoke).toHaveBeenCalledWith(WINDOW_CHANNELS.SET_TRANSLUCENCY, {
+      enabled: false,
+    });
+  });
+
+  it('waits for hydration instead of reporting the default value', async () => {
+    start();
+    await settle();
+
+    expect(mocks.invoke).not.toHaveBeenCalled();
   });
 
   it('turns the native blur off and back on when the setting changes', async () => {

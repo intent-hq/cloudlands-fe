@@ -3,7 +3,10 @@ import { call, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 import { invoke, isElectron } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { WINDOW_CHANNELS } from '$shared/ipc/channels';
-import { selectShellTransparencyEnabled } from '../user-preferences-selectors';
+import {
+  selectShellTransparencyEnabled,
+  selectUserPreferencesHydrated,
+} from '../user-preferences-selectors';
 import {
   setShellTransparencyEnabled,
   toggleShellTransparency,
@@ -32,4 +35,9 @@ export function* windowTranslucencySaga(): SagaGenerator<void> {
     [userPreferencesHydrated, setShellTransparencyEnabled, toggleShellTransparency],
     syncWindowTranslucencyWorker,
   );
+  // Root sagas start in order, and preference persistence hydrates synchronously
+  // before this saga runs, so the saved value has usually landed already.
+  if (yield* selectUserPreferencesHydrated.effect()) {
+    yield* call(syncWindowTranslucencyWorker);
+  }
 }
