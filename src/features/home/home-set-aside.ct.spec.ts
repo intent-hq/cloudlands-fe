@@ -693,6 +693,21 @@ test('Set aside rejects foreign, archived, already-aside and stale drags', async
   await expect.poll(() => dropTargetState(page)).toBe(idle);
   expect((await snapshot(page)).asideIds).toEqual([]);
 
+  // Keep the actual drag token while the same principal is readmitted in the same backend.
+  // Dispatch synchronously so neither a DOM remount nor a cancelled native drag can hide the stale callback.
+  await row(page, 'aside-idle').evaluate((card) => {
+    const dataTransfer = new DataTransfer();
+    card.dispatchEvent(
+      new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer }),
+    );
+    window.__homeSetAside!.readmitSamePrincipal();
+    document
+      .querySelector('[data-home-set-aside]')!
+      .dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer }));
+  });
+  expect((await snapshot(page)).asideIds).toEqual([]);
+  expect(await setAsideCount(page)).toBe(before);
+
   await startDrag(page, row(page, 'aside-other-repo'));
   await dragOver(page, asideColumn(page));
   await page.evaluate(() => window.__homeSetAside!.archive('aside-other-repo'));

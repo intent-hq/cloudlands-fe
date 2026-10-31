@@ -72,6 +72,28 @@ describe('Home actionable attention', () => {
         1,
       ).kind,
     ).toBe('return');
+
+    const legacyIdle = {
+      ...workspace,
+      displayStatus: 'idle' as const,
+      attention: 'none' as const,
+      attentionReminder: undefined,
+    };
+    const late = decideHomeSetAside(
+      { ...asideRecord(legacyIdle), knownAt: Date.parse('2026-10-01T12:00:00Z') },
+      homeSetAsideAttention(legacyIdle, [
+        agent({
+          metadata: {
+            pendingQuestionsMessageId: 'already-pending',
+            attentionRequestTimestamp: '2026-09-30T12:00:00Z',
+          },
+        }),
+      ]),
+      new Set(),
+      Date.parse('2026-10-01T12:00:01Z'),
+    );
+    expect(late.kind).toBe('record');
+    expect(late.kind === 'record' && late.knownAt).toBe(Date.parse('2026-10-01T12:00:00Z'));
   });
 
   it('retires a dismissed question but keeps an independent blocker', () => {

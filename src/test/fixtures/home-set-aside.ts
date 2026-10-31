@@ -43,6 +43,7 @@ import {
 import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import {
   principalContextChanged,
+  principalIdentityChanged,
   principalReceived,
 } from '$store/renderer/slices/principal/principal-slice';
 import { admitLegacyPrincipal } from './principal-state';
@@ -242,6 +243,18 @@ export function setupHomeSetAsideFixtures(view: 'list' | 'board') {
       store.dispatch(hydrateHomeWorkspaceSettings(null, readHomePersistence(undefined)));
       stopSaga = store.runSaga(homeWorkspacesSaga);
     },
+    readmitSamePrincipal() {
+      const { context, snapshot, invalidation, presentationVersion } = store.state.principal;
+      if (!context || !snapshot)
+        throw new Error('Set aside fixture requires an admitted principal');
+      store.dispatch(principalIdentityChanged(snapshot.principal.id));
+      store.dispatch(
+        principalReceived(
+          { context, invalidation: invalidation + 1, presentationVersion },
+          snapshot,
+        ),
+      );
+    },
     switchIdentity(principalId: string, backendId = 'local') {
       const connections = store.state.connections;
       store.dispatch(
@@ -294,6 +307,7 @@ declare global {
       resetView(): void;
       setShortcut(shortcut: string): void;
       reloadPreferences(): void;
+      readmitSamePrincipal(): void;
       switchIdentity(principalId: string, backendId?: string): void;
     };
   }
