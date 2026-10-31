@@ -5,6 +5,7 @@
  * attribute fallbacks. The chips themselves are built by the mention
  * registry (registry.ts).
  */
+import type { SidebarLocateTarget } from '$store/renderer/slices/app-layout/app-layout-types';
 import { parsePathSuffix } from './registry';
 
 /** The minimal element surface the reader needs (no DOM globals). */
@@ -29,6 +30,8 @@ export interface MentionChip {
   filePath?: string;
   /** For file chips: the line to reveal. */
   line?: number;
+  /** For folder chips: the workspace folder, without `@` or a trailing slash. */
+  folderPath?: string;
   /** For note chips: the note to open. */
   note?: MentionChipNote;
   /** An `intent://` link the chip was built from (`data-uri` or `meta.fullUrl`). */
@@ -86,6 +89,10 @@ export function readMentionChip(el: ChipElement | null | undefined): MentionChip
     if (filePath) chip.filePath = filePath;
     const line = chipLine(meta);
     if (line !== undefined) chip.line = line;
+  } else if (type === 'folder' || type === 'source-folder') {
+    const stored = meta.fullPath || meta.path || id || label;
+    const folderPath = stored ? stripAt(String(stored)).replace(/\/+$/, '') : '';
+    if (folderPath) chip.folderPath = folderPath;
   } else if (type === 'note' || type === 'note-range') {
     const noteId = meta.noteId || id;
     if (noteId) {
@@ -96,4 +103,12 @@ export function readMentionChip(el: ChipElement | null | undefined): MentionChip
     }
   }
   return chip;
+}
+
+/**
+ * Where a folder chip click goes: the Files sidebar, revealing the folder.
+ * The trailing slash asks the tree to expand the folder itself too.
+ */
+export function folderSidebarTarget(folderPath: string): SidebarLocateTarget {
+  return { sidebarTabId: 'files', type: 'file', filePath: `${folderPath}/` };
 }

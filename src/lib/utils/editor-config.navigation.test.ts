@@ -4,6 +4,18 @@ import { createEditorConfig } from './editor-config';
 import { processMarkdownToHTML } from './markdown-processor';
 
 const handleLinkMock = vi.hoisted(() => vi.fn());
+const dispatchMock = vi.hoisted(() => vi.fn());
+vi.mock('$store/renderer/store', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$store/renderer/store')>();
+  const store = new Proxy(actual.store, {
+    get(target, key) {
+      if (key === 'dispatch') return dispatchMock;
+      const value = Reflect.get(target, key, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+  return { ...actual, store };
+});
 vi.mock('$features/navigation/link-handler', () => ({ handleLink: handleLinkMock }));
 vi.mock('$lib/utils/store-note-title-lookup', () => ({
   storeNoteTitleLookup: (ws: string, id: string) =>
@@ -69,6 +81,32 @@ describe('note editor navigation', () => {
       sourcePanelId: 'panel-note',
       event,
     });
+  });
+
+  it('reveals and expands a folder chip in the Files sidebar', async () => {
+    dispatchMock.mockClear();
+    const element = document.createElement('div');
+    element.innerHTML = await processMarkdownToHTML('See @src/lib/ now');
+    const chip = element.querySelector('[data-mention][data-type="folder"]') as HTMLElement;
+    expect(chip?.textContent).toBe('src/lib/');
+    const config = createEditorConfig({
+      element,
+      content: '',
+      editable: true,
+      onUpdate: () => {},
+      workspace: { id: 'workspace-1' },
+    });
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'target', { value: chip });
+
+    expect(config.editorProps?.handleClick?.({} as never, 0, event)).toBe(true);
+
+    expect(dispatchMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'appLayout/locateItemInSidebarRequested',
+        payload: ['workspace-1', { sidebarTabId: 'files', type: 'file', filePath: 'src/lib/' }],
+      }),
+    );
   });
 
   it('opens a restored sibling-workspace note chip in its own workspace', async () => {
