@@ -161,4 +161,42 @@ describe('app settings schema', () => {
       '{"sidebarSide":"left"}',
     );
   });
+
+  it('defines the archive settings as daemon-backed day counts', () => {
+    expect(findAppSettingDefinition('workspace.autoArchiveIdleAfterDays')).toMatchObject({
+      type: 'number',
+      min: 0,
+      source: 'daemon-settings',
+      defaultValue: 0,
+      apply: { kind: 'daemon-settings-update', path: 'workspace.autoArchiveIdleAfterDays' },
+    });
+    const purge = findAppSettingDefinition('workspace.purgeArchivedAfterDays');
+    expect(purge).toMatchObject({
+      type: 'number',
+      min: 1,
+      source: 'daemon-settings',
+      defaultValue: null,
+      nullable: true,
+      nullLabel: 'Off',
+      apply: { kind: 'daemon-settings-update', path: 'workspace.purgeArchivedAfterDays' },
+    });
+    expect(purge?.sensitive).toBeUndefined();
+  });
+
+  it('normalizes stringified daemon preview values for number settings', () => {
+    const purge = findAppSettingDefinition(
+      'workspace.purgeArchivedAfterDays',
+    ) as AppSettingDefinition;
+    const autoArchive = findAppSettingDefinition(
+      'workspace.autoArchiveIdleAfterDays',
+    ) as AppSettingDefinition;
+    const stringDefinition = findAppSettingDefinition('model.default') as AppSettingDefinition;
+
+    expect(formatSettingValue(purge, '14.0')).toBe('14');
+    expect(formatSettingValue(purge, 'null')).toBe('Off');
+    expect(formatSettingValue(purge, null)).toBe('Off');
+    expect(formatSettingValue(autoArchive, '0')).toBe('0');
+    expect(formatSettingValue(autoArchive, 'null')).toBe('null');
+    expect(formatSettingValue(stringDefinition, '14.0')).toBe('14.0');
+  });
 });

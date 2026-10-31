@@ -711,6 +711,10 @@ export const WindowSetThemeSchema = z.object({
   theme: z.enum(['light', 'dark', 'system']),
 });
 
+export const WindowSetTranslucencySchema = z.object({
+  enabled: z.boolean(),
+});
+
 export const WindowSetTitleSchema = z.object({
   title: z.string(),
 });

@@ -32,10 +32,6 @@ function renderSettings(url: string) {
   window.history.pushState({}, '', url);
   mocks.page.url = new SvelteURL(window.location.href);
   Object.defineProperty(Element.prototype, 'scrollTo', { value: vi.fn(), configurable: true });
-  Object.defineProperty(Element.prototype, 'scrollIntoView', {
-    value: vi.fn(),
-    configurable: true,
-  });
   return render(SettingsPage, { context: new Map([['redux-store-context', storeContext]]) });
 }
 

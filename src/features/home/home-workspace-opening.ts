@@ -33,7 +33,7 @@ const DOUBLE_CLICK_SLOP_PX = 16;
  * check the browser's count, which applies the OS double-click speed).
  */
 const DOUBLE_CLICK_POINTER_MS = 800;
-const DOUBLE_CLICK_EVENTS = ['pointerdown', 'mousedown', 'click', 'dblclick'] as const;
+const DOUBLE_CLICK_EVENTS = ['pointerdown', 'mousedown', 'click', 'dblclick', 'dragstart'] as const;
 
 export interface HomeDoubleClickOpener {
   /**
@@ -56,6 +56,10 @@ export interface HomeDoubleClickOpener {
 export function createHomeDoubleClickOpener(onopen: (id: string) => void): HomeDoubleClickOpener {
   let armed: { id: string; x: number; y: number; at: number; open: boolean } | null = null;
   function capture(event: Event) {
+    if (event.type === 'dragstart') {
+      armed = null;
+      return;
+    }
     if (!armed || !(event instanceof MouseEvent) || event.button !== 0) return;
     const near =
       Math.hypot(event.clientX - armed.x, event.clientY - armed.y) <= DOUBLE_CLICK_SLOP_PX;
@@ -67,7 +71,11 @@ export function createHomeDoubleClickOpener(onopen: (id: string) => void): HomeD
       if (event.type === 'mousedown') armed = null;
       return;
     }
-    event.preventDefault();
+    const startsCardDrag =
+      event.type === 'mousedown' &&
+      event.target instanceof Element &&
+      Boolean(event.target.closest('[data-home-workspace][draggable="true"]'));
+    if (!startsCardDrag) event.preventDefault();
     event.stopPropagation();
     if (event.type === 'click' && armed.open) {
       armed.open = false;

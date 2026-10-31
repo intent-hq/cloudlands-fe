@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import GitLabBranchPicker from '../GitLabBranchPicker.svelte';
 import type { GitLabBranchPickerProps } from '../gitlab-picker-types';
 
@@ -34,9 +34,6 @@ function props(): GitLabBranchPickerProps {
   };
 }
 
-beforeAll(() => {
-  Element.prototype.scrollIntoView = vi.fn();
-});
 afterEach(cleanup);
 
 describe('GitLab branch presentation', () => {

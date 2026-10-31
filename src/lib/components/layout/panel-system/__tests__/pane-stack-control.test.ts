@@ -9,7 +9,6 @@ vi.mock('$features/layout/tab-types/registry', () => ({
 import PaneStackControlHost from './mocks/PaneStackControlHost.svelte';
 
 beforeEach(() => {
-  Element.prototype.scrollIntoView = vi.fn();
   vi.stubGlobal(
     'ResizeObserver',
     class {
