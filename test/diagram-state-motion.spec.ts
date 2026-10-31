@@ -94,6 +94,10 @@ type Frame = {
   motionPhase: string;
   cameraAnimationCount: number;
   cameraDurations: number[];
+  /** Finite renderer animations still playing; the product gates each stage on these. */
+  finiteAnimationCount: number;
+  /** Designed end time (delay + active duration) of each playing finite animation. */
+  finiteAnimationEndTimes: number[];
   entranceOpacity: number;
   nodeEntryOpacity: number;
   groupEntryOpacity: number;
@@ -761,6 +765,16 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
           cameraDurations: cameraAnimations.map((animation) =>
             Number(animation.effect?.getTiming().duration),
           ),
+          ...(() => {
+            const endTimes = renderer
+              .getAnimations({ subtree: true })
+              .filter(
+                (animation) => animation.playState !== 'finished' && animation.playState !== 'idle',
+              )
+              .map((animation) => Number(animation.effect?.getComputedTiming().endTime))
+              .filter((endTime) => Number.isFinite(endTime));
+            return { finiteAnimationCount: endTimes.length, finiteAnimationEndTimes: endTimes };
+          })(),
           entranceOpacity: Math.max(...entryOpacities),
           nodeEntryOpacity: entryOpacities[0],
           groupEntryOpacity: entryOpacities[1],
@@ -969,9 +983,27 @@ function expectCameraBeforeScene(
       ),
     ).toBe(0);
     expect(stage.after.motionPhase).not.toBe('camera');
+    // Wall-clock time only stretches under load, so the lower bound stays a reliable
+    // proof that the camera really animated instead of jumping.
     const elapsedMs = stage.after.elapsedMs - stage.before.elapsedMs;
     expect(elapsedMs).toBeGreaterThanOrEqual(120);
-    expect(elapsedMs).toBeLessThanOrEqual(450);
+    // The upper bound is checked in load-independent terms (intent-hq/intent#8188): the
+    // stage is driven by designed animation time, and it hands over to the scene within
+    // two sampled frames once those animations finish, with no extra hold.
+    const stageEndTimes = stage.frames.flatMap((frame) => frame.finiteAnimationEndTimes);
+    expect(Math.max(...stageEndTimes), JSON.stringify(stageEndTimes)).toBeLessThanOrEqual(450);
+    const lastAnimatedFrame = stage.frames.findLastIndex((frame) => frame.finiteAnimationCount > 0);
+    expect(lastAnimatedFrame).toBeGreaterThanOrEqual(0);
+    const heldFrames = stage.frames.length - 1 - lastAnimatedFrame;
+    expect(
+      heldFrames,
+      JSON.stringify(
+        stage.frames.map(({ elapsedMs, finiteAnimationCount }) => ({
+          elapsedMs,
+          finiteAnimationCount,
+        })),
+      ),
+    ).toBeLessThanOrEqual(2);
   }
   const firstVisibleFrame = (key: keyof Frame) =>
     transition.samples.findIndex((frame) => Number(frame[key]) > 0.01);
