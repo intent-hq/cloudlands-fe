@@ -67,6 +67,7 @@ const PICKER = 'Contents/Resources/dock-helper/intent-dock-element-pick';
 const packaged = [
   'Contents/MacOS/Intent',
   'Contents/Resources/intentd/intentd',
+  'Contents/Resources/desktop-helper/intent-desktop-helper',
   'Contents/Resources/speech-helper/intent-speech-helper',
   'Contents/Resources/keychain-helper/intent-keychain-helper.app/Contents/MacOS/intent-keychain-helper',
   'Contents/Resources/dock-helper/intent-dock-helper',
