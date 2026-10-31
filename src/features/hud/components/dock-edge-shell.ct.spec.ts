@@ -195,6 +195,7 @@ test.describe('side shell motion', () => {
       surface.append(update);
     });
     await page.clock.runFor(32);
+    await expect(side.getByTestId('dock-preview')).toHaveCount(0);
     const regions = await side.evaluate((fixture) => {
       const rect = (selector: string) => {
         const box = fixture.querySelector(selector)!.getBoundingClientRect();
@@ -207,6 +208,8 @@ test.describe('side shell motion', () => {
         host: rect('.dock-preview-host'),
         shell: rect('[data-testid="dock-edge-shell"]'),
         rail: rect('[data-testid="dock-surface"]'),
+        scrollport: rect('.side-rail'),
+        entryCount: fixture.querySelectorAll('[data-dock-entry]').length,
         regions: JSON.parse(fixture.getAttribute('data-preview-pointer') ?? '{}').regions as {
           x: number;
           y: number;
@@ -219,30 +222,35 @@ test.describe('side shell motion', () => {
       body: JSON.stringify(regions, null, 2),
       contentType: 'application/json',
     });
-    expect(regions.reveal).toBeGreaterThan(0.2);
-    expect(regions.reveal).toBeLessThan(1);
-    expect(regions.regions.length).toBeGreaterThan(0);
-    // Shell/rail regions are window-local; measured conversation regions are viewport-local.
-    // Neither may claim the transparent part of the final panel during opening.
-    const bounds = [regions.shell, regions.rail].flatMap((box) => [
-      box,
-      { ...box, x: box.x - regions.host.x, y: box.y - regions.host.y },
-    ]);
-    for (const region of regions.regions)
-      expect(
-        bounds.some(
-          (box) =>
-            region.x >= box.x - 1 &&
-            region.y >= box.y - 1 &&
-            region.x + region.width <= box.x + box.width + 1 &&
-            region.y + region.height <= box.y + box.height + 1,
-        ),
-      ).toBe(true);
     await shot(page, 'dock-edge-mid');
     await testInfo.attach('side-shell-streaming-frame.png', {
       body: await page.screenshot(),
       contentType: 'image/png',
     });
+    expect(regions.reveal).toBeGreaterThan(0.2);
+    expect(regions.reveal).toBeLessThan(1);
+    // This fixture has no preview or detached popups. Publication order is the rail,
+    // visible side entries, animated shell, then the measured conversation surface.
+    const shellIndex = 1 + regions.entryCount;
+    expect(regions.regions.length).toBeGreaterThan(shellIndex + 1);
+    const local = (box: typeof regions.shell) => ({
+      ...box,
+      x: box.x - regions.host.x,
+      y: box.y - regions.host.y,
+    });
+    const contained = (region: typeof regions.shell, box: typeof regions.shell) =>
+      expect(
+        region.x >= box.x - 1 &&
+          region.y >= box.y - 1 &&
+          region.x + region.width <= box.x + box.width + 1 &&
+          region.y + region.height <= box.y + box.height + 1,
+      ).toBe(true);
+    contained(regions.regions[0], local(regions.rail));
+    // Magnified entries can extend into the scroll gutter beyond the rail's chrome.
+    for (const region of regions.regions.slice(1, shellIndex))
+      contained(region, regions.scrollport);
+    contained(regions.regions[shellIndex], local(regions.shell));
+    for (const region of regions.regions.slice(shellIndex + 1)) contained(region, regions.shell);
     // Let the rest play in real time for the recording.
     for (let i = 0; i < 40 && (await reveal()) < 1; i += 1) {
       await page.clock.runFor(16);

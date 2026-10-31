@@ -1055,6 +1055,8 @@ test('floating compact and expanded headers preserve the screen-relative drag or
     expect(begin.origin.y).toBeGreaterThan(DOCK_FLOATING_COMPACT_SIZE.height);
     expect(begin.origin.y).toBeLessThan(current.surface.height);
     expect(begin.headerBounds).toBeDefined();
+    // Native drag authorization rejects headers taller than this wire bound.
+    expect(begin.headerBounds.height).toBeLessThanOrEqual(64);
     for (const dimension of ['x', 'y', 'width', 'height'] as const)
       expect(begin.headerBounds[dimension]).toBeCloseTo(press.headerBounds[dimension], 0);
     if (expanded) {
@@ -1361,6 +1363,18 @@ for (const { origin, finish } of [
       const final = samples.at(-1)!;
       // Native commit must complete while preserving the final input region.
       expect(samples.some((sample) => sample.placement.phase === 'idle')).toBe(true);
+      // Before native commit, the held grip keeps the pointer's original drag origin.
+      // The committed header may adopt its own layout without a decorative baseline.
+      for (const sample of samples.filter((sample) => sample.placement.phase !== 'idle')) {
+        expect(sample.grip.x + sample.grip.width / 2 - sample.core.x).toBeCloseTo(
+          begin.origin.x,
+          0,
+        );
+        expect(sample.grip.y + sample.grip.height / 2 - sample.core.y).toBeCloseTo(
+          begin.origin.y,
+          0,
+        );
+      }
       expect(final.pointer.regions).toContainEqual(final.placement.surface);
       expect(final.pointer.regions).toHaveLength(1);
       await component.screenshot({ path: testInfo.outputPath(`${origin}-${finish}-settled.png`) });
@@ -1786,8 +1800,6 @@ for (const reduced of [false, true]) {
           expect(last.dragTarget?.surface).toEqual(last.snapPreview);
           for (const region of frames.at(-1)!.pointer.regions) expect(region).toEqual(last.surface);
         } else await expect(component.getByTestId('dock-snap-preview')).toHaveCount(0);
-        // Never a light-filled box: the dragged shell and the drop-target preview
-        // are drawn dark (perceived luminance) in both themes.
         // One form at a time: with a drop target only its preview is visible (the dragged
         // shell keeps the gesture but fades out); with none, the dragged bar is the fallback.
         await expect

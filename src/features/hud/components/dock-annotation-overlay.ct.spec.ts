@@ -96,6 +96,13 @@ test('still markup letterboxes the frozen image and maps its marks into the same
   const mark = dockAnnotationStill.marks[0].geometry;
   if (mark.kind !== 'rect') throw new Error('Expected rectangle fixture');
   const image = dockAnnotationStill.image!;
+  // Letterboxing preserves the captured image's aspect ratio and keeps it on screen.
+  expect(frame.width / frame.height).toBeCloseTo(image.width / image.height, 5);
+  const viewport = (await page.getByTestId('dock-annotation-overlay').boundingBox())!;
+  expect(frame.x).toBeGreaterThanOrEqual(viewport.x - 1);
+  expect(frame.y).toBeGreaterThanOrEqual(viewport.y - 1);
+  expect(frame.x + frame.width).toBeLessThanOrEqual(viewport.x + viewport.width + 1);
+  expect(frame.y + frame.height).toBeLessThanOrEqual(viewport.y + viewport.height + 1);
   const [x, y, width, height] = await numbers(page.locator('[data-mark="1"]'), 'rect', [
     'x',
     'y',
@@ -202,6 +209,50 @@ test('the on-screen tool bar sits next to the dock and follows it, switches tool
   expect(Math.round(after.y)).toBe(Math.round(below.y));
   await expect(page.getByTestId('dock-annotation-overlay')).toHaveAttribute('data-tool', 'pen');
   expect(await recorded(page, 'pointers')).toEqual([]);
+
+  // Attach counts all four authoritative fixture marks, then continues in mouse mode.
+  await expect(bar.locator('[data-attach-count]')).toHaveText('4');
+  await bar.getByRole('button', { name: 'Attach' }).click();
+  await expect(bar).toBeVisible();
+  await expect(bar.getByRole('button', { name: 'Mouse' })).toHaveAttribute('aria-pressed', 'true');
+  await bar.getByRole('button', { name: 'End annotating' }).click();
+  await expect(bar).toHaveCount(0);
+  const actions = JSON.parse(
+    (await page.getByTestId('dock-annotation-harness').getAttribute('data-toolbar')) ?? '[]',
+  );
+  expect(actions).toEqual([
+    { sessionId: 'fixture-live', action: 'mouse' },
+    { sessionId: 'fixture-live', action: 'tool', tool: 'pen' },
+    { sessionId: 'fixture-live', action: 'commit' },
+    { sessionId: 'fixture-live', action: 'end' },
+  ]);
+});
+
+test('Screenshot and Record on the tool bar run the composer actions with its look, limit and alerts', async ({
+  mount,
+  page,
+}, testInfo) => {
+  const notch = { shape: 'notch', rect: { x: 440, y: 0, width: 400, height: 56 } } as const;
+  const props = {
+    fixture: 'live-marked',
+    dock: notch,
+    media: dockAnnotationMediaIdle,
+    markCount: 3,
+  } as const;
+  const component = await mount(Harness, { props });
+  const bar = page.getByRole('toolbar', { name: 'Annotation tools' });
+  await expect(bar).toBeVisible();
+  const toolbar = async () =>
+    JSON.parse(
+      (await page.getByTestId('dock-annotation-harness').getAttribute('data-toolbar')) ?? '[]',
+    ) as { action: string }[];
+  const reportedWidth = async () =>
+    (
+      JSON.parse(
+        (await page.getByTestId('dock-annotation-harness').getAttribute('data-toolbar-rect')) ??
+          'null',
+      ) as { rect: { width: number } } | null
+    )?.rect.width ?? 0;
 
   // Attach is the primary action and counts the 3 marks it will attach.
   await expect(bar.locator('[data-attach-count]')).toHaveText('3');

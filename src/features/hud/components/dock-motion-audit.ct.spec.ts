@@ -1,6 +1,6 @@
 import { writeFile } from 'node:fs/promises';
 import type { Locator, Page } from '@playwright/test';
-import { expect, test } from '../../../test/ct-test';
+import { expect, test, expectAnimationsToSettle } from '../../../test/ct-test';
 import DockRailPreview from './dock-rail.preview.svelte';
 import ComposerMediaPreview from './dock-composer-media.preview.svelte';
 import ConversationWireHarness from './DockConversationWireHarness.svelte';
@@ -411,8 +411,22 @@ test('motion audit: edge conversation open, close and interrupted close', async 
   const side = await mountSide(mount, page);
   const shellBox = side.getByTestId('dock-edge-shell');
   const SHELL = '[data-testid="dock-edge-shell"]';
+  const entry = side.locator('[data-dock-entry]').first();
+  const preview = side.getByTestId('dock-preview');
+  const warmOrigin = async () => {
+    await entry.hover();
+    await expect(preview).toBeVisible();
+    await expect(preview).toHaveCSS('opacity', '1');
+    await expectAnimationsToSettle(preview);
+    const box = await preview.boundingBox();
+    if (!box) throw new Error('Missing side preview origin');
+    return box;
+  };
+  // Compare the same path: the unmeasured fallback card is taller than this fixture's
+  // loaded preview, so a cold first open cannot be a pixel-step baseline for a warm one.
+  const baselineOrigin = await warmOrigin();
   const open = await audit(page, 'edge-open', SHELL, async () => {
-    await side.locator('[data-dock-entry]').first().click();
+    await entry.click();
     await settle(shellBox, 'data-reveal', '1');
   });
   const close = await audit(page, 'edge-close', SHELL, async () => {
@@ -420,14 +434,44 @@ test('motion audit: edge conversation open, close and interrupted close', async 
     await expect(shellBox).toHaveCount(0);
   });
   // Reverse mid-way: reopen while closing and require a continuous path.
-  await side.locator('[data-dock-entry]').first().click();
+  const interruptedOrigin = await warmOrigin();
+  await test.info().attach('edge-motion-origins.json', {
+    body: JSON.stringify({ baselineOrigin, interruptedOrigin }, null, 2),
+    contentType: 'application/json',
+  });
+  for (const key of ['x', 'y', 'width', 'height'] as const)
+    expect(
+      Math.abs(interruptedOrigin[key] - baselineOrigin[key]),
+      `origin ${key}`,
+    ).toBeLessThanOrEqual(1);
+  await entry.click();
   await settle(shellBox, 'data-reveal', '1');
   const interrupted = await audit(page, 'edge-interrupted', SHELL, async () => {
     await page.keyboard.press('Escape');
-    await expect
-      .poll(async () => Number((await shellBox.getAttribute('data-reveal')) ?? 1))
-      .toBeLessThan(0.7);
-    await side.locator('[data-dock-entry]').first().click();
+    // Click in the observed browser frame: Playwright's stability wait can otherwise
+    // consume the entire close, turning this into a second ordinary open.
+    const reversalReveal = await page.evaluate(async () => {
+      const deadline = performance.now() + 2000;
+      while (performance.now() < deadline) {
+        const shell = document.querySelector('[data-testid="dock-edge-shell"]');
+        const reveal = Number(shell?.getAttribute('data-reveal') ?? 0);
+        if (reveal <= 0.2) throw new Error('Missed the mid-flight reversal window');
+        if (reveal < 0.7) {
+          const button = document.querySelector<HTMLButtonElement>('[data-dock-entry]');
+          if (!button || button.disabled) throw new Error('Side entry is unavailable');
+          button.click();
+          return reveal;
+        }
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      }
+      throw new Error('Side shell did not start closing');
+    });
+    await test.info().attach('edge-reversal-reveal.json', {
+      body: JSON.stringify({ reversalReveal }),
+      contentType: 'application/json',
+    });
+    expect(reversalReveal).toBeGreaterThan(0.2);
+    expect(reversalReveal).toBeLessThan(0.7);
     await settle(shellBox, 'data-reveal', '1');
   });
   for (const stats of [open, close]) expectContinuous(stats);
@@ -576,6 +620,9 @@ test('motion audit: on-screen annotate bar drag', async ({ mount, page }) => {
   await mount(AnnotationHarness, { props: { fixture: 'live-marked' } });
   const bar = page.getByTestId('dock-annotation-toolbar');
   await expect(bar).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  await expect(bar).toHaveAttribute('data-placed');
+  await expectAnimationsToSettle(bar, { subtree: false });
   const box = (await bar.boundingBox())!;
   const drag = await audit(
     page,
@@ -588,7 +635,7 @@ test('motion audit: on-screen annotate bar drag', async ({ mount, page }) => {
       await page.mouse.up();
     },
   );
-  // The bar follows the pointer: no frame moves it further than the pointer moved.
+  // The dock-bound bar must not jump when a pointer gesture begins on it.
   expect(drag.maxSteadyStepPx, drag.name).toBeLessThanOrEqual(Math.hypot(10, 5) * 2 + 2);
   expect(drag.droppedFrames, drag.name).toBeLessThanOrEqual(1);
 });
