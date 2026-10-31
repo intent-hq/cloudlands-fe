@@ -597,7 +597,7 @@
         class="flex min-h-0 flex-1 flex-col"
       >
         {#if !$collaborator$}
-          <div class="home-sidebar-header flex shrink-0 items-center">
+          <div class="home-sidebar-header flex shrink-0 items-end">
             <Tabs.List
               aria-label={m.layout_sidebarPanel_tabs_ariaLabel()}
               class="home-sidebar-tabs grid h-9 w-full shrink-0 grid-cols-2 items-center rounded-lg bg-background p-1"

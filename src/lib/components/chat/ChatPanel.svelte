@@ -6490,7 +6490,7 @@
   {/if}
 
   <!-- Messages Area -->
-  <div class="w-full relative flex-1 flex flex-col min-h-0 z-10">
+  <div class="chat-transcript-area w-full relative flex-1 flex flex-col min-h-0 z-10">
     <!-- Inline-end padding compensates the scroll container's scrollbar gutter
          so the lane's box matches the conversation column's box. -->
     <div
@@ -6561,6 +6561,10 @@
       class="flex-1 {CHAT_TRANSCRIPT_OVERFLOW_CLASS}"
       class:agent-font-monospace={$isAgentMonospace}
       style="scrollbar-gutter: stable;"
+      style:padding-bottom="var(--chat-composer-gap)"
+      style:mask-image={distanceFromBottom > SCROLL_BOTTOM_BUTTON_EPSILON
+        ? `linear-gradient(to bottom, black calc(100% - ${Math.min(40, distanceFromBottom)}px), transparent)`
+        : undefined}
       data-testid="chat-transcript-scroll-viewport"
       data-message-controls-root
     >
@@ -7752,6 +7756,7 @@
     {#if isActive && showScrollToBottom && !deferTranscriptReveal}
       <div
         class="pointer-events-none absolute inset-x-0 bottom-3 z-40 flex justify-center"
+        style:margin-bottom="var(--chat-composer-gap)"
         style:padding-inline-end="{scrollbarGutterWidth}px"
       >
         <div class="pointer-events-auto">
@@ -7764,7 +7769,7 @@
   <!-- Message Input with Aurora Background -->
   <div
     bind:this={composerElement}
-    class="conversation-composer relative z-10 w-full"
+    class="conversation-composer relative z-10 w-full pointer-events-none"
     class:input-flash={showInputFlash}
     data-streaming={$agentSessionIsStreaming$}
     data-testid="chat-composer-shell"
@@ -7800,7 +7805,7 @@
         operational
       >
         <div
-          class="w-full min-w-0"
+          class="pointer-events-auto w-full min-w-0"
           data-testid="chat-composer-controls-inner"
           onfocusout={flushPendingDraftWrite}
         >
@@ -7881,7 +7886,7 @@
                     <PresenceTypingIndicator
                       workspaceId={workspace.id}
                       {agentId}
-                      class="pointer-events-none absolute inset-x-0 bottom-full mb-1"
+                      class="pointer-events-none absolute inset-x-0 bottom-full mb-1 bg-background"
                     />
                   {/if}
                   <SimpleRichInput
@@ -7926,7 +7931,12 @@
 
 <style>
   .chat-panel-container {
+    --chat-composer-gap: 1.25rem;
     container: chat-panel / inline-size;
+  }
+
+  .chat-transcript-area {
+    margin-bottom: calc(-1 * var(--chat-composer-gap));
   }
 
   .workspace-setup-card-alignment {

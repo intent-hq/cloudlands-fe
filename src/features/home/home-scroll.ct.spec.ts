@@ -93,6 +93,7 @@ async function measure(host: Locator) {
     const sidebar = home.querySelector<HTMLElement>('.home-sidebar [data-slot="list-view"]')!;
     const header = home.querySelector<HTMLElement>('[data-chief-header-row]')!;
     const composer = home.querySelector<HTMLElement>('[data-testid="chat-composer-shell"]')!;
+    const prompt = composer.querySelector<HTMLElement>('[data-testid="message-input"]')!;
     const transcript = home.querySelector<HTMLElement>(
       '[data-testid="chat-transcript-scroll-viewport"]',
     )!;
@@ -104,6 +105,7 @@ async function measure(host: Locator) {
       host: bounds(element),
       header: bounds(header),
       composer: bounds(composer),
+      prompt: bounds(prompt),
       transcript: bounds(transcript),
       pageOverflow: home.scrollHeight - home.clientHeight,
       horizontalOverflow: home.scrollWidth - home.clientWidth,
@@ -165,7 +167,7 @@ for (const { name, width, height, scenario } of cases) {
     expect(before.header.top).toBeGreaterThanOrEqual(before.host.top);
     expect(before.composer.bottom).toBeLessThanOrEqual(before.host.bottom);
     expect(before.transcript.height).toBeGreaterThan(0);
-    expect(before.transcript.bottom).toBeLessThanOrEqual(before.composer.top + 1);
+    expect(before.transcript.bottom).toBeLessThanOrEqual(before.prompt.top + 1);
     if (scenario === 'assistant-many') {
       expect(before.sidebarRange).toBeGreaterThan(0);
       await wheelUntilScrolled(sidebar.getByRole('listbox'), { deltaY: 1600 });
