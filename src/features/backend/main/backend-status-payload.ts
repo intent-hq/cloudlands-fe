@@ -2,14 +2,11 @@
  * The one place that shapes `backend:status` payloads (and the
  * `backend:get-status` reply).
  *
- * Every per-backend push is built by {@link buildBackendStatusPayload}, so a
- * new field reaches every window of that backend from one edit. The rare
- * unscoped push (delivered to EVERY window, whatever backend it is bound to)
- * has its own, deliberately narrower {@link UnscopedBackendStatusPayload}:
- * per-backend facts — the daemon's startup posture, the daemon-update marker,
- * the guest connection-limit state — are typed `never` there, so leaking one
- * backend's facts into another backend's windows fails to type-check
- * (cloudlands-fe#3883 review).
+ * Every push is built by {@link buildBackendStatusPayload} for ONE backend and
+ * sent only to that backend's windows, so a new field reaches every push from
+ * one edit and a backend's facts (startup posture, daemon-update marker,
+ * connection-limit state, status and transport) never reach another
+ * backend's windows (cloudlands-fe#3883 review).
  *
  * Free of Electron imports so the shaping is unit-testable.
  */
@@ -19,7 +16,7 @@ import type { ConnectionStatus } from './json-rpc-client';
 import { formatTransportInfo, type TransportInfo } from './transport-info';
 
 /**
- * Client surface the builders read (satisfied by `JsonRpcClient`). Every getter
+ * Client surface the builder reads (satisfied by `JsonRpcClient`). Every getter
  * is required so a renamed client method fails to type-check; the builder still
  * calls the per-backend getters defensively because IPC test doubles omit them.
  */
@@ -34,7 +31,7 @@ export interface BackendStatusSource {
 }
 
 /** Event-specific markers a single push may add on top of the live client state. */
-export interface BackendStatusExtras {
+interface BackendStatusExtras {
   /** A true reconnect completed (model-boot re-runs its load). */
   reconnected?: true;
   /** The app-managed sidecar's restart policy gave up (#439). */
@@ -65,18 +62,6 @@ export interface BackendStatusSnapshot extends BackendStatusPayload {
   sidecarStartupFailedReason?: string;
 }
 
-type UnscopedBackendStatusKey = 'status' | 'transport' | 'reconnectAttempts';
-
-/**
- * A `backend:status` payload delivered to EVERY window. Every other field of
- * the scoped snapshot is mapped to `never` — including fields added later —
- * so a per-backend fact cannot be added here or smuggled in via a scoped
- * payload without a compile error.
- */
-export type UnscopedBackendStatusPayload = Pick<BackendStatusPayload, UnscopedBackendStatusKey> & {
-  [K in Exclude<keyof BackendStatusSnapshot, UnscopedBackendStatusKey>]?: never;
-};
-
 export interface BuildBackendStatusOptions {
   /** The intentd.version pin reported in the transport info. */
   pinnedVersion: string | null;
@@ -87,10 +72,6 @@ export interface BuildBackendStatusOptions {
   extras?: BackendStatusExtras;
 }
 
-function buildTransport(client: BackendStatusSource, pinnedVersion: string | null): TransportInfo {
-  return formatTransportInfo(client.getConfig(), pinnedVersion, client.getConnectedVia());
-}
-
 /** Build the full per-backend `backend:status` payload from the client's live state. */
 export function buildBackendStatusPayload(
   client: BackendStatusSource,
@@ -99,23 +80,15 @@ export function buildBackendStatusPayload(
   return {
     status: options.status ?? client.getStatus(),
     ...options.extras,
-    transport: buildTransport(client, options.pinnedVersion),
+    transport: formatTransportInfo(
+      client.getConfig(),
+      options.pinnedVersion,
+      client.getConnectedVia(),
+    ),
     reconnectAttempts: client.getReconnectAttempts(),
     daemonStartup: client.getStartupState?.() ?? null,
     connectionLimited: client.isConnectionLimited?.() ?? false,
     connectionLimitRetryAfterMs: client.getConnectionLimitRetryAfterMs?.() ?? null,
     ...options.updateMarker,
-  };
-}
-
-/** Build the narrow payload safe for an unscoped (all-window) push. */
-export function buildUnscopedBackendStatusPayload(
-  client: BackendStatusSource,
-  pinnedVersion: string | null,
-): UnscopedBackendStatusPayload {
-  return {
-    status: client.getStatus(),
-    transport: buildTransport(client, pinnedVersion),
-    reconnectAttempts: client.getReconnectAttempts(),
   };
 }

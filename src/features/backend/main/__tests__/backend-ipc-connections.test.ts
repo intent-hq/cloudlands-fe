@@ -1804,7 +1804,7 @@ describe('connections:* IPC handlers', () => {
       expect(statusPayloads()[0]).not.toHaveProperty(MARKER);
     });
 
-    it('never sends the local marker to a remote window (unscoped orphan-restart broadcast)', async () => {
+    it('keeps the orphan-restart push and its local marker out of remote windows', async () => {
       const { mod, update, statusPayloads, localStatusPayloads } = await setupConnectedRemote();
       const connectionMode = await import('../connection-mode');
       connectionMode.setConnectionMode('external');
@@ -1819,15 +1819,19 @@ describe('connections:* IPC handlers', () => {
           expect.objectContaining({ status: 'disconnected', [MARKER]: T0 + 1_000 }),
         );
 
+        const remoteBefore = statusPayloads().length;
         mockRestartOrphanedSidecar.mockResolvedValueOnce({ ok: true, spawned: true });
         await expect(
           findHandler('backend:restart-orphaned-sidecar')!({}, undefined),
         ).resolves.toMatchObject({ ok: true });
         expect(mockRestartOrphanedSidecar).toHaveBeenCalledTimes(1);
 
-        // The unscoped restart broadcast reached the remote window without the
-        // local marker; nothing the remote window received carried it.
-        expect(statusPayloads().length).toBeGreaterThan(0);
+        // The restart push is the LOCAL client's status: local windows get it
+        // with the local marker; the remote window receives nothing from it.
+        expect(localStatusPayloads().at(-1)).toEqual(
+          expect.objectContaining({ status: 'disconnected', [MARKER]: T0 + 1_000 }),
+        );
+        expect(statusPayloads()).toHaveLength(remoteBefore);
         for (const payload of statusPayloads()) expect(payload).not.toHaveProperty(MARKER);
       } finally {
         connectionMode.__resetConnectionModeForTesting();
@@ -6543,7 +6547,7 @@ describe('startup status IPC ownership', () => {
     ).toMatchObject({ connectionLimited: true, connectionLimitRetryAfterMs: 30_000 });
   });
 
-  it('keeps the unscoped orphan-restart push free of per-backend facts', async () => {
+  it('sends the orphan-restart status only to local windows', async () => {
     const { mod } = await loadModule();
     const { localSend, remoteSend } = installBackendWindows();
     mod.registerBackendHandlers();
@@ -6564,10 +6568,14 @@ describe('startup status IPC ownership', () => {
       send.mock.calls
         .filter(([channel]) => channel === 'backend:status')
         .map(([, payload]) => payload as Record<string, unknown>);
-    expect(statusPayloads(localSend)).toHaveLength(1);
-    // Whatever a window receives from this push carries no per-backend facts.
-    for (const payload of [...statusPayloads(localSend), ...statusPayloads(remoteSend)]) {
-      expect(Object.keys(payload).sort()).toEqual(['reconnectAttempts', 'status', 'transport']);
-    }
+    // The local client's status, startup state and connection-limit state
+    // reach local windows only; a remote window's dead backend is untouched.
+    expect(statusPayloads(localSend)).toEqual([
+      expect.objectContaining({
+        daemonStartup: { state: 'starting', available: true, snapshot: null },
+        connectionLimited: true,
+      }),
+    ]);
+    expect(statusPayloads(remoteSend)).toEqual([]);
   });
 });

@@ -1,14 +1,12 @@
 /**
- * `backend:status` payload builders: one builder for every per-backend push
- * (so a new field reaches every site at once) and a narrower builder for the
- * unscoped all-window push that cannot carry per-backend facts.
+ * `backend:status` payload builder: one builder for every per-backend push, so
+ * a new field reaches every site at once.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { DaemonStartupState } from '$shared/daemon-startup';
 import {
   buildBackendStatusPayload,
-  buildUnscopedBackendStatusPayload,
   type BackendStatusPayload,
   type BackendStatusSource,
 } from '../backend-status-payload';
@@ -87,18 +85,6 @@ describe('buildBackendStatusPayload', () => {
       daemonStartup: null,
       connectionLimited: false,
       connectionLimitRetryAfterMs: null,
-    });
-  });
-});
-
-describe('buildUnscopedBackendStatusPayload', () => {
-  it('carries only the facts safe for every window', () => {
-    const payload = buildUnscopedBackendStatusPayload(source(), '1.2.3');
-    expect(Object.keys(payload).sort()).toEqual(['reconnectAttempts', 'status', 'transport']);
-    expect(payload).toEqual({
-      status: 'connecting',
-      transport: { mode: 'sidecar-uds', target: '/tmp/intentd.sock', pinnedVersion: '1.2.3' },
-      reconnectAttempts: 3,
     });
   });
 });

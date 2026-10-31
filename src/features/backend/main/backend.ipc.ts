@@ -75,13 +75,11 @@ import {
 } from './client-identity';
 import {
   buildBackendStatusPayload,
-  buildUnscopedBackendStatusPayload,
   type BackendStatusPayload,
   type BackendStatusSnapshot,
   type BackendStatusSource,
   type BuildBackendStatusOptions,
   type DaemonUpdateMarker,
-  type UnscopedBackendStatusPayload,
 } from './backend-status-payload';
 import { readPinnedVersion } from './intentd-version-pin';
 import { updateDaemonToPin } from './exact-daemon-update';
@@ -2320,7 +2318,7 @@ export function onAnyBackendStatus(
 /**
  * Broadcast a payload to live renderer windows, optionally scoped to one backend.
  * `backend:status` is refused at compile time: send it through
- * {@link broadcastBackendStatus} / {@link broadcastUnscopedBackendStatus}.
+ * {@link broadcastBackendStatus}, which always names the backend.
  */
 function broadcast<C extends string>(
   // A literal channel other than `backend:status`; a widened `string` is
@@ -2332,6 +2330,7 @@ function broadcast<C extends string>(
   sendToWindows(channel, payload, backendId);
 }
 
+/** Delivery for {@link broadcast} and {@link broadcastBackendStatus}; do not call it directly. */
 function sendToWindows(channel: string, payload: unknown, backendId?: string): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue;
@@ -2375,19 +2374,6 @@ function broadcastBackendStatus(
   options?: BackendStatusEventOptions,
 ): void {
   sendToWindows(BACKEND.STATUS, backendStatusPayload(backendId, client, options), backendId);
-}
-
-/**
- * Push a status to EVERY window, whatever backend it is bound to. Only the
- * narrow {@link UnscopedBackendStatusPayload} is accepted, so per-backend
- * facts cannot leak into another backend's windows.
- */
-function broadcastUnscopedBackendStatus(client: BackendStatusSource): void {
-  const payload: UnscopedBackendStatusPayload = buildUnscopedBackendStatusPayload(
-    client,
-    getPinnedVersion(),
-  );
-  sendToWindows(BACKEND.STATUS, payload);
 }
 
 /** Resolve a renderer invoke event to the client bound to its window's backend. */
@@ -4132,10 +4118,10 @@ async function doPerformRestartOrphanedSidecar(): Promise<RestartOrphanedSidecar
     });
     if (result.ok) {
       const client = getLocalBackendClient();
-      // Unscoped broadcast: the narrow payload type cannot carry the
-      // daemon-update marker, startup state or connection-limit state, which
-      // are LOCAL-client facts and must not reach remote windows.
-      broadcastUnscopedBackendStatus(client);
+      // Scoped to local windows: this is the LOCAL client's status. Sent to
+      // every window, a connected local client would mark a remote window's
+      // still-dead backend healthy and dismiss its overlay.
+      broadcastBackendStatus(LOCAL_CONNECTION_ID, client);
     }
     return result;
   } catch (error) {
