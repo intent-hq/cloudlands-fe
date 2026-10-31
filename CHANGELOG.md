@@ -4,6 +4,21 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.262.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.261.2...v2.262.0) (2026-10-31)
+
+
+### 🚀 Features
+
+* add personal workspace Set aside controls ([#3903](https://github.com/intent-hq/cloudlands-fe/issues/3903)) ([10b7760](https://github.com/intent-hq/cloudlands-fe/commit/10b7760280df4251892dac924764503ee22d4983))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.93 ([#3949](https://github.com/intent-hq/cloudlands-fe/issues/3949)) ([e4966b9](https://github.com/intent-hq/cloudlands-fe/commit/e4966b958b1bb9b2a9e7ba4268f5992a1d0e4bf5))
+* open clipped-name tooltips enabled after keyboard focus ([#3936](https://github.com/intent-hq/cloudlands-fe/issues/3936)) ([2bccfca](https://github.com/intent-hq/cloudlands-fe/commit/2bccfca8f5ae8e1ee426feb33d044a4d1898ada9))
+* **settings:** apply proposable daemon settings from chat cards ([#3942](https://github.com/intent-hq/cloudlands-fe/issues/3942)) ([9f0cb5b](https://github.com/intent-hq/cloudlands-fe/commit/9f0cb5bdc9c7587ce6b97efaa4573f5f2a1d5fe2))
+* **window:** stop the always-on macOS window blur ([#3940](https://github.com/intent-hq/cloudlands-fe/issues/3940)) ([664cc00](https://github.com/intent-hq/cloudlands-fe/commit/664cc005a515f8d2911c86869a28165cad6f2ed0))
+
 ## [2.261.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.261.1...v2.261.2) (2026-10-31)
 
 
