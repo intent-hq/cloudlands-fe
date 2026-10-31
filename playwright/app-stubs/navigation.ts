@@ -5,19 +5,13 @@
  * CT browser bundle.
  */
 
-/**
- * Lands same-origin routes in the history like SvelteKit's `goto`, without
- * loading a page, so callers that check the landed route (show-workspace.ts)
- * see the navigation complete.
- */
+/** Model arrival without invoking a router that would unmount the CT preview. */
 export const goto = async (
   url: string | URL,
-  options: { replaceState?: boolean } = {},
+  options: { replaceState?: boolean; state?: App.PageState } = {},
 ): Promise<void> => {
-  const target = new URL(url, window.location.href);
-  if (target.origin !== window.location.origin) return;
-  if (options.replaceState) window.history.replaceState(null, '', target);
-  else window.history.pushState(null, '', target);
+  const method = options.replaceState ? 'replaceState' : 'pushState';
+  window.history[method](options.state ?? {}, '', url);
 };
 export const invalidate = async (): Promise<void> => {};
 export const invalidateAll = async (): Promise<void> => {};
