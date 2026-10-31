@@ -98,6 +98,8 @@ type Frame = {
   finiteAnimationCount: number;
   /** Designed end time (delay + active duration) of each playing finite animation. */
   finiteAnimationEndTimes: number[];
+  /** Designed start delay of each label reveal animation, including finished `fill: both` ones. */
+  labelEntryDelays: number[];
   entranceOpacity: number;
   nodeEntryOpacity: number;
   groupEntryOpacity: number;
@@ -775,6 +777,14 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
               .filter((endTime) => Number.isFinite(endTime));
             return { finiteAnimationCount: endTimes.length, finiteAnimationEndTimes: endTimes };
           })(),
+          labelEntryDelays: renderer
+            .getAnimations({ subtree: true })
+            .filter(
+              (animation) =>
+                animation instanceof CSSAnimation &&
+                animation.animationName.includes('revealLabel'),
+            )
+            .map((animation) => Number(animation.effect?.getTiming().delay)),
           entranceOpacity: Math.max(...entryOpacities),
           nodeEntryOpacity: entryOpacities[0],
           groupEntryOpacity: entryOpacities[1],
@@ -1017,9 +1027,14 @@ function expectCameraBeforeScene(
     expect(Math.abs(routeFrame - sceneFrame)).toBeLessThanOrEqual(1);
   if (routeFrame >= 0 && labelFrame >= 0) {
     expect(labelFrame).toBeGreaterThanOrEqual(routeFrame);
-    // Labels follow their route after a designed 60 ms delay. Count sampled frames rather
-    // than wall-clock time, which a loaded runner stretches (intent-hq/intent#8188): eight
-    // frames is about 130 ms at 60 Hz, and slower frames only lower the count.
+    // Labels follow their route after a designed 60 ms delay. Assert that designed delay
+    // from the reveal animations themselves, which a loaded runner cannot stretch
+    // (intent-hq/intent#8188), instead of the wall-clock gap between sampled frames.
+    const labelDelays = transition.samples.flatMap((frame) => frame.labelEntryDelays);
+    expect(labelDelays.length).toBeGreaterThan(0);
+    expect(Math.max(...labelDelays), JSON.stringify(labelDelays)).toBeLessThanOrEqual(100);
+    // Bound the observed lag in frames too, so a label held back by other means still
+    // fails: eight frames is about 130 ms at 60 Hz, and slower frames only lower the count.
     expect(
       labelFrame - routeFrame,
       JSON.stringify(
