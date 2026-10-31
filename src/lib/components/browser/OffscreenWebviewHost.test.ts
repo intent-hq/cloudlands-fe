@@ -945,6 +945,8 @@ describe('OffscreenWebviewHost', () => {
   // (left:-10000px) get viewport-culled by the compositor — no BeginFrames,
   // so CDP screenshot and capturePage hang. The host container must stay
   // in-viewport (1x1 clip at the origin), hidden via overflow + opacity.
+  // Opacity sits on each guest's box, never on the shared host: an opacity-0
+  // ancestor throttles every guest, including ones an agent is drawing.
   it('hosts guests in-viewport in a clipped invisible container, not parked offscreen', async () => {
     layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-bg' }]) });
     const { container } = render(OffscreenWebviewHost, {
@@ -955,7 +957,7 @@ describe('OffscreenWebviewHost', () => {
     expect(host.style.left).not.toBe('-10000px');
     expect(host.className).toContain('left-0');
     expect(host.className).toContain('top-0');
-    expect(host.className).toContain('opacity-0');
+    expect(host.style.opacity).toBe('');
     expect(host.className).toContain('pointer-events-none');
     // inert keeps the focusable webviews out of the tab order.
     expect(host.hasAttribute('inert')).toBe(true);
@@ -963,15 +965,16 @@ describe('OffscreenWebviewHost', () => {
     const box = container.querySelector('[data-offscreen-webview-box="tab-bg"]') as HTMLElement;
     expect(box.style.width).toBe('1px');
     expect(box.style.height).toBe('1px');
+    expect(box.style.opacity).toBe('0');
     expect(box.hasAttribute('data-agent-drawing')).toBe(false);
   });
 
   // An agent acting on a hidden tab needs full frame rate, but Chromium
-  // pauses or slows a frame whose visible box is 1x1 (~1 fps measured).
-  // Main's agent drawing hold (`browser:agent-drawing`) grows only that
-  // tab's box to 8x8 (measured full rate), still invisible, without
-  // reloading the guest.
-  it('gives a tab a larger box while an agent is drawing it, then parks it again', async () => {
+  // treats a guest at opacity 0 as never drawn and slows it (1-57 fps
+  // measured on v2.259.0). Main's agent drawing hold (`browser:agent-drawing`)
+  // raises only that tab's 1x1 box to opacity 0.01 (measured a steady 60
+  // fps), still invisible, without reloading the guest.
+  it('draws a tab at near-zero opacity while an agent is acting on it, then parks it again', async () => {
     layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-a' }, { id: 'tab-b' }]) });
     const { container } = render(OffscreenWebviewHost, {
       props: { excludedWorkspaceIds: new Set() },
@@ -984,18 +987,19 @@ describe('OffscreenWebviewHost', () => {
     agentDrawingStore.set({ 'tab-a': true });
     await tick();
     expect(box('tab-a').hasAttribute('data-agent-drawing')).toBe(true);
-    expect(box('tab-a').style.width).toBe('8px');
-    expect(box('tab-a').style.height).toBe('8px');
-    // Only the agent's tab grows; the other stays parked.
-    expect(box('tab-b').style.width).toBe('1px');
-    // Same guest element: growing the box never reloads the page.
+    expect(box('tab-a').style.opacity).toBe('0.01');
+    // The box stays 1x1: size made no difference to the frame rate.
+    expect(box('tab-a').style.width).toBe('1px');
+    expect(box('tab-a').style.height).toBe('1px');
+    // Only the agent's tab is drawn; the other stays parked at opacity 0.
+    expect(box('tab-b').style.opacity).toBe('0');
+    // Same guest element: changing the box never reloads the page.
     expect(container.querySelector('[data-offscreen-webview-tab="tab-a"]')).toBe(webviewA);
 
     agentDrawingStore.set({});
     await tick();
     expect(box('tab-a').hasAttribute('data-agent-drawing')).toBe(false);
-    expect(box('tab-a').style.width).toBe('1px');
-    expect(box('tab-a').style.height).toBe('1px');
+    expect(box('tab-a').style.opacity).toBe('0');
     expect(container.querySelector('[data-offscreen-webview-tab="tab-a"]')).toBe(webviewA);
   });
 

@@ -112,15 +112,17 @@
   );
 
   // Tabs an agent is acting on right now (main's agent drawing hold, via
-  // `browser:agent-drawing`): their box grows from the 1x1 parking box to
-  // 8x8, because Chromium pauses or slows a frame whose visible box is 1x1
-  // (~1 frame per second measured) while an 8x8 one at opacity 0 drew at
-  // full rate, and agents measuring animation or timing need full frame
-  // rate. Kept that small so the invisible guest covers almost nothing of
-  // the app. Only the box's size changes, so the guest never reloads.
+  // `browser:agent-drawing`) draw their 1x1 box at a near-zero opacity
+  // instead of 0. Chromium treats a guest under opacity 0 as never drawn and
+  // slows its frames (measured 1-57 frames per second, uneven), while the
+  // same 1x1 box at opacity 0.01 drew a steady 60; box size made no
+  // difference. Agents measuring animation or timing need that full rate;
+  // idle tabs stay at opacity 0 so they keep the battery-saving throttle.
+  // One pixel at 1% opacity is invisible, and only the box's opacity
+  // changes, so the guest never reloads.
   const agentDrawing$ = selectBrowserTabsAgentDrawing();
-  const PARKED_BOX = '1px';
-  const AGENT_DRAWING_BOX = '8px';
+  const PARKED_OPACITY = '0';
+  const AGENT_DRAWING_OPACITY = '0.01';
 
   let cache = $state<Map<string, number>>(new Map());
   // URL/workspace frozen when a tab enters the keep-alive set, so later
@@ -210,15 +212,17 @@
   viewport-culled by the compositor — no BeginFrames, so CDP
   Page.captureScreenshot and webContents.capturePage() hang until the
   caller's budget kills them (monorepo#3366). Each full-size guest sits in
-  its own overflow-hidden wrapper at the viewport origin, inside an
-  invisible (opacity 0), non-interactive layer: a 1x1 wrapper keeps an idle
-  guest painting at a throttled rate, and a tab an agent is acting on gets
-  an 8x8 wrapper so it draws at full frame rate (still invisible and
-  non-interactive). `inert` removes the (focusable) webviews from the tab
-  order; harness-verified to not suppress BeginFrames.
+  its own 1x1 overflow-hidden wrapper at the viewport origin, inside a
+  non-interactive layer. An idle wrapper is invisible (opacity 0), which
+  keeps the guest painting at a throttled rate; a tab an agent is acting on
+  gets opacity 0.01 so it draws at full frame rate (still invisible to the
+  eye and non-interactive). Opacity sits on each wrapper, not this layer,
+  because an opacity-0 ancestor would throttle every guest. `inert` removes
+  the (focusable) webviews from the tab order; harness-verified to not
+  suppress BeginFrames.
 -->
 <div
-  class="pointer-events-none fixed left-0 top-0 h-0 w-0 opacity-0"
+  class="pointer-events-none fixed left-0 top-0 h-0 w-0"
   aria-hidden="true"
   inert
   data-offscreen-webview-host
@@ -226,11 +230,12 @@
 >
   {#each entries as entry (entry.tabId)}
     {@const agentDrawing = $agentDrawing$[entry.tabId] === true}
-    <!-- Box size is behavioural (Chromium frame scheduling), so it is an inline style. -->
+    <!-- Box size and opacity are behavioural (Chromium frame scheduling), so they are inline styles. -->
     <div
       class="absolute left-0 top-0 overflow-hidden"
-      style:width={agentDrawing ? AGENT_DRAWING_BOX : PARKED_BOX}
-      style:height={agentDrawing ? AGENT_DRAWING_BOX : PARKED_BOX}
+      style:width="1px"
+      style:height="1px"
+      style:opacity={agentDrawing ? AGENT_DRAWING_OPACITY : PARKED_OPACITY}
       data-offscreen-webview-box={entry.tabId}
       data-agent-drawing={agentDrawing ? '' : undefined}
     >
