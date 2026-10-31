@@ -30,6 +30,7 @@
   import {
     selectBrowserTabRecoveryRequests,
     selectBrowserTabNavigations,
+    selectBrowserTabsAgentDrawing,
     selectMountedBrowserTabLeases,
   } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import {
@@ -109,6 +110,17 @@
         : [],
     ),
   );
+
+  // Tabs an agent is acting on right now (main's agent drawing hold, via
+  // `browser:agent-drawing`): their box grows from the 1x1 parking box to
+  // 8x8, because Chromium pauses or slows a frame whose visible box is 1x1
+  // (~1 frame per second measured) while an 8x8 one at opacity 0 drew at
+  // full rate, and agents measuring animation or timing need full frame
+  // rate. Kept that small so the invisible guest covers almost nothing of
+  // the app. Only the box's size changes, so the guest never reloads.
+  const agentDrawing$ = selectBrowserTabsAgentDrawing();
+  const PARKED_BOX = '1px';
+  const AGENT_DRAWING_BOX = '8px';
 
   let cache = $state<Map<string, number>>(new Map());
   // URL/workspace frozen when a tab enters the keep-alive set, so later
@@ -197,24 +209,34 @@
   and out-of-viewport guests (the old left:-10000px parking) get
   viewport-culled by the compositor — no BeginFrames, so CDP
   Page.captureScreenshot and webContents.capturePage() hang until the
-  caller's budget kills them (monorepo#3366). A 1x1 overflow-hidden
-  container at the viewport origin (opacity 0, no pointer events) keeps
-  the full-size guests genuinely painting while staying invisible and
-  non-interactive. `inert` removes the (focusable) webviews from the tab
+  caller's budget kills them (monorepo#3366). Each full-size guest sits in
+  its own overflow-hidden wrapper at the viewport origin, inside an
+  invisible (opacity 0), non-interactive layer: a 1x1 wrapper keeps an idle
+  guest painting at a throttled rate, and a tab an agent is acting on gets
+  an 8x8 wrapper so it draws at full frame rate (still invisible and
+  non-interactive). `inert` removes the (focusable) webviews from the tab
   order; harness-verified to not suppress BeginFrames.
 -->
 <div
-  class="pointer-events-none fixed left-0 top-0 h-px w-px overflow-hidden opacity-0"
+  class="pointer-events-none fixed left-0 top-0 h-0 w-0 opacity-0"
   aria-hidden="true"
   inert
   data-offscreen-webview-host
   data-offscreen-excluded-workspaces={[...excludedWorkspaceIds].join(' ')}
 >
-  <div class="relative h-[800px] w-[1280px]">
-    {#each entries as entry (entry.tabId)}
+  {#each entries as entry (entry.tabId)}
+    {@const agentDrawing = $agentDrawing$[entry.tabId] === true}
+    <!-- Box size is behavioural (Chromium frame scheduling), so it is an inline style. -->
+    <div
+      class="absolute left-0 top-0 overflow-hidden"
+      style:width={agentDrawing ? AGENT_DRAWING_BOX : PARKED_BOX}
+      style:height={agentDrawing ? AGENT_DRAWING_BOX : PARKED_BOX}
+      data-offscreen-webview-box={entry.tabId}
+      data-agent-drawing={agentDrawing ? '' : undefined}
+    >
       {#key entry.recoveryKey}
         <webview
-          class="absolute inset-0 h-full w-full border-none"
+          class="absolute left-0 top-0 h-[800px] w-[1280px] border-none"
           src={entry.recoveryKey ? 'about:blank' : entry.url}
           partition={BROWSER_PANEL_PARTITION}
           allowpopups
@@ -223,6 +245,6 @@
           use:offscreenWebview={entry}
         ></webview>
       {/key}
-    {/each}
-  </div>
+    </div>
+  {/each}
 </div>

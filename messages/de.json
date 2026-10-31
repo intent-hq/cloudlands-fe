@@ -2737,6 +2737,7 @@
   "home_views": "Ansichten der Startseite",
   "home_workspace_details": "Arbeitsbereich-Vorschau",
   "home_workspace_view": "Arbeitsbereichsansicht",
+  "home_workspace_disableAutoArchive_label": "Automatisches Archivieren deaktivieren",
   "home_workspaceLabel_menu_label": "Label",
   "home_workspaceLabel_new_label": "Neues Label…",
   "home_workspaceLabel_remove_label": "Label entfernen",

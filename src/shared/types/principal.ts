@@ -29,6 +29,8 @@ interface HostCapabilities {
   workspaceLabels?: 1;
   /** Agent secret requests: secret-request cards and `secret.*` (PROTOCOL §5.56). */
   secretRequests?: 1;
+  /** `Workspace.autoArchiveDisabled` + `workspace.update` toggle (PROTOCOL §5.1). */
+  workspaceAutoArchiveOptOut?: 1;
   invitationAccountSearch?: boolean;
   workspaceGuestRoles?: boolean;
   hostMembership: boolean;
@@ -76,6 +78,7 @@ export function parsePrincipalSnapshot(hello: unknown, value: unknown): Principa
     ...(bag.prWorkspaceLookup === 1 ? { prWorkspaceLookup: 1 as const } : {}),
     ...(bag.workspaceLabels === 1 ? { workspaceLabels: 1 as const } : {}),
     ...(bag.secretRequests === 1 ? { secretRequests: 1 as const } : {}),
+    ...(bag.workspaceAutoArchiveOptOut === 1 ? { workspaceAutoArchiveOptOut: 1 as const } : {}),
     invitationAccountSearch: bag.invitationAccountSearch === 1,
     workspaceGuestRoles: bag.workspaceGuestRoles === 1,
     hostMembership: bag.hostMembership === 1,

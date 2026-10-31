@@ -54,6 +54,14 @@ export const togglePinWorkspace = createAction<[id: string]>('sidebarNav/toggleP
 export const setWorkspaceLabel = createAction<[workspaceId: string, label: string | null]>(
   'sidebarNav/setWorkspaceLabel',
 );
+/**
+ * Turn a workspace's auto-archive opt-out on (`true`) or off via
+ * `workspace.update`. Applied right away and rolled back with an error toast
+ * if the call fails.
+ */
+export const setWorkspaceAutoArchiveDisabled = createAction<
+  [workspaceId: string, disabled: boolean]
+>('sidebarNav/setWorkspaceAutoArchiveDisabled');
 export const setMultiSelectSidebarSelectedTabs = createAction<
   [workspaceId: string, tabIds: string[]]
 >('sidebarNav/setMultiSelectSidebarSelectedTabs');

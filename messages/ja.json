@@ -2737,6 +2737,7 @@
   "home_views": "ホームの表示",
   "home_workspace_details": "ワークスペースのプレビュー",
   "home_workspace_view": "ワークスペースの表示",
+  "home_workspace_disableAutoArchive_label": "自動アーカイブを無効にする",
   "home_workspaceLabel_menu_label": "ラベル",
   "home_workspaceLabel_new_label": "新しいラベル…",
   "home_workspaceLabel_remove_label": "ラベルを削除",
