@@ -1,5 +1,6 @@
 <script lang="ts">
   import './markdown-math.css';
+  import { readMentionChip } from '$lib/services/mentions/chip';
   import { canLoadMediaUrl, filterFileMedia } from '$lib/utils/media-provenance';
   import { classifyMarkdownContent } from '$lib/utils/markdown-content-complexity';
   import { getAllContexts, onDestroy } from 'svelte';
@@ -297,19 +298,17 @@
     }
 
     // Handle mention chip clicks (file mentions in chat)
-    const mentionEl = target.closest('[data-mention]');
-    if (mentionEl) {
-      const type = mentionEl.getAttribute('data-type');
-      const id = mentionEl.getAttribute('data-id') || '';
-      const meta = JSON.parse(mentionEl.getAttribute('data-meta') || '{}');
+    const chip = readMentionChip(target.closest('[data-mention]'));
+    if (chip) {
+      const { type, meta } = chip;
 
-      if (type === 'file') {
+      if (type === 'file' && chip.filePath) {
         if (canOpenFile?.() === false) return;
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
 
-        const filePath = meta.fullPath || meta.path || meta.filename || id;
+        const filePath = chip.filePath;
         logger.debug('[MarkdownViewer] File mention clicked', { filePath, meta });
 
         // Get source panel ID for same-panel navigation
@@ -318,25 +317,25 @@
 
         // Use onFileClick callback if provided, otherwise use direct navigation
         if (onFileClick) {
-          onFileClick(filePath, { line: meta.line, openInAdjacentPanel, sourcePanelId });
+          onFileClick(filePath, { line: chip.line, openInAdjacentPanel, sourcePanelId });
         } else {
           const wsId = workspaceId;
           if (wsId) {
             appStore.dispatch(
               openWorkspaceFile(wsId, filePath, {
-                line: meta.line,
+                line: chip.line,
                 openInAdjacentPanel,
                 sourcePanelId,
               }),
             );
           }
         }
-      } else if (type === 'note') {
+      } else if (type === 'note' && chip.note) {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
 
-        const noteId = meta.noteId || id;
+        const noteId = chip.note.id;
         logger.debug('[MarkdownViewer] Note mention clicked', { noteId, meta });
 
         // Get source panel ID for same-panel navigation
@@ -344,8 +343,8 @@
         const openInAdjacentPanel = isCmdClickModifier({ event });
 
         // Cross-workspace note chips carry their workspace in meta.
-        if (meta.isExternalLink && meta.workspaceId && meta.workspaceId !== workspaceId) {
-          handleLink(noteUrl(noteId, meta.workspaceId), {
+        if (chip.note.workspaceId && chip.note.workspaceId !== workspaceId) {
+          handleLink(noteUrl(noteId, chip.note.workspaceId), {
             workspaceId: workspaceId ? WorkspaceId(workspaceId) : undefined,
             sourcePanelId,
             event,

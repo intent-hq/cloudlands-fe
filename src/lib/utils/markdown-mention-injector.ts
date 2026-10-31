@@ -2,58 +2,15 @@
  * Pure string-based mention injection for HTML.
  *
  * Converts canonical @-tokens to <span data-mention> elements so TipTap
- * re-parses them as mention nodes.
+ * re-parses them as mention nodes. Token patterns, parsing and chip
+ * attributes come from the mention registry; this module only emits them as
+ * HTML strings (the note editor emits the same elements as DOM).
  *
  * This module is intentionally free of DOM dependencies so it can run in
  * a Web Worker as well as on the main thread.
  */
 
-import { memberMentionLabel, parseMemberMention } from '$lib/utils/member-mention-token';
-import {
-  NOTE_MENTION_BODY_SOURCE,
-  noteMentionChipAttrs,
-  parseNoteMention,
-} from '$lib/utils/note-mention-token';
-import {
-  parseRuntimeMention,
-  RUNTIME_MENTION_BODY_SOURCE,
-  runtimeMentionChipAttrs,
-} from '$lib/utils/runtime-mention-token';
-
-// --- Regex patterns ---
-const noteBracketRe = new RegExp(`@${NOTE_MENTION_BODY_SOURCE}`, 'g');
-const runtimeRe = new RegExp(`@${RUNTIME_MENTION_BODY_SOURCE}`, 'g');
-const noteRe = /@note\/([A-Za-z0-9\-_]+)/g;
-const rulesRe = /@\.augment\/rules\/[^\s<>()'\"]+/g;
-const fileRe = /@\/[^\s<>()'\"]+/g;
-const relativeFileRe = /@([A-Za-z0-9._-]+\/[^\s<>()'\"]+\.[A-Za-z0-9]+)/g;
-const personaRe = /@auggie\-personality\-[\w\-]+/g;
-const simpleFileNameRe = /@([A-Za-z0-9._-]+\.[A-Za-z0-9._-]+)/g;
-const bareFileNameRe =
-  /\b([A-Za-z0-9][A-Za-z0-9._-]+\.(?:json|js|ts|tsx|jsx|md|mdx|yaml|yml|svelte|html|css|scss|py|go|rs|rb|java|kt|swift|m|mm|hpp|h|hh|c|cc|cpp|sh|toml|lock|ini|conf|txt|csv|sql))\b/g;
-const barePathRe =
-  /\b([A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)+\.(?:json|js|ts|tsx|jsx|md|mdx|yaml|yml|svelte|html|css|scss|py|go|rs|rb|java|kt|swift|m|mm|hpp|h|hh|c|cc|cpp|sh|toml|lock|ini|conf|txt|csv|sql))\b/g;
-const workspaceNotePathRe =
-  /\/[^\s<>()'\"]*(?:intent|\.workspaces)\/[a-f0-9-]+\/\.workspace\/notes\/([a-f0-9-]+)\.json/g;
-const intentUrlRe = /intent:\/\/[^\s<>()'\"]+/g;
-const contextMentionRe = /@context\[([A-Za-z0-9+/=]+|[^\[\]]*(?:\[[^\]]*\][^\[\]]*)*)\]/g;
-
-const allPatterns: Array<{ re: RegExp; kind: string }> = [
-  { re: /@member\[[^\]\s]*\]/g, kind: 'member' },
-  { re: noteBracketRe, kind: 'note-bracket' },
-  { re: runtimeRe, kind: 'runtime' },
-  { re: noteRe, kind: 'note' },
-  { re: rulesRe, kind: 'rule' },
-  { re: fileRe, kind: 'file' },
-  { re: relativeFileRe, kind: 'relative-file' },
-  { re: simpleFileNameRe, kind: 'simple-file' },
-  { re: bareFileNameRe, kind: 'bare-file' },
-  { re: barePathRe, kind: 'bare-path' },
-  { re: personaRe, kind: 'personality' },
-  { re: workspaceNotePathRe, kind: 'workspace-note-path' },
-  { re: intentUrlRe, kind: 'intent-url' },
-  { re: contextMentionRe, kind: 'context-mention' },
-];
+import { mentionElement, scanMentions } from '$lib/services/mentions/registry';
 
 // --- Helper: escape HTML attribute values ---
 const escAttr = (s: string): string =>
@@ -80,241 +37,26 @@ const unescapeHtmlText = (s: string): string =>
     return NAMED_ENTITIES[body] ?? entity;
   });
 
-// --- Helper: build mention span HTML string ---
-function mentionSpanHtml(attrs: {
-  type: string;
-  id?: string;
-  label: string;
-  meta?: unknown;
-  uri?: string;
-}): string {
-  let s = `<span data-mention="true" data-type="${escAttr(attrs.type)}"`;
-  if (attrs.id) s += ` data-id="${escAttr(attrs.id)}"`;
-  s += ` data-label="${escAttr(attrs.label)}"`;
-  if (attrs.uri) s += ` data-uri="${escAttr(attrs.uri)}"`;
-  s += ` data-meta="${escAttr(JSON.stringify(attrs.meta || {}))}"`;
-  const displayLabel = attrs.type === 'member' ? memberMentionLabel(attrs.label) : attrs.label;
-  s += ` class="mention-chip">${escAttr(displayLabel)}</span>`;
-  return s;
-}
-
-// --- Helper: build context mention span HTML string ---
-function contextSpanHtml(attrs: {
-  itemType: string;
-  provider: string;
-  title: string;
-  identifier: string;
-  url?: string;
-  description?: string;
-  metadata?: string;
-  displayLabel: string;
-}): string {
-  let s = `<span data-type="context-mention"`;
-  s += ` data-item-type="${escAttr(attrs.itemType)}"`;
-  s += ` data-provider="${escAttr(attrs.provider)}"`;
-  s += ` data-title="${escAttr(attrs.title)}"`;
-  s += ` data-identifier="${escAttr(attrs.identifier)}"`;
-  if (attrs.url) s += ` data-url="${escAttr(attrs.url)}"`;
-  if (attrs.description) s += ` data-description="${escAttr(attrs.description)}"`;
-  if (attrs.metadata) s += ` data-metadata="${escAttr(attrs.metadata)}"`;
-  s += ` class="context-mention">${escAttr(attrs.displayLabel)}</span>`;
-  return s;
-}
-
-// --- Convert a match to its replacement HTML ---
-function matchToHtml(kind: string, value: string, groups: string[]): string {
-  if (kind === 'member') {
-    const member = parseMemberMention(value);
-    return member ? mentionSpanHtml(member) : value;
-  } else if (kind === 'note-bracket') {
-    // Input is HTML text, so entities in the title are still escaped.
-    const note = parseNoteMention(unescapeHtmlText(value));
-    return note ? mentionSpanHtml(noteMentionChipAttrs(note)) : value;
-  } else if (kind === 'runtime') {
-    // Input is HTML text, so entities in the name are still escaped.
-    const mention = parseRuntimeMention(unescapeHtmlText(value));
-    return mention ? mentionSpanHtml(runtimeMentionChipAttrs(mention)) : value;
-  } else if (kind === 'note') {
-    const id = groups[0] || '';
-    return mentionSpanHtml({ type: 'note', id, label: id });
-  } else if (kind === 'rule') {
-    const path = value.slice(1);
-    const label = path.split('/').pop() || path;
-    return mentionSpanHtml({ type: 'rule', id: path, label, meta: { path } });
-  } else if (kind === 'file') {
-    const fullPath = value.slice(1);
-    return mentionSpanHtml({ type: 'file', id: fullPath, label: fullPath, meta: { fullPath } });
-  } else if (kind === 'relative-file') {
-    const rawPath = groups[0] || value.slice(1);
-    const fullPath = rawPath
-      .split('/')
-      .map((seg: string) => (seg.startsWith('@') ? seg.slice(1) : seg))
-      .join('/');
-    return mentionSpanHtml({ type: 'file', id: fullPath, label: fullPath, meta: { fullPath } });
-  } else if (kind === 'simple-file') {
-    const rawFilename = groups[0] || value.slice(1);
-    const filename = rawFilename.startsWith('@') ? rawFilename.slice(1) : rawFilename;
-    return mentionSpanHtml({ type: 'file', id: filename, label: filename, meta: { filename } });
-  } else if (kind === 'bare-file') {
-    const rawFilename = groups[0] || '';
-    const filename = rawFilename.startsWith('@') ? rawFilename.slice(1) : rawFilename;
-    if (filename) {
-      return mentionSpanHtml({ type: 'file', id: filename, label: filename, meta: { filename } });
-    }
-    return value; // no match — keep original text
-  } else if (kind === 'bare-path') {
-    const fullPath = groups[0] || value;
-    if (fullPath) {
-      return mentionSpanHtml({ type: 'file', id: fullPath, label: fullPath, meta: { fullPath } });
-    }
-    return value;
-  } else if (kind === 'personality') {
-    const token = value.slice(1);
-    return mentionSpanHtml({
-      type: 'personality',
-      id: token,
-      label: token,
-      meta: { promptToken: token },
-    });
-  } else if (kind === 'workspace-note-path') {
-    const noteId = groups[0] || '';
-    if (noteId) {
-      return mentionSpanHtml({
-        type: 'note',
-        id: noteId,
-        label: noteId,
-        meta: { fullPath: value },
-      });
-    }
-    return ''; // skip the path
-  } else if (kind === 'intent-url') {
-    const url = value;
-    try {
-      const parsed = new URL(url.replace('intent://', 'http://'));
-      const segments = parsed.pathname.replace(/^\/+/, '').split('/').filter(Boolean);
-      let resourceType = 'unknown';
-      let resourceId = '';
-      let workspaceId = '';
-      if (segments[0] === 'note' && segments[1]) {
-        resourceType = 'note';
-        resourceId = segments[1];
-      } else if (segments[1] === 'note' && segments[2]) {
-        workspaceId = segments[0];
-        resourceType = 'note';
-        resourceId = segments[2];
-      }
-      if (resourceType === 'note' && resourceId) {
-        return mentionSpanHtml({
-          type: 'note',
-          id: resourceId,
-          label: resourceId,
-          uri: url,
-          meta: { workspaceId, fullUrl: url, isExternalLink: !!workspaceId },
-        });
-      }
-      return escAttr(value); // unknown format — plain text
-    } catch {
-      return escAttr(value); // invalid URL — plain text
-    }
-  } else if (kind === 'context-mention') {
-    const content = groups[0] || '';
-    let provider = 'browser';
-    let identifier = '';
-    let title = '';
-    let url = '';
-    let description = '';
-    let metadata = '';
-    let itemType = '';
-    const isBase64 = /^[A-Za-z0-9+/=]+$/.test(content) && !content.includes('|');
-    if (isBase64) {
-      try {
-        const json = decodeURIComponent(escape(atob(content)));
-        const parsed = JSON.parse(json);
-        provider = parsed.provider || 'browser';
-        identifier = parsed.identifier || '';
-        title = parsed.title || '';
-        url = parsed.url || '';
-        description = parsed.description || '';
-        metadata = parsed.metadata || '';
-        itemType = parsed.itemType || '';
-      } catch {
-        // fall through to legacy
-      }
-    }
-    if (!itemType) {
-      const firstPipe = content.indexOf('|');
-      const secondPipe = content.indexOf('|', firstPipe + 1);
-      if (firstPipe !== -1 && secondPipe !== -1) {
-        provider = content.substring(0, firstPipe) || 'browser';
-        identifier = content.substring(firstPipe + 1, secondPipe);
-        title = content.substring(secondPipe + 1);
-      } else if (firstPipe !== -1) {
-        provider = content.substring(0, firstPipe) || 'browser';
-        identifier = content.substring(firstPipe + 1);
-        title = identifier;
-      } else {
-        identifier = content;
-        title = content;
-      }
-      const providerToItemType: Record<string, string> = {
-        linear: 'linear-issue',
-        github: 'github-issue',
-        sentry: 'sentry-issue',
-        browser: 'browser-url',
-      };
-      itemType = providerToItemType[provider] || 'browser-url';
-    }
-    return contextSpanHtml({
-      itemType,
-      provider,
-      title,
-      identifier,
-      url,
-      description,
-      metadata,
-      displayLabel: title || identifier || 'Link',
-    });
-  }
-  return value;
-}
-
-// --- Process a text segment: find earliest match, replace, repeat ---
+// --- Process a text segment: replace each registry match with its element ---
 function processText(text: string): string {
-  let idx = 0;
   const parts: string[] = [];
-
-  while (idx < text.length) {
-    let best: { start: number; end: number; kind: string; value: string; groups: string[] } | null =
-      null;
-
-    for (const { re, kind } of allPatterns) {
-      re.lastIndex = 0;
-      const m = re.exec(text.slice(idx));
-      if (m) {
-        const start = idx + m.index;
-        const end = idx + m.index + m[0].length;
-        if (!best || start < best.start) {
-          best = { start, end, kind, value: m[0], groups: m.slice(1) };
-        }
-      }
+  let idx = 0;
+  // Input is HTML text, so entities in titles and names are still escaped.
+  for (const match of scanMentions(text, 'markdown', { decode: unescapeHtmlText })) {
+    if (match.index > idx) parts.push(text.slice(idx, match.index));
+    const element = match.parsed ? mentionElement(match.parsed) : null;
+    if (element) {
+      const attributes = element.attributes
+        .map(([name, value]) => ` ${name}="${escAttr(value)}"`)
+        .join('');
+      parts.push(`<span${attributes} class="${element.className}">${escAttr(element.text)}</span>`);
+    } else {
+      // Malformed token or a non-note link: keep the original text.
+      parts.push(match.text);
     }
-
-    if (!best) {
-      // No more matches — append rest of text
-      parts.push(text.slice(idx));
-      break;
-    }
-
-    // Append text before match
-    if (best.start > idx) {
-      parts.push(text.slice(idx, best.start));
-    }
-
-    // Append replacement
-    parts.push(matchToHtml(best.kind, best.value, best.groups));
-    idx = best.end;
+    idx = match.index + match.text.length;
   }
-
+  if (idx < text.length) parts.push(text.slice(idx));
   return parts.join('');
 }
 
@@ -325,7 +67,7 @@ const BLOCK_TAGS = new Set(['code', 'pre', 'script', 'style', 'a']);
  * Inject mention chips into HTML by converting canonical @-tokens to
  * `<span data-mention>` elements so TipTap re-parses them as mention nodes.
  *
- * - Skips inside code/pre/script/style/a tags and existing data-mention spans
+ * - Skips inside code/pre/script/style/a tags, existing data-mention spans and math
  * - Pure string-based implementation (no DOM required) for performance
  */
 export function injectMentionSpans(html: string): string {
@@ -363,7 +105,10 @@ export function injectMentionSpans(html: string): string {
       if (openMatch) {
         const tagName = openMatch[1].toLowerCase();
         const isSelfClosing = tag.endsWith('/>');
-        const isBlocked = BLOCK_TAGS.has(tagName) || tag.includes('data-mention');
+        const isBlocked =
+          BLOCK_TAGS.has(tagName) ||
+          tag.includes('data-mention') ||
+          tag.includes('data-math-source');
 
         if (isBlocked && !isSelfClosing) {
           blockStack.push(tagName);

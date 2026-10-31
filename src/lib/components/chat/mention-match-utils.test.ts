@@ -21,10 +21,10 @@ describe('findInlineMentions', () => {
   });
 
   it('matches a mention wrapped in parentheses (regression)', () => {
-    // The note pattern is greedy over non-whitespace, so the closing paren is
-    // included in the capture — same behavior as before the email guard.
+    // Legacy note ids are `[A-Za-z0-9_-]+`, so the closing paren stays text
+    // (the chat and note-editor readers share this pattern).
     expect(findInlineMentions('see (@note/spec) for details')).toEqual([
-      { index: 5, fullMatch: '@note/spec)', captured: 'note/spec)' },
+      { index: 5, fullMatch: '@note/spec', captured: 'note/spec' },
     ]);
   });
 

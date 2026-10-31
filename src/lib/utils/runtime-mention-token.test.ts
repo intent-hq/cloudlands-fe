@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { mentionTokensToText } from '$lib/services/mentions/registry';
 import {
   parseRuntimeMention,
   runtimeMentionChipAttrs,
-  runtimeMentionsToText,
   serializeRuntimeMention,
 } from './runtime-mention-token';
 
@@ -68,7 +68,7 @@ describe('runtime mention tokens', () => {
 
   it('renders previews as @<name> and leaves legacy tokens alone', () => {
     expect(
-      runtimeMentionsToText('Run @script[s1:Dev server] in @terminal[pty-0:zsh] @terminal/old'),
+      mentionTokensToText('Run @script[s1:Dev server] in @terminal[pty-0:zsh] @terminal/old'),
     ).toBe('Run @Dev server in @zsh @terminal/old');
   });
 });
