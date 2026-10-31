@@ -1017,9 +1017,19 @@ function expectCameraBeforeScene(
     expect(Math.abs(routeFrame - sceneFrame)).toBeLessThanOrEqual(1);
   if (routeFrame >= 0 && labelFrame >= 0) {
     expect(labelFrame).toBeGreaterThanOrEqual(routeFrame);
+    // Labels follow their route after a designed 60 ms delay. Count sampled frames rather
+    // than wall-clock time, which a loaded runner stretches (intent-hq/intent#8188): eight
+    // frames is about 130 ms at 60 Hz, and slower frames only lower the count.
     expect(
-      transition.samples[labelFrame].elapsedMs - transition.samples[routeFrame].elapsedMs,
-    ).toBeLessThanOrEqual(100);
+      labelFrame - routeFrame,
+      JSON.stringify(
+        transition.samples.map(({ elapsedMs, routeEntryOpacity, labelEntryOpacity }) => ({
+          elapsedMs,
+          routeEntryOpacity,
+          labelEntryOpacity,
+        })),
+      ),
+    ).toBeLessThanOrEqual(8);
   }
 }
 
