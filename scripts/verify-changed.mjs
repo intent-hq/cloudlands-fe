@@ -1038,6 +1038,7 @@ export function checkEnvironment(check, { heldLock = null, baseEnv = process.env
 
 /** Retained tail of a captured check's output, enough to explain a failure. */
 const CAPTURED_OUTPUT_LIMIT = 256 * 1024;
+const CAPTURE_DRAIN_MS = 2_000;
 
 /**
  * How a check's child process writes its output. Real runs stream it to the
@@ -1079,8 +1080,7 @@ async function runCheck(check, root, { heldLock = null, output = checkOutputMode
       activeChildren.delete(child);
       reject(error);
     });
-    // 'close' (not 'exit') so captured pipes are fully drained first.
-    child.on(capture ? 'close' : 'exit', (code, signal) => {
+    const settle = (code, signal) => {
       activeChildren.delete(child);
       if (code === 0) resolveRun();
       else {
@@ -1096,6 +1096,20 @@ async function runCheck(check, root, { heldLock = null, output = checkOutputMode
           }),
         );
       }
+    };
+    child.on('exit', (code, signal) => {
+      if (!capture) return settle(code, signal);
+      // Let the pipes drain, but never wait on a grandchild (a CT server, a
+      // Playwright worker) that inherited them and outlives the check.
+      const drained = setTimeout(() => {
+        child.stdout?.destroy();
+        child.stderr?.destroy();
+        settle(code, signal);
+      }, CAPTURE_DRAIN_MS);
+      child.once('close', () => {
+        clearTimeout(drained);
+        settle(code, signal);
+      });
     });
   });
 }

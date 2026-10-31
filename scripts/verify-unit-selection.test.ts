@@ -166,6 +166,34 @@ describe('practice check output', () => {
     expect(error?.output).toMatch(/Test Files\s+1 failed/);
   });
 
+  it('does not wait on a grandchild that keeps a captured pipe open', async () => {
+    const { root } = fixture();
+    const lingering = `const { spawn } = require('node:child_process');
+const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'inherit' });
+require('node:fs').writeFileSync('lingering.pid', String(child.pid));
+console.log('FAIL lingering practice output');
+process.exit(3);`;
+    try {
+      const error = await runVerificationPlan(
+        plan({
+          ...check('lingering', 'run'),
+          executable: process.execPath,
+          args: ['-e', lingering],
+        }),
+        root,
+        { log() {} },
+      ).catch((cause: Error & { exitCode?: number; output?: string }) => cause);
+      // The grandchild lives 60s; waiting on it would exceed the test timeout.
+      expect(error).toMatchObject({ exitCode: 3 });
+      expect((error as { output?: string }).output).toContain('FAIL lingering practice output');
+    } finally {
+      const pid = Number(readFileSync(join(root, 'lingering.pid'), 'utf8'));
+      try {
+        process.kill(pid);
+      } catch {}
+    }
+  });
+
   it('still streams check output to the terminal for a real verify:changed run', () => {
     const { root, write } = fixture();
     write(
