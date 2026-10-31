@@ -1178,6 +1178,7 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
     RESULT_release_fast_path: 'success',
     RESULT_test_electron: 'skipped',
     RESULT_pr_title: event === 'merge_group' ? 'skipped' : 'success',
+    RESULT_docs_pr_scope: event === 'merge_group' ? 'skipped' : 'success',
     RESULT_conflict_markers: event === 'merge_group' ? 'skipped' : 'success',
     RESULT_checks: 'success',
     RESULT_build_web: 'success',
@@ -1507,6 +1508,36 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
         CT_REQUIRED: '',
       },
       1,
+    ],
+    [
+      'pull_request, docs-pr-scope passed',
+      { ...results('success', 'pull_request'), FAST_PATH: 'false', CT_REQUIRED: 'true' },
+      0,
+    ],
+    [
+      'pull_request, docs-pr-scope failed',
+      {
+        ...results('success', 'pull_request'),
+        RESULT_docs_pr_scope: 'failure',
+        FAST_PATH: 'false',
+        CT_REQUIRED: 'true',
+      },
+      1,
+    ],
+    [
+      'pull_request, docs-pr-scope skipped',
+      {
+        ...results('success', 'pull_request'),
+        RESULT_docs_pr_scope: 'skipped',
+        FAST_PATH: 'false',
+        CT_REQUIRED: 'true',
+      },
+      1,
+    ],
+    [
+      'merge_group, docs-pr-scope skipped',
+      { ...results('success', 'merge_group'), FAST_PATH: 'false', CT_REQUIRED: 'true' },
+      0,
     ],
     [
       'PR, CT passed, no test/ path, root Playwright skipped',
