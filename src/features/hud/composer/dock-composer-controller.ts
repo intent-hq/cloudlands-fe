@@ -128,9 +128,9 @@ export function createDockComposerController(
    * authority this controller was created under; `dock.authority` alone can lag.
    */
   const current = () => {
+    if (disposed) return false;
     const dock = appStore.state.dockConversation;
     return (
-      !disposed &&
       dock.workspaceId === workspaceId &&
       dock.agentId === agentId &&
       dock.authority === scope.authority &&

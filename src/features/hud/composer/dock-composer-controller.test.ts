@@ -353,6 +353,36 @@ describe('dock composer controller', () => {
     await controller.dispose();
   });
 
+  it('retires a pending speech stop without reading the disposed store or sending the draft', async () => {
+    const native = fakeNative();
+    await installNative(native);
+    native.adapter.speech.stop.mockImplementationOnce(() => new Promise(() => undefined));
+    const controller = createDockComposerController(scope(), { ...deps(), sendStopMs: 1_000 });
+    controller.actions.onDictationToggle();
+    await vi.waitFor(() => expect(native.adapter.speech.start).toHaveBeenCalledTimes(1));
+    const speechId = native.adapter.speech.start.mock.calls[0][0] as string;
+    native.emit(speechId, {
+      type: 'ready',
+      sessionId: speechId,
+      engine: 'analyzer',
+      locale: 'en-US',
+      onDevice: true,
+      startedAtEpochMs: 1_000,
+    });
+    const flush = vi.fn(() => true);
+    const sending = controller.beforeSubmit(flush);
+    await vi.waitFor(() => expect(native.adapter.speech.stop).toHaveBeenCalledTimes(1));
+
+    controller.dispose();
+    cleanups
+      .splice(0)
+      .reverse()
+      .forEach((dispose) => dispose());
+
+    await expect(sending).resolves.toBe(false);
+    expect(flush).not.toHaveBeenCalled();
+  });
+
   it('sends the known words when the stop ends in an error, surfacing the error without refusing', async () => {
     const native = fakeNative();
     await installNative(native);
