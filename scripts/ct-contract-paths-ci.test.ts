@@ -9,8 +9,8 @@
  * `verify:changed` consumes the list locally; the PR workflow must consume the
  * same module so `test-ct` runs on `pull_request` when the diff touches a
  * CT-contract path (cloudlands-fe#2441 was ejected from the merge queue with 40
- * CT failures after green PR CI), a CT spec, or a direct fixture dependency
- * of a discovered spec.
+ * CT failures after green PR CI), a CT spec, or a module a discovered spec or
+ * the mount harness transitively imports.
  * The step script and the gate script are
  * extracted from the workflow and executed under bash across a scenario table,
  * and the `test-ct` `if:` expression is evaluated the same way, so the
@@ -449,7 +449,7 @@ describe('test-ct runs on merge_group when ct_required is true', () => {
     route: 'success',
   };
   it.each<[string, Partial<Context>, boolean]>([
-    ['CT-relevant queue (contract path, spec, or direct import)', {}, true],
+    ['CT-relevant queue (contract path, spec, or mounted import)', {}, true],
     ['ordinary queue', { ctRequired: 'false' }, false],
     ['release-shaped queue touching package.json', { fastPath: 'true' }, false],
     ['queue whose relevance output is empty (fork / failed job)', { ctRequired: '' }, false],
