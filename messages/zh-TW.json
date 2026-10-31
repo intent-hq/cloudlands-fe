@@ -7740,6 +7740,7 @@
   "workspace_transfer_notTransferred_message": "事件歷史、終端機工作階段與伺服器設定會保留在來源端，不會被傳輸。",
   "workspace_transfer_ofEstimate_label": "/ {bytes}",
   "workspace_transfer_openTarget_label": "開啟 {label}",
+  "workspace_transfer_openTargetFailed_message": "已轉移，但無法開啟 {label}。請在設定 → 電腦中開啟。",
   "workspace_transfer_phase_committing": "正在目標端匯入…",
   "workspace_transfer_phase_downloading": "正在下載封存檔…",
   "workspace_transfer_phase_relaying": "正在傳輸封存檔…",

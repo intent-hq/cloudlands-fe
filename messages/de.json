@@ -7740,6 +7740,7 @@
   "workspace_transfer_notTransferred_message": "Ereignisverlauf, Terminalsitzungen und Servereinstellungen bleiben auf der Quelle und werden nicht übertragen.",
   "workspace_transfer_ofEstimate_label": "von {bytes}",
   "workspace_transfer_openTarget_label": "{label} öffnen",
+  "workspace_transfer_openTargetFailed_message": "Übertragen, aber {label} konnte nicht geöffnet werden. Öffnen Sie es unter Einstellungen → Rechner.",
   "workspace_transfer_phase_committing": "Import auf dem Ziel läuft…",
   "workspace_transfer_phase_downloading": "Archiv wird heruntergeladen…",
   "workspace_transfer_phase_relaying": "Archiv wird übertragen…",

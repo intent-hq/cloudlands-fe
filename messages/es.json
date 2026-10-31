@@ -7740,6 +7740,7 @@
   "workspace_transfer_notTransferred_message": "El historial de eventos, las sesiones de terminal y la configuración del servidor permanecen en el origen y no se transfieren.",
   "workspace_transfer_ofEstimate_label": "de {bytes}",
   "workspace_transfer_openTarget_label": "Abrir {label}",
+  "workspace_transfer_openTargetFailed_message": "Transferido, pero no se pudo abrir {label}. Ábrelo en Configuración → Equipos.",
   "workspace_transfer_phase_committing": "Importando en el destino…",
   "workspace_transfer_phase_downloading": "Descargando el archivo…",
   "workspace_transfer_phase_relaying": "Transfiriendo el archivo…",

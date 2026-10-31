@@ -7740,6 +7740,7 @@
   "workspace_transfer_notTransferred_message": "Event history, terminal sessions, and server settings stay on the source and are not transferred.",
   "workspace_transfer_ofEstimate_label": "of {bytes}",
   "workspace_transfer_openTarget_label": "Open {label}",
+  "workspace_transfer_openTargetFailed_message": "Transferred, but {label} could not be opened. Open it under Settings → Machines.",
   "workspace_transfer_phase_committing": "Importing on the destination…",
   "workspace_transfer_phase_downloading": "Downloading archive…",
   "workspace_transfer_phase_relaying": "Transferring archive…",

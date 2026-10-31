@@ -7740,6 +7740,7 @@
   "workspace_transfer_notTransferred_message": "イベント履歴、ターミナルセッション、サーバー設定は転送元に残り、転送されません。",
   "workspace_transfer_ofEstimate_label": "/ {bytes}",
   "workspace_transfer_openTarget_label": "{label} を開く",
+  "workspace_transfer_openTargetFailed_message": "転送しましたが、{label} を開けませんでした。設定 → マシンから開いてください。",
   "workspace_transfer_phase_committing": "転送先でインポート中…",
   "workspace_transfer_phase_downloading": "アーカイブをダウンロード中…",
   "workspace_transfer_phase_relaying": "アーカイブを転送中…",
