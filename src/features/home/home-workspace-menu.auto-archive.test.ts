@@ -10,8 +10,14 @@ import type {
 import { labelWorkspace, workspaceLabelsState } from '../../test/fixtures/workspace-labels-state';
 import {
   bulkUpdateWorkspaceEntities,
+  setWorkspaceHasLoaded,
   updateWorkspaceEntity,
 } from '$store/renderer/slices/workspace/workspace-slice';
+import {
+  principalIdentityChanged,
+  principalReceived,
+} from '$store/renderer/slices/principal/principal-slice';
+import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
 import { createHomeWorkspaceMenu } from './home-workspace-menu';
 
 const item = (entries: SidebarMenuEntry[], id: string) =>
@@ -19,6 +25,7 @@ const item = (entries: SidebarMenuEntry[], id: string) =>
 
 const close = vi.fn();
 let dispatch: ReturnType<typeof vi.spyOn>;
+let applyAction: typeof store.dispatch;
 let dispose: (() => void) | undefined;
 
 function setup({
@@ -33,6 +40,7 @@ function setup({
   dispose = store.init(
     workspaceLabelsState({ workspaces: [target], role, autoArchiveOptOut: supported }),
   );
+  applyAction = store.dispatch;
   dispatch = vi.spyOn(store, 'dispatch').mockImplementation(() => undefined as never);
   return createHomeWorkspaceMenu(target, {
     pinned: false,
@@ -42,6 +50,28 @@ function setup({
     expandGroup: vi.fn(),
     getHomeElement: () => null,
   });
+}
+
+function readmitSamePrincipal() {
+  const before = store.state.principal;
+  applyAction(principalIdentityChanged(before.boundPrincipalId!));
+  applyAction(
+    principalReceived(
+      {
+        context: before.context!,
+        invalidation: before.invalidation + 1,
+        presentationVersion: before.presentationVersion,
+      },
+      before.snapshot!,
+    ),
+  );
+  applyAction(
+    setWorkspaceHasLoaded(
+      true,
+      store.state.connections.windowBackendId,
+      selectPrincipalActionContext.select(store.state),
+    ),
+  );
 }
 
 afterEach(() => {
@@ -81,15 +111,35 @@ describe('Home workspace Disable auto-archive toggle', () => {
 
   it('toggles from the value current at click time, not when the menu opened', () => {
     const toggle = item(setup(), 'disable-auto-archive')!;
-    dispatch.mockRestore();
-    store.dispatch(
+    applyAction(
       bulkUpdateWorkspaceEntities([
         updateWorkspaceEntity('ws-target', { autoArchiveDisabled: true }),
       ]),
     );
-    dispatch = vi.spyOn(store, 'dispatch').mockImplementation(() => undefined as never);
     toggle.onClick();
     expect(dispatch).toHaveBeenCalledWith(setWorkspaceAutoArchiveDisabled('ws-target', false));
+
+    dispatch.mockClear();
+    readmitSamePrincipal();
+    toggle.onClick();
+    expect(dispatch).not.toHaveBeenCalled();
+
+    // A current callback is also retired when closing the menu changes admission.
+    const current = item(
+      createHomeWorkspaceMenu(labelWorkspace('ws-target'), {
+        pinned: false,
+        microConnected: false,
+        onOpen: vi.fn(),
+        onClose: close,
+        expandGroup: vi.fn(),
+        getHomeElement: () => null,
+      }),
+      'disable-auto-archive',
+    )!;
+    expect(current).toBeDefined();
+    close.mockImplementationOnce(readmitSamePrincipal);
+    current.onClick();
+    expect(dispatch).not.toHaveBeenCalled();
   });
 
   it('is hidden on remote workspaces, which are never auto-archived', () => {
