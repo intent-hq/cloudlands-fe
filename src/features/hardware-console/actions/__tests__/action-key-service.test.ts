@@ -230,6 +230,7 @@ describe('handleActionKeyPress', () => {
   it('no-ops with the generic hint for other unavailable actions', () => {
     // Slot 2 (ACT08) = see-spec; no active workspace → generic hint.
     mockState.tabState.currentTabId = null;
+    window.history.replaceState({}, '', '/');
     const showUnavailableHint = vi.fn();
     const result = handleActionKeyPress('ACT08', { showUnavailableHint });
     expect(result).toBeNull();
@@ -1137,5 +1138,20 @@ describe('workspace-scoped actions from Home or Settings', () => {
       'cycle-in-progress-agents',
     );
     expect(showWorkspace).toHaveBeenCalledWith('ws-1');
+  });
+});
+
+describe('workspace-scoped actions while a jump is landing', () => {
+  it('targets the workspace whose route landed before its tab opens', () => {
+    // openAndShowWorkspace opens the tab only after the route commits.
+    window.history.replaceState({}, '', '/workspace/ws-2');
+    mockState.workspace.workspaces = createCollection('id', [
+      { id: 'ws-1' } as never,
+      { id: 'ws-2' } as never,
+    ]);
+    expect(handleActionKeyPress('ACT08')).toBe('see-spec');
+    expect(dispatched).toContainEqual(
+      expect.objectContaining({ payload: expect.arrayContaining(['ws-2']) }),
+    );
   });
 });

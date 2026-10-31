@@ -29,15 +29,24 @@ describe('resolveVisibleWorkspaceId', () => {
     ['/workspace/ws-1/files', 'ws-1'],
     ['/', null],
     ['/settings', null],
-    ['/workspace/ws-2', null],
     ['/workspace/new', null],
   ])('on %s with the ws-1 tab → %s', (path, expected) => {
     expect(resolveVisibleWorkspaceId('ws-1', path)).toBe(expected);
   });
 
-  it('is null without a current tab', () => {
-    expect(resolveVisibleWorkspaceId(null, '/workspace/ws-1')).toBeNull();
-    expect(resolveVisibleWorkspaceId('', '/workspace/ws-1')).toBeNull();
+  it('follows the route before its tab is selected (show-workspace opens it after landing)', () => {
+    expect(resolveVisibleWorkspaceId('ws-1', '/workspace/ws-2')).toBe('ws-2');
+    expect(resolveVisibleWorkspaceId(null, '/workspace/ws-1')).toBe('ws-1');
+    expect(resolveVisibleWorkspaceId('', '/workspace/ws-1/files')).toBe('ws-1');
+  });
+
+  it('is null without a tab or a workspace route', () => {
+    expect(resolveVisibleWorkspaceId(null, '/')).toBeNull();
+    expect(resolveVisibleWorkspaceId(null, null)).toBeNull();
+  });
+
+  it('prefers a pending navigation whose tab is selected over the route being left', () => {
+    expect(resolveVisibleWorkspaceId('ws-1', '/workspace/ws-2', 'ws-1')).toBe('ws-1');
   });
 
   it('trusts the current tab when the route is unknown', () => {

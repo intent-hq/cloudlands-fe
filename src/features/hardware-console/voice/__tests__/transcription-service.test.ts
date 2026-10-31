@@ -541,6 +541,7 @@ describe('handleFinishedRecording', () => {
     // No active workspace → the insertion runs synchronously, so its throw
     // propagates into the flow instead of a timer callback.
     mockState.tabState.currentTabId = null;
+    window.history.replaceState(null, '', '/');
     const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
     const insertText = vi.fn(() => {
       throw new Error('boom');

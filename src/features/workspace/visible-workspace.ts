@@ -4,20 +4,25 @@
  *
  * Home and Settings leave the last workspace as the current workspace tab
  * (`tabState.currentTabId`), so the tab id alone does not prove that
- * workspace is visible. The visible workspace is the current tab only while
- * the route belongs to it (sub-routes included) — or while a navigation to it
- * that already selected its tab is still in flight: the route only commits
- * once `goto` settles, and a quick follow-up press in that window must act on
- * the workspace being opened, not on the page being left.
+ * workspace is visible. In order:
+ * 1. A navigation that already selected its tab and is still in flight wins:
+ *    the route only commits once `goto` settles, and a quick follow-up press
+ *    in that window must act on the workspace being opened, not on the page
+ *    being left.
+ * 2. Otherwise the route decides: the workspace that owns it (sub-routes
+ *    included), even before its tab is selected — `show-workspace` opens the
+ *    tab only after the navigation lands.
+ * 3. A non-workspace route (Home, Settings) shows no workspace.
  *
  * When the route is unknown (no DOM), the current tab is trusted, matching
  * `show-workspace`'s landing check.
  *
  * Dependency-light: reads `appStore.state` straight, no selector imports, so
- * device services and the store middleware graph can import it eagerly.
+ * device services can import it eagerly. Read it at call time only — the
+ * store module itself must not import it (that would be a cycle).
  */
 import { store as appStore } from '$store/renderer/store';
-import { currentRoutePath, isWorkspaceRoutePath } from '$lib/utils/workspace-route-path';
+import { currentRoutePath, workspaceIdOwningPath } from '$lib/utils/workspace-route-path';
 
 /**
  * The latest pending navigation. Each attempt is a fresh object so an older
@@ -32,10 +37,10 @@ export function resolveVisibleWorkspaceId(
   path: string | null,
   pendingWorkspaceId: string | null = null,
 ): string | null {
-  if (typeof currentTabId !== 'string' || currentTabId.length === 0) return null;
-  if (path === null) return currentTabId;
-  if (isWorkspaceRoutePath(path, currentTabId)) return currentTabId;
-  return pendingWorkspaceId === currentTabId ? currentTabId : null;
+  const tabId = typeof currentTabId === 'string' && currentTabId.length > 0 ? currentTabId : null;
+  if (tabId !== null && pendingWorkspaceId === tabId) return tabId;
+  if (path === null) return tabId;
+  return workspaceIdOwningPath(path);
 }
 
 /** The workspace on screen now, or null on Home, Settings and other routes. */

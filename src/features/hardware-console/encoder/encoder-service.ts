@@ -17,6 +17,7 @@ import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
 import { navigateToRoute } from '$lib/utils/navigation.client';
 import { openAndShowWorkspace } from '$lib/utils/show-workspace';
+import { currentRoutePath } from '$lib/utils/workspace-route-path';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import {
@@ -113,7 +114,7 @@ function handleEncoderRotate(direction: EncoderDirection, deps: EncoderDeps = {}
 function handleEncoderClick(deps: EncoderDeps = {}): void {
   const { dispatch, navigate } = resolveDeps(deps);
   const { sidebarNav, homeWorkspaces } = appStore.state;
-  const isHome = typeof window !== 'undefined' && window.location.pathname === '/';
+  const isHome = currentRoutePath() === '/';
   if (isHome && sidebarNav.panelItem === null && homeWorkspaces.tab === 'workspaces') {
     dispatch(
       updateHomeWorkspaceView({
