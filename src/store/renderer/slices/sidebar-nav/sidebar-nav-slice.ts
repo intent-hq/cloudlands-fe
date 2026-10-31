@@ -30,6 +30,7 @@ export const initialState: SidebarNavState = {
   collapsedNoteIdsByWorkspaceId: {},
   chiefActiveAgentId: null,
   statsOverlayOpen: false,
+  autoArchiveIdleAfterDays: null,
 };
 
 // ── Actions ──
@@ -62,6 +63,13 @@ export const setWorkspaceLabel = createAction<[workspaceId: string, label: strin
 export const setWorkspaceAutoArchiveDisabled = createAction<
   [workspaceId: string, disabled: boolean]
 >('sidebarNav/setWorkspaceAutoArchiveDisabled');
+/**
+ * Hydrate `workspace.autoArchiveIdleAfterDays` from the settings snapshot or a
+ * `settings:changed` delta; `0` means idle auto-archive is off.
+ */
+export const autoArchiveIdleAfterDaysHydrated = createAction<[days: number]>(
+  'sidebarNav/autoArchiveIdleAfterDaysHydrated',
+);
 export const setMultiSelectSidebarSelectedTabs = createAction<
   [workspaceId: string, tabIds: string[]]
 >('sidebarNav/setMultiSelectSidebarSelectedTabs');
@@ -126,6 +134,10 @@ sidebarNavReducer.with(togglePinWorkspace, (state, { payload: [id] }) => {
     pinnedWorkspaceIds: [...state.pinnedWorkspaceIds, id],
   };
 });
+sidebarNavReducer.with(autoArchiveIdleAfterDaysHydrated, (state, { payload: [days] }) => ({
+  ...state,
+  autoArchiveIdleAfterDays: days,
+}));
 sidebarNavReducer.with(
   setMultiSelectSidebarSelectedTabs,
   (state, { payload: [workspaceId, tabIds] }) => ({
