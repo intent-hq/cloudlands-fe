@@ -230,6 +230,34 @@ test('Known attention stays aside until a new request, failure or review appears
     window.__homeSetAside!.update('aside-other-repo', { attention: 'review_required' }),
   );
   await expect.poll(async () => (await snapshot(page)).asideIds).not.toContain('aside-other-repo');
+
+  await page.evaluate(() =>
+    window.__homeSetAside!.update('aside-other-repo', {
+      displayStatus: 'needs_attention',
+      attentionReminder: {
+        reasons: [{ id: 'opaque-reminder', revision: 'opaque-first' }],
+        dismissed: false,
+        displayStatus: 'needs_attention',
+      },
+    }),
+  );
+  await aside(page, 'aside-other-repo');
+  await page.evaluate(() => window.__homeSetAside!.reloadPreferences());
+  await page.evaluate(() =>
+    window.__homeSetAside!.update('aside-other-repo', {
+      attentionReminder: {
+        reasons: [{ id: 'opaque-reminder', revision: 'opaque-second' }],
+        dismissed: false,
+        displayStatus: 'needs_attention',
+      },
+    }),
+  );
+  await expect.poll(async () => (await snapshot(page)).asideIds).not.toContain('aside-other-repo');
+  await aside(page, 'aside-other-repo');
+  await page.evaluate(() =>
+    window.__homeSetAside!.update('aside-other-repo', { attentionReminder: undefined }),
+  );
+  await expect.poll(async () => (await snapshot(page)).asideIds).not.toContain('aside-other-repo');
 });
 
 test('Saved state survives reload and view reset while accounts and backends stay separate', async ({

@@ -1,4 +1,5 @@
 import type { AgentSession, Workspace } from '$shared/types';
+import { workspaceReminderStatus } from '$shared/utils/workspace-attention-reminder';
 import { getHomeAttentionRequests } from './home-attention';
 import {
   HOME_SET_ASIDE_KNOWN_CAPACITY,
@@ -20,10 +21,15 @@ export function homeSetAsideAttention(
   agents: readonly AgentSession[],
 ): HomeAttentionToken[] {
   const tokens: HomeAttentionToken[] = [];
+  const reminder = workspace.attentionReminder;
+  const status = workspaceReminderStatus(workspace);
   // Each signal is independent, so a review request on an already blocked workspace is new.
-  if (workspace.displayStatus && RETURNING_STATUSES.has(workspace.displayStatus))
-    tokens.push({ token: `workspace:${workspace.displayStatus}` });
-  if (workspace.attention === 'review_required') tokens.push({ token: 'workspace:review' });
+  if (status && RETURNING_STATUSES.has(status)) tokens.push({ token: `workspace:${status}` });
+  if (workspace.attention === 'review_required' && !reminder?.dismissed)
+    tokens.push({ token: 'workspace:review' });
+  if (reminder && !reminder.dismissed)
+    for (const { id, revision } of reminder.reasons)
+      tokens.push({ token: `reminder:${JSON.stringify([id, revision])}` });
   for (const request of getHomeAttentionRequests(workspace.id, [...agents])) {
     const parsed = request.timestamp ? Date.parse(request.timestamp) : NaN;
     tokens.push({
@@ -32,6 +38,9 @@ export function homeSetAsideAttention(
       timestamp: Number.isFinite(parsed) ? parsed : undefined,
     });
   }
+  // An omitted projection can be a private hold or an invalidated personal read.
+  // Keep it distinct from a known projection while retaining the legacy baseline.
+  if (!reminder && tokens.length) tokens.push({ token: 'workspace:reminder-unavailable' });
   return tokens;
 }
 

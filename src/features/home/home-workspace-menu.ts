@@ -218,12 +218,24 @@ export function createHomeWorkspaceMenu(
     workspace.status !== WorkspaceStatusEnum.Retired;
   if (options.aside && live) {
     const { setAside, onToggle } = options.aside;
+    const ownsAside = () => {
+      try {
+        return (
+          store.dispatch === dispatch &&
+          context !== null &&
+          context === selectPrincipalActionContext.select(store.state)
+        );
+      } catch {
+        return false;
+      }
+    };
     items.push({
       id: 'set-aside',
       label: setAside ? m.home_setAside_bringBack_label() : m.home_setAside_action_label(),
       icon: setAside ? faArrowUp : faArrowDown,
       onClick: () => {
         onClose();
+        if (!ownsAside()) return;
         onToggle();
       },
     });

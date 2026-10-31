@@ -93,6 +93,7 @@
   } from './home-workspaces-selectors';
   import {
     HOME_SET_ASIDE_GROUP,
+    captureHomeSetAsideContext,
     bringBackHomeWorkspaceNow,
     neighborHomeWorkspaceId,
     restoreHomeFocusAfterMove,
@@ -181,6 +182,11 @@
     );
   }
   function toggleAside(workspace: Workspace, focusMoved = false, expectedScope?: string) {
+    const isCurrent = captureHomeSetAsideContext();
+    if (!isCurrent()) return;
+    const current = selectWorkspaceById.select(store.state, workspace.id);
+    if (!current || !isLive(current)) return;
+    workspace = current;
     if (expectedScope !== undefined) {
       const state = store.state;
       const live = selectWorkspaceById.select(state, workspace.id);
@@ -196,7 +202,7 @@
     const neighbor = focusMoved ? null : neighborHomeWorkspaceId(homeElement, workspace.id);
     if (asideSet.has(workspace.id)) bringBackHomeWorkspaceNow(workspace.id);
     else setHomeWorkspaceAsideWithUndo(workspace);
-    restoreHomeFocusAfterMove(() => homeElement, neighbor, workspace.id);
+    restoreHomeFocusAfterMove(() => homeElement, neighbor, workspace.id, isCurrent);
   }
   const workspaces$ = selectWorkspaceItems();
   const hasLoaded$ = selectWorkspaceHasLoaded();

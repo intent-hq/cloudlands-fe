@@ -10,6 +10,7 @@ import {
   getSidebarContextPosition,
   type SidebarContextPosition,
   type SidebarMenuEntry,
+  type SidebarMenuItem,
 } from '$lib/components/ui/sidebar-context-menu/types';
 import { faBellSlash } from '@fortawesome/free-solid-svg-icons';
 import { createHomeWorkspaceMenu } from './home-workspace-menu';
@@ -31,11 +32,13 @@ export function createHomeWorkspaceActions(options: HomeWorkspaceActionsOptions)
   type ReminderMenuSnapshot = {
     reasons: AttentionReminderReason[];
     principalContext: string | null;
+    dispatch: typeof store.dispatch;
   };
   function captureReminderMenu(workspace: Workspace): ReminderMenuSnapshot {
     return {
       reasons: dismissibleWorkspaceReasons(workspace),
       principalContext: selectPrincipalActionContext.select(store.state),
+      dispatch: store.dispatch,
     };
   }
   const overflowSnapshots = $state<Record<string, ReminderMenuSnapshot>>({});
@@ -164,6 +167,16 @@ export function createHomeWorkspaceActions(options: HomeWorkspaceActionsOptions)
     workspace: Workspace,
     snapshot = captureReminderMenu(workspace),
   ): SidebarMenuEntry[] {
+    const ownsSnapshot = () => {
+      try {
+        return (
+          snapshot.dispatch === store.dispatch &&
+          snapshot.principalContext === selectPrincipalActionContext.select(store.state)
+        );
+      } catch {
+        return false;
+      }
+    };
     const pinned = options.pinnedIds().includes(workspace.id);
     const items = createHomeWorkspaceMenu(workspace, {
       pinned,
@@ -182,7 +195,14 @@ export function createHomeWorkspaceActions(options: HomeWorkspaceActionsOptions)
         icon: faBellSlash,
         onClick: () => dismissReminder(workspace, snapshot),
       });
-    return items;
+    const guardItem = (item: SidebarMenuItem): SidebarMenuItem => ({
+      ...item,
+      onClick: () => {
+        if (ownsSnapshot()) item.onClick();
+      },
+      ...(item.submenu ? { submenu: item.submenu.map(guardItem) } : {}),
+    });
+    return items.map((item) => ('onClick' in item ? guardItem(item) : item));
   }
   return {
     get contextMenu() {
