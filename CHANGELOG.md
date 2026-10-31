@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.258.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.257.0...v2.258.0) (2026-10-31)
+
+
+### 🚀 Features
+
+* **home:** add New chat to the Assistant sidebar ([#3891](https://github.com/intent-hq/cloudlands-fe/issues/3891)) ([4163fff](https://github.com/intent-hq/cloudlands-fe/commit/4163fffc0263cf2fb771cae135938bcda51bf631))
+
 ## [2.257.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.256.5...v2.257.0) (2026-10-30)
 
 
