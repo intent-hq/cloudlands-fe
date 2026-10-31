@@ -36,6 +36,8 @@
     onSelect: (path: string, scope?: string, initGit?: boolean) => void;
     /** Called when user presses Enter - should select AND advance to next step */
     onSelectAndAdvance?: (path: string, scope?: string, initGit?: boolean) => void;
+    /** "Initialize as git repository" is off (Labs): a non-git folder is used as a plain folder. */
+    plainFolderMode?: boolean;
   }
 
   interface DirectoryStatus {
@@ -46,7 +48,12 @@
     isSubdirectoryOfGitRepo?: boolean;
   }
 
-  let { selectedPath = '', onSelect, onSelectAndAdvance }: Props = $props();
+  let {
+    selectedPath = '',
+    onSelect,
+    onSelectAndAdvance,
+    plainFolderMode = false,
+  }: Props = $props();
 
   const workspaceItems$ = selectWorkspaceItems();
   const knownRepos$ = selectKnownRepos();
@@ -355,7 +362,9 @@
               class="mx-3 mb-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
             >
               {m.workspace_repoSelector_notGitRepository_label()}
-              {m.onboarding_localRepoTab_initializeGit_description()}
+              {plainFolderMode
+                ? m.onboarding_localRepoTab_plainFolder_description()
+                : m.onboarding_localRepoTab_initializeGit_description()}
             </div>
           {/if}
         {/each}

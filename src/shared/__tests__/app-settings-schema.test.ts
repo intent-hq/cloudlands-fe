@@ -34,6 +34,20 @@ describe('app settings schema', () => {
     });
   });
 
+  it('exposes plain-folder workspaces as a local, default-off Labs preference', () => {
+    expect(findAppSettingDefinition('labs.plainFolderWorkspaces')).toMatchObject({
+      category: 'labs',
+      type: 'boolean',
+      source: 'local-storage',
+      storageKey: 'labs:plainFolderWorkspacesEnabled',
+      defaultValue: false,
+      apply: {
+        kind: 'redux-action',
+        action: 'userPreferences/setLabsPlainFolderWorkspacesEnabled',
+      },
+    });
+  });
+
   it('defines the persisted Open In editor order setting', () => {
     expect(findAppSettingDefinition('openIn.editorOrder')).toMatchObject({
       type: 'array',

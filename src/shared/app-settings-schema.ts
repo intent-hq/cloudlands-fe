@@ -255,6 +255,21 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     apply: { kind: 'redux-action', action: 'userPreferences/setLabsRemoteAgentsEnabled' },
   },
   {
+    path: 'labs.plainFolderWorkspaces',
+    label: 'Plain-folder workspaces (Labs)',
+    description:
+      'Offer an Initialize as git repository toggle when creating a workspace, so new workspaces can be plain folders without git. Existing plain-folder workspaces keep working when disabled.',
+    category: 'labs',
+    type: 'boolean',
+    source: 'local-storage',
+    storageKey: 'labs:plainFolderWorkspacesEnabled',
+    defaultValue: false,
+    apply: {
+      kind: 'redux-action',
+      action: 'userPreferences/setLabsPlainFolderWorkspacesEnabled',
+    },
+  },
+  {
     path: 'theme.activePresetId',
     label: 'Theme preset',
     description: `Active built-in color theme preset ID. Available presets: ${THEME_PRESET_OPTIONS_DESCRIPTION}.`,

@@ -73,6 +73,8 @@ export type UserPreferencesState = {
   labsGitLabEnabled: boolean;
   /** Offers new remote setup/placement only; never restricts existing sessions or local execution. */
   labsRemoteAgentsEnabled: boolean;
+  /** Offers plain-folder (git-optional) creation only; existing plain-folder workspaces keep working when off. */
+  labsPlainFolderWorkspacesEnabled: boolean;
   /**
    * Internal gate for the native review pull-request flow. Off for everyone, so PR creation
    * keeps the classic flow; not persisted and has no UI. Tests and previews turn it on.
@@ -155,6 +157,7 @@ export const initialState: UserPreferencesStoreState = {
   labsMultiplayerEnabled: true,
   labsGitLabEnabled: false,
   labsRemoteAgentsEnabled: false,
+  labsPlainFolderWorkspacesEnabled: false,
   nativeReviewEnabled: false,
   preferencesHydrated: false,
   ...fontSettingsInitialState,
@@ -444,6 +447,17 @@ export const setLabsRemoteAgentsEnabled = labsRemoteAgentsPreference.setAction;
 
 export const toggleLabsRemoteAgents = labsRemoteAgentsPreference.toggleAction;
 
+const labsPlainFolderWorkspacesPreference = createBooleanPreference<UserPreferencesStoreState>({
+  sliceName: 'userPreferences',
+  field: 'labsPlainFolderWorkspacesEnabled',
+  setActionName: 'setLabsPlainFolderWorkspacesEnabled',
+  toggleActionName: 'toggleLabsPlainFolderWorkspaces',
+});
+
+export const setLabsPlainFolderWorkspacesEnabled = labsPlainFolderWorkspacesPreference.setAction;
+
+export const toggleLabsPlainFolderWorkspaces = labsPlainFolderWorkspacesPreference.toggleAction;
+
 const nativeReviewPreference = createBooleanPreference<UserPreferencesStoreState>({
   sliceName: 'userPreferences',
   field: 'nativeReviewEnabled',
@@ -572,6 +586,7 @@ labsSettingsVisibilityPreference.register(userPreferencesReducer);
 labsMultiplayerPreference.register(userPreferencesReducer);
 labsGitLabPreference.register(userPreferencesReducer);
 labsRemoteAgentsPreference.register(userPreferencesReducer);
+labsPlainFolderWorkspacesPreference.register(userPreferencesReducer);
 nativeReviewPreference.register(userPreferencesReducer);
 userPreferencesReducer.with(setUpdateChannel, (state, { payload: [channel] }) => ({
   ...state,

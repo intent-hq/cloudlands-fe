@@ -418,6 +418,11 @@ export interface Workspace {
   worktreePath?: string;
   scope?: string; // Optional relative path within worktreePath (e.g., "apps/web")
   skipWorktree?: boolean; // If true, workspace was created without a git worktree
+  /**
+   * Plain-folder workspace (PROTOCOL §5.1 Plain-folder workspaces): works directly in an ordinary
+   * folder with no git, checkout or forge. Omitted = false; set only at create.
+   */
+  plainFolder?: boolean;
   /** Shell script that was run during workspace creation */
   setupScript?: string;
   isRemote?: boolean; // Added for remote workspace support
@@ -1729,6 +1734,12 @@ export interface CreateWorkspaceRequest {
   setupScript?: string; // Shell script to run in worktree after creation
   environmentConfig?: EnvironmentConfig; // Remote environment configuration
   isNewRepo?: boolean; // If true, initialize a new git repository at repositoryPath
+  /**
+   * Create a plain-folder workspace (PROTOCOL §5.1 Plain-folder workspaces) at `repositoryPath`: an
+   * existing non-git folder, or a new folder the daemon creates without `.git`.
+   * Only `true` is sent; it excludes every git-only option.
+   */
+  plainFolder?: true;
   skipIsolation?: boolean; // If true, skip the isolated checkout (worktree or CoW clone) and work directly in the repo folder (wire: canonical for the deprecated skipWorktree alias)
   progressId?: string; // FE-minted correlation id echoed on git:clone:progress/done frames emitted during this create (PROTOCOL §5.1)
   contextLinks?: ContextLink[]; // Issue/PR context links persisted on the workspace row (PROTOCOL §5.1); omitted when there are none — older daemons ignore the field

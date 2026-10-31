@@ -44,6 +44,7 @@ import {
   selectHasCompletedProviderSetup,
   selectLabsGitLabEnabled,
   selectLabsRemoteAgentsEnabled,
+  selectLabsPlainFolderWorkspacesEnabled,
   selectLanguagePreference,
   selectNotificationEnabled,
   selectNotificationVolume,
@@ -101,6 +102,7 @@ import {
   setHasCompletedProviderSetup,
   setLabsGitLabEnabled,
   setLabsRemoteAgentsEnabled,
+  setLabsPlainFolderWorkspacesEnabled,
   setLanguagePreference,
   setNotificationEnabled,
   setNoteFontStyle,
@@ -325,6 +327,8 @@ async function readCurrentSettingValue(
       return selectLabsGitLabEnabled.select(state);
     case 'labs.remoteAgents':
       return selectLabsRemoteAgentsEnabled.select(state);
+    case 'labs.plainFolderWorkspaces':
+      return selectLabsPlainFolderWorkspacesEnabled.select(state);
     case 'workspaceList.showArchived':
       return selectShowArchived.select(state);
     case 'workspaceList.groupByRepo':
@@ -444,6 +448,10 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
     case 'labs.remoteAgents':
       if (typeof value !== 'boolean') return false;
       appStore.dispatch(setLabsRemoteAgentsEnabled(value));
+      return true;
+    case 'labs.plainFolderWorkspaces':
+      if (typeof value !== 'boolean') return false;
+      appStore.dispatch(setLabsPlainFolderWorkspacesEnabled(value));
       return true;
     case 'workspaceList.showArchived':
       appStore.dispatch(setShowArchived(Boolean(value)));

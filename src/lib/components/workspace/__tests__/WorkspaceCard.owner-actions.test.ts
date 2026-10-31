@@ -328,3 +328,14 @@ describe('WorkspaceCard context menu owner gating', () => {
     ]);
   });
 });
+
+describe('WorkspaceCard plain-folder workspaces', () => {
+  it('hides Transfer for a plain-folder workspace and keeps Archive and Delete', async () => {
+    await openContextMenu(
+      makeWorkspace({ myRole: 'owner', plainFolder: true, branch: '' }),
+      vi.fn(),
+    );
+
+    expect(menuItemNames()).toEqual(['Open in New Window', 'Archive', 'Delete Workspace…']);
+  });
+});

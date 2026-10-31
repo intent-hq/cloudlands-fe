@@ -82,7 +82,11 @@
   import { selectSpecialistName } from '$store/renderer/slices/specialists/specialists-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
-  import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+    selectHidesAgentLifecycleActions,
+    selectIsPlainFolderWorkspace,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
   import { backgroundModeMenuItems } from './agent-background-menu';
   import { isReplaceAgentEligible } from '$shared/utils/replace-agent-eligibility';
@@ -394,7 +398,13 @@
       });
     }
 
-    if ($agent$?.effectiveIsolation === 'isolated') {
+    // Plain folders have no git checkpoints to merge or discard.
+    const hubWorkspaceId = $agent$?.workspaceId ?? workspace?.id;
+    const plainFolder =
+      isPlainFolderWorkspace(workspace) ||
+      (!!hubWorkspaceId &&
+        selectIsPlainFolderWorkspace.select(appStore.state, String(hubWorkspaceId)));
+    if ($agent$?.effectiveIsolation === 'isolated' && !plainFolder) {
       items.push({
         id: 'hub-merge',
         label: $nodeCapabilities$.agentNodes

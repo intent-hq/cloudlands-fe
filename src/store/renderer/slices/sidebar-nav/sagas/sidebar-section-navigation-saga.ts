@@ -30,6 +30,7 @@ import {
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { selectSpec } from '../../workspace-notes/workspace-notes-selectors';
 import {
+  selectIsPlainFolderWorkspace,
   selectIsWorkspaceCollaborator,
   selectWorkspaceParticipationContext,
   selectWorkspaceSavedScriptContext,
@@ -83,6 +84,7 @@ function* activate(action: NavigationAction): SagaGenerator<void> {
   const [workspaceId, sectionId, layoutId = workspaceId] = action.payload;
   const context = yield* selectWorkspaceParticipationContext.effect(workspaceId);
   if (!context) return;
+  if (sectionId === 'changes' && (yield* selectIsPlainFolderWorkspace.effect(workspaceId))) return;
   const collaborator = yield* selectIsWorkspaceCollaborator.effect(workspaceId);
   if (collaborator && sectionId === 'browser') return;
   if (

@@ -63,6 +63,7 @@
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { setViewedFiles } from '$store/renderer/slices/transient-ui/transient-ui-slice';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
+  import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
   import { selectLockedFilePaths } from '$store/renderer/slices/agent-lock/agent-lock-selectors';
 
   const routeWorkspaceId = getWorkspaceRouteContext()?.workspaceId ?? '';
@@ -187,7 +188,10 @@
   const nodeOwnedPaths = $derived(
     !!agentId && (!$agentSession$ || hasNodeOwnedAgentPath($agentSession$)),
   );
-  const showStagingControls = $derived(showStagingControlsProp && !nodeOwnedPaths);
+  // Plain folders have no git index: no stage, unstage or revert controls.
+  const showStagingControls = $derived(
+    showStagingControlsProp && !nodeOwnedPaths && !isPlainFolderWorkspace($workspace$),
+  );
   const isAggregate = $derived(isAggregateProp && !nodeOwnedPaths);
   const offlineNode = $derived(nodeOwnedPaths && $agentSession$?.nodeState === 'offline');
 
