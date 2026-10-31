@@ -30,6 +30,9 @@ export function homeSetAsideAttention(
   if (reminder && !reminder.dismissed)
     for (const { id, revision } of reminder.reasons)
       tokens.push({ token: `reminder:${JSON.stringify([id, revision])}` });
+  // Only workspace causes are known to be loaded. Late session hydration keeps
+  // its own observed-agent and timestamp baseline below.
+  if (!reminder && tokens.length) tokens.push({ token: 'workspace:reminder-unavailable' });
   for (const request of getHomeAttentionRequests(workspace.id, [...agents])) {
     const parsed = request.timestamp ? Date.parse(request.timestamp) : NaN;
     tokens.push({
@@ -38,9 +41,6 @@ export function homeSetAsideAttention(
       timestamp: Number.isFinite(parsed) ? parsed : undefined,
     });
   }
-  // An omitted projection can be a private hold or an invalidated personal read.
-  // Keep it distinct from a known projection while retaining the legacy baseline.
-  if (!reminder && tokens.length) tokens.push({ token: 'workspace:reminder-unavailable' });
   return tokens;
 }
 

@@ -4,7 +4,7 @@
   import { Button } from '$lib/components/ui/button';
   import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
   import { faArrowDown, faArrowUp, faThumbtack } from '$lib/icons/phosphor-icons';
-  import { HOME_SET_ASIDE_GROUP } from './home-set-aside';
+  import { HOME_SET_ASIDE_GROUP, captureHomeSetAsideContext } from './home-set-aside';
   import HomeWorkspaceStatus from './HomeWorkspaceStatus.svelte';
   import HomeWorkspacePullBadge from './HomeWorkspacePullBadge.svelte';
   import HomeActivityTime from './HomeActivityTime.svelte';
@@ -45,11 +45,21 @@
     groups?: { id: string; label: string; items: Workspace[] }[];
     aside?: Workspace[];
     dragScope?: string | null;
-    ontoggleaside?: (workspace: Workspace, focusMoved?: boolean, expectedScope?: string) => void;
+    ontoggleaside?: (
+      workspace: Workspace,
+      focusMoved?: boolean,
+      expectedScope?: string,
+      isCurrent?: () => boolean,
+    ) => void;
   } = $props();
   const asideIds = $derived(new Set(aside.map((workspace) => workspace.id)));
   const CARD_DRAG_TYPE = 'application/x-intent-home-workspace';
-  let drag = $state<{ workspaceId: string; scope: string; token: string } | null>(null);
+  let drag = $state<{
+    workspaceId: string;
+    scope: string;
+    token: string;
+    isCurrent: () => boolean;
+  } | null>(null);
   let dropActive = $state(false);
   let suppressClick = false;
   function column(workspace: Workspace): string {
@@ -88,13 +98,14 @@
     if (drag && !draggedWorkspace) finishDrag();
   });
   function startDrag(event: DragEvent, workspace: Workspace) {
-    if (!canDrag(workspace) || dragScope === null || !event.dataTransfer) {
+    const isCurrent = captureHomeSetAsideContext();
+    if (!isCurrent() || !canDrag(workspace) || dragScope === null || !event.dataTransfer) {
       event.preventDefault();
       return;
     }
     event.stopPropagation();
     const token = globalThis.crypto.randomUUID();
-    drag = { workspaceId: workspace.id, scope: dragScope, token };
+    drag = { workspaceId: workspace.id, scope: dragScope, token, isCurrent };
     suppressClick = true;
     event.dataTransfer.clearData();
     event.dataTransfer.setData(CARD_DRAG_TYPE, token);
@@ -110,6 +121,7 @@
   }
   function dragOver(event: DragEvent) {
     event.preventDefault();
+    if (!drag?.isCurrent()) finishDrag();
     if (!draggedWorkspace || !event.dataTransfer?.types.includes(CARD_DRAG_TYPE)) {
       if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
       dropActive = false;
@@ -135,12 +147,17 @@
   function dropWorkspace(event: DragEvent) {
     const workspace = draggedWorkspace;
     const scope = drag?.scope;
-    const valid = workspace && drag && event.dataTransfer?.getData(CARD_DRAG_TYPE) === drag.token;
+    const isCurrent = drag?.isCurrent;
+    const valid =
+      workspace &&
+      drag &&
+      isCurrent?.() &&
+      event.dataTransfer?.getData(CARD_DRAG_TYPE) === drag.token;
     finishDrag();
     event.preventDefault();
     if (!valid || !scope) return;
     event.stopPropagation();
-    ontoggleaside?.(workspace, true, scope);
+    ontoggleaside?.(workspace, true, scope, isCurrent);
   }
   const columns = $derived(
     archived

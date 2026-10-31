@@ -181,8 +181,12 @@
       !workspace.pendingDeleteAt
     );
   }
-  function toggleAside(workspace: Workspace, focusMoved = false, expectedScope?: string) {
-    const isCurrent = captureHomeSetAsideContext();
+  function toggleAside(
+    workspace: Workspace,
+    focusMoved = false,
+    expectedScope?: string,
+    isCurrent = captureHomeSetAsideContext(),
+  ) {
     if (!isCurrent()) return;
     const current = selectWorkspaceById.select(store.state, workspace.id);
     if (!current || !isLive(current)) return;
