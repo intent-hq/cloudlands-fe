@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.261.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.261.0...v2.261.1) (2026-10-31)
+
+
+### 🐛 Bug Fixes
+
+* **home:** show Disable auto-archive only while auto-archive is on ([#3928](https://github.com/intent-hq/cloudlands-fe/issues/3928)) ([8330490](https://github.com/intent-hq/cloudlands-fe/commit/83304905bc9b3cc69b1a7f15ce5da74cb09d27a3))
+
 ## [2.261.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.260.1...v2.261.0) (2026-10-31)
 
 
