@@ -415,6 +415,8 @@ export const openTabInAdjacentOrSplit = createAction(
       animated?: boolean;
       force?: boolean;
       allowDuplicate?: boolean;
+      /** Show the tab but keep panel and keyboard focus where they are. */
+      preserveFocus?: boolean;
       newPanelId?: string;
       newTabId?: string;
     },
@@ -427,6 +429,7 @@ export const openTabInAdjacentOrSplit = createAction(
     animated: options?.animated ?? false,
     force: options?.force ?? false,
     ...(options?.allowDuplicate === undefined ? {} : { allowDuplicate: options.allowDuplicate }),
+    ...(options?.preserveFocus === true ? { preserveFocus: true } : {}),
     newPanelId: options?.newPanelId ?? generatePanelId(),
     newTabId: options?.newTabId ?? generateTabId(),
     timestamp: timestamp ?? Date.now(),
@@ -4508,8 +4511,17 @@ panelLayoutReducer.with(workspaceDeleted, (state, { payload: [wsId] }) => {
 });
 // --- Open Tab In Adjacent Or Split ---
 panelLayoutReducer.with(openTabInAdjacentOrSplit, (state, { payload }) => {
-  const { wsId, tab, sourcePanelId, force, allowDuplicate, newPanelId, newTabId, timestamp } =
-    payload;
+  const {
+    wsId,
+    tab,
+    sourcePanelId,
+    force,
+    allowDuplicate,
+    preserveFocus,
+    newPanelId,
+    newTabId,
+    timestamp,
+  } = payload;
   if (tab.workspaceId && tab.workspaceId !== wsId) return state;
   const ws = getWorkspaceState(state, wsId);
 
@@ -4526,11 +4538,20 @@ panelLayoutReducer.with(openTabInAdjacentOrSplit, (state, { payload }) => {
     return setWorkspaceState(
       state,
       wsId,
-      activateEquivalentTab(ws, existing, tab, newTabId, timestamp),
+      preserveFocus
+        ? activateEquivalentTabPreservingFocus(ws, existing, tab, newTabId)
+        : activateEquivalentTab(ws, existing, tab, newTabId, timestamp),
     );
   }
 
   if (sourcePanel && sourcePanel.tabs.length === 0) {
+    if (preserveFocus) {
+      return setWorkspaceState(
+        state,
+        wsId,
+        activateTabPreservingFocus(ws, sourcePanel.id, tab, newTabId, timestamp),
+      );
+    }
     const result = selfDispatch(
       state,
       openTab(wsId, tab, sourcePanel.id, newTabId, force, timestamp, allowDuplicate),
@@ -4559,16 +4580,22 @@ panelLayoutReducer.with(openTabInAdjacentOrSplit, (state, { payload }) => {
       getPanelCreationWidthForType(tab.type),
     );
     if (inserted) {
-      const next = addToFocusHistory(
-        {
-          ...inserted,
-          pendingFocusTabId: newTabId,
-          pendingPanelReveal: createPanelRevealRequest(newPanelId, newTabId, newTabId),
-        },
-        newPanelId,
-        newTabId,
-        timestamp,
-      );
+      const next = preserveFocus
+        ? {
+            ...inserted,
+            focusedPanelId: ws.focusedPanelId,
+            pendingPanelReveal: createPanelRevealRequest(newPanelId, newTabId, newTabId, true),
+          }
+        : addToFocusHistory(
+            {
+              ...inserted,
+              pendingFocusTabId: newTabId,
+              pendingPanelReveal: createPanelRevealRequest(newPanelId, newTabId, newTabId),
+            },
+            newPanelId,
+            newTabId,
+            timestamp,
+          );
       return setWorkspaceState(state, wsId, next);
     }
   }
@@ -4579,6 +4606,10 @@ panelLayoutReducer.with(openTabInAdjacentOrSplit, (state, { payload }) => {
 
   // Reuse the immediate right stack. From a capped rightmost stack, wrap to
   // the first rather than creating an invalid fifth column.
+  if (preserveFocus) {
+    const next = activateTabPreservingFocus(ws, targetPanelId, tab, newTabId, timestamp);
+    return next === ws ? state : setWorkspaceState(state, wsId, next);
+  }
   const result = selfDispatch(
     state,
     openTab(wsId, tab, targetPanelId, newTabId, force, timestamp, allowDuplicate),

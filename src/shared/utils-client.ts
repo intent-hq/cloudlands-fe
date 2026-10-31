@@ -33,6 +33,9 @@ export function stripMarkdownFormatting(text: string): string {
   // Remove inline code: `text`
   result = result.replace(/`([^`]+)`/g, '$1');
 
+  // Remove images: ![alt](url) -> alt
+  result = result.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1');
+
   // Remove links: [text](url) -> text
   result = result.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
 

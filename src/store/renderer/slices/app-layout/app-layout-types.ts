@@ -26,6 +26,12 @@ export type OpenAgentTabDetail = {
   openInAdjacentPanel?: boolean;
   openInNewColumn?: boolean;
   sourcePanelId?: string;
+  /**
+   * Show the chat next to `sourcePanelId` while that pane stays visible and
+   * focused: a chat open in another pane comes forward there, otherwise one
+   * opens in the adjacent column.
+   */
+  alongsideSource?: boolean;
   targetPanelId?: string;
   panelLayoutId?: string;
   availablePanelCanvasWidth?: number;

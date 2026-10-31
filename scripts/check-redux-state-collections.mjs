@@ -568,7 +568,6 @@ const BASELINE = new Set([
   // Existing legacy state shapes kept out of the initial rollout. New violations
   // fail unless they are explicitly added here during a deliberate migration plan.
   'src/store/renderer/slices/agent-follow/agent-follow-types.ts::AgentFollowState.pendingChanges::PendingChange[]',
-  'src/store/renderer/slices/agent-overview/agent-overview-types.ts::AgentOverviewWorkspaceState.events::InteractionEvent[]',
   'src/store/renderer/slices/browser/browser-types.ts::BrowserWorkspaceState.recentUrls::RecentUrl[]',
   'src/store/renderer/slices/browser/browser-types.ts::BrowserWorkspaceState.pendingZoomByTabId::BrowserZoomAction[]',
   'src/store/renderer/slices/changes/changes-types.ts::FileTrackingWorkspaceState.changes::TrackedChange[]',
