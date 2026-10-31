@@ -596,8 +596,8 @@ export const IPC_CHANNELS = {
     CAPTURE_DRAWING: 'browser:capture-drawing',
     /**
      * An agent is (active: true) / is no longer (active: false) acting on an
-     * agent-owned tab, so its offscreen webview gets a larger (8x8, still
-     * invisible) box and draws at full frame rate (main->renderer event)
+     * agent-owned tab, so its offscreen webview's box is drawn at a near-zero
+     * (still invisible) opacity and draws at full frame rate (main->renderer event)
      */
     AGENT_DRAWING: 'browser:agent-drawing',
     /** Report the workspaces this window hosts in the background (renderer->main) */
