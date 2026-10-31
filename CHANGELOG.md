@@ -4,6 +4,20 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.261.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.260.1...v2.261.0) (2026-10-31)
+
+
+### 🚀 Features
+
+* **settings:** guided add/edit for Codex and Claude Code provider profiles ([#3918](https://github.com/intent-hq/cloudlands-fe/issues/3918)) ([a00cc30](https://github.com/intent-hq/cloudlands-fe/commit/a00cc3058507ed60796a54fa6435b4a720aa704c))
+
+
+### 🐛 Bug Fixes
+
+* act on the visible workspace, not the last tab, from Home and Settings ([#3926](https://github.com/intent-hq/cloudlands-fe/issues/3926)) ([cf5124c](https://github.com/intent-hq/cloudlands-fe/commit/cf5124cd150fc61b3a9d66031a54794cfd4f9f5a))
+* **browser:** draw agent tabs at near-zero opacity, not a bigger box ([#3925](https://github.com/intent-hq/cloudlands-fe/issues/3925)) ([99cda23](https://github.com/intent-hq/cloudlands-fe/commit/99cda236056fba204fdc0480731b252adc56e00b))
+* bump intentd sidecar to v0.11.91 ([#3937](https://github.com/intent-hq/cloudlands-fe/issues/3937)) ([9f4bf4e](https://github.com/intent-hq/cloudlands-fe/commit/9f4bf4e88e63e3f2a554a7cd59390ccace9bf620))
+
 ## [2.260.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.260.0...v2.260.1) (2026-10-31)
 
 
