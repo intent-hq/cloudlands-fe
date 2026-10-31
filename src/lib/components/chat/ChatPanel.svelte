@@ -1848,6 +1848,7 @@
           const parent = (n as Text).parentElement;
           if (!parent) return NodeFilter.FILTER_REJECT;
           const tag = parent.tagName;
+          // eslint-disable-next-line intent/no-hand-written-typing-check -- text-search walk skips form-control text; not a typing check.
           if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'TEXTAREA' || tag === 'INPUT') {
             return NodeFilter.FILTER_REJECT;
           }

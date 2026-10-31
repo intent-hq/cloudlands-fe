@@ -423,6 +423,7 @@
 
   function handleRowsKeydown(event: KeyboardEvent) {
     const target = event.target as HTMLElement;
+    // eslint-disable-next-line intent/no-hand-written-typing-check -- arrow keys leave the Other textarea only at its first/last caret position, which needs a native textarea's selectionStart/selectionEnd.
     const isTextInput = target.tagName === 'TEXTAREA';
     if (isTextInput && !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
     if (
