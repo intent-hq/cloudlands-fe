@@ -121,6 +121,55 @@ export const selectCanSetWorkspaceLabel = store.createSelector<[workspaceId: str
     selectWorkspaceUpdateContext.select(state, workspaceId, LABEL_UPDATE_FIELDS) !== null,
 );
 
+/**
+ * Whether the connected daemon supports the per-workspace auto-archive
+ * opt-out (exact-integer `workspaceAutoArchiveOptOut: 1`, PROTOCOL §5.1).
+ */
+const selectAutoArchiveOptOutSupported = store.createSelector(
+  (state): boolean =>
+    selectPrincipalSnapshot.select(state)?.capabilities.workspaceAutoArchiveOptOut === 1,
+);
+
+/**
+ * Whether the daemon's idle auto-archive sweep is on
+ * (`workspace.autoArchiveIdleAfterDays` > 0). False until the settings
+ * snapshot has been read.
+ */
+const selectAutoArchiveIdleOn = store.createSelector(
+  (state): boolean => (state.sidebarNav.autoArchiveIdleAfterDays ?? 0) > 0,
+);
+
+/** Whether a workspace has opted out of auto-archive (the daemon omits `false`). */
+export const selectWorkspaceAutoArchiveDisabled = store.createSelector<
+  [workspaceId: string],
+  boolean
+>(
+  (state, workspaceId) =>
+    selectWorkspaceById.select(state, workspaceId)?.autoArchiveDisabled === true,
+);
+
+const AUTO_ARCHIVE_UPDATE_FIELDS = ['id', 'autoArchiveDisabled'];
+
+/**
+ * Whether this client may toggle the workspace's auto-archive opt-out
+ * (owner-only write). Remote workspaces are never auto-archived, so the
+ * opt-out is not offered there.
+ */
+export const selectCanSetWorkspaceAutoArchive = store.createSelector<
+  [workspaceId: string],
+  boolean
+>((state, workspaceId) => {
+  if (!selectAutoArchiveOptOutSupported.select(state)) return false;
+  // The opt-out only matters while idle auto-archive is on.
+  if (!selectAutoArchiveIdleOn.select(state)) return false;
+  const workspace = selectWorkspaceById.select(state, workspaceId);
+  if (!workspace || workspace.isRemote === true || workspace.environmentConfig?.type === 'remote')
+    return false;
+  return (
+    selectWorkspaceUpdateContext.select(state, workspaceId, AUTO_ARCHIVE_UPDATE_FIELDS) !== null
+  );
+});
+
 /** Local pin list (`intent:pinned-workspaces`), the source of pins on older daemons. */
 export const selectLocalPinnedWorkspaceIds = store.createSelector(
   (state) => state.sidebarNav.pinnedWorkspaceIds,

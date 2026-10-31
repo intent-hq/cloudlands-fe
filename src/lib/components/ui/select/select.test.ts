@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { pressOutsideLayer, waitForLayerExit } from '../../../../test/layer-exit';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { invalidControlContrastCases } from '../../../../../tests/helpers/invalid-control-contrast';
 import SelectHarness from './select.test-harness.svelte';
@@ -42,7 +43,7 @@ describe('Select', () => {
 
     await waitFor(() => expect(screen.getByTestId('select-value').textContent).toBe('banana'));
     expect(trigger.textContent).toContain('Banana');
-    expect(screen.queryByRole('listbox')).toBeNull();
+    await waitForLayerExit(listbox);
     expect(document.activeElement).toBe(trigger);
   });
 
@@ -64,7 +65,7 @@ describe('Select', () => {
     expect(trigger.getAttribute('aria-activedescendant')).toBe(banana.id);
 
     await fireEvent.keyDown(trigger, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+    await waitForLayerExit(banana);
     expect(trigger.hasAttribute('aria-activedescendant')).toBe(false);
   });
 
@@ -93,7 +94,7 @@ describe('Select', () => {
       const search = screen.getByRole('textbox', { name: 'Filter fruit' });
       search.focus();
       await fireEvent.keyDown(search, { key: 'Escape' });
-      await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+      await waitForLayerExit(search);
       await waitFor(() => expect(document.activeElement).toBe(trigger));
       expect(screen.getByTestId('select-value').textContent).toBe('apple');
       expect(trigger.getAttribute('aria-expanded')).toBe('false');
@@ -104,9 +105,10 @@ describe('Select', () => {
     render(SelectHarness, { props: { portal: true, searchable: true } });
     const trigger = screen.getByRole('combobox', { name: 'Choose fruit' });
     await fireEvent.keyDown(trigger, { key: 'Enter' });
-    screen.getByRole('textbox', { name: 'Filter fruit' }).focus();
-    await fireEvent.pointerDown(document.body);
-    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+    const search = screen.getByRole('textbox', { name: 'Filter fruit' });
+    search.focus();
+    await pressOutsideLayer(search);
+    await waitForLayerExit(search);
     expect(document.activeElement).not.toBe(trigger);
   });
 
@@ -149,8 +151,8 @@ describe('Select', () => {
 
     const listbox = screen.getByRole('listbox');
     expect(container.contains(listbox)).toBe(false);
-    await fireEvent.pointerDown(document.body);
-    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+    await pressOutsideLayer(listbox);
+    await waitForLayerExit(listbox);
   });
 
   it('opens long content without changing its accessible option name', async () => {

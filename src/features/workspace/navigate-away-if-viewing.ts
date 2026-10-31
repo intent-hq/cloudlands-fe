@@ -11,12 +11,11 @@
  */
 import { store as appStore } from '$store/renderer/store';
 import { resolveEmptyWindowDestination } from './utils/empty-window-destination';
+import { currentRoutePath, isWorkspaceRoutePath } from '$lib/utils/workspace-route-path';
 
 function isViewingWorkspace(workspaceId: string): boolean {
-  if (typeof window === 'undefined') return false;
-  const prefix = `/workspace/${workspaceId}`;
-  const path = window.location.pathname;
-  return path === prefix || path.startsWith(prefix + '/');
+  const path = currentRoutePath();
+  return path !== null && isWorkspaceRoutePath(path, workspaceId);
 }
 
 /**

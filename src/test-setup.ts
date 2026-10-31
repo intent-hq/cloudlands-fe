@@ -108,6 +108,64 @@ if (typeof window !== 'undefined') {
     };
   }
 
+  // jsdom also lacks Element.prototype.getAnimations. Svelte calls it when a keyed
+  // `{#each}` with `animate:` drops an item; without it the flush throws partway and
+  // later effects silently stop re-running (cloudlands-fe#3856). Report no running
+  // animations by default. Writable and configurable so a test can still override it
+  // (assignment, defineProperty, or vi.spyOn); a plain function so resetting mocks
+  // cannot strip its return value.
+  if (typeof Element.prototype.getAnimations !== 'function') {
+    Object.defineProperty(Element.prototype, 'getAnimations', {
+      configurable: true,
+      writable: true,
+      value: function getAnimations(): Animation[] {
+        return [];
+      },
+    });
+  }
+
+  // jsdom performs no layout, so its Element.prototype.getClientRects always returns an
+  // empty list. bits-ui's floating layer (use-floating.svelte.js `isReferenceHidden`)
+  // treats an empty list as "the anchor is not rendered" and sets visibility: hidden on
+  // every positioned menu, popover, select and tooltip. Role queries then skip them and
+  // their accessible names come out empty (cloudlands-fe#3889 worked around it with
+  // `hidden: true` and textContent checks). Report one box, as a browser does, for a
+  // connected element outside a `hidden` or display: none subtree. The box comes from
+  // getBoundingClientRect, so a test that stubs that one stays consistent; a test can
+  // still override this (vi.spyOn or defineProperty). See src/test/layer-exit.test.ts.
+  const jsdomGetClientRects = Element.prototype.getClientRects;
+  const isRenderedInJsdom = (element: Element) => {
+    if (!element.isConnected) return false;
+    let node: Element | null = element;
+    while (node) {
+      if (node instanceof HTMLElement && node.hidden) return false;
+      if (window.getComputedStyle(node).display === 'none') return false;
+      node = node.parentElement ?? ((node.getRootNode() as ShadowRoot).host || null);
+    }
+    return true;
+  };
+  Object.defineProperty(Element.prototype, 'getClientRects', {
+    configurable: true,
+    writable: true,
+    value: function getClientRects(this: Element): DOMRectList {
+      if (!isRenderedInJsdom(this)) return jsdomGetClientRects.call(this);
+      const rects = [this.getBoundingClientRect()];
+      return Object.assign(rects, { item: (index: number) => rects[index] ?? null }) as never;
+    },
+  });
+
+  // jsdom has no Element.prototype.scrollIntoView. With the getClientRects shim above,
+  // bits-ui select content counts as positioned and scrolls its highlighted item into view,
+  // which threw "node.scrollIntoView is not a function". A no-op, like the jsdom layout it
+  // stands in for; writable and configurable so a test can still spy on or replace it.
+  if (typeof Element.prototype.scrollIntoView !== 'function') {
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      configurable: true,
+      writable: true,
+      value: function scrollIntoView(): void {},
+    });
+  }
+
   // Mock window.matchMedia
   Object.defineProperty(window, 'matchMedia', {
     writable: true,

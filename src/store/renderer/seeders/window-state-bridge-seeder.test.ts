@@ -47,6 +47,7 @@ const INVOKE_CHANNELS = [
   IPC_CHANNELS.WINDOW.SET_THEME,
   IPC_CHANNELS.WINDOW.SET_TITLE,
   IPC_CHANNELS.WINDOW.SET_BROWSER_FOCUSED,
+  IPC_CHANNELS.WINDOW.SET_TRANSLUCENCY,
 ];
 
 const originalElectronAPI = (window as any).electronAPI;
@@ -117,6 +118,7 @@ describe('window-state-bridge-seeder', () => {
       browserFocused: true,
       focusOwnerId: 'owner-1',
     });
+    await mockInvoke(IPC_CHANNELS.WINDOW.SET_TRANSLUCENCY, { enabled: false });
 
     expect(invokeSpy).toHaveBeenNthCalledWith(1, IPC_CHANNELS.WINDOW.SET_IN_WORKSPACE, {
       inWorkspace: true,
@@ -134,6 +136,9 @@ describe('window-state-bridge-seeder', () => {
     expect(invokeSpy).toHaveBeenNthCalledWith(5, IPC_CHANNELS.WINDOW.SET_BROWSER_FOCUSED, {
       browserFocused: true,
       focusOwnerId: 'owner-1',
+    });
+    expect(invokeSpy).toHaveBeenNthCalledWith(6, IPC_CHANNELS.WINDOW.SET_TRANSLUCENCY, {
+      enabled: false,
     });
   });
 

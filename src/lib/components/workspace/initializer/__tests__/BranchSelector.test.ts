@@ -8,8 +8,9 @@
  * fabricated ['main','master',...] fallback.
  */
 import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/svelte';
+import { waitForLayerExit } from '../../../../../test/layer-exit';
 import { flushSync } from 'svelte';
-import { describe, expect, it, vi, beforeEach, beforeAll, afterEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 const {
   mockGetBranches,
@@ -113,10 +114,6 @@ vi.mock('$lib/utils/performance', () => ({
 import { m } from '$shared/paraglide/messages.js';
 import BranchSelector from '../BranchSelector.svelte';
 import { pushEscapeLayer } from '$lib/utils/escapeLayers';
-
-beforeAll(() => {
-  Element.prototype.scrollIntoView = vi.fn();
-});
 
 /** Open the dropdown by clicking the select trigger (first button rendered). */
 async function openDropdown(container: HTMLElement) {
@@ -1182,6 +1179,8 @@ describe('BranchSelector (server-side prefix search, github.branches.list prefix
     // 'feat/beyond-page' occurrence is the trigger's selected-branch label —
     // the search-result list entry must be dropped.
     await fireEvent.pointerUp(match, { pointerType: 'mouse' });
+    // Reopen only after the closing dropdown has finished its exit.
+    await waitForLayerExit(searchInput);
     await openDropdown(container);
     await waitFor(() => expect(screen.getByText('main')).toBeTruthy());
     expect(screen.getAllByText('feat/beyond-page')).toHaveLength(1);

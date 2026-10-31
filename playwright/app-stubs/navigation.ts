@@ -5,7 +5,7 @@
  * CT browser bundle.
  */
 
-/** Reflect a completed navigation without replacing the mounted CT component. */
+/** Model arrival without invoking a router that would unmount the CT preview. */
 export const goto = async (
   url: string | URL,
   options: { replaceState?: boolean; state?: App.PageState } = {},

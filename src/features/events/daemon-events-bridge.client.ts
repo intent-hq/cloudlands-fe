@@ -2810,6 +2810,11 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   } else if (raw.label === null) {
     changes.label = undefined;
   }
+  // Auto-archive opt-out (PROTOCOL §5.1): a boolean sets it; the entity keeps
+  // the wire shape, so `false` is stored as absent.
+  if (typeof raw.autoArchiveDisabled === 'boolean') {
+    changes.autoArchiveDisabled = raw.autoArchiveDisabled || undefined;
+  }
   if (typeof raw.branch === 'string') changes.branch = raw.branch;
   if (typeof raw.baseRef === 'string') changes.baseRef = raw.baseRef;
   if (typeof raw.baseCommitSha === 'string') changes.baseCommitSha = raw.baseCommitSha;

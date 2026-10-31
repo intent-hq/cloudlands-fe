@@ -622,7 +622,13 @@
           id: `mention-${Date.now()}-${index}`,
           type: 'file' as const,
           label: m.label,
-          path: (m.meta?.fullPath as string) || (m.meta?.path as string) || m.label,
+          // Path chips label themselves with any line suffix (`a.ts:12`); the
+          // path lives in meta (`filename` for bare file names).
+          path:
+            (m.meta?.fullPath as string) ||
+            (m.meta?.path as string) ||
+            (m.meta?.filename as string) ||
+            m.label,
         }),
       );
   }

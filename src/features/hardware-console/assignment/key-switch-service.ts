@@ -5,7 +5,9 @@
  * (`onRawMessage` — includes the CM2's bare joystick objects that never
  * reach `onNotification`) and, on agent-key presses, focuses the workspace
  * resolved for that key ({@link focusWorkspaceSlot}):
- * - first press (workspace not currently active): navigate to
+ * - first press (workspace not currently showing — not the current
+ *   workspace tab, or another route such as Home or Settings is open):
+ *   navigate to
  *   `/workspace/{id}` and land on the first agent tab needing attention
  *   (pending discussion/blocker request or wizard question — the LED
  *   engine's attention definition via `sessionNeedsAttention`); when none
@@ -40,7 +42,10 @@ import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-lay
 import { setActiveAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { sessionNeedsAttention } from '../actions/agent-cycle';
 import { focusAgentComposer } from '../actions/action-key-service';
-import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
+import {
+  beginVisibleWorkspaceNavigation,
+  getVisibleWorkspaceId,
+} from '$features/workspace/visible-workspace';
 
 const logger = createLogger('HardwareConsoleKeySwitch');
 
@@ -51,7 +56,11 @@ export interface KeySwitchDeps {
   focusComposer?: (agentId: string) => void;
   /** Console-owner gate (#1928). Defaults to the store-backed `isConsoleOwner`. */
   isOwner?: () => boolean;
-  /** Current workspace-tab seam. */
+  /**
+   * Visible-workspace seam. Defaults to `getVisibleWorkspaceId`: null on Home
+   * and Settings (which keep the last tab selected), and the target workspace
+   * while a key-triggered navigation to it is still in flight.
+   */
   getCurrentWorkspaceId?: () => string | null;
 }
 
@@ -131,9 +140,10 @@ function openFirstTopLevelAgent(workspaceId: string, deps: KeySwitchDeps): boole
 }
 
 /**
- * Focus the workspace behind a hardware key slot. Reusable behavior shared
- * with the Settings device graphic:
- * - workspace not active: navigate to it and land on the first agent tab
+ * Focus the workspace behind a hardware key slot:
+ * - workspace not showing (not the current workspace tab, or the current
+ *   tab while another route such as Home or Settings is open): navigate to
+ *   it and land on the first agent tab
  *   requiring attention; with none pending, keep the workspace's current
  *   tab (or activate the first open tab when no tab is active yet);
  * - workspace already active: cycle to the next open tab in order (wrap);
@@ -145,18 +155,20 @@ export function focusWorkspaceSlot(workspaceId: string, deps: KeySwitchDeps = {}
   const focusedPanelId = layout?.focusedPanelId ?? null;
   const activeTabId = focusedPanelId ? (layout?.panels[focusedPanelId]?.activeTabId ?? null) : null;
 
-  const activeWorkspaceId = (
-    deps.getCurrentWorkspaceId ?? (() => selectCurrentWorkspaceTabId.select(appStore.state))
-  )();
-  if (activeWorkspaceId !== workspaceId) {
-    // Open the workspace tab before route navigation, so a quick second press
-    // already sees the workspace as active and cycles its tabs.
+  const isShowing = (deps.getCurrentWorkspaceId ?? getVisibleWorkspaceId)() === workspaceId;
+  if (!isShowing) {
+    // Open the workspace tab and mark the navigation in flight before it
+    // starts: the route only commits once `goto` settles, so a quick second
+    // press must already see the workspace as visible and cycle its tabs.
     appStore.dispatch(openWorkspaceTab(workspaceId));
     const navigate = deps.navigate ?? navigateToRoute;
+    const settle = beginVisibleWorkspaceNavigation(workspaceId);
     // eslint-disable-next-line intent/no-raw-workspace-navigation -- the tab was opened just above, before navigating, so a quick second key press cycles tabs instead of re-jumping.
-    void navigate(`/workspace/${workspaceId}`).catch((error: unknown) => {
-      logger.warn('Failed to switch workspace from agent key', { workspaceId, error });
-    });
+    void navigate(`/workspace/${workspaceId}`)
+      .catch((error: unknown) => {
+        logger.warn('Failed to switch workspace from agent key', { workspaceId, error });
+      })
+      .finally(settle);
     if (tabs.length === 0) {
       openFirstTopLevelAgent(workspaceId, deps);
       return;

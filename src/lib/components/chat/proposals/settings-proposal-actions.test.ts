@@ -55,6 +55,7 @@ const mocks = vi.hoisted(() => ({
   getState: vi.fn(),
   settingsGet: vi.fn(),
   settingsUpdate: vi.fn(),
+  settingsReset: vi.fn(),
 }));
 
 vi.mock('$lib/store/redux-dispatch-bridge', () => ({
@@ -73,7 +74,11 @@ vi.mock('$store/renderer/store', () => ({
 
 vi.mock('$lib/client', () => ({
   appClient: {
-    settings: { get: mocks.settingsGet, update: mocks.settingsUpdate },
+    settings: {
+      get: mocks.settingsGet,
+      update: mocks.settingsUpdate,
+      reset: mocks.settingsReset,
+    },
   },
 }));
 
@@ -698,6 +703,280 @@ describe('settings-proposal-actions', () => {
         apply: { kind: 'daemon-settings-update', path: 'workspace.branchPrefix' },
       },
     ]);
+  });
+
+  // Regression: the daemon catalog lets the assistant propose these archive
+  // settings, but the card rejected them as "Unknown or unsupported setting"
+  // because the renderer schema had no apply plan for them.
+  it('applies and reverses the archived-workspace purge window', async () => {
+    mocks.settingsGet.mockResolvedValueOnce({
+      path: 'workspace.purgeArchivedAfterDays',
+      value: 14,
+    });
+    const proposal = makeProposal('workspace.purgeArchivedAfterDays', 3);
+
+    const result = await applySettingsProposalWork(makeDetail(proposal));
+
+    expect(mocks.settingsGet).toHaveBeenCalledWith('workspace.purgeArchivedAfterDays');
+    expect(mocks.settingsUpdate).toHaveBeenCalledWith([
+      { path: 'workspace.purgeArchivedAfterDays', value: 3 },
+    ]);
+    expect(result.reverseChanges).toEqual([
+      {
+        path: 'workspace.purgeArchivedAfterDays',
+        value: 14,
+        apply: { kind: 'daemon-settings-update', path: 'workspace.purgeArchivedAfterDays' },
+      },
+    ]);
+  });
+
+  it('reverses a purge window that was off back to null (off)', async () => {
+    mocks.settingsGet.mockResolvedValueOnce({
+      path: 'workspace.purgeArchivedAfterDays',
+      value: null,
+    });
+    const proposal = makeProposal('workspace.purgeArchivedAfterDays', 7);
+
+    const result = await applySettingsProposalWork(makeDetail(proposal));
+
+    expect(mocks.settingsUpdate).toHaveBeenCalledWith([
+      { path: 'workspace.purgeArchivedAfterDays', value: 7 },
+    ]);
+    expect(result.reverseChanges[0]?.value).toBeNull();
+  });
+
+  it('turns the purge window off when the card field is cleared', async () => {
+    mocks.settingsGet.mockResolvedValueOnce({
+      path: 'workspace.purgeArchivedAfterDays',
+      value: 14,
+    });
+    const proposal = makeProposal('workspace.purgeArchivedAfterDays', 3);
+    const detail = makeDetail(proposal);
+    detail.editedFields['workspace.purgeArchivedAfterDays'] = '';
+
+    mocks.settingsReset.mockResolvedValueOnce({
+      path: 'workspace.purgeArchivedAfterDays',
+      value: null,
+    });
+
+    await applySettingsProposalWork(detail);
+
+    // Off is the absent key: cleared through settings.reset, not a null write.
+    expect(mocks.settingsReset).toHaveBeenCalledWith('workspace.purgeArchivedAfterDays');
+    expect(mocks.settingsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('applies and reverses the auto-archive idle window', async () => {
+    mocks.settingsGet.mockResolvedValueOnce({
+      path: 'workspace.autoArchiveIdleAfterDays',
+      value: 0,
+    });
+    const proposal = makeProposal('workspace.autoArchiveIdleAfterDays', 7);
+
+    const result = await applySettingsProposalWork(makeDetail(proposal));
+
+    expect(mocks.settingsGet).toHaveBeenCalledWith('workspace.autoArchiveIdleAfterDays');
+    expect(mocks.settingsUpdate).toHaveBeenCalledWith([
+      { path: 'workspace.autoArchiveIdleAfterDays', value: 7 },
+    ]);
+    expect(result.reverseChanges).toEqual([
+      {
+        path: 'workspace.autoArchiveIdleAfterDays',
+        value: 0,
+        apply: { kind: 'daemon-settings-update', path: 'workspace.autoArchiveIdleAfterDays' },
+      },
+    ]);
+  });
+
+  // Daemon settings outside the app schema. The assistant may propose any
+  // setting the daemon marks `proposable`; the card used to reject all of them
+  // as "Unknown or unsupported setting" because only the app schema could
+  // supply an apply plan.
+  describe('daemon settings outside the app schema', () => {
+    function daemonEntry(
+      path: string,
+      value: unknown,
+      definition: Record<string, unknown> = {},
+    ): Record<string, unknown> {
+      return {
+        path,
+        label: path,
+        description: '',
+        category: path.split('.')[0],
+        type: 'boolean',
+        proposable: true,
+        value,
+        ...definition,
+      };
+    }
+
+    it.each([
+      ['agentFeatures.hostExec', true, false, { type: 'boolean', defaultValue: true }],
+      ['prMonitor.pollSeconds', 60, 30, { type: 'number', min: 10, defaultValue: 60 }],
+      [
+        'logging.level',
+        'info',
+        'debug',
+        { type: 'enum', enumValues: ['error', 'warn', 'info', 'debug', 'trace'] },
+      ],
+      ['agents.maxConcurrent', 0, 12, { type: 'number', min: 0, max: 200, defaultValue: 0 }],
+    ])('applies and reverses %s', async (path, before, after, definition) => {
+      mocks.settingsGet.mockResolvedValue(daemonEntry(path, before, definition));
+
+      const result = await applySettingsProposalWork(makeDetail(makeProposal(path, after)));
+
+      expect(mocks.settingsGet).toHaveBeenCalledWith(path);
+      expect(mocks.settingsUpdate).toHaveBeenCalledWith([{ path, value: after }]);
+      expect(result.reverseChanges).toEqual([
+        { path, value: before, apply: { kind: 'daemon-settings-update', path } },
+      ]);
+    });
+
+    it('parses an edited card value with the daemon definition type', async () => {
+      mocks.settingsGet.mockResolvedValue(
+        daemonEntry('prMonitor.pollSeconds', 60, { type: 'number', min: 10 }),
+      );
+      const detail = makeDetail(makeProposal('prMonitor.pollSeconds', 30));
+      detail.editedFields['prMonitor.pollSeconds'] = '45';
+
+      await applySettingsProposalWork(detail);
+
+      expect(mocks.settingsUpdate).toHaveBeenCalledWith([
+        { path: 'prMonitor.pollSeconds', value: 45 },
+      ]);
+    });
+
+    it('undoes back to an unset (null) value with settings.reset', async () => {
+      // agents.memoryBudgetMb reads null while absent (auto) even though the
+      // daemon advertises a default, and rejects an explicit null write.
+      mocks.settingsGet.mockResolvedValue(
+        daemonEntry('agents.memoryBudgetMb', null, { type: 'number', min: 0, defaultValue: 8192 }),
+      );
+
+      const result = await applySettingsProposalWork(
+        makeDetail(makeProposal('agents.memoryBudgetMb', 4096)),
+      );
+      expect(result.reverseChanges[0]?.value).toBeNull();
+
+      mocks.settingsGet.mockResolvedValue(
+        daemonEntry('agents.memoryBudgetMb', 4096, { type: 'number', min: 0, defaultValue: 8192 }),
+      );
+      mocks.settingsReset.mockResolvedValue({ path: 'agents.memoryBudgetMb', value: null });
+      await undoSettingsProposalWork(result.reverseChanges);
+
+      expect(mocks.settingsReset).toHaveBeenCalledWith('agents.memoryBudgetMb');
+      expect(mocks.settingsUpdate).not.toHaveBeenCalledWith([
+        { path: 'agents.memoryBudgetMb', value: null },
+      ]);
+    });
+
+    it('fails the undo instead of reporting success when the reset is rejected', async () => {
+      mocks.settingsGet.mockResolvedValue(daemonEntry('voice.language', 'fr', { type: 'string' }));
+      mocks.settingsReset.mockResolvedValue(null);
+
+      await expect(
+        undoSettingsProposalWork([
+          {
+            path: 'voice.language',
+            value: null,
+            apply: { kind: 'daemon-settings-update', path: 'voice.language' },
+          },
+        ]),
+      ).rejects.toThrow('Could not clear setting "voice.language"');
+    });
+
+    it('refuses a daemon setting the daemon marks not proposable', async () => {
+      mocks.settingsGet.mockResolvedValue(
+        daemonEntry('server.port', 7777, { type: 'number', proposable: false }),
+      );
+
+      await expect(
+        applySettingsProposalWork(makeDetail(makeProposal('server.port', 9999))),
+      ).rejects.toThrow('Setting "server.port" can\'t be changed from chat');
+
+      expect(mocks.settingsUpdate).not.toHaveBeenCalled();
+      expect(mocks.settingsReset).not.toHaveBeenCalled();
+    });
+
+    it('refuses a daemon setting when an older daemon does not say it is proposable', async () => {
+      const entry = daemonEntry('prMonitor.pollSeconds', 60, { type: 'number' });
+      delete entry.proposable;
+      mocks.settingsGet.mockResolvedValue(entry);
+
+      await expect(
+        applySettingsProposalWork(makeDetail(makeProposal('prMonitor.pollSeconds', 30))),
+      ).rejects.toThrow('Setting "prMonitor.pollSeconds" can\'t be changed from chat');
+
+      expect(mocks.settingsUpdate).not.toHaveBeenCalled();
+    });
+
+    it('refuses a sensitive daemon setting even if it claims to be proposable', async () => {
+      mocks.settingsGet.mockResolvedValue(
+        daemonEntry('linear.token', '********', { type: 'string', sensitive: true }),
+      );
+
+      await expect(
+        applySettingsProposalWork(makeDetail(makeProposal('linear.token', 'lin_abc'))),
+      ).rejects.toThrow('Setting "linear.token" can\'t be changed from chat');
+
+      expect(mocks.settingsUpdate).not.toHaveBeenCalled();
+    });
+
+    it('refuses an app-schema daemon setting the daemon marks not proposable', async () => {
+      mocks.settingsGet.mockResolvedValue(
+        daemonEntry('workspace.branchPrefix', 'old/', { type: 'string', proposable: false }),
+      );
+
+      await expect(
+        applySettingsProposalWork(makeDetail(makeProposal('workspace.branchPrefix', 'new/'))),
+      ).rejects.toThrow('Setting "workspace.branchPrefix" can\'t be changed from chat');
+
+      expect(mocks.settingsUpdate).not.toHaveBeenCalled();
+    });
+
+    it('ignores a payload-supplied apply plan for a daemon setting', async () => {
+      mocks.settingsGet.mockResolvedValue(
+        daemonEntry('prMonitor.pollSeconds', 60, { type: 'number' }),
+      );
+      const setItem = vi.spyOn(Storage.prototype, 'setItem');
+      const proposal: Proposal = {
+        kind: 'settings-change',
+        applyToolCallId: 'tool-settings',
+        payload: {
+          changes: [
+            {
+              path: 'prMonitor.pollSeconds',
+              value: 30,
+              apply: { kind: 'daemon-settings-update', path: 'server.port' },
+            },
+          ],
+        },
+        preview: { title: 'Change setting' },
+      };
+
+      await applySettingsProposalWork(makeDetail(proposal));
+
+      expect(mocks.settingsUpdate).toHaveBeenCalledWith([
+        { path: 'prMonitor.pollSeconds', value: 30 },
+      ]);
+      expect(setItem).not.toHaveBeenCalled();
+      setItem.mockRestore();
+    });
+
+    it.each([
+      'workspace.sshKeyPath',
+      'workspace.defaultShell',
+      'workspace.worktreesLocation',
+      'providers.paths.claude-code',
+      'providers.paths.codex',
+      'providers.paths.auggie',
+    ])('refuses the security-relevant app setting %s', async (path) => {
+      await expect(
+        applySettingsProposalWork(makeDetail(makeProposal(path, '/tmp/evil'))),
+      ).rejects.toThrow(`Setting "${path}" is read-only and cannot be changed`);
+
+      expect(mocks.settingsUpdate).not.toHaveBeenCalled();
+    });
   });
 
   // Backend scoping: a local-storage-set write against a per-backend key must

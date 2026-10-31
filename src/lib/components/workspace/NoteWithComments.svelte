@@ -312,6 +312,7 @@
     while ((node = walker.nextNode() as Text | null)) {
       const parent = node.parentElement;
       // Skip script, style, and other non-content elements
+      // eslint-disable-next-line intent/no-hand-written-typing-check -- text-search walk skips form-control text; not a typing check.
       if (parent && !['SCRIPT', 'STYLE', 'TEXTAREA', 'INPUT'].includes(parent.tagName)) {
         const text = node.textContent || '';
         const lowerText = text.toLowerCase();

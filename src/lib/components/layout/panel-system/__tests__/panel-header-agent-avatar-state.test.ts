@@ -122,7 +122,6 @@ beforeEach(() => {
       disconnect() {}
     },
   );
-  Element.prototype.scrollIntoView = vi.fn();
   mocks.dispatch.mockClear();
   document.documentElement.className = '';
 });

@@ -13,6 +13,7 @@
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/svelte';
+import { waitForLayerExit } from '../../../../test/layer-exit';
 import { tick } from 'svelte';
 import { pushEscapeLayer } from '$lib/utils/escapeLayers';
 import DropdownMenu from '../dropdown-menu.svelte';
@@ -75,10 +76,11 @@ describe('DropdownMenu Escape handling (escape-layer stack)', () => {
     try {
       const { rerender } = render(DropdownMenu, { props: { open: true } });
       await tick();
+      const menu = screen.getByRole('menu');
 
       await rerender({ open: false });
       await tick();
-      expect(screen.queryByRole('menu')).toBeFalsy();
+      await waitForLayerExit(menu);
 
       dispatchEscape();
 

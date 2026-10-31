@@ -135,6 +135,8 @@ export class ProtocolAdapter {
     statusMessage?: string;
     /** Workspace label: missing = untouched, `null` = clear, string = set. */
     label?: string | null;
+    /** Auto-archive opt-out: missing = untouched, boolean = set. */
+    autoArchiveDisabled?: boolean;
     branch?: string;
     baseRef?: string;
     status?: string;

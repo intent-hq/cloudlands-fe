@@ -14,13 +14,11 @@
     faSquare,
     faCircleExclamation,
     faUser,
+    faTerminal,
+    faPlay,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import {
-    memberMentionLabel,
-    memberMentionSubtitle,
-    parseMemberMention,
-  } from '$lib/utils/member-mention-token';
+  import { memberMentionLabel, memberMentionSubtitle } from '$lib/utils/member-mention-token';
   import { Button } from '$lib/components/ui/button';
   import { onDestroy } from 'svelte';
   import StreamingMessageContent from './StreamingMessageContent.svelte';
@@ -60,8 +58,7 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { shouldShowStoppedIndicator as resolveShouldShowStoppedIndicator } from './message-display-utils';
   import { splitTextByUrls } from './message-link-utils';
-  import { findInlineMentions } from './mention-match-utils';
-  import { parseNoteMention } from '$lib/utils/note-mention-token';
+  import { decodeInlineMention, findInlineMentions } from './mention-match-utils';
   import { noteUrl } from '$shared/constants/intent-links';
   import { USER_MESSAGE_SURFACE_CLASS, USER_MESSAGE_TEXT_CLASS } from './user-message-surface';
   import {
@@ -684,71 +681,33 @@
       }
 
       const fullMatch = match.fullMatch; // e.g., "@context[linear|AU-123|Title]" or "@note/spec"
-      const captured = match.captured; // e.g., "context[linear|AU-123|Title]" or "note/spec"
+      const decoded = decodeInlineMention(match);
 
-      if (captured.startsWith('member[')) {
-        const member = parseMemberMention(fullMatch);
-        if (member) {
-          segments.push({
-            type: 'mention',
-            mentionType: 'member',
-            label: memberMentionLabel(member.label),
-            description: memberMentionSubtitle(member),
-            id: member.id,
-            icon: faUser,
-          });
-        } else {
-          segments.push({ type: 'text', content: fullMatch });
-        }
-      } else if (captured.startsWith('context[')) {
-        // Context mention: @context[provider|identifier|title] or @context[base64JSON]
-        const inner = captured.slice(8, -1); // Remove "context[" and "]"
-
-        let provider = 'browser';
-        let identifier = '';
-        let title = '';
-        let url: string | undefined;
-
-        // Check if this is base64-encoded JSON (starts with eyJ which is {"  in base64)
-        if (inner.startsWith('eyJ')) {
-          try {
-            const decoded = atob(inner);
-            const json = JSON.parse(decoded);
-            provider = json.provider || 'browser';
-            identifier = json.identifier || '';
-            title = json.title || identifier || m.chat_shared_context_fallback();
-            url = json.url;
-          } catch {
-            // Fall back to treating as pipe-separated format
-            const parts = inner.split('|');
-            provider = parts[0] || 'browser';
-            identifier = parts[1] || '';
-            title = parts[2] || identifier;
-          }
-        } else {
-          // Standard pipe-separated format: provider|identifier|title
-          const parts = inner.split('|');
-          provider = parts[0] || 'browser';
-          identifier = parts[1] || '';
-          title = parts[2] || identifier;
-        }
-
+      if (decoded.kind === 'text') {
+        segments.push({ type: 'text', content: fullMatch });
+      } else if (decoded.kind === 'member') {
+        const { member } = decoded;
+        segments.push({
+          type: 'mention',
+          mentionType: 'member',
+          label: memberMentionLabel(member.label),
+          description: memberMentionSubtitle(member),
+          id: member.id,
+          icon: faUser,
+        });
+      } else if (decoded.kind === 'context') {
+        const { provider, identifier, title } = decoded;
         // Look up URL and metadata from refs if not already set
         const ref = identifier ? refsByIdentifier?.get(identifier) : undefined;
-        if (!url) {
-          url = ref?.url;
-        }
+        let url = decoded.url || ref?.url;
 
         // Fix GitHub URLs - the stored URL may be the author's profile instead of the PR/issue URL
         if (provider === 'github') {
           url = fixGitHubUrl(provider, identifier, url, ref?.metadata);
         }
 
-        // Determine icon based on provider (fallback, ProviderIcon is used in template)
-        let icon = faFile;
-        if (provider === 'linear') icon = faClipboard;
-        else if (provider === 'github') icon = faFile;
-        else if (provider === 'sentry') icon = faFile;
+        // ProviderIcon is used in the template for context providers; this is the fallback.
+        const icon = provider === 'linear' ? faClipboard : faFile;
 
         segments.push({
           type: 'mention',
@@ -759,60 +718,44 @@
           icon,
           url,
         });
-      } else if (captured.startsWith('note[')) {
-        // Note mention: @note[({workspaceId}/){noteId}:{title}]. The id drives
-        // lookup/navigation; the saved title is the fallback label.
-        const note = parseNoteMention(captured);
-        if (!note) {
-          segments.push({ type: 'text', content: fullMatch });
-        } else {
-          const owningWsId = getOwningWorkspaceId() ?? '';
-          const crossWorkspace = !!note.workspaceId && note.workspaceId !== owningWsId;
-          const lookupWsId = crossWorkspace ? note.workspaceId! : owningWsId;
-          const matchingNote =
-            selectAllNotes.select(appStore.state, lookupWsId).find((n) => n.id === note.id) ?? null;
-          const isSpec = note.id === 'spec' && !crossWorkspace;
-
-          segments.push({
-            type: 'mention',
-            mentionType: isSpec ? 'spec' : 'note',
-            label: matchingNote?.title || note.title,
-            id: note.id,
-            icon: isSpec ? faClipboard : faNoteSticky,
-            noteId: note.id,
-            url: crossWorkspace && !readOnly ? noteUrl(note.id, note.workspaceId) : undefined,
-          });
-        }
-      } else if (captured.startsWith('note/')) {
-        // Note mention: @note/{noteId}
-        const noteId = captured.slice(5); // Remove "note/" prefix
-        const wsId = getOwningWorkspaceId() ?? '';
-        const allNotes = selectAllNotes.select(appStore.state, wsId);
-        const matchingNote = allNotes.find((n) => n.id === noteId) ?? null;
-        const label = matchingNote?.title || noteId;
+      } else if (decoded.kind === 'note') {
+        // The id drives lookup/navigation; the saved title is the fallback label.
+        const { note } = decoded;
+        const owningWsId = getOwningWorkspaceId() ?? '';
+        const crossWorkspace = !!note.workspaceId && note.workspaceId !== owningWsId;
+        const lookupWsId = crossWorkspace ? note.workspaceId! : owningWsId;
+        const matchingNote =
+          selectAllNotes.select(appStore.state, lookupWsId).find((n) => n.id === note.id) ?? null;
+        const isSpec = note.id === 'spec' && !crossWorkspace;
 
         segments.push({
           type: 'mention',
-          mentionType: noteId === 'spec' ? 'spec' : 'note',
-          label,
-          id: noteId,
-          icon: noteId === 'spec' ? faClipboard : faNoteSticky,
-          noteId,
+          mentionType: isSpec ? 'spec' : 'note',
+          label: matchingNote?.title || note.title,
+          id: note.id,
+          icon: isSpec ? faClipboard : faNoteSticky,
+          noteId: note.id,
+          url: crossWorkspace && !readOnly ? noteUrl(note.id, note.workspaceId) : undefined,
+        });
+      } else if (decoded.kind === 'runtime') {
+        // Terminal/script chips name a live resource; there is no click target.
+        const { mention } = decoded;
+        segments.push({
+          type: 'mention',
+          mentionType: mention.kind,
+          label: mention.name,
+          id: mention.id,
+          icon: mention.kind === 'terminal' ? faTerminal : faPlay,
         });
       } else {
-        // File/folder mention: @path/to/file.ext
-        const { path, line } = parseFilePathLineSuffix(captured);
-        const fileName = path.split('/').pop() || path;
-        const suffix = captured.slice(path.length);
-
         segments.push({
           type: 'mention',
           mentionType: 'file',
-          label: `${fileName}${suffix}`,
-          id: path,
+          label: decoded.label,
+          id: decoded.path,
           icon: faFile,
-          path,
-          line,
+          path: decoded.path,
+          line: decoded.line,
         });
       }
 

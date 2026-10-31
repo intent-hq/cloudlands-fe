@@ -397,6 +397,9 @@ export const IPC_CHANNELS = {
     CREATE: 'window:create',
     OPEN_NEW: 'window:open-new',
     SET_THEME: 'window:set-theme',
+    // Renderer → main invoke: mirror the "Translucent window" preference onto
+    // the native macOS window blur ({ enabled: boolean })
+    SET_TRANSLUCENCY: 'window:set-translucency',
     GET_ZOOM_FACTOR: 'window:get-zoom-factor',
     SET_TITLE: 'window:set-title',
     SET_IN_WORKSPACE: 'window:set-in-workspace',
@@ -629,6 +632,12 @@ export const IPC_CHANNELS = {
      * visibility it causes (main->renderer event)
      */
     CAPTURE_DRAWING: 'browser:capture-drawing',
+    /**
+     * An agent is (active: true) / is no longer (active: false) acting on an
+     * agent-owned tab, so its offscreen webview's box is drawn at a near-zero
+     * (still invisible) opacity and draws at full frame rate (main->renderer event)
+     */
+    AGENT_DRAWING: 'browser:agent-drawing',
     /** Report the workspaces this window hosts in the background (renderer->main) */
     BACKGROUND_HOSTED_WORKSPACES: 'browser:background-hosted-workspaces',
     /** Response with browser tab list (renderer->main) */
@@ -1318,6 +1327,8 @@ export const EVENT_CHANNELS = [
   'browser:host-workspace',
   // An agent capture keeps this window drawing while hidden (presence gate)
   'browser:capture-drawing',
+  // An agent is acting on an offscreen tab: give it a box that draws at full rate
+  'browser:agent-drawing',
   // Browser tab open request from main process (agent wants to open a browser tab)
   'browser:open-tab',
   // A tab's registration timed out; the renderer logs its view of the tab (intent-hq/intent#7855)

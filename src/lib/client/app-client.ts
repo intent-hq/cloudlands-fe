@@ -1230,6 +1230,8 @@ export interface TerminalCreateParams {
   rows: number;
   cwd?: string;
   command?: string;
+  /** Layered onto the daemon's inherited environment (later keys override). */
+  env?: Record<string, string>;
 }
 
 /** Decoded `terminal:data` payload — `chunk` is the UTF-8 string the daemon base64-encoded. */
@@ -1333,6 +1335,12 @@ export interface SettingDefinitionWithValue {
   max?: number;
   defaultValue?: unknown;
   sensitive?: boolean;
+  /**
+   * Whether an Assistant chat settings-change card may change this setting.
+   * Always present on daemons that support it; absent on older daemons, which
+   * clients treat as not proposable for settings outside their own schema.
+   */
+  proposable?: boolean;
   /** Approximate prompt-token cost of the gated feature (e.g. "~620 tokens/session"); absent when unannotated. */
   tokenImpact?: string;
   value: unknown;

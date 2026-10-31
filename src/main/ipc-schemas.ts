@@ -231,6 +231,8 @@ export const WorkspaceUpdateSchema = z.object({
   statusMessage: WorkspaceStatusMessageSchema.optional(),
   // Workspace label: undefined = untouched, null = clear, string = set.
   label: z.string().nullable().optional(),
+  // Auto-archive opt-out: undefined = untouched, boolean = set.
+  autoArchiveDisabled: z.boolean().optional(),
   branch: z.string().optional(),
   baseRef: z.string().optional(),
   baseCommitSha: z.string().optional(),
@@ -724,6 +726,10 @@ export const WindowOpenNewSchema = z.object({
 
 export const WindowSetThemeSchema = z.object({
   theme: z.enum(['light', 'dark', 'system']),
+});
+
+export const WindowSetTranslucencySchema = z.object({
+  enabled: z.boolean(),
 });
 
 export const WindowSetTitleSchema = z.object({

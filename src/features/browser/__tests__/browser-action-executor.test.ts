@@ -36,6 +36,7 @@ vi.mock('../main/embedded-browser-cdp-service', () => ({
     claimTab: vi.fn().mockReturnValue({ status: 'claimed', alreadyOwned: false }),
     resizeTab: vi.fn().mockReturnValue(undefined),
     resolveTabOwner: vi.fn().mockResolvedValue(undefined),
+    beginAgentDrawing: vi.fn(),
     listAllTabs: vi.fn().mockResolvedValue({ tabs: [], stale: false }),
     // Default: capture targets are already mounted so the mount-on-demand
     // path (monorepo#4103) stays out of unrelated tests.
@@ -3958,6 +3959,110 @@ describe('browser-action-executor', () => {
 
       expect(result.success).toBe(true);
       expect(embeddedBrowserCdp.screenshot).toHaveBeenCalled();
+    });
+
+    // Agents measuring animation or timing need their own tab at full frame
+    // rate: every content action on an owned tab holds it drawing for the
+    // whole action (the idle window starts when the action ends).
+    it('an owner evaluate keeps its tab drawing for the whole action', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValue('agent-1');
+      const order: string[] = [];
+      vi.mocked(embeddedBrowserCdp.beginAgentDrawing).mockImplementationOnce(() => {
+        order.push('begin');
+        return () => order.push('end');
+      });
+      vi.mocked(embeddedBrowserCdp.evaluate).mockImplementationOnce(async () => {
+        order.push('evaluate');
+        return 2;
+      });
+
+      const result = await executeActions(
+        { actions: [{ action: 'evaluate', tabId: 'tab-x', expression: '1 + 1' }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(order).toEqual(['begin', 'evaluate', 'end']);
+      expect(embeddedBrowserCdp.beginAgentDrawing).toHaveBeenCalledWith('tab-x', 'agent-1');
+    });
+
+    it('a failing owner action still ends its drawing hold', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValue('agent-1');
+      const end = vi.fn();
+      vi.mocked(embeddedBrowserCdp.beginAgentDrawing).mockReturnValueOnce(end);
+      vi.mocked(embeddedBrowserCdp.evaluate).mockRejectedValueOnce(new Error('boom'));
+
+      const result = await executeActions(
+        { actions: [{ action: 'evaluate', tabId: 'tab-x', expression: 'x' }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(false);
+      expect(end).toHaveBeenCalledOnce();
+    });
+
+    it('no drawing hold for non-owners, user calls, or tab lifecycle actions', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValueOnce('agent-owner');
+      await executeActions(
+        { actions: [{ action: 'evaluate', tabId: 'tab-x', expression: '1' }] },
+        mockOpenTabFn,
+        'agent-intruder',
+        'ws-1',
+      );
+      await executeActions(
+        { actions: [{ action: 'evaluate', tabId: 'tab-x', expression: '1' }] },
+        mockOpenTabFn,
+        undefined,
+        'ws-1',
+      );
+      vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValue('agent-1');
+      await executeActions(
+        { actions: [{ action: 'closeTab', tabId: 'tab-x' }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(embeddedBrowserCdp.beginAgentDrawing).not.toHaveBeenCalled();
+    });
+
+    // Session steps that drive the tab take the hold; teardown and
+    // read-only ones must not keep an idle tab unthrottled for another
+    // idle window.
+    it('capture-session steps hold the session tab, teardown steps do not', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      const { browserCapture } = await import('../main/browser-capture-service');
+      vi.mocked(browserCapture.getSessionTabId).mockReturnValue('tab-session');
+      vi.mocked(browserCapture.startTrace).mockResolvedValue(undefined as never);
+
+      await executeActions(
+        { actions: [{ action: 'startTrace', sessionId: 'sess-1', traceName: 't' }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+      expect(browserCapture.assertSessionOwner).toHaveBeenCalledWith('sess-1', 'ws-1', 'agent-1');
+      expect(embeddedBrowserCdp.beginAgentDrawing).toHaveBeenCalledExactlyOnceWith(
+        'tab-session',
+        'agent-1',
+      );
+
+      for (const action of [
+        { action: 'endCapture', sessionId: 'sess-1' },
+        { action: 'stopTrace', sessionId: 'sess-1', traceName: 't' },
+        { action: 'endSession', sessionId: 'sess-1' },
+      ] as const) {
+        await executeActions({ actions: [action] }, mockOpenTabFn, 'agent-1', 'ws-1');
+      }
+      expect(embeddedBrowserCdp.beginAgentDrawing).toHaveBeenCalledOnce();
+      vi.mocked(browserCapture.getSessionTabId).mockReturnValue(undefined);
     });
 
     it("user-initiated calls (no agentId) are unrestricted on any agent's tab", async () => {

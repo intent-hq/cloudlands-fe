@@ -54,7 +54,7 @@ test('Home status groups restore every work stage in list view only', async ({
   });
   await component.getByRole('button', { name: 'Board view', exact: true }).click();
   const board = component.locator('[data-home-board]');
-  await expect(board.locator('section')).toHaveCount(4);
+  await expect(board.locator('section:not([data-home-set-aside])')).toHaveCount(4);
   await expect(board.getByRole('region', { name: 'Needs you', exact: true })).toBeVisible();
   await expect(board.getByRole('region', { name: 'Running', exact: true })).toBeVisible();
   // A PR in the merge queue is waiting on CI, not done.
@@ -116,7 +116,7 @@ test('Home status grouping keeps pinned work unique and respects filters and sav
   await page.evaluate(() => window.__homeWorkspacePreview!.roundTripSettings());
   await expect(component.locator('[data-home-group]')).toHaveCount(8);
   const pinned = component.locator('[data-home-workspace="home-status-pr_ready"]');
-  await pinned.getByRole('button').click();
+  await pinned.getByRole('button', { name: 'Workspace actions', exact: true }).click();
   await page.getByRole('menuitem', { name: /^Pin/ }).click();
   await expect(
     component

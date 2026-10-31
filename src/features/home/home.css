@@ -311,3 +311,88 @@
     display: block;
   }
 }
+
+/* Set aside / Bring back takes the activity time's place on hover or focus, so rows
+   and cards keep their size and the action appears where the pointer already is. */
+.home-aside-slot {
+  display: inline-grid;
+  align-items: center;
+  justify-items: end;
+}
+.home-aside-slot > * {
+  grid-area: 1 / 1;
+}
+.home-aside-slot > *,
+.home-board-item > .home-aside-control,
+.home-board-item [data-home-card-time] {
+  transition: opacity var(--motion-fast) var(--ease-standard);
+}
+.home-board-item {
+  position: relative;
+  transition: opacity var(--motion-fast) var(--ease-standard);
+}
+[data-home-board] [data-home-workspace][draggable='true'] {
+  cursor: grab;
+}
+.home-board-card-dragging {
+  opacity: 0.5;
+}
+.home-board-aside-column,
+.home-board-aside-column > h3 {
+  transition: background-color var(--motion-fast) var(--ease-standard);
+}
+.home-board-aside-column {
+  min-height: 8rem;
+  background: hsl(var(--background));
+}
+.home-board-aside-column > h3 {
+  background: inherit;
+}
+.home-board-drop-ready {
+  background: color-mix(in srgb, hsl(var(--muted)) 45%, hsl(var(--background)));
+}
+.home-board-drop-active {
+  background: hsl(var(--muted));
+}
+.home-board-item > .home-aside-control {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.5rem;
+}
+.home-aside-control {
+  display: inline-flex;
+  opacity: 0;
+}
+.home-list-row:is(:hover, :focus-within)
+  .home-aside-slot:has(> .home-aside-control)
+  > :not(.home-aside-control),
+[role='option']:focus-visible
+  .home-aside-slot:has(> .home-aside-control)
+  > :not(.home-aside-control),
+.home-board-item:is(:hover, :focus-within):has(> .home-aside-control) [data-home-card-time] {
+  opacity: 0;
+}
+.home-list-row:is(:hover, :focus-within) .home-aside-control,
+[role='option']:focus-visible .home-aside-control,
+.home-board-item:is(:hover, :focus-within) > .home-aside-control {
+  opacity: 1;
+}
+@media (hover: none) {
+  .home-aside-control {
+    opacity: 1;
+  }
+  .home-aside-slot:has(> .home-aside-control) > :not(.home-aside-control),
+  .home-board-item:has(> .home-aside-control) [data-home-card-time] {
+    opacity: 0;
+  }
+}
+@container style(--motion-reduced: 1) {
+  .home-board-item,
+  .home-board-aside-column,
+  .home-board-aside-column > h3,
+  .home-aside-slot > *,
+  .home-board-item > .home-aside-control,
+  .home-board-item [data-home-card-time] {
+    transition: none;
+  }
+}

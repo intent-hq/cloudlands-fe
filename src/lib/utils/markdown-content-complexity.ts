@@ -1,3 +1,5 @@
+import { hasMentionToken } from '$lib/services/mentions/registry';
+
 // PERF: Detect content complexity to choose rendering strategy
 // - Simple: plain text, no markdown - render as <p>
 // - Static: has markdown - render the processed HTML directly (no TipTap)
@@ -28,23 +30,16 @@ const needsProcessingPatterns = [
   /^[-*_]{3,}\s*$/m, // Horizontal rules
   /^\s*[-*+]\s/m, // Unordered lists
   /^\s*\d+\.\s/m, // Ordered lists
-  // @-mentions and bare file paths that injectMentionSpans converts to mention chips
-  /@note[/[]/, // @note[...] and legacy @note/... mentions
-  /@context\[/, // @context[...] mentions
-  /@member\[/, // Persisted workspace member mentions
-  /@\//, // @/absolute/path mentions
-  /@[A-Za-z0-9._-]+\/[^\s]*\.[A-Za-z0-9]+/, // @relative/path/file.ext mentions
-  /@[A-Za-z0-9._-]+\.[A-Za-z0-9]+/, // @file.ext mentions
-  /@auggie-personality-/, // @auggie-personality-* persona mentions
-  /intent:\/\//, // intent:// protocol URLs
-  /\b[A-Za-z0-9][A-Za-z0-9._-]+\.(?:json|js|ts|tsx|jsx|md|mdx|yaml|yml|svelte|html|css|scss|py|go|rs|rb|java|kt|swift|m|mm|hpp|h|hh|c|cc|cpp|sh|toml|lock|ini|conf|txt|csv|sql)\b/, // bare filenames like file.ext
-  /\b[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)+\.(?:json|js|ts|tsx|jsx|md|mdx|yaml|yml|svelte|html|css|scss|py|go|rs|rb|java|kt|swift|m|mm|hpp|h|hh|c|cc|cpp|sh|toml|lock|ini|conf|txt|csv|sql)\b/, // bare paths like dir/file.ext
 ];
 
 export function classifyMarkdownContent(content: string): 'simple' | 'static' {
   if (!content) return 'simple';
   // Check if needs markdown processing
-  if (needsProcessingPatterns.some((pattern) => pattern.test(content))) {
+  if (
+    needsProcessingPatterns.some((pattern) => pattern.test(content)) ||
+    // @-mentions and bare file paths that injectMentionSpans converts to chips
+    hasMentionToken(content, 'markdown')
+  ) {
     return 'static';
   }
   return 'simple';

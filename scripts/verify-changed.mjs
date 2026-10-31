@@ -112,6 +112,7 @@ const FULL_RISK_FILES = new Set([
   'svelte.config.js',
   'vite.config.mjs',
   'vitest.config.ts',
+  'scripts/vitest-native-deps.mjs',
 ]);
 // Files that decide which root specs playwright.config.ts runs: the config and the
 // modules it reads its testDir/testMatch/testIgnore from (root-spec-pattern.mjs
@@ -1035,8 +1036,24 @@ export function checkEnvironment(check, { heldLock = null, baseEnv = process.env
   return env;
 }
 
-async function runCheck(check, root, { heldLock = null } = {}) {
-  console.log(`\n[verify:changed] ${check.label}`);
+/** Retained tail of a captured check's output, enough to explain a failure. */
+const CAPTURED_OUTPUT_LIMIT = 256 * 1024;
+const CAPTURE_DRAIN_MS = 2_000;
+
+/**
+ * How a check's child process writes its output. Real runs stream it to the
+ * terminal. Under Vitest a check is a practice run that a script test starts
+ * on purpose (often expected to fail), so its output is captured and attached
+ * to the failure instead: its FAIL lines and failure counts must not appear in
+ * the parent suite's log, where they read as real failures (cloudlands-fe#3939).
+ */
+export function checkOutputMode(env = process.env) {
+  return env.VITEST ? 'capture' : 'inherit';
+}
+
+async function runCheck(check, root, { heldLock = null, output = checkOutputMode() } = {}) {
+  const capture = output === 'capture';
+  if (!capture) console.log(`\n[verify:changed] ${check.label}`);
   const launcher =
     check.executable === 'pnpm'
       ? pnpmInvocation(check.args)
@@ -1048,27 +1065,54 @@ async function runCheck(check, root, { heldLock = null } = {}) {
   await new Promise((resolveRun, reject) => {
     const child = spawn(launcher.executable, launcher.args, {
       cwd: root,
-      stdio: 'inherit',
+      stdio: capture ? ['ignore', 'pipe', 'pipe'] : 'inherit',
       shell: launcher.shell,
       env,
     });
+    let captured = '';
+    const collect = (chunk) => {
+      captured = (captured + chunk).slice(-CAPTURED_OUTPUT_LIMIT);
+    };
+    for (const stream of [child.stdout, child.stderr]) {
+      // Decode per stream so a multibyte character split across chunks survives.
+      stream?.setEncoding('utf8');
+      stream?.on('data', collect);
+    }
     activeChildren.add(child);
     child.on('error', (error) => {
       activeChildren.delete(child);
       reject(error);
     });
-    child.on('exit', (code, signal) => {
+    const settle = (code, signal) => {
       activeChildren.delete(child);
       if (code === 0) resolveRun();
-      else
+      else {
+        const reason = `${check.label} failed${signal ? ` with ${signal}` : ` with exit code ${code ?? 1}`}`;
+        const details = capture
+          ? `\n--- captured output of ${check.label} ---\n${captured.trimEnd()}\n--- end of captured output ---`
+          : '';
         reject(
-          Object.assign(
-            new Error(
-              `${check.label} failed${signal ? ` with ${signal}` : ` with exit code ${code ?? 1}`}`,
-            ),
-            { exitCode: code, signal },
-          ),
+          Object.assign(new Error(reason + details), {
+            exitCode: code,
+            signal,
+            ...(capture ? { output: captured } : {}),
+          }),
         );
+      }
+    };
+    child.on('exit', (code, signal) => {
+      if (!capture) return settle(code, signal);
+      // Let the pipes drain, but never wait on a grandchild (a CT server, a
+      // Playwright worker) that inherited them and outlives the check.
+      const drained = setTimeout(() => {
+        child.stdout?.destroy();
+        child.stderr?.destroy();
+        settle(code, signal);
+      }, CAPTURE_DRAIN_MS);
+      child.once('close', () => {
+        clearTimeout(drained);
+        settle(code, signal);
+      });
     });
   });
 }

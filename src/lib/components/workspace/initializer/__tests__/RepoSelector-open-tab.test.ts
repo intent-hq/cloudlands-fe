@@ -9,6 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { waitForLayerExit } from '../../../../../test/layer-exit';
 
 const mocks = vi.hoisted(() => {
   const listeners = new Set<() => void>();
@@ -288,11 +289,13 @@ describe('RepoSelector qualified GitLab choice', () => {
     const onchange = vi.fn();
     await openDropdown({ gitlab, onchange });
     await fireEvent.click(tabButton('Pick a repo'));
-    await fireEvent.click(screen.getByRole('option', { name: 'group/subgroup/api' }));
+    const option = screen.getByRole('option', { name: 'group/subgroup/api' });
+    await fireEvent.click(option);
     expect(gitlab.onSelect).toHaveBeenCalledWith('group/subgroup/api', gitlab.scopeKey);
     expect(onchange).not.toHaveBeenCalled();
     expect(mocks.dispatch.mock.calls.some(([action]) => action.type === 'wi/last')).toBe(false);
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitForLayerExit(option);
+    expect(screen.queryByRole('dialog')).toBeNull();
     expect(gitlab.onOpenChange).toHaveBeenLastCalledWith(false, gitlab.scopeKey);
   });
 
@@ -301,7 +304,7 @@ describe('RepoSelector qualified GitLab choice', () => {
     const view = await openDropdown({ gitlab, gitlabSelected: true });
     await view.rerender({ gitlab: undefined });
     await waitFor(() => expect(screen.queryByRole('option')).toBeNull());
-    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(gitlab.onOpenChange).toHaveBeenLastCalledWith(false, gitlab.scopeKey);
   });
 

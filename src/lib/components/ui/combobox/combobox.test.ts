@@ -1,5 +1,6 @@
 // @ui-invariant
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { waitForLayerExit } from '../../../../test/layer-exit';
 import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildUiComponentInventory } from '../../../../../scripts/ui-component-inventory';
@@ -77,7 +78,7 @@ describe('Combobox behavior', () => {
     await fireEvent.keyDown(input, { key: 'Home' });
     await fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => expect(screen.getByTestId('combobox-value').textContent).toBe('"grace"'));
-    expect(screen.queryByRole('listbox')).toBeNull();
+    await waitForLayerExit(listbox);
     expect(document.activeElement).toBe(input);
   });
 
@@ -187,9 +188,10 @@ describe('Combobox behavior', () => {
     const input = screen.getByRole('combobox', { name: 'Search people' });
     input.focus();
     await fireEvent.focus(input);
-    expect(container.contains(screen.getByRole('listbox'))).toBe(false);
+    const listbox = screen.getByRole('listbox');
+    expect(container.contains(listbox)).toBe(false);
     await fireEvent.keyDown(input, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+    await waitForLayerExit(listbox);
     expect(document.activeElement).toBe(input);
   });
 });

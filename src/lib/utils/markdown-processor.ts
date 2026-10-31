@@ -11,17 +11,12 @@ import {
   workspaceFileImageUrlToIntentFileUrl,
   workspaceFileMediaUrlToIntentFileUrl,
 } from './workspace-file-image';
-import { toPromptToken } from '$lib/services/mentions/format';
-import {
-  NOTE_MENTION_BODY_SOURCE,
-  noteMentionChipAttrs,
-  parseNoteMention,
-} from '$lib/utils/note-mention-token';
-import { memberMentionLabel, parseMemberMention } from '$lib/utils/member-mention-token';
+import { readMentionChip } from '$lib/services/mentions/chip';
+import { mentionElement, scanMentions, toPromptToken } from '$lib/services/mentions/registry';
+import type { MentionType } from '$lib/services/mentions/types';
 import { NotesPrimitivesSerializer } from './notes-primitives-serializer';
 import type { MarkdownWorkerResponse } from './markdown-worker';
 import { decodeDiffContent } from './diff-patch-utils';
-import { parseFilePathLineSuffix } from '$shared/utils/link-helpers';
 import { MAX_MATH_SOURCE_LENGTH, protectMathSource, renderKatexToString } from './marked-math';
 
 const logger = new Logger('MarkdownProcessor');
@@ -883,372 +878,32 @@ function injectMentionSpans(html: string): string {
 
   const BLOCK_TAGS = new Set(['CODE', 'PRE', 'SCRIPT', 'STYLE']);
 
-  const createMentionSpan = (attrs: {
-    type: string;
-    id?: string;
-    label: string;
-    meta?: any;
-    uri?: string;
-  }): HTMLElement => {
-    const span = document.createElement('span');
-    span.setAttribute('data-mention', 'true');
-    span.setAttribute('data-type', attrs.type);
-    if (attrs.id) span.setAttribute('data-id', attrs.id);
-    span.setAttribute('data-label', attrs.label);
-    if (attrs.uri) span.setAttribute('data-uri', attrs.uri);
-    span.setAttribute('data-meta', JSON.stringify(attrs.meta || {}));
-    span.className = 'mention-chip';
-    span.textContent = attrs.type === 'member' ? memberMentionLabel(attrs.label) : attrs.label;
-    return span;
-  };
-
-  const noteBracketRe = new RegExp(`@${NOTE_MENTION_BODY_SOURCE}`, 'g');
-  const noteRe = /@note\/([A-Za-z0-9\-_]+)/g;
-  const rulesRe = /@\.augment\/rules\/[^\s<>()'\"]+/g;
-  const fileRe = /@\/[^\s<>()'\"]+(?::\d+(?::\d+)?|#L\d+(?:-\d+)?)?/g; // '@/absolute/path' until whitespace or delimiter
-  // Match @path/to/file.ext (relative paths with at least one slash and a file extension)
-  const relativeFileRe =
-    /@([A-Za-z0-9._-]+\/[^\s<>()'\"]+\.[A-Za-z0-9]+)(?::\d+(?::\d+)?|#L\d+(?:-\d+)?)?/g;
-  const personaRe = /@auggie\-personality\-[\w\-]+/g;
-  const simpleFileNameRe = /@([A-Za-z0-9._-]+\.[A-Za-z0-9._-]+)(?::\d+(?::\d+)?|#L\d+(?:-\d+)?)?/g;
-  // Heuristic: bare filenames (no leading @) for common file extensions, outside code/pre
-  const bareFileNameRe =
-    /\b([A-Za-z0-9][A-Za-z0-9._-]+\.(?:json|js|ts|tsx|jsx|md|mdx|yaml|yml|svelte|html|css|scss|py|go|rs|rb|java|kt|swift|m|mm|hpp|h|hh|c|cc|cpp|sh|toml|lock|ini|conf|txt|csv|sql))\b(?::\d+(?::\d+)?|#L\d+(?:-\d+)?)?/g;
-  // Heuristic: bare paths (dir/subdir/file.ext without @ prefix) for common file extensions
-  // Must have at least one slash to distinguish from bare filenames
-  const barePathRe =
-    /\b([A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)+\.(?:json|js|ts|tsx|jsx|md|mdx|yaml|yml|svelte|html|css|scss|py|go|rs|rb|java|kt|swift|m|mm|hpp|h|hh|c|cc|cpp|sh|toml|lock|ini|conf|txt|csv|sql))\b(?::\d+(?::\d+)?|#L\d+(?:-\d+)?)?/g;
-  // Match absolute paths to workspace notes: /path/intent/xxx/.workspace/notes/yyy.json (also legacy .workspaces)
-  const workspaceNotePathRe =
-    /\/[^\s<>()'\"]*(?:intent|\.workspaces)\/[a-f0-9-]+\/\.workspace\/notes\/([a-f0-9-]+)\.json/g;
-  // Match intent:// protocol URLs for notes
-  // Formats: intent://local/note/{note-id} or intent://local/{workspace-id}/note/{note-id}
-  const intentUrlRe = /intent:\/\/[^\s<>()'\"]+/g;
-  // Match context mentions: @context[...] where content can be:
-  // - Base64 format (new): @context[base64encodedJson] - safe, no special char issues
-  // - Legacy pipe format: @context[provider|identifier|title] - for backward compatibility
-  // Base64 uses only [A-Za-z0-9+/=], legacy uses pipes and brackets
-  const contextMentionRe = /@context\[([A-Za-z0-9+/=]+|[^\[\]]*(?:\[[^\]]*\][^\[\]]*)*)\]/g;
-
+  // Token patterns, parsing and chip attributes come from the mention
+  // registry; the composer's string injector emits the same elements.
   const processTextNode = (textNode: Text) => {
     const text = textNode.nodeValue || '';
-    let idx = 0;
+    const matches = scanMentions(text, 'markdown');
+    if (matches.length === 0) return;
     const frag = document.createDocumentFragment();
-
-    // Helper to push plain text segment
-    const pushText = (end: number) => {
-      if (end > idx) frag.appendChild(document.createTextNode(text.slice(idx, end)));
-    };
-
-    // Find the earliest next match among our patterns
-    const nextMatch = (): {
-      start: number;
-      end: number;
-      type: string;
-      value: string;
-      groups?: string[];
-    } | null => {
-      const find = (re: RegExp) => {
-        re.lastIndex = 0;
-        const m = re.exec(text.slice(idx));
-        if (!m) return null;
-        return {
-          start: idx + m.index,
-          end: idx + m.index + m[0].length,
-          match: m[0],
-          groups: m.slice(1),
-        };
-      };
-      const cands: Array<{
-        start: number;
-        end: number;
-        match: string;
-        groups?: string[];
-        kind: string;
-      }> = [];
-      const member = find(/@member\[[^\]\s]*\]/g);
-      if (member) cands.push({ ...member, kind: 'member' });
-      const nb = find(noteBracketRe);
-      if (nb) cands.push({ ...nb, kind: 'note-bracket' });
-      const n = find(noteRe);
-      if (n) cands.push({ ...n, kind: 'note' });
-      const r = find(rulesRe);
-      if (r) cands.push({ ...r, kind: 'rule' });
-      const f = find(fileRe);
-      if (f) cands.push({ ...f, kind: 'file' });
-      const rf = find(relativeFileRe);
-      if (rf) cands.push({ ...rf, kind: 'relative-file' });
-      const sf = find(simpleFileNameRe);
-      if (sf) cands.push({ ...sf, kind: 'simple-file' });
-      const bf = find(bareFileNameRe);
-      if (bf) cands.push({ ...bf, kind: 'bare-file' });
-      const bp = find(barePathRe);
-      if (bp) cands.push({ ...bp, kind: 'bare-path' });
-      const p = find(personaRe);
-      if (p) cands.push({ ...p, kind: 'personality' });
-      const wnp = find(workspaceNotePathRe);
-      if (wnp) cands.push({ ...wnp, kind: 'workspace-note-path' });
-      const wu = find(intentUrlRe);
-      if (wu) cands.push({ ...wu, kind: 'intent-url' });
-      const cm = find(contextMentionRe);
-      if (cm) cands.push({ ...cm, kind: 'context-mention' });
-      if (!cands.length) return null;
-      cands.sort((a, b) => a.start - b.start);
-      const m = cands[0];
-      return { start: m.start, end: m.end, type: m.kind, value: m.match, groups: m.groups };
-    };
-
-    while (true) {
-      const m = nextMatch();
-      if (!m) break;
-      // Append text before match
-      pushText(m.start);
-
-      // Create mention span
-      if (m.type === 'member') {
-        const member = parseMemberMention(m.value);
-        frag.appendChild(member ? createMentionSpan(member) : document.createTextNode(m.value));
-      } else if (m.type === 'note-bracket') {
-        const note = parseNoteMention(m.value);
-        frag.appendChild(
-          note ? createMentionSpan(noteMentionChipAttrs(note)) : document.createTextNode(m.value),
-        );
-      } else if (m.type === 'note') {
-        const id = m.groups?.[0] || '';
-        frag.appendChild(createMentionSpan({ type: 'note', id, label: id }));
-      } else if (m.type === 'rule') {
-        const path = m.value.slice(1); // drop '@'
-        const label = path.split('/').pop() || path;
-        frag.appendChild(createMentionSpan({ type: 'rule', id: path, label, meta: { path } }));
-      } else if (m.type === 'file') {
-        const target = m.value.slice(1);
-        const { path: fullPath, line } = parseFilePathLineSuffix(target);
-        // Use full path as label so users can distinguish files with the same name
-        frag.appendChild(
-          createMentionSpan({
-            type: 'file',
-            id: fullPath,
-            label: target,
-            meta: { fullPath, ...(line !== undefined ? { line } : {}) },
-          }),
-        );
-      } else if (m.type === 'relative-file') {
-        // Handle @path/to/file.ext (relative paths)
-        // Also clean up any stray @ symbols in path segments (from previous corruption)
-        const target = m.value
-          .slice(1)
-          .split('/')
-          .map((seg) => (seg.startsWith('@') ? seg.slice(1) : seg))
-          .join('/');
-        const { path: fullPath, line } = parseFilePathLineSuffix(target);
-        // Use full path as label so users can distinguish files with the same name
-        frag.appendChild(
-          createMentionSpan({
-            type: 'file',
-            id: fullPath,
-            label: target,
-            meta: { fullPath, ...(line !== undefined ? { line } : {}) },
-          }),
-        );
-      } else if (m.type === 'simple-file') {
-        // Strip any leading @ from the filename (cleanup from previous corruption)
-        const target = m.value.slice(1);
-        const { path: filename, line } = parseFilePathLineSuffix(target);
-        frag.appendChild(
-          createMentionSpan({
-            type: 'file',
-            id: filename,
-            label: target,
-            meta: { filename, ...(line !== undefined ? { line } : {}) },
-          }),
-        );
-      } else if (m.type === 'bare-file') {
-        // Strip any leading @ from the filename (cleanup from previous corruption)
-        const target = m.value;
-        const { path: filename, line } = parseFilePathLineSuffix(target);
-        if (filename) {
-          frag.appendChild(
-            createMentionSpan({
-              type: 'file',
-              id: filename,
-              label: target,
-              meta: { filename, ...(line !== undefined ? { line } : {}) },
-            }),
-          );
-        } else {
-          pushText(m.end);
-        }
-      } else if (m.type === 'bare-path') {
-        // Handle bare paths like dir/subdir/file.ext (paths without @ prefix)
-        const target = m.value;
-        const { path: fullPath, line } = parseFilePathLineSuffix(target);
-        if (fullPath) {
-          frag.appendChild(
-            createMentionSpan({
-              type: 'file',
-              id: fullPath,
-              label: target,
-              meta: { fullPath, ...(line !== undefined ? { line } : {}) },
-            }),
-          );
-        } else {
-          pushText(m.end);
-        }
-      } else if (m.type === 'personality') {
-        const token = m.value.slice(1);
-        frag.appendChild(
-          createMentionSpan({
-            type: 'personality',
-            id: token,
-            label: token,
-            meta: { promptToken: token },
-          }),
-        );
-      } else if (m.type === 'workspace-note-path') {
-        // Convert absolute workspace note path to a note reference
-        // Extract note ID from the path (last capture group)
-        const noteId = m.groups?.[0] || '';
-        if (noteId) {
-          frag.appendChild(
-            createMentionSpan({
-              type: 'note',
-              id: noteId,
-              label: noteId,
-              meta: { fullPath: m.value },
-            }),
-          );
-        } else {
-          // Fallback: just skip the path (don't show it)
-          // Could also render as plain text if needed
-        }
-      } else if (m.type === 'intent-url') {
-        // Convert intent:// URLs to mention pills
-        // Parse the URL to extract resource type and ID
-        const url = m.value;
-        try {
-          // Parse intent://local/note/{id} or intent://local/{workspace-id}/note/{id}
-          const parsed = new URL(url.replace('intent://', 'http://'));
-          const segments = parsed.pathname.replace(/^\/+/, '').split('/').filter(Boolean);
-
-          // Determine format: [note, id] or [workspace-id, note, id]
-          let resourceType = 'unknown';
-          let resourceId = '';
-          let workspaceId = '';
-
-          if (segments[0] === 'note' && segments[1]) {
-            // Short format: intent://local/note/{id}
-            resourceType = 'note';
-            resourceId = segments[1];
-          } else if (segments[1] === 'note' && segments[2]) {
-            // Long format: intent://local/{workspace-id}/note/{id}
-            workspaceId = segments[0];
-            resourceType = 'note';
-            resourceId = segments[2];
-          }
-
-          if (resourceType === 'note' && resourceId) {
-            frag.appendChild(
-              createMentionSpan({
-                type: 'note',
-                id: resourceId,
-                label: resourceId, // Just show the note ID - cross-workspace status shown via icon/hover
-                uri: url,
-                meta: { workspaceId, fullUrl: url, isExternalLink: !!workspaceId },
-              }),
-            );
-          } else {
-            // Unknown format - render as plain text
-            frag.appendChild(document.createTextNode(m.value));
-          }
-        } catch {
-          // Invalid URL - render as plain text
-          frag.appendChild(document.createTextNode(m.value));
-        }
-      } else if (m.type === 'context-mention') {
-        // Handle context mentions - can be base64 format or legacy pipe format
-        const content = m.groups?.[0] || '';
-
-        let provider = 'browser';
-        let identifier = '';
-        let title = '';
-        let url = '';
-        let description = '';
-        let metadata = '';
-        let itemType = '';
-
-        // Check if it's base64 encoded (no pipes or brackets, only base64 chars)
-        const isBase64 = /^[A-Za-z0-9+/=]+$/.test(content) && !content.includes('|');
-
-        if (isBase64) {
-          try {
-            // Decode base64 to JSON
-            const json = decodeURIComponent(escape(atob(content)));
-            const parsed = JSON.parse(json);
-            provider = parsed.provider || 'browser';
-            identifier = parsed.identifier || '';
-            title = parsed.title || '';
-            url = parsed.url || '';
-            description = parsed.description || '';
-            metadata = parsed.metadata || '';
-            itemType = parsed.itemType || '';
-          } catch {
-            // Base64/JSON decode failed, fall back to treating as legacy format
-          }
-        }
-
-        // If not base64 or decode failed, try legacy pipe format
-        if (!itemType) {
-          const firstPipe = content.indexOf('|');
-          const secondPipe = content.indexOf('|', firstPipe + 1);
-
-          if (firstPipe !== -1 && secondPipe !== -1) {
-            provider = content.substring(0, firstPipe) || 'browser';
-            identifier = content.substring(firstPipe + 1, secondPipe);
-            title = content.substring(secondPipe + 1);
-          } else if (firstPipe !== -1) {
-            provider = content.substring(0, firstPipe) || 'browser';
-            identifier = content.substring(firstPipe + 1);
-            title = identifier;
-          } else {
-            identifier = content;
-            title = content;
-          }
-
-          // Map provider to itemType for legacy format
-          const providerToItemType: Record<string, string> = {
-            linear: 'linear-issue',
-            github: 'github-issue',
-            sentry: 'sentry-issue',
-            browser: 'browser-url',
-          };
-          itemType = providerToItemType[provider] || 'browser-url';
-        }
-
-        // Create a context mention span that TipTap's ContextMention extension can parse
+    let idx = 0;
+    for (const match of matches) {
+      if (match.index > idx)
+        frag.appendChild(document.createTextNode(text.slice(idx, match.index)));
+      const element = match.parsed ? mentionElement(match.parsed) : null;
+      if (element) {
         const span = document.createElement('span');
-        span.setAttribute('data-type', 'context-mention');
-        span.setAttribute('data-item-type', itemType);
-        span.setAttribute('data-provider', provider);
-        span.setAttribute('data-title', title);
-        span.setAttribute('data-identifier', identifier);
-        if (url) span.setAttribute('data-url', url);
-        if (description) span.setAttribute('data-description', description);
-        if (metadata) span.setAttribute('data-metadata', metadata);
-        span.className = 'context-mention';
-        span.textContent = title || identifier || 'Link';
+        for (const [name, value] of element.attributes) span.setAttribute(name, value);
+        span.className = element.className;
+        span.textContent = element.text;
         frag.appendChild(span);
+      } else {
+        // Malformed token or a non-note link: keep the original text.
+        frag.appendChild(document.createTextNode(match.text));
       }
-
-      idx = m.end;
+      idx = match.index + match.text.length;
     }
-
-    // Append remaining text
-    pushText(text.length);
-
-    // Replace node if anything changed
-    if (frag.childNodes.length > 0) {
-      textNode.parentNode?.replaceChild(frag, textNode);
-    }
+    if (idx < text.length) frag.appendChild(document.createTextNode(text.slice(idx)));
+    textNode.parentNode?.replaceChild(frag, textNode);
   };
 
   const walk = (node: Node, blocked: boolean) => {
@@ -1412,26 +1067,16 @@ export function processHTMLToMarkdown(
         } else if (mathSource) {
           result += mathSource;
         } else if (childEl.tagName === 'SPAN') {
-          if (childEl.hasAttribute('data-mention')) {
+          const chip = readMentionChip(childEl);
+          if (chip) {
             // Preserve canonical @-token using mention metadata
-            const type = childEl.getAttribute('data-type') || '';
-            const id = childEl.getAttribute('data-id') || '';
-            const label = childEl.getAttribute('data-label') || childEl.textContent || '';
-            const metaStr = childEl.getAttribute('data-meta');
-            let meta: any = {};
-            if (metaStr) {
-              try {
-                meta = JSON.parse(metaStr);
-              } catch {
-                meta = {};
-              }
-            }
+            const label = chip.label || childEl.textContent || '';
             try {
               result += toPromptToken({
-                type: type as any,
-                id: id || label || '',
-                label: label || '',
-                meta,
+                type: chip.type as MentionType,
+                id: chip.id || label,
+                label,
+                meta: chip.meta,
               });
             } catch {
               // Fallback if formatter fails

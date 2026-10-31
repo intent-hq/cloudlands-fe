@@ -141,6 +141,7 @@ describe('renderer app saga registry', () => {
       'userPreferencesPersistenceSaga',
       'workspaceInitializerSaga',
       'zoomIpcSaga',
+      'windowTranslucencySaga',
       'menuIpcSaga',
       'deepLinksSaga',
       'browserIpcSaga',

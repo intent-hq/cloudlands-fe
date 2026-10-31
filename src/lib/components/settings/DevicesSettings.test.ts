@@ -10,6 +10,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/svelte';
+import { waitForLayerExit } from '../../../test/layer-exit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComponentProps } from 'svelte';
 import { m } from '$shared/paraglide/messages.js';
@@ -505,7 +506,10 @@ describe('DevicesSettings', () => {
     deviceName = 'Studio Mac',
   ) {
     await fireEvent.click(screen.getByRole('button', { name: `Actions for ${deviceName}` }));
-    await fireEvent.click(await screen.findByRole('menuitem', { name }));
+    const item = await screen.findByRole('menuitem', { name });
+    await fireEvent.click(item);
+    // Let this menu finish its exit so the next action cannot pick a stale item.
+    await waitForLayerExit(item);
   }
 
   describe('behind-pin indicator and Update action', () => {

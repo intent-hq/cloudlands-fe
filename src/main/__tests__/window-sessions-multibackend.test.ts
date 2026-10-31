@@ -170,6 +170,7 @@ import {
   saveAllWindowSessions,
   saveWindowSessions,
   setOnLastWindowClosedForBackend,
+  showWorkspaceInBackendWindow,
   type WindowSession,
 } from '../window';
 
@@ -925,6 +926,52 @@ describe('multi-backend window sessions', () => {
         }
       },
     );
+
+    it('reopens a closed backend window and shows a transferred workspace in it', async () => {
+      const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      const remote = seedLiveWindow('app://workspaces/work/old', undefined, 'remote-1');
+      captureWindowSessionsSnapshot.call(remote as never);
+      remote.destroy();
+      FakeBrowserWindow.focused = local;
+      vi.mocked(setMainWindow).mockClear();
+
+      await openOrFocusWindowsForBackend('remote-1');
+      expect(showWorkspaceInBackendWindow('remote-1', 'ws-moved')).toBe(true);
+
+      const reopened = FakeBrowserWindow.getAllWindows().filter(
+        (window) => window.backendId === 'remote-1',
+      );
+      expect(reopened).toHaveLength(1);
+      expect(consumePendingDeepLinks(reopened[0].webContents.id).actions).toEqual([
+        { type: 'open', params: { id: 'ws-moved' } },
+      ]);
+      expect(consumePendingDeepLinks(local.webContents.id).actions).toEqual([]);
+      expect(reopened[0].webContents.send).toHaveBeenCalledWith('deep-link', { pending: true });
+      expect(FakeBrowserWindow.getFocusedWindow()).toBe(reopened[0]);
+      expect(setMainWindow).toHaveBeenLastCalledWith(reopened[0]);
+    });
+
+    it('shows a transferred workspace in an already-open, minimized backend window', async () => {
+      const remote = seedLiveWindow('app://workspaces/work/remote', undefined, 'remote-1');
+      remote.minimized = true;
+
+      expect(showWorkspaceInBackendWindow('remote-1', 'ws-moved')).toBe(true);
+
+      expect(FakeBrowserWindow.getAllWindows()).toHaveLength(1);
+      expect(remote.restore).toHaveBeenCalledOnce();
+      expect(remote.focus).toHaveBeenCalled();
+      expect(consumePendingDeepLinks(remote.webContents.id).actions).toEqual([
+        { type: 'open', params: { id: 'ws-moved' } },
+      ]);
+    });
+
+    it('reports false when no app window is bound to the backend', () => {
+      const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+
+      expect(showWorkspaceInBackendWindow('remote-1', 'ws-moved')).toBe(false);
+      expect(consumePendingDeepLinks(local.webContents.id).actions).toEqual([]);
+      expect(local.focus).not.toHaveBeenCalled();
+    });
 
     it('opens and focuses a fresh app window when only a live HUD exists', async () => {
       const hud = seedLiveWindow('app://workspaces/hud', undefined, 'remote-1');

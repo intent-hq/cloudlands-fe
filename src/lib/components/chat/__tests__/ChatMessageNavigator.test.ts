@@ -172,7 +172,7 @@ describe('ChatMessageNavigator', () => {
     trigger.blur();
     trigger.focus();
     await fireEvent.focus(trigger);
-    await screen.findByRole('tooltip', { name: 'Browse user messages', hidden: true });
+    await screen.findByRole('tooltip', { name: 'Browse user messages' });
   });
 
   it('toggles with Space and Enter only from the trigger', async () => {
@@ -213,7 +213,8 @@ describe('ChatMessageNavigator', () => {
     input = await screen.findByRole('combobox', { name: 'Filter user messages' });
     await waitFor(() => expect(document.activeElement).toBe(input));
     onSelectMessage.mockImplementation(async () => {
-      expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull();
+      // Closed before the selection runs; the panel may still be playing its exit.
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
       downButton.focus();
       return true;
     });

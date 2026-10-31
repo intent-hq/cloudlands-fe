@@ -6,7 +6,9 @@
  * - @context[provider|identifier|title] — context mentions (Linear, GitHub, etc.)
  * - @note[({workspaceId}/){noteId}:{title}] — note mentions (current form)
  * - @note/{noteId} — legacy note mentions
- * - @{path} — file/folder mentions (paths with / or file extensions)
+ * - @terminal[{id}:{name}], @script[{id}:{name}] — terminal and script mentions
+ * - @{path} — file mentions (paths with / or file extensions)
+ * - @{path}/ — folder mentions (a trailing slash marks the folder)
  *
  * The `@` must not be preceded by an email-local-part character (letters,
  * digits, `._%+-`), so email addresses like clement@shv.com and URL userinfo
@@ -15,9 +17,19 @@
  * `(@note/spec)` or `"@src/foo.rs"` (which the input typeahead can produce)
  * still chip. Runs BEFORE URL linkification (splitTextByUrls), which handles
  * the remaining text segments.
+ *
+ * Patterns and parsing come from the mention registry (`chat` surface).
  */
 
-import { NOTE_MENTION_BODY_SOURCE } from '$lib/utils/note-mention-token';
+import {
+  scanMentions,
+  type ContextMention,
+  type ParsedMention,
+} from '$lib/services/mentions/registry';
+import type { MentionCandidate } from '$lib/services/mentions/types';
+import type { NoteMention } from '$lib/utils/note-mention-token';
+import type { RuntimeMention } from '$lib/utils/runtime-mention-token';
+import { m } from '$shared/paraglide/messages.js';
 
 export interface InlineMentionMatch {
   /** Index of the `@` in the source text. */
@@ -28,20 +40,76 @@ export interface InlineMentionMatch {
   captured: string;
 }
 
-const MENTION_REGEX = new RegExp(
-  String.raw`(?<![A-Za-z0-9._%+-])@(member\[[^\]\s]*\]|context\[[^\]]+\]|` +
-    NOTE_MENTION_BODY_SOURCE +
-    String.raw`|note\/[^\s]+|[^\s@]+\.[a-zA-Z]+(?::\d+(?::\d+)?|#L\d+(?:-\d+)?|:L\d+(?:-\d+)?)?|[^\s@]*\/[^\s]+(?::\d+(?::\d+)?|#L\d+(?:-\d+)?)?)`,
-  'g',
-);
+/** What the registry parsed each found match as (null when malformed). */
+const parsedMatches = new WeakMap<InlineMentionMatch, ParsedMention | null>();
 
 /** Find all inline @mentions in `text`, in order of appearance. */
 export function findInlineMentions(text: string): InlineMentionMatch[] {
-  const matches: InlineMentionMatch[] = [];
-  MENTION_REGEX.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = MENTION_REGEX.exec(text)) !== null) {
-    matches.push({ index: match.index, fullMatch: match[0], captured: match[1] });
+  return scanMentions(text, 'chat').map((match) => {
+    const inline = { index: match.index, fullMatch: match.text, captured: match.text.slice(1) };
+    parsedMatches.set(inline, match.parsed);
+    return inline;
+  });
+}
+
+/**
+ * What one inline match decodes to, before any store lookup or icon choice.
+ * ChatMessage (and the mention contract test) read tokens through this, so the
+ * chat bubble's interpretation of each token type lives in one testable place.
+ */
+export type DecodedInlineMention =
+  /** Malformed token: render the matched text as plain text. */
+  | { kind: 'text' }
+  | { kind: 'member'; member: MentionCandidate }
+  | { kind: 'context'; provider: string; identifier: string; title: string; url?: string }
+  /** `legacy` is the whitespace-delimited `@note/<id>` form (no saved title). */
+  | { kind: 'note'; note: NoteMention; legacy: boolean }
+  | { kind: 'runtime'; mention: RuntimeMention }
+  | { kind: 'file'; path: string; line?: number; label: string };
+
+function decodeContext(context: ContextMention): DecodedInlineMention {
+  return {
+    kind: 'context',
+    provider: context.provider,
+    identifier: context.identifier,
+    title: context.title || context.identifier || m.chat_shared_context_fallback(),
+    ...(context.url ? { url: context.url } : {}),
+  };
+}
+
+/** Decode one {@link findInlineMentions} match into the mention it names. */
+export function decodeInlineMention(match: InlineMentionMatch): DecodedInlineMention {
+  const parsed = parsedMatches.has(match)
+    ? parsedMatches.get(match)
+    : (scanMentions(match.fullMatch, 'chat')[0]?.parsed ?? null);
+  if (!parsed) return { kind: 'text' };
+  switch (parsed.kind) {
+    case 'member':
+      return { kind: 'member', member: parsed.member };
+    case 'context':
+      return decodeContext(parsed.context);
+    case 'note':
+      return { kind: 'note', note: parsed.note, legacy: parsed.form === 'legacy' };
+    case 'runtime':
+      return { kind: 'runtime', mention: parsed.mention };
+    case 'path': {
+      // File/folder mention: @path/to/file.ext(:line), labelled by its last segment.
+      const fileName = parsed.path.split('/').pop() || parsed.path;
+      return {
+        kind: 'file',
+        path: parsed.path,
+        ...(parsed.line !== undefined ? { line: parsed.line } : {}),
+        label: `${fileName}${parsed.target.slice(parsed.path.length)}`,
+      };
+    }
+    case 'folder':
+      // Folder mention: @path/to/dir/, shown like a legacy @path/to/dir chip.
+      return {
+        kind: 'file',
+        path: parsed.path,
+        label: parsed.path.split('/').pop() || parsed.path,
+      };
+    default:
+      return { kind: 'text' };
   }
-  return matches;
 }

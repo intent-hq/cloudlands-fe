@@ -205,14 +205,6 @@ beforeEach(() => {
     callback(0);
     return 0;
   });
-  Object.defineProperty(Element.prototype, 'scrollIntoView', {
-    configurable: true,
-    value: vi.fn(),
-  });
-  Object.defineProperty(HTMLElement.prototype, 'getAnimations', {
-    configurable: true,
-    value: () => [],
-  });
 });
 
 afterEach(() => {

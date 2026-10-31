@@ -37,6 +37,14 @@ import {
   UNBRIDGED_INVOKE_ALLOWLIST,
   UNEMITTED_LISTENER_ALLOWLIST,
 } from '$shared/ipc-mock-router';
+import {
+  collectGroupAliases,
+  extractFirstArgument,
+  LITERAL_RE,
+  readArgumentExpression,
+  resolveChannelArgument,
+  skipGenericArguments,
+} from '../../../test/ipc-channel-source-scan';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 
 const SRC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -123,53 +131,6 @@ function buildSagaCallHeadRegex(source: string): RegExp {
   return new RegExp(`(?<![.\\w$])(?:${alternation})\\s*\\(`, 'g');
 }
 
-/**
- * Extract the first-argument expression of a call whose name ends at `index`,
- * skipping an optional generic argument list with a bracket-depth counter.
- * A regex like `<[^>]*>` stops at the FIRST `>`, so any call site with a
- * nested generic — `invoke<{ data?: Record<string, any> }>('settings:getAll')`
- * — failed to match at all and silently escaped the audit (settings:getAll
- * reached the runtime UnbridgedMockIpcChannelError exactly this way).
- */
-function extractFirstArgument(source: string, index: number): string | undefined {
-  let i = skipGenericArguments(source, index);
-  if (source[i] !== '(') return undefined;
-  i += 1;
-  while (i < source.length && /\s/.test(source[i])) i += 1;
-  return readArgumentExpression(source, i);
-}
-
-/** Skip an optional `<...>` generic argument list (plus trailing whitespace). */
-function skipGenericArguments(source: string, index: number): number {
-  let i = index;
-  if (source[i] !== '<') return i;
-  let depth = 0;
-  while (i < source.length) {
-    const char = source[i];
-    // `=>` inside a function-type generic is not a closing bracket.
-    if (char === '<') depth += 1;
-    else if (char === '>' && source[i - 1] !== '=') {
-      depth -= 1;
-      if (depth === 0) {
-        i += 1;
-        break;
-      }
-    }
-    i += 1;
-  }
-  while (i < source.length && /\s/.test(source[i])) i += 1;
-  return i;
-}
-
-/** Read one argument expression starting at `index` (up to `,`, `)`, or EOL). */
-function readArgumentExpression(source: string, index: number): string | undefined {
-  let i = index;
-  while (i < source.length && source[i] !== ',' && source[i] !== ')' && source[i] !== '\n') {
-    i += 1;
-  }
-  return source.slice(index, i).trim() || undefined;
-}
-
 /** Sticky identifier matcher for the saga-call argument parser. */
 const IDENTIFIER_RE = /[A-Za-z_$][A-Za-z0-9_$]*/y;
 
@@ -198,22 +159,6 @@ function extractSagaCallChannelArgument(
   while (i < source.length && /\s/.test(source[i])) i += 1;
   return readArgumentExpression(source, i);
 }
-const LITERAL_RE = /^['"`]([^'"`$]+)['"`]$/;
-const CHANNELS_CONST_RE = /^([A-Z][A-Z0-9_]*_CHANNELS)\.([A-Z0-9_]+)$/;
-const REGISTRY_REF_RE = /^IPC_CHANNELS\.([A-Z0-9_]+(?:\.[A-Z0-9_]+)*)\.([A-Z0-9_]+)$/;
-/** Group aliases may name nested groups, e.g. `IPC_CHANNELS.BACKEND.REPOSITORY_RESOURCE`. */
-const GROUP_ALIAS_DECL_RE =
-  /\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*IPC_CHANNELS\.([A-Z0-9_]+(?:\.[A-Z0-9_]+)*)\b/g;
-/** `ALIAS.KEY` argument shape, resolved through the file's group aliases. */
-const ALIAS_REF_RE = /^([A-Za-z_$][A-Za-z0-9_$]*)\.([A-Z0-9_]+)$/;
-
-/** Map per-file group-alias locals (alias name → complete IPC_CHANNELS group path). */
-function collectGroupAliases(source: string): Map<string, string> {
-  const aliases = new Map<string, string>();
-  for (const decl of source.matchAll(GROUP_ALIAS_DECL_RE)) aliases.set(decl[1], decl[2]);
-  return aliases;
-}
-
 function* walkRendererSources(dir: string): Generator<string> {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const absolute = path.join(dir, entry.name);
@@ -231,50 +176,11 @@ function* walkRendererSources(dir: string): Generator<string> {
   }
 }
 
-function resolveRegistryChannel(group: string, key: string): string | undefined {
-  let value: unknown = IPC_CHANNELS;
-  for (const segment of [...group.split('.'), key]) {
-    if (!value || typeof value !== 'object') return undefined;
-    value = (value as Record<string, unknown>)[segment];
-  }
-  return typeof value === 'string' ? value : undefined;
-}
-
 interface ScanResult {
   /** Statically resolved channel → call sites (`file:line`). */
   invoked: Map<string, string[]>;
   /** Constant-style references the resolver could not map to a channel. */
   unresolved: string[];
-}
-
-/**
- * Resolve one channel-argument expression to a concrete channel name.
- * `unresolvedConstant` marks constant-style references the resolver could not
- * map (audit-exhaustiveness failures); anything else non-matching (variables,
- * wrapper parameters) is dynamic — the concrete channels show up at the
- * wrappers' call sites, which the scan covers.
- */
-function resolveChannelArgument(
-  argument: string,
-  groupAliases: Map<string, string>,
-): { channel?: string; unresolvedConstant: boolean } {
-  let constMatch: RegExpMatchArray | null;
-  if ((constMatch = argument.match(LITERAL_RE))) {
-    return { channel: constMatch[1], unresolvedConstant: false };
-  }
-  if ((constMatch = argument.match(CHANNELS_CONST_RE))) {
-    const channel = resolveRegistryChannel(constMatch[1].replace(/_CHANNELS$/, ''), constMatch[2]);
-    return { channel, unresolvedConstant: !channel };
-  }
-  if ((constMatch = argument.match(REGISTRY_REF_RE))) {
-    const channel = resolveRegistryChannel(constMatch[1], constMatch[2]);
-    return { channel, unresolvedConstant: !channel };
-  }
-  if ((constMatch = argument.match(ALIAS_REF_RE)) && groupAliases.has(constMatch[1])) {
-    const channel = resolveRegistryChannel(groupAliases.get(constMatch[1])!, constMatch[2]);
-    return { channel, unresolvedConstant: !channel };
-  }
-  return { unresolvedConstant: false };
 }
 
 /** Scan renderer sources for statically-resolvable IPC invoke call sites. */
@@ -422,7 +328,7 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
     expect(
       unresolved,
       'Constant-style channel references the resolver could not map — extend ' +
-        'resolveRegistryChannel() or the regexes in this file so the audit stays exhaustive.',
+        'resolveRegistryChannel() or the regexes in src/test/ipc-channel-source-scan.ts so the audit stays exhaustive.',
     ).toEqual([]);
   });
 

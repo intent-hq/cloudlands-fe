@@ -207,7 +207,6 @@ beforeEach(() => {
   mocks.workspaceHostLocal = true;
   mocks.setPanelColumnCount(2);
   setDraggedPane(null);
-  Element.prototype.scrollIntoView = vi.fn();
   vi.stubGlobal(
     'ResizeObserver',
     class {

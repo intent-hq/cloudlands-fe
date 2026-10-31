@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findInlineMentions } from './mention-match-utils';
+import { decodeInlineMention, findInlineMentions } from './mention-match-utils';
 
 describe('findInlineMentions', () => {
   it('does not match the domain of an email address (regression)', () => {
@@ -21,10 +21,10 @@ describe('findInlineMentions', () => {
   });
 
   it('matches a mention wrapped in parentheses (regression)', () => {
-    // The note pattern is greedy over non-whitespace, so the closing paren is
-    // included in the capture — same behavior as before the email guard.
+    // Legacy note ids are `[A-Za-z0-9_-]+`, so the closing paren stays text
+    // (the chat and note-editor readers share this pattern).
     expect(findInlineMentions('see (@note/spec) for details')).toEqual([
-      { index: 5, fullMatch: '@note/spec)', captured: 'note/spec)' },
+      { index: 5, fullMatch: '@note/spec', captured: 'note/spec' },
     ]);
   });
 
@@ -95,5 +95,83 @@ describe('findInlineMentions', () => {
 
   it('returns an empty array for text without mentions', () => {
     expect(findInlineMentions('plain text with no at-signs')).toEqual([]);
+  });
+});
+
+describe('decodeInlineMention', () => {
+  const decodeOne = (text: string) => {
+    const [match] = findInlineMentions(text);
+    return decodeInlineMention(match);
+  };
+
+  it('decodes a bracketed note with its workspace', () => {
+    expect(decodeOne('@note[ws-2/n1:Meeting with Andre]')).toEqual({
+      kind: 'note',
+      note: { id: 'n1', title: 'Meeting with Andre', workspaceId: 'ws-2' },
+      legacy: false,
+    });
+  });
+
+  it('decodes a legacy @note/<id> with the id as its title', () => {
+    expect(decodeOne('@note/spec')).toEqual({
+      kind: 'note',
+      note: { id: 'spec', title: 'spec' },
+      legacy: true,
+    });
+  });
+
+  it('decodes a pipe context mention', () => {
+    expect(decodeOne('@context[linear|AU-1|Fix login]')).toEqual({
+      kind: 'context',
+      provider: 'linear',
+      identifier: 'AU-1',
+      title: 'Fix login',
+    });
+  });
+
+  it('decodes a base64 context mention', () => {
+    const json = btoa(JSON.stringify({ provider: 'github', identifier: '#12', url: 'https://x' }));
+    expect(decodeOne(`@context[${json}]`)).toEqual({
+      kind: 'context',
+      provider: 'github',
+      identifier: '#12',
+      title: '#12',
+      url: 'https://x',
+    });
+  });
+
+  it('decodes a file path with a line suffix', () => {
+    expect(decodeOne('@src/lib/a.ts:12')).toEqual({
+      kind: 'file',
+      path: 'src/lib/a.ts',
+      line: 12,
+      label: 'a.ts:12',
+    });
+  });
+
+  it('decodes terminal and script mentions with spaces in their names', () => {
+    expect(decodeOne('@terminal[pty-0:Build server] next')).toEqual({
+      kind: 'runtime',
+      mention: { kind: 'terminal', id: 'pty-0', name: 'Build server' },
+    });
+    expect(decodeOne('@script[dev-server:Dev server]')).toEqual({
+      kind: 'runtime',
+      mention: { kind: 'script', id: 'dev-server', name: 'Dev server' },
+    });
+  });
+
+  it('renders a legacy @terminal/<name> token as it did before', () => {
+    const [match] = findInlineMentions('@terminal/Build server');
+    expect(match.fullMatch).toBe('@terminal/Build');
+    expect(decodeInlineMention(match)).toEqual({
+      kind: 'file',
+      path: 'terminal/Build',
+      line: undefined,
+      label: 'Build',
+    });
+  });
+
+  it('treats a malformed member token as text', () => {
+    expect(decodeOne('@member[notbase64!]')).toEqual({ kind: 'text' });
   });
 });

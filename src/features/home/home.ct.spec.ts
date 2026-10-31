@@ -249,7 +249,7 @@ test('Home board uses the same scope and restores keyboard focus after narrow pr
   await component.getByRole('combobox', { name: 'Status', exact: true }).click();
   await page.getByRole('option', { name: 'Running', exact: true }).click();
   await expect(board.locator('[data-home-workspace]')).toHaveCount(1);
-  await expect(board.getByRole('region')).toHaveCount(4);
+  await expect(board.locator('section:not([data-home-set-aside])')).toHaveCount(4);
   expect(await board.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await testInfo.attach('home-board', { body: await page.screenshot(), contentType: 'image/png' });
 });
@@ -715,14 +715,14 @@ test('Home grouping switches between status, repository and ungrouped in both vi
   await expect(component.getByRole('option')).toHaveCount(6);
   await component.getByRole('button', { name: 'Board view', exact: true }).click();
   const board = component.locator('[data-home-board]');
-  await expect(board.locator('section')).toHaveCount(1);
+  await expect(board.locator('section:not([data-home-set-aside])')).toHaveCount(1);
   await groupBy('Repository');
-  await expect(board.locator('section')).toHaveCount(2);
+  await expect(board.locator('section:not([data-home-set-aside])')).toHaveCount(2);
   await component.getByRole('searchbox').fill('onboarding');
   await expect(board.locator('[data-home-workspace]')).toHaveCount(1);
   await component.getByRole('searchbox').clear();
   await groupBy('Activity');
-  await expect(board.locator('section')).toHaveCount(4);
+  await expect(board.locator('section:not([data-home-set-aside])')).toHaveCount(4);
   const inactive = board.getByRole('region', { name: 'Done & idle', exact: true });
   await expect(inactive.locator('[data-home-workspace]')).toHaveCount(2);
   await expect(inactive.getByRole('img', { name: /^Done\./ })).toHaveCount(1);

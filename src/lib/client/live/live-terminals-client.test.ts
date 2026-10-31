@@ -70,6 +70,20 @@ describe('LiveTerminalsClient wire requests (fake transport)', () => {
     });
   });
 
+  it('create forwards env (PROTOCOL §5.13) when provided', async () => {
+    mockedRequest.mockResolvedValueOnce({ terminalId: 'term-3' });
+    const client = new LiveTerminalsClient();
+
+    await client.create({ workspaceId: 'ws-1', cols: 80, rows: 24, env: { CODEX_HOME: '/h/c' } });
+
+    expect(mockedRequest).toHaveBeenCalledWith('terminal.create', {
+      workspaceId: 'ws-1',
+      cols: 80,
+      rows: 24,
+      env: { CODEX_HOME: '/h/c' },
+    });
+  });
+
   it('create maps a transport error to a failed MutationResult', async () => {
     mockedRequest.mockRejectedValueOnce(new Error('boom'));
     const client = new LiveTerminalsClient();

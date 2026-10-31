@@ -3,8 +3,7 @@
  */
 
 import { stripInternalDeliveryNotes } from './user-message-presentation';
-import { memberMentionsToText } from '$lib/utils/member-mention-token';
-import { noteMentionsToText } from '$lib/utils/note-mention-token';
+import { mentionTokensToText, stripContextMentions } from '$lib/services/mentions/registry';
 
 /**
  * Strip `<group:Name>` and `</group>` (or `</group:Name>` / `</group:>`) tags
@@ -78,10 +77,9 @@ export function getLastMeaningfulLine(text: string): string {
  * Shared by the AgentCard footer preview and the HUD card agent line.
  */
 export function stripUserMessagePrefixes(text: string): string {
-  return noteMentionsToText(memberMentionsToText(stripInternalDeliveryNotes(text)))
-    .replace(/^(\[.*?\]\s*)+/, '')
-    .replace(/@context\[[^\]]*\]/g, '')
-    .trim();
+  return stripContextMentions(
+    mentionTokensToText(stripInternalDeliveryNotes(text)).replace(/^(\[.*?\]\s*)+/, ''),
+  ).trim();
 }
 
 /**

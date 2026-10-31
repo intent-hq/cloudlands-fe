@@ -34,7 +34,7 @@ const rerun =
   'corepack pnpm run test:ct -- src/features/home/home-workspace-links.ct.spec.ts --workers=1';
 const limits = [
   'Real HomeWorkspaceDetail, HomeWorkspaceChat and ChatPanel; seeded Redux transcript; production workspaceNavigationTabSaga and panelLayoutSaga.',
-  'CT $app/navigation.goto is a no-op. Selected workspace and produced panel tabs are asserted; actual SvelteKit route paint, navigation rejection and Electron browser loading are not verified.',
+  'CT $app/navigation.goto updates browser history without unmounting the preview. Selected workspace and produced panel tabs are asserted; actual SvelteKit route paint, navigation rejection and Electron browser loading are not verified.',
   'The marker-removed comparison reproduces the old missing-workspace-entry boundary using current code. It is not a screenshot of the historical source revision.',
 ];
 async function snapshot(page: Page): Promise<Snapshot> {

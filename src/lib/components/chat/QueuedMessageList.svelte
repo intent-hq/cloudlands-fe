@@ -12,8 +12,7 @@
     isQueuedMessageReadyForBatch,
     queuedMessagePermissions,
   } from '$lib/utils/queued-message-permissions';
-  import { memberMentionsToText } from '$lib/utils/member-mention-token';
-  import { noteMentionsToText } from '$lib/utils/note-mention-token';
+  import { hasParsedMention, mentionTokensToText } from '$lib/services/mentions/registry';
   import { presentQueuedMessageText } from '$lib/utils/collaborator-sender-attribution';
   import Fa from 'svelte-fa';
   import { faCheck, faArrowUp } from '@fortawesome/free-solid-svg-icons';
@@ -253,9 +252,7 @@
   let editTextarea = $state<HTMLTextAreaElement>();
   let editRichEditor = $state<TipTapEditor>();
   let editRichContainer = $state<HTMLDivElement>();
-  const editHasMembers = $derived(
-    memberMentionsToText(editPresentedContent) !== editPresentedContent,
-  );
+  const editHasMembers = $derived(hasParsedMention(editPresentedContent, 'preview', 'member'));
 
   /** Display/edit copy of queued text; the queued entry itself is never changed. */
   function presentedQueuedText(
@@ -1251,7 +1248,7 @@
                                 labelClass="block!"
                                 data-testid="queued-message-content"
                                 data-mode="display"
-                                aria-label={noteMentionsToText(memberMentionsToText(groupText))}
+                                aria-label={mentionTokensToText(groupText)}
                                 ondblclick={() => startEdit(message)}
                                 onkeydown={(event) => handleDisplayKeydown(event, message)}
                               >
@@ -1259,7 +1256,7 @@
                                   class="block whitespace-pre-wrap wrap-anywhere {USER_MESSAGE_TEXT_CLASS}"
                                   data-testid="queued-message-text"
                                 >
-                                  {noteMentionsToText(memberMentionsToText(groupText))}
+                                  {mentionTokensToText(groupText)}
                                 </span>
                               </Button>
                             {/if}

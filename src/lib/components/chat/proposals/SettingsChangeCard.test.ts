@@ -38,6 +38,12 @@ vi.mock('$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-selectors'
   })),
 }));
 
+const clientMocks = vi.hoisted(() => ({ settingsGet: vi.fn() }));
+
+vi.mock('$lib/client', () => ({
+  appClient: { settings: { get: clientMocks.settingsGet } },
+}));
+
 vi.mock('svelte-fa', async () => {
   const MockFa = (await import('../../ui/__tests__/mocks/Fa.svelte')).default;
   return { default: MockFa, Fa: MockFa };
@@ -75,6 +81,8 @@ describe('SettingsChangeCard', () => {
     selectorState.applied = null;
     selectorState.status = 'idle';
     selectorState.error = null;
+    clientMocks.settingsGet.mockReset();
+    clientMocks.settingsGet.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -207,5 +215,103 @@ describe('SettingsChangeCard', () => {
     const reported = onEditedFieldsChange.mock.calls.at(-1)?.[0];
     expect(typeof reported).toBe('object');
     expect(Object.values(reported).every((value) => typeof value === 'string')).toBe(true);
+  });
+  // Daemon settings outside the app schema get their definition from the
+  // daemon, so they format and edit like schema rows instead of raw text.
+  it('formats and edits a proposable daemon setting from its daemon definition', async () => {
+    clientMocks.settingsGet.mockImplementation(async (path: string) =>
+      path === 'logging.level'
+        ? {
+            path,
+            label: 'Log level',
+            description: '',
+            category: 'logging',
+            type: 'enum',
+            enumValues: ['error', 'warn', 'info', 'debug'],
+            defaultValue: 'info',
+            proposable: true,
+            value: 'info',
+          }
+        : {
+            path,
+            label: 'Purge archived workspace folders (days)',
+            description: '',
+            category: 'workspace',
+            type: 'number',
+            min: 1,
+            proposable: true,
+            value: 14,
+          },
+    );
+    const proposal: Proposal = {
+      kind: 'settings-change',
+      applyToolCallId: 'tool-settings-daemon',
+      payload: {
+        changes: [
+          { path: 'logging.level', value: 'debug' },
+          { path: 'agents.toolPayloadRetentionDays', value: 7 },
+        ],
+      },
+      preview: {
+        title: 'Update 2 settings',
+        fields: [
+          { key: 'logging.level', label: 'Log level', before: 'info', after: 'debug' },
+          {
+            key: 'agents.toolPayloadRetentionDays',
+            label: 'Tool payload retention (days)',
+            before: '14.0',
+            after: '7',
+          },
+        ],
+      },
+    };
+    const onApply = vi.fn();
+    const { container } = render(SettingsChangeCard, { props: { proposal, onApply } });
+
+    const trigger = await screen.findByLabelText('Log level');
+    expect(trigger.textContent).toContain('debug');
+    await waitFor(() =>
+      expect(
+        container.querySelector(
+          '[data-proposal-before-after-row="agents.toolPayloadRetentionDays"]',
+        )?.textContent,
+      ).toBe('14 → 7'),
+    );
+
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await waitFor(() => expect(trigger.textContent).not.toContain('debug'));
+    await fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+
+    expect(onApply.mock.calls[0]?.[0].editedFields['logging.level']).toBeDefined();
+    expect(clientMocks.settingsGet).toHaveBeenCalledWith('logging.level');
+  });
+
+  it('renders a daemon setting the daemon refuses as plain text without an editor', async () => {
+    clientMocks.settingsGet.mockResolvedValue({
+      path: 'server.tunnel.only',
+      label: 'Tunnel only',
+      description: '',
+      category: 'server',
+      type: 'enum',
+      enumValues: ['a', 'b'],
+      proposable: false,
+      value: 'a',
+    });
+    const proposal: Proposal = {
+      kind: 'settings-change',
+      applyToolCallId: 'tool-settings-refused',
+      payload: { changes: [{ path: 'server.tunnel.only', value: 'b' }] },
+      preview: {
+        title: 'Tunnel only: b',
+        fields: [{ key: 'server.tunnel.only', label: 'Tunnel only', before: 'a', after: 'b' }],
+      },
+    };
+    render(SettingsChangeCard, { props: { proposal } });
+
+    await waitFor(() => expect(clientMocks.settingsGet).toHaveBeenCalled());
+    expect(screen.getByText('a → b')).toBeTruthy();
+    expect(screen.queryByLabelText('Tunnel only')).toBeNull();
   });
 });

@@ -52,6 +52,7 @@ import {
   WindowCreateSchema,
   WindowOpenNewSchema,
   WindowSetThemeSchema,
+  WindowSetTranslucencySchema,
   WindowSetTitleSchema,
   WindowSetInWorkspaceSchema,
   WindowSetOpenWorkspaceTabsSchema,
@@ -85,9 +86,11 @@ import { MINIMUM_NODE_VERSION } from '../../../shared/constants/auggie';
 import { findVSCodeAsync } from '../../../shared/main/async-utils';
 import { withDiffTempFiles } from '../../ide/main/diff-temp-files.service';
 import {
+  applyWindowTranslucency,
   getWindowAppearanceOptions,
   getWindowBackgroundColor,
   getWindowTitleBarOptions,
+  setWindowTranslucencyEnabled,
 } from '../../../shared/main/window-appearance';
 import { meetsMinimumVersion } from '../../../shared/utils/version-compare';
 import { posixSingleQuote } from '../../../shared/utils/posix-single-quote';
@@ -1068,6 +1071,32 @@ export function setupSystemIPC() {
         }
       },
       WINDOW_CHANNELS.SET_THEME,
+    ),
+  );
+
+  // Mirror the "Translucent window" preference onto every app window's native
+  // blur. The preference is app-wide (shared renderer storage), so a change in
+  // one window applies to all of them and to windows opened later.
+  ipcMain.handle(
+    WINDOW_CHANNELS.SET_TRANSLUCENCY,
+    createSafeValidatedHandler(
+      WindowSetTranslucencySchema,
+      async (_event, validated) => {
+        setWindowTranslucencyEnabled(validated.enabled);
+        const isDark = nativeTheme.shouldUseDarkColors;
+        for (const window of BrowserWindow.getAllWindows()) {
+          if (
+            window.isDestroyed() ||
+            isDockWindow(window) ||
+            isDockAnnotationWindow(window) ||
+            isDesktopOverlayWindow(window)
+          )
+            continue;
+          applyWindowTranslucency(window, isDark, validated.enabled);
+        }
+        return { success: true };
+      },
+      WINDOW_CHANNELS.SET_TRANSLUCENCY,
     ),
   );
 

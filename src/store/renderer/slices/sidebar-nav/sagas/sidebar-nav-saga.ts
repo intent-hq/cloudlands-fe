@@ -25,6 +25,7 @@ import {
   PINNED_WORKSPACES_KEY,
   setChiefActiveAgentId,
   setMultiSelectSidebarSelectedTabs,
+  setWorkspaceAutoArchiveDisabled,
   setWorkspaceLabel,
   setWorkspaceNoteOrder,
   togglePinWorkspace,
@@ -38,6 +39,10 @@ import {
   watchAuthoritativeWorkspaceLabels,
   watchPinLabelMigration,
 } from './workspace-label-saga';
+import {
+  setWorkspaceAutoArchiveDisabledWorker,
+  watchAuthoritativeAutoArchiveDisabled,
+} from './workspace-auto-archive-saga';
 
 function pinnedWorkspacesKey(backendId: string): string {
   return namespaceBackendKey(PINNED_WORKSPACES_KEY, backendId);
@@ -253,8 +258,10 @@ export function* sidebarNavSaga(): SagaGenerator<void> {
   yield* fork(watchBackendSwitch);
   yield* fork(watchPinLabelMigration);
   yield* fork(watchAuthoritativeWorkspaceLabels);
+  yield* fork(watchAuthoritativeAutoArchiveDisabled);
   yield* takeEvery(togglePinWorkspace, handleTogglePinWorkspace);
   yield* takeEvery(setWorkspaceLabel, setWorkspaceLabelWorker);
+  yield* takeEvery(setWorkspaceAutoArchiveDisabled, setWorkspaceAutoArchiveDisabledWorker);
   yield* takeEvery(setChiefActiveAgentId, persistChiefActiveAgentId);
   yield* takeEvery(workspaceMounted, hydrateWorkspaceSidebarUiState);
   yield* takeEvery(setMultiSelectSidebarSelectedTabs, handleWorkspaceSelectedTabs);
