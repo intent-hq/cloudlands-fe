@@ -84,6 +84,13 @@ function compactJsonSnippet(value: unknown): string {
 export function formatSettingValue(definition: AppSettingDefinition, value: unknown): string {
   if (value === null || value === undefined || value === '')
     return definition.nullLabel ?? '(none)';
+  // Daemon proposal previews stringify the current value: an absent nullable
+  // setting arrives as "null" and a TOML number as e.g. "14.0".
+  if (definition.nullable === true && value === 'null') return definition.nullLabel ?? '(none)';
+  if (definition.type === 'number' && typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return String(parsed);
+  }
   if (definition.type === 'enum' && typeof value === 'string') {
     return definition.enumLabels?.[value] ?? value;
   }
@@ -433,6 +440,37 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     storageKey: 'workspace.defaultShell',
     defaultValue: 'auto',
     apply: { kind: 'daemon-settings-update', path: 'workspace.defaultShell' },
+  },
+  {
+    // PROTOCOL §5.12: absent means 0 (off); turning it off is an explicit 0,
+    // never null.
+    path: 'workspace.autoArchiveIdleAfterDays',
+    label: 'Auto-archive idle workspaces (days)',
+    description:
+      'Archive workspaces after this many days without activity. 0 turns automatic archiving off.',
+    category: 'workspace',
+    type: 'number',
+    min: 0,
+    source: 'daemon-settings',
+    storageKey: 'workspace.autoArchiveIdleAfterDays',
+    defaultValue: 0,
+    apply: { kind: 'daemon-settings-update', path: 'workspace.autoArchiveIdleAfterDays' },
+  },
+  {
+    // PROTOCOL §5.12: absent (null) means off; zero is rejected.
+    path: 'workspace.purgeArchivedAfterDays',
+    label: 'Purge archived workspace folders (days)',
+    description:
+      'Delete the folders of workspaces archived longer than this many days; notes, conversations and branches are kept. Empty turns automatic purging off.',
+    category: 'workspace',
+    type: 'number',
+    min: 1,
+    source: 'daemon-settings',
+    storageKey: 'workspace.purgeArchivedAfterDays',
+    defaultValue: null,
+    nullable: true,
+    nullLabel: 'Off',
+    apply: { kind: 'daemon-settings-update', path: 'workspace.purgeArchivedAfterDays' },
   },
   {
     path: 'workspace.autoCommit',
