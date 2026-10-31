@@ -20,9 +20,24 @@ export interface HomeConfiguration {
   expandedGroups: Record<string, boolean>;
   moreReposExpanded: boolean;
 }
+/**
+ * A workspace the user set aside on Home. `known` is the attention the user
+ * had already seen when settling it (or after it last cleared); only attention
+ * outside it brings the workspace back. `null` until the watcher records it.
+ */
+export interface HomeSetAsideRecord {
+  at: number;
+  known: string[] | null;
+  knownAt: number;
+}
 export interface HomePersistenceDocument {
   configuration: HomeConfiguration;
+  /** Additive and omitted when empty, so older documents and readers are unchanged. */
+  setAside?: Record<string, HomeSetAsideRecord>;
 }
+/** Bounded personal state; new set-asides are refused (not evicted) at capacity. */
+export const HOME_SET_ASIDE_CAPACITY = 1000;
+export const HOME_SET_ASIDE_KNOWN_CAPACITY = 64;
 export function defaultHomeConfiguration(): HomeConfiguration {
   return {
     integrationViews: {
@@ -100,6 +115,34 @@ export function normalizeHomeConfiguration(value: unknown): HomeConfiguration {
     moreReposExpanded: raw.moreReposExpanded === true,
   };
 }
+function timestamp(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : null;
+}
+export function normalizeHomeSetAside(value: unknown): Record<string, HomeSetAsideRecord> {
+  const records: Record<string, HomeSetAsideRecord> = {};
+  let count = 0;
+  for (const [id, entry] of Object.entries(object(value))) {
+    if (count >= HOME_SET_ASIDE_CAPACITY) break;
+    const raw = object(entry);
+    const at = timestamp(raw.at);
+    if (!safeKey(id) || at === null) continue;
+    const known = Array.isArray(raw.known)
+      ? [
+          ...new Set(
+            raw.known.filter(
+              (token): token is string =>
+                typeof token === 'string' && token.length > 0 && token.length <= 512,
+            ),
+          ),
+        ].slice(0, HOME_SET_ASIDE_KNOWN_CAPACITY)
+      : null;
+    records[id] = { at, known, knownAt: timestamp(raw.knownAt) ?? at };
+    count += 1;
+  }
+  return records;
+}
 export function homePersistenceKey(backendId: string, principalId: string): string {
   return `home-workspaces:${JSON.stringify([backendId, principalId])}`;
 }
@@ -110,10 +153,17 @@ export function readHomePersistence(value: unknown): HomePersistenceDocument {
   // Keep automatic settings from older scoped documents, ignoring retired
   // savedViews, activeSavedViewId and workspaceIds fields entirely.
   // Never import an unscoped key into a newly authenticated account.
-  return { configuration: normalizeHomeConfiguration(raw.configuration ?? raw.settings ?? raw) };
+  const configuration = normalizeHomeConfiguration(raw.configuration ?? raw.settings ?? raw);
+  const setAside = normalizeHomeSetAside(raw.setAside);
+  return Object.keys(setAside).length > 0 ? { configuration, setAside } : { configuration };
 }
-export function persistedHomeState<T extends HomeConfiguration>(
-  state: T,
-): HomePersistenceDocument & { version: 2 } {
-  return { version: 2, configuration: normalizeHomeConfiguration(state) };
+// Version 2 stays: older builds ignore the additive `setAside` field.
+export function persistedHomeState<
+  T extends HomeConfiguration & { setAside?: Record<string, HomeSetAsideRecord> },
+>(state: T): HomePersistenceDocument & { version: 2 } {
+  const configuration = normalizeHomeConfiguration(state);
+  const setAside = normalizeHomeSetAside(state.setAside);
+  return Object.keys(setAside).length > 0
+    ? { version: 2, configuration, setAside }
+    : { version: 2, configuration };
 }
