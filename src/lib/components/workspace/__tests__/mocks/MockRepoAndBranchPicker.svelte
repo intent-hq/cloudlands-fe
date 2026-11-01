@@ -21,6 +21,8 @@
     skipIsolation = false,
     isNewRepo = false,
     remoteSetup = null,
+    plainFolderMode = false,
+    plainFolder = null,
   }: {
     onRepoChange?: (event: { detail: Record<string, unknown> }) => void;
     onBranchChange?: (event: { detail: { branch: string } }) => void;
@@ -41,6 +43,8 @@
     skipIsolation?: boolean;
     isNewRepo?: boolean;
     remoteSetup?: { workspacePath?: string } | null;
+    plainFolderMode?: boolean;
+    plainFolder?: string | null;
     [key: string]: unknown;
   } = $props();
 
@@ -65,3 +69,5 @@
 <div data-testid="picker-skip-isolation">{String(skipIsolation)}</div>
 <div data-testid="picker-is-new-repo">{String(isNewRepo)}</div>
 <div data-testid="picker-remote-path">{remoteSetup?.workspacePath ?? ''}</div>
+<div data-testid="picker-plain-folder-mode">{String(plainFolderMode)}</div>
+<div data-testid="picker-plain-folder">{plainFolder ?? ''}</div>

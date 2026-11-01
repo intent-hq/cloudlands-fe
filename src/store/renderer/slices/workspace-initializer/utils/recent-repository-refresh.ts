@@ -5,6 +5,7 @@ import {
   isDaemonManagedRepoPath,
 } from '$lib/components/workspace/initializer/recent-repo-display';
 import type { Workspace } from '$shared/types';
+import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
 import type { KnownRepo } from '$shared/types/known-repo';
 import type { RepositoryTarget } from '$shared/types/repository-context';
 import type { WorkspaceInitializerRecentRepo } from '../workspace-initializer-types';
@@ -124,7 +125,20 @@ export function aggregateRecentRepositories(
     entries.set(key, entry);
     noteRecency(key, repo.updatedAt);
   }
+  // Mark folders of plain-folder workspace rows; a stale saved mark is dropped.
+  const plainFolderPaths = new Set(
+    workspaces
+      .filter((workspace) => isPlainFolderWorkspace(workspace) && workspace.repositoryPath)
+      .map((workspace) => workspace.repositoryPath!),
+  );
   return [...entries.entries()]
     .sort(([a], [b]) => (recency.get(b) ?? 0) - (recency.get(a) ?? 0))
-    .map(([, repo]) => repo);
+    .map(([, repo]) => {
+      if (repo.type === 'local' && plainFolderPaths.has(repo.path))
+        return repo.plainFolder ? repo : { ...repo, plainFolder: true as const };
+      if (!repo.plainFolder) return repo;
+      const unmarked = { ...repo };
+      delete unmarked.plainFolder;
+      return unmarked;
+    });
 }

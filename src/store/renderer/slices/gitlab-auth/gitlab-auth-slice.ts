@@ -11,6 +11,7 @@ import type { GitLabAuthChangedStatus, GitLabAuthState } from './gitlab-auth-typ
 
 export const initialState: GitLabAuthState = {
   statusReady: false,
+  statusFailed: false,
   host: DEFAULT_GITLAB_HOST,
   instanceBaseUrl: null,
   isConfigured: false,
@@ -33,6 +34,9 @@ export const initializeGitLabAuth =
   createAction<[host?: string, mode?: 'resume' | 'status-only']>('gitlabAuth/initialize');
 
 export const resetGitLabAdmission = createAction('gitlabAuth/resetAdmission');
+
+/** The `sourceControl.authStatus` read failed or returned nothing usable. */
+export const gitlabAuthStatusUnavailable = createAction('gitlabAuth/statusUnavailable');
 
 /** Trigger: start (or resume) the device grant against `host` */
 export const startGitLabDeviceAuth = createAction<[host: string]>('gitlabAuth/startDeviceAuth');
@@ -142,6 +146,7 @@ export const gitlabAuthReducer = createReducer<GitLabAuthState>(initialState);
 
 gitlabAuthReducer.with(resetGitLabAdmission, () => ({ ...initialState }));
 gitlabAuthReducer.with(initializeGitLabAuth, (state) => ({ ...state, statusReady: false }));
+gitlabAuthReducer.with(gitlabAuthStatusUnavailable, (state) => ({ ...state, statusFailed: true }));
 gitlabAuthReducer.with(setGitLabHost, (state, { payload: [host] }) => {
   const root = /[/?#\\]/.test(host) ? normalizeGitLabInstanceUrl(host) : null;
   const authority = root ? new URL(root).host : host;
@@ -172,6 +177,7 @@ gitlabAuthReducer.with(setGitLabAuthStatus, (state, { payload }) => ({
     payload.instanceBaseUrl ??
     (payload.host.toLowerCase() === state.host.toLowerCase() ? state.instanceBaseUrl : null),
   statusReady: true,
+  statusFailed: false,
   isConfigured: payload.isConfigured,
   deviceGrantSupported: payload.deviceGrantSupported,
   user: payload.user,

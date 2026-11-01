@@ -386,6 +386,18 @@ describe('ChatPanel skeleton branch vs WorkspaceSetupCard', () => {
     expect(screen.queryByTestId('chat-transcript-skeleton')).toBeNull();
   });
 
+  it.each([
+    ['a plain-folder workspace', { plainFolder: true }, 'true'],
+    ['a git workspace', {}, 'false'],
+  ])('tells the setup card whether it is %s', async (_label, row, expected) => {
+    testState.transcriptHydration = 'settled';
+    testState.transcriptHydratedOnce = true;
+    await renderInitialWorkspaceChatPanel(undefined, row);
+
+    const card = await screen.findByTestId('mock-workspace-setup-card');
+    expect(card.getAttribute('data-plain-folder')).toBe(expected);
+  });
+
   describe('setupScript wire shape → setupScriptContent', () => {
     beforeEach(() => {
       testState.transcriptHydration = 'settled';

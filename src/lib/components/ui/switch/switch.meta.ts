@@ -18,6 +18,7 @@ export const switchMetadata = {
     'src/lib/components/patterns/settings/custom-controls.ts',
     'src/lib/components/patterns/settings/types.ts',
     'src/lib/components/workspace/initializer/BranchSelector.svelte',
+    'src/lib/components/workspace/initializer/InitializeGitToggle.svelte',
     'src/lib/components/workspace/sidebar/FileChangesSection.svelte',
     'src/lib/components/workspace/sidebar/McpServersSection.svelte',
     'src/lib/components/workspace/sidebar/MergePanel.svelte',

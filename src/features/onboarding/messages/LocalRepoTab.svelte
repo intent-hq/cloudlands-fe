@@ -10,6 +10,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { createLogger } from '$lib/utils/client-logger';
   import { getRecentRepos } from '$lib/utils/workspace-utils';
+  import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectKnownRepos } from '$store/renderer/slices/known-repos/known-repos-selectors';
   import { invoke } from '$lib/electron-bridge';
@@ -36,6 +37,8 @@
     onSelect: (path: string, scope?: string, initGit?: boolean) => void;
     /** Called when user presses Enter - should select AND advance to next step */
     onSelectAndAdvance?: (path: string, scope?: string, initGit?: boolean) => void;
+    /** "Initialize as git repository" is off (Labs): a non-git folder is used as a plain folder. */
+    plainFolderMode?: boolean;
   }
 
   interface DirectoryStatus {
@@ -46,7 +49,12 @@
     isSubdirectoryOfGitRepo?: boolean;
   }
 
-  let { selectedPath = '', onSelect, onSelectAndAdvance }: Props = $props();
+  let {
+    selectedPath = '',
+    onSelect,
+    onSelectAndAdvance,
+    plainFolderMode = false,
+  }: Props = $props();
 
   const workspaceItems$ = selectWorkspaceItems();
   const knownRepos$ = selectKnownRepos();
@@ -58,6 +66,15 @@
   /** Manually picked folders (via the folder picker) that aren't in known repos. */
   let manuallyAddedPaths = $state<string[]>([]);
   let initGitPath = $state('');
+
+  // Folders of known plain-folder workspaces (Labs).
+  const plainFolderPaths = $derived(
+    new Set(
+      $workspaceItems$
+        .filter((workspace) => isPlainFolderWorkspace(workspace) && workspace.repositoryPath)
+        .map((workspace) => workspace.repositoryPath!),
+    ),
+  );
 
   // Build recent repos list
   const recentRepos = $derived.by(() => {
@@ -136,7 +153,6 @@
   });
 
   async function getDirectoryStatus(path: string): Promise<DirectoryStatus | null> {
-    if (typeof window === 'undefined' || !window.electronAPI) return null;
     try {
       const result = await invoke<any>('file:getDirectoryStatus', { path });
       return result?.success && result.data ? result.data : null;
@@ -158,12 +174,14 @@
       return;
     }
     const scope = status?.isSubdirectoryOfGitRepo ? status.relativePathFromGitRoot : undefined;
-    const initGit =
-      !!status &&
-      !!status.exists &&
-      !!status.isDirectory &&
-      !status.isGitRepo &&
-      !status.isSubdirectoryOfGitRepo;
+    // A non-git folder; when the probe cannot run, a known plain-folder
+    // workspace row still marks it as one (never assumed to be a repository).
+    const initGit = status
+      ? !!status.exists &&
+        !!status.isDirectory &&
+        !status.isGitRepo &&
+        !status.isSubdirectoryOfGitRepo
+      : plainFolderPaths.has(path);
     initGitPath = initGit ? path : '';
     if (advance && advanceCb) {
       if (initGit) advanceCb(path, scope, true);
@@ -355,7 +373,9 @@
               class="mx-3 mb-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
             >
               {m.workspace_repoSelector_notGitRepository_label()}
-              {m.onboarding_localRepoTab_initializeGit_description()}
+              {plainFolderMode
+                ? m.onboarding_localRepoTab_plainFolder_description()
+                : m.onboarding_localRepoTab_initializeGit_description()}
             </div>
           {/if}
         {/each}

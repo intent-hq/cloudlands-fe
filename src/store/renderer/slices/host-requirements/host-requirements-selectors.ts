@@ -3,7 +3,9 @@
  */
 
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
+import { isGitOptionalWithoutForge } from '$lib/components/workspace/initializer/plain-folder-create';
 import { store } from '../../store';
+import type { StoreState } from '../../types';
 
 export const selectGitRequirement = store.createSelector((state) => state.hostRequirements.git);
 
@@ -20,9 +22,31 @@ export const selectHostRequirementsHasCheckedOnce = store.createSelector(
   (state) => state.hostRequirements.hasCheckedOnce,
 );
 
-/** Terminal gate: git available AND node meets the minimum version. */
+/**
+ * Labs: with no forge connected Git is not needed to finish onboarding; it is
+ * needed only when a git workspace is created. Reads raw state so a partial
+ * store (tests, older daemons) keeps Git required.
+ */
+function gitOptional(state: StoreState): boolean {
+  const gitlabFailed = state.gitlabAuth?.statusFailed === true;
+  return isGitOptionalWithoutForge({
+    labsEnabled: state.userPreferences?.labsPlainFolderWorkspacesEnabled === true,
+    protocolVersion: state.daemonHealth?.stats?.protocolVersion,
+    githubConnected: state.githubAuth?.isAuthenticated === true,
+    githubSettled: state.githubAuth?.statusSettled === true,
+    githubFailed: state.githubAuth?.statusFailed === true,
+    gitlabConnected: state.gitlabAuth?.isConfigured === true,
+    gitlabSettled: state.gitlabAuth?.statusReady === true || gitlabFailed,
+    gitlabFailed,
+  });
+}
+
+export const selectGitOptional = store.createSelector(gitOptional);
+
+/** Terminal gate: node meets the minimum version AND git is available (unless optional). */
 export const selectAllRequirementsMet = store.createSelector(
-  (state) => state.hostRequirements.git.available && state.hostRequirements.node.ok,
+  (state) =>
+    state.hostRequirements.node.ok && (state.hostRequirements.git.available || gitOptional(state)),
 );
 
 export const selectProviderCliRequirements = store.createSelector((state) => {

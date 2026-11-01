@@ -29,6 +29,8 @@
     extraFiles?: number;
     scriptsState?: 'ready' | 'empty' | 'loading' | 'retry';
     navigationEnabled?: boolean;
+    /** Plain-folder workspace: no git, so Changes, branch and PRs hide. */
+    plainFolder?: boolean;
   }
 
   export const preview = definePreview<Props>({
@@ -37,6 +39,8 @@
     defaultState: 'default',
     states: {
       default: { props: {} },
+      'plain-folder': { props: { plainFolder: true, initialSections: ['agents', 'files'] } },
+      'plain-folder-git-comparison': { props: { initialSections: ['agents', 'files'] } },
       'multiple-panes': { props: { initialSections: ['agents', 'context'] } },
       'multiple-short': {
         props: { initialSections: ['agents', 'context', 'files'], height: 440, items: 40 },
@@ -152,6 +156,7 @@
     extraFiles = 0,
     scriptsState = 'ready',
     navigationEnabled = false,
+    plainFolder = false,
   }: Props = $props();
   const workspaceId = 'sidebar-tabs-preview';
   const timestamp = '2026-10-20T12:00:00Z';
@@ -211,13 +216,17 @@
         title: 'Refine workspace navigation',
         statusMessage: 'Making room for the work that matters.',
         taskStats: { total: 0, completed: 0, inProgress: 0 },
-        repositoryOwner: 'intent-hq',
-        repositoryName: 'intent',
-        repositoryPath: root,
-        worktreePath: root,
+        ...(plainFolder
+          ? { plainFolder: true, branch: '', repositoryPath: '/Users/me/Documents/Notes' }
+          : {
+              repositoryOwner: 'intent-hq',
+              repositoryName: 'intent',
+              repositoryPath: root,
+              worktreePath: root,
+              branch: 'feat/sidebar-tabs',
+              baseRef: 'main',
+            }),
         path: root,
-        branch: 'feat/sidebar-tabs',
-        baseRef: 'main',
         myRole: manager ? 'manager' : collaborator ? 'collaborator' : 'owner',
         status: 'active',
         createdAt: timestamp,

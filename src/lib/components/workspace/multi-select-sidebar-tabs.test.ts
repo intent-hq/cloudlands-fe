@@ -31,3 +31,11 @@ it('keeps a Manager saved-script Shell selection while still stripping Browser',
   expect([...normalizeSelectedTabs(['browser'], true, true, true)]).toEqual(['agents']);
   expect([...normalizeSelectedTabs(['shell'], true, true, false)]).toEqual(['agents']);
 });
+
+it('drops a persisted Changes selection for plain-folder workspaces only', () => {
+  expect([...normalizeSelectedTabs(['changes', 'files'], false, true, false, true)]).toEqual([
+    'files',
+  ]);
+  expect([...normalizeSelectedTabs(['changes'], false, true, false, true)]).toEqual(['agents']);
+  expect([...normalizeSelectedTabs(['changes'], false, true, false, false)]).toEqual(['changes']);
+});

@@ -13,13 +13,15 @@ import { fireEvent, render, waitFor } from '@testing-library/svelte';
 
 import type { HostRequirementsState } from '$store/renderer/slices/host-requirements/host-requirements-types';
 import { MINIMUM_NODE_VERSION } from '$shared/constants/auggie';
+import { parseProtocolVersion } from '$shared/protocol-version';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
   const hostRequirements: { value: unknown } = { value: null };
   const daemonHealthStats: { value: unknown } = { value: null };
   const handleLink = vi.fn(() => Promise.resolve(true));
-  return { dispatch, hostRequirements, daemonHealthStats, handleLink };
+  const extraState: { value: Record<string, unknown> } = { value: {} };
+  return { dispatch, hostRequirements, daemonHealthStats, handleLink, extraState };
 });
 
 vi.mock('$store/renderer/store', async () => {
@@ -29,6 +31,7 @@ vi.mock('$store/renderer/store', async () => {
     state: () => ({
       hostRequirements: mocks.hostRequirements.value,
       daemonHealth: { stats: mocks.daemonHealthStats.value },
+      ...mocks.extraState.value,
     }),
     dispatch: mocks.dispatch,
   });
@@ -73,6 +76,7 @@ const findButton = (root: HTMLElement, label: string) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.extraState.value = {};
   mocks.hostRequirements.value = failedState();
   // Default: daemon reports a macOS host (system.status host.os mirrored
   // into daemonHealth.stats by its polling service).
@@ -214,5 +218,44 @@ describe('OnboardingRequirementsStep', () => {
     expect(ghCard!.textContent).toContain("The GitHub CLI (gh) wasn't found");
     expect(container.textContent).toContain('git version 2.44.0');
     expect(container.textContent).toContain('v22.4.0');
+  });
+
+  describe('Git not required without a forge (Labs)', () => {
+    function noForgeLabs(options: { github?: boolean } = {}) {
+      mocks.daemonHealthStats.value = {
+        ...(mocks.daemonHealthStats.value as object),
+        // fixture-protocol-version: plain-folder creation gate (15.3 accepts plainFolder)
+        protocolVersion: parseProtocolVersion('15.3'),
+      };
+      mocks.extraState.value = {
+        userPreferences: { labsPlainFolderWorkspacesEnabled: true },
+        githubAuth: { isAuthenticated: options.github ?? false, statusSettled: true },
+        gitlabAuth: { isConfigured: false, statusReady: true },
+      };
+    }
+
+    it('labels a missing Git optional and keeps the install guidance', async () => {
+      noForgeLabs();
+      const { container } = render(OnboardingRequirementsStep);
+      const gitCard = container.querySelector('[data-testid="requirement-git"]')!;
+      expect(gitCard.textContent).toContain('Optional');
+      expect(gitCard.textContent).toContain('only needed for git workspaces');
+      expect(gitCard.textContent).not.toContain('Git is required');
+      await waitFor(() => expect(gitCard.textContent).toContain('xcode-select --install'));
+    });
+
+    it('keeps Git required with a forge connected', () => {
+      noForgeLabs({ github: true });
+      const { container } = render(OnboardingRequirementsStep);
+      const gitCard = container.querySelector('[data-testid="requirement-git"]')!;
+      expect(gitCard.textContent).toContain('Git is required');
+      expect(gitCard.textContent).not.toContain('Optional');
+    });
+
+    it('keeps Git required with Labs off', () => {
+      const { container } = render(OnboardingRequirementsStep);
+      const gitCard = container.querySelector('[data-testid="requirement-git"]')!;
+      expect(gitCard.textContent).toContain('Git is required');
+    });
   });
 });

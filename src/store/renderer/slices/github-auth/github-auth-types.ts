@@ -17,6 +17,14 @@ export type GitHubAuthState = {
   isDisconnecting: boolean;
   /** Whether user is authenticated with GitHub via the daemon */
   isAuthenticated: boolean;
+  /**
+   * True once a `github.authStatus` read has settled (succeeded or failed), so
+   * defaults that depend on the connection are never decided from the
+   * pre-hydration `isAuthenticated: false`.
+   */
+  statusSettled?: boolean;
+  /** The latest `github.authStatus` read failed, so the connection is unknown. */
+  statusFailed?: boolean;
   /** Whether user needs to authenticate with the daemon first */
   requiresDaemonAuth: boolean;
   /** GitHub user info (if available) */

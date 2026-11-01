@@ -11,6 +11,11 @@ import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 import { AgentStatus, type AgentSession } from '$shared/types';
 import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import AgentCard from '../AgentCard.svelte';
+import { chatChangesInputChanged } from '$store/renderer/slices/chat-changes/chat-changes-slice';
+import {
+  removeWorkspaceEntity,
+  setWorkspaceEntity,
+} from '$store/renderer/slices/workspace/workspace-slice';
 import ChatChangesPanelHarness from '../ChatChangesPanelHarness.svelte';
 import ToolCall from '../ToolCall.svelte';
 import { invoke } from '$lib/electron-bridge';
@@ -198,6 +203,42 @@ describe('node agents in existing views', () => {
     ).toBe(false);
   });
 
+  it('offers no checkpoint merge or discard in a plain-folder workspace', async () => {
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: 'preview-chat-changes',
+        title: 'Notes',
+        branch: '',
+        plainFolder: true,
+        status: 'active',
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-09-28T08:00:00Z',
+        updatedAt: '2026-09-28T08:00:00Z',
+      } as never),
+    );
+    appStore.dispatch(bulkUpsertSessions([makeAgent({ effectiveIsolation: 'isolated' })]));
+    appStore.dispatch(
+      nodeCapabilitiesReceived(appStore.state.daemonHealth.connectionGeneration, {
+        agentNodes: true,
+        localNodeIsolation: true,
+      }),
+    );
+    try {
+      const view = render(AgentCard, { agentId: id });
+      await fireEvent.contextMenu(
+        view.container.querySelector('[data-testid="agent-list-item"] button')!,
+        { clientX: 10, clientY: 10 },
+      );
+      await screen.findAllByRole('menuitem');
+      expect(screen.queryByRole('menuitem', { name: 'Merge checkpoint' })).toBeNull();
+      expect(screen.queryByRole('menuitem', { name: 'Discard isolated work' })).toBeNull();
+    } finally {
+      appStore.dispatch(removeWorkspaceEntity('preview-chat-changes'));
+    }
+  });
+
   it('keeps an existing remote agent visible and responsive after Labs is disabled', async () => {
     appStore.dispatch(setLabsRemoteAgentsEnabled(true));
     appStore.dispatch(bulkUpsertSessions([makeAgent()]));
@@ -230,6 +271,48 @@ describe('node agents in existing views', () => {
       (await screen.findByRole('button', { name: 'Open file' })).hasAttribute('disabled'),
     ).toBe(false);
   });
+  it.each([
+    [true, false],
+    [false, true],
+  ])(
+    'requests git stage and revert controls only outside plain folders (plainFolder %s)',
+    async (plainFolder, expected) => {
+      appStore.dispatch(
+        setWorkspaceEntity({
+          id: 'preview-chat-changes',
+          title: 'Notes',
+          branch: plainFolder ? '' : 'main',
+          ...(plainFolder ? { plainFolder: true } : {}),
+          status: 'active',
+          changesets: [],
+          timeline: [],
+          conversationInfo: [],
+          createdAt: '2026-09-28T08:00:00Z',
+          updatedAt: '2026-09-28T08:00:00Z',
+        } as never),
+      );
+      appStore.dispatch(
+        bulkUpsertSessions([
+          makeAgent({ placement: undefined, nodeState: undefined, checkpoint: undefined }),
+        ]),
+      );
+      const dispatch = vi.spyOn(appStore, 'dispatch');
+      try {
+        render(ChatChangesPanelHarness, { changes, agentId: id, showStagingControls: true });
+        await waitFor(() => {
+          const input = dispatch.mock.calls
+            .map(([action]) => action as { type: string; payload?: unknown[] })
+            .filter((action) => action.type === chatChangesInputChanged.type)
+            .at(-1);
+          expect(
+            (input?.payload?.[3] as { showStagingControls?: boolean })?.showStagingControls,
+          ).toBe(expected);
+        });
+      } finally {
+        appStore.dispatch(removeWorkspaceEntity('preview-chat-changes'));
+      }
+    },
+  );
   it('blocks a tool file link after a remote placement update', async () => {
     appStore.dispatch(
       bulkUpsertSessions([makeAgent({ placement: undefined, nodePath: undefined })]),

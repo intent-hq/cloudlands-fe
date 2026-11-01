@@ -44,6 +44,11 @@ export interface WorkspaceInitializerRecentRepo {
   owner?: string;
   /** Display identity only; null explicitly marks unqualified legacy metadata. */
   repositoryIdentity?: RepositoryTarget | null;
+  /**
+   * The folder of a plain-folder workspace row (Labs). A hint only: picking
+   * the entry still probes the folder; the hint applies when the probe cannot run.
+   */
+  plainFolder?: true;
 }
 
 export interface WorkspaceInitializerRecentRepoRefresh {
@@ -328,6 +333,12 @@ interface WorkspaceInitializationSubmissionBase {
   branchBehind: number;
   pullEnabled: boolean;
   skipIsolation: boolean;
+  /**
+   * Plain-folder create (Labs, PROTOCOL §5.1): `'existing'` works in an
+   * existing non-git folder, `'new'` has the daemon create the folder. Absent
+   * or null keeps today's git create.
+   */
+  plainFolder?: 'existing' | 'new' | null;
   selectedPrNumber: number | null;
   draft: NonNullable<WorkspaceInitializationCompletion['draft']>;
 }

@@ -114,11 +114,13 @@
   import {
     normalizeSelectedTabs,
     orderSelectedTabs,
+    GIT_ONLY_TAB_IDS,
     OWNER_ONLY_TAB_IDS,
     TAB_DEFINITIONS,
     type TabId,
   } from './multi-select-sidebar-tabs';
   import { m } from '$shared/paraglide/messages.js';
+  import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
 
   interface Props {
     workspaceId: string;
@@ -290,18 +292,33 @@
   const scriptContext$ = selectWorkspaceSavedScriptContext(workspaceIdStore);
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
   const isCollaborator = $derived($isCollaborator$);
+  const plainFolder = $derived(isPlainFolderWorkspace($workspace));
   const presencePeople$ = selectWorkspacePeopleTilePeople(workspaceIdStore);
   const peopleInvites$ = selectWorkspacePeopleInvites(workspaceIdStore);
   const showPeople = $derived($presencePeople$.length > 0 || $peopleInvites$.length > 0);
   const selectedTabIds = selectMultiSelectSidebarSelectedTabIds(workspaceIdStore);
   const selectedTabs = $derived(
-    normalizeSelectedTabs($selectedTabIds, isCollaborator, showPeople, !!$scriptContext$),
+    normalizeSelectedTabs(
+      $selectedTabIds,
+      isCollaborator,
+      showPeople,
+      !!$scriptContext$,
+      plainFolder,
+    ),
   );
   let agentSearchQuery = $state('');
   let contextSearchQuery = $state('');
   const activeTabId = $derived(
     panelOnly && flyout?.open && flyout.tabId
-      ? [...normalizeSelectedTabs([flyout.tabId], isCollaborator, showPeople, !!$scriptContext$)][0]
+      ? [
+          ...normalizeSelectedTabs(
+            [flyout.tabId],
+            isCollaborator,
+            showPeople,
+            !!$scriptContext$,
+            plainFolder,
+          ),
+        ][0]
       : (orderSelectedTabs(selectedTabs)[0] ?? 'agents'),
   );
   // Expanded sidebars stack every selected pane in sidebar order; collapsed previews show one.
@@ -785,7 +802,7 @@
     data-direction={direction}
     data-stacked={visibleTabIds.length > 1 || undefined}
   >
-    {#each TAB_DEFINITIONS.filter(({ id }) => (id !== 'people' || showPeople) && !(isCollaborator && OWNER_ONLY_TAB_IDS.has(id) && !(id === 'shell' && $scriptContext$))) as tab (tab.id)}
+    {#each TAB_DEFINITIONS.filter(({ id }) => (id !== 'people' || showPeople) && !(plainFolder && GIT_ONLY_TAB_IDS.has(id)) && !(isCollaborator && OWNER_ONLY_TAB_IDS.has(id) && !(id === 'shell' && $scriptContext$))) as tab (tab.id)}
       {@const tabId = tab.id}
       <section
         id={`${panelId}-${tabId}`}

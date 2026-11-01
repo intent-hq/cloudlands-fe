@@ -8,9 +8,11 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { StoreState } from '../../types';
+import { parseProtocolVersion } from '$shared/protocol-version';
 import {
   selectAllRequirementsMet,
   selectGhRequirement,
+  selectGitOptional,
   selectGitRequirement,
   selectHostRequirementsChecking,
   selectHostRequirementsHasCheckedOnce,
@@ -190,5 +192,70 @@ describe('host-requirements selectors', () => {
         storeWith({ ...met, gh: { checked: false, available: false } }),
       ),
     ).toBe(true);
+  });
+});
+
+describe('selectAllRequirementsMet — Git not required without a forge (Labs)', () => {
+  const noGit: HostRequirementsState = {
+    ...initialState,
+    git: { checked: true, available: false },
+    node: { checked: true, ok: true, version: '22.4.0' },
+    hasCheckedOnce: true,
+  };
+
+  function stateWith(options: {
+    labs?: boolean;
+    github?: boolean;
+    gitlab?: boolean;
+    settled?: boolean;
+    hostRequirements?: HostRequirementsState;
+  }): StoreState {
+    const settled = options.settled ?? true;
+    return {
+      hostRequirements: options.hostRequirements ?? noGit,
+      userPreferences: { labsPlainFolderWorkspacesEnabled: options.labs ?? true },
+      // fixture-protocol-version: plain-folder creation gate (15.3 accepts plainFolder)
+      daemonHealth: { stats: { protocolVersion: parseProtocolVersion('15.3') } },
+      githubAuth: {
+        isAuthenticated: options.github ?? false,
+        statusSettled: settled,
+        statusFailed: false,
+      },
+      gitlabAuth: {
+        isConfigured: options.gitlab ?? false,
+        statusReady: settled,
+        statusFailed: false,
+      },
+    } as unknown as StoreState;
+  }
+
+  it('passes without Git when Labs is on and no forge is connected', () => {
+    expect(selectAllRequirementsMet.select(stateWith({}))).toBe(true);
+  });
+
+  it('still requires Node', () => {
+    const state = stateWith({
+      hostRequirements: { ...noGit, node: { checked: true, ok: false } },
+    });
+    expect(selectAllRequirementsMet.select(state)).toBe(false);
+  });
+
+  it('requires Git as today with Labs off', () => {
+    expect(selectAllRequirementsMet.select(stateWith({ labs: false }))).toBe(false);
+  });
+
+  it('requires Git as today with GitHub or GitLab connected', () => {
+    expect(selectAllRequirementsMet.select(stateWith({ github: true }))).toBe(false);
+    expect(selectAllRequirementsMet.select(stateWith({ gitlab: true }))).toBe(false);
+  });
+
+  it('requires Git until the forge status reads settle', () => {
+    expect(selectAllRequirementsMet.select(stateWith({ settled: false }))).toBe(false);
+  });
+
+  it('reports Git optional only in the relaxed case', () => {
+    expect(selectGitOptional.select(stateWith({}))).toBe(true);
+    expect(selectGitOptional.select(stateWith({ github: true }))).toBe(false);
+    expect(selectGitOptional.select(stateWith({ labs: false }))).toBe(false);
   });
 });

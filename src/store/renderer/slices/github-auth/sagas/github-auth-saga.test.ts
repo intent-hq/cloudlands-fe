@@ -104,6 +104,20 @@ describe('githubAuthSaga', () => {
     await run.task.toPromise();
   });
 
+  it('settles the status as not connected when the authStatus read fails', async () => {
+    mocks.getAuthState.mockRejectedValue(new Error('daemon unavailable'));
+    const run = harness();
+    run.channel.put(initializeGitHubAuth());
+    await settle();
+
+    expect(run.dispatched).toEqual([
+      expect.objectContaining({ type: 'githubAuth/statusUnavailable' }),
+    ]);
+    expect(run.state()).toMatchObject({ statusSettled: true, isAuthenticated: false });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('cancels polling on disconnect, scoping the cancel to the started flow, and ignores the late completion', async () => {
     let resolveCheck!: (value: unknown) => void;
     mocks.startAuth.mockResolvedValue({
