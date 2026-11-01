@@ -60,11 +60,11 @@
   >
     <p class="type-body text-danger">{remoteMachineFailureMessage(failure, labels)}</p>
     {#if failure.attempts?.length}
-      <ul class="list-disc pl-5 type-body text-muted-foreground">
+      <div class="space-y-1 type-body text-muted-foreground">
         {#each failure.attempts as attempt (attempt.route)}
-          <li>{m.remoteMachines_failure_attempt_label(attempt)}</li>
+          <p>{m.remoteMachines_failure_attempt_label(attempt)}</p>
         {/each}
-      </ul>
+      </div>
     {/if}
     <div class="flex flex-wrap justify-end gap-2">
       {#if failure.code === 'listener-off' && connectionId}
