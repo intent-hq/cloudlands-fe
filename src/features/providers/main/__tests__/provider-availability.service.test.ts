@@ -260,7 +260,11 @@ describe('provider availability service', () => {
         expect(single).toEqual({
           success: true,
           providerId: 'claude-code',
-          data: { available: true, hasNpxFallback: false, authenticated: authenticated ?? undefined },
+          data: {
+            available: true,
+            hasNpxFallback: false,
+            authenticated: authenticated ?? undefined,
+          },
         });
         expect(
           mocks.backendRequest.mock.calls.filter(([method]) => method === 'host.providerDiscovery'),
