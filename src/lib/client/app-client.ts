@@ -300,9 +300,11 @@ export interface ResolveInterruptedResult {
 /**
  * One lightweight user-message index item (`agent.listUserMessages`, §5.5).
  * `preview` is the daemon-extracted plain text of the message,
- * server-truncated (default 300 chars); `metadata` is the persisted
- * `messageMetadata` passed through verbatim when present (omitted when
- * absent, never null) so callers can keep filtering automated rows.
+ * server-truncated (default 300 chars); `metadata` carries the persisted
+ * `messageMetadata` classification fields (`type`, `source`, `fromAgentId`,
+ * `fromPrincipalId`, `queueInfo` timing) when present (omitted when absent,
+ * never null) so callers can keep filtering automated rows. Older daemons
+ * sent the whole metadata object; the same fields read the same way.
  */
 export interface UserMessageIndexItem {
   id: string;
@@ -319,8 +321,27 @@ export interface UserMessageIndexItem {
  * `unsupported: false`.
  */
 export type UserMessageIndexResult =
-  | { ok: true; items: UserMessageIndexItem[]; total: number }
+  | {
+      ok: true;
+      items: UserMessageIndexItem[];
+      total: number;
+      /**
+       * Paged reads only (`limit` / `nextToken` supplied): the opaque cursor
+       * for the next older page, `null` once none remain. Absent on unpaged
+       * reads and from daemons that predate paging (which ignore `limit`
+       * and return the whole index), so absent means "complete".
+       */
+      nextToken?: string | null;
+    }
   | { ok: false; unsupported: boolean; error: string };
+
+/** Optional newest-first paging for `agents.listUserMessages` (§5.5). */
+export interface UserMessageIndexPageOptions {
+  /** Newest rows per page (daemon-clamped into [1, 500]). */
+  limit?: number;
+  /** Cursor from a previous page's `nextToken`, passed back verbatim. */
+  nextToken?: string;
+}
 
 /**
  * Post-refresh linkage state returned by `pr.refresh` (PROTOCOL §5.7
@@ -754,10 +775,12 @@ export interface AgentsClient {
     workspaceId?: string,
   ): Promise<ContentBlock>;
   /**
-   * The full user-message index of one agent (`agent.listUserMessages`,
-   * §5.5): every **user-role** message as a lightweight
-   * `{ id, preview, createdAt, metadata? }` item, oldest→newest, deliberately
-   * unpaged (the navigator filter needs the whole set client-side).
+   * The user-message index of one agent (`agent.listUserMessages`, §5.5):
+   * **user-role** messages as lightweight `{ id, preview, createdAt,
+   * metadata? }` items, oldest→newest. Without `page` the whole index is
+   * returned (the navigator filter needs the whole set client-side); with
+   * `page.limit` / `page.nextToken` only the newest rows older than the
+   * cursor are read and the result carries `nextToken`.
    * `previewChars` bounds the preview length (daemon default 300,
    * server-clamped into [1, 2000]). Never rejects: an old daemon lacking the
    * method surfaces as `{ ok: false, unsupported: true }` and any other
@@ -768,6 +791,7 @@ export interface AgentsClient {
     agentId: string,
     previewChars?: number,
     workspaceId?: string,
+    page?: UserMessageIndexPageOptions,
   ): Promise<UserMessageIndexResult>;
   /**
    * Create an agent session (`agent.create`, §5.5). The daemon returns the
