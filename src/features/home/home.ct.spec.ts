@@ -752,6 +752,9 @@ test('Home workspace menus pin without duplication and support right click and k
   await pinned.getByRole('button', { name: 'Workspace actions', exact: true }).click();
   await expect(page.getByRole('menuitem', { name: 'Unpin', exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
+  // bits-ui unmounts closed menu content on a later animation frame. Wait for it so a
+  // busy page cannot open the context menu while the dropdown's Unpin is still mounted.
+  await expect(page.getByRole('menu')).toHaveCount(0);
   await pinned.getByRole('option').focus();
   await page.keyboard.press('Shift+F10');
   await page.getByRole('menuitem', { name: 'Unpin', exact: true }).click();
