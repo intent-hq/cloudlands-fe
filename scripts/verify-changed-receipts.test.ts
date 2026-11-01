@@ -126,6 +126,47 @@ describe('configuration identity', () => {
     expect(configurationIdentity(root, { env: { CI: 'true' } }).digest).not.toBe(base);
   });
 
+  it('ignores the commit hash and timestamp in the generated build config, not its other fields', () => {
+    const generated = (fields: {
+      commit?: string | null;
+      at?: string;
+      generator?: string;
+      buildId?: string;
+    }) =>
+      [
+        '/**',
+        ` * Generator SHA256: ${fields.generator ?? 'a'.repeat(64)}`,
+        ` * Generated at: ${fields.at ?? '2026-11-01T09:00:00.000Z'}`,
+        ' */',
+        'export const BUILD_CONFIG = {',
+        ...(fields.commit === null
+          ? []
+          : [`  GIT_COMMIT_HASH: "${fields.commit ?? '1515d8f61'}",`]),
+        `  ISOLATED_TEST_BUILD_ID: "${fields.buildId ?? ''}",`,
+        '  ISOLATED_TEST_BACKEND_SHA: "",',
+        '} as const;',
+        '',
+      ].join('\n');
+    const file = 'src/main/build-config.generated.ts';
+    const { root, write } = repo({ 'vitest.config.ts': config, [file]: generated({}) });
+    const identity = () => configurationIdentity(root, { env: {} }).digest;
+    const base = identity();
+
+    write(file, generated({ commit: '793bd0b5c', at: '2026-11-02T10:30:00.000Z' }));
+    expect(identity()).toBe(base);
+
+    for (const changed of [
+      { buildId: 'manual-123-1' },
+      { generator: 'b'.repeat(64) },
+      { commit: null },
+    ]) {
+      write(file, generated(changed));
+      expect(identity(), JSON.stringify(changed)).not.toBe(base);
+    }
+    rmSync(join(root, file));
+    expect(identity()).not.toBe(base);
+  });
+
   it('changes when the shared monorepo transfer-selection fixtures change', () => {
     const { root } = repo({ 'vitest.config.ts': config });
     const { root: fixtures, write } = repo({ 'contract.json': '{"v":1}' });
