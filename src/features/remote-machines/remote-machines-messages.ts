@@ -21,8 +21,6 @@ export function remoteMachineFailureMessage(failure: RemoteMachineFailure, label
       return m.remoteMachines_failure_notConnected_error({ machine });
     case 'listener-off':
       return m.remoteMachines_failure_listenerOff_error({ machine });
-    case 'remote-agents-disabled':
-      return m.remoteMachines_failure_disabled_error({ machine });
     case 'machine-update-required':
       if (failure.update === 'backend')
         return m.remoteMachines_failure_updateBackend_error({ machine, backend });

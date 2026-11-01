@@ -80,7 +80,6 @@ const ADD_TIMEOUT_MS = 45_000;
 const REMOVE_STOP_AGENTS_TIMEOUT_MS = 45_000;
 
 const DAEMON_CODES: ReadonlySet<RemoteMachineFailureCode> = new Set([
-  'remote-agents-disabled',
   'machine-update-required',
   'machine-unreachable',
   'machine-in-use',
