@@ -116,6 +116,27 @@ describe('scanDockHumanMessages', () => {
     });
   });
 
+  it('keeps the newer previous result over a backdated new human row on resume', async () => {
+    const previous = { latest: NOW - 2 * HOUR, newestId: 'a' };
+    const rows = [human('recent', 2 * HOUR), automated('a', HOUR), human('backdated', 25 * HOUR)];
+    const { readPage } = pagingDaemon(rows);
+    expect(await scanDockHumanMessages(readPage, previous)).toEqual({
+      latest: NOW - 2 * HOUR,
+      newestId: 'backdated',
+    });
+  });
+
+  it('keeps the newer previous result when a backdated human row lands before the boundary page', async () => {
+    const previous = { latest: NOW - 2 * HOUR, newestId: 'boundary' };
+    const rows = [
+      automated('boundary', 3 * HOUR),
+      ...Array.from({ length: 60 }, (_, n) => automated(`a-${n}`, HOUR - n)),
+      human('backdated', 25 * HOUR),
+    ];
+    const { readPage } = pagingDaemon(rows);
+    expect((await scanDockHumanMessages(readPage, previous))?.latest).toBe(NOW - 2 * HOUR);
+  });
+
   it('keeps the previous result when nothing new arrived', async () => {
     const rows = [human('h', 3 * HOUR), automated('a', HOUR)];
     const { readPage, reads } = pagingDaemon(rows);
