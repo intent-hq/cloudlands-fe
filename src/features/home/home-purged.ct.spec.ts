@@ -34,3 +34,37 @@ test('Home shows purged workspaces under Archived, with no Retired chip', async 
   await expect(board.getByRole('region', { name: 'Archived', exact: true })).toBeVisible();
   await expect(board.locator('[data-home-workspace="home-retired"]')).toHaveCount(1);
 });
+
+// Under Archived, a purged row carries a "Workspace purged" pill on the right,
+// just before the status icon and last activity; plain archived rows do not.
+test('Home marks purged workspaces with a Workspace purged pill', async ({ mount, page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const component = await mount(Preview, { props: { scenario: 'purged', height: 880 } });
+  const filters = component.getByRole('group', { name: 'Status', exact: true });
+  await filters.getByRole('button', { name: 'Archived', exact: false }).first().click();
+
+  const purged = component.locator('[data-home-workspace="home-retired"]');
+  const pill = purged.locator('[data-home-workspace-purged]');
+  await expect(pill).toHaveText('Workspace purged');
+  await expect(
+    component.locator('[data-home-workspace="home-archived"] [data-home-workspace-purged]'),
+  ).toHaveCount(0);
+  await expect(component.locator('[data-home-workspace-purged]')).toHaveCount(1);
+
+  const pillBox = await pill.boundingBox();
+  const statusBox = await purged.locator('[data-home-status]').boundingBox();
+  const timeBox = await purged.locator('[data-home-row-time]').boundingBox();
+  expect(pillBox && statusBox && timeBox).toBeTruthy();
+  expect(pillBox!.x + pillBox!.width).toBeLessThanOrEqual(statusBox!.x);
+  expect(statusBox!.x).toBeLessThan(timeBox!.x);
+
+  await pill.hover();
+  await expect(page.getByRole('tooltip')).toContainText('deleted to free disk space');
+
+  await component.getByRole('button', { name: 'Board view', exact: true }).click();
+  const board = component.locator('[data-home-board]');
+  await expect(
+    board.locator('[data-home-workspace="home-retired"] [data-home-workspace-purged]'),
+  ).toHaveText('Workspace purged');
+  await expect(board.locator('[data-home-workspace-purged]')).toHaveCount(1);
+});

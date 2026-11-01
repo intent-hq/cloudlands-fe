@@ -33,7 +33,7 @@ import {
   verificationLockKey,
   vitestExcludePatterns,
 } from './verify-changed.mjs';
-import { HELD_LOCK_ENV, lockOwner } from './verification-lock.mjs';
+import { HELD_LOCK_ENV, lockOwner, worktreeCtPort } from './verification-lock.mjs';
 import { createCtGateFixture } from './test-fixtures/ct-gate.mjs';
 import { loadTransferSelectionFixtures } from './transfer-selection-fixtures.mjs';
 
@@ -2587,11 +2587,18 @@ describe('expensive-check coordination', () => {
   });
 
   it('uses per-kind keys and bounded default waits', () => {
-    expect(verificationLockKey(testCheck('ct', 'ct'), {})).toBe('ct-3100');
+    const worktreeKey = `ct-${worktreeCtPort()}`;
+    expect(worktreeKey).not.toBe('ct-3100');
+    expect(verificationLockKey(testCheck('ct', 'ct'), {})).toBe(worktreeKey);
     expect(verificationLockKey(testCheck('ct', 'ct'), { CT_PORT: '03101' })).toBe('ct-3101');
     expect(verificationLockKey(testCheck('ct', 'ct'), { CT_PORT: ' 3102 ' })).toBe('ct-3102');
-    expect(verificationLockKey(testCheck('ct', 'ct'), { CT_PORT: '' })).toBe('ct-3100');
-    expect(verificationLockKey(testCheck('ct', 'ct'), { CT_PORT: ' ' })).toBe('ct-3100');
+    expect(verificationLockKey(testCheck('ct', 'ct'), { CT_PORT: '3100' })).toBe('ct-3100');
+    expect(verificationLockKey(testCheck('ct', 'ct'), { CT_PORT: '' })).toBe(worktreeKey);
+    expect(verificationLockKey(testCheck('ct', 'ct'), { CT_PORT: ' ' })).toBe(worktreeKey);
+    expect(verificationLockKey(testCheck('ct', 'ct'), { CI: 'true' })).toBe('ct-3100');
+    expect(verificationLockKey(testCheck('ct', 'ct'), { CI: 'true', CT_PORT: '3999' })).toBe(
+      'ct-3999',
+    );
     expect(verificationLockKey(testCheck('vitest', 'vitest-full'), {})).toBe('vitest-full');
     expect(verificationLockKey(testCheck('tsc', null), {})).toBeNull();
     expect(lockTimeout('ct-3100', undefined)).toBe(240_000);

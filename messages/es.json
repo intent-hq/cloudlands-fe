@@ -2576,6 +2576,8 @@
   "workspace_ops_purged_toast": "Carpeta de {title} purgada",
   "workspace_ops_purgeFailed_error": "No se pudo purgar la carpeta de este espacio de trabajo.",
   "workspace_ops_purgeUnsupported_error": "La carpeta de este espacio de trabajo no se puede purgar porque no es una copia de trabajo independiente.",
+  "workspace_purged_badge_label": "Espacio de trabajo purgado",
+  "workspace_purged_badge_tooltip": "La carpeta de este espacio de trabajo se eliminó para liberar espacio en disco. Se conservan las conversaciones, las notas, las tareas y la rama de git.",
   "workspace_archivedBanner_title": "Este espacio de trabajo está archivado",
   "workspace_archivedBanner_description": "Desarchívalo, o envía un mensaje a un agente, para seguir trabajando. Se conservan las conversaciones, notas y tareas.",
   "home_filter_attention": "Requieren su atención",

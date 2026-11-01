@@ -2576,6 +2576,8 @@
   "workspace_ops_purged_toast": "{title}의 폴더를 비웠습니다",
   "workspace_ops_purgeFailed_error": "이 워크스페이스의 폴더를 비우지 못했습니다.",
   "workspace_ops_purgeUnsupported_error": "이 워크스페이스의 폴더는 별도의 체크아웃이 아니므로 비울 수 없습니다.",
+  "workspace_purged_badge_label": "워크스페이스 비워짐",
+  "workspace_purged_badge_tooltip": "디스크 공간을 확보하기 위해 이 워크스페이스의 폴더를 삭제했습니다. 대화, 노트, 작업, git 브랜치는 유지됩니다.",
   "workspace_archivedBanner_title": "이 워크스페이스는 보관되었습니다",
   "workspace_archivedBanner_description": "계속 작업하려면 보관을 해제하거나 에이전트에게 메시지를 보내세요. 대화, 노트, 작업은 유지됩니다.",
   "home_filter_attention": "내 주의 필요",
