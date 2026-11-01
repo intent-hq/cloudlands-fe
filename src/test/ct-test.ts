@@ -325,3 +325,10 @@ export { expect };
 export { activeAnimations, expectAnimationsToSettle, expectNoAnimations } from './ct-animations';
 
 export { wheelUntilScrolled } from './ct-wheel';
+
+export {
+  clickAndSettle,
+  expectMotionToSettle,
+  motionSnapshot,
+  type MotionSnapshot,
+} from './ct-settle';
