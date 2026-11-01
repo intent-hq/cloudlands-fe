@@ -9,7 +9,6 @@
   const hostMember$ = selectIsHostMember();
   const canAdministerHost$ = selectCanAdministerHost();
   const admission$ = selectPrincipalActionContext();
-  import { isElectronPlatform } from '$lib/utils/platform-capabilities';
   import GitRepoIcon from '$lib/components/icons/GitRepoIcon.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import Header from '$lib/components/ui/Header.svelte';
@@ -213,6 +212,8 @@
   }: Props = $props();
 
   function onchangeWithTracking(detail: RepoChangeDetail) {
+    // Any committed selection supersedes a recent entry still being probed.
+    recentProbeToken++;
     if (!onchange) return;
     onchange(new CustomEvent('change', { detail }));
   }
@@ -494,12 +495,24 @@
   // Plain-folder kind for the new tab's target: null keeps today's git flow
   // (an existing repository, or a folder inside one).
   let newRepoParentGitProbe = $state<{ parent: string; inRepo: boolean } | null>(null);
+  // The toggle is off, so an unavailable status keeps the plain-folder flow
+  // and the daemon decides (it rejects a folder inside a git repository).
+  const newRepoPathStatusUnavailable = $derived(
+    $directoryStatusCheck$?.admission === $admission$ &&
+      $directoryStatusCheck$.path === newRepoFullPath &&
+      ($directoryStatusCheck$.status === 'failed' ||
+        $directoryStatusCheck$.status === 'unsupported'),
+  );
   const newRepoPlainFolderKind = $derived(
     plainFolderMode
-      ? classifyPlainFolderTarget(
-          newRepoPathStatus,
-          newRepoParentGitProbe?.parent === newRepoParentPath ? newRepoParentGitProbe.inRepo : null,
-        )
+      ? newRepoPathStatusUnavailable
+        ? 'new'
+        : classifyPlainFolderTarget(
+            newRepoPathStatus,
+            newRepoParentGitProbe?.parent === newRepoParentPath
+              ? newRepoParentGitProbe.inRepo
+              : null,
+          )
       : null,
   );
 
@@ -536,6 +549,8 @@
   // give them explicit options rather than silently proceeding
   let showNonGitFolderPrompt = $state(false);
   let nonGitFolderPath = $state('');
+  // Bumped by every selection so a late recent-entry probe never overrides it.
+  let recentProbeToken = 0;
 
   // Filter repos based on search term and active tab type
   const filteredRepos = $derived(() => {
@@ -1011,8 +1026,7 @@
 
   // Check directory status for local paths
   async function checkDirectoryStatus(path: string): Promise<void> {
-    if (!isElectronPlatform()) return;
-
+    // The bridge forwards to the daemon's host.directoryStatus in every build.
     try {
       const result = await invoke<any>('file:getDirectoryStatus', { path });
       if (result.success && result.data) {
@@ -1152,6 +1166,54 @@
       isOpen = false;
       return;
     }
+    recentProbeToken++;
+    // A local recent entry may be a plain folder (Labs): classify it through the
+    // same folder-status probe as a picked folder instead of assuming git.
+    if (repo.type === 'local' && (plainFolderMode || repo.plainFolder === true)) {
+      void selectLocalRecent(repo);
+      return;
+    }
+    selectRecentRepo(repo);
+  }
+
+  async function probeDirectoryStatus(path: string): Promise<typeof directoryStatus> {
+    try {
+      const result = await invoke<any>('file:getDirectoryStatus', { path });
+      return result?.success && result.data ? result.data : null;
+    } catch (err) {
+      logger.warn('Failed to check directory status', err);
+      return null;
+    }
+  }
+
+  async function selectLocalRecent(repo: WorkspaceInitializerRecentRepo) {
+    const token = recentProbeToken;
+    const status = await probeDirectoryStatus(repo.path);
+    if (token !== recentProbeToken) return;
+    const inRepo = !!status && (status.isGitRepo || !!status.isSubdirectoryOfGitRepo);
+    // Unknown status: a known plain-folder row, or the toggle being off, keeps
+    // the plain-folder flow (the daemon rejects a path inside a git repository).
+    const nonGitFolder = status
+      ? status.exists && status.isDirectory && !inRepo
+      : repo.plainFolder === true || plainFolderMode;
+    if (nonGitFolder) {
+      if (plainFolderMode) {
+        selectPlainFolder(repo.path, 'existing');
+        return;
+      }
+      // Same prompt as a picked non-git folder; the dropdown stays open.
+      nonGitFolderPath = repo.path;
+      showNonGitFolderPrompt = true;
+      return;
+    }
+    if (plainFolderMode && status && !status.exists && !inRepo) {
+      selectPlainFolder(repo.path, 'new');
+      return;
+    }
+    selectRecentRepo(repo, status?.isSubdirectoryOfGitRepo ? status.relativePathFromGitRoot : '');
+  }
+
+  function selectRecentRepo(repo: any, scope = '') {
     // GitHub picks are path-less: identify the repo by its owner/repo shorthand
     const githubInfo =
       repo.type === 'github' && repo.githubUrl ? parseGitHubUrl(repo.githubUrl) : null;
@@ -1176,6 +1238,7 @@
       isNewRepo: false,
       isValidPath: true,
     };
+    if (scope) detail.scope = scope;
     if (repo.type === 'github' && repo.githubUrl) {
       detail.githubUrl = repo.githubUrl;
     }

@@ -14,12 +14,16 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/sv
 const LOCAL_PATH = '/tmp/local-folder';
 const mocks = vi.hoisted(() => ({
   localDirectoryStatus: null as Record<string, unknown> | null,
+  /** The folder status cannot be read (the bridge reports a failure). */
+  statusUnavailable: false,
 }));
 
 vi.mock('$lib/electron-bridge', () => ({
   invoke: vi.fn(async (channel: string) =>
     channel === 'file:getDirectoryStatus'
-      ? { success: true, data: mocks.localDirectoryStatus }
+      ? mocks.statusUnavailable
+        ? { success: false, error: 'unavailable' }
+        : { success: true, data: mocks.localDirectoryStatus }
       : undefined,
   ),
 }));
@@ -119,6 +123,7 @@ describe('ProjectPickerMessage — plain-folder toggle (Labs)', () => {
     cleanup();
     backendRequestMock.mockReset();
     mocks.localDirectoryStatus = null;
+    mocks.statusUnavailable = false;
     sessionStorage.clear();
     resetPlainFolderState();
   });
@@ -245,5 +250,64 @@ describe('ProjectPickerMessage — plain-folder toggle (Labs)', () => {
     );
     await new Promise((resolve) => setTimeout(resolve, 400));
     expect(selections.at(-1)).not.toHaveProperty('plainFolder');
+  });
+
+  describe('recent plain-folder entries', () => {
+    const NOTES = '/tmp/notes';
+    const plainRow = {
+      id: 'ws-notes',
+      title: 'Notes',
+      repositoryPath: NOTES,
+      repositoryName: 'notes',
+      plainFolder: true,
+      updatedAt: '2026-10-01T00:00:00.000Z',
+    } as unknown as Workspace;
+
+    async function pickRecent(selections: ProjectSelection[]) {
+      await fireEvent.click(await screen.findByText('notes'));
+      await waitFor(() => expect(selections.at(-1)?.repoPath).toBe(NOTES));
+      return selections.at(-1)!;
+    }
+
+    it('classifies a recent plain-folder row by the folder probe', async () => {
+      setPlainFolderLabs(true);
+      settleForgeAuth();
+      loadWorkspaces([plainRow]);
+      const selections = renderPicker();
+      await screen.findByRole('switch', { name: toggleName() });
+      mocks.localDirectoryStatus = { path: NOTES, ...nonGitFolder };
+
+      const selection = await pickRecent(selections);
+      expect(selection).toMatchObject({ type: 'local', plainFolder: 'existing', branch: '' });
+      expect(selection).not.toHaveProperty('initGit');
+    });
+
+    it('probes in the browser build too (no Electron bridge)', async () => {
+      const electronAPI = (window as { electronAPI?: unknown }).electronAPI;
+      delete (window as { electronAPI?: unknown }).electronAPI;
+      try {
+        setPlainFolderLabs(true);
+        settleForgeAuth();
+        loadWorkspaces([]);
+        const selections = renderPicker();
+        await screen.findByRole('switch', { name: toggleName() });
+        const selection = await pickLocal(nonGitFolder, selections);
+        expect(selection).toMatchObject({ type: 'local', plainFolder: 'existing' });
+      } finally {
+        (window as { electronAPI?: unknown }).electronAPI = electronAPI;
+      }
+    });
+
+    it('treats a plain-folder row as a plain folder when the status is unavailable', async () => {
+      setPlainFolderLabs(true);
+      settleForgeAuth();
+      loadWorkspaces([plainRow]);
+      const selections = renderPicker();
+      await screen.findByRole('switch', { name: toggleName() });
+      mocks.statusUnavailable = true;
+
+      const selection = await pickRecent(selections);
+      expect(selection).toMatchObject({ type: 'local', plainFolder: 'existing' });
+    });
   });
 });

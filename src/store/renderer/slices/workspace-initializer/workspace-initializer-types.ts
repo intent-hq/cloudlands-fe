@@ -44,6 +44,11 @@ export interface WorkspaceInitializerRecentRepo {
   owner?: string;
   /** Display identity only; null explicitly marks unqualified legacy metadata. */
   repositoryIdentity?: RepositoryTarget | null;
+  /**
+   * The folder of a plain-folder workspace row (Labs). A hint only: picking
+   * the entry still probes the folder; the hint applies when the probe cannot run.
+   */
+  plainFolder?: true;
 }
 
 export interface WorkspaceInitializerRecentRepoRefresh {

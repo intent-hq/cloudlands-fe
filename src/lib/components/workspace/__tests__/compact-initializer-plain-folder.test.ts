@@ -507,6 +507,26 @@ describe('New Workspace — plain-folder toggle (Labs)', () => {
     });
   });
 
+  it('shows the daemon rejection when a plain folder turns out to be inside a git repository', async () => {
+    // The folder status was unavailable, so the daemon decides at create.
+    const rejection =
+      '/work/repo/notes is inside the git repository /work/repo; choose a folder outside any git repository or create a git workspace';
+    mocks.create.mockResolvedValue({
+      ok: false,
+      error: rejection,
+      errorCode: 'plain-folder-path-rejected',
+    });
+    plainFolder.available$.set(true);
+    plainFolder.defaultState$.set('off');
+    mountDialog();
+    await waitFor(() => expect(toggle()).toBeTruthy());
+    await pick({ path: join(root, 'new-project'), plainFolder: 'new' });
+
+    await submit();
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(rejection)).toBeTruthy();
+  });
+
   it('shows which repository a git pick belongs to and keeps it a git workspace', async () => {
     plainFolder.available$.set(true);
     plainFolder.defaultState$.set('off');

@@ -156,10 +156,6 @@
 
     isCheckingNewProjectDir = true;
     const checkPath = async () => {
-      if (typeof window === 'undefined' || !window.electronAPI) {
-        isCheckingNewProjectDir = false;
-        return;
-      }
       try {
         const result = await invoke<any>('file:getDirectoryStatus', {
           path: targetPath,
