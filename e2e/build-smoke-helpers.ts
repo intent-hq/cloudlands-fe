@@ -2265,9 +2265,13 @@ export async function getSmokeWorkspace(
   id: string,
 ): Promise<{ id: string; worktreePath: string; title?: string; name?: string }> {
   const workspace = await page.evaluate(async (workspaceId) => {
-    const result = await (window as any).electronAPI.invoke('workspace:get', { id: workspaceId });
-    if (result?.success === false) throw new Error(JSON.stringify(result));
-    const workspace = result?.data ?? result?.workspace ?? result;
+    // Daemon `workspace.get` (PROTOCOL §5.1) through the generic backend bridge.
+    const result = await (window as any).electronAPI.invoke('backend:request', {
+      method: 'workspace.get',
+      params: { workspaceId },
+    });
+    if (!result?.ok) throw new Error(JSON.stringify(result));
+    const workspace = result.result?.workspace;
     if (
       workspace?.id !== workspaceId ||
       typeof workspace.worktreePath !== 'string' ||

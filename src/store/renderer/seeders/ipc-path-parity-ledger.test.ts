@@ -200,18 +200,12 @@ const DIVERGENT: ReadonlyMap<string, string> = new Map([
  * Most remaining entries are renderer reimplementations whose main copy only
  * the generated `invoke()` would reach — and it never does, so the main copy
  * is dead and can be deleted. Check for direct `window.electronAPI.invoke`
- * callers first (including e2e build-smoke helpers: `workspace:get` and
- * `providers:get-availability` are called that way).
+ * callers first (including e2e build-smoke helpers: `providers:get-availability`
+ * is called that way).
  */
 const UNCHECKED_LEGACY: ReadonlySet<string> = new Set([
   'external-editors:detect-installed',
   'external-editors:open',
-  'file:copy',
-  'file:delete',
-  'file:exists',
-  'file:getDirectoryStatus',
-  'file:move',
-  'file:write',
   'jetbrains:open',
   'providers:get-availability',
   'providers:get-paths',
@@ -219,21 +213,11 @@ const UNCHECKED_LEGACY: ReadonlySet<string> = new Set([
   'vscode:open',
   'vscode:open-git-diff',
   'vscode:openFile',
-  'workspace:add-recent-repository',
-  'workspace:get',
-  'workspace:get-diff-summary',
-  'workspace:get-git-summary',
-  'workspace:get-recent-repositories',
-  'workspace:list',
-  'workspace:open',
-  'workspace:remove-recent-repository',
-  'workspace:rename-branch',
-  'workspace:update-settings',
   'xcode:open',
 ]);
 
 /** Ceiling for UNCHECKED_LEGACY — lower it as entries leave; never raise it. */
-const UNCHECKED_LEGACY_CEILING = 26;
+const UNCHECKED_LEGACY_CEILING = 10;
 
 /** How long the probe waits for a seeder handler before treating it as not forwarding. */
 const PROBE_TIMEOUT_MS = 500;

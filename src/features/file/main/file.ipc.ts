@@ -5,18 +5,13 @@
  */
 
 import { ipcMain, dialog } from 'electron';
-import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
 import { promises as fs, createReadStream } from 'fs';
 import { createHash } from 'crypto';
 import path from 'path';
 import { homedir } from 'os';
 import { Logger } from '../../../shared/logger';
 import { m } from '$shared/paraglide/messages.js';
-import {
-  getBackendClient,
-  getBackendClientForIpcEvent,
-  getBackendIdForIpcSender,
-} from '../../backend/main/backend.ipc';
+import { getBackendClientForIpcEvent } from '../../backend/main/backend.ipc';
 import {
   isBinaryExtension,
   detectBinaryContent,
@@ -24,26 +19,19 @@ import {
   getExtension,
 } from '../../../shared/binary-file-extensions';
 import { FILE_CHANNELS } from '$shared/ipc/channels';
-import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { type IpcResponse, FileIpc } from '$shared/ipc';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import {
   FileReadSchema,
   FileReadChunkSchema,
   FileHashSchema,
-  FileWriteSchema,
-  FileDeleteSchema,
   FileListSchema,
   FileReadBatchSchema,
-  FileExistsSchema,
   FileReadDirWithStatsSchema,
   FileGetGitignorepatternsSchema,
   FileGetGitStatusSchema,
   FileMkdirSchema,
-  FileMoveSchema,
-  FileCopySchema,
   FileGetTreeWithSizesSchema,
-  FileGetDirectoryStatusSchema,
   FileDownloadSchema,
   FileDownloadAttachmentSchema,
 } from '../../../main/ipc-schemas';
@@ -358,161 +346,6 @@ export function setupFileIPC() {
     ),
   );
 
-  // Write file
-  ipcMain.handle(
-    FILE_CHANNELS.WRITE,
-    createSafeValidatedHandler(
-      FileWriteSchema,
-      async (event, validated): Promise<IpcResponse<FileIpc.WriteResponse>> => {
-        try {
-          // Local-only after P3-5.1; remote writes no longer route through RPC.
-          const expandedPath = expandPath(validated.path);
-
-          // Create directory if it doesn't exist
-          const dir = path.dirname(expandedPath);
-          logger.debug('Creating directory if needed', { dir });
-          await fs.mkdir(dir, { recursive: true });
-
-          // Use atomic write: write to temp file, then rename
-          // This ensures the file is either fully written or not written at all
-          // Use Date.now() + random suffix to avoid collisions in high-concurrency scenarios
-          const randomSuffix = Math.random().toString(36).substring(2, 8);
-          const tempPath = `${expandedPath}.${Date.now()}-${randomSuffix}.tmp`;
-          logger.debug('Writing file atomically', {
-            filePath: expandedPath,
-            tempPath,
-            contentLength: validated.content.length,
-          });
-
-          try {
-            // Handle different encodings
-            if (validated.encoding === 'base64') {
-              // Decode base64 content to binary buffer
-              const buffer = Buffer.from(validated.content, 'base64');
-              await fs.writeFile(tempPath, buffer);
-            } else {
-              // Default to UTF-8 text
-              await fs.writeFile(tempPath, validated.content, 'utf-8');
-            }
-            await renameWithRetry(tempPath, expandedPath);
-            // PERF: Changed from INFO to DEBUG - called for every file write
-            logger.debug('File written successfully', { filePath: expandedPath });
-
-            // Refresh backend specialist cache immediately for specialist file saves
-            if (expandedPath.includes('.augment/specialists/') && expandedPath.endsWith('.md')) {
-              try {
-                const { refreshSpecialistsFromFiles } =
-                  await import('../../agent/main/specialists.service');
-                const specialistDirIndex = expandedPath.indexOf('.augment/specialists/');
-                const workspacePath =
-                  specialistDirIndex > 0
-                    ? expandedPath.substring(0, specialistDirIndex)
-                    : undefined;
-                await refreshSpecialistsFromFiles(workspacePath);
-              } catch (e) {
-                logger.warn('Failed to refresh specialist cache after file save', {
-                  error: (e as Error).message,
-                });
-              }
-            }
-
-            // Emit file change event for immediate UI update if workspaceId provided
-            if (validated.workspaceId) {
-              try {
-                // The saving window's host owns this workspace.
-                const backendId = getBackendIdForIpcSender(event.sender);
-                sendToWorkspaceWindows(
-                  validated.workspaceId,
-                  'file:content-changed',
-                  {
-                    workspaceId: validated.workspaceId,
-                    path: validated.path,
-                    relativePath: validated.path,
-                    content: validated.content,
-                    source: 'user',
-                  },
-                  backendId,
-                );
-
-                sendToWorkspaceWindows(
-                  validated.workspaceId,
-                  IPC_CHANNELS.FILE_TRACKING.AGENT_FILE_CHANGED,
-                  {
-                    workspaceId: validated.workspaceId,
-                    filePath: validated.path,
-                    source: 'user',
-                  },
-                  backendId,
-                );
-              } catch (emitError) {
-                logger.warn('Failed to emit file change event', {
-                  error: (emitError as Error).message,
-                });
-              }
-            }
-
-            return {
-              success: true,
-              data: {
-                bytesWritten: validated.content.length,
-              },
-            };
-          } catch (writeError) {
-            // Clean up temp file if it exists
-            try {
-              await fs.unlink(tempPath);
-            } catch {
-              // Ignore unlink errors
-            }
-            throw writeError;
-          }
-        } catch (error) {
-          const errnoError = error as NodeJS.ErrnoException;
-          logger.error('Failed to write file', error as Error, {
-            filePath: validated.path,
-            errorCode: errnoError.code,
-            errorPath: errnoError.path,
-          });
-          return {
-            success: false,
-            error: {
-              code: 'FILE_WRITE_FAILED',
-              message: error instanceof Error ? error.message : m.file_ipc_writeFailed_error(),
-              details: {
-                errorCode: errnoError.code,
-                errorPath: errnoError.path,
-              },
-            },
-          };
-        }
-      },
-      FILE_CHANNELS.WRITE,
-    ),
-  );
-
-  // Check if file exists
-  ipcMain.handle(
-    FILE_CHANNELS.EXISTS,
-    createSafeValidatedHandler(
-      FileExistsSchema,
-      async (_, validated) => {
-        try {
-          // Local-only after P3-5.1; remote existence checks no longer route through RPC.
-          const expandedPath = expandPath(validated.path);
-          // ASYNC: Check file existence without blocking
-          const exists = await fs
-            .access(expandedPath)
-            .then(() => true)
-            .catch(() => false);
-          return { success: true, exists, data: exists };
-        } catch (error) {
-          return { success: false, exists: false, error: (error as Error).message };
-        }
-      },
-      FILE_CHANNELS.EXISTS,
-    ),
-  );
-
   // List directory
   ipcMain.handle(
     FILE_CHANNELS.LIST,
@@ -570,25 +403,6 @@ export function setupFileIPC() {
     ),
   );
 
-  // Delete file
-  ipcMain.handle(
-    FILE_CHANNELS.DELETE,
-    createSafeValidatedHandler(
-      FileDeleteSchema,
-      async (_, validated) => {
-        try {
-          const expandedPath = expandPath(validated.path);
-          await fs.unlink(expandedPath);
-
-          return { success: true, data: undefined };
-        } catch (error) {
-          return { success: false, error: (error as Error).message };
-        }
-      },
-      FILE_CHANNELS.DELETE,
-    ),
-  );
-
   // Create directory
   ipcMain.handle(
     FILE_CHANNELS.MKDIR,
@@ -604,91 +418,6 @@ export function setupFileIPC() {
         }
       },
       FILE_CHANNELS.MKDIR,
-    ),
-  );
-
-  // Move/rename file or directory
-  ipcMain.handle(
-    FILE_CHANNELS.MOVE,
-    createSafeValidatedHandler(
-      FileMoveSchema,
-      async (_, validated) => {
-        try {
-          const expandedOldPath = expandPath(validated.oldPath);
-          const expandedNewPath = expandPath(validated.newPath);
-
-          // Check if source exists
-          await fs.access(expandedOldPath);
-
-          // Create parent directory if it doesn't exist
-          const parentDir = path.dirname(expandedNewPath);
-          await fs.mkdir(parentDir, { recursive: true });
-
-          // Rename/move the file or directory
-          await fs.rename(expandedOldPath, expandedNewPath);
-
-          logger.info('File moved successfully', {
-            from: validated.oldPath,
-            to: validated.newPath,
-          });
-
-          return { success: true, data: undefined };
-        } catch (error) {
-          logger.error('Failed to move file', error as Error, {
-            from: validated.oldPath,
-            to: validated.newPath,
-          });
-          return { success: false, error: (error as Error).message };
-        }
-      },
-      FILE_CHANNELS.MOVE,
-    ),
-  );
-
-  // Copy file or directory (recursive for directories)
-  ipcMain.handle(
-    FILE_CHANNELS.COPY,
-    createSafeValidatedHandler(
-      FileCopySchema,
-      async (_, validated) => {
-        try {
-          const expandedSourcePath = expandPath(validated.sourcePath);
-          const expandedDestinationPath = expandPath(validated.destinationPath);
-
-          // Check if source exists and determine if it's a directory
-          const sourceStats = await fs.stat(expandedSourcePath);
-          const isDirectory = sourceStats.isDirectory();
-
-          // Create parent directory if it doesn't exist
-          const parentDir = path.dirname(expandedDestinationPath);
-          await fs.mkdir(parentDir, { recursive: true });
-
-          if (isDirectory) {
-            // Use fs.cp for recursive directory copy (Node.js 16.7+)
-            await fs.cp(expandedSourcePath, expandedDestinationPath, { recursive: true });
-            logger.info('Directory copied recursively', {
-              from: validated.sourcePath,
-              to: validated.destinationPath,
-            });
-          } else {
-            // Copy the file
-            await fs.copyFile(expandedSourcePath, expandedDestinationPath);
-            logger.info('File copied successfully', {
-              from: validated.sourcePath,
-              to: validated.destinationPath,
-            });
-          }
-
-          return { success: true, data: { isDirectory } };
-        } catch (error) {
-          logger.error('Failed to copy file/directory', error as Error, {
-            from: validated.sourcePath,
-            to: validated.destinationPath,
-          });
-          return { success: false, error: (error as Error).message };
-        }
-      },
-      FILE_CHANNELS.COPY,
     ),
   );
 
@@ -1029,39 +758,6 @@ export function setupFileIPC() {
         }
       },
       FILE_CHANNELS.GET_TREE_WITH_SIZES,
-    ),
-  );
-
-  // Get directory status — delegated to the daemon host. The BE mirrors the
-  // worktree-aware .git detection and parent-git-root walk, so the IPC
-  // response shape ({ exists, isDirectory, isEmpty, isGitRepo, parentGitRoot?,
-  // relativePathFromGitRoot?, isSubdirectoryOfGitRepo, path }) is preserved.
-  ipcMain.handle(
-    FILE_CHANNELS.GET_DIRECTORY_STATUS,
-    createSafeValidatedHandler(
-      FileGetDirectoryStatusSchema,
-      async (_, validated) => {
-        try {
-          const result = await getBackendClient().request<{
-            exists: boolean;
-            isDirectory: boolean;
-            isEmpty: boolean;
-            isGitRepo: boolean;
-            parentGitRoot?: string;
-            relativePathFromGitRoot?: string;
-            isSubdirectoryOfGitRepo: boolean;
-            path: string;
-          }>('host.directoryStatus', { path: validated.path });
-          return { success: true, data: result };
-        } catch (error) {
-          logger.error('Failed to get directory status', error as Error);
-          return {
-            success: false,
-            error: (error as Error).message,
-          };
-        }
-      },
-      FILE_CHANNELS.GET_DIRECTORY_STATUS,
     ),
   );
 
