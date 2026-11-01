@@ -89,7 +89,6 @@ export function* dockRecencySaga(): SagaGenerator<never> {
             try {
               const scan = await scanDockHumanMessages(
                 (page) => appClient.agents.listUserMessages(agentId, 80, workspaceId, page),
-                Date.now(),
                 cached,
               );
               if (scan) {

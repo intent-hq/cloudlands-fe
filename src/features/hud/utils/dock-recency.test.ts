@@ -61,8 +61,8 @@ describe('scanDockHumanMessages', () => {
       automated('tail', HOUR - 1),
     ];
     const { readPage, reads } = pagingDaemon(rows);
-    const scan = await scanDockHumanMessages(readPage, NOW);
-    expect(scan).toEqual({ latest: NOW - HOUR, scannedThrough: NOW - HOUR + 1 });
+    const scan = await scanDockHumanMessages(readPage);
+    expect(scan).toEqual({ latest: NOW - HOUR, newestId: 'tail' });
     expect(reads).toEqual([{ limit: DOCK_INDEX_PAGE_LIMIT, nextToken: undefined }]);
   });
 
@@ -72,37 +72,56 @@ describe('scanDockHumanMessages', () => {
       ...Array.from({ length: 120 }, (_, n) => automated(`a-${n}`, 4 * HOUR - n * 1000)),
     ];
     const { readPage, reads } = pagingDaemon(rows);
-    const scan = await scanDockHumanMessages(readPage, NOW);
-    expect(scan?.latest).toBe(NOW - 5 * HOUR);
+    const scan = await scanDockHumanMessages(readPage);
+    expect(scan).toEqual({ latest: NOW - 5 * HOUR, newestId: 'a-119' });
     expect(reads.map(({ nextToken }) => nextToken)).toEqual([undefined, '71', '21']);
   });
 
-  it('stops paging once rows are older than the dock window', async () => {
+  it('never stops on a timestamp: an old row on the newest page cannot hide a human row', async () => {
     const rows = [
-      human('stale', 30 * HOUR),
-      ...Array.from({ length: 200 }, (_, n) => automated(`a-${n}`, 25 * HOUR - n * 1000)),
+      human('human', 2 * HOUR),
+      ...Array.from({ length: 49 }, (_, n) => automated(`a-${n}`, HOUR - n)),
+      automated('backdated', 25 * HOUR),
     ];
     const { readPage, reads } = pagingDaemon(rows);
-    const scan = await scanDockHumanMessages(readPage, NOW);
-    expect(scan?.latest).toBeNull();
-    expect(reads).toHaveLength(1);
+    const scan = await scanDockHumanMessages(readPage);
+    expect(scan?.latest).toBe(NOW - 2 * HOUR);
+    expect(reads).toHaveLength(2);
   });
 
-  it('resumes from a previous scan instead of re-reading covered history', async () => {
+  it('resumes at the previous scan newest row instead of re-reading covered history', async () => {
     const rows = [
       human('human', 6 * HOUR),
       ...Array.from({ length: 300 }, (_, n) => automated(`a-${n}`, 5 * HOUR - n * 1000)),
     ];
     const first = pagingDaemon(rows);
-    const previous = await scanDockHumanMessages(first.readPage, NOW);
-    expect(previous?.latest).toBe(NOW - 6 * HOUR);
+    const previous = await scanDockHumanMessages(first.readPage);
+    expect(previous).toEqual({ latest: NOW - 6 * HOUR, newestId: 'a-299' });
     expect(first.reads.length).toBeGreaterThan(1);
 
     const grown = [...rows, automated('new-1', HOUR), automated('new-2', HOUR - 1)];
     const second = pagingDaemon(grown);
-    const scan = await scanDockHumanMessages(second.readPage, NOW, previous ?? undefined);
-    expect(scan).toEqual({ latest: NOW - 6 * HOUR, scannedThrough: NOW - HOUR + 1 });
+    const scan = await scanDockHumanMessages(second.readPage, previous ?? undefined);
+    expect(scan).toEqual({ latest: NOW - 6 * HOUR, newestId: 'new-2' });
     expect(second.reads).toHaveLength(1);
+  });
+
+  it('finds a human row newer than the previous scan on resume', async () => {
+    const rows = [human('old-human', 6 * HOUR), automated('a', 5 * HOUR)];
+    const previous = { latest: NOW - 6 * HOUR, newestId: 'a' };
+    const { readPage } = pagingDaemon([...rows, human('new-human', HOUR)]);
+    expect(await scanDockHumanMessages(readPage, previous)).toEqual({
+      latest: NOW - HOUR,
+      newestId: 'new-human',
+    });
+  });
+
+  it('keeps the previous result when nothing new arrived', async () => {
+    const rows = [human('h', 3 * HOUR), automated('a', HOUR)];
+    const { readPage, reads } = pagingDaemon(rows);
+    const previous = { latest: NOW - 3 * HOUR, newestId: 'a' };
+    expect(await scanDockHumanMessages(readPage, previous)).toEqual(previous);
+    expect(reads).toHaveLength(1);
   });
 
   it('treats a daemon without paging as one complete page', async () => {
@@ -111,8 +130,8 @@ describe('scanDockHumanMessages', () => {
       items: [human('h', 3 * HOUR), automated('a', HOUR)],
       total: 2,
     }));
-    const scan = await scanDockHumanMessages(readPage, NOW);
-    expect(scan?.latest).toBe(NOW - 3 * HOUR);
+    const scan = await scanDockHumanMessages(readPage);
+    expect(scan).toEqual({ latest: NOW - 3 * HOUR, newestId: 'a' });
     expect(readPage).toHaveBeenCalledTimes(1);
   });
 
@@ -122,14 +141,14 @@ describe('scanDockHumanMessages', () => {
       unsupported: false,
       error: 'boom',
     }));
-    expect(await scanDockHumanMessages(readPage, NOW)).toBeNull();
+    expect(await scanDockHumanMessages(readPage)).toBeNull();
   });
 
   it('bounds the number of pages per scan', async () => {
     const rows = Array.from({ length: 5_000 }, (_, n) => automated(`a-${n}`, HOUR - n));
     const { readPage, reads } = pagingDaemon(rows);
-    const scan = await scanDockHumanMessages(readPage, NOW);
-    expect(scan?.latest).toBeNull();
+    const scan = await scanDockHumanMessages(readPage);
+    expect(scan).toEqual({ latest: null, newestId: 'a-4999' });
     expect(reads).toHaveLength(DOCK_INDEX_MAX_PAGES);
   });
 });
