@@ -44,6 +44,11 @@ export interface DockHumanScan {
   newestId: string | null;
 }
 
+function newer(a: number | null, b: number | null): number | null {
+  if (a === null) return b;
+  return b !== null && b > a ? b : a;
+}
+
 export type DockIndexPageReader = (
   page: UserMessageIndexPageOptions,
 ) => Promise<UserMessageIndexResult>;
@@ -74,8 +79,10 @@ export async function scanDockHumanMessages(
     const seen =
       previous?.newestId != null ? items.findIndex((item) => item.id === previous.newestId) : -1;
     const latest = latestDockHumanMessage(seen >= 0 ? items.slice(seen + 1) : items);
-    if (latest !== null) return { latest, newestId };
-    if (seen >= 0) return { latest: previous?.latest ?? null, newestId };
+    // Rows the previous scan read still stand, so its result can only be
+    // superseded by a newer timestamp, never by a backdated new row.
+    if (seen >= 0) return { latest: newer(latest, previous?.latest ?? null), newestId };
+    if (latest !== null) return { latest: newer(latest, previous?.latest ?? null), newestId };
     if (typeof result.nextToken !== 'string') return { latest: null, newestId };
     nextToken = result.nextToken;
   }
