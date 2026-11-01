@@ -159,6 +159,14 @@ describe('preload generator drift guard', () => {
 });
 
 describe('preload template', () => {
+  it('carries no channel list of its own, only the generator marker', () => {
+    // cloudlands-fe#3956: a stale filled-in list in the template was edited and
+    // reviewed as if it were the allowlist; the build always replaced it.
+    expect(realTemplate).not.toContain('GENERATED IPC CHANNELS');
+    expect(realTemplate).not.toMatch(/^\s*const (ALLOWED_CHANNELS|EVENT_CHANNELS)\b/m);
+    expect(realTemplate.split('// GENERATED_CHANNELS_PLACEHOLDER')).toHaveLength(2);
+  });
+
   it('exposes getIpcListenerCounts from the template, not just the generated file', () => {
     // monorepo#2124: present only in index.ts meant `ipcBackendListeners` read
     // -1 in every packaged build.
@@ -166,5 +174,66 @@ describe('preload template', () => {
       realTemplate,
       'getIpcListenerCounts must live in the template or packaging strips it',
     ).toContain('getIpcListenerCounts');
+  });
+});
+
+describe('preload generator template guard', () => {
+  // The generated block the generator itself writes, used as a "filled-in"
+  // stand-in so the cases track the real output shape.
+  function generatedBlock(): string {
+    const root = makeFixture(realTemplate);
+    const result = runGenerator(root);
+    if (result.status !== 0) throw new Error(`regeneration failed:\n${result.output}`);
+    const index = generatedIndex(root);
+    const start = index.indexOf(
+      '// ============================================\n// GENERATED IPC CHANNELS',
+    );
+    const endMarker =
+      '// END GENERATED IPC CHANNELS\n// ============================================\n';
+    const end = index.indexOf(endMarker) + endMarker.length;
+    expect(start, 'generated block must be present').toBeGreaterThan(-1);
+    return index.slice(start, end);
+  }
+
+  function expectRejected(template: string, reason: string): void {
+    const root = makeFixture(template);
+    const result = runGenerator(root);
+    expect(result.status, result.output).toBe(1);
+    expect(result.output).toContain('index.template.ts cannot be used');
+    expect(result.output).toContain(reason);
+    expect(result.output).toContain('src/shared/ipc-registry.ts');
+  }
+
+  it('rejects a template that contains a filled-in generated block again', () => {
+    const marker = '// GENERATED_CHANNELS_PLACEHOLDER';
+    const template = realTemplate.replace(marker, `${generatedBlock()}\n${marker}`);
+    expectRejected(template, 'filled-in "GENERATED IPC CHANNELS" block');
+  });
+
+  it('rejects a template that declares a channel list without the block markers', () => {
+    const template = realTemplate.replace(
+      '// GENERATED_CHANNELS_PLACEHOLDER',
+      "// GENERATED_CHANNELS_PLACEHOLDER\nconst ALLOWED_CHANNELS = ['workspace:list'];",
+    );
+    expectRejected(template, 'declares ALLOWED_CHANNELS');
+  });
+
+  it('rejects a template with no placeholder marker', () => {
+    const template = realTemplate.replace('// GENERATED_CHANNELS_PLACEHOLDER', '');
+    expectRejected(template, 'exactly one // GENERATED_CHANNELS_PLACEHOLDER marker (found 0)');
+  });
+
+  it('leaves an existing generated file untouched when it rejects the template', () => {
+    const root = makeFixture(realTemplate);
+    expect(runGenerator(root).status).toBe(0);
+    const before = generatedIndex(root);
+    writeFileSync(
+      join(root, templateFile),
+      realTemplate.replace('// GENERATED_CHANNELS_PLACEHOLDER', ''),
+      'utf-8',
+    );
+
+    expect(runGenerator(root).status).toBe(1);
+    expect(generatedIndex(root)).toBe(before);
   });
 });
