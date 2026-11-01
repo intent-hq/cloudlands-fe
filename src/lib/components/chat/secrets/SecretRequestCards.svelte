@@ -7,7 +7,7 @@
    * the loaded page. Hide collapses the stack to one chip, like the Q&A
    * card; a new request expands it again. Values never pass through here.
    */
-  import { untrack } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import {
     secretAnswerRequested,
@@ -18,6 +18,7 @@
   import { selectSecretRequestsState } from '$store/renderer/slices/secret-requests/secret-requests-selectors';
   import { selectDaemonConnectionGeneration } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
   import CollapsedCardChip from '../CollapsedCardChip.svelte';
   import SecretRequestCard from './SecretRequestCard.svelte';
   import SecretRequestDismissDialog from './SecretRequestDismissDialog.svelte';
@@ -37,7 +38,24 @@
   let { transcript, workspaceId, agentId }: Props = $props();
 
   const secretRequests$ = selectSecretRequestsState();
+  const admissionRevision = $derived($secretRequests$.admissionRevision ?? 0);
   const connectionGeneration$ = selectDaemonConnectionGeneration();
+  const principalContext$ = selectPrincipalActionContext();
+  type Owner = { admission: string; revision: number; dispatch: typeof appStore.dispatch };
+  let owner = $state<Owner | null>(null);
+
+  function isCurrent(expected: Owner | null): boolean {
+    try {
+      return (
+        !!expected &&
+        appStore.dispatch === expected.dispatch &&
+        (appStore.state.secretRequests.admissionRevision ?? 0) === expected.revision &&
+        selectPrincipalActionContext.select(appStore.state) === expected.admission
+      );
+    } catch {
+      return false;
+    }
+  }
   const visible = $derived(
     visibleSecretRequests(
       transcript,
@@ -66,16 +84,20 @@
     agentId: string;
     requestId: string;
     name: string;
+    owner: Owner;
   } | null>(null);
   let stackElement = $state<HTMLDivElement>();
   let chipExpandButton = $state<HTMLElement | null>(null);
   let focusAfter = $state<'chip' | 'cards' | null>(null);
+  let focusFrom = $state<Element | null>(null);
 
   $effect(() => {
     const target = chipDismissTarget;
+    void $principalContext$;
     if (
       target &&
-      (target.workspaceId !== workspaceId ||
+      (!isCurrent(target.owner) ||
+        target.workspaceId !== workspaceId ||
         target.agentId !== agentId ||
         target.requestId !== chipRequest?.requestId)
     )
@@ -94,21 +116,41 @@
   $effect(() => {
     const target = focusAfter;
     const root = stackElement;
+    const focusOwner = owner;
     void collapsed;
-    if (!target || !root) return;
-    const element =
-      target === 'chip'
-        ? chipExpandButton
-        : root.querySelector<HTMLElement>(
-            '[data-testid="secret-request-input"]:not([disabled]), [data-testid="secret-request-card"] button',
-          );
-    if (element) {
-      element.focus();
-      focusAfter = null;
-    }
+    if (!target || !root || !isCurrent(focusOwner)) return;
+    const previousFocus = focusFrom;
+    void tick().then(() => {
+      if (
+        focusAfter !== target ||
+        focusFrom !== previousFocus ||
+        stackElement !== root ||
+        !root.isConnected ||
+        !isCurrent(focusOwner)
+      )
+        return;
+      if (
+        document.activeElement !== previousFocus &&
+        document.activeElement !== document.body &&
+        !root.contains(document.activeElement)
+      )
+        return;
+      const element =
+        target === 'chip'
+          ? chipExpandButton
+          : root.querySelector<HTMLElement>(
+              '[data-testid="secret-request-input"]:not([disabled]), [data-testid="secret-request-card"] button:not([disabled])',
+            );
+      if (element) {
+        element.focus();
+        if (document.activeElement === element) focusAfter = null;
+      }
+    });
   });
 
   function hide(): void {
+    if (!isCurrent(owner)) return;
+    focusFrom = document.activeElement;
     focusAfter = 'chip';
     appStore.dispatch(
       secretRequestsCollapsed(
@@ -119,24 +161,33 @@
   }
 
   function expand(): void {
+    if (!isCurrent(owner)) return;
+    focusFrom = document.activeElement;
     focusAfter = 'cards';
     appStore.dispatch(secretRequestsExpanded(agentId));
   }
 
   function openChipDismiss(): void {
-    if (!chipRequest) return;
+    if (!chipRequest || !owner || !isCurrent(owner)) return;
     chipDismissTarget = {
       workspaceId,
       agentId,
       requestId: chipRequest.requestId,
       name: chipRequest.name,
+      owner,
     };
   }
 
-  function dismissChipRequest(): void {
-    const target = chipDismissTarget;
+  function dismissChipRequest(target: NonNullable<typeof chipDismissTarget>): void {
+    if (chipDismissTarget !== target) return;
     chipDismissTarget = null;
-    if (!target || target.requestId !== chipRequest?.requestId) return;
+    if (
+      !isCurrent(target.owner) ||
+      target.workspaceId !== workspaceId ||
+      target.agentId !== agentId ||
+      target.requestId !== chipRequest?.requestId
+    )
+      return;
     appStore.dispatch(
       secretAnswerRequested({
         workspaceId: target.workspaceId,
@@ -155,9 +206,17 @@
   // and requests lost on restart show as expired.
   $effect(() => {
     void $connectionGeneration$;
+    const admission = $principalContext$;
+    const revision = admissionRevision;
     const key = requestKey;
     const workspace = workspaceId;
     const agent = agentId;
+    const currentOwner = admission ? { admission, revision, dispatch: appStore.dispatch } : null;
+    owner = currentOwner;
+    chipDismissTarget = null;
+    focusAfter = null;
+    focusFrom = null;
+    if (!isCurrent(currentOwner)) return;
     untrack(() => {
       appStore.dispatch(secretListRequested(workspace, agent, key ? key.split(',') : []));
     });
@@ -198,10 +257,13 @@
 {/if}
 
 {#if chipDismissTarget}
+  {@const target = chipDismissTarget}
   <SecretRequestDismissDialog
     open
-    name={chipDismissTarget.name}
-    onConfirm={dismissChipRequest}
-    onCancel={() => (chipDismissTarget = null)}
+    name={target.name}
+    onConfirm={() => dismissChipRequest(target)}
+    onCancel={() => {
+      if (chipDismissTarget === target) chipDismissTarget = null;
+    }}
   />
 {/if}

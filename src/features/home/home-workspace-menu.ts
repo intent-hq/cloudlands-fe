@@ -8,7 +8,10 @@ import type {
 } from '$lib/components/ui/sidebar-context-menu/types';
 import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
 import { m } from '$shared/paraglide/messages.js';
+import { resolveBackendTransport } from '$lib/client/live/backend-transport-factory';
 import { store } from '$store/renderer/store';
+import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
+import { selectWorkspaceUpdateContext } from '$store/renderer/slices/workspace/workspace-selectors';
 import {
   setWorkspaceAutoArchiveDisabled,
   setWorkspaceLabel,
@@ -47,6 +50,7 @@ interface HomeWorkspaceMenuOptions {
   microConnected: boolean;
   onOpen: (id: string) => void;
   onClose: () => void;
+  onPin?: () => void;
   /** Expand a Home list group (`pinned` or `label:<name>`). */
   expandGroup: (key: string) => void;
   getHomeElement: () => HTMLElement | null;
@@ -58,14 +62,28 @@ interface HomeWorkspaceMenuOptions {
 export function focusHomeWorkspaceRow(
   getHomeElement: () => HTMLElement | null,
   workspaceId: string,
+  isCurrent: () => boolean = () => true,
 ): void {
+  const source = getHomeElement()?.querySelector<HTMLElement>(
+    `[data-home-workspace="${CSS.escape(workspaceId)}"]`,
+  );
+  const sourceRow = source?.closest<HTMLElement>('[role="option"], button') ?? source;
+  const sourceLayer = document.activeElement?.closest('[role="menu"], [role="dialog"]');
   void tick().then(() => {
-    requestAnimationFrame(() =>
-      getHomeElement()
+    requestAnimationFrame(() => {
+      if (!isCurrent()) return;
+      const target = getHomeElement()
         ?.querySelector<HTMLElement>(`[data-home-workspace="${CSS.escape(workspaceId)}"]`)
-        ?.closest<HTMLElement>('[role="option"], button')
-        ?.focus(),
-    );
+        ?.closest<HTMLElement>('[role="option"], button');
+      const active = document.activeElement;
+      const ownsFocus =
+        active &&
+        (sourceRow?.contains(active) || target?.contains(active) || sourceLayer?.contains(active));
+      const removedSourceLostFocus =
+        active === document.body &&
+        ((sourceRow && !sourceRow.isConnected) || (sourceLayer && !sourceLayer.isConnected));
+      if (ownsFocus || removedSourceLostFocus) target?.focus();
+    });
   });
 }
 
@@ -73,6 +91,20 @@ function createLabelSubmenu(
   workspace: Workspace,
   { onClose, expandGroup, getHomeElement }: HomeWorkspaceMenuOptions,
 ): SidebarMenuItem {
+  const dispatch = store.dispatch;
+  const context = selectWorkspaceUpdateContext.select(store.state, workspace.id, ['id', 'label']);
+  const ownsLabel = () => {
+    try {
+      return (
+        store.dispatch === dispatch &&
+        context !== null &&
+        selectCanSetWorkspaceLabel.select(store.state, workspace.id) &&
+        context === selectWorkspaceUpdateContext.select(store.state, workspace.id, ['id', 'label'])
+      );
+    } catch {
+      return false;
+    }
+  };
   const current = selectWorkspaceLabel.select(store.state, workspace.id);
   const custom = current !== null && !isPinnedWorkspaceLabel(current) ? current : null;
   // Labels match ignoring case, like the name rules; the in-use list keeps one spelling.
@@ -87,10 +119,10 @@ function createLabelSubmenu(
       closeOnSelect: true,
       onClick: () => {
         onClose();
-        if (isCurrent(label)) return;
+        if (!ownsLabel() || isCurrent(label)) return;
         store.dispatch(setWorkspaceLabel(workspace.id, label));
         expandGroup(homeLabelGroupKey(label));
-        focusHomeWorkspaceRow(getHomeElement, workspace.id);
+        focusHomeWorkspaceRow(getHomeElement, workspace.id, ownsLabel);
       },
     }));
   return {
@@ -106,7 +138,8 @@ function createLabelSubmenu(
         label: m.home_workspaceLabel_new_label(),
         onClick: () => {
           onClose();
-          homeNewLabel.open({ workspaceId: workspace.id, expandGroup, getHomeElement });
+          if (ownsLabel())
+            homeNewLabel.open({ workspaceId: workspace.id, expandGroup, getHomeElement });
         },
       },
       ...(custom === null
@@ -117,8 +150,9 @@ function createLabelSubmenu(
               label: m.home_workspaceLabel_remove_label(),
               onClick: () => {
                 onClose();
+                if (!ownsLabel()) return;
                 store.dispatch(setWorkspaceLabel(workspace.id, null));
-                focusHomeWorkspaceRow(getHomeElement, workspace.id);
+                focusHomeWorkspaceRow(getHomeElement, workspace.id, ownsLabel);
               },
             },
           ]),
@@ -130,7 +164,22 @@ export function createHomeWorkspaceMenu(
   workspace: Workspace,
   options: HomeWorkspaceMenuOptions,
 ): SidebarMenuEntry[] {
-  const { pinned, microConnected, onOpen, onClose, expandGroup, getHomeElement } = options;
+  const { pinned, microConnected, onOpen, onClose, onPin, expandGroup, getHomeElement } = options;
+  const dispatch = store.dispatch;
+  const context = selectPrincipalActionContext.select(store.state);
+  const ownsPin = () => {
+    try {
+      return (
+        store.dispatch === dispatch &&
+        context !== null &&
+        context === selectPrincipalActionContext.select(store.state) &&
+        (!selectLabelsSupported.select(store.state) ||
+          selectCanSetWorkspaceLabel.select(store.state, workspace.id))
+      );
+    } catch {
+      return false;
+    }
+  };
   // On a label-capable daemon a pin is the owner-only "pinned" label; older
   // daemons keep pins local, so everyone may still pin there.
   const canSetLabel = selectCanSetWorkspaceLabel.select(store.state, workspace.id);
@@ -151,9 +200,13 @@ export function createHomeWorkspaceMenu(
       icon: faThumbtack,
       onClick: () => {
         onClose();
-        store.dispatch(togglePinWorkspace(workspace.id));
-        if (!pinned) expandGroup('pinned');
-        focusHomeWorkspaceRow(getHomeElement, workspace.id);
+        if (!ownsPin()) return;
+        if (onPin) onPin();
+        else {
+          store.dispatch(togglePinWorkspace(workspace.id));
+          if (!pinned) expandGroup('pinned');
+          focusHomeWorkspaceRow(getHomeElement, workspace.id, ownsPin);
+        }
       },
     });
   }
@@ -165,12 +218,24 @@ export function createHomeWorkspaceMenu(
     workspace.status !== WorkspaceStatusEnum.Retired;
   if (options.aside && live) {
     const { setAside, onToggle } = options.aside;
+    const ownsAside = () => {
+      try {
+        return (
+          store.dispatch === dispatch &&
+          context !== null &&
+          context === selectPrincipalActionContext.select(store.state)
+        );
+      } catch {
+        return false;
+      }
+    };
     items.push({
       id: 'set-aside',
       label: setAside ? m.home_setAside_bringBack_label() : m.home_setAside_action_label(),
       icon: setAside ? faArrowUp : faArrowDown,
       onClick: () => {
         onClose();
+        if (!ownsAside()) return;
         onToggle();
       },
     });
@@ -189,6 +254,28 @@ export function createHomeWorkspaceMenu(
     // §5.1); owner-only, offered on daemons that advertise it, and only while
     // idle auto-archive is turned on in Settings.
     if (selectCanSetWorkspaceAutoArchive.select(store.state, workspace.id)) {
+      const admission = selectWorkspaceUpdateContext.select(store.state, workspace.id, [
+        'id',
+        'autoArchiveDisabled',
+      ]);
+      const transport = resolveBackendTransport();
+      const ownsAutoArchive = () => {
+        try {
+          return (
+            store.dispatch === dispatch &&
+            resolveBackendTransport() === transport &&
+            admission !== null &&
+            selectCanSetWorkspaceAutoArchive.select(store.state, workspace.id) &&
+            admission ===
+              selectWorkspaceUpdateContext.select(store.state, workspace.id, [
+                'id',
+                'autoArchiveDisabled',
+              ])
+          );
+        } catch {
+          return false;
+        }
+      };
       items.push({
         id: 'disable-auto-archive',
         label: m.home_workspace_disableAutoArchive_label(),
@@ -196,6 +283,7 @@ export function createHomeWorkspaceMenu(
         closeOnSelect: true,
         onClick: () => {
           onClose();
+          if (!ownsAutoArchive()) return;
           // Read at click time: the flag may have changed while the menu was open.
           const disabled = selectWorkspaceAutoArchiveDisabled.select(store.state, workspace.id);
           store.dispatch(setWorkspaceAutoArchiveDisabled(workspace.id, !disabled));

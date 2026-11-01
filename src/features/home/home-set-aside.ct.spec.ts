@@ -230,6 +230,34 @@ test('Known attention stays aside until a new request, failure or review appears
     window.__homeSetAside!.update('aside-other-repo', { attention: 'review_required' }),
   );
   await expect.poll(async () => (await snapshot(page)).asideIds).not.toContain('aside-other-repo');
+
+  await page.evaluate(() =>
+    window.__homeSetAside!.update('aside-other-repo', {
+      displayStatus: 'needs_attention',
+      attentionReminder: {
+        reasons: [{ id: 'opaque-reminder', revision: 'opaque-first' }],
+        dismissed: false,
+        displayStatus: 'needs_attention',
+      },
+    }),
+  );
+  await aside(page, 'aside-other-repo');
+  await page.evaluate(() => window.__homeSetAside!.reloadPreferences());
+  await page.evaluate(() =>
+    window.__homeSetAside!.update('aside-other-repo', {
+      attentionReminder: {
+        reasons: [{ id: 'opaque-reminder', revision: 'opaque-second' }],
+        dismissed: false,
+        displayStatus: 'needs_attention',
+      },
+    }),
+  );
+  await expect.poll(async () => (await snapshot(page)).asideIds).not.toContain('aside-other-repo');
+  await aside(page, 'aside-other-repo');
+  await page.evaluate(() =>
+    window.__homeSetAside!.update('aside-other-repo', { attentionReminder: undefined }),
+  );
+  await expect.poll(async () => (await snapshot(page)).asideIds).not.toContain('aside-other-repo');
 });
 
 test('Saved state survives reload and view reset while accounts and backends stay separate', async ({
@@ -664,6 +692,21 @@ test('Set aside rejects foreign, archived, already-aside and stale drags', async
   await expect(asideColumn(page)).toBeVisible();
   await expect.poll(() => dropTargetState(page)).toBe(idle);
   expect((await snapshot(page)).asideIds).toEqual([]);
+
+  // Keep the actual drag token while the same principal is readmitted in the same backend.
+  // Dispatch synchronously so neither a DOM remount nor a cancelled native drag can hide the stale callback.
+  await row(page, 'aside-idle').evaluate((card) => {
+    const dataTransfer = new DataTransfer();
+    card.dispatchEvent(
+      new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer }),
+    );
+    window.__homeSetAside!.readmitSamePrincipal();
+    document
+      .querySelector('[data-home-set-aside]')!
+      .dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer }));
+  });
+  expect((await snapshot(page)).asideIds).toEqual([]);
+  expect(await setAsideCount(page)).toBe(before);
 
   await startDrag(page, row(page, 'aside-other-repo'));
   await dragOver(page, asideColumn(page));

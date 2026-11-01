@@ -2,8 +2,22 @@ import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { SecretListing } from '$shared/types/secret-request-resource';
 import type { SecretAnswerStatus, SecretRequestsState } from './secret-requests-types';
+import { principalContextChanged } from '../principal/principal-slice';
 
-const initialState: SecretRequestsState = { listings: {}, answers: {}, hidden: {}, collapsed: {} };
+const initialState: SecretRequestsState = {
+  admissionRevision: 0,
+  listings: {},
+  answers: {},
+  hidden: {},
+  collapsed: {},
+};
+
+function retirePresentation(state: SecretRequestsState): SecretRequestsState {
+  return { ...initialState, admissionRevision: (state.admissionRevision ?? 0) + 1 };
+}
+
+/** Retire caller-relative presentation without changing any daemon request. */
+export const secretRequestsReset = createAction('secretRequests/reset');
 
 /**
  * Refresh one agent's names-only `secret.list` (PROTOCOL §5.56). `requestIds`
@@ -67,6 +81,8 @@ export const secretRequestsExpanded = createAction<[agentId: string]>(
 );
 
 export const secretRequestsReducer = createReducer<SecretRequestsState>(initialState);
+secretRequestsReducer.with(principalContextChanged, retirePresentation);
+secretRequestsReducer.with(secretRequestsReset, retirePresentation);
 secretRequestsReducer.with(
   secretListLoaded,
   (state, { payload: [agentId, listing, requestIds, answeredBefore] }) => {

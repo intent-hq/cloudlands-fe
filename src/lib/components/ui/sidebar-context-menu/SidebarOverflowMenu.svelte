@@ -9,6 +9,8 @@
     items,
     ariaLabel,
     open = $bindable(false),
+    onOpenChange,
+    returnFocus,
     orientation = 'vertical',
     selection,
     class: className = '',
@@ -16,6 +18,8 @@
     items: SidebarMenuEntry[];
     ariaLabel: string;
     open?: boolean;
+    onOpenChange?: (open: boolean) => void;
+    returnFocus?: HTMLElement | null;
     orientation?: 'horizontal' | 'vertical';
     selection?: 'single';
     class?: string;
@@ -29,6 +33,8 @@
   bind:open
   align="end"
   {ariaLabel}
+  {onOpenChange}
+  {returnFocus}
   onAction={(id) => findSidebarItem(items, id)?.onClick()}
 >
   {#snippet trigger({ props })}

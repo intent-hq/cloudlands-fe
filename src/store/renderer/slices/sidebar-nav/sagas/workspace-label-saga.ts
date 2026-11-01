@@ -23,6 +23,9 @@ import { getLocalStorageJSON, setLocalStorageJSON } from '../../../utils/safe-lo
 import { connectionsListReceived } from '../../connections/connections-slice';
 import { principalReceived } from '../../principal/principal-slice';
 import { workspaceClient } from '../../workspace/utils/workspace.client';
+import { store } from '../../../store';
+import { selectPrincipalActionContext } from '../../principal/principal-selectors';
+import { selectWorkspaceUpdateContext } from '../../workspace/workspace-selectors';
 import {
   selectWorkspaceById,
   selectWorkspaceListLoadedForBackend,
@@ -66,9 +69,33 @@ function applyLabel(workspaceId: string, label: string | null) {
  */
 const pendingLabelWrites = new Map<
   string,
-  { token: number; optimistic: string | null; previous: string | null }
+  { owner: LabelOwner; token: number; optimistic: string | null; previous: string | null }
 >();
 let nextLabelWriteToken = 0;
+
+type LabelOwner = { admission: string; dispatch: typeof store.dispatch };
+
+function sameOwner(a: LabelOwner | null | undefined, b: LabelOwner | null | undefined): boolean {
+  return !!a && !!b && a.admission === b.admission && a.dispatch === b.dispatch;
+}
+
+function* labelOwner(workspaceId?: string): SagaGenerator<LabelOwner | null> {
+  if (!(yield* selectLabelsSupported.effect())) return null;
+  const admission =
+    workspaceId === undefined
+      ? yield* selectPrincipalActionContext.effect()
+      : yield* selectWorkspaceUpdateContext.effect(workspaceId, ['id', 'label']);
+  if (admission === null) return null;
+  try {
+    return { admission, dispatch: store.dispatch };
+  } catch {
+    return null;
+  }
+}
+
+function forgetOwnWrite(workspaceId: string, token: number): void {
+  if (pendingLabelWrites.get(workspaceId)?.token === token) pendingLabelWrites.delete(workspaceId);
+}
 
 /** Test-only reset of the module-level pending-write bookkeeping. */
 export function resetWorkspaceLabelWritesForTest(): void {
@@ -89,7 +116,13 @@ export function* watchAuthoritativeWorkspaceLabels(): SagaGenerator<void> {
     for (const update of action.payload[0]) {
       const [workspaceId, changes] = update.payload;
       const pending = pendingLabelWrites.get(workspaceId);
-      if (pending && 'label' in changes) pending.previous = normalizeLabel(changes.label ?? null);
+      if (
+        pending &&
+        'label' in changes &&
+        sameOwner(pending.owner, yield* call(labelOwner, workspaceId))
+      ) {
+        pending.previous = normalizeLabel(changes.label ?? null);
+      }
     }
   }
 }
@@ -110,54 +143,68 @@ function* writeWorkspaceLabel(
   requested: string | null,
   options: { silent?: boolean } = {},
 ): SagaGenerator<boolean> {
+  const owner = yield* call(labelOwner, workspaceId);
+  if (!owner) return false;
   const label = normalizeLabel(requested);
   const workspace = yield* selectWorkspaceById.effect(workspaceId);
   if (!workspace) return false;
   const current = workspace.label ?? null;
-  const pending = pendingLabelWrites.get(workspaceId);
+  const candidate = pendingLabelWrites.get(workspaceId);
+  const pending = sameOwner(candidate?.owner, owner) ? candidate : undefined;
   if (!pending && current === label) return true;
 
   const token = ++nextLabelWriteToken;
-  // Inherit the earlier write's rollback value only while the row still shows
-  // that write's optimistic value; an authoritative update in between (e.g.
-  // another client's workspace:updated) becomes the new rollback target.
   const previous = pending && current === pending.optimistic ? pending.previous : current;
-  pendingLabelWrites.set(workspaceId, { token, optimistic: label, previous });
-  yield* put(applyLabel(workspaceId, label));
-
-  let error: string | undefined;
+  pendingLabelWrites.set(workspaceId, { owner, token, optimistic: label, previous });
   try {
-    const result = yield* call([workspaceClient, workspaceClient.update], {
-      id: workspaceId as WorkspaceId,
-      label,
-    });
-    if (result.ok) {
-      const latest = pendingLabelWrites.get(workspaceId);
+    yield* put(applyLabel(workspaceId, label));
+    if (!sameOwner(owner, yield* call(labelOwner, workspaceId))) {
+      forgetOwnWrite(workspaceId, token);
+      return false;
+    }
+
+    let error: string | undefined;
+    let result: Awaited<ReturnType<typeof workspaceClient.update>> | undefined;
+    try {
+      result = yield* call([workspaceClient, workspaceClient.update], {
+        id: workspaceId as WorkspaceId,
+        label,
+      });
+      if (!result.ok) error = result.error;
+    } catch (caught) {
+      error = caught instanceof Error ? caught.message : String(caught);
+      logger.error('Workspace label update failed', { error: caught });
+    }
+    // A retired mutation is not a failed write belonging to the newly admitted row.
+    if (!sameOwner(owner, yield* call(labelOwner, workspaceId))) {
+      forgetOwnWrite(workspaceId, token);
+      return false;
+    }
+    const latest = pendingLabelWrites.get(workspaceId);
+    if (!sameOwner(latest?.owner, owner)) return false;
+    if (result?.ok) {
       if (latest?.token === token) {
         pendingLabelWrites.delete(workspaceId);
         const served = result.data.label ?? null;
-        if (served !== label) {
-          yield* put(applyLabel(workspaceId, served));
-        }
+        if (served !== label) yield* put(applyLabel(workspaceId, served));
       } else if (latest) {
-        // A newer write is in flight; if it fails it should fall back to this value.
         latest.previous = label;
       }
       return true;
     }
-    error = result.error;
-  } catch (caught) {
-    logger.error('Failed to set workspace label', { workspaceId, error: caught });
+    if (latest?.token !== token) return false;
+    pendingLabelWrites.delete(workspaceId);
+    const row = yield* selectWorkspaceById.effect(workspaceId);
+    if ((row?.label ?? null) === latest.optimistic) {
+      yield* put(applyLabel(workspaceId, latest.previous));
+    }
+    if (!options.silent && sameOwner(owner, yield* call(labelOwner, workspaceId))) {
+      notify.error(error?.trim() || m.workspace_client_updateFailed_error());
+    }
+    return false;
+  } finally {
+    forgetOwnWrite(workspaceId, token);
   }
-
-  const latest = pendingLabelWrites.get(workspaceId);
-  if (latest?.token !== token) return false;
-  pendingLabelWrites.delete(workspaceId);
-  if ((yield* selectWorkspaceLabel.effect(workspaceId)) === label) {
-    yield* put(applyLabel(workspaceId, latest.previous));
-  }
-  if (!options.silent) notify.error(error?.trim() || m.workspace_client_updateFailed_error());
-  return false;
 }
 
 export function* setWorkspaceLabelWorker(
@@ -203,43 +250,56 @@ function stringArray(value: unknown): string[] {
  * supports labels and the workspace list has loaded. Marked done only when
  * every write succeeded, so a failure retries on the next app start.
  */
-function* migrateLocalPinsToLabels(attempted: Set<string>): SagaGenerator<void> {
-  if (!(yield* selectLabelsSupported.effect())) return;
+function* migrateLocalPinsToLabels(attempted: Map<string, LabelOwner>): SagaGenerator<void> {
+  const owner = yield* call(labelOwner);
+  if (!owner) return;
   const backendId = yield* selectActiveBackendId();
-  if (attempted.has(backendId)) return;
+  if (sameOwner(attempted.get(backendId), owner)) return;
   if (!(yield* selectWorkspaceListLoadedForBackend.effect(backendId))) return;
-  attempted.add(backendId);
-
-  const doneKey = namespaceBackendKey(PINNED_WORKSPACES_LABEL_MIGRATION_KEY, backendId);
-  if ((yield* call(getLocalStorageJSON<unknown>, doneKey)) === true) return;
-
-  const pinned = stringArray(
-    yield* call(
+  attempted.set(backendId, owner);
+  try {
+    const doneKey = namespaceBackendKey(PINNED_WORKSPACES_LABEL_MIGRATION_KEY, backendId);
+    const done = yield* call(getLocalStorageJSON<unknown>, doneKey);
+    if (!sameOwner(owner, yield* call(labelOwner))) return;
+    if (done === true) return;
+    const saved = yield* call(
       getLocalStorageJSON<unknown>,
       namespaceBackendKey(PINNED_WORKSPACES_KEY, backendId),
-    ),
-  );
-  let allSucceeded = true;
-  for (const workspaceId of pinned) {
-    const workspace = yield* selectWorkspaceById.effect(workspaceId);
-    if (!workspace || workspace.label) continue;
-    if (!(yield* selectCanSetWorkspaceLabel.effect(workspaceId))) continue;
-    const ok = yield* call(writeWorkspaceLabel, workspaceId, PINNED_WORKSPACE_LABEL, {
-      silent: true,
-    });
-    if (!ok) allSucceeded = false;
+    );
+    if (!sameOwner(owner, yield* call(labelOwner))) return;
+    let allSucceeded = true;
+    for (const workspaceId of stringArray(saved)) {
+      if (!sameOwner(owner, yield* call(labelOwner))) return;
+      const workspace = yield* selectWorkspaceById.effect(workspaceId);
+      if (!workspace || workspace.label) continue;
+      if (!(yield* selectCanSetWorkspaceLabel.effect(workspaceId))) continue;
+      const ok = yield* call(writeWorkspaceLabel, workspaceId, PINNED_WORKSPACE_LABEL, {
+        silent: true,
+      });
+      if (!sameOwner(owner, yield* call(labelOwner))) return;
+      if (!ok) allSucceeded = false;
+    }
+    if (allSucceeded && sameOwner(owner, yield* call(labelOwner))) {
+      yield* call(setLocalStorageJSON, doneKey, true);
+    }
+  } finally {
+    if (!sameOwner(owner, yield* call(labelOwner)) && attempted.get(backendId) === owner) {
+      attempted.delete(backendId);
+    }
   }
-  if (allSucceeded) yield* call(setLocalStorageJSON, doneKey, true);
 }
 
 export function* watchPinLabelMigration(): SagaGenerator<void> {
-  const attempted = new Set<string>();
+  const attempted = new Map<string, LabelOwner>();
   while (true) {
+    const startedWith = yield* call(labelOwner);
     try {
       yield* call(migrateLocalPinsToLabels, attempted);
     } catch (error) {
       logger.error('Pin label migration failed', { error });
     }
+    const current = yield* call(labelOwner);
+    if (current && !sameOwner(startedWith, current)) continue;
     yield* take([setWorkspaceHasLoaded, principalReceived, connectionsListReceived]);
   }
 }

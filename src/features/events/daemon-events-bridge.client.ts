@@ -55,6 +55,10 @@ import {
   isAgentReadWorkspaceCurrent,
 } from '$features/agent/agent-read-ownership';
 import { selectWorkspaceMcpServerName } from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
+import {
+  captureWorkspaceReadContext,
+  type WorkspaceReadContext,
+} from '$lib/client/live/workspace-read-context';
 /**
  * Daemon events → renderer Redux bridge.
  *
@@ -273,6 +277,7 @@ import {
   refreshWorkspaceMembershipRequested,
   removeWorkspaceEntity,
   updateWorkspaceEntity,
+  workspaceReminderInvalidated,
   workspacePullRequestsRefreshed,
 } from '$store/renderer/slices/workspace/workspace-slice';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -2306,7 +2311,7 @@ function handlePrEvent(
  * through the shared `fetchWorkspaceDetail` single-flight: joining a read
  * already in flight could return a pool served before this root changed.
  * Only rows already in this window's store refresh — this never adds a
- * workspace. Single-flighted per workspace with one trailing follow-up for
+ * workspace. Single-flighted per workspace and captured admission with one trailing follow-up for
  * events arriving mid-read; a routing dispose drops in-flight results. A
  * `pr:*` event landing mid-read bumps the workspace's PR revision: the read
  * may predate it, so its result is discarded and re-read instead of
@@ -2318,32 +2323,42 @@ const gitRootPoolRefreshFollowUp = new Set<string>();
 let gitRootPoolRefreshGeneration = 0;
 
 async function refreshWorkspacePrPoolFromGitRoot(workspaceId: string): Promise<void> {
-  if (!selectWorkspaceById.select(appStore.state, workspaceId)) return;
-  if (gitRootPoolRefreshInFlight.has(workspaceId)) {
-    gitRootPoolRefreshFollowUp.add(workspaceId);
+  const read = captureWorkspaceReadContext(workspaceId);
+  const key = JSON.stringify([read.key, workspaceId]);
+  if (
+    !read.isCurrent() ||
+    appStore.state.workspace.pendingDeletions[workspaceId] ||
+    !selectWorkspaceById.select(appStore.state, workspaceId)
+  )
+    return;
+  if (gitRootPoolRefreshInFlight.has(key)) {
+    gitRootPoolRefreshFollowUp.add(key);
     return;
   }
   const generation = gitRootPoolRefreshGeneration;
   const prRevision = prEventRevisionByWorkspace.get(workspaceId) ?? 0;
-  gitRootPoolRefreshInFlight.add(workspaceId);
+  gitRootPoolRefreshInFlight.add(key);
   try {
     const { backendRequest } = await import('$lib/client/live/backend-transport');
+    read.assertCurrent();
     const response = (await backendRequest('workspace.get', { workspaceId })) as
       { workspace?: Workspace } | undefined;
+    read.assertCurrent();
     const workspace = response?.workspace;
     if (workspace && generation === gitRootPoolRefreshGeneration) {
       if ((prEventRevisionByWorkspace.get(workspaceId) ?? 0) === prRevision) {
         appStore.dispatch(workspacePullRequestsRefreshed(workspaceId, workspace));
       } else {
-        gitRootPoolRefreshFollowUp.add(workspaceId);
+        gitRootPoolRefreshFollowUp.add(key);
       }
     }
   } catch {
-    // Deleted workspace or transport error: the next list/event converges.
+    // Deleted workspace, retired read or transport error: the next list/event converges.
   } finally {
     if (generation === gitRootPoolRefreshGeneration) {
-      gitRootPoolRefreshInFlight.delete(workspaceId);
-      if (gitRootPoolRefreshFollowUp.delete(workspaceId)) {
+      gitRootPoolRefreshInFlight.delete(key);
+      const followUp = gitRootPoolRefreshFollowUp.delete(key);
+      if (followUp && read.isCurrent() && !appStore.state.workspace.pendingDeletions[workspaceId]) {
         void refreshWorkspacePrPoolFromGitRoot(workspaceId);
       }
     }
@@ -2543,7 +2558,7 @@ function handleRunningFlagChangedEvent(
  * an unrelated refetch. When the entity is missing, fetch `workspace.get` and
  * seed the full entity via `setWorkspaceEntity` — the fresh projection
  * carries the flag the dropped delta announced. Single-flighted with trailing
- * coalesce per workspaceId (AGENTS.md "Event-driven refetches — single-flight
+ * coalesce per workspace and admission (AGENTS.md "Event-driven refetches — single-flight
  * and coalesced"): a burst of deltas for one missing workspace produces at
  * most one immediate fetch plus at most one trailing follow-up. Workspaces
  * with a pending local deletion are skipped so a tombstoned row is not
@@ -2552,11 +2567,17 @@ function handleRunningFlagChangedEvent(
 const missingEntityFetchInFlightByWorkspace = new Set<string>();
 const missingEntityFetchFollowUpWantedByWorkspace = new Set<string>();
 
-async function runHydrateMissingWorkspaceEntityFetch(workspaceId: string): Promise<void> {
-  const { backendRequest } = await import('$lib/client/live/backend-transport');
+async function runHydrateMissingWorkspaceEntityFetch(
+  workspaceId: string,
+  key: string,
+  read: WorkspaceReadContext,
+): Promise<void> {
   try {
+    const { backendRequest } = await import('$lib/client/live/backend-transport');
+    read.assertCurrent();
     const response = (await backendRequest('workspace.get', { workspaceId })) as
       { workspace?: Workspace } | undefined;
+    read.assertCurrent();
     const workspace = response?.workspace;
     if (workspace) {
       const { setWorkspaceEntity } =
@@ -2565,7 +2586,8 @@ async function runHydrateMissingWorkspaceEntityFetch(workspaceId: string): Promi
       // presence-detected flag it omits (`scriptsRunning`, `waiting` — false
       // on the wire, PROTOCOL §5.1) clears a value an earlier read stored
       // instead of surviving a shallow upsert.
-      appStore.dispatch(setWorkspaceEntity(workspace, { detailRead: true }));
+      if (read.isCurrent() && !appStore.state.workspace.pendingDeletions[workspaceId])
+        appStore.dispatch(setWorkspaceEntity(workspace, { detailRead: true }));
     }
   } catch (_error) {
     // Workspace might have been deleted or transport error; no-op is safe.
@@ -2576,16 +2598,20 @@ async function runHydrateMissingWorkspaceEntityFetch(workspaceId: string): Promi
     // set across the trailing fetch so triggers arriving during it keep
     // coalescing instead of starting a parallel fetch; it is only cleared
     // when no follow-up is pending.
-    if (missingEntityFetchFollowUpWantedByWorkspace.delete(workspaceId)) {
-      void runHydrateMissingWorkspaceEntityFetch(workspaceId);
+    const followUp = missingEntityFetchFollowUpWantedByWorkspace.delete(key);
+    if (followUp && read.isCurrent() && !appStore.state.workspace.pendingDeletions[workspaceId]) {
+      void runHydrateMissingWorkspaceEntityFetch(workspaceId, key, read);
     } else {
-      missingEntityFetchInFlightByWorkspace.delete(workspaceId);
+      missingEntityFetchInFlightByWorkspace.delete(key);
     }
   }
 }
 
 async function hydrateWorkspaceEntityIfMissing(workspaceId: string): Promise<void> {
+  const read = captureWorkspaceReadContext(workspaceId);
+  const key = JSON.stringify([read.key, workspaceId]);
   const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
+  if (!read.isCurrent()) return;
   const state = appStore.state as {
     workspace: { workspaces: unknown; pendingDeletions: Record<string, boolean> };
   };
@@ -2596,13 +2622,13 @@ async function hydrateWorkspaceEntityIfMissing(workspaceId: string): Promise<voi
   // the present entity but the older fetch can resolve last and overwrite the
   // merged flag with its stale projection — queuing a trailing fetch (whose
   // projection postdates this delta) guarantees convergence.
-  if (missingEntityFetchInFlightByWorkspace.has(workspaceId)) {
-    missingEntityFetchFollowUpWantedByWorkspace.add(workspaceId);
+  if (missingEntityFetchInFlightByWorkspace.has(key)) {
+    missingEntityFetchFollowUpWantedByWorkspace.add(key);
     return;
   }
   if (getItem(state.workspace.workspaces as never, workspaceId as never)) return;
-  missingEntityFetchInFlightByWorkspace.add(workspaceId);
-  await runHydrateMissingWorkspaceEntityFetch(workspaceId);
+  missingEntityFetchInFlightByWorkspace.add(key);
+  await runHydrateMissingWorkspaceEntityFetch(workspaceId, key, read);
 }
 
 /**
@@ -2618,7 +2644,7 @@ async function hydrateWorkspaceEntityIfMissing(workspaceId: string): Promise<voi
  */
 /**
  * Single-flight + trailing-coalesce state for
- * {@link reconcileWorkspaceActivity}, keyed per workspaceId (AGENTS.md
+ * {@link reconcileWorkspaceActivity}, keyed per workspace and admission (AGENTS.md
  * "Event-driven refetches — single-flight and coalesced"). An N-event agent
  * burst for one workspace (e.g. an `agent:idle` burst when a multi-agent
  * delegation group settles, or per-agent `agent:stream:*` liveness pings
@@ -2630,11 +2656,17 @@ async function hydrateWorkspaceEntityIfMissing(workspaceId: string): Promise<voi
 const activityFetchInFlightByWorkspace = new Set<string>();
 const activityFetchFollowUpWantedByWorkspace = new Set<string>();
 
-async function runReconcileWorkspaceActivityFetch(workspaceId: string): Promise<void> {
-  const { backendRequest } = await import('$lib/client/live/backend-transport');
+async function runReconcileWorkspaceActivityFetch(
+  workspaceId: string,
+  key: string,
+  read: WorkspaceReadContext,
+): Promise<void> {
   try {
+    const { backendRequest } = await import('$lib/client/live/backend-transport');
+    read.assertCurrent();
     const response = (await backendRequest('workspace.get', { workspaceId })) as
       { workspace?: Workspace } | undefined;
+    read.assertCurrent();
     const workspace = response?.workspace;
     if (!workspace) return;
 
@@ -2649,6 +2681,7 @@ async function runReconcileWorkspaceActivityFetch(workspaceId: string): Promise<
     // store here (not at trigger time) so the trailing fetch sees the
     // current entity state.
     const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
+    if (!read.isCurrent() || appStore.state.workspace.pendingDeletions[workspaceId]) return;
     const state = appStore.state as { workspace: { workspaces: unknown } };
     const current = getItem(state.workspace.workspaces as never, workspaceId as never);
     if (current) {
@@ -2658,7 +2691,8 @@ async function runReconcileWorkspaceActivityFetch(workspaceId: string): Promise<
     } else {
       const { setWorkspaceEntity } =
         await import('$store/renderer/slices/workspace/workspace-slice');
-      appStore.dispatch(setWorkspaceEntity(workspace));
+      if (read.isCurrent() && !appStore.state.workspace.pendingDeletions[workspaceId])
+        appStore.dispatch(setWorkspaceEntity(workspace));
     }
   } catch (_error) {
     // Workspace might have been deleted or transport error; no-op is safe.
@@ -2669,10 +2703,11 @@ async function runReconcileWorkspaceActivityFetch(workspaceId: string): Promise<
     // set across the trailing fetch so triggers arriving during it keep
     // coalescing instead of starting a parallel fetch; it is only cleared
     // when no follow-up is pending.
-    if (activityFetchFollowUpWantedByWorkspace.delete(workspaceId)) {
-      void runReconcileWorkspaceActivityFetch(workspaceId);
+    const followUp = activityFetchFollowUpWantedByWorkspace.delete(key);
+    if (followUp && read.isCurrent() && !appStore.state.workspace.pendingDeletions[workspaceId]) {
+      void runReconcileWorkspaceActivityFetch(workspaceId, key, read);
     } else {
-      activityFetchInFlightByWorkspace.delete(workspaceId);
+      activityFetchInFlightByWorkspace.delete(key);
     }
   }
 }
@@ -2681,7 +2716,10 @@ async function reconcileWorkspaceActivity(
   workspaceId: string,
   impliesBusy: boolean,
 ): Promise<void> {
+  const read = captureWorkspaceReadContext(workspaceId);
+  const key = JSON.stringify([read.key, workspaceId]);
   const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
+  if (!read.isCurrent() || appStore.state.workspace.pendingDeletions[workspaceId]) return;
   const state = appStore.state as { workspace: { workspaces: unknown } };
   const current = getItem(state.workspace.workspaces as never, workspaceId as never) as
     { activity?: 'idle' | 'agent_running' } | undefined;
@@ -2690,22 +2728,22 @@ async function reconcileWorkspaceActivity(
   // isn't already agent_running, or if we see an idle signal (always refetch
   // on idle — the daemon's live count is authoritative), fetch workspace.get
   // and merge the fresh activity. Single-flighted with trailing coalesce per
-  // workspaceId (see {@link activityFetchInFlightByWorkspace}): the leading
+  // workspace and admission (see {@link activityFetchInFlightByWorkspace}): the leading
   // edge fetches immediately, and any triggers that arrive while that fetch
   // is in flight collapse into at most one trailing follow-up.
   if (!current || (impliesBusy && current.activity !== 'agent_running') || !impliesBusy) {
-    if (activityFetchInFlightByWorkspace.has(workspaceId)) {
-      activityFetchFollowUpWantedByWorkspace.add(workspaceId);
+    if (activityFetchInFlightByWorkspace.has(key)) {
+      activityFetchFollowUpWantedByWorkspace.add(key);
       return;
     }
-    activityFetchInFlightByWorkspace.add(workspaceId);
-    await runReconcileWorkspaceActivityFetch(workspaceId);
+    activityFetchInFlightByWorkspace.add(key);
+    await runReconcileWorkspaceActivityFetch(workspaceId, key, read);
   }
 }
 
 /**
  * Single-flight + trailing-coalesce state for
- * {@link reconcileWorkspaceAggregates}, keyed per workspaceId (AGENTS.md
+ * {@link reconcileWorkspaceAggregates}, keyed per workspace and admission (AGENTS.md
  * "Event-driven refetches — single-flight and coalesced"). A burst of
  * `agent:deleted` events for the same workspace (e.g. a multi-agent cleanup)
  * must produce at most one immediate `workspace.get` plus at most one
@@ -2716,16 +2754,23 @@ async function reconcileWorkspaceActivity(
 const aggregateFetchInFlightByWorkspace = new Set<string>();
 const aggregateFetchFollowUpWantedByWorkspace = new Set<string>();
 
-async function runReconcileWorkspaceAggregatesFetch(workspaceId: string): Promise<void> {
-  const { backendRequest } = await import('$lib/client/live/backend-transport');
+async function runReconcileWorkspaceAggregatesFetch(
+  workspaceId: string,
+  key: string,
+  read: WorkspaceReadContext,
+): Promise<void> {
   try {
+    const { backendRequest } = await import('$lib/client/live/backend-transport');
+    read.assertCurrent();
     const response = (await backendRequest('workspace.get', { workspaceId })) as
       { workspace?: Workspace } | undefined;
+    read.assertCurrent();
     const workspace = response?.workspace;
     if (workspace) {
       const { setWorkspaceEntity } =
         await import('$store/renderer/slices/workspace/workspace-slice');
-      appStore.dispatch(setWorkspaceEntity(workspace));
+      if (read.isCurrent() && !appStore.state.workspace.pendingDeletions[workspaceId])
+        appStore.dispatch(setWorkspaceEntity(workspace));
     }
   } catch (_error) {
     // Workspace might have been deleted or transport error; no-op is safe.
@@ -2734,10 +2779,11 @@ async function runReconcileWorkspaceAggregatesFetch(workspaceId: string): Promis
     // flight — run exactly one follow-up fetch to pick up the latest state,
     // regardless of how many triggers piled up. Keep the in-flight marker
     // through trailing reads so another burst cannot start a parallel fetch.
-    if (aggregateFetchFollowUpWantedByWorkspace.delete(workspaceId)) {
-      void runReconcileWorkspaceAggregatesFetch(workspaceId);
+    const followUp = aggregateFetchFollowUpWantedByWorkspace.delete(key);
+    if (followUp && read.isCurrent() && !appStore.state.workspace.pendingDeletions[workspaceId]) {
+      void runReconcileWorkspaceAggregatesFetch(workspaceId, key, read);
     } else {
-      aggregateFetchInFlightByWorkspace.delete(workspaceId);
+      aggregateFetchInFlightByWorkspace.delete(key);
     }
   }
 }
@@ -2749,12 +2795,15 @@ async function runReconcileWorkspaceAggregatesFetch(workspaceId: string): Promis
  * Single-flight with one trailing read per burst, scoped to the affected workspace.
  */
 async function reconcileWorkspaceAggregates(workspaceId: string): Promise<void> {
-  if (aggregateFetchInFlightByWorkspace.has(workspaceId)) {
-    aggregateFetchFollowUpWantedByWorkspace.add(workspaceId);
+  const read = captureWorkspaceReadContext(workspaceId);
+  const key = JSON.stringify([read.key, workspaceId]);
+  if (appStore.state.workspace.pendingDeletions[workspaceId]) return;
+  if (aggregateFetchInFlightByWorkspace.has(key)) {
+    aggregateFetchFollowUpWantedByWorkspace.add(key);
     return;
   }
-  aggregateFetchInFlightByWorkspace.add(workspaceId);
-  await runReconcileWorkspaceAggregatesFetch(workspaceId);
+  aggregateFetchInFlightByWorkspace.add(key);
+  await runReconcileWorkspaceAggregatesFetch(workspaceId, key, read);
 }
 
 /**
@@ -2783,6 +2832,11 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   const wireChanges = (data as { changes?: unknown }).changes;
   if (!wireChanges || typeof wireChanges !== 'object') return;
   const raw = wireChanges as Record<string, unknown>;
+  // Receipt-free invalidation: every recipient reads its own reminder projection.
+  if (raw.attentionReminder === true) {
+    appStore.dispatch(workspaceReminderInvalidated(workspaceId));
+    void reconcileWorkspaceAggregates(workspaceId);
+  }
   // `mcpServerToggled` (§5.22 per-workspace disable) is a non-column delta —
   // a self-sufficient notification of a workspace-scoped `mcp.servers.toggle`,
   // never a `Workspace` field — so it routes to the mcp-settings slice and is

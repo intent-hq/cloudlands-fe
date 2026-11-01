@@ -1,7 +1,12 @@
 <script lang="ts">
   import * as Tooltip from '$lib/components/ui/tooltip';
   import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
-  import { faCircleCheck, faCircleQuestion, faCircleExclamation } from '$lib/icons/phosphor-icons';
+  import {
+    faCircleCheck,
+    faCircleQuestion,
+    faCircleExclamation,
+    faCodePullRequest,
+  } from '$lib/icons/phosphor-icons';
   import { cn } from '$lib/utils';
   import { getHomeStatusCause } from './home-attention';
   import { m } from '$shared/paraglide/messages.js';
@@ -28,11 +33,17 @@
       : null,
   );
   const waiting = $derived(
-    workspace.waiting === true &&
-      (cause === 'idle' || cause === 'merged' || cause === 'complete' || prPresentation !== null),
+    cause === 'waiting' ||
+      (workspace.waiting === true &&
+        (cause === 'idle' ||
+          cause === 'merged' ||
+          cause === 'complete' ||
+          prPresentation !== null)),
   );
   const waitingPresentation = $derived(getWorkspaceStatusPresentation('waiting'));
-  const supplementalWaiting = $derived(waiting && cause !== 'idle' && cause !== 'pr_queued');
+  const supplementalWaiting = $derived(
+    waiting && cause !== 'idle' && cause !== 'waiting' && cause !== 'pr_queued',
+  );
   const explanation = $derived.by(() => {
     if (prPresentation) return prPresentation.tooltip;
     if (waiting && cause === 'idle') return m.home_status_waiting_description();
@@ -55,6 +66,8 @@
         return m.home_status_merged();
       case 'complete':
         return m.home_status_complete();
+      case 'waiting':
+        return m.home_status_waiting();
       case 'unread':
         return m.home_status_unread();
       default:
@@ -62,13 +75,15 @@
     }
   });
   const description = $derived(
-    waiting && cause !== 'idle'
+    waiting && cause !== 'idle' && cause !== 'waiting'
       ? `${explanation} ${m.home_status_waiting_description()}`
       : explanation,
   );
   const failed = $derived(workspace.displayStatus === 'failed');
   const presentation = $derived.by(() => {
-    const specific = prPresentation ?? (waiting && cause === 'idle' ? waitingPresentation : null);
+    const specific =
+      prPresentation ??
+      (waiting && (cause === 'idle' || cause === 'waiting') ? waitingPresentation : null);
     if (specific) return { label: specific.label, icon: specific.icon, color: specific.className };
     switch (group) {
       case 'needs-you':
@@ -77,6 +92,8 @@
           icon: faCircleQuestion,
           color: '',
         };
+      case 'pr-ready':
+        return { label: m.home_filter_pr_ready(), icon: faCodePullRequest, color: 'text-success' };
       case 'running':
         return { label: m.home_filter_running(), icon: null, color: 'text-primary' };
       case 'blocked':

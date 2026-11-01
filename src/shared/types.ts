@@ -317,6 +317,17 @@ export function isWorkspaceAttention(value: unknown): value is WorkspaceAttentio
 export type WorkspaceGuestRole = 'collaborator' | 'manager';
 export type WorkspaceRole = 'owner' | WorkspaceGuestRole;
 
+export interface AttentionReminderReason {
+  id: string;
+  revision: string;
+}
+
+export interface WorkspaceAttentionReminder {
+  reasons: AttentionReminderReason[];
+  dismissed: boolean;
+  displayStatus: WorkspaceDisplayStatus | 'waiting';
+}
+
 /** Every wire role, keyed so adding a role to `WorkspaceRole` fails to compile
  *  until the runtime guard below accepts it too (intent-hq/intent#7736). */
 const WORKSPACE_ROLES: Record<WorkspaceRole, true> = {
@@ -369,6 +380,8 @@ export interface Workspace {
    *  daemon-side: open/draft PR → open tasks → merged PR → complete. Optional on
    *  decode — when absent (older daemons) the FE defaults to 'not_started'. */
   displayStatus?: WorkspaceDisplayStatus;
+  /** Caller-relative reminder projection; raw status and pending work remain unchanged. */
+  attentionReminder?: WorkspaceAttentionReminder;
   /** BE-owned dismissible attention flag (blue dot; PROTOCOL §5.1 / §9.9). The
    *  daemon raises 'unread' when an agent finishes its work; cleared via
    *  `workspace.markSeen` / `workspace.dismissAttention`. Optional on decode —

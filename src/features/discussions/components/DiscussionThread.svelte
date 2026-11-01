@@ -356,10 +356,23 @@
     );
   }
   let followingBottom = true;
+  let lastScrollElement: HTMLDivElement | undefined;
+  let lastScrollTop = 0;
+  function updateBottomFollow(element: HTMLDivElement) {
+    const atBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 48;
+    // Content can grow after a scroll event was queued. Preserve follow intent
+    // until the reader's scroll position changes, rather than treating that
+    // growth as a deliberate move away from the bottom.
+    if (lastScrollElement !== element || element.scrollTop !== lastScrollTop || atBottom)
+      followingBottom = atBottom;
+    lastScrollElement = element;
+    lastScrollTop = element.scrollTop;
+    return followingBottom;
+  }
   function reportVisible() {
     const element = scroller;
     if (!element) return;
-    followingBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 48;
+    updateBottomFollow(element);
     if (
       !isActive ||
       !isPanelFocused ||
@@ -386,18 +399,16 @@
       onReadThrough(sequence);
     }
   }
-  // Reply context and wrapping drafts change the history viewport height.
-  // Follow that resize only for readers who were already at the bottom.
+  // Viewport and message-content resizes follow only readers already at the bottom.
   $effect(() => {
     const element = scroller;
     if (!element) return;
-    let initial = true;
     const observer = new ResizeObserver(() => {
-      if (!initial && followingBottom) element.scrollTop = element.scrollHeight;
-      initial = false;
+      if (updateBottomFollow(element)) element.scrollTop = element.scrollHeight;
       reportVisible();
     });
     observer.observe(element);
+    if (element.firstElementChild) observer.observe(element.firstElementChild);
     return () => observer.disconnect();
   });
   function jumpToNewest() {
@@ -438,7 +449,7 @@
     const element = scroller;
     const active = isActive;
     if (!element || !active) return;
-    const atBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 48;
+    const atBottom = updateBottomFollow(element);
     const initial = firstRender;
     const changed =
       firstId !== previousFirstId ||
