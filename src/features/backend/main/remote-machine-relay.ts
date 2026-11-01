@@ -194,7 +194,9 @@ function parseMint(value: unknown): MintedCredential | null {
       name: machine.name,
       port: machine.port as number,
       hosts: Array.isArray(machine.hosts) ? machine.hosts.filter(text) : [],
-      ...(text(machine.tcAddress) ? { tcAddress: machine.tcAddress } : {}),
+      ...(text(machine.tcAddress) && machine.tcAddress.trim()
+        ? { tcAddress: machine.tcAddress.trim() }
+        : {}),
       fingerprint: machine.fingerprint,
     },
   };
@@ -287,9 +289,9 @@ export function createRemoteMachineRelay(deps: RemoteMachineRelayDeps): RemoteMa
         return mapError(error, 'machine');
       }
       if (!minted) return fail('failed');
-      // `remoteMachines.add` needs at least one host; a listener bound only to
-      // loopback advertises none, so no backend could reach the machine.
-      if (minted.machine.hosts.length === 0) {
+      // A listener bound only to loopback advertises no hosts; without a
+      // tailcat address either, no backend could reach the machine.
+      if (minted.machine.hosts.length === 0 && !minted.machine.tcAddress) {
         await revoke(machine, minted.credentialId);
         return fail('listener-off');
       }
