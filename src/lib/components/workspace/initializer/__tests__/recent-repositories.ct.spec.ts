@@ -10,7 +10,7 @@ test('late settings hydration preserves undismissed source rows in the open pick
   const trigger = component.getByRole('button', { name: 'Choose fixture repository' });
   const open = async () => {
     await trigger.click();
-    await page.getByRole('tab', { name: 'Copy local repo', exact: true }).click();
+    await page.getByRole('tab', { name: 'Existing folder', exact: true }).click();
   };
   await open();
   const rows = page.locator('[data-recent-repo-row]');
@@ -32,7 +32,7 @@ test('late settings hydration preserves undismissed source rows in the open pick
   await expect(component.getByTestId('repo-selection')).toContainText('/fixture/tools');
 });
 
-for (const tab of ['Pick a repo', 'Copy local repo']) {
+for (const tab of ['Clone', 'Existing folder']) {
   test(`Recent ${tab} rows contain long text and remain selectable`, async ({ mount, page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.setViewportSize({ width: 560, height: 720 });
@@ -77,7 +77,7 @@ for (const tab of ['Pick a repo', 'Copy local repo']) {
     expect(geometry[2].clipped).toBe(true);
 
     await rows.first().click();
-    const path = tab === 'Pick a repo' ? 'fixture-owner/app' : '/fixture/app';
+    const path = tab === 'Clone' ? 'fixture-owner/app' : '/fixture/app';
     await expect(component.getByTestId('repo-selection')).toContainText(JSON.stringify(path));
     await expect(rows).toHaveCount(0);
     await expect(trigger).toBeFocused();
@@ -85,14 +85,14 @@ for (const tab of ['Pick a repo', 'Copy local repo']) {
     await dialog.getByRole('tab', { name: tab, exact: true }).click();
     await rows.nth(1).focus();
     await rows.nth(1).press('Enter');
-    const secondPath = tab === 'Pick a repo' ? 'fixture-owner/tools' : '/fixture/tools';
+    const secondPath = tab === 'Clone' ? 'fixture-owner/tools' : '/fixture/tools';
     await expect(component.getByTestId('repo-selection')).toContainText(JSON.stringify(secondPath));
     await expect(rows).toHaveCount(0);
     await expect(trigger).toBeFocused();
   });
 }
 
-for (const tab of ['Pick a repo', 'Copy local repo']) {
+for (const tab of ['Clone', 'Existing folder']) {
   test(`Recent ${tab} dismissal is isolated, accessible, and survives source refresh`, async ({
     mount,
     page,
@@ -129,7 +129,7 @@ for (const tab of ['Pick a repo', 'Copy local repo']) {
     for (const row of geometry) {
       expect(row.gap).toBeGreaterThanOrEqual(0);
     }
-    const path = tab === 'Pick a repo' ? 'fixture-owner/app' : '/fixture/app';
+    const path = tab === 'Clone' ? 'fixture-owner/app' : '/fixture/app';
     await expect(remove.first()).toHaveAccessibleName(`Remove ${path} from recent repositories`);
     await remove.first().click();
     await expect(rows).toHaveCount(2);
@@ -162,9 +162,9 @@ for (const tab of ['Pick a repo', 'Copy local repo']) {
     await expect(page.getByRole('dialog')).toBeVisible();
     await expect(component.getByTestId('repo-selection')).toHaveText('null');
     await expect(page.getByRole('tab', { name: tab, exact: true })).toBeFocused();
-    if (tab === 'Pick a repo') await expect(page.getByRole('combobox')).toBeVisible();
+    if (tab === 'Clone') await expect(page.getByRole('combobox')).toBeVisible();
     else await expect(page.getByRole('button', { name: 'Select a folder' })).toBeVisible();
-    const otherTab = tab === 'Pick a repo' ? 'Copy local repo' : 'Pick a repo';
+    const otherTab = tab === 'Clone' ? 'Existing folder' : 'Clone';
     await page.getByRole('tab', { name: otherTab, exact: true }).click();
     await expect(rows).toHaveCount(3);
     await rows.first().locator('[data-slot=menu-action-row]').click();

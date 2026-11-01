@@ -56,6 +56,7 @@ import { backendRequest } from '$lib/client/live/backend-transport';
 import { store as appStore } from '$store/renderer/store';
 import { resetMockIpcRouter, setMockIpcInvokeFallback } from '$shared/ipc-mock-router';
 import { m } from '$shared/paraglide/messages.js';
+import { githubAuthStatusUnavailable } from '$store/renderer/slices/github-auth/github-auth-slice';
 import type { Workspace } from '$shared/types';
 import '$store/renderer/seeders/host-bridge-seeder';
 import {
@@ -193,13 +194,13 @@ describe('ProjectPickerMessage — plain-folder toggle (Labs)', () => {
 
   it('hides the toggle on the GitHub clone tab', async () => {
     setPlainFolderLabs(true);
-    settleForgeAuth();
+    settleForgeAuth({ github: true });
     loadWorkspaces([]);
     renderPicker();
     await screen.findByRole('switch', { name: toggleName() });
 
     await fireEvent.click(
-      screen.getByRole('tab', { name: m.onboarding_projectPicker_githubRepo_label() }),
+      screen.getByRole('tab', { name: m.onboarding_projectPicker_clone_label() }),
     );
     await waitFor(() => expect(screen.queryByRole('switch', { name: toggleName() })).toBeNull());
   });
@@ -336,5 +337,64 @@ describe('ProjectPickerMessage — plain-folder toggle (Labs)', () => {
       const selection = await pickRecent(selections);
       expect(selection).toMatchObject({ type: 'local', plainFolder: 'existing' });
     });
+  });
+});
+
+describe('ProjectPickerMessage — source tabs and Clone visibility', () => {
+  beforeAll(() => appStore.init());
+  beforeEach(() => {
+    setMockIpcInvokeFallback(undefined);
+    mockDaemon();
+  });
+  afterEach(() => {
+    cleanup();
+    backendRequestMock.mockReset();
+    sessionStorage.clear();
+    resetPlainFolderState();
+  });
+  afterAll(() => resetMockIpcRouter());
+
+  const tabNames = () => screen.getAllByRole('tab').map((tab) => tab.textContent?.trim());
+
+  it.each([false, true])('labels the tabs Existing folder, Clone, New (Labs %s)', (labs) => {
+    setPlainFolderLabs(labs);
+    settleForgeAuth({ github: true });
+    renderPicker();
+    expect(tabNames()).toEqual(['Existing folder', 'Clone', 'New']);
+  });
+
+  it('hides Clone once forge status is known and nothing is connected', async () => {
+    settleForgeAuth();
+    renderPicker();
+    await waitFor(() => expect(tabNames()).toEqual(['Existing folder', 'New']));
+  });
+
+  it('keeps Clone with GitLab connected', () => {
+    settleForgeAuth({ gitlab: true });
+    renderPicker();
+    expect(tabNames()).toEqual(['Existing folder', 'Clone', 'New']);
+  });
+
+  it('keeps Clone when the GitHub status read failed', () => {
+    settleForgeAuth();
+    appStore.dispatch(githubAuthStatusUnavailable());
+    renderPicker();
+    expect(tabNames()).toEqual(['Existing folder', 'Clone', 'New']);
+  });
+
+  it('moves a GitHub prefill off the hidden Clone tab to Existing folder', async () => {
+    settleForgeAuth();
+    sessionStorage.setItem(
+      'workspace-prefill',
+      JSON.stringify({ githubUrl: 'https://github.com/octo/alpha' }),
+    );
+    const selections = renderPicker();
+    await waitFor(() => expect(tabNames()).toEqual(['Existing folder', 'New']));
+    expect(
+      screen
+        .getByRole('tab', { name: m.onboarding_projectPicker_existingFolder_label() })
+        .getAttribute('aria-selected'),
+    ).toBe('true');
+    expect(selections.at(-1)?.type).toBe('local');
   });
 });

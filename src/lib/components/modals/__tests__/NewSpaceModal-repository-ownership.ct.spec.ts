@@ -89,7 +89,7 @@ for (const { name, viewport } of [
       )
       .toBe(true);
 
-    const github = chooser.getByRole('tab', { name: 'Pick a repo', exact: true });
+    const github = chooser.getByRole('tab', { name: 'Clone', exact: true });
     await expectPointerReachable(github);
     await github.click();
     const search = chooser.getByRole('combobox');
@@ -114,7 +114,7 @@ for (const { name, viewport } of [
     );
 
     await repo.press('Enter');
-    const local = chooser.getByRole('tab', { name: 'Copy local repo', exact: true });
+    const local = chooser.getByRole('tab', { name: 'Existing folder', exact: true });
     await expectPointerReachable(local);
     await local.click();
     const tools = chooser
@@ -155,7 +155,7 @@ test('standalone repository chooser retains pointer selection, Escape and focus 
   await repo.click();
   const chooser = page.getByRole('dialog', { name: 'What repo should we work on?' });
   await expectViewportContainment(chooser);
-  const local = chooser.getByRole('tab', { name: 'Copy local repo', exact: true });
+  const local = chooser.getByRole('tab', { name: 'Existing folder', exact: true });
   await expectPointerReachable(local);
   await local.click();
   const tools = chooser.getByTestId('recent-repositories').getByRole('button', { name: /^tools/ });

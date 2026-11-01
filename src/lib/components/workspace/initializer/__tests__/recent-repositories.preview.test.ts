@@ -89,7 +89,7 @@ const rows = () => document.querySelectorAll('[data-recent-repo-row]');
 const saved = () => selectWorkspaceInitializerRecentRepos.select(store.state);
 
 describe('recent repositories preview through the actual settings and source lifecycle', () => {
-  it.each(['Pick a repo', 'Copy local repo'])(
+  it.each(['Clone', 'Existing folder'])(
     'shows initial registry rows in the default %s preview',
     async (tab) => {
       render(Preview);
@@ -100,14 +100,14 @@ describe('recent repositories preview through the actual settings and source lif
       const action = rows()[0].querySelector('[data-slot="menu-action-row"]')!;
       await fireEvent.click(action);
       expect(screen.getByTestId('repo-selection').textContent).toContain(
-        tab === 'Pick a repo' ? 'fixture-owner/app' : '/fixture/app',
+        tab === 'Clone' ? 'fixture-owner/app' : '/fixture/app',
       );
     },
   );
 
   it('shows sources before settings and preserves dismissal through delayed hydration', async () => {
     render(Preview, { props: { persist: true, delayHydration: true } });
-    await open('Copy local repo');
+    await open('Existing folder');
     await waitFor(() => expect(rows()).toHaveLength(3));
     expect(screen.getByTestId('hydration-state').textContent).toBe('false');
     expect(saved()).toEqual([]);
@@ -123,14 +123,14 @@ describe('recent repositories preview through the actual settings and source lif
     expect(screen.getByTestId('repo-selection').textContent).toContain('/fixture/tools');
   });
 
-  it.each(['Pick a repo', 'Copy local repo'])(
+  it.each(['Clone', 'Existing folder'])(
     'keeps the already working persisted %s dismissal and refresh',
     async (tab) => {
       render(Preview, { props: { persist: true } });
       await open(tab);
       await waitFor(() => expect(rows()).toHaveLength(3));
       expect(store.state.workspaceInitializer.hydrated).toBe(true);
-      const path = tab === 'Pick a repo' ? 'fixture-owner/app' : '/fixture/app';
+      const path = tab === 'Clone' ? 'fixture-owner/app' : '/fixture/app';
       await fireEvent.click(rows()[0].querySelector('[data-remove-recent-repo]')!);
       await waitFor(() => expect(rows()).toHaveLength(2));
       await fireEvent.keyDown(window, { key: 'Escape' });

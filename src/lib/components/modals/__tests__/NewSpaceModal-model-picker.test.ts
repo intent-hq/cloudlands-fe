@@ -680,7 +680,7 @@ describe('NewSpaceModal model-picker composition', () => {
       },
     );
 
-    describe('GitHub repository cloned by a "Pick a repo" workspace', () => {
+    describe('GitHub repository cloned by a "Clone" workspace', () => {
       const clonePath = '/workspaces/ideate-future/intent';
 
       // A Pick-a-repo workspace is cloned into its own folder, so the daemon

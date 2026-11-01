@@ -17,6 +17,9 @@
       'both-gitlab': { props: { scenario: 'both-gitlab' } },
       'gitlab-unavailable': { props: { scenario: 'gitlab-unavailable' } },
       disconnected: { props: { scenario: 'disconnected' } },
+      'github-plain-folder': { props: { scenario: 'github-plain-folder' } },
+      'no-forge': { props: { scenario: 'no-forge' } },
+      'no-forge-plain-folder': { props: { scenario: 'no-forge-plain-folder' } },
       'self-managed': { props: { scenario: 'self-managed' } },
     },
   });
@@ -27,6 +30,10 @@
   import { store as appStore } from '$store/renderer/store';
   import { setWorkspaceInitializerRecentRepos } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import { setGitHubAuthState } from '$store/renderer/slices/github-auth/github-auth-slice';
+  import {
+    resetGitLabAdmission,
+    setGitLabAuthStatus,
+  } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
   import { setGithubRepos } from '$store/renderer/slices/github-repos/github-repos-slice';
   import { selectGithubRepos } from '$store/renderer/slices/github-repos/github-repos-selectors';
   import RepoSelector, { type RepoChangeDetail } from './RepoSelector.svelte';
@@ -50,17 +57,37 @@
   // svelte-ignore state_referenced_locally -- one named fixture per mount
   appStore.dispatch(
     setGitHubAuthState({
-      isAuthenticated: ['github-only', 'both', 'both-gitlab', 'gitlab-unavailable'].includes(
-        scenario,
-      ),
+      isAuthenticated: [
+        'github-only',
+        'github-plain-folder',
+        'both',
+        'both-gitlab',
+        'gitlab-unavailable',
+      ].includes(scenario),
       requiresDaemonAuth: false,
       user: null,
       needsScopeUpdate: false,
       oauthUrl: null,
     }),
   );
+  // svelte-ignore state_referenced_locally -- one named fixture per mount
+  const noForge = scenario.startsWith('no-forge');
+  // svelte-ignore state_referenced_locally -- one named fixture per mount
+  const plainFolderMode = scenario.endsWith('plain-folder');
+  // Settled "nothing connected" forge status: the Clone tab is hidden.
+  if (noForge)
+    appStore.dispatch(
+      setGitLabAuthStatus({
+        host: 'gitlab.com',
+        isConfigured: false,
+        deviceGrantSupported: null,
+        user: null,
+        method: null,
+      }),
+    );
   onDestroy(() => {
     cleanup();
+    if (noForge) appStore.dispatch(resetGitLabAdmission());
     appStore.dispatch(setGitHubAuthState(githubBefore));
     appStore.dispatch(setGithubRepos(reposBefore));
   });
@@ -124,6 +151,7 @@
   <RepoSelector
     {gitlab}
     gitlabSelected={scenario === 'both-gitlab' || scenario === 'gitlab-unavailable'}
+    {plainFolderMode}
     triggerAriaLabel="Choose fixture repository"
     onchange={(event) => (selection = event.detail)}
   />

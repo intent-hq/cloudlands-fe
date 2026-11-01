@@ -3,7 +3,8 @@
   /**
    * ProjectPickerMessage — Message 2 of the onboarding flow.
    *
-   * Tabbed picker: Local repo | GitHub repo | New project.
+   * Tabbed picker: Existing folder | Clone | New. Clone is hidden once forge
+   * status is known and neither GitHub nor GitLab is connected.
    * Pre-fills from Redux persistence. On valid selection:
    *   - emits project config
    *   - triggers sidebar slide-in
@@ -27,6 +28,7 @@
     selectWorkspaceInitializerLastSelectedRepo,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import type { WorkspaceInitializerRepoSelection } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
+  import { selectCloneSourceVisible } from '$store/renderer/slices/workspace-initializer/clone-source-selectors';
 
   const logger = createLogger('ProjectPickerMessage');
 
@@ -50,6 +52,10 @@
   }
 
   type TabId = 'local' | 'github' | 'new';
+
+  // Clone (the GitHub tab) is hidden once forge status is known and nothing is
+  // connected; the onboarding forge step is where a forge gets connected.
+  const cloneSourceVisible$ = selectCloneSourceVisible();
 
   export interface ProjectSelection {
     type: 'local' | 'github' | 'new';
@@ -347,17 +353,26 @@
     });
   });
 
-  const tabs: { id: TabId; label: string }[] = [
+  // A persisted or prefilled GitHub pick must not leave the user on a hidden tab.
+  $effect(() => {
+    if (!$cloneSourceVisible$ && activeTab === 'github')
+      untrack(() => {
+        activeTab = 'local';
+        notifyParent();
+      });
+  });
+
+  const allTabs: { id: TabId; label: string }[] = [
     {
       id: 'local',
       get label() {
-        return m.onboarding_projectPicker_localFolder_label();
+        return m.onboarding_projectPicker_existingFolder_label();
       },
     },
     {
       id: 'github',
       get label() {
-        return m.onboarding_projectPicker_githubRepo_label();
+        return m.onboarding_projectPicker_clone_label();
       },
     },
     {
@@ -367,6 +382,9 @@
       },
     },
   ];
+  const tabs = $derived(
+    $cloneSourceVisible$ ? allTabs : allTabs.filter((tab) => tab.id !== 'github'),
+  );
 </script>
 
 <!-- Message content — flies in from bottom -->
@@ -376,7 +394,7 @@
       {m.onboarding_projectPicker_chooseProject_title()}
     </h2>
     <p class="text-base text-muted-foreground leading-relaxed font-light max-w-lg">
-      {m.onboarding_projectPicker_workOnA_description()}
+      {m.onboarding_projectPicker_source_description()}
     </p>
   {/if}
 

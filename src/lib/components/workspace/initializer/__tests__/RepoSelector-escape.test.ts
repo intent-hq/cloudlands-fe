@@ -4,7 +4,7 @@
  * (and only it, when stacked under other overlays — see the NewSpaceModal
  * regression test in modals/__tests__).
  * Also covers the Recent list rendering (owner-qualified repo names) and
- * plain-text search filtering from the "Pick a repo" tab (intent-hq/monorepo#859).
+ * plain-text search filtering from the "Clone" tab (intent-hq/monorepo#859).
  */
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
@@ -116,7 +116,7 @@ vi.mock('$store/renderer/slices/feature-codes/feature-codes-selectors', async ()
   return { selectIsFeatureEnabled: store.createSelector(() => false) };
 });
 
-// GitHub autocomplete sources on the "Pick a repo" tab — signed out here, so
+// GitHub autocomplete sources on the "Clone" tab — signed out here, so
 // no suggestions render and the Recent list assertions below stay isolated.
 vi.mock('$store/renderer/slices/github-auth/github-auth-slice', () => ({
   initializeGitHubAuth: () => ({ type: 'githubAuth/initialize' }),
@@ -285,8 +285,8 @@ describe('RepoSelector Recent list owner rendering', () => {
       expect(screen.getByText(DROPDOWN_HEADING)).toBeTruthy();
     });
 
-    // Local repos live under the "Copy local repo" tab ("Pick a repo" is the default)
-    await fireEvent.click(screen.getByText('Copy local repo'));
+    // Local repos live under the "Existing folder" tab ("Clone" is the default)
+    await fireEvent.click(screen.getByText('Existing folder'));
 
     await waitFor(() => {
       expect(screen.getAllByText('(acme/app)').length).toBe(2);
@@ -331,7 +331,7 @@ describe('RepoSelector Recent list path tooltip', () => {
       expect(screen.getByText(DROPDOWN_HEADING)).toBeTruthy();
     });
 
-    await fireEvent.click(screen.getByText('Copy local repo'));
+    await fireEvent.click(screen.getByText('Existing folder'));
 
     const row = (await screen.findByText('app')).closest('button')!;
     // The tooltip trigger wrapper forwards its marker onto the row button.
@@ -358,7 +358,7 @@ describe('RepoSelector Recent list path tooltip', () => {
     const { container } = render(RepoSelector, { props: {} });
     await openDropdown(container);
 
-    // GitHub repos show on the default "Pick a repo" tab
+    // GitHub repos show on the default "Clone" tab
     const row = (await screen.findByText('app')).closest('button')!;
     expect(row.hasAttribute('data-tooltip-trigger')).toBe(false);
     expect(row.closest('[data-tooltip-trigger]')).toBeNull();
@@ -376,22 +376,22 @@ describe('RepoSelector mode tabs', () => {
   // Mode-label containment and activation are covered in initializer-pickers.ct.spec.ts.
 
   // Regression: PR #1031's merge reverted the tab order from PR #771
-  // (intent-hq/monorepo#2148) — "Pick a repo" must stay the first tab.
-  it('renders "Pick a repo" as the first tab', async () => {
+  // (intent-hq/monorepo#2148) — "Clone" must stay the first tab.
+  it('renders "Clone" as the first tab', async () => {
     const { container } = render(RepoSelector, { props: {} });
     await openDropdown(container);
 
-    await screen.findByRole('tab', { name: 'Pick a repo' });
-    const expectedLabels = new Set(['Pick a repo', 'Copy local repo', 'New repo']);
+    await screen.findByRole('tab', { name: 'Clone' });
+    const expectedLabels = new Set(['Clone', 'Existing folder', 'New']);
     const tabLabels = screen
       .getAllByRole('tab')
       .map((tab) => tab.textContent?.trim())
       .filter((label): label is string => Boolean(label && expectedLabels.has(label)));
-    expect(tabLabels).toEqual(['Pick a repo', 'Copy local repo', 'New repo']);
+    expect(tabLabels).toEqual(['Clone', 'Existing folder', 'New']);
   });
 });
 
-describe('RepoSelector Recent list search filtering ("Pick a repo" tab)', () => {
+describe('RepoSelector Recent list search filtering ("Clone" tab)', () => {
   afterEach(() => {
     mockRepos.recentRepos = [];
     cleanup();
@@ -420,7 +420,7 @@ describe('RepoSelector Recent list search filtering ("Pick a repo" tab)', () => 
       expect(screen.getByText(DROPDOWN_HEADING)).toBeTruthy();
     });
 
-    // "Pick a repo" is the first and default tab — GitHub repos show right away
+    // "Clone" is the first and default tab — GitHub repos show right away
     await waitFor(() => {
       expect(screen.getByText('monorepo')).toBeTruthy();
       expect(screen.getByText('react')).toBeTruthy();

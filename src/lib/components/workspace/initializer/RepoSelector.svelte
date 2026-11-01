@@ -64,6 +64,9 @@
   import { initializeGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
   import { classifyPlainFolderTarget, newProjectDefaultParent } from './plain-folder-create';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
+  import { selectCloneSourceVisible } from '$store/renderer/slices/workspace-initializer/clone-source-selectors';
+  import { selectLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import {
     loadGithubRepos,
     type GithubRepoItem,
@@ -123,7 +126,7 @@
   let recentRepoRequestId: string | undefined;
   let directoryStatusRequestId: string | undefined;
 
-  // GitHub autocomplete sources for the "Pick a repo" tab: the user's own
+  // GitHub autocomplete sources for the "Clone" tab: the user's own
   // repos (client-side filtered) plus a debounced global search.
   const isGithubAuthenticated$ = selectGitHubAuthIsAuthenticated();
   const canBrowseGithub = $derived(
@@ -328,9 +331,32 @@
   );
   const repositoryTab = $derived(selectedForge?.id ?? 'github');
   const repositoryTabActive = $derived(activeTab === 'github' || activeTab === 'gitlab');
-  const repositoryTabLabel = $derived(
-    selectedForge?.label ?? m.workspace_repoSelector_pickARepo_tab(),
+  const repositoryTabLabel = $derived(selectedForge?.label ?? m.workspace_repoSelector_clone_tab());
+
+  // Clone is hidden only once forge status is known and nothing is connected;
+  // pending or failed reads keep it (same fail-safe as the git-toggle default).
+  // A forge the checkout owner reports as authenticated, or a host member's
+  // host-side GitHub access, always keeps it.
+  const cloneSourceVisible$ = selectCloneSourceVisible();
+  const cloneTabVisible = $derived(
+    $cloneSourceVisible$ || authenticatedForges.length > 0 || $hostMember$,
   );
+  /** The tab to open in place of `tab` when Clone is hidden. */
+  function visibleTab(tab: TabId): TabId {
+    return !cloneTabVisible && (tab === 'github' || tab === 'gitlab') ? 'local' : tab;
+  }
+  const labsGitLabEnabled$ = selectLabsGitLabEnabled();
+  const connectToCloneLabel = $derived(
+    $labsGitLabEnabled$
+      ? m.workspace_repoSelector_connectForgeToClone_label()
+      : m.workspace_repoSelector_connectGithubToClone_label(),
+  );
+  function handleConnectToClone() {
+    isOpen = false;
+    void navigateToSettings({ tab: 'connections', hash: 'integrations' }).catch((error: unknown) =>
+      logger.error('Failed to open connection settings', error),
+    );
+  }
   function selectForge(forge: 'github' | 'gitlab') {
     if (!authenticatedForges.some((choice) => choice.id === forge)) return;
     preferredForge = forge;
@@ -360,7 +386,7 @@
   // Authentication may withdraw a choice while the picker is open. Reconcile
   // presentation only; the existing checkout owner still retires its lease.
   $effect(() => {
-    if (repositoryTabActive) activeTab = repositoryTab;
+    if (repositoryTabActive) activeTab = visibleTab(repositoryTab);
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -570,7 +596,7 @@
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // GITHUB AUTOCOMPLETE ("Pick a repo" tab)
+  // GITHUB AUTOCOMPLETE ("Clone" tab)
   // ═══════════════════════════════════════════════════════════════════════════
   // Mirrors the onboarding GitHubRepoTab: the user's own repos filtered
   // client-side by the typed text, followed by deduped global search results.
@@ -747,10 +773,10 @@
       activeTab = 'gitlab';
     } else if (currentValue) {
       // Use the stored repo type to determine the tab
-      activeTab = selectedRepoType === 'github' ? repositoryTab : selectedRepoType;
+      activeTab = visibleTab(selectedRepoType === 'github' ? repositoryTab : selectedRepoType);
 
       // If GitHub, also populate the input from inputValue (which stores the GitHub URL)
-      if (selectedRepoType === 'github' && inputValue) {
+      if (selectedRepoType === 'github' && cloneTabVisible && inputValue) {
         const githubInfo = parseGitHubUrl(inputValue);
         if (githubInfo) {
           githubUrlInput = `${githubInfo.owner}/${githubInfo.repo}`;
@@ -760,8 +786,8 @@
         }
       }
     } else {
-      // No value selected, default to the "Pick a repo" tab
-      activeTab = repositoryTab;
+      // No value selected: default to the "Clone" tab ("Existing folder" when hidden)
+      activeTab = visibleTab(repositoryTab);
     }
 
     // Focus input - always autofocus for better UX
@@ -1706,15 +1732,17 @@
           aria-label={m.workspace_repoSelector_whichRepo_label()}
           class="flex shrink-0 gap-0 mx-3 mb-3 bg-sidebar rounded-lg p-1"
         >
-          <Tabs.Trigger
-            value="repository"
-            class="flex-1 min-w-0 h-auto min-h-(--control-height-medium) px-2 py-1.5 text-sm whitespace-normal rounded-md cursor-pointer transition-all {repositoryTabActive
-              ? 'bg-background font-medium text-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground'}"
-          >
-            {m.workspace_repoSelector_pickARepo_tab()}
-          </Tabs.Trigger>
-          {#each [{ id: 'local' as TabId, label: m.workspace_repoSelector_copyLocalRepo_tab() }, { id: 'new' as TabId, label: plainFolderMode ? m.workspace_repoSelector_newFolder_tab() : m.workspace_repoSelector_newRepo_tab() }, ...($remoteWorkspacesEnabled$ ? [{ id: 'remote' as TabId, label: m.workspace_repoSelector_remoteServer_tab() }] : [])] as tab}
+          {#if cloneTabVisible}
+            <Tabs.Trigger
+              value="repository"
+              class="flex-1 min-w-0 h-auto min-h-(--control-height-medium) px-2 py-1.5 text-sm whitespace-normal rounded-md cursor-pointer transition-all {repositoryTabActive
+                ? 'bg-background font-medium text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'}"
+            >
+              {m.workspace_repoSelector_clone_tab()}
+            </Tabs.Trigger>
+          {/if}
+          {#each [{ id: 'local' as TabId, label: m.workspace_repoSelector_existingFolder_tab() }, { id: 'new' as TabId, label: m.workspace_repoSelector_new_tab() }, ...($remoteWorkspacesEnabled$ ? [{ id: 'remote' as TabId, label: m.workspace_repoSelector_remoteServer_tab() }] : [])] as tab}
             <Tabs.Trigger
               value={tab.id}
               class="flex-1 min-w-0 h-auto min-h-(--control-height-medium) px-2 py-1.5 text-sm whitespace-normal rounded-md cursor-pointer transition-all {activeTab ===
@@ -1726,6 +1754,17 @@
             </Tabs.Trigger>
           {/each}
         </Tabs.List>
+        {#if !cloneTabVisible && $canAdministerHost$}
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            class="mx-3 -mt-1 mb-2 h-auto self-start p-0 text-xs"
+            onclick={handleConnectToClone}
+          >
+            {connectToCloneLabel}
+          </Button>
+        {/if}
         <Tabs.Content
           value={repositoryTabActive ? 'repository' : activeTab}
           class="mt-0 min-h-0 flex flex-col"
