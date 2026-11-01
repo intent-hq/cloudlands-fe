@@ -38,6 +38,12 @@ const fixture = resolve('test/fixtures/browser-lifetime');
  * covered the observed destruction latency when no probe hung.
  */
 const GUEST_TEARDOWN_TIMEOUT_MS = 20_000;
+/**
+ * Agent drawing idle window for the isolated main-process bundle, replacing
+ * production's 30 s so the frame-rate test can observe a hold end promptly.
+ */
+const FIXTURE_AGENT_DRAWING_IDLE_MS = 500;
+const CDP_SERVICE = resolve('src/features/browser/main/embedded-browser-cdp-service.ts');
 test.beforeAll(async () => {
   bundleDir = await mkdtemp(join(tmpdir(), 'intent-browser-lifetime-code-'));
   cdpBundle = join(bundleDir, 'cdp.cjs');
@@ -45,7 +51,7 @@ test.beforeAll(async () => {
   await writeFile(
     entry,
     [
-      `export { embeddedBrowserCdp } from ${JSON.stringify(resolve('src/features/browser/main/embedded-browser-cdp-service.ts'))};`,
+      `export { embeddedBrowserCdp } from ${JSON.stringify(CDP_SERVICE)};`,
       `export { executeActions } from ${JSON.stringify(resolve('src/features/browser/main/browser-action-executor.ts'))};`,
     ].join('\n'),
   );
@@ -85,6 +91,17 @@ test.beforeAll(async () => {
             return 'export function getBackendClient() { throw new Error("No daemon in isolated fixture"); }';
           if (id === '\0fixture-tunnel')
             return 'export class TunnelForbiddenError extends Error {}';
+        },
+        transform(code, id) {
+          if (id !== CDP_SERVICE) return;
+          const declaration = /export const AGENT_DRAWING_IDLE_MS = [\d_]+;/;
+          // Fail the build, not the frame-rate assertion, if the constant moves.
+          if (!declaration.test(code))
+            throw new Error('AGENT_DRAWING_IDLE_MS declaration not found');
+          return code.replace(
+            declaration,
+            `export const AGENT_DRAWING_IDLE_MS = ${FIXTURE_AGENT_DRAWING_IDLE_MS};`,
+          );
         },
       },
     ],
@@ -1157,3 +1174,129 @@ for (const owned of [false, true]) {
     }
   });
 }
+
+/**
+ * Frames per second, measured on the main-process clock, for the host window
+ * and one guest (each must already count requestAnimationFrame callbacks in
+ * `window.__rafFrames`). The host window is visible, so its rate is the
+ * display's refresh rate: the oracle the guest is compared against.
+ */
+async function frameRates(app: ElectronApplication, tabId: string, ms: number) {
+  return app.evaluate(
+    async ({ BrowserWindow, webContents }, { tabId, ms }) => {
+      const guest = webContents
+        .getAllWebContents()
+        .find((wc) => wc.getType() === 'webview' && wc.getURL().endsWith(`tab=${tabId}`));
+      if (!guest) throw new Error(`Missing ${tabId} guest`);
+      const host = BrowserWindow.getAllWindows()[0].webContents;
+      const read = async () => {
+        const [guestFrames, hostFrames] = await Promise.all(
+          [guest, host].map((wc) => wc.executeJavaScript('window.__rafFrames') as Promise<number>),
+        );
+        return { guestFrames, hostFrames, at: performance.now() };
+      };
+      const start = await read();
+      await new Promise((done) => setTimeout(done, ms));
+      const end = await read();
+      const seconds = (end.at - start.at) / 1000;
+      return {
+        guest: (end.guestFrames - start.guestFrames) / seconds,
+        display: (end.hostFrames - start.hostFrames) / seconds,
+      };
+    },
+    { tabId, ms },
+  );
+}
+
+/**
+ * Guest frame-rate bounds as fractions of the display's own rate, so a 60 Hz
+ * and a 120 Hz runner share them. Measured on macOS (60 and 120 Hz): a held
+ * guest draws at the display rate; an idle guest under the host's opacity-0
+ * layer mostly at 1 fps with bursts (at most ~0.25 of the display); an idle
+ * guest whose own box is opacity 0 but has no transparent ancestor at ~0.5
+ * (cloudlands-fe#3925, #3952).
+ */
+const HELD_MIN_FRACTION = 0.8;
+const IDLE_MAX_FRACTION = 0.35;
+/** The held tab must draw at least this many times as often as the idle one. */
+const HELD_TO_IDLE_MIN_RATIO = 3;
+
+function median(values: number[]) {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
+// Chromium's opacity-based frame throttling for hidden guests only happens with
+// macOS compositing: under Linux Xvfb (software compositing) every guest draws
+// at the display rate whatever its opacity, so there is nothing to compare.
+test('agent drawing lifts a hidden tab from the idle throttle to full frame rate', async ({}, testInfo) => {
+  test.skip(
+    process.platform !== 'darwin',
+    'Hidden-guest frame throttling only reproduces with macOS compositing',
+  );
+  test.setTimeout(120_000);
+  const { app, page, profile } = await launch(true);
+  const observations: any[] = [];
+  const countFrames =
+    'window.__rafFrames ??= (requestAnimationFrame(function count() { window.__rafFrames++; requestAnimationFrame(count); }), 0); true';
+  async function measure(label: string) {
+    const samples = [];
+    for (let i = 0; i < 3; i++) samples.push(await frameRates(app, 'B-1', 2000));
+    const rate = {
+      guest: median(samples.map((sample) => sample.guest)),
+      display: median(samples.map((sample) => sample.display)),
+    };
+    observations.push({ label, samples, rate });
+    expect(rate.display, `${label}: the visible host window must draw`).toBeGreaterThan(20);
+    return rate;
+  }
+  const holdState = async () => ({
+    held: await app.evaluate(() => (globalThis as any).lifetimeCdp.hasAgentDrawingHold('B-1')),
+    box: await page
+      .locator('[data-offscreen-webview-box="B-1"]')
+      .getAttribute('data-agent-drawing'),
+  });
+  try {
+    await ready(app, 'B-1');
+    // Hide B-1 so the agent-owned tab of the background workspace is drawn
+    // only by the offscreen host, pinned there for the agent.
+    await page.evaluate(() => (window as any).lifetimeFixture.close('B-1'));
+    expect(
+      (await page.evaluate(() => (window as any).lifetimeFixture.records())).B.hidden,
+    ).toContain('B-1');
+    await expect(page.locator('[data-offscreen-webview-tab="B-1"]')).toHaveCount(1);
+    await page.evaluate(countFrames);
+    await app.evaluate(async ({ webContents }, script) => {
+      const guest = webContents.getAllWebContents().find((wc) => wc.getURL().endsWith('tab=B-1'));
+      if (!guest) throw new Error('Missing B-1 guest');
+      await guest.executeJavaScript(script);
+    }, countFrames);
+
+    await app.evaluate(() => {
+      const g = globalThis as any;
+      g.lifetimeEndDrawing = g.lifetimeCdp.beginAgentDrawing('B-1', 'fixture-agent');
+    });
+    await expect.poll(holdState).toEqual({ held: true, box: '' });
+    const held = await measure('agent drawing');
+
+    // The action ends; after the (fixture-shortened) idle window the hold
+    // lapses and the tab returns to the idle throttle.
+    await app.evaluate(() => (globalThis as any).lifetimeEndDrawing());
+    await expect.poll(holdState).toEqual({ held: false, box: null });
+    const idle = await measure('idle after agent drawing');
+    console.log('Hidden tab frame rates:', JSON.stringify({ held, idle }));
+
+    expect
+      .soft(held.guest, 'held tab draws at the display rate')
+      .toBeGreaterThanOrEqual(held.display * HELD_MIN_FRACTION);
+    expect
+      .soft(idle.guest, 'idle tab is throttled well below the display rate')
+      .toBeLessThanOrEqual(idle.display * IDLE_MAX_FRACTION);
+    expect(
+      held.guest,
+      'held tab draws several times as often as the idle one',
+    ).toBeGreaterThanOrEqual(idle.guest * HELD_TO_IDLE_MIN_RATIO);
+  } finally {
+    await teardown(app, page, profile, observations, testInfo);
+  }
+});

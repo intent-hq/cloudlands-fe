@@ -1,0 +1,45 @@
+# TEMPORARY experiment for the hidden-tab frame-rate test; removed before review.
+name: Frame rate experiment
+on:
+  push:
+    branches: [test/offscreen-frame-rate]
+permissions:
+  contents: read
+jobs:
+  measure:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-26]
+        variant: [main, no-layer-opacity, held-box-zero]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+          run_install: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec install-electron
+      - run: pnpm run generate:i18n
+      - name: Apply mutation
+        run: |
+          f=src/lib/components/browser/OffscreenWebviewHost.svelte
+          case "${{ matrix.variant }}" in
+            no-layer-opacity) perl -0pi -e 's/\n\s*style:opacity=\{anyAgentDrawing \? undefined : PARKED_OPACITY\}//' "$f" ;;
+            held-box-zero) perl -pi -e "s/const AGENT_DRAWING_OPACITY = '0.01';/const AGENT_DRAWING_OPACITY = '0';/" "$f" ;;
+          esac
+          git diff --stat
+      - name: Display
+        run: system_profiler SPDisplaysDataType || true
+      - name: Frame-rate test (x3)
+        env:
+          PLAYWRIGHT_HTML_OPEN: never
+        run: |
+          for i in 1 2 3; do
+            pnpm exec playwright test --config=playwright.manual.config.ts test/electron-browser-lifetime.spec.ts -g "agent drawing lifts" --workers=1 --reporter=list || true
+          done
