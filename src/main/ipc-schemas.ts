@@ -814,11 +814,6 @@ export const ShellShowItemInFolderSchema = z.object({
   path: z.string().min(1, 'Path is required'),
 });
 
-export const VscodeOpenGitDiffSchema = z.object({
-  filePath: z.string().min(1, 'File path is required'),
-  workspacePath: z.string().optional(),
-});
-
 export const VscodeOpenDiffSchema = z.object({
   oldContent: z.string(),
   newContent: z.string(),
@@ -826,31 +821,6 @@ export const VscodeOpenDiffSchema = z.object({
   newFileName: z.string().min(1, 'New file name is required'),
   filePath: z.string().min(1, 'File path is required'),
 });
-
-export const VscodeOpenFileSchema = z.object({
-  file: z.string().min(1, 'File path is required'),
-  line: z.number().int().positive().optional(),
-});
-
-// JETBRAINS_CHANNELS schemas
-export const JetbrainsOpenSchema = z.union([
-  z.string().min(1, 'Path is required'),
-  z.object({
-    folder: z.string().min(1, 'Folder path is required'),
-    file: z.string().min(1, 'File path is required'),
-  }),
-]);
-
-// XCODE_CHANNELS schemas
-export const XcodeOpenSchema = z.union([
-  z.string().min(1, 'Path is required'),
-  z.object({
-    folder: z.string().min(1, 'Folder path is required'),
-    file: z.string().optional(),
-    // Optional: list of changed file paths (relative to folder) to help find the right Xcode project in monorepos
-    changedFiles: z.array(z.string()).optional(),
-  }),
-]);
 
 // USER_MCP_CHANNELS schemas
 export const UserMcpAuthenticateSchema = z.object({

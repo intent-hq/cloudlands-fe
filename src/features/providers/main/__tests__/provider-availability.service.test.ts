@@ -41,10 +41,6 @@ vi.mock('../../../../shared/main/host-exec', () => ({
   hostExec: mocks.hostExec,
 }));
 
-vi.mock('../../../feature-codes/main/feature-codes.service', () => ({
-  featureCodesService: { isFeatureEnabled: vi.fn(() => false) },
-}));
-
 /** host.providerDiscovery body with every provider uninstalled. */
 const EMPTY_DISCOVERY = {
   providers: [
@@ -124,8 +120,7 @@ describe('provider availability service', () => {
         },
         'host.providerAuthStatus': authSweep({ antigravity: authenticated }),
       });
-      const { getProviderAvailability, setupProviderAvailabilityIPC } =
-        await import('../provider-availability.service');
+      const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
       setupProviderAvailabilityIPC();
       const result = await mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE)!(
         {},
@@ -136,14 +131,6 @@ describe('provider availability service', () => {
         data: { available: true, hasNpxFallback: false, authenticated: authenticated ?? undefined },
       });
       expect(result.data).not.toHaveProperty('authDetails');
-
-      const aggregate = await getProviderAvailability();
-      expect(aggregate.providers.antigravity).toEqual({
-        available: true,
-        hasNpxFallback: false,
-        authenticated: authenticated ?? undefined,
-      });
-      expect(aggregate.providers.antigravity).not.toHaveProperty('authDetails');
       expect(mocks.findBinary).not.toHaveBeenCalled();
       expect(mocks.hostExec).not.toHaveBeenCalled();
       expect(mocks.backendRequest).toHaveBeenCalledWith('host.providerAuthStatus', {
@@ -264,18 +251,8 @@ describe('provider availability service', () => {
           'host.providerAuthStatus': authSweep({ 'claude-code': authenticated }),
         });
         mocks.backendRequest.mockClear();
-        const { getProviderAvailability, setupProviderAvailabilityIPC } =
-          await import('../provider-availability.service');
+        const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
         setupProviderAvailabilityIPC();
-        const aggregate = await getProviderAvailability();
-        expect(aggregate.providers.claudeCode).toEqual({
-          available: true,
-          hasNpxFallback: false,
-          authenticated: authenticated ?? undefined,
-        });
-        expect(
-          mocks.backendRequest.mock.calls.filter(([method]) => method === 'host.providerDiscovery'),
-        ).toEqual([['host.providerDiscovery', {}]]);
         const single = await mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE)!(
           {},
           { providerId: 'claude-code', force: false },
@@ -283,11 +260,11 @@ describe('provider availability service', () => {
         expect(single).toEqual({
           success: true,
           providerId: 'claude-code',
-          data: aggregate.providers.claudeCode,
+          data: { available: true, hasNpxFallback: false, authenticated: authenticated ?? undefined },
         });
         expect(
           mocks.backendRequest.mock.calls.filter(([method]) => method === 'host.providerDiscovery'),
-        ).toHaveLength(2);
+        ).toEqual([['host.providerDiscovery', {}]]);
         expect(mocks.backendRequest).toHaveBeenCalledWith('host.providerAuthStatus', {
           providerId: 'claude-code',
           force: false,
@@ -308,17 +285,9 @@ describe('provider availability service', () => {
           'host.providerDiscovery': discovery(row),
           'host.providerAuthStatus': authSweep({ 'claude-code': true }),
         });
-        const { getProviderAvailability, setupProviderAvailabilityIPC } =
-          await import('../provider-availability.service');
-        setupProviderAvailabilityIPC();
-        const aggregate = await getProviderAvailability();
-        expect(aggregate.providers.claudeCode.available).toBe(false);
-        expect(aggregate.providers.claudeCode.warning).toBe(warning);
-        expect(aggregate.providers.claudeCode.authenticated).toBeUndefined();
-        expect(
-          mocks.backendRequest.mock.calls.filter(([method]) => method === 'host.providerDiscovery'),
-        ).toHaveLength(1);
         mocks.backendRequest.mockClear();
+        const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
+        setupProviderAvailabilityIPC();
         const single = await mocks.handlers.get(PROVIDERS_CHANNELS.CHECK_SINGLE)!(
           {},
           'claude-code',
@@ -326,8 +295,9 @@ describe('provider availability service', () => {
         expect(single).toEqual({
           success: true,
           providerId: 'claude-code',
-          data: aggregate.providers.claudeCode,
+          data: { available: false, hasNpxFallback: false, warning },
         });
+        expect(single.data.authenticated).toBeUndefined();
         expect(mocks.backendRequest.mock.calls).toEqual([['host.providerDiscovery', {}]]);
         expect(mocks.findBinaryStrict).not.toHaveBeenCalled();
         expect(mocks.findBinary).not.toHaveBeenCalled();
@@ -346,7 +316,7 @@ describe('provider availability service', () => {
       expect(mocks.findBinaryStrict).not.toHaveBeenCalled();
     });
 
-    it('preserves aggregate and single failure envelopes when discovery fails', async () => {
+    it('preserves the single-check failure envelope when discovery fails', async () => {
       mocks.backendRequest.mockRejectedValue(new Error('discovery transport down'));
       const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
       setupProviderAvailabilityIPC();
@@ -357,184 +327,8 @@ describe('provider availability service', () => {
           error: 'discovery transport down',
         },
       );
-      expect(await mocks.handlers.get(PROVIDERS_CHANNELS.GET_AVAILABILITY)!({})).toEqual({
-        success: false,
-        error: 'discovery transport down',
-      });
       expect(mocks.findBinaryStrict).not.toHaveBeenCalled();
     });
-  });
-
-  it('reports grok availability from the daemon discovery result', async () => {
-    // Grok availability comes from the daemon's provider discovery; auth
-    // comes from the daemon's providerAuthStatus sweep (wire null = unknown
-    // → undefined, no indicator).
-    routeBackend({
-      'host.providerDiscovery': {
-        ...EMPTY_DISCOVERY,
-        providers: EMPTY_DISCOVERY.providers.map((p) =>
-          p.id === 'grok'
-            ? { ...p, installed: true, resolvedPath: '/home/user/.grok/bin/grok' }
-            : p,
-        ),
-      },
-      'host.providerAuthStatus': authSweep(),
-    });
-
-    const { getProviderAvailability } = await import('../provider-availability.service');
-    const result = await getProviderAvailability();
-
-    expect(result.providers.grok.available).toBe(true);
-    expect(result.providers.grok.authenticated).toBeUndefined();
-  });
-
-  it('reports unsloth availability from discovery with available ⇒ authenticated', async () => {
-    // Unsloth rides the opencode binary; it is local-only (no login surface),
-    // so an available provider is always authenticated.
-    routeBackend({
-      'host.providerDiscovery': {
-        ...EMPTY_DISCOVERY,
-        providers: EMPTY_DISCOVERY.providers.map((p) =>
-          p.id === 'unsloth'
-            ? { ...p, installed: true, resolvedPath: '/home/user/.opencode/bin/opencode' }
-            : p,
-        ),
-      },
-      'host.providerAuthStatus': authSweep(),
-    });
-
-    const { getProviderAvailability } = await import('../provider-availability.service');
-    const result = await getProviderAvailability();
-
-    expect(result.providers.unsloth.available).toBe(true);
-    expect(result.providers.unsloth.authenticated).toBe(true);
-  });
-
-  it('sweeps auth verdicts from host.providerAuthStatus on the aggregate path', async () => {
-    routeBackend({
-      'host.providerDiscovery': {
-        ...EMPTY_DISCOVERY,
-        providers: EMPTY_DISCOVERY.providers.map((p) =>
-          ['pi', 'droid', 'grok'].includes(p.id)
-            ? { ...p, installed: true, resolvedPath: `/usr/local/bin/${p.id}` }
-            : p,
-        ),
-      },
-      'host.providerAuthStatus': authSweep({ pi: true, droid: false, grok: null }),
-    });
-
-    const { getProviderAvailability } = await import('../provider-availability.service');
-    const result = await getProviderAvailability();
-
-    // The aggregate path sends an empty params object (no providerId, no
-    // force — the daemon's cache is respected).
-    expect(mocks.backendRequest).toHaveBeenCalledWith('host.providerAuthStatus', {});
-    // The FE runs no auth-check commands itself.
-    expect(mocks.hostExec).not.toHaveBeenCalled();
-    expect(result.providers.pi).toMatchObject({ available: true, authenticated: true });
-    expect(result.providers.droid).toMatchObject({ available: true, authenticated: false });
-    // Wire null (unknown) folds to undefined — no indicator.
-    expect(result.providers.grok.authenticated).toBeUndefined();
-  });
-
-  it('attaches the host.providerAuthStatus identity line only to the provider that sent one', async () => {
-    routeBackend({
-      'host.providerDiscovery': {
-        ...EMPTY_DISCOVERY,
-        providers: EMPTY_DISCOVERY.providers.map((p) =>
-          ['pi', 'droid'].includes(p.id)
-            ? { ...p, installed: true, resolvedPath: `/usr/local/bin/${p.id}` }
-            : p,
-        ),
-      },
-      'host.providerAuthStatus': {
-        providers: [
-          {
-            id: 'pi',
-            authenticated: true,
-            identity: { email: 'dev@example.com', orgName: 'Example Org', subscriptionType: 'max' },
-          },
-          { id: 'droid', authenticated: true },
-        ],
-      },
-    });
-
-    const { getProviderAvailability } = await import('../provider-availability.service');
-    const result = await getProviderAvailability();
-
-    expect(result.providers.pi).toMatchObject({
-      available: true,
-      authenticated: true,
-      authDetails: 'dev@example.com · Example Org',
-    });
-    // No identity on the wire → no authDetails key at all (no `identity` object).
-    expect(result.providers.droid.authenticated).toBe(true);
-    expect(result.providers.droid).not.toHaveProperty('authDetails');
-  });
-
-  it('does not attach auth verdicts to unavailable providers', async () => {
-    routeBackend({
-      'host.providerDiscovery': EMPTY_DISCOVERY,
-      'host.providerAuthStatus': authSweep({ codex: true }),
-    });
-
-    const { getProviderAvailability } = await import('../provider-availability.service');
-    const result = await getProviderAvailability();
-
-    expect(result.providers.codex).toEqual(expect.objectContaining({ available: false }));
-    expect(result.providers.codex.authenticated).toBeUndefined();
-  });
-
-  it('propagates a host.providerDiscovery RPC failure instead of fabricating an all-unavailable result', async () => {
-    routeBackend({
-      'host.providerAuthStatus': authSweep(),
-      // 'host.providerDiscovery' intentionally unrouted — routeBackend throws
-      // "unexpected daemon method" for it, simulating an RPC failure.
-    });
-
-    const { getProviderAvailability } = await import('../provider-availability.service');
-
-    await expect(getProviderAvailability()).rejects.toThrow(
-      'unexpected daemon method: host.providerDiscovery',
-    );
-  });
-
-  it('GET_AVAILABILITY handler returns an explicit failure envelope on RPC failure (never success:true with fabricated data)', async () => {
-    routeBackend({
-      'host.providerAuthStatus': authSweep(),
-    });
-
-    const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
-    setupProviderAvailabilityIPC();
-    const handler = mocks.handlers.get(PROVIDERS_CHANNELS.GET_AVAILABILITY);
-    if (!handler) throw new Error('provider availability handler was not registered');
-
-    const result = await handler();
-
-    expect(result).toEqual({
-      success: false,
-      error: 'unexpected daemon method: host.providerDiscovery',
-    });
-  });
-
-  it('degrades auth to unknown when the providerAuthStatus RPC fails', async () => {
-    routeBackend({
-      'host.providerDiscovery': {
-        ...EMPTY_DISCOVERY,
-        providers: EMPTY_DISCOVERY.providers.map((p) =>
-          p.id === 'droid' ? { ...p, installed: true, resolvedPath: '/usr/local/bin/droid' } : p,
-        ),
-      },
-      'host.providerAuthStatus': () => {
-        throw new Error('transport down');
-      },
-    });
-
-    const { getProviderAvailability } = await import('../provider-availability.service');
-    const result = await getProviderAvailability();
-
-    expect(result.providers.droid.available).toBe(true);
-    expect(result.providers.droid.authenticated).toBeUndefined();
   });
 
   it('rechecks a single provider with a forced providerAuthStatus verdict', async () => {
@@ -770,225 +564,6 @@ describe('provider availability service', () => {
     const result = await handler({}, 'cortex');
 
     expect(result).toEqual({ success: true, providerId: 'cortex', data: { available: true } });
-  });
-
-  describe('hiddenProviders gating verdict', () => {
-    /** Schema-valid `providers.catalog` row (PROTOCOL §5.38). */
-    const catalogEntry = (id: string, overrides: Record<string, unknown> = {}) => ({
-      id,
-      displayName: id,
-      shortName: id,
-      command: id,
-      canBeDisabled: true,
-      visible: true,
-      ...overrides,
-    });
-
-    it('omits hiddenProviders when the catalog fetch fails with no cache (gating verdict unknown)', async () => {
-      routeBackend({
-        'host.providerDiscovery': EMPTY_DISCOVERY,
-        'host.providerAuthStatus': authSweep(),
-        // 'providers.catalog' intentionally unrouted — the fetch fails and
-        // there is no cached catalog, so the gating verdict is unknown. The
-        // result must NOT fabricate an authoritative "nothing hidden" empty
-        // array, or gated providers (e.g. mock) flash in the renderer.
-      });
-
-      const { getProviderAvailability } = await import('../provider-availability.service');
-      const result = await getProviderAvailability();
-
-      expect('hiddenProviders' in result).toBe(false);
-      expect(result.hiddenProviders).toBeUndefined();
-      // Availability also fails closed for the registry-gated providers, so
-      // availability-only consumers (onboarding auto-selection) cannot pick
-      // them while the gating verdict is unknown.
-      expect(result.providers.mock.available).toBe(false);
-    });
-
-    it('computes hiddenProviders from a hydrated catalog (gated rows hidden)', async () => {
-      routeBackend({
-        'providers.catalog': {
-          providers: [
-            catalogEntry('auggie', { canBeDisabled: false }),
-            catalogEntry('gated-prov', { requiresFeatureCode: 'some-feature', visible: false }),
-            catalogEntry('mock', { requiresEnvVar: 'INTENTD_TEST_MOCK_GATE', visible: false }),
-          ],
-        },
-        'host.providerDiscovery': EMPTY_DISCOVERY,
-        'host.providerAuthStatus': authSweep(),
-      });
-
-      const { getProviderAvailability } = await import('../provider-availability.service');
-      const result = await getProviderAvailability();
-
-      expect(result.hiddenProviders).toEqual(['gated-prov', 'mock']);
-    });
-
-    it('does not hide cortex — its visibility rides the catalog verdict alone', async () => {
-      routeBackend({
-        'providers.catalog': {
-          providers: [catalogEntry('auggie', { canBeDisabled: false }), catalogEntry('cortex')],
-        },
-        'host.providerDiscovery': {
-          ...EMPTY_DISCOVERY,
-          providers: EMPTY_DISCOVERY.providers.map((p) =>
-            p.id === 'cortex'
-              ? { ...p, installed: true, resolvedPath: '/usr/local/bin/cortex' }
-              : p,
-          ),
-        },
-        'host.providerAuthStatus': authSweep(),
-      });
-
-      const { getProviderAvailability } = await import('../provider-availability.service');
-      const result = await getProviderAvailability();
-
-      expect(result.hiddenProviders).toEqual([]);
-      expect(result.providers.cortex.available).toBe(true);
-    });
-
-    it('returns an empty hiddenProviders array when the catalog has no gated rows', async () => {
-      routeBackend({
-        'providers.catalog': {
-          providers: [catalogEntry('auggie', { canBeDisabled: false }), catalogEntry('codex')],
-        },
-        'host.providerDiscovery': EMPTY_DISCOVERY,
-        'host.providerAuthStatus': authSweep(),
-      });
-
-      const { getProviderAvailability } = await import('../provider-availability.service');
-      const result = await getProviderAvailability();
-
-      // Catalog consulted, nothing hidden — the empty array is a legitimate
-      // authoritative verdict, distinct from the absent field above.
-      expect(result.hiddenProviders).toEqual([]);
-    });
-  });
-
-  describe('getProviderPaths (providers:get-paths → host.providerDiscovery)', () => {
-    it('maps daemon-resolved paths for every provider, incl. grok and unsloth primary+secondary', async () => {
-      routeBackend({
-        'host.providerDiscovery': {
-          ...EMPTY_DISCOVERY,
-          providers: EMPTY_DISCOVERY.providers.map((p) => {
-            if (p.id === 'grok') {
-              return { ...p, installed: true, resolvedPath: '/home/user/.grok/bin/grok' };
-            }
-            if (p.id === 'unsloth') {
-              return {
-                ...p,
-                installed: true,
-                resolvedPath: '/home/user/.opencode/bin/opencode',
-                secondaryCommand: 'unsloth',
-                secondaryResolved: true,
-                secondaryResolvedPath: '/usr/local/bin/unsloth',
-              };
-            }
-            if (p.id === 'auggie') {
-              return { ...p, installed: true, resolvedPath: '/usr/local/bin/auggie' };
-            }
-            if (p.id === 'claude-code') {
-              return {
-                ...p,
-                command: 'npx',
-                installed: true,
-                resolvedPath: '/usr/local/bin/npx',
-                npxOnly: true,
-                npxPackage: '@agentclientprotocol/claude-agent-acp@1.2.3',
-              };
-            }
-            if (p.id === 'pi') {
-              return {
-                ...p,
-                command: 'npx',
-                installed: true,
-                resolvedPath: '/usr/local/bin/npx',
-                npxOnly: true,
-                npxPackage: 'pi-acp@0.0.33',
-              };
-            }
-            return p;
-          }),
-        },
-      });
-
-      const { getProviderPaths } = await import('../provider-availability.service');
-      const result = await getProviderPaths();
-
-      expect(mocks.backendRequest).toHaveBeenCalledWith('host.providerDiscovery', {});
-      // No FE-local binary resolution on the GET_PATHS path.
-      expect(mocks.findBinary).not.toHaveBeenCalled();
-      expect(mocks.findBinaryStrict).not.toHaveBeenCalled();
-      expect(mocks.findAuggiePathStrict).not.toHaveBeenCalled();
-      expect(result.paths).toEqual({
-        auggie: '/usr/local/bin/auggie',
-        'claude-code': '/usr/local/bin/npx',
-        codex: null,
-        cortex: null,
-        opencode: null,
-        pi: '/usr/local/bin/npx',
-        droid: null,
-        grok: '/home/user/.grok/bin/grok',
-        unsloth: '/home/user/.opencode/bin/opencode',
-      });
-      expect(result.secondaryPaths).toEqual({ unsloth: '/usr/local/bin/unsloth' });
-      // Only npx-only providers whose path override the daemon honors surface
-      // their pinned package spec (their `paths` entry is npx, not the adapter
-      // the override targets); pi stays pinned-npx-only and is excluded.
-      expect(result.npxPackages).toEqual({
-        'claude-code': '@agentclientprotocol/claude-agent-acp@1.2.3',
-      });
-    });
-
-    it('keys an unresolved secondary as null when secondaryResolvedPath is omitted', async () => {
-      routeBackend({
-        'host.providerDiscovery': {
-          ...EMPTY_DISCOVERY,
-          providers: EMPTY_DISCOVERY.providers.map((p) =>
-            p.id === 'unsloth'
-              ? { ...p, secondaryCommand: 'unsloth', secondaryResolved: false }
-              : p,
-          ),
-        },
-      });
-
-      const { getProviderPaths } = await import('../provider-availability.service');
-      const result = await getProviderPaths();
-
-      expect(result.paths.unsloth).toBeNull();
-      expect(result.secondaryPaths).toEqual({ unsloth: null });
-    });
-
-    it('degrades to empty maps when the discovery RPC fails', async () => {
-      routeBackend({});
-
-      const { getProviderPaths } = await import('../provider-availability.service');
-      const result = await getProviderPaths();
-
-      expect(result).toEqual({ paths: {}, secondaryPaths: {}, npxPackages: {} });
-    });
-
-    it('serves the new shape through the GET_PATHS IPC handler envelope', async () => {
-      routeBackend({
-        'host.providerDiscovery': {
-          ...EMPTY_DISCOVERY,
-          providers: EMPTY_DISCOVERY.providers.map((p) =>
-            p.id === 'codex' ? { ...p, installed: true, resolvedPath: '/usr/local/bin/codex' } : p,
-          ),
-        },
-      });
-
-      const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
-      setupProviderAvailabilityIPC();
-      const handler = mocks.handlers.get(PROVIDERS_CHANNELS.GET_PATHS);
-      if (!handler) throw new Error('provider paths handler was not registered');
-
-      const result = await handler({});
-
-      expect(result.success).toBe(true);
-      expect(result.data.paths.codex).toBe('/usr/local/bin/codex');
-      expect(result.data.secondaryPaths).toEqual({});
-    });
   });
 });
 

@@ -1519,8 +1519,10 @@ async function waitForAgentTurnIdle(page: Page, workspaceId: string, deadline: n
 // ---------------------------------------------------------------------------
 
 /**
- * Detect which providers are available using the `providers:get-availability`
- * IPC channel.
+ * Detect which providers are available: the daemon's `host.providerDiscovery`
+ * (PROTOCOL §5.14) through the generic `backend:request` bridge for the real
+ * providers, and main's `providers:check-single` for the env-gated `mock`
+ * provider (only main can read `TESTING` / `MOCK_AGENT_SCRIPT_PATH`).
  *
  * Returns a Set of provider IDs (e.g. `new Set(['auggie', 'claude-code'])`).
  */
@@ -1536,27 +1538,25 @@ export async function getAvailableProviders(page: Page): Promise<Set<string>> {
     keysToRemove.forEach((k) => localStorage.removeItem(k));
   });
 
-  const result = await page.evaluate(async () => {
-    const response = await (window as any).electronAPI.invoke('providers:get-availability');
-    return response?.data;
+  const discovered = await page.evaluate(async () => {
+    const api = (window as any).electronAPI;
+    const discovery = await api.invoke('backend:request', {
+      method: 'host.providerDiscovery',
+      params: {},
+    });
+    if (!discovery?.ok) throw new Error(JSON.stringify(discovery));
+    const rows: Array<{ id: string; installed?: boolean; gatedOff?: string | null }> =
+      discovery.result?.providers ?? [];
+    const ids = rows
+      .filter((row) => row.id !== 'mock' && row.installed === true && !row.gatedOff)
+      .map((row) => row.id);
+    const mock = await api.invoke('providers:check-single', 'mock');
+    if (mock?.success && mock.data?.available) ids.push('mock');
+    return ids;
   });
 
-  const available = new Set<string>();
-  const keyMap: Record<string, string> = {
-    auggie: 'auggie',
-    claudeCode: 'claude-code',
-    codex: 'codex',
-    mock: 'mock',
-    opencode: 'opencode',
-  };
-
-  for (const [key, providerId] of Object.entries(keyMap)) {
-    if (result?.providers?.[key]?.available) {
-      available.add(providerId);
-    }
-  }
-
-  return available;
+  const smokeProviders = new Set(['auggie', 'claude-code', 'codex', 'mock', 'opencode']);
+  return new Set(discovered.filter((id) => smokeProviders.has(id)));
 }
 
 // ---------------------------------------------------------------------------

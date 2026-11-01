@@ -20,7 +20,7 @@
  *     that sends the same params through both paths and compares the daemon
  *     requests — listed in PARITY_SUITES;
  *  3. an intentional difference, justified in DIVERGENT;
- *  4. frozen pre-existing debt in UNCHECKED_LEGACY (entries only leave).
+ *  4. frozen pre-existing debt in UNCHECKED_LEGACY (now empty; entries only leave).
  * A new shared channel that is none of these fails.
  */
 import fs from 'node:fs';
@@ -194,30 +194,16 @@ const DIVERGENT: ReadonlyMap<string, string> = new Map([
 
 /**
  * Pre-existing renderer reimplementations of a main-handled channel with no
- * parity suite yet, snapshotted when this check landed. FROZEN: never add an
- * entry. Remove one by writing a parity suite, making the seeder forward to
- * main, retiring one side, or moving it to DIVERGENT with a confirmed reason.
- * Most remaining entries are renderer reimplementations whose main copy only
- * the generated `invoke()` would reach — and it never does, so the main copy
- * is dead and can be deleted. Check for direct `window.electronAPI.invoke`
- * callers first (including e2e build-smoke helpers: `providers:get-availability`
- * is called that way).
+ * parity suite, snapshotted when this check landed (80 channels). Every entry
+ * has since been resolved — by a parity suite, a verbatim forwarder, a
+ * DIVERGENT reason, or deleting a main copy that nothing could reach — so the
+ * list is empty. FROZEN: never add an entry; classify a new shared channel
+ * with one of the other three routes instead.
  */
-const UNCHECKED_LEGACY: ReadonlySet<string> = new Set([
-  'external-editors:detect-installed',
-  'external-editors:open',
-  'jetbrains:open',
-  'providers:get-availability',
-  'providers:get-paths',
-  'shell:showItemInFolder',
-  'vscode:open',
-  'vscode:open-git-diff',
-  'vscode:openFile',
-  'xcode:open',
-]);
+const UNCHECKED_LEGACY: ReadonlySet<string> = new Set<string>();
 
-/** Ceiling for UNCHECKED_LEGACY — lower it as entries leave; never raise it. */
-const UNCHECKED_LEGACY_CEILING = 10;
+/** Ceiling for UNCHECKED_LEGACY — it has reached zero; never raise it. */
+const UNCHECKED_LEGACY_CEILING = 0;
 
 /** How long the probe waits for a seeder handler before treating it as not forwarding. */
 const PROBE_TIMEOUT_MS = 500;

@@ -249,7 +249,7 @@ class IPCDebugTracker {
         suggestions[channel] =
           'Check src/features/terminal/main/terminal.ipc.ts or terminal-professional.ipc.ts';
       } else if (channel.includes('vscode') || channel.includes('jetbrains')) {
-        suggestions[channel] = 'Check src/features/ide/main/ide.ipc.ts';
+        suggestions[channel] = 'Check src/features/system/main/system.ipc.ts';
       } else {
         suggestions[channel] = 'Create new handler file in appropriate feature directory';
       }

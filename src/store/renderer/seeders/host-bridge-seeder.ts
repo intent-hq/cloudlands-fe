@@ -5,11 +5,10 @@
  * to the daemon-host `host.*` JSON-RPC surface (PROTOCOL §host / §5.14).
  *
  * The renderer's `invoke()` resolves through the in-memory mock IPC router
- * (`$shared/ipc-mock-router`), not the real Electron preload bridge — so the
- * main-process handlers in `features/system/main/system.ipc.ts` +
- * `features/file/main/file.ipc.ts` that already delegate to `host.checkGit` /
- * `host.directoryStatus` (cloudlands-fe PR #5) were never reached from the
- * renderer. The fallthrough returned `undefined`, which made
+ * (`$shared/ipc-mock-router`), not the real Electron preload bridge — so
+ * main-process copies of these channels were never reached from the
+ * renderer (they have since been retired). The fallthrough returned
+ * `undefined`, which made
  * `CompactWorkspaceInitializer`'s git probe report `gitAvailable:false` and
  * every `RepoSelector` / `LocalRepoTab` / `ProjectPickerMessage` directory
  * status check resolve to `null`.
@@ -305,7 +304,7 @@ registerMockIpcHandler('vscode:open', async (arg) =>
 
 /**
  * `vscode:open-git-diff` → open the repository folder in VS Code so its native
- * git tooling shows the diff (mirrors the legacy main-process behavior).
+ * git tooling shows the diff.
  */
 registerMockIpcHandler('vscode:open-git-diff', async (arg) => {
   const params = asRecord(arg);
@@ -315,9 +314,9 @@ registerMockIpcHandler('vscode:open-git-diff', async (arg) => {
 });
 
 /**
- * JetBrains-family catalog ids in launch-priority order (mirrors the legacy
- * main-process selection in ide.ipc.ts; ids match the daemon catalog and the
- * shared EDITOR_REGISTRY).
+ * JetBrains-family catalog ids in launch-priority order (the order the retired
+ * main-process launcher used; ids match the daemon catalog and the shared
+ * EDITOR_REGISTRY).
  */
 const JETBRAINS_EDITOR_IDS = [
   'intellij',
