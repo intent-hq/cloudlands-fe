@@ -32,6 +32,10 @@ describe('disable-directives', () => {
           '/* eslint-enable */',
           '// eslint-disable -- line comments cannot open a block',
           'c(); // eslint-disable-line -- no rule list',
+          '/* eslint-disable-next-line',
+          '   intent/x */',
+          'd(); /* eslint-disable-line',
+          '   intent/x */',
         ].join('\n'),
       ),
     );
@@ -41,6 +45,9 @@ describe('disable-directives', () => {
       { kind: 'disable', rules: null, reason: '' },
       { kind: 'enable', rules: null, reason: '' },
       { kind: 'disable-line', rules: null, reason: 'no rule list' },
+      // ESLint accepts a multi-line `disable-next-line` block but not a multi-line
+      // `disable-line`.
+      { kind: 'disable-next-line', rules: ['intent/x'], reason: '' },
     ]);
   });
 
@@ -56,11 +63,14 @@ describe('disable-directives', () => {
           'd();',
           '/* eslint-enable intent/x */',
           'e();',
+          '/* eslint-disable-next-line',
+          '   intent/x -- why */',
+          'f();',
         ].join('\n'),
       ),
       'x',
     );
-    expect([1, 2, 3, 4, 5, 6, 7, 8].filter(suppressed)).toEqual([1, 3, 5, 6, 7]);
+    expect([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].filter(suppressed)).toEqual([1, 3, 5, 6, 7, 11]);
   });
 });
 
@@ -110,6 +120,13 @@ tester.run('require-disable-reason', rule, {
       filename,
       options,
       errors: [notLineScoped],
+    },
+    // A multi-line block directive still needs its reason.
+    {
+      code: '/* eslint-disable-next-line\n   no-debugger */\nawait w();',
+      filename,
+      options,
+      errors: [missingReason],
     },
     // A directive that names no rule turns this one off too.
     {

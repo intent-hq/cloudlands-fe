@@ -143,18 +143,25 @@ function resolveObject(node, context, depth = 0) {
   return null;
 }
 
-/** The value node of `object.key`, following spreads of constant objects; last wins. */
+// Stands in for a property value a spread we cannot read may supply; never fixed.
+const UNRESOLVED = { type: 'Unresolved' };
+
+/**
+ * The value node of `object.key`, following spreads of constant objects; last wins. A
+ * spread we cannot read (`...budgetOptions()`) may override an earlier value, so it
+ * yields `UNRESOLVED` until a later explicit property sets the key again.
+ */
 function objectProperty(object, key, context, depth = 0) {
   if (!object || depth > MAX_RESOLVE_DEPTH) return null;
   let found = null;
   for (const property of object.properties) {
     if (property.type === 'SpreadElement') {
-      const spread = objectProperty(
-        resolveObject(property.argument, context),
-        key,
-        context,
-        depth + 1,
-      );
+      const spreadObject = resolveObject(property.argument, context);
+      if (!spreadObject) {
+        found = UNRESOLVED;
+        continue;
+      }
+      const spread = objectProperty(spreadObject, key, context, depth + 1);
       if (spread) found = spread;
     } else if (keyName(property) === key) {
       found = property.value;
@@ -220,12 +227,18 @@ function fixedValue(node, context, depth = 0) {
   }
 }
 
-function isTestingLibraryImport(identifier, context) {
+/**
+ * The exported name an identifier imports from a `@testing-library/*` module (so
+ * `import { waitFor as wait }` still names `waitFor`), or null.
+ */
+function testingLibraryImportName(identifier, context) {
   const variable = resolveVariable(identifier, context);
   const def = variable?.defs[0];
-  if (def?.type !== 'ImportBinding') return false;
+  if (def?.type !== 'ImportBinding' || def.node.type !== 'ImportSpecifier') return null;
   const source = def.parent?.source?.value;
-  return typeof source === 'string' && source.startsWith('@testing-library/');
+  if (typeof source !== 'string' || !source.startsWith('@testing-library/')) return null;
+  const { imported } = def.node;
+  return imported.type === 'Identifier' ? imported.name : String(imported.value);
 }
 
 /**
@@ -235,10 +248,11 @@ function isTestingLibraryImport(identifier, context) {
 function waitCall(node, context) {
   const callee = unwrap(node.callee);
   if (callee.type === 'Identifier') {
-    if (TESTING_LIBRARY_WAITS.has(callee.name) && isTestingLibraryImport(callee, context)) {
+    const imported = testingLibraryImportName(callee, context);
+    if (imported && TESTING_LIBRARY_WAITS.has(imported)) {
       return { options: node.arguments.slice(1, 2), numberOption: false };
     }
-    if (FIND_QUERY.test(callee.name)) {
+    if (FIND_QUERY.test(imported ?? callee.name)) {
       return { options: node.arguments.slice(1), numberOption: false };
     }
     return null;

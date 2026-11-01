@@ -19,14 +19,9 @@ export function disableDirectives(sourceCode) {
     const match = DIRECTIVE.exec(comment.value);
     if (!match) continue;
     const [, kind, list, reason] = match;
-    // `eslint-disable-line` must be a line comment or a block on one line, as in ESLint.
-    if (
-      kind !== 'disable' &&
-      kind !== 'enable' &&
-      comment.loc.start.line !== comment.loc.end.line
-    ) {
-      continue;
-    }
+    // As in ESLint, `eslint-disable-line` must sit on one line; a block
+    // `eslint-disable-next-line` may span lines and covers the line after it ends.
+    if (kind === 'disable-line' && comment.loc.start.line !== comment.loc.end.line) continue;
     if ((kind === 'disable' || kind === 'enable') && comment.type !== 'Block') continue;
     const rules = list
       ? list

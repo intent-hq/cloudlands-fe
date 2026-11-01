@@ -148,6 +148,11 @@ tester.run(ruleName, rule, {
       filename,
     },
     { code: inTest('await vi.waitFor(check, budget);'), filename },
+    // A later spread we cannot read may supply a run-time limit over the fixed one.
+    {
+      code: inTest('await waitFor(check, { timeout: 3000, ...budgetOptions() });'),
+      filename,
+    },
     // A `let` that is reassigned no longer holds its initializer.
     {
       code: inTest(
@@ -222,6 +227,23 @@ tester.run(ruleName, rule, {
     },
   ],
   invalid: [
+    // Renaming the import does not hide the wait.
+    {
+      code: "import { waitFor as wait } from '@testing-library/svelte';\nawait wait(check, { timeout: 3000 });",
+      filename,
+      errors: [error],
+    },
+    {
+      code: "import { waitForElementToBeRemoved as gone } from '@testing-library/dom';\nawait gone(() => el, { timeout: 3000 });",
+      filename,
+      errors: [error],
+    },
+    // A fixed property after the unreadable spread sets the limit again.
+    {
+      code: inTest('await waitFor(check, { ...budgetOptions(), timeout: 3000 });'),
+      filename,
+      errors: [error],
+    },
     {
       code: inTest('await waitFor(() => expect(x).toBe(1), { timeout: 3000 });'),
       filename,
@@ -307,6 +329,16 @@ tester.run(ruleName, rule, {
       ),
       filename,
       errors: [error],
+    },
+    // A multi-line block `eslint-disable-next-line` covers the line after it ends, and
+    // uses none of the allowance either.
+    {
+      code: inTest(
+        '/* eslint-disable-next-line\n   rule-to-test/no-fixed-wait-timeout-in-tests -- deliberate */\nawait waitFor(a, { timeout: 1000 });\nawait waitFor(b, { timeout: 2000 });\nawait waitFor(c, { timeout: 3000 });',
+      ),
+      filename,
+      options: [{ baseline: { 'src/features/example/__tests__/example.test.ts': 1 } }],
+      errors: [{ ...error, line: 7 }],
     },
     // Findings past a file's baseline allowance are reported; a disabled line uses none.
     {
