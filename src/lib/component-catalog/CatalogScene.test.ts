@@ -293,9 +293,8 @@ describe('CatalogScene', () => {
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(mocks.watchCaptureStability).not.toHaveBeenCalled();
-    await waitFor(
-      () => expect(container.querySelector('[data-catalog-renderer-fixture]')).not.toBeNull(),
-      { timeout: 10_000 },
+    await waitFor(() =>
+      expect(container.querySelector('[data-catalog-renderer-fixture]')).not.toBeNull(),
     );
     expect(screen.getByRole('button', { name: '1. Primary' })).not.toBeNull();
   });

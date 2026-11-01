@@ -316,7 +316,7 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
           backendRequestMock.mock.calls.filter(([method]) => method === 'agent.sendMessage'),
         ).toHaveLength(1);
       },
-      { timeout: 15000, interval: 50 },
+      { interval: 50 },
     );
     const placementCalls = backendRequestMock.mock.calls.filter(
       ([method]) => method === 'file.placeAttachment',
@@ -388,7 +388,7 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
           appStore.state.chatState.byAgentId[AGENT]?.queuedRetryRecords[merged.id]?.record.text,
         ).toBe(merged.content);
       },
-      { timeout: 15000, interval: 50 },
+      { interval: 50 },
     );
     expect(
       backendRequestMock.mock.calls.find(([method]) => method === 'agent.queueMessage'),
@@ -480,7 +480,7 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
       () => {
         expect(backendRequestMock.mock.calls.map((c) => c[0])).toContain('agent.sendMessage');
       },
-      { timeout: 15000, interval: 50 },
+      { interval: 50 },
     );
 
     const sendCall = backendRequestMock.mock.calls.find((c) => c[0] === 'agent.sendMessage')!;
@@ -578,7 +578,7 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
       () => {
         expect(backendRequestMock.mock.calls.map((c) => c[0])).toContain('agent.queueMessage');
       },
-      { timeout: 15000, interval: 50 },
+      { interval: 50 },
     );
 
     const queueCall = backendRequestMock.mock.calls.find((c) => c[0] === 'agent.queueMessage')!;

@@ -17,8 +17,8 @@ warmImport(() => import('./renderers/ChatPolishCatalogPreview.svelte'));
 
 async function renderReadyPreview() {
   const view = render(CatalogFixtureList, { props: { entry } });
-  await screen.findByRole('slider', { name: 'Panel width' }, { timeout: 20_000 });
-  await screen.findByTestId('chat-polish-preview', {}, { timeout: 20_000 });
+  await screen.findByRole('slider', { name: 'Panel width' });
+  await screen.findByTestId('chat-polish-preview');
   return view;
 }
 
