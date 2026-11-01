@@ -184,8 +184,6 @@ const UNREACHABLE_LEGACY: ReadonlySet<string> = new Set([
   'events:subscribe',
   'events:unsubscribe',
   'export:chat-to-html',
-  'external-editors:detect-installed',
-  'external-editors:open',
   'file:getGitStatus',
   'file:getGitignorePatterns',
   'file:getTreeWithSizes',
@@ -200,7 +198,6 @@ const UNREACHABLE_LEGACY: ReadonlySet<string> = new Set([
   'generate_pr_content',
   'get_home_directory',
   'get_workspace_changes',
-  'jetbrains:open',
   'log:clear',
   'log:export-debug-bundle',
   'log:paths',
@@ -209,7 +206,6 @@ const UNREACHABLE_LEGACY: ReadonlySet<string> = new Set([
   'log:track-agent-event',
   'log:track-file-change',
   'log:track-mcp-call',
-  'providers:get-paths',
   'resolve_merge_conflicts',
   'rules:get-context',
   'rules:list',
@@ -217,7 +213,6 @@ const UNREACHABLE_LEGACY: ReadonlySet<string> = new Set([
   'setup-scripts:detect-type',
   'setup-scripts:generate',
   'shell:openPath',
-  'shell:showItemInFolder',
   'specialists:delete-file',
   'specialists:export-builtin',
   'specialists:file-exists',
@@ -258,10 +253,7 @@ const UNREACHABLE_LEGACY: ReadonlySet<string> = new Set([
   'user-rules:set-enabled-by-type',
   'user-rules:update',
   'user-rules:update-by-type',
-  'vscode:open',
   'vscode:open-diff',
-  'vscode:open-git-diff',
-  'vscode:openFile',
   'window:create',
   'window:maximize',
   'window:minimize',
@@ -301,11 +293,10 @@ const UNREACHABLE_LEGACY: ReadonlySet<string> = new Set([
   'workspace:update_git_info',
   'workspace:validate',
   'write_file',
-  'xcode:open',
 ]);
 
 /** Ceiling for UNREACHABLE_LEGACY — lower it as entries leave; never raise it. */
-const UNREACHABLE_LEGACY_CEILING = 152;
+const UNREACHABLE_LEGACY_CEILING = 143;
 
 const mainScan = scanMainInvokeHandlers(path.join(PACKAGE_ROOT, 'src'));
 const bridgeSources = readBridgeCallerSources(PACKAGE_ROOT);
@@ -339,7 +330,7 @@ describe('main-process IPC handler reachability', () => {
     expect(mainScan.unresolved).toEqual([]);
     expect(bridgeSources.some((entry) => entry.file.startsWith('e2e/'))).toBe(true);
     // Literal call from an e2e build-smoke helper.
-    expect(bridgeScan.called.get('providers:get-availability')).toEqual(
+    expect(bridgeScan.called.get('backend:request')).toEqual(
       expect.arrayContaining([expect.stringMatching(/^e2e\/build-smoke-helpers\.ts:/)]),
     );
     // Group-alias constant (`BACKEND.GET_STATUS`) from a saga.

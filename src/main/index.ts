@@ -333,7 +333,6 @@ import { getDockEnabledLocalPref, setDockEnabledLocalPref } from './local-prefs'
 import { isDockLabEnabled, loadDockLabEnabled, registerDockLabHandlers } from './dock-lab';
 import { registerExternalEditorsHandlers } from '../features/external-editors/main/external-editors.ipc';
 import { setupFileIPC } from '../features/file/main/file.ipc';
-import { registerIDEHandlers } from '../features/ide/main/ide.ipc';
 import { setupPanelLayoutHistoryIPC } from '../features/layout/main/panel-layout-history.ipc';
 import { setupLogIPC } from '../features/log/main/log.ipc';
 import { setupNotificationIPC } from '../features/notifications/main/notification.ipc';
@@ -1577,8 +1576,7 @@ const bootFlow = app.whenReady().then(async () => {
   setupDevConsoleIPC();
   setupPowerStateIPC();
   await setupConfigIPC();
-  registerIDEHandlers(); // Needed for IDE integration
-  registerExternalEditorsHandlers(); // Needed for external editor detection and opening
+  registerExternalEditorsHandlers(); // Needed for the native "Open with…" chooser
   registerWorkspacePRHandlers(); // Needed for PR operations
   registerMissingAgentHandlers(); // Needed for agent context operations
   registerDeepLinkHandlers(); // Needed for deep link and file operations
@@ -1642,11 +1640,6 @@ const bootFlow = app.whenReady().then(async () => {
   markRendererWindowsAllowed();
   if (isDockLabEnabled()) await dockMenuController.restore();
   void rebuildMenu();
-
-  // Hydrate the main-process provider catalog cache (non-blocking): the
-  // JSON-RPC client queues the request until the daemon socket connects.
-  const { primeProviderCatalog } = await import('./utils/provider-catalog-accessor.js');
-  primeProviderCatalog();
 
   startupMetrics.end('criticalIPC');
 

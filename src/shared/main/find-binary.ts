@@ -65,7 +65,6 @@ let activeBackendClient: ReturnType<typeof getBackendClient> | null = null;
 let reconnectInvalidationInstalled = false;
 const binaryCache = new Map<string, { value: string | null; expiresAt: number }>();
 const binaryInFlight = new Map<string, Promise<string | null>>();
-const invalidationListeners = new Set<() => void>();
 
 function hostEnvPathContext(env: HostEnvResult | null): string {
   return env ? `${env.path}\0${env.enhancedPath}` : '';
@@ -75,19 +74,12 @@ function invalidateDiscoveryResults(): void {
   discoveryGeneration += 1;
   binaryCache.clear();
   binaryInFlight.clear();
-  for (const listener of invalidationListeners) listener();
 }
 
 /** Clear host-discovery state after a reconnect or backend identity change. */
 export function invalidateHostDiscoveryCache(): void {
   cachedHostEnv = null;
   invalidateDiscoveryResults();
-}
-
-/** Subscribe a related host-discovery client to the same invalidation domain. */
-export function onHostDiscoveryInvalidated(listener: () => void): () => void {
-  invalidationListeners.add(listener);
-  return () => invalidationListeners.delete(listener);
 }
 
 function ensureReconnectInvalidation(): void {

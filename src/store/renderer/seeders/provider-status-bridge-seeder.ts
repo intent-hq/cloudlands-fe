@@ -15,9 +15,9 @@
  * AuggieSetupGate, ProviderSelector, and AgentGrid render the truth and show
  * their static install/login guidance.
  *
- * Mirrors the main-process semantics in
- * `features/providers/main/provider-availability.service.ts`, which the
- * renderer cannot reach in this mock-router build:
+ * These are the only implementations of the aggregate reads — the mock
+ * router intercepts every renderer `invoke()` in every build, so main keeps
+ * just the `providers:check-single` recheck (forwarded here for `mock`):
  *  - auggie:      availability via `host.checkAuggie` (settings precedence +
  *                 PATH scan on the daemon).
  *  - claude-code: daemon discovery's installed and gatedOff verdict.
@@ -484,7 +484,7 @@ interface ProviderDiscoveryEntry {
  * and `npxPackages[id]` the pinned package spec of npx-only providers.
  * `npx` rides along from the same round-trip so the onboarding bulk check can
  * fetch it without the aggregated auth sweep.
- * Mirrors main's getProviderPaths; degrades to empty maps on RPC failure.
+ * Degrades to empty maps on RPC failure.
  */
 registerMockIpcHandler(PROVIDERS_CHANNELS.GET_PATHS, async () => {
   try {
