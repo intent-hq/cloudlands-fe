@@ -81,7 +81,7 @@
 
 {#if rendered}
   <div
-    class="{CHAT_OPERATIONAL_ROW_CLASS} group font-family-child font-normal text-muted-foreground {className}"
+    class="{CHAT_OPERATIONAL_ROW_CLASS} subscription-card-row-inset gap-2! group font-family-child font-normal text-muted-foreground {className}"
     data-streaming-typing-row
     aria-hidden={!visible}
     onpointerenter={() => setHovered(true)}
