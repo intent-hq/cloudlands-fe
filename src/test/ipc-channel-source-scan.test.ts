@@ -96,6 +96,50 @@ describe('scanDirectBridgeCallers', () => {
     expect(dynamicSites.size).toBe(0);
   });
 
+  it('counts only receivers bound to the bridge, not other invoke clients in the same file', () => {
+    const { called } = scan({
+      'src/mixed.ts': [
+        'const api = window.electronAPI;',
+        "await api.invoke('demo:live-local');",
+        "await client.invoke('demo:mock-router');",
+        "await mockClient?.invoke('demo:mock-optional');",
+      ].join('\n'),
+      'src/getter.ts': [
+        "function getApi(): Window['electronAPI'] | undefined {",
+        "  return typeof window !== 'undefined' ? window.electronAPI : undefined;",
+        '}',
+        'const bridge =',
+        "  typeof window !== 'undefined' && isElectron()",
+        '    ? getApi()',
+        '    : undefined;',
+        "await bridge.invoke('demo:live-getter');",
+        "await getApi()?.invoke('demo:live-getter-call');",
+        "const other = createClient('x');",
+        "await other.invoke('demo:mock-other');",
+      ].join('\n'),
+      'src/typed.ts': [
+        'export interface IpcLike { invoke(channel: string): Promise<unknown> }',
+        'export function getOwnerBridge(): IpcLike | null {',
+        '  return (globalThis as { electronAPI?: IpcLike }).electronAPI ?? null;',
+        '}',
+        'export async function query(ipc: IpcLike) {',
+        "  return ipc.invoke('demo:live-typed');",
+        '}',
+        "export function forward(target: Window['electronAPI'], rpc: RpcClient) {",
+        "  target.invoke('demo:live-param');",
+        "  rpc.invoke('demo:mock-param');",
+        '}',
+      ].join('\n'),
+    });
+    expect([...called.keys()].sort()).toEqual([
+      'demo:live-getter',
+      'demo:live-getter-call',
+      'demo:live-local',
+      'demo:live-param',
+      'demo:live-typed',
+    ]);
+  });
+
   it('reports dynamic calls and handoffs, and resolves them through known wrappers', () => {
     const files = {
       'src/wrapper.ts': [

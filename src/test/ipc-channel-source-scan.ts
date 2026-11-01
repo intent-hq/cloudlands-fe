@@ -219,23 +219,104 @@ const BRIDGE_TEST_ONLY_FILE_RE =
   /(?:^|\/)(?:__tests__|__mocks__|test|fixtures)\/|\.(?:test|spec)\.[cm]?[jt]s$|\.d\.ts$|\.preview\.(?:ts|svelte)$|[.-]preview-fixtures\.ts$|-fixtures?\.ts$|Harness\.svelte$/;
 
 /**
- * `RECEIVER.invoke` heads in a bridge-aware file: `window.electronAPI.invoke`,
- * `?.invoke`, `(window as any).electronAPI.invoke`, `electronAPI().invoke`,
- * and locals holding the bridge (`api.invoke`, `bridge.invoke`, `getBridge().invoke`).
+ * `RECEIVER.invoke` heads: `window.electronAPI.invoke`, `?.invoke`,
+ * `(window as any).electronAPI.invoke`, `electronAPI().invoke`, and calls
+ * through a bridge-bound receiver (`api.invoke`, `getPreloadBridge().invoke`).
  */
 const INVOKE_HEAD_RE = /\b([A-Za-z_$][A-Za-z0-9_$]*)(?:\(\))?!?\s*\??\.\s*invoke\b/g;
-/**
- * `.invoke` receivers that are not the preload bridge: class clients and the
- * generated `TypedIpcClient` route through the renderer mock router, and the
- * preload's own `ipcRenderer.invoke` is the bridge implementation.
- */
-const NON_BRIDGE_RECEIVERS: ReadonlySet<string> = new Set([
-  'this',
-  'TypedIpcClient',
-  'ipcRenderer',
-]);
 /** A file may hold bridge calls only if it names the bridge (value or `ElectronAPI` type). */
 const BRIDGE_AWARE_RE = /electronAPI/i;
+/** `const NAME`, `function NAME`, or a typed `NAME:` / `NAME?:` parameter or property. */
+const BINDING_RE =
+  /\b(?:(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)|function\s*\*?\s*([A-Za-z_$][A-Za-z0-9_$]*)|([A-Za-z_$][A-Za-z0-9_$]*)\s*\??\s*:(?!:))/g;
+
+/** Blank out block comments and whole-line `//` comments (strings stay intact). */
+function stripComments(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, ' '))
+    .replace(/^\s*\/\/.*$/gm, (comment) => ' '.repeat(comment.length));
+}
+
+/**
+ * Read a binding's text from `index`: a declaration's initializer or type up
+ * to the end of its statement, or a function's signature and body. Tracks
+ * brackets and strings; stops at a depth-0 `;`, `,`, or (once text has
+ * started) newline, or where an enclosing bracket closes.
+ */
+function readBindingText(source: string, index: number, isFunction: boolean): string {
+  let depth = 0;
+  let quote: string | undefined;
+  let sawBody = false;
+  let i = index;
+  while (i < source.length && /\s/.test(source[i])) i += 1;
+  const start = i;
+  for (; i < source.length; i += 1) {
+    const char = source[i];
+    if (quote) {
+      if (char === '\\') i += 1;
+      else if (char === quote) quote = undefined;
+      continue;
+    }
+    if (char === "'" || char === '"' || char === '`') quote = char;
+    else if ('([{'.includes(char)) {
+      depth += 1;
+      if (char === '{' && depth === 1) sawBody = true;
+    } else if (')]}'.includes(char)) {
+      if (depth === 0) break;
+      depth -= 1;
+      if (isFunction && sawBody && depth === 0 && char === '}') return source.slice(start, i + 1);
+    } else if (depth === 0 && !isFunction) {
+      if (char === ';' || char === ',') break;
+      if (
+        char === '\n' &&
+        !/[=?:|&(,]\s*$/.test(source.slice(start, i)) &&
+        !/^\s*(?:\?|:|&&|\|\||\.)/.test(source.slice(i + 1))
+      ) {
+        break;
+      }
+    }
+  }
+  return source.slice(start, i);
+}
+
+/**
+ * Identifiers bound to the preload bridge in one file, to a fixpoint from
+ * `electronAPI`: a local, parameter, or getter function whose initializer,
+ * type, or body names a bridge identifier (`const api = window.electronAPI`,
+ * `bridge: Window['electronAPI']`, `function getApi() { return window.electronAPI }`),
+ * and a type annotated onto a bridge identifier (`{ electronAPI?: IpcLike }`
+ * makes `ipc: IpcLike` a bridge parameter). Receivers outside this set — a
+ * mock-router client, a class's `this.invoke` — are not bridge calls.
+ */
+function collectBridgeReceivers(source: string): Set<string> {
+  const code = stripComments(source);
+  const bindings: { name: string; text: string }[] = [];
+  for (const match of code.matchAll(BINDING_RE)) {
+    const name = match[1] ?? match[2] ?? match[3];
+    bindings.push({
+      name,
+      text: readBindingText(code, match.index + match[0].length, match[2] !== undefined),
+    });
+  }
+  const receivers = new Set(['electronAPI']);
+  const mentionsReceiver = (text: string) =>
+    [...text.matchAll(/[A-Za-z_$][A-Za-z0-9_$]*/g)].some(([word]) => receivers.has(word));
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const { name, text } of bindings) {
+      if (!receivers.has(name) && mentionsReceiver(text)) {
+        receivers.add(name);
+        grew = true;
+      }
+      const typeName = text.match(/^([A-Z][A-Za-z0-9_$]*)\s*(?:[|;,)}]|$)/)?.[1];
+      if (receivers.has(name) && typeName && !receivers.has(typeName)) {
+        receivers.add(typeName);
+        grew = true;
+      }
+    }
+  }
+  return receivers;
+}
 
 /** Module constants bound to a channel literal, e.g. `const X_CHANNEL = 'browser:resolve-url'`. */
 const LITERAL_CONST_DECL_RE =
@@ -484,8 +565,9 @@ export function scanDirectBridgeCallers(
   for (const { file, source } of files) {
     if (!BRIDGE_AWARE_RE.test(source)) continue;
     const context = contexts.get(file)!;
+    const receivers = collectBridgeReceivers(source);
     for (const match of source.matchAll(INVOKE_HEAD_RE)) {
-      if (NON_BRIDGE_RECEIVERS.has(match[1]) || isOnCommentLine(source, match.index)) continue;
+      if (!receivers.has(match[1]) || isOnCommentLine(source, match.index)) continue;
       const site = `${file}:${lineOf(source, match.index)}`;
       const end = match.index + match[0].length;
       let i = end;
