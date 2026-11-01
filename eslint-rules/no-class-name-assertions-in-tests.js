@@ -1,4 +1,5 @@
 import { relativeFilename } from './design-system/common.js';
+import { suppressedLines } from './lib/disable-directives.js';
 
 const MESSAGE =
   'Asserting on CSS class names pins the test to how a style is spelled, not to what the user ' +
@@ -156,40 +157,6 @@ function expectCall(callee) {
 }
 
 const RULE_NAME = 'no-class-name-assertions-in-tests';
-const DIRECTIVE =
-  /^\s*eslint-(disable|enable|disable-line|disable-next-line)(?:\s+([^]*?))?(?:\s+--[^]*)?\s*$/;
-
-function namesThisRule(list) {
-  if (!list) return true;
-  return list
-    .split(',')
-    .map((rule) => rule.trim())
-    .some((rule) => rule === RULE_NAME || rule.endsWith(`/${RULE_NAME}`));
-}
-
-// Lines on which an `eslint-disable*` directive turns this rule off, so the baseline
-// count matches what ESLint actually reports.
-function suppressedLines(context) {
-  const lines = new Set();
-  const ranges = [];
-  let openFrom = null;
-  for (const comment of context.sourceCode.getAllComments()) {
-    const match = DIRECTIVE.exec(comment.value);
-    if (!match || !namesThisRule(match[2])) continue;
-    const [, kind] = match;
-    if (kind === 'disable-line') lines.add(comment.loc.start.line);
-    else if (kind === 'disable-next-line') lines.add(comment.loc.end.line + 1);
-    else if (kind === 'disable' && comment.type === 'Block' && openFrom === null) {
-      openFrom = comment.loc.start.line;
-    } else if (kind === 'enable' && openFrom !== null) {
-      ranges.push([openFrom, comment.loc.start.line]);
-      openFrom = null;
-    }
-  }
-  if (openFrom !== null) ranges.push([openFrom, Infinity]);
-  return (line) => lines.has(line) || ranges.some(([from, to]) => line >= from && line <= to);
-}
-
 export default {
   meta: {
     type: 'problem',
@@ -219,7 +186,7 @@ export default {
 
   create(context) {
     const allowed = context.options[0]?.baseline?.[relativeFilename(context)] ?? 0;
-    const suppressed = suppressedLines(context);
+    const suppressed = suppressedLines(context.sourceCode, RULE_NAME);
     let seen = 0;
 
     return {
