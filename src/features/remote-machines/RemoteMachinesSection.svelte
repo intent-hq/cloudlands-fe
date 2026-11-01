@@ -18,13 +18,13 @@
     selectRemoteMachineFailures,
     selectRemoteMachineOperations,
     selectRemoteMachines,
-    selectRemoteMachinesSupported,
+    selectRemoteMachinesVisible,
   } from './remote-machines-selectors';
   import { remoteMachineUnexposeRequested } from './remote-machines-slice';
   import { connectionForMachine } from './remote-machines-utils';
   import { runningAgentsLabel } from './remote-machines-messages';
 
-  const supported$ = selectRemoteMachinesSupported();
+  const supported$ = selectRemoteMachinesVisible();
   const machines$ = selectRemoteMachines();
   const connections$ = selectConnections();
   const localFingerprint$ = selectLocalMachineFingerprint();

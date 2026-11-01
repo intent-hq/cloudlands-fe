@@ -17,6 +17,7 @@ import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { store } from '$store/renderer/store';
 import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
+import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { remoteMachinesSaga } from './remote-machines-saga';
 import {
   executorRevokeRequested,
@@ -62,6 +63,7 @@ async function settle() {
 beforeEach(() => {
   store.init();
   store.dispatch(backendReconnected());
+  store.dispatch(setLabsRemoteAgentsEnabled(true));
   invoke.mockReset();
   (window as unknown as { electronAPI: unknown }).electronAPI = { invoke };
   ui.confirm.mockResolvedValue(true);
@@ -328,5 +330,34 @@ describe('remote machines saga — un-expose and revoke', () => {
     dispatch(executorRevokeRequested('cred-9'));
     await vi.waitFor(() => expect(store.state.remoteMachines.executorBackends).toEqual([]));
     expect(ui.confirm).toHaveBeenLastCalledWith(expect.objectContaining({ destructive: true }));
+  });
+});
+
+describe('remote machines saga — Labs flag off', () => {
+  beforeEach(() => {
+    store.dispatch(setLabsRemoteAgentsEnabled(false));
+  });
+
+  it('reads nothing from the daemon and ignores owner actions', async () => {
+    const mock = backend();
+    start();
+    dispatch(remoteMachinesRefreshRequested());
+    dispatch(remoteMachineExposeRequested('mac'));
+    dispatch(remoteMachineUnexposeRequested('d-mac', 'mac', true));
+    dispatch(executorRevokeRequested('cred-9'));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(mock.requests.map((r) => r.method)).toEqual([]);
+    expect(invoke).not.toHaveBeenCalled();
+    expect(ui.confirm).not.toHaveBeenCalled();
+    expect(store.state.remoteMachines.executorBackends).toBeNull();
+  });
+
+  it('loads as soon as the flag is turned on', async () => {
+    backend();
+    invoke.mockResolvedValue(null);
+    start();
+    dispatch(setLabsRemoteAgentsEnabled(true));
+    await vi.waitFor(() => expect(store.state.remoteMachines.supported).toBe(true));
+    expect(Object.keys(store.state.remoteMachines.machines)).toEqual(['d-mac']);
   });
 });

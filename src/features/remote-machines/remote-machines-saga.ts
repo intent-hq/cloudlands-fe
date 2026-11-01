@@ -23,6 +23,8 @@ import { confirm } from '$lib/components/patterns/confirm';
 import { notify } from '$lib/components/patterns/notify';
 import { store } from '$store/renderer/store';
 import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { selectLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import {
   executorBackendRevoked,
   executorRevokeRequested,
@@ -95,6 +97,11 @@ function unexposeReply(reply: unknown): RemoteMachineUnexposeResult {
   const value = (reply ?? {}) as Record<string, unknown>;
   if (value.success === true) return { success: true, revoked: value.revoked === true };
   return bridgeFailure(reply) as RemoteMachineFailure;
+}
+
+/** The Labs "Remote agents" flag is the only switch: off, nothing is read or changed. */
+function labsEnabled(): boolean {
+  return selectLabsRemoteAgentsEnabled.select(store.state);
 }
 
 function generation(): number {
@@ -189,6 +196,7 @@ function* readSnapshot(): SagaGenerator<Parameters<typeof remoteMachinesLoaded>[
 const SNAPSHOT_ATTEMPTS = 3;
 
 function* refresh(): SagaGenerator<void> {
+  if (!labsEnabled()) return;
   for (let attempt = 0; attempt < SNAPSHOT_ATTEMPTS; attempt += 1) {
     const started = generation();
     const snapshot = yield* call(readSnapshot);
@@ -200,6 +208,7 @@ function* refresh(): SagaGenerator<void> {
 }
 
 function* expose(action: ReturnType<typeof remoteMachineExposeRequested>): SagaGenerator<void> {
+  if (!labsEnabled()) return;
   const [connectionId, enableListener] = action.payload;
   if (store.state.remoteMachines.pending[connectionId]) return;
   const machine = selectConnectionLabel.select(store.state, connectionId);
@@ -236,6 +245,7 @@ function* expose(action: ReturnType<typeof remoteMachineExposeRequested>): SagaG
 }
 
 function* unexpose(action: ReturnType<typeof remoteMachineUnexposeRequested>): SagaGenerator<void> {
+  if (!labsEnabled()) return;
   const [machineId, connectionId, stopAgents] = action.payload;
   if (store.state.remoteMachines.pending[machineId]) return;
   const name = store.state.remoteMachines.machines[machineId]?.name ?? machineId;
@@ -276,6 +286,7 @@ function* unexpose(action: ReturnType<typeof remoteMachineUnexposeRequested>): S
 }
 
 function* revokeExecutor(action: ReturnType<typeof executorRevokeRequested>): SagaGenerator<void> {
+  if (!labsEnabled()) return;
   const [credentialId] = action.payload;
   if (store.state.remoteMachines.pending[credentialId]) return;
   const backend = store.state.remoteMachines.executorBackends?.find(
@@ -303,7 +314,10 @@ function* revokeExecutor(action: ReturnType<typeof executorRevokeRequested>): Sa
 }
 
 export function* remoteMachinesSaga(): SagaGenerator<void> {
-  yield* takeLatest([remoteMachinesRefreshRequested, backendReconnected], refresh);
+  yield* takeLatest(
+    [remoteMachinesRefreshRequested, backendReconnected, setLabsRemoteAgentsEnabled],
+    refresh,
+  );
   yield* takeEvery(remoteMachineExposeRequested, expose);
   yield* takeEvery(remoteMachineUnexposeRequested, unexpose);
   yield* takeEvery(executorRevokeRequested, revokeExecutor);

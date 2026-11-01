@@ -65,7 +65,7 @@
     selectRemoteMachineFailures,
     selectRemoteMachineOperations,
     selectRemoteMachines,
-    selectRemoteMachinesSupported,
+    selectRemoteMachinesVisible,
   } from '$features/remote-machines/remote-machines-selectors';
   import {
     remoteMachineExposeRequested,
@@ -91,7 +91,7 @@
   const connectedIds$ = selectConnectedIds();
   const currentConnectionId$ = selectCurrentConnectionId();
   const syncState$ = selectKeychainSyncState();
-  const remoteSupported$ = selectRemoteMachinesSupported();
+  const remoteSupported$ = selectRemoteMachinesVisible();
   const remoteMachines$ = selectRemoteMachines();
   const localFingerprint$ = selectLocalMachineFingerprint();
   const remoteOperations$ = selectRemoteMachineOperations();

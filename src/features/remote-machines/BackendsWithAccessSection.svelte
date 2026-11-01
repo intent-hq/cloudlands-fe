@@ -14,11 +14,13 @@
     selectExecutorBackends,
     selectRemoteMachineFailures,
     selectRemoteMachineOperations,
+    selectRemoteMachinesVisible,
   } from './remote-machines-selectors';
   import { executorRevokeRequested, remoteMachineFailureDismissed } from './remote-machines-slice';
   import { remoteMachineFailureMessage, runningAgentsLabel } from './remote-machines-messages';
   import { Button } from '$lib/components/ui/button';
 
+  const visible$ = selectRemoteMachinesVisible();
   const backends$ = selectExecutorBackends();
   const operations$ = selectRemoteMachineOperations();
   const failures$ = selectRemoteMachineFailures();
@@ -36,7 +38,7 @@
   }
 </script>
 
-{#if $backends$.length > 0}
+{#if $visible$ && $backends$.length > 0}
   <section class="space-y-3" aria-labelledby="executor-backends-title">
     <div>
       <h3 id="executor-backends-title" class="type-title text-foreground">

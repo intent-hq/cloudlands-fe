@@ -4,10 +4,15 @@ import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import type { RemoteMachine } from '$shared/types/remote-machines';
 import { formatConnectionLabel } from '$lib/utils/connection-label';
 import { store } from '$store/renderer/store';
+import { selectLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 
-/** The current backend advertises `remoteMachines: 1`; every remote-machine surface hides otherwise. */
-export const selectRemoteMachinesSupported = store.createSelector(
-  (state) => state.remoteMachines.supported,
+/**
+ * Every remote-machine surface shows only while the Labs "Remote agents" flag
+ * is on AND the current backend advertises `remoteMachines: 1`. Turning the
+ * flag off hides them; it revokes nothing.
+ */
+export const selectRemoteMachinesVisible = store.createSelector(
+  (state) => selectLabsRemoteAgentsEnabled.select(state) && state.remoteMachines.supported === true,
 );
 
 /** The current backend's exposed machines, by name. */
