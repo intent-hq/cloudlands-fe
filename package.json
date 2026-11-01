@@ -328,7 +328,7 @@
   },
   "dependencies": {
     "@themislib/themis": "0.3.3",
-    "body-parser": "^2.3.0",
+    "body-parser": "^2.4.0",
     "chrome-remote-interface": "^0.34.0",
     "date-fns": "^4.4.0",
     "electron-updater": "^6.8.9",
