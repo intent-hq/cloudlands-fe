@@ -200,14 +200,19 @@ export interface JsonRpcRetirement {
 
 /**
  * Request methods whose params never reach traffic observers (Dev Console
- * capture): desktop authority and input, and `secret.provide` (PROTOCOL
- * §5.56), whose `value` is a user secret.
+ * capture): desktop authority and input, `secret.provide` (PROTOCOL
+ * §5.56), whose `value` is a user secret, and `remoteMachines.add`, whose
+ * `token` is an executor credential.
  */
 const REDACTED_TRAFFIC_METHODS: ReadonlySet<string> = new Set([
   'desktop.control',
   'desktop.revoke',
   'secret.provide',
+  'remoteMachines.add',
 ]);
+
+/** Request methods whose results never reach traffic observers: `executor.mint` returns the executor token. */
+const REDACTED_RESULT_METHODS: ReadonlySet<string> = new Set(['executor.mint']);
 
 /**
  * Events: `notification` (JsonRpcNotification), `status` (ConnectionStatus),
@@ -703,6 +708,8 @@ export class JsonRpcClient extends EventEmitter {
       chiefAttachments: capabilities?.chiefAttachments === 1 ? 1 : 0,
       // Truncated note reads (§5.2): gates maxContentBytes / baseContentBytes.
       noteTruncatedRead: capabilities?.noteTruncatedRead === 1 ? 1 : 0,
+      // Daemon-to-daemon remote machines: gates "Make available to <backend>".
+      remoteMachines: capabilities?.remoteMachines === 1 ? 1 : 0,
     });
     this.acknowledgedHelloIdentity = Object.freeze({
       clientId: result.clientId,
@@ -1490,7 +1497,9 @@ export class JsonRpcClient extends EventEmitter {
           type: 'response',
           key: `out:${numericId}`,
           status: message.error ? 'error' : 'success',
-          payload: message.error ?? message.result,
+          payload:
+            message.error ??
+            (REDACTED_RESULT_METHODS.has(entry.method) ? { redacted: true } : message.result),
         }));
         if (message.error) {
           entry.reject(new JsonRpcError(message.error));

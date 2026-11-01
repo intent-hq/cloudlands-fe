@@ -246,7 +246,7 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     path: 'labs.remoteAgents',
     label: 'Remote agents (Labs)',
     description:
-      'Offer experimental remote agent setup and placement. Existing remote sessions remain available when disabled.',
+      'Offer experimental remote agent setup and placement, including making your machines available to a backend. Existing remote sessions remain available when disabled.',
     category: 'labs',
     type: 'boolean',
     source: 'local-storage',

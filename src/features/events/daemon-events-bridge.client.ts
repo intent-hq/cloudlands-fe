@@ -2,6 +2,11 @@ import {
   selectCanReadScriptDefinition,
   selectUsesGuestScriptScope,
 } from '$store/renderer/slices/scripts/scripts-selectors';
+import { parseRemoteMachine } from '$shared/types/remote-machines';
+import {
+  remoteMachineChanged,
+  remoteMachineRemoved,
+} from '$features/remote-machines/remote-machines-slice';
 import type { Note, WorkspaceTask, WorkspaceTaskStats } from '$shared/types';
 import { workspaceTasksPushed } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import { workspaceTaskStatsPushed } from '$store/renderer/slices/workspace/workspace-slice';
@@ -3538,6 +3543,16 @@ function handleSourceControlAuthChangedEvent(event: WorkspaceEvent): void {
  * explicit `identity.provider` change) or unlinked. Global; the identity slice
  * follows the new triple's provider.
  */
+function handleRemoteMachineChangedEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (data?.removed === true && typeof data.machineId === 'string' && data.machineId) {
+    appStore.dispatch(remoteMachineRemoved(data.machineId));
+    return;
+  }
+  const machine = parseRemoteMachine(data?.machine);
+  if (machine) appStore.dispatch(remoteMachineChanged(machine));
+}
+
 function handlePrincipalIdentityChangedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (typeof data?.principalId !== 'string' || !data.principalId.trim()) return;
@@ -3928,6 +3943,12 @@ export function routeDaemonEventsNotification(
   }
   if (type === 'principal:identity-changed') {
     handlePrincipalIdentityChangedEvent(event);
+    return;
+  }
+  // `remoteMachine:changed` is global and owner-only: an exposed machine was
+  // added, removed, changed state or reported new capabilities.
+  if (type === 'remoteMachine:changed') {
+    handleRemoteMachineChangedEvent(event);
     return;
   }
 
@@ -4846,6 +4867,9 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // `principal:identity-changed` — the host's identity forge was re-keyed
   // (`{ principalId, identity | null }`); global, folded into the identity slice.
   'principal:identity-changed',
+  // `remoteMachine:changed` — the current backend's exposed machines
+  // (`{ machine }` or `{ machineId, removed: true }`); owner connections only.
+  'remoteMachine:changed',
   // REV-2 browser-client routing (§5.17): global logical-client transitions
   // (re-read `client.list`) and the workspace-scoped daemon tab-registry
   // change events (`{ tab, changes? }`, patched into the browser-clients
