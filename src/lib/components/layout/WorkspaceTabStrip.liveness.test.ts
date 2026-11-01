@@ -7,6 +7,7 @@ import { mount, unmount } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTabLivenessStore } from './__tests__/mocks/workspace-tab-liveness-store';
 import type { WorkspaceTabBorderMaskBounds } from './titlebar-geometry';
+import { defaultAsyncUtilTimeoutMs } from '../../../../scripts/vitest-timeouts.mjs';
 
 const mocks = vi.hoisted(() => ({
   fixture: null as ReturnType<typeof createTabLivenessStore> | null,
@@ -85,8 +86,13 @@ const settle = (ms = 60) => new Promise((resolve) => setTimeout(resolve, ms));
 // Bounded completion signal for DOM removals (intent#5005): re-query once per
 // stubbed frame on real timers until the node is gone, and name the node that
 // is still attached when the deadline passes. This never flushes either, so a
-// stalled root still fails here instead of being rescued.
-async function waitForRemoval(query: () => Element | null, timeoutMs = 2000) {
+// stalled root still fails here instead of being rescued. A stalled root never
+// recovers on its own, so the deadline is only a hang guard: it follows the
+// suite's CI-scaled wait default rather than a fixed 2s a loaded runner can miss.
+async function waitForRemoval(
+  query: () => Element | null,
+  timeoutMs = defaultAsyncUtilTimeoutMs(),
+) {
   const deadline = Date.now() + timeoutMs;
   for (let node = query(); node; node = query()) {
     if (Date.now() >= deadline) {
@@ -242,7 +248,8 @@ describe('WorkspaceTabStrip reactive-parent liveness', () => {
           expect(fixture().store.state.shell.current).toBe(id);
           // Themis may schedule a cadence timer followed by an animation frame.
           // Observe delivery and DOM progress without tick/flushSync rescuing a
-          // stalled root. Use the same bounded real-timer wait as DOM removals.
+          // stalled root. Like waitForRemoval, the bound is the suite's CI-scaled
+          // wait default: a stalled root never catches up, so a longer bound still fails.
           await vi.waitFor(
             () => {
               expect(deliveries.at(-1)).toBe(cycle % 2 === 0 ? 'all-workspaces' : null);
@@ -250,7 +257,7 @@ describe('WorkspaceTabStrip reactive-parent liveness', () => {
               expect(sidebar.getAttribute('aria-pressed')).toBe(String(cycle % 2 === 0));
               expect(local.textContent).toBe(String(cycle + 1));
             },
-            { interval: 16, timeout: 2000 },
+            { interval: 16 },
           );
           samples.push({
             selected: tab(id).getAttribute('aria-selected'),
