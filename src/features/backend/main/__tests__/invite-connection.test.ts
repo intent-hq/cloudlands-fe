@@ -507,11 +507,11 @@ describe('openInviteConnection', () => {
         await expect(conn.challenge('inv_1', 's3cret')).resolves.toEqual(CHALLENGE);
         // The loser — connecting or already open — is destroyed, so at most
         // the winner's socket remains open on the daemon side.
-        await vi.waitFor(() => expect(shared.openClients()).toBe(1), { timeout: 3_000 });
+        await vi.waitFor(() => expect(shared.openClients()).toBe(1));
       } finally {
         conn.close();
       }
-      await vi.waitFor(() => expect(shared.openClients()).toBe(0), { timeout: 3_000 });
+      await vi.waitFor(() => expect(shared.openClients()).toBe(0));
     } finally {
       await shared.stop();
     }
@@ -541,8 +541,8 @@ describe('openInviteConnection', () => {
       ).catch((e: unknown) => e);
       expect(err).toBeInstanceOf(InviteTransportError);
       expect(err).toMatchObject({ transportCode: 'host-unreachable' });
-      await vi.waitFor(() => expect(accepted.length).toBe(1), { timeout: 3_000 });
-      await vi.waitFor(() => expect(closedCount).toBe(1), { timeout: 3_000 });
+      await vi.waitFor(() => expect(accepted.length).toBe(1));
+      await vi.waitFor(() => expect(closedCount).toBe(1));
     } finally {
       for (const s of accepted) s.destroy();
       await new Promise<void>((res) => blackhole.close(() => res()));
@@ -584,9 +584,7 @@ describe('openInviteConnection', () => {
       } finally {
         conn.close();
       }
-      await vi.waitFor(() => expect(children.every((c) => c.killed)).toBe(true), {
-        timeout: 3_000,
-      });
+      await vi.waitFor(() => expect(children.every((c) => c.killed)).toBe(true));
     });
 
     it('passes the tc address to tailcat byte-for-byte (base64url is case-sensitive)', async () => {
@@ -612,9 +610,7 @@ describe('openInviteConnection', () => {
       } finally {
         conn.close();
       }
-      await vi.waitFor(() => expect(children.every((c) => c.killed)).toBe(true), {
-        timeout: 3_000,
-      });
+      await vi.waitFor(() => expect(children.every((c) => c.killed)).toBe(true));
     });
 
     it('falls back to the tunnel when every direct host fails, and closes it on failure', async () => {
@@ -650,13 +646,10 @@ describe('openInviteConnection', () => {
           { timeoutMs: 3_000, tailcatSpawn: relaySpawn(daemon.port, mismatchChildren, []) },
         ),
       ).rejects.toBeInstanceOf(PinMismatchError);
-      await vi.waitFor(
-        () => {
-          expect(mismatchChildren.length).toBeGreaterThan(0);
-          expect(mismatchChildren.every((c) => c.killed)).toBe(true);
-        },
-        { timeout: 3_000 },
-      );
+      await vi.waitFor(() => {
+        expect(mismatchChildren.length).toBeGreaterThan(0);
+        expect(mismatchChildren.every((c) => c.killed)).toBe(true);
+      });
     });
 
     it('rejects with tunnel-failed when the tailcat child exits immediately', async () => {
@@ -689,13 +682,10 @@ describe('openInviteConnection', () => {
         ).catch((e: unknown) => e);
         expect(err).toBeInstanceOf(InviteTransportError);
         expect(err).toMatchObject({ transportCode: 'host-refused' });
-        await vi.waitFor(
-          () => {
-            expect(children.length).toBeGreaterThan(0);
-            expect(children.every((c) => c.killed)).toBe(true);
-          },
-          { timeout: 3_000 },
-        );
+        await vi.waitFor(() => {
+          expect(children.length).toBeGreaterThan(0);
+          expect(children.every((c) => c.killed)).toBe(true);
+        });
       } finally {
         await new Promise<void>((res) => refusing.close(() => res()));
       }

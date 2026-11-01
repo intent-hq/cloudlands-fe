@@ -818,9 +818,7 @@ describe('NewSpaceModal model-picker composition', () => {
       await within(teamListbox).findByRole('option', { name: /^GPT 5\.1 Model 1/ }),
     ).toBeTruthy();
     expect(within(teamListbox).getByRole('option', { name: /^GPT 5\.12 Last model/ })).toBeTruthy();
-    await fireEvent.click(
-      await within(teamListbox).findByRole('option', { name: /GPT 5\.6/ }, { timeout: 5000 }),
-    );
+    await fireEvent.click(await within(teamListbox).findByRole('option', { name: /GPT 5\.6/ }));
 
     await waitFor(() => {
       expect(pickerTrigger(team).textContent).toContain('GPT 5.6');
@@ -862,9 +860,7 @@ describe('NewSpaceModal model-picker composition', () => {
     const singleContent = dropdownContent(singleListbox);
     expect(singleContent.dataset.side).toBe('bottom');
     expect(singleContent.style.maxHeight).toBe('360px');
-    await fireEvent.click(
-      await within(singleListbox).findByRole('option', { name: /GPT 5\.5/ }, { timeout: 5000 }),
-    );
+    await fireEvent.click(await within(singleListbox).findByRole('option', { name: /GPT 5\.5/ }));
 
     await waitFor(() => {
       expect(pickerTrigger(single).textContent).toContain('GPT 5.5');
@@ -1024,9 +1020,7 @@ describe('NewSpaceModal model-picker composition', () => {
       );
       const trigger = pickerTrigger(modeCard(/Agent orchestration/i));
       await fireEvent.click(trigger);
-      await fireEvent.click(
-        await within(dialog).findByRole('option', { name: /GPT 5\.6/ }, { timeout: 5000 }),
-      );
+      await fireEvent.click(await within(dialog).findByRole('option', { name: /GPT 5\.6/ }));
       await waitFor(() => expect(trigger.textContent).toContain('GPT 5.6'));
 
       // A create that fails must not save anything either.
@@ -1078,9 +1072,7 @@ describe('NewSpaceModal model-picker composition', () => {
       picker.onBranchChange({ detail: { branch: 'feature' } });
       const trigger = pickerTrigger(modeCard(/Agent orchestration/i));
       await fireEvent.click(trigger);
-      await fireEvent.click(
-        await within(dialog).findByRole('option', { name: /GPT 5\.6/ }, { timeout: 5000 }),
-      );
+      await fireEvent.click(await within(dialog).findByRole('option', { name: /GPT 5\.6/ }));
       await waitFor(() => expect(trigger.textContent).toContain('GPT 5.6'));
       expect(savedSelections()).toEqual([]);
 
@@ -1111,7 +1103,7 @@ describe('NewSpaceModal model-picker composition', () => {
     const trigger = pickerTrigger(team);
 
     await fireEvent.click(trigger);
-    await within(dialog).findByRole('option', { name: /GPT 5\.6/ }, { timeout: 5000 });
+    await within(dialog).findByRole('option', { name: /GPT 5\.6/ });
     const search = await within(dialog).findByRole('searchbox', { name: 'Search options' });
     await fireEvent.input(search, { target: { value: 'GPT 5.6' } });
     await fireEvent.keyDown(search, { key: 'Enter' });
@@ -1141,9 +1133,7 @@ describe('NewSpaceModal model-picker composition', () => {
 
     await fireEvent.click(modelTrigger);
     const modelListbox = await within(dialog).findByRole('listbox');
-    await fireEvent.click(
-      await within(modelListbox).findByRole('option', { name: /GPT 5\.6/ }, { timeout: 5000 }),
-    );
+    await fireEvent.click(await within(modelListbox).findByRole('option', { name: /GPT 5\.6/ }));
     await waitFor(() => expect(modelTrigger.textContent).toContain('GPT 5.6'));
 
     expect(modelTrigger.getAttribute('aria-expanded')).toBe('true');
