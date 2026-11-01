@@ -159,12 +159,11 @@ async function readLocalFingerprint(): Promise<string | null> {
   }
 }
 
-function* refresh(): SagaGenerator<void> {
-  const started = generation();
+/** A snapshot read against one connection generation. */
+function* readSnapshot(): SagaGenerator<Parameters<typeof remoteMachinesLoaded>[0]> {
   let known = yield* call(readSupported);
   for (let attempt = 0; known === null && attempt < CAPABILITY_RETRIES; attempt += 1) {
     yield* delay(CAPABILITY_RETRY_MS);
-    if (started !== generation()) return;
     known = yield* call(readSupported);
   }
   const supported = known === true;
@@ -179,8 +178,25 @@ function* refresh(): SagaGenerator<void> {
     localFingerprint = yield* call(readLocalFingerprint);
   }
   const executorBackends = yield* call(readExecutorBackends);
-  if (started !== generation()) return;
-  yield* put(remoteMachinesLoaded({ supported, machines, localFingerprint, executorBackends }));
+  return { supported, machines, localFingerprint, executorBackends };
+}
+
+/**
+ * The connection generation also moves on the first connect, which does not
+ * dispatch `backendReconnected`; a snapshot read across a move is read again
+ * rather than dropped, so the section does not stay hidden after startup.
+ */
+const SNAPSHOT_ATTEMPTS = 3;
+
+function* refresh(): SagaGenerator<void> {
+  for (let attempt = 0; attempt < SNAPSHOT_ATTEMPTS; attempt += 1) {
+    const started = generation();
+    const snapshot = yield* call(readSnapshot);
+    if (started === generation()) {
+      yield* put(remoteMachinesLoaded(snapshot));
+      return;
+    }
+  }
 }
 
 function* expose(action: ReturnType<typeof remoteMachineExposeRequested>): SagaGenerator<void> {

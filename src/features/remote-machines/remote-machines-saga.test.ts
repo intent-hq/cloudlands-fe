@@ -16,6 +16,7 @@ import { installMockBackend, resetMockBackend } from '../../test/mocks/backend-t
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { store } from '$store/renderer/store';
 import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
 import { remoteMachinesSaga } from './remote-machines-saga';
 import {
   executorRevokeRequested,
@@ -138,6 +139,24 @@ describe('remote machines saga — refresh', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('reads again when the connection generation moves mid-refresh (first connect)', async () => {
+    const mock = backend();
+    let calls = 0;
+    mock.onRequest('remoteMachines.list', () => {
+      calls += 1;
+      if (calls === 1) store.dispatch(connectionStatusChanged('connected'));
+      return { machines: [MACHINE] };
+    });
+    invoke.mockResolvedValue(null);
+    store.dispatch(connectionStatusChanged('connecting'));
+    start();
+    dispatch(remoteMachinesRefreshRequested());
+    await vi.waitFor(() => expect(store.state.remoteMachines.executorBackends).not.toBeNull());
+    expect(calls).toBe(2);
+    expect(store.state.remoteMachines.supported).toBe(true);
+    expect(Object.keys(store.state.remoteMachines.machines)).toEqual(['d-mac']);
   });
 
   it('stays hidden when the backend does not advertise remoteMachines', async () => {
