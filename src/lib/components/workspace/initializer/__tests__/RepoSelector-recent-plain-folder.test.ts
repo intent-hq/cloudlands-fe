@@ -404,17 +404,18 @@ describe('RepoSelector new folder classification in the browser build', () => {
     );
   });
 
-  it('keeps the plain-folder flow when the folder status is unavailable', async () => {
+  it('keeps the plain-folder flow as an existing folder when the status is unavailable', async () => {
+    // The unread target may already hold files, so it must reach the in-place,
+    // no-undo confirmation that only an existing folder gets.
     statuses.set(PARENT, 'fail');
     statuses.set(TARGET, 'fail');
     const { onchange } = await openNewFolder();
-    await waitFor(() =>
-      expect(screen.getByText('A new folder will be created, without git')).toBeTruthy(),
-    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Select' })).toBeTruthy());
+    expect(screen.queryByText('A new folder will be created, without git')).toBeNull();
     expect(screen.queryByText(/Create new repo/i)).toBeNull();
-    await fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Select' }));
     expect(lastDetail(onchange)).toEqual(
-      expect.objectContaining({ path: TARGET, plainFolder: 'new' }),
+      expect.objectContaining({ path: TARGET, plainFolder: 'existing' }),
     );
   });
 

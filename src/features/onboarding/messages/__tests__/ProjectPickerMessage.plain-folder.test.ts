@@ -225,6 +225,33 @@ describe('ProjectPickerMessage — plain-folder toggle (Labs)', () => {
     );
   });
 
+  it('confirms a new project as an existing folder when its status is unavailable', async () => {
+    // The target may already exist with user files: an unread status must not
+    // skip the in-place, no-undo confirmation by passing as a new folder.
+    setPlainFolderLabs(true);
+    settleForgeAuth();
+    loadWorkspaces([]);
+    const selections = renderPicker();
+    await screen.findByRole('switch', { name: toggleName() });
+    const respond = backendRequestMock.getMockImplementation()!;
+    backendRequestMock.mockImplementation(((method: string, params?: { path?: string }) =>
+      method === 'host.directoryStatus' && params?.path === '~/Documents/my-project'
+        ? Promise.reject(new Error('unavailable'))
+        : respond(method as never, params as never)) as never);
+
+    await fireEvent.click(
+      screen.getByRole('tab', { name: m.onboarding_projectPicker_new_label() }),
+    );
+    await waitFor(() =>
+      expect(selections.at(-1)).toMatchObject({
+        type: 'new',
+        repoPath: '~/Documents/my-project',
+        plainFolder: 'existing',
+        isValid: true,
+      }),
+    );
+  });
+
   it('keeps a new project inside a git repository a git workspace', async () => {
     // The target does not exist; its parent is a git repository.
     mockDaemon((path) =>

@@ -318,7 +318,10 @@
         branch: plain ? '' : 'main',
         projectName,
         isValid: !!parentPath && !!projectName && !hasError && !isCheckingNewProjectDir,
-        ...(plain ? { plainFolder: newProjectDirStatus?.exists ? 'existing' : 'new' } : {}),
+        // An unread status may hide an existing folder: confirm it as existing.
+        ...(plain
+          ? { plainFolder: newProjectDirStatus && !newProjectDirStatus.exists ? 'new' : 'existing' }
+          : {}),
       } as ProjectSelection;
     }
   }

@@ -496,7 +496,9 @@
   // (an existing repository, or a folder inside one).
   let newRepoParentGitProbe = $state<{ parent: string; inRepo: boolean } | null>(null);
   // The toggle is off, so an unavailable status keeps the plain-folder flow
-  // and the daemon decides (it rejects a folder inside a git repository).
+  // and the daemon decides (it rejects a folder inside a git repository). The
+  // target may already exist, so it counts as existing: the in-place, no-undo
+  // confirmation is never skipped for a folder that might hold user files.
   const newRepoPathStatusUnavailable = $derived(
     $directoryStatusCheck$?.admission === $admission$ &&
       $directoryStatusCheck$.path === newRepoFullPath &&
@@ -506,7 +508,7 @@
   const newRepoPlainFolderKind = $derived(
     plainFolderMode
       ? newRepoPathStatusUnavailable
-        ? 'new'
+        ? 'existing'
         : classifyPlainFolderTarget(
             newRepoPathStatus,
             newRepoParentGitProbe?.parent === newRepoParentPath
