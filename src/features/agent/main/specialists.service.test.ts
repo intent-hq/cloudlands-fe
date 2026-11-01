@@ -152,11 +152,12 @@ describe('specialists.service — coding agent resolution (D1-B)', () => {
       expect(prompt).not.toContain('"verifier"');
     });
 
-    it('formatSpecialistsForPrompt prefers implementor/verifier when actually present', async () => {
+    it('formatSpecialistsForPrompt uses available built-in specialists', async () => {
       const { formatSpecialistsForPrompt } = await import('./specialists.service');
       const prompt = await formatSpecialistsForPrompt();
       expect(prompt).toContain('specialist: "implementor"');
-      expect(prompt).toContain('specialist: "verifier"');
+      expect(prompt).toContain('specialist: "spec-writer"');
+      expect(prompt).not.toContain('specialist: "verifier"');
     });
   });
 

@@ -441,7 +441,7 @@ describe('WorkspaceCard phase-card controls', () => {
 
     const activation = getByRole('button', { name: 'Build search' });
     const taskProgress = getByRole('button', { name: '1/4 tasks' });
-    const primaryAction = getByRole('button', { name: 'Show Coordinator' });
+    const primaryAction = getByRole('button', { name: 'Show Lead' });
     const secondaryAction = getByRole('button', { name: 'Pause' });
 
     for (const button of [activation, taskProgress, primaryAction, secondaryAction]) {

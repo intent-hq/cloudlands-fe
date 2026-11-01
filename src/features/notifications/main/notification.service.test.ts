@@ -2385,13 +2385,13 @@ describe('NotificationService structured notification:show payload', () => {
 
     const payload = showPayload(onlyWindow);
     // Existing concatenated (truncated) title/body are byte-identical.
-    expect(payload.title).toBe(`Test Workspace - Coordinator: ${'t'.repeat(37)}...`);
+    expect(payload.title).toBe(`Test Workspace - Lead: ${'t'.repeat(37)}...`);
     expect(payload.body).toBe('Task completed');
     // Structured parts are untruncated — the renderer truncates via CSS.
     expect(payload.structured).toEqual({
       workspaceTitle: 'Test Workspace',
       specialist: 'spec-writer',
-      specialistDisplayName: 'Coordinator',
+      specialistDisplayName: 'Lead',
       taskTitle: longTaskTitle,
       provider: 'claude-code',
       // Seeds AgentAvatar's deterministic gradient colors in the toast.
