@@ -8158,5 +8158,8 @@
   "remoteMachines_unexpose_confirm_description": "{backend} 將不再在 {machine} 上執行代理程式，並會撤銷已授予的存取權限。",
   "remoteMachines_unexpose_label": "停止允許使用",
   "remoteMachines_unexpose_success": "此後端不再可以使用 {machine}。",
-  "remoteMachines_unexpose_unrevoked_warning": "已移除 {machine}，但由於該機器未連線，無法撤銷其存取權限。請在 {machine} 的「設定 → 機器 → 有存取權限的後端」中撤銷。"
+  "remoteMachines_unexpose_unrevoked_warning": "已移除 {machine}，但由於該機器未連線，無法撤銷其存取權限。請在 {machine} 的「設定 → 機器 → 有存取權限的後端」中撤銷。",
+  "remoteMachines_failure_unconfirmedStops_error_one": "{machine} 未確認 {count} 個代理程式已停止，因此未移除任何內容，它仍可供 {backend} 使用。請重試，或在 {machine} 上撤銷存取權限。",
+  "remoteMachines_failure_unconfirmedStops_error_many": "{machine} 未確認 {count} 個代理程式已停止，因此未移除任何內容，它仍可供 {backend} 使用。請重試，或在 {machine} 上撤銷存取權限。",
+  "remoteMachines_failure_retryStopAgents_label": "重試"
 }

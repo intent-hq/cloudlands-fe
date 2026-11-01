@@ -108,6 +108,11 @@ export interface RemoteMachineFailure {
   message?: string;
   /** `machine-unreachable`: the routes the backend tried. */
   attempts?: RemoteMachineRouteAttempt[];
+  /**
+   * `machine-unreachable` from `remove` with `stopAgents`: agent ids whose stop
+   * the machine has not acknowledged. Nothing was removed; retrying is safe.
+   */
+  unconfirmedStops?: string[];
   /** `machine-update-required`: which side needs the update. */
   update?: 'machine' | 'backend';
   machineVersion?: string;

@@ -33,8 +33,15 @@ export function remoteMachineFailureMessage(failure: RemoteMachineFailure, label
             backendVersion: failure.backendVersion,
           })
         : m.remoteMachines_failure_updateMachine_error({ machine });
-    case 'machine-unreachable':
-      return m.remoteMachines_failure_unreachable_error({ machine, backend });
+    case 'machine-unreachable': {
+      const unconfirmed = failure.unconfirmedStops?.length ?? 0;
+      if (unconfirmed === 0)
+        return m.remoteMachines_failure_unreachable_error({ machine, backend });
+      const count = formatInteger(unconfirmed);
+      return unconfirmed === 1
+        ? m.remoteMachines_failure_unconfirmedStops_error_one({ count, machine, backend })
+        : m.remoteMachines_failure_unconfirmedStops_error_many({ count, machine, backend });
+    }
     case 'machine-in-use': {
       const count = failure.runningAgents ?? 0;
       return count === 1
@@ -46,6 +53,20 @@ export function remoteMachineFailureMessage(failure: RemoteMachineFailure, label
         message: failure.message ?? m.workspace_transfer_unknown_error(),
       });
   }
+}
+
+/**
+ * The removal retry a failure offers: `stop-agents` after `machine-in-use`, or
+ * `retry-stop-agents` after `remove` with `stopAgents` left stops unconfirmed
+ * (the backend deleted nothing, so retrying is safe).
+ */
+export function remoteMachineFailureRetry(
+  failure: RemoteMachineFailure,
+): 'stop-agents' | 'retry-stop-agents' | null {
+  if (failure.code === 'machine-in-use') return 'stop-agents';
+  if (failure.code === 'machine-unreachable' && (failure.unconfirmedStops?.length ?? 0) > 0)
+    return 'retry-stop-agents';
+  return null;
 }
 
 /** Explanation for an exposed machine that cannot currently run agents, or null. */

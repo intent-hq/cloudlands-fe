@@ -8158,5 +8158,8 @@
   "remoteMachines_unexpose_confirm_description": "{backend} は {machine} でエージェントを実行しなくなり、付与したアクセス権は取り消されます。",
   "remoteMachines_unexpose_label": "使用を停止",
   "remoteMachines_unexpose_success": "このバックエンドでは {machine} を使えなくなりました。",
-  "remoteMachines_unexpose_unrevoked_warning": "{machine} を削除しましたが、そのマシンが接続されていないためアクセス権を取り消せませんでした。{machine} の「設定 → マシン → アクセスできるバックエンド」で取り消してください。"
+  "remoteMachines_unexpose_unrevoked_warning": "{machine} を削除しましたが、そのマシンが接続されていないためアクセス権を取り消せませんでした。{machine} の「設定 → マシン → アクセスできるバックエンド」で取り消してください。",
+  "remoteMachines_failure_unconfirmedStops_error_one": "{machine} で {count} 件のエージェントの停止が確認できなかったため、何も削除されず、引き続き {backend} で利用できます。もう一度お試しいただくか、{machine} でアクセスを取り消してください。",
+  "remoteMachines_failure_unconfirmedStops_error_many": "{machine} で {count} 件のエージェントの停止が確認できなかったため、何も削除されず、引き続き {backend} で利用できます。もう一度お試しいただくか、{machine} でアクセスを取り消してください。",
+  "remoteMachines_failure_retryStopAgents_label": "再試行"
 }

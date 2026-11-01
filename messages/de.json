@@ -8158,5 +8158,8 @@
   "remoteMachines_unexpose_confirm_description": "{backend} führt dann keine Agenten mehr auf {machine} aus, und der erteilte Zugriff wird widerrufen.",
   "remoteMachines_unexpose_label": "Nicht mehr verfügbar machen",
   "remoteMachines_unexpose_success": "{machine} ist für dieses Backend nicht mehr verfügbar.",
-  "remoteMachines_unexpose_unrevoked_warning": "{machine} wurde entfernt, aber der Zugriff konnte nicht widerrufen werden, weil der Rechner nicht verbunden ist. Widerrufen Sie ihn auf {machine} unter Einstellungen → Rechner → Backends mit Zugriff."
+  "remoteMachines_unexpose_unrevoked_warning": "{machine} wurde entfernt, aber der Zugriff konnte nicht widerrufen werden, weil der Rechner nicht verbunden ist. Widerrufen Sie ihn auf {machine} unter Einstellungen → Rechner → Backends mit Zugriff.",
+  "remoteMachines_failure_unconfirmedStops_error_one": "{machine} hat nicht bestätigt, dass {count} Agent gestoppt wurde. Es wurde nichts entfernt, und {machine} ist weiterhin für {backend} verfügbar. Versuche es erneut oder widerrufe den Zugriff auf {machine}.",
+  "remoteMachines_failure_unconfirmedStops_error_many": "{machine} hat nicht bestätigt, dass {count} Agenten gestoppt wurden. Es wurde nichts entfernt, und {machine} ist weiterhin für {backend} verfügbar. Versuche es erneut oder widerrufe den Zugriff auf {machine}.",
+  "remoteMachines_failure_retryStopAgents_label": "Erneut versuchen"
 }

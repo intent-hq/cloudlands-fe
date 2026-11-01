@@ -229,6 +229,33 @@ describe('remote machine relay — expose', () => {
     expect(backendCalls.map((c) => c.method)).not.toContain('remoteMachines.add');
   });
 
+  it('revokes and reports listener-off when the machine advertises no hosts', async () => {
+    const { relay, backend, machineCalls, backendCalls } = setup({
+      machine: {
+        'executor.mint': () => ({
+          credentialId: 'cred-1',
+          token: TOKEN,
+          machine: {
+            daemonId: 'd-mac',
+            name: 'Studio Mac',
+            port: 5179,
+            hosts: [],
+            fingerprint: 'AA:BB',
+          },
+        }),
+      },
+    });
+    expect(await relay.expose({ machineConnectionId: 'mac' }, backend)).toEqual({
+      success: false,
+      code: 'listener-off',
+    });
+    expect(backendCalls.map((call) => call.method)).not.toContain('remoteMachines.add');
+    expect(machineCalls.at(-1)).toEqual({
+      method: 'executor.revoke',
+      params: { credentialId: 'cred-1' },
+    });
+  });
+
   it('maps remote-agents-disabled from mint', async () => {
     const { relay, backend } = setup({
       machine: {
@@ -422,6 +449,45 @@ describe('remote machine relay — unexpose', () => {
     const { relay, backend, backendCalls } = setup();
     await relay.unexpose({ machineId: 'd-mac', stopAgents: true }, backend);
     expect(backendCalls.at(-1)?.params).toEqual({ machineId: 'd-mac', stopAgents: true });
+  });
+
+  it('waits past the 30 s stop-acknowledgement window when stopping agents', async () => {
+    const { relay, backend } = setup();
+    await relay.unexpose({ machineId: 'd-mac', stopAgents: true }, backend);
+    const request = vi.mocked(backend.client.request);
+    const [, , options] = request.mock.calls.at(-1) ?? [];
+    expect(options?.timeoutMs).toBeGreaterThan(30_000);
+  });
+
+  it('reports unconfirmed stops, removes nothing and does not revoke', async () => {
+    const { relay, backend, machineCalls } = setup({
+      backend: {
+        'remoteMachines.remove': () => {
+          throw new JsonRpcError({
+            code: -32603,
+            message: 'Studio Mac did not confirm 2 stops',
+            data: {
+              code: 'machine-unreachable',
+              attempts: [],
+              unconfirmedStops: ['agent-1', 'agent-2', 7],
+            },
+          });
+        },
+      },
+    });
+    expect(
+      await relay.unexpose(
+        { machineId: 'd-mac', machineConnectionId: 'mac', stopAgents: true },
+        backend,
+      ),
+    ).toEqual({
+      success: false,
+      code: 'machine-unreachable',
+      message: 'Studio Mac did not confirm 2 stops',
+      attempts: [],
+      unconfirmedStops: ['agent-1', 'agent-2'],
+    });
+    expect(machineCalls).toEqual([]);
   });
 
   it('still succeeds, unrevoked, when the machine is not reachable', async () => {

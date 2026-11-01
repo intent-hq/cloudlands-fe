@@ -8158,5 +8158,8 @@
   "remoteMachines_unexpose_confirm_description": "{backend} 将不再在 {machine} 上运行智能体，并会撤销已授予的访问权限。",
   "remoteMachines_unexpose_label": "停止允许使用",
   "remoteMachines_unexpose_success": "此后端不再可以使用 {machine}。",
-  "remoteMachines_unexpose_unrevoked_warning": "已移除 {machine}，但由于该机器未连接，无法撤销其访问权限。请在 {machine} 的“设置 → 机器 → 有访问权限的后端”中撤销。"
+  "remoteMachines_unexpose_unrevoked_warning": "已移除 {machine}，但由于该机器未连接，无法撤销其访问权限。请在 {machine} 的“设置 → 机器 → 有访问权限的后端”中撤销。",
+  "remoteMachines_failure_unconfirmedStops_error_one": "{machine} 未确认 {count} 个代理已停止，因此未移除任何内容，它仍可供 {backend} 使用。请重试，或在 {machine} 上撤销访问权限。",
+  "remoteMachines_failure_unconfirmedStops_error_many": "{machine} 未确认 {count} 个代理已停止，因此未移除任何内容，它仍可供 {backend} 使用。请重试，或在 {machine} 上撤销访问权限。",
+  "remoteMachines_failure_retryStopAgents_label": "重试"
 }

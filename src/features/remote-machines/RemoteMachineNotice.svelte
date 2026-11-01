@@ -10,6 +10,7 @@
   } from './remote-machines-slice';
   import {
     remoteMachineFailureMessage,
+    remoteMachineFailureRetry,
     remoteMachineStateMessage,
   } from './remote-machines-messages';
 
@@ -41,6 +42,7 @@
 
   const labels = $derived({ machine: machineLabel, backend: backendLabel });
   const stateMessage = $derived(machine ? remoteMachineStateMessage(machine, labels) : null);
+  const retry = $derived(failure ? remoteMachineFailureRetry(failure) : null);
 
   function exposeWith(listener: 'wss' | 'tailcat') {
     if (connectionId) appStore.dispatch(remoteMachineExposeRequested(connectionId, listener));
@@ -72,9 +74,13 @@
         <Button variant="secondary" size="sm" disabled={busy} onclick={() => exposeWith('tailcat')}>
           {m.remoteMachines_failure_listenerTailcat_label()}
         </Button>
-      {:else if failure.code === 'machine-in-use' && machine}
+      {:else if retry === 'stop-agents' && machine}
         <Button variant="destructive" size="sm" disabled={busy} onclick={stopAgentsAndRemove}>
           {m.remoteMachines_failure_stopAgents_label()}
+        </Button>
+      {:else if retry === 'retry-stop-agents' && machine}
+        <Button variant="secondary" size="sm" disabled={busy} onclick={stopAgentsAndRemove}>
+          {m.remoteMachines_failure_retryStopAgents_label()}
         </Button>
       {:else if failure.code === 'machine-update-required' && failure.update !== 'backend' && onUpdateMachine}
         <Button variant="secondary" size="sm" disabled={busy} onclick={onUpdateMachine}>

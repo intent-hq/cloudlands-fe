@@ -15,6 +15,7 @@
       'listener-off': state('listener-off'),
       available: state('available'),
       'in-use': state('in-use'),
+      'stops-unconfirmed': state('stops-unconfirmed'),
       'update-required': state('update-required'),
       revoked: state('revoked'),
       unreachable: state('unreachable'),

@@ -22,6 +22,7 @@ export type RemoteMachinesPreviewState =
   | 'listener-off'
   | 'available'
   | 'in-use'
+  | 'stops-unconfirmed'
   | 'update-required'
   | 'revoked'
   | 'unreachable'
@@ -115,6 +116,7 @@ export function setupRemoteMachinesFixture(state: RemoteMachinesPreviewState) {
   const exposed: Partial<Record<RemoteMachinesPreviewState, RemoteMachine>> = {
     available: machine('connected', 1),
     'in-use': machine('connected', 2),
+    'stops-unconfirmed': machine('unreachable', 2),
     'update-required': machine('update-required'),
     revoked: machine('revoked'),
     unreachable: machine('unreachable'),
@@ -131,6 +133,14 @@ export function setupRemoteMachinesFixture(state: RemoteMachinesPreviewState) {
   if (state === 'listener-off') failure('local', { success: false, code: 'listener-off' });
   if (state === 'in-use')
     failure('d-studio-mac', { success: false, code: 'machine-in-use', runningAgents: 2 });
+  if (state === 'stops-unconfirmed')
+    failure('d-studio-mac', {
+      success: false,
+      code: 'machine-unreachable',
+      message: 'Studio Mac did not confirm 2 agent stops',
+      attempts: [],
+      unconfirmedStops: ['agent-1', 'agent-2'],
+    });
   if (state === 'update-required')
     failure('lab-pc', {
       success: false,

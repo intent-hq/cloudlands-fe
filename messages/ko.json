@@ -8158,5 +8158,8 @@
   "remoteMachines_unexpose_confirm_description": "{backend}은(는) 더 이상 {machine}에서 에이전트를 실행하지 않으며, 부여된 접근 권한이 취소됩니다.",
   "remoteMachines_unexpose_label": "사용 중지",
   "remoteMachines_unexpose_success": "이제 이 백엔드에서 {machine}을(를) 사용할 수 없습니다.",
-  "remoteMachines_unexpose_unrevoked_warning": "{machine}을(를) 제거했지만 해당 머신이 연결되어 있지 않아 접근 권한을 취소하지 못했습니다. {machine}의 설정 → 머신 → 접근 가능한 백엔드에서 취소하세요."
+  "remoteMachines_unexpose_unrevoked_warning": "{machine}을(를) 제거했지만 해당 머신이 연결되어 있지 않아 접근 권한을 취소하지 못했습니다. {machine}의 설정 → 머신 → 접근 가능한 백엔드에서 취소하세요.",
+  "remoteMachines_failure_unconfirmedStops_error_one": "{machine}에서 에이전트 {count}개의 중지를 확인하지 못해 아무것도 제거되지 않았으며 {backend}에서 계속 사용할 수 있습니다. 다시 시도하거나 {machine}에서 액세스를 취소하세요.",
+  "remoteMachines_failure_unconfirmedStops_error_many": "{machine}에서 에이전트 {count}개의 중지를 확인하지 못해 아무것도 제거되지 않았으며 {backend}에서 계속 사용할 수 있습니다. 다시 시도하거나 {machine}에서 액세스를 취소하세요.",
+  "remoteMachines_failure_retryStopAgents_label": "다시 시도"
 }

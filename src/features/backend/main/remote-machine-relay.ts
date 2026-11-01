@@ -76,6 +76,8 @@ export interface RemoteMachineRelay {
 
 /** The backend probes (route race, pin, token, bind, capabilities) before saving. */
 const ADD_TIMEOUT_MS = 45_000;
+/** `remove` with `stopAgents` waits up to 30 s for the machine to acknowledge every stop. */
+const REMOVE_STOP_AGENTS_TIMEOUT_MS = 45_000;
 
 const DAEMON_CODES: ReadonlySet<RemoteMachineFailureCode> = new Set([
   'remote-agents-disabled',
@@ -131,6 +133,8 @@ function mapError(error: unknown, side: 'machine' | 'backend'): RemoteMachineFai
         : [],
     );
   }
+  if (code === 'machine-unreachable' && Array.isArray(data.unconfirmedStops))
+    extra.unconfirmedStops = data.unconfirmedStops.filter(text);
   if (code === 'machine-update-required') {
     extra.update = data.update === 'backend' ? 'backend' : 'machine';
     if (text(data.machineVersion)) extra.machineVersion = data.machineVersion;
@@ -283,6 +287,12 @@ export function createRemoteMachineRelay(deps: RemoteMachineRelayDeps): RemoteMa
         return mapError(error, 'machine');
       }
       if (!minted) return fail('failed');
+      // `remoteMachines.add` needs at least one host; a listener bound only to
+      // loopback advertises none, so no backend could reach the machine.
+      if (minted.machine.hosts.length === 0) {
+        await revoke(machine, minted.credentialId);
+        return fail('listener-off');
+      }
 
       let added: unknown;
       try {
@@ -327,10 +337,13 @@ export function createRemoteMachineRelay(deps: RemoteMachineRelayDeps): RemoteMa
     if (!backend.supportsRemoteMachines) return fail('unsupported-backend');
     let removed: unknown;
     try {
-      removed = await backend.client.request('remoteMachines.remove', {
-        machineId: params.machineId,
-        ...(params.stopAgents ? { stopAgents: true } : {}),
-      });
+      removed = params.stopAgents
+        ? await backend.client.request(
+            'remoteMachines.remove',
+            { machineId: params.machineId, stopAgents: true },
+            { timeoutMs: REMOVE_STOP_AGENTS_TIMEOUT_MS },
+          )
+        : await backend.client.request('remoteMachines.remove', { machineId: params.machineId });
     } catch (error) {
       return mapError(error, 'backend');
     }

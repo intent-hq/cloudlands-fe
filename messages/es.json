@@ -8158,5 +8158,8 @@
   "remoteMachines_unexpose_confirm_description": "{backend} dejará de ejecutar agentes en {machine} y se revocará el acceso concedido.",
   "remoteMachines_unexpose_label": "Dejar de poner a disposición",
   "remoteMachines_unexpose_success": "{machine} ya no está disponible para este backend.",
-  "remoteMachines_unexpose_unrevoked_warning": "Se quitó {machine}, pero no se pudo revocar su acceso porque esa máquina no está conectada. Revócalo en {machine}, en Ajustes → Máquinas → Backends con acceso."
+  "remoteMachines_unexpose_unrevoked_warning": "Se quitó {machine}, pero no se pudo revocar su acceso porque esa máquina no está conectada. Revócalo en {machine}, en Ajustes → Máquinas → Backends con acceso.",
+  "remoteMachines_failure_unconfirmedStops_error_one": "{machine} no confirmó que {count} agente se detuviera, así que no se quitó nada y sigue disponible para {backend}. Vuelve a intentarlo o revoca el acceso en {machine}.",
+  "remoteMachines_failure_unconfirmedStops_error_many": "{machine} no confirmó que {count} agentes se detuvieran, así que no se quitó nada y sigue disponible para {backend}. Vuelve a intentarlo o revoca el acceso en {machine}.",
+  "remoteMachines_failure_retryStopAgents_label": "Reintentar"
 }
