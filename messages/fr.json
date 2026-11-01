@@ -8125,7 +8125,6 @@
   "remoteMachines_expose_warning": "{backend} pourra exécuter des agents sur {machine}. Ces agents exécutent du code avec votre compte utilisateur sur {machine}, avec les mêmes accès que vous. Vous pouvez arrêter cela à tout moment.",
   "remoteMachines_exposing_label": "Mise à disposition…",
   "remoteMachines_failure_attempt_label": "{route} : {error}",
-  "remoteMachines_failure_disabled_error": "Les agents distants sont désactivés sur {machine}. Activez-les dans les réglages de cette machine.",
   "remoteMachines_failure_dismiss_label": "Ignorer",
   "remoteMachines_failure_generic_error": "Une erreur s'est produite : {message}",
   "remoteMachines_failure_inUse_error_many": "{count} agents sont en cours d'exécution sur {machine}.",

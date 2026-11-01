@@ -8125,7 +8125,6 @@
   "remoteMachines_expose_warning": "{backend} 將可以在 {machine} 上執行代理程式。這些代理程式會以你在 {machine} 上的使用者帳戶執行程式碼，擁有與你相同的權限。你可以隨時停止。",
   "remoteMachines_exposing_label": "正在允許使用…",
   "remoteMachines_failure_attempt_label": "{route}：{error}",
-  "remoteMachines_failure_disabled_error": "{machine} 上的遠端代理程式已關閉。請在該機器的設定中開啟。",
   "remoteMachines_failure_dismiss_label": "關閉",
   "remoteMachines_failure_generic_error": "發生問題：{message}",
   "remoteMachines_failure_inUse_error_many": "{machine} 上有 {count} 個代理程式正在執行。",

@@ -307,7 +307,7 @@ describe('remote machine relay — expose', () => {
     expect(backendCalls.map((call) => call.method)).not.toContain('remoteMachines.add');
   });
 
-  it('maps remote-agents-disabled from mint', async () => {
+  it('treats an unknown daemon code (the removed remote-agents-disabled) as a generic failure', async () => {
     const { relay, backend } = setup({
       machine: {
         'executor.mint': () => {
@@ -319,9 +319,10 @@ describe('remote machine relay — expose', () => {
         },
       },
     });
-    expect(await relay.expose({ machineConnectionId: 'mac' }, backend)).toMatchObject({
+    expect(await relay.expose({ machineConnectionId: 'mac' }, backend)).toEqual({
       success: false,
-      code: 'remote-agents-disabled',
+      code: 'failed',
+      message: 'Remote agents are off',
     });
   });
 

@@ -90,7 +90,6 @@ export type RemoteMachineFailureCode =
   | 'not-owner'
   | 'machine-not-connected'
   | 'listener-off'
-  | 'remote-agents-disabled'
   | 'machine-update-required'
   | 'machine-unreachable'
   | 'machine-in-use'

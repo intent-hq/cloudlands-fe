@@ -61,7 +61,6 @@ const FAILURE_CODES: ReadonlySet<string> = new Set<RemoteMachineFailure['code']>
   'not-owner',
   'machine-not-connected',
   'listener-off',
-  'remote-agents-disabled',
   'machine-update-required',
   'machine-unreachable',
   'machine-in-use',

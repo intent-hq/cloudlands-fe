@@ -8125,7 +8125,6 @@
   "remoteMachines_expose_warning": "{backend} will be able to run agents on {machine}. Those agents run code as your user account on {machine}, with the same access you have there. You can stop this at any time.",
   "remoteMachines_exposing_label": "Making available…",
   "remoteMachines_failure_attempt_label": "{route}: {error}",
-  "remoteMachines_failure_disabled_error": "Remote agents are turned off on {machine}. Turn them on in that machine's settings.",
   "remoteMachines_failure_dismiss_label": "Dismiss",
   "remoteMachines_failure_generic_error": "Something went wrong: {message}",
   "remoteMachines_failure_inUse_error_many": "{count} agents are running on {machine}.",

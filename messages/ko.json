@@ -8125,7 +8125,6 @@
   "remoteMachines_expose_warning": "{backend}이(가) {machine}에서 에이전트를 실행할 수 있게 됩니다. 이 에이전트는 {machine}의 사용자 계정으로, 사용자와 같은 권한으로 코드를 실행합니다. 언제든지 중지할 수 있습니다.",
   "remoteMachines_exposing_label": "사용 가능하게 하는 중…",
   "remoteMachines_failure_attempt_label": "{route}: {error}",
-  "remoteMachines_failure_disabled_error": "{machine}에서 원격 에이전트가 꺼져 있습니다. 해당 머신의 설정에서 켜세요.",
   "remoteMachines_failure_dismiss_label": "닫기",
   "remoteMachines_failure_generic_error": "문제가 발생했습니다: {message}",
   "remoteMachines_failure_inUse_error_many": "{machine}에서 에이전트 {count}개가 실행 중입니다.",

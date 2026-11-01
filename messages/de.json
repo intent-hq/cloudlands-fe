@@ -8125,7 +8125,6 @@
   "remoteMachines_expose_warning": "{backend} kann dann Agenten auf {machine} ausführen. Diese Agenten führen Code mit Ihrem Benutzerkonto auf {machine} aus – mit denselben Rechten, die Sie dort haben. Sie können dies jederzeit beenden.",
   "remoteMachines_exposing_label": "Wird verfügbar gemacht…",
   "remoteMachines_failure_attempt_label": "{route}: {error}",
-  "remoteMachines_failure_disabled_error": "Remote-Agenten sind auf {machine} deaktiviert. Aktivieren Sie sie in den Einstellungen dieses Rechners.",
   "remoteMachines_failure_dismiss_label": "Schließen",
   "remoteMachines_failure_generic_error": "Etwas ist schiefgelaufen: {message}",
   "remoteMachines_failure_inUse_error_many": "Auf {machine} laufen {count} Agenten.",

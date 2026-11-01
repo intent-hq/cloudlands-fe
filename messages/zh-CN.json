@@ -8125,7 +8125,6 @@
   "remoteMachines_expose_warning": "{backend} 将可以在 {machine} 上运行智能体。这些智能体会以你在 {machine} 上的用户账户运行代码，拥有与你相同的权限。你可以随时停止。",
   "remoteMachines_exposing_label": "正在允许使用…",
   "remoteMachines_failure_attempt_label": "{route}：{error}",
-  "remoteMachines_failure_disabled_error": "{machine} 上的远程智能体已关闭。请在该机器的设置中开启。",
   "remoteMachines_failure_dismiss_label": "关闭",
   "remoteMachines_failure_generic_error": "出现问题：{message}",
   "remoteMachines_failure_inUse_error_many": "{machine} 上有 {count} 个智能体正在运行。",
