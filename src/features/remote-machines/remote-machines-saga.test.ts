@@ -230,6 +230,31 @@ describe('remote machines saga — un-expose and revoke', () => {
     });
   });
 
+  it('keeps the machine when stops go unconfirmed; retrying stops again without a confirm', async () => {
+    await loaded();
+    invoke.mockResolvedValueOnce({
+      success: false,
+      code: 'machine-unreachable',
+      attempts: [],
+      unconfirmedStops: ['agent-1', 'agent-2'],
+    });
+    dispatch(remoteMachineUnexposeRequested('d-mac', 'mac', true));
+    await vi.waitFor(() =>
+      expect(store.state.remoteMachines.failures['d-mac']).toMatchObject({
+        code: 'machine-unreachable',
+        unconfirmedStops: ['agent-1', 'agent-2'],
+      }),
+    );
+    expect(store.state.remoteMachines.machines['d-mac']).toBeDefined();
+    expect(ui.success).not.toHaveBeenCalled();
+    expect(ui.warning).not.toHaveBeenCalled();
+    invoke.mockResolvedValueOnce({ success: true, revoked: true });
+    dispatch(remoteMachineUnexposeRequested('d-mac', 'mac', true));
+    await vi.waitFor(() => expect(store.state.remoteMachines.machines['d-mac']).toBeUndefined());
+    expect(ui.confirm).not.toHaveBeenCalled();
+    expect(store.state.remoteMachines.failures['d-mac']).toBeUndefined();
+  });
+
   it('revokes a backend from this machine after confirmation', async () => {
     await loaded();
     dispatch(executorRevokeRequested('cred-9'));
