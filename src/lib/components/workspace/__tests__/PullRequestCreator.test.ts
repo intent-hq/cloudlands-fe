@@ -122,8 +122,7 @@ describe('PullRequestCreator', () => {
   it('auto-fills and creates through the workflow, then calls back with the authoritative workspace PR', async () => {
     const { container, onCreated, onClose } = await renderCreator();
     await fireEvent.click(findButton(container, 'Auto-fill & Create')!);
-    const completionWait = { timeout: 4000 };
-    await waitFor(() => expect(onCreated).toHaveBeenCalledWith(pr), completionWait);
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith(pr));
     expect(onClose).toHaveBeenCalledOnce();
     expect(backendRequest).toHaveBeenCalledWith('accept-changes.prepare', {
       workspaceId: 'pr-creator',

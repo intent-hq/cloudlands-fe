@@ -42,6 +42,8 @@ import noUnarmedOutsideClickInCtRule from './eslint-rules/no-unarmed-outside-cli
 import noRawMouseWheelInCtRule from './eslint-rules/no-raw-mouse-wheel-in-ct.js';
 import noHandWrittenTypingCheckRule from './eslint-rules/no-hand-written-typing-check.js';
 import noScrollIntoViewPrototypeStubRule from './eslint-rules/no-scroll-into-view-prototype-stub.js';
+import noFixedWaitTimeoutInTestsRule from './eslint-rules/no-fixed-wait-timeout-in-tests.js';
+import requireDisableReasonRule from './eslint-rules/require-disable-reason.js';
 import noDirectReducedMotionQueryRule, {
   SOURCE_OF_TRUTH_FILES as reducedMotionSourceOfTruthFiles,
   TEST_FILE_GLOBS as reducedMotionTestFileGlobs,
@@ -53,6 +55,8 @@ const wallClockAssertionsBaseline =
   baselineCounts(lintBaseline['no-wall-clock-assertions-in-tests']) ?? {};
 const classNameAssertionsBaseline =
   baselineCounts(lintBaseline['no-class-name-assertions-in-tests']) ?? {};
+const fixedWaitTimeoutBaseline =
+  baselineCounts(lintBaseline['no-fixed-wait-timeout-in-tests']) ?? {};
 
 const intentPlugin = {
   rules: {
@@ -74,6 +78,8 @@ const intentPlugin = {
     'no-raw-workspace-navigation': noRawWorkspaceNavigationRule,
     'no-hand-written-typing-check': noHandWrittenTypingCheckRule,
     'no-scroll-into-view-prototype-stub': noScrollIntoViewPrototypeStubRule,
+    'no-fixed-wait-timeout-in-tests': noFixedWaitTimeoutInTestsRule,
+    'require-disable-reason': requireDisableReasonRule,
   },
 };
 
@@ -728,6 +734,25 @@ export default [
       'intent/no-class-name-assertions-in-tests': [
         'error',
         { baseline: classNameAssertionsBaseline },
+      ],
+    },
+  },
+  // Testing Library waits and vi.waitFor / vi.waitUntil default to half the CI-scaled test
+  // budget (src/test-setup.ts; 15 s locally, 30 s on CI). The fixed 3-5 s limits tests added
+  // to get past the old 1 s default are stricter than that on CI (cloudlands-fe#3958,
+  // #3964). The baseline lists the deliberate cases with their owner and reason; counts
+  // only shrink. A reasoned single-line eslint-disable is the other escape hatch, and
+  // intent/require-disable-reason checks that it gives the reason.
+  {
+    files: ['**/*.test.{js,mjs,cjs,ts}'],
+    plugins: {
+      intent: intentPlugin,
+    },
+    rules: {
+      'intent/no-fixed-wait-timeout-in-tests': ['error', { baseline: fixedWaitTimeoutBaseline }],
+      'intent/require-disable-reason': [
+        'error',
+        { rules: ['intent/no-fixed-wait-timeout-in-tests'] },
       ],
     },
   },
