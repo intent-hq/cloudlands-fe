@@ -39,13 +39,19 @@ import {
 } from './remote-machines-slice';
 import { selectConnectionLabel, selectCurrentBackendLabel } from './remote-machines-selectors';
 
-const CHANNELS = IPC_CHANNELS.REMOTE_MACHINES;
-
-async function invokeRemoteMachines<T>(channel: string, params?: unknown): Promise<T> {
+function bridge() {
   const api = typeof window !== 'undefined' ? window.electronAPI : undefined;
   if (!api?.invoke) throw new Error('remote machines bridge unavailable'); // i18n-ignore (developer diagnostic)
-  return (await api.invoke(channel, params)) as T;
+  return api;
 }
+
+// Each call names its channel so the IPC reachability scan can see the main handler's caller.
+const invokeExpose = async (params: unknown): Promise<unknown> =>
+  bridge().invoke(IPC_CHANNELS.REMOTE_MACHINES.EXPOSE, params);
+const invokeUnexpose = async (params: unknown): Promise<unknown> =>
+  bridge().invoke(IPC_CHANNELS.REMOTE_MACHINES.UNEXPOSE, params);
+const invokeMachineFingerprint = async (connectionId: string): Promise<unknown> =>
+  bridge().invoke(IPC_CHANNELS.REMOTE_MACHINES.MACHINE_FINGERPRINT, connectionId);
 
 function errorFailure(error: unknown): RemoteMachineFailure {
   return {
@@ -155,10 +161,7 @@ async function readExecutorBackends(): Promise<ExecutorBackend[] | null> {
 
 async function readLocalFingerprint(): Promise<string | null> {
   try {
-    const reply = await invokeRemoteMachines<unknown>(
-      CHANNELS.MACHINE_FINGERPRINT,
-      LOCAL_CONNECTION_ID,
-    );
+    const reply = await invokeMachineFingerprint(LOCAL_CONNECTION_ID);
     return typeof reply === 'string' ? reply : null;
   } catch {
     return null;
@@ -225,7 +228,7 @@ function* expose(action: ReturnType<typeof remoteMachineExposeRequested>): SagaG
   let result: RemoteMachineExposeResult;
   try {
     result = exposeReply(
-      yield* call(invokeRemoteMachines<unknown>, CHANNELS.EXPOSE, {
+      yield* call(invokeExpose, {
         machineConnectionId: connectionId,
         ...(enableListener ? { enableListener } : {}),
       }),
@@ -263,7 +266,7 @@ function* unexpose(action: ReturnType<typeof remoteMachineUnexposeRequested>): S
   let result: RemoteMachineUnexposeResult;
   try {
     result = unexposeReply(
-      yield* call(invokeRemoteMachines<unknown>, CHANNELS.UNEXPOSE, {
+      yield* call(invokeUnexpose, {
         machineId,
         ...(connectionId ? { machineConnectionId: connectionId } : {}),
         ...(stopAgents ? { stopAgents: true } : {}),
