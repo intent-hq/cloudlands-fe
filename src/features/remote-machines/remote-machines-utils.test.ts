@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { RemoteMachine } from '$shared/types/remote-machines';
+import { fingerprintKey, type RemoteMachine } from '$shared/types/remote-machines';
 import {
   canOfferExpose,
   connectionForMachine,
@@ -42,5 +42,12 @@ describe('remote machine matching', () => {
     expect(canOfferExpose(machine('m', 'x', 'revoked'))).toBe(true);
     for (const state of ['connected', 'disconnected', 'unreachable', 'update-required'] as const)
       expect(canOfferExpose(machine('m', 'x', state))).toBe(false);
+  });
+});
+
+describe('fingerprintKey', () => {
+  it('treats a non-string value as no fingerprint', () => {
+    expect(fingerprintKey({ success: false } as unknown as string)).toBeNull();
+    expect(fingerprintKey(' aa:bb ')).toBe('AA:BB');
   });
 });

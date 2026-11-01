@@ -107,6 +107,39 @@ describe('remote machines saga — refresh', () => {
     ]);
   });
 
+  it('ignores a non-string fingerprint from a bridge without the channel (web build)', async () => {
+    backend();
+    invoke.mockResolvedValue({ success: false, error: 'Browser mock: channel not implemented' });
+    start();
+    dispatch(remoteMachinesRefreshRequested());
+    await vi.waitFor(() => expect(store.state.remoteMachines.supported).toBe(true));
+    expect(store.state.remoteMachines.localFingerprint).toBeNull();
+  });
+
+  it('retries while the capability snapshot is not known yet (hello in flight)', async () => {
+    const mock = backend();
+    let calls = 0;
+    mock.onRequest('client.hello', () =>
+      ++calls < 3
+        ? { server: { capabilities: null } }
+        : { server: { capabilities: { remoteMachines: 1 } } },
+    );
+    invoke.mockResolvedValue(null);
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      start();
+      dispatch(remoteMachinesRefreshRequested());
+      await vi.waitFor(async () => {
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(store.state.remoteMachines.supported).toBe(true);
+      });
+      expect(calls).toBe(3);
+      expect(Object.keys(store.state.remoteMachines.machines)).toEqual(['d-mac']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('stays hidden when the backend does not advertise remoteMachines', async () => {
     const mock = backend({});
     start();
@@ -145,6 +178,22 @@ describe('remote machines saga — expose', () => {
     expect(invoke).toHaveBeenCalledWith(CHANNELS.EXPOSE, { machineConnectionId: 'mac' });
     await settle();
     expect(ui.success).toHaveBeenCalled();
+  });
+
+  it('turns an unrecognized bridge reply into a generic failure', async () => {
+    invoke.mockResolvedValueOnce({
+      success: false,
+      error: 'Browser mock: channel not implemented',
+    });
+    start();
+    dispatch(remoteMachineExposeRequested('mac'));
+    await vi.waitFor(() =>
+      expect(store.state.remoteMachines.failures.mac).toMatchObject({
+        success: false,
+        code: 'failed',
+        message: 'Browser mock: channel not implemented',
+      }),
+    );
   });
 
   it('does nothing when the warning is declined', async () => {

@@ -218,6 +218,7 @@ export function parseExecutorBackend(value: unknown): ExecutorBackend | null {
 
 /** Normalized fingerprint key (trimmed, upper-case) for matching a machine to a saved connection. */
 export function fingerprintKey(fingerprint: string | null | undefined): string | null {
-  const key = (fingerprint ?? '').trim().toUpperCase();
+  // Bridge replies are untyped at runtime; anything but a string is no fingerprint.
+  const key = (typeof fingerprint === 'string' ? fingerprint : '').trim().toUpperCase();
   return key === '' ? null : key;
 }
