@@ -2578,6 +2578,8 @@
   "workspace_ops_purged_toast": "{title} のフォルダーを削除しました",
   "workspace_ops_purgeFailed_error": "このワークスペースのフォルダーを削除できませんでした。",
   "workspace_ops_purgeUnsupported_error": "このワークスペースのフォルダーは独立したチェックアウトではないため、削除できません。",
+  "workspace_purged_badge_label": "ワークスペース削除済み",
+  "workspace_purged_badge_tooltip": "ディスク容量を空けるため、このワークスペースのフォルダーを削除しました。会話、ノート、タスク、git ブランチは保持されます。",
   "workspace_archivedBanner_title": "このワークスペースはアーカイブされています",
   "workspace_archivedBanner_description": "作業を続けるには、アーカイブを解除するか、エージェントにメッセージを送信してください。会話、ノート、タスクは保持されます。",
   "home_filter_attention": "対応が必要",

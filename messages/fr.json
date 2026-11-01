@@ -2578,6 +2578,8 @@
   "workspace_ops_purged_toast": "Dossier de {title} purgé",
   "workspace_ops_purgeFailed_error": "Impossible de purger le dossier de cet espace de travail.",
   "workspace_ops_purgeUnsupported_error": "Le dossier de cet espace de travail ne peut pas être purgé, car ce n'est pas une copie de travail distincte.",
+  "workspace_purged_badge_label": "Espace de travail purgé",
+  "workspace_purged_badge_tooltip": "Le dossier de cet espace de travail a été supprimé pour libérer de l'espace disque. Les conversations, les notes, les tâches et la branche git sont conservées.",
   "workspace_archivedBanner_title": "Cet espace de travail est archivé",
   "workspace_archivedBanner_description": "Désarchivez-le, ou envoyez un message à un agent, pour continuer. Les conversations, notes et tâches sont conservées.",
   "home_filter_attention": "Votre attention requise",
