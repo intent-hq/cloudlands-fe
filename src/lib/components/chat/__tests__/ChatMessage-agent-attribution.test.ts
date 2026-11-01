@@ -274,6 +274,28 @@ describe('ChatMessage user message text rendering', () => {
       }),
     );
   });
+
+  it('reveals an inline folder mention in the Files sidebar', async () => {
+    dispatchMock.mockClear();
+    render(ChatMessage, {
+      props: {
+        message: userTextMessage('see @src/lib/ now'),
+        workspace: { id: 'ws-1' } as any,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'lib' }));
+
+    expect(dispatchMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'appLayout/locateItemInSidebarRequested',
+        payload: ['ws-1', { sidebarTabId: 'files', type: 'file', filePath: 'src/lib/' }],
+      }),
+    );
+    expect(dispatchMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'workspaceNavigation/openWorkspaceFile' }),
+    );
+  });
 });
 
 describe('ChatMessage agent-to-agent sender attribution', () => {
