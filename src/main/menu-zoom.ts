@@ -1,5 +1,6 @@
 import { BrowserWindow } from 'electron';
 import { isFocusedWindowBrowserActive } from '../features/system/main/system.ipc';
+import { hasFixedZoom } from './fixed-zoom';
 
 type ZoomCommand = 'menu:zoom-in' | 'menu:zoom-out' | 'menu:reset-zoom';
 
@@ -9,7 +10,12 @@ export function handleMenuZoom(
   sendWorkspaceCommand: (channel: ZoomCommand) => void,
 ): void {
   const focusedWindow = BrowserWindow.getFocusedWindow();
-  if (!focusedWindow || focusedWindow.isDestroyed() || focusedWindow.webContents.isDestroyed()) {
+  if (
+    !focusedWindow ||
+    focusedWindow.isDestroyed() ||
+    focusedWindow.webContents.isDestroyed() ||
+    hasFixedZoom(focusedWindow.webContents)
+  ) {
     return;
   }
   if (isFocusedWindowBrowserActive()) {

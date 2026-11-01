@@ -31,6 +31,8 @@ vi.mock('electron', async () => {
       getURL: () => this.url,
       send: vi.fn(),
       sendInputEvent: vi.fn(),
+      setZoomMode: vi.fn(),
+      setZoomLevel: vi.fn(),
     });
     visible = false;
     show = vi.fn(() => {
