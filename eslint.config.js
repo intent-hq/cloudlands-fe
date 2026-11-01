@@ -40,6 +40,7 @@ import noRawWorkspaceNavigationRule from './eslint-rules/no-raw-workspace-naviga
 import noOneShotAnimationCountRule from './eslint-rules/no-one-shot-animation-count.js';
 import noUnarmedOutsideClickInCtRule from './eslint-rules/no-unarmed-outside-click-in-ct.js';
 import noRawMouseWheelInCtRule from './eslint-rules/no-raw-mouse-wheel-in-ct.js';
+import noWaitForTimeoutInCtRule from './eslint-rules/no-wait-for-timeout-in-ct.js';
 import noHandWrittenTypingCheckRule from './eslint-rules/no-hand-written-typing-check.js';
 import noScrollIntoViewPrototypeStubRule from './eslint-rules/no-scroll-into-view-prototype-stub.js';
 import noFixedWaitTimeoutInTestsRule from './eslint-rules/no-fixed-wait-timeout-in-tests.js';
@@ -57,6 +58,7 @@ const classNameAssertionsBaseline =
   baselineCounts(lintBaseline['no-class-name-assertions-in-tests']) ?? {};
 const fixedWaitTimeoutBaseline =
   baselineCounts(lintBaseline['no-fixed-wait-timeout-in-tests']) ?? {};
+const waitForTimeoutInCtBaseline = baselineCounts(lintBaseline['no-wait-for-timeout-in-ct']) ?? {};
 
 const intentPlugin = {
   rules: {
@@ -74,6 +76,7 @@ const intentPlugin = {
     'no-one-shot-animation-count': noOneShotAnimationCountRule,
     'no-unarmed-outside-click-in-ct': noUnarmedOutsideClickInCtRule,
     'no-raw-mouse-wheel-in-ct': noRawMouseWheelInCtRule,
+    'no-wait-for-timeout-in-ct': noWaitForTimeoutInCtRule,
     'no-direct-reduced-motion-query': noDirectReducedMotionQueryRule,
     'no-raw-workspace-navigation': noRawWorkspaceNavigationRule,
     'no-hand-written-typing-check': noHandWrittenTypingCheckRule,
@@ -710,6 +713,12 @@ export default [
   // cloudlands-fe#3516, intent-hq/intent#7255). Use wheelUntilScrolled from
   // src/test/ct-test.ts; a wheel that must not scroll disables the rule on its line with a
   // reason. No baseline.
+  //
+  // A fixed page.waitForTimeout guesses how long motion takes; on a slow runner the next
+  // click lands mid-animation and is dropped because Playwright hit-tests only pointerdown
+  // (cloudlands-fe#3955; the flake ejected cloudlands-fe#3920 from the merge queue). Use
+  // clickAndSettle / expectMotionToSettle from src/test/ct-test.ts. The baseline maps
+  // today's specs to their sleep counts and may only shrink.
   {
     files: ['src/**/*.ct.spec.ts'],
     plugins: {
@@ -719,6 +728,7 @@ export default [
       'intent/no-one-shot-animation-count': 'error',
       'intent/no-unarmed-outside-click-in-ct': 'error',
       'intent/no-raw-mouse-wheel-in-ct': 'error',
+      'intent/no-wait-for-timeout-in-ct': ['error', { baseline: waitForTimeoutInCtBaseline }],
     },
   },
   // A unit test that asserts an element's className / classList / class attribute pins

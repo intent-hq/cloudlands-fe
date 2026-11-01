@@ -674,6 +674,14 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   the wheel's direction; keep your own end-position assertion after it. Lint
   (`intent/no-raw-mouse-wheel-in-ct`) rejects the raw call; disable it on the line, with
   the reason, only when the test checks that a wheel does NOT scroll.
+- Wait for motion, never a fixed `page.waitForTimeout`: Playwright hit-tests only
+  pointerdown, so a target still moving at mouseup loses the click (cloudlands-fe#3955).
+  `clickAndSettle(control, region)` (`src/test/ct-test.ts`) clicks, waits for `region` to
+  change, then for its box, scroll and finite animations to stay still;
+  `expectMotionToSettle(region, { changedFrom: await motionSnapshot(region) })` does the
+  same after another trigger. Lint (`intent/no-wait-for-timeout-in-ct`) caps each spec's
+  sleeps at its baseline (`eslint-rules/baselines/`, shrink-only); keep a sleep, disabled
+  on the line with the reason, only to observe a quiet period.
 - **Every CT spec imports `test` / `expect` from `src/test/ct-test.ts`** — lint-enforced
   (`no-restricted-imports`; only type imports may come from
   `@playwright/experimental-ct-svelte`). The module gives every test a fresh browser
