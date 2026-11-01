@@ -2578,6 +2578,8 @@
   "workspace_ops_purged_toast": "Ordner von {title} bereinigt",
   "workspace_ops_purgeFailed_error": "Der Ordner dieses Arbeitsbereichs konnte nicht bereinigt werden.",
   "workspace_ops_purgeUnsupported_error": "Der Ordner dieses Arbeitsbereichs kann nicht bereinigt werden, da er kein separater Checkout ist.",
+  "workspace_purged_badge_label": "Arbeitsbereich bereinigt",
+  "workspace_purged_badge_tooltip": "Der Ordner dieses Arbeitsbereichs wurde gelöscht, um Speicherplatz freizugeben. Unterhaltungen, Notizen, Aufgaben und der Git-Branch bleiben erhalten.",
   "workspace_archivedBanner_title": "Dieser Arbeitsbereich ist archiviert",
   "workspace_archivedBanner_description": "Hole ihn aus dem Archiv oder sende einem Agenten eine Nachricht, um weiterzuarbeiten. Unterhaltungen, Notizen und Aufgaben bleiben erhalten.",
   "home_filter_attention": "Ihre Aufmerksamkeit nötig",

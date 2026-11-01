@@ -2578,6 +2578,8 @@
   "workspace_ops_purged_toast": "已清除 {title} 的資料夾",
   "workspace_ops_purgeFailed_error": "無法清除此工作區的資料夾。",
   "workspace_ops_purgeUnsupported_error": "此工作區的資料夾不是獨立的簽出，因此無法清除。",
+  "workspace_purged_badge_label": "工作區已清除",
+  "workspace_purged_badge_tooltip": "已刪除此工作區的資料夾以釋放磁碟空間。對話、筆記、任務和 git 分支均會保留。",
   "workspace_archivedBanner_title": "此工作區已封存",
   "workspace_archivedBanner_description": "取消封存，或傳送訊息給代理，即可繼續工作。對話、筆記與工作會保留。",
   "home_filter_attention": "需要你處理",

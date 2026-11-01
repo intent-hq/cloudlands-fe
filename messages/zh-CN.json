@@ -2578,6 +2578,8 @@
   "workspace_ops_purged_toast": "已清除 {title} 的文件夹",
   "workspace_ops_purgeFailed_error": "无法清除此工作区的文件夹。",
   "workspace_ops_purgeUnsupported_error": "此工作区的文件夹不是独立的检出，因此无法清除。",
+  "workspace_purged_badge_label": "工作区已清除",
+  "workspace_purged_badge_tooltip": "已删除此工作区的文件夹以释放磁盘空间。对话、笔记、任务和 git 分支均会保留。",
   "workspace_archivedBanner_title": "此工作区已归档",
   "workspace_archivedBanner_description": "取消归档，或向代理发送消息，即可继续工作。对话、笔记和任务会保留。",
   "home_filter_attention": "需要你处理",

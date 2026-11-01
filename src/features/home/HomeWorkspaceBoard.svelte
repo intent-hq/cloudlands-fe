@@ -7,6 +7,7 @@
   import { HOME_SET_ASIDE_GROUP } from './home-set-aside';
   import HomeWorkspaceStatus from './HomeWorkspaceStatus.svelte';
   import HomeWorkspacePullBadge from './HomeWorkspacePullBadge.svelte';
+  import HomeWorkspacePurgedBadge from './HomeWorkspacePurgedBadge.svelte';
   import HomeActivityTime from './HomeActivityTime.svelte';
   import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
   import type { Workspace } from '$shared/types';
@@ -281,8 +282,11 @@
         {#if workspace.pullRequests?.length || workspace.activePullRequest}
           <HomeWorkspacePullBadge {workspace} />
         {/if}
-        <span class="ml-auto shrink-0" data-home-card-time>
-          <HomeActivityTime {workspace} />
+        <span class="ml-auto flex shrink-0 items-center gap-2">
+          <HomeWorkspacePurgedBadge {workspace} />
+          <span class="shrink-0" data-home-card-time>
+            <HomeActivityTime {workspace} />
+          </span>
         </span>
       </span>
     </Button>

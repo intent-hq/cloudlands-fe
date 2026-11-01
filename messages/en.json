@@ -2578,6 +2578,8 @@
   "workspace_ops_purged_toast": "Purged the folder of {title}",
   "workspace_ops_purgeFailed_error": "Couldn't purge this workspace's folder.",
   "workspace_ops_purgeUnsupported_error": "This workspace's folder can't be purged because it is not a separate checkout.",
+  "workspace_purged_badge_label": "Workspace purged",
+  "workspace_purged_badge_tooltip": "This workspace's folder was deleted to free disk space. Conversations, notes, tasks and the git branch are kept.",
   "workspace_archivedBanner_title": "This workspace is archived",
   "workspace_archivedBanner_description": "Unarchive it, or send a message to an agent, to keep working. Conversations, notes and tasks are kept.",
   "home_filter_attention": "Needs you",
