@@ -22,7 +22,7 @@ import {
   totals,
   usage,
 } from './run-ct-full.mjs';
-import { HELD_LOCK_ENV } from './verification-lock.mjs';
+import { ctLockKey, HELD_LOCK_ENV } from './verification-lock.mjs';
 
 const dirs: string[] = [];
 afterAll(() => dirs.forEach((dir) => rmSync(dir, { recursive: true, force: true })));
@@ -393,7 +393,7 @@ describe('runFull', () => {
       const log = run.log(shard);
       expect(log).toContain(`"--shard=${shard}/4"`);
       expect(log).toContain('"--grep-invert","@quarantine\\\\b","src/x.ct.spec.ts"');
-      expect(log).toContain('LOCK ct-3100');
+      expect(log).toContain(`LOCK ${ctLockKey({})}`);
     }
     expect(run.summary).toMatchObject({
       ok: true,
@@ -435,7 +435,7 @@ describe('runFull', () => {
     const run = await runFake(['--shards=1', '--stream']);
     expect(run.code).toBe(0);
     expect(run.stdout).toContain('ARGS ["--shard=1/1"');
-    expect(run.stderr).toContain('LOCK ct-3100');
+    expect(run.stderr).toContain(`LOCK ${ctLockKey({})}`);
   });
 
   it('fails without running shards when the port lock is busy', async () => {

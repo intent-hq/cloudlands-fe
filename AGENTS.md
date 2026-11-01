@@ -252,10 +252,11 @@ For focused browser validation, run:
 corepack pnpm run test:ct -- src/features/agent/components/agent-avatar/__tests__/agent-avatar-waiting.ct.spec.ts
 ```
 
-The CT harness defaults to port 3100 (the `CT_PORT` env var overrides it). A run holds
-the host-wide `ct-<CT_PORT>` lock, so a second run on an occupied port waits for the
-first instead of reusing its server; set a free `CT_PORT` to run concurrently (see
-[Verification](#verification)). The port also keys the generated bundle cache
+Without `CT_PORT`, each worktree gets its own CT port, hashed from its package path into
+10100-14099 (CI keeps 3100); the run's `waiting … for ct-<port> lock` line names it. An
+explicit `CT_PORT` always wins. A run holds
+the host-wide `ct-<port>` lock, so a second run on the same port waits for the first
+instead of reusing its server (see [Verification](#verification)). An explicit port also keys the generated bundle cache
 (`playwright/.cache-<CT_PORT>`; bare `playwright/.cache` when unset), so per-port runs are
 isolated for server, lock, and cache — including within one worktree. The run exits with Playwright's
 status as soon as the tests finish — the HTML report is written to `playwright-report/`
@@ -395,11 +396,11 @@ Rules that follow from it:
 - Workflow edits: `pnpm run lint:workflows` (part of `lint:architecture`) runs the pinned
   actionlint with shellcheck; add path-scoped ignores with a reason there.
 
-Playwright CT holds a host-wide `ct-<CT_PORT>` lock (default `ct-3100`) and the full Vitest
+Playwright CT holds a host-wide `ct-<port>` lock (per-worktree port by default; see above) and the full Vitest
 fallback holds `vitest-full`. A second run waits (240 s / 120 s by default,
 `VERIFY_CHANGED_LOCK_TIMEOUT_MS` up to 300000 ms) and then fails naming the owner's pid and
-worktree; never stop a lock owner — pick a free `CT_PORT` to run CT concurrently
-(intent-hq/intent#4964).
+worktree; never stop a lock owner — two runs in one worktree share its port, so pick a free
+`CT_PORT` to run CT concurrently there (intent-hq/intent#4964).
 
 After any structural change (moving files, changing imports, extracting modules):
 
