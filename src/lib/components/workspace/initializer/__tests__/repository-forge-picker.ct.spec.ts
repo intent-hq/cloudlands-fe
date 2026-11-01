@@ -9,7 +9,7 @@ for (const width of [390, 720]) {
     await page.setViewportSize({ width, height: 760 });
     await mount(Preview, { props: { scenario: 'both' } });
     await page.getByRole('button', { name: 'Choose fixture repository' }).click();
-    await expect(page.getByRole('tab', { name: 'Pick a repo', exact: true })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Clone', exact: true })).toBeVisible();
     await expect(page.getByRole('tab', { name: 'GitLab', exact: true })).toHaveCount(0);
     await expect(
       page.getByTestId('recent-repositories').getByRole('img', { name: 'GitHub', exact: true }),

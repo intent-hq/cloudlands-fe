@@ -5,7 +5,7 @@
  * selection restored through the `value` prop. A GitHub pick (owner/repo
  * shorthand or URL) used to be misclassified as local because
  * `selectedRepoType` defaulted to 'local' and the value-prop sync never
- * re-derived it, so the popup wrongly opened on "Copy local repo".
+ * re-derived it, so the popup wrongly opened on "Existing folder".
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
@@ -272,7 +272,7 @@ describe('RepoSelector qualified GitLab choice', () => {
   it('restores a qualified project without treating its path as GitHub or local', async () => {
     const gitlab = gitlabProps();
     await openDropdown({ gitlab, gitlabSelected: true });
-    expect(tabButton('Pick a repo').className).toContain(ACTIVE_TAB_CLASS);
+    expect(tabButton('Clone').className).toContain(ACTIVE_TAB_CLASS);
     expect(
       screen.getByRole('button', { name: 'Select a repository: group/subgroup/api' }),
     ).toBeTruthy();
@@ -288,7 +288,7 @@ describe('RepoSelector qualified GitLab choice', () => {
     const gitlab = gitlabProps();
     const onchange = vi.fn();
     await openDropdown({ gitlab, onchange });
-    await fireEvent.click(tabButton('Pick a repo'));
+    await fireEvent.click(tabButton('Clone'));
     const option = screen.getByRole('option', { name: 'group/subgroup/api' });
     await fireEvent.click(option);
     expect(gitlab.onSelect).toHaveBeenCalledWith('group/subgroup/api', gitlab.scopeKey);
@@ -330,7 +330,7 @@ describe('RepoSelector authenticated forge selection', () => {
     mocks.authenticated = true;
     const gitlab = { ...gitlabProps(), authenticated: false };
     await openDropdown({ gitlab });
-    const tab = screen.getByRole('tab', { name: 'Pick a repo', exact: true });
+    const tab = screen.getByRole('tab', { name: 'Clone', exact: true });
     expect(tab.hasAttribute('aria-haspopup')).toBe(false);
     expect(screen.queryByRole('button', { name: /^(github.com|gitlab.com)\/$/ })).toBeNull();
     await fireEvent.click(tab);
@@ -347,7 +347,7 @@ describe('RepoSelector authenticated forge selection', () => {
       page: { status: 'loading' as const },
     };
     await openDropdown({ gitlab });
-    const tab = screen.getByRole('tab', { name: 'Pick a repo', exact: true });
+    const tab = screen.getByRole('tab', { name: 'Clone', exact: true });
     expect(tab.hasAttribute('aria-haspopup')).toBe(false);
     expect(screen.queryByRole('button', { name: /^(github.com|gitlab.com)\/$/ })).toBeNull();
     expect(githubInput()).toBeNull();
@@ -388,7 +388,7 @@ describe('RepoSelector authenticated forge selection', () => {
     expect(gitlab.onOpenChange).toHaveBeenLastCalledWith(false, gitlab.scopeKey);
     expect(gitlab.onSelect).not.toHaveBeenCalled();
     expect(
-      screen.getByRole('tab', { name: 'Pick a repo', exact: true }).hasAttribute('aria-haspopup'),
+      screen.getByRole('tab', { name: 'Clone', exact: true }).hasAttribute('aria-haspopup'),
     ).toBe(false);
   });
 
@@ -401,22 +401,18 @@ describe('RepoSelector authenticated forge selection', () => {
     await waitFor(() => expect(githubInput()).toBeNull());
     expect(gitlab.onOpenChange).toHaveBeenCalledWith(true, gitlab.scopeKey);
     expect(
-      screen.getByRole('tab', { name: 'Pick a repo', exact: true }).hasAttribute('aria-haspopup'),
+      screen.getByRole('tab', { name: 'Clone', exact: true }).hasAttribute('aria-haspopup'),
     ).toBe(false);
   });
 
   it('retains the connect view and local/new actions when no forge is authenticated', async () => {
     await openDropdown({ gitlab: { ...gitlabProps(), authenticated: false } });
-    expect(screen.getByRole('tab', { name: 'Pick a repo' }).hasAttribute('aria-haspopup')).toBe(
-      false,
-    );
+    expect(screen.getByRole('tab', { name: 'Clone' }).hasAttribute('aria-haspopup')).toBe(false);
     expect(githubInput()).toBeTruthy();
-    await fireEvent.click(screen.getByRole('tab', { name: 'Copy local repo' }));
+    await fireEvent.click(screen.getByRole('tab', { name: 'Existing folder' }));
     expect(githubInput()).toBeNull();
-    await fireEvent.click(screen.getByRole('tab', { name: 'New repo' }));
-    expect(screen.getByRole('tab', { name: 'New repo' }).getAttribute('aria-selected')).toBe(
-      'true',
-    );
+    await fireEvent.click(screen.getByRole('tab', { name: 'New' }));
+    expect(screen.getByRole('tab', { name: 'New' }).getAttribute('aria-selected')).toBe('true');
   });
 });
 
@@ -570,9 +566,9 @@ describe('RepoSelector active forge recent search', () => {
     await view.rerender({ gitlab: { ...gitlab, query: 'docs' } });
     await waitFor(() => expect(recentLabels()).toEqual(['group/subgroup / docs']));
 
-    await fireEvent.click(screen.getByRole('tab', { name: 'Copy local repo' }));
+    await fireEvent.click(screen.getByRole('tab', { name: 'Existing folder' }));
     await waitFor(() => expect(recentLabels()).toEqual(['local-project']));
-    await fireEvent.click(screen.getByRole('tab', { name: 'Pick a repo' }));
+    await fireEvent.click(screen.getByRole('tab', { name: 'Clone' }));
     await waitFor(() => expect(recentLabels()).toEqual(['group/subgroup / docs']));
     expect(gitlab.onSearch).toHaveBeenCalledTimes(1);
   });
@@ -610,34 +606,34 @@ describe('RepoSelector open tab derived from the value prop', () => {
     mocks.dispatch.mockReset();
   });
 
-  it('opens on "Pick a repo" with the input prefilled for an owner/repo shorthand value', async () => {
+  it('opens on "Clone" with the input prefilled for an owner/repo shorthand value', async () => {
     await openDropdown({ value: 'octo/alpha' });
 
-    expect(tabButton('Pick a repo').className).toContain(ACTIVE_TAB_CLASS);
-    expect(tabButton('Copy local repo').className).not.toContain(ACTIVE_TAB_CLASS);
+    expect(tabButton('Clone').className).toContain(ACTIVE_TAB_CLASS);
+    expect(tabButton('Existing folder').className).not.toContain(ACTIVE_TAB_CLASS);
     expect(githubInput()?.value).toBe('octo/alpha');
   });
 
-  it('opens on "Pick a repo" with the input prefilled for a GitHub URL value', async () => {
+  it('opens on "Clone" with the input prefilled for a GitHub URL value', async () => {
     await openDropdown({ value: 'https://github.com/octo/alpha' });
 
-    expect(tabButton('Pick a repo').className).toContain(ACTIVE_TAB_CLASS);
+    expect(tabButton('Clone').className).toContain(ACTIVE_TAB_CLASS);
     expect(githubInput()?.value).toBe('octo/alpha');
   });
 
-  it('opens on "Copy local repo" for a filesystem path value', async () => {
+  it('opens on "Existing folder" for a filesystem path value', async () => {
     await openDropdown({ value: '/Users/dev/my-repo' });
 
-    expect(tabButton('Copy local repo').className).toContain(ACTIVE_TAB_CLASS);
-    expect(tabButton('Pick a repo').className).not.toContain(ACTIVE_TAB_CLASS);
+    expect(tabButton('Existing folder').className).toContain(ACTIVE_TAB_CLASS);
+    expect(tabButton('Clone').className).not.toContain(ACTIVE_TAB_CLASS);
     expect(githubInput()).toBeNull();
   });
 
-  it('defaults to "Pick a repo" when nothing is selected', async () => {
+  it('defaults to "Clone" when nothing is selected', async () => {
     await openDropdown();
 
-    expect(tabButton('Pick a repo').className).toContain(ACTIVE_TAB_CLASS);
-    expect(tabButton('Copy local repo').className).not.toContain(ACTIVE_TAB_CLASS);
+    expect(tabButton('Clone').className).toContain(ACTIVE_TAB_CLASS);
+    expect(tabButton('Existing folder').className).not.toContain(ACTIVE_TAB_CLASS);
     expect(githubInput()?.value).toBe('');
   });
 });
@@ -741,7 +737,7 @@ describe('RepoSelector recent forge identity', () => {
     expect(mocks.dispatch.mock.calls.some(([action]) => action.type === 'wi/last')).toBe(false);
   });
 
-  it('keeps Copy local repo on its local flow even when the origin is GitLab', async () => {
+  it('keeps Existing folder on its local flow even when the origin is GitLab', async () => {
     const gitlab = { ...gitlabProps(), scopeKey: '' };
     const onchange = vi.fn();
     mocks.state.recentRepos = [
@@ -754,7 +750,7 @@ describe('RepoSelector recent forge identity', () => {
       },
     ];
     await openDropdown({ gitlab, onchange });
-    await fireEvent.click(screen.getByRole('tab', { name: 'Copy local repo', exact: true }));
+    await fireEvent.click(screen.getByRole('tab', { name: 'Existing folder', exact: true }));
     const badge = await screen.findByRole('img', { name: 'GitLab', exact: true });
     const row = badge.closest('button')!;
     expect(row.disabled).toBe(false);
@@ -770,7 +766,7 @@ describe('RepoSelector recent forge identity', () => {
     const onchange = vi.fn();
     mocks.state.recentRepos = [{ path: '/owned/local-app', type: 'local', name: 'local-app' }];
     await openDropdown({ onchange });
-    await fireEvent.click(screen.getByRole('tab', { name: 'Copy local repo', exact: true }));
+    await fireEvent.click(screen.getByRole('tab', { name: 'Existing folder', exact: true }));
     await fireEvent.click(await screen.findByRole('button', { name: /^local-app/ }));
     expect(onchange.mock.calls[0][0].detail).toMatchObject({
       path: '/owned/local-app',

@@ -110,7 +110,7 @@ vi.mock('$store/renderer/slices/feature-codes/feature-codes-selectors', async ()
   return { selectIsFeatureEnabled: store.createSelector(() => false) };
 });
 
-// GitHub autocomplete sources on RepoSelector's "Pick a repo" tab — signed out
+// GitHub autocomplete sources on RepoSelector's "Clone" tab — signed out
 // here, so no suggestions render and the Escape ordering stays isolated.
 vi.mock('$store/renderer/slices/github-auth/github-auth-slice', () => ({
   initializeGitHubAuth: () => ({ type: 'githubAuth/initialize' }),

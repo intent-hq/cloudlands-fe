@@ -167,7 +167,7 @@ for (const scenario of ['clone', 'long', 'remote'] as const) {
     const repo = fixture.locator('button[aria-haspopup="dialog"]').first();
     await repo.focus();
     await repo.press('Enter');
-    await page.getByRole('tab', { name: 'Copy local repo', exact: true }).click();
+    await page.getByRole('tab', { name: 'Existing folder', exact: true }).click();
     await page
       .getByTestId('recent-repositories')
       .getByRole('button', { name: /^tools/ })
@@ -217,12 +217,12 @@ for (const { name, width, height, position } of [
     await expectViewportBounded(menu);
     await page.evaluate(() => document.fonts.ready);
     // Labels may wrap, but every rendered line must remain readable and operable.
-    for (const label of ['Pick a repo', 'New repo', 'Copy local repo']) {
+    for (const label of ['Clone', 'New', 'Existing folder']) {
       const mode = menu.getByRole('tab', { name: label, exact: true });
       await mode.click();
-      if (label === 'Pick a repo') {
+      if (label === 'Clone') {
         await expect(menu.getByPlaceholder('owner/repo', { exact: true })).toBeVisible();
-      } else if (label === 'New repo') {
+      } else if (label === 'New') {
         await expect(menu.getByPlaceholder('new-project', { exact: true })).toBeVisible();
       } else {
         await expect(page.getByTestId('recent-repositories')).toBeVisible();

@@ -17,7 +17,7 @@ import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
 import { resetHomeWorkspaceView, updateHomeWorkspaceView } from './home-workspaces-slice';
 import HomePage from './HomePage.svelte';
 
-// A "Pick a repo" workspace is cloned into its own folder: the daemon reports
+// A "Clone" workspace is cloned into its own folder: the daemon reports
 // the clone as both repositoryPath and worktreePath.
 const clone = '/workspaces/ideate-future/intent';
 const clonedWorkspace: Workspace = {
@@ -66,7 +66,7 @@ describe('Home New workspace', () => {
 
     expect(selectShowCreateModal.select(store.state)).toBe(true);
     // New space resolves the sidebar repository itself; Home must not record
-    // the clone folder as a "Copy local repo" choice for later restores.
+    // the clone folder as a "Existing folder" choice for later restores.
     expect(selectWorkspaceInitializerLastSelectedRepo.select(store.state)).toEqual(lastPick);
   });
 });

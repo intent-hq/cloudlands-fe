@@ -269,7 +269,7 @@ async function openWithRecents(props: Record<string, unknown>) {
   const rendered = render(RepoSelector, { props: { ...props, onchange } });
   await fireEvent.click(rendered.container.querySelector('button')!);
   await waitFor(() => expect(screen.getByText(DROPDOWN_HEADING)).toBeTruthy());
-  await fireEvent.click(screen.getByRole('tab', { name: 'Copy local repo' }));
+  await fireEvent.click(screen.getByRole('tab', { name: 'Existing folder' }));
   await waitFor(() => expect(screen.getByText('notes')).toBeTruthy());
   return { ...rendered, onchange };
 }
@@ -369,7 +369,7 @@ describe('RepoSelector new folder classification in the browser build', () => {
     const rendered = render(RepoSelector, { props: { plainFolderMode: true, onchange } });
     await fireEvent.click(rendered.container.querySelector('button')!);
     await waitFor(() => expect(screen.getByText(DROPDOWN_HEADING)).toBeTruthy());
-    await fireEvent.click(screen.getByRole('tab', { name: 'New folder' }));
+    await fireEvent.click(screen.getByRole('tab', { name: 'New', exact: true }));
     const name = await waitFor(() => screen.getByPlaceholderText('new-project'));
     await fireEvent.input(name, { target: { value: 'journal' } });
     return { ...rendered, onchange };
@@ -486,7 +486,7 @@ describe('RepoSelector recent probe cancellation', () => {
     await fireEvent.click(screen.getByText('notes'));
     await waitFor(() => expect(probes().length).toBeGreaterThan(0));
 
-    await fireEvent.click(screen.getByRole('tab', { name: 'Pick a repo' }));
+    await fireEvent.click(screen.getByRole('tab', { name: 'Clone' }));
     await fireEvent.click(await screen.findByRole('option', { name: 'group/subgroup/api' }));
     expect(gitlab.onSelect).toHaveBeenCalledWith('group/subgroup/api', gitlab.scopeKey);
 

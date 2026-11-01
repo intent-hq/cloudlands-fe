@@ -315,7 +315,7 @@ describe('RepoSelector partial source settlement through the real store and clie
     mocks.registry.mockResolvedValue({ success: true, data: [registryRepo] });
     const view = render(RepoSelector);
     await fireEvent.click(view.container.querySelector('button')!);
-    await fireEvent.click(screen.getByRole('tab', { name: 'Copy local repo' }));
+    await fireEvent.click(screen.getByRole('tab', { name: 'Existing folder' }));
     await waitFor(() => expect(screen.getByText('registry-repo')).toBeTruthy());
     expect(screen.getByText('workspace-repo')).toBeTruthy();
     expect(store.state.workspaceInitializer.hydrated).toBe(false);

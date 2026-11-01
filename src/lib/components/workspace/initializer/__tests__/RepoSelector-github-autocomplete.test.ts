@@ -2,7 +2,7 @@ import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-stat
 /**
  * @vitest-environment jsdom
  *
- * Autocomplete on the RepoSelector "Pick a repo" tab: the user's own GitHub
+ * Autocomplete on the RepoSelector "Clone" tab: the user's own GitHub
  * repos (client-side filtered) plus deduped global search results, rendered
  * under the `github.com/ owner/repo` input. Covers rendering, dedupe,
  * keyboard selection, the emitted pick detail, and the signed-out state.
@@ -179,7 +179,7 @@ const suggestions = () =>
 
 const rowText = (button: HTMLButtonElement) => button.textContent?.replace(/\s+/g, ' ').trim();
 
-/** Open the dropdown (defaults to the "Pick a repo" tab) and return its input. */
+/** Open the dropdown (defaults to the "Clone" tab) and return its input. */
 async function openGithubTab(props: Record<string, unknown> = {}) {
   const rendered = render(RepoSelector, { props });
   const trigger = rendered.container.querySelector('button')!;
@@ -193,7 +193,7 @@ beforeEach(() => {
   mocks.state = withLegacyPrincipal({});
 });
 
-describe('RepoSelector "Pick a repo" autocomplete', () => {
+describe('RepoSelector "Clone" autocomplete', () => {
   beforeEach(() => {
     mocks.isAuthenticated = true;
     mocks.reposLoaded = true;
