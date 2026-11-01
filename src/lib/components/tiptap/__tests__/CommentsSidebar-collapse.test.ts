@@ -20,8 +20,6 @@ import { store as appStore } from '$store/renderer/store';
 import type { CommentV2 } from '$features/comments/comment-types-v2';
 import CommentsSidebar from '../CommentsSidebar.svelte';
 
-const RENDER_WAIT = { timeout: 3000 };
-
 const comment: CommentV2 = {
   id: 'c-1',
   threadId: 't-1',
@@ -83,7 +81,7 @@ describe('CommentsSidebar Collapse action', () => {
       const el = container.querySelector('[data-comment-id="c-1"]');
       if (!el) throw new Error('comment not rendered yet');
       return el as HTMLElement;
-    }, RENDER_WAIT);
+    });
 
     await fireEvent.keyDown(thread, { key: ' ' });
     await waitFor(() => {

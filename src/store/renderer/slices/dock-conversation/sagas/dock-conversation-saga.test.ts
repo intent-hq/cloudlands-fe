@@ -1112,21 +1112,19 @@ describe('dock screen evidence through the canonical send', () => {
     expect(
       selectComposerContextItems.select(appStore.state, workspaceA, mainA).map((i) => i.id),
     ).toEqual(rawItems);
-    // Marks persist beside their screenshot in the opaque draft attachment.
-    await vi.waitFor(
-      () =>
-        expect(
-          backend.requests
-            .filter((row) => row.method === 'drafts.set')
-            .some((row) =>
-              (
-                (row.params as { attachments?: { screen?: { marks?: unknown[] } }[] })
-                  .attachments ?? []
-              ).some((attachment) => attachment.screen?.marks?.length === 1),
-            ),
-        ).toBe(true),
-      // Draft saves are debounced (CHAT_DRAFT_SAVE_DEBOUNCE_MS) after the last mark.
-      { timeout: 3000 },
+    // Marks persist beside their screenshot in the opaque draft attachment. Draft saves are
+    // debounced (CHAT_DRAFT_SAVE_DEBOUNCE_MS) after the last mark.
+    await vi.waitFor(() =>
+      expect(
+        backend.requests
+          .filter((row) => row.method === 'drafts.set')
+          .some((row) =>
+            (
+              (row.params as { attachments?: { screen?: { marks?: unknown[] } }[] }).attachments ??
+              []
+            ).some((attachment) => attachment.screen?.marks?.length === 1),
+          ),
+      ).toBe(true),
     );
     appStore.dispatch(
       dockConversationDraftChanged(workspaceA, mainA, 'this [[mark:1]] keeps the old shadow'),
