@@ -43,6 +43,10 @@ export const selectZoomFactor = store.createSelector((state) => {
   return state.userPreferences.zoomFactor;
 });
 
+export const selectFontSize = store.createSelector((state) => {
+  return state.userPreferences?.fontSize ?? 'default';
+});
+
 export const selectShowArchived = store.createSelector((state) => {
   return state.userPreferences.showArchived;
 });

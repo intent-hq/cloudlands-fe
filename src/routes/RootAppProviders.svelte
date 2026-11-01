@@ -6,6 +6,7 @@
   import {
     selectPauseAnimationsWhenUnfocused,
     selectResolvedLocale,
+    selectFontSize,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import {
@@ -29,9 +30,13 @@
   // modals, and HUD surfaces — so every mounted m.*() string re-renders when
   // the language preference changes (no reload needed).
   const resolvedLocale$ = selectResolvedLocale();
+  const fontSize$ = selectFontSize();
   const pauseAnimationsWhenUnfocused$ = selectPauseAnimationsWhenUnfocused();
 
   onMount(() => {
+    const stopFontSize = fontSize$.subscribe((size) => {
+      document.documentElement.dataset.fontSize = size;
+    });
     // `data-window-blurred` pauses ambient motion (looping app.css keyframes via
     // pauseWindowAnimations below, the shared frame clock, aurora, mark motion);
     // one-shot entrances and flashes keep running. It is set only while the window
@@ -89,6 +94,8 @@
     );
 
     return () => {
+      stopFontSize();
+      delete document.documentElement.dataset.fontSize;
       stopPausePreference();
       windowAnimations.destroy();
       if (windowFocusListenerId) {

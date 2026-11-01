@@ -13,6 +13,7 @@ import {
 import {
   setAgentFontStyle,
   setCodeFontFamily,
+  setFontSize,
   setNoteFontStyle,
   setSystemFonts,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
@@ -102,6 +103,7 @@ beforeEach(() => {
     setThemeCustomization({ hasCustomTheme: false, customThemeName: null, activePresetId: null }),
   );
   appStore.dispatch(setNoteFontStyle('sans'));
+  appStore.dispatch(setFontSize('default'));
   appStore.dispatch(setAgentFontStyle('sans'));
   appStore.dispatch(setCodeFontFamily('system-default'));
   appStore.dispatch(setSystemFonts([LONG_FONT_NAME]));
@@ -117,6 +119,22 @@ afterEach(() => {
 });
 
 describe('Fonts & Colors settings migration', () => {
+  it('changes font size through the Appearance control', async () => {
+    renderFontsColors();
+    const size = screen.getByRole('combobox', { name: 'Font size' });
+    await fireEvent.keyDown(size, { key: 'Enter' });
+    await screen.findByRole('option', { name: 'Extra large' });
+    await fireEvent.keyDown(size, { key: 'End' });
+    await fireEvent.keyDown(size, { key: 'Enter' });
+    await waitFor(() => expect(appStore.state.userPreferences.fontSize).toBe('extra-large'));
+    await fireEvent.keyDown(size, { key: 'Enter' });
+    await screen.findByRole('option', { name: 'Default' });
+    await fireEvent.keyDown(size, { key: 'Home' });
+    await fireEvent.keyDown(size, { key: 'ArrowDown' });
+    await fireEvent.keyDown(size, { key: 'Enter' });
+    await waitFor(() => expect(appStore.state.userPreferences.fontSize).toBe('default'));
+  });
+
   it('dispatches exact FE-owned theme and font actions with no backend request', async () => {
     const recorder = installDispatchRecorder();
     try {
@@ -133,7 +151,7 @@ describe('Fonts & Colors settings migration', () => {
         within(document.getElementById('agent-chat-font')!).getByRole('radio', { name: 'Mono' }),
       );
 
-      const codeFont = document.querySelector<HTMLElement>('[data-select-trigger]')!;
+      const codeFont = document.querySelector<HTMLElement>('#code-font [data-select-trigger]')!;
       await fireEvent.keyDown(codeFont, { key: 'Enter' });
       expect(await screen.findByRole('option', { name: LONG_FONT_NAME })).toBeTruthy();
       await fireEvent.keyDown(codeFont, { key: 'ArrowDown' });

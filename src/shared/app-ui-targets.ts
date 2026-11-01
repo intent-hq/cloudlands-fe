@@ -180,6 +180,7 @@ const APP_UI_TARGETS: AppUiTarget[] = [
   ...[
     ['color-theme', 'Color theme', 'Color theme selection.'],
     ['note-font', 'Notes font', 'Notes/spec font style.'],
+    ['font-size', 'Font size', 'App text size.'],
     ['agent-chat-font', 'Agent chat font', 'Agent chat font style.'],
     ['code-font', 'Code font', 'Code editor and diff font.'],
   ].map(([id, label, description]) =>

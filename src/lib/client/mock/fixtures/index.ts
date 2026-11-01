@@ -238,6 +238,7 @@ export const mockUserPreferences: UserPreferencesState = {
   updateChannel: 'stable',
   spellcheckEnabled: true,
   zoomFactor: 1.0,
+  fontSize: 'default',
   showArchived: false,
   groupByRepo: true,
   hasCompletedProviderSetup: true,

@@ -26,6 +26,7 @@
   import GitWorkspaceSettings from '$lib/components/settings/GitWorkspaceSettings.svelte';
   import OpenInAppsSettings from '$lib/components/settings/OpenInAppsSettings.svelte';
   import LanguageSettings from '$lib/components/settings/LanguageSettings.svelte';
+  import FontSizeSettings from '$lib/components/settings/FontSizeSettings.svelte';
   import GitHubLinkSettings from '$lib/components/settings/GitHubLinkSettings.svelte';
   import KeyboardShortcutsSettings from '$lib/components/settings/KeyboardShortcutsSettings.svelte';
   import ColorThemeSettings from '$lib/components/settings/ColorThemeSettings.svelte';
@@ -378,7 +379,6 @@
     { value: 'system', label: m.settings_theme_system() },
   ];
 
-  // Font style options
   const fontStyleOptions = [
     { value: 'sans', label: m.settings_fontStyle_sans() },
     { value: 'monospace', label: m.settings_fontStyle_mono() },
@@ -643,7 +643,6 @@
           </div>
         {/if}
 
-        <!-- Setup -->
         {#if activeTab === 'setup'}
           <div id="git-workspace" data-highlight-id="git-workspace" use:highlightTarget>
             <GitWorkspaceSettings bind:this={gitWorkspaceSettingsRef}>
@@ -654,9 +653,7 @@
           </div>
         {/if}
 
-        <!-- Display -->
         {#if activeTab === 'display'}
-          <!-- Theme -->
           <div id="theme" data-highlight-id="appearance" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_appearance()}
@@ -783,6 +780,15 @@
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
               <section
+                id="font-size"
+                data-highlight-id="font-size"
+                use:highlightTarget
+                data-slot="settings-section-body"
+                class="px-6 py-4"
+              >
+                <FontSizeSettings />
+              </section>
+              <section
                 id="note-font"
                 data-highlight-id="note-font"
                 use:highlightTarget
@@ -886,7 +892,6 @@
             </div>
           </div>
 
-          <!-- Language -->
           <div id="language" data-highlight-id="language" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_language_section_title()}
@@ -899,9 +904,7 @@
           </div>
         {/if}
 
-        <!-- App Behavior -->
         {#if activeTab === 'app-behavior'}
-          <!-- Updates -->
           <div id="updates" data-highlight-id="updates" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_updates()}
@@ -984,7 +987,6 @@
           </SettingsSection>
         {/if}
 
-        <!-- Agent Behavior -->
         {#if activeTab === 'agent-behavior'}
           <div
             id="global-instructions"
@@ -1004,7 +1006,6 @@
           <AgentFeaturesSettings />
         {/if}
 
-        <!-- Input -->
         {#if activeTab === 'input'}
           <div id="keyboard-shortcuts" data-highlight-id="keyboard-shortcuts" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">

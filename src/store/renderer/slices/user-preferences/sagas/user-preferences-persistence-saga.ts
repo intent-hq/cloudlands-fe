@@ -21,6 +21,7 @@ import {
   selectChatAuroraEnabled,
   selectCollapseToolRuns,
   selectCodeFontFamily,
+  selectFontSize,
   selectGroupByRepo,
   selectGithubLinkDefaultAction,
   selectHasCompletedProviderSetup,
@@ -51,6 +52,8 @@ import {
   setChatAuroraEnabled,
   setCollapseToolRuns,
   setCodeFontFamily,
+  isFontSize,
+  setFontSize,
   setGroupByRepo,
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
@@ -102,6 +105,7 @@ const LABS_REMOTE_AGENTS_STORAGE_KEY = 'labs:remoteAgentsEnabled';
 const AGENT_STORAGE_KEY = 'agent-font-settings';
 const NOTE_STORAGE_KEY = 'note-font-settings';
 const CODE_STORAGE_KEY = 'code-font-settings';
+const FONT_SIZE_STORAGE_KEY = 'appearance:fontSize';
 const ACTIVITY_LOG_PRESETS_STORAGE_KEY = 'activityLogPresets';
 const LANGUAGE_PREFERENCE_STORAGE_KEY = 'language-preference';
 const GITHUB_LINK_DEFAULT_ACTION_STORAGE_KEY = 'github-links:defaultAction';
@@ -245,6 +249,9 @@ export function* hydrateUserPreferencesWorker() {
 
   const agentFont = yield* getLocalStorageJSON<unknown>(AGENT_STORAGE_KEY);
   if (validAgentFont(agentFont)) yield* put(setAgentFontStyle(agentFont.fontStyle));
+
+  const fontSize = yield* getLocalStorageJSON<unknown>(FONT_SIZE_STORAGE_KEY);
+  if (isFontSize(fontSize)) yield* put(setFontSize(fontSize));
 
   const noteFont = yield* getLocalStorageJSON<unknown>(NOTE_STORAGE_KEY);
   if (validNoteFont(noteFont)) yield* put(setNoteFontStyle(noteFont.fontStyle));
@@ -403,6 +410,10 @@ function* persistCodeFontWorker() {
   });
 }
 
+function* persistFontSizeWorker() {
+  yield* setLocalStorageJSON(FONT_SIZE_STORAGE_KEY, yield* selectFontSize.effect());
+}
+
 function* persistActivityLogPresetsWorker() {
   yield* setLocalStorageJSON(
     ACTIVITY_LOG_PRESETS_STORAGE_KEY,
@@ -498,6 +509,7 @@ function* watchUserPreferenceWrites() {
   yield* takeEvery([setAgentFontStyle], persistAgentFontWorker);
   yield* takeEvery([setNoteFontStyle, cycleNoteFontStyle], persistNoteFontWorker);
   yield* takeEvery(setCodeFontFamily, persistCodeFontWorker);
+  yield* takeEvery(setFontSize, persistFontSizeWorker);
   yield* takeEvery(
     [saveActivityLogPreset, deleteActivityLogPreset],
     persistActivityLogPresetsWorker,

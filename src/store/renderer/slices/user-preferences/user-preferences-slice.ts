@@ -20,6 +20,11 @@ export const SYSTEM_DEFAULT_FONT =
 export type FontStyle = 'sans' | 'monospace';
 export type AgentFontStyle = FontStyle;
 export type NoteFontStyle = FontStyle | 'serif';
+export type FontSize = 'small' | 'default' | 'large' | 'extra-large';
+
+export function isFontSize(value: unknown): value is FontSize {
+  return value === 'small' || value === 'default' || value === 'large' || value === 'extra-large';
+}
 
 export const FONT_STYLES: FontStyle[] = ['sans', 'monospace'];
 const NOTE_FONT_STYLES: NoteFontStyle[] = ['sans', 'serif', 'monospace'];
@@ -49,6 +54,7 @@ export type UserPreferencesState = {
   updateChannel: UpdateChannel;
   spellcheckEnabled: boolean;
   zoomFactor: number;
+  fontSize: FontSize;
   showArchived: boolean;
   groupByRepo: boolean;
   hasCompletedProviderSetup: boolean;
@@ -141,6 +147,7 @@ export const initialState: UserPreferencesStoreState = {
   updateChannel: 'stable',
   spellcheckEnabled: false,
   zoomFactor: 1.0,
+  fontSize: 'default',
   showArchived: false,
   groupByRepo: true,
   hasCompletedProviderSetup: false,
@@ -173,6 +180,8 @@ export const initialState: UserPreferencesStoreState = {
 export const setUpdateChannel = createAction<[channel: UpdateChannel]>(
   'userPreferences/setUpdateChannel',
 );
+
+export const setFontSize = createAction<[size: FontSize]>('userPreferences/setFontSize');
 
 export const agentRulesEditorOpened = createAction('userPreferences/agentRulesEditorOpened');
 export const agentRulesEditorClosed = createAction('userPreferences/agentRulesEditorClosed');
@@ -586,6 +595,9 @@ userPreferencesReducer.with(setAgentFontStyle, (state, { payload: [style] }) => 
   ...state,
   agentFontStyle: style,
 }));
+userPreferencesReducer.with(setFontSize, (state, { payload: [size] }) =>
+  isFontSize(size) ? { ...state, fontSize: size } : state,
+);
 userPreferencesReducer.with(setNoteFontStyle, (state, { payload: [style] }) => ({
   ...state,
   noteFontStyle: style,

@@ -44,6 +44,7 @@ import {
   setChatAuroraEnabled,
   setCollapseToolRuns,
   setCodeFontFamily,
+  setFontSize,
   setGroupByRepo,
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
@@ -221,6 +222,7 @@ describe('userPreferencesPersistenceSaga', () => {
       'labs:gitlabEnabled': true,
       'labs:remoteAgentsEnabled': true,
       'agent-font-settings': { fontStyle: 'monospace' },
+      'appearance:fontSize': 'large',
       'note-font-settings': { fontStyle: 'sans' },
       'code-font-settings': { fontFamily: 'Monaco' },
       activityLogPresets: [preset],
@@ -251,6 +253,7 @@ describe('userPreferencesPersistenceSaga', () => {
       [setLabsGitLabEnabled(true)],
       [setLabsRemoteAgentsEnabled(true)],
       [setAgentFontStyle('monospace')],
+      [setFontSize('large')],
       [setNoteFontStyle('sans')],
       [setCodeFontFamily('Monaco')],
       [hydrateActivityLogPresets([preset])],
@@ -552,6 +555,41 @@ describe('userPreferencesPersistenceSaga', () => {
     expect(fresh.getUserPreferences().noteFontStyle).toBe('serif');
     await fresh.stop();
   });
+
+  it('persists font size, restores it in a fresh store, and restores the default', async () => {
+    const stored: Record<string, unknown> = {};
+    mocks.getJSON.mockImplementation((key: string) => stored[key]);
+    mocks.setJSON.mockImplementation((key: string, value: unknown) => {
+      stored[key] = value;
+    });
+    const first = startPreferenceStore();
+    await settle();
+    first.dispatch(setFontSize('extra-large'));
+    await settle();
+    expect(stored['appearance:fontSize']).toBe('extra-large');
+    await first.stop();
+
+    const fresh = startPreferenceStore();
+    await settle();
+    expect(fresh.getUserPreferences().fontSize).toBe('extra-large');
+    fresh.dispatch(setFontSize('default'));
+    await settle();
+    expect(stored['appearance:fontSize']).toBe('default');
+    await fresh.stop();
+  });
+
+  it.each([null, 1.2, 'huge', {}, ['large']])(
+    'ignores invalid saved font size %j',
+    async (value) => {
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === 'appearance:fontSize' ? value : undefined,
+      );
+      const store = startPreferenceStore();
+      await settle();
+      expect(store.getUserPreferences().fontSize).toBe('default');
+      await store.stop();
+    },
+  );
 
   it('persists a code font action and restores it in a fresh store', async () => {
     const stored: Record<string, unknown> = {};
