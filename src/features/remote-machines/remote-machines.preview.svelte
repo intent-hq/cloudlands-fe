@@ -20,6 +20,7 @@
       revoked: state('revoked'),
       unreachable: state('unreachable'),
       unsupported: state('unsupported'),
+      'labs-off': state('labs-off'),
     },
     captureReadiness: { selector: '[aria-label="Build box"], article' },
   });

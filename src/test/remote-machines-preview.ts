@@ -3,6 +3,7 @@ import { connectionsListReceived } from '$store/renderer/slices/connections/conn
 import { selectConnections } from '$store/renderer/slices/connections/connections-selectors';
 import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
 import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import {
   remoteMachineOperationSettled,
   remoteMachineOperationStarted,
@@ -26,7 +27,8 @@ export type RemoteMachinesPreviewState =
   | 'update-required'
   | 'revoked'
   | 'unreachable'
-  | 'unsupported';
+  | 'unsupported'
+  | 'labs-off';
 
 const CONNECTIONS: ConnectionRecord[] = [
   {
@@ -113,8 +115,11 @@ export function setupRemoteMachinesFixture(state: RemoteMachinesPreviewState) {
   );
   store.dispatch(connectionStatusChanged('connected'));
   store.dispatch(backendReconnected());
+  const previousLabs = before.userPreferences?.labsRemoteAgentsEnabled === true;
+  store.dispatch(setLabsRemoteAgentsEnabled(state !== 'labs-off'));
   const exposed: Partial<Record<RemoteMachinesPreviewState, RemoteMachine>> = {
     available: machine('connected', 1),
+    'labs-off': machine('connected', 1),
     'in-use': machine('connected', 2),
     'stops-unconfirmed': machine('unreachable', 2),
     'update-required': machine('update-required'),
@@ -159,6 +164,7 @@ export function setupRemoteMachinesFixture(state: RemoteMachinesPreviewState) {
       ],
     });
   return () => {
+    store.dispatch(setLabsRemoteAgentsEnabled(previousLabs));
     store.dispatch(backendReconnected());
     store.dispatch(
       connectionsListReceived({
