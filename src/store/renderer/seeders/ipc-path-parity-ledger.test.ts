@@ -1,6 +1,7 @@
 // @verify-changed-triggers: src/main/**, src/features/**/main/**, src/**/*.ipc.ts,
 // src/store/renderer/seeders/**, src/**/*-ipc-path-parity.test.ts, src/shared/ipc-registry.ts,
-// src/shared/ipc/**, src/test/ipc-channel-source-scan.ts
+// src/shared/ipc/**, src/test/ipc-channel-source-scan.ts,
+// src/test/ipc-seeder-forward-probe.ts
 /**
  * Main/renderer IPC path-parity ledger (cloudlands-fe#3918).
  *
@@ -26,7 +27,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 // test-setup stubs the bridge globally; the probe needs seeders to see the
 // real bridge (e.g. `isElectron()` reads `window.electronAPI`).
@@ -35,7 +36,6 @@ vi.mock('$lib/electron-bridge', async (importOriginal) => importOriginal());
 import './index';
 import {
   getRegisteredMockIpcChannels,
-  mockInvoke,
   registerMockIpcHandler,
   unregisterMockIpcHandler,
 } from '$shared/ipc-mock-router';
@@ -44,6 +44,10 @@ import {
   resolveChannelArgument,
   scanMainInvokeHandlers,
 } from '../../../test/ipc-channel-source-scan';
+import {
+  probeSeederForwarding,
+  withElectronUserAgent,
+} from '../../../test/ipc-seeder-forward-probe';
 
 const SRC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
@@ -199,9 +203,9 @@ const DIVERGENT: ReadonlyMap<string, string> = new Map([
  * main, retiring one side, or moving it to DIVERGENT with a confirmed reason.
  * Most remaining entries are renderer reimplementations whose main copy only
  * the generated `invoke()` would reach — and it never does, so the main copy
- * is dead and can be deleted. Check for direct `window.electronAPI.invoke`
- * callers first (including e2e build-smoke helpers: `providers:get-availability`
- * is called that way).
+ * is dead and can be deleted. ipc-main-handler-reachability.test.ts lists
+ * them in its UNREACHABLE_LEGACY; an entry missing there has a direct caller
+ * (`providers:get-availability` is called by an e2e build-smoke helper).
  */
 const UNCHECKED_LEGACY: ReadonlySet<string> = new Set([
   'external-editors:detect-installed',
@@ -219,48 +223,15 @@ const UNCHECKED_LEGACY: ReadonlySet<string> = new Set([
 /** Ceiling for UNCHECKED_LEGACY — lower it as entries leave; never raise it. */
 const UNCHECKED_LEGACY_CEILING = 10;
 
-/** How long the probe waits for a seeder handler before treating it as not forwarding. */
-const PROBE_TIMEOUT_MS = 500;
-
 const DESCRIBE_PARITY_RE = /\bdescribeParity\(\s*([^,\n)]+)/g;
 
 const mainScan = scanMainInvokeHandlers(SRC_ROOT);
 const rendererChannels = new Set(getRegisteredMockIpcChannels());
 const sharedChannels = [...mainScan.handled.keys()].filter((c) => rendererChannels.has(c)).sort();
 
-/**
- * Probe whether the seeder for `channel` forwards verbatim to main: stub the
- * preload bridge, invoke with a unique payload, and require the same channel
- * and payload to reach `electronAPI.invoke` and its result to come back.
- * The payload is frozen (an in-place edit throws) and what reaches main is
- * compared with an independently built original, so a seeder that drops or
- * adds a field cannot pass as a forwarder.
- */
+/** Whether the seeder for `channel` forwards verbatim to main (see probeSeederForwarding). */
 async function forwardsVerbatimToMain(channel: string): Promise<boolean> {
-  const payload = Object.freeze({ parityProbe: channel });
-  const original = JSON.stringify({ parityProbe: channel });
-  const sentinel = { parityProbeResult: channel };
-  const forwarded: unknown[][] = [];
-  const bridge = (window as unknown as { electronAPI: { invoke: unknown } }).electronAPI;
-  bridge.invoke = async (...args: unknown[]) => {
-    forwarded.push(args);
-    return sentinel;
-  };
-  let result: unknown;
-  try {
-    result = await Promise.race([
-      mockInvoke(channel, payload),
-      new Promise((resolve) => setTimeout(resolve, PROBE_TIMEOUT_MS)),
-    ]);
-  } catch {
-    return false;
-  }
-  return (
-    result === sentinel &&
-    forwarded.some(
-      (args) => args[0] === channel && args.length === 2 && JSON.stringify(args[1]) === original,
-    )
-  );
+  return (await probeSeederForwarding(channel)).verbatim;
 }
 
 /** Channels `describeParity(...)` registers in one parity suite file. */
@@ -279,26 +250,13 @@ function parityChannelsIn(relativeFile: string): Set<string> {
 
 describe('IPC path-parity ledger (main handler vs renderer mock-router seeder)', () => {
   const forwarders = new Set<string>();
-  const originalInvoke = (window as unknown as { electronAPI: { invoke: unknown } }).electronAPI
-    .invoke;
 
   beforeAll(async () => {
-    // Model the packaged Electron renderer: some seeders forward only when the
-    // user agent says Electron (`expectsElectronPreloadBridge`).
-    const userAgent = vi
-      .spyOn(navigator, 'userAgent', 'get')
-      .mockReturnValue(`${navigator.userAgent} Electron/39.0.0`);
-    try {
+    await withElectronUserAgent(async () => {
       for (const channel of sharedChannels) {
         if (await forwardsVerbatimToMain(channel)) forwarders.add(channel);
       }
-    } finally {
-      userAgent.mockRestore();
-    }
-  });
-
-  afterAll(() => {
-    (window as unknown as { electronAPI: { invoke: unknown } }).electronAPI.invoke = originalInvoke;
+    });
   });
 
   it('scanner sanity: resolves every ipcMain.handle registration', () => {
