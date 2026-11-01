@@ -92,7 +92,9 @@ const INSTANT_ANIMATION_MS = 1;
 type Attempt =
   | { state: 'settled'; snapshot: MotionSnapshot }
   | { state: 'unchanged'; snapshot: MotionSnapshot }
-  | { state: 'moving'; snapshot: MotionSnapshot; animations: string[] };
+  | { state: 'moving'; snapshot: MotionSnapshot; animations: string[] }
+  /** The element was replaced; `changed` says whether a change was seen before that. */
+  | { state: 'detached'; changed: boolean };
 
 /** The region's current position, size and scroll offsets. */
 export async function motionSnapshot(region: Locator): Promise<MotionSnapshot> {
@@ -172,7 +174,7 @@ function sampleUntilStill(
           // A replaced element reads as a zero box that never moves; end the attempt so
           // the next one re-resolves the locator.
           if (!element.isConnected) {
-            resolve({ state: 'moving', snapshot: read(), animations: ['(element detached)'] });
+            resolve({ state: 'detached', changed });
             return;
           }
           const current = read();
@@ -212,6 +214,7 @@ function sampleUntilStill(
 
 function describeAttempt(attempt: Attempt, changedFrom: MotionSnapshot | null): string {
   if (attempt.state === 'settled') return 'settled';
+  if (attempt.state === 'detached') return 'was replaced by a new element';
   if (attempt.state === 'unchanged') {
     return `has not changed from ${JSON.stringify(changedFrom)} yet`;
   }
@@ -238,8 +241,12 @@ export async function expectMotionToSettle(
       async () => {
         const attempt = await sampleUntilStill(region, { changedFrom, quietMs });
         // Once a change has been seen, later attempts only wait for stillness: the region
-        // may legitimately come to rest where it started (an expand-then-collapse).
-        if (attempt.state !== 'unchanged') changedFrom = null;
+        // may legitimately come to rest where it started (an expand-then-collapse). A
+        // replacement alone is not a change: a same-size element may only start moving
+        // later.
+        const changed =
+          attempt.state === 'detached' ? attempt.changed : attempt.state !== 'unchanged';
+        if (changed) changedFrom = null;
         if (attempt.state === 'settled') settled = attempt.snapshot;
         return describeAttempt(attempt, changedFrom);
       },

@@ -18,6 +18,9 @@
   let scroller: HTMLDivElement;
   let wobbling = $state(false);
   let nextClicks = $state(0);
+  // A click that re-renders the region as a new, same-size element, then animates it later.
+  let generation = $state(0);
+  let replacedHeight = $state(40);
 
   // Animate `from` → `to` over `durationMs` after `startDelayMs`, writing each frame.
   function tween(from: number, to: number, write: (value: number) => void) {
@@ -35,6 +38,11 @@
   function toggleJs() {
     jsExpanded = !jsExpanded;
     tween(jsHeight, jsExpanded ? OPEN_HEIGHT : 0, (value) => (jsHeight = value));
+  }
+
+  function replaceThenGrow() {
+    generation += 1;
+    tween(replacedHeight, OPEN_HEIGHT, (value) => (replacedHeight = value));
   }
 
   function scrollDown() {
@@ -84,6 +92,10 @@
   Next
 </button>
 <button type="button" data-testid="noop">No-op</button>
+<button type="button" data-testid="replace" onclick={replaceThenGrow}>Replace</button>
+{#key generation}
+  <div data-testid="replaced-region" style="overflow: clip; height: {replacedHeight}px;"></div>
+{/key}
 <button type="button" data-testid="scroll-down" onclick={scrollDown}>Scroll down</button>
 <button type="button" data-testid="wobble" onclick={wobble}>Wobble</button>
 

@@ -81,6 +81,18 @@ test('settles motion started without a click when given the starting snapshot', 
   expect(settled.height).toBe(120);
 });
 
+test('keeps waiting for a change when the click replaces the region with an identical one', async ({
+  mount,
+}) => {
+  // The replacement is detected first; the size change only starts 400 ms later.
+  const component = await mount(SettleProbeHarness, { props: { startDelayMs: 400 } });
+  const settled = await clickAndSettle(
+    component.getByTestId('replace'),
+    component.getByTestId('replaced-region'),
+  );
+  expect(settled.height).toBe(120);
+});
+
 test('requireChange: false accepts a click that moves nothing', async ({ mount }) => {
   const component = await mount(SettleProbeHarness);
   const settled = await clickAndSettle(
