@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.266.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.265.1...v2.266.0) (2026-11-01)
+
+
+### 🚀 Features
+
+* plain-folder workspaces Labs flag and git toggle on create ([#3934](https://github.com/intent-hq/cloudlands-fe/issues/3934)) ([ae552ad](https://github.com/intent-hq/cloudlands-fe/commit/ae552adceb5c8f5cf9224a39d3344d30844ce99b))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.102 ([#3990](https://github.com/intent-hq/cloudlands-fe/issues/3990)) ([d187536](https://github.com/intent-hq/cloudlands-fe/commit/d1875368a122c8de9b917e4f87d21b6729699643))
+
 ## [2.265.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.265.0...v2.265.1) (2026-11-01)
 
 
