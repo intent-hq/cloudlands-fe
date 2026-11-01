@@ -2,7 +2,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { store as appStore } from '$store/renderer/store';
 import { githubAuthStatusUnavailable } from '$store/renderer/slices/github-auth/github-auth-slice';
 import { gitlabAuthStatusUnavailable } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
-import { selectCloneSourceVisible } from '$store/renderer/slices/workspace-initializer/clone-source-selectors';
+import { selectCloneSourceVisible } from '$store/renderer/slices/workspace-initializer/plain-folder-selectors';
 import {
   resolveCloneSourceVisible,
   type CloneSourceVisibilityInput,

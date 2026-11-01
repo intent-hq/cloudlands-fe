@@ -28,7 +28,7 @@
     selectWorkspaceInitializerLastSelectedRepo,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import type { WorkspaceInitializerRepoSelection } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
-  import { selectCloneSourceVisible } from '$store/renderer/slices/workspace-initializer/clone-source-selectors';
+  import { selectCloneSourceVisible } from '$store/renderer/slices/workspace-initializer/plain-folder-selectors';
 
   const logger = createLogger('ProjectPickerMessage');
 

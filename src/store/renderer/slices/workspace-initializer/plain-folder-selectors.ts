@@ -9,6 +9,7 @@ import {
   resolveInitializeGitDefault,
   supportsPlainFolderCreate,
 } from '$lib/components/workspace/initializer/plain-folder-create';
+import { resolveCloneSourceVisible } from '$lib/components/workspace/initializer/clone-source-visibility';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import type { Workspace } from '$shared/types';
 import { store } from '../../store';
@@ -54,3 +55,19 @@ export const selectInitializeGitDefaultState = store.createSelector(
     return decided ? 'on' : 'off';
   },
 );
+
+/**
+ * Clone-tab visibility for create surfaces (not Labs-gated). Unknown forge
+ * status (pending, failed, or a surface without the full store) keeps Clone.
+ */
+export const selectCloneSourceVisible = store.createSelector((state) => {
+  const gitlabFailed = state.gitlabAuth?.statusFailed === true;
+  return resolveCloneSourceVisible({
+    githubConnected: state.githubAuth?.isAuthenticated === true,
+    githubSettled: state.githubAuth?.statusSettled === true,
+    githubFailed: state.githubAuth?.statusFailed === true,
+    gitlabConnected: state.gitlabAuth?.isConfigured === true,
+    gitlabSettled: state.gitlabAuth?.statusReady === true || gitlabFailed,
+    gitlabFailed,
+  });
+});

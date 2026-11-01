@@ -64,7 +64,7 @@
   import { initializeGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
   import { classifyPlainFolderTarget, newProjectDefaultParent } from './plain-folder-create';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
-  import { selectCloneSourceVisible } from '$store/renderer/slices/workspace-initializer/clone-source-selectors';
+  import { selectCloneSourceVisible } from '$store/renderer/slices/workspace-initializer/plain-folder-selectors';
   import { selectLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import {

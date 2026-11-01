@@ -7,7 +7,6 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { waitForLayerExit } from '../../../../../test/layer-exit';
 
 const mocks = vi.hoisted(() => {
   const listeners = new Set<() => void>();
@@ -166,7 +165,8 @@ vi.mock('$lib/components/workspace/initializer/AddRemoteSetupModal.svelte', asyn
   default: (await import('./mocks/MockComponent.svelte')).default,
 }));
 
-vi.mock('$store/renderer/slices/workspace-initializer/clone-source-selectors', () => ({
+vi.mock('$store/renderer/slices/workspace-initializer/plain-folder-selectors', async (orig) => ({
+  ...(await orig<object>()),
   selectCloneSourceVisible: mocks.selector(() => mocks.cloneVisible),
 }));
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', async (orig) => ({
@@ -183,7 +183,6 @@ vi.mock('$lib/utils/workspace-navigation', async (orig) => ({
 }));
 
 import RepoSelector from '../RepoSelector.svelte';
-import type { GitLabProjectPickerProps } from '../gitlab-picker-types';
 import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 
 beforeEach(() => {
@@ -197,7 +196,6 @@ beforeEach(() => {
 import { warmImport } from '../../../../../test/warm-import';
 
 const DROPDOWN_HEADING = 'What repo should we work on?';
-const ACTIVE_TAB_CLASS = 'bg-background';
 
 warmImport(() => import('../../../ui/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('./mocks/MockComponent.svelte'));
@@ -211,15 +209,11 @@ async function openDropdown(props: Record<string, unknown> = {}) {
   return rendered;
 }
 
-/** The dropdown is portalled to <body>; find a tab button by its label. */
-function tabButton(label: string): HTMLButtonElement {
-  const button = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button')).find(
-    (b) => b.textContent?.trim() === label,
-  );
-  expect(button, `tab button "${label}"`).toBeTruthy();
-  return button!;
-}
-
+const selectedTab = () =>
+  screen
+    .getAllByRole('tab')
+    .find((tab) => tab.getAttribute('aria-selected') === 'true')
+    ?.textContent?.trim();
 const tabNames = () => screen.getAllByRole('tab').map((tab) => tab.textContent?.trim());
 
 describe('RepoSelector source tab labels', () => {
@@ -250,7 +244,7 @@ describe('RepoSelector Clone visibility', () => {
     mocks.cloneVisible = false;
     await openDropdown();
     expect(tabNames()).toEqual(['Existing folder', 'New']);
-    expect(tabButton('Existing folder').className).toContain(ACTIVE_TAB_CLASS);
+    expect(selectedTab()).toBe('Existing folder');
     expect(screen.queryByPlaceholderText('owner/repo')).toBeNull();
   });
 
@@ -258,7 +252,7 @@ describe('RepoSelector Clone visibility', () => {
     mocks.cloneVisible = false;
     mocks.authenticated = true;
     await openDropdown();
-    expect(tabButton('Clone').className).toContain(ACTIVE_TAB_CLASS);
+    expect(selectedTab()).toBe('Clone');
   });
 
   it('shows Clone when the checkout owner supplies an authenticated GitLab', async () => {
@@ -289,18 +283,18 @@ describe('RepoSelector Clone visibility', () => {
     mocks.cloneVisible = false;
     await openDropdown({ value: 'https://github.com/octo/alpha' });
     expect(tabNames()).toEqual(['Existing folder', 'New']);
-    expect(tabButton('Existing folder').className).toContain(ACTIVE_TAB_CLASS);
+    expect(selectedTab()).toBe('Existing folder');
     expect(screen.queryByPlaceholderText('owner/repo')).toBeNull();
   });
 
   it('leaves the user on Existing folder when Clone disappears while open', async () => {
     mocks.cloneVisible = true;
     await openDropdown();
-    expect(tabButton('Clone').className).toContain(ACTIVE_TAB_CLASS);
+    expect(selectedTab()).toBe('Clone');
     mocks.cloneVisible = false;
     for (const notify of mocks.listeners) notify();
     await waitFor(() => expect(tabNames()).toEqual(['Existing folder', 'New']));
-    expect(tabButton('Existing folder').className).toContain(ACTIVE_TAB_CLASS);
+    expect(selectedTab()).toBe('Existing folder');
   });
 
   it('offers a connect link to Settings → Connections when Clone is hidden', async () => {
