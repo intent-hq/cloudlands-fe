@@ -140,7 +140,3 @@ export class MockPersistenceService {
     this.loadHistory.push({ key, timestamp: Date.now() });
   }
 }
-
-function createMockPersistenceService(): MockPersistenceService {
-  return new MockPersistenceService();
-}
