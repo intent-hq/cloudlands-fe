@@ -642,6 +642,40 @@ describe('RepoSelector open tab derived from the value prop', () => {
   });
 });
 
+describe('RepoSelector openOnLocalTab (plain-folder toggle turned off)', () => {
+  afterEach(() => {
+    cleanup();
+    mocks.dispatch.mockReset();
+  });
+
+  it('opens on "Copy local repo" and drops a GitHub selection the consumer cleared', async () => {
+    const rendered = render(RepoSelector, { props: { value: 'octo/alpha' } });
+    const trigger = rendered.container.querySelector('button')!;
+    expect(trigger.textContent).toContain('octo/alpha');
+
+    await rendered.rerender({ value: '' });
+    (rendered.component as unknown as { openOnLocalTab: () => void }).openOnLocalTab();
+
+    await waitFor(() => expect(screen.getByText(DROPDOWN_HEADING)).toBeTruthy());
+    expect(tabButton('Copy local repo').getAttribute('aria-selected')).toBe('true');
+    expect(tabButton('Pick a repo').getAttribute('aria-selected')).toBe('false');
+    expect(trigger.textContent).not.toContain('octo/alpha');
+  });
+
+  it('only applies the local tab once; the next open follows the selection', async () => {
+    const rendered = render(RepoSelector, { props: { value: '' } });
+    (rendered.component as unknown as { openOnLocalTab: () => void }).openOnLocalTab();
+    await waitFor(() => expect(screen.getByText(DROPDOWN_HEADING)).toBeTruthy());
+    expect(tabButton('Copy local repo').getAttribute('aria-selected')).toBe('true');
+
+    await fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByText(DROPDOWN_HEADING)).toBeNull());
+    await fireEvent.click(rendered.container.querySelector('button')!);
+    await waitFor(() => expect(screen.getByText(DROPDOWN_HEADING)).toBeTruthy());
+    expect(tabButton('Pick a repo').getAttribute('aria-selected')).toBe('true');
+  });
+});
+
 // Regression: the open-time GitHub pre-fill used to seed searchTerm, so the
 // Recent list opened filtered down to the already-selected repo. Only actual
 // typing should filter it (intent-hq/monorepo).

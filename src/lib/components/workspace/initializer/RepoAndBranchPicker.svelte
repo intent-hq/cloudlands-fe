@@ -15,6 +15,7 @@
 
   type RepoSelectorHandle = {
     focusInput: () => void;
+    openOnLocalTab: () => void;
   };
 
   export interface RemoteSetup {
@@ -271,6 +272,11 @@
    */
   export function focusInput() {
     repoSelector?.focusInput?.();
+  }
+
+  /** Open the repo picker on its local folder tab. */
+  export function openFolderSelection() {
+    repoSelector?.openOnLocalTab?.();
   }
 </script>
 
