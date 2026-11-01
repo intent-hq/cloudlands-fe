@@ -5,7 +5,7 @@
  * machine rows and failure codes, never an executor token.
  */
 
-import { call, put, takeEvery, takeLatest, type SagaGenerator } from 'typed-redux-saga';
+import { call, delay, put, takeEvery, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 import { m } from '$shared/paraglide/messages.js';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import {
@@ -53,20 +53,75 @@ function errorFailure(error: unknown): RemoteMachineFailure {
   };
 }
 
+const FAILURE_CODES: ReadonlySet<string> = new Set<RemoteMachineFailure['code']>([
+  'unsupported-backend',
+  'same-machine',
+  'not-owner',
+  'machine-not-connected',
+  'listener-off',
+  'remote-agents-disabled',
+  'machine-update-required',
+  'machine-unreachable',
+  'machine-in-use',
+  'failed',
+]);
+
+/**
+ * Narrow a `remote-machines:*` bridge reply. A bridge without the channel (the
+ * web build's mock `electronAPI`) answers `{ success: false, error }`, which
+ * becomes a generic failure instead of leaking an unknown shape into state.
+ */
+function bridgeFailure(reply: unknown): RemoteMachineFailure | null {
+  const value = (reply ?? {}) as Record<string, unknown>;
+  if (value.success === false && typeof value.code === 'string' && FAILURE_CODES.has(value.code))
+    return reply as RemoteMachineFailure;
+  return {
+    success: false,
+    code: 'failed',
+    ...(typeof value.error === 'string' ? { message: value.error } : {}),
+  };
+}
+
+function exposeReply(reply: unknown): RemoteMachineExposeResult {
+  const value = (reply ?? {}) as Record<string, unknown>;
+  if (value.success === true) {
+    const machine = parseRemoteMachine(value.machine);
+    if (machine) return { success: true, machine };
+  }
+  return bridgeFailure(reply) as RemoteMachineFailure;
+}
+
+function unexposeReply(reply: unknown): RemoteMachineUnexposeResult {
+  const value = (reply ?? {}) as Record<string, unknown>;
+  if (value.success === true) return { success: true, revoked: value.revoked === true };
+  return bridgeFailure(reply) as RemoteMachineFailure;
+}
+
 function generation(): number {
   return store.state.daemonHealth.connectionGeneration;
 }
 
-async function readSupported(): Promise<boolean> {
+/**
+ * `remoteMachines: 1` from the current hello, or null while unknown: the
+ * transport clears its capability snapshot whenever another `client.hello` is
+ * in flight, and reports no snapshot until that reply lands.
+ */
+async function readSupported(): Promise<boolean | null> {
   try {
     const hello = (await observeBackendNodeCapabilities()) as {
       server?: { capabilities?: { remoteMachines?: unknown } | null };
     } | null;
-    return hello?.server?.capabilities?.remoteMachines === 1;
+    const capabilities = hello?.server?.capabilities;
+    if (!capabilities) return null;
+    return capabilities.remoteMachines === 1;
   } catch {
-    return false;
+    return null;
   }
 }
+
+/** Retry an unknown capability snapshot briefly before treating it as unsupported. */
+const CAPABILITY_RETRIES = 10;
+const CAPABILITY_RETRY_MS = 500;
 
 async function readMachines(): Promise<RemoteMachine[]> {
   const result = await backendRequest<{ machines?: unknown }>('remoteMachines.list');
@@ -94,10 +149,11 @@ async function readExecutorBackends(): Promise<ExecutorBackend[] | null> {
 
 async function readLocalFingerprint(): Promise<string | null> {
   try {
-    return await invokeRemoteMachines<string | null>(
+    const reply = await invokeRemoteMachines<unknown>(
       CHANNELS.MACHINE_FINGERPRINT,
       LOCAL_CONNECTION_ID,
     );
+    return typeof reply === 'string' ? reply : null;
   } catch {
     return null;
   }
@@ -105,7 +161,13 @@ async function readLocalFingerprint(): Promise<string | null> {
 
 function* refresh(): SagaGenerator<void> {
   const started = generation();
-  const supported = yield* call(readSupported);
+  let known = yield* call(readSupported);
+  for (let attempt = 0; known === null && attempt < CAPABILITY_RETRIES; attempt += 1) {
+    yield* delay(CAPABILITY_RETRY_MS);
+    if (started !== generation()) return;
+    known = yield* call(readSupported);
+  }
+  const supported = known === true;
   let machines: RemoteMachine[] = [];
   let localFingerprint: string | null = null;
   if (supported) {
@@ -138,10 +200,12 @@ function* expose(action: ReturnType<typeof remoteMachineExposeRequested>): SagaG
   yield* put(remoteMachineOperationStarted(connectionId, 'exposing'));
   let result: RemoteMachineExposeResult;
   try {
-    result = yield* call(invokeRemoteMachines<RemoteMachineExposeResult>, CHANNELS.EXPOSE, {
-      machineConnectionId: connectionId,
-      ...(enableListener ? { enableListener } : {}),
-    });
+    result = exposeReply(
+      yield* call(invokeRemoteMachines<unknown>, CHANNELS.EXPOSE, {
+        machineConnectionId: connectionId,
+        ...(enableListener ? { enableListener } : {}),
+      }),
+    );
   } catch (error) {
     result = errorFailure(error);
   }
@@ -173,11 +237,13 @@ function* unexpose(action: ReturnType<typeof remoteMachineUnexposeRequested>): S
   yield* put(remoteMachineOperationStarted(machineId, 'removing'));
   let result: RemoteMachineUnexposeResult;
   try {
-    result = yield* call(invokeRemoteMachines<RemoteMachineUnexposeResult>, CHANNELS.UNEXPOSE, {
-      machineId,
-      ...(connectionId ? { machineConnectionId: connectionId } : {}),
-      ...(stopAgents ? { stopAgents: true } : {}),
-    });
+    result = unexposeReply(
+      yield* call(invokeRemoteMachines<unknown>, CHANNELS.UNEXPOSE, {
+        machineId,
+        ...(connectionId ? { machineConnectionId: connectionId } : {}),
+        ...(stopAgents ? { stopAgents: true } : {}),
+      }),
+    );
   } catch (error) {
     result = errorFailure(error);
   }
