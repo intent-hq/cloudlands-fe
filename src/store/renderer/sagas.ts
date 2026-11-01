@@ -41,6 +41,7 @@ import { deepLinksSaga } from './slices/deep-links/sagas/deep-links-saga';
 import { autoUpdateSaga } from './slices/auto-update/sagas/auto-update-saga';
 import { backgroundAgentSettingsSaga } from './slices/background-agent-settings/sagas/background-agent-settings-saga';
 import { backgroundHooksSaga } from './slices/background-hooks/sagas/background-hooks-saga';
+import { agentTraceSaga } from './slices/agent-trace/sagas/agent-trace-saga';
 import { browserPersistenceSaga } from './slices/browser/sagas/browser-persistence-saga';
 import { browserClientsSaga } from './slices/browser-clients/sagas/browser-clients-saga';
 import { chatReadSaga } from './slices/chat-state/sagas/chat-read-saga';
@@ -230,6 +231,7 @@ export const sagas = [
   providerAdapterPreparationSaga,
   setupPromptSaga,
   backgroundHooksSaga,
+  agentTraceSaga,
   hostOwnerServicesSaga,
   dockConversationSaga,
   themeSaga,

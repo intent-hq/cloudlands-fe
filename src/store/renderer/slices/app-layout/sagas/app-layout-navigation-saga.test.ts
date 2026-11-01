@@ -144,6 +144,114 @@ describe('appLayoutNavigationSaga', () => {
     await task.toPromise();
   });
 
+  const overviewPane = {
+    id: 'overview',
+    tabs: [{ id: 'tab-overview', type: 'agent-overview', title: 'Agent overview' }],
+    activeTabId: 'tab-overview',
+  };
+  const alongsideCases: Array<{
+    name: string;
+    panels: Record<string, unknown>;
+    expected: { type: string; payload: Record<string, unknown> };
+  }> = [
+    {
+      name: 'brings a chat open in another pane forward there without taking focus',
+      panels: {
+        overview: overviewPane,
+        side: {
+          id: 'side',
+          tabs: [
+            { id: 'tab-note', type: 'note', title: 'Spec', noteId: 'spec' },
+            { id: 'tab-chat', type: 'agent', title: 'Ada', agentId: 'agent-1' },
+          ],
+          activeTabId: 'tab-note',
+        },
+      },
+      expected: {
+        type: 'panelLayout/openTab',
+        payload: { wsId: 'ws-1', panelId: 'side', force: true, preserveFocus: true },
+      },
+    },
+    {
+      name: 'opens beside the source when the chat is only behind it in the same pane',
+      panels: {
+        overview: {
+          ...overviewPane,
+          tabs: [
+            { id: 'tab-chat', type: 'agent', title: 'Ada', agentId: 'agent-1' },
+            ...overviewPane.tabs,
+          ],
+        },
+      },
+      expected: {
+        type: 'panelLayout/openTabInAdjacentOrSplit',
+        payload: {
+          wsId: 'ws-1',
+          sourcePanelId: 'overview',
+          force: true,
+          allowDuplicate: true,
+          preserveFocus: true,
+        },
+      },
+    },
+    {
+      name: 'opens beside the source when only another agent is open',
+      panels: {
+        overview: overviewPane,
+        side: {
+          id: 'side',
+          tabs: [{ id: 'tab-other', type: 'agent', title: 'Bo', agentId: 'agent-2' }],
+          activeTabId: 'tab-other',
+        },
+      },
+      expected: {
+        type: 'panelLayout/openTabInAdjacentOrSplit',
+        payload: {
+          wsId: 'ws-1',
+          sourcePanelId: 'overview',
+          force: true,
+          allowDuplicate: true,
+          preserveFocus: true,
+        },
+      },
+    },
+  ];
+
+  it.each(alongsideCases)('alongside its source: $name', async ({ panels, expected }) => {
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga(
+      {
+        channel,
+        dispatch,
+        getState: () => ({
+          agentSessions: { byAgentId: { 'agent-1': { id: 'agent-1', name: 'Ada' } } },
+          panelLayout: { byWorkspaceId: { 'ws-1': { ...emptyWorkspaceState, panels } } },
+        }),
+      },
+      appLayoutNavigationSaga,
+    );
+    channel.put(
+      openAgentTabRequested('ws-1', {
+        agentId: 'agent-1',
+        sourcePanelId: 'overview',
+        alongsideSource: true,
+      }),
+    );
+    await settle();
+    expect(dispatch).toHaveBeenNthCalledWith(1, ensureAgentSessionLoaded('ws-1', 'agent-1'));
+    expect(dispatch).toHaveBeenCalledTimes(2);
+    expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
+      ...expected,
+      payload: {
+        ...expected.payload,
+        tab: { type: 'agent', agentId: 'agent-1', workspaceId: 'ws-1' },
+      },
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('uses the fallback title for an unloaded agent and ignores invalid requests', async () => {
     const channel = stdChannel();
     const dispatch = vi.fn();

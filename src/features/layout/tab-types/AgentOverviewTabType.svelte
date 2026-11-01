@@ -2,13 +2,13 @@
   /**
    * Agent Overview Tab Type Component
    *
-   * Renders the agent overview visualization.
+   * Renders the workspace's recent agent activity as a trace waterfall.
    */
 
   import type { TabTypeComponentProps } from './registry';
-  import { AgentOverviewPanel } from '$lib/components/agent-overview';
+  import AgentTracePanel from '$features/agent-trace/components/AgentTracePanel.svelte';
 
-  let { workspaceId, onFocus }: TabTypeComponentProps = $props();
+  let { workspaceId, isActive, onFocus }: TabTypeComponentProps = $props();
 </script>
 
-<AgentOverviewPanel {workspaceId} {onFocus} />
+<AgentTracePanel {workspaceId} active={isActive} {onFocus} />

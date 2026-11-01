@@ -445,6 +445,7 @@
     collectSearchRanges,
     createRangeForSpan,
     findChatSearchMatches,
+    locateToolCall,
     type ChatSearchMatch,
     type ChatSearchOptions,
   } from './chat-search';
@@ -4909,6 +4910,41 @@
   let clearDeepOpenHighlight: (() => void) | null = null;
   const DEEP_OPEN_HIGHLIGHT_NAME = 'deep-open-match';
   const DEEP_OPEN_HIGHLIGHT_TIMEOUT_MS = 8000;
+  /** How long a deep-open target is kept in view while history settles around it. */
+  const DEEP_OPEN_HOLD_MS = 5000;
+  const DEEP_OPEN_HOLD_RELEASE_EVENTS = ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const;
+
+  // Older pages and lazy turns can land around a deep-open target after it is
+  // revealed and push it off screen. Until the user scrolls, clicks or types,
+  // or a newer navigation starts, bring it back when it leaves the viewport.
+  function holdDeepOpenTarget(selector: string, getContainer: () => HTMLElement | null) {
+    const deadline = performance.now() + DEEP_OPEN_HOLD_MS;
+    let released = false;
+    const release = () => {
+      released = true;
+      for (const type of DEEP_OPEN_HOLD_RELEASE_EVENTS)
+        window.removeEventListener(type, release, true);
+    };
+    for (const type of DEEP_OPEN_HOLD_RELEASE_EVENTS)
+      window.addEventListener(type, release, { capture: true, passive: true });
+    const step = () => {
+      const container = getContainer();
+      if (released || !container || performance.now() > deadline) {
+        release();
+        return;
+      }
+      const target = container.querySelector<HTMLElement>(selector);
+      if (target) {
+        const view = container.getBoundingClientRect();
+        const rect = target.getBoundingClientRect();
+        const margin = view.height * 0.2;
+        if (rect.bottom < view.top + margin || rect.top > view.bottom - margin)
+          container.scrollTop += rect.top + rect.height / 2 - (view.top + view.height / 2);
+      }
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
 
   function isMessageForceVisible(messageId: string): boolean {
     if (!shouldUseLazyLoading) return true;
@@ -5143,31 +5179,83 @@
       shouldFollowBottom = false;
       await tick();
       if (!current() || !(await waitForActiveFrame()) || !current()) return;
-      const targetElement = scrollContainer?.querySelector<HTMLElement>(
-        `[data-message-id="${CSS.escape(detail.messageId)}"]`,
-      );
+      const findTarget = () =>
+        scrollContainer?.querySelector<HTMLElement>(
+          `[data-message-id="${CSS.escape(detail.messageId)}"]`,
+        );
+      if (!findTarget() && !messageIdToTurnKey.has(detail.messageId)) {
+        // A return-to-tail collapse can drop the page the helper loaded before
+        // this reveal runs. Load it again while the landing owns the transcript.
+        seekLandingPending = true;
+        try {
+          const loaded = await seekConversationToMessage(
+            agentId,
+            detail.messageId,
+            workspace?.id,
+            detail.signal,
+          );
+          if (!loaded) handledOpenMessageRequestIds.add(detail.requestId);
+          if (!loaded || !current()) return;
+          deepOpenTurnKey = messageIdToTurnKey.get(detail.messageId) ?? detail.messageId;
+          await tick();
+          if (!current() || !(await waitForActiveFrame()) || !current()) return;
+        } finally {
+          seekLandingPending = false;
+        }
+      }
+      const targetElement = findTarget();
       if (!targetElement) return;
       handledOpenMessageRequestIds.add(detail.requestId);
+      const messages = [...$agentHistoryMessages$, ...$agentMessages$].filter(
+        (message) => message.id === detail.messageId,
+      );
+      // A tool call is revealed like a search match: its group opens and its row renders.
+      const toolTarget =
+        !detail.query && detail.toolCallId && messages[0]
+          ? locateToolCall(messages[0], detail.toolCallId, chatSearchOptions)
+          : null;
       const match = detail.query
         ? findChatSearchMatches(
-            [...$agentHistoryMessages$, ...$agentMessages$].filter(
-              (message) => message.id === detail.messageId,
-            ),
+            messages,
             detail.query,
             messageIdToTurnKey,
             workspace?.ownerPrincipalId,
             chatSearchOptions,
           )[0]
-        : undefined;
+        : toolTarget
+          ? {
+              messageId: detail.messageId,
+              turnKey: messageIdToTurnKey.get(detail.messageId) ?? detail.messageId,
+              matchIndexInMessage: 0,
+              occurrenceInBlock: 0,
+              ...toolTarget,
+            }
+          : undefined;
       if (match) await revealSearchMatch(match, scrollContainer, current, detail.query);
       if (!current()) return;
+      const toolElement = detail.toolCallId
+        ? scrollContainer?.querySelector<HTMLElement>(
+            `[data-tool-call-id="${CSS.escape(detail.toolCallId)}"]`,
+          )
+        : null;
       if (!match?.blockPath)
-        smoothScrollTo(targetElement, 'center', undefined, () =>
+        smoothScrollTo(toolElement ?? targetElement, 'center', undefined, () =>
           current() ? getContainer() : null,
         );
+      holdDeepOpenTarget(
+        toolElement && detail.toolCallId
+          ? `[data-tool-call-id="${CSS.escape(detail.toolCallId)}"]`
+          : `[data-message-id="${CSS.escape(detail.messageId)}"]`,
+        () => (current() ? getContainer() : null),
+      );
       scheduleDeepOpenRelease();
-      targetElement.classList.add('message-highlight-flash');
-      scheduleHighlightRemoval(targetElement, 'message-highlight-flash', 600);
+      if (toolElement) {
+        toolElement.classList.add('highlight-flash');
+        scheduleHighlightRemoval(toolElement, 'highlight-flash', 1500);
+      } else {
+        targetElement.classList.add('message-highlight-flash');
+        scheduleHighlightRemoval(targetElement, 'message-highlight-flash', 600);
+      }
       if (detail.query) applyDeepOpenQueryHighlight(targetElement, detail.query);
     } finally {
       pendingOpenMessageRequestIds.delete(detail.requestId);
