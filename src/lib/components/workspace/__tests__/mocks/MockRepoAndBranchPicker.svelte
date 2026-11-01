@@ -48,6 +48,13 @@
     [key: string]: unknown;
   } = $props();
 
+  /** Records the initializer's "switch to folder selection" request. */
+  export function openFolderSelection() {
+    const registry = window as unknown as Record<string, unknown>;
+    registry.__mockRepoAndBranchPickerFolderOpens =
+      ((registry.__mockRepoAndBranchPickerFolderOpens as number | undefined) ?? 0) + 1;
+  }
+
   $effect(() => {
     const registry = window as unknown as Record<string, unknown>;
     const callbacks = { onRepoChange, onBranchChange, onSkipIsolationChange, onBranchStatusChange };
