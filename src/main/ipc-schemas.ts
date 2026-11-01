@@ -7,6 +7,7 @@
 
 import { z } from 'zod';
 import { BROWSER_PROTOCOLS } from '../shared/constants';
+import { DOCK_SURFACE_MAX_SIZE } from '../shared/dock-placement';
 import type { InviteProgressAction } from '../shared/ipc/invite-progress';
 import { FirstVisitStateSchema, WorkspaceStatusMessageSchema } from '../shared/schemas';
 import { isValidWorkspaceId } from '../shared/types/branded-ids';
@@ -146,10 +147,6 @@ const MessageIdSchema = z.string().min(1, 'Message ID is required');
 // Workspace Schemas
 // ============================================================================
 
-export const WorkspaceGetSchema = z.object({
-  id: WorkspaceIdSchema,
-});
-
 export const WorkspaceGetCurrentSchema = z.object({}).passthrough();
 
 export const WorkspaceGetByIdSchema = z.object({
@@ -258,18 +255,9 @@ export const WorkspaceCloseSchema = z.object({
   id: WorkspaceIdSchema,
 });
 
-export const WorkspaceOpenSchema = z.object({
-  id: WorkspaceIdSchema,
-});
-
 export const WorkspaceRenameSchema = z.object({
   id: WorkspaceIdSchema,
   newName: z.string().min(1, 'New name is required').max(255, 'Name too long'),
-});
-
-export const WorkspaceRenameBranchSchema = z.object({
-  id: WorkspaceIdSchema,
-  newBranchName: z.string().min(1, 'New branch name is required'),
 });
 
 export const WorkspaceDuplicateSchema = z.object({
@@ -319,10 +307,6 @@ export const WorkspaceImportSchema = z.object({
   data: z.any(),
 });
 
-export const WorkspaceListSchema = z.object({
-  lite: z.boolean().optional(), // When true, skip heavy computations to avoid blocking other IPC operations
-});
-
 export const WorkspaceGetRecentSchema = z.object({});
 
 export const WorkspaceClearRecentSchema = z.object({});
@@ -335,15 +319,7 @@ export const WorkspaceGetHoverStatusSchema = z.object({
   workspaceId: WorkspaceIdSchema,
 });
 
-// On-demand summary endpoints (data intentionally excluded from workspace metadata payloads)
-export const WorkspaceGetDiffSummarySchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-});
-
-export const WorkspaceGetGitSummarySchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-});
-
+// On-demand task endpoint (data intentionally excluded from workspace metadata payloads)
 export const WorkspaceGetTasksSchema = z.object({
   workspaceId: WorkspaceIdSchema,
 });
@@ -367,26 +343,6 @@ export const WorkspaceRestoreSchema = z.object({
 
 export const WorkspaceGetSettingsSchema = z.object({
   id: WorkspaceIdSchema,
-});
-
-export const WorkspaceUpdateSettingsSchema = z.object({
-  id: WorkspaceIdSchema,
-  settings: z.record(z.any()),
-});
-
-export const WorkspaceGetRecentRepositoriesSchema = z.object({});
-
-export const WorkspaceAddRecentRepositorySchema = z.object({
-  repository: z.string().min(1, 'Repository is required'),
-  name: z.string().optional(),
-  owner: z.string().optional(),
-  githubUrl: z.string().optional(),
-});
-
-export const WorkspaceClearRecentRepositoriesSchema = z.object({});
-
-export const WorkspaceRemoveRecentRepositorySchema = z.object({
-  repository: z.string().min(1, 'Repository path is required'),
 });
 
 export const WorkspaceUpdateGitInfoSchema = z.object({
@@ -437,18 +393,6 @@ export const FileHashSchema = z.object({
   path: z.string().min(1, 'Path is required'),
 });
 
-export const FileWriteSchema = z.object({
-  path: z.string().min(1, 'Path is required'),
-  content: z.string(),
-  encoding: z.enum(['utf8', 'ascii', 'base64']).optional(),
-  workspaceId: z.string().optional(), // For immediate file tracking updates
-});
-
-export const FileDeleteSchema = z.object({
-  path: z.string().min(1, 'Path is required'),
-  workspaceId: z.string().optional(),
-});
-
 export const FileListSchema = z.object({
   path: z.string().min(1, 'Path is required'),
   recursive: z.boolean().optional(),
@@ -460,11 +404,6 @@ export const FileReadBatchSchema = z.object({
       path: z.string().min(1, 'Path is required'),
     }),
   ),
-  workspaceId: z.string().optional(), // For remote workspace file routing
-});
-
-export const FileExistsSchema = z.object({
-  path: z.string().min(1, 'Path is required'),
   workspaceId: z.string().optional(), // For remote workspace file routing
 });
 
@@ -501,20 +440,6 @@ export const FileGetTreeWithSizesSchema = z.object({
 });
 
 export const FileMkdirSchema = z.object({
-  path: z.string().min(1, 'Path is required'),
-});
-
-export const FileMoveSchema = z.object({
-  oldPath: z.string().min(1, 'Old path is required'),
-  newPath: z.string().min(1, 'New path is required'),
-});
-
-export const FileCopySchema = z.object({
-  sourcePath: z.string().min(1, 'Source path is required'),
-  destinationPath: z.string().min(1, 'Destination path is required'),
-});
-
-export const FileGetDirectoryStatusSchema = z.object({
   path: z.string().min(1, 'Path is required'),
 });
 
@@ -704,7 +629,23 @@ export const WindowCreateSchema = z.object({
 
 export const WindowOpenNewSchema = z.object({
   route: z.string().optional(),
+  agentId: z.string().min(1).max(256).optional(),
+  workspaceTarget: z
+    .discriminatedUnion('type', [
+      z
+        .object({
+          type: z.literal('file'),
+          filePath: z.string().min(1).max(16384),
+          line: z.number().int().min(0).optional(),
+          gitRootId: z.string().min(1).max(256).optional(),
+          gitRootPath: z.string().min(1).max(16384).optional(),
+        })
+        .strict(),
+      z.object({ type: z.literal('note'), noteId: z.string().min(1).max(256) }).strict(),
+    ])
+    .optional(),
   requestId: z.string().min(1).max(256).optional(),
+  reuseExistingWorkspace: z.boolean().optional(),
 });
 
 export const WindowSetThemeSchema = z.object({
@@ -728,6 +669,98 @@ export const WindowSetOpenWorkspaceTabsSchema = z.object({
   workspaceIds: z.array(z.string()),
 });
 
+export const WindowSetDockPointerRegionSchema = z.object({
+  revision: z.number().int().nonnegative().optional(),
+  active: z.boolean(),
+  regions: z
+    .array(
+      z.object({
+        x: z.number().finite(),
+        y: z.number().finite(),
+        width: z.number().finite().positive(),
+        height: z.number().finite().positive(),
+      }),
+    )
+    .max(128),
+});
+
+const DockSurfaceSizeSchema = z.object({
+  width: z.number().finite().min(24).max(DOCK_SURFACE_MAX_SIZE),
+  height: z.number().finite().min(24).max(DOCK_SURFACE_MAX_SIZE),
+});
+
+export const WindowUpdateDockPlacementSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('dismiss') }),
+  z.object({ action: z.literal('focus') }),
+  z.object({
+    action: z.literal('move'),
+    target: z.enum(['notch', 'left', 'right', 'floating', 'reset']),
+  }),
+  z.object({
+    action: z.literal('resize'),
+    compactNotchWingWidth: z.number().finite().min(0).max(256).optional(),
+    sidePanelSize: DockSurfaceSizeSchema.nullable().optional(),
+    sidePanelAnchor: z.number().finite().min(0).max(16384).nullable().optional(),
+    expansionDirection: z.enum(['up', 'down']).nullable().optional(),
+    resizeToken: z.string().uuid().optional(),
+    landingSizes: z
+      .object({
+        notch: DockSurfaceSizeSchema,
+        edge: DockSurfaceSizeSchema,
+        floating: DockSurfaceSizeSchema,
+      })
+      .optional(),
+    width: z.number().finite().min(24).max(DOCK_SURFACE_MAX_SIZE),
+    height: z.number().finite().min(24).max(DOCK_SURFACE_MAX_SIZE),
+    revision: z.number().int().nonnegative(),
+  }),
+  z.object({
+    action: z.literal('begin-resize'),
+    revision: z.number().int().nonnegative(),
+    origin: z.object({
+      x: z.number().finite().nonnegative().max(DOCK_SURFACE_MAX_SIZE),
+      y: z.number().finite().nonnegative().max(DOCK_SURFACE_MAX_SIZE),
+    }),
+  }),
+  ...(['end-resize', 'cancel-resize'] as const).map((action) =>
+    z.object({ action: z.literal(action), token: z.string().uuid() }),
+  ),
+  z.object({
+    action: z.literal('begin-drag'),
+    revision: z.number().int().nonnegative(),
+    headerBounds: z
+      .object({
+        x: z.number().finite().nonnegative().max(DOCK_SURFACE_MAX_SIZE),
+        y: z.number().finite().nonnegative().max(DOCK_SURFACE_MAX_SIZE),
+        width: z.number().finite().positive().max(DOCK_SURFACE_MAX_SIZE),
+        height: z.number().finite().positive().max(64),
+      })
+      .optional(),
+    origin: z.object({
+      x: z.number().finite().nonnegative().max(DOCK_SURFACE_MAX_SIZE),
+      y: z.number().finite().nonnegative().max(DOCK_SURFACE_MAX_SIZE),
+    }),
+  }),
+  z.object({
+    action: z.literal('end-drag'),
+    token: z.string().uuid(),
+    sequence: z.number().int().nonnegative(),
+    releasePoint: z
+      .object({
+        x: z.number().finite().min(-1_000_000).max(1_000_000),
+        y: z.number().finite().min(-1_000_000).max(1_000_000),
+      })
+      .optional(),
+  }),
+  ...(['drag', 'cancel-drag'] as const).map((action) =>
+    z.object({
+      action: z.literal(action),
+      token: z.string().uuid(),
+      sequence: z.number().int().nonnegative(),
+    }),
+  ),
+]);
+
 /** Workspaces a window hosts in the background for agent browser ops. */
 export const BrowserBackgroundHostedWorkspacesSchema = z.object({
   workspaceIds: z.array(z.string()),
@@ -736,6 +769,8 @@ export const BrowserBackgroundHostedWorkspacesSchema = z.object({
 export const WindowSetFullScreenSchema = z.object({
   fullScreen: z.boolean(),
 });
+
+export const WindowSetDockLabSchema = z.object({ enabled: z.boolean() }).strict();
 
 export const WindowSetBrowserFocusedSchema = z.object({
   browserFocused: z.boolean(),
@@ -1303,3 +1338,9 @@ export const InviteNoticeAckSchema = z.object({
 export const InviteNoticeResponseSchema = z.object({
   requestId: z.string().min(1, 'Request ID is required'),
 });
+
+export const WindowSwitchDockBackendSchema = z
+  .object({
+    backendId: z.string().trim().min(1).max(256),
+  })
+  .strict();

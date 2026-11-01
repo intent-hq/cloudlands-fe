@@ -98,7 +98,15 @@ for (const outcome of ['rejected', 'uncertain'] as const) {
     await component.getByRole('button', { name: 'Continue', exact: true }).click();
     const editor = component.getByTestId('message-input').locator('.tiptap-editor');
     await expect(editor).toBeVisible();
+    await expect(component.getByTestId('question-composer')).toHaveAttribute(
+      'data-expanded',
+      'false',
+    );
+    await expect
+      .poll(() => editor.evaluate((element) => element.closest('[inert]') === null))
+      .toBe(true);
     await editor.fill('Keep this newer draft');
+    await expect(editor).toHaveText('Keep this newer draft');
     await component.update({ props: { ...props, settleSubmission: outcome } });
     await expect(component.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
     if (outcome === 'rejected') {

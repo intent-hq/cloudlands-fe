@@ -1,8 +1,8 @@
 /**
  * OpenCode command resolution
  *
- * Resolves the OpenCode command, preferring a direct binary
- * and falling back to npx with auto-approve if needed.
+ * Resolves the OpenCode binary on the daemon host for the provider status
+ * panel (`isOpenCodeInstalled`).
  */
 
 import * as os from 'os';
@@ -32,31 +32,7 @@ const OPENCODE_PATHS = [
     : []),
 ];
 
-// Common paths to look for npx (fallback runner)
-const NPX_PATHS = [
-  '/usr/local/bin/npx',
-  '/usr/bin/npx',
-  '/opt/homebrew/bin/npx',
-  '/opt/homebrew/opt/node/bin/npx',
-  '/opt/homebrew/opt/node@20/bin/npx',
-  '/opt/homebrew/opt/node@18/bin/npx',
-  path.join(os.homedir(), '.volta/bin/npx'),
-  path.join(os.homedir(), '.fnm/aliases/default/bin/npx'),
-  path.join(os.homedir(), '.asdf/shims/npx'),
-  path.join(os.homedir(), '.npm-global/bin/npx'),
-  // Windows paths
-  ...(process.platform === 'win32'
-    ? [
-        path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'npx.cmd'),
-        path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'npx'),
-        path.join(os.homedir(), 'AppData', 'Local', 'Volta', 'bin', 'npx.exe'),
-        path.join(os.homedir(), 'scoop', 'shims', 'npx.exe'),
-      ]
-    : []),
-];
-
 let cachedOpenCodePath: string | null = null;
-let cachedNpxPath: string | null = null;
 
 /**
  * Clear cached paths to force re-detection on next check.
@@ -64,26 +40,6 @@ let cachedNpxPath: string | null = null;
  */
 export function clearOpenCodeCache(): void {
   cachedOpenCodePath = null;
-  cachedNpxPath = null;
-}
-
-async function findNpxPath(): Promise<string | null> {
-  if (cachedNpxPath) {
-    return cachedNpxPath;
-  }
-
-  const result = await findBinary('npx', {
-    commonPaths: [...NPX_PATHS, ...getCommonNpmPaths('npx')],
-    timeout: 3000,
-    useEnhancedPath: false,
-    useLoginShell: false,
-  });
-
-  if (result) {
-    cachedNpxPath = result;
-  }
-
-  return result;
 }
 
 /**
@@ -118,32 +74,4 @@ async function findOpenCodePath(strict = false): Promise<string | null> {
 export async function isOpenCodeInstalled(): Promise<boolean> {
   const opencodePath = await findOpenCodePath(true);
   return opencodePath !== null;
-}
-
-export type OpenCodeResolvedCommand = {
-  command: string;
-  argsPrefix: string[];
-  usesNpx: boolean;
-};
-
-/**
- * Resolve the command to run OpenCode.
- * Prefer a direct binary, fall back to npx with auto-approve.
- */
-export async function resolveOpenCodeCommand(): Promise<OpenCodeResolvedCommand | null> {
-  const opencodePath = await findOpenCodePath();
-  if (opencodePath) {
-    return { command: opencodePath, argsPrefix: [], usesNpx: false };
-  }
-
-  const npxPath = await findNpxPath();
-  if (npxPath) {
-    return {
-      command: npxPath,
-      argsPrefix: ['-y', 'opencode'],
-      usesNpx: true,
-    };
-  }
-
-  return null;
 }

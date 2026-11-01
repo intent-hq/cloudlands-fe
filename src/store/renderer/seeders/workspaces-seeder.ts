@@ -108,8 +108,8 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.LIST, async () => {
 // Path-less GitHub picks (githubUrl, no local checkout) are persisted in the
 // daemon-owned `repos.known` setting (PROTOCOL §5.12) — the daemon's
 // `repo.list` registry is keyed on local paths, so these entries live beside
-// it and are merged into the recents read below. Mirrors the legacy
-// main-process repo-registry, which persists through the same setting.
+// it and are merged into the recents read below. (The retired main-process
+// repo-registry persisted through the same setting.)
 const REPOS_KNOWN_SETTING = 'repos.known';
 
 async function readReposKnownSetting(): Promise<KnownRepo[]> {
@@ -246,8 +246,8 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY, async (arg) 
 // per-workspace auto-commit state via this IPC channel. Bridge to the daemon's
 // `workspace.setAutoCommit` (PROTOCOL §5.1) — the per-workspace override only;
 // the global `git.autoCommit` setting is never written from here. Resolve the
-// legacy CommandResponse envelope (matching the Electron main handler) instead
-// of rejecting; the saga worker inspects `success` and logs failures.
+// legacy CommandResponse envelope (matching the retired Electron main handler)
+// instead of rejecting; the saga worker inspects `success` and logs failures.
 registerMockIpcHandler(WORKSPACE_CHANNELS.UPDATE_SETTINGS, async (arg) => {
   const payload = arg as { id?: unknown; settings?: { autoCommitEnabled?: unknown } } | undefined;
   const id = typeof payload?.id === 'string' ? payload.id : '';

@@ -16,43 +16,28 @@ import { Logger } from '../../../shared/logger';
 
 import { getWorkspacePath } from './workspace-path.service';
 import { execFileAsync } from '../../../shared/git/git-env';
-import { getBackendClient, getBackendIdForIpcSender } from '../../backend/main/backend.ipc';
+import { getBackendIdForIpcSender } from '../../backend/main/backend.ipc';
 import { cleanupWorkspaceTerminals } from '../../terminal/main/terminal.ipc';
-import {
-  initRepoRegistry,
-  getAllRepos,
-  addRepo,
-  removeRepo,
-  syncRepos,
-  clearRepos,
-} from './repo-registry';
 import { initChangeHistory } from './change-history-persistence';
 
 import { clearMetadataFSCache } from '../../metadata-fs/main/metadata-fs-factory';
 
 const require = createRequire(import.meta.url);
 import { validateIPCString } from '../../ipc/ipc-validation';
-import {
-  isValidBranchName,
-  getBranchNameValidationError,
-} from '../../../main/utils/workspace-validation';
+
 import { WORKSPACE_CHANNELS, EDITOR_CHANNELS } from '$shared/ipc/channels';
-import { isDaemonManagedCheckoutPath } from '$shared/utils/daemon-managed-checkout';
 import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
 import {
   createSafeValidatedHandler,
   registerValidationSchema,
 } from '../../../main/ipc-validation-middleware';
 import {
-  WorkspaceGetSchema,
   WorkspaceGetCurrentSchema,
   WorkspaceGetByIdSchema,
   WorkspaceUpdateSchema,
   WorkspaceDeleteSchema,
   WorkspaceCloseSchema,
-  WorkspaceOpenSchema,
   WorkspaceRenameSchema,
-  WorkspaceRenameBranchSchema,
   WorkspaceDuplicateSchema,
   WorkspaceArchiveSchema,
   WorkspaceUnarchiveSchema,
@@ -64,7 +49,6 @@ import {
   WorkspaceSaveSchema,
   WorkspaceExportSchema,
   WorkspaceImportSchema,
-  WorkspaceListSchema,
   WorkspaceGetRecentSchema,
   WorkspaceClearRecentSchema,
   WorkspaceGetStatsSchema,
@@ -74,11 +58,6 @@ import {
   WorkspaceBackupSchema,
   WorkspaceRestoreSchema,
   WorkspaceGetSettingsSchema,
-  WorkspaceUpdateSettingsSchema,
-  WorkspaceGetRecentRepositoriesSchema,
-  WorkspaceAddRecentRepositorySchema,
-  WorkspaceClearRecentRepositoriesSchema,
-  WorkspaceRemoveRecentRepositorySchema,
   WorkspaceUpdateGitInfoSchema,
   WorkspaceGetSettingsAltSchema,
   WorkspaceUpdateSettingsAltSchema,
@@ -119,21 +98,15 @@ function resultToCommandResponse<T>(result: Result<T, string>): CommandResponse<
 // ============================================================================
 
 export function setupWorkspaceIPC(): void {
-  // Initialize the persistent repo registry
-  initRepoRegistry().catch((err) => logger.error('Failed to init repo registry', err as Error));
-
   // Initialize the persistent change history cache
   initChangeHistory().catch((err) => logger.error('Failed to init change history', err as Error));
 
   // Register validation schemas for all workspace channels
-  registerValidationSchema(WORKSPACE_CHANNELS.GET, WorkspaceGetSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.GET_CURRENT, WorkspaceGetCurrentSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.UPDATE, WorkspaceUpdateSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.DELETE, WorkspaceDeleteSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.CLOSE, WorkspaceCloseSchema);
-  registerValidationSchema(WORKSPACE_CHANNELS.OPEN, WorkspaceOpenSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.RENAME, WorkspaceRenameSchema);
-  registerValidationSchema(WORKSPACE_CHANNELS.RENAME_BRANCH, WorkspaceRenameBranchSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.DUPLICATE, WorkspaceDuplicateSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.ARCHIVE, WorkspaceArchiveSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.UNARCHIVE, WorkspaceUnarchiveSchema);
@@ -145,7 +118,6 @@ export function setupWorkspaceIPC(): void {
   registerValidationSchema(WORKSPACE_CHANNELS.SAVE, WorkspaceSaveSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.EXPORT, WorkspaceExportSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.IMPORT, WorkspaceImportSchema);
-  registerValidationSchema(WORKSPACE_CHANNELS.LIST, WorkspaceListSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.GET_RECENT, WorkspaceGetRecentSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.CLEAR_RECENT, WorkspaceClearRecentSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.GET_STATS, WorkspaceGetStatsSchema);
@@ -155,23 +127,6 @@ export function setupWorkspaceIPC(): void {
   registerValidationSchema(WORKSPACE_CHANNELS.BACKUP, WorkspaceBackupSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.RESTORE, WorkspaceRestoreSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.GET_SETTINGS, WorkspaceGetSettingsSchema);
-  registerValidationSchema(WORKSPACE_CHANNELS.UPDATE_SETTINGS, WorkspaceUpdateSettingsSchema);
-  registerValidationSchema(
-    WORKSPACE_CHANNELS.GET_RECENT_REPOSITORIES,
-    WorkspaceGetRecentRepositoriesSchema,
-  );
-  registerValidationSchema(
-    WORKSPACE_CHANNELS.ADD_RECENT_REPOSITORY,
-    WorkspaceAddRecentRepositorySchema,
-  );
-  registerValidationSchema(
-    WORKSPACE_CHANNELS.CLEAR_RECENT_REPOSITORIES,
-    WorkspaceClearRecentRepositoriesSchema,
-  );
-  registerValidationSchema(
-    WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY,
-    WorkspaceRemoveRecentRepositorySchema,
-  );
   registerValidationSchema(WORKSPACE_CHANNELS.UPDATE_GIT_INFO, WorkspaceUpdateGitInfoSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.GET_SETTINGS_ALT, WorkspaceGetSettingsAltSchema);
   registerValidationSchema(
@@ -185,46 +140,9 @@ export function setupWorkspaceIPC(): void {
 
   logger.info('Setting up workspace IPC handlers');
 
-  // List workspaces - use backward compatible method
-  ipcMain.handle(
-    WORKSPACE_CHANNELS.LIST,
-    createSafeValidatedHandler(
-      WorkspaceListSchema,
-      async (_, validated) => {
-        // Pass lite option to skip heavy computations when requested
-        const result = await protocolAdapter.listAllWorkspaces({ lite: validated?.lite });
-        return resultToCommandResponse(result);
-      },
-      WORKSPACE_CHANNELS.LIST,
-    ),
-  );
-
   // Workspace creation is owned by the daemon: the FE routes `workspace.create`
   // through `appClient.workspaces.create` (PROTOCOL §5.1); the legacy
   // `workspace:create` IPC arm was retired with the daemon-direct cut-over.
-
-  // Get workspace
-  ipcMain.handle(
-    WORKSPACE_CHANNELS.GET,
-    createSafeValidatedHandler(
-      WorkspaceGetSchema,
-      async (_, validated) => {
-        // Protocol adapter now returns data directly for MCP compatibility
-        const workspace = await protocolAdapter.getWorkspace(validated.id);
-
-        // Convert to Result format for frontend
-        if (workspace) {
-          return resultToCommandResponse({ ok: true, data: workspace });
-        } else {
-          return resultToCommandResponse({
-            ok: false,
-            error: m.workspaceIpc_workspaceNotFound_error(),
-          });
-        }
-      },
-      WORKSPACE_CHANNELS.GET,
-    ),
-  );
 
   // Get the current workspace for the calling window
   ipcMain.handle(
@@ -343,71 +261,6 @@ export function setupWorkspaceIPC(): void {
         }
       },
       WORKSPACE_CHANNELS.CLOSE,
-    ),
-  );
-
-  // Open workspace
-  //
-  // This handler has no FE-side side effects beyond opening the workspace: the
-  // legacy prompt-cache warming has been removed. File-change monitoring is owned
-  // by the daemon; the FE-side change-detection stack has been removed. Script
-  // autoStart is owned by the daemon (`script.*`, PROTOCOL §5.8) — the legacy
-  // FE-side autoStart trigger has been removed.
-  //
-  // The backend is IDEMPOTENT, so it's safe to call this multiple times for the
-  // same workspace.
-  //
-  ipcMain.handle(
-    WORKSPACE_CHANNELS.OPEN,
-    createSafeValidatedHandler(
-      WorkspaceOpenSchema,
-      async (_, validated) => {
-        const id = validated.id;
-        const startTime = Date.now();
-        logger.info('[WorkspaceIPC] Opening workspace', { workspaceId: id });
-
-        // Get workspace - protocol adapter now returns data directly for MCP compatibility
-        const getWorkspaceStart = Date.now();
-        const workspace = await protocolAdapter.getWorkspace(id);
-        logger.info('[WorkspaceIPC] Got workspace', {
-          workspaceId: id,
-          hasWorkspace: !!workspace,
-          worktreePath: workspace?.worktreePath,
-          repositoryPath: workspace?.repositoryPath,
-          durationMs: Date.now() - getWorkspaceStart,
-        });
-
-        // Check if workspace exists (not null)
-        if (workspace) {
-          // Attribution is owned by the daemon (§17.4 / §5.19); no FE-side
-          // agent-writes cache to warm here.
-
-          // Metadata watcher retired alongside the workspace disk-read path;
-          // workspace metadata is served by the daemon (`workspace.get`).
-
-          // System prompts are assembled by the daemon harness; the FE no
-          // longer pre-warms a prompt cache on workspace open.
-
-          // Spec-note seeding is owned by the daemon (`workspace.create` runs
-          // `ensure_spec_note`); the FE no longer performs FS-level orphan
-          // recovery on open.
-
-          logger.info('[WorkspaceIPC] Workspace open returning immediately', {
-            workspaceId: id,
-            totalDurationMs: Date.now() - startTime,
-          });
-
-          // Return in Result format for the frontend
-          return resultToCommandResponse({ ok: true, data: workspace });
-        } else {
-          // Workspace not found or error
-          return resultToCommandResponse({
-            ok: false,
-            error: m.workspaceIpc_workspaceNotFound_error(),
-          });
-        }
-      },
-      WORKSPACE_CHANNELS.OPEN,
     ),
   );
 
@@ -613,148 +466,6 @@ export function setupWorkspaceIPC(): void {
         });
       },
       WORKSPACE_CHANNELS.RENAME,
-    ),
-  );
-
-  // Rename workspace branch
-  ipcMain.handle(
-    WORKSPACE_CHANNELS.RENAME_BRANCH,
-    createSafeValidatedHandler(
-      WorkspaceRenameBranchSchema,
-      async (_, validated) => {
-        const workspaceId = validated.id;
-        const newBranchName = validated.newBranchName?.trim();
-
-        logger.info('Renaming workspace branch', {
-          workspaceId,
-          newBranchName,
-        });
-
-        // Early validation: check branch name format before doing any work
-        if (!newBranchName) {
-          return resultToCommandResponse({
-            ok: false,
-            error: m.workspaceIpc_branchNameEmpty_error(),
-          });
-        }
-
-        if (!isValidBranchName(newBranchName)) {
-          const validationError = getBranchNameValidationError(newBranchName);
-          return resultToCommandResponse({
-            ok: false,
-            error: validationError || m.workspaceIpc_branchNameInvalid_error(),
-          });
-        }
-
-        try {
-          // Get the current workspace to find the old branch name
-          const workspace = await protocolAdapter.getWorkspace(workspaceId);
-          if (!workspace) {
-            return resultToCommandResponse({
-              ok: false,
-              error: m.workspaceIpc_workspaceNotFound_error(),
-            });
-          }
-
-          const oldBranchName = workspace.branch;
-          if (!oldBranchName) {
-            return resultToCommandResponse({
-              ok: false,
-              error: m.workspaceIpc_workspaceHasNoBranch_error(),
-            });
-          }
-
-          // No-op if renaming to the same name
-          if (oldBranchName === newBranchName) {
-            return resultToCommandResponse({ ok: true, data: workspace });
-          }
-
-          // Read the ACTUAL current git branch name from the worktree via
-          // the daemon `git.status` (PROTOCOL §5.6). The workspace.branch is
-          // the display name, which may differ from the actual git branch.
-          let actualGitBranch: string;
-          try {
-            const status = await getBackendClient().request<{ branch?: string }>('git.status', {
-              workspaceId,
-            });
-            if (!status?.branch) {
-              return resultToCommandResponse({
-                ok: false,
-                error: m.workspaceIpc_getCurrentBranchFailed_error(),
-              });
-            }
-            actualGitBranch = status.branch;
-          } catch (error) {
-            return resultToCommandResponse({
-              ok: false,
-              error:
-                error instanceof Error
-                  ? error.message
-                  : m.workspaceIpc_getCurrentBranchFailed_error(),
-            });
-          }
-
-          logger.info('Git branch info', {
-            workspaceId,
-            displayBranch: oldBranchName,
-            actualGitBranch,
-            newBranchName,
-          });
-
-          // Rename the git branch via the daemon (§5.6 — includes
-          // duplicate/worktree checks).
-          try {
-            await getBackendClient().request('git.renameBranch', {
-              workspaceId,
-              oldBranchName: actualGitBranch,
-              newBranchName,
-            });
-          } catch (error) {
-            return resultToCommandResponse({
-              ok: false,
-              error:
-                error instanceof Error ? error.message : m.workspaceIpc_renameBranchFailed_error(),
-            });
-          }
-
-          // Update the workspace metadata with the new branch name
-          const updateResult = await protocolAdapter.updateWorkspace({
-            id: workspaceId,
-            branch: newBranchName,
-          });
-
-          if (!updateResult.ok) {
-            logger.error('Failed to update workspace branch metadata', {
-              workspaceId,
-              error: updateResult.error,
-            });
-            return resultToCommandResponse({
-              ok: false,
-              error: m.workspaceIpc_updateMetadataFailed_error({ error: updateResult.error }),
-            });
-          }
-
-          logger.info('Workspace branch renamed successfully', {
-            workspaceId,
-            oldBranch: oldBranchName,
-            newBranch: newBranchName,
-          });
-
-          return resultToCommandResponse({ ok: true, data: updateResult.data });
-        } catch (error) {
-          logger.error('Failed to rename workspace branch', error as Error, {
-            workspaceId: validated.id,
-          });
-          return resultToCommandResponse({
-            ok: false,
-            error:
-              error instanceof Error
-                ? error.message
-                : m.workspaceIpc_renameWorkspaceBranchFailed_error(),
-          });
-        }
-      },
-      WORKSPACE_CHANNELS.RENAME_BRANCH,
     ),
   );
 
@@ -998,109 +709,6 @@ export function setupWorkspaceIPC(): void {
         return resultToCommandResponse({ ok: true, data: settings });
       },
       WORKSPACE_CHANNELS.GET_SETTINGS,
-    ),
-  );
-
-  // Update workspace settings
-  ipcMain.handle(
-    WORKSPACE_CHANNELS.UPDATE_SETTINGS,
-    createSafeValidatedHandler(
-      WorkspaceUpdateSettingsSchema,
-      async (_, validated) => {
-        const { updateWorkspaceSettings } = await import('./workspace-settings.service');
-        const updated = await updateWorkspaceSettings(validated.id, validated.settings);
-        return resultToCommandResponse({ ok: true, data: updated });
-      },
-      WORKSPACE_CHANNELS.UPDATE_SETTINGS,
-    ),
-  );
-
-  // Get recent repositories (persistent repo registry)
-  // On first call, kicks off a background sync of workspace repos into the registry
-  let repoRegistrySynced = false;
-  ipcMain.handle(
-    WORKSPACE_CHANNELS.GET_RECENT_REPOSITORIES,
-    createSafeValidatedHandler(
-      WorkspaceGetRecentRepositoriesSchema,
-      async () => {
-        // Return known repos immediately — don't block on the sync.
-        // Daemon-managed cache/clone checkouts are internal paths, never
-        // user-pickable repos — keep them out of the recents list.
-        const repos = getAllRepos().filter((repo) => !isDaemonManagedCheckoutPath(repo.path));
-
-        // One-time background sync: register repos from existing workspaces into the persistent registry
-        // This ensures pre-existing workspaces (created before this feature) get registered
-        // Runs in the background so it doesn't slow down the response
-        if (!repoRegistrySynced) {
-          repoRegistrySynced = true;
-          protocolAdapter
-            .listAllWorkspaces({ lite: true })
-            .then((result) => {
-              if (result.ok && result.data) {
-                const reposToSync = result.data
-                  .filter((ws: any) => ws.repositoryPath)
-                  .map((ws: any) => ({
-                    path: ws.repositoryPath,
-                    name: ws.repositoryName || ws.repositoryPath.split('/').pop() || 'Unknown',
-                    owner: ws.repositoryOwner,
-                  }));
-                if (reposToSync.length > 0) {
-                  syncRepos(reposToSync);
-                }
-              }
-            })
-            .catch((err) => {
-              logger.warn('Failed to sync workspace repos to registry', { error: err });
-            });
-        }
-
-        return { success: true, data: repos };
-      },
-      WORKSPACE_CHANNELS.GET_RECENT_REPOSITORIES,
-    ),
-  );
-
-  // Add recent repository (persistent repo registry)
-  ipcMain.handle(
-    WORKSPACE_CHANNELS.ADD_RECENT_REPOSITORY,
-    createSafeValidatedHandler(
-      WorkspaceAddRecentRepositorySchema,
-      async (_, validated) => {
-        addRepo({
-          path: validated.repository,
-          name: validated.name || validated.repository.split('/').pop() || 'Unknown',
-          owner: validated.owner,
-          githubUrl: validated.githubUrl,
-        });
-        return { success: true };
-      },
-      WORKSPACE_CHANNELS.ADD_RECENT_REPOSITORY,
-    ),
-  );
-
-  // Clear recent repositories (persistent repo registry)
-  ipcMain.handle(
-    WORKSPACE_CHANNELS.CLEAR_RECENT_REPOSITORIES,
-    createSafeValidatedHandler(
-      WorkspaceClearRecentRepositoriesSchema,
-      async () => {
-        clearRepos();
-        return { success: true };
-      },
-      WORKSPACE_CHANNELS.CLEAR_RECENT_REPOSITORIES,
-    ),
-  );
-
-  // Remove a single recent repository (persistent repo registry)
-  ipcMain.handle(
-    WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY,
-    createSafeValidatedHandler(
-      WorkspaceRemoveRecentRepositorySchema,
-      async (_, validated) => {
-        const removed = removeRepo(validated.repository);
-        return { success: true, data: { removed } };
-      },
-      WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY,
     ),
   );
 

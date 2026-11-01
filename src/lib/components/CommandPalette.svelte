@@ -45,7 +45,6 @@
   import {
     setLabsGitLabEnabled,
     setLabsRemoteAgentsEnabled,
-    setLabsPlainFolderWorkspacesEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { initBrowserWorkspace } from '$store/renderer/slices/browser/browser-slice';
   import {
@@ -101,6 +100,8 @@
   import CommandPaletteItemTitle from './CommandPaletteItemTitle.svelte';
   import CommandPaletteFilters from './CommandPaletteFilters.svelte';
   import { COMMAND_PALETTE_COMMANDS } from './command-palette-commands';
+  import { isLabCommandHidden, runLabCommand } from './command-palette-labs';
+  import { dockLabEnabled } from '$lib/dock-lab';
   import IntentNavigationIcon from '$lib/icons/IntentNavigationIcon.svelte';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
@@ -174,7 +175,7 @@
         !(!$labsGitLabEnabled$ && command.id === 'disable-experimental-gitlab') &&
         !($labsRemoteAgentsEnabled$ && command.id === 'enable-experimental-remote-agents') &&
         !(!$labsRemoteAgentsEnabled$ && command.id === 'disable-experimental-remote-agents') &&
-        command.id !== `${$labsPlainFolders$ ? 'en' : 'dis'}able-experimental-plain-folders`,
+        !isLabCommandHidden(command.id, $dockLabEnabled, $labsPlainFolders$),
     ),
   );
   const currentChanges$ = selectCurrentChanges(workspaceIdStore);
@@ -854,6 +855,7 @@
       navigateToSettings({ tab: settingsCommand.settingsTab });
       return true;
     }
+    if (runLabCommand(commandId)) return true;
     switch (commandId) {
       case 'new-workspace':
         if (selectWorkspaceCreationVisible.select(appStore.state)) {
@@ -875,10 +877,6 @@
         return true;
       case 'disable-experimental-remote-agents':
         appStore.dispatch(setLabsRemoteAgentsEnabled(false));
-        return true;
-      case 'enable-experimental-plain-folders':
-      case 'disable-experimental-plain-folders':
-        appStore.dispatch(setLabsPlainFolderWorkspacesEnabled(commandId.startsWith('enable')));
         return true;
       case 'new-agent':
         if (workspaceId && !$hidesAgentLifecycleActions$) {

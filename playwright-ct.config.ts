@@ -11,7 +11,7 @@ import { resolveCtWorkers } from './playwright/ct-workers';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
-// Resolve CT_PORT once (blank → unset, matching scripts/verification-lock.mjs)
+// Resolve CT_PORT once through scripts/verification-lock.mjs's ctPort()
 // so the component server port and the bundle cache dir below cannot drift
 // apart from each other or from the ct-<CT_PORT> lock.
 const { port: ctPort, cacheDir: ctCacheDir } = resolveCtPortConfig({ env: process.env });
@@ -79,9 +79,10 @@ export default defineConfig({
     /* Record the original attempt; keep it only on failure, even if a retry passes. */
     trace: 'retain-on-first-failure',
 
-    /* Port to use for Playwright component endpoint. CT_PORT overrides the
-       default (3100) for CI shards on the shared self-hosted host, where a
-       fixed port would collide across co-tenant runner slots. */
+    /* Port to use for Playwright component endpoint. Unset CT_PORT means a
+       per-worktree port locally and 3100 on CI (playwright/ct-port.ts); CI
+       shards on the shared self-hosted host set CT_PORT, where a fixed port
+       would collide across co-tenant runner slots. */
     ctPort,
 
     /* Key the generated component registry/bundle cache by the same port.
@@ -93,6 +94,9 @@ export default defineConfig({
 
     /* Vite configuration for component testing */
     ctViteConfig: {
+      // CI does not need the bundle-size table: measuring gzip and source maps
+      // concurrently exhausted the prebuild heap. Keep emitted maps and warnings.
+      logLevel: process.env.CI ? 'warn' : 'info',
       // CT roots Vite in playwright/, outside the app's Svelte config discovery.
       // Reuse its compiler compatibility so mounted components retain $set.
       plugins: [svelte({ configFile: resolve(__dirname, 'svelte.config.js') })],

@@ -1,8 +1,16 @@
+import type { OwnedPopupContext } from '$lib/components/ui/owned-popup-context';
 import { logger } from '$lib/utils/client-logger';
 import { mount, unmount } from 'svelte';
 import EnhancedMentionList from './EnhancedMentionList.svelte';
 
 class MentionSuggestionRenderer {
+  constructor(private owner?: OwnedPopupContext) {}
+  private unregisterPopup: (() => void) | undefined;
+  private attachPopup(): void {
+    if (!this.popup) return;
+    (this.owner?.target() ?? document.body).appendChild(this.popup);
+    this.unregisterPopup = this.owner?.register(this.popup, () => this.onExit());
+  }
   private component: any = null;
   private popup: HTMLDivElement | null = null;
   private editorElement: HTMLElement | null = null;
@@ -43,6 +51,7 @@ class MentionSuggestionRenderer {
   private generation = 0;
 
   onBeforeStart(props: any) {
+    if (this.owner && !this.owner.active()) return;
     this.generation++;
 
     // Clean up any existing popup from a previous cycle
@@ -56,7 +65,7 @@ class MentionSuggestionRenderer {
     // Show the popup immediately with a loading state — don't wait for async items()
     this.popup = document.createElement('div');
     this.popup.className = 'mention-popup';
-    document.body.appendChild(this.popup);
+    this.attachPopup();
 
     this.positionPopup(props);
 
@@ -72,6 +81,7 @@ class MentionSuggestionRenderer {
   }
 
   onStart(props: any) {
+    if (this.owner && !this.owner.active()) return;
     // If onExit was called after our onBeforeStart (race condition),
     // the generation will have been reset to 0. Don't create an orphaned popup.
     if (this.generation === 0) return;
@@ -94,7 +104,7 @@ class MentionSuggestionRenderer {
 
     this.popup = document.createElement('div');
     this.popup.className = 'mention-popup';
-    document.body.appendChild(this.popup);
+    this.attachPopup();
     this.positionPopup(props);
 
     this.component = mount(EnhancedMentionList, {
@@ -257,6 +267,8 @@ class MentionSuggestionRenderer {
   }
 
   private cleanup() {
+    this.unregisterPopup?.();
+    this.unregisterPopup = undefined;
     if (this.editorElement) {
       for (const [name, value] of this.previousAria) {
         if (value === null) this.editorElement.removeAttribute(name);
@@ -282,8 +294,8 @@ class MentionSuggestionRenderer {
   }
 }
 
-export function createMentionSuggestionRenderer() {
-  const renderer = new MentionSuggestionRenderer();
+export function createMentionSuggestionRenderer(owner?: OwnedPopupContext) {
+  const renderer = new MentionSuggestionRenderer(owner);
 
   return {
     onBeforeStart: (props: any) => renderer.onBeforeStart(props),

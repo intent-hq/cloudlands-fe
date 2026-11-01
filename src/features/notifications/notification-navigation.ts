@@ -22,21 +22,46 @@ import { openAndShowWorkspace } from '$lib/utils/show-workspace';
 import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+import type { WorkspaceWindowTarget } from '$shared/workspace-window-target';
+import {
+  openWorkspaceFile,
+  openWorkspaceNote,
+} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import {
   openPanel,
   setChiefActiveAgentId,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 
 const logger = createLogger('NotificationNavigation');
+let navigationGeneration = 0;
 
 /** Payload of `notification:navigate` (sent on notification click). */
 export interface NotificationNavigatePayload {
   workspaceId?: string;
   /** Set for chief-of-staff completions — route to the homepage Assistant. */
   chief?: boolean;
-  /** Chief chat thread (agent) to select in the Assistant panel. */
+  /** Exact conversation to select in the target workspace or Assistant. */
   agentId?: string;
+  workspaceTarget?: WorkspaceWindowTarget;
   discussion?: { target: DiscussionTarget; messageId: string };
+}
+
+function openWorkspaceTarget(data: NotificationNavigatePayload): void {
+  if (!data.workspaceId || !data.workspaceTarget) return;
+  const target = data.workspaceTarget;
+  if (target.type === 'note') {
+    appStore.dispatch(openWorkspaceNote(data.workspaceId, target.noteId));
+  } else {
+    appStore.dispatch(
+      openWorkspaceFile(data.workspaceId, target.filePath, {
+        ...(target.line !== undefined ? { line: target.line } : {}),
+        ...(target.gitRootId ? { gitRootId: target.gitRootId } : {}),
+        ...(target.gitRootPath ? { gitRootPath: target.gitRootPath } : {}),
+        filePathIsLiteral: true,
+      }),
+    );
+  }
 }
 
 /**
@@ -59,12 +84,16 @@ export async function handleNotificationNavigate(
 
   // The HUD window registers the same IPC listeners as every renderer; the
   // main process avoids targeting it, but guard here too (defense in depth).
-  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/hud')) {
+  if (
+    typeof window !== 'undefined' &&
+    /^\/(?:hud|dock|annotation|dev-console)(?:\/|$)/.test(window.location.pathname)
+  ) {
     logger.debug('Ignoring notification navigate in HUD window', {
       workspaceId: data.workspaceId,
     });
     return;
   }
+  const generation = ++navigationGeneration;
 
   if (data.discussion) {
     const { target, messageId } = data.discussion;
@@ -75,11 +104,11 @@ export async function handleNotificationNavigate(
     if (target.workspaceId !== data.workspaceId || !admitted()) return;
     try {
       if (!(await openAndShowWorkspace(target.workspaceId))) return;
-      if (!admitted()) return;
+      if (generation !== navigationGeneration || !admitted()) return;
       const ready = await appStore.dispatch(
         discussionNotificationLayoutRequested(target, messageId),
       );
-      if (!ready || !admitted()) return;
+      if (!ready || generation !== navigationGeneration || !admitted()) return;
       openWorkspaceDiscussion(target.workspaceId, target.workspaceId, target.conversationId);
     } catch (error) {
       logger.warn('Failed to open discussion from notification click', { error });
@@ -96,6 +125,7 @@ export async function handleNotificationNavigate(
       }
       appStore.dispatch(openPanel('chief'));
       await navigateToRoute('/');
+      if (generation === navigationGeneration) openWorkspaceTarget(data);
     } catch (error) {
       logger.warn('Failed to open Assistant panel from notification click', { error });
     }
@@ -103,7 +133,11 @@ export async function handleNotificationNavigate(
   }
 
   try {
-    await openAndShowWorkspace(data.workspaceId);
+    if (!(await openAndShowWorkspace(data.workspaceId))) return;
+    if (data.agentId && generation === navigationGeneration) {
+      appStore.dispatch(openAgentTabRequested(data.workspaceId, { agentId: data.agentId }));
+    }
+    if (generation === navigationGeneration) openWorkspaceTarget(data);
   } catch (error) {
     logger.warn('Failed to navigate from notification click', {
       workspaceId: data.workspaceId,

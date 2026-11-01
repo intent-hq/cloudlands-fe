@@ -71,11 +71,3 @@ export async function isDroidInstalled(): Promise<boolean> {
   const droidPath = await findDroidPath(true);
   return droidPath !== null;
 }
-
-/**
- * Get the resolved path to the droid executable.
- * Returns null if not found.
- */
-export async function getDroidPath(): Promise<string | null> {
-  return findDroidPath();
-}

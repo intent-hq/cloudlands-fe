@@ -198,20 +198,33 @@ test('preview link uses its workspace panel instead of an enclosing Home panel',
   expect(Object.keys((await snapshot(page)).owner.panels)).toEqual(['source-preview-owner']);
 });
 
-for (const modifier of ['Meta', 'Control'] as const) {
-  test(`preview chat ${modifier} file click enters owner and opens adjacent panel`, async ({
+const nativePlatform =
+  process.platform === 'darwin'
+    ? 'MacIntel'
+    : process.platform === 'win32'
+      ? 'Win32'
+      : 'Linux x86_64';
+const nativeModifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+for (const activation of [
+  { name: 'native primary-modifier file click', platform: nativePlatform, keyboard: false },
+  { name: 'Linux Control+Enter file activation', platform: 'Linux x86_64', keyboard: true },
+]) {
+  test(`preview chat ${activation.name} enters owner and opens adjacent panel`, async ({
     mount,
     page,
   }) => {
+    // navigator.platform controls the app's modifier choice, not Chromium's
+    // native mouse semantics. Align clicks with this local browser's host;
+    // exercise the other platform's handler through explicit keyboard input.
     await page.evaluate(
       (platform) =>
         Object.defineProperty(navigator, 'platform', { value: platform, configurable: true }),
-      modifier === 'Meta' ? 'MacIntel' : 'Linux x86_64',
+      activation.platform,
     );
     const component = await mount(Harness);
-    await component
-      .getByRole('link', { name: 'Review destination', exact: true })
-      .click({ modifiers: [modifier] });
+    const link = component.getByRole('link', { name: 'Review destination', exact: true });
+    if (activation.keyboard) await link.press('Control+Enter');
+    else await link.click({ modifiers: [nativeModifier] });
     await expect.poll(async () => (await snapshot(page)).selectedWorkspaceId).toBe('preview-owner');
     await expect
       .poll(async () => focused((await snapshot(page)).owner)?.filePath)

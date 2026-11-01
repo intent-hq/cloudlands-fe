@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getOwnedPopupContext, getOwnedPopupClose } from '$lib/components/ui/owned-popup-context';
   import { Dialog as DialogPrimitive } from 'bits-ui';
   import type { Snippet } from 'svelte';
   import { Button } from '$lib/components/ui/button';
@@ -49,6 +50,14 @@
     role?: 'dialog' | 'alertdialog';
     children: Snippet;
   } = $props();
+
+  const popupOwner = getOwnedPopupContext();
+  const closeOwnedPopup = getOwnedPopupClose();
+  $effect(() => {
+    const element = ref;
+    if (!element || !popupOwner) return;
+    return popupOwner.register(element, closeOwnedPopup);
+  });
 
   const rootOpen = useOverlayOpen();
   const staticPosition = useOverlayStatic();
@@ -174,7 +183,10 @@
   {#if staticPosition()}
     {@render dialogContent()}
   {:else}
-    <DialogPrimitive.Portal {...portalProps} to={container ?? portalProps?.to}>
+    <DialogPrimitive.Portal
+      {...portalProps}
+      to={container ?? portalProps?.to ?? popupOwner?.target()}
+    >
       {@render dialogContent()}
     </DialogPrimitive.Portal>
   {/if}

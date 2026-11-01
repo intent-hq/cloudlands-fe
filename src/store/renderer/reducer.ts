@@ -1,3 +1,4 @@
+import { dockConversationReducer } from './slices/dock-conversation/dock-conversation-slice';
 import { desktopControlReducer } from './slices/desktop-control/desktop-control-slice';
 import { homeWorkspacesReducer } from '$features/home/home-workspaces-slice';
 import { homeIntegrationsReducer } from '$features/home/home-integrations-slice';
@@ -156,6 +157,7 @@ export const reducers = {
   model: modelReducer,
   agentModel: agentModelReducer,
   pip: pipReducer,
+  dockConversation: dockConversationReducer,
   power: powerReducer,
   specialists: specialistsReducer,
   systemStatus: systemStatusReducer,

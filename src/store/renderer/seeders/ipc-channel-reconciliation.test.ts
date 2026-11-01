@@ -493,6 +493,26 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
   // a bridge the slice default `isConsoleOwner: true` stands and no IPC is
   // attempted). A mock bridge would shadow the main-process tracker.
   'hardware-console:get-owner-status',
+  // Experimental dock Labs setting: main owns and persists it and pushes
+  // changes to every window (src/lib/dock-lab.ts). Without a bridge the lab
+  // stays off; a mock bridge would create a second source of truth.
+  'window:get-dock-lab',
+  'window:set-dock-lab',
+  // Dock composer native sessions (capture, annotate, record, pick): main owns
+  // the screen capture, overlay window and helper processes. Both callers
+  // (dock-evidence-native.ts, dock-annotation-overlay-bridge.ts) invoke only
+  // when running in Electron and return a shaped "unavailable"/stale fallback
+  // otherwise, so the mock router is never reached; a mock bridge would fake
+  // native evidence.
+  'dock-annotation:gesture',
+  'dock-annotation:get-still',
+  'dock-annotation:pointer',
+  'dock-annotation:ready',
+  'dock-annotation:toolbar',
+  'dock-evidence:begin',
+  'dock-evidence:cancel',
+  'dock-evidence:capture',
+  'dock-evidence:control',
 ]);
 
 /**

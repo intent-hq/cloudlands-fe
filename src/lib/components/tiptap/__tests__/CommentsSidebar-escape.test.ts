@@ -58,14 +58,11 @@ async function renderWithFocusedComment() {
   });
 
   // Positions are debounced (300ms on initial load) before comments render.
-  const thread = await waitFor(
-    () => {
-      const el = container.querySelector('[data-comment-id="c-1"]');
-      if (!el) throw new Error('comment not rendered yet');
-      return el as HTMLElement;
-    },
-    { timeout: 3000 },
-  );
+  const thread = await waitFor(() => {
+    const el = container.querySelector('[data-comment-id="c-1"]');
+    if (!el) throw new Error('comment not rendered yet');
+    return el as HTMLElement;
+  });
 
   await fireEvent.click(thread);
   await waitFor(() => {
@@ -106,12 +103,9 @@ describe('CommentsSidebar Escape handling (escape-layer stack)', () => {
     const { container } = render(CommentsSidebar, {
       props: { comments: [comment], editor: makeMockEditor() },
     });
-    await waitFor(
-      () => {
-        expect(container.querySelector('[data-comment-id="c-1"]')).toBeTruthy();
-      },
-      { timeout: 3000 },
-    );
+    await waitFor(() => {
+      expect(container.querySelector('[data-comment-id="c-1"]')).toBeTruthy();
+    });
 
     const event = new KeyboardEvent('keydown', {
       key: 'Escape',

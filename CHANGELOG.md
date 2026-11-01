@@ -4,6 +4,70 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.265.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.264.4...v2.265.0) (2026-11-01)
+
+
+### 🚀 Features
+
+* **chat:** reveal folder mentions in the Files sidebar ([#3973](https://github.com/intent-hq/cloudlands-fe/issues/3973)) ([ff98c3f](https://github.com/intent-hq/cloudlands-fe/commit/ff98c3ff3dd89ffaf41ee00507542a34b9c21c9e))
+* **ct:** give each worktree its own default CT port ([#3977](https://github.com/intent-hq/cloudlands-fe/issues/3977)) ([d2c5cd1](https://github.com/intent-hq/cloudlands-fe/commit/d2c5cd1a1966534f0721aba914bec031f2482373))
+* **home:** show a Workspace purged pill on purged archived workspaces ([#3976](https://github.com/intent-hq/cloudlands-fe/issues/3976)) ([95e066a](https://github.com/intent-hq/cloudlands-fe/commit/95e066a214a67942943e1f2c79576c7952d533a6))
+
+## [2.264.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.264.3...v2.264.4) (2026-11-01)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.100 ([#3983](https://github.com/intent-hq/cloudlands-fe/issues/3983)) ([eda9a33](https://github.com/intent-hq/cloudlands-fe/commit/eda9a33cb432b1f56b5e3903f3dd05a8a37b8441))
+
+## [2.264.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.264.2...v2.264.3) (2026-11-01)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.99 ([#3979](https://github.com/intent-hq/cloudlands-fe/issues/3979)) ([9ad2344](https://github.com/intent-hq/cloudlands-fe/commit/9ad234483c85d2e7b758a5b2b2bdeb2afe0e8cbb))
+
+## [2.264.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.264.1...v2.264.2) (2026-11-01)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.98 ([#3969](https://github.com/intent-hq/cloudlands-fe/issues/3969)) ([74a350b](https://github.com/intent-hq/cloudlands-fe/commit/74a350b3bf64242807e1613b79e83c951cbb3fbc))
+
+## [2.264.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.264.0...v2.264.1) (2026-11-01)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.97 ([#3967](https://github.com/intent-hq/cloudlands-fe/issues/3967)) ([0475d13](https://github.com/intent-hq/cloudlands-fe/commit/0475d131c24df3693ea793651d0547de5c9de067))
+
+## [2.264.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.263.0...v2.264.0) (2026-11-01)
+
+
+### 🚀 Features
+
+* **mentions:** open folder chips in notes in the Files sidebar ([#3953](https://github.com/intent-hq/cloudlands-fe/issues/3953)) ([1e0a761](https://github.com/intent-hq/cloudlands-fe/commit/1e0a761a1b95f5912a32665a88f8a177a6d6bdf0))
+
+
+### 🐛 Bug Fixes
+
+* **browser:** keep idle offscreen tabs under an opacity-0 layer ([#3952](https://github.com/intent-hq/cloudlands-fe/issues/3952)) ([a605afc](https://github.com/intent-hq/cloudlands-fe/commit/a605afc153da9dff232fac712b8ceb531cada45a))
+* **scripts:** reuse npm_execpath only when it points at pnpm ([#3954](https://github.com/intent-hq/cloudlands-fe/issues/3954)) ([6cee7d8](https://github.com/intent-hq/cloudlands-fe/commit/6cee7d845608d50ff7df830bf277c27180e59773))
+
+## [2.263.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.262.2...v2.263.0) (2026-10-31)
+
+
+### 🚀 Features
+
+* add adaptive dock and live screen feedback ([#3794](https://github.com/intent-hq/cloudlands-fe/issues/3794)) ([ab5f75b](https://github.com/intent-hq/cloudlands-fe/commit/ab5f75bfeeba2205516df8c3083f6e5ba55ccc25))
+
+## [2.262.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.262.1...v2.262.2) (2026-10-31)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.96 ([#3959](https://github.com/intent-hq/cloudlands-fe/issues/3959)) ([faf51c0](https://github.com/intent-hq/cloudlands-fe/commit/faf51c00a3b07ccbd4f406c3f856446c65d36454))
+
 ## [2.262.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.262.0...v2.262.1) (2026-10-31)
 
 

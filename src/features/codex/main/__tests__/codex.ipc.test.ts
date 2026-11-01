@@ -1,9 +1,7 @@
 /**
  * Tests for the Codex IPC handlers.
  *
- * Both handlers are thin daemon calls: availability resolves the codex CLI
- * through `host.findBinary` (PROTOCOL §5.14) and GET_MODELS reads the
- * per-provider catalog (`models.list { providerId: 'codex' }`, PROTOCOL
+ * GET_MODELS is a thin daemon call that reads the per-provider catalog (`models.list { providerId: 'codex' }`, PROTOCOL
  * §6.7). These tests assert the wire request shape and the envelope mapping.
  */
 
@@ -13,7 +11,6 @@ const mocks = vi.hoisted(() => ({
   handlers: new Map<string, Function>(),
   backendRequest: vi.fn(),
   remoteBackendRequest: vi.fn(),
-  findBinary: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
@@ -40,10 +37,6 @@ vi.mock('../../../backend/main/backend.ipc', () => ({
   },
 }));
 
-vi.mock('../../../../shared/main/find-binary', () => ({
-  findBinary: mocks.findBinary,
-}));
-
 async function setupAndGetHandler(channel: string) {
   const { setupCodexIPC } = await import('../codex.ipc');
   setupCodexIPC();
@@ -56,40 +49,12 @@ async function setupAndGetModels() {
   return setupAndGetHandler('codex:get-models');
 }
 
-describe('codex IPC availability', () => {
-  beforeEach(() => {
-    vi.resetModules();
-    vi.clearAllMocks();
-    mocks.handlers.clear();
-    mocks.findBinary.mockReset();
-  });
-
-  it('reports available when the daemon resolves the codex CLI', async () => {
-    mocks.findBinary.mockResolvedValue('/opt/homebrew/bin/codex');
-
-    const handler = await setupAndGetHandler('codex:check-availability');
-    const result = await handler({});
-
-    expect(mocks.findBinary).toHaveBeenCalledWith('codex');
-    expect(result).toEqual({ success: true, available: true });
-  });
-
-  it('reports unavailable when the codex CLI does not resolve', async () => {
-    mocks.findBinary.mockResolvedValue(null);
-
-    const handler = await setupAndGetHandler('codex:check-availability');
-
-    expect(await handler({})).toEqual({ success: true, available: false });
-  });
-});
-
 describe('codex IPC model listing', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
     mocks.handlers.clear();
     mocks.backendRequest.mockReset();
-    mocks.findBinary.mockReset();
   });
 
   it('requests models.list { providerId: "codex" } and maps rows to value/label', async () => {

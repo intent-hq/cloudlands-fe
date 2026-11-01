@@ -643,9 +643,12 @@ describe('authored browser tests require their complete PR suites', () => {
     ['test/fixtures/browser-lifetime/main.cjs', true],
     ['test/fixtures/repository-checkout/playwright.config.ts', true],
     ['test/fixtures/repository-checkout/main.ts', true],
+    ['test/fixtures/dock-placement-native/placement.electron.ts', true],
     ['src/features/backend/main/repository-checkout-feed.ts', true],
     ['src/lib/client/live/repository-checkout-transport.ts', true],
     ['src/shared/types/repository-checkout.ts', true],
+    ['src/shared/dock-placement.ts', true],
+    ['src/main/ipc-schemas.ts', true],
     ['test/fixtures/pr-monitor-native/main.ts', true],
     ['test/fixtures/pr-monitor-native/monitor.electron.ts', true],
     ['test/fixtures/pr-monitor-native/playwright.config.ts', true],
@@ -666,6 +669,7 @@ describe('authored browser tests require their complete PR suites', () => {
     ['playwright-ct.config.ts', false],
     ['test/fixtures/browser-lifetime-other/main.cjs', false],
     ['test/fixtures/repository-checkout-other/main.ts', false],
+    ['test/fixtures/dock-placement-native-other/placement.electron.ts', false],
     ['test/fixtures/pr-monitor-native-other/main.ts', false],
   ])('classifies Electron setup path %s as required=%s', (file, required) => {
     const { root, base } = checkoutWith(file);
@@ -840,7 +844,7 @@ describe('shared browser jobs and nightly routing', () => {
     expect(field(ct, 'fail-fast')).toBe('false');
     expect(jobField(ct, 'timeout-minutes')).toBe('50');
     expect(field(step(ct, 'Build CT bundle'), 'NODE_OPTIONS').replaceAll("'", '')).toBe(
-      '--max-old-space-size=8192',
+      '--max-old-space-size=12288',
     );
     expect(field(step(ct, 'Component tests'), 'NODE_OPTIONS').replaceAll("'", '')).toBe(
       '--max-old-space-size=4096',

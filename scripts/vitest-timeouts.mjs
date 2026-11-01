@@ -10,3 +10,16 @@ export function isCiEnv(env = process.env) {
 export function defaultTestTimeoutMs(env = process.env) {
   return isCiEnv(env) ? 60_000 : 30_000;
 }
+
+/**
+ * Default limit for Testing Library's async utilities (`waitFor`, `findBy*`,
+ * `waitForElementToBeRemoved`), set suite-wide by src/test-setup.ts: half the test
+ * budget, so 15s locally and 30s on CI. Testing Library's own 1s default ejected a
+ * green cloudlands-fe#3915 from the merge queue when a cold first render ran past it
+ * on a loaded runner (merge_group run 41182853681). Half leaves the rest of the test
+ * budget for the wait to report a real hang with its own message (the last failed
+ * assertion or the DOM it searched) before the test timeout fires.
+ */
+export function defaultAsyncUtilTimeoutMs(env = process.env) {
+  return defaultTestTimeoutMs(env) / 2;
+}

@@ -225,6 +225,8 @@ function* maybeNotifyVersionMismatch(
   // warning would be redundant noise on the same daemon.
   if (transport.isOrphanedSidecar || ownedByBehindPinToast(transport) || alreadyNotified)
     return alreadyNotified;
+  // App-level daemon notices belong to app windows, not the dock or annotation toolbar.
+  if (document.documentElement.dataset.auxiliaryWindow) return alreadyNotified;
   return yield* call(notifyVersionMismatch, transport);
 }
 

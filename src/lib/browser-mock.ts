@@ -429,7 +429,7 @@ function mockInvoke(channel: string, data?: any): any {
   }
 
   // Provider / model channels
-  if (channel.endsWith(':get-models') || channel.endsWith(':check-availability')) {
+  if (channel.endsWith(':get-models')) {
     return { success: true, data: [] };
   }
   if (channel === 'providers:get-availability') {

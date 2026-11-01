@@ -151,6 +151,7 @@ export function createSafeValidatedHandler<T>(
     } catch (error) {
       if (error instanceof z.ZodError) {
         logger.warn('IPC validation failed', {
+          channel: channelName,
           errors: error.errors,
         });
 

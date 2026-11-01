@@ -178,10 +178,13 @@ test.describe('Build Smoke — Agent Chat UI', () => {
 
       await waitForAgentCompletion(page, workspaceId, TEST_TIMEOUT);
 
-      // Get the actual worktree path from workspace metadata via IPC
+      // Get the actual worktree path from the daemon's `workspace.get`
       const worktreePath = await page.evaluate(async (wsId) => {
-        const result = await (window as any).electronAPI.invoke('workspace:get', { id: wsId });
-        const ws = result?.data || result?.workspace || result;
+        const result = await (window as any).electronAPI.invoke('backend:request', {
+          method: 'workspace.get',
+          params: { workspaceId: wsId },
+        });
+        const ws = result?.ok ? result.result?.workspace : null;
         return ws?.worktreePath || ws?.repositoryPath || null;
       }, workspaceId);
 

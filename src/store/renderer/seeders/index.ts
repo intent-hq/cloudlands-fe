@@ -6,7 +6,6 @@
  * hydration and business subscriptions are owned by the root sagas.
  */
 import './workspaces-seeder';
-import './active-streams-bridge-seeder';
 import './agent-ipc-bridge-seeder';
 import './backend-status-bridge-seeder';
 import './connections-bridge-seeder';

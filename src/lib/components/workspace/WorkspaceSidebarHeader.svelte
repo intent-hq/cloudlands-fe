@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { workspaceRepositoryLabel } from './utils/workspace-repository-label';
   import { truncatedTitle } from '$lib/actions/observe-overflow';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import SidebarIcon from '$lib/components/icons/SidebarIcon.svelte';
@@ -78,11 +79,7 @@
   // Plain folders have no branch to show, rename or transfer.
   const plainFolder = $derived(isPlainFolderWorkspace(workspace));
   const currentStatusMessage = $derived(workspace?.statusMessage?.trim() ?? '');
-  const repositoryLabel = $derived(
-    workspace?.repositoryOwner && workspace?.repositoryName
-      ? `${workspace.repositoryOwner}/${workspace.repositoryName}`
-      : (workspace?.repositoryPath?.split('/').pop() ?? ''),
-  );
+  const repositoryLabel = $derived(workspaceRepositoryLabel(workspace));
 
   async function handleDelete() {
     if (isDeleting || !workspace) return;

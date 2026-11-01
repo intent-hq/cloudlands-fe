@@ -40,7 +40,7 @@
     // focus, so it never sets the attribute: its takeover choreography must play
     // unfocused, and any attribute already present on <html> is cleared on mount.
     // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous route check, no data fetch
-    const pausesMotionOnBlur = !isHudWindowRenderer();
+    const pausesMotionOnBlur = !isHudWindowRenderer() && window.location.pathname !== '/dock';
     let windowFocused = document.hasFocus();
     let pauseWhenUnfocused = false;
     const applyWindowBlurred = () => {

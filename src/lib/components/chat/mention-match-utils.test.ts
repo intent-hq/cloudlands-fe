@@ -175,3 +175,15 @@ describe('decodeInlineMention', () => {
     expect(decodeOne('@member[notbase64!]')).toEqual({ kind: 'text' });
   });
 });
+
+describe('decodeInlineMention folders', () => {
+  it('decodes a saved @<path>/ token as a folder labelled by its last segment', () => {
+    const [match] = findInlineMentions('see @src/lib/ now');
+    expect(decodeInlineMention(match)).toEqual({ kind: 'folder', path: 'src/lib', label: 'lib' });
+  });
+
+  it('keeps a legacy @<path> with no slash as a path chip', () => {
+    const [match] = findInlineMentions('see @src/lib now');
+    expect(decodeInlineMention(match)).toMatchObject({ kind: 'file', path: 'src/lib' });
+  });
+});

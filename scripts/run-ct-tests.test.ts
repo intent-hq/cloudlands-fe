@@ -21,7 +21,12 @@ import {
   runPlaywright,
   usage,
 } from './run-ct-tests.mjs';
-import { HELD_LOCK_ENV, acquireVerificationLock, lockOwner } from './verification-lock.mjs';
+import {
+  HELD_LOCK_ENV,
+  acquireVerificationLock,
+  lockOwner,
+  worktreeCtPort,
+} from './verification-lock.mjs';
 import { createCtGateFixture } from './test-fixtures/ct-gate.mjs';
 
 const baseEnv = { PATH: '/usr/bin' };
@@ -698,6 +703,15 @@ describe('acquireCtPortLock', () => {
     ]);
     a();
     b();
+  });
+
+  it('takes the per-worktree lock when CT_PORT is unset, not the shared ct-3100', async () => {
+    const options = { acquireLock, lockPath, log() {} };
+    const key = `ct-${worktreeCtPort()}`;
+    const release = await acquireCtPortLock({ ...options, env: {}, cwd: '/worktree/a' });
+    expect(existsSync(path.join(lockRoot, key))).toBe(true);
+    expect(existsSync(path.join(lockRoot, 'ct-3100'))).toBe(false);
+    release();
   });
 
   it('skips acquisition when the parent verify:changed already holds this port', async () => {

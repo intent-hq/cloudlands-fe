@@ -63,7 +63,6 @@ import {
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { broadcastToBrowserIpcClients } from '../../../main/browser-ipc-broadcast-adapter';
 import { execFileAsync } from '../../../shared/git/git-env';
-import { findBinary } from '../../../shared/main/find-binary';
 import { getBackendClient, getBackendIdForIpcSender } from '../../backend/main/backend.ipc';
 import { hostExec } from '../../../shared/main/host-exec';
 import { hostExecStream } from '../../../shared/main/host-exec-stream';
@@ -82,7 +81,6 @@ import {
 } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
 import { m } from '../../../shared/paraglide/messages.js';
-import { MINIMUM_NODE_VERSION } from '../../../shared/constants/auggie';
 import { findVSCodeAsync } from '../../../shared/main/async-utils';
 import { withDiffTempFiles } from '../../ide/main/diff-temp-files.service';
 import {
@@ -92,7 +90,6 @@ import {
   getWindowTitleBarOptions,
   setWindowTranslucencyEnabled,
 } from '../../../shared/main/window-appearance';
-import { meetsMinimumVersion } from '../../../shared/utils/version-compare';
 import { posixSingleQuote } from '../../../shared/utils/posix-single-quote';
 import { resolveAppIconPath } from '../../../main/utils/resolve-app-icon';
 import {
@@ -100,6 +97,11 @@ import {
   registerWindowTitleListener,
 } from '../../../main/utils/resolve-app-title';
 import { isHudWindow, isTrackedHudWindow } from '../../../main/hud-window';
+import { isDockWindow } from '../../../main/dock-window';
+import { registerDockPlacementHandlers } from '../../../main/dock-placement-ipc';
+import { isDockAnnotationWindow } from '../../../main/dock-annotation-identity';
+import { isWebviewPopupWindow } from '../../../main/webview-security';
+import { isDevConsoleRoute } from '../../../shared/dev-console-route';
 import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
 import { isDesktopOverlayWindow } from '../../../shared/main/desktop-overlay-window';
@@ -115,7 +117,8 @@ let nativeThemeBackgroundSyncInstalled = false;
 const WINDOW_OPEN_REQUEST_RETENTION_MS = 5 * 60 * 1000;
 const MAX_TRACKED_WINDOW_OPEN_REQUESTS = 256;
 
-type WindowOpenResult = { success: true; windowId: number } | { success: false; error: string };
+type WindowOpenResult =
+  { success: true; windowId: number; reused?: boolean } | { success: false; error: string };
 type WindowOpenRequestEntry = {
   result: Promise<WindowOpenResult>;
   settledAt?: number;
@@ -124,7 +127,8 @@ type WindowOpenRequestEntry = {
 function refreshNativeWindowBackgrounds(): void {
   const backgroundColor = getWindowBackgroundColor(nativeTheme.shouldUseDarkColors);
   for (const window of BrowserWindow.getAllWindows()) {
-    if (isDesktopOverlayWindow(window)) continue;
+    if (isDockWindow(window) || isDockAnnotationWindow(window) || isDesktopOverlayWindow(window))
+      continue;
     window.setBackgroundColor(backgroundColor);
   }
 }
@@ -795,6 +799,48 @@ export function setupSystemIPC() {
   installNativeThemeBackgroundSync();
   const handledWindowOpenRequests = new Map<string, WindowOpenRequestEntry>();
 
+  type DockNavigationTarget = {
+    workspaceId: string;
+    agentId?: string;
+    workspaceTarget?: import('$shared/workspace-window-target').WorkspaceWindowTarget;
+  };
+  const pendingDockCreations = new Map<
+    string,
+    { result: Promise<BrowserWindow>; target: DockNavigationTarget }
+  >();
+  const pendingDockLaunches = new Map<
+    string,
+    { window: BrowserWindow; target: DockNavigationTarget }
+  >();
+
+  async function waitForWorkspaceSurface(
+    targetWindow: BrowserWindow,
+    workspaceId: string,
+  ): Promise<void> {
+    const serializedWorkspaceId = JSON.stringify(workspaceId);
+    await targetWindow.webContents.executeJavaScript(`
+      new Promise((resolve) => {
+        const workspaceId = ${serializedWorkspaceId};
+        const findSurface = () => workspaceId === ${JSON.stringify(CHIEF_WORKSPACE_ID)}
+          ? document.querySelector('[data-home-page]')
+          : Array.from(document.querySelectorAll('[data-workspace-surface]'))
+            .find((node) => node.getAttribute('data-workspace-surface') === workspaceId);
+        if (findSurface()) return resolve(true);
+        const observer = new MutationObserver(() => {
+          if (!findSurface()) return;
+          observer.disconnect();
+          clearTimeout(timer);
+          resolve(true);
+        });
+        observer.observe(document.documentElement, { childList: true, subtree: true });
+        const timer = setTimeout(() => {
+          observer.disconnect();
+          resolve(false);
+        }, 30000);
+      })
+    `);
+  }
+
   // App info
   ipcMain.handle(
     APP_CHANNELS.VERSION,
@@ -1005,7 +1051,9 @@ export function setupSystemIPC() {
           if (window) {
             nativeTheme.themeSource = validated.theme;
             const isDark = nativeTheme.shouldUseDarkColors;
-            window.setBackgroundColor(getWindowBackgroundColor(isDark));
+            if (!isDockWindow(window) && !isDockAnnotationWindow(window)) {
+              window.setBackgroundColor(getWindowBackgroundColor(isDark));
+            }
 
             logger.info('Window theme updated', { theme: validated.theme, isDark });
           }
@@ -1034,7 +1082,13 @@ export function setupSystemIPC() {
         setWindowTranslucencyEnabled(validated.enabled);
         const isDark = nativeTheme.shouldUseDarkColors;
         for (const window of BrowserWindow.getAllWindows()) {
-          if (window.isDestroyed() || isDesktopOverlayWindow(window)) continue;
+          if (
+            window.isDestroyed() ||
+            isDockWindow(window) ||
+            isDockAnnotationWindow(window) ||
+            isDesktopOverlayWindow(window)
+          )
+            continue;
           applyWindowTranslucency(window, isDark, validated.enabled);
         }
         return { success: true };
@@ -1180,6 +1234,7 @@ export function setupSystemIPC() {
   async function createAppWindow(
     route: string | undefined,
     openerBackendId: string,
+    suppressStartupSplash = false,
   ): Promise<BrowserWindow> {
     const { BrowserWindow } = await import('electron');
     const path = await import('path');
@@ -1189,7 +1244,8 @@ export function setupSystemIPC() {
       await import('../../../main/hud-window');
 
     const isHudRoute = typeof route === 'string' && route.startsWith(HUD_ROUTE_PREFIX);
-    const isChiefRoute = route === `/workspace/${CHIEF_WORKSPACE_ID}`;
+    const isChiefRoute =
+      route === `/workspace/${CHIEF_WORKSPACE_ID}` || (suppressStartupSplash && route === '/');
     if (isHudRoute) {
       const existing = findExistingHudWindow(openerBackendId);
       if (existing) {
@@ -1239,9 +1295,69 @@ export function setupSystemIPC() {
       registerHudWindow(newWindow);
     }
 
-    newWindow.once('ready-to-show', () => {
-      newWindow.show();
-    });
+    if (!suppressStartupSplash) {
+      newWindow.once('ready-to-show', () => {
+        newWindow.show();
+      });
+    }
+
+    const directWorkspaceMatch = route?.match(/^\/workspace\/([^/]+)$/);
+    const directWorkspaceId = suppressStartupSplash
+      ? route === '/'
+        ? CHIEF_WORKSPACE_ID
+        : directWorkspaceMatch && decodeURIComponent(directWorkspaceMatch[1])
+      : undefined;
+    if (directWorkspaceId) {
+      pendingDockLaunches.set(openerBackendId, {
+        window: newWindow,
+        target: pendingDockCreations.get(openerBackendId)?.target ?? {
+          workspaceId: directWorkspaceId,
+        },
+      });
+      newWindow.on('closed', () => {
+        if (pendingDockLaunches.get(openerBackendId)?.window === newWindow) {
+          pendingDockLaunches.delete(openerBackendId);
+        }
+      });
+      newWindow.webContents.once('did-finish-load', () => {
+        void (async () => {
+          let renderedWorkspaceId = directWorkspaceId;
+          try {
+            await waitForWorkspaceSurface(newWindow, renderedWorkspaceId);
+            let pending = pendingDockLaunches.get(openerBackendId);
+            while (pending?.window === newWindow && !newWindow.isDestroyed()) {
+              const target = pending.target;
+              if (target.workspaceId !== renderedWorkspaceId) {
+                renderedWorkspaceId = target.workspaceId;
+                newWindow.webContents.send('notification:navigate', {
+                  workspaceId: renderedWorkspaceId,
+                });
+                await waitForWorkspaceSurface(newWindow, renderedWorkspaceId);
+              }
+              pending = pendingDockLaunches.get(openerBackendId);
+              // A newer agent in the same workspace also supersedes the old target.
+              if (pending?.window !== newWindow) break;
+              if (pending.target !== target) continue;
+              newWindow.webContents.send('notification:navigate', {
+                ...target,
+                ...(target.workspaceId === CHIEF_WORKSPACE_ID ? { chief: true } : {}),
+              });
+              break;
+            }
+          } catch (error) {
+            logger.warn('Dock workspace launch did not finish rendering', { error });
+          } finally {
+            if (!newWindow.isDestroyed()) {
+              newWindow.show();
+              newWindow.focus();
+            }
+            if (pendingDockLaunches.get(openerBackendId)?.window === newWindow) {
+              pendingDockLaunches.delete(openerBackendId);
+            }
+          }
+        })();
+      });
+    }
 
     // Load the app with the specified route
     const isDev = process.env.NODE_ENV === 'development';
@@ -1249,17 +1365,83 @@ export function setupSystemIPC() {
     if (isDev) {
       const devPort = process.env.DEV_PORT || '5190';
       const baseUrl = `http://127.0.0.1:${devPort}`;
-      const url = route ? `${baseUrl}${route}` : baseUrl;
-      await newWindow.loadURL(url);
+      const url = new URL(route ? `${baseUrl}${route}` : baseUrl);
+      if (suppressStartupSplash) url.searchParams.set('dockLaunch', '1');
+      await newWindow.loadURL(url.toString()).catch((error: unknown) => {
+        newWindow.destroy();
+        throw error;
+      });
     } else {
       // In production, use the custom app:// protocol (same as main window)
       // The protocol handler in main/index.ts serves files from dist/renderer
       // and handles client-side routing for SvelteKit
-      const url = route ? `app://workspaces${route}` : 'app://workspaces/';
-      await newWindow.loadURL(url);
+      const url = new URL(route ? `app://workspaces${route}` : 'app://workspaces/');
+      if (suppressStartupSplash) url.searchParams.set('dockLaunch', '1');
+      await newWindow.loadURL(url.toString()).catch((error: unknown) => {
+        newWindow.destroy();
+        throw error;
+      });
     }
 
     return newWindow;
+  }
+
+  function isNormalWindowForBackend(existing: BrowserWindow, backendId: string): boolean {
+    return (
+      !existing.isDestroyed() &&
+      !existing.webContents.isDestroyed() &&
+      !isDockWindow(existing) &&
+      !isDockAnnotationWindow(existing) &&
+      !isWebviewPopupWindow(existing) &&
+      !isDevConsoleRoute(new URL(existing.webContents.getURL() || 'about:blank').pathname) &&
+      !isHudWindow(existing) &&
+      !isTrackedHudWindow(existing) &&
+      getBackendIdForWindow(existing) === backendId
+    );
+  }
+
+  function isReadyNormalWindowForBackend(existing: BrowserWindow, backendId: string): boolean {
+    return (
+      isNormalWindowForBackend(existing, backendId) &&
+      existing.webContents.getURL() !== '' &&
+      !existing.webContents.isLoadingMainFrame()
+    );
+  }
+
+  function focusExistingWorkspaceWindow(
+    workspaceId: string,
+    backendId: string,
+    agentId?: string,
+    workspaceTarget?: DockNavigationTarget['workspaceTarget'],
+  ): BrowserWindow | null {
+    let existing: BrowserWindow | null = null;
+    for (const windowId of getWindowIdsForWorkspace(workspaceId, backendId)) {
+      const candidate = BrowserWindow.fromId(windowId);
+      if (candidate && isNormalWindowForBackend(candidate, backendId)) {
+        existing = candidate;
+        break;
+      }
+    }
+
+    if (!existing) {
+      const focused = BrowserWindow.getFocusedWindow();
+      const candidates = focused
+        ? [focused, ...BrowserWindow.getAllWindows().filter((window) => window !== focused)]
+        : BrowserWindow.getAllWindows();
+      existing =
+        candidates.find((candidate) => isReadyNormalWindowForBackend(candidate, backendId)) ?? null;
+    }
+
+    if (!existing) return null;
+    if (existing.isMinimized()) existing.restore();
+    existing.show();
+    existing.focus();
+    existing.webContents.send('notification:navigate', {
+      workspaceId,
+      ...(agentId ? { agentId } : {}),
+      ...(workspaceTarget ? { workspaceTarget } : {}),
+    });
+    return existing;
   }
 
   // Create new window
@@ -1294,14 +1476,68 @@ export function setupSystemIPC() {
       WindowOpenNewSchema,
       async (event, validated) => {
         const openWindow = async (): Promise<WindowOpenResult> => {
+          let openerBackendId: string | undefined;
           try {
-            const newWindow = await createAppWindow(
-              validated.route,
-              getBackendIdForIpcSender(event.sender),
-            );
+            openerBackendId =
+              validated.route === `/workspace/${CHIEF_WORKSPACE_ID}` ||
+              (validated.reuseExistingWorkspace && validated.route === '/')
+                ? LOCAL_CONNECTION_ID
+                : getBackendIdForIpcSender(event.sender);
+            const workspaceMatch = validated.route?.match(/^\/workspace\/([^/]+)$/);
+            if (validated.reuseExistingWorkspace && (workspaceMatch || validated.route === '/')) {
+              const workspaceId =
+                validated.route === '/'
+                  ? CHIEF_WORKSPACE_ID
+                  : decodeURIComponent(workspaceMatch![1]);
+              const target = {
+                workspaceId,
+                ...(validated.agentId ? { agentId: validated.agentId } : {}),
+                ...(validated.workspaceTarget
+                  ? { workspaceTarget: validated.workspaceTarget }
+                  : {}),
+              };
+              const pending = pendingDockLaunches.get(openerBackendId);
+              if (pending && !pending.window.isDestroyed()) {
+                pending.target = target;
+                return { success: true, windowId: pending.window.id, reused: true };
+              }
+              pendingDockLaunches.delete(openerBackendId);
+              const creating = pendingDockCreations.get(openerBackendId);
+              if (creating) {
+                creating.target = target;
+                const window = await creating.result;
+                return { success: true, windowId: window.id, reused: true };
+              }
+              const existing = focusExistingWorkspaceWindow(
+                workspaceId,
+                openerBackendId,
+                validated.agentId,
+                validated.workspaceTarget,
+              );
+              if (existing) return { success: true, windowId: existing.id, reused: true };
+              const creation = {
+                result: createAppWindow(validated.route, openerBackendId, true),
+                target,
+              };
+              pendingDockCreations.set(openerBackendId, creation);
+              try {
+                const window = await creation.result;
+                return { success: true, windowId: window.id };
+              } finally {
+                if (pendingDockCreations.get(openerBackendId) === creation)
+                  pendingDockCreations.delete(openerBackendId);
+              }
+            }
+            const newWindow = await createAppWindow(validated.route, openerBackendId);
             return { success: true, windowId: newWindow.id };
           } catch (error) {
-            logger.error('Failed to open new window', error as Error);
+            logger.error('Failed to open new window', error as Error, {
+              reason: error instanceof Error ? error.message : String(error),
+              route: validated.route,
+              workspaceTarget: validated.workspaceTarget?.type ?? null,
+              reuseExistingWorkspace: validated.reuseExistingWorkspace === true,
+              backendId: openerBackendId ?? null,
+            });
             return {
               success: false,
               error:
@@ -1387,6 +1623,8 @@ export function setupSystemIPC() {
     ),
   );
 
+  registerDockPlacementHandlers();
+
   // Focus the next open app window in list order, wrapping around. Destroyed,
   // hidden, and HUD pop-out windows (URL-detected or tracked pre-navigation)
   // are excluded from the cycle. Minimized windows are included — macOS
@@ -1404,6 +1642,8 @@ export function setupSystemIPC() {
           (w) =>
             !w.isDestroyed() &&
             (w.isVisible() || w.isMinimized()) &&
+            !isDockWindow(w) &&
+            !isDockAnnotationWindow(w) &&
             !isHudWindow(w) &&
             !isTrackedHudWindow(w),
         );
@@ -2875,96 +3115,6 @@ export function setupSystemIPC() {
       SYSTEM_CHANNELS.EXECUTE_COMMAND_STREAMING,
     ),
   );
-
-  // Check git availability — delegated to the daemon host so detection
-  // matches the machine actually running git (and is consistent across
-  // local/remote transports). Mapped back to the existing IPC contract.
-  // Only a daemon-reported probe answer may fold to available:false; a
-  // transport failure (RPC timeout / daemon unreachable) folds to
-  // available:'unknown' so the UI never renders "Git is not installed"
-  // when the check simply couldn't run.
-  ipcMain.handle(SYSTEM_CHANNELS.CHECK_GIT, async () => {
-    try {
-      const result = await getBackendClient().request<{ available: boolean; version?: string }>(
-        'host.checkGit',
-      );
-      const available = result?.available === true;
-      const version = typeof result?.version === 'string' ? result.version : undefined;
-      return {
-        success: true,
-        data: available ? { available: true, version } : { available: false },
-      };
-    } catch (error) {
-      logger.warn('host.checkGit failed', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return { success: true, data: { available: 'unknown' } };
-    }
-  });
-
-  // Check Node.js availability + minimum version — delegated to the daemon
-  // host via the uncached host.checkNode probe (host.checkGit idiom) so a
-  // newly installed node is detected without an app restart. Mirrors
-  // CHECK_GIT: a missing binary or failed probe folds to available:false,
-  // never an error.
-  ipcMain.handle(SYSTEM_CHANNELS.CHECK_NODE, async () => {
-    try {
-      const result = await getBackendClient().request<{ available: boolean; version?: string }>(
-        'host.checkNode',
-      );
-      if (result?.available !== true) {
-        return { success: true, data: { available: false, versionOk: false } };
-      }
-      const version =
-        typeof result.version === 'string' ? result.version.trim().replace(/^v/, '') : undefined;
-      return {
-        success: true,
-        data: {
-          available: true,
-          version,
-          versionOk: version ? meetsMinimumVersion(version, MINIMUM_NODE_VERSION) : false,
-        },
-      };
-    } catch (error) {
-      logger.warn('host.checkNode failed', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return { success: true, data: { available: false, versionOk: false } };
-    }
-  });
-
-  // Check GitHub CLI (gh) availability — delegated to the daemon host via
-  // the uncached host.checkGh probe (host.checkGit idiom) like CHECK_NODE.
-  // Informational only: the onboarding gate never blocks on gh, and a
-  // missing binary or failed probe folds to available:false, never an error.
-  ipcMain.handle(SYSTEM_CHANNELS.CHECK_GH, async () => {
-    try {
-      const result = await getBackendClient().request<{ available: boolean; version?: string }>(
-        'host.checkGh',
-      );
-      const available = result?.available === true;
-      const version = typeof result?.version === 'string' ? result.version : undefined;
-      return {
-        success: true,
-        data: available ? { available: true, version } : { available: false },
-      };
-    } catch (error) {
-      logger.warn('host.checkGh failed', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return { success: true, data: { available: false } };
-    }
-  });
-
-  // Check rtk availability
-  ipcMain.handle(SYSTEM_CHANNELS.CHECK_RTK, async () => {
-    try {
-      const rtkPath = await findBinary('rtk');
-      return { success: true, data: { available: rtkPath !== null } };
-    } catch {
-      return { success: true, data: { available: false } };
-    }
-  });
 
   // List available system fonts using font-list module
   ipcMain.handle(

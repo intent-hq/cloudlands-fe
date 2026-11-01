@@ -1183,22 +1183,16 @@ describe('CommandPalette chat message rows', () => {
     await fireEvent.input(input, { target: { value: 'hello' } });
 
     // Assert the wire request matches PROTOCOL §5.15 (search.messages)
-    await waitFor(
-      () =>
-        expect(backendRequestMock).toHaveBeenCalledWith('search.messages', {
-          query: 'hello',
-          limit: 10,
-          preferWorkspaceId: 'ws-1',
-        }),
-      { timeout: 3000 },
+    await waitFor(() =>
+      expect(backendRequestMock).toHaveBeenCalledWith('search.messages', {
+        query: 'hello',
+        limit: 10,
+        preferWorkspaceId: 'ws-1',
+      }),
     );
 
     // Full metadata: Agent · Workspace · owner/repo
-    const coordinator = await screen.findByRole(
-      'button',
-      { name: /Coordinator/ },
-      { timeout: 3000 },
-    );
+    const coordinator = await screen.findByRole('button', { name: /Coordinator/ });
     expect(coordinator.textContent).toMatch(
       /Coordinator\s*·\s*Repo overview\s*·\s*panghy\/chinese-fonts/,
     );

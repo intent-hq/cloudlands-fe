@@ -4,13 +4,41 @@
  * Replaces bash-specific scripts with Node.js for Windows compatibility
  */
 
-import { spawn } from 'child_process';
+import { execFileSync, spawn } from 'child_process';
+import { existsSync, mkdirSync, statSync } from 'fs';
+import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { buildWaitOnEnv, buildWaitOnTargets, resolveWaitOnTimeoutMs } from './dev-electron-lib.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = dirname(__dirname);
+
+/**
+ * macOS: a dev Electron spawned from another app (terminal, IDE, the Intent app)
+ * inherits that app's privacy "responsibility", so Screen Recording and
+ * Accessibility grants made to Electron.app never apply. Launch it through a tiny
+ * native spawner that disclaims responsibility; fall back to a plain spawn when it
+ * cannot be built (no clang) or on other platforms.
+ */
+function disclaimLauncher() {
+  if (process.platform !== 'darwin' || process.env.INTENT_DEV_NO_DISCLAIM === '1') return null;
+  const source = join(__dirname, 'native/disclaim-spawn.c');
+  const binary = join(rootDir, 'node_modules/.cache/intent-dev/disclaim-spawn');
+  try {
+    if (!existsSync(binary) || statSync(binary).mtimeMs < statSync(source).mtimeMs) {
+      mkdirSync(dirname(binary), { recursive: true });
+      execFileSync('xcrun', ['clang', '-O2', '-o', binary, source], { stdio: 'ignore' });
+    }
+    const electronBinary = createRequire(import.meta.url)('electron');
+    return typeof electronBinary === 'string' && existsSync(electronBinary)
+      ? { binary, electronBinary }
+      : null;
+  } catch (error) {
+    console.warn('dev-electron: responsibility launcher unavailable; plain spawn.', String(error));
+    return null;
+  }
+}
 
 // Parse arguments
 const args = process.argv.slice(2);
@@ -86,14 +114,18 @@ waitOn.on('exit', (code) => {
     : [];
 
   const isWindows = process.platform === 'win32';
+  const electronArgs = [
+    join(rootDir, 'dist/main/index.js'),
+    `--inspect=${devInspectPort}`,
+    '--no-sandbox',
+    ...extraArgs,
+  ];
+  const launcher = disclaimLauncher();
+  if (launcher)
+    console.log('dev-electron: Electron is its own responsible process (grant Electron.app).');
   const electron = spawn(
-    'electron',
-    [
-      join(rootDir, 'dist/main/index.js'),
-      `--inspect=${devInspectPort}`,
-      '--no-sandbox',
-      ...extraArgs,
-    ],
+    launcher ? launcher.binary : 'electron',
+    launcher ? [launcher.electronBinary, ...electronArgs] : electronArgs,
     {
       cwd: rootDir,
       env,

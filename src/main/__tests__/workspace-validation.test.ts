@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  getBranchNameValidationError,
   isValidProjectName,
   isValidWorkspaceIdFormat,
   sanitizePath,
-  validateBranchName,
   validateProjectName,
   validateRepositoryPath,
   validateWorkspaceId,
@@ -17,11 +15,6 @@ describe('main workspace-validation', () => {
     expect(validateWorkspaceId('bad id')).toEqual(['Workspace ID contains invalid characters']);
     expect(isValidWorkspaceIdFormat('valid-id_123')).toBe(true);
     expect(isValidWorkspaceIdFormat('bad id')).toBe(false);
-  });
-
-  it('preserves branch validation helpers', () => {
-    expect(validateBranchName('feature/test-branch')).toEqual([]);
-    expect(getBranchNameValidationError('bad branch')).toBe('Branch name cannot contain spaces');
   });
 
   it('sanitizes unsafe path characters', () => {

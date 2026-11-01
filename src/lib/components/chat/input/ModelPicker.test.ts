@@ -2410,14 +2410,11 @@ describe('ModelPicker multi-provider mode', () => {
       silentFallback: true,
     });
 
-    await waitFor(
-      () => {
-        expect(
-          vi.mocked(getModelsForProvider).mock.calls.filter(([provider]) => provider === 'codex'),
-        ).toHaveLength(2);
-      },
-      { timeout: 5000 },
-    );
+    await waitFor(() => {
+      expect(
+        vi.mocked(getModelsForProvider).mock.calls.filter(([provider]) => provider === 'codex'),
+      ).toHaveLength(2);
+    });
     expect(
       vi.mocked(getModelsForProvider).mock.calls.filter(([provider]) => provider === 'auggie'),
     ).toHaveLength(1);
