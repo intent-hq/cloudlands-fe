@@ -84,7 +84,8 @@ test('settles motion started without a click when given the starting snapshot', 
 test('keeps waiting for a change when the click replaces the region with an identical one', async ({
   mount,
 }) => {
-  // The replacement is detected first; the size change only starts 400 ms later.
+  // The region is replaced 50 ms after the click, while the wait watches the old node; the
+  // size change only starts 400 ms after the click.
   const component = await mount(SettleProbeHarness, { props: { startDelayMs: 400 } });
   const settled = await clickAndSettle(
     component.getByTestId('replace'),

@@ -18,7 +18,8 @@
   let scroller: HTMLDivElement;
   let wobbling = $state(false);
   let nextClicks = $state(0);
-  // A click that re-renders the region as a new, same-size element, then animates it later.
+  // A click that re-renders the region as a new, same-size element 50 ms later, then
+  // animates it after `startDelayMs`.
   let generation = $state(0);
   let replacedHeight = $state(40);
 
@@ -41,7 +42,8 @@
   }
 
   function replaceThenGrow() {
-    generation += 1;
+    // Replace shortly after the click, once a settle wait is already watching the old node.
+    setTimeout(() => (generation += 1), 50);
     tween(replacedHeight, OPEN_HEIGHT, (value) => (replacedHeight = value));
   }
 
