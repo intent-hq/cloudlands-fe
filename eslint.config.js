@@ -59,6 +59,13 @@ const classNameAssertionsBaseline =
 const fixedWaitTimeoutBaseline =
   baselineCounts(lintBaseline['no-fixed-wait-timeout-in-tests']) ?? {};
 const waitForTimeoutInCtBaseline = baselineCounts(lintBaseline['no-wait-for-timeout-in-ct']) ?? {};
+// The component-test rules whose sanctioned escape hatch is a reasoned single-line disable.
+const componentTestReasonedDisableRules = [
+  'intent/no-one-shot-animation-count',
+  'intent/no-unarmed-outside-click-in-ct',
+  'intent/no-raw-mouse-wheel-in-ct',
+  'intent/no-wait-for-timeout-in-ct',
+];
 
 const intentPlugin = {
   rules: {
@@ -719,6 +726,9 @@ export default [
   // (cloudlands-fe#3955; the flake ejected cloudlands-fe#3920 from the merge queue). Use
   // clickAndSettle / expectMotionToSettle from src/test/ct-test.ts. The baseline maps
   // today's specs to their sleep counts and may only shrink.
+  //
+  // Each of these rules accepts a single-line eslint-disable with a reason as its escape
+  // hatch; intent/require-disable-reason checks that the directive gives one.
   {
     files: ['src/**/*.ct.spec.ts'],
     plugins: {
@@ -729,22 +739,7 @@ export default [
       'intent/no-unarmed-outside-click-in-ct': 'error',
       'intent/no-raw-mouse-wheel-in-ct': 'error',
       'intent/no-wait-for-timeout-in-ct': ['error', { baseline: waitForTimeoutInCtBaseline }],
-    },
-  },
-  // A unit test that asserts an element's className / classList / class attribute pins
-  // how a style is spelled, not what the user sees (cloudlands-fe#3463; AGENTS.md "Do
-  // not write decorative appearance tests"). Same ratchet as above: the baseline maps
-  // today's offenders to their assertion counts and may only shrink.
-  {
-    files: ['src/**/*.test.ts'],
-    plugins: {
-      intent: intentPlugin,
-    },
-    rules: {
-      'intent/no-class-name-assertions-in-tests': [
-        'error',
-        { baseline: classNameAssertionsBaseline },
-      ],
+      'intent/require-disable-reason': ['error', { rules: componentTestReasonedDisableRules }],
     },
   },
   // Testing Library waits and vi.waitFor / vi.waitUntil default to half the CI-scaled test
@@ -763,6 +758,34 @@ export default [
       'intent/require-disable-reason': [
         'error',
         { rules: ['intent/no-fixed-wait-timeout-in-tests'] },
+      ],
+    },
+  },
+  // A unit test that asserts an element's className / classList / class attribute pins
+  // how a style is spelled, not what the user sees (cloudlands-fe#3463; AGENTS.md "Do
+  // not write decorative appearance tests"). The baseline maps today's offenders to their
+  // assertion counts and may only shrink. A reasoned single-line eslint-disable is the
+  // other escape hatch, and intent/require-disable-reason checks that it gives the reason.
+  {
+    files: ['src/**/*.test.ts'],
+    plugins: {
+      intent: intentPlugin,
+    },
+    rules: {
+      'intent/no-class-name-assertions-in-tests': [
+        'error',
+        { baseline: classNameAssertionsBaseline },
+      ],
+      // These files also match the block above, and a later block's options replace an
+      // earlier block's, so this list names both rules.
+      'intent/require-disable-reason': [
+        'error',
+        {
+          rules: [
+            'intent/no-fixed-wait-timeout-in-tests',
+            'intent/no-class-name-assertions-in-tests',
+          ],
+        },
       ],
     },
   },
@@ -1093,12 +1116,19 @@ export default [
   // editor (intent-hq/intent#8068 via cloudlands-fe#3848; intent-hq/intent#8115 via
   // cloudlands-fe#3865). isTextEntryTarget / isMultilineTextEntryTarget in
   // src/lib/utils/text-entry.ts are the one check. A non-typing use disables the rule on
-  // its line with a reason. No baseline: enforced at zero.
+  // its line with a reason, which intent/require-disable-reason checks. No baseline:
+  // enforced at zero.
   {
     files: ['src/**/*.{js,ts,svelte}'],
     ignores: [...productionModuleIgnores, 'src/lib/utils/text-entry.ts'],
     plugins: { intent: intentPlugin },
-    rules: { 'intent/no-hand-written-typing-check': 'error' },
+    rules: {
+      'intent/no-hand-written-typing-check': 'error',
+      'intent/require-disable-reason': [
+        'error',
+        { rules: ['intent/no-hand-written-typing-check'] },
+      ],
+    },
   },
   // flushSync from an $effect cleanup, onDestroy callback, or action destroy()
   // flushes unrelated effects mid-teardown; any component mounted by that flush
