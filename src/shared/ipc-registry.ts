@@ -80,7 +80,6 @@ export const IPC_CHANNELS = {
     CLEANUP: 'agent:cleanup',
     GET_USER_RULES: 'agent:get-user-rules',
     GET_SPECIALIZATION_RULES: 'agent:get-specialization-rules',
-    GET_ACTIVE_STREAMS: 'agent:get-active-streams',
     TRACK_STARTED: 'agent:track-started',
     TRACK_COMPLETED: 'agent:track-completed',
     TRACK_ERROR: 'agent:track-error',
@@ -201,25 +200,21 @@ export const IPC_CHANNELS = {
   },
   // OpenCode Integration
   OPENCODE: {
-    CHECK_AVAILABILITY: 'opencode:check-availability',
     GET_MODELS: 'opencode:get-models',
   },
 
   // Claude Code Integration
   CLAUDE_CODE: {
-    CHECK_AVAILABILITY: 'claude-code:check-availability',
     GET_MODELS: 'claude-code:get-models',
   },
 
   // Codex Integration
   CODEX: {
-    CHECK_AVAILABILITY: 'codex:check-availability',
     GET_MODELS: 'codex:get-models',
   },
 
   // Cortex Integration
   CORTEX: {
-    CHECK_AVAILABILITY: 'cortex:check-availability',
     GET_MODELS: 'cortex:get-models',
   },
 
@@ -230,7 +225,6 @@ export const IPC_CHANNELS = {
 
   // Factory Droid Integration
   DROID: {
-    CHECK_AVAILABILITY: 'droid:check-availability',
     GET_MODELS: 'droid:get-models',
   },
 
@@ -525,7 +519,6 @@ export const IPC_CHANNELS = {
   FEATURE_CODES: {
     ACTIVATE: 'feature-codes:activate',
     GET_ACTIVE: 'feature-codes:get-active',
-    CLEAR: 'feature-codes:clear',
     DEACTIVATE: 'feature-codes:deactivate',
     RESTART_APP: 'feature-codes:restart-app',
   },

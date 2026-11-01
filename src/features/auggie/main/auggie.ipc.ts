@@ -2,119 +2,18 @@ import { ipcMain } from 'electron';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { MINIMUM_NODE_VERSION } from '../../../shared/constants/auggie';
 import { AUGGIE_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
 import { findAuggiePathAsync } from './auggie-path';
 import { hostExec } from '../../../shared/main/host-exec';
-import { getProviderAuthVerdict } from '../../../shared/main/provider-auth-status';
 import { getProviderModelsEnvelope } from '../../../main/utils/daemon-model-catalog';
-import { getBackendClient, getBackendClientForIpcEvent } from '../../backend/main/backend.ipc';
+import { getBackendClient } from '../../backend/main/backend.ipc';
 import { JsonRpcError } from '../../backend/main/json-rpc-errors';
 import { m } from '../../../shared/paraglide/messages.js';
 
 // Re-export path helpers for backwards compatibility with existing consumers.
 
 const logger = new Logger('AuggieIPC');
-
-// ============================================================================
-// Node.js Version Requirements
-// ============================================================================
-
-/**
- * Parse a semver version string into its components.
- * Prerelease suffixes (e.g., -beta.1, -rc.1) are ignored for comparison purposes.
- * Returns null if the version string is invalid.
- */
-function parseVersion(
-  versionString: string,
-): { major: number; minor: number; patch: number } | null {
-  // Extract version number from strings like "auggie version 0.14.0-beta.1 (commit abc123)"
-  // The regex captures major.minor.patch, ignoring any prerelease suffix
-  const match = versionString.match(/(\d+)\.(\d+)(?:\.(\d+))?/);
-  if (!match) return null;
-
-  return {
-    major: parseInt(match[1], 10),
-    minor: parseInt(match[2], 10),
-    patch: match[3] ? parseInt(match[3], 10) : 0,
-  };
-}
-
-/**
- * Compare two version strings.
- * Returns:
- *   -1 if version1 < version2
- *    0 if version1 === version2
- *    1 if version1 > version2
- *   null if either version is invalid
- */
-function compareVersions(version1: string, version2: string): number | null {
-  const v1 = parseVersion(version1);
-  const v2 = parseVersion(version2);
-
-  if (!v1 || !v2) return null;
-
-  if (v1.major !== v2.major) return v1.major > v2.major ? 1 : -1;
-  if (v1.minor !== v2.minor) return v1.minor > v2.minor ? 1 : -1;
-  if (v1.patch !== v2.patch) return v1.patch > v2.patch ? 1 : -1;
-
-  return 0;
-}
-
-/**
- * Check if a version meets the minimum required version.
- */
-function meetsMinimumVersion(version: string, minimum: string): boolean {
-  const comparison = compareVersions(version, minimum);
-  // If comparison is null (invalid version), assume it doesn't meet requirements
-  return comparison !== null && comparison >= 0;
-}
-
-/**
- * Check the installed Node.js version via the daemon's `host.exec`
- * (PROTOCOL §5.14).
- *
- * Post-P2 the daemon owns agent spawning (`agent.create` → `spawn.rs`) and
- * PATH resolution (`host.env`), so the `node` that `host.exec` resolves —
- * with the daemon's PATH-enriched env — is exactly the runtime the agent
- * will use. The earlier `rawExec(process.env)` workaround (which avoided
- * the app's enhanced PATH to match the launcher's PATH) is obsolete.
- */
-async function checkNodeVersion(): Promise<{
-  nodeVersion?: string;
-  nodeVersionOk: boolean;
-}> {
-  try {
-    const result = await hostExec('node', {
-      args: ['--version'],
-      timeoutMs: 5000,
-    });
-    if (result.timedOut) {
-      logger.warn('Node version probe (host.exec) timed out');
-      return { nodeVersionOk: false };
-    }
-    if (result.exitCode !== 0) {
-      logger.warn('Node not found on PATH (host.exec)', {
-        exitCode: result.exitCode,
-        stderr: result.stderr,
-      });
-      return { nodeVersionOk: false };
-    }
-    const version = (result.stdout || '').trim();
-    if (!version) {
-      return { nodeVersionOk: false };
-    }
-    const versionOk = meetsMinimumVersion(version, MINIMUM_NODE_VERSION);
-    logger.info('Node.js version check (host.exec)', { version, versionOk });
-    return { nodeVersion: version, nodeVersionOk: versionOk };
-  } catch (err) {
-    logger.warn('Node version probe (host.exec) failed', {
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return { nodeVersionOk: false };
-  }
-}
 
 // ============================================================================
 // Main Process Handlers
@@ -137,138 +36,6 @@ export function setupAuggieIPC() {
       };
     }
   });
-
-  // Install auggie. Local install (npm-install / binary download / codesign)
-  // is retired per Decision 3: the FE returns platform-specific instructions
-  // for the user to run in their own terminal. The envelope shape
-  // ({ success, error, errorType, data }) is preserved so existing renderers
-  // keep functioning; `data.instructions` / `data.command` carry the
-  // actionable payload for callers that render the new UX.
-  ipcMain.handle(AUGGIE_CHANNELS.INSTALL, async () => {
-    const platform = process.platform;
-    const command =
-      platform === 'win32'
-        ? 'npm install -g @augmentcode/auggie'
-        : 'npm install -g @augmentcode/auggie';
-    const nodeCheck = await checkNodeVersion();
-
-    const instructions: string[] = [];
-    if (!nodeCheck.nodeVersionOk) {
-      const major = MINIMUM_NODE_VERSION.split('.')[0];
-      instructions.push(
-        nodeCheck.nodeVersion
-          ? m.auggie_ipc_installNodeFound_instruction({ major, version: nodeCheck.nodeVersion })
-          : m.auggie_ipc_installNodeNotFound_instruction({ major }),
-      );
-    }
-    instructions.push(
-      m.auggie_ipc_runInstall_instruction({ command }),
-      m.auggie_ipc_verifyInstall_instruction(),
-    );
-
-    const errorMessage = instructions.join(' ');
-    logger.info('Auggie install: returning manual-install instructions', {
-      platform,
-      nodeVersionOk: nodeCheck.nodeVersionOk,
-    });
-
-    return {
-      success: false,
-      error: errorMessage,
-      errorType: 'manual_install_required' as const,
-      data: {
-        instructions,
-        command,
-        platform,
-        minimumNodeVersion: MINIMUM_NODE_VERSION,
-      },
-    };
-  });
-
-  // Authenticate with Augment. The FE-side interactive OAuth flow
-  // (spawning `auggie login`, stdout scraping, JSON paste, direct token
-  // exchange) is retired per Decision 3. The FE now detects auth via
-  // `host.checkAuggie` + `host.providerAuthStatus` and returns instructions
-  // for the user to run `auggie login` themselves.
-  //
-  // The `{ action }` param is preserved for renderer compat: `start` and
-  // `complete` return the instruction payload; `poll` re-runs detection so
-  // the setup UI can show "logged in" once the user finishes the flow.
-  ipcMain.handle(
-    AUGGIE_CHANNELS.AUTHENTICATE,
-    async (event, _params?: { action?: 'start' | 'complete' | 'poll'; authResponse?: string }) => {
-      // Re-check via the calling window's daemon so callers get the current
-      // install state of the backend they are actually connected to.
-      const { client: backendClient } = getBackendClientForIpcEvent(event);
-      let auggiePath: string | null = null;
-      let installed = false;
-      try {
-        const check = await backendClient.request<{
-          available: boolean;
-          path?: string;
-        }>('host.checkAuggie');
-        installed = Boolean(check?.available);
-        if (typeof check?.path === 'string' && check.path.trim()) {
-          auggiePath = check.path.trim();
-        }
-      } catch (error) {
-        logger.warn('host.checkAuggie failed during authenticate', {
-          error: error instanceof Error ? error.message : String(error),
-        });
-        return {
-          success: false,
-          error: m.auggie_ipc_daemonUnreachable_error(),
-        };
-      }
-
-      if (!installed || !auggiePath) {
-        return {
-          success: false,
-          error: m.auggie_ipc_notInstalled_error(),
-          errorType: 'not_installed' as const,
-          data: {
-            instructions: [
-              m.auggie_ipc_installFirst_instruction(),
-              m.auggie_ipc_thenLogin_instruction(),
-            ],
-            command: 'auggie login',
-          },
-        };
-      }
-
-      // Auth verdict via the daemon (`host.providerAuthStatus`, force to
-      // bypass the daemon's cache — the user may have just logged in). If
-      // already logged in, tell the renderer so it can skip the login step.
-      // Otherwise return the instruction to run `auggie login` interactively
-      // (the daemon cannot host the OAuth interactive TTY session; the user
-      // runs it in their own terminal).
-      const authenticated =
-        (await getProviderAuthVerdict('auggie', { force: true }, backendClient))?.authenticated ===
-        true;
-
-      if (authenticated) {
-        return {
-          success: true,
-          data: { authenticated: true, completed: true },
-        };
-      }
-
-      return {
-        success: false,
-        error: m.auggie_ipc_loginRequired_error(),
-        errorType: 'manual_login_required' as const,
-        data: {
-          authenticated: false,
-          instructions: [
-            m.auggie_ipc_runLogin_instruction({ path: auggiePath }),
-            m.auggie_ipc_completeBrowserFlow_instruction(),
-          ],
-          command: 'auggie login',
-          auggiePath,
-        },
-      };
-    },
-  );
 
   // Get available models for auggie — daemon-owned catalog (PROTOCOL §6.7)
   ipcMain.handle(

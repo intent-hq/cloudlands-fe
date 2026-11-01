@@ -63,7 +63,6 @@ import {
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { broadcastToBrowserIpcClients } from '../../../main/browser-ipc-broadcast-adapter';
 import { execFileAsync } from '../../../shared/git/git-env';
-import { findBinary } from '../../../shared/main/find-binary';
 import { getBackendClient, getBackendIdForIpcSender } from '../../backend/main/backend.ipc';
 import { hostExec } from '../../../shared/main/host-exec';
 import { hostExecStream } from '../../../shared/main/host-exec-stream';
@@ -82,7 +81,6 @@ import {
 } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
 import { m } from '../../../shared/paraglide/messages.js';
-import { MINIMUM_NODE_VERSION } from '../../../shared/constants/auggie';
 import { findVSCodeAsync } from '../../../shared/main/async-utils';
 import { withDiffTempFiles } from '../../ide/main/diff-temp-files.service';
 import {
@@ -92,7 +90,6 @@ import {
   getWindowTitleBarOptions,
   setWindowTranslucencyEnabled,
 } from '../../../shared/main/window-appearance';
-import { meetsMinimumVersion } from '../../../shared/utils/version-compare';
 import { posixSingleQuote } from '../../../shared/utils/posix-single-quote';
 import { resolveAppIconPath } from '../../../main/utils/resolve-app-icon';
 import {
@@ -3118,96 +3115,6 @@ export function setupSystemIPC() {
       SYSTEM_CHANNELS.EXECUTE_COMMAND_STREAMING,
     ),
   );
-
-  // Check git availability — delegated to the daemon host so detection
-  // matches the machine actually running git (and is consistent across
-  // local/remote transports). Mapped back to the existing IPC contract.
-  // Only a daemon-reported probe answer may fold to available:false; a
-  // transport failure (RPC timeout / daemon unreachable) folds to
-  // available:'unknown' so the UI never renders "Git is not installed"
-  // when the check simply couldn't run.
-  ipcMain.handle(SYSTEM_CHANNELS.CHECK_GIT, async () => {
-    try {
-      const result = await getBackendClient().request<{ available: boolean; version?: string }>(
-        'host.checkGit',
-      );
-      const available = result?.available === true;
-      const version = typeof result?.version === 'string' ? result.version : undefined;
-      return {
-        success: true,
-        data: available ? { available: true, version } : { available: false },
-      };
-    } catch (error) {
-      logger.warn('host.checkGit failed', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return { success: true, data: { available: 'unknown' } };
-    }
-  });
-
-  // Check Node.js availability + minimum version — delegated to the daemon
-  // host via the uncached host.checkNode probe (host.checkGit idiom) so a
-  // newly installed node is detected without an app restart. Mirrors
-  // CHECK_GIT: a missing binary or failed probe folds to available:false,
-  // never an error.
-  ipcMain.handle(SYSTEM_CHANNELS.CHECK_NODE, async () => {
-    try {
-      const result = await getBackendClient().request<{ available: boolean; version?: string }>(
-        'host.checkNode',
-      );
-      if (result?.available !== true) {
-        return { success: true, data: { available: false, versionOk: false } };
-      }
-      const version =
-        typeof result.version === 'string' ? result.version.trim().replace(/^v/, '') : undefined;
-      return {
-        success: true,
-        data: {
-          available: true,
-          version,
-          versionOk: version ? meetsMinimumVersion(version, MINIMUM_NODE_VERSION) : false,
-        },
-      };
-    } catch (error) {
-      logger.warn('host.checkNode failed', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return { success: true, data: { available: false, versionOk: false } };
-    }
-  });
-
-  // Check GitHub CLI (gh) availability — delegated to the daemon host via
-  // the uncached host.checkGh probe (host.checkGit idiom) like CHECK_NODE.
-  // Informational only: the onboarding gate never blocks on gh, and a
-  // missing binary or failed probe folds to available:false, never an error.
-  ipcMain.handle(SYSTEM_CHANNELS.CHECK_GH, async () => {
-    try {
-      const result = await getBackendClient().request<{ available: boolean; version?: string }>(
-        'host.checkGh',
-      );
-      const available = result?.available === true;
-      const version = typeof result?.version === 'string' ? result.version : undefined;
-      return {
-        success: true,
-        data: available ? { available: true, version } : { available: false },
-      };
-    } catch (error) {
-      logger.warn('host.checkGh failed', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return { success: true, data: { available: false } };
-    }
-  });
-
-  // Check rtk availability
-  ipcMain.handle(SYSTEM_CHANNELS.CHECK_RTK, async () => {
-    try {
-      const rtkPath = await findBinary('rtk');
-      return { success: true, data: { available: rtkPath !== null } };
-    } catch {
-      return { success: true, data: { available: false } };
-    }
-  });
 
   // List available system fonts using font-list module
   ipcMain.handle(

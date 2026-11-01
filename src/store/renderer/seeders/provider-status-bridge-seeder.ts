@@ -1,7 +1,6 @@
 /**
  * Provider status bridge — routes `providers:get-availability`,
- * `providers:check-single`, `providers:get-paths`, the per-provider
- * `*:check-availability` probes, and the `auggie:install` /
+ * `providers:check-single`, `providers:get-paths`, and the `auggie:install` /
  * `auggie:authenticate` guidance flows to real daemon probes
  * (`host.checkAuggie` / `host.toolAvailability` / `host.findBinary` /
  * `host.providerAuthStatus`, PROTOCOL §5.14) instead of
@@ -52,15 +51,7 @@
  * first render.
  */
 import { registerMockIpcHandler } from '$shared/ipc-mock-router';
-import {
-  AUGGIE_CHANNELS,
-  CLAUDE_CODE_CHANNELS,
-  CODEX_CHANNELS,
-  CORTEX_CHANNELS,
-  DROID_CHANNELS,
-  OPENCODE_CHANNELS,
-  PROVIDERS_CHANNELS,
-} from '$shared/ipc/channels';
+import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { store as appStore } from '$store/renderer/store';
 import {
@@ -550,35 +541,6 @@ registerMockIpcHandler(PROVIDERS_CHANNELS.CHECK_SINGLE, async (arg) => {
     };
   }
 });
-
-/**
- * Per-provider `*:check-availability` (the `check<Provider>Availability`
- * model clients) — availability probes against the daemon host, mirroring
- * the main handlers' discovery or binary resolution. Callers read `available`
- * and fold a rejection to `false` with a warning log, so daemon RPC failures propagate
- * instead of being masked as "not installed".
- */
-const CHECK_AVAILABILITY_CHANNELS: Record<string, string> = {
-  'claude-code': CLAUDE_CODE_CHANNELS.CHECK_AVAILABILITY,
-  codex: CODEX_CHANNELS.CHECK_AVAILABILITY,
-  cortex: CORTEX_CHANNELS.CHECK_AVAILABILITY,
-  opencode: OPENCODE_CHANNELS.CHECK_AVAILABILITY,
-  droid: DROID_CHANNELS.CHECK_AVAILABILITY,
-};
-
-for (const [providerId, channel] of Object.entries(CHECK_AVAILABILITY_CHANNELS)) {
-  registerMockIpcHandler(channel, async () => {
-    const found = await readProviderStatus(async () => {
-      if (selectHostRole.select(appStore.state) === 'member' || providerId === 'claude-code') {
-        return providerStatusFromDiscovery(await fetchProviderDiscovery(), providerId);
-      }
-      return backendRequest<HostCheckResult>('host.findBinary', {
-        name: PROVIDER_BINARIES[providerId],
-      });
-    });
-    return { success: true, available: found?.available === true };
-  });
-}
 
 /** Manual install step surfaced by the INSTALL / AUTHENTICATE instructions. */
 const AUGGIE_INSTALL_COMMAND = 'npm install -g @augmentcode/auggie';
