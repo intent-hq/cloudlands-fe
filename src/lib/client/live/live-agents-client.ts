@@ -38,6 +38,7 @@ import type {
   SubscriptionHandler,
   Unsubscribe,
   UserMessageIndexItem,
+  UserMessageIndexPageOptions,
   UserMessageIndexResult,
 } from '../app-client';
 import { backendRequest } from './backend-transport';
@@ -401,10 +402,11 @@ export class LiveAgentsClient implements AgentsClient {
     return block;
   }
 
-  // Full user-message index (`agent.listUserMessages`, §5.5): every
-  // user-role row as a lightweight `{ id, preview, createdAt, metadata? }`
-  // item, oldest→newest, deliberately unpaged. `previewChars` only rides
-  // along when supplied so the daemon default (300) applies otherwise.
+  // User-message index (`agent.listUserMessages`, §5.5): user-role rows as
+  // lightweight `{ id, preview, createdAt, metadata? }` items,
+  // oldest→newest — the whole index unless `page` asks for the newest rows
+  // only. `previewChars` and the page params only ride along when supplied
+  // so the daemon defaults apply otherwise.
   // Failures fold into a typed result instead of throwing so the navigator
   // can silently degrade to its tail-derived items: -32601 (older daemon
   // lacking the method) is marked `unsupported: true`; any other failure
@@ -413,17 +415,19 @@ export class LiveAgentsClient implements AgentsClient {
     agentId: string,
     previewChars?: number,
     workspaceId?: string,
+    page?: UserMessageIndexPageOptions,
   ): Promise<UserMessageIndexResult> {
     const params: Record<string, unknown> = {
       agentId,
       ...(workspaceId !== undefined ? { workspaceId } : {}),
     };
     if (previewChars !== undefined) params.previewChars = previewChars;
+    if (page?.limit !== undefined) params.limit = page.limit;
+    if (page?.nextToken !== undefined) params.nextToken = page.nextToken;
     try {
-      const result = await backendRequest<{ items?: unknown[]; total?: unknown } | undefined>(
-        'agent.listUserMessages',
-        params,
-      );
+      const result = await backendRequest<
+        { items?: unknown[]; total?: unknown; nextToken?: unknown } | undefined
+      >('agent.listUserMessages', params);
       const rawItems = Array.isArray(result?.items) ? result.items : [];
       const items = rawItems
         .filter((raw): raw is Record<string, unknown> => !!raw && typeof raw === 'object')
@@ -441,6 +445,9 @@ export class LiveAgentsClient implements AgentsClient {
           return item;
         });
       const total = typeof result?.total === 'number' ? result.total : items.length;
+      const nextToken = result?.nextToken;
+      if (typeof nextToken === 'string' || nextToken === null)
+        return { ok: true, items, total, nextToken };
       return { ok: true, items, total };
     } catch (error) {
       const unsupported =

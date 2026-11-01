@@ -2714,6 +2714,48 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
       expect(result).toEqual({ ok: true, items: [], total: 0 });
     });
 
+    it('forwards paging params and surfaces nextToken (string or null)', async () => {
+      backend.onRequest('agent.listUserMessages', (params) => ({
+        agentId: 'agent-1',
+        items: [{ id: 'msg-9', preview: 'newest', createdAt: '2026-08-09T00:00:00Z' }],
+        total: 1,
+        nextToken: (params as { nextToken?: string }).nextToken ? null : 'um1:9',
+      }));
+      const client = new LiveAgentsClient();
+
+      const first = await client.listUserMessages('agent-1', 80, 'ws-1', { limit: 50 });
+      expect(backend.requests[0]).toEqual({
+        method: 'agent.listUserMessages',
+        params: { agentId: 'agent-1', workspaceId: 'ws-1', previewChars: 80, limit: 50 },
+      });
+      expect(first).toMatchObject({ ok: true, total: 1, nextToken: 'um1:9' });
+
+      const older = await client.listUserMessages('agent-1', 80, 'ws-1', {
+        limit: 50,
+        nextToken: 'um1:9',
+      });
+      expect(backend.requests[1].params).toEqual({
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        previewChars: 80,
+        limit: 50,
+        nextToken: 'um1:9',
+      });
+      expect(older).toMatchObject({ ok: true, nextToken: null });
+    });
+
+    it('omits nextToken when the daemon predates paging', async () => {
+      backend.onRequest('agent.listUserMessages', () => ({
+        agentId: 'agent-1',
+        items: [],
+        total: 0,
+      }));
+      const client = new LiveAgentsClient();
+
+      const result = await client.listUserMessages('agent-1', undefined, undefined, { limit: 5 });
+      expect(result).toEqual({ ok: true, items: [], total: 0 });
+    });
+
     it('marks an old daemon lacking the method as unsupported (no throw)', async () => {
       // -32601 = Method not found: the daemon lacks `agent.listUserMessages`. The
       // typed failure lets the navigator degrade to tail-only items.

@@ -13,7 +13,7 @@ for (const unavailable of [false, true]) {
     const requests = async (): Promise<
       Array<{
         method: string;
-        params: { scope?: string; previewChars?: number; workspaceId?: string };
+        params: { scope?: string; previewChars?: number; workspaceId?: string; limit?: number };
       }>
     > => JSON.parse((await host.getAttribute('data-requests'))!);
     await expect
@@ -39,6 +39,7 @@ for (const unavailable of [false, true]) {
     for (const { params } of calls.filter(({ method }) => method === 'agent.listUserMessages')) {
       expect(params.workspaceId).toBeTruthy();
       expect(params.previewChars).toBe(80);
+      expect(params.limit).toBe(50);
     }
     await testInfo.attach('dock-recency-boundary.json', {
       body: JSON.stringify(
