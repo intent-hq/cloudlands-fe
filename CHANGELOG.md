@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.264.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.263.0...v2.264.0) (2026-11-01)
+
+
+### 🚀 Features
+
+* **mentions:** open folder chips in notes in the Files sidebar ([#3953](https://github.com/intent-hq/cloudlands-fe/issues/3953)) ([1e0a761](https://github.com/intent-hq/cloudlands-fe/commit/1e0a761a1b95f5912a32665a88f8a177a6d6bdf0))
+
+
+### 🐛 Bug Fixes
+
+* **browser:** keep idle offscreen tabs under an opacity-0 layer ([#3952](https://github.com/intent-hq/cloudlands-fe/issues/3952)) ([a605afc](https://github.com/intent-hq/cloudlands-fe/commit/a605afc153da9dff232fac712b8ceb531cada45a))
+* **scripts:** reuse npm_execpath only when it points at pnpm ([#3954](https://github.com/intent-hq/cloudlands-fe/issues/3954)) ([6cee7d8](https://github.com/intent-hq/cloudlands-fe/commit/6cee7d845608d50ff7df830bf277c27180e59773))
+
 ## [2.263.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.262.2...v2.263.0) (2026-10-31)
 
 
