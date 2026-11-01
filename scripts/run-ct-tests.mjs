@@ -39,11 +39,13 @@
  * The launcher pins `PLAYWRIGHT_HTML_OPEN=never` unless the caller opts in
  * from an interactive terminal (see `usage()`).
  *
- * Test runs hold the same host-wide `ct-<CT_PORT>` lock `verify:changed` uses
+ * Test runs hold the same host-wide `ct-<port>` lock `verify:changed` uses
  * (intent-hq/intent#4964): the CT runtime reuses any endpoint already
  * listening on its port, so an unlocked second run from another worktree
  * would test against that tree's component registry and then fail with
- * ECONNREFUSED when the first run exits.
+ * ECONNREFUSED when the first run exits. Without CT_PORT the port is derived
+ * from the worktree (scripts/verification-lock.mjs `ctPort`), so separate
+ * worktrees do not contend for one lock by default.
  *
  * Before a test run it also provisions the gitignored Paraglide bundle
  * (src/shared/paraglide) through the same stale-aware `ensureI18nFresh`
@@ -96,11 +98,13 @@ export function usage() {
     '  --help, -h        Show this help.',
     '',
     'Environment:',
-    '  CT_PORT           Component server port (default 3100). The port keys the component',
-    '                    server, the host-wide ct-<CT_PORT> lock verify:changed uses, and the',
-    '                    playwright/.cache-<CT_PORT> bundle cache (bare playwright/.cache when',
-    '                    unset or blank), so runs on distinct ports never share a server or a',
-    '                    bundle — even within one worktree; use a free port to run concurrently.',
+    '  CT_PORT           Component server port. Default: a per-worktree port hashed from',
+    '                    this package path (10100-14099), or 3100 on CI. The port keys the',
+    '                    component server and the host-wide ct-<port> lock verify:changed uses,',
+    '                    so separate worktrees never share either. An explicit CT_PORT also',
+    '                    keys the playwright/.cache-<CT_PORT> bundle cache (bare',
+    '                    playwright/.cache when unset or blank); set one to run two CT runs',
+    '                    concurrently in the same worktree.',
     '  VERIFY_CHANGED_LOCK_TIMEOUT_MS',
     '                    How long to wait for that lock (default 240000, capped at 300000).',
     `  ${CT_HTML_REPORT_ENV}=open|always|on-failure|never`,
@@ -549,7 +553,7 @@ async function main(argv) {
       console.error(
         `[run-ct-tests] ${error instanceof Error ? error.message : error}\n` +
           `[run-ct-tests] another CT run owns port ${ctPort()}; wait for it to finish or ` +
-          'set a free CT_PORT (two worktrees must not share one component server)',
+          'set a free CT_PORT (two runs must not share one component server)',
       );
       process.exit(1);
     }
