@@ -509,7 +509,7 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
     expect(backendRequestMock.mock.calls.filter((c) => c[0] === 'agent.sendMessage')).toHaveLength(
       1,
     );
-  }, 30000);
+  });
 
   it('queues the tagged answer via agent.queueMessage while the agent is responding', async () => {
     // The asking turn ended and the daemon wrote the marker, but a later
@@ -589,7 +589,7 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
       messageMetadata: { type: 'question_answers', answeredQuestionsMessageId: 'msg-a1' },
     });
     expect(backendRequestMock.mock.calls.map((c) => c[0])).not.toContain('agent.sendMessage');
-  }, 30000);
+  });
 });
 
 describe('marker-compatible wizard transitions', () => {

@@ -11,7 +11,6 @@ const route = vi.hoisted(() => ({
 }));
 vi.mock('$app/state', () => ({ page: route }));
 afterEach(cleanup);
-const previewReadyWait = { timeout: 10_000 };
 
 it('groups discovery levels while preserving existing destinations', () => {
   const groups = buildCatalogNavigation(catalogEntries);
@@ -107,11 +106,10 @@ it.each([
       expect(regions.length).toBeGreaterThan(0);
       for (const region of regions) expect(region.childElementCount).toBeGreaterThan(0);
       return regions;
-    }, previewReadyWait);
+    });
     expect(getCatalogEntry(slug)?.fixtures).toHaveLength(previews.length);
     for (const preview of previews) expect(preview.querySelector(landmark)).not.toBeNull();
   },
-  15_000,
 );
 
 it('resolves the legacy spinner URL to the loading indicator without dropping its query', async () => {
