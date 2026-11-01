@@ -1490,6 +1490,7 @@
                 branchStatus={setupBranchStatus}
                 agentStatus={setupAgentStatus}
                 skipIsolation={onboardingSkipIsolation}
+                plainFolder={!!projectSelection?.plainFolder}
                 progressId={onboardingCreateProgressId ?? undefined}
               />
             {/key}

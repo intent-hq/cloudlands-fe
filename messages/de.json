@@ -8036,5 +8036,7 @@
   "daemonStartup_unchanged_description": "Indizierung läuft; Anzahl abgeschlossener Notizen unverändert",
   "daemonStartup_finalizing_description": "Datenbankarbeiten werden abgeschlossen und Dienste gestartet. Die App öffnet sich automatisch, sobald sie bereit ist.",
   "daemonStartup_failed_description": "Details finden Sie in den Daemon-Protokollen.",
-  "daemonStartup_unavailable_description": "Der aktuelle Startstatus konnte nicht empfangen werden. Verbindung wird wiederhergestellt…"
+  "daemonStartup_unavailable_description": "Der aktuelle Startstatus konnte nicht empfangen werden. Verbindung wird wiederhergestellt…",
+  "onboarding_setupCard_workingInFolder_before": "Direktes Arbeiten in deinem Ordner",
+  "onboarding_setupCard_plainFolderInPlace_label": "Intent hat keine Kopie und keinen Branch erstellt: Agenten ändern deine Dateien direkt, ohne Rückgängig-Möglichkeit."
 }

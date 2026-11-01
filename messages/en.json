@@ -8036,5 +8036,7 @@
   "daemonStartup_unchanged_description": "Still indexing; completed-note count unchanged",
   "daemonStartup_finalizing_description": "Finishing database work and starting services. The app will open automatically when ready.",
   "daemonStartup_failed_description": "Check the daemon logs for details.",
-  "daemonStartup_unavailable_description": "The latest startup status could not be received. Reconnecting…"
+  "daemonStartup_unavailable_description": "The latest startup status could not be received. Reconnecting…",
+  "onboarding_setupCard_workingInFolder_before": "Working directly in your folder",
+  "onboarding_setupCard_plainFolderInPlace_label": "Intent made no copy and no branch: agents change your files in place, and there is no undo."
 }

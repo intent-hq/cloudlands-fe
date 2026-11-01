@@ -8036,5 +8036,7 @@
   "daemonStartup_unchanged_description": "Indexation en cours ; nombre de notes terminées inchangé",
   "daemonStartup_finalizing_description": "Finalisation de la base de données et démarrage des services. L’application s’ouvrira automatiquement une fois prête.",
   "daemonStartup_failed_description": "Consultez les journaux du daemon pour plus de détails.",
-  "daemonStartup_unavailable_description": "Impossible de recevoir le dernier état du démarrage. Reconnexion…"
+  "daemonStartup_unavailable_description": "Impossible de recevoir le dernier état du démarrage. Reconnexion…",
+  "onboarding_setupCard_workingInFolder_before": "Travail direct dans votre dossier",
+  "onboarding_setupCard_plainFolderInPlace_label": "Intent n’a créé ni copie ni branche : les agents modifient vos fichiers directement, sans possibilité d’annulation."
 }

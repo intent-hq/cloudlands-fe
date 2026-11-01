@@ -469,6 +469,7 @@
   import { getQueueSurfaceAuthors } from '$lib/utils/message-authorship';
   import { isAutomatedChatMessage } from '$lib/utils/previous-user-message';
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
+  import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
   import { store as appStore } from '$store/renderer/store';
   import { rememberWorkspaceInitializerRecentSpecialist } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import { getEffectiveShortcut } from '$lib/utils/effective-shortcuts';
@@ -1022,6 +1023,7 @@
     specialistId?: string;
     setupScript?: string;
     skipWorktree?: boolean;
+    plainFolder?: boolean;
   } | null>(null);
 
   function handleFocusSetupTerminal() {
@@ -4449,6 +4451,7 @@
           // (PROTOCOL §5.25); the card renders the script text.
           setupScript: workspaceSetupScriptText(workspace.setupScript),
           skipWorktree: workspace.skipWorktree,
+          plainFolder: isPlainFolderWorkspace(workspace),
         };
         // `setupScript` is detail-only (absent from slim `workspace.list`
         // rows), so an undefined value on the list-backed prop does not mean
@@ -6752,6 +6755,7 @@
                 ? handleFocusSetupTerminal
                 : undefined}
               skipIsolation={onboardingContext.skipWorktree}
+              plainFolder={onboardingContext.plainFolder}
             />
           </div>
         {:else if shouldShowTranscriptSkeleton( { isFirstHydrationLoading, hasSession: Boolean($agentSession$), hydrationSettled: $transcriptHydration$ === 'settled', hasMessages: $agentMessages$.length > 0 || pendingConversationMessages.length > 0, isStreaming: $agentSessionIsStreaming$, hasPendingInitialPrompt: Boolean(pendingInitialPrompt) } )}
@@ -6794,6 +6798,7 @@
                         ? handleFocusSetupTerminal
                         : undefined}
                       skipIsolation={onboardingContext.skipWorktree}
+                      plainFolder={onboardingContext.plainFolder}
                     />
                   </div>
                 {/if}
@@ -6917,6 +6922,7 @@
                         ? handleFocusSetupTerminal
                         : undefined}
                       skipIsolation={onboardingContext.skipWorktree}
+                      plainFolder={onboardingContext.plainFolder}
                     />
                   </div>
                 {/if}
@@ -7101,6 +7107,7 @@
                       ? handleFocusSetupTerminal
                       : undefined}
                     skipIsolation={onboardingContext.skipWorktree}
+                    plainFolder={onboardingContext.plainFolder}
                   />
                 </div>
               {/if}

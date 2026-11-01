@@ -8036,5 +8036,7 @@
   "daemonStartup_unchanged_description": "인덱싱 중입니다. 완료된 노트 수는 변경되지 않았습니다",
   "daemonStartup_finalizing_description": "데이터베이스 작업을 마무리하고 서비스를 시작하는 중입니다. 준비되면 앱이 자동으로 열립니다.",
   "daemonStartup_failed_description": "자세한 내용은 데몬 로그를 확인하세요.",
-  "daemonStartup_unavailable_description": "최신 시작 상태를 받지 못했습니다. 다시 연결 중…"
+  "daemonStartup_unavailable_description": "최신 시작 상태를 받지 못했습니다. 다시 연결 중…",
+  "onboarding_setupCard_workingInFolder_before": "폴더에서 직접 작업 중:",
+  "onboarding_setupCard_plainFolderInPlace_label": "Intent는 복사본이나 브랜치를 만들지 않았습니다. 에이전트가 파일을 직접 변경하며 실행 취소할 수 없습니다."
 }

@@ -84,6 +84,11 @@
     /** If true, the workspace works directly on the branch without an isolated checkout (worktree or CoW clone) */
     skipIsolation?: boolean;
     /**
+     * Plain-folder workspace (Labs): agents work directly in the user's folder,
+     * with no isolated copy, no branch and no undo.
+     */
+    plainFolder?: boolean;
+    /**
      * FE-minted correlation id of the in-flight `workspace.create` (echoed on
      * git:clone:progress frames, PROTOCOL §5.1). When set and frames arrive,
      * the repo step shows the live stage label + percent + bar; without it
@@ -112,6 +117,7 @@
     branchStatus = 'pending',
     agentStatus = 'pending',
     skipIsolation = false,
+    plainFolder = false,
     progressId,
   }: Props = $props();
 
@@ -157,7 +163,8 @@
   );
 
   const steps = $derived.by(() => {
-    const all: StepStatus[] = [repoStatus, branchStatus];
+    // A plain folder has no branch step.
+    const all: StepStatus[] = plainFolder ? [repoStatus] : [repoStatus, branchStatus];
     if (setupScriptStatus) all.push(setupScriptStatus);
     all.push(agentStatus);
     return all;
@@ -319,7 +326,7 @@
             data-testid="setup-card-progress-bar"
           ></div>
         </div>
-      {:else if skipIsolation}
+      {:else if skipIsolation || plainFolder}
         {m.onboarding_setupCard_opening_before()}
         {@render repoNameCopyable(m.onboarding_setupCard_opening_after())}
       {:else}
@@ -327,7 +334,28 @@
       {/if}
     {/snippet}
     {#snippet repoDone()}
-      {#if skipIsolation}
+      {#if plainFolder}
+        {@const folderPath = worktreePath || repoPath}
+        <span data-testid="setup-card-plain-folder">
+          {m.onboarding_setupCard_workingInFolder_before()}
+          {#if folderPath}
+            <OpenComboButton
+              filePath={folderPath}
+              {workspaceId}
+              isDirectory={true}
+              variant="sidebar"
+              compact
+              inline
+              class="setup-path"
+            >
+              {@render referenceLabel(shortenPath(folderPath), '.')}
+            </OpenComboButton>
+          {:else}
+            {repoName}.
+          {/if}
+          {m.onboarding_setupCard_plainFolderInPlace_label()}
+        </span>
+      {:else if skipIsolation}
         {m.onboarding_setupCard_workingDirectlyOn_before()}
         <code class="text-sm bg-secondary py-1 px-1.5">{displayBranch}</code>
         {#if worktreePath}{' '}{m.onboarding_setupCard_at_label()}
@@ -361,7 +389,7 @@
     {/snippet}
 
     <!-- Step 2: Branch -->
-    {#if branchStatus !== 'pending' && !skipIsolation}
+    {#if branchStatus !== 'pending' && !skipIsolation && !plainFolder}
       {@render stepRow(branchStatus, faCodeBranch, '', branchActive, branchDone)}
     {/if}
     {#snippet branchActive()}

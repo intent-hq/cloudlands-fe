@@ -8036,5 +8036,7 @@
   "daemonStartup_unchanged_description": "仍在建立索引；已完成筆記數未變更",
   "daemonStartup_finalizing_description": "正在完成資料庫作業並啟動服務。準備就緒後，應用程式將自動開啟。",
   "daemonStartup_failed_description": "請查看守護程序記錄以瞭解詳情。",
-  "daemonStartup_unavailable_description": "未能收到最新啟動狀態。正在重新連線…"
+  "daemonStartup_unavailable_description": "未能收到最新啟動狀態。正在重新連線…",
+  "onboarding_setupCard_workingInFolder_before": "直接在你的資料夾中工作：",
+  "onboarding_setupCard_plainFolderInPlace_label": "Intent 未建立副本或分支：代理程式會直接修改你的檔案，且無法復原。"
 }

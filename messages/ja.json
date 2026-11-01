@@ -8036,5 +8036,7 @@
   "daemonStartup_unchanged_description": "インデックス作成中です。完了したノート数は変わっていません",
   "daemonStartup_finalizing_description": "データベース処理を完了し、サービスを起動しています。準備ができるとアプリが自動的に開きます。",
   "daemonStartup_failed_description": "詳細はデーモンのログを確認してください。",
-  "daemonStartup_unavailable_description": "最新の起動状態を受信できませんでした。再接続中…"
+  "daemonStartup_unavailable_description": "最新の起動状態を受信できませんでした。再接続中…",
+  "onboarding_setupCard_workingInFolder_before": "フォルダーで直接作業中:",
+  "onboarding_setupCard_plainFolderInPlace_label": "Intent はコピーもブランチも作成していません。エージェントはファイルを直接変更し、元に戻すことはできません。"
 }

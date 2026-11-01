@@ -8036,5 +8036,7 @@
   "daemonStartup_unchanged_description": "La indexación continúa; el número de notas completadas no ha cambiado",
   "daemonStartup_finalizing_description": "Finalizando la base de datos e iniciando los servicios. La aplicación se abrirá automáticamente cuando esté lista.",
   "daemonStartup_failed_description": "Consulta los registros del daemon para obtener más información.",
-  "daemonStartup_unavailable_description": "No se pudo recibir el último estado de inicio. Reconectando…"
+  "daemonStartup_unavailable_description": "No se pudo recibir el último estado de inicio. Reconectando…",
+  "onboarding_setupCard_workingInFolder_before": "Trabajando directamente en tu carpeta",
+  "onboarding_setupCard_plainFolderInPlace_label": "Intent no creó ninguna copia ni rama: los agentes modifican tus archivos directamente y no se puede deshacer."
 }

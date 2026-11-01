@@ -8036,5 +8036,7 @@
   "daemonStartup_unchanged_description": "仍在建立索引；已完成笔记数未变化",
   "daemonStartup_finalizing_description": "正在完成数据库操作并启动服务。准备就绪后，应用将自动打开。",
   "daemonStartup_failed_description": "请查看守护进程日志以了解详情。",
-  "daemonStartup_unavailable_description": "未能收到最新启动状态。正在重新连接…"
+  "daemonStartup_unavailable_description": "未能收到最新启动状态。正在重新连接…",
+  "onboarding_setupCard_workingInFolder_before": "直接在你的文件夹中工作：",
+  "onboarding_setupCard_plainFolderInPlace_label": "Intent 未创建副本或分支：智能体会直接修改你的文件，且无法撤销。"
 }
