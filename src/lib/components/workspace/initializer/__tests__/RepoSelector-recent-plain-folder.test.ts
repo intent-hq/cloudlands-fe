@@ -369,7 +369,7 @@ describe('RepoSelector new folder classification in the browser build', () => {
     const rendered = render(RepoSelector, { props: { plainFolderMode: true, onchange } });
     await fireEvent.click(rendered.container.querySelector('button')!);
     await waitFor(() => expect(screen.getByText(DROPDOWN_HEADING)).toBeTruthy());
-    await fireEvent.click(screen.getByRole('tab', { name: 'New folder' }));
+    await fireEvent.click(screen.getByRole('tab', { name: 'New', exact: true }));
     const name = await waitFor(() => screen.getByPlaceholderText('new-project'));
     await fireEvent.input(name, { target: { value: 'journal' } });
     return { ...rendered, onchange };
