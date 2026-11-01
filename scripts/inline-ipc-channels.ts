@@ -41,9 +41,8 @@ const projectRoot = args.find((arg) => !arg.startsWith('-')) ?? path.join(__dirn
 const preloadTemplatePath = path.join(projectRoot, 'src/preload/index.template.ts');
 const preloadOutputPath = path.join(projectRoot, 'src/preload/index.ts');
 
-// Matches the block this script writes into the output (and any stale copy left
-// in the template). It is rewritten on every run, so it never participates in
-// drift detection.
+// Matches the block this script writes into the output. It is rewritten on
+// every run, so it never participates in drift detection.
 const generatedSectionPattern =
   /\/\/ ={40,}\s*\n\/\/ GENERATED IPC CHANNELS[\s\S]*?\/\/ END GENERATED IPC CHANNELS\s*\n\/\/ ={40,}\s*/g;
 
@@ -156,22 +155,49 @@ function discardedLines(generated: string, template: string): DiscardedLine[] {
   return discarded;
 }
 
-// Read the template file
-let templateContent: string;
-try {
-  templateContent = fs.readFileSync(preloadTemplatePath, 'utf-8');
-} catch {
-  // If template doesn't exist, use the current index.ts as template
-  templateContent = fs.readFileSync(preloadOutputPath, 'utf-8');
+const placeholderMarker = '// GENERATED_CHANNELS_PLACEHOLDER';
 
-  // Remove the import statement for generated-channels
-  templateContent = templateContent.replace(
-    /import\s+{[^}]+}\s+from\s+["']\.\/generated-channels["'];?\s*/g,
-    '',
-  );
+// Declarations the generated block owns. A template that declares any of them
+// carries its own channel list, which never ships (the generated block replaces
+// it) yet reads as the real allowlist — cloudlands-fe#3956 edited and reviewed
+// such a stale copy as if it controlled access.
+const generatedDeclarationPattern =
+  /^[ \t]*(?:export\s+)?(?:const|let|var|function)\s+(ALLOWED_CHANNELS|DYNAMIC_CHANNEL_PATTERNS|EVENT_CHANNELS|isChannelAllowed)\b/m;
 
-  // Save as template for future use
-  fs.writeFileSync(preloadTemplatePath, templateContent, 'utf-8');
+/**
+ * Why the template cannot be used as generator input, or null when it can. The
+ * template must hold exactly one placeholder marker and no channel list of its
+ * own: the registry (src/shared/ipc-registry.ts) is the only source of truth.
+ */
+function templateProblem(template: string): string | null {
+  if (/\/\/ GENERATED IPC CHANNELS/.test(template)) {
+    return 'it contains a filled-in "GENERATED IPC CHANNELS" block';
+  }
+  const declaration = template.match(generatedDeclarationPattern);
+  if (declaration) {
+    return `it declares ${declaration[1]}, which only the generated block may define`;
+  }
+  const markers = template.split(placeholderMarker).length - 1;
+  if (markers !== 1) {
+    return `it must contain exactly one ${placeholderMarker} marker (found ${markers})`;
+  }
+  return null;
+}
+
+if (!fs.existsSync(preloadTemplatePath)) {
+  console.error(`\n❌ ${preloadTemplatePath} is missing; it is the tracked preload source.\n`);
+  process.exit(1);
+}
+let templateContent = fs.readFileSync(preloadTemplatePath, 'utf-8');
+
+const problem = templateProblem(templateContent);
+if (problem) {
+  const relTemplate = path.relative(projectRoot, preloadTemplatePath);
+  console.error(`\n❌ ${relTemplate} cannot be used: ${problem}.\n`);
+  console.error('The IPC channel lists are generated from src/shared/ipc-registry.ts at the');
+  console.error(`${placeholderMarker} marker. Change channels in the registry and leave only`);
+  console.error('the marker in the template.\n');
+  process.exit(1);
 }
 
 // Refuse to silently destroy hand edits made to the generated file.
@@ -222,9 +248,6 @@ if (fs.existsSync(preloadOutputPath)) {
   }
 }
 
-// Remove any existing generated sections
-templateContent = templateContent.replace(generatedSectionPattern, '');
-
 // Generate the inline channel data
 const inlineChannels = `
 // ============================================
@@ -255,27 +278,8 @@ function isChannelAllowed(channel: string): boolean {
 // ============================================
 `;
 
-// Insert the inline channels at the GENERATED_CHANNELS_PLACEHOLDER marker, or after imports if not found
-const placeholderMarker = '// GENERATED_CHANNELS_PLACEHOLDER';
-const placeholderIndex = templateContent.indexOf(placeholderMarker);
-
-if (placeholderIndex !== -1) {
-  // Replace the placeholder with the generated channels
-  const beforePlaceholder = templateContent.slice(0, placeholderIndex);
-  const afterPlaceholder = templateContent.slice(placeholderIndex + placeholderMarker.length);
-  templateContent = `${beforePlaceholder}${inlineChannels}${afterPlaceholder}`;
-} else {
-  // Fallback: insert after imports
-  const importEndMatch = templateContent.match(/(import[^;]+;[\s\n]*)+/);
-  if (importEndMatch) {
-    const importEnd = (importEndMatch.index ?? 0) + importEndMatch[0].length;
-    const beforeImports = templateContent.slice(0, importEnd);
-    const afterImports = templateContent.slice(importEnd);
-    templateContent = `${beforeImports}\n${inlineChannels}\n${afterImports}`;
-  } else {
-    templateContent = `${inlineChannels}\n${templateContent}`;
-  }
-}
+// templateProblem() guarantees exactly one marker.
+templateContent = templateContent.replace(placeholderMarker, () => inlineChannels);
 
 // Keep regeneration byte-stable with the repository formatting gate.
 const prettierConfig = await resolveConfig(path.join(__dirname, '..', 'src/preload/index.ts'));
