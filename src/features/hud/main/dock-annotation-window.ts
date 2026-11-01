@@ -70,6 +70,7 @@ import {
 import { Logger } from '../../../shared/logger';
 import { stampWindowWithBackend } from '../../../main/window-backend';
 import { registerDockAnnotationWindow } from '../../../main/dock-annotation-identity';
+import { fixWebContentsZoom } from '../../../main/fixed-zoom';
 import {
   createDockElementPicker,
   type DockElementHit,
@@ -1472,6 +1473,7 @@ function createOverlayWindow(display: Display, backendId: string): BrowserWindow
   });
   // Classified as the dock annotation overlay before any document (even about:blank) loads.
   registerDockAnnotationWindow(window);
+  fixWebContentsZoom(window.webContents);
   // One step below the dock's floating level so the dock stays the composer above it.
   window.setAlwaysOnTop(true, 'floating', -1);
   if (process.platform === 'darwin')

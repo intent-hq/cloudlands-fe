@@ -54,6 +54,7 @@ import {
 } from '../system.ipc';
 import { WINDOW_CHANNELS } from '../../../../shared/ipc/channels';
 import { handleMenuZoom } from '../../../../main/menu-zoom';
+import { fixWebContentsZoom } from '../../../../main/fixed-zoom';
 import { sendWorkspaceCommand } from '../../../../main/menu-workspace-command';
 import { zoomIpcSaga } from '../../../../store/renderer/slices/user-preferences/sagas/zoom-ipc-saga';
 import {
@@ -190,6 +191,7 @@ describe('app menu zoom IPC', () => {
         setZoomLevel: vi.fn((level: number) => {
           zoom.level = level;
         }),
+        setZoomMode: vi.fn(),
         send: vi.fn(),
       },
     };
@@ -295,6 +297,23 @@ describe('app menu zoom IPC', () => {
     expect(peer.webContents.setZoomLevel).not.toHaveBeenCalled();
     expect(other.webContents.setZoomLevel).not.toHaveBeenCalled();
     expect(destroyed.webContents.send).not.toHaveBeenCalled();
+  });
+
+  it('leaves a fixed-zoom dock at 100% when it has focus', () => {
+    const dock = createZoomWindow(921);
+    fixWebContentsZoom(dock.webContents as never);
+    electronMocks.getFocusedWindow.mockReturnValue(dock);
+    electronMocks.getAllWindows.mockReturnValue([dock] as never);
+    const routeBrowserZoom = vi.fn();
+
+    for (const command of ['menu:zoom-out', 'menu:zoom-in', 'menu:reset-zoom'] as const) {
+      handleMenuZoom(command, routeBrowserZoom);
+    }
+
+    expect(dock.webContents.setZoomMode).toHaveBeenCalledExactlyOnceWith('isolated');
+    expect(dock.webContents.getZoomFactor()).toBe(1);
+    expect(routeBrowserZoom).not.toHaveBeenCalled();
+    expect(dock.webContents.send).not.toHaveBeenCalled();
   });
 
   it('routes every browser-focused zoom command with its workspace payload and leaves app zoom alone', async () => {

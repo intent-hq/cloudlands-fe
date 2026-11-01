@@ -44,6 +44,8 @@ class FakeWebContents extends EventEmitter {
   sent: unknown[] = [];
   destroyed = false;
   isDestroyed = () => this.destroyed;
+  setZoomMode = () => {};
+  setZoomLevel = () => {};
   send = (channel: string, state: unknown) => {
     if (channel === DOCK_ANNOTATION_CHANNELS.STATE) this.sent.push(state);
   };

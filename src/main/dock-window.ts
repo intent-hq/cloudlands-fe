@@ -18,6 +18,7 @@ import {
 } from './window-backend';
 import { DockPlacementController } from './dock-placement-controller';
 import { attachDockCursor } from './dock-cursor';
+import { fixWebContentsZoom } from './fixed-zoom';
 import { createDockPointerPresenceTracker } from './dock-pointer-presence';
 import type { DockPlacementCommand, DockPlacementSnapshot } from '../shared/dock-placement';
 import type {
@@ -743,6 +744,7 @@ export function createDockWindow(): BrowserWindow {
   });
 
   dockWindowRef = window;
+  fixWebContentsZoom(window.webContents);
   attachLifecycleListeners(window);
   configurePlatformBehavior(window);
   dockCursor = attachDockCursor(window);
