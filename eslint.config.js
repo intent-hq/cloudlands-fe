@@ -551,7 +551,9 @@ export default [
       '**/playwright/.cache/**',
       '**/playwright-report/**',
       '**/e2e/**',
-      '**/test/**',
+      // Package-root Playwright suite only; src/test/** (shared test helpers and their
+      // tests) must stay linted. Mirrors the vitest.config.ts exclude.
+      'test/**',
     ],
   },
   javascriptConfig,

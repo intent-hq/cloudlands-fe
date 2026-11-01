@@ -12,7 +12,9 @@ export async function applyAndVerifyMotion(
   if (requested === undefined || requested === null) return;
   await page.emulateMedia({ reducedMotion: requested });
   const actual = await page.evaluate(() => ({
+    // eslint-disable-next-line intent/no-direct-reduced-motion-query -- verifies the CT emulation itself; the OS-level query is the point
     reduce: matchMedia('(prefers-reduced-motion: reduce)').matches,
+    // eslint-disable-next-line intent/no-direct-reduced-motion-query -- verifies the CT emulation itself; the OS-level query is the point
     noPreference: matchMedia('(prefers-reduced-motion: no-preference)').matches,
   }));
   if (

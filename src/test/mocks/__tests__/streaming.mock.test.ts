@@ -2,7 +2,7 @@
  * Tests for MockStreamManager
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { MockStreamManager } from '../streaming.mock';
 import type { ContentBlock } from '$shared/types';
 
@@ -163,7 +163,7 @@ describe('MockStreamManager', () => {
   describe('Stream Management', () => {
     it('should get active streams', async () => {
       const stream1 = manager.startStream('agent-1', 'session-1');
-      const stream2 = manager.startStream('agent-2', 'session-2');
+      manager.startStream('agent-2', 'session-2');
 
       let active = manager.getActiveStreams();
       expect(active).toHaveLength(2);
