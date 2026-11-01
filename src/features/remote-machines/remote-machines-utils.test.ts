@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { fingerprintKey, type RemoteMachine } from '$shared/types/remote-machines';
+import {
+  fingerprintKey,
+  parseRemoteMachine,
+  type RemoteMachine,
+} from '$shared/types/remote-machines';
 import {
   canOfferExpose,
   connectionForMachine,
@@ -49,5 +53,23 @@ describe('fingerprintKey', () => {
   it('treats a non-string value as no fingerprint', () => {
     expect(fingerprintKey({ success: false } as unknown as string)).toBeNull();
     expect(fingerprintKey(' aa:bb ')).toBe('AA:BB');
+  });
+});
+
+describe('parseRemoteMachine', () => {
+  it('keeps a tailcat-only machine (no LAN hosts)', () => {
+    expect(
+      parseRemoteMachine({
+        id: 'd-mac',
+        name: 'Mac',
+        hosts: [],
+        tcAddress: 'tc-mac',
+        port: 5179,
+        fingerprint: 'AA:BB',
+        state: 'connected',
+        runningAgents: 0,
+        addedAt: '2026-11-01T00:00:00Z',
+      }),
+    ).toMatchObject({ hosts: [], tcAddress: 'tc-mac', state: 'connected' });
   });
 });

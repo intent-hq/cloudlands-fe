@@ -229,7 +229,7 @@ describe('remote machine relay — expose', () => {
     expect(backendCalls.map((c) => c.method)).not.toContain('remoteMachines.add');
   });
 
-  it('revokes and reports listener-off when the machine advertises no hosts', async () => {
+  it('revokes and reports listener-off when the machine advertises no route at all', async () => {
     const { relay, backend, machineCalls, backendCalls } = setup({
       machine: {
         'executor.mint': () => ({
@@ -254,6 +254,57 @@ describe('remote machine relay — expose', () => {
       method: 'executor.revoke',
       params: { credentialId: 'cred-1' },
     });
+  });
+
+  it('adds a tailcat-only machine (no LAN hosts) with its tunnel address', async () => {
+    const { relay, backend, backendCalls, machineCalls } = setup({
+      machine: {
+        'executor.mint': () => ({
+          credentialId: 'cred-1',
+          token: TOKEN,
+          machine: {
+            daemonId: 'd-mac',
+            name: 'Studio Mac',
+            port: 5179,
+            hosts: [],
+            tcAddress: 'tc-mac',
+            fingerprint: 'AA:BB',
+          },
+        }),
+      },
+    });
+    expect(await relay.expose({ machineConnectionId: 'mac' }, backend)).toMatchObject({
+      success: true,
+    });
+    expect(backendCalls.at(-1)).toMatchObject({
+      method: 'remoteMachines.add',
+      params: { machineId: 'd-mac', hosts: [], tcAddress: 'tc-mac' },
+    });
+    expect(machineCalls.map((call) => call.method)).not.toContain('executor.revoke');
+  });
+
+  it('treats a blank tailcat address as no route', async () => {
+    const { relay, backend, backendCalls } = setup({
+      machine: {
+        'executor.mint': () => ({
+          credentialId: 'cred-1',
+          token: TOKEN,
+          machine: {
+            daemonId: 'd-mac',
+            name: 'Mac',
+            port: 5179,
+            hosts: [],
+            tcAddress: '  ',
+            fingerprint: 'AA:BB',
+          },
+        }),
+      },
+    });
+    expect(await relay.expose({ machineConnectionId: 'mac' }, backend)).toEqual({
+      success: false,
+      code: 'listener-off',
+    });
+    expect(backendCalls.map((call) => call.method)).not.toContain('remoteMachines.add');
   });
 
   it('maps remote-agents-disabled from mint', async () => {
