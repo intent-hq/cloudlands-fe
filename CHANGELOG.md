@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.266.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.266.0...v2.266.1) (2026-11-01)
+
+
+### 🐛 Bug Fixes
+
+* **dock:** keep the dock and annotation overlay at 100% zoom ([#3971](https://github.com/intent-hq/cloudlands-fe/issues/3971)) ([cb0dc59](https://github.com/intent-hq/cloudlands-fe/commit/cb0dc59336e7dca04bcdefba86f0e86bab9a65f4))
+* **verify-changed:** keep resume passes across commits and rebases ([#3991](https://github.com/intent-hq/cloudlands-fe/issues/3991)) ([b3142bc](https://github.com/intent-hq/cloudlands-fe/commit/b3142bcfa174c4fd6141e921c0f192a07dfa3b74))
+
 ## [2.266.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.265.1...v2.266.0) (2026-11-01)
 
 
