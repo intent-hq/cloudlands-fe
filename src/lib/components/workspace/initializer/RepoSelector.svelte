@@ -1151,6 +1151,8 @@
 
   // Handle selecting a recent repo
   function handleSelectRepo(repo: any) {
+    // Any recent pick (GitLab included) supersedes a local entry still being probed.
+    recentProbeToken++;
     const identity = getRecentRepoIdentity(repo, gitlab?.instanceBaseUrl);
     if (repo.type !== 'local' && identity?.provider === 'gitlab') {
       if (
@@ -1166,7 +1168,6 @@
       isOpen = false;
       return;
     }
-    recentProbeToken++;
     // A local recent entry may be a plain folder (Labs): classify it through the
     // same folder-status probe as a picked folder instead of assuming git.
     if (repo.type === 'local' && (plainFolderMode || repo.plainFolder === true)) {
@@ -1276,6 +1277,7 @@
 
   // Apply a picked path for the "select-repo" flow.
   async function applyPickedRepoFolder(path: string): Promise<void> {
+    recentProbeToken++;
     try {
       // Check directory status first
       await checkDirectoryStatus(path);
@@ -1731,6 +1733,7 @@
                 {...gitlab}
                 prefix={forgePrefix}
                 onSelect={(projectPath, scopeKey) => {
+                  recentProbeToken++;
                   gitlab?.onSelect(projectPath, scopeKey);
                   isOpen = false;
                 }}

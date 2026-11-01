@@ -432,3 +432,79 @@ describe('RepoSelector new folder classification in the browser build', () => {
     expect(screen.queryByText('A new folder will be created, without git')).toBeNull();
   });
 });
+
+describe('RepoSelector recent probe cancellation', () => {
+  const GITLAB_BASE = 'https://git.example.test:8443/Forge';
+  function gitlabProps() {
+    return {
+      authenticated: true,
+      scopeKey: 'owner/connection-a/checkout-a',
+      instanceBaseUrl: GITLAB_BASE,
+      query: '',
+      page: {
+        status: 'ready' as const,
+        items: [{ projectPath: 'group/subgroup/api', name: 'API', namespace: 'group/subgroup' }],
+        hasMore: false,
+      },
+      copy: {
+        searchLabel: 'Search GitLab projects',
+        searchPlaceholder: 'Project or namespace',
+        listLabel: 'GitLab projects',
+        loadingLabel: 'Loading projects',
+        emptyLabel: 'No projects',
+        emptySearchLabel: 'No matching projects',
+        loadMoreLabel: 'Load more projects',
+        loadingMoreLabel: 'Loading more projects',
+      },
+      onSearch: vi.fn(),
+      onMore: vi.fn(),
+      onSelect: vi.fn(),
+      onOpenChange: vi.fn(),
+    };
+  }
+
+  /** Hold the folder probe for `path` until the returned release is called. */
+  function holdProbe(path: string) {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const fallback = vi.mocked(invoke).getMockImplementation()!;
+    vi.mocked(invoke).mockImplementation(async (channel, args) => {
+      if (channel === 'file:getDirectoryStatus' && (args as { path: string }).path === path) {
+        await held;
+        return { success: true, data: plainStatus(path) };
+      }
+      return fallback(channel, args);
+    });
+    return release;
+  }
+
+  it('a GitLab project pick supersedes a local recent still being probed', async () => {
+    const release = holdProbe(NOTES);
+    const gitlab = gitlabProps();
+    const { onchange } = await openWithRecents({ plainFolderMode: true, gitlab });
+    await fireEvent.click(screen.getByText('notes'));
+    await waitFor(() => expect(probes().length).toBeGreaterThan(0));
+
+    await fireEvent.click(screen.getByRole('tab', { name: 'Pick a repo' }));
+    await fireEvent.click(await screen.findByRole('option', { name: 'group/subgroup/api' }));
+    expect(gitlab.onSelect).toHaveBeenCalledWith('group/subgroup/api', gitlab.scopeKey);
+
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(onchange).not.toHaveBeenCalled();
+  });
+
+  it('a local recent probe answering late never overrides a later local pick', async () => {
+    const release = holdProbe(NOTES);
+    statuses.set(REPO, gitStatus(REPO));
+    const { onchange } = await openWithRecents({ plainFolderMode: true });
+    await fireEvent.click(screen.getByText('notes'));
+    await fireEvent.click(screen.getByText('app'));
+    await waitFor(() => expect(onchange).toHaveBeenCalled());
+
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(onchange).toHaveBeenCalledTimes(1);
+    expect(lastDetail(onchange)).toMatchObject({ path: REPO });
+  });
+});
