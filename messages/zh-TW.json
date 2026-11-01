@@ -7420,6 +7420,7 @@
   "workspace_repoSelector_select_placeholder": "請選擇…",
   "workspace_repoSelector_suggestionsUnavailable_label": "目前無法提供儲存庫建議。",
   "workspace_repoSelector_whichRepo_description": "選擇現有程式碼庫或新建一個。我們將建立一個隔離的空間來工作。",
+  "workspace_repoSelector_whichRepo_plainFolder_description": "選擇現有程式碼庫或新建一個。對於沒有 Git 的資料夾，Intent 會直接在其中工作，不會建立副本，也無法復原。",
   "workspace_repoSelector_whichRepo_label": "我們要在哪個儲存庫上工作？",
   "workspace_resizablePanels_activity_label": "活動",
   "workspace_resizablePanels_resize_ariaLabel": "調整面板大小",

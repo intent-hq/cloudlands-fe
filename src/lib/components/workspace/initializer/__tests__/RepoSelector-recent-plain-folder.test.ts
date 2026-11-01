@@ -508,3 +508,22 @@ describe('RepoSelector recent probe cancellation', () => {
     expect(lastDetail(onchange)).toMatchObject({ path: REPO });
   });
 });
+
+describe('RepoSelector picker intro', () => {
+  const GIT_INTRO =
+    "Select an existing codebase or make a new one. We'll create an isolated workspace to work in.";
+  const PLAIN_INTRO =
+    'Select an existing codebase or make a new one. For a folder without Git, Intent works directly in it, with no copy and no undo.';
+
+  it('says Intent works in place, with no copy and no undo, when the toggle is off', async () => {
+    await openWithRecents({ plainFolderMode: true });
+    expect(screen.getByText(PLAIN_INTRO)).toBeTruthy();
+    expect(screen.queryByText(GIT_INTRO)).toBeNull();
+  });
+
+  it('keeps the isolated-workspace intro when the toggle is on', async () => {
+    await openWithRecents({ plainFolderMode: false });
+    expect(screen.getByText(GIT_INTRO)).toBeTruthy();
+    expect(screen.queryByText(PLAIN_INTRO)).toBeNull();
+  });
+});

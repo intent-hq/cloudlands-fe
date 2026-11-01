@@ -7420,6 +7420,7 @@
   "workspace_repoSelector_select_placeholder": "選択...",
   "workspace_repoSelector_suggestionsUnavailable_label": "現在、リポジトリの候補を利用できません。",
   "workspace_repoSelector_whichRepo_description": "既存のコードベースを選択するか、新しく作成してください。作業用の分離されたスペースを作成します。",
+  "workspace_repoSelector_whichRepo_plainFolder_description": "既存のコードベースを選択するか、新しく作成してください。Git のないフォルダーでは、Intent はフォルダー内で直接作業します。コピーは作成されず、元に戻すこともできません。",
   "workspace_repoSelector_whichRepo_label": "どのリポジトリで作業しますか？",
   "workspace_resizablePanels_activity_label": "アクティビティ",
   "workspace_resizablePanels_resize_ariaLabel": "パネルのサイズを変更",

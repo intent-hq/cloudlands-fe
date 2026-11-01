@@ -7420,6 +7420,7 @@
   "workspace_repoSelector_select_placeholder": "선택...",
   "workspace_repoSelector_suggestionsUnavailable_label": "지금은 저장소 추천을 사용할 수 없습니다.",
   "workspace_repoSelector_whichRepo_description": "기존 코드베이스를 선택하거나 새로 만드세요. 작업할 격리된 스페이스를 만들어 드립니다.",
+  "workspace_repoSelector_whichRepo_plainFolder_description": "기존 코드베이스를 선택하거나 새로 만드세요. Git이 없는 폴더에서는 Intent가 폴더에서 직접 작업하며, 복사본이 없고 실행 취소할 수 없습니다.",
   "workspace_repoSelector_whichRepo_label": "어떤 저장소에서 작업할까요?",
   "workspace_resizablePanels_activity_label": "활동",
   "workspace_resizablePanels_resize_ariaLabel": "패널 크기 조정",

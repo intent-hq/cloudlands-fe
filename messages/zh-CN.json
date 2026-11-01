@@ -7420,6 +7420,7 @@
   "workspace_repoSelector_select_placeholder": "请选择…",
   "workspace_repoSelector_suggestionsUnavailable_label": "当前无法提供仓库建议。",
   "workspace_repoSelector_whichRepo_description": "选择现有代码库或新建一个。我们将创建一个隔离的空间来工作。",
+  "workspace_repoSelector_whichRepo_plainFolder_description": "选择现有代码库或新建一个。对于没有 Git 的文件夹，Intent 会直接在其中工作，不会创建副本，也无法撤销。",
   "workspace_repoSelector_whichRepo_label": "我们要在哪个仓库上工作？",
   "workspace_resizablePanels_activity_label": "活动",
   "workspace_resizablePanels_resize_ariaLabel": "调整面板大小",

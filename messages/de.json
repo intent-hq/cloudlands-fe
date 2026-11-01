@@ -7420,6 +7420,7 @@
   "workspace_repoSelector_select_placeholder": "Auswählen...",
   "workspace_repoSelector_suggestionsUnavailable_label": "Repository-Vorschläge sind derzeit nicht verfügbar.",
   "workspace_repoSelector_whichRepo_description": "Wählen Sie eine bestehende Codebasis oder erstellen Sie eine neue. Wir erstellen einen isolierten Space zum Arbeiten.",
+  "workspace_repoSelector_whichRepo_plainFolder_description": "Wählen Sie eine bestehende Codebasis oder erstellen Sie eine neue. In einem Ordner ohne Git arbeitet Intent direkt darin, ohne Kopie und ohne Rückgängig-Möglichkeit.",
   "workspace_repoSelector_whichRepo_label": "An welchem Repo sollen wir arbeiten?",
   "workspace_resizablePanels_activity_label": "Aktivität",
   "workspace_resizablePanels_resize_ariaLabel": "Panels vergrößern/verkleinern",
