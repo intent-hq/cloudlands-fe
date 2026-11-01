@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.265.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.264.4...v2.265.0) (2026-11-01)
+
+
+### 🚀 Features
+
+* **chat:** reveal folder mentions in the Files sidebar ([#3973](https://github.com/intent-hq/cloudlands-fe/issues/3973)) ([ff98c3f](https://github.com/intent-hq/cloudlands-fe/commit/ff98c3ff3dd89ffaf41ee00507542a34b9c21c9e))
+* **ct:** give each worktree its own default CT port ([#3977](https://github.com/intent-hq/cloudlands-fe/issues/3977)) ([d2c5cd1](https://github.com/intent-hq/cloudlands-fe/commit/d2c5cd1a1966534f0721aba914bec031f2482373))
+* **home:** show a Workspace purged pill on purged archived workspaces ([#3976](https://github.com/intent-hq/cloudlands-fe/issues/3976)) ([95e066a](https://github.com/intent-hq/cloudlands-fe/commit/95e066a214a67942943e1f2c79576c7952d533a6))
+
 ## [2.264.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.264.3...v2.264.4) (2026-11-01)
 
 
