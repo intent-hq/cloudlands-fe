@@ -1,4 +1,5 @@
 import { buildConfigForRecord, ConnectionSecretUnavailableError } from './connection-config';
+import { collectListPages } from '$shared/paged-list';
 import { collaborationMachineName } from '../../../shared/collaboration-machine-name';
 import { assertNormalAppOperation, isIsolatedTestBuild } from '../../../main/isolated-test-profile';
 import { createNativeReviewFeed } from './native-review-feed';
@@ -2680,7 +2681,11 @@ async function hydrateGuestWorkspacesOriginal(id: string, owner?: PoolOwner): Pr
         guestMembershipEpochs.get(id) === epoch,
       { credential: guard.credential },
     );
-    const result = await poolRequest(owner, client, 'workspace.list');
+    const result = await collectListPages(
+      (params) => poolRequest<Record<string, unknown>>(owner, client, 'workspace.list', params),
+      undefined,
+      'workspaces',
+    );
     if (!stillValid()) return;
     const refs = extractWorkspaceRefs(result);
     if (refs === null) {

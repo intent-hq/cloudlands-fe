@@ -11,6 +11,7 @@
  *    workspace without an extra parameter; when the cache misses they fall back
  *    to scanning the workspace list.
  */
+import { collectListPages } from '$shared/paged-list';
 import { isProjectionRejected } from '$shared/utils/note-content';
 import type { MutationResult, Unsubscribe } from '../app-client';
 import { backendRequest, onBackendNotification, onBackendReconnected } from './backend-transport';
@@ -234,7 +235,11 @@ function logWorkspaceListRpc(tag: string, detail?: string): void {
 function fetchWorkspaceIdsRpc(tag: string, detail?: string): Promise<string[]> {
   if (workspaceListRpcInFlight) return workspaceListRpcInFlight;
   logWorkspaceListRpc(tag, detail);
-  const fetch = backendRequest<{ workspaces?: unknown[] }>('workspace.list').then((result) => {
+  const fetch = collectListPages<{ workspaces?: unknown[] }>(
+    (params) => backendRequest<{ workspaces?: unknown[] }>('workspace.list', params),
+    undefined,
+    'workspaces',
+  ).then((result) => {
     const workspaces = Array.isArray(result?.workspaces) ? result.workspaces : [];
     const ids = workspaces
       .map((w) =>

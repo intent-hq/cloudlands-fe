@@ -5,6 +5,7 @@
  * These handlers are NOT registered in production.
  */
 
+import { collectListPages } from '$shared/paged-list';
 import { ipcMain } from 'electron';
 import { Logger } from '../../../shared/logger';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
@@ -35,7 +36,12 @@ export function setupDebugIPC(): void {
         // AgentLite projection with messageCount already, so we no longer need
         // to list ids and load each session individually. Deliberately
         // unscoped (§5.5 row scope): a debug dump lists every bin.
-        const result = (await getBackendClient().request('agent.list', { workspaceId })) as {
+        const client = getBackendClient();
+        const result = (await collectListPages(
+          (params) => client.request('agent.list', params) as Promise<Record<string, unknown>>,
+          { workspaceId },
+          'agents',
+        )) as {
           agents?: Array<{
             id: string;
             name?: string;

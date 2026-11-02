@@ -29,6 +29,7 @@
  * most one follow-up `workspace.list`.
  */
 
+import { collectListPages } from '$shared/paged-list';
 import { Logger } from '../../../shared/logger';
 import {
   getLocalBackendClient,
@@ -148,9 +149,12 @@ class WorkspaceForwardCleanupState {
     const epoch = this.subscribeEpoch;
     let workspaces: unknown[];
     try {
-      const result = (await this.deps.client.request('workspace.list', {
-        includeArchived: true,
-      })) as { workspaces?: unknown[] } | undefined;
+      const result = (await collectListPages(
+        (params) =>
+          this.deps.client.request('workspace.list', params) as Promise<{ workspaces?: unknown[] }>,
+        { includeArchived: true },
+        'workspaces',
+      )) as { workspaces?: unknown[] } | undefined;
       if (!Array.isArray(result?.workspaces)) {
         logger.warn('workspace.list for forward reconciliation returned no workspaces array');
         this.reconcileFailed = true;

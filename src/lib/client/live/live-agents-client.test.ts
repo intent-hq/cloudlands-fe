@@ -866,6 +866,43 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     expect(JSON.stringify({ queue, messages })).toBe(before);
   });
 
+  it('getQueue follows nextToken on a paging daemon and returns the whole queue', async () => {
+    backend.onRequest('agent.getQueue', (params) => {
+      const token = (params as { nextToken?: string }).nextToken;
+      return token === 'q2'
+        ? { success: true, queue: [{ id: 'm2' }], queueLength: 2, nextToken: null }
+        : { success: true, queue: [{ id: 'm1' }], queueLength: 2, nextToken: 'q2' };
+    });
+    const client = new LiveAgentsClient();
+
+    expect(await client.getQueue('agent-1', 'ws-1')).toEqual([{ id: 'm1' }, { id: 'm2' }]);
+    expect(backend.requests).toEqual([
+      { method: 'agent.getQueue', params: { agentId: 'agent-1', workspaceId: 'ws-1' } },
+      {
+        method: 'agent.getQueue',
+        params: { agentId: 'agent-1', workspaceId: 'ws-1', nextToken: 'q2' },
+      },
+    ]);
+  });
+
+  it('listWithMeta follows nextToken and keeps the first page counts', async () => {
+    backend.onRequest('agent.list', (params) => {
+      const token = (params as { nextToken?: string }).nextToken;
+      return token === 'p2'
+        ? { agents: [{ id: 'agent-b', workspaceId: 'ws-1' }], retiredCount: 0, nextToken: null }
+        : { agents: [{ id: 'agent-a', workspaceId: 'ws-1' }], retiredCount: 4, nextToken: 'p2' };
+    });
+    const client = new LiveAgentsClient();
+
+    const result = await client.listWithMeta('ws-1');
+    expect(result.agents.map((a) => a.id)).toEqual(['agent-a', 'agent-b']);
+    expect(result.retiredCount).toBe(4);
+    expect(backend.requests.map((r) => r.params)).toEqual([
+      { workspaceId: 'ws-1' },
+      { workspaceId: 'ws-1', nextToken: 'p2' },
+    ]);
+  });
+
   it('getQueue returns [] when the daemon body omits queue', async () => {
     backend.onRequest('agent.getQueue', () => ({ success: true }));
     const client = new LiveAgentsClient();

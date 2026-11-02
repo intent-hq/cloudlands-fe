@@ -21,6 +21,10 @@ let failNextSubscribes = 0;
 // used to exercise the registration-retry backoff on a malformed-but-settled
 // reply, distinct from an outright rejection.
 let emptyNextSubscribes = 0;
+// Paged-snapshot continuation replies for `ws.list`, keyed by `nextToken`;
+// a pending entry holds its reply until the test resolves it.
+const listPages = new Map<string, unknown>();
+const pendingListPages = new Map<string, () => void>();
 
 vi.mock('./backend-transport', () => ({
   backendRequest: vi.fn((method: string, params?: unknown) => {
@@ -42,6 +46,16 @@ vi.mock('./backend-transport', () => ({
         });
       }
       return Promise.resolve({ subscriptionId });
+    }
+    if (method === 'ws.list') {
+      const token = String((params as { nextToken?: unknown } | undefined)?.nextToken ?? '');
+      const reply = listPages.get(token);
+      if (reply === 'pending') {
+        return new Promise((resolve) => {
+          pendingListPages.set(token, () => resolve(listPages.get(`${token}:reply`)));
+        });
+      }
+      return reply === undefined ? Promise.reject(new Error('no page')) : Promise.resolve(reply);
     }
     return Promise.resolve({ success: true });
   }),
@@ -91,6 +105,8 @@ afterEach(() => {
   deferChannelSubscribe = false;
   channelSubscribeResolvers.length = 0;
   failNextSubscribes = 0;
+  listPages.clear();
+  pendingListPages.clear();
   vi.clearAllMocks();
 });
 
@@ -711,4 +727,143 @@ it('retains workspace origin for late subscription cleanup after removal and rec
     { subscriptionId: 'chan-2', workspaceId: 'workspace-b' },
     { subscriptionId: 'chan-3', workspaceId: 'workspace-b' },
   ]);
+});
+
+describe('paged snapshots (§6.9 boundedReads)', () => {
+  const PAGED = {
+    subscribeMethod: 'ws.subscribe',
+    unsubscribeMethod: 'ws.unsubscribe',
+    params: { includeRetired: true },
+    continuation: {
+      method: 'ws.list',
+      key: 'rows',
+      params: (scope: Record<string, unknown>) => ({ includeArchived: true, ...scope }),
+    },
+  };
+
+  const lastValues = (handler: ReturnType<typeof vi.fn>) =>
+    (handler.mock.calls.at(-1)?.[0] as Row[] | undefined)?.map((r) => r.id).sort();
+
+  it('parses nextToken only when the snapshot carries a token', () => {
+    expect(
+      parseSubscriptionPush('subscription.push', {
+        subscriptionId: 's',
+        kind: 'snapshot',
+        seq: 0,
+        snapshot: [],
+        nextToken: 'n1',
+      }),
+    ).toMatchObject({ nextToken: 'n1' });
+    expect(
+      parseSubscriptionPush('subscription.push', {
+        subscriptionId: 's',
+        kind: 'snapshot',
+        seq: 0,
+        snapshot: [],
+        nextToken: null,
+      }),
+    ).not.toHaveProperty('nextToken');
+  });
+
+  it('fetches the remaining pages with the scope params and fills them in', async () => {
+    listPages.set('n1', { rows: [{ id: 'b' }], nextToken: 'n2' });
+    listPages.set('n2', { rows: [{ id: 'c' }], nextToken: null });
+    const handler = vi.fn();
+    const dispose = createDeltaSubscription<Row>({ channel: PAGED, getId, normalize, handler });
+    await flush();
+    push('subscription.push', {
+      subscriptionId: 'chan-1',
+      kind: 'snapshot',
+      seq: 0,
+      snapshot: [{ id: 'a' }],
+      nextToken: 'n1',
+    });
+    await flush();
+    await flush();
+    expect(lastValues(handler)).toEqual(['a', 'b', 'c']);
+    expect(requestCalls.filter((c) => c.method === 'ws.list').map((c) => c.params)).toEqual([
+      { includeArchived: true, includeRetired: true, nextToken: 'n1' },
+      { includeArchived: true, includeRetired: true, nextToken: 'n2' },
+    ]);
+    dispose();
+  });
+
+  it('keeps newer delta rows and removals over continuation rows', async () => {
+    listPages.set('n1', 'pending');
+    listPages.set('n1:reply', {
+      rows: [
+        { id: 'b', v: 1 },
+        { id: 'gone', v: 1 },
+      ],
+      nextToken: null,
+    });
+    const handler = vi.fn();
+    const dispose = createDeltaSubscription<Row>({ channel: PAGED, getId, normalize, handler });
+    await flush();
+    push('subscription.push', {
+      subscriptionId: 'chan-1',
+      kind: 'snapshot',
+      seq: 0,
+      snapshot: [{ id: 'a' }],
+      nextToken: 'n1',
+    });
+    await flush();
+    push('subscription.push', {
+      subscriptionId: 'chan-1',
+      kind: 'delta',
+      seq: 1,
+      delta: { updated: [{ id: 'b', v: 2 }], removedIds: ['gone'] },
+    });
+    pendingListPages.get('n1')?.();
+    await flush();
+    await flush();
+    const rows = handler.mock.calls.at(-1)?.[0] as Row[];
+    expect(rows.map((r) => r.id).sort()).toEqual(['a', 'b']);
+    expect(rows.find((r) => r.id === 'b')?.v).toBe(2);
+    dispose();
+  });
+
+  it('drops a continuation page that lands after a newer snapshot', async () => {
+    listPages.set('n1', 'pending');
+    listPages.set('n1:reply', { rows: [{ id: 'stale' }], nextToken: null });
+    const handler = vi.fn();
+    const dispose = createDeltaSubscription<Row>({ channel: PAGED, getId, normalize, handler });
+    await flush();
+    push('subscription.push', {
+      subscriptionId: 'chan-1',
+      kind: 'snapshot',
+      seq: 0,
+      snapshot: [{ id: 'a' }],
+      nextToken: 'n1',
+    });
+    await flush();
+    push('subscription.push', {
+      subscriptionId: 'chan-1',
+      kind: 'snapshot',
+      seq: 5,
+      snapshot: [{ id: 'z' }],
+    });
+    pendingListPages.get('n1')?.();
+    await flush();
+    await flush();
+    expect(lastValues(handler)).toEqual(['z']);
+    dispose();
+  });
+
+  it('keeps the rows seen so far when a page read fails', async () => {
+    const handler = vi.fn();
+    const dispose = createDeltaSubscription<Row>({ channel: PAGED, getId, normalize, handler });
+    await flush();
+    push('subscription.push', {
+      subscriptionId: 'chan-1',
+      kind: 'snapshot',
+      seq: 0,
+      snapshot: [{ id: 'a' }],
+      nextToken: 'missing',
+    });
+    await flush();
+    await flush();
+    expect(lastValues(handler)).toEqual(['a']);
+    dispose();
+  });
 });

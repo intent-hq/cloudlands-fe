@@ -50,6 +50,12 @@ export interface SubscriptionPush {
   kind: 'snapshot' | 'delta';
   seq: number;
   snapshot?: unknown[];
+  /**
+   * Paged snapshot continuation (§6.9 "Paged snapshots"): the token for the
+   * rows after this first page. Absent when the snapshot is complete
+   * (`nextToken: null`) or the daemon does not page snapshots.
+   */
+  nextToken?: string | null;
   delta?: DeltaPayload;
 }
 
@@ -66,6 +72,9 @@ export function parseSubscriptionPush(method: string, params: unknown): Subscrip
       kind: 'snapshot',
       seq,
       snapshot: Array.isArray(p.snapshot) ? p.snapshot : [],
+      ...(typeof p.nextToken === 'string' && p.nextToken.length > 0
+        ? { nextToken: p.nextToken }
+        : {}),
     };
   }
   if (p.kind === 'delta') {
@@ -92,8 +101,12 @@ export function parseSubscriptionPush(method: string, params: unknown): Subscrip
  */
 export class DeltaReconciler<T> {
   private readonly items = new Map<string, T>();
+  /** Ids a delta removed since the last snapshot (paged-snapshot fill guard). */
+  private readonly removedSinceSnapshot = new Set<string>();
   private expectedSeq = 0;
   private seeded = false;
+  /** Bumped by every snapshot and reset, so a stale continuation stops. */
+  private epochValue = 0;
 
   constructor(
     private readonly getId: (raw: Record<string, unknown>) => string,
@@ -103,13 +116,22 @@ export class DeltaReconciler<T> {
   /** Forget all state so the next snapshot rebuilds from scratch. */
   reset(): void {
     this.items.clear();
+    this.removedSinceSnapshot.clear();
     this.expectedSeq = 0;
     this.seeded = false;
+    this.epochValue += 1;
+  }
+
+  /** Identity of the current snapshot; changes on every snapshot or reset. */
+  get epoch(): number {
+    return this.epochValue;
   }
 
   /** Replace the whole collection from a snapshot push (any seq is a full rebuild). */
   applySnapshot(seq: number, rawItems: unknown[]): void {
     this.items.clear();
+    this.removedSinceSnapshot.clear();
+    this.epochValue += 1;
     for (const raw of rawItems) this.upsert(raw);
     this.expectedSeq = seq + 1;
     this.seeded = true;
@@ -120,9 +142,26 @@ export class DeltaReconciler<T> {
     if (!this.seeded || seq !== this.expectedSeq) return false;
     for (const raw of delta.added ?? []) this.upsert(raw);
     for (const raw of delta.updated ?? []) this.upsert(raw);
-    for (const id of delta.removedIds ?? []) this.items.delete(String(id));
+    for (const id of delta.removedIds ?? []) {
+      this.items.delete(String(id));
+      this.removedSinceSnapshot.add(String(id));
+    }
     this.expectedSeq = seq + 1;
     return true;
+  }
+
+  /**
+   * Add the rows of a later snapshot page (§6.9 "Paged snapshots"). A row
+   * already present came from a newer delta, and a row a delta removed is
+   * gone, so both are skipped.
+   */
+  fillFromPage(rawItems: unknown[]): void {
+    for (const raw of rawItems) {
+      if (!raw || typeof raw !== 'object') continue;
+      const id = this.getId(raw as Record<string, unknown>);
+      if (!id || this.items.has(id) || this.removedSinceSnapshot.has(id)) continue;
+      this.upsert(raw);
+    }
   }
 
   /** Current collection as an array. */
@@ -172,6 +211,17 @@ export interface TypedChannelDescriptor {
   params?: Record<string, unknown>;
   /** Dynamic form: one channel per id yielded by the source. */
   dynamic?: DynamicChannelScope;
+  /**
+   * Paged snapshot continuation (§6.9 "Paged snapshots"): the list read
+   * that serves the rows after a snapshot's `nextToken`. `params` maps the
+   * channel's registration params to the read's params (without the token);
+   * `key` names the rows array in its reply.
+   */
+  continuation?: {
+    method: string;
+    key: string;
+    params: (scope: Record<string, unknown>) => Record<string, unknown>;
+  };
 }
 
 /** Configuration for {@link createDeltaSubscription}. */
@@ -219,6 +269,9 @@ interface DynamicChannelState<T> {
  * buffering precedent.
  */
 const MAX_BUFFERED_PUSHES = 32;
+
+/** Safety stop for a paged snapshot's continuation chain. */
+const MAX_SNAPSHOT_PAGES = 1000;
 
 /** Base delay for channel-registration retry backoff. */
 const RETRY_BASE_MS = 1000;
@@ -513,6 +566,35 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
     registerChannel();
   };
 
+  // Paged snapshot (§6.9): fetch the rows after `nextToken` through the
+  // channel's list read and fill them in, page by page. Stops when a newer
+  // snapshot, reset or teardown replaces this one; a failed page read leaves
+  // the rows seen so far (the next snapshot retries).
+  const continueSnapshot = (
+    target: DeltaReconciler<T>,
+    scope: Record<string, unknown>,
+    firstToken: string,
+  ) => {
+    const continuation = channel.continuation;
+    if (!continuation) return;
+    const epoch = target.epoch;
+    void (async () => {
+      let token: string | null = firstToken;
+      for (let pages = 0; token && pages < MAX_SNAPSHOT_PAGES; pages += 1) {
+        const reply: Record<string, unknown> | undefined = await backendRequest<
+          Record<string, unknown>
+        >(continuation.method, { ...continuation.params(scope), nextToken: token }).catch(
+          () => undefined,
+        );
+        if (disposed || target.epoch !== epoch || !reply) return;
+        const rows = reply[continuation.key];
+        target.fillFromPage(Array.isArray(rows) ? rows : []);
+        emit();
+        token = typeof reply.nextToken === 'string' && reply.nextToken ? reply.nextToken : null;
+      }
+    })();
+  };
+
   // Route a push (fresh or replayed from the pre-ack buffer) to its channel.
   // Dynamic form: apply against the matching per-id reconciler and emit the
   // merged collection immediately — confirmed sibling channels are not
@@ -527,6 +609,7 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
           state.seeded = true;
           state.reconciler.applySnapshot(push.seq, push.snapshot ?? []);
           emit();
+          if (push.nextToken) continueSnapshot(state.reconciler, state.params, push.nextToken);
         } else if (!state.awaitingResnapshot) {
           if (state.reconciler.applyDelta(push.seq, push.delta ?? {})) {
             emit();
@@ -548,6 +631,7 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
     if (push.kind === 'snapshot') {
       reconciler.applySnapshot(push.seq, push.snapshot ?? []);
       emit();
+      if (push.nextToken) continueSnapshot(reconciler, params, push.nextToken);
     } else if (reconciler.applyDelta(push.seq, push.delta ?? {})) {
       emit();
     } else {
