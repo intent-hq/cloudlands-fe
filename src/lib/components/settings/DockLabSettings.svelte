@@ -9,7 +9,7 @@
       sections: [
         {
           id: 'dock-lab',
-          title: m.settings_section_labs(),
+          title: m.settings_dockLab_label(),
           entries: [
             {
               kind: 'switch',
@@ -27,12 +27,10 @@
   );
 </script>
 
-<div>
-  <h2 class="type-title mb-3 text-foreground">{m.settings_section_labs()}</h2>
-  <div class="flex items-center gap-4 rounded-xl bg-card px-6 py-1">
-    <DockLabIllustration />
-    <div class="min-w-0 flex-1">
-      <SettingsForm {schema} embedded compact={false} />
-    </div>
+<!-- A row of the Appearance card (Settings › Display). -->
+<div class="flex items-center gap-4">
+  <DockLabIllustration />
+  <div class="min-w-0 flex-1">
+    <SettingsForm {schema} embedded compact={false} />
   </div>
 </div>

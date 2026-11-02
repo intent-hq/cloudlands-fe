@@ -443,7 +443,7 @@ test('motion audit: edge conversation open, close and interrupted close', async 
   const side = await mountSide(mount, page);
   const shellBox = side.getByTestId('dock-edge-shell');
   const SHELL = '[data-testid="dock-edge-shell"]';
-  const entry = side.locator('[data-dock-entry]').first();
+  const entry = side.locator('[data-dock-entry="dock:assistant"]');
   const preview = side.getByTestId('dock-preview');
   const warmOrigin = async () => {
     await entry.hover();
@@ -496,7 +496,10 @@ test('motion audit: edge conversation open, close and interrupted close', async 
         const reveal = Number(shell?.getAttribute('data-reveal') ?? 0);
         if (reveal <= 0.2) throw new Error('Missed the mid-flight reversal window');
         if (reveal < 0.7) {
-          const button = document.querySelector<HTMLButtonElement>('[data-dock-entry]');
+          // The same entry the shell opened from (the Assistant).
+          const button = document.querySelector<HTMLButtonElement>(
+            '[data-dock-entry="dock:assistant"]',
+          );
           if (!button || button.disabled) throw new Error('Side entry is unavailable');
           const sampler = (window as any).__motionAudit;
           if (!sampler.frames.length) throw new Error('Missing pre-reversal motion sample');

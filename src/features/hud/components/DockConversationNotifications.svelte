@@ -39,9 +39,23 @@
   const DEFAULT_DURATION = 10_000;
   const shown = new Set<ToastId>();
 
+  // No routine toasts in the notch: only failures (error, warning) and notices
+  // whose button is the only way to act (e.g. Undo) are shown. Plain info,
+  // success and progress notices are cleared here instead of lingering.
+  const bannerWorthy = (item: ToastT): boolean =>
+    item.type === 'error' ||
+    item.type === 'warning' ||
+    isButton(item.action) ||
+    isButton(item.cancel);
   // Only unaddressed notifications belong to this window's single host; the
   // store keeps newest first, so the first one is the one the banner shows.
-  const unaddressed = $derived(toast.getActiveToasts().filter((item) => !item.toasterId));
+  const unaddressed = $derived(
+    toast.getActiveToasts().filter((item) => !item.toasterId && bannerWorthy(item)),
+  );
+  $effect(() => {
+    for (const item of toast.getActiveToasts())
+      if (!item.toasterId && !bannerWorthy(item)) toast.dismiss(item.id);
+  });
   const current = $derived(unaddressed[0]);
   const glyph = $derived.by(() => {
     const type = current?.type;

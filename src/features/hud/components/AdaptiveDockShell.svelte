@@ -23,11 +23,14 @@
     dockViewportRect,
     getDockHeaderBounds,
     getDockShellLayout,
+    dockCompactWingWidth,
+    dockDragEndCommand,
     dockDragGripCenter,
     type DockDragGesture,
     type DockDragFinish,
   } from './dock-shell-geometry';
   import { useDockConversationPresence } from './dock-conversation-presence.svelte';
+  import { dockIntro } from '$features/hud/intro/dock-intro.svelte';
   import { useDockConversationResize } from './dock-conversation-resize.svelte';
   import { useDockShellResize } from './dock-shell-resize.svelte';
   import { useDockConversationFocus } from './dock-conversation-focus.svelte';
@@ -187,12 +190,12 @@
     !edge &&
       !dragging &&
       (machineMenuOpen ||
-        (pinned ? conversationVisible : expandedByUser || (!floating && pending))),
+        (pinned
+          ? conversationVisible
+          : expandedByUser || dockIntro.hold || (!floating && pending))),
   );
   const statusGroups = $derived(dockStatusGroups(workspaces));
-  const compactWingWidth = $derived(
-    12 + statusGroups.length * 12 + 6 * Math.max(0, statusGroups.length - 1) + 4,
-  );
+  const compactWingWidth = $derived(dockCompactWingWidth(statusGroups.length));
   const rowLimit = 5;
   const conversationResize = useDockConversationResize(
     () => placement,
@@ -214,6 +217,7 @@
         : workspaces.length,
       compactWingWidth,
       hasFeedback: actionFeedback !== null,
+      intro: dockIntro.open,
     }),
   );
   const headerHeight = $derived(layout.headerHeight);
@@ -257,14 +261,7 @@
   }
 
   function sendDragEnd(token: string, finish: DockDragFinish): void {
-    command({
-      action: finish.action,
-      token,
-      sequence: ++sequence,
-      ...(finish.action === 'end-drag'
-        ? { releasePoint: { x: finish.releasePoint.x, y: finish.releasePoint.y } }
-        : {}),
-    });
+    command(dockDragEndCommand(token, finish, ++sequence));
   }
   $effect(() => {
     const wantOpen = expanded;

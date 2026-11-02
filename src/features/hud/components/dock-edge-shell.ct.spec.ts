@@ -72,7 +72,7 @@ test('side conversation is one box beside the unchanged rail, unclipped, with no
   await expect(side.getByTestId('dock-edge-shell')).toHaveCount(0);
   const rail = side.getByTestId('dock-surface');
   const railBefore = await rail.boundingBox();
-  await side.locator('[data-dock-entry]').first().click();
+  await side.locator('[data-dock-entry="dock:assistant"]').click();
   const shell = side.getByTestId('dock-edge-shell');
   await expect(shell).toHaveAttribute('data-reveal', '1');
   const panel = side.getByTestId('dock-conversation-surface');
@@ -80,7 +80,7 @@ test('side conversation is one box beside the unchanged rail, unclipped, with no
   // The rail keeps its size, position and avatars while the conversation is open.
   expect(await rail.boundingBox()).toEqual(railBefore);
   await expect(rail).toHaveCSS('opacity', '1');
-  await expect(side.locator('[data-dock-entry]').first()).toBeVisible();
+  await expect(side.locator('[data-dock-entry="dock:assistant"]')).toBeVisible();
   // The open conversation's entry reads as selected.
   await expect(side.locator('[data-dock-entry][aria-current="true"]')).toHaveCount(1);
   // One box: the open shell is the panel, and it is the only bordered surface around it.
@@ -179,7 +179,7 @@ test.describe('side shell motion', () => {
     const side = await mountSide(mount, page);
     await page.clock.runFor(100);
     await shot(page, 'dock-edge-closed');
-    await side.locator('[data-dock-entry]').first().click();
+    await side.locator('[data-dock-entry="dock:assistant"]').click();
     const shell = side.getByTestId('dock-edge-shell');
     // Step frames deterministically until the shell is part-way open.
     const reveal = async () =>

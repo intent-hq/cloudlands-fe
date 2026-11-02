@@ -664,12 +664,14 @@ for (const mode of ['notch', 'side-left', 'side-right'] as const) {
     await wheelUntilScrolled(scroller, { deltaY: 1200 });
     await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
     // Keyboard navigation must reveal the target itself, without a test scrollIntoView call.
-    // The notch pins the assistant row below the scrolled list: End lands there, and
-    // one step up is the last workspace at the bottom of the scrolled list.
+    // Every mode keeps the Assistant below the workspaces: End lands there, and one
+    // step up is the last workspace at the bottom of the scrolled list.
     await entries.first().focus();
     await entries.first().press('End');
-    const last = isSide ? entries.last() : scroller.locator('[data-dock-row]').last();
-    if (!isSide) await page.keyboard.press('ArrowUp');
+    const last = isSide
+      ? entries.nth(workspaces.length - 1)
+      : scroller.locator('[data-dock-row]').last();
+    await page.keyboard.press('ArrowUp');
     await expect(last).toBeFocused();
     const visible = async () =>
       last.evaluate((el) => {

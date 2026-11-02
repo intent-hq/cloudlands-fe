@@ -135,9 +135,9 @@ export async function __drainLocalPrefsWriteChainForTesting(): Promise<void> {
   writeChain = Promise.resolve();
 }
 
-/** The experimental dock Labs setting is off until the user turns it on. */
+/** The dock is on for everyone by default; only an explicit opt-out turns it off. */
 export async function getDockLabEnabledLocalPref(): Promise<boolean> {
-  return (await getLocalPref('dockLabEnabled')) === true;
+  return (await getLocalPref('dockLabEnabled')) !== false;
 }
 
 export async function setDockLabEnabledLocalPref(enabled: boolean): Promise<void> {

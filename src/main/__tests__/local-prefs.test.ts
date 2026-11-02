@@ -61,6 +61,8 @@ describe('local-prefs', () => {
     });
     const { setDockLabEnabledLocalPref, getDockLabEnabledLocalPref } =
       await import('../local-prefs');
+    // Everyone is opted in until they turn the dock off.
+    expect(await getDockLabEnabledLocalPref()).toBe(true);
     await setDockLabEnabledLocalPref(true);
     fail = true;
     await expect(setDockLabEnabledLocalPref(false)).rejects.toThrow('disk unavailable');
