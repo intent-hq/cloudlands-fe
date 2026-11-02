@@ -131,6 +131,29 @@ describe('LiveScriptsClient (fake transport)', () => {
     });
   });
 
+  it('list reads an oversized definition whole through script.get', async () => {
+    const hello = {
+      server: {
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
+        capabilities: { scriptActiveLists: 1, boundedReads: 1 },
+      },
+    };
+    const { command: _command, ...rest } = DEV_SCRIPT;
+    const omitted = { ...rest, commandOmitted: true, commandBytes: 600_000 };
+    const whole: ScriptWithState = { ...DEV_SCRIPT, command: 'x'.repeat(600_000) };
+    mockedRequest
+      .mockResolvedValueOnce(hello)
+      .mockResolvedValueOnce({ scripts: [omitted] })
+      .mockResolvedValueOnce(whole);
+    const scripts = await new LiveScriptsClient().list('ws-1');
+
+    expect(scripts).toEqual([whole]);
+    expect(mockedRequest).toHaveBeenNthCalledWith(3, 'script.get', {
+      workspaceId: 'ws-1',
+      scriptId: 's-1',
+    });
+  });
+
   it('list rejects a repeated full-view cursor instead of looping', async () => {
     mockedRequest
       .mockResolvedValueOnce({

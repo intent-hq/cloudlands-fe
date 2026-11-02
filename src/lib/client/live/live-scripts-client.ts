@@ -75,7 +75,18 @@ export class LiveScriptsClient implements ScriptsClient {
         },
       );
       if (!Array.isArray(result?.scripts)) throw new Error(m.scripts_list_load_error());
-      scripts.push(...result.scripts);
+      for (const row of result.scripts) {
+        // A definition too big for one page arrives with `<field>Omitted`
+        // markers in place of its largest fields; `script.get` serves it whole.
+        scripts.push(
+          hasOmittedFields(row)
+            ? await backendRequest<ScriptWithState>('script.get', {
+                workspaceId,
+                scriptId: row.id,
+              })
+            : row,
+        );
+      }
       const next = fullPages ? result.nextCursor : undefined;
       if (typeof next === 'string' && next && !seen.has(next)) {
         seen.add(next);
@@ -227,4 +238,9 @@ export class LiveScriptsClient implements ScriptsClient {
     handler([]);
     return () => {};
   }
+}
+
+/** Whether a paged list row had fields replaced by `<field>Omitted: true`. */
+function hasOmittedFields(row: object): boolean {
+  return Object.entries(row).some(([key, value]) => key.endsWith('Omitted') && value === true);
 }
