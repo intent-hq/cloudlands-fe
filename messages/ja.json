@@ -1133,7 +1133,7 @@
   "chat_streamingStatus_memoryWait_label": "メモリの空きを待機中 — {used}/{cap} 実行中。",
   "chat_streamingStatus_modelUnavailable_after": "は利用できません",
   "chat_streamingStatus_modelUnavailable_before": "モデル",
-  "chat_streamingStatus_quotaExceeded_after": "— 再試行しても成功しません",
+  "chat_streamingStatus_quotaExceeded_after": "— リセット後に再試行するか、プロバイダーを切り替えてください",
   "chat_streamingStatus_quotaExceeded_before": "使用上限に達しました:",
   "chat_streamingStatus_responseFailed_label": "応答に失敗しました",
   "chat_streamingStatus_retryOnProvider_label": "{provider} で再試行",

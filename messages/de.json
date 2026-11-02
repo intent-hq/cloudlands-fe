@@ -1133,7 +1133,7 @@
   "chat_streamingStatus_memoryWait_label": "Warten auf freien Speicher — {used}/{cap} aktiv.",
   "chat_streamingStatus_modelUnavailable_after": "ist nicht verfügbar",
   "chat_streamingStatus_modelUnavailable_before": "Modell",
-  "chat_streamingStatus_quotaExceeded_after": "— ein erneuter Versuch wird nicht erfolgreich sein",
+  "chat_streamingStatus_quotaExceeded_after": "— erneut versuchen, sobald es zurückgesetzt ist, oder Anbieter wechseln",
   "chat_streamingStatus_quotaExceeded_before": "Nutzungslimit erreicht für",
   "chat_streamingStatus_responseFailed_label": "Antwort fehlgeschlagen",
   "chat_streamingStatus_retryOnProvider_label": "Mit {provider} erneut versuchen",

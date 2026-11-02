@@ -1133,7 +1133,7 @@
   "chat_streamingStatus_memoryWait_label": "Waiting for memory headroom — {used}/{cap} running.",
   "chat_streamingStatus_modelUnavailable_after": "is not available",
   "chat_streamingStatus_modelUnavailable_before": "Model",
-  "chat_streamingStatus_quotaExceeded_after": "— retrying it will not succeed",
+  "chat_streamingStatus_quotaExceeded_after": "— retry once it resets, or switch provider",
   "chat_streamingStatus_quotaExceeded_before": "Usage limit reached for",
   "chat_streamingStatus_responseFailed_label": "Response failed",
   "chat_streamingStatus_retryOnProvider_label": "Retry on {provider}",
