@@ -33,7 +33,7 @@
   const description = $derived(
     kind === 'existing'
       ? m.workspace_plainFolder_isolatedCopy_description()
-      : m.workspace_plainFolder_initializeGit_description(),
+      : m.workspace_plainFolder_initializeGitChoice_description(),
   );
 
   const id = `initialize-git-${crypto.randomUUID()}`;
