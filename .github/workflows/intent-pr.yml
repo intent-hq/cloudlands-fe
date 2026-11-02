@@ -3,8 +3,8 @@ name: Intent PR Checks
 on:
   pull_request:
     branches: ['main', 'feat/up-clean-3-shared-controls']
-  # PRs run metadata, static consumer contracts, the CI policy test, type/lint
-  # and unit tests. The merge queue reruns type/lint and unit tests on the
+  # PRs run metadata, static consumer contracts, the CI policy test, type/lint,
+  # unit tests and repeated runs of any changed component test spec. The merge queue reruns type/lint and unit tests on the
   # merged tree and adds build, integration and relevant browser/native suites
   # (browser suites also run nightly/manually). Release-shaped diffs retain the
   # existing fast path; CI Gate rejects all other unexpected skips.
@@ -515,6 +515,7 @@ jobs:
       root_playwright_required: ${{ steps.root-playwright.outputs.root_playwright_required }}
       electron_required: ${{ steps.electron.outputs.electron_required }}
       portable_fixtures_required: ${{ steps.portable-fixtures.outputs.portable_fixtures_required }}
+      ct_changed_specs: ${{ steps.ct-changed.outputs.ct_changed_specs }}
     steps:
       - uses: actions/checkout@v7
       - name: Fetch diff base commit
@@ -554,6 +555,19 @@ jobs:
           printf '%s\n' "$out"
           line=$(printf '%s\n' "$out" | grep -E '^ct_required=(true|false)$' | tail -n1 || true)
           echo "${line:-ct_required=true}" >> "$GITHUB_OUTPUT"
+      - name: List changed component test specs
+        # JSON array of the .ct.spec.ts files this diff adds or edits, for
+        # test-ct-changed. Fail-closed: any error writes `error`, which that
+        # job rejects and the CI Gate never accepts as "no specs changed".
+        id: ct-changed
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        run: |
+          set -euo pipefail
+          out=$(node scripts/ct-changed-specs.mjs --diff "$BASE_SHA" HEAD) || out="ct_changed_specs=error"
+          printf '%s\n' "$out"
+          line=$(printf '%s\n' "$out" | grep -E '^ct_changed_specs=' | tail -n1 || true)
+          echo "${line:-ct_changed_specs=error}" >> "$GITHUB_OUTPUT"
       - name: Evaluate root Playwright relevance
         id: root-playwright
         env:
@@ -1184,6 +1198,107 @@ jobs:
       slots: ${{ needs.route.outputs.slots }}
       cloud: ${{ needs.route.outputs.cloud }}
 
+  # Repeats just the component test specs a PR adds or edits, retries off, so
+  # a flaky spec fails on its own PR instead of ejecting unrelated PRs from
+  # the merge queue (dock-actions.ct.spec.ts ejected #3978; the new
+  # dock-composer-spec.ct.spec.ts ejected #4002 and failed 12 of 40 runs
+  # under load). The full suite stays queue-only (#3930: cost); this job runs
+  # only when a spec changed. scripts/ct-changed-specs.mjs lists the specs and
+  # sets the repetition count (20, scaled down for PRs touching many specs).
+  test-ct-changed:
+    name: Changed Component Tests (repeated)
+    needs: [route, release-fast-path]
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' && needs.release-fast-path.outputs.ct_changed_specs != '[]' }}
+    # The same 8-core burst runner as the queue's CT shards, without a slot:
+    # the bundle build below needs their 12 GiB heap.
+    runs-on: ${{ fromJSON(needs.route.outputs.cloud || '{}')['gh-linux-8x'] || fromJSON('["warp-ubuntu-2404-x64-8x"]') }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+      CT_CHANGED_SPECS: ${{ needs.release-fast-path.outputs.ct_changed_specs }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Validate changed spec list
+        # Rejects a missing or `error` list before any setup is paid for.
+        run: |
+          set -euo pipefail
+          node scripts/ct-changed-specs.mjs --filters "$CT_CHANGED_SPECS" > /dev/null
+          echo "Changed component test specs: $CT_CHANGED_SPECS"
+          echo "Repetitions per test: $(node scripts/ct-changed-specs.mjs --repeat-each "$CT_CHANGED_SPECS")"
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+          run_install: false
+          dest: ~/setup-pnpm-${{ runner.name }}
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Cache pnpm store
+        uses: ./.github/actions/pnpm-store-cache
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Generate i18n messages
+        run: pnpm run generate:i18n
+      - name: Resolve CT browser cache
+        id: ct-browser
+        run: |
+          node scripts/run-ct-tests.mjs --print-browser-plan > "$RUNNER_TEMP/ct-browser-plan.json"
+          # shellcheck disable=SC2016
+          node --input-type=module -e '
+          import { readFileSync } from "node:fs";
+          const plan = JSON.parse(readFileSync(process.argv[1], "utf8"));
+          console.log(`cache-key=${plan.cacheKey}`);
+          console.log(`cache-dir=${plan.cacheDir}`);
+          ' "$RUNNER_TEMP/ct-browser-plan.json" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.ct-browser.outputs.cache-dir }}
+          key: playwright-browsers-${{ runner.os }}-${{ runner.arch }}-${{ steps.ct-browser.outputs.cache-key }}
+      - name: Install Playwright browsers
+        # The burst image already carries Chromium's shared libraries (see
+        # browser-tests.yml); a missing one fails the first test loudly.
+        timeout-minutes: 8
+        run: node scripts/run-ct-tests.mjs --install-browsers chromium
+      - name: Build CT bundle
+        # Same split as browser-tests.yml: build once under a 12 GiB heap
+        # (--only-changed=HEAD selects no tests on a clean checkout), then
+        # run the tests against the cached bundle under 4 GiB.
+        env:
+          NODE_OPTIONS: '--max-old-space-size=12288'
+        run: node scripts/run-ct-tests.mjs --only-changed=HEAD --pass-with-no-tests --reporter=list
+      - name: Repeat changed component tests
+        # Retries off, so any failing repetition fails the job, and
+        # --fail-on-flaky-tests as a backstop. Two workers, like a queue
+        # shard. Quarantined tests are excluded as in the required lane; a
+        # spec whose tests are all quarantined fails with "No tests found".
+        env:
+          NODE_OPTIONS: '--max-old-space-size=4096'
+          PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-report/results.json
+        run: |
+          set -euo pipefail
+          # A file, not process substitution, so a failing helper stops the step.
+          node scripts/ct-changed-specs.mjs --filters "$CT_CHANGED_SPECS" > "$RUNNER_TEMP/ct-filters"
+          mapfile -d '' filters < "$RUNNER_TEMP/ct-filters"
+          repeat=$(node scripts/ct-changed-specs.mjs --repeat-each "$CT_CHANGED_SPECS")
+          node scripts/run-ct-tests.mjs "${filters[@]}" --repeat-each="$repeat" --retries=0 \
+            --fail-on-flaky-tests --workers=2 --grep-invert '@quarantine\b' --reporter=list,html,json
+      - name: Upload playwright report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-ct-changed-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
   test-playwright:
     needs: [route, release-fast-path]
     if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.release-fast-path.outputs.root_playwright_required == 'true' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
@@ -1272,6 +1387,7 @@ jobs:
         test-integration,
         test-portable-fixtures,
         test-ct,
+        test-ct-changed,
         test-playwright,
         test-electron,
         monorepo-consumer-checks,
@@ -1284,6 +1400,7 @@ jobs:
           CT_REQUIRED: ${{ needs.release-fast-path.outputs.ct_required }}
           ROOT_PLAYWRIGHT_REQUIRED: ${{ needs.release-fast-path.outputs.root_playwright_required }}
           ELECTRON_REQUIRED: ${{ needs.release-fast-path.outputs.electron_required }}
+          CT_CHANGED_SPECS: ${{ needs.release-fast-path.outputs.ct_changed_specs }}
         run: |
           # route must have succeeded on every run (see the gate comment): a
           # route failure skips the heavy jobs, and a fast-path skip
@@ -1343,12 +1460,24 @@ jobs:
             case "${{ needs.build-web.result }}" in success|skipped) ;; *) exit 1 ;; esac
             case "${{ needs.test-portable-fixtures.result }}" in success|skipped) ;; *) exit 1 ;; esac
             case "${{ needs.test-ct.result }}" in success|skipped) ;; *) exit 1 ;; esac
+            # Changed CT specs: success, or skipped only when none changed
+            # (an `error` or missing list never counts as none) or via the
+            # release-PR fast path.
+            ct_changed_result="${{ needs.test-ct-changed.result }}"
+            if [ "$ct_changed_result" != "success" ]; then
+              if [ "$ct_changed_result" != "skipped" ] || { [ "$CT_CHANGED_SPECS" != "[]" ] && [ "$FAST_PATH" != "true" ]; }; then
+                echo "test-ct-changed result '$ct_changed_result' not acceptable (ct_changed_specs='$CT_CHANGED_SPECS', fast_path='$FAST_PATH')"
+                exit 1
+              fi
+            fi
             case "${{ needs.test-playwright.result }}" in success|skipped) ;; *) exit 1 ;; esac
             case "${{ needs.test-electron.result }}" in success|skipped) ;; *) exit 1 ;; esac
             case "${{ needs.test-integration.result }}" in success|skipped) ;; *) exit 1 ;; esac
             exit 0
           fi
           case "${{ needs.pr-static.result }}" in success|skipped) ;; *) exit 1 ;; esac
+          # PR-only: the queue runs the full CT suite instead.
+          case "${{ needs.test-ct-changed.result }}" in success|skipped) ;; *) exit 1 ;; esac
           # Queued heavy jobs (checks / build-web / test): success, or
           # skipped ONLY via the release-PR fast path (check_heavy above).
           check_heavy "checks" "${{ needs.checks.result }}"
