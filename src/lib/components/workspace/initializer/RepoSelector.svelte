@@ -1759,9 +1759,7 @@
           {m.workspace_repoSelector_whichRepo_label()}
         </h2>
         <p class="text-sm text-subtle mt-1">
-          {plainFolderMode
-            ? m.workspace_repoSelector_whichRepo_plainFolder_description()
-            : m.workspace_repoSelector_whichRepo_description()}
+          {m.workspace_repoSelector_whichRepo_description()}
         </p>
       </div>
 

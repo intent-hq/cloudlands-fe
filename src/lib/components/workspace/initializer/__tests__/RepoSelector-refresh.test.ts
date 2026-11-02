@@ -147,7 +147,7 @@ import { invoke } from '$lib/electron-bridge';
 import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
 import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 
-const DROPDOWN_HEADING = 'What repo should we work on?';
+const DROPDOWN_HEADING = 'What should we work on?';
 warmImport(() => import('../../../ui/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('./mocks/MockComponent.svelte'));
 

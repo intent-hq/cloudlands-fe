@@ -174,7 +174,7 @@ beforeEach(() => {
 });
 import { warmImport } from '../../../../../test/warm-import';
 
-const DROPDOWN_HEADING = 'What repo should we work on?';
+const DROPDOWN_HEADING = 'What should we work on?';
 const ACTIVE_TAB_CLASS = 'bg-background';
 
 warmImport(() => import('../../../ui/__tests__/mocks/Fa.svelte'));

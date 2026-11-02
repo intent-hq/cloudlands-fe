@@ -205,7 +205,7 @@ beforeEach(() => {
 warmImport(() => import('../../../ui/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('./mocks/MockComponent.svelte'));
 
-const DROPDOWN_HEADING = 'What repo should we work on?';
+const DROPDOWN_HEADING = 'What should we work on?';
 
 async function openDropdown(props: Record<string, unknown> = {}) {
   const rendered = render(RepoSelector, { props });
@@ -400,5 +400,19 @@ describe('RepoSelector git choice (Labs plain folders)', () => {
         ),
       );
     });
+  });
+
+  // User decision: the picker header is about the work, not about code, and
+  // makes no "isolated workspace" claim, with or without plain folders.
+  it.each([
+    ['plain folders on', { gitChoice: gitChoice(false), plainFolderMode: true }],
+    ['plain folders off', {}],
+  ])('header reads the same with %s', async (_label, props) => {
+    await openDropdown(props);
+    expect(screen.getByText('What should we work on?')).toBeTruthy();
+    expect(
+      screen.getByText('Clone a project, pick a folder on this computer, or start a new one.'),
+    ).toBeTruthy();
+    expect(screen.queryByText(/isolated workspace/i)).toBeNull();
   });
 });

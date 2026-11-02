@@ -68,7 +68,7 @@ for (const { name, viewport } of [
       .locator('button[aria-haspopup="dialog"]')
       .first();
     await repo.click();
-    const chooser = page.getByRole('dialog', { name: 'What repo should we work on?' });
+    const chooser = page.getByRole('dialog', { name: 'What should we work on?' });
     await expectViewportContainment(chooser);
     // Exercise the pixels shared with the parent, not just the child area
     // extending beyond it. A body-portalled z40 popup can be DOM-visible yet
@@ -153,7 +153,7 @@ test('standalone repository chooser retains pointer selection, Escape and focus 
     .locator('button[aria-haspopup="dialog"]')
     .first();
   await repo.click();
-  const chooser = page.getByRole('dialog', { name: 'What repo should we work on?' });
+  const chooser = page.getByRole('dialog', { name: 'What should we work on?' });
   await expectViewportContainment(chooser);
   const local = chooser.getByRole('tab', { name: 'Existing folder', exact: true });
   await expectPointerReachable(local);

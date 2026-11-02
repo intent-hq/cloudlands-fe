@@ -195,7 +195,7 @@ beforeEach(() => {
 });
 import { warmImport } from '../../../../../test/warm-import';
 
-const DROPDOWN_HEADING = 'What repo should we work on?';
+const DROPDOWN_HEADING = 'What should we work on?';
 
 warmImport(() => import('../../../ui/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('./mocks/MockComponent.svelte'));
