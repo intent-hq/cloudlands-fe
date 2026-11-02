@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.269.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.268.1...v2.269.0) (2026-11-02)
+
+
+### 🚀 Features
+
+* **browser-access:** use the desktop app and its backends from a browser ([#4017](https://github.com/intent-hq/cloudlands-fe/issues/4017)) ([4401a33](https://github.com/intent-hq/cloudlands-fe/commit/4401a3308e68072bfbd83f8a7ab400f65e2e3993))
+
 ## [2.268.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.268.0...v2.268.1) (2026-11-02)
 
 
