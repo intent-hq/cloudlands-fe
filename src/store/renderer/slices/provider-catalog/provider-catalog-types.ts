@@ -30,6 +30,11 @@ export interface ProviderCatalogState {
   profiles?: Collection<import('$shared/provider-catalog').ProviderProfileSummary, 'id'>;
   /** Renamed Default configurations by base provider id (§5.54 catalog `defaultNames`). */
   defaultNames?: Record<string, string>;
+  /** Default configurations that can't run on another machine (§5.54 catalog `defaultRemoteIncompatibility`). */
+  defaultRemoteIncompatibility?: Record<
+    string,
+    import('$shared/provider-catalog').RemoteIncompatibility
+  >;
 }
 
 export interface WorkspaceCatalogSnapshot {
