@@ -926,6 +926,44 @@
     scope = data.scope || '';
   }
 
+  /**
+   * Reopen a plain folder remembered from the last create (Labs) as an
+   * existing plain folder with the git switch off. The folder is checked
+   * first: one that has become a git repository opens as a git repo, and a
+   * missing or unreadable one, or Labs off, preselects nothing.
+   */
+  async function restoreRememberedPlainFolder(path: string) {
+    let status: {
+      exists: boolean;
+      isDirectory: boolean;
+      isGitRepo: boolean;
+      isSubdirectoryOfGitRepo?: boolean;
+      relativePathFromGitRoot?: string;
+    } | null = null;
+    try {
+      const result = await invoke<any>('file:getDirectoryStatus', { path });
+      status = result?.success && result.data ? result.data : null;
+    } catch (err) {
+      logger.warn('Failed to check the remembered plain folder', err);
+    }
+    // Anything picked while the folder was checked wins.
+    if (!mounted || repoPath || repoType === 'gitlab') return;
+    if (!status?.exists || !status.isDirectory) return;
+    if (status.isGitRepo || status.isSubdirectoryOfGitRepo) {
+      applyLastSelectedRepo({
+        path,
+        type: 'local',
+        isValidPath: true,
+        scope: status.isSubdirectoryOfGitRepo ? status.relativePathFromGitRoot : undefined,
+      });
+      return;
+    }
+    if (!initializeGitChoice.available) return;
+    if (initializeGitChoice.initializeGit) initializeGitChoice.set(false);
+    applyLastSelectedRepo({ path, type: 'local', isValidPath: true });
+    plainFolderPick = { path, kind: 'existing' };
+  }
+
   $effect(() => {
     if (!$workspaceInitializerHydrated$ || didApplyHydratedCompactState) return;
     if ($compactFormState$) {
@@ -1028,7 +1066,9 @@
     if (hydrationAction === 'wait') return;
 
     didApplyHydratedLastSelectedRepo = true;
-    if (hydrationAction === 'restore' && lastSelectedRepo) {
+    if (hydrationAction === 'restore' && lastSelectedRepo?.plainFolder) {
+      void restoreRememberedPlainFolder(lastSelectedRepo.path);
+    } else if (hydrationAction === 'restore' && lastSelectedRepo) {
       applyLastSelectedRepo(lastSelectedRepo);
     } else if (hydrationAction === 'restore-recent' && recentRepos.length > 0) {
       // Fall back to the most recently used repository
@@ -2524,13 +2564,14 @@
       isNewRepo = false;
       isValidPath = true;
     }
-    // A plain folder is not reopened: the next form starts from the toggle again.
-    if (!preserveSubmission && plainFolder !== null) {
-      repoPath = '';
-      isValidPath = false;
+    // A plain folder now exists (one made with New too), so it stays selected
+    // as an existing plain folder; the in-place warning still guards each create.
+    const keptPlainFolder = !preserveSubmission && plainFolder !== null && !!repoPath;
+    if (keptPlainFolder) {
+      plainFolderPick = { path: repoPath, kind: 'existing' };
+      isValidPath = true;
       branch = '';
       scope = '';
-      plainFolderPick = null;
     }
     if (
       !preserveSubmission &&
@@ -2545,6 +2586,7 @@
           ...(githubUrl ? { githubUrl } : {}),
           isValidPath,
           ...(scope ? { scope } : {}),
+          ...(keptPlainFolder ? { plainFolder: true as const } : {}),
         }),
       );
     }
@@ -2573,7 +2615,7 @@
 
     // Restore the last used setup script for the preserved repo so the next
     // workspace creation defaults to the same script
-    if (repoPath && repoType !== 'gitlab') {
+    if (repoPath && repoType !== 'gitlab' && !keptPlainFolder) {
       restoreLastUsedSetupScript(repoPath);
     }
 
@@ -2610,13 +2652,15 @@
       selectedProvider,
       skipIsolation,
       remoteSetup, // null at this point
-      // Repo selection — preserved so the next form re-opens on the same repo
-      repoPath,
+      // Repo selection — preserved so the next form re-opens on the same repo.
+      // A plain folder is not saved here (it would reopen as a git pick): the
+      // next form restores it from the last selected repo after re-checking it.
+      repoPath: keptPlainFolder ? '' : repoPath,
       repoType,
       githubUrl,
       branch,
       isNewRepo,
-      isValidPath,
+      isValidPath: keptPlainFolder ? false : isValidPath,
       scope,
       scopeRepoPath: scope ? repoPath : undefined,
     };

@@ -112,7 +112,8 @@ function setupScriptRecord(
 function compactCompletionFormState(
   s: CompactWorkspaceInitializationSubmission,
 ): NonNullable<WorkspaceInitializationRequest['completion']>['compactFormState'] {
-  // A plain-folder selection resets like a remote one: it is not a repository to reopen.
+  // A plain-folder selection resets like a remote one: it is not a repository to
+  // reopen. The folder itself is remembered as `lastSelectedRepo` instead.
   const remote = s.repoType === 'remote' || (s.repoType === 'local' && !!s.plainFolder);
   const repoPath = remote ? '' : s.repoPath;
   const repoType = remote ? 'local' : s.repoType;
@@ -453,20 +454,20 @@ export function* prepareCompactWorkspaceInitialization(
       draft: s.draft,
       compactFormState: compactCompletionFormState(s),
       // A newly created repository now exists, so the next form opens it as an existing repo.
-      // A plain folder is not remembered: the next form starts from the toggle again.
+      // A plain folder (made with New or picked) now exists too: the next form
+      // re-checks it and reopens it as an existing plain folder.
       lastSelectedRepo:
-        !plainFolder &&
-        s.formPersistence &&
-        s.repoPath &&
-        (s.repoType === 'local' || s.repoType === 'github')
-          ? {
-              path: s.repoPath,
-              type: s.repoType,
-              ...(s.githubUrl ? { githubUrl: s.githubUrl } : {}),
-              isValidPath: s.isNewRepo ? true : s.isValidPath,
-              ...(s.scope ? { scope: s.scope } : {}),
-            }
-          : undefined,
+        plainFolder && s.formPersistence && s.repoPath
+          ? { path: s.repoPath, type: 'local', isValidPath: true, plainFolder: true }
+          : s.formPersistence && s.repoPath && (s.repoType === 'local' || s.repoType === 'github')
+            ? {
+                path: s.repoPath,
+                type: s.repoType,
+                ...(s.githubUrl ? { githubUrl: s.githubUrl } : {}),
+                isValidPath: s.isNewRepo ? true : s.isValidPath,
+                ...(s.scope ? { scope: s.scope } : {}),
+              }
+            : undefined,
     },
   };
   return { request, prepared: { pull: Boolean(request.pull) } };
