@@ -1,6 +1,6 @@
 <script lang="ts">
   /**
-   * Browser access (Settings → Devices): lets a browser on another device use
+   * Browser access (Settings → Mobile): lets a browser on another device use
    * this app, including every backend it connects to, through a private HTTPS
    * front-end such as `tailscale serve`. Main owns the setting and server; the
    * browser-access saga carries requests and this section renders its slice.
@@ -14,7 +14,6 @@
     type SettingEntry,
   } from '$lib/components/patterns/settings';
   import { CopyInput } from '$lib/components/patterns/settings/custom-controls';
-  import { tailscaleServeCommand } from '$lib/browser-access';
   import { store as appStore } from '$store/renderer/store';
   import {
     selectBrowserAccess,
@@ -138,15 +137,6 @@
         },
       );
     }
-    if (current?.running) {
-      entries.push({
-        kind: 'custom',
-        id: 'browser-access-command',
-        label: m.settings_browserAccess_tailscale_label(),
-        description: m.settings_browserAccess_tailscale_description(),
-        layout: 'full-width',
-      });
-    }
     return defineSettings({
       sections: [
         { id: 'browser-access-settings', title: m.settings_section_browserAccess(), entries },
@@ -179,16 +169,6 @@
   {/if}
 {/snippet}
 
-{#snippet commandControl()}
-  {#if $access$}
-    <CopyInput
-      value={tailscaleServeCommand($access$.port)}
-      label={m.settings_browserAccess_tailscale_label()}
-      data-testid="browser-access-command"
-    />
-  {/if}
-{/snippet}
-
 <SettingsForm
   {schema}
   embedded
@@ -196,6 +176,5 @@
   descriptions={{ 'browser-access-enabled': toggleDescription }}
   custom={defineSettingsCustomControls({
     'browser-access-key': keyControl,
-    'browser-access-command': commandControl,
   })}
 />

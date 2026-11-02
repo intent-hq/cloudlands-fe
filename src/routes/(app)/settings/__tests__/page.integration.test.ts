@@ -627,6 +627,7 @@ describe('settings tab route and focus behavior', () => {
     ['/settings?tab=devices#websocket-api', 'Mobile', 'websocket-api'],
     ['/settings?tab=machines#remote-access', 'Mobile', 'websocket-api'],
     ['/settings?tab=mobile#backend-sync', 'Machines', 'backend-sync'],
+    ['/settings?tab=devices#browser-access', 'Mobile', 'browser-access'],
     // Legacy deep link from when the section lived on Advanced.
     ['/settings?tab=advanced#websocket-api', 'Mobile', 'websocket-api'],
     ['/settings?tab=agent-behavior#agent-features', 'Agent defaults', 'agent-features'],

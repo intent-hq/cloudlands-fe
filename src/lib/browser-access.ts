@@ -9,8 +9,3 @@
 export function canManageBrowserAccess(): boolean {
   return Boolean((globalThis as { electronAPI?: unknown }).electronAPI);
 }
-
-/** The command that puts this machine's Browser access on the user's tailnet. */
-export function tailscaleServeCommand(port: number): string {
-  return `tailscale serve --bg ${port}`;
-}
