@@ -4,14 +4,16 @@ import { goto } from '$app/navigation';
 import { menuIpcSaga } from '$store/renderer/slices/app-layout/sagas/menu-ipc-saga';
 import { voiceSettingsToastAction } from '$features/hardware-console/voice/voice-setup-toast';
 import { navigateToRoute } from './navigation.client';
+import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import {
   getSettingsPreviousPath,
   navigateBackFromSettings,
   navigateToSettings,
 } from './workspace-navigation';
 
-const { workspaceItems } = vi.hoisted(() => ({
+const { workspaceItems, dispatch } = vi.hoisted(() => ({
   workspaceItems: { value: [] as Array<{ id: string; status: string }> },
+  dispatch: vi.fn(),
 }));
 
 vi.mock('$lib/electron-bridge', () => ({ isElectron: () => true }));
@@ -19,7 +21,7 @@ vi.mock('$lib/utils/keyboardShortcuts', () => ({ isFocusInTerminal: () => false 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: () => ({}), dispatch: vi.fn() });
+  return createAppStoreMockModule({ state: () => ({}), dispatch });
 });
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceItems: { select: () => workspaceItems.value },
@@ -107,6 +109,8 @@ describe('Settings return navigation', () => {
       expect(getSettingsPreviousPath()).toBe('/workspace/available');
       await navigateBackFromSettings();
       expect(goto).toHaveBeenLastCalledWith('/workspace/available');
+      // The fallback workspace may not be in the tab strip: going back opens its tab.
+      expect(dispatch).toHaveBeenLastCalledWith(openWorkspaceTab('available'));
     },
   );
 

@@ -27,11 +27,6 @@ beforeEach(() => {
       disconnect() {}
     },
   );
-  Element.prototype.scrollIntoView = vi.fn();
-  Object.defineProperty(HTMLElement.prototype, 'getAnimations', {
-    configurable: true,
-    value: () => [],
-  });
   context = initAppStore(store);
   store.dispatch(
     initializeLayout('header-removal', {

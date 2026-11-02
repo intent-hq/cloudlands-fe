@@ -1,13 +1,5 @@
 # Redux Store — Agent Directives
 
-> Architecture update — the renderer uses the published Themis runtime.
-> The `@themislib/themis` version declared in `package.json` is the canonical
-> Store implementation. Themis
-> owns its saga middleware and initializes it during `Store.init()`; do not add
-> another saga middleware. `store.runSaga(sagaFn)` starts an app-owned saga and
-> returns its cancellation handler. Business side effects belong to root-owned
-> sagas, not Store middleware or new renderer bridges.
-
 Use these rules when creating or editing code in `src/store/renderer/` so Redux state stays serializable and normalized.
 
 ## Source of Truth
@@ -15,6 +7,7 @@ Use these rules when creating or editing code in `src/store/renderer/` so Redux 
 - The published exports of the `@themislib/themis` version declared in `package.json` and installed Themis skills are the source of truth for the store API surface.
 - This file is a repository-local companion checklist for `src/store/renderer/`. Keep it concise.
 - If this file conflicts with the installed Themis runtime, follow the runtime and report the instruction drift instead of extending local guidance.
+- Themis owns its saga middleware and initializes it during `Store.init()`; do not add another. `store.runSaga(sagaFn)` starts an app-owned saga and returns its cancellation handler. Business side effects belong to root-owned sagas, not Store middleware or new renderer bridges.
 
 ## 1. Import Boundaries
 
@@ -57,7 +50,6 @@ import {
 - `takeEveryFromElectronChannel` / `takeEveryFromWindowEvent` from `../../../utils/ipc-channel` in saga files — standard IPC and window listener loops with cleanup.
 - `getLocalStorageJSON` / `setLocalStorageJSON` from `../../../utils/safe-local-storage-saga` in saga files — safe persistence helpers for sagas.
 - `createCollection` / `addItem` / `removeItem` / `updateItem` / `getItem` / `getItems` from `@themislib/themis/utils/collections/collection-utils` — immutable collection CRUD and lookup.
-- If a prompt says `getAllItems`, use `getItems` here; `getItems` is the real helper in this codebase.
 
 ## 5. Selector Lifecycle Rules
 
@@ -131,7 +123,7 @@ const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
 
 - Every slice must have a colocated reducer test file named `*-slice.test.ts`.
 - Test the initial state, every reducer case, and important edge cases.
-- Test saga behavior with `expectSaga` from `redux-saga-test-plan` or with explicit generator stepping when that is clearer.
+- Test saga behavior with `runSaga` from `redux-saga` and a stub `{ dispatch, getState, channel }` I/O object, or with explicit generator stepping when that is clearer.
 - Keep test files next to the code they cover.
 - When you change store structure, update or add tests in the same task.
 

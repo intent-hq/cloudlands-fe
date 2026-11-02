@@ -216,6 +216,7 @@
       appStore.dispatch(resetWorkspaceState());
 
       // Navigate directly to the simulated workspace
+      // eslint-disable-next-line intent/no-raw-workspace-navigation -- dev-only simulation of a fake workspace that must not join the persisted tab strip.
       goto(`/workspace/${simulatedWorkspaceId}`)
         .then(() => {
           logger.info('[Debug] Navigation to simulated workspace successful');

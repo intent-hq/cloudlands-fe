@@ -10,6 +10,7 @@
       narrow: { props: { cardWidth: 240 } },
       'agent-bins': { props: { cardWidth: 320, agentBins: true } },
       'agent-orphaned-bin': { props: { cardWidth: 320, agentBins: true, orphanedBin: true } },
+      'agent-pinned': { props: { cardWidth: 320, pinnedAgents: true } },
     },
   });
 </script>
@@ -47,11 +48,19 @@
   // `orphanedBin`: the daemon also served `delegatedCounts` with `orphaned`, so
   // the first agent shows its collapsed per-parent group and the Delegated bin
   // counts only the orphaned row.
+  // `pinnedAgents`: the first two agents are pinned (`AgentLite.pinned`), so
+  // they list first with the pinned divider below them.
   let {
     cardWidth = 320,
     agentBins = false,
     orphanedBin = false,
-  }: { cardWidth?: number; agentBins?: boolean; orphanedBin?: boolean } = $props();
+    pinnedAgents = false,
+  }: {
+    cardWidth?: number;
+    agentBins?: boolean;
+    orphanedBin?: boolean;
+    pinnedAgents?: boolean;
+  } = $props();
   const timestamp = '2026-09-16T00:00:00.000Z';
   const notes = [
     {
@@ -81,10 +90,15 @@
     updatedAt: timestamp,
     ...note,
   }));
-  const agents: AgentSession[] = [
-    'Interface reviewer',
-    'A deliberately long implementation agent name',
-  ].map((name, index): AgentSession => ({
+  const agentNames = pinnedAgents
+    ? [
+        'Release coordinator',
+        'Pinned docs reviewer',
+        'Interface reviewer',
+        'A deliberately long implementation agent name',
+      ]
+    : ['Interface reviewer', 'A deliberately long implementation agent name'];
+  const agents: AgentSession[] = agentNames.map((name, index): AgentSession => ({
     id: AgentId(`sidebar-row-agent-${index}`),
     workspaceId: WorkspaceId(LIST_LABELS_WORKSPACE),
     backendSessionId: AgentId(`sidebar-row-session-${index}`),
@@ -93,6 +107,7 @@
     messages: [],
     createdAt: timestamp,
     updatedAt: timestamp,
+    ...(pinnedAgents ? { pinned: index < 2 } : {}),
   }));
   let openedNote = $state('');
   let selectedAgentId = $state<string | null>(null);

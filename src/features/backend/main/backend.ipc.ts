@@ -32,6 +32,7 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import { Logger } from '$shared/logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { isLoopbackHost } from '$shared/loopback-host';
+import { classifyStartupReply } from '$shared/daemon-startup';
 import { cancelInflightHostExecStreamsForBackendSwitch } from '$shared/main/host-exec-stream';
 import {
   AuthRejectedError,
@@ -72,7 +73,14 @@ import {
   persistClientId,
   setLocalHostIdentity,
 } from './client-identity';
-import { formatTransportInfo } from './transport-info';
+import {
+  buildBackendStatusPayload,
+  type BackendStatusPayload,
+  type BackendStatusSnapshot,
+  type BackendStatusSource,
+  type BuildBackendStatusOptions,
+  type DaemonUpdateMarker,
+} from './backend-status-payload';
 import { readPinnedVersion } from './intentd-version-pin';
 import { updateDaemonToPin } from './exact-daemon-update';
 import { getConnectionTunnel, setConnectionTunnel } from './connection-tunnel';
@@ -290,16 +298,6 @@ function logDaemonHelloBuild(helloResult: unknown, connectionId: string): void {
  * dropped).
  */
 export const DAEMON_UPDATE_PENDING_TTL_MS = 5 * 60_000;
-
-/**
- * Additive `backend:status` marker: the drop is caused by a requested update.
- * Carries the epoch ms of the FIRST drop main observed for the backend, so
- * every window of that backend (including one opened mid-outage) shares the
- * same countdown deadline.
- */
-interface DaemonUpdateMarker {
-  daemonUpdateDisconnectedAt?: number;
-}
 
 // Backends with a user-requested daemon update in flight: `Date.now()` of the
 // successful `system.requestUpdate`, keyed by backend id. Main is the only
@@ -1280,6 +1278,15 @@ export function __getProtocolMismatchForTesting(
 ): ConnectionProtocolMismatchEvent | null {
   return protocolMismatchById.get(id) ?? null;
 }
+/**
+ * Token-free connections list for a Browser access tab bound to
+ * `windowBackendId` (the same shape `connections:list` returns to a window).
+ */
+export function listConnectionsForBrowserAccess(
+  windowBackendId: string,
+): Promise<ConnectionsListResult> {
+  return listConnections(windowBackendId);
+}
 export function __listConnectionsForTesting(
   windowBackendId?: string,
 ): Promise<ConnectionsListResult> {
@@ -1693,21 +1700,7 @@ function replayReconnectOnceConnected(id: string, rebuilt: JsonRpcClient): void 
   const replay = (): void => {
     if (replayed || backendClients.get(id) !== rebuilt) return;
     replayed = true;
-    broadcast(
-      BACKEND.STATUS,
-      {
-        status: 'connected',
-        reconnected: true,
-        transport: formatTransportInfo(
-          rebuilt.getConfig(),
-          getPinnedVersion(),
-          rebuilt.getConnectedVia(),
-        ),
-        reconnectAttempts: rebuilt.getReconnectAttempts(),
-        ...daemonUpdateMarker(id),
-      },
-      id,
-    );
+    broadcastBackendStatus(id, rebuilt, { status: 'connected', extras: { reconnected: true } });
     backendReconnectForwarder.emit('reconnected', id);
   };
   if (rebuilt.getStatus() === 'connected') {
@@ -2005,20 +1998,7 @@ function createAdditionalBackendClient(
             });
             if (refreshed) {
               setDaemonVersionInfo(refreshed);
-              broadcast(
-                BACKEND.STATUS,
-                {
-                  status: instance.getStatus(),
-                  transport: formatTransportInfo(
-                    instance.getConfig(),
-                    getPinnedVersion(),
-                    instance.getConnectedVia(),
-                  ),
-                  reconnectAttempts: instance.getReconnectAttempts(),
-                  ...daemonUpdateMarker(id),
-                },
-                id,
-              );
+              broadcastBackendStatus(id, instance);
             }
             // Capture whether the adopted external local daemon supports
             // self-update (system.status `updateSupported`), mirroring the
@@ -2087,43 +2067,21 @@ function createAdditionalBackendClient(
       guestWorkspaceEvents.subscribing = false;
     }
     notePendingDaemonUpdateStatus(id, status);
-    broadcast(
-      BACKEND.STATUS,
-      {
-        status,
-        transport: formatTransportInfo(
-          instance.getConfig(),
-          getPinnedVersion(),
-          instance.getConnectedVia(),
-        ),
-        reconnectAttempts: instance.getReconnectAttempts(),
-        connectionLimited: instance.isConnectionLimited(),
-        connectionLimitRetryAfterMs: instance.getConnectionLimitRetryAfterMs(),
-        ...daemonUpdateMarker(id),
-      },
-      id,
-    );
+    broadcastBackendStatus(id, instance, { status });
     backendStatusForwarder.emit('status', id, status);
     refreshConnectionsForStatusChange();
+  });
+  // Startup progress changes while the status stays `connecting` (or after a
+  // failed start leaves it `disconnected`): re-broadcast the current status
+  // with the new startup state so every window's overlay follows it.
+  instance.on('startup', () => {
+    if (backendClients.get(id) !== instance) return;
+    broadcastBackendStatus(id, instance);
   });
   instance.on('reconnected', () => {
     if (backendClients.get(id) !== instance) return;
     notePendingDaemonUpdateStatus(id, 'connected');
-    broadcast(
-      BACKEND.STATUS,
-      {
-        status: 'connected',
-        reconnected: true,
-        transport: formatTransportInfo(
-          instance.getConfig(),
-          getPinnedVersion(),
-          instance.getConnectedVia(),
-        ),
-        reconnectAttempts: instance.getReconnectAttempts(),
-        ...daemonUpdateMarker(id),
-      },
-      id,
-    );
+    broadcastBackendStatus(id, instance, { status: 'connected', extras: { reconnected: true } });
     backendReconnectForwarder.emit('reconnected', id);
   });
   // Non-fatal per-host pin mismatches from the multi-host connection race
@@ -2366,8 +2324,23 @@ export function onAnyBackendStatus(
   return () => backendStatusForwarder.off('status', listener);
 }
 
-/** Broadcast a payload to live renderer windows, optionally scoped to one backend. */
-function broadcast(channel: string, payload: unknown, backendId?: string): void {
+/**
+ * Broadcast a payload to live renderer windows, optionally scoped to one backend.
+ * `backend:status` is refused at compile time: send it through
+ * {@link broadcastBackendStatus}, which always names the backend.
+ */
+function broadcast<C extends string>(
+  // A literal channel other than `backend:status`; a widened `string` is
+  // refused too, since it could carry the status channel past this guard.
+  channel: C & (string extends C ? never : C extends typeof BACKEND.STATUS ? never : unknown),
+  payload: unknown,
+  backendId?: string,
+): void {
+  sendToWindows(channel, payload, backendId);
+}
+
+/** Delivery for {@link broadcast} and {@link broadcastBackendStatus}; do not call it directly. */
+function sendToWindows(channel: string, payload: unknown, backendId?: string): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue;
     if (backendId && getBackendIdForWebContents(win.webContents) !== backendId) continue;
@@ -2381,6 +2354,35 @@ function broadcast(channel: string, payload: unknown, backendId?: string): void 
       });
     }
   }
+}
+
+/** Per-push overrides: the event's own status and its markers. */
+type BackendStatusEventOptions = Pick<BuildBackendStatusOptions, 'status' | 'extras'>;
+
+/**
+ * The `backend:status` payload for one backend's windows: the client's live
+ * state plus this backend's daemon-update marker. Every scoped status push and
+ * the get-status reply go through here so they carry the same fields.
+ */
+function backendStatusPayload(
+  backendId: string,
+  client: BackendStatusSource,
+  options: BackendStatusEventOptions = {},
+): BackendStatusPayload {
+  return buildBackendStatusPayload(client, {
+    pinnedVersion: getPinnedVersion(),
+    updateMarker: daemonUpdateMarker(backendId),
+    ...options,
+  });
+}
+
+/** Push `backendId`'s status to that backend's windows only. */
+function broadcastBackendStatus(
+  backendId: string,
+  client: BackendStatusSource,
+  options?: BackendStatusEventOptions,
+): void {
+  sendToWindows(BACKEND.STATUS, backendStatusPayload(backendId, client, options), backendId);
 }
 
 /** Resolve a renderer invoke event to the client bound to its window's backend. */
@@ -3068,20 +3070,7 @@ async function captureLocalUpdateSupportedOriginal(owner?: PoolOwner): Promise<v
         // `backend:status`, whose connected event precedes this capture —
         // push a flag-bearing status so its behind-pin suppression can
         // resolve (see daemon-health-saga `maybeNotifyVersionMismatch`).
-        broadcast(
-          BACKEND.STATUS,
-          {
-            status: client.getStatus(),
-            transport: formatTransportInfo(
-              client.getConfig(),
-              getPinnedVersion(),
-              client.getConnectedVia(),
-            ),
-            reconnectAttempts: client.getReconnectAttempts(),
-            ...daemonUpdateMarker(LOCAL_CONNECTION_ID),
-          },
-          LOCAL_CONNECTION_ID,
-        );
+        broadcastBackendStatus(LOCAL_CONNECTION_ID, client);
       }
     }
   } catch (error) {
@@ -3948,6 +3937,8 @@ function enqueueConnectionOperation<T>(fn: (owner?: PoolOwner) => Promise<T>): P
  * The LOCAL open keeps strict probe semantics: one authenticated
  * `host.status` completes before the window is created, and a failure
  * rejects — {@link openLocalAndSpawn}'s deadline/retry loop depends on it.
+ * The one exception is a daemon that is still starting: its window opens
+ * right away to show startup progress.
  * `options.probeTimeoutMs` bounds that local probe for a single call (used by
  * deadline-driven callers whose budget is shorter than the 30s client
  * default); it is ignored for a remote, which issues no probe.
@@ -3983,10 +3974,19 @@ async function performOpenBackendWindowOriginal(
       // creating a renderer, so the common healthy open never flashes the
       // connection-lost overlay. A failure rejects: openLocalAndSpawn's
       // deadline loop retries on it, and a local window without a daemon has
-      // no client reconnect posture worth showing.
-      await observeStatus(target, 'performOpenBackendWindow', owner, () =>
-        target.request('host.status', undefined, { timeoutMs: options?.probeTimeoutMs }),
-      );
+      // no client reconnect posture worth showing. A daemon that is still
+      // starting cannot answer yet: open the window so it shows startup
+      // progress instead of failing the open at the deadline.
+      if (target.getStartupState?.()?.state !== 'starting') {
+        try {
+          await observeStatus(target, 'performOpenBackendWindow', owner, () =>
+            target.request('host.status', undefined, { timeoutMs: options?.probeTimeoutMs }),
+          );
+        } catch (error) {
+          // The connect-time hello can discover startup while this probe waits.
+          if (classifyStartupReply(error)?.kind !== 'not-ready') throw error;
+        }
+      }
     } else {
       // Label the remote by its hostname once it connects (T14). Reuses the
       // live client's `host.status`; fire-and-forget so a slow remote never
@@ -4055,20 +4055,7 @@ async function performSpawnSidecar(): Promise<{
       // would let an already-connected local client mark a remote window's
       // still-dead backend healthy and wrongly dismiss its overlay.
       const client = getLocalBackendClient();
-      broadcast(
-        BACKEND.STATUS,
-        {
-          status: client.getStatus(),
-          transport: formatTransportInfo(
-            client.getConfig(),
-            getPinnedVersion(),
-            client.getConnectedVia(),
-          ),
-          reconnectAttempts: client.getReconnectAttempts(),
-          ...daemonUpdateMarker(LOCAL_CONNECTION_ID),
-        },
-        LOCAL_CONNECTION_ID,
-      );
+      broadcastBackendStatus(LOCAL_CONNECTION_ID, client);
     }
     return result;
   } catch (error) {
@@ -4140,17 +4127,10 @@ async function doPerformRestartOrphanedSidecar(): Promise<RestartOrphanedSidecar
     });
     if (result.ok) {
       const client = getLocalBackendClient();
-      // Unscoped broadcast: deliberately carries no daemon-update marker,
-      // which is a LOCAL-client fact and must not reach remote windows.
-      broadcast(BACKEND.STATUS, {
-        status: client.getStatus(),
-        transport: formatTransportInfo(
-          client.getConfig(),
-          getPinnedVersion(),
-          client.getConnectedVia(),
-        ),
-        reconnectAttempts: client.getReconnectAttempts(),
-      });
+      // Scoped to local windows: this is the LOCAL client's status. Sent to
+      // every window, a connected local client would mark a remote window's
+      // still-dead backend healthy and dismiss its overlay.
+      broadcastBackendStatus(LOCAL_CONNECTION_ID, client);
     }
     return result;
   } catch (error) {
@@ -4539,35 +4519,21 @@ export function registerBackendHandlers(): void {
 
   ipcMain.handle(BACKEND.GET_STATUS, async (event) => {
     const { backendId, client } = getBackendClientForIpcEvent(event);
-    const transport = formatTransportInfo(
-      client.getConfig(),
-      getPinnedVersion(),
-      client.getConnectedVia(),
-    );
+    const payload = backendStatusPayload(backendId, client);
     // Boot-time startup failures fire before this module registers its
     // `onSidecarStartupFailed` listener and before any window exists, so the
     // broadcast alone is lossy. Expose the latched failure here so the
     // renderer's boot-time get-status fetch learns about it regardless of
     // ordering (PR #402 review; spec addendum under "Pinned IPC contract").
     const startupFailure = backendId === LOCAL_CONNECTION_ID ? getSidecarStartupFailure() : null;
-    if (startupFailure) {
-      return {
-        status: client.getStatus(),
-        transport,
-        reconnectAttempts: client.getReconnectAttempts(),
-        sidecarStartupFailed: true as const,
-        sidecarStartupFailedReason: startupFailure.reason,
-        ...daemonUpdateMarker(backendId),
-      };
-    }
-    return {
-      status: client.getStatus(),
-      transport,
-      reconnectAttempts: client.getReconnectAttempts(),
-      connectionLimited: client.isConnectionLimited(),
-      connectionLimitRetryAfterMs: client.getConnectionLimitRetryAfterMs(),
-      ...daemonUpdateMarker(backendId),
-    };
+    const snapshot: BackendStatusSnapshot = startupFailure
+      ? {
+          ...payload,
+          sidecarStartupFailed: true,
+          sidecarStartupFailedReason: startupFailure.reason,
+        }
+      : payload;
+    return snapshot;
   });
 
   ipcMain.handle(BACKEND.SPAWN_SIDECAR, async () => {
@@ -4600,22 +4566,9 @@ export function registerBackendHandlers(): void {
   onSidecarStartupFailed((reason) => {
     poolAuxiliary('sidecar');
     const instance = getBackendClient();
-    broadcast(
-      BACKEND.STATUS,
-      {
-        status: instance.getStatus(),
-        sidecarStartupFailed: true,
-        reason,
-        transport: formatTransportInfo(
-          instance.getConfig(),
-          getPinnedVersion(),
-          instance.getConnectedVia(),
-        ),
-        reconnectAttempts: instance.getReconnectAttempts(),
-        ...daemonUpdateMarker(LOCAL_CONNECTION_ID),
-      },
-      LOCAL_CONNECTION_ID,
-    );
+    broadcastBackendStatus(LOCAL_CONNECTION_ID, instance, {
+      extras: { sidecarStartupFailed: true, reason },
+    });
   });
 
   // Crash-looping sidecar: the restart policy exhausted its attempts. Reuse
@@ -4629,22 +4582,9 @@ export function registerBackendHandlers(): void {
     // crash-looping child lost the socket to an external daemon the client
     // has meanwhile connected to — hardcoding 'disconnected' would flip a
     // healthy renderer to 'down' until the next poll corrected it.
-    broadcast(
-      BACKEND.STATUS,
-      {
-        status: instance.getStatus(),
-        sidecarGaveUp: true,
-        reason,
-        transport: formatTransportInfo(
-          instance.getConfig(),
-          getPinnedVersion(),
-          instance.getConnectedVia(),
-        ),
-        reconnectAttempts: instance.getReconnectAttempts(),
-        ...daemonUpdateMarker(LOCAL_CONNECTION_ID),
-      },
-      LOCAL_CONNECTION_ID,
-    );
+    broadcastBackendStatus(LOCAL_CONNECTION_ID, instance, {
+      extras: { sidecarGaveUp: true, reason },
+    });
   });
 
   registerConnectionsHandlers();

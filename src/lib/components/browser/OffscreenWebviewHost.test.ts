@@ -14,6 +14,7 @@ const {
   mountedLeasesStore,
   recoveryStore,
   navigationStore,
+  agentDrawingStore,
   dispatchMock,
 } = vi.hoisted(() => {
   // Minimal svelte-store-contract writable (vi.hoisted runs before imports).
@@ -43,6 +44,7 @@ const {
     navigationStore: miniWritable<Record<string, { url: string; kind: 'observed' | 'requested' }>>(
       {},
     ),
+    agentDrawingStore: miniWritable<Record<string, true>>({}),
     dispatchMock: vi.fn(),
   };
 });
@@ -59,6 +61,7 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
   selectMountedBrowserTabLeases: () => mountedLeasesStore,
   selectBrowserTabRecoveryRequests: () => recoveryStore,
   selectBrowserTabNavigations: () => navigationStore,
+  selectBrowserTabsAgentDrawing: () => agentDrawingStore,
 }));
 
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-slice', () => ({
@@ -113,6 +116,7 @@ describe('OffscreenWebviewHost', () => {
     mountedLeasesStore.set({});
     recoveryStore.set({});
     navigationStore.set({});
+    agentDrawingStore.set({});
     dispatchMock.mockClear();
     dispatchMock.mockImplementation((action) => {
       const initial = tabStateReducer(undefined, { type: '@@INIT' });
@@ -941,6 +945,9 @@ describe('OffscreenWebviewHost', () => {
   // (left:-10000px) get viewport-culled by the compositor — no BeginFrames,
   // so CDP screenshot and capturePage hang. The host container must stay
   // in-viewport (1x1 clip at the origin), hidden via overflow + opacity.
+  // With no agent drawing, the shared layer is at opacity 0: an opacity-0
+  // ancestor throttles idle guests hard (about 1 fps), which saves battery;
+  // an opacity-0 box alone only halves the rate (~30 fps, measured v2.262.0).
   it('hosts guests in-viewport in a clipped invisible container, not parked offscreen', async () => {
     layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-bg' }]) });
     const { container } = render(OffscreenWebviewHost, {
@@ -951,11 +958,101 @@ describe('OffscreenWebviewHost', () => {
     expect(host.style.left).not.toBe('-10000px');
     expect(host.className).toContain('left-0');
     expect(host.className).toContain('top-0');
-    expect(host.className).toContain('overflow-hidden');
-    expect(host.className).toContain('opacity-0');
+    // Idle: the shared layer itself is transparent (heavy throttle).
+    expect(host.style.opacity).toBe('0');
     expect(host.className).toContain('pointer-events-none');
     // inert keeps the focusable webviews out of the tab order.
     expect(host.hasAttribute('inert')).toBe(true);
+    // Each idle guest is clipped to its own 1x1 box at the origin.
+    const box = container.querySelector('[data-offscreen-webview-box="tab-bg"]') as HTMLElement;
+    expect(box.style.width).toBe('1px');
+    expect(box.style.height).toBe('1px');
+    expect(box.style.opacity).toBe('0');
+    expect(box.hasAttribute('data-agent-drawing')).toBe(false);
+  });
+
+  // An agent acting on a hidden tab needs full frame rate, but Chromium
+  // slows a guest under an opacity-0 ancestor (1-57 fps measured on
+  // v2.259.0). Main's agent drawing hold (`browser:agent-drawing`) lifts the
+  // shared layer's opacity and raises only that tab's 1x1 box to 0.01
+  // (measured a steady 60 fps), still invisible, without reloading the guest.
+  // When the hold ends the layer is transparent again, so idle tabs go back
+  // to the heavy throttle instead of ~30 fps (measured on v2.262.0).
+  it('draws a tab at near-zero opacity while an agent is acting on it, then parks it again', async () => {
+    layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-a' }, { id: 'tab-b' }]) });
+    const { container } = render(OffscreenWebviewHost, {
+      props: { excludedWorkspaceIds: new Set() },
+    });
+    await waitFor(() => expect(mountedTabIds(container).sort()).toEqual(['tab-a', 'tab-b']));
+    const box = (tabId: string) =>
+      container.querySelector(`[data-offscreen-webview-box="${tabId}"]`) as HTMLElement;
+    const host = container.querySelector('[data-offscreen-webview-host]') as HTMLElement;
+    const webviewA = container.querySelector('[data-offscreen-webview-tab="tab-a"]');
+    expect(host.style.opacity).toBe('0');
+
+    agentDrawingStore.set({ 'tab-a': true });
+    await tick();
+    // The layer no longer hides its guests; each box carries its own opacity.
+    expect(host.style.opacity).toBe('');
+    expect(box('tab-a').hasAttribute('data-agent-drawing')).toBe(true);
+    expect(box('tab-a').style.opacity).toBe('0.01');
+    // The box stays 1x1: size made no difference to the frame rate.
+    expect(box('tab-a').style.width).toBe('1px');
+    expect(box('tab-a').style.height).toBe('1px');
+    // Only the agent's tab is drawn; the other stays parked at opacity 0.
+    expect(box('tab-b').style.opacity).toBe('0');
+    // Same guest element: changing the box never reloads the page.
+    expect(container.querySelector('[data-offscreen-webview-tab="tab-a"]')).toBe(webviewA);
+
+    agentDrawingStore.set({});
+    await tick();
+    expect(host.style.opacity).toBe('0');
+    expect(box('tab-a').hasAttribute('data-agent-drawing')).toBe(false);
+    expect(box('tab-a').style.opacity).toBe('0');
+    expect(container.querySelector('[data-offscreen-webview-tab="tab-a"]')).toBe(webviewA);
+  });
+
+  // The layer stays lifted while any held tab is mounted here, and drops
+  // back as soon as the last one is released or leaves the host while its
+  // hold is still on (closed, or moved out of the offscreen set).
+  it('lifts the layer until the last mounted held tab is released or leaves', async () => {
+    layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-a' }, { id: 'tab-b' }]) });
+    const { container } = render(OffscreenWebviewHost, {
+      props: { excludedWorkspaceIds: new Set() },
+    });
+    await waitFor(() => expect(mountedTabIds(container).sort()).toEqual(['tab-a', 'tab-b']));
+    const host = container.querySelector('[data-offscreen-webview-host]') as HTMLElement;
+
+    agentDrawingStore.set({ 'tab-a': true, 'tab-b': true });
+    await tick();
+    expect(host.style.opacity).toBe('');
+
+    agentDrawingStore.set({ 'tab-b': true });
+    await tick();
+    expect(host.style.opacity).toBe('');
+
+    // tab-b leaves the host while its hold is still on.
+    layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-a' }]) });
+    await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-a']));
+    expect(host.style.opacity).toBe('0');
+  });
+
+  // A hold on a tab this host does not mount (shown in a panel, or not
+  // mounted at all) must not lift the layer's opacity: that would only make
+  // every idle guest here draw at ~30 fps for nothing.
+  it('keeps the layer transparent when the held tab is not mounted here', async () => {
+    layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-a' }]) });
+    const { container } = render(OffscreenWebviewHost, {
+      props: { excludedWorkspaceIds: new Set() },
+    });
+    await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-a']));
+    const host = container.querySelector('[data-offscreen-webview-host]') as HTMLElement;
+
+    agentDrawingStore.set({ 'tab-elsewhere': true });
+    await tick();
+    expect(host.style.opacity).toBe('0');
+    const box = container.querySelector('[data-offscreen-webview-box="tab-a"]') as HTMLElement;
+    expect(box.style.opacity).toBe('0');
   });
 
   it('skips tabs with non-loadable URLs', async () => {

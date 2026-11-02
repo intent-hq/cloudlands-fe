@@ -578,6 +578,7 @@ const SHORTCUT_IDS_BY_CATEGORY: Record<ShortcutCategory, readonly ShortcutId[]> 
     'workspace.new-note',
     'workspace.new-terminal',
     'workspace.new-browser',
+    'workspace.set-aside',
   ],
   chat: [
     'chat.send',
@@ -750,6 +751,12 @@ export const SHORTCUT_CATEGORIES: Record<
       { ...SHORTCUTS.NEW_NOTE, contexts: ['global'] },
       { ...SHORTCUTS.NEW_TERMINAL, contexts: ['global'] },
       { ...SHORTCUTS.NEW_BROWSER, contexts: ['global'] },
+      {
+        key: SHORTCUT_DEFAULTS['workspace.set-aside'],
+        get label() {
+          return m.home_setAside_shortcut_label();
+        },
+      },
     ],
   },
   chat: {

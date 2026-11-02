@@ -15,6 +15,7 @@ import {
   mapWorkspacePRs,
   mergeMonitoredPRs,
   prRepoFromUrl,
+  type GitRootPRSource,
 } from './sidebar-changes-utils';
 
 export interface WorkspacePRPresentationOptions {
@@ -24,6 +25,7 @@ export interface WorkspacePRPresentationOptions {
   workspaceRepo: string | undefined;
   buildPrUrl: (prNumber: number, fallbackUrl?: string) => string;
   getDisplayTitle: (pr: PullRequestInfo) => string;
+  secondaryRoots?: GitRootPRSource[];
 }
 
 export interface WorkspacePRPresentationRow extends ReviewMonitorExtension {
@@ -136,25 +138,32 @@ export function buildWorkspacePRPresentationModel({
   workspaceRepo,
   buildPrUrl,
   getDisplayTitle,
+  secondaryRoots = [],
 }: WorkspacePRPresentationOptions): WorkspacePRPresentationRow[] {
-  const branchSources = workspacePRs?.length ? workspacePRs : activePR ? [activePR] : [];
+  const branchSources = [
+    ...(workspacePRs?.length ? workspacePRs : activePR ? [activePR] : []),
+    ...secondaryRoots.flatMap((root) =>
+      root.repoOwner && root.repoName
+        ? (root.pullRequests ?? []).map((pr) => ({
+            ...pr,
+            url:
+              pr.url || `https://github.com/${root.repoOwner}/${root.repoName}/pull/${pr.number}`,
+          }))
+        : [],
+    ),
+  ];
   // The daemon-merged `pullRequests` pool can contain cross-repo entries whose
   // `url` is authoritative for their repo (intent-hq/intentd#1330) — key each
   // source by its own repo so a cross-repo entry never collides with a
-  // same-numbered workspace-repo PR (intent-hq/intent#3964). Without a
-  // workspace repo, mapWorkspacePRs leaves every row unqualified and lookups
-  // key by bare number, so the sources must too.
+  // same-numbered workspace-repo PR (intent-hq/intent#3964).
   const sourceByIdentity = new Map(
     branchSources.map((pr) => [
-      normalizedPrIdentity(
-        workspaceRepo === undefined ? undefined : (prRepoFromUrl(pr.url) ?? workspaceRepo),
-        pr.number,
-      ),
+      normalizedPrIdentity(prRepoFromUrl(pr.url) ?? workspaceRepo, pr.number),
       pr,
     ]),
   );
   const combined = mergeMonitoredPRs(
-    mapWorkspacePRs(workspacePRs, activePR, buildPrUrl, getDisplayTitle, workspaceRepo),
+    mapWorkspacePRs(branchSources, activePR, buildPrUrl, getDisplayTitle, workspaceRepo),
     monitors,
     workspaceRepo,
   );

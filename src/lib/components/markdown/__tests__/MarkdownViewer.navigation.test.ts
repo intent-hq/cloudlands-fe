@@ -50,6 +50,22 @@ describe('MarkdownViewer panel navigation', () => {
     );
   });
 
+  it('reveals and expands a folder mention in the Files sidebar', async () => {
+    const MarkdownViewer = (await import('../MarkdownViewer.svelte')).default;
+    render(MarkdownViewer, {
+      props: { content: 'see @src/lib/ for details', workspaceId: 'ws-1' },
+    });
+
+    await fireEvent.click(await screen.findByText('src/lib/'));
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'appLayout/locateItemInSidebarRequested',
+        payload: ['ws-1', { sidebarTabId: 'files', type: 'file', filePath: 'src/lib/' }],
+      }),
+    );
+  });
+
   it('shows a note chip with its current title, falling back to the saved one', async () => {
     liveTitles.set({ 'ws-1/n-1': 'Meeting (renamed)' });
     const MarkdownViewer = (await import('../MarkdownViewer.svelte')).default;

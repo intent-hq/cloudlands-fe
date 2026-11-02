@@ -8,6 +8,7 @@
 
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
+import type { DaemonStartupState } from '$shared/daemon-startup';
 import { parseProtocolVersion } from '$shared/protocol-version';
 import type {
   AgentMemoryUsageWirePayload,
@@ -33,6 +34,7 @@ export const initialState: DaemonHealthState = {
   reconnectAttempts: 0,
   connectionLimited: false,
   connectionLimitRetryAfterMs: null,
+  daemonStartup: null,
   hostLocality: null,
   sidecarGaveUp: false,
   sidecarGaveUpReason: null,
@@ -78,6 +80,8 @@ export interface ConnectionStatusExtras {
   connectionLimited?: boolean;
   /** The wait main scheduled before its next attempt while `connectionLimited`. */
   connectionLimitRetryAfterMs?: number | null;
+  /** The daemon is starting or failed to start; null or absent otherwise. */
+  daemonStartup?: DaemonStartupState | null;
   /**
    * Epoch ms of the first drop main observed for this window's backend while
    * a user-requested `system.requestUpdate` is outstanding — the disconnect
@@ -303,6 +307,7 @@ daemonHealthReducer.with(
         reconnectAttempts: 0,
         connectionLimited: false,
         connectionLimitRetryAfterMs: null,
+        daemonStartup: null,
         // A reported locality belongs to the daemon/transport that produced it.
         // Drop it when switching connections so selectors immediately fall back
         // to the new transport until that daemon's next system.status response.
@@ -336,6 +341,14 @@ daemonHealthReducer.with(
         transport: transport ?? state.transport,
         hostLocality,
         reconnectAttempts: extras?.reconnectAttempts ?? state.reconnectAttempts,
+        // Backend broadcasts carry the client's current startup posture; one
+        // that omits it (an unscoped push) keeps it for the same daemon.
+        daemonStartup:
+          extras?.daemonStartup !== undefined
+            ? extras.daemonStartup
+            : transportChanged
+              ? null
+              : state.daemonStartup,
         connectionLimited: extras?.connectionLimited ?? state.connectionLimited,
         connectionLimitRetryAfterMs:
           extras?.connectionLimited === undefined

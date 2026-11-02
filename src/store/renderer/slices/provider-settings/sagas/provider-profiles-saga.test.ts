@@ -52,9 +52,10 @@ import {
   selectProviderProfileActivationMap,
   selectProviderProfileMutations,
   selectProviderProfilesForBase,
+  selectProviderProfileIdentityMap,
   selectProviderProfileStatusMap,
 } from '../provider-settings-selectors';
-import { providerProfilesSaga } from './provider-profiles-saga';
+import { providerProfilesSaga, type ProfileAuthVerdict } from './provider-profiles-saga';
 import { selectProfileSignInStatuses } from '../provider-profile-status-selectors';
 import { selectProviderCatalogProfiles } from '../../provider-catalog/provider-catalog-selectors';
 
@@ -92,7 +93,9 @@ function profile(id: string, name: string, base = 'codex'): ProviderProfile {
 
 function setup({
   supported = true,
-  auth = vi.fn(async () => undefined as boolean | undefined),
+  auth = vi.fn(async (..._args: unknown[]): Promise<ProfileAuthVerdict> => ({
+    authenticated: undefined,
+  })),
 } = {}) {
   let current = {
     providerSettings: providerSettingsReducer(initialState, providerSettingsSessionOpened('s1')),
@@ -144,9 +147,9 @@ describe('provider profiles saga', () => {
       ],
       revision: 4,
     });
-    const auth = vi.fn(async (ref: string) =>
-      ref === 'codex@pwork' ? true : ref === 'codex@ppers' ? false : undefined,
-    );
+    const auth = vi.fn(async (ref: string) => ({
+      authenticated: ref === 'codex@pwork' ? true : ref === 'codex@ppers' ? false : undefined,
+    }));
     const h = setup({ auth });
     task = h.task;
     h.dispatch(providerProfilesRequested());
@@ -348,11 +351,36 @@ describe('provider profiles saga', () => {
     h.dispatch(providerProfilesRequested());
     await settle();
     h.auth.mockClear();
-    h.auth.mockResolvedValue(true);
+    h.auth.mockResolvedValue({ authenticated: true });
     h.dispatch(providerProfileCheckRequested('pwork'));
     await settle();
     expect(h.auth).toHaveBeenCalledWith('codex@pwork', true);
     expect(selectProviderProfileStatusMap.select(h.state()).pwork).toBe('ready');
+  });
+
+  it('records the signed-in email a check reports and clears it once signed out', async () => {
+    mocks.list.mockResolvedValue({
+      profiles: [profile('pc', 'Work', 'claude-code')],
+      revision: 1,
+    });
+    const h = setup({
+      auth: vi.fn(async () => ({ authenticated: true, email: 'work@acme.com' })),
+    });
+    task = h.task;
+    h.dispatch(providerProfilesRequested());
+    await settle();
+    expect(selectProviderProfileIdentityMap.select(h.state())).toEqual({ pc: 'work@acme.com' });
+
+    h.auth.mockResolvedValue({ authenticated: undefined });
+    h.dispatch(providerProfileCheckRequested('pc'));
+    await settle();
+    // An unknown verdict keeps the last account.
+    expect(selectProviderProfileIdentityMap.select(h.state())).toEqual({ pc: 'work@acme.com' });
+
+    h.auth.mockResolvedValue({ authenticated: false });
+    h.dispatch(providerProfileCheckRequested('pc'));
+    await settle();
+    expect(selectProviderProfileIdentityMap.select(h.state())).toEqual({});
   });
 });
 
@@ -568,7 +596,7 @@ describe('picker sign-in statuses (§5.54)', () => {
   });
 
   it('probes each listed profile once without forcing and records signed-out', async () => {
-    const auth = vi.fn(async () => false as boolean | undefined);
+    const auth = vi.fn(async (..._args: unknown[]) => ({ authenticated: false }));
     const h = setup({ auth });
     task = h.task;
     h.dispatch(providerCatalogLoaded({ providers: [row('codex', true)], profiles: [work] }));
@@ -585,7 +613,7 @@ describe('picker sign-in statuses (§5.54)', () => {
   });
 
   it('drops a verdict for a profile the catalog no longer lists', async () => {
-    const pending = deferred<boolean | undefined>();
+    const pending = deferred<ProfileAuthVerdict>();
     const auth = vi.fn(() => pending.promise);
     const h = setup({ auth });
     task = h.task;
@@ -595,7 +623,7 @@ describe('picker sign-in statuses (§5.54)', () => {
     );
     await settle();
     h.dispatch(providerCatalogLoaded({ providers: [row('codex', true)], profiles: [] }));
-    pending.resolve(false);
+    pending.resolve({ authenticated: false });
     await settle();
     expect(selectProfileSignInStatuses.select(h.state())).toEqual({});
   });

@@ -1,5 +1,5 @@
 import { call, take, type SagaGenerator } from 'typed-redux-saga';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentSession, Workspace } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import type { HostRole } from '$shared/types/principal';
@@ -52,7 +52,11 @@ vi.mock('$lib/client/live/backend-transport', () => ({
     return () => wire.listeners.delete(fn);
   },
 }));
-vi.mock('$app/navigation', () => ({ goto: wire.goto }));
+vi.mock('$app/navigation', async () => {
+  const { landingNavigation } =
+    await import('$store/renderer/utils/test-helpers/landing-navigation');
+  return { goto: landingNavigation(wire.goto) };
+});
 vi.mock('../../panel-layout/sagas/panel-layout-saga', () => ({
   hydrateWorkspaceLayout: wire.hydrate,
 }));
@@ -151,16 +155,9 @@ beforeEach(() => {
       },
     );
   wire.hydrate.mockReset().mockResolvedValue(undefined);
-  wire.goto
-    .mockReset()
-    .mockImplementation(async (path: string, options: { state: App.PageState }) => {
-      store.dispatch(
-        openWorkspaceTab(
-          decodeURIComponent(path.split('/').at(-1)!),
-          options.state.presenceFollowRequestId,
-        ),
-      );
-    });
+  // The shared workspace helper opens the tab tagged with the follow's request
+  // id once goto resolves (the route projection the saga waits for).
+  wire.goto.mockReset().mockResolvedValue(undefined);
   store.dispatch(
     connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }),
   );
@@ -211,6 +208,12 @@ const views = () =>
       action.type === openAgentTabRequested.type || action.type === openWorkspaceNote.type,
   );
 
+// Load the (async) navigation mock once up front so the first follow's
+// lazy `$app/navigation` import is not slower than `settle()`.
+beforeAll(async () => {
+  await import('$app/navigation');
+});
+
 describe('following authorized presence', () => {
   it.each(['owner', 'member', 'guest'] as const)(
     'follows a closed-tab note for an admitted %s with fresh snapshot checks',
@@ -223,6 +226,10 @@ describe('following authorized presence', () => {
       expect(wire.goto).toHaveBeenCalledWith('/workspace/closed', {
         state: { presenceFollowRequestId: 'click-1' },
       });
+      // The shared helper opens the followed workspace's tab, tagged with this
+      // click (an untagged selection would have cancelled the follow below).
+      expect(store.state.tabState.openTabs.closed).toBeDefined();
+      expect(store.state.tabState.currentTabId).toBe('closed');
       expect(views()).toEqual([
         openWorkspaceNote('closed', 'spec', {
           sourcePanelId: undefined,
@@ -712,6 +719,9 @@ describe('following authorized presence', () => {
     finish();
     await settle();
     expect(views()).toEqual([]);
+    // The follow was cancelled, but the goto it started still landed on the
+    // workspace, so the workspace still gets its tab.
+    expect(store.state.tabState.openTabs.closed).toBeDefined();
   });
   it('discards every frame and action on disconnect and rehydrates only after readmission', async () => {
     start();

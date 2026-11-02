@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { setOwnedPopupClose } from '$lib/components/ui/owned-popup-context';
   import { DropdownMenu as MenuPrimitive } from 'bits-ui';
   import { setContext } from 'svelte';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
@@ -12,6 +13,10 @@
   }: MenuPrimitive.RootProps & { staticPosition?: boolean } = $props();
 
   provideStaticOverlay(() => staticPosition);
+  setOwnedPopupClose(() => {
+    open = false;
+    onOpenChange?.(false);
+  });
 
   $effect(() => {
     if (!open) return;

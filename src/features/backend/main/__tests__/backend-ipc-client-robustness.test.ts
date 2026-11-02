@@ -56,6 +56,7 @@ vi.mock('../json-rpc-client', () => {
       lifecycle.events.push({ type: 'dispose', seq: this.id });
     }
     request = vi.fn(async () => ({}));
+    getStartupState = vi.fn((): unknown => null);
     registerMethod(): () => void {
       return () => {};
     }
@@ -366,6 +367,103 @@ describe('openBackendWindow serialization', () => {
 // ---------------------------------------------------------------------------
 
 describe('openLocalAndSpawn — open-only recovery', () => {
+  const startingSnapshot = {
+    startupStatus: 1,
+    attemptId: 'boot-local',
+    phase: 'preparing',
+    elapsedMs: 20000,
+    phaseElapsedMs: 20000,
+    progressAgeMs: 0,
+    retryAfterMs: 1000,
+  };
+  const notReady = {
+    rpcCode: -32012,
+    code: 'daemon-not-ready',
+    message: 'Daemon not ready',
+    data: { code: 'daemon-not-ready', retryable: true, retryAfterMs: 1000 },
+  };
+
+  it.each(['direct', 'recovery-adopted', 'recovery-managed'])(
+    'opens the window of a starting local daemon through the %s path without probing',
+    async (entry) => {
+      vi.useFakeTimers();
+      const priorSocket = process.env.INTENTD_SOCKET;
+      process.env.INTENTD_SOCKET = '/tmp/intent-open-starting-test.sock';
+      try {
+        const mod = await loadModule();
+        const openOrFocus = vi.fn(async () => {});
+        mod.__setBackendWindowHooksForTesting({ openOrFocus });
+        const client = mod.getBackendClientForId('local');
+        vi.spyOn(client, 'getStartupState').mockReturnValue({
+          state: 'starting',
+          available: true,
+          snapshot: startingSnapshot,
+        } as never);
+        vi.mocked(client.request).mockRejectedValue(notReady);
+        vi.mocked(spawnSidecarOnDemand).mockResolvedValue({
+          ok: true,
+          spawned: entry === 'recovery-managed',
+          reason: 'live daemon already serving the socket',
+        } as unknown as Awaited<ReturnType<typeof spawnSidecarOnDemand>>);
+        const pending =
+          entry === 'direct'
+            ? mod.openBackendWindow('local').then(
+                () => ({ ok: true }),
+                () => ({ ok: false }),
+              )
+            : mod.openLocalAndSpawn();
+        await vi.advanceTimersByTimeAsync(16000);
+        expect(await pending).toMatchObject({ ok: true });
+        expect(openOrFocus).toHaveBeenCalledWith('local');
+        expect(client.request).not.toHaveBeenCalled();
+        expect(store.setActiveId).not.toHaveBeenCalled();
+      } finally {
+        if (priorSocket === undefined) delete process.env.INTENTD_SOCKET;
+        else process.env.INTENTD_SOCKET = priorSocket;
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it('opens the local window when the probe itself discovers startup', async () => {
+    const mod = await loadModule();
+    const openOrFocus = vi.fn(async () => {});
+    mod.__setBackendWindowHooksForTesting({ openOrFocus });
+    const client = mod.getBackendClientForId('local');
+    vi.mocked(client.request).mockRejectedValue(notReady);
+    await expect(mod.openBackendWindow('local')).resolves.toEqual({ id: 'local' });
+    expect(openOrFocus).toHaveBeenCalledWith('local');
+    expect(client.request).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not open the local window for a daemon that failed to start', async () => {
+    const mod = await loadModule();
+    const openOrFocus = vi.fn(async () => {});
+    mod.__setBackendWindowHooksForTesting({ openOrFocus });
+    const client = mod.getBackendClientForId('local');
+    const failed = {
+      rpcCode: -32012,
+      message: 'Daemon startup failed',
+      data: { code: 'daemon-startup-failed', retryable: false },
+    };
+    vi.mocked(client.request).mockRejectedValue(failed);
+    await expect(mod.openBackendWindow('local')).rejects.toBe(failed);
+    expect(openOrFocus).not.toHaveBeenCalled();
+  });
+
+  it.each(['offline', 'auth-rejected'])('preserves a local %s probe failure', async (reason) => {
+    const mod = await loadModule();
+    const openOrFocus = vi.fn(async () => {});
+    mod.__setBackendWindowHooksForTesting({ openOrFocus });
+    const error = Object.assign(new Error(reason), {
+      code: reason === 'offline' ? 'ECONNREFUSED' : -32001,
+    });
+    const client = mod.getBackendClientForId('local');
+    vi.mocked(client.request).mockRejectedValue(error);
+    await expect(mod.openBackendWindow('local')).rejects.toBe(error);
+    expect(openOrFocus).not.toHaveBeenCalled();
+  });
+
   it('spawns the sidecar then opens the local windows without retargeting any window', async () => {
     // The initiating window targets a remote backend; recovery must NOT
     // retarget it (or any other window) to local.

@@ -14,7 +14,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('$lib/electron-bridge', () => ({ isElectron: mocks.isElectron, invoke: mocks.invoke }));
-vi.mock('$lib/utils/navigation.client', () => ({ navigateToRoute: mocks.navigateToRoute }));
+vi.mock('$lib/utils/navigation.client', async () => {
+  const { landingNavigation } =
+    await import('$store/renderer/utils/test-helpers/landing-navigation');
+  return { navigateToRoute: landingNavigation(mocks.navigateToRoute) };
+});
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ warn: vi.fn(), debug: vi.fn(), info: vi.fn() }),
 }));
@@ -96,8 +100,9 @@ describe('intent://open?path (the intent CLI)', () => {
     });
     const dispatched = await run({ type: 'open', params: { path: '/Users/me/' } });
     expect(mocks.create).not.toHaveBeenCalled();
-    expect(dispatched).toContainEqual(openWorkspaceTab('home'));
     expect(mocks.navigateToRoute).toHaveBeenCalledWith('/workspace/home');
+    // The tab opens once the navigation resolves, through the shared helper.
+    expect(dispatched).toContainEqual(openWorkspaceTab('home'));
   });
 
   it('matches a workspace created through the symlinked path the CLI sends as alias', async () => {
@@ -163,6 +168,15 @@ describe('intent://open?id', () => {
     const dispatched = await run({ type: 'open', params: { id: 'ws-9' } });
     expect(dispatched).toContainEqual(openWorkspaceTab('ws-9'));
     expect(mocks.navigateToRoute).toHaveBeenCalledWith('/workspace/ws-9');
+  });
+
+  it('opens no tab and reports the error when the navigation fails', async () => {
+    mocks.navigateToRoute.mockRejectedValueOnce(new Error('route rejected'));
+    mocks.list.mockResolvedValue({ ok: true, data: [workspace({ id: 'ws-9' })] });
+    const dispatched = await run({ type: 'open', params: { id: 'ws-9' } });
+    expect(mocks.navigateToRoute).toHaveBeenCalledWith('/workspace/ws-9');
+    expect(dispatched).not.toContainEqual(openWorkspaceTab('ws-9'));
+    expect(mocks.notifyError).toHaveBeenCalledTimes(1);
   });
 
   it('shows an error for an unknown workspace id', async () => {

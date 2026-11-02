@@ -279,15 +279,11 @@ for (const layout of [
       expect(Math.abs(inputBox.x - titleBox.x)).toBeLessThanOrEqual(1);
       expect(Math.abs(inputBox.width - titleBox.width)).toBeLessThanOrEqual(1);
       const headerBox = (await header.boundingBox())!;
-      for (const action of [
-        header.getByRole('button', { name: /^Delete thread/ }),
-        header.getByRole('button', { name: 'New Assistant thread', exact: true }),
-      ]) {
-        await expect(action).toBeVisible();
-        const box = (await action.boundingBox())!;
-        expect(box.x).toBeGreaterThanOrEqual(inputBox.x + inputBox.width);
-        expect(box.x + box.width).toBeLessThanOrEqual(headerBox.x + headerBox.width);
-      }
+      const action = header.getByRole('button', { name: /^Delete thread/ });
+      await expect(action).toBeVisible();
+      const box = (await action.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(inputBox.x + inputBox.width);
+      expect(box.x + box.width).toBeLessThanOrEqual(headerBox.x + headerBox.width);
     }
     await testInfo.attach('assistant-title-full-width', {
       body: await page.screenshot({ path: testInfo.outputPath('full-width.png') }),

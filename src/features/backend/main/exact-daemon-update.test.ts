@@ -1,11 +1,14 @@
 // protocol-version-ok-file: fixed release identifiers are update test fixtures
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { DaemonStartupState } from '$shared/daemon-startup';
 import { updateDaemonToPin } from './exact-daemon-update';
 import { JsonRpcError } from './json-rpc-errors';
+import type { ConnectionStatus } from './json-rpc-client';
 
 function client() {
   return {
-    getStatus: vi.fn(() => 'connected' as const),
+    getStatus: vi.fn((): ConnectionStatus => 'connected'),
+    getStartupState: vi.fn((): DaemonStartupState | null => null),
     request: vi.fn(),
   };
 }
@@ -363,5 +366,106 @@ describe('restarted daemon startup (intent-hq/intent#8104)', () => {
       .mockRejectedValueOnce(error);
     await expect(updateDaemonToPin(rpc, '1.2.0', vi.fn())).rejects.toBe(error);
     expect(rpc.request).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('restarted daemon startup reported by the connection', () => {
+  const starting: DaemonStartupState = { state: 'starting', snapshot: null, available: false };
+  const failed: DaemonStartupState = {
+    state: 'failed',
+    snapshot: null,
+    available: false,
+    message: 'Daemon startup failed. Check daemon logs.',
+  };
+
+  it('waits while the connection reports the daemon starting, then confirms the version', async () => {
+    vi.useFakeTimers();
+    const rpc = acceptedUpdate();
+    rpc.getStatus
+      .mockReturnValueOnce('connected')
+      .mockReturnValueOnce('connected')
+      .mockReturnValue('connecting');
+    rpc.getStartupState.mockReturnValue(starting);
+    rpc.request.mockResolvedValueOnce({ version: '1.2.0', exactUpdateSupported: true });
+    const mark = vi.fn();
+    const result = updateDaemonToPin(rpc, '1.2.0', mark);
+    await vi.advanceTimersByTimeAsync(5000);
+    // No request reaches a starting daemon; the update stays marked in progress.
+    expect(rpc.request).toHaveBeenCalledTimes(2);
+    expect(mark.mock.calls.length).toBeGreaterThan(2);
+
+    rpc.getStatus.mockReturnValue('connected');
+    rpc.getStartupState.mockReturnValue(null);
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(result).resolves.toEqual({ ok: true });
+    expect(rpc.request.mock.calls.at(-1)).toEqual(['system.status']);
+  });
+
+  it('prefers the rollback daemon outcome after the connection reports a failed start', async () => {
+    vi.useFakeTimers();
+    const rpc = acceptedUpdate();
+    rpc.getStatus
+      .mockReturnValueOnce('connected')
+      .mockReturnValueOnce('connected')
+      .mockReturnValue('disconnected');
+    rpc.getStartupState.mockReturnValue(failed);
+    rpc.request.mockResolvedValueOnce({
+      version: '1.0.0',
+      targetUpdate: { targetVersion: '1.2.0', state: 'failed', message: 'migration failed' },
+    });
+    const result = updateDaemonToPin(rpc, '1.2.0', vi.fn());
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(rpc.request).toHaveBeenCalledTimes(2);
+
+    rpc.getStatus.mockReturnValue('connected');
+    rpc.getStartupState.mockReturnValue(null);
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(result).resolves.toEqual({
+      ok: false,
+      reason: 'failed',
+      message: 'migration failed',
+    });
+  });
+
+  it('reports a persistent failed start with the daemon message after a bounded grace', async () => {
+    vi.useFakeTimers();
+    const rpc = acceptedUpdate();
+    rpc.getStatus
+      .mockReturnValueOnce('connected')
+      .mockReturnValueOnce('connected')
+      .mockReturnValue('disconnected');
+    rpc.getStartupState.mockReturnValue(failed);
+    let settled = false;
+    const result = updateDaemonToPin(rpc, '1.2.0', vi.fn()).finally(() => (settled = true));
+    await vi.advanceTimersByTimeAsync(2 * 60_000 - 1000);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(2000);
+    await expect(result).resolves.toEqual({
+      ok: false,
+      reason: 'failed',
+      message: 'Daemon startup failed. Check daemon logs.',
+    });
+  });
+
+  it('lets a new startup attempt supersede an earlier failed start', async () => {
+    vi.useFakeTimers();
+    const rpc = acceptedUpdate();
+    rpc.getStatus
+      .mockReturnValueOnce('connected')
+      .mockReturnValueOnce('connected')
+      .mockReturnValue('disconnected');
+    rpc.getStartupState.mockReturnValue(failed);
+    let settled = false;
+    const result = updateDaemonToPin(rpc, '1.2.0', vi.fn()).finally(() => (settled = true));
+    await vi.advanceTimersByTimeAsync(60_000);
+    rpc.getStatus.mockReturnValue('connecting');
+    rpc.getStartupState.mockReturnValue(starting);
+    await vi.advanceTimersByTimeAsync(2 * 60_000);
+    expect(settled).toBe(false);
+    rpc.getStatus.mockReturnValue('connected');
+    rpc.getStartupState.mockReturnValue(null);
+    rpc.request.mockResolvedValueOnce({ version: '1.2.0' });
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(result).resolves.toEqual({ ok: true });
   });
 });

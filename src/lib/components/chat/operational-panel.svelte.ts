@@ -6,6 +6,22 @@ import {
 } from './operational-row-window';
 
 const CONTEXT = Symbol('operational-panel');
+
+/** How a box finds its containing block: past static ancestors when absolute or fixed. */
+function positioned(style: CSSStyleDeclaration): 'absolute' | 'fixed' | null {
+  return style.position === 'fixed' ? 'fixed' : style.position === 'absolute' ? 'absolute' : null;
+}
+
+/** Ancestors that establish a containing block even for fixed descendants. */
+function containsFixed(style: CSSStyleDeclaration): boolean {
+  return (
+    style.transform !== 'none' ||
+    style.perspective !== 'none' ||
+    style.filter !== 'none' ||
+    /\b(paint|layout|strict|content)\b/.test(style.contain) ||
+    /\b(transform|perspective|filter)\b/.test(style.willChange)
+  );
+}
 type Entry = Omit<OperationalRowDescriptor, 'scopeId'> & {
   mountPath?: string;
   navigation?: { messageId: string; path: string; text?: string };
@@ -260,7 +276,11 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
     const measurements: { key: string; height: number; entranceNode?: HTMLElement }[] = [];
     for (const [scope, root] of roots) {
       const box = root.node.getBoundingClientRect();
-      const scale = root.node.offsetWidth > 0 ? box.width / root.node.offsetWidth : 1;
+      const scaleX = root.node.offsetWidth > 0 ? box.width / root.node.offsetWidth : 1;
+      // Rows stack vertically: a non-uniform transform (the dock shell's scaleY
+      // reveal) needs the vertical factor; uniform or no scaling matches scaleX.
+      const scale =
+        root.node.offsetHeight > 0 && box.height > 0 ? box.height / root.node.offsetHeight : scaleX;
       if (box.width > 0 && widths.get(scope) !== box.width) {
         widths.set(scope, box.width);
         for (const entry of root.entries) {
@@ -282,6 +302,10 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
       let hidden = rootStyle.display === 'none' || rootStyle.visibility === 'hidden';
       let scroll: HTMLElement | undefined;
       let scrollCandidate: HTMLElement | undefined;
+      // Overflow clips a descendant only along its containing-block chain: a
+      // fixed or absolute box escapes ancestors until one establishes its
+      // containing block (the dock route's fixed screen sits in a 0×0 clip).
+      let escape = positioned(rootStyle);
       for (let parent = root.node.parentElement; parent; parent = parent.parentElement) {
         const style = getComputedStyle(parent);
         if (
@@ -290,6 +314,12 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
           parent.matches('[data-operational-expanded-content][aria-hidden="true"]')
         )
           hidden = true;
+        const contains =
+          !escape || containsFixed(style) || (escape === 'absolute' && style.position !== 'static');
+        if (!contains) continue;
+        escape = positioned(style);
+        // A box-less element (display: contents) has no overflow to clip with.
+        if (style.display === 'contents') continue;
         if (/(auto|scroll)/.test(style.overflowY)) {
           scrollCandidate ??= parent;
           // Unconstrained disclosure bodies advertise auto overflow but cannot

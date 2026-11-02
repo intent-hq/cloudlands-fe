@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * Wire-contract tests for the daemon-backed workspace settings service
- * (PROTOCOL.md §5.1 `workspace.getAutoCommit` / `workspace.setAutoCommit`).
- * The former in-memory per-workspace map is retired; reads and writes go
- * straight to the daemon's persisted per-workspace override.
+ * (PROTOCOL.md §5.1 `workspace.getAutoCommit`). The former in-memory
+ * per-workspace map is retired; reads go straight to the daemon's persisted
+ * per-workspace override. Writes are served by the renderer
+ * `workspace:update-settings` seeder (`workspace.setAutoCommit`).
  */
 
 const requestMock = vi.hoisted(() =>
@@ -26,7 +27,7 @@ vi.mock('../../../../shared/logger', () => ({
   },
 }));
 
-describe('workspace-settings.service ↔ daemon workspace.getAutoCommit/setAutoCommit', () => {
+describe('workspace-settings.service ↔ daemon workspace.getAutoCommit', () => {
   beforeEach(() => {
     requestMock.mockClear();
     requestMock.mockImplementation(async () => ({
@@ -64,58 +65,5 @@ describe('workspace-settings.service ↔ daemon workspace.getAutoCommit/setAutoC
     requestMock.mockResolvedValueOnce({});
     const { getWorkspaceSettings } = await import('../workspace-settings.service');
     await expect(getWorkspaceSettings('ws-5')).resolves.toEqual({ autoCommitEnabled: true });
-  });
-
-  it('updateWorkspaceSettings persists via workspace.setAutoCommit and reads back', async () => {
-    requestMock
-      .mockResolvedValueOnce({ autoCommit: { enabled: false, source: 'workspace' } }) // set
-      .mockResolvedValueOnce({ autoCommit: { enabled: false, source: 'workspace' } }); // read-back
-    const { updateWorkspaceSettings } = await import('../workspace-settings.service');
-    const updated = await updateWorkspaceSettings('ws-6', { autoCommitEnabled: false });
-    expect(requestMock).toHaveBeenNthCalledWith(1, 'workspace.setAutoCommit', {
-      workspaceId: 'ws-6',
-      enabled: false,
-    });
-    expect(requestMock).toHaveBeenNthCalledWith(2, 'workspace.getAutoCommit', {
-      workspaceId: 'ws-6',
-    });
-    expect(updated).toEqual({ autoCommitEnabled: false });
-  });
-
-  it('updateWorkspaceSettings propagates a workspace.setAutoCommit rejection', async () => {
-    // e.g. -32602 for the virtual Chief workspace (PROTOCOL §5.1) — the write
-    // must reject rather than being swallowed like the get path.
-    requestMock.mockRejectedValueOnce(new Error('Invalid params'));
-    const { updateWorkspaceSettings } = await import('../workspace-settings.service');
-    await expect(updateWorkspaceSettings('chief', { autoCommitEnabled: false })).rejects.toThrow(
-      'Invalid params',
-    );
-    // No read-back is attempted after a failed set.
-    const reads = requestMock.mock.calls.filter(([m]) => m === 'workspace.getAutoCommit');
-    expect(reads).toHaveLength(0);
-  });
-
-  it('returns the value just written when the read-back after a successful set fails', async () => {
-    requestMock
-      .mockResolvedValueOnce({}) // workspace.setAutoCommit ok
-      .mockRejectedValueOnce(new Error('boom')); // read-back getAutoCommit fails
-    const { updateWorkspaceSettings } = await import('../workspace-settings.service');
-    await expect(updateWorkspaceSettings('ws-9', { autoCommitEnabled: false })).resolves.toEqual({
-      autoCommitEnabled: false,
-    });
-  });
-
-  it('updateWorkspaceSettings with no autoCommitEnabled never writes', async () => {
-    const { updateWorkspaceSettings } = await import('../workspace-settings.service');
-    await updateWorkspaceSettings('ws-7', {});
-    const writes = requestMock.mock.calls.filter(([m]) => m === 'workspace.setAutoCommit');
-    expect(writes).toHaveLength(0);
-  });
-
-  it('never writes the global git.autoCommit setting', async () => {
-    const { updateWorkspaceSettings } = await import('../workspace-settings.service');
-    await updateWorkspaceSettings('ws-8', { autoCommitEnabled: true });
-    const globalWrites = requestMock.mock.calls.filter(([m]) => m === 'settings.update');
-    expect(globalWrites).toHaveLength(0);
   });
 });

@@ -29,7 +29,11 @@ const makeDerivedReadable = <S, T>(
 ) => ({
   subscribe: (run: (value: T) => void) => source.subscribe((value) => run(project(value))),
 });
-vi.mock('$lib/utils/navigation.client', () => ({ navigateToRoute: navigateToRouteSpy }));
+vi.mock('$lib/utils/navigation.client', async () => {
+  const { landingNavigation } =
+    await import('$store/renderer/utils/test-helpers/landing-navigation');
+  return { navigateToRoute: landingNavigation(navigateToRouteSpy) };
+});
 const mockStreamingContent = new Map<string, string>();
 const mockIsResponding = new Map<string, boolean>();
 const mockHasStreamOwnedMessage = new Map<string, boolean>();
@@ -270,9 +274,7 @@ async function renderWithSnapshot(wsId: string, wire: unknown, compact = false) 
   await flush();
   const value = wire as { subscriptions?: unknown[]; delegationGroups?: unknown[] };
   if ((value.subscriptions?.length ?? 0) > 0 || (value.delegationGroups?.length ?? 0) > 0) {
-    await waitFor(() => expect(screen.getByTestId('one-shot-watches')).toBeTruthy(), {
-      timeout: 5000,
-    });
+    await waitFor(() => expect(screen.getByTestId('one-shot-watches')).toBeTruthy());
   }
   return utils;
 }

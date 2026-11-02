@@ -284,6 +284,15 @@ describe('openMessage', () => {
     await done;
 
     expect(goto).toHaveBeenCalledWith('/workspace/ws-1');
+    const types = mockDispatch.mock.calls.map(([action]) => action.type);
+    // The workspace tab opens (shared helper) before the agent tab.
+    expect(mockDispatch).toHaveBeenCalledWith({
+      type: 'tabState/openWorkspaceTab',
+      payload: ['ws-1'],
+    });
+    expect(types.indexOf('tabState/openWorkspaceTab')).toBeLessThan(
+      types.indexOf('appLayout/openAgentTabRequested'),
+    );
     expect(mockDispatch).toHaveBeenCalledWith({
       type: 'appLayout/openAgentTabRequested',
       payload: ['ws-1', { agentId: 'agent-1' }],

@@ -29,12 +29,9 @@ describe('generate-stable-summary CLI', () => {
     process.argv = ['node', 'generate-stable-summary.mjs', ...args, '--out', outFile];
     vi.resetModules();
     await import('./generate-stable-summary.mjs?t=' + Date.now());
-    await vi.waitFor(
-      () => {
-        readFileSync(outFile, 'utf8');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      readFileSync(outFile, 'utf8');
+    });
     return readFileSync(outFile, 'utf8');
   }
 

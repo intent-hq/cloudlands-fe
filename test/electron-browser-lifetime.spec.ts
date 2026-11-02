@@ -20,7 +20,7 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 import tailwindcss from '@tailwindcss/postcss';
 import autoprefixer from 'autoprefixer';
 import { build, createServer, type ViteDevServer } from 'vite';
-import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
+import { settleDepsOptimizer, viteHarnessCacheDir } from './vite-harness-cache.mjs';
 
 let server: ViteDevServer;
 let guestServer: Server;
@@ -39,6 +39,8 @@ const fixture = resolve('test/fixtures/browser-lifetime');
  */
 const GUEST_TEARDOWN_TIMEOUT_MS = 20_000;
 test.beforeAll(async () => {
+  // Owns the cold-start cost (bundle + dependency pre-bundle) for every test.
+  test.setTimeout(90_000);
   bundleDir = await mkdtemp(join(tmpdir(), 'intent-browser-lifetime-code-'));
   cdpBundle = join(bundleDir, 'cdp.cjs');
   const entry = join(bundleDir, 'entry.ts');
@@ -130,7 +132,13 @@ test.beforeAll(async () => {
     cacheDir: viteHarnessCacheDir('electron-browser-lifetime', {
       override: join(bundleDir, 'vite-cache'),
     }),
-    optimizeDeps: { include: ['bits-ui', 'svelte', 'flatstr', 'redux-saga', 'typed-redux-saga'] },
+    optimizeDeps: {
+      // Crawl only the page this harness serves. The default crawls every HTML
+      // file under the package (the whole app) in the background, which overlaps
+      // the first test and the afterAll close on a cold cache.
+      entries: ['test/fixtures/browser-lifetime/index.html'],
+      include: ['bits-ui', 'svelte', 'flatstr', 'redux-saga', 'typed-redux-saga'],
+    },
     plugins: [svelte({ configFile: resolve('svelte.config.js') })],
     css: { postcss: { plugins: [tailwindcss, autoprefixer] } },
     resolve: {
@@ -174,6 +182,8 @@ test.beforeAll(async () => {
   });
   console.log('Electron harness cache:', server.config.cacheDir);
   await server.listen();
+  // Finish the cold-cache scan and pre-bundle here, not inside the first test.
+  await settleDepsOptimizer(server);
   baseUrl = server.resolvedUrls!.local[0];
 });
 test.afterAll(async () => {

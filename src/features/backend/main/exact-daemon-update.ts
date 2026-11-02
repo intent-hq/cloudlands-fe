@@ -1,5 +1,6 @@
 import { compareToPinnedVersion } from '$shared/intentd-version-compare';
 import type { UpdateBackendResult } from '$shared/types/connections';
+import { classifyStartupReply } from '$shared/daemon-startup';
 import type { JsonRpcClient } from './json-rpc-client';
 import { JsonRpcError } from './json-rpc-errors';
 
@@ -13,54 +14,14 @@ interface UpdateStatus {
   };
 }
 
-// docs/protocol/startup-readiness.md bounds the daemon's retry hint to 1-30s.
-const STARTUP_RETRY_DEFAULT_MS = 1000;
-const STARTUP_RETRY_MIN_MS = 1000;
-const STARTUP_RETRY_MAX_MS = 30_000;
 // After a terminal startup failure the sitter stops the new daemon and rolls
 // back; give the restored daemon this long to report the install outcome.
 const STARTUP_FAILURE_GRACE_MS = 2 * 60_000;
 const UPDATE_DEADLINE_MS = 12 * 60_000;
 
-type StartupReply =
-  { kind: 'not-ready'; retryAfterMs: number } | { kind: 'failed'; message: string };
-
-/**
- * Recognize the daemon's structured startup reply (`-32012`, see
- * docs/protocol/startup-readiness.md). A restarted daemon reconnects before it
- * is ready and answers every request, `system.status` included, with a
- * retryable `daemon-not-ready`; a terminal `daemon-startup-failed` means the
- * new version never became ready. Anything else is not a startup reply.
- */
-function classifyStartupReply(error: unknown): StartupReply | undefined {
-  if (!(error instanceof JsonRpcError) || error.rpcCode !== -32012) return undefined;
-  const data = (error.data ?? {}) as {
-    code?: unknown;
-    retryable?: unknown;
-    retryAfterMs?: unknown;
-    startup?: { failure?: { message?: unknown } };
-  };
-  if (data.code === 'daemon-startup-failed') {
-    const detail = data.startup?.failure?.message;
-    return {
-      kind: 'failed',
-      message: typeof detail === 'string' && detail.trim() ? detail : error.message,
-    };
-  }
-  if (data.code !== 'daemon-not-ready' || data.retryable !== true) return undefined;
-  const hint =
-    typeof data.retryAfterMs === 'number' && Number.isFinite(data.retryAfterMs)
-      ? data.retryAfterMs
-      : STARTUP_RETRY_DEFAULT_MS;
-  return {
-    kind: 'not-ready',
-    retryAfterMs: Math.min(STARTUP_RETRY_MAX_MS, Math.max(STARTUP_RETRY_MIN_MS, hint)),
-  };
-}
-
 /** Main supplies the bundle pin. An absent capability never falls back to a channel update. */
 export async function updateDaemonToPin(
-  client: Pick<JsonRpcClient, 'request' | 'getStatus'>,
+  client: Pick<JsonRpcClient, 'request' | 'getStatus' | 'getStartupState'>,
   targetVersion: string | null,
   markPending: () => void,
   isCurrentClient: () => boolean = () => true,
@@ -103,15 +64,35 @@ export async function updateDaemonToPin(
     if (startupFailure && Date.now() >= startupFailure.giveUpAt) {
       return { ok: false, reason: 'failed', message: startupFailure.message };
     }
+    // The connection layer tracks a restarted daemon's startup: it stays
+    // `connecting` while the daemon starts and reports a failed start.
+    const startupState = client.getStartupState();
+    if (startupState?.state === 'starting') {
+      // A fresh attempt (retry or rollback) supersedes an earlier failure.
+      startupFailure = undefined;
+      markPending();
+      await pause(1000);
+      continue;
+    }
+    if (startupState?.state === 'failed') {
+      // Wait (bounded) for the rollback daemon to report the real cause.
+      startupFailure ??= {
+        message: startupState.message ?? '',
+        giveUpAt: Date.now() + STARTUP_FAILURE_GRACE_MS,
+      };
+      await pause(1000);
+      continue;
+    }
     if (client.getStatus() === 'connected') {
       let current: UpdateStatus;
       try {
         current = await client.request<UpdateStatus>('system.status');
       } catch (error) {
+        // Backstop for a request already in flight when the connection saw the
+        // startup reply (or a daemon that answers without a fresh hello).
         const startup = classifyStartupReply(error);
         if (startup?.kind === 'not-ready') {
           // The restarted daemon is reachable but still starting; keep waiting.
-          // A fresh attempt (retry or rollback) supersedes an earlier failure.
           startupFailure = undefined;
           markPending();
           await pause(startup.retryAfterMs);

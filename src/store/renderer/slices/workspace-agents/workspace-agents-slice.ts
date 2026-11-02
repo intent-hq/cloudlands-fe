@@ -582,6 +582,15 @@ export const setAgentNotificationsMutedRequested = createAsyncAction<
   'workspaceAgents/setAgentNotificationsMuted',
   'workspaceAgents/setAgentNotificationsMutedRequested',
 );
+/**
+ * Pin or unpin an agent in the sidebar (`agent.update { changes: { pinned } }`,
+ * §5.5). The saga applies the flag optimistically, reverts on a daemon
+ * failure, and lets the `agent:updated` push converge the session.
+ */
+export const setAgentPinnedRequested = createAsyncAction<
+  [wsId: string, agentId: string, pinned: boolean],
+  void
+>('workspaceAgents/setAgentPinned', 'workspaceAgents/setAgentPinnedRequested');
 /** Persist mode before reconciling the session and scoped agent list. */
 export const setAgentBackgroundRequested = createAsyncAction<
   [wsId: string, agentId: string, isBackground: boolean],

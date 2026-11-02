@@ -262,11 +262,13 @@ export function manager(model: HardwareDeviceModel = 'codex-micro') {
     statuses,
   };
   const navigate = vi.fn(async () => {});
+  const showWorkspace = vi.fn(async (_workspaceId: string) => true);
   const dispose = installHardwareConsoleEncoder(fake as unknown as HardwareConsoleManager, {
     navigate,
+    showWorkspace,
   });
   disposers.push(dispose);
-  return { ...fake, navigate, dispose };
+  return { ...fake, navigate, showWorkspace, dispose };
 }
 export function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -329,6 +331,8 @@ export function useEncoderEffortHarness() {
     vi.useFakeTimers();
     vi.clearAllMocks();
     __resetSettingsReadCacheForTests();
+    // The current workspace tab is on screen unless a scenario opens Home.
+    window.history.replaceState(null, '', '/workspace/ws-1');
     state = makeState();
     mocks.state.current = state;
     channel = stdChannel();

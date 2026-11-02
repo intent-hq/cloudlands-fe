@@ -491,6 +491,26 @@ describe('daemonHealthSaga', () => {
     await task.toPromise();
   });
 
+  it('passes the daemon startup state from the status payload into the action extras', async () => {
+    const daemonStartup = { state: 'failed', snapshot: null, available: false, message: 'boom' };
+    const { dispatched, task } = startHealthSaga();
+    await settle();
+    statusHandler!({
+      status: 'disconnected',
+      transport: { mode: 'external-ws', target: 'wss:192.168.1.20:5181' },
+      daemonStartup,
+    });
+    await settle();
+
+    const actions = statusActions(dispatched) as Array<{
+      payload: [string, unknown, { daemonStartup?: unknown } | undefined];
+    }>;
+    const disconnected = actions.find(({ payload: [status] }) => status === 'disconnected');
+    expect(disconnected!.payload[2]?.daemonStartup).toEqual(daemonStartup);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('passes connectionLimited from the status payload into the action extras', async () => {
     const { dispatched, task } = startHealthSaga();
     await settle();

@@ -1,6 +1,8 @@
+import { dockConversationReducer } from './slices/dock-conversation/dock-conversation-slice';
 import { desktopControlReducer } from './slices/desktop-control/desktop-control-slice';
 import { homeWorkspacesReducer } from '$features/home/home-workspaces-slice';
 import { homeIntegrationsReducer } from '$features/home/home-integrations-slice';
+import { remoteMachinesReducer } from '$features/remote-machines/remote-machines-slice';
 import { pendingSubmissionsReducer } from './slices/pending-submissions/pending-submissions-slice';
 import { repositoryContextReducer } from './slices/repository-context/repository-context-slice';
 import { repositoryCheckoutReducer } from './slices/repository-checkout/repository-checkout-slice';
@@ -66,6 +68,7 @@ import { browserTabRegistryReducer } from './slices/browser-tab-registry/browser
 import { sentryAuthReducer } from './slices/sentry-auth/sentry-auth-slice';
 import { contextReducer } from './slices/context/context-slice';
 import { setupScriptsReducer } from './slices/setup-scripts/setup-scripts-slice';
+import { browserAccessReducer } from './slices/browser-access/browser-access-slice';
 import { mcpSettingsReducer } from './slices/mcp-settings/mcp-settings-slice';
 import { commentsReducer } from './slices/comments/comments-slice';
 import { taskAgentAssociationsReducer } from './slices/task-agent-associations/task-agent-associations-slice';
@@ -156,6 +159,7 @@ export const reducers = {
   model: modelReducer,
   agentModel: agentModelReducer,
   pip: pipReducer,
+  dockConversation: dockConversationReducer,
   power: powerReducer,
   specialists: specialistsReducer,
   systemStatus: systemStatusReducer,
@@ -194,6 +198,7 @@ export const reducers = {
   browserTabRegistry: browserTabRegistryReducer,
   context: contextReducer,
   setupScripts: setupScriptsReducer,
+  browserAccess: browserAccessReducer,
   mcpSettings: mcpSettingsReducer,
   comments: commentsReducer,
   taskAgentAssociations: taskAgentAssociationsReducer,
@@ -260,4 +265,5 @@ export const reducers = {
   workspaceShare: workspaceShareReducer,
   invitationAccountSearch: invitationAccountSearchReducer,
   hostMembership: hostMembershipReducer,
+  remoteMachines: remoteMachinesReducer,
 } as const;

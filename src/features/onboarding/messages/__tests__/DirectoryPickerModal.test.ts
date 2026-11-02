@@ -80,13 +80,6 @@ beforeAll(() => {
       configurable: true,
     });
   }
-  if (!('scrollIntoView' in Element.prototype)) {
-    Object.defineProperty(Element.prototype, 'scrollIntoView', {
-      value: () => {},
-      writable: true,
-      configurable: true,
-    });
-  }
   appStore.init();
   stopDirectoryPickerSaga = appStore.runSaga(directoryPickerSaga);
 });

@@ -4403,6 +4403,28 @@ describe('daemonEventsBridge (queue drain-start — agent:queue:processing opens
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
   });
 
+  it("keeps a drained turn live when the previous turn's completion already settled the session idle", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    // The old turn's terminal chat frame settled the session before the drain.
+    appStore.dispatch(
+      updateSession(AGENT, {
+        status: AgentStatus.RuntimeIdle,
+        isActive: true,
+        liveTurnOpen: false,
+        liveTurnOpenedAt: undefined,
+      }),
+    );
+
+    processing(handler);
+    // A later refresh re-stores the renderer's own copy of the session.
+    appStore.dispatch(upsertSession({ ...readSession()!, workspaceId: WS }));
+
+    expect(readSession()?.status).toBe(AgentStatus.Active);
+    expect(readSession()?.liveTurnOpen).toBe(true);
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
+  });
+
   it("stamps the drain frame's daemon timestamp as the live-turn ordering signal", async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -9946,6 +9968,27 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     const ws = await readWorkspace();
     expect(ws.label).toBeUndefined();
     expect(ws.branch).toBe('main');
+  });
+
+  it('applies and clears the auto-archive opt-out delta (PROTOCOL §5.1)', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(updatedNotification({ autoArchiveDisabled: true }));
+    expect((await readWorkspace()).autoArchiveDisabled).toBe(true);
+
+    // A delta without the key leaves the flag untouched.
+    handler(updatedNotification({ title: 'Renamed' }));
+    expect((await readWorkspace()).autoArchiveDisabled).toBe(true);
+
+    // `false` turns it off; the entity keeps the wire shape (absent while off).
+    handler(updatedNotification({ autoArchiveDisabled: false }));
+    expect((await readWorkspace()).autoArchiveDisabled).toBeUndefined();
+
+    // A non-boolean value is ignored.
+    handler(updatedNotification({ autoArchiveDisabled: 'yes' }));
+    expect((await readWorkspace()).autoArchiveDisabled).toBeUndefined();
   });
 
   it('clears statusImageAssetId on an explicit null in the delta', async () => {

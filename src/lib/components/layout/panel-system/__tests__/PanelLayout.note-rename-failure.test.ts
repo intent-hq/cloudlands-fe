@@ -105,10 +105,6 @@ beforeEach(() => {
       disconnect() {}
     },
   );
-  Object.defineProperty(HTMLElement.prototype, 'getAnimations', {
-    configurable: true,
-    value: () => [],
-  });
   vi.spyOn(appClient.notes, 'supportsTruncatedRead').mockResolvedValue(false);
   storeContext = initAppStore(appStore);
   cancelWriteSaga = appStore.runSaga(notesWriteSaga);

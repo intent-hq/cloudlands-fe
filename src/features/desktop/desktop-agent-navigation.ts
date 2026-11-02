@@ -1,4 +1,5 @@
 import { navigateToRoute } from '$lib/utils/navigation.client';
+import { openAndShowWorkspace } from '$lib/utils/show-workspace';
 import { store } from '$store/renderer/store';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import {
@@ -16,6 +17,6 @@ export async function navigateToDesktopAgent(workspaceId: string, agentId: strin
     store.dispatch(openPanel('chief'));
     return;
   }
-  await navigateToRoute(`/workspace/${encodeURIComponent(workspaceId)}`);
+  if (!(await openAndShowWorkspace(workspaceId))) return;
   store.dispatch(openAgentTabRequested(workspaceId, { agentId }));
 }

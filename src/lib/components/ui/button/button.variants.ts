@@ -133,6 +133,8 @@ type ButtonBaseProps = WithElementRef<HTMLButtonAttributes> &
     tooltipSide?: 'top' | 'right' | 'bottom' | 'left';
     tooltipAlign?: 'start' | 'center' | 'end';
     tooltipDelayDuration?: number;
+    /** Classes for the tooltip's trigger wrapper (e.g. `min-w-0` so the button can shrink). */
+    tooltipClass?: string;
   };
 
 type NamedIconButton =

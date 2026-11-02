@@ -680,7 +680,7 @@ describe('NewSpaceModal model-picker composition', () => {
       },
     );
 
-    describe('GitHub repository cloned by a "Pick a repo" workspace', () => {
+    describe('GitHub repository cloned by a "Clone" workspace', () => {
       const clonePath = '/workspaces/ideate-future/intent';
 
       // A Pick-a-repo workspace is cloned into its own folder, so the daemon
@@ -810,9 +810,7 @@ describe('NewSpaceModal model-picker composition', () => {
       await within(teamListbox).findByRole('option', { name: /^GPT 5\.1 Model 1/ }),
     ).toBeTruthy();
     expect(within(teamListbox).getByRole('option', { name: /^GPT 5\.12 Last model/ })).toBeTruthy();
-    await fireEvent.click(
-      await within(teamListbox).findByRole('option', { name: /GPT 5\.6/ }, { timeout: 5000 }),
-    );
+    await fireEvent.click(await within(teamListbox).findByRole('option', { name: /GPT 5\.6/ }));
 
     await waitFor(() => expect(modelTrigger().textContent).toContain('GPT 5.6'));
     expect(agentTrigger().textContent).toMatch(COORDINATOR);
@@ -843,9 +841,7 @@ describe('NewSpaceModal model-picker composition', () => {
     expect(agentTrigger().textContent).toContain('General');
     await fireEvent.click(modelTrigger());
     const singleListbox = await screen.findByRole('listbox');
-    await fireEvent.click(
-      await within(singleListbox).findByRole('option', { name: /GPT 5\.5/ }, { timeout: 5000 }),
-    );
+    await fireEvent.click(await within(singleListbox).findByRole('option', { name: /GPT 5\.5/ }));
 
     await waitFor(() => expect(modelTrigger().textContent).toContain('GPT 5.5'));
     expect(agentTrigger().textContent).toContain('General');
@@ -1002,9 +998,7 @@ describe('NewSpaceModal model-picker composition', () => {
       );
       const trigger = modelTrigger();
       await fireEvent.click(trigger);
-      await fireEvent.click(
-        await screen.findByRole('option', { name: /GPT 5\.6/ }, { timeout: 5000 }),
-      );
+      await fireEvent.click(await screen.findByRole('option', { name: /GPT 5\.6/ }));
       await waitFor(() => expect(trigger.textContent).toContain('GPT 5.6'));
 
       // A create that fails must not save anything either.
@@ -1056,9 +1050,7 @@ describe('NewSpaceModal model-picker composition', () => {
       picker.onBranchChange({ detail: { branch: 'feature' } });
       const trigger = modelTrigger();
       await fireEvent.click(trigger);
-      await fireEvent.click(
-        await screen.findByRole('option', { name: /GPT 5\.6/ }, { timeout: 5000 }),
-      );
+      await fireEvent.click(await screen.findByRole('option', { name: /GPT 5\.6/ }));
       await waitFor(() => expect(trigger.textContent).toContain('GPT 5.6'));
       expect(savedSelections()).toEqual([]);
 
@@ -1088,7 +1080,7 @@ describe('NewSpaceModal model-picker composition', () => {
     const trigger = modelTrigger();
 
     await fireEvent.click(trigger);
-    await screen.findByRole('option', { name: /GPT 5\.6/ }, { timeout: 5000 });
+    await screen.findByRole('option', { name: /GPT 5\.6/ });
     const search = await screen.findByRole('searchbox', { name: 'Search models...' });
     await fireEvent.input(search, { target: { value: 'GPT 5.6' } });
     await fireEvent.keyDown(search, { key: 'Enter' });
@@ -1117,9 +1109,7 @@ describe('NewSpaceModal model-picker composition', () => {
 
     await fireEvent.click(modelRow);
     const modelListbox = await screen.findByRole('listbox');
-    await fireEvent.click(
-      await within(modelListbox).findByRole('option', { name: /GPT 5\.6/ }, { timeout: 5000 }),
-    );
+    await fireEvent.click(await within(modelListbox).findByRole('option', { name: /GPT 5\.6/ }));
     await waitFor(() => expect(modelRow.textContent).toContain('GPT 5.6'));
 
     expect(modelRow.getAttribute('aria-expanded')).toBe('true');

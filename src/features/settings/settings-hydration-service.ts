@@ -41,6 +41,7 @@ import {
 } from '$store/renderer/slices/model/model-slice';
 import { setDefaultSpecialistId } from '$store/renderer/slices/specialists/specialists-slice';
 import { hydrateNotificationVolume } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { autoArchiveIdleAfterDaysHydrated } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 
 export { BG_MODEL_MIGRATION_MARKER_KEY } from '$store/renderer/slices/background-agent-settings/background-agent-settings-slice';
 
@@ -74,6 +75,15 @@ function applyOne(change: AppliedSettingChange, revision?: number): void {
     case 'providers.enabled': {
       if (value && typeof value === 'object') {
         appStore.dispatch(loadEnabledProvidersFromStorage(value as Record<string, boolean>));
+      }
+      return;
+    }
+    case 'workspace.autoArchiveIdleAfterDays': {
+      // `0` (the default) or null means idle auto-archive is off.
+      if (typeof value === 'number') {
+        appStore.dispatch(autoArchiveIdleAfterDaysHydrated(Math.max(0, value)));
+      } else if (value === null) {
+        appStore.dispatch(autoArchiveIdleAfterDaysHydrated(0));
       }
       return;
     }

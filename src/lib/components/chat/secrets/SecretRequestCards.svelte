@@ -8,7 +8,6 @@
    * card; a new request expands it again. Values never pass through here.
    */
   import { untrack } from 'svelte';
-  import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
   import {
     secretAnswerRequested,
@@ -19,6 +18,7 @@
   import { selectSecretRequestsState } from '$store/renderer/slices/secret-requests/secret-requests-selectors';
   import { selectDaemonConnectionGeneration } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import CollapsedCardChip from '../CollapsedCardChip.svelte';
   import SecretRequestCard from './SecretRequestCard.svelte';
   import SecretRequestDismissDialog from './SecretRequestDismissDialog.svelte';
   import {
@@ -68,6 +68,7 @@
     name: string;
   } | null>(null);
   let stackElement = $state<HTMLDivElement>();
+  let chipExpandButton = $state<HTMLElement | null>(null);
   let focusAfter = $state<'chip' | 'cards' | null>(null);
 
   $effect(() => {
@@ -95,11 +96,12 @@
     const root = stackElement;
     void collapsed;
     if (!target || !root) return;
-    const selector =
+    const element =
       target === 'chip'
-        ? '[data-testid="secret-request-expand"]'
-        : '[data-testid="secret-request-input"]:not([disabled]), [data-testid="secret-request-card"] button';
-    const element = root.querySelector<HTMLElement>(selector);
+        ? chipExpandButton
+        : root.querySelector<HTMLElement>(
+            '[data-testid="secret-request-input"]:not([disabled]), [data-testid="secret-request-card"] button',
+          );
     if (element) {
       element.focus();
       focusAfter = null;
@@ -169,42 +171,24 @@
     data-testid="secret-request-cards"
   >
     {#if collapsed}
-      <div
-        class="flex w-full min-w-0 items-center rounded-(--radius-large) border border-border bg-card"
+      <CollapsedCardChip
+        bind:expandButton={chipExpandButton}
         data-testid="secret-request-chip"
-      >
-        <Button
-          variant="plain"
-          wrapContent={false}
-          class="h-auto min-w-0 flex-1 justify-start gap-2 px-3 py-2.5 text-left sm:px-4"
-          aria-expanded={false}
-          onclick={expand}
-          data-testid="secret-request-expand"
-        >
-          <span class="min-w-0 flex-1 truncate type-caption font-medium text-foreground">
-            {awaiting.length === 1
-              ? m.chat_secretRequest_collapsed_one({ name: awaiting[0].request.name })
-              : m.chat_secretRequest_collapsed_many({ count: awaiting.length })}
-          </span>
-          <span class="min-w-0 max-w-[40%] truncate type-caption text-muted-foreground">
-            {m.chat_secretRequest_clickToExpand_label()}
-          </span>
-        </Button>
-        {#if chipRequest}
-          <div class="shrink-0 pr-1 sm:pr-2">
-            <Button
-              variant="ghost"
-              size="compact"
-              class="text-danger"
-              title={m.chat_secretRequest_dismiss_tooltip()}
-              onclick={openChipDismiss}
-              data-testid="secret-request-chip-dismiss"
-            >
-              {m.chat_secretRequest_dismiss_label()}
-            </Button>
-          </div>
-        {/if}
-      </div>
+        heading={awaiting.length === 1
+          ? m.chat_secretRequest_collapsed_one({ name: awaiting[0].request.name })
+          : m.chat_secretRequest_collapsed_many({ count: awaiting.length })}
+        hint={m.chat_secretRequest_clickToExpand_label()}
+        onExpand={expand}
+        expandTestId="secret-request-expand"
+        dismiss={chipRequest
+          ? {
+              label: m.chat_secretRequest_dismiss_label(),
+              tooltip: m.chat_secretRequest_dismiss_tooltip(),
+              onDismiss: openChipDismiss,
+              testId: 'secret-request-chip-dismiss',
+            }
+          : undefined}
+      />
     {:else}
       {#each visible as { request, state } (request.requestId)}
         <SecretRequestCard {request} {workspaceId} {agentId} listedState={state} onHide={hide} />

@@ -56,10 +56,6 @@ beforeEach(() => {
     },
   );
   Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() });
-  Object.defineProperty(Element.prototype, 'getAnimations', {
-    configurable: true,
-    value: () => [],
-  });
 });
 
 afterEach(() => {

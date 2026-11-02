@@ -1,10 +1,15 @@
 import type { Locator } from '@playwright/experimental-ct-svelte';
-import { expect, expectAnimationsToSettle, test } from '../../../test/ct-test';
+import {
+  clickAndSettle,
+  expect,
+  expectAnimationsToSettle,
+  expectMotionToSettle,
+  test,
+} from '../../../test/ct-test';
 import { expectDismissibleLayerArmed } from '../../../test/dismissible-layer';
 import WorkspaceTabStripGeometryPreview from './workspace-tab-strip-geometry.preview.svelte';
 import WorkspaceTabMenuHarness from './WorkspaceTabMenuHarness.svelte';
 import { WORKSPACE_TAB_MAX_SCROLL_STEP_PX } from './workspace-tab-lifecycle-motion';
-import { WORKSPACE_TAB_MOTION_DURATION_MS } from './titlebar-geometry';
 
 const WORKSPACE_TAB_SCROLL_TRACE_TOLERANCE_PX = Math.ceil(WORKSPACE_TAB_MAX_SCROLL_STEP_PX);
 
@@ -467,7 +472,7 @@ for (const { controlsWidth, startsRightScrolled } of [
       element.style.width = `${width}px`;
       element.style.flex = 'none';
     }, controlsWidth);
-    await page.waitForTimeout(WORKSPACE_TAB_MOTION_DURATION_MS + 50);
+    await expectMotionToSettle(component.locator('[data-workspace-tab-strip]'));
     const before = await component.locator('[data-workspace-tab-strip]').evaluate((strip) => {
       const element = strip as HTMLElement;
       const styles = getComputedStyle(element);
@@ -546,10 +551,13 @@ for (const { controlsWidth, startsRightScrolled } of [
       });
     expect(interruptedWidth).toBeGreaterThan(0);
     expect(interruptedWidth).toBeLessThan(naturalWidth);
-    await component.locator('[data-open-tab]').click();
-    await page.waitForTimeout(1_000);
-    // The sleep lets the reopen motion start; then wait for it to end instead of counting
-    // once, so a slow runner does not read a mid-flight slot.
+    // Wait for the reopen to move the interrupted slot and for it to come to rest, then
+    // check the Web Animations were cleaned up, so a slow runner does not read a
+    // mid-flight slot.
+    await clickAndSettle(
+      component.locator('[data-open-tab]'),
+      component.locator('[data-workspace-tab-motion="geometry-gamma"]'),
+    );
     await expectAnimationsToSettle(component.locator('[data-workspace-tab-motion]'), {
       subtree: false,
     });
@@ -617,7 +625,7 @@ test('closes the active rightmost tab without reversing an overflowing strip', a
     element.style.width = '490px';
     element.style.flex = 'none';
   });
-  await page.waitForTimeout(WORKSPACE_TAB_MOTION_DURATION_MS + 50);
+  await expectMotionToSettle(component.locator('[data-workspace-tab-strip]'));
   await component.locator('[data-workspace-tab-strip]').evaluate((strip) => {
     strip.scrollLeft = strip.scrollWidth;
     strip.dispatchEvent(new Event('scroll'));
@@ -723,7 +731,7 @@ test('closes an active middle tab with monotonic neighbor and launcher motion', 
     element.style.width = '650px';
     element.style.flex = 'none';
   });
-  await page.waitForTimeout(WORKSPACE_TAB_MOTION_DURATION_MS + 50);
+  await expectMotionToSettle(component.locator('[data-workspace-tab-strip]'));
 
   const naturalWidth = await component
     .locator('[data-workspace-tab-motion="geometry-beta"]')

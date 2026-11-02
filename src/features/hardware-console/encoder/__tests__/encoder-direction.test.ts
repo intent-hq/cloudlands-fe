@@ -66,6 +66,7 @@ describe.each(['codex-micro', 'creator-micro-2'] as const)('%s raw encoder routi
       expect(screen.getByRole('status').textContent).toContain(label());
       expect(screen.getByTestId('effort-gauge').getAttribute('data-gauge-value')).toBe(gauge);
       expect(device.navigate).not.toHaveBeenCalled();
+      expect(device.showWorkspace).not.toHaveBeenCalled();
     },
   );
 
@@ -95,11 +96,11 @@ describe.each(['codex-micro', 'creator-micro-2'] as const)('%s raw encoder routi
     mocks.dispatch(setHardwareConsoleEncoderBehavior('workspace-switch'));
     const device = manager(model);
     device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CW', act: 2 } });
-    expect(device.navigate).toHaveBeenLastCalledWith('/workspace/ws-2');
+    expect(device.showWorkspace).toHaveBeenLastCalledWith('ws-2');
     device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CW', act: 2 } });
-    expect(device.navigate).toHaveBeenCalledTimes(1);
+    expect(device.showWorkspace).toHaveBeenCalledTimes(1);
     device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CC', act: 2 } });
-    expect(device.navigate).toHaveBeenLastCalledWith('/workspace/ws-1');
+    expect(device.showWorkspace).toHaveBeenLastCalledWith('ws-1');
     device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CLK', act: 1 } });
     expect(device.navigate).toHaveBeenLastCalledWith('/');
     expect(state.sidebarNav.panelItem).toBeNull();
@@ -107,6 +108,7 @@ describe.each(['codex-micro', 'creator-micro-2'] as const)('%s raw encoder routi
     device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CLK', act: 1 } });
     expect(state.homeWorkspaces.tab).toBe('workspaces');
     device.navigate.mockClear();
+    device.showWorkspace.mockClear();
     await flush();
     expect(mutations()).toHaveLength(0);
   });

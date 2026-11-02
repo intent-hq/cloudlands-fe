@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-const mocks = vi.hoisted(() => ({ navigate: vi.fn(), dispatch: vi.fn() }));
+const mocks = vi.hoisted(() => ({ navigate: vi.fn(), show: vi.fn(), dispatch: vi.fn() }));
 vi.mock('$lib/utils/navigation.client', () => ({ navigateToRoute: mocks.navigate }));
+vi.mock('$lib/utils/show-workspace', () => ({ openAndShowWorkspace: mocks.show }));
 vi.mock('$store/renderer/store', () => ({ store: { dispatch: mocks.dispatch } }));
 import { navigateToDesktopAgent } from './desktop-agent-navigation';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
@@ -12,15 +13,17 @@ import {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.navigate.mockResolvedValue(undefined);
+  mocks.show.mockResolvedValue(true);
 });
-it('opens the exact agent only after navigating to its owning workspace', async () => {
-  let navigated = false;
-  mocks.navigate.mockImplementation(async () => {
-    navigated = true;
+it('opens the exact agent only after showing its owning workspace and tab', async () => {
+  let shown = false;
+  mocks.show.mockImplementation(async () => {
+    shown = true;
+    return true;
   });
-  mocks.dispatch.mockImplementation(() => expect(navigated).toBe(true));
+  mocks.dispatch.mockImplementation(() => expect(shown).toBe(true));
   await navigateToDesktopAgent('space/#other', 'agent-a');
-  expect(mocks.navigate).toHaveBeenCalledWith('/workspace/space%2F%23other');
+  expect(mocks.show).toHaveBeenCalledWith('space/#other');
   expect(mocks.dispatch).toHaveBeenCalledWith(
     openAgentTabRequested('space/#other', { agentId: 'agent-a' }),
   );
@@ -36,8 +39,13 @@ it('selects the controlling Assistant thread rather than a hidden workspace page
 it('does not open an unrelated agent on missing identity or failed navigation', async () => {
   await navigateToDesktopAgent('', 'agent-a');
   await navigateToDesktopAgent('space-a', '');
-  expect(mocks.navigate).not.toHaveBeenCalled();
-  mocks.navigate.mockRejectedValue(new Error('navigation failed'));
+  expect(mocks.show).not.toHaveBeenCalled();
+  mocks.show.mockRejectedValueOnce(new Error('navigation failed'));
   await expect(navigateToDesktopAgent('space-a', 'agent-a')).rejects.toThrow('navigation failed');
+  expect(mocks.dispatch).not.toHaveBeenCalled();
+});
+it('does not open the agent when the helper skips navigation (HUD window)', async () => {
+  mocks.show.mockResolvedValueOnce(false);
+  await navigateToDesktopAgent('space-a', 'agent-a');
   expect(mocks.dispatch).not.toHaveBeenCalled();
 });

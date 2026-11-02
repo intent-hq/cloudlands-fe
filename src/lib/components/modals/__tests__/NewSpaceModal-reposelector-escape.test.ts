@@ -110,7 +110,7 @@ vi.mock('$store/renderer/slices/feature-codes/feature-codes-selectors', async ()
   return { selectIsFeatureEnabled: store.createSelector(() => false) };
 });
 
-// GitHub autocomplete sources on RepoSelector's "Pick a repo" tab — signed out
+// GitHub autocomplete sources on RepoSelector's "Clone" tab — signed out
 // here, so no suggestions render and the Escape ordering stays isolated.
 vi.mock('$store/renderer/slices/github-auth/github-auth-slice', () => ({
   initializeGitHubAuth: () => ({ type: 'githubAuth/initialize' }),
@@ -177,7 +177,7 @@ import NewSpaceModal from '../NewSpaceModal.svelte';
 import RepoSelector from '../../workspace/initializer/RepoSelector.svelte';
 import { warmImport } from '../../../../test/warm-import';
 
-const DROPDOWN_HEADING = 'What repo should we work on?';
+const DROPDOWN_HEADING = 'What should we work on?';
 
 // Pre-warm the component module graph so the cold dynamic import is not
 // billed to the first test's timeout (intent-hq/monorepo#1464).

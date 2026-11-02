@@ -2,7 +2,7 @@
   import { logger } from '$lib/utils/client-logger';
 
   import { page } from '$app/stores';
-  import { goto } from '$app/navigation';
+  import { openAndShowWorkspace } from '$lib/utils/show-workspace';
   import { invoke } from '$lib/electron-bridge';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { Button } from '$lib/components/ui/button';
@@ -108,10 +108,9 @@
       return;
     }
 
-    // Otherwise, use programmatic navigation in current window.
-    // The route (/workspace/:id) is the single source of truth for the active workspace.
+    // Otherwise show the workspace in this window and open its tab.
     event.preventDefault();
-    await goto(`/workspace/${workspaceId}`);
+    await openAndShowWorkspace(workspaceId);
   }
 
   function isWorkspaceActive(workspaceId: string): boolean {

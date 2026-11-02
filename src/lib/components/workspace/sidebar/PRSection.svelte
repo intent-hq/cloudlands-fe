@@ -143,6 +143,7 @@
      * no local-files expansion) — the secondary-root browsing view
      * (monorepo#2053). */
     listOnly?: boolean;
+    showPullRequests?: boolean;
     /** Every mutating affordance (push / create PR / merge / rebase / connect
      * remote via `accept-changes.*`, GitHub auth via `github.*`, `git.pull`,
      * force `git.push`) renders only when true; a collaborator gets the
@@ -191,6 +192,7 @@
     onOpenChange: _onOpenChange,
     mergePanelContent,
     listOnly = false,
+    showPullRequests = true,
     isOwner = true,
   }: Props = $props();
 
@@ -876,7 +878,7 @@
      secondary root (or a monitor-only row) can supply PRs even when the
      primary workspace has no remote (monorepo#2053). Primary-only
      affordances (create PR / push / merge) stay gated on hasRemote above. -->
-{#if hasAnyPRs}
+{#if showPullRequests && hasAnyPRs}
   <div transition:slide={{ tier: 'moderate' }}>
     <TimelineSection
       title={m.workspace_prSection_pullRequests_label()}

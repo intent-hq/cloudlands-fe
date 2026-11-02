@@ -220,10 +220,11 @@ test.describe('Build Smoke — Provider Verification', () => {
             const deadline = Date.now() + 30_000;
             while (Date.now() < deadline) {
               try {
-                const result = await (window as any).electronAPI.invoke('workspace:get', {
-                  id: wsId,
+                const result = await (window as any).electronAPI.invoke('backend:request', {
+                  method: 'workspace.get',
+                  params: { workspaceId: wsId },
                 });
-                const ws = result?.data || result?.workspace || result;
+                const ws = result?.ok ? result.result?.workspace : null;
                 if (ws?.worktreePath) return ws.worktreePath;
               } catch {
                 /* retry */
@@ -321,10 +322,11 @@ test.describe('Build Smoke — Provider Verification', () => {
             // Get the IPC-reported worktree path for diagnostic comparison
             const ipcWorktree = await page.evaluate(async (wsId) => {
               try {
-                const result = await (window as any).electronAPI.invoke('workspace:get', {
-                  id: wsId,
+                const result = await (window as any).electronAPI.invoke('backend:request', {
+                  method: 'workspace.get',
+                  params: { workspaceId: wsId },
                 });
-                const ws = result?.data || result?.workspace || result;
+                const ws = result?.ok ? result.result?.workspace : null;
                 return {
                   worktreePath: ws?.worktreePath,
                   repositoryPath: ws?.repositoryPath,

@@ -18,34 +18,57 @@ import { openWorkspaceDiscussion } from '$features/discussions/discussion-naviga
 import { selectDiscussionMentionAdmission } from '$store/renderer/slices/notifications/notifications-selectors';
 import type { DiscussionTarget } from '$store/renderer/slices/workspace-discussion/workspace-discussion-slice';
 import { navigateToRoute } from '$lib/utils/navigation.client';
+import { openAndShowWorkspace } from '$lib/utils/show-workspace';
 import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+import type { WorkspaceWindowTarget } from '$shared/workspace-window-target';
+import {
+  openWorkspaceFile,
+  openWorkspaceNote,
+} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import {
   openPanel,
   setChiefActiveAgentId,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 
 const logger = createLogger('NotificationNavigation');
+let navigationGeneration = 0;
 
 /** Payload of `notification:navigate` (sent on notification click). */
 export interface NotificationNavigatePayload {
   workspaceId?: string;
   /** Set for chief-of-staff completions — route to the homepage Assistant. */
   chief?: boolean;
-  /** Chief chat thread (agent) to select in the Assistant panel. */
+  /** Exact conversation to select in the target workspace or Assistant. */
   agentId?: string;
+  workspaceTarget?: WorkspaceWindowTarget;
   discussion?: { target: DiscussionTarget; messageId: string };
 }
 
+function openWorkspaceTarget(data: NotificationNavigatePayload): void {
+  if (!data.workspaceId || !data.workspaceTarget) return;
+  const target = data.workspaceTarget;
+  if (target.type === 'note') {
+    appStore.dispatch(openWorkspaceNote(data.workspaceId, target.noteId));
+  } else {
+    appStore.dispatch(
+      openWorkspaceFile(data.workspaceId, target.filePath, {
+        ...(target.line !== undefined ? { line: target.line } : {}),
+        ...(target.gitRootId ? { gitRootId: target.gitRootId } : {}),
+        ...(target.gitRootPath ? { gitRootPath: target.gitRootPath } : {}),
+        filePathIsLiteral: true,
+      }),
+    );
+  }
+}
+
 /**
- * Route a notification click: `goto(/workspace/{workspaceId})`, then activate
- * the workspace tab (adding it to the strip when it is not open), guarding
- * null/missing payloads. In-app navigation alone never adds a closed
- * workspace to the tab strip — only the boot route does — so, like the link
- * handler, the tab is activated once navigation succeeds; a failed navigation
- * leaves the strip untouched.
+ * Route a notification click through `openAndShowWorkspace`: navigate to the
+ * workspace, then activate its tab (adding it to the strip when it is not
+ * open), guarding null/missing payloads. A failed navigation leaves the strip
+ * untouched.
  * Chief-of-staff payloads (`chief: true` or the chief
  * virtual workspace id) open the homepage Assistant and select the chat
  * thread instead — the chief workspace page is hidden. No-ops in the HUD
@@ -61,12 +84,16 @@ export async function handleNotificationNavigate(
 
   // The HUD window registers the same IPC listeners as every renderer; the
   // main process avoids targeting it, but guard here too (defense in depth).
-  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/hud')) {
+  if (
+    typeof window !== 'undefined' &&
+    /^\/(?:hud|dock|annotation|dev-console)(?:\/|$)/.test(window.location.pathname)
+  ) {
     logger.debug('Ignoring notification navigate in HUD window', {
       workspaceId: data.workspaceId,
     });
     return;
   }
+  const generation = ++navigationGeneration;
 
   if (data.discussion) {
     const { target, messageId } = data.discussion;
@@ -76,13 +103,12 @@ export async function handleNotificationNavigate(
     };
     if (target.workspaceId !== data.workspaceId || !admitted()) return;
     try {
-      await navigateToRoute(`/workspace/${encodeURIComponent(target.workspaceId)}`);
-      appStore.dispatch(openWorkspaceTab(target.workspaceId));
-      if (!admitted()) return;
+      if (!(await openAndShowWorkspace(target.workspaceId))) return;
+      if (generation !== navigationGeneration || !admitted()) return;
       const ready = await appStore.dispatch(
         discussionNotificationLayoutRequested(target, messageId),
       );
-      if (!ready || !admitted()) return;
+      if (!ready || generation !== navigationGeneration || !admitted()) return;
       openWorkspaceDiscussion(target.workspaceId, target.workspaceId, target.conversationId);
     } catch (error) {
       logger.warn('Failed to open discussion from notification click', { error });
@@ -99,6 +125,7 @@ export async function handleNotificationNavigate(
       }
       appStore.dispatch(openPanel('chief'));
       await navigateToRoute('/');
+      if (generation === navigationGeneration) openWorkspaceTarget(data);
     } catch (error) {
       logger.warn('Failed to open Assistant panel from notification click', { error });
     }
@@ -106,8 +133,11 @@ export async function handleNotificationNavigate(
   }
 
   try {
-    await navigateToRoute(`/workspace/${encodeURIComponent(data.workspaceId)}`);
-    appStore.dispatch(openWorkspaceTab(data.workspaceId));
+    if (!(await openAndShowWorkspace(data.workspaceId))) return;
+    if (data.agentId && generation === navigationGeneration) {
+      appStore.dispatch(openAgentTabRequested(data.workspaceId, { agentId: data.agentId }));
+    }
+    if (generation === navigationGeneration) openWorkspaceTarget(data);
   } catch (error) {
     logger.warn('Failed to navigate from notification click', {
       workspaceId: data.workspaceId,

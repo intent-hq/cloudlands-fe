@@ -6,6 +6,8 @@
  * The main-process build excludes this via tsconfig.main.json patterns.
  */
 import { createLogger } from './client-logger';
+import { isHudWindowRenderer } from './hud-window';
+import { bumpNavigationEpoch } from './navigation-epoch';
 
 const logger = createLogger('Navigation');
 
@@ -16,15 +18,7 @@ export function isSettingsRoute(route: string): boolean {
   return /^\/settings(?:[/?#]|$)/.test(route);
 }
 
-/**
- * Whether this renderer is the chrome-less HUD pop-out window.
- *
- * The HUD window registers the same IPC listeners and services as every
- * renderer; navigation must never replace its /hud route with another view.
- */
-export function isHudWindowRenderer(): boolean {
-  return typeof window !== 'undefined' && window.location.pathname.startsWith('/hud');
-}
+export { isHudWindowRenderer };
 
 /**
  * Navigate to an arbitrary route.
@@ -33,21 +27,30 @@ export function isHudWindowRenderer(): boolean {
  * For workspace-specific navigation (agents, notes, files), prefer the helpers in
  * workspace-navigation.ts which add workspace context.
  *
- * No-ops in the HUD pop-out window so stray toast actions / IPC events can
- * never navigate it away from the /hud route.
+ * No-ops in the HUD and dock so stray toast actions / IPC events cannot
+ * replace these auxiliary surfaces with a full app page.
  *
  * @param route - The route to navigate to (e.g., '/settings', '/workspace/ws-123')
  * @returns Promise that resolves when navigation completes
  */
 export async function navigateToRoute(
   route: string,
-  options: { assistantContent?: boolean; assistantAgentId?: string } = {},
+  options: { assistantContent?: boolean; assistantAgentId?: string; state?: App.PageState } = {},
 ): Promise<void> {
-  if (isHudWindowRenderer()) {
-    logger.debug('Ignoring navigation in HUD window', { route });
+  if (
+    isHudWindowRenderer() ||
+    (typeof window !== 'undefined' && /^\/dock(?:\/|$)/.test(window.location.pathname))
+  ) {
+    logger.debug('Ignoring navigation in auxiliary window', { route });
     return;
   }
-  if (options.assistantContent || route.startsWith('intent://') || /^https?:\/\//.test(route)) {
+  const mayStayInPlace =
+    options.assistantContent || route.startsWith('intent://') || /^https?:\/\//.test(route);
+  // Synchronously, before any await: a workspace jump still waiting on its
+  // own goto sees this navigation and skips its tab (show-workspace.ts).
+  // Routes that may open in the Assistant panel instead do not count.
+  if (!mayStayInPlace) bumpNavigationEpoch();
+  if (mayStayInPlace) {
     const { showAssistantContent } = await import('$features/home/assistant-panels');
     if (
       await showAssistantContent(route, {
@@ -82,5 +85,5 @@ export async function navigateToRoute(
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
   // @ts-ignore - $app/navigation is a SvelteKit renderer-only module (not available in main process)
   const { goto } = await import('$app/navigation');
-  return goto(route);
+  return options.state ? goto(route, { state: options.state }) : goto(route);
 }

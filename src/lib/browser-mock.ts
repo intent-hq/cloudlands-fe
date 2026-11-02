@@ -371,6 +371,7 @@ function mockBackendInvoke(channel: string, data?: any): any {
     if (source) {
       return {
         status: source.getStatus(),
+        daemonStartup: source.getStartupState(),
         transport: { mode: 'external-ws', target: source.getTarget() },
       };
     }
@@ -428,7 +429,7 @@ function mockInvoke(channel: string, data?: any): any {
   }
 
   // Provider / model channels
-  if (channel.endsWith(':get-models') || channel.endsWith(':check-availability')) {
+  if (channel.endsWith(':get-models')) {
     return { success: true, data: [] };
   }
   if (channel === 'providers:get-availability') {
@@ -670,12 +671,24 @@ function installWebDaemonStatusBridge(): void {
   webDaemonStatusBridgeInstalled = true;
   let unsubscribeStatus: (() => void) | null = null;
   let unsubscribeReconnected: (() => void) | null = null;
+  let unsubscribeStartup: (() => void) | null = null;
   onWebDaemonStatusSourceRegistered((source) => {
     unsubscribeStatus?.();
     unsubscribeReconnected?.();
+    unsubscribeStartup?.();
     unsubscribeStatus = source.onStatusChange((status) => {
       emitBrowserMockEvent('backend:status', {
         status,
+        daemonStartup: source.getStartupState(),
+        transport: { mode: 'external-ws', target: source.getTarget() },
+      });
+    });
+    // Mirror backend.ipc.ts: startup progress changes while the status stays
+    // `connecting`, so re-emit the current status with the new posture.
+    unsubscribeStartup = source.onStartupChange((daemonStartup) => {
+      emitBrowserMockEvent('backend:status', {
+        status: source.getStatus(),
+        daemonStartup,
         transport: { mode: 'external-ws', target: source.getTarget() },
       });
     });

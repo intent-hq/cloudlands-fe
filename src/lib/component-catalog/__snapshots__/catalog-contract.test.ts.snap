@@ -42,7 +42,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:action-menu:
           "none"
       <section data-catalog-rendered-state="context-menu">
         <div>
-          <button aria-controls="c<id>-content" aria-expanded="true" aria-haspopup="menu" aria-hidden="true" aria-label="Document actions" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast fixed font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none opacity-0 pointer-events-none px-4 rounded-(--radius-medium) shrink-0 size-px text-secondary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-dropdown-menu-trigger="" data-slot="menu-trigger" data-state="open" id="bits-<id>" tabindex="-1" type="button">
+          <button aria-controls="c<id>-content" aria-expanded="true" aria-haspopup="menu" aria-hidden="true" aria-label="Document actions" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast fixed font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none opacity-0 p-0 pointer-events-none rounded-(--radius-medium) shrink-0 size-px text-secondary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-dropdown-menu-trigger="" data-slot="menu-trigger" data-state="open" id="bits-<id>" tabindex="-1" type="button">
             <span aria-hidden="true" class="-z-10 absolute bg-secondary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-0 motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
@@ -18216,6 +18216,13 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                               "Rich chat blocks"
                                           <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
                                             "Prompt agents to emit rich chat blocks (Mermaid diagrams, CLI commands, code references, navigation links)"
+                                      <div class="[&_.truncate]:whitespace-normal flex gap-3 items-start min-h-0 min-w-0 px-0 py-0" data-density="default" data-enabled="false" data-feature="secretRequests" data-slot="list-row" data-testid="harness-feature-state" role="listitem">
+                                        <div class="flex-1 min-w-0">
+                                          <div class="flex gap-2 items-baseline min-w-0">
+                                            <div class="min-w-0 text-foreground truncate type-caption" data-slot="list-row-title">
+                                              "Secret requests"
+                                          <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
+                                            "Let top-level agents ask you for secrets such as API keys, held in memory only for their commands. Also needs Host command execution"
                                       <div class="[&_.truncate]:whitespace-normal flex gap-3 items-start min-h-0 min-w-0 px-0 py-0" data-density="default" data-enabled="false" data-feature="attentionRequests" data-slot="list-row" data-testid="harness-feature-state" role="listitem">
                                         <div class="flex-1 min-w-0">
                                           <div class="flex gap-2 items-baseline min-w-0">

@@ -30,6 +30,7 @@ import {
 import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
 import { navigateToRoute } from '$lib/utils/navigation.client';
+import { openAndShowWorkspace } from '$lib/utils/show-workspace';
 import { dispatchWindowEvent } from '$lib/utils/window-events';
 import { m } from '$shared/paraglide/messages.js';
 import type { HardwareConsoleManager } from '../device/device-manager';
@@ -47,7 +48,7 @@ import { cancelPttRecording } from '../voice/ptt-controller';
 import { isConsoleOwner } from '../owner-gate';
 import { getActionKeyDefinition, type ActionKeyContext } from './action-key-registry';
 import { ENCODER_HUD_HIDE_MS } from '../encoder/encoder-service';
-import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
+import { getVisibleWorkspaceId } from '$features/workspace/visible-workspace';
 
 const logger = createLogger('HardwareConsoleActionKeys');
 
@@ -79,15 +80,20 @@ function getToast() {
 }
 
 export interface ActionKeyDeps {
-  /** Navigate the app to a route. Defaults to `navigateToRoute`. */
+  /** Navigate the app to a non-workspace route. Defaults to `navigateToRoute`. */
   navigate?: (route: string) => Promise<void>;
+  /** Jump to a workspace and open its tab. Defaults to `openAndShowWorkspace`. */
+  showWorkspace?: (workspaceId: string) => Promise<unknown>;
   /** Show the subtle unavailable-action hint. Defaults to a small toast. */
   showUnavailableHint?: (message: string) => void;
   /** Focus an agent tab's chat composer. Defaults to `focusAgentComposer`. */
   focusComposer?: (agentId: string) => void;
   /** Console-owner gate (#1928). Defaults to the store-backed `isConsoleOwner`. */
   isOwner?: () => boolean;
-  /** Current workspace-tab seam. */
+  /**
+   * Visible-workspace seam. Defaults to `getVisibleWorkspaceId`: null on
+   * Home and Settings, which keep the last workspace tab selected.
+   */
   getCurrentWorkspaceId?: () => string | null;
 }
 
@@ -153,11 +159,10 @@ async function showUnavailableToast(message: string): Promise<void> {
 function buildContext(deps: ActionKeyDeps): ActionKeyContext {
   return {
     state: appStore.state,
-    workspaceId: (
-      deps.getCurrentWorkspaceId ?? (() => selectCurrentWorkspaceTabId.select(appStore.state))
-    )(),
+    workspaceId: (deps.getCurrentWorkspaceId ?? getVisibleWorkspaceId)(),
     dispatch: (action) => appStore.dispatch(action as { type: string }),
     navigate: deps.navigate ?? navigateToRoute,
+    showWorkspace: deps.showWorkspace ?? openAndShowWorkspace,
     focusComposer: deps.focusComposer ?? focusAgentComposer,
     showHint: deps.showUnavailableHint ?? ((hint: string) => void showUnavailableToast(hint)),
   };

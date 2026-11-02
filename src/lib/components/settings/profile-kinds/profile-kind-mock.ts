@@ -1,0 +1,67 @@
+/**
+ * Presentational types and folder-preview helpers for the redesigned
+ * add/edit profile dialog mock-ups. Everything here is props-only: no store,
+ * no daemon calls.
+ */
+
+import {
+  loginCommand,
+  profileFoldersParent,
+  slugifyProfileName,
+  type ProfileKind,
+  type ProfileProvider,
+} from '$lib/provider-profile-kinds';
+
+export type ProfileKindProvider = ProfileProvider;
+
+/** The cards on step 1 (Codex has no API key card). */
+export type ProfileKindChoice = ProfileKind;
+
+/** Where the dialog is in the add flow. */
+export type ProfileKindStep = 'pick' | 'details';
+
+/**
+ * The key check the dialog shows after an API key / Token save. A terminal
+ * sign-in is not shown here: the dialog closes and the profile row tracks it.
+ */
+export type ProfileSignInState =
+  | { status: 'idle' }
+  | { status: 'checkingKey' }
+  | { status: 'keyWorks' }
+  | { status: 'keyRejected' };
+
+/** What Save does with a saved Custom endpoint (`ANTHROPIC_BASE_URL`, masked on read). */
+export type BaseUrlAction = 'keep' | 'replace' | 'remove';
+
+/** Failures after the profile was saved (the profile itself stays). */
+export type ProfileSetupError = { kind: 'folderFailed'; path: string } | { kind: 'terminalFailed' };
+
+/** The `~/…` folder a new Different-login profile would use (never desktop-expanded). */
+export function previewProfileFolder(
+  provider: ProfileKindProvider,
+  name: string,
+  suffix: string,
+): string {
+  return `${profileFoldersParent(provider)}/${slugifyProfileName(name)}-${suffix}`;
+}
+
+/** The plain terminal command for a sign-in; the folder goes in `env`, never here. */
+export function signInCommand(provider: ProfileKindProvider, remoteDaemon: boolean): string {
+  return loginCommand(provider, !remoteDaemon);
+}
+
+/** A profile row's status, as ProviderProfiles shows it ('error' reads "Signed out"). */
+export type MockProfileStatus = 'checking' | 'ready' | 'error' | 'configured';
+
+/** Fake profile row data for the rows mock-up. */
+export interface MockProfileRow {
+  id: string;
+  name: string;
+  kind: ProfileKindChoice;
+  status: MockProfileStatus;
+  /** Claude identity, shown as "Signed in as <email>" when Ready. */
+  email?: string;
+  backup?: boolean;
+  /** Different login: the folder saved on the profile. */
+  folderPath?: string;
+}

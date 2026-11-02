@@ -270,6 +270,23 @@ describe('workspace.service ↔ daemon workspace.* write path (PROTOCOL.md §5.1
     if (result.ok) expect(result.data.label).toBeUndefined();
   });
 
+  it('updateWorkspace forwards autoArchiveDisabled and treats an omitted flag as off', async () => {
+    const ws = seed();
+    daemonWorkspaces.set(ws.id, { ...ws });
+
+    const on = await service.updateWorkspace({ id: ws.id, autoArchiveDisabled: true });
+    const onCall = requestMock.mock.calls.find(([m]) => m === 'workspace.update');
+    expect((onCall![1] as Record<string, unknown>).autoArchiveDisabled).toBe(true);
+    expect(on.ok && on.data.autoArchiveDisabled).toBe(true);
+
+    // The daemon omits the flag while it is off.
+    const { autoArchiveDisabled: _a, ...off } = daemonWorkspaces.get(ws.id)!;
+    daemonWorkspaces.set(ws.id, off);
+    const result = await service.updateWorkspace({ id: ws.id, title: 'Renamed' });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect('autoArchiveDisabled' in result.data).toBe(false);
+  });
+
   it('deleteWorkspace sends workspace.delete with { workspaceId }', async () => {
     const ws = seed();
     daemonWorkspaces.set(ws.id, { ...ws });

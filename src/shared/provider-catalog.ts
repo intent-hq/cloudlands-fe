@@ -62,6 +62,15 @@ const ProviderCatalogEntrySchema = z
  * display name only — never env. `providerRef` is the value every provider
  * field carries; clients read it and never compose it.
  */
+/**
+ * Why a configuration can't run on another machine (§5.54 "Remote
+ * compatibility"). `reason` is an open enum: an unknown reason still means
+ * incompatible. `keys` names variables only, never values.
+ */
+const RemoteIncompatibilitySchema = z
+  .object({ reason: z.string(), keys: z.array(z.string()) })
+  .passthrough();
+
 const ProviderProfileSummarySchema = z
   .object({
     id: z.string().min(1),
@@ -70,6 +79,10 @@ const ProviderProfileSummarySchema = z
     name: z.string(),
     /** Backup failover flag; absent on daemons without backup failover. */
     backup: z.boolean().optional(),
+    /** Can run a remote agent; absent on daemons that predate remote compatibility. */
+    remoteCompatible: z.boolean().optional(),
+    /** Present exactly when `remoteCompatible` is false. */
+    remoteIncompatibility: RemoteIncompatibilitySchema.optional(),
   })
   .passthrough();
 
@@ -80,9 +93,13 @@ export const ProviderCatalogResponseSchema = z
     profiles: z.array(ProviderProfileSummarySchema).optional(),
     // Renamed Default configurations by base provider id (§5.54); omitted when none is.
     defaultNames: z.record(z.string(), z.string()).optional(),
+    // Default configurations that can't run on another machine, by base id;
+    // omitted when every Default can (§5.54 "Remote compatibility").
+    defaultRemoteIncompatibility: z.record(z.string(), RemoteIncompatibilitySchema).optional(),
   })
   .passthrough();
 
+export type RemoteIncompatibility = z.infer<typeof RemoteIncompatibilitySchema>;
 export type ProviderProfileSummary = z.infer<typeof ProviderProfileSummarySchema>;
 
 export type ProviderCatalogEntry = z.infer<typeof ProviderCatalogEntrySchema>;

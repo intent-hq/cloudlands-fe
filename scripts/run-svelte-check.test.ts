@@ -7,6 +7,7 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -646,7 +647,7 @@ describe('checker wrapper diagnostics with real children', () => {
     { childExit: 0, errors: 1, completed: true, expectedExit: 1 },
     { childExit: 0, errors: 0, completed: false, expectedExit: 1 },
   ])('preserves diagnostics and guards for %j', (control) => {
-    const dir = mkdtempSync(path.join(tmpdir(), 'svelte-wrapper-child-'));
+    const dir = realpathSync(mkdtempSync(path.join(tmpdir(), 'svelte-wrapper-child-')));
     try {
       const runner = path.join(dir, 'runner.mjs');
       writeFileSync(runner, readFileSync(path.resolve('scripts/run-svelte-check.mjs')));

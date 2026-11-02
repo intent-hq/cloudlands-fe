@@ -536,6 +536,7 @@
 
   async function openWorkspace(workspaceId: string, restoreFocus = false) {
     appStore.dispatch(openWorkspaceTab(workspaceId));
+    // eslint-disable-next-line intent/no-raw-workspace-navigation -- selects a tab already in the strip; it is focused before navigating so the strip highlights at once.
     await goto(`/workspace/${workspaceId}`);
     if (restoreFocus) requestAnimationFrame(() => tabButtons[workspaceId]?.focus());
   }
@@ -551,6 +552,7 @@
     reportActiveTabTracking();
     activeTabBoundsControllers.get(workspaceId)?.(false);
     if (nextWorkspaceId) activeTabBoundsControllers.get(nextWorkspaceId)?.(true);
+    // eslint-disable-next-line intent/no-raw-workspace-navigation -- tab-close fallback to the tab the strip just selected.
     void goto(
       nextWorkspaceId
         ? `/workspace/${nextWorkspaceId}`
@@ -573,6 +575,7 @@
       activeTabBoundsControllers.get(closingWorkspaceId)?.(false);
       if (nextWorkspaceId) activeTabBoundsControllers.get(nextWorkspaceId)?.(true);
     }
+    // eslint-disable-next-line intent/no-raw-workspace-navigation -- tab-close fallback to the tab the strip just selected.
     void goto(
       nextWorkspaceId
         ? `/workspace/${nextWorkspaceId}`

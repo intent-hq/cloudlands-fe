@@ -233,6 +233,81 @@ describe('DaemonStoppedOverlay', () => {
     vi.unstubAllGlobals();
   });
 
+  describe('daemon startup', () => {
+    const snapshot = {
+      startupStatus: 1 as const,
+      attemptId: 'boot-a',
+      phase: 'preparing' as const,
+      elapsedMs: 3000,
+      phaseElapsedMs: 3000,
+      progressAgeMs: 0,
+      retryAfterMs: 1000,
+    };
+
+    it('shows startup progress at once, without recovery actions, and dismisses when ready', async () => {
+      render(DaemonStoppedOverlay);
+      bootTransport = externalTransport;
+      dispatchAndFlush(connectionStatusChanged('connected', externalTransport));
+      await vi.advanceTimersByTimeAsync(10);
+      dispatchAndFlush(
+        connectionStatusChanged('connecting', externalTransport, {
+          daemonStartup: { state: 'starting', snapshot, available: true },
+        }),
+      );
+      // No grace period: startup can take minutes.
+      await vi.waitFor(() => expect(overlay()).toBeTruthy());
+      const progress = screen.getByTestId('daemon-startup-progress');
+      expect(overlay()!.getAttribute('aria-labelledby')).toBe(
+        progress.querySelector('h2')!.getAttribute('id'),
+      );
+      // A starting daemon is not lost: no spawn fallback, no retry counter.
+      expect(screen.queryByTestId('daemon-stopped-spawn-sidecar')).toBeNull();
+      expect(screen.queryByTestId('daemon-stopped-retrying')).toBeNull();
+
+      dispatchAndFlush(connectionStatusChanged('connected', externalTransport));
+      await vi.waitFor(() => expect(overlay()).toBeNull());
+    });
+
+    it('shows a failed start with the reconnect indicator and the usual fallback', async () => {
+      render(DaemonStoppedOverlay);
+      bootTransport = externalTransport;
+      dispatchAndFlush(connectionStatusChanged('connected', externalTransport));
+      await vi.advanceTimersByTimeAsync(10);
+      dispatchAndFlush(
+        connectionStatusChanged('disconnected', externalTransport, {
+          daemonStartup: {
+            state: 'failed',
+            snapshot: null,
+            available: false,
+            message: 'Daemon startup failed. Check daemon logs.',
+          },
+        }),
+      );
+      await vi.waitFor(() => expect(overlay()).toBeTruthy());
+      expect(screen.getByTestId('daemon-startup-progress')).toBeTruthy();
+      expect(screen.getByTestId('daemon-stopped-retrying')).toBeTruthy();
+      expect(screen.getByTestId('daemon-stopped-spawn-sidecar')).toBeTruthy();
+    });
+
+    it('returns to the connection-lost posture when the daemon goes away while starting', async () => {
+      render(DaemonStoppedOverlay);
+      bootTransport = externalTransport;
+      dispatchAndFlush(connectionStatusChanged('connected', externalTransport));
+      await vi.advanceTimersByTimeAsync(10);
+      dispatchAndFlush(
+        connectionStatusChanged('connecting', externalTransport, {
+          daemonStartup: { state: 'starting', snapshot, available: true },
+        }),
+      );
+      await vi.waitFor(() => expect(overlay()).toBeTruthy());
+      dispatchAndFlush(
+        connectionStatusChanged('disconnected', externalTransport, { daemonStartup: null }),
+      );
+      expect(screen.queryByTestId('daemon-startup-progress')).toBeNull();
+      expect(screen.getByTestId('daemon-stopped-spawn-sidecar')).toBeTruthy();
+    });
+  });
+
   it('stays hidden while the daemon is healthy', async () => {
     render(DaemonStoppedOverlay);
     appStore.dispatch(connectionStatusChanged('connected', sidecarTransport));

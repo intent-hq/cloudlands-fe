@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Hardened-runtime entitlements for the dock media helpers only
+     (dock-helper/intent-dock-recorder and speech-helper/intent-dock-speech),
+     applied by scripts/sign-sidecar.js. Microphone access is the one privilege
+     they need; screen capture and speech recognition are TCC-gated and have no
+     hardened-runtime entitlement. The element picker is signed with none. -->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+</dict>
+</plist>

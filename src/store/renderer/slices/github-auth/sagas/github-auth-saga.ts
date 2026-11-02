@@ -35,6 +35,7 @@ import {
   cancelGitHubAuth,
   checkGitHubAuthStatus,
   githubAuthChanged,
+  githubAuthStatusUnavailable,
   initializeGitHubAuth,
   logoutCompleted,
   logoutGitHub,
@@ -153,6 +154,7 @@ function* initialize(): SagaGenerator<void> {
     }
   } catch (error) {
     logger.error('Failed to initialize GitHub auth', error);
+    yield* put(githubAuthStatusUnavailable());
   }
 }
 

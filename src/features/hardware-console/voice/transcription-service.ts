@@ -41,7 +41,7 @@ import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
 import { writeTextToClipboard } from '$lib/utils/clipboard';
 import { getItem, type Collection } from '@themislib/themis/utils/collections/collection-utils';
-import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
+import { getVisibleWorkspaceId } from '$features/workspace/visible-workspace';
 import { m } from '$shared/paraglide/messages.js';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import type { Workspace } from '$shared/types';
@@ -196,7 +196,11 @@ export interface TranscriptionDeps {
   sendComposer?: () => boolean;
   /** Dispatch into the app store. Defaults to `appStore.dispatch`. */
   dispatch?: (action: unknown) => void;
-  /** Current workspace-tab seam. */
+  /**
+   * Visible-workspace seam. Defaults to `getVisibleWorkspaceId`: null on Home
+   * and Settings, so the transcript goes to the focused editable instead of
+   * the unmounted composer of the hidden last workspace tab.
+   */
   getCurrentWorkspaceId?: () => string | null;
   /** Copy text to the clipboard (insert-failed fallback). Defaults to `writeTextToClipboard`. */
   copyToClipboard?: (text: string) => Promise<void>;
@@ -476,8 +480,7 @@ export async function handleFinishedRecording(
 
   const state = appStore.state as unknown as VoiceContextState;
   const routeWorkspaceId =
-    explicitTarget?.workspaceId ??
-    (deps.getCurrentWorkspaceId ?? (() => selectCurrentWorkspaceTabId.select(appStore.state)))();
+    explicitTarget?.workspaceId ?? (deps.getCurrentWorkspaceId ?? getVisibleWorkspaceId)();
   // A focused modal keeps the insertion: null target → focused-editable
   // caret path, never `focusAgentComposer` stealing focus from the modal.
   const targetAgentId = dialogFocused
@@ -645,9 +648,7 @@ export async function runTranscriptionFlow(
   if (recording === null) {
     if (!options.autoSend || isFocusInsideDialog()) return;
     const state = appStore.state as unknown as VoiceContextState;
-    const workspaceId = (
-      deps.getCurrentWorkspaceId ?? (() => selectCurrentWorkspaceTabId.select(appStore.state))
-    )();
+    const workspaceId = (deps.getCurrentWorkspaceId ?? getVisibleWorkspaceId)();
     await triggerComposerSend(resolveTargetAgentId(state, workspaceId), deps);
     return;
   }

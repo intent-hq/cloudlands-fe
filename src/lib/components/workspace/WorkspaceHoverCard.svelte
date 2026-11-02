@@ -16,7 +16,7 @@
   import type { AgentSession, PullRequestInfo, Workspace } from '$shared/types';
   import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
   import { createLogger } from '$lib/utils/client-logger';
-  import { navigateToRoute } from '$lib/utils/navigation.client';
+  import { openAndShowWorkspace } from '$lib/utils/show-workspace';
   import { classifyAgentScope } from '$shared/utils/agent-scope';
   import { onMount } from 'svelte';
   import { writable } from 'svelte/store';
@@ -32,10 +32,10 @@
   import { selectReviewMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import { selectWorkspaceActivePullRequest } from '$store/renderer/slices/workspace/workspace-selectors';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
-  import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import WorkspaceStatusIcon from './WorkspaceStatusIcon.svelte';
   import { constructPrUrl } from './sidebar/sidebar-changes-utils';
+  import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
   import {
     buildWorkspacePRPresentationModel,
     type WorkspacePRPresentationRow,
@@ -298,7 +298,8 @@
     );
   });
   let workspacePrRows = $derived.by(() => {
-    if (!workspace) return [];
+    // Plain folders have no PRs.
+    if (!workspace || isPlainFolderWorkspace(workspace)) return [];
     const workspaceRepo =
       workspace.repositoryOwner && workspace.repositoryName
         ? `${workspace.repositoryOwner}/${workspace.repositoryName}`
@@ -332,8 +333,7 @@
     if (!workspace || !loadAgentSessions) return;
     const workspaceId = workspace.id;
     if (selectCurrentWorkspaceTabId.select(appStore.state) !== workspaceId) {
-      appStore.dispatch(openWorkspaceTab(workspaceId));
-      void navigateToRoute(`/workspace/${workspaceId}`).catch((error) => {
+      void openAndShowWorkspace(workspaceId).catch((error) => {
         logger.warn('Failed to switch workspace for hover-card agent', { agentId, error });
       });
     }

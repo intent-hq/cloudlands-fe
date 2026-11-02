@@ -33,6 +33,8 @@ function pickTransport(): BackendTransport {
       getStatus: () => transport.getConnectionStatus(),
       getTarget: () => sanitizeWsUrlForDisplay(wsUrl),
       onStatusChange: (handler) => transport.onConnectionStatusChange(handler),
+      getStartupState: () => transport.getStartupState(),
+      onStartupChange: (handler) => transport.onStartupChange(handler),
       onReconnected: (handler) => transport.onReconnected(handler),
     });
     return transport;

@@ -3,13 +3,15 @@
   /**
    * ProjectPickerMessage — Message 2 of the onboarding flow.
    *
-   * Tabbed picker: Local repo | GitHub repo | New project.
+   * Tabbed picker: Clone | Existing folder | New (the New Workspace dialog's
+   * order). Clone is hidden once forge status is known and neither GitHub nor
+   * GitLab is connected; the step opens on Clone, or Existing folder when hidden.
    * Pre-fills from Redux persistence. On valid selection:
    *   - emits project config
    *   - triggers sidebar slide-in
    *   - reveals Message 3
    */
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { createLogger } from '$lib/utils/client-logger';
   import { invoke } from '$shared/generated/ipc-client';
@@ -17,6 +19,13 @@
   import LocalRepoTab from './LocalRepoTab.svelte';
   import GitHubRepoTab from './GitHubRepoTab.svelte';
   import NewProjectTab from './NewProjectTab.svelte';
+  import InitializeGitToggle from '$lib/components/workspace/initializer/InitializeGitToggle.svelte';
+  import { createInitializeGitChoice } from '$lib/components/workspace/initializer/initialize-git-choice.svelte';
+  import {
+    newProjectDefaultParent,
+    skipIsolationForPick,
+  } from '$lib/components/workspace/initializer/plain-folder-create';
+  import type { GitSwitchFolder } from '$lib/components/workspace/initializer/git-switch-copy';
   import {
     selectWorkspaceInitializerBranchByRepo,
     selectWorkspaceInitializerDefaultParentPath,
@@ -24,6 +33,7 @@
     selectWorkspaceInitializerLastSelectedRepo,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import type { WorkspaceInitializerRepoSelection } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
+  import { selectCloneSourceVisible } from '$store/renderer/slices/workspace-initializer/plain-folder-selectors';
 
   const logger = createLogger('ProjectPickerMessage');
 
@@ -33,16 +43,24 @@
   const lastSelectedRepo$ = selectWorkspaceInitializerLastSelectedRepo();
   const branchByRepo$ = selectWorkspaceInitializerBranchByRepo();
 
+  // "Initialize as git repository" (Labs, plain-folder workspaces).
+  const initializeGitChoice = createInitializeGitChoice();
+  const plainFolderMode = $derived(!initializeGitChoice.initializeGit);
+
   /**
    * Resolve the default on-disk location for the "New project" parent
    * folder. Prefers a previously saved value from Redux hydrated
-   * persistence, falling back to `~/Developer`.
+   * persistence, falling back to `~/Developer` (`~/Documents` for a plain folder).
    */
   function getDefaultLocation(): string {
-    return $defaultParentPath$ || '~/Developer';
+    return newProjectDefaultParent($defaultParentPath$, plainFolderMode);
   }
 
   type TabId = 'local' | 'github' | 'new';
+
+  // Clone (the GitHub tab) is hidden once forge status is known and nothing is
+  // connected; the onboarding forge step is where a forge gets connected.
+  const cloneSourceVisible$ = selectCloneSourceVisible();
 
   export interface ProjectSelection {
     type: 'local' | 'github' | 'new';
@@ -54,6 +72,11 @@
     isValid: boolean;
     /** Local folder exists but has no Git repo; the daemon must initialize it. */
     initGit?: boolean;
+    /**
+     * Plain-folder workspace (Labs): `'existing'` uses a non-git folder as-is,
+     * `'new'` creates the folder without git. Never set with `initGit`.
+     */
+    plainFolder?: 'existing' | 'new';
   }
 
   interface Props {
@@ -63,12 +86,25 @@
     onSelectAndAdvance?: () => void;
     /** Hide the heading text (used in split layout where heading is in the left panel) */
     hideHeading?: boolean;
+    /**
+     * No isolated checkout: work in the folder itself. Shared with the branch
+     * selector's isolation option; the git switch shows and sets it for a git repo.
+     */
+    skipIsolation?: boolean;
+    onSkipIsolationChange?: (skipIsolation: boolean) => void;
   }
 
-  let { onProjectChange, onSelectAndAdvance, hideHeading = false }: Props = $props();
+  let {
+    onProjectChange,
+    onSelectAndAdvance,
+    hideHeading = false,
+    skipIsolation = false,
+    onSkipIsolationChange,
+  }: Props = $props();
 
-  // Tab state
-  let activeTab = $state<TabId>('local');
+  // Tab state: Clone first, like New Workspace; the effect below moves to
+  // Existing folder once Clone is hidden.
+  let activeTab = $state<TabId>('github');
 
   // Local repo state
   let localRepoPath = $state('');
@@ -110,6 +146,7 @@
     isDirectory: boolean;
     isEmpty: boolean;
     isGitRepo: boolean;
+    isSubdirectoryOfGitRepo?: boolean;
   } | null>(null);
   let isCheckingNewProjectDir = $state(false);
 
@@ -120,9 +157,22 @@
       : '',
   );
 
+  async function parentIsInGitRepo(parent: string): Promise<boolean> {
+    try {
+      const result = await invoke<any>('file:getDirectoryStatus', { path: parent });
+      return !!(
+        result?.success &&
+        (result.data?.isGitRepo || result.data?.isSubdirectoryOfGitRepo)
+      );
+    } catch {
+      return false;
+    }
+  }
+
   // Check directory status when new project path changes
   $effect(() => {
     const targetPath = newProjectFullPath;
+    void plainFolderMode; // The parent probe depends on the mode.
     if (!targetPath) {
       newProjectDirStatus = null;
       return;
@@ -130,16 +180,18 @@
 
     isCheckingNewProjectDir = true;
     const checkPath = async () => {
-      if (typeof window === 'undefined' || !window.electronAPI) {
-        isCheckingNewProjectDir = false;
-        return;
-      }
       try {
         const result = await invoke<any>('file:getDirectoryStatus', {
           path: targetPath,
         });
         if (result.success && result.data) {
-          newProjectDirStatus = result.data;
+          // A missing folder reports no repository; its parent decides whether
+          // the new folder would sit inside one (then it stays a git workspace).
+          const parentInRepo =
+            !result.data.exists && plainFolderMode ? await parentIsInGitRepo(parentPath) : false;
+          newProjectDirStatus = parentInRepo
+            ? { ...result.data, isSubdirectoryOfGitRepo: true }
+            : result.data;
         } else {
           newProjectDirStatus = null;
         }
@@ -240,13 +292,17 @@
   // to avoid $effect → callback → state change → $effect infinite loops.
   function buildSelection(): ProjectSelection {
     if (activeTab === 'local') {
+      // A non-git folder outside any repository is git-initialized, or used as
+      // a plain folder when "Initialize as git repository" is off.
+      const plain = localInitGit && plainFolderMode;
       return {
         type: 'local',
         repoPath: localRepoPath,
-        branch: localBranch,
+        branch: plain ? '' : localBranch,
         scope: localScope,
         isValid: !!localRepoPath,
-        ...(localInitGit ? { initGit: true } : {}),
+        ...(localInitGit && !plain ? { initGit: true } : {}),
+        ...(plain ? { plainFolder: 'existing' as const } : {}),
       };
     } else if (activeTab === 'github') {
       // Branch is chosen in the prompt/configuration step via the shared
@@ -274,19 +330,67 @@
         parentPath && projectName && !hasError
           ? `${parentPath.replace(/\/$/, '')}/${projectName}`
           : '';
+      // Plain-folder mode: a folder outside any git repository is created without git.
+      const plain =
+        plainFolderMode &&
+        !!fullPath &&
+        !newProjectDirStatus?.isGitRepo &&
+        !newProjectDirStatus?.isSubdirectoryOfGitRepo;
       return {
         type: 'new',
         repoPath: fullPath,
-        branch: 'main',
+        branch: plain ? '' : 'main',
         projectName,
         isValid: !!parentPath && !!projectName && !hasError && !isCheckingNewProjectDir,
-      };
+        // An unread status may hide an existing folder: confirm it as existing.
+        ...(plain
+          ? { plainFolder: newProjectDirStatus && !newProjectDirStatus.exists ? 'new' : 'existing' }
+          : {}),
+      } as ProjectSelection;
     }
   }
 
-  /** Notify parent of current selection. Called from event handlers, NOT from $effect. */
-  function notifyParent() {
-    onProjectChange?.(buildSelection());
+  // What the git switch acts on in the current tab.
+  const gitSwitchFolder = $derived<GitSwitchFolder>(
+    activeTab === 'new' ? 'new' : !localRepoPath ? null : localInitGit ? 'folder' : 'git-repo',
+  );
+
+  /**
+   * The isolation a selection implies while the git switch is shown (Labs): a
+   * new repository is worked on in place on main with no new branch, a clone
+   * gets its own checkout, and a git repo follows the switch — only when it
+   * was just picked, so a later change in the branch selector is kept.
+   */
+  function syncIsolation(selection: ProjectSelection, gitRepoPicked: boolean) {
+    if (!initializeGitChoice.visible || !selection.repoPath) return;
+    const pick =
+      selection.type === 'github'
+        ? 'clone'
+        : selection.plainFolder
+          ? 'plain'
+          : selection.initGit || selection.type === 'new'
+            ? 'new-repo'
+            : 'git-repo';
+    if (pick === 'git-repo' && !gitRepoPicked) return;
+    const next = skipIsolationForPick(pick, initializeGitChoice.initializeGit);
+    if (next !== null) onSkipIsolationChange?.(next);
+  }
+
+  /**
+   * Notify parent of current selection. Called from event handlers, NOT from
+   * $effect. `gitRepoPicked`: a git repo was just picked (or its tab reopened).
+   */
+  function notifyParent(gitRepoPicked = false) {
+    const selection = buildSelection();
+    syncIsolation(selection, gitRepoPicked);
+    onProjectChange?.(selection);
+  }
+
+  /** The git switch was flipped: for a picked git repo it is the isolation setting. */
+  function handleGitSwitchChange(value: boolean) {
+    const folder = gitSwitchFolder;
+    initializeGitChoice.set(value);
+    if (folder === 'git-repo') onSkipIsolationChange?.(!value);
   }
 
   // Notify parent once on mount with pre-filled persisted values (if any)
@@ -294,17 +398,37 @@
     notifyParent();
   });
 
-  const tabs: { id: TabId; label: string }[] = [
-    {
-      id: 'local',
-      get label() {
-        return m.onboarding_projectPicker_localFolder_label();
-      },
-    },
+  // The selection depends on the toggle (git init vs plain folder); the new
+  // project location follows the mode's built-in fallback until the user picks one.
+  $effect(() => {
+    const plain = plainFolderMode;
+    untrack(() => {
+      if (parentPath === newProjectDefaultParent($defaultParentPath$, !plain))
+        parentPath = newProjectDefaultParent($defaultParentPath$, plain);
+      notifyParent();
+    });
+  });
+
+  // A persisted or prefilled GitHub pick must not leave the user on a hidden tab.
+  $effect(() => {
+    if (!$cloneSourceVisible$ && activeTab === 'github')
+      untrack(() => {
+        activeTab = 'local';
+        notifyParent();
+      });
+  });
+
+  const allTabs: { id: TabId; label: string }[] = [
     {
       id: 'github',
       get label() {
-        return m.onboarding_projectPicker_githubRepo_label();
+        return m.onboarding_projectPicker_clone_label();
+      },
+    },
+    {
+      id: 'local',
+      get label() {
+        return m.onboarding_projectPicker_existingFolder_label();
       },
     },
     {
@@ -314,6 +438,9 @@
       },
     },
   ];
+  const tabs = $derived(
+    $cloneSourceVisible$ ? allTabs : allTabs.filter((tab) => tab.id !== 'github'),
+  );
 </script>
 
 <!-- Message content — flies in from bottom -->
@@ -323,7 +450,7 @@
       {m.onboarding_projectPicker_chooseProject_title()}
     </h2>
     <p class="text-base text-muted-foreground leading-relaxed font-light max-w-lg">
-      {m.onboarding_projectPicker_workOnA_description()}
+      {m.onboarding_projectPicker_source_description()}
     </p>
   {/if}
 
@@ -333,7 +460,7 @@
     activationMode="manual"
     onValueChange={(value) => {
       activeTab = value as TabId;
-      notifyParent();
+      notifyParent(true);
     }}
   >
     <Tabs.List class="w-full" aria-label={m.onboarding_projectPicker_chooseProject_title()}>
@@ -344,6 +471,17 @@
       {/each}
     </Tabs.List>
 
+    {#if initializeGitChoice.visible && activeTab !== 'github'}
+      <InitializeGitToggle
+        class="mt-4"
+        folder={gitSwitchFolder}
+        checked={gitSwitchFolder === 'git-repo'
+          ? !skipIsolation
+          : initializeGitChoice.initializeGit}
+        onCheckedChange={handleGitSwitchChange}
+      />
+    {/if}
+
     <!-- Tab content -->
     <div class="min-h-[120px]" in:fly={{ tier: 'slow', distance: 10 }}>
       {#key activeTab}
@@ -351,11 +489,12 @@
           {#if activeTab === 'local'}
             <LocalRepoTab
               selectedPath={localRepoPath}
+              {plainFolderMode}
               onSelect={(path, scope, initGit) => {
                 localRepoPath = path;
                 localScope = scope;
                 localInitGit = initGit === true;
-                notifyParent();
+                notifyParent(true);
               }}
               onSelectAndAdvance={(path, scope, initGit) => {
                 // Capture reactive prop before state changes invalidate it.
@@ -366,7 +505,7 @@
                 localRepoPath = path;
                 localScope = scope;
                 localInitGit = initGit === true;
-                notifyParent();
+                notifyParent(true);
                 if (typeof advance === 'function') advance();
               }}
             />

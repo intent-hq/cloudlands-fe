@@ -27,6 +27,8 @@ import {
   selectLabsSettingsVisible,
   selectLabsGitLabEnabled,
   selectLabsRemoteAgentsEnabled,
+  selectLabsPlainFolderWorkspacesEnabled,
+  selectLabsBrowserAccessEnabled,
   selectLanguagePreference,
   selectNoteFontStyle,
   selectPauseAnimationsWhenUnfocused,
@@ -58,6 +60,8 @@ import {
   setLabsSettingsVisible,
   setLabsGitLabEnabled,
   setLabsRemoteAgentsEnabled,
+  setLabsPlainFolderWorkspacesEnabled,
+  setLabsBrowserAccessEnabled,
   setLanguagePreference,
   setNoteFontStyle,
   setPauseAnimationsWhenUnfocused,
@@ -75,6 +79,8 @@ import {
   toggleLabsSettingsVisibility,
   toggleLabsGitLab,
   toggleLabsRemoteAgents,
+  toggleLabsPlainFolderWorkspaces,
+  toggleLabsBrowserAccess,
   togglePauseAnimationsWhenUnfocused,
   toggleReduceMotionOnBattery,
   toggleShowArchived,
@@ -99,6 +105,8 @@ const PAUSE_ANIMATIONS_WHEN_UNFOCUSED_STORAGE_KEY = 'appearance:pauseAnimationsW
 const LABS_SETTINGS_VISIBLE_STORAGE_KEY = 'labs:settingsVisible';
 const LABS_GITLAB_STORAGE_KEY = 'labs:gitlabEnabled';
 const LABS_REMOTE_AGENTS_STORAGE_KEY = 'labs:remoteAgentsEnabled';
+const LABS_PLAIN_FOLDER_WORKSPACES_STORAGE_KEY = 'labs:plainFolderWorkspacesEnabled';
+const LABS_BROWSER_ACCESS_STORAGE_KEY = 'labs:browserAccessEnabled';
 const AGENT_STORAGE_KEY = 'agent-font-settings';
 const NOTE_STORAGE_KEY = 'note-font-settings';
 const CODE_STORAGE_KEY = 'code-font-settings';
@@ -243,6 +251,20 @@ export function* hydrateUserPreferencesWorker() {
     yield* put(setLabsRemoteAgentsEnabled(labsRemoteAgentsEnabled));
   }
 
+  const labsPlainFolderWorkspacesEnabled = yield* getLocalStorageJSON<boolean>(
+    LABS_PLAIN_FOLDER_WORKSPACES_STORAGE_KEY,
+  );
+  if (typeof labsPlainFolderWorkspacesEnabled === 'boolean') {
+    yield* put(setLabsPlainFolderWorkspacesEnabled(labsPlainFolderWorkspacesEnabled));
+  }
+
+  const labsBrowserAccessEnabled = yield* getLocalStorageJSON<boolean>(
+    LABS_BROWSER_ACCESS_STORAGE_KEY,
+  );
+  if (typeof labsBrowserAccessEnabled === 'boolean') {
+    yield* put(setLabsBrowserAccessEnabled(labsBrowserAccessEnabled));
+  }
+
   const agentFont = yield* getLocalStorageJSON<unknown>(AGENT_STORAGE_KEY);
   if (validAgentFont(agentFont)) yield* put(setAgentFontStyle(agentFont.fontStyle));
 
@@ -385,6 +407,20 @@ function* persistLabsRemoteAgentsWorker() {
   );
 }
 
+function* persistLabsBrowserAccessWorker() {
+  yield* setLocalStorageJSON(
+    LABS_BROWSER_ACCESS_STORAGE_KEY,
+    yield* selectLabsBrowserAccessEnabled.effect(),
+  );
+}
+
+function* persistLabsPlainFolderWorkspacesWorker() {
+  yield* setLocalStorageJSON(
+    LABS_PLAIN_FOLDER_WORKSPACES_STORAGE_KEY,
+    yield* selectLabsPlainFolderWorkspacesEnabled.effect(),
+  );
+}
+
 function* persistAgentFontWorker() {
   yield* setLocalStorageJSON(AGENT_STORAGE_KEY, {
     fontStyle: yield* selectAgentFontStyle.effect(),
@@ -494,6 +530,14 @@ function* watchUserPreferenceWrites() {
   yield* takeEvery(
     [setLabsRemoteAgentsEnabled, toggleLabsRemoteAgents],
     persistLabsRemoteAgentsWorker,
+  );
+  yield* takeEvery(
+    [setLabsPlainFolderWorkspacesEnabled, toggleLabsPlainFolderWorkspaces],
+    persistLabsPlainFolderWorkspacesWorker,
+  );
+  yield* takeEvery(
+    [setLabsBrowserAccessEnabled, toggleLabsBrowserAccess],
+    persistLabsBrowserAccessWorker,
   );
   yield* takeEvery([setAgentFontStyle], persistAgentFontWorker);
   yield* takeEvery([setNoteFontStyle, cycleNoteFontStyle], persistNoteFontWorker);

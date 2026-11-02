@@ -45,7 +45,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
-  import { onDestroy, tick } from 'svelte';
+  import { onDestroy, tick, untrack } from 'svelte';
   import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
   import { workspacePickerStyles } from './workspace-picker-styles';
   import { slide } from '$lib/motion';
@@ -239,6 +239,14 @@
 
   // Derived: whether the selected branch is the currently checked out branch
   const isCurrentBranch = $derived(selectedBranch === currentBranch && currentBranch !== '');
+
+  // No isolated checkout works in the folder on its current branch, whichever
+  // control turned isolation off (this selector or the folder picker's switch).
+  $effect(() => {
+    if (!directMode || !currentBranch || selectedBranch === currentBranch) return;
+    const branch = currentBranch;
+    untrack(() => selectBranch(branch, { keepSkipIsolation: true, keepOpen: true }));
+  });
 
   // Notify parent when branch status changes.
   // Read individual state values directly instead of a $derived object literal,

@@ -7,11 +7,11 @@ const mocks = vi.hoisted(() => ({
   offById: vi.fn(),
   warning: vi.fn(),
   error: vi.fn(),
-  navigate: vi.fn(() => Promise.resolve()),
+  show: vi.fn(() => Promise.resolve(true)),
   callbacks: {} as Record<string, (data: any) => void>,
 }));
 vi.mock('$lib/electron-bridge', () => ({ isElectron: mocks.isElectron }));
-vi.mock('$lib/utils/navigation.client', () => ({ navigateToRoute: mocks.navigate }));
+vi.mock('$lib/utils/show-workspace', () => ({ openAndShowWorkspace: mocks.show }));
 vi.mock('$lib/components/patterns/notify', () => ({
   notify: { warning: mocks.warning, error: mocks.error },
 }));
@@ -71,7 +71,8 @@ describe('agentEventsIpcSaga', () => {
       },
     ]);
     authOptions.action.onClick();
-    expect(mocks.navigate.mock.calls).toEqual([['/workspace/ws-1?panel=terminal']]);
+    // The shared helper navigates and opens the workspace tab.
+    expect(mocks.show.mock.calls).toEqual([['ws-1', { query: { panel: 'terminal' } }]]);
     task.cancel();
     await task.toPromise();
   });
@@ -84,7 +85,7 @@ describe('agentEventsIpcSaga', () => {
     mocks.callbacks['agent:auth-required']({ isRemote: false, message: 'Sign in' });
     mocks.callbacks['agent:plan-required']({ message: 'Upgrade' });
     await settle();
-    expect(mocks.navigate.mock.calls).toEqual([]);
+    expect(mocks.show.mock.calls).toEqual([]);
     expect(task.isRunning()).toBe(true);
     task.cancel();
     await task.toPromise();

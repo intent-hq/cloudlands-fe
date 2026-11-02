@@ -40,6 +40,8 @@ vi.mock('../../../../shared/main/async-utils', () => ({
 import { setupSystemIPC } from '../system.ipc';
 import { WINDOW_CHANNELS } from '../../../../shared/ipc/channels';
 import { getWindowBackgroundColor } from '../../../../shared/main/window-appearance';
+import * as windowAppearance from '../../../../shared/main/window-appearance';
+import { registerDockAnnotationWindow } from '../../../../main/dock-annotation-identity';
 import { registerDesktopOverlayWindow } from '../../../../shared/main/desktop-overlay-window';
 import type { BrowserWindow } from 'electron';
 
@@ -123,4 +125,41 @@ describe('WINDOW_CHANNELS.SET_THEME', () => {
     expect(overlay.setBackgroundColor).not.toHaveBeenCalled();
     expect(ordinary.setBackgroundColor).toHaveBeenCalledOnce();
   });
+});
+
+describe('WINDOW_CHANNELS.SET_TRANSLUCENCY', () => {
+  it.each([true, false])(
+    'keeps transparent auxiliary windows unchanged when enabled=%s',
+    async (enabled) => {
+      const makeWindow = (route = '/', destroyed = false) => ({
+        isDestroyed: () => destroyed,
+        setBackgroundColor: vi.fn(),
+        setVibrancy: vi.fn(),
+        webContents: { getURL: () => `http://localhost:5173${route}` },
+      });
+      const dock = makeWindow('/dock');
+      const annotation = makeWindow('/annotation');
+      const overlay = makeWindow('/overlay');
+      const ordinary = makeWindow();
+      const destroyed = makeWindow('/', true);
+      registerDockAnnotationWindow(annotation as unknown as BrowserWindow);
+      registerDesktopOverlayWindow(overlay as unknown as BrowserWindow);
+      electronMocks.getAllWindows.mockReturnValue([dock, annotation, overlay, ordinary, destroyed]);
+      const apply = vi
+        .spyOn(windowAppearance, 'applyWindowTranslucency')
+        .mockImplementation(() => {});
+      try {
+        const result = await handlerFor(WINDOW_CHANNELS.SET_TRANSLUCENCY)(
+          { sender: {} },
+          { enabled },
+        );
+        expect(result).toEqual({ success: true });
+        expect(windowAppearance.isWindowTranslucencyEnabled()).toBe(enabled);
+        expect(apply).toHaveBeenCalledExactlyOnceWith(ordinary, false, enabled);
+      } finally {
+        apply.mockRestore();
+        windowAppearance.setWindowTranslucencyEnabled(true);
+      }
+    },
+  );
 });

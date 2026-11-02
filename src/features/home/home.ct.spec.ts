@@ -249,7 +249,7 @@ test('Home board uses the same scope and restores keyboard focus after narrow pr
   await component.getByRole('combobox', { name: 'Status', exact: true }).click();
   await page.getByRole('option', { name: 'Running', exact: true }).click();
   await expect(board.locator('[data-home-workspace]')).toHaveCount(1);
-  await expect(board.getByRole('region')).toHaveCount(4);
+  await expect(board.locator('section:not([data-home-set-aside])')).toHaveCount(4);
   expect(await board.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await testInfo.attach('home-board', { body: await page.screenshot(), contentType: 'image/png' });
 });
@@ -558,11 +558,7 @@ test('Home sidebar keeps an empty Assistant usable', async ({ mount, page }, tes
   const sidebar = component.getByRole('navigation', { name: 'Home', exact: true });
   await sidebar.getByRole('tab', { name: 'Assistant', exact: true }).click();
   await expect(sidebar.getByRole('status')).toContainText('No Assistant threads');
-  await expect(
-    component
-      .locator('[data-chief-header-row]')
-      .getByRole('button', { name: 'New Assistant thread', exact: true }),
-  ).toBeEnabled();
+  await expect(sidebar.getByRole('button', { name: 'New chat', exact: true })).toBeEnabled();
   await testInfo.attach('home-sidebar-empty-assistant', {
     body: await page.screenshot({ path: testInfo.outputPath('home-sidebar-empty-assistant.png') }),
     contentType: 'image/png',
@@ -571,6 +567,65 @@ test('Home sidebar keeps an empty Assistant usable', async ({ mount, page }, tes
   await expect(
     component.locator('.home-header').getByRole('button', { name: 'New workspace', exact: true }),
   ).toBeVisible();
+});
+
+test('Home sidebar New chat starts one Assistant chat and reuses it while blank', async ({
+  mount,
+  page,
+}, testInfo) => {
+  const component = await mount(Preview, { props: { scenario: 'assistant' } });
+  const sidebar = component.getByRole('navigation', { name: 'Home', exact: true });
+  await sidebar.getByRole('tab', { name: 'Assistant', exact: true }).click();
+  const header = component.locator('[data-chief-header-row]');
+  await expect(header.getByRole('heading')).toHaveText('Plan the next release');
+  await expect(header.getByRole('button', { name: 'New Assistant thread' })).toHaveCount(0);
+  const threads = sidebar.getByRole('listbox');
+  await expect(threads.getByRole('option')).toHaveCount(3);
+  const newChat = sidebar.getByRole('button', { name: 'New chat', exact: true });
+  const createCalls = () => page.evaluate(() => window.__homeAssistantNewChat!.calls);
+
+  await page.evaluate(() => window.__homeAssistantNewChat!.holdNext());
+  await newChat.click();
+  await expect(newChat).toHaveAttribute('aria-busy', 'true');
+  await newChat.press('Enter');
+  await expect(newChat).toBeFocused();
+  await expect.poll(createCalls).toHaveLength(1);
+  const [request] = await createCalls();
+  expect(request).toMatchObject({
+    workspaceId: '__chief__',
+    nameExplicitlySet: false,
+    specialistId: 'chief-of-staff',
+    metadata: {
+      source: 'chief-card',
+      chiefWorkspace: true,
+      specialist: 'chief-of-staff',
+      chiefPromptVersion: expect.any(Number),
+    },
+  });
+  expect(request.behaviorPrompt).toEqual(expect.any(String));
+  await testInfo.attach('home-sidebar-new-chat-request', {
+    body: JSON.stringify(request, null, 2),
+    contentType: 'application/json',
+  });
+
+  await page.evaluate(() => window.__homeAssistantNewChat!.release());
+  await expect(newChat).not.toHaveAttribute('aria-busy');
+  await expect(threads.getByRole('option')).toHaveCount(4);
+  await expect(threads.getByRole('option').first()).toHaveAttribute('aria-selected', 'true');
+  const created = await threads.getByRole('option').first().textContent();
+  await expect(header.getByRole('heading')).toHaveText(created!.trim());
+  await testInfo.attach('home-sidebar-new-chat', {
+    body: await page.screenshot({ path: testInfo.outputPath('home-sidebar-new-chat.png') }),
+    contentType: 'image/png',
+  });
+
+  await threads.getByRole('option', { name: 'Review open pull requests', exact: true }).click();
+  await expect(header.getByRole('heading')).toHaveText('Review open pull requests');
+  await newChat.click();
+  await expect(threads.getByRole('option').first()).toHaveAttribute('aria-selected', 'true');
+  await expect(header.getByRole('heading')).toHaveText(created!.trim());
+  await expect(threads.getByRole('option')).toHaveCount(4);
+  expect(await createCalls()).toHaveLength(1);
 });
 
 test('Home sidebar scrolls long thread history and keeps narrow tabs usable', async ({
@@ -592,10 +647,9 @@ test('Home sidebar scrolls long thread history and keeps narrow tabs usable', as
   );
   await threads.getByRole('option', { name: /^Find the workspaces/ }).click();
   await expect(
-    component
-      .locator('[data-chief-header-row]')
-      .getByRole('button', { name: 'New Assistant thread', exact: true }),
-  ).toBeVisible();
+    component.locator('[data-chief-header-row]').getByRole('button', { name: /^Delete thread/ }),
+  ).toBeInViewport();
+  await expect(sidebar.getByRole('button', { name: 'New chat', exact: true })).toBeInViewport();
   await testInfo.attach('home-sidebar-long-title', {
     body: await page.screenshot({ path: testInfo.outputPath('home-sidebar-long-title.png') }),
     contentType: 'image/png',
@@ -661,14 +715,14 @@ test('Home grouping switches between status, repository and ungrouped in both vi
   await expect(component.getByRole('option')).toHaveCount(6);
   await component.getByRole('button', { name: 'Board view', exact: true }).click();
   const board = component.locator('[data-home-board]');
-  await expect(board.locator('section')).toHaveCount(1);
+  await expect(board.locator('section:not([data-home-set-aside])')).toHaveCount(1);
   await groupBy('Repository');
-  await expect(board.locator('section')).toHaveCount(2);
+  await expect(board.locator('section:not([data-home-set-aside])')).toHaveCount(2);
   await component.getByRole('searchbox').fill('onboarding');
   await expect(board.locator('[data-home-workspace]')).toHaveCount(1);
   await component.getByRole('searchbox').clear();
   await groupBy('Activity');
-  await expect(board.locator('section')).toHaveCount(4);
+  await expect(board.locator('section:not([data-home-set-aside])')).toHaveCount(4);
   const inactive = board.getByRole('region', { name: 'Done & idle', exact: true });
   await expect(inactive.locator('[data-home-workspace]')).toHaveCount(2);
   await expect(inactive.getByRole('img', { name: /^Done\./ })).toHaveCount(1);
@@ -698,6 +752,9 @@ test('Home workspace menus pin without duplication and support right click and k
   await pinned.getByRole('button', { name: 'Workspace actions', exact: true }).click();
   await expect(page.getByRole('menuitem', { name: 'Unpin', exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
+  // bits-ui unmounts closed menu content on a later animation frame. Wait for it so a
+  // busy page cannot open the context menu while the dropdown's Unpin is still mounted.
+  await expect(page.getByRole('menu')).toHaveCount(0);
   await pinned.getByRole('option').focus();
   await page.keyboard.press('Shift+F10');
   await page.getByRole('menuitem', { name: 'Unpin', exact: true }).click();

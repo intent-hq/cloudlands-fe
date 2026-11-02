@@ -185,8 +185,13 @@
   const treatAsNewRepo = $derived(
     projectSelection ? shouldTreatAsNewRepo(projectSelection) : false,
   );
+  // A plain folder (Labs) has no branch, setup script or issue/PR suggestions.
+  const isPlainFolder = $derived(!!projectSelection?.plainFolder);
   const hasResolvedBranch = $derived(
-    treatAsNewRepo || Boolean(projectSelection?.branch.trim()) || Boolean(selectedPRBranch.trim()),
+    isPlainFolder ||
+      treatAsNewRepo ||
+      Boolean(projectSelection?.branch.trim()) ||
+      Boolean(selectedPRBranch.trim()),
   );
 
   // Drag and drop state
@@ -679,16 +684,18 @@
         {/if}
 
         <div class="flex items-center gap-2 px-2.5 pt-1 pb-2.5 overflow-x-auto relative">
-          <IssueSuggestions
-            onSelect={(text, metadata) => {
-              onIssueSelect(text, metadata);
-              if (metadata?.metadata?.sourceBranch) {
-                onBranchSet(metadata.metadata.sourceBranch);
-              }
-            }}
-            repositoryOwner={onboardingGithubRepoInfo?.owner}
-            repositoryName={onboardingGithubRepoInfo?.repo}
-          />
+          {#if !isPlainFolder}
+            <IssueSuggestions
+              onSelect={(text, metadata) => {
+                onIssueSelect(text, metadata);
+                if (metadata?.metadata?.sourceBranch) {
+                  onBranchSet(metadata.metadata.sourceBranch);
+                }
+              }}
+              repositoryOwner={onboardingGithubRepoInfo?.owner}
+              repositoryName={onboardingGithubRepoInfo?.repo}
+            />
+          {/if}
 
           <div class="absolute top-2 right-2.5 flex items-center">
             {#if enhancePromptAvailable}
@@ -724,7 +731,15 @@
 
     <div class="onboarding-metadata-stack flex w-full min-w-0 flex-col gap-2">
       <!-- Branch picker -->
-      {#if projectSelection?.type === 'local' && projectSelection?.repoPath && treatAsNewRepo}
+      {#if isPlainFolder && projectSelection?.repoPath}
+        <div
+          class="onboarding-metadata-row flex min-h-8 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground"
+          data-testid="onboarding-plain-folder-row"
+          in:fly={{ tier: 'moderate', distance: 10 }}
+        >
+          {m.onboarding_promptStep_plainFolder_description()}
+        </div>
+      {:else if projectSelection?.type === 'local' && projectSelection?.repoPath && treatAsNewRepo}
         <div
           class="onboarding-metadata-row flex min-h-8 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground"
           in:fly={{ tier: 'moderate', distance: 10 }}
@@ -812,7 +827,7 @@
       {/if}
 
       <!-- Setup script disclosure -->
-      {#if projectSelection?.repoPath && projectSelection?.type !== 'new'}
+      {#if projectSelection?.repoPath && projectSelection?.type !== 'new' && !isPlainFolder}
         {#if !hideSetupScriptControl}
           <div
             class="onboarding-metadata-row flex min-h-8 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-sm"

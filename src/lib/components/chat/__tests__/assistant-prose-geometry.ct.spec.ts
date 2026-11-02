@@ -163,18 +163,43 @@ for (const theme of ['light', 'dark'] as const) {
         const staticRows = component.locator(
           '[data-testid="static-operational-cluster"] [data-operational-cluster-row]',
         );
-        await staticRows.nth(2).getByRole('button').click();
-        await staticRows.nth(4).getByRole('button').click();
+        // Each toggle animates its row's height and shifts every row below it.
+        // Playwright only hit-tests the first pointer event, so a click issued
+        // mid-animation can press one element and release over another, and the
+        // browser then drops the click. Wait for the row to settle at its
+        // target height before clicking the next one.
+        const toggleStaticRow = async (index: number, expanded: boolean) => {
+          const row = staticRows.nth(index);
+          const button = row.getByRole('button');
+          await button.click();
+          await expect(button).toHaveAttribute('aria-expanded', String(expanded));
+          await expect
+            .poll(() =>
+              row.locator('[data-response-group-motion="animated-height"]').evaluate((wrapper) => {
+                // Measure the element animatedHeight measures: the last nested
+                // height target, else the first child.
+                const targets = wrapper.querySelectorAll<HTMLElement>(
+                  '[data-animated-height-target]',
+                );
+                const content =
+                  targets.item(targets.length - 1) ??
+                  (wrapper.firstElementChild as HTMLElement | null);
+                const target = content?.offsetHeight ?? 0;
+                return Math.abs((wrapper as HTMLElement).offsetHeight - target) <= 1;
+              }),
+            )
+            .toBe(true);
+        };
+        await toggleStaticRow(2, true);
+        await toggleStaticRow(4, true);
         await expect(
           component.locator(
             '[data-testid="static-operational-cluster"] [data-operational-expanded-content]',
           ),
         ).toHaveCount(2);
-        await page.waitForTimeout(200);
         await assertCluster('static-operational-cluster', 5);
-        await staticRows.nth(2).getByRole('button').click();
-        await staticRows.nth(4).getByRole('button').click();
-        await page.waitForTimeout(200);
+        await toggleStaticRow(2, false);
+        await toggleStaticRow(4, false);
         await expect(
           component.locator(
             '[data-testid="static-operational-cluster"] [data-operational-expanded-content]',

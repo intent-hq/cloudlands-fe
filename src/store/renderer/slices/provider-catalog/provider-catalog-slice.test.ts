@@ -24,6 +24,7 @@ import {
   selectProviderCatalogLoaded,
   selectProviderEnabledFromCatalog,
   selectProviderCatalogProfiles,
+  selectProviderCatalogDefaultRemoteIncompatibility,
 } from './provider-catalog-selectors';
 import {
   initialState,
@@ -457,6 +458,40 @@ describe('named profile summaries (§5.54 catalog `profiles`)', () => {
       WITH_PROFILES.profiles,
     );
     expect(selectProviderCatalogProfiles.select(storeWith(state))).toEqual([]);
+  });
+
+  it('keeps remote compatibility on profile rows and the incompatible Defaults', () => {
+    const remote = {
+      ...WITH_PROFILES,
+      profiles: WITH_PROFILES.profiles!.map((profile) => ({
+        ...profile,
+        remoteCompatible: false,
+        remoteIncompatibility: { reason: 'account-folder', keys: ['CODEX_HOME'] },
+      })),
+      defaultRemoteIncompatibility: {
+        'claude-code': { reason: 'account-folder', keys: ['CLAUDE_CONFIG_DIR'] },
+      },
+    };
+    const state = providerCatalogReducer(initialState, providerCatalogLoaded(remote));
+    expect(selectProviderCatalogProfiles.select(storeWith(state))[0]).toMatchObject({
+      remoteCompatible: false,
+      remoteIncompatibility: { reason: 'account-folder', keys: ['CODEX_HOME'] },
+    });
+    expect(selectProviderCatalogDefaultRemoteIncompatibility.select(storeWith(state))).toEqual(
+      remote.defaultRemoteIncompatibility,
+    );
+    // Omitted when every Default is compatible, or by an older daemon.
+    const older = providerCatalogReducer(state, providerCatalogLoaded(CATALOG));
+    expect(selectProviderCatalogDefaultRemoteIncompatibility.select(storeWith(older))).toBe(
+      undefined,
+    );
+    const workspace = {
+      ...initialState,
+      byWorkspaceId: { 'ws-1': { catalog: remote, settings: [], specialists: [], readiness: {} } },
+    } as ProviderCatalogState;
+    expect(
+      selectProviderCatalogDefaultRemoteIncompatibility.select(storeWith(workspace), 'ws-1'),
+    ).toEqual(remote.defaultRemoteIncompatibility);
   });
 
   it('labels a profile reference with its base provider and current name', () => {

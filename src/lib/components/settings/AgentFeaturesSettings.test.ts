@@ -66,6 +66,7 @@ const FEATURE_PATHS = [
   'agentFeatures.desktopControl',
   'agentFeatures.richChatBlocks',
   'agentFeatures.structuredQuestions',
+  'agentFeatures.secretRequests',
   'agentFeatures.attentionRequests',
   'agentFeatures.stateSnapshot',
   'agentFeatures.prMonitor',
@@ -119,11 +120,11 @@ describe('AgentFeaturesSettings', () => {
     expect(getItems(form.operations).some((operation) => operation.resource === path)).toBe(false);
   });
 
-  it('renders fourteen toggles; all on when the daemon reports every path true', async () => {
+  it('renders fifteen toggles; all on when the daemon reports every path true', async () => {
     await renderReady();
 
     await waitFor(() => {
-      expect(screen.getAllByRole('switch')).toHaveLength(14);
+      expect(screen.getAllByRole('switch')).toHaveLength(15);
     });
     for (const toggle of screen.getAllByRole('switch')) {
       expect(toggle.getAttribute('aria-checked')).toBe('true');
@@ -137,7 +138,7 @@ describe('AgentFeaturesSettings', () => {
     await renderReady();
 
     await waitFor(() => {
-      expect(screen.getAllByRole('switch')).toHaveLength(14);
+      expect(screen.getAllByRole('switch')).toHaveLength(15);
       expect((screen.getAllByRole('switch')[0] as HTMLButtonElement).disabled).toBe(false);
     });
     for (const toggle of screen.getAllByRole('switch')) {
@@ -146,9 +147,69 @@ describe('AgentFeaturesSettings', () => {
         screen.getByRole('switch', {
           name: 'Top-level agent spawning & retirement',
         });
-      expect(toggle.getAttribute('aria-checked')).toBe(String(!peerAgents));
-      expect((toggle as HTMLButtonElement).disabled).toBe(peerAgents);
+      // Secret requests, like peer agents, needs a registered settings.list entry.
+      const secretRequests = toggle === screen.getByRole('switch', { name: 'Secret requests' });
+      const unregistered = peerAgents || secretRequests;
+      expect(toggle.getAttribute('aria-checked')).toBe(String(!unregistered));
+      expect((toggle as HTMLButtonElement).disabled).toBe(unregistered);
     }
+  });
+
+  it('keeps secret requests off and unavailable when the daemon does not register it', async () => {
+    mocks.mockSettingsList.mockResolvedValue(
+      FEATURE_PATHS.filter((path) => path !== 'agentFeatures.secretRequests').map((path) => ({
+        path,
+        value: true,
+      })),
+    );
+
+    await renderReady();
+
+    const toggle = await screen.findByRole('switch', { name: 'Secret requests' });
+    const hostExec = screen.getByRole('switch', { name: 'Host command execution' });
+    await waitFor(() => expect(hostExec.getAttribute('aria-checked')).toBe('true'));
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect((toggle as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.click(toggle);
+    expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('keeps secret requests unavailable while host command execution is off', async () => {
+    mocks.mockSettingsList.mockResolvedValue(
+      FEATURE_PATHS.map((path) => ({
+        path,
+        value: path !== 'agentFeatures.hostExec' && path !== 'agentFeatures.secretRequests',
+      })),
+    );
+
+    await renderReady();
+
+    const toggle = await screen.findByRole('switch', { name: 'Secret requests' });
+    const hostExec = screen.getByRole('switch', { name: 'Host command execution' });
+    await waitFor(() => expect(hostExec.getAttribute('aria-checked')).toBe('false'));
+    expect((toggle as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.click(toggle);
+    expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+
+    mocks.mockSettingsUpdate.mockResolvedValueOnce([
+      { path: 'agentFeatures.hostExec', value: true },
+    ]);
+    await fireEvent.click(hostExec);
+    await waitFor(() => expect((toggle as HTMLButtonElement).disabled).toBe(false));
+  });
+
+  it.each([true, false])('renders secret requests with daemon value %s', async (enabled) => {
+    mocks.mockSettingsList.mockResolvedValue(
+      FEATURE_PATHS.map((path) => ({
+        path,
+        value: path === 'agentFeatures.secretRequests' ? enabled : true,
+      })),
+    );
+
+    await renderReady();
+
+    const toggle = await screen.findByRole('switch', { name: 'Secret requests' });
+    await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe(String(enabled)));
   });
 
   it('renders task graph on when an older daemon does not report the key', async () => {
@@ -346,7 +407,7 @@ describe('AgentFeaturesSettings', () => {
     await renderReady();
 
     await waitFor(() => {
-      expect(screen.getAllByText('~620 tokens/session')).toHaveLength(13);
+      expect(screen.getAllByText('~620 tokens/session')).toHaveLength(14);
     });
     expect(screen.getByText('~50 tokens/turn')).toBeTruthy();
   });
@@ -355,7 +416,7 @@ describe('AgentFeaturesSettings', () => {
     await renderReady();
 
     await waitFor(() => {
-      expect(screen.getAllByRole('switch')).toHaveLength(14);
+      expect(screen.getAllByRole('switch')).toHaveLength(15);
     });
     expect(screen.queryByText(/tokens\/(session|turn)/)).toBeNull();
   });

@@ -3,7 +3,7 @@ import { tick } from 'svelte';
 import { writable } from 'svelte/store';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ dispatch: vi.fn() }));
+const mocks = vi.hoisted(() => ({ dispatch: vi.fn(), show: vi.fn(async () => true) }));
 const agents$ = writable<Array<Record<string, unknown>>>([]);
 const readRevision$ = writable(3);
 const pickedId$ = writable<string | null>(null);
@@ -15,6 +15,7 @@ vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () =
   default: (await import('$lib/components/chat/__tests__/mocks/AgentAvatar.svelte')).default,
 }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
+vi.mock('$lib/utils/show-workspace', () => ({ openAndShowWorkspace: mocks.show }));
 vi.mock('$features/workspace/workspace-detail-hydration', () => ({
   ensureWorkspaceDetail: vi.fn(async () => undefined),
 }));
@@ -33,6 +34,7 @@ vi.mock('./home-workspaces-selectors', () => ({
 }));
 
 import HomeWorkspaceDetail from './HomeWorkspaceDetail.svelte';
+import { m } from '$shared/paraglide/messages.js';
 import { setHomePreviewAgent } from './home-workspaces-slice';
 import { setActiveAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import type { Workspace } from '$shared/types';
@@ -54,10 +56,9 @@ const shownAgent = () => screen.getByTestId('home-chat').getAttribute('data-show
 const renderDetail = () => render(HomeWorkspaceDetail, { workspace, onclose: vi.fn() });
 
 beforeAll(() => {
-  // jsdom lacks the pointer-capture and scroll APIs the bits-ui select calls.
+  // jsdom lacks the pointer-capture APIs the bits-ui select calls.
   Element.prototype.hasPointerCapture ??= () => false;
   Element.prototype.releasePointerCapture ??= () => undefined;
-  Element.prototype.scrollIntoView ??= () => undefined;
 });
 beforeEach(() => {
   mocks.dispatch.mockClear();
@@ -72,6 +73,14 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('Home workspace preview agent choice', () => {
+  it('opens the workspace and its tab through the shared helper', async () => {
+    renderDetail();
+
+    await fireEvent.click(screen.getByRole('button', { name: m.home_open_workspace() }));
+
+    expect(mocks.show).toHaveBeenCalledExactlyOnceWith('ws-1');
+  });
+
   it('shows the most recently active top-level agent instead of the initial agent', async () => {
     renderDetail();
     await tick();

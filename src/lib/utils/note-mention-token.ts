@@ -32,9 +32,32 @@ export const NOTE_MENTION_BODY_SOURCE = String.raw`note\[(?:[A-Za-z0-9_-]+\/)?[A
 
 const PARSE_RE = /^@?note\[(?:([A-Za-z0-9_-]+)\/)?([A-Za-z0-9_-]+):([^[\]\n]*)\]$/;
 
-/** Strip delimiter and markdown-significant characters; collapse whitespace. */
-function sanitizeTitle(title: string): string {
-  return title
+/** Matches what Markdown passes through as an HTML character reference (`&#93;`, `&amp;`). */
+const CHARACTER_REFERENCE = /&(#?\w+);/g;
+
+/**
+ * Drop the `;` of every character-reference-shaped sequence. Markdown passes
+ * `&#93;` through as a reference that the note editor's HTML parse decodes to
+ * `]`, ending the token early; without the `;` Markdown escapes the `&` and
+ * every reader keeps the same literal text. Repeats because removing one `;`
+ * can complete another reference (`&ab;c;` → `&abc;`).
+ */
+function disarmCharacterReferences(text: string): string {
+  let previous: string;
+  let current = text;
+  do {
+    previous = current;
+    current = current.replace(CHARACTER_REFERENCE, '&$1');
+  } while (current !== previous);
+  return current;
+}
+
+/**
+ * Strip delimiter and markdown-significant characters; collapse whitespace.
+ * Shared by the other bracketed mention tokens (runtime-mention-token.ts).
+ */
+export function sanitizeMentionTitle(title: string): string {
+  return disarmCharacterReferences(title)
     .replace(/[[\]|*_`~\\<>@]/g, ' ')
     .replace(/:\/\//g, ' ')
     .replace(/\bwww\./gi, 'www ')
@@ -51,7 +74,7 @@ export function serializeNoteMention(mention: NoteMention): string | null {
   // An unsafe workspace id must not silently degrade into a same-workspace
   // token that would resolve the wrong note.
   if (mention.workspaceId && !SAFE_ID.test(mention.workspaceId)) return null;
-  const title = sanitizeTitle(mention.title) || mention.id;
+  const title = sanitizeMentionTitle(mention.title) || mention.id;
   const ws = mention.workspaceId ? `${mention.workspaceId}/` : '';
   return `@note[${ws}${mention.id}:${title}]`;
 }
@@ -82,14 +105,4 @@ export function noteMentionChipAttrs(note: NoteMention): {
         }
       : {}),
   };
-}
-
-const NOTE_MENTION_GLOBAL = new RegExp(`@${NOTE_MENTION_BODY_SOURCE}`, 'g');
-
-/** Plain-text previews: render each `@note[...]` token as `@<title>`. */
-export function noteMentionsToText(text: string): string {
-  return text.replace(NOTE_MENTION_GLOBAL, (token) => {
-    const note = parseNoteMention(token);
-    return note ? `@${note.title}` : token;
-  });
 }

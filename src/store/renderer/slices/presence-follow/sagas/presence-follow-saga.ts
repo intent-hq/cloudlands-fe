@@ -6,15 +6,16 @@ import {
   join,
   put,
   race,
+  spawn,
   take,
   takeLatest,
   type SagaGenerator,
 } from 'typed-redux-saga';
 import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
-import { goto } from '$app/navigation';
 import { openWorkspaceTab } from '../../tab-state/tab-state-slice';
 import { isViewSelection, workspaceSelectionTypes } from './presence-follow-navigation';
 import { isHudWindowRenderer } from '$lib/utils/navigation.client';
+import { showWorkspaceSaga } from '$lib/utils/show-workspace';
 import {
   createPresenceFocusChannel,
   type FocusFrame,
@@ -124,7 +125,7 @@ function* followPerson(
       if (committing) return false;
       if (store.state.presenceFollow.navigation?.requestId !== requestId) return true;
       if (workspaceSelectionTypes.has(event.type)) {
-        // Only goto's expected route projection may retain the source. A later
+        // Only the helper's expected tab projection may retain the source. A later
         // selection (including away-and-back or reselecting a view) cancels.
         return !(
           routing &&
@@ -156,14 +157,19 @@ function* followPerson(
         if (store.state.tabState.currentTabId !== target.workspaceId) {
           yield* put(presenceFollowRouteStarted(requestId, target.workspaceId));
           routing = true;
+          // Navigates, then opens the tab tagged with this request id. Spawned
+          // (detached) because cancelling this follow cannot stop the `goto`
+          // it started: if the route still lands on the workspace, its tab
+          // must open. The helper skips the tab when the jump was overtaken.
+          const route = yield* spawn(showWorkspaceSaga, target.workspaceId, {
+            state: { presenceFollowRequestId: requestId },
+          });
           const navigated = yield* race({
-            navigated: call(goto, `/workspace/${encodeURIComponent(target.workspaceId)}`, {
-              state: { presenceFollowRequestId: requestId },
-            }),
+            navigated: join(route),
             changed: take(changed),
           });
           routing = false;
-          if (!('navigated' in navigated) || !current(frame)) return;
+          if (!('navigated' in navigated) || !navigated.navigated || !current(frame)) return;
         }
         // One final fresh authorization after layout/route awaits; no retry loop.
         const afterLoad = yield* call(session.refresh);

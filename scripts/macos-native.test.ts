@@ -1,6 +1,8 @@
 // @vitest-environment node
 // @verify-changed-triggers: electron-builder.yml, scripts/build-speech-helper.cjs,
-//   scripts/build-keychain-helper.cjs, scripts/ensure-native-deps.cjs
+//   scripts/build-keychain-helper.cjs, scripts/ensure-native-deps.cjs,
+//   scripts/build-dock-recorder.cjs, scripts/build-dock-speech.cjs,
+//   scripts/build-dock-element-pick.cjs
 
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -40,6 +42,9 @@ const staged = [
   'resources/sidecar/intentd',
   'resources/speech-helper/intent-speech-helper',
   'resources/keychain-helper/intent-keychain-helper.app/Contents/MacOS/intent-keychain-helper',
+  'resources/dock-helper/intent-dock-recorder',
+  'resources/speech-helper/intent-dock-speech',
+  'resources/dock-helper/intent-dock-element-pick',
   'resources/tailcat/mac-ARCH/tailcat',
   'node_modules/node-pty/build/Release/pty.node',
   'node_modules/node-pty/build/Release/spawn-helper',
@@ -48,6 +53,9 @@ const packaged = [
   'Contents/Resources/intentd/intentd',
   'Contents/Resources/speech-helper/intent-speech-helper',
   'Contents/Resources/keychain-helper/intent-keychain-helper.app/Contents/MacOS/intent-keychain-helper',
+  'Contents/Resources/dock-helper/intent-dock-recorder',
+  'Contents/Resources/speech-helper/intent-dock-speech',
+  'Contents/Resources/dock-helper/intent-dock-element-pick',
   'Contents/Resources/tailcat/tailcat',
   'Contents/Resources/app.asar.unpacked/node_modules/node-pty/build/Release/pty.node',
   'Contents/Resources/app.asar.unpacked/node_modules/node-pty/build/Release/spawn-helper',
@@ -170,10 +178,16 @@ describe('Mac native binary validation', () => {
   });
 
   for (const arch of ['x64', 'arm64']) {
-    it(`accepts all six staged ${arch} executable types`, () => {
+    it(`accepts every staged ${arch} executable type`, () => {
       const root = temporaryDirectory();
       for (const file of staged) put(root, file.replace('ARCH', arch), binary(arch));
       expect(() => native.validateStagedMacBinaries(root, arch)).not.toThrow();
+      // An optional cursor addon must be checked before it enters the app bundle.
+      const cursor = 'resources/dock-helper/intent-dock-cursor.node';
+      put(root, cursor, binary(arch));
+      expect(() => native.validateStagedMacBinaries(root, arch)).not.toThrow();
+      put(root, cursor, binary(arch === 'x64' ? 'arm64' : 'x64'));
+      expect(() => native.validateStagedMacBinaries(root, arch)).toThrow(/Wrong architecture/);
     });
     it.each(staged)(`rejects a stale foreign binary in a ${arch} staging tree: %s`, (wrongFile) => {
       const root = temporaryDirectory();
@@ -187,6 +201,13 @@ describe('Mac native binary validation', () => {
         put(root, file.replace('ARCH', arch), binary(arch));
       }
       expect(() => native.validateStagedMacBinaries(root, arch)).toThrow(/ENOENT/);
+    });
+    it.each(packaged)(`requires every packaged ${arch} executable: %s`, (missingFile) => {
+      const root = temporaryDirectory();
+      for (const file of packaged.filter((file) => file !== missingFile)) {
+        put(root, file, binary(arch));
+      }
+      expect(() => native.validatePackagedMacBinaries(root, arch)).toThrow(/ENOENT/);
     });
     it(`checks the assembled ${arch} app, including Electron and transitive helpers`, () => {
       const root = temporaryDirectory();

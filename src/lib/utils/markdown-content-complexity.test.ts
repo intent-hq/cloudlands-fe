@@ -41,6 +41,8 @@ describe('markdown rendering strategy', () => {
     '1. item',
     '@note/spec',
     '@note[n1:Meeting with Andre]',
+    '@terminal[pty-0:Build server]',
+    '@script[dev-server:Dev server]',
     '@context[context-id]',
     '@/absolute/path',
     '@relative/file.custom',

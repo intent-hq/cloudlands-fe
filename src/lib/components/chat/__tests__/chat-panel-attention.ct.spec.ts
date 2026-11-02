@@ -40,6 +40,7 @@ async function measure(component: CtLocator) {
     const banner = host.querySelector<HTMLElement>('[data-testid="attention-request-banner"]')!;
     const message = host.querySelector<HTMLElement>('[data-message-id="attention-assistant-11"]')!;
     const composer = host.querySelector<HTMLElement>('[data-testid="chat-composer-shell"]')!;
+    const prompt = composer.querySelector<HTMLElement>('[data-testid="message-input"]')!;
     const queue = host.querySelector<HTMLElement>('[data-testid="queued-messages-container"]');
     const box = (element: HTMLElement) => {
       const rect = element.getBoundingClientRect();
@@ -52,6 +53,7 @@ async function measure(component: CtLocator) {
       banner: box(banner),
       message: box(message),
       composer: box(composer),
+      prompt: box(prompt),
       viewport: box(viewport),
       queue: queue ? box(queue) : null,
       contentLeft: content.left + parseFloat(style.paddingLeft),
@@ -120,7 +122,7 @@ for (const width of [280, 720]) {
         expect(before.inTranscript).toBe(true);
         expect(before.inComposer).toBe(false);
         expect(before.banner.bottom).toBeLessThanOrEqual(before.viewport.bottom + 1);
-        expect(before.viewport.bottom).toBeLessThanOrEqual(before.composer.top + 1);
+        expect(before.viewport.bottom).toBeLessThanOrEqual(before.prompt.top + 1);
         expect(before.banner.bottom).toBeLessThanOrEqual(before.queue!.top);
         expect(before.overflow).toBeLessThanOrEqual(1);
 

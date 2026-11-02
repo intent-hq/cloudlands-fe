@@ -135,6 +135,7 @@ export class LiveTerminalsClient implements TerminalsClient {
         rows: params.rows,
         ...(params.cwd !== undefined ? { cwd: params.cwd } : {}),
         ...(params.command !== undefined ? { command: params.command } : {}),
+        ...(params.env !== undefined ? { env: params.env } : {}),
       });
       const id = typeof result?.terminalId === 'string' ? result.terminalId : undefined;
       return id ? { success: true, id } : { success: true };

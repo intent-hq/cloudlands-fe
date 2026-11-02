@@ -36,7 +36,7 @@
   import ProposalCardHeader from './ProposalCardHeader.svelte';
   import { getProposalId } from './proposal-id';
   import type { ProposalCardDraft } from './proposal-draft-storage';
-  import { goto } from '$app/navigation';
+  import { openAndShowWorkspace } from '$lib/utils/show-workspace';
   import {
     selectProposalError,
     selectProposalErrorCode,
@@ -928,7 +928,7 @@
   async function handleOpenCreatedWorkspace(event: MouseEvent) {
     if (!createdWorkspaceId) return;
     event.preventDefault();
-    await goto(`/workspace/${createdWorkspaceId}`);
+    await openAndShowWorkspace(createdWorkspaceId);
   }
 </script>
 

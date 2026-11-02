@@ -232,3 +232,31 @@ test('places an early first-turn indicator below the optimistic first message', 
   await expect(status).toHaveCount(1);
   expect(await gap(row, status)).toBeGreaterThanOrEqual(0);
 });
+
+test('keeps a turn gap between a drained row without working status and the queue card', async ({
+  mount,
+  page,
+}, info) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(ChatPanelComposerGeometryHost, {
+    props: { ...props, queuePhase: 'ready', drainedRow: true },
+  });
+  await page.evaluate(() => document.fonts.ready);
+  const drained = component
+    .locator('[data-message-role="user"]')
+    .filter({ hasText: 'Delivered ahead of the queued file' });
+  const queue = component.getByTestId('queued-messages-container');
+  await expect(drained).toBeVisible();
+  await expect(queue).toBeVisible();
+  await expect(component.locator('[data-streaming-typing-row]')).toHaveCount(0);
+  await page.screenshot({ path: info.outputPath('drained-row-gap.png') });
+  // Relational, not a pinned value: the status-less pending row keeps the same
+  // turn boundary as a confirmed user row, and the queue card stays below it.
+  const confirmed = component.locator(
+    '[data-message-role="user"][data-message-id="attention-user-11"]',
+  );
+  const bottomMargin = (row: Locator) =>
+    row.evaluate((element) => getComputedStyle(element).marginBottom);
+  expect(await bottomMargin(drained)).toBe(await bottomMargin(confirmed));
+  expect(await gap(drained, queue)).toBeGreaterThanOrEqual(0);
+});

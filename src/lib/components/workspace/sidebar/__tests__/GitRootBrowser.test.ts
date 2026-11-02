@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { store as appStore } from '$store/renderer/store';
 import {
@@ -24,9 +24,6 @@ const roots: GitRootRow[] = ['/alpha/packages/api', '/beta/packages/api'].map((p
   createdAt: '',
   updatedAt: '',
 }));
-beforeAll(() => {
-  Element.prototype.scrollIntoView = vi.fn();
-});
 beforeEach(() => {
   appStore.init();
   appStore.dispatch(

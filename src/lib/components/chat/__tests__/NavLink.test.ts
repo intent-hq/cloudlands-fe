@@ -11,7 +11,11 @@ const mocks = vi.hoisted(() => ({
   handleLink: vi.fn(() => Promise.resolve(true)),
 }));
 
-vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
+vi.mock('$app/navigation', async () => {
+  const { landingNavigation } =
+    await import('$store/renderer/utils/test-helpers/landing-navigation');
+  return { goto: landingNavigation(mocks.goto) };
+});
 vi.mock('$store/renderer/store', () => ({
   store: {
     dispatch: mocks.dispatch,
@@ -41,7 +45,7 @@ describe('NavLink', () => {
 
     await fireEvent.click(screen.getByRole('link', { name: /Default model/ }));
 
-    expect(mocks.goto).toHaveBeenCalledWith('/settings#default-model');
+    await waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/settings#default-model'));
     await waitFor(() =>
       expect(mocks.dispatch).toHaveBeenCalledWith({
         type: 'uiHighlight/requestUiHighlight',
@@ -65,6 +69,11 @@ describe('NavLink', () => {
         type: 'uiHighlight/requestUiHighlight',
         payload: ['unknown-target'],
       }),
+    );
+    // A workspace route keeps its hash and also opens the workspace's tab.
+    expect(mocks.goto).toHaveBeenCalledWith('/workspace/abc-123#unknown-target');
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'tabState/openWorkspaceTab', payload: ['abc-123'] }),
     );
   });
 

@@ -119,8 +119,8 @@ export function usage() {
     'and writes <run>/summary.json. Every shard runs even after a failure.',
     'Exit: 0 all shards passed; 1 any shard failed or crashed; 128+n on signal n.',
     '',
-    'The ct-<CT_PORT> lock is held for the whole run; set CT_PORT to a free port',
-    'to keep the default port available to other worktrees.',
+    "The ct-<port> lock for this worktree's CT port is held for the whole run;",
+    'set CT_PORT to a free port to run another CT run in this worktree meanwhile.',
   ].join('\n');
 }
 

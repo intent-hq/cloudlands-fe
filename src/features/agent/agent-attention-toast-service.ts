@@ -34,7 +34,6 @@
  */
 import { store as appStore } from '$store/renderer/store';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
-import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import type { NotificationNavigatePayload } from '$features/notifications/notification-navigation';
 import { createLogger } from '$lib/utils/client-logger';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -146,21 +145,19 @@ function isAgentMuted(request: AgentAttentionRequest): boolean {
 }
 
 /**
- * "Switch To": dismiss the toast, activate the reporting workspace, navigate
- * to it, then open/focus the agent's conversation tab. Explicit tab activation
- * keeps tab state synchronized with route navigation.
+ * "Switch To": dismiss the toast, show the reporting workspace (navigate, then
+ * activate its tab), then open/focus the agent's conversation tab.
  */
 export async function switchToAttentionAgent(workspaceId: string, agentId: string): Promise<void> {
   await dismissAgentAttentionToast(agentId);
   await openAgentConversation(workspaceId, agentId);
 }
 
-/** Activate the workspace, navigate to it, then open/focus the agent's conversation tab. */
+/** Show the workspace and its tab, then open/focus the agent's conversation tab. */
 async function openAgentConversation(workspaceId: string, agentId: string): Promise<void> {
-  appStore.dispatch(openWorkspaceTab(workspaceId));
   try {
-    const { navigateToRoute } = await import('$lib/utils/navigation.client');
-    await navigateToRoute(`/workspace/${workspaceId}`);
+    const { openAndShowWorkspace } = await import('$lib/utils/show-workspace');
+    await openAndShowWorkspace(workspaceId);
   } catch (error) {
     logger.warn('Switch To navigation failed', { workspaceId, agentId, error });
   }

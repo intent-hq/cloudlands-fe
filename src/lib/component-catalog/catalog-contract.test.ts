@@ -150,6 +150,13 @@ const budgets = new Map(
 const budgetMs = ({ key }: ContractCase) => budgets.get(key)!;
 
 const intentionalAxeAllowlist: Record<string, ReadonlyArray<{ rule: string; reason: string }>> = {
+  'pattern:action-menu:action-menu-states': [
+    {
+      rule: 'region',
+      reason:
+        'The open menu state portals its menu to the document body, outside the preview landmark, as every app popup does.',
+    },
+  ],
   'pattern:collection:collection-states': [
     {
       rule: 'nested-interactive',
@@ -236,10 +243,8 @@ function renderCase(testCase: ContractCase) {
 }
 
 const originalResizeObserver = globalThis.ResizeObserver;
-const originalScrollIntoView = Element.prototype.scrollIntoView;
 
 beforeAll(() => {
-  Element.prototype.scrollIntoView = vi.fn();
   globalThis.ResizeObserver = class ResizeObserverMock {
     observe() {}
     unobserve() {}
@@ -248,7 +253,6 @@ beforeAll(() => {
 });
 
 afterAll(() => {
-  Element.prototype.scrollIntoView = originalScrollIntoView;
   globalThis.ResizeObserver = originalResizeObserver;
 });
 

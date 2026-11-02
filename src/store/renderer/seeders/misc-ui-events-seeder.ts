@@ -14,6 +14,12 @@ import { registerMockIpcHandler } from '$shared/ipc-mock-router';
 registerMockIpcHandler('window:open-new', async (arg) => {
   const rawRoute = (arg as { route?: unknown } | undefined)?.route;
   const rawRequestId = (arg as { requestId?: unknown } | undefined)?.requestId;
+  const rawAgentId = (arg as { agentId?: unknown } | undefined)?.agentId;
+  const workspaceTarget = (arg as { workspaceTarget?: unknown } | undefined)?.workspaceTarget;
+  const agentId =
+    typeof rawAgentId === 'string' && rawAgentId.trim() ? rawAgentId.trim() : undefined;
+  const reuseExistingWorkspace =
+    (arg as { reuseExistingWorkspace?: unknown } | undefined)?.reuseExistingWorkspace === true;
   const route = typeof rawRoute === 'string' && rawRoute.startsWith('/') ? rawRoute : '/';
   const requestId =
     typeof rawRequestId === 'string' && rawRequestId.length > 0 ? rawRequestId : undefined;
@@ -22,6 +28,9 @@ registerMockIpcHandler('window:open-new', async (arg) => {
     const response = (await bridge.invoke('window:open-new', {
       route,
       ...(requestId ? { requestId } : {}),
+      ...(reuseExistingWorkspace ? { reuseExistingWorkspace: true } : {}),
+      ...(agentId ? { agentId } : {}),
+      ...(workspaceTarget ? { workspaceTarget } : {}),
     })) as { success?: boolean; error?: string } | undefined;
     if (!response?.success) {
       throw new Error(response?.error || 'Opening a new window is not available in this build');
@@ -29,6 +38,7 @@ registerMockIpcHandler('window:open-new', async (arg) => {
     return response;
   }
   const target = route.startsWith('/hud') ? 'intent-hud' : '_blank';
+  if (workspaceTarget) throw new Error('Exact workspace item handoff requires the desktop bridge');
   const opened =
     typeof window !== 'undefined' ? window.open(`${window.location.origin}${route}`, target) : null;
   if (!opened) {

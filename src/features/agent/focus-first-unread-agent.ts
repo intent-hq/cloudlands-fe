@@ -43,12 +43,13 @@
  * focuses the agent tab — the same seam `switchToAttentionAgent` uses.
  *
  * Dependency-light, mirroring `key-switch-service.ts`: no selector imports,
- * state is read straight off `appStore.state`.
+ * state is read straight off `appStore.state`; the visible workspace comes
+ * from the shared `getVisibleWorkspaceId`.
  */
 import { store as appStore } from '$store/renderer/store';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import { setActiveAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
-import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
+import { getVisibleWorkspaceId } from '$features/workspace/visible-workspace';
 
 /** How long to wait for the navigation-triggered agent load to land. */
 const DEFAULT_TIMEOUT_MS = 5_000;
@@ -58,7 +59,10 @@ export interface FocusFirstUnreadAgentDeps {
   timeoutMs?: number;
   /** Store-change subscription seam. Defaults to the app store's readable state. */
   subscribe?: (listener: () => void) => () => void;
-  /** Current workspace-tab seam, re-read on every store emission. */
+  /**
+   * Visible-workspace seam, re-read on every store emission. Defaults to
+   * `getVisibleWorkspaceId` (null on Home and Settings).
+   */
   getCurrentWorkspaceId?: () => string | null;
 }
 
@@ -194,11 +198,14 @@ export function focusFirstUnreadAgent(
   // and the watch must bail rather than survive to mutate A's tab in the
   // background once A's agents hydrate.
   //
-  // Residual, accepted: when `departedFrom` is null (clicked from a route with
-  // no active workspace) and the user leaves to another null-active route,
-  // null → null is indistinguishable from still-pending, so that watch runs to
-  // the timeout. Telling those apart needs route awareness the store does not
-  // carry, and the cost is a background tab mutation capped by `timeoutMs`.
+  // "On" a workspace means visible (`getVisibleWorkspaceId`), not merely its
+  // tab selected: Home and Settings keep the last tab, so a click from there
+  // departs from null and opening that hidden last tab counts as leaving.
+  //
+  // Residual, accepted: when `departedFrom` is null and the user moves to
+  // another route with no visible workspace (Home → Settings), null → null is
+  // indistinguishable from still-pending, so that watch runs to the timeout;
+  // the cost is a background tab mutation capped by `timeoutMs`.
   //
   // The selection guard only applies to a NON-NULL armed selection: hydration
   // itself picks a default agent when none is set (`hydrateWorkspaceAgents` /
@@ -206,8 +213,7 @@ export function focusFirstUnreadAgent(
   // With a selection already in place both hydration paths preserve it, so a
   // change then really is someone else moving the tab.
   const armedActiveAgentId = activeAgentIdOf(workspaceId);
-  const getCurrentWorkspaceId =
-    deps.getCurrentWorkspaceId ?? (() => selectCurrentWorkspaceTabId.select(appStore.state));
+  const getCurrentWorkspaceId = deps.getCurrentWorkspaceId ?? getVisibleWorkspaceId;
   const departedFrom = getCurrentWorkspaceId();
   let arrived = departedFrom === workspaceId;
   function userTookOver(): boolean {

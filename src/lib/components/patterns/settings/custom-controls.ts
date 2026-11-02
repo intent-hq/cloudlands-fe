@@ -6,6 +6,7 @@ export { Button } from '$lib/components/ui/button';
 export { Combobox } from '$lib/components/ui/combobox';
 export { Checkbox } from '$lib/components/ui/checkbox';
 export { default as CopyButton } from '$lib/components/ui/CopyButton.svelte';
+export { CopyInput } from '$lib/components/ui/copy-input';
 export { FileInput } from '$lib/components/ui/file-input';
 export { default as GrokLogo } from '$lib/components/ui/GrokLogo.svelte';
 export { default as Header } from '$lib/components/ui/Header.svelte';

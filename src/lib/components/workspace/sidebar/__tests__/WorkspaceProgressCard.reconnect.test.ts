@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { waitForClosingLayers } from '../../../../../test/layer-exit';
 import { tick } from 'svelte';
 import type { BackendNotification } from '$lib/client/live/backend-transport';
 import type { Workspace } from '$shared/types';
@@ -75,7 +76,6 @@ import { __resetOwnClientIdForTesting } from '$lib/client/live/live-clients-clie
 import WorkspaceProgressCard from '../WorkspaceProgressCard.svelte';
 
 const own = 'exact-desktop';
-const principalRetryWait = { timeout: 3000 };
 const workspace = {
   id: WorkspaceId('ws-1'),
   title: 'Recovery fixture',
@@ -177,13 +177,16 @@ async function mount() {
 }
 /** Open the card menu and its primary-client submenu. */
 async function openPrimaryMenu(container: HTMLElement) {
+  // A previous menu may still be playing its exit; wait for both its levels to leave so
+  // the queries below find the newly opened items.
+  await waitForClosingLayers();
   await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
   await fireEvent.click(
     await waitFor(() => document.querySelector<HTMLElement>('[data-action-id="primary-client"]')!),
   );
   await waitFor(() => primary());
 }
-// jsdom has no layout, so the positioned submenu reads as hidden to role queries.
+// The submenu item carries a stable action id; its role and name depend on the resolution.
 const primary = () => {
   const item = document.querySelector<HTMLElement>('[data-action-id="primary-client-this-app"]');
   if (!item) throw new Error('The primary-client submenu is not open');
@@ -447,7 +450,7 @@ describe('actual browser lifecycle to primary menu', () => {
     failBrowserHello = false;
     store.dispatch(workspaceMounted('ws-1'));
     const remounted = render(WorkspaceProgressCard, { workspaceId: workspace.id });
-    await waitFor(() => expect(store.state.principal.status).toBe('ready'), principalRetryWait);
+    await waitFor(() => expect(store.state.principal.status).toBe('ready'));
     await capabilities();
     await openPrimaryMenu(remounted.container);
     await waitFor(() =>

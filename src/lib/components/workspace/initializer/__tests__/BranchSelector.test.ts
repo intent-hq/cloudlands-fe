@@ -8,8 +8,9 @@
  * fabricated ['main','master',...] fallback.
  */
 import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/svelte';
+import { waitForLayerExit } from '../../../../../test/layer-exit';
 import { flushSync } from 'svelte';
-import { describe, expect, it, vi, beforeEach, beforeAll, afterEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 const {
   mockGetBranches,
@@ -113,10 +114,6 @@ vi.mock('$lib/utils/performance', () => ({
 import { m } from '$shared/paraglide/messages.js';
 import BranchSelector from '../BranchSelector.svelte';
 import { pushEscapeLayer } from '$lib/utils/escapeLayers';
-
-beforeAll(() => {
-  Element.prototype.scrollIntoView = vi.fn();
-});
 
 /** Open the dropdown by clicking the select trigger (first button rendered). */
 async function openDropdown(container: HTMLElement) {
@@ -548,6 +545,36 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
     expect(screen.queryByRole('combobox')).toBeNull();
     expect(await screen.findByText(m.workspace_branchSelector_folderBranch_label())).toBeTruthy();
     expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false');
+  });
+
+  // Isolation off works in the folder on its current branch, whichever control
+  // turned it off (the folder-picker git switch or this selector).
+  it('local repo: isolation turned off elsewhere selects the folder’s current branch', async () => {
+    mockGetBranches.mockResolvedValue({
+      branches: ['main', 'feature'],
+      remoteBranches: [],
+      defaultBranch: 'main',
+      currentBranch: 'feature',
+    });
+    const onchange = vi.fn();
+    const onSkipIsolationChange = vi.fn();
+    const { rerender } = render(BranchSelector, {
+      props: {
+        repoPath: '/tmp/repo',
+        repoType: 'local',
+        value: 'main',
+        skipIsolation: false,
+        onchange,
+        onSkipIsolationChange,
+      },
+    });
+    await waitFor(() => expect(mockGetBranches).toHaveBeenCalledWith('/tmp/repo', true));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(onchange.mock.lastCall?.[0].detail.branch).not.toBe('feature');
+
+    await rerender({ skipIsolation: true });
+    await waitFor(() => expect(onchange.mock.lastCall?.[0].detail).toEqual({ branch: 'feature' }));
+    expect(onSkipIsolationChange).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -1223,6 +1250,8 @@ describe('BranchSelector (server-side prefix search, github.branches.list prefix
     // 'feat/beyond-page' occurrence is the trigger's selected-branch label —
     // the search-result list entry must be dropped.
     await fireEvent.pointerUp(match, { pointerType: 'mouse' });
+    // Reopen only after the closing dropdown has finished its exit.
+    await waitForLayerExit(searchInput);
     await openDropdown(container);
     await waitFor(() => expect(screen.getByText('main')).toBeTruthy());
     expect(screen.getAllByText('feat/beyond-page')).toHaveLength(1);

@@ -15,6 +15,7 @@ const live = await vi.hoisted(async () => {
     scriptContext: writable<string | null>('owner-context'),
     people: writable([]),
     invites: writable<WorkspaceInvite[]>([]),
+    plainFolder: writable(false),
     dispatch: vi.fn(),
   };
 });
@@ -40,6 +41,7 @@ vi.mock('$store/renderer/slices/sidebar-nav/sidebar-nav-selectors', () => ({
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectIsWorkspaceCollaborator: () => live.collaborator,
   selectWorkspaceSavedScriptContext: () => live.scriptContext,
+  selectIsPlainFolderWorkspace: () => live.plainFolder,
 }));
 
 vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
@@ -70,6 +72,7 @@ beforeEach(() => {
   live.scriptContext.set('owner-context');
   live.people.set([]);
   live.invites.set([]);
+  live.plainFolder.set(false);
   live.dispatch.mockClear();
 });
 
@@ -195,5 +198,26 @@ describe.each(['horizontal', 'vertical'] as const)('%s section activation', (ori
     await fireEvent.keyDown(agents, { key });
     await fireEvent.keyUp(agents, { key });
     expect(onActivate.mock.calls).toEqual([['agents']]);
+  });
+});
+
+describe('plain-folder workspaces', () => {
+  it('hides the Changes tab and falls back from a saved Changes selection', async () => {
+    live.plainFolder.set(true);
+    live.selected.set(['changes']);
+    const view = render(SidebarSectionTabs, { props: { workspaceId: 'workspace' } });
+
+    expect(view.queryByRole('tab', { name: 'Changes' })).toBeNull();
+    expect(view.getByRole('tab', { name: 'Files' })).toBeTruthy();
+    expect(
+      view.getByRole('tab', { name: 'Agents', exact: true }).getAttribute('aria-selected'),
+    ).toBe('true');
+  });
+
+  it('keeps the Changes tab for a git workspace', async () => {
+    live.selected.set(['changes']);
+    const view = render(SidebarSectionTabs, { props: { workspaceId: 'workspace' } });
+
+    expect(view.getByRole('tab', { name: 'Changes' }).getAttribute('aria-selected')).toBe('true');
   });
 });

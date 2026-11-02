@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getOwnedPopupContext } from '$lib/components/ui/owned-popup-context';
   /**
    * ContextPickerButton
    *
@@ -97,7 +98,14 @@
     class: className = '',
   }: Props = $props();
 
+  const popupOwner = getOwnedPopupContext();
   let isOpen = $state(false);
+  $effect(() => {
+    if (!bodyRef || !popupOwner || embedded) return;
+    return popupOwner.register(bodyRef, () => {
+      isOpen = false;
+    });
+  });
   let triggerRef = $state<HTMLButtonElement | null>(null);
   let externalAnchor = $state<HTMLElement | null>(null);
   let searchInputRef = $state<{ focus: () => void } | null>(null);
@@ -655,7 +663,7 @@
 {#if embedded}
   {@render pickerBody()}
 {:else if isOpen}
-  <Portal zIndex={60}>
+  <Portal target={popupOwner?.target() ?? 'body'} zIndex={60}>
     {@render pickerBody()}
   </Portal>
 {/if}

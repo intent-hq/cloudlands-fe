@@ -62,6 +62,7 @@ const FEATURE_PATHS = [
   'agentFeatures.browserAutomation',
   'agentFeatures.richChatBlocks',
   'agentFeatures.structuredQuestions',
+  'agentFeatures.secretRequests',
   'agentFeatures.attentionRequests',
   'agentFeatures.stateSnapshot',
   'agentFeatures.prMonitor',
@@ -70,7 +71,7 @@ const FEATURE_PATHS = [
   'agentFeatures.mcpTools',
 ];
 
-// PROTOCOL §5.12 settings.list response with all thirteen agentFeatures.* entries
+// PROTOCOL §5.12 settings.list response with the agentFeatures.* entries
 // plus the prMonitor.debounceSeconds (§6.9) and agents.maxTopLevelAgents numbers.
 // Entries are FLAT SettingDefinitionWithValue objects — the daemon merges `value`
 // into the definition itself (no nested `definition` key; that shape is settings.get's).
@@ -84,8 +85,9 @@ function listResponse() {
         description: '',
         category: 'agentFeatures',
         type: 'boolean',
-        defaultValue: true,
-        value: true,
+        // agentFeatures.secretRequests is the one feature the daemon defaults off.
+        defaultValue: path !== 'agentFeatures.secretRequests',
+        value: path !== 'agentFeatures.secretRequests',
         origin: 'default',
       })),
       {
@@ -224,6 +226,35 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
       });
     });
     await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'));
+  });
+
+  it('renders secret requests off by default and sends the exact toggle-on payload', async () => {
+    mocks.mockBackendRequest.mockImplementation(async (method: string) => {
+      if (method === 'settings.list') return listResponse();
+      if (method === 'settings.update') {
+        return { applied: [{ path: 'agentFeatures.secretRequests', value: true }] };
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+
+    await renderReady();
+
+    const toggle = await screen.findByRole('switch', { name: 'Secret requests' });
+    const hostExec = screen.getByRole('switch', { name: 'Host command execution' });
+    await waitFor(() => expect(hostExec.getAttribute('aria-checked')).toBe('true'));
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    await fireEvent.click(toggle);
+
+    await waitFor(() => {
+      const updateCall = vi
+        .mocked(mocks.mockBackendRequest)
+        .mock.calls.find((call) => call[0] === 'settings.update');
+      expect(updateCall).toBeDefined();
+      expect(updateCall![1]).toEqual({
+        changes: [{ path: 'agentFeatures.secretRequests', value: true }],
+      });
+    });
+    await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('true'));
   });
 
   it('reverts taskGraph to off when the daemon rolls back a toggle-on', async () => {

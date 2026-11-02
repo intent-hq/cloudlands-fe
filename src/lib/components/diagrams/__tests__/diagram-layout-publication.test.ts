@@ -54,10 +54,6 @@ beforeEach(() => {
     },
   );
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(960);
-  Object.defineProperty(Element.prototype, 'getAnimations', {
-    configurable: true,
-    value: () => [],
-  });
   document.documentElement.classList.add('catalog-reduced-motion');
 });
 

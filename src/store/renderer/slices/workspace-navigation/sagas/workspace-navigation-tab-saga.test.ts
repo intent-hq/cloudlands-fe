@@ -37,11 +37,13 @@ import {
 import { workspaceNavigationTabSaga } from './workspace-navigation-tab-saga';
 
 const mocks = vi.hoisted(() => ({
+  invoke: vi.fn(),
   getAttachmentInfo: vi.fn(),
   downloadAttachment: vi.fn(),
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
 }));
+vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke }));
 vi.mock('$lib/components/chat/input/context-api', () => ({
   getAttachmentInfo: mocks.getAttachmentInfo,
   downloadAttachment: mocks.downloadAttachment,
@@ -77,6 +79,31 @@ function reducePanelAction(state: PanelLayoutSliceState, action: any): PanelLayo
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe('workspaceNavigationTabSaga', () => {
+  it('opens a dock file link and line in the full workspace instead of an invisible dock tab', async () => {
+    window.history.replaceState({}, '', '/dock');
+    mocks.invoke.mockResolvedValue({ success: true });
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga(
+      { channel, dispatch, getState: () => noFocusedPanelState },
+      workspaceNavigationTabSaga,
+    );
+    try {
+      channel.put(openWorkspaceFile('ws-one', 'src/app.ts:42'));
+      await vi.waitFor(() =>
+        expect(mocks.invoke).toHaveBeenCalledWith('window:open-new', {
+          route: '/workspace/ws-one',
+          reuseExistingWorkspace: true,
+          workspaceTarget: { type: 'file', filePath: 'src/app.ts', line: 42 },
+        }),
+      );
+      expect(dispatch).not.toHaveBeenCalled();
+    } finally {
+      task.cancel();
+      await task.toPromise();
+      window.history.replaceState({}, '', '/');
+    }
+  });
   it('opens the sidebar all-changes request as a local-changes panel tab', async () => {
     const channel = stdChannel();
     const dispatch = vi.fn();

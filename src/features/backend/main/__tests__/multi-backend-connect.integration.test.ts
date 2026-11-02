@@ -176,6 +176,11 @@ vi.mock('../client-identity', () => ({
   persistClientId: vi.fn(async () => {}),
 }));
 
+vi.mock('../../../desktop/main/desktop-native', async (importActual) => {
+  const actual = await importActual<typeof import('../../../desktop/main/desktop-native')>();
+  return { ...actual, desktopNativeAvailable: vi.fn(() => false) };
+});
+
 vi.mock('../intentd-sidecar', () => ({
   onSidecarGaveUp: vi.fn(),
   onSidecarStartupFailed: vi.fn(() => () => {}),

@@ -257,3 +257,8 @@ export const selectAgentMemoryUsage = store.createSelector(
 export const selectAgentMemoryUsageError = store.createSelector(
   (state) => state.daemonHealth.agentMemoryUsageError,
 );
+
+/** The daemon's startup posture (starting or failed to start), or null. */
+export const selectDaemonStartup = store.createSelector(
+  (state) => state.daemonHealth.daemonStartup,
+);

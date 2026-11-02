@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
 import { m } from '$shared/paraglide/messages.js';
@@ -8,9 +8,6 @@ import TaskStatusIndicator from '../TaskStatusIndicator.svelte';
 
 vi.mock('$features/tasks/tasks-write-service', () => ({ updateTaskNoteStatus: vi.fn() }));
 vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: vi.fn() } }));
-beforeAll(() => {
-  Element.prototype.scrollIntoView = vi.fn();
-});
 beforeEach(() => vi.clearAllMocks());
 afterEach(cleanup);
 const props = {

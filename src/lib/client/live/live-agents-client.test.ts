@@ -1351,6 +1351,45 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     });
   });
 
+  it('setPinned forwards agent.update with the boolean pinned change (§5.5)', async () => {
+    backend.onRequest('agent.update', () => ({ success: true }));
+    const client = new LiveAgentsClient();
+
+    expect(
+      await client.setPinned({ agentId: 'agent-1', workspaceId: 'ws-1', pinned: true }),
+    ).toEqual({ success: true });
+    expect(
+      await client.setPinned({ agentId: 'agent-1', workspaceId: 'ws-1', pinned: false }),
+    ).toEqual({ success: true });
+    expect(backend.requests.map((request) => request.method)).toEqual([
+      'agent.update',
+      'agent.update',
+    ]);
+    expect(backend.requests.map((request) => request.params)).toEqual([
+      { agentId: 'agent-1', workspaceId: 'ws-1', changes: { pinned: true } },
+      { agentId: 'agent-1', workspaceId: 'ws-1', changes: { pinned: false } },
+    ]);
+  });
+
+  it('setPinned folds a daemon rejection (older daemon, -32602) into {success:false,error}', async () => {
+    backend.onRequest('agent.update', () => {
+      throw new BackendError(
+        buildErrorPayload('BACKEND_ERROR', 'agent.update: unknown field `pinned`', {
+          rpcCode: -32602,
+        }),
+      );
+    });
+    const client = new LiveAgentsClient();
+
+    const result = await client.setPinned({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      pinned: true,
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('unknown field `pinned`');
+  });
+
   it('setNotificationsMuted folds a daemon rejection into {success:false,error} (no throw)', async () => {
     backend.onRequest('agent.update', () => {
       throw new BackendError(
@@ -2641,6 +2680,59 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     );
   });
 
+  it('getMessageBlockPage returns the capped page fields (§5.5 messageBlockPages: 1)', async () => {
+    backend.onRequest('agent.getMessageBlock', () => ({
+      block: { type: 'tool_result', id: 'msg-1:3', tool_use_id: 'call-9', output: 'head' },
+      truncated: true,
+      field: 'output',
+      encoding: 'text',
+      totalBytes: 3_200_000,
+      nextOffset: 479_900,
+    }));
+    const client = new LiveAgentsClient();
+
+    const page = await client.getMessageBlockPage('agent-1', 'msg-1', 'msg-1:3', 'ws-1');
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.getMessageBlock',
+      params: { agentId: 'agent-1', messageId: 'msg-1', blockId: 'msg-1:3', workspaceId: 'ws-1' },
+    });
+    expect(page).toEqual({
+      block: { type: 'tool_result', id: 'msg-1:3', tool_use_id: 'call-9', output: 'head' },
+      truncated: true,
+      field: 'output',
+      encoding: 'text',
+      totalBytes: 3_200_000,
+      nextOffset: 479_900,
+    });
+  });
+
+  it('getMessageBlockPage reads absent or malformed page fields as a whole block', async () => {
+    backend.onRequest('agent.getMessageBlock', () => ({
+      block: { type: 'text', id: 'msg-1:0', text: 'hi' },
+      truncated: 'yes',
+      encoding: 'base64',
+      totalBytes: -1,
+    }));
+    const client = new LiveAgentsClient();
+
+    await expect(client.getMessageBlockPage('agent-1', 'msg-1', 'msg-1:0')).resolves.toEqual({
+      block: { type: 'text', id: 'msg-1:0', text: 'hi' },
+      truncated: false,
+      field: null,
+      encoding: null,
+      totalBytes: null,
+      nextOffset: null,
+    });
+  });
+
+  it('getMessageBlockPage rejects on a missing block envelope', async () => {
+    backend.onRequest('agent.getMessageBlock', () => ({ truncated: true }));
+    const client = new LiveAgentsClient();
+    await expect(client.getMessageBlockPage('agent-1', 'msg-1', 'msg-1:0')).rejects.toThrow(
+      'returned no block',
+    );
+  });
+
   it('getMessageBlock propagates daemon -32602 rejections (unknown ids)', async () => {
     backend.onRequest('agent.getMessageBlock', () => {
       throw new BackendError(buildErrorPayload('INVALID_PARAMS', 'unknown block id: msg-1:99'));
@@ -2711,6 +2803,48 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
         method: 'agent.listUserMessages',
         params: { agentId: 'agent-1', previewChars: 120 },
       });
+      expect(result).toEqual({ ok: true, items: [], total: 0 });
+    });
+
+    it('forwards paging params and surfaces nextToken (string or null)', async () => {
+      backend.onRequest('agent.listUserMessages', (params) => ({
+        agentId: 'agent-1',
+        items: [{ id: 'msg-9', preview: 'newest', createdAt: '2026-08-09T00:00:00Z' }],
+        total: 1,
+        nextToken: (params as { nextToken?: string }).nextToken ? null : 'um1:9',
+      }));
+      const client = new LiveAgentsClient();
+
+      const first = await client.listUserMessages('agent-1', 80, 'ws-1', { limit: 50 });
+      expect(backend.requests[0]).toEqual({
+        method: 'agent.listUserMessages',
+        params: { agentId: 'agent-1', workspaceId: 'ws-1', previewChars: 80, limit: 50 },
+      });
+      expect(first).toMatchObject({ ok: true, total: 1, nextToken: 'um1:9' });
+
+      const older = await client.listUserMessages('agent-1', 80, 'ws-1', {
+        limit: 50,
+        nextToken: 'um1:9',
+      });
+      expect(backend.requests[1].params).toEqual({
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        previewChars: 80,
+        limit: 50,
+        nextToken: 'um1:9',
+      });
+      expect(older).toMatchObject({ ok: true, nextToken: null });
+    });
+
+    it('omits nextToken when the daemon predates paging', async () => {
+      backend.onRequest('agent.listUserMessages', () => ({
+        agentId: 'agent-1',
+        items: [],
+        total: 0,
+      }));
+      const client = new LiveAgentsClient();
+
+      const result = await client.listUserMessages('agent-1', undefined, undefined, { limit: 5 });
       expect(result).toEqual({ ok: true, items: [], total: 0 });
     });
 

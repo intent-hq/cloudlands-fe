@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parseUiComponentMetadata } from '../component-metadata';
 import { m } from '$shared/paraglide/messages.js';
 import TooltipHarness from './TooltipHarness.svelte';
+import TooltipEnableHarness from './TooltipEnableHarness.svelte';
 import { tooltipFixtures } from './tooltip.fixtures';
 import * as tooltipApi from './index';
 
@@ -54,6 +55,51 @@ describe('Tooltip', () => {
     await fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull());
     expect(document.activeElement).toBe(trigger);
+  });
+
+  describe('when help becomes enabled while its trigger is focused (intent#8081)', () => {
+    const nativeMatches = Element.prototype.matches;
+    let focusVisible = true;
+
+    beforeEach(() => {
+      focusVisible = true;
+      // jsdom never matches :focus-visible; model keyboard versus pointer focus.
+      Element.prototype.matches = function (this: Element, selector: string) {
+        if (selector === ':focus-visible') return focusVisible && document.activeElement === this;
+        return nativeMatches.call(this, selector);
+      };
+    });
+
+    afterEach(() => {
+      Element.prototype.matches = nativeMatches;
+    });
+
+    it('opens for keyboard focus that landed before the help was enabled', async () => {
+      const { rerender } = render(TooltipEnableHarness, { props: { disabled: true } });
+      const trigger = screen.getByRole('button', { name: 'Show measured help' });
+      trigger.focus();
+      await fireEvent.focus(trigger);
+      expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull();
+
+      await rerender({ disabled: false });
+      const tooltip = await screen.findByRole('tooltip', { hidden: true });
+      expect(tooltip.textContent).toContain('Measured full name help');
+      expect(trigger.getAttribute('aria-describedby')).toBe(tooltip.id);
+      expect(document.activeElement).toBe(trigger);
+    });
+
+    it('stays closed for pointer focus or an unfocused trigger', async () => {
+      const { rerender } = render(TooltipEnableHarness, { props: { disabled: true } });
+      const trigger = screen.getByRole('button', { name: 'Show measured help' });
+      await rerender({ disabled: false });
+      await rerender({ disabled: true });
+
+      focusVisible = false;
+      trigger.focus();
+      await rerender({ disabled: false });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull();
+    });
   });
 
   it('honors controlled open state and publishes the configured delay on its trigger', async () => {

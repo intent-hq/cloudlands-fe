@@ -8,6 +8,6 @@
  * and $effect inside functions that return reactive objects.
  */
 
-export { useTabManagement } from './use-tab-management.svelte';
+export { useCreationTransition } from './use-creation-transition.svelte';
 export { useCloseHandlers } from './use-close-handlers.svelte';
 export { usePanelShortcuts } from './use-panel-shortcuts.svelte';

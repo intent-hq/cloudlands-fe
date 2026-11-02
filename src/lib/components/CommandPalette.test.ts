@@ -26,6 +26,7 @@ const {
   multiplayerState,
   gitlabState,
   remoteAgentsState,
+  plainFolderState,
   storeEvents,
 } = vi.hoisted(() => {
   const createSelectorReadable = <TArg, TValue>(arg: TArg, resolver: (value: any) => TValue) => ({
@@ -150,11 +151,16 @@ const {
     multiplayerState: { enabled: false },
     gitlabState: { enabled: undefined as boolean | undefined },
     remoteAgentsState: { enabled: undefined as boolean | undefined },
+    plainFolderState: { enabled: undefined as boolean | undefined },
     storeEvents: { emit: () => {} },
   };
 });
 
-vi.mock('$app/navigation', () => ({ goto: gotoMock }));
+vi.mock('$app/navigation', async () => {
+  const { landingNavigation } =
+    await import('$store/renderer/utils/test-helpers/landing-navigation');
+  return { goto: landingNavigation(gotoMock) };
+});
 vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToSettings: navigateToSettingsMock }));
 vi.mock('$lib/electron-bridge', () => ({ invoke: invokeMock }));
 vi.mock('$lib/utils/open-message', () => ({ openMessage: openMessageMock }));
@@ -265,6 +271,7 @@ vi.mock('$store/renderer/store', async () => {
         labsMultiplayerEnabled: multiplayerState.enabled,
         labsGitLabEnabled: gitlabState.enabled,
         labsRemoteAgentsEnabled: remoteAgentsState.enabled,
+        labsPlainFolderWorkspacesEnabled: plainFolderState.enabled,
       },
     }),
     dispatch: reduxDispatchMock,
@@ -380,6 +387,7 @@ import { createNoteRequested } from '$store/renderer/slices/note-read-tracking/n
 import { commandPaletteNewFileRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import { setStatsOverlayOpen } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { openTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { terminalManager } from '$features/terminal/terminal-manager.svelte';
 
 // Actions that dispatch Redux actions directly (no window event intermediary)
@@ -408,6 +416,7 @@ describe('CommandPalette new actions', () => {
     multiplayerState.enabled = false;
     gitlabState.enabled = undefined;
     remoteAgentsState.enabled = undefined;
+    plainFolderState.enabled = undefined;
   });
 
   it.each([
@@ -609,6 +618,36 @@ describe('CommandPalette new actions', () => {
       });
       expect(invokeMock).not.toHaveBeenCalled();
       expect(backendRequestMock).not.toHaveBeenCalled();
+      expect(onClose).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each([undefined, false, true])(
+    'changes experimental plain-folder workspaces from saved=%s',
+    async (enabled) => {
+      plainFolderState.enabled = enabled;
+      const onClose = vi.fn();
+      render(CommandPalette, { props: { isOpen: true, initialQuery: 'plain-folder', onClose } });
+      const command = await screen.findByRole('button', {
+        name: enabled
+          ? /Disable experimental plain-folder workspaces/i
+          : /Enable experimental plain-folder workspaces/i,
+      });
+      expect(
+        screen.queryByRole('button', {
+          name: enabled
+            ? /Enable experimental plain-folder workspaces/i
+            : /Disable experimental plain-folder workspaces/i,
+        }),
+      ).toBeNull();
+
+      reduxDispatchMock.mockClear();
+      await fireEvent.click(command);
+
+      expect(reduxDispatchMock).toHaveBeenCalledExactlyOnceWith({
+        type: 'userPreferences/setLabsPlainFolderWorkspacesEnabled',
+        payload: [!enabled],
+      });
       expect(onClose).toHaveBeenCalledOnce();
     },
   );
@@ -980,6 +1019,26 @@ describe('CommandPalette workspace activity recency', () => {
     expect(old.textContent).not.toContain('just now');
   });
 
+  it('shows a selected workspace and opens its tab', async () => {
+    workspaceItemsState.value = [
+      { id: 'current', title: 'Current Space', createdAt: '2025-01-01T00:00:00.000Z' },
+      { id: 'closed', title: 'Closed Space', createdAt: '2025-06-01T00:00:00.000Z' },
+    ];
+    try {
+      render(CommandPalette, {
+        props: { isOpen: true, workspaceId: 'current', onClose: vi.fn() },
+      });
+      await fireEvent.click(await screen.findByRole('button', { name: /Closed Space/i }));
+
+      await waitFor(() =>
+        expect(reduxDispatchMock).toHaveBeenCalledWith(openWorkspaceTab('closed')),
+      );
+      expect(gotoMock).toHaveBeenCalledWith('/workspace/closed');
+    } finally {
+      workspaceItemsState.value = [];
+    }
+  });
+
   it('lists purged (retired) workspaces with the Archived badge and opts in to loading them', async () => {
     workspaceItemsState.value = [
       {
@@ -1124,22 +1183,16 @@ describe('CommandPalette chat message rows', () => {
     await fireEvent.input(input, { target: { value: 'hello' } });
 
     // Assert the wire request matches PROTOCOL §5.15 (search.messages)
-    await waitFor(
-      () =>
-        expect(backendRequestMock).toHaveBeenCalledWith('search.messages', {
-          query: 'hello',
-          limit: 10,
-          preferWorkspaceId: 'ws-1',
-        }),
-      { timeout: 3000 },
+    await waitFor(() =>
+      expect(backendRequestMock).toHaveBeenCalledWith('search.messages', {
+        query: 'hello',
+        limit: 10,
+        preferWorkspaceId: 'ws-1',
+      }),
     );
 
     // Full metadata: Agent · Workspace · owner/repo
-    const coordinator = await screen.findByRole(
-      'button',
-      { name: /Coordinator/ },
-      { timeout: 3000 },
-    );
+    const coordinator = await screen.findByRole('button', { name: /Coordinator/ });
     expect(coordinator.textContent).toMatch(
       /Coordinator\s*·\s*Repo overview\s*·\s*panghy\/chinese-fonts/,
     );
@@ -1231,6 +1284,7 @@ describe('CommandPalette indexed notes', () => {
         ),
       );
       expect(gotoMock).toHaveBeenCalledWith('/workspace/other');
+      expect(reduxDispatchMock).toHaveBeenCalledWith(openWorkspaceTab('other'));
       expect(reduxDispatchMock).toHaveBeenCalledWith(
         recordPaletteMruItem('note', JSON.stringify(['other', 'spec']), expect.any(Number)),
       );

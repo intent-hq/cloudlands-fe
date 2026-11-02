@@ -63,11 +63,42 @@ index 924869bdb3eedccf57345314adb7c1a9b2a12b20..4058f6b78a4de28db871dd65163f0c1f
              this.#interactOutsideProp.current(event);
          }
      }, 10);
+diff --git a/dist/bits/utilities/popper-layer/popper-layer-inner.svelte b/dist/bits/utilities/popper-layer/popper-layer-inner.svelte
+index 994848562fb44c3be1fc915c3df0bbaf3f5467b2..2f40b0349c615e3ca6e19d3925d7c6fdf55c2339 100644
+--- a/dist/bits/utilities/popper-layer/popper-layer-inner.svelte
++++ b/dist/bits/utilities/popper-layer/popper-layer-inner.svelte
+@@ -90,7 +90,7 @@
+ 			{onOpenAutoFocus}
+ 			{onCloseAutoFocus}
+ 			{loop}
+-			{enabled}
++			enabled={enabled && !tooltip}
+ 			{trapFocus}
+ 			forceMount={restProps.forceMount}
+ 			{ref}
+diff --git a/dist/internal/animations-complete.js b/dist/internal/animations-complete.js
+index 15adb3359fd075b24bcca025e7c6afb14a4bcf40..3113e2991710076293cad857cd2ddae64618aa42 100644
+--- a/dist/internal/animations-complete.js
++++ b/dist/internal/animations-complete.js
+@@ -89,7 +89,12 @@ export class AnimationsComplete {
+         });
+     }
+     #executeCallback(fn) {
++        const runId = this.#runId;
+         const execute = () => {
++            // afterTick defers past cleanup: a later run, or the owner unmounting
++            // mid-exit (its prop boxes are gone by then), supersedes this callback.
++            if (runId !== this.#runId)
++                return;
+             fn();
+         };
+         if (this.#opts.afterTick) {
 diff --git a/dist/internal/body-scroll-lock.svelte.js b/dist/internal/body-scroll-lock.svelte.js
-index 04833253a9e04813a458a8e1a7c12b720dd4a15b..b5e434d07c0855a88caa135a761d0941f3b3a996 100644
+index 04833253a9e04813a458a8e1a7c12b720dd4a15b..816c6b83a56ef77daf3f47f24ac9e2dd5403b3e7 100644
 --- a/dist/internal/body-scroll-lock.svelte.js
 +++ b/dist/internal/body-scroll-lock.svelte.js
-@@ -30,6 +30,6 @@ let cleanupScheduledAt = null;
+@@ -29,7 +29,7 @@ const anyLocked = boxWith(() => {
+ let cleanupScheduledAt = null;
  const bodyLockStackCount = new SharedState(() => {
      function resetBodyStyle() {
 -        if (!BROWSER)
@@ -84,15 +115,3 @@ index 04833253a9e04813a458a8e1a7c12b720dd4a15b..b5e434d07c0855a88caa135a761d0941
              stopTouchMoveListener?.();
          };
      });
-diff --git a/dist/bits/utilities/popper-layer/popper-layer-inner.svelte b/dist/bits/utilities/popper-layer/popper-layer-inner.svelte
---- a/dist/bits/utilities/popper-layer/popper-layer-inner.svelte
-+++ b/dist/bits/utilities/popper-layer/popper-layer-inner.svelte
-@@ -97,7 +97,7 @@
- 			{onOpenAutoFocus}
- 			{onCloseAutoFocus}
- 			{loop}
--			{enabled}
-+			enabled={enabled && !tooltip}
- 			{trapFocus}
- 			forceMount={restProps.forceMount}
- 			{ref}

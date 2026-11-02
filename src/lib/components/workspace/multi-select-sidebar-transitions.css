@@ -14,6 +14,12 @@
   --sidebar-section-offset: -12px;
 }
 
+/* A pane added to the stack settles into its slot instead of sliding sideways. */
+[data-sidebar-panels][data-stacked='true'] {
+  --sidebar-section-offset: 0px;
+  --sidebar-section-offset-y: 8px;
+}
+
 [data-sidebar-panels][data-floating='true'] .sidebar-section {
   position: absolute;
   inset: 0 0 auto;
@@ -61,11 +67,11 @@
 @keyframes sidebar-section-enter {
   from {
     opacity: 0;
-    transform: translateX(var(--sidebar-section-offset, 0px));
+    transform: translate(var(--sidebar-section-offset, 0px), var(--sidebar-section-offset-y, 0px));
   }
   to {
     opacity: 1;
-    transform: translateX(0);
+    transform: translate(0, 0);
   }
 }
 

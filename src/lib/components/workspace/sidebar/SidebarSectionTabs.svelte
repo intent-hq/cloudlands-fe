@@ -15,6 +15,7 @@
     setMultiSelectSidebarSelectedTabs,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
+    selectIsPlainFolderWorkspace,
     selectIsWorkspaceCollaborator,
     selectWorkspaceSavedScriptContext,
   } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -27,8 +28,12 @@
   } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import {
     TAB_DEFINITIONS,
+    GIT_ONLY_TAB_IDS,
     OWNER_ONLY_TAB_IDS,
     normalizeSelectedTabs,
+    orderSelectedTabs,
+    toggleSelectedTab,
+    type TabId,
   } from '../multi-select-sidebar-tabs';
   import { m } from '$shared/paraglide/messages.js';
   import { getSidebarFlyout } from './sidebar-flyout-context';
@@ -48,6 +53,8 @@
   } = $props();
   type SectionTab = (typeof TAB_DEFINITIONS)[number];
   let tabViewport = $state<HTMLDivElement | null>(null);
+  let pointerSelection = false;
+  let extendSelection = false;
   const flyout = getSidebarFlyout();
 
   const workspaceId$ = writable('');
@@ -55,6 +62,7 @@
   const selected$ = selectMultiSelectSidebarSelectedTabIds(workspaceId$);
   const collaborator$ = selectIsWorkspaceCollaborator(workspaceId$);
   const scriptContext$ = selectWorkspaceSavedScriptContext(workspaceId$);
+  const plainFolder$ = selectIsPlainFolderWorkspace(workspaceId$);
   const people$ = selectWorkspacePeopleTilePeople(workspaceId$);
   const invites$ = selectWorkspacePeopleInvites(workspaceId$);
   const showPeople = $derived($people$.length > 0 || $invites$.length > 0);
@@ -65,17 +73,28 @@
     TAB_DEFINITIONS.filter(
       ({ id }) =>
         (id !== 'people' || showPeople) &&
+        !($plainFolder$ && GIT_ONLY_TAB_IDS.has(id)) &&
         !($collaborator$ && OWNER_ONLY_TAB_IDS.has(id) && !(id === 'shell' && $scriptContext$)),
     ),
   );
   const savedSelection = $derived(
-    [...normalizeSelectedTabs($selected$, $collaborator$, showPeople, !!$scriptContext$)][0],
+    orderSelectedTabs(
+      normalizeSelectedTabs(
+        $selected$,
+        $collaborator$,
+        showPeople,
+        !!$scriptContext$,
+        $plainFolder$,
+      ),
+    ),
   );
-  const selected = $derived(
+  // The collapsed rail previews one pane; the saved group shows again once the preview closes.
+  const selectedIds = $derived(
     orientation === 'vertical' && flyout?.open && tabs.some((tab) => tab.id === flyout?.tabId)
-      ? (flyout.tabId ?? savedSelection)
+      ? [flyout.tabId as TabId]
       : savedSelection,
   );
+  const selected = $derived(selectedIds[0] ?? 'agents');
 
   $effect(() => {
     const viewport = tabViewport;
@@ -113,14 +132,25 @@
     };
   });
 
-  function selectSection(tabId: string) {
-    store.dispatch(setMultiSelectSidebarSelectedTabs(workspaceId, [tabId]));
+  function selectSections(tabIds: readonly string[]) {
+    store.dispatch(setMultiSelectSidebarSelectedTabs(workspaceId, [...tabIds]));
   }
 
-  function activate(tabId: string) {
-    const alreadySelected = savedSelection === tabId;
-    selectSection(tabId);
-    if (orientation === 'horizontal' && !alreadySelected) return;
+  function activate(tabId: string, toggle = false) {
+    const id = tabId as TabId;
+    if (toggle) {
+      // Shift adds or removes a pane; it never opens main content or empties the sidebar.
+      selectSections(toggleSelectedTab(savedSelection, id));
+      return;
+    }
+    if (orientation === 'vertical') {
+      // A rail preview keeps the saved group when the pane already belongs to it.
+      if (!savedSelection.includes(id)) selectSections([id]);
+    } else {
+      const alreadySelected = savedSelection.length === 1 && savedSelection[0] === id;
+      selectSections([id]);
+      if (!alreadySelected) return;
+    }
     store.dispatch(activateSidebarSectionRequested(workspaceId, tabId, panelLayoutId));
     onActivate?.(tabId);
   }
@@ -128,6 +158,7 @@
 
 <Tabs.Root
   value={selected}
+  selectedValues={selectedIds}
   activationMode="manual"
   {orientation}
   variant={orientation === 'horizontal' ? 'icon' : 'underline'}
@@ -147,30 +178,58 @@
         class={cn(
           'relative min-w-0 gap-0 px-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
           orientation === 'horizontal'
-            ? cn('w-full', selected === tab.id ? 'text-foreground' : 'text-muted-foreground')
+            ? cn(
+                'w-full',
+                selectedIds.includes(tab.id) ? 'text-foreground' : 'text-muted-foreground',
+              )
             : cn(
                 'size-9 rounded-(--radius-medium) border-0',
-                selected === tab.id && 'bg-selected dark:bg-surface-4',
+                selectedIds.includes(tab.id) && 'bg-selected dark:bg-surface-4',
               ),
         )}
         data-sidebar-section-tab={tab.id}
+        onpointerdown={() => {
+          pointerSelection = true;
+        }}
+        onpointercancel={() => {
+          pointerSelection = false;
+        }}
+        onpointerup={() => {
+          pointerSelection = false;
+        }}
+        onpointerleave={() => {
+          pointerSelection = false;
+        }}
         onpointerenter={(event) => {
           if (orientation === 'vertical' && event.pointerType !== 'touch')
             flyout?.preview(tab.id, event.currentTarget);
         }}
         onfocus={(event) => {
           if (orientation === 'vertical') flyout?.preview(tab.id, event.currentTarget, true);
-          else if (event.currentTarget.matches(':focus-visible')) selectSection(tab.id);
+          else if (
+            !pointerSelection &&
+            !extendSelection &&
+            savedSelection.length === 1 &&
+            savedSelection[0] !== tab.id &&
+            event.currentTarget.matches(':focus-visible')
+          )
+            // Arrow focus follows a single pane; a multi-pane group changes only on activation.
+            selectSections([tab.id]);
         }}
         onkeydown={(event) => {
+          extendSelection = event.shiftKey;
+          queueMicrotask(() => {
+            extendSelection = false;
+          });
           if (event.key !== 'Enter' && event.key !== ' ') return;
           event.preventDefault();
           if (orientation === 'vertical') flyout?.preview(tab.id, event.currentTarget);
-          activate(tab.id);
+          activate(tab.id, event.shiftKey);
         }}
         onclick={(event) => {
+          pointerSelection = false;
           if (orientation === 'vertical') flyout?.preview(tab.id, event.currentTarget);
-          activate(tab.id);
+          activate(tab.id, event.shiftKey);
         }}
       >
         {#if tab.id === 'agents' && mainAgent}
@@ -201,6 +260,7 @@
     {#if orientation === 'vertical'}
       <Tabs.List
         aria-label={m.workspace_layout_ariaLabel()}
+        aria-multiselectable={selectedIds.length > 1 || undefined}
         class="flex! w-full flex-col gap-1 bg-transparent p-0"
       >
         {#each tabs as tab (tab.id)}
@@ -224,6 +284,7 @@
       >
         <Tabs.List
           aria-label={m.workspace_layout_ariaLabel()}
+          aria-multiselectable={selectedIds.length > 1 || undefined}
           class="w-max min-w-full max-w-none justify-start gap-1 overflow-visible bg-selected dark:bg-surface-4"
         >
           {#each tabs as tab (tab.id)}

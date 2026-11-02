@@ -82,11 +82,17 @@
   import { selectSpecialistName } from '$store/renderer/slices/specialists/specialists-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
-  import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+    selectHidesAgentLifecycleActions,
+    selectIsPlainFolderWorkspace,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
   import { backgroundModeMenuItems } from './agent-background-menu';
+  import { pinMenuItems } from './agent-pin-menu';
   import { isReplaceAgentEligible } from '$shared/utils/replace-agent-eligibility';
   import TaskProgressControl from './TaskProgressControl.svelte';
+  import AgentLocationBadge from '$features/remote-machines/AgentLocationBadge.svelte';
   import type { TaskProgressItem } from './workspace-task-fallback';
 
   interface Props {
@@ -367,6 +373,11 @@
       },
     ];
 
+    if (panelRow) {
+      const wsId = $agent$?.workspaceId ?? workspace?.id;
+      items.push(...pinMenuItems($agent$, wsId ? String(wsId) : undefined, closeContextMenu));
+    }
+
     items.push(...backgroundModeMenuItems($agent$, $backgroundPending$, closeContextMenu));
 
     // Per-agent notification mute (daemon-owned `notificationsMuted`, §5.5):
@@ -394,7 +405,13 @@
       });
     }
 
-    if ($agent$?.effectiveIsolation === 'isolated') {
+    // Plain folders have no git checkpoints to merge or discard.
+    const hubWorkspaceId = $agent$?.workspaceId ?? workspace?.id;
+    const plainFolder =
+      isPlainFolderWorkspace(workspace) ||
+      (!!hubWorkspaceId &&
+        selectIsPlainFolderWorkspace.select(appStore.state, String(hubWorkspaceId)));
+    if ($agent$?.effectiveIsolation === 'isolated' && !plainFolder) {
       items.push({
         id: 'hub-merge',
         label: $nodeCapabilities$.agentNodes
@@ -859,6 +876,7 @@
                   : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
               ></span>
             </div>
+            <AgentLocationBadge {agentId} hidden={inline && !panelRow} />
             {#if isNotificationsMuted && (!inline || panelRow)}
               <span
                 class="inline-flex shrink-0 items-center text-subtle"

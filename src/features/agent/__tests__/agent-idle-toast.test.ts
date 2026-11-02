@@ -38,10 +38,14 @@ vi.mock('$lib/components/ui/toast', () => ({
 vi.mock('$features/hardware-console/assignment/connected-key-slot', () => ({
   resolveConnectedWorkspaceKeySlot: mocks.keySlot,
 }));
-vi.mock('$lib/utils/navigation.client', () => ({
-  navigateToRoute: mocks.navigateToRoute,
-  isHudWindowRenderer: () => false,
-}));
+vi.mock('$lib/utils/navigation.client', async () => {
+  const { landingNavigation } =
+    await import('$store/renderer/utils/test-helpers/landing-navigation');
+  return {
+    navigateToRoute: landingNavigation(mocks.navigateToRoute),
+    isHudWindowRenderer: () => false,
+  };
+});
 vi.mock('$features/notifications/notification-navigation', () => ({
   handleNotificationNavigate: mocks.notificationNavigate,
 }));

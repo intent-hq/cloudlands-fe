@@ -11,6 +11,8 @@
  * transport modules (the mock is installed before the transport exists).
  */
 
+import type { DaemonStartupState } from '$shared/daemon-startup';
+
 /** Connection status mirroring the main-process ConnectionStatus union. */
 type WebDaemonConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 
@@ -21,6 +23,10 @@ export interface WebDaemonStatusSource {
   getTarget(): string;
   /** Subscribe to status transitions; returns an unsubscriber. */
   onStatusChange(handler: (status: WebDaemonConnectionStatus) => void): () => void;
+  /** The daemon's startup posture (starting or failed to start), or null. */
+  getStartupState(): DaemonStartupState | null;
+  /** Subscribe to startup posture changes; returns an unsubscriber. */
+  onStartupChange(handler: (state: DaemonStartupState | null) => void): () => void;
   /**
    * Subscribe to the 2nd+ successful connect (RESUB-1); returns an
    * unsubscriber. Lets the mock emit the `reconnected: true` status marker

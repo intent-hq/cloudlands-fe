@@ -776,6 +776,138 @@ describe('workspace-transfer relay — finalize', () => {
     expect(result).toEqual({ success: true, resumeFailed: ['agent-9'] });
   });
 
+  it('opens the imported workspace on the target after finalize when openTarget is set', async () => {
+    const source = makeSource();
+    const target = makeTarget({
+      'workspace.import.commit': () => ({
+        workspace: { id: 'ws-target' },
+        interruptedAgents: [],
+      }),
+    });
+    const openTargetWorkspace = vi.fn(async () => undefined);
+    const { deps } = makeDeps(source, target, { openTargetWorkspace });
+    const relay = makeRelay(deps);
+    const startPromise = relay.start(
+      { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+    );
+    await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
+    await startPromise;
+
+    const result = await relay.finalize({ archiveSource: true, openTarget: true });
+
+    expect(result).toEqual({ success: true });
+    expect(openTargetWorkspace).toHaveBeenCalledExactlyOnceWith('conn-1', 'ws-target');
+  });
+
+  it('falls back to the source workspace id when the commit reply omits the workspace', async () => {
+    const openTargetWorkspace = vi.fn(async () => undefined);
+    const source = makeSource();
+    const target = makeTarget({
+      'workspace.import.commit': () => ({ interruptedAgents: [] }),
+    });
+    const { deps } = makeDeps(source, target, { openTargetWorkspace });
+    const relay = makeRelay(deps);
+    const startPromise = relay.start(
+      { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+    );
+    await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
+    await startPromise;
+
+    await relay.finalize({ archiveSource: true, openTarget: true });
+
+    expect(openTargetWorkspace).toHaveBeenCalledExactlyOnceWith('conn-1', 'ws-1');
+  });
+
+  it('does not open the target when openTarget is unset', async () => {
+    const openTargetWorkspace = vi.fn(async () => undefined);
+    const source = makeSource();
+    const target = makeTarget();
+    const { deps } = makeDeps(source, target, { openTargetWorkspace });
+    const relay = makeRelay(deps);
+    const startPromise = relay.start(
+      { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+    );
+    await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
+    await startPromise;
+
+    await relay.finalize({ archiveSource: true });
+
+    expect(openTargetWorkspace).not.toHaveBeenCalled();
+  });
+
+  it('does not open the target when the source finalize fails', async () => {
+    const openTargetWorkspace = vi.fn(async () => undefined);
+    const source = makeSource({
+      'workspace.export.finalize': () => new Error('workspace gone'),
+    });
+    const target = makeTarget();
+    const { deps } = makeDeps(source, target, { openTargetWorkspace });
+    const relay = makeRelay(deps);
+    const startPromise = relay.start(
+      { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+    );
+    await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
+    await startPromise;
+
+    const result = await relay.finalize({ archiveSource: true, openTarget: true });
+
+    expect(result.success).toBe(false);
+    expect(openTargetWorkspace).not.toHaveBeenCalled();
+  });
+
+  it('a failure opening the target is logged and never fails the finalize', async () => {
+    const openTargetWorkspace = vi.fn(async () => {
+      throw new Error('secret unavailable');
+    });
+    const source = makeSource();
+    const target = makeTarget();
+    const { deps } = makeDeps(source, target, { openTargetWorkspace });
+    const relay = makeRelay(deps);
+    const startPromise = relay.start(
+      { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+    );
+    await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
+    await startPromise;
+
+    const result = await relay.finalize({ archiveSource: true, openTarget: true });
+
+    expect(result).toEqual({ success: true, targetOpenFailed: true });
+    expect(deps.logger.warn).toHaveBeenCalledWith(
+      'Could not open the transferred workspace on the target',
+      expect.objectContaining({ connectionId: 'conn-1', workspaceId: 'ws-1' }),
+    );
+  });
+
+  it('does not hold the finalize reply on a slow target open', async () => {
+    vi.useFakeTimers();
+    try {
+      const openTargetWorkspace = vi.fn(() => new Promise<void>(() => undefined));
+      const source = makeSource();
+      const target = makeTarget();
+      const { deps } = makeDeps(source, target, { openTargetWorkspace });
+      const relay = makeRelay(deps);
+      const startPromise = relay.start(
+        { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+        source.client,
+      );
+      await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
+      await startPromise;
+
+      const finalize = relay.finalize({ archiveSource: true, openTarget: true });
+      await vi.advanceTimersByTimeAsync(15_000);
+
+      await expect(finalize).resolves.toEqual({ success: true });
+      expect(openTargetWorkspace).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('propagates a finalize failure', async () => {
     const { relay } = await committedRelay({
       'workspace.export.finalize': () => new Error('workspace gone'),

@@ -42,6 +42,7 @@
     leftSlot,
     rightSlot,
     disabled = false,
+    sendDisabled = false,
     minRows = 1,
     maxRows = 8,
     clickToFocus = true,
@@ -73,7 +74,9 @@
   const supportsQueue = $derived(status !== undefined && onQueueChange !== undefined);
   const streaming = $derived(status === 'streaming');
   const trimmed = $derived(value.trim());
-  const canSend = $derived(!disabled && (trimmed.length > 0 || filesArr.length > 0));
+  const canSend = $derived(
+    !disabled && !sendDisabled && (trimmed.length > 0 || filesArr.length > 0),
+  );
   const filesOpen = $derived(filesArr.length > 0);
   const queueOpen = $derived(supportsQueue && showQueue && queueArr.length > 0);
   const suggestionsOpen = $derived(suggestions.length > 0 && value === '');
@@ -85,6 +88,7 @@
   let suggestionHover: ProximityHover | null = $state.raw(null);
   let fallbackSuggestion: number | null = $state(null);
   let focused = $state(false);
+  let composing = false;
   let hovered = $state(false);
   let dragOver = $state(false);
   let historyIndex: number | null = $state(null);
@@ -249,7 +253,7 @@
   }
 
   function handleKeydown(event: KeyboardEvent) {
-    if (event.isComposing) return;
+    if (composing || event.isComposing || event.keyCode === 229) return;
     const plain = !event.shiftKey && !event.altKey && !event.metaKey && !event.ctrlKey;
     if (suggestionsOpen && plain) {
       if (event.key === 'ArrowDown') {
@@ -311,7 +315,7 @@
     }
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
-      handleSend();
+      if (!event.repeat) handleSend();
     }
   }
 
@@ -590,6 +594,14 @@
             textareaProps?.class,
           )}
           oninput={handleInput}
+          oncompositionstart={(event) => {
+            composing = true;
+            textareaProps?.oncompositionstart?.(event);
+          }}
+          oncompositionend={(event) => {
+            composing = false;
+            textareaProps?.oncompositionend?.(event);
+          }}
           onkeydown={handleKeydown}
           onfocus={(event) => {
             focused = true;

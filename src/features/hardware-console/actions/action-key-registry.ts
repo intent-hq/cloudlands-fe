@@ -135,8 +135,10 @@ export interface ActionKeyContext {
   state: ActionKeyState;
   workspaceId: string | null;
   dispatch: (action: unknown) => unknown;
-  /** Navigate the app to a route (workspace switching). */
+  /** Navigate the app to a non-workspace route (tab-close fallbacks). */
   navigate: (route: string) => Promise<void>;
+  /** Jump to a workspace and open its tab (`openAndShowWorkspace`). */
+  showWorkspace: (workspaceId: string) => Promise<unknown>;
   /** Focus the chat composer of an agent's (open or opening) conversation tab. */
   focusComposer: (agentId: string) => void;
   /** Show a subtle toast hint (same surface as the unavailable-action hint). */
@@ -451,7 +453,7 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
           // has already advanced by the time the rejection settles, so pin
           // the next press back to this stop — unless a newer press has
           // happened since, in which case the rejection is stale.
-          void context.navigate(`/workspace/${next.wsId}`).catch((error: unknown) => {
+          void context.showWorkspace(next.wsId).catch((error: unknown) => {
             logger.warn('Failed to switch workspace for cycle step', {
               actionId: spec.id,
               workspaceId: next.wsId,

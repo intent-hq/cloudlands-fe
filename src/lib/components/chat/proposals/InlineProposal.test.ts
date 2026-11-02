@@ -34,6 +34,7 @@ const actionMocks = vi.hoisted(() => ({
   undoSpecialist: vi.fn(() => false),
   undoSettings: vi.fn(() => true),
   goto: vi.fn(),
+  showWorkspace: vi.fn(async () => true),
   loadDraft: vi.fn(() => null),
   saveDraft: vi.fn(),
   clearDraft: vi.fn(),
@@ -129,6 +130,9 @@ vi.mock('$store/renderer/store', () => ({
   },
 }));
 vi.mock('$app/navigation', () => ({ goto: actionMocks.goto }));
+vi.mock('$lib/utils/show-workspace', () => ({
+  openAndShowWorkspace: actionMocks.showWorkspace,
+}));
 vi.mock('$lib/components/workspace/initializer/RepoAndBranchPicker.svelte', async () => ({
   default: (await import('../../workspace/sidebar/__tests__/mocks/MockRepoAndBranchPicker.svelte'))
     .default,
@@ -310,7 +314,8 @@ describe('InlineProposal', () => {
     const link = screen.getByRole('link', { name: 'Open workspace' });
     expect(link.getAttribute('href')).toBe('/workspace/workspace-created');
     await fireEvent.click(link);
-    expect(actionMocks.goto).toHaveBeenCalledWith('/workspace/workspace-created');
+    // A proposal-created workspace may have no tab yet; the helper opens it.
+    expect(actionMocks.showWorkspace).toHaveBeenCalledWith('workspace-created');
     expect(actionMocks.resolve).toHaveBeenCalledWith(AGENT_ID, WORKSPACE_ID, {
       proposalId: 'tool-applied',
       outcome: 'applied',

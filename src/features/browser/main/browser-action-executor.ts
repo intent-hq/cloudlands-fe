@@ -749,6 +749,32 @@ const OWNERSHIP_ENFORCED_ACTIONS = new Set([
 ]);
 
 /**
+ * Content actions that keep the agent's own tab drawing at full frame rate
+ * while they run and for a short idle window after (see
+ * EmbeddedBrowserCdpService.beginAgentDrawing), so animation and timing
+ * measured across consecutive actions are real. Every entry is
+ * ownership-enforced; the service also re-checks that the caller owns the
+ * tab.
+ */
+const AGENT_DRAWING_ACTIONS = new Set([
+  'focusTab',
+  'getAccessibilityTree',
+  'screenshot',
+  'evaluate',
+  'snapshot',
+  'startSession',
+  'navigate',
+]);
+
+/**
+ * Capture-session actions that drive the session's tab and so take the same
+ * hold. Teardown and read-only ones (endSession, stopTrace, endCapture,
+ * readCapture, getSummary) deliberately do not: they would keep an idle tab
+ * and its window unthrottled for another idle window.
+ */
+const SESSION_DRAWING_ACTIONS = new Set(['startCapture', 'captureStep', 'startTrace']);
+
+/**
  * Per-`executeActions` memo of the owner display-name lookup, keyed by agent
  * id and single-flight per id (a shared in-flight promise), so a batch with N
  * distinct owners costs at most N `agent.get` point reads — never a
@@ -912,6 +938,7 @@ async function executeAction(
   // methods apply — and reject agent calls on tabs the agent does not own.
   // A missing target falls through so the action fails with its own
   // descriptive "no tabs" error.
+  let drawingTabId: string | undefined;
   if (agentId && OWNERSHIP_ENFORCED_ACTIONS.has(action.action)) {
     const targetTabId = tabId ?? embeddedBrowserCdp.getFirstTab()?.tabId;
     if (targetTabId) {
@@ -919,16 +946,26 @@ async function executeAction(
       if (owner !== agentId) {
         return notOwnerResult(action.action, targetTabId, owner, workspaceId, ownerNameCache);
       }
+      if (AGENT_DRAWING_ACTIONS.has(action.action)) drawingTabId = targetTabId;
     }
   }
 
+  // Agent activity keeps the owned tab drawing at full frame rate for the
+  // whole action (including a tab it mounts on demand), and for an idle
+  // window after it ends.
+  let endDrawing: (() => void) | undefined;
+  if (drawingTabId && agentId) {
+    endDrawing = embeddedBrowserCdp.beginAgentDrawing(drawingTabId, agentId);
+  }
   try {
-    if ('sessionId' in action)
-      browserCapture.assertSessionOwner(
-        action.sessionId,
-        requireWorkspaceId(workspaceId, action.action),
-        agentId,
-      );
+    if ('sessionId' in action) {
+      const sessionWorkspaceId = requireWorkspaceId(workspaceId, action.action);
+      browserCapture.assertSessionOwner(action.sessionId, sessionWorkspaceId, agentId);
+      if (agentId && !endDrawing && SESSION_DRAWING_ACTIONS.has(action.action)) {
+        const sessionTabId = browserCapture.getSessionTabId(action.sessionId, sessionWorkspaceId);
+        if (sessionTabId) endDrawing = embeddedBrowserCdp.beginAgentDrawing(sessionTabId, agentId);
+      }
+    }
     switch (action.action) {
       case 'listTabs': {
         const scope = action.scope ?? 'all';
@@ -1945,6 +1982,8 @@ async function executeAction(
       // i18n-ignore (agent-facing protocol error, not user-facing)
       error: error instanceof Error ? error.message : 'Unknown error',
     };
+  } finally {
+    endDrawing?.();
   }
 }
 

@@ -1,6 +1,41 @@
 import { expect, test } from '../../../../../test/ct-test';
 import Preview from '../changes-summary.preview.svelte';
 
+test('keeps workspace PRs available in stacked panes and when browsing a submodule', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 420, height: 800 });
+  await mount(Preview, { props: { prs: 'multiple', secondaryFiles: true } });
+  const prs = page.locator('[data-workspace-pull-requests] [data-pr-identity]');
+  await expect(prs).toHaveCount(5);
+  const identities = await prs.evaluateAll((rows) =>
+    rows.map((row) => row.getAttribute('data-pr-identity')),
+  );
+  await testInfo.attach('pull-requests-single-pane', {
+    body: await page.locator('[data-workspace-sidebar]').screenshot(),
+    contentType: 'image/png',
+  });
+  const tabs = page.locator('[data-sidebar-section-tabs="horizontal"]');
+  await tabs.getByRole('tab', { name: 'Agents', exact: true }).click({ modifiers: ['Shift'] });
+  await expect(page.getByRole('tabpanel', { name: 'Agents', exact: true })).toBeVisible();
+  await expect(page.getByRole('tabpanel', { name: 'Changes', exact: true })).toBeVisible();
+  await page.getByRole('combobox', { name: 'Select git root' }).click();
+  await page.getByRole('option', { name: /^packages\/component/ }).click();
+  await expect(page.locator('[data-testid="secondary-root-changes-view"]')).toBeVisible();
+  await expect(prs).toHaveCount(5);
+  expect(
+    await prs.evaluateAll((rows) => rows.map((row) => row.getAttribute('data-pr-identity'))),
+  ).toEqual(identities);
+  await prs.last().focus();
+  await expect(prs.last()).toBeFocused();
+  await expect(prs.last()).toBeInViewport();
+  await testInfo.attach('pull-requests-stacked-panes', {
+    body: await page.locator('[data-workspace-sidebar]').screenshot(),
+    contentType: 'image/png',
+  });
+});
+
 test('owner metadata cannot enable branch editing before connection admission', async ({
   mount,
   page,

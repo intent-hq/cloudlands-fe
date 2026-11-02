@@ -2,6 +2,7 @@
   import { monitorAccessibleLabel } from '$lib/utils/review-monitor-presentation';
   import Fa from 'svelte-fa';
   import * as Menu from '$lib/components/ui/menu';
+  import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
   import type { WorkspacePRPresentationRow } from './workspace-pr-presentation';
 
@@ -9,6 +10,7 @@
     rows,
     onSelect,
     interactive = true,
+    inline = false,
     class: className = '',
   }: {
     rows: WorkspacePRPresentationRow[];
@@ -18,6 +20,7 @@
      * `Menu.Content`; `false` renders static rows for catalog/preview surfaces.
      */
     interactive?: boolean;
+    inline?: boolean;
     class?: string;
   } = $props();
 
@@ -37,6 +40,7 @@
   }
 
   function getPrState(pr: WorkspacePRPresentationRow): string {
+    if (inline) return pr.repoContext ?? pr.repo?.split('/').pop() ?? '';
     return [pr.repoContext, pr.accessibleStateLabel].filter(Boolean).join(' · ');
   }
 </script>
@@ -49,7 +53,10 @@
         ? m.workspace_hoverCard_mergeRequest_label()
         : m.workspace_hoverCard_pullRequest_label())}
   </span>
-  <span class="type-caption min-w-0 truncate text-muted-foreground" data-sidebar-pr-state>
+  <span
+    class="type-caption min-w-0 truncate text-muted-foreground {inline ? 'max-w-24' : ''}"
+    data-sidebar-pr-state
+  >
     {getPrState(pr)}
   </span>
   <span class="type-caption shrink-0 text-muted-foreground"
@@ -59,7 +66,24 @@
 
 <div class="grid w-full gap-0.5 {className}" data-sidebar-pr-list>
   {#each rows as pr (pr.identity)}
-    {#if interactive}
+    {#if inline}
+      <Button
+        variant="ghost"
+        wrapContent={false}
+        class={rowClass}
+        aria-label={getPrLabel(pr)}
+        title={getPrLabel(pr)}
+        disabled={!pr.url}
+        data-sidebar-pr-link
+        data-sidebar-pr-url={pr.url}
+        data-pr-identity={pr.identity}
+        data-pr-status={pr.status}
+        onclick={() => onSelect(pr)}
+        onkeydown={(event) => event.stopPropagation()}
+      >
+        {@render rowContent(pr)}
+      </Button>
+    {:else if interactive}
       <Menu.Item
         class={rowClass}
         aria-label={getPrLabel(pr)}

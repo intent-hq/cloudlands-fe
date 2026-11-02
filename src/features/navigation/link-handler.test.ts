@@ -12,6 +12,7 @@ import { CHIEF_WORKSPACE_ID, type WorkspaceId } from '$shared/types/branded-ids'
 import type { GithubLinkDefaultAction, LinkHandlerOptions } from '$shared/utils/link-helpers';
 import type { Workspace } from '$shared/types';
 import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 
 const TEST_WORKSPACE_ID = 'ws-1' as WorkspaceId;
@@ -68,7 +69,11 @@ vi.mock('$lib/utils/clipboard', () => ({
 }));
 
 const gotoMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
-vi.mock('$app/navigation', () => ({ goto: gotoMock }));
+vi.mock('$app/navigation', async () => {
+  const { landingNavigation } =
+    await import('$store/renderer/utils/test-helpers/landing-navigation');
+  return { goto: landingNavigation(gotoMock) };
+});
 
 // Workspace entity lookup used to relativize absolute paths
 const workspaceRoots = vi.hoisted(() => ({
@@ -104,6 +109,13 @@ vi.mock('$store/renderer/store', async () => {
     }),
     dispatch: reduxDispatchMock,
   });
+});
+
+// The navigation fakes land on their route (see landingNavigation); start
+// every test from the same URL, since file links resolve against it.
+const initialHref = window.location.href;
+beforeEach(() => {
+  window.history.replaceState({}, '', initialHref);
 });
 
 describe.each(['Assistant', 'workspace preview'] as const)('Home GitHub links in %s', (surface) => {
@@ -1366,6 +1378,13 @@ describe('openLinkInApp', () => {
     expect(openBrowserPanelMock).toHaveBeenCalledWith(url, undefined, undefined, undefined);
     expect(order).toEqual(['goto', 'panel']);
     expect(invokeIpcMock).not.toHaveBeenCalled();
+  });
+
+  it('opens the owning workspace tab once entering the workspace succeeds', async () => {
+    expect(await openLinkInApp(url, TEST_WORKSPACE_ID, { openInWorkspace: true })).toBe(true);
+
+    expect(gotoMock).toHaveBeenCalledWith('/workspace/ws-1');
+    expect(reduxDispatchMock).toHaveBeenCalledWith(openWorkspaceTab(TEST_WORKSPACE_ID));
   });
 
   it('stays in the current workspace and opens beside the source panel', async () => {

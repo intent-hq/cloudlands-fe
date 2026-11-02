@@ -4,6 +4,7 @@
   import Fa from 'svelte-fa';
   import { faCheck, faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
   import Portal from '../Portal.svelte';
+  import { getOwnedPopupContext } from '$lib/components/ui/owned-popup-context';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { getPageTargetIndex } from '$lib/components/ui/menu';
@@ -27,6 +28,22 @@
   import { formatInteger } from '$lib/i18n/format';
 
   const uid = $props.id();
+  const popupOwner = getOwnedPopupContext();
+
+  function registerOwnedContent(element: HTMLElement) {
+    let active = true;
+    let unregister: (() => void) | undefined;
+    // The custom Portal moves its parent during mount; register after that move.
+    void tick().then(() => {
+      if (active) unregister = popupOwner?.register(element, handleClose);
+    });
+    return {
+      destroy() {
+        active = false;
+        unregister?.();
+      },
+    };
+  }
 
   interface Props {
     /** Current value - string for single, string[] for multiple */
@@ -311,7 +328,7 @@
 
   /** Open without toggling and focus search, including programmatic keyboard entry. */
   export async function openAndFocusSearch() {
-    if (disabled) return;
+    if (disabled || (popupOwner && !popupOwner.active())) return;
     if (!open) {
       // Pre-compute highlight so the first render is correct
       highlightedIndex = findHighlightIndex();
@@ -768,6 +785,7 @@
       <!-- svelte-ignore a11y_no_static_element_interactions (static catalog keyboard boundary) -->
       <div
         bind:this={inlineContentRef}
+        use:registerOwnedContent
         class={cn(menuOverlay(), 'relative z-50 min-w-full w-full', contentClass)}
         data-static-position
         data-slot="dropdown-content"
@@ -779,6 +797,7 @@
       <!-- svelte-ignore a11y_no_static_element_interactions (keyboard boundary for nested popup controls) -->
       <div
         bind:this={inlineContentRef}
+        use:registerOwnedContent
         use:pinOpenWidth
         style:width={openedWidth === undefined ? undefined : `${openedWidth}px`}
         in:panelEnter={menuOverlayTransition.enter}
@@ -803,10 +822,11 @@
 
 <!-- Portal content (renders outside overflow:hidden containers) -->
 {#if open && portal && !staticPosition}
-  <Portal target={portalTarget ?? 'body'} zIndex={100}>
+  <Portal target={portalTarget ?? popupOwner?.target() ?? 'body'} zIndex={100}>
     <!-- svelte-ignore a11y_no_static_element_interactions (keyboard boundary for nested popup controls) -->
     <div
       bind:this={portalContentRef}
+      use:registerOwnedContent
       use:pinOpenWidth
       style:width={openedWidth === undefined ? undefined : `${openedWidth}px`}
       in:panelEnter={menuOverlayTransition.enter}
@@ -1071,9 +1091,10 @@
 
       <!-- Submenu (rendered in portal for proper positioning; owned via the trigger's aria-controls) -->
       {#if option.type === 'submenu' && option.children?.length && openSubmenu === option.value}
-        <Portal zIndex={101}>
+        <Portal zIndex={101} target={popupOwner?.target() ?? 'body'}>
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
+            use:registerOwnedContent
             id={submenuId}
             data-submenu
             in:panelEnter={menuOverlayTransition.enter}

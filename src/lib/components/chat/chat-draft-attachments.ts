@@ -17,6 +17,13 @@ import type { ContextItem } from './input/context-api';
 import { isSupportedImageMimeType } from './input/image-attachment-format';
 
 /**
+ * Optional FE-owned evidence for one attachment (the dock composer stores its
+ * screenshot dimensions and numbered marks here). Opaque to the daemon and to
+ * ordinary chat: absent unless a caller passes `screens`.
+ */
+export type DraftAttachmentWithScreen = DraftAttachment & { screen?: unknown };
+
+/**
  * Project attachment context items into wire-safe draft attachments. Items
  * carrying `imageData` + `imageMimeType` (images), an `attachmentId` (placed
  * attachments), or a `sourcePath` (staged path-only items awaiting placement)
@@ -30,7 +37,10 @@ import { isSupportedImageMimeType } from './input/image-attachment-format';
  * folders (type 'folder', path-only, never placed) persist their absolute
  * host `path` + label so an onboarding reload doesn't lose the pill.
  */
-export function serializeDraftAttachments(items: ContextItem[]): DraftAttachment[] {
+export function serializeDraftAttachments(
+  items: ContextItem[],
+  screens?: Readonly<Record<string, unknown>>,
+): DraftAttachmentWithScreen[] {
   return items
     .filter(
       (item) =>
@@ -61,7 +71,17 @@ export function serializeDraftAttachments(items: ContextItem[]): DraftAttachment
       !item.attachmentId
         ? { placementStatus: 'failed' as const }
         : {}),
+      ...(screens?.[item.id] !== undefined ? { screen: screens[item.id] } : {}),
     }));
+}
+
+/** The persisted `screen` entries of restored attachments, keyed by context item id. */
+export function readDraftAttachmentScreens(
+  attachments: readonly DraftAttachmentWithScreen[],
+): (readonly [string, unknown])[] {
+  return attachments.flatMap((attachment) =>
+    attachment.screen !== undefined ? [[attachment.id, attachment.screen] as const] : [],
+  );
 }
 
 /**

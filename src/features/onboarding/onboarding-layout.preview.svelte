@@ -22,6 +22,8 @@
     allProviders?: boolean;
     verificationUri?: string;
     onOpenExternal?: (payload: unknown) => void;
+    /** Plain-folder workspaces Labs on, with the remembered toggle choice. */
+    plainFolder?: 'off' | 'on';
   }
   export const preview = definePreview<Props>({
     id: 'onboarding-layout',
@@ -60,6 +62,9 @@
       project: { props: { step: 'project' } },
       prompt: { props: { step: 'configuring' } },
       'new-workspace': { props: { compact: true } },
+      'project-plain-folder': { props: { step: 'project', plainFolder: 'off' } },
+      'new-workspace-plain-folder': { props: { compact: true, plainFolder: 'off' } },
+      'new-workspace-plain-folder-git': { props: { compact: true, plainFolder: 'on' } },
     },
   });
 </script>
@@ -67,13 +72,19 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
   import OnboardingPage from './OnboardingPage.svelte';
+  import { ConfirmHost } from '$lib/components/patterns/confirm';
   import GitLabAuthConnection from '$lib/components/settings/GitLabAuthConnection.svelte';
   import { overrideMockIpcHandler } from '$shared/ipc-mock-router';
   import CompactWorkspaceInitializer from '$lib/components/workspace/CompactWorkspaceInitializer.svelte';
   import { previewProviders } from '$lib/components/settings/provider-selector.preview';
   import { store as appStore } from '$store/renderer/store';
   import { systemStatusSuccess } from '$store/renderer/slices/daemon-health/daemon-health-slice';
-  import { setLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import {
+    setLabsGitLabEnabled,
+    setLabsPlainFolderWorkspacesEnabled,
+  } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import { safeLocalStorage } from '$lib/utils/safe-storage';
+  import { INITIALIZE_GIT_CHOICE_STORAGE_KEY } from '$lib/components/workspace/initializer/plain-folder-create';
   import { goToStep } from '$store/renderer/slices/onboarding/onboarding-slice';
   import { selectOnboardingStep } from '$store/renderer/slices/onboarding/onboarding-selectors';
   import { selectProviderCatalogEntries } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
@@ -119,6 +130,7 @@
     allProviders = false,
     verificationUri,
     onOpenExternal,
+    plainFolder,
   }: Props = $props();
   const restoreOpen = untrack(() =>
     // eslint-disable-next-line intent/no-component-async-data-fetch -- Fixture-only navigation interception; restores the original mock handler on teardown and never fetches domain data.
@@ -263,6 +275,27 @@
     appStore.dispatch(setLabsGitLabEnabled(untrack(() => gitlabEnabled)));
     seedForge(untrack(() => forge));
   }
+  const seededPlainFolder = untrack(() => plainFolder);
+  const previousPlainFolderLabs = appStore.state.userPreferences.labsPlainFolderWorkspacesEnabled;
+  const previousInitializeGit = safeLocalStorage.getItem(INITIALIZE_GIT_CHOICE_STORAGE_KEY);
+  if (seededPlainFolder) {
+    // Plain-folder creation needs the Labs flag and a daemon that accepts `plainFolder`; the
+    // remembered toggle choice makes the default deterministic for the scene.
+    appStore.dispatch(
+      systemStatusSuccess(
+        {
+          running: true,
+          listenMode: 'local',
+          protocolVersion: '15.3',
+          host: { os: 'linux', arch: 'x86_64', locality: 'local' },
+        },
+        new Date(catalogNow()).toISOString(),
+        appStore.state.daemonHealth.connectionGeneration,
+      ),
+    );
+    safeLocalStorage.setItem(INITIALIZE_GIT_CHOICE_STORAGE_KEY, String(seededPlainFolder === 'on'));
+    appStore.dispatch(setLabsPlainFolderWorkspacesEnabled(true));
+  }
   const fullCatalog = untrack(() => allProviders);
   const seededProviders = fullCatalog ? MOCK_PROVIDER_CATALOG.providers : previewProviders;
   appStore.dispatch(providerCatalogLoaded({ providers: seededProviders }));
@@ -292,6 +325,12 @@
       );
     }
     appStore.dispatch(setAllProvidersLoading(previousLoading));
+    if (seededPlainFolder) {
+      appStore.dispatch(setLabsPlainFolderWorkspacesEnabled(previousPlainFolderLabs));
+      if (previousInitializeGit === null)
+        safeLocalStorage.removeItem(INITIALIZE_GIT_CHOICE_STORAGE_KEY);
+      else safeLocalStorage.setItem(INITIALIZE_GIT_CHOICE_STORAGE_KEY, previousInitializeGit);
+    }
     if (seededForge) {
       applyGitHub(previousGitHub);
       applyGitLab(previousGitLab);
@@ -309,6 +348,10 @@
   });
 </script>
 
+{#if plainFolder}
+  <!-- Hosts the plain-folder in-place warning (mounted by the app layout outside previews). -->
+  <ConfirmHost />
+{/if}
 <div class="relative h-[720px] w-full" data-onboarding-layout-fixture>
   {#if settings}
     <div class="p-6"><GitLabAuthConnection /></div>

@@ -151,6 +151,8 @@ function attachmentInfoToPlacementResult(info: AttachmentInfo): PlaceAttachmentR
     ...(info.mimeType !== undefined ? { mimeType: info.mimeType } : {}),
     uploadedAt: info.uploadedAt,
     replayed: true,
+    // A recovered raw keeps its server-fixed deadline (never renewed).
+    ...(info.rawScreenshot !== undefined ? { rawScreenshot: info.rawScreenshot } : {}),
   };
 }
 

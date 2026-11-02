@@ -232,10 +232,6 @@ beforeEach(() => {
   vi.mocked(localStorage.setItem).mockImplementation((key, value) => storage.set(key, value));
   vi.mocked(localStorage.removeItem).mockImplementation((key) => storage.delete(key));
   /* eslint-enable themis/direct-local-storage-usage */
-  Object.defineProperty(HTMLElement.prototype, 'getAnimations', {
-    configurable: true,
-    value: () => [],
-  });
   vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function () {
     if (this.classList.contains('panel-split-handle-wrapper')) return GUTTER_WIDTH;
     return Number.parseFloat(this.style.width) || 0;
@@ -276,7 +272,6 @@ afterEach(async () => {
   storeContext = undefined;
   TestResizeObserver.instances.clear();
   document.documentElement.style.removeProperty('zoom');
-  Reflect.deleteProperty(HTMLElement.prototype, 'getAnimations');
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });

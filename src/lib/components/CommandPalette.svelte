@@ -30,6 +30,7 @@
   import { backendRequest } from '$lib/client/live/backend-transport';
   import { openMessage } from '$lib/utils/open-message';
   import { openPaletteNote } from '$lib/utils/palette-note-navigation';
+  import { openAndShowWorkspace } from '$lib/utils/show-workspace';
   import { createTranscriptQuery } from '$lib/utils/palette-transcript-search';
   import { createLogger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
@@ -38,6 +39,8 @@
   import {
     selectLabsGitLabEnabled,
     selectLabsRemoteAgentsEnabled,
+    selectLabsPlainFolderWorkspacesEnabled,
+    selectLabsBrowserAccessEnabled,
     selectLabsMultiplayerEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
@@ -98,6 +101,8 @@
   import CommandPaletteItemTitle from './CommandPaletteItemTitle.svelte';
   import CommandPaletteFilters from './CommandPaletteFilters.svelte';
   import { COMMAND_PALETTE_COMMANDS } from './command-palette-commands';
+  import { isLabCommandHidden, runLabCommand } from './command-palette-labs';
+  import { dockLabEnabled } from '$lib/dock-lab';
   import IntentNavigationIcon from '$lib/icons/IntentNavigationIcon.svelte';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
@@ -143,6 +148,8 @@
   const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
   const labsGitLabEnabled$ = selectLabsGitLabEnabled();
   const labsRemoteAgentsEnabled$ = selectLabsRemoteAgentsEnabled();
+  const labsPlainFolders$ = selectLabsPlainFolderWorkspacesEnabled();
+  const labsBrowserAccess$ = selectLabsBrowserAccessEnabled();
   // Collaborators (multiplayer w3) are refused on terminal + browser methods and
   // cannot create workspaces, so those commands and result groups are withheld.
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
@@ -169,7 +176,8 @@
         !($labsGitLabEnabled$ && command.id === 'enable-experimental-gitlab') &&
         !(!$labsGitLabEnabled$ && command.id === 'disable-experimental-gitlab') &&
         !($labsRemoteAgentsEnabled$ && command.id === 'enable-experimental-remote-agents') &&
-        !(!$labsRemoteAgentsEnabled$ && command.id === 'disable-experimental-remote-agents'),
+        !(!$labsRemoteAgentsEnabled$ && command.id === 'disable-experimental-remote-agents') &&
+        !isLabCommandHidden(command.id, $dockLabEnabled, $labsPlainFolders$, $labsBrowserAccess$),
     ),
   );
   const currentChanges$ = selectCurrentChanges(workspaceIdStore);
@@ -830,7 +838,9 @@
           break;
       }
     } else if ('_workspace' in item) {
-      goto(`/workspace/${item.id}`);
+      void openAndShowWorkspace(item.id).catch((error) =>
+        logger.warn('Failed to open workspace from palette', { workspaceId: item.id, error }),
+      );
     } else if (item.path) {
       onSelectFile?.({ path: item.path, line: item.line, openInAdjacentPanel });
       if (item.path) recordMRUFile(item.path);
@@ -847,6 +857,7 @@
       navigateToSettings({ tab: settingsCommand.settingsTab });
       return true;
     }
+    if (runLabCommand(commandId)) return true;
     switch (commandId) {
       case 'new-workspace':
         if (selectWorkspaceCreationVisible.select(appStore.state)) {

@@ -12,9 +12,13 @@ vi.mock('$lib/client', () => ({ appClient: { agents: { retry: mocks.retry } } })
 vi.mock('$lib/components/patterns/notify', () => ({
   notify: { agentFailure: mocks.agentFailure, dismiss: mocks.dismiss },
 }));
-vi.mock('$lib/utils/navigation.client', () => ({
-  navigateToRoute: mocks.navigateToRoute,
-}));
+vi.mock('$lib/utils/navigation.client', async () => {
+  const { landingNavigation } =
+    await import('$store/renderer/utils/test-helpers/landing-navigation');
+  return {
+    navigateToRoute: landingNavigation(mocks.navigateToRoute),
+  };
+});
 vi.mock('$features/hardware-console/assignment/connected-key-slot', () => ({
   resolveConnectedWorkspaceKeySlot: mocks.resolveKeySlot,
 }));
@@ -29,6 +33,7 @@ import { AgentStatus } from '$shared/types';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { checkSingleProviderRequested } from '../../agent-availability/agent-availability-slice';
 import { openAgentTabRequested } from '../../app-layout/app-layout-slice';
+import { openWorkspaceTab } from '../../tab-state/tab-state-slice';
 import {
   initialState as providerCatalogInitialState,
   providerCatalogLoaded,
@@ -362,9 +367,39 @@ describe('agentFailureToastSaga', () => {
     await settle();
 
     expect(mocks.navigateToRoute).toHaveBeenCalledWith('/workspace/ws-1');
-    expect(dispatch).toHaveBeenCalledWith(openAgentTabRequested('ws-1', { agentId: 'agent-1' }));
+    const actions = dispatch.mock.calls.map(([action]) => action);
+    const tabIndex = actions.findIndex(
+      (action) => JSON.stringify(action) === JSON.stringify(openWorkspaceTab('ws-1')),
+    );
+    const agentIndex = actions.findIndex(
+      (action) =>
+        JSON.stringify(action) ===
+        JSON.stringify(openAgentTabRequested('ws-1', { agentId: 'agent-1' })),
+    );
+    // The workspace tab opens before the agent tab, so an unopened workspace joins the strip.
+    expect(tabIndex).toBeGreaterThanOrEqual(0);
+    expect(agentIndex).toBeGreaterThan(tabIndex);
     expect(mocks.retry).not.toHaveBeenCalled();
     expect(getAgentFailureEntry('agent-1')).toBeDefined();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('Switch To opens no workspace or agent tab when the workspace navigation fails', async () => {
+    mocks.navigateToRoute.mockRejectedValueOnce(new Error('navigation failed'));
+    const dispatch = vi.fn();
+    const task = runSaga({ dispatch, getState: state }, agentFailureToastSaga);
+    recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'boom' });
+    await settle();
+
+    lastToast('agent-failure:agent-1').componentProps.onSwitchTo();
+    await settle();
+
+    expect(mocks.navigateToRoute).toHaveBeenCalledWith('/workspace/ws-1');
+    expect(dispatch).not.toHaveBeenCalledWith(openWorkspaceTab('ws-1'));
+    expect(dispatch).not.toHaveBeenCalledWith(
+      openAgentTabRequested('ws-1', { agentId: 'agent-1' }),
+    );
     task.cancel();
     await task.toPromise();
   });

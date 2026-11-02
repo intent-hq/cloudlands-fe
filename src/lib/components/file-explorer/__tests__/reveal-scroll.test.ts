@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeRevealScrollTop } from '../reveal-scroll';
+import { computeRevealScrollTop, findRevealIndex } from '../reveal-scroll';
 
 const view = { itemHeight: 25, viewHeight: 250 };
 
@@ -30,5 +30,24 @@ describe('computeRevealScrollTop', () => {
 
   it('never returns a negative scroll position', () => {
     expect(computeRevealScrollTop({ ...view, index: 0, viewTop: 300 })).toBe(0);
+  });
+});
+
+describe('findRevealIndex', () => {
+  const ws = '/repo';
+
+  it('prefers the exact workspace path over an earlier suffix match', () => {
+    const paths = ['/repo/app', '/repo/app/lib', '/repo/lib'];
+    expect(findRevealIndex(paths, 'lib/', ws)).toBe(2);
+    expect(findRevealIndex(paths, 'lib', ws)).toBe(2);
+  });
+
+  it('falls back to a suffix match when no exact path is present', () => {
+    expect(findRevealIndex(['/repo/app', '/repo/app/lib'], 'lib', ws)).toBe(1);
+  });
+
+  it('matches absolute targets and reports a missing row', () => {
+    expect(findRevealIndex(['/repo/src', '/repo/src/a.ts'], '/repo/src/a.ts', ws)).toBe(1);
+    expect(findRevealIndex(['/repo/src'], 'docs/', ws)).toBe(-1);
   });
 });

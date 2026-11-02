@@ -36,6 +36,7 @@ import type {
 import { m } from '$shared/paraglide/messages.js';
 import { formatInteger, formatNumber } from '$lib/i18n/format';
 import { getPrChipLabel } from '$lib/utils/pr-chip-label';
+import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
 
 /** Workspace entity changes observed by independent UI projections. */
 export const selectWorkspaceEntities = store.createSelector((state) => state.workspace.workspaces);
@@ -123,6 +124,11 @@ export const selectWorkspaceById = store.createSelector<[wsId: string], Workspac
   (state, wsId) => {
     return getItem(state.workspace.workspaces, wsId as Workspace['id']);
   },
+);
+
+/** Plain-folder workspace (no git): every git surface hides. See `isPlainFolderWorkspace`. */
+export const selectIsPlainFolderWorkspace = store.createSelector<[wsId: string], boolean>(
+  (state, wsId) => isPlainFolderWorkspace(selectWorkspaceById.select(state, wsId)),
 );
 
 /**

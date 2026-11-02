@@ -27,6 +27,8 @@ export const SPLASH_FALLBACK_TIMEOUT_MS = 10_000;
 interface SplashGateStatusPayload {
   status: string;
   sidecarStartupFailed?: boolean;
+  /** The daemon is starting or failed to start; the app shows its own screen. */
+  daemonStartup?: unknown;
 }
 
 export interface StartSplashGateOptions {
@@ -37,7 +39,10 @@ export interface StartSplashGateOptions {
 }
 
 function shouldDismiss(payload: SplashGateStatusPayload | null | undefined): boolean {
-  return !!payload && (payload.status === 'connected' || !!payload.sidecarStartupFailed);
+  return (
+    !!payload &&
+    (payload.status === 'connected' || !!payload.daemonStartup || !!payload.sidecarStartupFailed)
+  );
 }
 
 /**

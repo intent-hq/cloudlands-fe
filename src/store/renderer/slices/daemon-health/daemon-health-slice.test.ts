@@ -52,6 +52,7 @@ describe('daemonHealthReducer', () => {
       reconnectAttempts: 0,
       connectionLimited: false,
       connectionLimitRetryAfterMs: null,
+      daemonStartup: null,
       hostLocality: null,
       sidecarGaveUp: false,
       sidecarGaveUpReason: null,
@@ -1407,5 +1408,72 @@ describe('daemonHealthReducer', () => {
       const late = daemonHealthReducer(closed, agentMemoryUsageSucceeded(usage));
       expect(late.agentMemoryUsage).toBeNull();
     });
+  });
+});
+
+describe('daemon startup state', () => {
+  const snapshot = {
+    startupStatus: 1 as const,
+    attemptId: 'boot-a',
+    phase: 'preparing' as const,
+    elapsedMs: 1000,
+    phaseElapsedMs: 1000,
+    progressAgeMs: 0,
+    retryAfterMs: 1000,
+  };
+
+  it('tracks starting and failed while down, and clears it on connect', () => {
+    let state = daemonHealthReducer(
+      initialState,
+      connectionStatusChanged('connecting', undefined, {
+        daemonStartup: { state: 'starting', snapshot, available: true },
+      }),
+    );
+    expect(state.health).toBe('down');
+    expect(state.daemonStartup).toEqual({ state: 'starting', snapshot, available: true });
+
+    state = daemonHealthReducer(
+      state,
+      connectionStatusChanged('disconnected', undefined, {
+        daemonStartup: { state: 'failed', snapshot: null, available: false, message: 'boom' },
+      }),
+    );
+    expect(state.daemonStartup?.state).toBe('failed');
+    expect(state.daemonStartup?.message).toBe('boom');
+
+    state = daemonHealthReducer(state, connectionStatusChanged('connected'));
+    expect(state.health).toBe('healthy');
+    expect(state.daemonStartup).toBeNull();
+  });
+
+  it('drops a startup state the next broadcast no longer reports', () => {
+    let state = daemonHealthReducer(
+      initialState,
+      connectionStatusChanged('connecting', undefined, {
+        daemonStartup: { state: 'starting', snapshot, available: true },
+      }),
+    );
+    state = daemonHealthReducer(
+      state,
+      connectionStatusChanged('disconnected', undefined, { daemonStartup: null }),
+    );
+    expect(state.daemonStartup).toBeNull();
+  });
+
+  it('keeps the posture when an unscoped push omits it, and drops it on a daemon switch', () => {
+    const transport = { mode: 'external-uds' as const, target: '/tmp/a.sock' };
+    let state = daemonHealthReducer(
+      initialState,
+      connectionStatusChanged('connecting', transport, {
+        daemonStartup: { state: 'starting', snapshot, available: true },
+      }),
+    );
+    state = daemonHealthReducer(state, connectionStatusChanged('connecting', transport));
+    expect(state.daemonStartup?.state).toBe('starting');
+    state = daemonHealthReducer(
+      state,
+      connectionStatusChanged('connecting', { mode: 'external-ws', target: 'wss:other:1' }),
+    );
+    expect(state.daemonStartup).toBeNull();
   });
 });

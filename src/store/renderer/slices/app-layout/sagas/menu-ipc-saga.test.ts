@@ -11,7 +11,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('$lib/electron-bridge', () => ({ isElectron: mocks.isElectron }));
 vi.mock('$lib/utils/keyboardShortcuts', () => ({ isFocusInTerminal: mocks.isFocusInTerminal }));
-vi.mock('$lib/utils/navigation.client', () => ({ navigateToRoute: mocks.navigateToRoute }));
+vi.mock('$lib/utils/navigation.client', async () => {
+  const { landingNavigation } =
+    await import('$store/renderer/utils/test-helpers/landing-navigation');
+  return { navigateToRoute: landingNavigation(mocks.navigateToRoute) };
+});
 vi.mock('$lib/utils/window-events', () => ({ dispatchWindowEvent: mocks.dispatchWindowEvent }));
 vi.mock('$lib/utils/client-logger', () => ({ createLogger: () => ({ warn: mocks.warn }) }));
 
@@ -87,6 +91,47 @@ describe('menuIpcSaga', () => {
     expect(on).toHaveBeenCalledTimes(CHANNELS.length * 2);
     restarted.cancel();
     await restarted.toPromise();
+  });
+
+  it('opens the tab of a Recent Workspaces route once navigation resolves', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+
+    await emit('navigate', '/workspace/closed-ws');
+
+    expect(mocks.navigateToRoute.mock.calls).toEqual([['/workspace/closed-ws']]);
+    expect(actions).toEqual([{ type: 'tabState/openWorkspaceTab', payload: ['closed-ws'] }]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('keeps the query and hash of a workspace route', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+
+    await emit('navigate', '/workspace/ws-1?panel=terminal#log');
+
+    expect(mocks.navigateToRoute.mock.calls).toEqual([['/workspace/ws-1?panel=terminal#log']]);
+    expect(actions).toEqual([{ type: 'tabState/openWorkspaceTab', payload: ['ws-1'] }]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('opens no tab when a Recent Workspaces navigation fails', async () => {
+    const actions: unknown[] = [];
+    const failure = new Error('goto stalled');
+    mocks.navigateToRoute.mockRejectedValueOnce(failure);
+    const task = start((action) => actions.push(action));
+
+    await emit('navigate', '/workspace/closed-ws');
+
+    expect(actions).toEqual([]);
+    expect(mocks.warn).toHaveBeenCalledWith('Failed to navigate from menu IPC', {
+      path: '/workspace/closed-ws',
+      error: failure,
+    });
+    task.cancel();
+    await task.toPromise();
   });
 
   it('maps every successful menu command to exact actions in arrival order', async () => {

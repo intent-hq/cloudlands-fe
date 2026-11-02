@@ -140,6 +140,34 @@ describe('DaemonUpdatingOverlay', () => {
     vi.useRealTimers();
   });
 
+  it('gives way to the startup screen and never stacks with it, even after startup clears', async () => {
+    renderBoth();
+    const disconnectedAt = dropForUpdate();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(updatingOverlay()).toBeTruthy();
+
+    dispatchAndFlush(
+      connectionStatusChanged('connecting', undefined, {
+        daemonUpdateDisconnectedAt: disconnectedAt,
+        daemonStartup: { state: 'starting', snapshot: null, available: false },
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(updatingOverlay()).toBeNull();
+    expect(stoppedOverlay()).toBeTruthy();
+
+    // The restarted daemon drops mid-startup while the countdown still runs.
+    dispatchAndFlush(
+      connectionStatusChanged('disconnected', undefined, {
+        daemonUpdateDisconnectedAt: disconnectedAt,
+        daemonStartup: null,
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(updatingOverlay()).toBeNull();
+    expect(stoppedOverlay()).toBeTruthy();
+  });
+
   it('stays hidden for a disconnect that was not caused by an update', async () => {
     renderBoth();
     dispatchAndFlush(connectionStatusChanged('connected', externalTransport));

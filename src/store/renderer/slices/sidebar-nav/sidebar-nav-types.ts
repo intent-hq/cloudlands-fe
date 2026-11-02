@@ -20,4 +20,10 @@ export type SidebarNavState = {
   collapsedNoteIdsByWorkspaceId: Record<string, string[]>;
   chiefActiveAgentId: string | null;
   statsOverlayOpen: boolean;
+  /**
+   * The daemon's `workspace.autoArchiveIdleAfterDays` setting (PROTOCOL
+   * §5.12): `0` means idle auto-archive is off; `null` until the settings
+   * snapshot has been read.
+   */
+  autoArchiveIdleAfterDays: number | null;
 };

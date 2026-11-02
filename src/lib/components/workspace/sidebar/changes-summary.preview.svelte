@@ -5,13 +5,20 @@
     locked?: boolean;
     admittedOwner?: boolean;
     secondaryFiles?: boolean;
+    prs?: 'single' | 'multiple' | 'many';
     onNavigation?: (action: { type: string; payload: unknown }) => void;
   }
   export const preview = definePreview<Props>({
     id: 'changes-summary',
     title: 'Changes sidebar summary',
     defaultState: 'editable',
-    states: { editable: { props: {} }, locked: { props: { locked: true } } },
+    states: {
+      editable: { props: {} },
+      locked: { props: { locked: true } },
+      'single-pr': { props: { prs: 'single' } },
+      'workspace-prs': { props: { prs: 'multiple', secondaryFiles: true } },
+      'many-prs': { props: { prs: 'many' } },
+    },
   });
 </script>
 
@@ -34,16 +41,36 @@
   import { setSecondaryRootGit } from '$store/renderer/slices/git/git-slice';
   import { setupChangesSummaryPreview } from '../../../../test/changes-summary-preview';
   import { ChangeStage } from '$features/file-tracking/types';
+  import { PullRequestStatus, type PullRequestInfo } from '$shared/types';
 
   let {
     locked = false,
     admittedOwner = true,
     secondaryFiles = false,
+    prs,
     onNavigation,
   }: Props = $props();
   const workspaceId = 'changes-summary-preview';
   const timestamp = '2026-09-01T00:00:00Z';
   const branch = 'feature/a-long-working-branch-for-sidebar-layout';
+  function pr(
+    number: number,
+    repo: string,
+    title: string,
+    status = PullRequestStatus.Open,
+  ): PullRequestInfo {
+    return {
+      id: `${repo}-${number}`,
+      number,
+      title,
+      status,
+      url: `https://github.com/intent-hq/${repo}/pull/${number}`,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+  }
+  const frontendPR = pr(42, 'cloudlands-fe', 'Show workspace pull requests in Changes');
+  const backendPR = pr(42, 'intentd', 'Document the workspace PR list', PullRequestStatus.Draft);
   const dispose = startRootStoreLifecycle(store, { startSagas: () => [] });
   const disposePreview = untrack(() =>
     setupChangesSummaryPreview(workspaceId, branch, admittedOwner, onNavigation),
@@ -60,6 +87,35 @@
       status: 'active',
       createdAt: timestamp,
       updatedAt: timestamp,
+      repositoryOwner: 'intent-hq',
+      repositoryName: 'intent',
+      pullRequests: prs
+        ? [
+            pr(101, 'intent', 'Document workspace review workflow'),
+            ...(prs !== 'single'
+              ? [
+                  frontendPR,
+                  pr(
+                    38,
+                    'cloudlands-fe',
+                    'Preserve repository identity for long pull request titles',
+                    PullRequestStatus.Merged,
+                  ),
+                  pr(
+                    35,
+                    'intentd',
+                    'Earlier draft of the review workflow',
+                    PullRequestStatus.Closed,
+                  ),
+                ]
+              : []),
+            ...(prs === 'many'
+              ? Array.from({ length: 12 }, (_, i) =>
+                  pr(200 + i, 'intent', `Additional workspace pull request ${i + 1}`),
+                )
+              : []),
+          ]
+        : [],
     } as never),
   );
   store.dispatch(
@@ -91,7 +147,26 @@
         source: 'agent',
         createdAt: timestamp,
         updatedAt: timestamp,
+        repoOwner: 'intent-hq',
+        repoName: 'cloudlands-fe',
+        pullRequests: prs && prs !== 'single' ? [frontendPR] : [],
       },
+      ...(prs && prs !== 'single'
+        ? [
+            {
+              id: 'backend-root',
+              workspaceId,
+              path: '/preview/workspace/packages/intentd',
+              branch: 'feature/guide',
+              source: 'agent' as const,
+              repoOwner: 'intent-hq',
+              repoName: 'intentd',
+              pullRequests: [backendPR],
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            },
+          ]
+        : []),
     ]),
   );
   store.dispatch(
