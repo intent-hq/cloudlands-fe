@@ -4,6 +4,20 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.271.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.270.0...v2.271.0) (2026-11-02)
+
+
+### 🚀 Features
+
+* **browser-access:** move Browser access to Settings &gt; Mobile behind a Labs flag ([#4025](https://github.com/intent-hq/cloudlands-fe/issues/4025)) ([2872bbe](https://github.com/intent-hq/cloudlands-fe/commit/2872bbef054e59f22f0e756f99e8f118b4040412))
+* **remote-machines:** show where a remote agent runs ([#4021](https://github.com/intent-hq/cloudlands-fe/issues/4021)) ([664fd95](https://github.com/intent-hq/cloudlands-fe/commit/664fd95522839e762a35e0b7ecacb9dfcd9a311e))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.108 ([#4036](https://github.com/intent-hq/cloudlands-fe/issues/4036)) ([3a0ab12](https://github.com/intent-hq/cloudlands-fe/commit/3a0ab12940fa1f9c512ef34b7ec47435668585b1))
+* **chat:** keep queue-drained turns busy and spaced from the queue card ([#4029](https://github.com/intent-hq/cloudlands-fe/issues/4029)) ([8d66e57](https://github.com/intent-hq/cloudlands-fe/commit/8d66e5780afc830b47b06693d1b82fe8fc165eed))
+
 ## [2.270.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.269.1...v2.270.0) (2026-11-02)
 
 
