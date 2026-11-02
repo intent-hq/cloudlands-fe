@@ -70,10 +70,10 @@ import { INITIALIZE_GIT_CHOICE_STORAGE_KEY } from '$lib/components/workspace/ini
 import ProjectPickerMessage, { type ProjectSelection } from '../ProjectPickerMessage.svelte';
 
 const backendRequestMock = vi.mocked(backendRequest);
-/** Either tab's git choice: "Existing folder" or "New" copy. */
+/** The git switch under any of its per-folder names. */
 const toggleName = () =>
   new RegExp(
-    `^(${m.workspace_plainFolder_isolatedCopy_label()}|${m.workspace_plainFolder_initializeGit_label()})$`,
+    `^(${m.workspace_plainFolder_switchNeutral_label()}|${m.workspace_plainFolder_switchGitRepo_label()}|${m.workspace_plainFolder_initializeGit_label()})$`,
   );
 
 function mockDaemon(
@@ -95,9 +95,17 @@ function mockDaemon(
   }) as never);
 }
 
-function renderPicker() {
+const isolation = { calls: [] as boolean[] };
+function renderPicker(props: { skipIsolation?: boolean } = {}) {
   const selections: ProjectSelection[] = [];
-  render(ProjectPickerMessage, { props: { onProjectChange: (s) => selections.push(s) } });
+  isolation.calls = [];
+  render(ProjectPickerMessage, {
+    props: {
+      onProjectChange: (s) => selections.push(s),
+      onSkipIsolationChange: (value: boolean) => isolation.calls.push(value),
+      ...props,
+    },
+  });
   return selections;
 }
 
@@ -229,26 +237,26 @@ describe('ProjectPickerMessage — plain-folder toggle (Labs)', () => {
     });
     expect(toggle.getAttribute('aria-checked')).toBe('false');
     expect(toggleHint(toggle)).not.toMatch(/turn off/i);
-    expect(toggleHint(toggle)).toBe(m.workspace_plainFolder_initializeGitChoice_description());
+    expect(toggleHint(toggle)).toBe(m.workspace_plainFolder_switchNewOff_description());
 
     await fireEvent.click(toggle);
     await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('true'));
-    expect(toggleHint(toggle)).toBe(m.workspace_plainFolder_initializeGitChoice_description());
+    expect(toggleHint(toggle)).toBe(m.workspace_plainFolder_switchNewOn_description());
   });
 
-  it('describes both states on the Existing folder tab', async () => {
+  it('is neutral on the Existing folder tab before a folder is picked', async () => {
     setPlainFolderLabs(true);
     settleForgeAuth();
     loadWorkspaces([]);
     renderPicker();
     const toggle = await screen.findByRole('switch', {
-      name: m.workspace_plainFolder_isolatedCopy_label(),
+      name: m.workspace_plainFolder_switchNeutral_label(),
     });
     expect(toggle.getAttribute('aria-checked')).toBe('false');
-    expect(toggleHint(toggle)).toBe(m.workspace_plainFolder_isolatedCopy_description());
+    expect(toggleHint(toggle)).toBe(m.workspace_plainFolder_switchNeutralOff_description());
   });
 
-  it('names the choice per tab: an isolated copy for Existing folder, git init for New', async () => {
+  it('names the choice per tab: neutral for an empty Existing folder, git init for New', async () => {
     setPlainFolderLabs(true);
     settleForgeAuth({ github: true });
     loadWorkspaces([]);
@@ -256,7 +264,7 @@ describe('ProjectPickerMessage — plain-folder toggle (Labs)', () => {
     await fireEvent.click(
       screen.getByRole('tab', { name: m.onboarding_projectPicker_existingFolder_label() }),
     );
-    await screen.findByRole('switch', { name: m.workspace_plainFolder_isolatedCopy_label() });
+    await screen.findByRole('switch', { name: m.workspace_plainFolder_switchNeutral_label() });
     expect(
       screen.queryByRole('switch', { name: m.workspace_plainFolder_initializeGit_label() }),
     ).toBeNull();
@@ -266,7 +274,7 @@ describe('ProjectPickerMessage — plain-folder toggle (Labs)', () => {
     );
     await screen.findByRole('switch', { name: m.workspace_plainFolder_initializeGit_label() });
     expect(
-      screen.queryByRole('switch', { name: m.workspace_plainFolder_isolatedCopy_label() }),
+      screen.queryByRole('switch', { name: m.workspace_plainFolder_switchNeutral_label() }),
     ).toBeNull();
   });
 
@@ -343,6 +351,99 @@ describe('ProjectPickerMessage — plain-folder toggle (Labs)', () => {
     );
     await new Promise((resolve) => setTimeout(resolve, 400));
     expect(selections.at(-1)).not.toHaveProperty('plainFolder');
+  });
+
+  describe('switch per folder type', () => {
+    const gitRepo = { ...nonGitFolder, isGitRepo: true };
+    const gitRepoSwitch = () =>
+      screen.findByRole('switch', { name: m.workspace_plainFolder_switchGitRepo_label() });
+
+    it('git repo, switch off: works in place on its current branch (isolation off)', async () => {
+      setPlainFolderLabs(true);
+      settleForgeAuth();
+      loadWorkspaces([]);
+      const selections = renderPicker();
+      await screen.findByRole('switch', { name: toggleName() });
+
+      const selection = await pickLocal(gitRepo, selections);
+      expect(selection).not.toHaveProperty('plainFolder');
+      expect(selection).not.toHaveProperty('initGit');
+      await waitFor(() => expect(isolation.calls.at(-1)).toBe(true));
+    });
+
+    it('git repo, switch on: a new branch in a separate worktree', async () => {
+      setPlainFolderLabs(true);
+      settleForgeAuth();
+      loadWorkspaces([{ id: 'ws-1', title: 'Repo' } as unknown as Workspace]);
+      const selections = renderPicker();
+      await screen.findByRole('switch', { name: toggleName() });
+
+      await pickLocal(gitRepo, selections);
+      await waitFor(() => expect(isolation.calls.at(-1)).toBe(false));
+      const toggle = await gitRepoSwitch();
+      expect(toggle.getAttribute('aria-checked')).toBe('true');
+      expect(toggleHint(toggle)).toBe(m.workspace_plainFolder_switchGitRepoOn_description());
+    });
+
+    it('the switch on a git repo shows and sets the isolation setting', async () => {
+      setPlainFolderLabs(true);
+      settleForgeAuth();
+      loadWorkspaces([{ id: 'ws-1', title: 'Repo' } as unknown as Workspace]);
+      const selections = renderPicker({ skipIsolation: true });
+      await screen.findByRole('switch', { name: toggleName() });
+      await pickLocal(gitRepo, selections);
+      isolation.calls = [];
+
+      // The parent still reports isolation off: the switch shows it.
+      const toggle = await gitRepoSwitch();
+      expect(toggle.getAttribute('aria-checked')).toBe('false');
+      await fireEvent.click(toggle);
+      expect(isolation.calls).toEqual([false]);
+      expect(selections.at(-1)).not.toHaveProperty('plainFolder');
+    });
+
+    it('folder without git, switch on: git init in place, on main (isolation off)', async () => {
+      setPlainFolderLabs(true);
+      settleForgeAuth();
+      loadWorkspaces([{ id: 'ws-1', title: 'Repo' } as unknown as Workspace]);
+      const selections = renderPicker();
+      await screen.findByRole('switch', { name: toggleName() });
+
+      const selection = await pickLocal(nonGitFolder, selections);
+      expect(selection).toMatchObject({ type: 'local', initGit: true });
+      await waitFor(() => expect(isolation.calls.at(-1)).toBe(true));
+      const toggle = await screen.findByRole('switch', {
+        name: m.workspace_plainFolder_initializeGit_label(),
+      });
+      expect(toggle.getAttribute('aria-checked')).toBe('true');
+      expect(toggleHint(toggle)).toBe(m.workspace_plainFolder_switchFolderOn_description());
+    });
+
+    it('New, switch on: create, git init and work on main (isolation off)', async () => {
+      setPlainFolderLabs(true);
+      settleForgeAuth();
+      loadWorkspaces([{ id: 'ws-1', title: 'Repo' } as unknown as Workspace]);
+      const selections = renderPicker();
+      await screen.findByRole('switch', { name: toggleName() });
+      await fireEvent.click(
+        screen.getByRole('tab', { name: m.onboarding_projectPicker_new_label() }),
+      );
+      await waitFor(() => expect(selections.at(-1)).toMatchObject({ type: 'new', branch: 'main' }));
+      await waitFor(() => expect(isolation.calls.at(-1)).toBe(true));
+    });
+
+    it('with Labs off never touches the isolation setting', async () => {
+      setPlainFolderLabs(false);
+      settleForgeAuth();
+      loadWorkspaces([]);
+      const selections = renderPicker();
+      await pickLocal(nonGitFolder, selections);
+      await fireEvent.click(
+        screen.getByRole('tab', { name: m.onboarding_projectPicker_new_label() }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(isolation.calls).toEqual([]);
+    });
   });
 
   describe('recent plain-folder entries', () => {

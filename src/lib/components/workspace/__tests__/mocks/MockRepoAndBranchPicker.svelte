@@ -48,6 +48,9 @@
     plainFolder?: string | null;
     gitChoice?: {
       checked: boolean;
+      folder?: 'git-repo' | 'folder' | null;
+      worktree?: boolean;
+      branch?: string;
       disabled?: boolean;
       onCheckedChange: (checked: boolean, tab: 'local' | 'new') => void;
     };
@@ -94,13 +97,20 @@
 <div data-testid="picker-plain-folder-mode">{String(plainFolderMode)}</div>
 <div data-testid="picker-plain-folder">{plainFolder ?? ''}</div>
 {#if gitChoice}
-  <!-- Stands in for the git choice inside the picker's Existing folder / New tabs. -->
+  <!-- Stands in for the git choice inside the picker's Existing folder / New tabs:
+       a picked git repo shows its worktree setting, anything else the git choice. -->
+  {@const checked =
+    gitChoiceTab() === 'local' && gitChoice.folder === 'git-repo'
+      ? !!gitChoice.worktree
+      : gitChoice.checked}
   <button
     type="button"
     role="switch"
     data-testid="picker-git-choice"
-    aria-checked={gitChoice.checked ? 'true' : 'false'}
+    aria-checked={checked ? 'true' : 'false'}
     disabled={gitChoice.disabled}
-    onclick={() => gitChoice.onCheckedChange(!gitChoice.checked, gitChoiceTab())}>git choice</button
+    onclick={() => gitChoice.onCheckedChange(!checked, gitChoiceTab())}>git choice</button
   >
+  <div data-testid="picker-git-choice-folder">{gitChoice.folder ?? ''}</div>
+  <div data-testid="picker-git-choice-branch">{gitChoice.branch ?? ''}</div>
 {/if}
