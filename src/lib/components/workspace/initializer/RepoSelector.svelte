@@ -63,6 +63,7 @@
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
   import { initializeGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
   import { classifyPlainFolderTarget, newProjectDefaultParent } from './plain-folder-create';
+  import InitializeGitToggle from './InitializeGitToggle.svelte';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import { selectCloneSourceVisible } from '$store/renderer/slices/workspace-initializer/plain-folder-selectors';
   import { selectLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
@@ -151,6 +152,14 @@
 
   type RemoteSetup = WorkspaceInitializerRemoteSetup;
 
+  /** The git choice (Labs plain folders) shown in the folder tabs. */
+  export interface RepoSelectorGitChoice {
+    checked: boolean;
+    disabled?: boolean;
+    /** `tab` is the folder tab the choice was flipped in. */
+    onCheckedChange: (checked: boolean, tab: 'local' | 'new') => void;
+  }
+
   export interface RepoChangeDetail {
     path: string;
     type: 'local' | 'github' | 'remote';
@@ -190,6 +199,11 @@
      * pick as git.
      */
     plainFolderMode?: boolean;
+    /**
+     * The git choice (Labs), rendered inside the "Existing folder" and "New"
+     * tabs and never on Clone. `onCheckedChange` names the tab it was flipped in.
+     */
+    gitChoice?: RepoSelectorGitChoice;
   }
 
   let {
@@ -212,6 +226,7 @@
     gitlab,
     gitlabSelected = false,
     plainFolderMode = false,
+    gitChoice,
   }: Props = $props();
 
   function onchangeWithTracking(detail: RepoChangeDetail) {
@@ -231,15 +246,15 @@
     }
   }
 
-  /** Open the dropdown on the local folder tab (the "Initialize as git" toggle was turned off). */
-  export function openOnLocalTab() {
+  /** Open the dropdown on a folder tab (a pick made for the other git choice was dropped). */
+  export function openOnLocalTab(tab: 'local' | 'new' = 'local') {
     if (selectedValue && !value) {
       selectedValue = '';
       inputValue = '';
       selectedRepoType = 'local';
       confirmedGithubUrl = '';
     }
-    openOnTab = 'local';
+    openOnTab = tab;
     isOpen = true;
   }
 
@@ -254,7 +269,7 @@
    *  can target it exactly rather than matching any focused text field. */
   let githubInputElement = $state<HTMLInputElement | null>(null);
   let isOpen = $state(false); // Track dropdown open state
-  let openOnTab: 'local' | null = null; // One-shot tab for the next open
+  let openOnTab: 'local' | 'new' | null = null; // One-shot tab for the next open
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let isDialogOpen = $state(false); // Track if a native dialog is open (prevents dropdown from closing)
   const isLoading = $derived(
@@ -1787,6 +1802,16 @@
         >
           <!-- Input section - changes based on tab -->
           <div class="shrink-0 px-3 mb-3">
+            {#if gitChoice && (activeTab === 'local' || activeTab === 'new')}
+              {@const tab = activeTab}
+              <InitializeGitToggle
+                class="mb-3 px-1"
+                kind={tab === 'local' ? 'existing' : 'new'}
+                checked={gitChoice.checked}
+                disabled={gitChoice.disabled}
+                onCheckedChange={(value) => gitChoice.onCheckedChange(value, tab)}
+              />
+            {/if}
             {#if activeTab === 'gitlab' && gitlab}
               <GitLabProjectPicker
                 {...gitlab}

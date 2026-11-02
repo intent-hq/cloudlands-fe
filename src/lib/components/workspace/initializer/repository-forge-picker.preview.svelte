@@ -73,7 +73,10 @@
   // svelte-ignore state_referenced_locally -- one named fixture per mount
   const noForge = scenario.startsWith('no-forge');
   // svelte-ignore state_referenced_locally -- one named fixture per mount
-  const plainFolderMode = scenario.endsWith('plain-folder');
+  const plainFolderLabs = scenario.endsWith('plain-folder');
+  // Labs plain-folder scenarios start with the git choice off (folder tabs show it).
+  let initializeGit = $state(false);
+  const plainFolderMode = $derived(plainFolderLabs && !initializeGit);
   // Settled "nothing connected" forge status: the Clone tab is hidden.
   if (noForge)
     appStore.dispatch(
@@ -152,6 +155,9 @@
     {gitlab}
     gitlabSelected={scenario === 'both-gitlab' || scenario === 'gitlab-unavailable'}
     {plainFolderMode}
+    gitChoice={plainFolderLabs
+      ? { checked: initializeGit, onCheckedChange: (value) => (initializeGit = value) }
+      : undefined}
     triggerAriaLabel="Choose fixture repository"
     onchange={(event) => (selection = event.detail)}
   />
