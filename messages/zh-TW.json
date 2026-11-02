@@ -2580,6 +2580,8 @@
   "workspace_plainFolder_gitRepoNotice_label": "此資料夾屬於 Git 儲存庫 {repo}，因此工作區將使用 Git。",
   "workspace_plainFolder_initializeGit_description": "關閉後將在沒有版本控制的一般資料夾中工作。",
   "workspace_plainFolder_initializeGit_label": "初始化為 Git 儲存庫",
+  "workspace_plainFolder_isolatedCopy_description": "開啟：Intent 在新分支上的副本中工作。關閉：代理直接修改此資料夾，沒有副本、沒有分支，也無法復原。",
+  "workspace_plainFolder_isolatedCopy_label": "在隔離副本中工作",
   "workspace_plainFolder_label": "一般資料夾",
   "workspace_plainFolder_label_tooltip": "無 git：代理程式會直接編輯這些檔案，沒有版本控制，也無法復原。",
   "workspace_purge_menu_label": "清除工作區資料夾",

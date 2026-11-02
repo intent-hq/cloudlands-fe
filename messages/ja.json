@@ -2580,6 +2580,8 @@
   "workspace_plainFolder_gitRepoNotice_label": "このフォルダーは Git リポジトリ {repo} に属しているため、ワークスペースは Git を使用します。",
   "workspace_plainFolder_initializeGit_description": "オフにすると、バージョン管理なしのプレーンフォルダーで作業します。",
   "workspace_plainFolder_initializeGit_label": "Git リポジトリとして初期化",
+  "workspace_plainFolder_isolatedCopy_description": "オン: Intent は新しいブランチ上のコピーで作業します。オフ: エージェントはこのフォルダーを直接変更します。コピー、ブランチ、元に戻す機能はありません。",
+  "workspace_plainFolder_isolatedCopy_label": "分離されたコピーで作業",
   "workspace_plainFolder_label": "通常フォルダー",
   "workspace_plainFolder_label_tooltip": "Git なし: エージェントはこれらのファイルを直接編集します。バージョン管理や元に戻す機能はありません。",
   "workspace_purge_menu_label": "ワークスペースフォルダーを削除",

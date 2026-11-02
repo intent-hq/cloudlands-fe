@@ -1,8 +1,9 @@
 import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 /** @vitest-environment jsdom */
 /**
- * Plain-folder workspaces (Labs) in the New Workspace dialog: the
- * "Initialize as git repository" toggle, hidden git-only controls, the
+ * Plain-folder workspaces (Labs) in the New Workspace dialog: the git choice
+ * handed to the folder picker's Existing folder / New tabs (no switch row in
+ * the dialog itself), hidden git-only controls, the
  * in-place/no-undo warning (cancel creates nothing) and the plain-folder
  * `workspace.create` request. With the Labs flag off the dialog renders and
  * creates exactly as today.
@@ -304,8 +305,17 @@ type PickerCallbacks = {
 };
 const picker = () =>
   (window as unknown as { __mockRepoAndBranchPicker: PickerCallbacks }).__mockRepoAndBranchPicker;
-const toggle = () =>
+/** The git choice the dialog hands to the folder picker (rendered by the stand-in). */
+const toggle = () => screen.queryByTestId('picker-git-choice');
+/** The old switch row under the source summary. */
+const dialogSwitchRow = () =>
+  document.querySelector('[data-testid="initialize-git-toggle"]') ??
   screen.queryByRole('switch', { name: m.workspace_plainFolder_initializeGit_label() });
+const registry = () => window as unknown as Record<string, unknown>;
+const folderOpens = () =>
+  (registry().__mockRepoAndBranchPickerFolderOpens as number | undefined) ?? 0;
+const folderOpenTabs = () =>
+  (registry().__mockRepoAndBranchPickerFolderOpenTabs as string[] | undefined) ?? [];
 const gitOnlyKeys = [
   'githubUrl',
   'branch',
@@ -316,12 +326,15 @@ const gitOnlyKeys = [
   'scope',
 ];
 
-describe('New Workspace — plain-folder toggle (Labs)', () => {
+describe('New Workspace — plain-folder git choice (Labs)', () => {
   let root: string;
   let folder: string;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    delete registry().__mockRepoAndBranchPickerFolderOpens;
+    delete registry().__mockRepoAndBranchPickerFolderOpenTabs;
+    delete registry().__mockRepoAndBranchPickerGitChoiceTab;
     vi.mocked(localStorage.getItem).mockImplementation(() => null);
     plainFolder.available$.set(false);
     plainFolder.defaultState$.set('pending');
@@ -422,11 +435,39 @@ describe('New Workspace — plain-folder toggle (Labs)', () => {
     expect(screen.getByTestId('picker-plain-folder-mode').textContent).toBe('false');
   });
 
+  it('renders no git switch row under the source summary', async () => {
+    plainFolder.available$.set(true);
+    plainFolder.defaultState$.set('on');
+    mountDialog();
+    await waitFor(() => expect(toggle()).toBeTruthy());
+    expect(dialogSwitchRow()).toBeNull();
+  });
+
+  it('turning the choice off in Existing folder leads to the in-place warning', async () => {
+    plainFolder.available$.set(true);
+    plainFolder.defaultState$.set('on');
+    plainFolder.confirm.mockResolvedValue(false);
+    mountDialog();
+    const sw = await screen.findByTestId('picker-git-choice');
+    await fireEvent.click(sw);
+    await waitFor(() =>
+      expect(screen.getByTestId('picker-plain-folder-mode').textContent).toBe('true'),
+    );
+    await pick({ path: folder, plainFolder: 'existing' });
+    await waitFor(() =>
+      expect(screen.getByTestId('picker-plain-folder').textContent).toBe('existing'),
+    );
+    await submit();
+    await waitFor(() => expect(plainFolder.confirm).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
   it('defaults on with a forge or git workspace and keeps git behavior', async () => {
     plainFolder.available$.set(true);
     plainFolder.defaultState$.set('on');
     mountDialog();
-    const sw = await waitFor(() => toggle()!);
+    const sw = await screen.findByTestId('picker-git-choice');
     expect(sw.getAttribute('aria-checked')).toBe('true');
     expect(screen.getByTestId('issue-suggestions')).toBeTruthy();
     expect(setupScriptHidden()).toBe(false);
@@ -436,7 +477,7 @@ describe('New Workspace — plain-folder toggle (Labs)', () => {
     plainFolder.available$.set(true);
     plainFolder.defaultState$.set('off');
     mountDialog();
-    const sw = await waitFor(() => toggle()!);
+    const sw = await screen.findByTestId('picker-git-choice');
     expect(sw.getAttribute('aria-checked')).toBe('false');
     expect(screen.getByTestId('picker-plain-folder-mode').textContent).toBe('true');
     expect(screen.queryByTestId('issue-suggestions')).toBeNull();
@@ -450,7 +491,7 @@ describe('New Workspace — plain-folder toggle (Labs)', () => {
     plainFolder.available$.set(true);
     plainFolder.defaultState$.set('on');
     mountDialog();
-    const sw = await waitFor(() => toggle()!);
+    const sw = await screen.findByTestId('picker-git-choice');
     expect(sw.getAttribute('aria-checked')).toBe('false');
     await fireEvent.click(sw);
     await waitFor(() => expect(sw.getAttribute('aria-checked')).toBe('true'));
@@ -541,23 +582,35 @@ describe('New Workspace — plain-folder toggle (Labs)', () => {
     expect(setupScriptHidden()).toBe(false);
   });
 
-  it('drops a plain-folder pick when the toggle is turned on', async () => {
+  it('drops a plain-folder pick when the choice is turned on and reopens that tab', async () => {
     plainFolder.available$.set(true);
     plainFolder.defaultState$.set('off');
     mountDialog();
-    const sw = await waitFor(() => toggle()!);
+    const sw = await screen.findByTestId('picker-git-choice');
     await pick({ path: folder, plainFolder: 'existing' });
     await waitFor(() => expect(screen.getByTestId('picker-repo-path').textContent).toBe(folder));
 
     await fireEvent.click(sw);
     await waitFor(() => expect(screen.getByTestId('picker-repo-path').textContent).toBe(''));
     expect(screen.getByTestId('picker-plain-folder').textContent).toBe('');
+    await waitFor(() => expect(folderOpenTabs()).toEqual(['local']));
+  });
+
+  it('reopens folder selection on New when a new plain-folder pick is dropped there', async () => {
+    plainFolder.available$.set(true);
+    plainFolder.defaultState$.set('off');
+    (window as unknown as Record<string, unknown>).__mockRepoAndBranchPickerGitChoiceTab = 'new';
+    mountDialog();
+    const sw = await screen.findByTestId('picker-git-choice');
+    await pick({ path: join(root, 'new-project'), plainFolder: 'new' });
+    await waitFor(() => expect(screen.getByTestId('picker-plain-folder').textContent).toBe('new'));
+
+    await fireEvent.click(sw);
+    await waitFor(() => expect(screen.getByTestId('picker-repo-path').textContent).toBe(''));
+    await waitFor(() => expect(folderOpenTabs()).toEqual(['new']));
   });
 
   describe('with a GitHub or GitLab repository selected', () => {
-    const folderOpens = () =>
-      ((window as unknown as Record<string, unknown>).__mockRepoAndBranchPickerFolderOpens as
-        number | undefined) ?? 0;
     const githubSaved = {
       repoPath: 'acme/app',
       repoType: 'github',
@@ -566,13 +619,9 @@ describe('New Workspace — plain-folder toggle (Labs)', () => {
       isValidPath: true,
     };
 
-    beforeEach(() => {
-      delete (window as unknown as Record<string, unknown>).__mockRepoAndBranchPickerFolderOpens;
-    });
-
-    // Regression: a GitHub repo restored from the last create hid the toggle,
-    // even after switching the repo picker to its local tab.
-    it('shows the toggle, on, for a GitHub repo restored from the last create', async () => {
+    // Regression: a GitHub repo restored from the last create hid the git
+    // choice, even after switching the repo picker to a folder tab.
+    it('hands the git choice to the picker for a GitHub repo restored from the last create', async () => {
       mocks.compactFormState$.set(githubSaved);
       plainFolder.available$.set(true);
       plainFolder.defaultState$.set('on');
@@ -580,11 +629,12 @@ describe('New Workspace — plain-folder toggle (Labs)', () => {
       await waitFor(() =>
         expect(screen.getByTestId('picker-repo-type').textContent).toBe('github'),
       );
-      const sw = await waitFor(() => toggle()!);
+      const sw = await screen.findByTestId('picker-git-choice');
       expect(sw.getAttribute('aria-checked')).toBe('true');
+      expect(dialogSwitchRow()).toBeNull();
     });
 
-    it('shows the toggle on for a forge repo even when the remembered choice is off', async () => {
+    it('shows the remembered choice in the folder tabs while a forge repo is selected', async () => {
       vi.mocked(localStorage.getItem).mockImplementation((key) =>
         key === INITIALIZE_GIT_CHOICE_STORAGE_KEY ? 'false' : null,
       );
@@ -592,11 +642,12 @@ describe('New Workspace — plain-folder toggle (Labs)', () => {
       plainFolder.available$.set(true);
       plainFolder.defaultState$.set('on');
       mountDialog();
-      const sw = await waitFor(() => toggle()!);
-      expect(sw.getAttribute('aria-checked')).toBe('true');
+      const sw = await screen.findByTestId('picker-git-choice');
+      expect(sw.getAttribute('aria-checked')).toBe('false');
+      expect(dialogSwitchRow()).toBeNull();
     });
 
-    it('keeps the toggle, on, for a GitHub clone pick', async () => {
+    it('renders no git switch in the dialog for a GitHub clone pick', async () => {
       plainFolder.available$.set(true);
       plainFolder.defaultState$.set('off');
       mountDialog();
@@ -606,67 +657,32 @@ describe('New Workspace — plain-folder toggle (Labs)', () => {
         type: 'github',
         githubUrl: 'https://github.com/acme/app',
       });
-      await waitFor(() => expect(toggle()!.getAttribute('aria-checked')).toBe('true'));
-    });
-
-    it('turning the toggle off clears the GitHub repo and switches to folder selection', async () => {
-      mocks.compactFormState$.set(githubSaved);
-      plainFolder.available$.set(true);
-      plainFolder.defaultState$.set('on');
-      mountDialog();
-      const sw = await waitFor(() => toggle()!);
-
-      await fireEvent.click(sw);
-      await waitFor(() => expect(screen.getByTestId('picker-repo-type').textContent).toBe('local'));
-      expect(screen.getByTestId('picker-repo-path').textContent).toBe('');
-      expect(screen.getByTestId('picker-github-url').textContent).toBe('');
-      expect(screen.getByTestId('picker-branch').textContent).toBe('');
-      expect(screen.getByTestId('picker-plain-folder-mode').textContent).toBe('true');
-      expect(sw.getAttribute('aria-checked')).toBe('false');
-      expect(localStorage.setItem).toHaveBeenCalledWith(INITIALIZE_GIT_CHOICE_STORAGE_KEY, 'false');
-      await waitFor(() => expect(folderOpens()).toBe(1));
-    });
-
-    it('turning the toggle off with a remembered off choice still clears the GitHub repo', async () => {
-      vi.mocked(localStorage.getItem).mockImplementation((key) =>
-        key === INITIALIZE_GIT_CHOICE_STORAGE_KEY ? 'false' : null,
+      await waitFor(() =>
+        expect(screen.getByTestId('picker-repo-type').textContent).toBe('github'),
       );
+      expect(dialogSwitchRow()).toBeNull();
+    });
+
+    it('turning the choice off in a folder tab keeps the GitHub repo until a folder is picked', async () => {
       mocks.compactFormState$.set(githubSaved);
       plainFolder.available$.set(true);
       plainFolder.defaultState$.set('on');
       mountDialog();
-      const sw = await waitFor(() => toggle()!);
+      const sw = await screen.findByTestId('picker-git-choice');
 
       await fireEvent.click(sw);
-      await waitFor(() => expect(screen.getByTestId('picker-repo-type').textContent).toBe('local'));
-      expect(screen.getByTestId('picker-repo-path').textContent).toBe('');
-      expect(sw.getAttribute('aria-checked')).toBe('false');
+      await waitFor(() => expect(sw.getAttribute('aria-checked')).toBe('false'));
+      expect(localStorage.setItem).toHaveBeenCalledWith(INITIALIZE_GIT_CHOICE_STORAGE_KEY, 'false');
+      expect(screen.getByTestId('picker-repo-type').textContent).toBe('github');
+      expect(screen.getByTestId('picker-repo-path').textContent).toBe('acme/app');
+      expect(folderOpens()).toBe(0);
     });
 
-    it('turning the toggle off leaves GitLab checkout and closes its form', async () => {
-      mocks.compactFormState$.set({ repoType: 'gitlab', repoPath: '' });
+    it('turning the choice back on does not clear a local git repo pick', async () => {
       plainFolder.available$.set(true);
       plainFolder.defaultState$.set('on');
       mountDialog();
-      const sw = await waitFor(() => toggle()!);
-      expect(sw.getAttribute('aria-checked')).toBe('true');
-      mocks.dispatch.mockClear();
-
-      await fireEvent.click(sw);
-      await waitFor(() => expect(screen.getByTestId('picker-repo-type').textContent).toBe('local'));
-      expect(
-        mocks.dispatch.mock.calls.some(
-          ([action]) => (action as { type?: string })?.type === 'repositoryCheckout/closed',
-        ),
-      ).toBe(true);
-      expect(sw.getAttribute('aria-checked')).toBe('false');
-    });
-
-    it('turning the toggle back on does not clear a local git repo pick', async () => {
-      plainFolder.available$.set(true);
-      plainFolder.defaultState$.set('on');
-      mountDialog();
-      const sw = await waitFor(() => toggle()!);
+      const sw = await screen.findByTestId('picker-git-choice');
       await pick({ path: folder });
       await waitFor(() => expect(screen.getByTestId('picker-repo-path').textContent).toBe(folder));
       await fireEvent.click(sw);

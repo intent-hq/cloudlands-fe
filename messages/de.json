@@ -2580,6 +2580,8 @@
   "workspace_plainFolder_gitRepoNotice_label": "Dieser Ordner gehört zum Git-Repository {repo}, daher verwendet der Arbeitsbereich Git.",
   "workspace_plainFolder_initializeGit_description": "Ausschalten, um in einem einfachen Ordner ohne Versionskontrolle zu arbeiten.",
   "workspace_plainFolder_initializeGit_label": "Als Git-Repository initialisieren",
+  "workspace_plainFolder_isolatedCopy_description": "An: Intent arbeitet an einer Kopie auf einem neuen Branch. Aus: Agents ändern diesen Ordner direkt, ohne Kopie, ohne Branch und ohne Rückgängigmachen.",
+  "workspace_plainFolder_isolatedCopy_label": "An einer isolierten Kopie arbeiten",
   "workspace_plainFolder_label": "Einfacher Ordner",
   "workspace_plainFolder_label_tooltip": "Kein Git: Agenten bearbeiten diese Dateien direkt, ohne Versionskontrolle und ohne Rückgängig.",
   "workspace_purge_menu_label": "Arbeitsbereichsordner bereinigen",

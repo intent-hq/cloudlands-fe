@@ -8,14 +8,14 @@
   import Fa from 'svelte-fa';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import BranchSelector, { type BranchListInfo, type BranchStatus } from './BranchSelector.svelte';
-  import RepoSelector from './RepoSelector.svelte';
+  import RepoSelector, { type RepoSelectorGitChoice } from './RepoSelector.svelte';
   import GitLabBranchPicker from './GitLabBranchPicker.svelte';
   import type { GitLabProjectPickerProps, GitLabBranchPickerProps } from './gitlab-picker-types';
   import { m } from '$shared/paraglide/messages.js';
 
   type RepoSelectorHandle = {
     focusInput: () => void;
-    openOnLocalTab: () => void;
+    openOnLocalTab: (tab?: 'local' | 'new') => void;
   };
 
   export interface RemoteSetup {
@@ -87,6 +87,8 @@
     plainFolderMode?: boolean;
     /** The selection is a plain folder (Labs): no branch is shown. */
     plainFolder?: 'existing' | 'new' | null;
+    /** The git choice (Labs), forwarded to the repo selector's folder tabs. */
+    gitChoice?: RepoSelectorGitChoice;
   }
 
   let {
@@ -115,6 +117,7 @@
     detectedGitHubRepo = null,
     plainFolderMode = false,
     plainFolder = null,
+    gitChoice,
   }: Props = $props();
 
   const isMetadataPresentation = $derived(presentation === 'metadata');
@@ -275,8 +278,8 @@
   }
 
   /** Open the repo picker on its local folder tab. */
-  export function openFolderSelection() {
-    repoSelector?.openOnLocalTab?.();
+  export function openFolderSelection(tab: 'local' | 'new' = 'local') {
+    repoSelector?.openOnLocalTab?.(tab);
   }
 </script>
 
@@ -285,6 +288,7 @@
     <RepoSelector
       {gitlab}
       {plainFolderMode}
+      {gitChoice}
       bind:this={repoSelector}
       variant="ghost"
       gitlabSelected={repoType === 'gitlab'}
@@ -346,6 +350,7 @@
     <RepoSelector
       {gitlab}
       {plainFolderMode}
+      {gitChoice}
       bind:this={repoSelector}
       variant="ghost"
       value=""
@@ -374,6 +379,7 @@
     <RepoSelector
       {gitlab}
       {plainFolderMode}
+      {gitChoice}
       variant="ghost"
       value={repoPath}
       onchange={handleRepoChange}
@@ -398,6 +404,7 @@
     <RepoSelector
       {gitlab}
       {plainFolderMode}
+      {gitChoice}
       variant="ghost"
       value={repoPath}
       onchange={handleRepoChange}
@@ -412,6 +419,7 @@
     <RepoSelector
       {gitlab}
       {plainFolderMode}
+      {gitChoice}
       gitlabSelected={repoType === 'gitlab'}
       variant="ghost"
       value={repoType === 'gitlab' ? '' : repoPath}
@@ -434,6 +442,7 @@
     <RepoSelector
       {gitlab}
       {plainFolderMode}
+      {gitChoice}
       gitlabSelected={repoType === 'gitlab'}
       variant="ghost"
       value={repoType === 'gitlab' ? '' : repoPath}
@@ -485,6 +494,7 @@
     <RepoSelector
       {gitlab}
       {plainFolderMode}
+      {gitChoice}
       variant="ghost"
       value={remoteSetup.name}
       onchange={handleRepoChange}
@@ -506,6 +516,7 @@
     <RepoSelector
       {gitlab}
       {plainFolderMode}
+      {gitChoice}
       variant="ghost"
       value={remoteSetup.name}
       onchange={handleRepoChange}
@@ -562,6 +573,7 @@
     <RepoSelector
       {gitlab}
       {plainFolderMode}
+      {gitChoice}
       variant="ghost"
       value={repoPath}
       onchange={handleRepoChange}
@@ -585,6 +597,7 @@
     <RepoSelector
       {gitlab}
       {plainFolderMode}
+      {gitChoice}
       variant="ghost"
       value={repoPath}
       onchange={handleRepoChange}

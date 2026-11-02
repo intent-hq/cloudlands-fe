@@ -2580,6 +2580,8 @@
   "workspace_plainFolder_gitRepoNotice_label": "이 폴더는 Git 저장소 {repo}에 속해 있으므로 작업 공간은 Git을 사용합니다.",
   "workspace_plainFolder_initializeGit_description": "끄면 버전 관리 없이 일반 폴더에서 작업합니다.",
   "workspace_plainFolder_initializeGit_label": "Git 저장소로 초기화",
+  "workspace_plainFolder_isolatedCopy_description": "켜기: Intent가 새 브랜치의 복사본에서 작업합니다. 끄기: 에이전트가 이 폴더를 직접 변경하며 복사본, 브랜치, 실행 취소가 없습니다.",
+  "workspace_plainFolder_isolatedCopy_label": "격리된 복사본에서 작업",
   "workspace_plainFolder_label": "일반 폴더",
   "workspace_plainFolder_label_tooltip": "Git 없음: 에이전트가 이 파일을 직접 편집하며, 버전 관리나 실행 취소가 없습니다.",
   "workspace_purge_menu_label": "워크스페이스 폴더 비우기",
