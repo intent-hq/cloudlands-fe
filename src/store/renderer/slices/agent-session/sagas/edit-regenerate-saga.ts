@@ -6,6 +6,7 @@ import {
   type WireImageBlock,
 } from '$lib/components/chat/input/image-attachment-placement';
 import { createLogger } from '$lib/utils/client-logger';
+import type { MessageBlockImageReference } from '$shared/types/wire-image-block';
 import { m } from '$shared/paraglide/messages.js';
 import {
   chatLastAttemptedMessageSet,
@@ -18,6 +19,12 @@ import { selectAgentSession } from '../agent-session-selectors';
 
 const logger = createLogger('EditRegenerateSaga');
 type EditAction = ReturnType<typeof agentSessionEditAndRegenerateRequested>;
+
+type EditImageBlock = NonNullable<NonNullable<EditAction['payload'][4]>['imageBlocks']>[number];
+
+function isStoredBlockReference(block: EditImageBlock): block is MessageBlockImageReference {
+  return 'messageId' in block || 'blockId' in block;
+}
 
 function editError(error: unknown): Error {
   if (error instanceof Error) return error;
@@ -44,14 +51,22 @@ function* editAndRegenerate(action: EditAction): SagaGenerator<void> {
     // truncation, surfacing the per-image reason. The chief virtual
     // workspace has no attachment registry, so its edits keep the inline
     // arm (mirrors chat-send-saga's gate).
+    // Stored-block references (regenerate on a `messageBlockPages: 1`
+    // daemon) carry no bytes to place: they keep their position and the
+    // daemon resolves them.
     let options = rawOptions;
     if ((options?.imageBlocks?.length ?? 0) > 0 && wsId !== CHIEF_WORKSPACE_ID) {
+      const blocks = options!.imageBlocks!;
+      const placed = yield* call(
+        toImageReferenceBlocks,
+        wsId,
+        blocks.filter((block) => !isStoredBlockReference(block)) as WireImageBlock[],
+      );
+      let next = 0;
       options = {
         ...options,
-        imageBlocks: yield* call(
-          toImageReferenceBlocks,
-          wsId,
-          options!.imageBlocks as WireImageBlock[],
+        imageBlocks: blocks.map((block) =>
+          isStoredBlockReference(block) ? block : placed[next++],
         ),
       };
     }
@@ -77,19 +92,29 @@ function* editAndRegenerate(action: EditAction): SagaGenerator<void> {
     yield* put(chatSendStarted(agentId, wsId));
     const hasBlocks =
       (options?.imageBlocks?.length ?? 0) > 0 || (options?.fileBlocks?.length ?? 0) > 0;
+    // "Try again" resends through `agent.sendMessage`, which rejects stored-
+    // block references, and the referenced message is gone after the
+    // truncation. Record no retry rather than one that drops the images;
+    // Regenerate stays available.
+    const unreplayable = options?.imageBlocks?.some(isStoredBlockReference) === true;
     yield* put(
-      chatLastAttemptedMessageSet(agentId, {
-        text: newText,
-        // Record the attachment blocks so "Try again" resends them verbatim.
-        ...(hasBlocks
-          ? {
-              options: {
-                ...(options?.imageBlocks?.length ? { imageBlocks: options.imageBlocks } : {}),
-                ...(options?.fileBlocks?.length ? { fileBlocks: options.fileBlocks } : {}),
-              },
-            }
-          : {}),
-      }),
+      chatLastAttemptedMessageSet(
+        agentId,
+        unreplayable
+          ? null
+          : {
+              text: newText,
+              // Record the attachment blocks so "Try again" resends them verbatim.
+              ...(hasBlocks
+                ? {
+                    options: {
+                      ...(options?.imageBlocks?.length ? { imageBlocks: options.imageBlocks } : {}),
+                      ...(options?.fileBlocks?.length ? { fileBlocks: options.fileBlocks } : {}),
+                    },
+                  }
+                : {}),
+            },
+      ),
     );
     yield* put(action.success(undefined as never));
     settled = true;

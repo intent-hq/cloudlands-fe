@@ -1,3 +1,4 @@
+// @verify-changed-triggers: src/**/*.{ts,svelte}
 /**
  * IPC channel reconciliation — automated audit of renderer invoke call sites
  * against the channels bridged by the mock-router seeders.

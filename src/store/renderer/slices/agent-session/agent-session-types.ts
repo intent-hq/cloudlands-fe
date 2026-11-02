@@ -1,5 +1,6 @@
 import type { AgentSession, AgentMessage, AgentMetadata } from '$shared/types';
 import type { UnifiedAgentConfig } from '$shared/types/agent.types';
+import type { MessageBlockImageReference } from '$shared/types/wire-image-block';
 
 interface AgentSessionSendContextItem {
   id: string;
@@ -29,8 +30,16 @@ export interface AgentSessionSendMessageOptions {
   model?: string;
   agentId?: string;
   contextReferences?: AgentSessionContextReference[];
-  /** Image content blocks riding the message (PROTOCOL §5.5) — plain base64. */
-  imageBlocks?: Array<{ type: 'image'; data?: string; mimeType?: string; attachmentId?: string }>;
+  /**
+   * Image content blocks riding the message (PROTOCOL §5.5) — plain base64 or
+   * an attachment reference. `agent.editAndRegenerate` alone also accepts a
+   * stored-block reference (`{ type, messageId, blockId }`) on daemons
+   * advertising `messageBlockPages: 1`.
+   */
+  imageBlocks?: Array<
+    | { type: 'image'; data?: string; mimeType?: string; attachmentId?: string }
+    | MessageBlockImageReference
+  >;
   /**
    * Attachment-reference file blocks riding the message (PROTOCOL §5.5) —
    * registry UUID + metadata only, never bytes.

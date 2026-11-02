@@ -202,6 +202,21 @@ export interface TranscriptSnapshotMeta {
 export type LiveStreamPhase = 'connecting' | 'awaiting-snapshot' | 'live' | 'resyncing' | 'delayed';
 
 /**
+ * Set on a loaded hydrated block the daemon served cut (PROTOCOL §5.5
+ * "Capped and paged block reads", `messageBlockPages: 1`): the block is too
+ * large for one read, so the app shows the part it received with a notice.
+ * `shownBytes` is the size of the received body slice (null when the body
+ * was dropped, e.g. an over-cap image); `totalBytes` is the full body size
+ * (null when unknown).
+ */
+export interface HydratedBlockTruncation {
+  field: string | null;
+  encoding: 'text' | 'json' | null;
+  shownBytes: number | null;
+  totalBytes: number | null;
+}
+
+/**
  * One lazily hydrated content block (PROTOCOL §5.5 slim projection +
  * `agent.getMessageBlock`): the FULL body fetched on demand when the user
  * expands a truncated tool row or views a truncated image. Keyed in
@@ -211,7 +226,7 @@ export type LiveStreamPhase = 'connecting' | 'awaiting-snapshot' | 'live' | 'res
  */
 export type HydratedBlockEntry =
   | { status: 'loading'; seq: number }
-  | { status: 'loaded'; seq: number; block: ContentBlock }
+  | { status: 'loaded'; seq: number; block: ContentBlock; truncation?: HydratedBlockTruncation }
   | { status: 'error'; seq: number; error: string };
 
 export interface StreamFailureCorrelation {

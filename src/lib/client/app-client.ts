@@ -1,4 +1,5 @@
 import type { WorkspaceId } from '$shared/types/branded-ids';
+import type { MessageBlockImageReference } from '$shared/types/wire-image-block';
 import type { MergeQueueEntry } from '$lib/utils/merge-queue';
 import type { SubmissionCorrelation } from '$shared/types/agent-message';
 import type { AgentPlacement } from '$shared/types/agent-node';
@@ -617,6 +618,23 @@ export interface ImageBlock {
 }
 
 /**
+ * One capped `agent.getMessageBlock` read (PROTOCOL §5.5 "Capped and paged
+ * block reads", `messageBlockPages: 1`). `truncated: false` means `block` is
+ * the complete stored block. Otherwise `block` is cut: a paged body
+ * (`field`) is a string slice of its body text (`encoding`), an over-cap
+ * image has no `data` (`dataTruncated` + `dataBytes`), and an unfittable
+ * block keeps only `id` and `type`. `totalBytes` is the full body text size.
+ */
+export interface MessageBlockPage {
+  block: ContentBlock;
+  truncated: boolean;
+  field: string | null;
+  encoding: 'text' | 'json' | null;
+  totalBytes: number | null;
+  nextOffset: number | null;
+}
+
+/**
  * Attachment-reference file block attached to a message (PROTOCOL §5.5:
  * `{ type: "file", attachmentId, fileName, mimeType?, size? }`). Carries the
  * attachment-registry UUID plus chip-rendering metadata — never bytes or
@@ -775,6 +793,19 @@ export interface AgentsClient {
     workspaceId?: string,
   ): Promise<ContentBlock>;
   /**
+   * The capped `agent.getMessageBlock` read with its page fields (PROTOCOL
+   * §5.5 "Capped and paged block reads"). Call only when the daemon
+   * advertises `server.capabilities.messageBlockPages === 1`; the first page
+   * (offset 0, default 480,000-byte cap) is all the app reads. Errors
+   * propagate as rejections.
+   */
+  getMessageBlockPage(
+    agentId: string,
+    messageId: string,
+    blockId: string,
+    workspaceId?: string,
+  ): Promise<MessageBlockPage>;
+  /**
    * The user-message index of one agent (`agent.listUserMessages`, §5.5):
    * **user-role** messages as lightweight `{ id, preview, createdAt,
    * metadata? }` items, oldest→newest. Without `page` the whole index is
@@ -820,7 +851,8 @@ export interface AgentsClient {
     messageId: string;
     content: string;
     model?: string;
-    imageBlocks?: ImageBlock[];
+    /** Block references need `messageBlockPages: 1` (see MessageBlockImageReference). */
+    imageBlocks?: Array<ImageBlock | MessageBlockImageReference>;
     fileBlocks?: FileBlock[];
   }): Promise<MutationResult>;
   /**

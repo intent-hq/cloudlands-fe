@@ -394,9 +394,10 @@ for renderer changes, and `lint:architecture` for `src/`, `AGENTS.md` and
 Lane selection in detail: [What verify:changed selects](../../docs/fe/DEVELOPER_GUIDE.md#what-verifychanged-selects).
 Rules that follow from it:
 
-- A suite that reads the tree from disk is invisible to `vitest related`: declare
-  `// @verify-changed-triggers: <paths or globs>` in its leading comments or opt out with
-  `// @verify-changed-exempt: <reason>` (`lint:verify-changed-triggers`; cloudlands-fe#2256, #2314).
+- A suite that reads the tree from disk (directly or via the IPC source scanner) is invisible
+  to `vitest related`: declare `// @verify-changed-triggers: <paths or globs>` in its leading
+  comments or opt out with `// @verify-changed-exempt: <reason>` (`lint:verify-changed-triggers`;
+  cloudlands-fe#2256, #2314, #4017).
 - Mark any new component-inventory or `*.meta` ledger suite `// @ui-invariant` (or
   `// @ui-invariant-exempt: <reason>`); `node scripts/ui-invariant-suites.mjs --list` / `--check`.
 - New architecture gates go into `lint:architecture` in `package.json`, never a separate

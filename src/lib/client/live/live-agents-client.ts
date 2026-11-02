@@ -22,6 +22,7 @@ import type {
   ContentBlock,
 } from '$shared/types';
 import type { QueuedMessage } from '$shared/types/agent-session';
+import type { MessageBlockImageReference } from '$shared/types/wire-image-block';
 import type {
   AgentCancelDeleteResult,
   AgentCreateRequest,
@@ -32,6 +33,7 @@ import type {
   AgentsClient,
   FileBlock,
   ImageBlock,
+  MessageBlockPage,
   MutationResult,
   PermissionOutcome,
   RespondPermissionResult,
@@ -402,6 +404,47 @@ export class LiveAgentsClient implements AgentsClient {
     return block;
   }
 
+  // Capped block read (`agent.getMessageBlock` with `messageBlockPages: 1`,
+  // §5.5 "Capped and paged block reads"): the same request, plus the page
+  // fields describing whether the served block was cut. Fields a daemon
+  // omits or sends malformed read as "not cut" / null, never a guess.
+  async getMessageBlockPage(
+    agentId: string,
+    messageId: string,
+    blockId: string,
+    workspaceId?: string,
+  ): Promise<MessageBlockPage> {
+    const result = await backendRequest<{
+      block?: unknown;
+      truncated?: unknown;
+      field?: unknown;
+      encoding?: unknown;
+      totalBytes?: unknown;
+      nextOffset?: unknown;
+    }>('agent.getMessageBlock', {
+      agentId,
+      messageId,
+      blockId,
+      ...(workspaceId !== undefined ? { workspaceId } : {}),
+    });
+    const block = result?.block;
+    if (!isContentBlock(block)) {
+      throw new Error(
+        `agent.getMessageBlock returned no block for message ${messageId} block ${blockId}`,
+      );
+    }
+    const byteCount = (value: unknown): number | null =>
+      typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
+    return {
+      block,
+      truncated: result.truncated === true,
+      field: typeof result.field === 'string' ? result.field : null,
+      encoding: result.encoding === 'text' || result.encoding === 'json' ? result.encoding : null,
+      totalBytes: byteCount(result.totalBytes),
+      nextOffset: byteCount(result.nextOffset),
+    };
+  }
+
   // User-message index (`agent.listUserMessages`, §5.5): user-role rows as
   // lightweight `{ id, preview, createdAt, metadata? }` items,
   // oldest→newest — the whole index unless `page` asks for the newest rows
@@ -545,7 +588,7 @@ export class LiveAgentsClient implements AgentsClient {
     messageId: string;
     content: string;
     model?: string;
-    imageBlocks?: ImageBlock[];
+    imageBlocks?: Array<ImageBlock | MessageBlockImageReference>;
     fileBlocks?: FileBlock[];
   }): Promise<MutationResult> {
     // `agent.editAndRegenerate` (§5.5 catalog-parity extension) edits a past
