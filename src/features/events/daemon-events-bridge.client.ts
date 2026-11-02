@@ -204,6 +204,7 @@ import {
   principalIdentityChanged,
 } from '$store/renderer/slices/principal/principal-slice';
 import { m } from '$shared/paraglide/messages.js';
+import { AgentStatus } from '$shared/types/agent.types';
 import type {
   ContentBlock,
   MessageMetadata,
@@ -1828,10 +1829,17 @@ function handleQueueProcessingEvent(event: WorkspaceEvent): void {
 function openDrainedTurn(event: WorkspaceEvent, agentId: string): void {
   const eventTimestamp = (event as { timestamp?: unknown }).timestamp;
   withHydratedSession(agentId, event.workspaceId, () => {
+    // The previous turn's completion may already have settled the session to
+    // idle. The daemon reports the drained turn as active but emits no running
+    // status edge, so promote it here; otherwise any later re-store of this
+    // session reads the stale idle status and closes the live turn again.
+    const status = appStore.state.agentSessions?.byAgentId[agentId]?.status;
+    const settledIdle = status === AgentStatus.RuntimeIdle || status === 'Idle';
     appStore.dispatch(
       updateSession(agentId, {
         liveTurnOpen: true,
         ...(typeof eventTimestamp === 'string' ? { liveTurnOpenedAt: eventTimestamp } : {}),
+        ...(settledIdle ? { status: AgentStatus.Active, isActive: true } : {}),
       }),
     );
   });

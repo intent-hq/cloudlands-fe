@@ -4403,6 +4403,28 @@ describe('daemonEventsBridge (queue drain-start — agent:queue:processing opens
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
   });
 
+  it("keeps a drained turn live when the previous turn's completion already settled the session idle", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    // The old turn's terminal chat frame settled the session before the drain.
+    appStore.dispatch(
+      updateSession(AGENT, {
+        status: AgentStatus.RuntimeIdle,
+        isActive: true,
+        liveTurnOpen: false,
+        liveTurnOpenedAt: undefined,
+      }),
+    );
+
+    processing(handler);
+    // A later refresh re-stores the renderer's own copy of the session.
+    appStore.dispatch(upsertSession({ ...readSession()!, workspaceId: WS }));
+
+    expect(readSession()?.status).toBe(AgentStatus.Active);
+    expect(readSession()?.liveTurnOpen).toBe(true);
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
+  });
+
   it("stamps the drain frame's daemon timestamp as the live-turn ordering signal", async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
