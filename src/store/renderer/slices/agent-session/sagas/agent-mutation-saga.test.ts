@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   updateSpecialist: vi.fn(),
   rename: vi.fn(),
   setNotificationsMuted: vi.fn(),
+  setPinned: vi.fn(),
   setBackground: vi.fn(),
   stop: vi.fn(),
   cancelSubscriptions: vi.fn(),
@@ -30,6 +31,7 @@ vi.mock('$lib/client', () => ({
       updateSpecialist: mocks.updateSpecialist,
       rename: mocks.rename,
       setNotificationsMuted: mocks.setNotificationsMuted,
+      setPinned: mocks.setPinned,
       setBackground: mocks.setBackground,
       stop: mocks.stop,
       cancelSubscriptions: mocks.cancelSubscriptions,
@@ -96,6 +98,7 @@ import {
   retireAgentRequested,
   saveAgentSessionRequested,
   setAgentNotificationsMutedRequested,
+  setAgentPinnedRequested,
   setAgentBackgroundRequested,
   undoAgentDeletionRequested,
   initialState as workspaceAgentsInitialState,
@@ -1149,6 +1152,37 @@ describe('agentMutationSaga', () => {
     await expect(action.promise).rejects.toThrow('mute rejected');
     await settle();
     expect(mocks.dismiss).not.toHaveBeenCalled();
+    await stop(task);
+  });
+
+  it('pins optimistically and forwards exact agent.update params', async () => {
+    mocks.setPinned.mockResolvedValue({ success: true });
+    const { channel, dispatched, task } = start({ [A1]: session(A1, { pinned: false }) });
+    const action = setAgentPinnedRequested(WS, A1, true);
+    channel.put(action);
+
+    await expect(action.promise).resolves.toBeUndefined();
+    expect(mocks.setPinned).toHaveBeenCalledWith({ agentId: A1, workspaceId: WS, pinned: true });
+    expect(dispatched).toContainEqual(updateSession(A1, { pinned: true }));
+    await stop(task);
+  });
+
+  it('rolls back the optimistic pin and surfaces the daemon failure', async () => {
+    mocks.setPinned.mockResolvedValue({ success: false, error: 'pin rejected' });
+    const { channel, dispatched, task } = start(
+      { [A1]: session(A1, { pinned: false }) },
+      { live: true },
+    );
+    const action = setAgentPinnedRequested(WS, A1, true);
+    channel.put(action);
+
+    await expect(action.promise).rejects.toThrow('pin rejected');
+    const updates = dispatched.filter((candidate) => candidate.type === updateSession.type);
+    expect(updates).toEqual([
+      updateSession(A1, { pinned: true }),
+      updateSession(A1, { pinned: false }),
+    ]);
+    expect(mocks.error).toHaveBeenCalledWith('pin rejected');
     await stop(task);
   });
 

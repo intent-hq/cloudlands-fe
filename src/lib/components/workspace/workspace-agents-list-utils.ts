@@ -25,7 +25,14 @@ const DELEGATION_SKELETON_ROWS = 2;
  */
 export type WorkspaceAgentListRow =
   | { kind: 'header'; key: string; depth: 0; section: 'coordinator' | 'yourAgents' }
-  | { kind: 'agent'; key: string; depth: number; agent: AgentSession }
+  | {
+      kind: 'agent';
+      key: string;
+      depth: number;
+      agent: AgentSession;
+      /** First unpinned top-level row after pinned ones: draw the pinned divider above it. */
+      dividerBefore?: boolean;
+    }
   | {
       kind: 'delegatedGroup';
       key: string;
@@ -61,8 +68,18 @@ export function buildWorkspaceAgentListRows(
   depth = 0,
 ): WorkspaceAgentListRow[] {
   const rows: WorkspaceAgentListRow[] = [];
+  let previousPinned = false;
   for (const agent of agents) {
-    rows.push({ kind: 'agent', key: `agent:${agent.id}`, depth, agent });
+    const pinned = isPinnedAgentSession(agent);
+    const dividerBefore = depth === 0 && previousPinned && !pinned;
+    previousPinned = pinned;
+    rows.push({
+      kind: 'agent',
+      key: `agent:${agent.id}`,
+      depth,
+      agent,
+      ...(dividerBefore ? { dividerBefore } : {}),
+    });
 
     const children = options.getChildren(agent.id);
     const counted = options.getCountedChildren(agent.id);
@@ -101,6 +118,11 @@ export function buildWorkspaceAgentListRows(
 
 export function isCoordinatorAgentSession(agent: AgentSession): boolean {
   return (agent.metadata?.specialist ?? agent.agentMetadata?.specialist) === 'spec-writer';
+}
+
+/** Daemon-owned sidebar pin (`AgentLite.pinned`, §5.5). */
+function isPinnedAgentSession(agent: AgentSession): boolean {
+  return agent.pinned === true;
 }
 
 export function isRetiredAgentSession(agent: AgentSession): boolean {
@@ -177,6 +199,7 @@ function isIdleForOrdering(agent: AgentSession): boolean {
 /** Per-agent ordering keys, precomputed once per sort (matches the HUD's precomputed buckets). */
 interface AgentSortKey {
   coordinator: boolean;
+  pinned: boolean;
   idle: boolean;
   recency: number;
 }
@@ -184,16 +207,18 @@ interface AgentSortKey {
 function getAgentSortKey(agent: AgentSession): AgentSortKey {
   return {
     coordinator: isCoordinatorAgentSession(agent),
+    pinned: isPinnedAgentSession(agent),
     idle: isIdleForOrdering(agent),
     recency: getAgentRecency(agent),
   };
 }
 
 /**
- * Sibling comparator: coordinator first, then non-idle agents by recency
- * descending, idle agents last (also by recency descending), with a stable
- * agent-id tiebreak so rows don't jump between refreshes. Keys are read from
- * the precomputed map so comparisons stay allocation-free.
+ * Sibling comparator: coordinator first, then pinned agents by recency
+ * descending, then non-idle agents by recency descending, idle agents last
+ * (also by recency descending), with a stable agent-id tiebreak so rows don't
+ * jump between refreshes. Keys are read from the precomputed map so
+ * comparisons stay allocation-free.
  */
 function makeAgentComparator(
   keyById: ReadonlyMap<string, AgentSortKey>,
@@ -202,7 +227,9 @@ function makeAgentComparator(
     const aKey = keyById.get(a.id) ?? getAgentSortKey(a);
     const bKey = keyById.get(b.id) ?? getAgentSortKey(b);
     if (aKey.coordinator !== bKey.coordinator) return aKey.coordinator ? -1 : 1;
-    const idleDelta = Number(aKey.idle) - Number(bKey.idle);
+    if (aKey.pinned !== bKey.pinned) return aKey.pinned ? -1 : 1;
+    // Pinned agents order by time alone; the idle split applies to the rest.
+    const idleDelta = aKey.pinned ? 0 : Number(aKey.idle) - Number(bKey.idle);
     if (idleDelta !== 0) return idleDelta;
     if (aKey.recency !== bKey.recency) return bKey.recency - aKey.recency;
     return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;

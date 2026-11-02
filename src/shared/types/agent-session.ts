@@ -338,6 +338,15 @@ export interface AgentSession extends AgentNodeFields {
    */
   notificationsMuted?: boolean;
 
+  /**
+   * Daemon-owned sidebar pin (`pinned`, §5.5 AgentLite). Set via
+   * `agent.update { changes: { pinned } }` and converged through
+   * `agent:updated`. Pinned agents list first in the sidebar. A daemon that
+   * supports pins always sends the boolean on list rows; absent means the
+   * daemon cannot pin, so the menu hides the action.
+   */
+  pinned?: boolean;
+
   /** Current turn number for this session */
   currentTurnNumber?: number;
 

@@ -1351,6 +1351,45 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     });
   });
 
+  it('setPinned forwards agent.update with the boolean pinned change (§5.5)', async () => {
+    backend.onRequest('agent.update', () => ({ success: true }));
+    const client = new LiveAgentsClient();
+
+    expect(
+      await client.setPinned({ agentId: 'agent-1', workspaceId: 'ws-1', pinned: true }),
+    ).toEqual({ success: true });
+    expect(
+      await client.setPinned({ agentId: 'agent-1', workspaceId: 'ws-1', pinned: false }),
+    ).toEqual({ success: true });
+    expect(backend.requests.map((request) => request.method)).toEqual([
+      'agent.update',
+      'agent.update',
+    ]);
+    expect(backend.requests.map((request) => request.params)).toEqual([
+      { agentId: 'agent-1', workspaceId: 'ws-1', changes: { pinned: true } },
+      { agentId: 'agent-1', workspaceId: 'ws-1', changes: { pinned: false } },
+    ]);
+  });
+
+  it('setPinned folds a daemon rejection (older daemon, -32602) into {success:false,error}', async () => {
+    backend.onRequest('agent.update', () => {
+      throw new BackendError(
+        buildErrorPayload('BACKEND_ERROR', 'agent.update: unknown field `pinned`', {
+          rpcCode: -32602,
+        }),
+      );
+    });
+    const client = new LiveAgentsClient();
+
+    const result = await client.setPinned({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      pinned: true,
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('unknown field `pinned`');
+  });
+
   it('setNotificationsMuted folds a daemon rejection into {success:false,error} (no throw)', async () => {
     backend.onRequest('agent.update', () => {
       throw new BackendError(
