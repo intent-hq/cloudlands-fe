@@ -13,8 +13,6 @@
     disabled?: boolean;
     onCheckedChange: (checked: boolean) => void;
     folder: GitSwitchFolder;
-    /** A picked git repo's branch, named when it is used in place. */
-    branch?: string;
     class?: string;
   }
 
@@ -23,11 +21,10 @@
     disabled = false,
     onCheckedChange,
     folder,
-    branch = '',
     class: className = '',
   }: Props = $props();
 
-  const copy = $derived(gitSwitchCopy(folder, checked, branch));
+  const copy = $derived(gitSwitchCopy(folder));
   const label = $derived(copy.label);
   const description = $derived(copy.description);
 

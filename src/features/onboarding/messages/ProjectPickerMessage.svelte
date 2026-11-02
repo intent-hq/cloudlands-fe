@@ -475,7 +475,6 @@
       <InitializeGitToggle
         class="mt-4"
         folder={gitSwitchFolder}
-        branch={localBranch}
         checked={gitSwitchFolder === 'git-repo'
           ? !skipIsolation
           : initializeGitChoice.initializeGit}

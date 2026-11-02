@@ -50,7 +50,6 @@
       checked: boolean;
       folder?: 'git-repo' | 'folder' | null;
       worktree?: boolean;
-      branch?: string;
       disabled?: boolean;
       onCheckedChange: (checked: boolean, tab: 'local' | 'new') => void;
     };
@@ -112,5 +111,4 @@
     onclick={() => gitChoice.onCheckedChange(!checked, gitChoiceTab())}>git choice</button
   >
   <div data-testid="picker-git-choice-folder">{gitChoice.folder ?? ''}</div>
-  <div data-testid="picker-git-choice-branch">{gitChoice.branch ?? ''}</div>
 {/if}

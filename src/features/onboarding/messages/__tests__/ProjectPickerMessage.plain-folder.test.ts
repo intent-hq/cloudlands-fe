@@ -73,7 +73,7 @@ const backendRequestMock = vi.mocked(backendRequest);
 /** The git switch under any of its per-folder names. */
 const toggleName = () =>
   new RegExp(
-    `^(${m.workspace_plainFolder_switchNeutral_label()}|${m.workspace_plainFolder_switchGitRepo_label()}|${m.workspace_plainFolder_initializeGit_label()})$`,
+    `^(${m.workspace_plainFolder_switchGitRepo_label()}|${m.workspace_plainFolder_initializeGit_label()})$`,
   );
 
 function mockDaemon(
@@ -237,26 +237,26 @@ describe('ProjectPickerMessage — plain-folder toggle (Labs)', () => {
     });
     expect(toggle.getAttribute('aria-checked')).toBe('false');
     expect(toggleHint(toggle)).not.toMatch(/turn off/i);
-    expect(toggleHint(toggle)).toBe(m.workspace_plainFolder_switchNewOff_description());
+    expect(toggleHint(toggle)).toBe(m.workspace_plainFolder_initializeGit_description());
 
     await fireEvent.click(toggle);
     await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('true'));
-    expect(toggleHint(toggle)).toBe(m.workspace_plainFolder_switchNewOn_description());
+    expect(toggleHint(toggle)).toBe(m.workspace_plainFolder_initializeGit_description());
   });
 
-  it('is neutral on the Existing folder tab before a folder is picked', async () => {
+  it('reads as the git-repo choice on the Existing folder tab before a folder is picked', async () => {
     setPlainFolderLabs(true);
     settleForgeAuth();
     loadWorkspaces([]);
     renderPicker();
     const toggle = await screen.findByRole('switch', {
-      name: m.workspace_plainFolder_switchNeutral_label(),
+      name: m.workspace_plainFolder_switchGitRepo_label(),
     });
     expect(toggle.getAttribute('aria-checked')).toBe('false');
-    expect(toggleHint(toggle)).toBe(m.workspace_plainFolder_switchNeutralOff_description());
+    expect(toggleHint(toggle)).toBe(m.workspace_plainFolder_switchGitRepo_description());
   });
 
-  it('names the choice per tab: neutral for an empty Existing folder, git init for New', async () => {
+  it('names the choice per tab: git repo for an empty Existing folder, git init for New', async () => {
     setPlainFolderLabs(true);
     settleForgeAuth({ github: true });
     loadWorkspaces([]);
@@ -264,7 +264,7 @@ describe('ProjectPickerMessage — plain-folder toggle (Labs)', () => {
     await fireEvent.click(
       screen.getByRole('tab', { name: m.onboarding_projectPicker_existingFolder_label() }),
     );
-    await screen.findByRole('switch', { name: m.workspace_plainFolder_switchNeutral_label() });
+    await screen.findByRole('switch', { name: m.workspace_plainFolder_switchGitRepo_label() });
     expect(
       screen.queryByRole('switch', { name: m.workspace_plainFolder_initializeGit_label() }),
     ).toBeNull();
@@ -274,7 +274,7 @@ describe('ProjectPickerMessage — plain-folder toggle (Labs)', () => {
     );
     await screen.findByRole('switch', { name: m.workspace_plainFolder_initializeGit_label() });
     expect(
-      screen.queryByRole('switch', { name: m.workspace_plainFolder_switchNeutral_label() }),
+      screen.queryByRole('switch', { name: m.workspace_plainFolder_switchGitRepo_label() }),
     ).toBeNull();
   });
 
@@ -382,7 +382,7 @@ describe('ProjectPickerMessage — plain-folder toggle (Labs)', () => {
       await waitFor(() => expect(isolation.calls.at(-1)).toBe(false));
       const toggle = await gitRepoSwitch();
       expect(toggle.getAttribute('aria-checked')).toBe('true');
-      expect(toggleHint(toggle)).toBe(m.workspace_plainFolder_switchGitRepoOn_description());
+      expect(toggleHint(toggle)).toBe(m.workspace_plainFolder_switchGitRepo_description());
     });
 
     it('the switch on a git repo shows and sets the isolation setting', async () => {
@@ -416,7 +416,7 @@ describe('ProjectPickerMessage — plain-folder toggle (Labs)', () => {
         name: m.workspace_plainFolder_initializeGit_label(),
       });
       expect(toggle.getAttribute('aria-checked')).toBe('true');
-      expect(toggleHint(toggle)).toBe(m.workspace_plainFolder_switchFolderOn_description());
+      expect(toggleHint(toggle)).toBe(m.workspace_plainFolder_initializeGit_description());
     });
 
     it('New, switch on: create, git init and work on main (isolation off)', async () => {

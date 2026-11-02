@@ -3499,7 +3499,6 @@
                       checked: initializeGitChoice.initializeGit,
                       folder: gitSwitchFolder,
                       worktree: !skipIsolation,
-                      branch,
                       disabled: isCreating,
                       onCheckedChange: handleInitializeGitChange,
                     }

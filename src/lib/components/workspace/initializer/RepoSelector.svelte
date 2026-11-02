@@ -160,8 +160,6 @@
     folder?: 'git-repo' | 'folder' | null;
     /** For a picked git repo the switch shows its isolation: its own worktree. */
     worktree?: boolean;
-    /** The picked git repo's branch, named when it is used in place. */
-    branch?: string;
     disabled?: boolean;
     /** `tab` is the folder tab the choice was flipped in. */
     onCheckedChange: (checked: boolean, tab: 'local' | 'new') => void;
@@ -1828,7 +1826,6 @@
               <InitializeGitToggle
                 class="mb-3 px-1"
                 {folder}
-                branch={gitChoice.branch}
                 checked={folder === 'git-repo' ? gitChoice.worktree !== false : gitChoice.checked}
                 disabled={gitChoice.disabled}
                 onCheckedChange={(value) => handleGitSwitchChange(value, tab)}
