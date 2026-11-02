@@ -1,16 +1,24 @@
 /** Real Electron + production native manager/preload; fixture traffic, no daemon connection. */
-import { _electron as electron, expect, test } from '@playwright/test';
+import { expect } from '@playwright/test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createServer } from 'node:http';
 import { build } from 'vite';
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { closeElectronApp, electronTest as test } from './electron-app-close';
 
-test('native console isolation, duplicate focus, reload, crash, load failure and reopen', async () => {
+test('native console isolation, duplicate focus, reload, crash, load failure and reopen', async ({
+  launchElectron,
+}) => {
   test.setTimeout(60000);
   // This lane starts from a fresh checkout; exercise the real generated preload.
-  execFileSync('pnpm', ['run', 'build:preload'], { cwd: process.cwd(), stdio: 'pipe' });
+  // Async so the worker's event loop (and the test timeout) stays live meanwhile.
+  await promisify(execFile)('pnpm', ['run', 'build:preload'], {
+    cwd: process.cwd(),
+    timeout: 45_000,
+  });
   const root = await mkdtemp(join(tmpdir(), 'intent-dev-console-'));
   let failConsoleRequests = false;
   const server = createServer((req, res) => {
@@ -21,7 +29,7 @@ test('native console isolation, duplicate focus, reload, crash, load failure and
     res.setHeader('Content-Type', 'text/html');
     res.end('<!doctype html><title>Intent</title><main>Native lifecycle fixture</main>');
   });
-  let application: Awaited<ReturnType<typeof electron.launch>> | undefined;
+  let application: Awaited<ReturnType<typeof launchElectron>> | undefined;
   try {
     await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
     const address = server.address();
@@ -73,7 +81,7 @@ test('native console isolation, duplicate focus, reload, crash, load failure and
           !key.startsWith('DD_') && !['NODE_OPTIONS', 'ELECTRON_RUN_AS_NODE'].includes(key),
       ),
     );
-    application = await electron.launch({
+    application = await launchElectron({
       args: [join(root, 'main.cjs')],
       env: { ...env, DD_TRACE_ENABLED: 'false' },
     });
@@ -148,7 +156,8 @@ test('native console isolation, duplicate focus, reload, crash, load failure and
     const failedLoad = await app.evaluate(async () => {
       const fixture = (globalThis as any).fixture;
       const window = fixture.windows.open('fixture-a');
-      return await new Promise<{ url: string; isMainFrame: boolean }>((done) => {
+      return await new Promise<{ url: string; isMainFrame: boolean } | null>((done) => {
+        setTimeout(() => done(null), 10_000);
         window.webContents.once(
           'did-fail-load',
           (
@@ -171,7 +180,9 @@ test('native console isolation, duplicate focus, reload, crash, load failure and
     });
     expect(await app.evaluate(() => (globalThis as any).fixture.observers.size)).toBe(0);
   } finally {
-    await application?.close();
+    if (application) await closeElectronApp(application);
+    // Electron keep-alive sockets would otherwise hold server.close() open.
+    server.closeAllConnections();
     await new Promise<void>((done) => server.close(() => done()));
     await rm(root, { recursive: true, force: true });
   }

@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import { createServer, type ViteDevServer } from 'vite';
-import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
+import { settleDepsOptimizer, viteHarnessCacheDir } from './vite-harness-cache.mjs';
 
 // Deliberately different dependency graphs exercise Vite's real cache publication.
 // This is a mechanism control, not a reconstruction of the historical fetch failure.
@@ -155,3 +155,52 @@ for (const isolated of [false, true]) {
     },
   );
 }
+
+// The Electron browser lifetime harness serves one fixture page, but without
+// `optimizeDeps.entries` Vite crawls every HTML file under the root (the whole
+// app) in the background, overlapping the first test and the server shutdown.
+test('scoped entries settle before setup returns and skip unrelated pages', async () => {
+  test.setTimeout(60_000);
+  const root = await mkdtemp(join(tmpdir(), 'vite-cache-settle-'));
+  let server: ViteDevServer | undefined;
+  try {
+    await writeFile(join(root, 'package.json'), JSON.stringify({ type: 'module' }));
+    for (const name of ['served', 'unrelated']) {
+      const dir = join(root, 'node_modules', name);
+      await mkdir(dir, { recursive: true });
+      await writeFile(
+        join(dir, 'package.json'),
+        JSON.stringify({ name, version: '1.0.0', type: 'module', main: 'index.js' }),
+      );
+      await writeFile(join(dir, 'index.js'), `export const value = '${name}';`);
+    }
+    await mkdir(join(root, 'fixture'));
+    await writeFile(
+      join(root, 'fixture', 'index.html'),
+      '<!doctype html><script type="module">import "served";</script>',
+    );
+    await writeFile(
+      join(root, 'index.html'),
+      '<!doctype html><script type="module">import "unrelated";</script>',
+    );
+    const cacheDir = viteHarnessCacheDir('settle', { root });
+    server = await createServer({
+      configFile: false,
+      logLevel: 'silent',
+      root,
+      cacheDir,
+      optimizeDeps: { entries: ['fixture/index.html'] },
+      server: { host: '127.0.0.1', port: 0, watch: { ignored: ['**/*'] } },
+    });
+    await server.listen();
+    await settleDepsOptimizer(server, { timeoutMs: 30_000 });
+    const optimizer = server.environments.client.depsOptimizer!;
+    expect(optimizer.scanProcessing).toBeUndefined();
+    expect(Object.keys(optimizer.metadata.optimized)).toEqual(['served']);
+    const metadata = JSON.parse(await readFile(join(cacheDir, 'deps/_metadata.json'), 'utf8'));
+    expect(Object.keys(metadata.optimized)).toEqual(['served']);
+  } finally {
+    await server?.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});

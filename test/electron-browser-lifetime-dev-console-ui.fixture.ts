@@ -1,11 +1,13 @@
 /** Actual SvelteKit route + production preload/IPC, with synthetic transport traffic. */
-import { _electron as electron, expect, test } from '@playwright/test';
+import { expect } from '@playwright/test';
 import { build, createServer } from 'vite';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { createServer as createPortProbe } from 'node:net';
+import { closeElectronApp, electronTest as test } from './electron-app-close';
 
 async function availableLoopbackPort(port = 0) {
   const probe = createPortProbe();
@@ -21,13 +23,16 @@ async function availableLoopbackPort(port = 0) {
   return address.port;
 }
 
-test('Dev Console native renderer inspects traffic through authorized preload and clears on reopen', async () => {
+test('Dev Console native renderer inspects traffic through authorized preload and clears on reopen', async ({
+  launchElectron,
+}) => {
   test.setTimeout(180000);
-  execFileSync('pnpm', ['run', 'build:preload'], { stdio: 'pipe' });
+  // Async so the worker's event loop (and the test timeout) stays live meanwhile.
+  await promisify(execFile)('pnpm', ['run', 'build:preload'], { timeout: 90_000 });
   const root = await mkdtemp(join(tmpdir(), 'intent-console-ui-'));
   let server: Awaited<ReturnType<typeof createServer>> | undefined;
   let ownedPort: number | undefined;
-  let application: Awaited<ReturnType<typeof electron.launch>> | undefined;
+  let application: Awaited<ReturnType<typeof launchElectron>> | undefined;
   try {
     if (!process.env.DEV_CONSOLE_TEST_URL) {
       // Vite treats port 0 as its default port, already occupied by the parent harness.
@@ -98,7 +103,7 @@ test('Dev Console native renderer inspects traffic through authorized preload an
           !key.startsWith('DD_') && !['NODE_OPTIONS', 'ELECTRON_RUN_AS_NODE'].includes(key),
       ),
     );
-    application = await electron.launch({
+    application = await launchElectron({
       args: [join(root, 'main.cjs')],
       env: { ...env, DD_TRACE_ENABLED: 'false' },
     });
@@ -203,7 +208,7 @@ test('Dev Console native renderer inspects traffic through authorized preload an
     ).toEqual([]);
   } finally {
     try {
-      await application?.close();
+      if (application) await closeElectronApp(application);
     } finally {
       try {
         await server?.close();
