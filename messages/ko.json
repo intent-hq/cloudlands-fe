@@ -182,7 +182,7 @@
   "bgExecutor_service_unavailable_error": "현재 공급자에서는 원샷 완성을 사용할 수 없습니다",
   "browserAccess_login_invalidKey_error": "접근 키가 올바르지 않습니다.",
   "browserAccess_login_key_label": "접근 키",
-  "browserAccess_login_prompt": "데스크톱의 Intent에서 설정 → 기기 → 브라우저 접근에 표시된 접근 키를 입력하세요.",
+  "browserAccess_login_prompt": "데스크톱의 Intent에서 설정 → 컴퓨터 → 브라우저 접근에 표시된 접근 키를 입력하세요.",
   "browserAccess_login_submit_label": "로그인",
   "browserAccess_login_title": "Intent에 로그인",
   "browserAccess_login_tooManyAttempts_error": "시도 횟수가 너무 많습니다. 1분 후에 다시 시도하세요.",

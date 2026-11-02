@@ -190,6 +190,19 @@ describe('Browser access server: access control', () => {
     expect(reply.status).toBe(403);
   });
 
+  it('serves a front-end that forwards its public host (tailscale serve)', async () => {
+    const { port } = await start();
+    const reply = await request(port, {
+      headers: {
+        host: 'box.tailnet.ts.net:8443',
+        'x-forwarded-host': 'box.tailnet.ts.net:8443',
+        'x-forwarded-proto': 'https',
+        cookie: COOKIE,
+      },
+    });
+    expect(reply.status).toBe(200);
+  });
+
   it('shows the login page to signed-out navigations and 401s other requests', async () => {
     const { port } = await start();
     const page = await request(port, { headers: { accept: 'text/html' } });

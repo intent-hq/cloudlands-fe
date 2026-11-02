@@ -9,6 +9,7 @@ import {
   deriveSessionToken,
   generateAccessKey,
   hasValidSession,
+  isAllowedHost,
   isLoopbackHost,
   isSameOriginUpgrade,
   pageOrigin,
@@ -78,6 +79,19 @@ describe('request checks', () => {
     '127.0.0.1/x',
     undefined,
   ])('rejects %s as non-loopback', (host) => expect(isLoopbackHost(host)).toBe(false));
+
+  it('allows loopback hosts and a front-end host that matches X-Forwarded-Host', () => {
+    expect(isAllowedHost({ host: '127.0.0.1:47120' })).toBe(true);
+    expect(
+      isAllowedHost({
+        host: 'box.tailnet.ts.net:8443',
+        'x-forwarded-host': 'box.tailnet.ts.net:8443',
+      }),
+    ).toBe(true);
+    expect(isAllowedHost({ host: 'evil.example:47120' })).toBe(false);
+    expect(isAllowedHost({ host: 'evil.example', 'x-forwarded-host': 'box.ts.net' })).toBe(false);
+    expect(isAllowedHost({ host: 'a/b', 'x-forwarded-host': 'a/b' })).toBe(false);
+  });
 
   it('uses the forwarded page origin from a front-end', () => {
     expect(

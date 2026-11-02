@@ -182,7 +182,7 @@
   "bgExecutor_service_unavailable_error": "La finalización de una sola pasada no está disponible para el proveedor actual",
   "browserAccess_login_invalidKey_error": "Esa clave de acceso no es correcta.",
   "browserAccess_login_key_label": "Clave de acceso",
-  "browserAccess_login_prompt": "Introduce la clave de acceso de Intent en tu escritorio, en Ajustes → Dispositivos → Acceso desde el navegador.",
+  "browserAccess_login_prompt": "Introduce la clave de acceso de Intent en tu escritorio, en Ajustes → Equipos → Acceso desde el navegador.",
   "browserAccess_login_submit_label": "Iniciar sesión",
   "browserAccess_login_title": "Iniciar sesión en Intent",
   "browserAccess_login_tooManyAttempts_error": "Demasiados intentos. Espera un minuto y vuelve a intentarlo.",

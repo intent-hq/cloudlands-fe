@@ -92,7 +92,7 @@
     const entries: SettingEntry[] = [
       {
         kind: 'switch',
-        id: 'browser-access',
+        id: 'browser-access-enabled',
         label: m.settings_browserAccess_toggle_label(),
         get: () => toggleOn,
         set: handleToggle,
@@ -148,7 +148,9 @@
       });
     }
     return defineSettings({
-      sections: [{ id: 'browser-access', title: m.settings_section_browserAccess(), entries }],
+      sections: [
+        { id: 'browser-access-settings', title: m.settings_section_browserAccess(), entries },
+      ],
     });
   });
 </script>
@@ -191,7 +193,7 @@
   {schema}
   embedded
   compact={false}
-  descriptions={{ 'browser-access': toggleDescription }}
+  descriptions={{ 'browser-access-enabled': toggleDescription }}
   custom={defineSettingsCustomControls({
     'browser-access-key': keyControl,
     'browser-access-command': commandControl,

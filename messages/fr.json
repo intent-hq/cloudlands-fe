@@ -182,7 +182,7 @@
   "bgExecutor_service_unavailable_error": "La complétion en une seule passe n'est pas disponible pour le fournisseur actuel",
   "browserAccess_login_invalidKey_error": "Cette clé d’accès est incorrecte.",
   "browserAccess_login_key_label": "Clé d’accès",
-  "browserAccess_login_prompt": "Saisissez la clé d’accès affichée dans Intent sur votre ordinateur, sous Réglages → Appareils → Accès depuis le navigateur.",
+  "browserAccess_login_prompt": "Saisissez la clé d’accès affichée dans Intent sur votre ordinateur, sous Réglages → Ordinateurs → Accès depuis le navigateur.",
   "browserAccess_login_submit_label": "Se connecter",
   "browserAccess_login_title": "Se connecter à Intent",
   "browserAccess_login_tooManyAttempts_error": "Trop de tentatives. Patientez une minute, puis réessayez.",

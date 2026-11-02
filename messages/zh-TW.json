@@ -182,7 +182,7 @@
   "bgExecutor_service_unavailable_error": "目前的提供者不支援一次性補全",
   "browserAccess_login_invalidKey_error": "存取金鑰不正確。",
   "browserAccess_login_key_label": "存取金鑰",
-  "browserAccess_login_prompt": "請輸入桌面版 Intent 中「設定 → 裝置 → 瀏覽器存取」下顯示的存取金鑰。",
+  "browserAccess_login_prompt": "請輸入桌面版 Intent 中「設定 → 電腦 → 瀏覽器存取」下顯示的存取金鑰。",
   "browserAccess_login_submit_label": "登入",
   "browserAccess_login_title": "登入 Intent",
   "browserAccess_login_tooManyAttempts_error": "嘗試次數過多。請稍候一分鐘再試。",

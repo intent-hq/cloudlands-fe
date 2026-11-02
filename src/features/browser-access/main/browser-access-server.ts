@@ -27,7 +27,7 @@ import {
   LoginRateLimiter,
   accessKeyMatches,
   hasValidSession,
-  isLoopbackHost,
+  isAllowedHost,
   isSameOriginUpgrade,
   pageOrigin,
   sessionCookieHeader,
@@ -393,7 +393,7 @@ export function createBrowserAccessServer(deps: BrowserAccessServerDeps): Browse
     response: http.ServerResponse,
   ): Promise<void> => {
     setSecurityHeaders(response);
-    if (!isLoopbackHost(request.headers.host)) {
+    if (!isAllowedHost(request.headers)) {
       response.statusCode = 403;
       response.end();
       return;
@@ -516,7 +516,7 @@ export function createBrowserAccessServer(deps: BrowserAccessServerDeps): Browse
     }
     if (!CONNECTION_ID_PATTERN.test(connectionId)) return rejectUpgrade(socket, 400, 'Bad Request');
     if (
-      !isLoopbackHost(request.headers.host) ||
+      !isAllowedHost(request.headers) ||
       !hasValidSession(request.headers, deps.getAccessKey()) ||
       !isSameOriginUpgrade(request.headers)
     ) {

@@ -182,7 +182,7 @@
   "bgExecutor_service_unavailable_error": "現在のプロバイダーではワンショット補完を利用できません",
   "browserAccess_login_invalidKey_error": "アクセスキーが正しくありません。",
   "browserAccess_login_key_label": "アクセスキー",
-  "browserAccess_login_prompt": "デスクトップの Intent の「設定 → デバイス → ブラウザアクセス」に表示されているアクセスキーを入力してください。",
+  "browserAccess_login_prompt": "デスクトップの Intent の「設定 → マシン → ブラウザアクセス」に表示されているアクセスキーを入力してください。",
   "browserAccess_login_submit_label": "サインイン",
   "browserAccess_login_title": "Intent にサインイン",
   "browserAccess_login_tooManyAttempts_error": "試行回数が多すぎます。1 分ほど待ってから再試行してください。",

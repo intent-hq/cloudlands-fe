@@ -182,7 +182,7 @@
   "bgExecutor_service_unavailable_error": "One-Shot-Vervollständigung ist für den aktuellen Anbieter nicht verfügbar",
   "browserAccess_login_invalidKey_error": "Dieser Zugriffsschlüssel ist nicht korrekt.",
   "browserAccess_login_key_label": "Zugriffsschlüssel",
-  "browserAccess_login_prompt": "Gib den Zugriffsschlüssel aus Intent auf deinem Desktop ein, unter Einstellungen → Geräte → Browserzugriff.",
+  "browserAccess_login_prompt": "Gib den Zugriffsschlüssel aus Intent auf deinem Desktop ein, unter Einstellungen → Rechner → Browserzugriff.",
   "browserAccess_login_submit_label": "Anmelden",
   "browserAccess_login_title": "Bei Intent anmelden",
   "browserAccess_login_tooManyAttempts_error": "Zu viele Versuche. Warte eine Minute und versuche es erneut.",

@@ -182,7 +182,7 @@
   "bgExecutor_service_unavailable_error": "当前提供商不支持一次性补全",
   "browserAccess_login_invalidKey_error": "访问密钥不正确。",
   "browserAccess_login_key_label": "访问密钥",
-  "browserAccess_login_prompt": "请输入桌面版 Intent 中“设置 → 设备 → 浏览器访问”下显示的访问密钥。",
+  "browserAccess_login_prompt": "请输入桌面版 Intent 中“设置 → 计算机 → 浏览器访问”下显示的访问密钥。",
   "browserAccess_login_submit_label": "登录",
   "browserAccess_login_title": "登录 Intent",
   "browserAccess_login_tooManyAttempts_error": "尝试次数过多。请稍等一分钟后重试。",

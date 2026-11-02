@@ -182,7 +182,7 @@
   "bgExecutor_service_unavailable_error": "One-shot completion is not available for the current provider",
   "browserAccess_login_invalidKey_error": "That access key is not correct.",
   "browserAccess_login_key_label": "Access key",
-  "browserAccess_login_prompt": "Enter the access key from Intent on your desktop, under Settings → Devices → Browser access.",
+  "browserAccess_login_prompt": "Enter the access key from Intent on your desktop, under Settings → Machines → Browser access.",
   "browserAccess_login_submit_label": "Sign in",
   "browserAccess_login_title": "Sign in to Intent",
   "browserAccess_login_tooManyAttempts_error": "Too many attempts. Wait a minute and try again.",

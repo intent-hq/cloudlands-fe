@@ -6,7 +6,8 @@
  * front-end the user configures can reach it. It therefore never trusts
  * identity headers: each request must carry a session cookie derived from the
  * user's access key, and browser-level attacks are blocked separately:
- * - DNS rebinding: the Host header must name a loopback address.
+ * - DNS rebinding: the Host header must be loopback or the front-end's
+ *   forwarded host, and a rebound page never carries this host's cookie.
  * - Cross-site WebSocket hijacking: the upgrade's Origin must equal the page
  *   origin the front-end reports (X-Forwarded-Proto/Host), else Host.
  *
@@ -111,6 +112,19 @@ export function isLoopbackHost(host: string | string[] | undefined): boolean {
     hostname === '::1' ||
     /^127(?:\.[0-9]{1,3}){3}$/.test(hostname)
   );
+}
+
+/**
+ * Whether the Host header is acceptable: a loopback name (a direct visit), or
+ * the same name a front-end reports in X-Forwarded-Host (`tailscale serve`
+ * forwards the public name as both). The session cookie remains the real gate:
+ * a DNS-rebinding page can forge these headers but never has this host's cookie.
+ */
+export function isAllowedHost(headers: Headers): boolean {
+  if (isLoopbackHost(headers.host)) return true;
+  const host = firstHeaderValue(headers.host)?.toLowerCase();
+  const forwarded = firstHeaderValue(headers['x-forwarded-host'])?.toLowerCase();
+  return Boolean(host && forwarded && host === forwarded && hostnameOf(host));
 }
 
 /**
