@@ -21,7 +21,7 @@
   import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
   import MobileSettings from '$features/settings/MobileSettings.svelte';
   import GuestSessionsSettings from '$lib/components/settings/GuestSessionsSettings.svelte';
-  import BackendSyncSettings from '$lib/components/settings/BackendSyncSettings.svelte';
+  import DevicesConnectionSections from '$lib/components/settings/DevicesConnectionSections.svelte';
   import VoiceSettings from '$lib/components/settings/VoiceSettings.svelte';
   import GitWorkspaceSettings from '$lib/components/settings/GitWorkspaceSettings.svelte';
   import OpenInAppsSettings from '$lib/components/settings/OpenInAppsSettings.svelte';
@@ -156,6 +156,7 @@
     devices: 'devices',
     machines: 'devices',
     'backend-sync': 'devices',
+    'browser-access': 'devices',
     mobile: 'mobile',
     'websocket-api': 'mobile',
     'remote-access': 'mobile',
@@ -598,16 +599,7 @@
             <DevicesSettings />
           </div>
 
-          <div id="backend-sync" class="scroll-mt-20">
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_backendSync()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section data-slot="settings-section-body" class="px-6 py-4">
-                <BackendSyncSettings />
-              </section>
-            </div>
-          </div>
+          <DevicesConnectionSections />
         {/if}
 
         {#if activeTab === 'mobile'}

@@ -4,6 +4,36 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.269.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.268.1...v2.269.0) (2026-11-02)
+
+
+### 🚀 Features
+
+* **browser-access:** use the desktop app and its backends from a browser ([#4017](https://github.com/intent-hq/cloudlands-fe/issues/4017)) ([4401a33](https://github.com/intent-hq/cloudlands-fe/commit/4401a3308e68072bfbd83f8a7ab400f65e2e3993))
+
+## [2.268.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.268.0...v2.268.1) (2026-11-02)
+
+
+### 🐛 Bug Fixes
+
+* **chat:** show the workspace before opening a monitored script ([#4013](https://github.com/intent-hq/cloudlands-fe/issues/4013)) ([908815c](https://github.com/intent-hq/cloudlands-fe/commit/908815c66cd4269c22b9025961f11ce8865e00bc))
+* polish the onboarding project step for plain folders ([#4016](https://github.com/intent-hq/cloudlands-fe/issues/4016)) ([9fe75fb](https://github.com/intent-hq/cloudlands-fe/commit/9fe75fb7e17325c747f1b7fed199caef74fe2f70))
+* remove the Plain folder pill from workspace surfaces ([#4014](https://github.com/intent-hq/cloudlands-fe/issues/4014)) ([423ad0a](https://github.com/intent-hq/cloudlands-fe/commit/423ad0a20f292420ba2ae5855e8f81ed311908c1))
+
+## [2.268.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.267.0...v2.268.0) (2026-11-02)
+
+
+### 🚀 Features
+
+* **sidebar:** pin agents to the top of the agent list ([#4007](https://github.com/intent-hq/cloudlands-fe/issues/4007)) ([f443c6c](https://github.com/intent-hq/cloudlands-fe/commit/f443c6c4674bebfb17e168b932a435fd25eca99e))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.105 ([#4015](https://github.com/intent-hq/cloudlands-fe/issues/4015)) ([4d2b00f](https://github.com/intent-hq/cloudlands-fe/commit/4d2b00f77c10dffb135c71d5a1aed3d68dab32a4))
+* **ci:** fail safe when release-fast-path relevance matchers crash ([#4011](https://github.com/intent-hq/cloudlands-fe/issues/4011)) ([5dc8085](https://github.com/intent-hq/cloudlands-fe/commit/5dc8085f285fd16f35e6c1d158f4012ea461daa2))
+* move the plain-folder git choice into the folder picker tabs ([#4008](https://github.com/intent-hq/cloudlands-fe/issues/4008)) ([b4b91bd](https://github.com/intent-hq/cloudlands-fe/commit/b4b91bd2ddb98ea7ce9d353ec4a033f23520e637))
+
 ## [2.267.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.266.3...v2.267.0) (2026-11-02)
 
 

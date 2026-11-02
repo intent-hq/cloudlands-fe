@@ -271,6 +271,7 @@
   "settings_updateChannel_stable_label": ["fr"],
   "settings_voice_inputDevice_label": ["fr"],
   "settings_voice_inputDevice_unnamed": ["fr"],
+  "settings_browserAccess_port_label": ["de", "fr"],
   "settings_wsApi_port_label": ["de", "fr"],
   "shared_agentAttribution_agent_fallback": ["de", "fr"],
   "specialists_builtin_chiefOfStaff_name": "*",

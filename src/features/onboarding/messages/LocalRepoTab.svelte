@@ -193,10 +193,16 @@
   }
 
   let pickerOpen = $state(false);
+  // A plain folder is not a repository; name the picker for what it picks.
+  const pickerTitle = $derived(
+    plainFolderMode
+      ? m.onboarding_localRepoTab_selectFolder_title()
+      : m.onboarding_localRepoTab_selectRepoFolder_title(),
+  );
 
   function handleSelectFolder() {
     void pickDirectory({
-      title: m.onboarding_localRepoTab_selectRepoFolder_title(),
+      title: pickerTitle,
       defaultPath: selectedPath,
       openModal: () => (pickerOpen = true),
       onSelect: handlePickerSelect,
@@ -394,7 +400,7 @@
 
 <DirectoryPickerModal
   open={pickerOpen}
-  title={m.onboarding_localRepoTab_selectRepoFolder_title()}
+  title={pickerTitle}
   initialPath={selectedPath}
   selectLabel={m.onboarding_dirPicker_selectFolder_label()}
   onSelect={handlePickerSelect}

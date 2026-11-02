@@ -1,8 +1,10 @@
 <script lang="ts">
   /**
-   * "Initialize as git repository" toggle (Labs, plain-folder workspaces).
-   * Shown on the New Workspace dialog and the onboarding project step, never
-   * on the forge clone flows. Off creates a plain-folder workspace.
+   * The git choice (Labs, plain-folder workspaces), shown inside the folder
+   * picker's "Existing folder" and "New" tabs of the New Workspace dialog and
+   * the onboarding project step, never on the clone flows. Off creates a
+   * plain-folder workspace. `kind` picks the copy: an existing folder is used
+   * through an isolated copy, a new folder is initialized as a git repository.
    */
   import { Switch } from '$lib/components/ui/switch';
   import { m } from '$shared/paraglide/messages.js';
@@ -11,10 +13,28 @@
     checked: boolean;
     disabled?: boolean;
     onCheckedChange: (checked: boolean) => void;
+    kind?: 'existing' | 'new';
     class?: string;
   }
 
-  let { checked, disabled = false, onCheckedChange, class: className = '' }: Props = $props();
+  let {
+    checked,
+    disabled = false,
+    onCheckedChange,
+    kind = 'new',
+    class: className = '',
+  }: Props = $props();
+
+  const label = $derived(
+    kind === 'existing'
+      ? m.workspace_plainFolder_isolatedCopy_label()
+      : m.workspace_plainFolder_initializeGit_label(),
+  );
+  const description = $derived(
+    kind === 'existing'
+      ? m.workspace_plainFolder_isolatedCopy_description()
+      : m.workspace_plainFolder_initializeGitChoice_description(),
+  );
 
   const id = `initialize-git-${crypto.randomUUID()}`;
 </script>
@@ -32,10 +52,10 @@
   />
   <div class="min-w-0">
     <label id={`${id}-label`} for={`${id}-switch`} class="text-sm font-medium text-foreground">
-      {m.workspace_plainFolder_initializeGit_label()}
+      {label}
     </label>
     <p id={`${id}-description`} class="text-xs text-muted-foreground">
-      {m.workspace_plainFolder_initializeGit_description()}
+      {description}
     </p>
   </div>
 </div>

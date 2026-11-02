@@ -110,6 +110,14 @@ function commitFile(root: string, file: string, content: string) {
 // base, and one head commit on top of it. Extra `headFiles` land in the same
 // head commit (`git diff --name-only` lists the commit's paths in sorted
 // order), so the base..head diff names exactly the head files.
+// Head-commit content for a fixture path. JSON files get valid JSON: a
+// committed `package.json` sits in the matcher's cwd, and Node (under a host
+// `--require` preload, e.g. an APM injector) fails to start on an invalid one,
+// which would exercise the crash fallback instead of the path match.
+function headContent(file: string) {
+  return file.endsWith('.json') ? '{}\n' : '// head';
+}
+
 function checkoutWith(headFile: string, moduleSource?: string, headFiles: string[] = []) {
   const root = temporaryDirectory('ct-contract-paths-ci-');
   git(root, 'init', '-q');
@@ -129,10 +137,10 @@ function checkoutWith(headFile: string, moduleSource?: string, headFiles: string
   for (const file of headFiles) {
     const path = join(root, file);
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, '// head');
+    writeFileSync(path, headContent(file));
   }
   if (headFiles.length > 0) git(root, 'add', '--all');
-  commitFile(root, headFile, '// head');
+  commitFile(root, headFile, headContent(headFile));
   return { root, base };
 }
 
@@ -572,6 +580,78 @@ describe('portable fixture relevance', () => {
   });
 });
 
+// A relevance matcher that crashes (Node startup failure under a host
+// --require preload, an invalid package.json, a grep error) must require its
+// suite, never skip it: only the matcher's explicit no-match status may
+// report false (intent-hq/intent#8299).
+describe('relevance matchers fail safe when the matcher itself crashes', () => {
+  // Shadows `name` on PATH with a stub that exits `status`, so the crash does
+  // not depend on the host's Node or grep.
+  function crashingTool(root: string, name: string, status: number) {
+    const bin = join(root, 'crash-bin');
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(join(bin, name), `#!/bin/sh\necho "${name} crashed" >&2\nexit ${status}\n`, {
+      mode: 0o755,
+    });
+    return `${bin}:${process.env.PATH ?? ''}`;
+  }
+
+  function runStep(stepName: string, root: string, env: Record<string, string>) {
+    const output = join(root, 'github-output');
+    writeFileSync(output, '');
+    const result = bash(
+      stepRunBlock(releaseFastPath, stepName),
+      { GITHUB_OUTPUT: output, ...env },
+      root,
+    );
+    return { ...result, output: readFileSync(output, 'utf8').trim() };
+  }
+
+  const NODE_STEPS = [
+    ['Evaluate root Playwright relevance', 'root_playwright_required'],
+    ['Evaluate Electron relevance', 'electron_required'],
+  ] as const;
+
+  it.each(NODE_STEPS)('%s requires the suite when node exits 1', (stepName, key) => {
+    const { root, base } = checkoutWith('src/features/agent/view.svelte');
+    const result = runStep(stepName, root, { BASE_SHA: base, PATH: crashingTool(root, 'node', 1) });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.output).toBe(`${key}=true`);
+  });
+
+  it.each(NODE_STEPS)(
+    '%s requires the suite when a NODE_OPTIONS preload throws',
+    (stepName, key) => {
+      const { root, base } = checkoutWith('src/features/agent/view.svelte');
+      const preload = join(root, 'throwing-preload.cjs');
+      writeFileSync(preload, "throw new Error('preload failed');\n");
+      const result = runStep(stepName, root, {
+        BASE_SHA: base,
+        NODE_OPTIONS: `--require ${preload}`,
+      });
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.output).toBe(`${key}=true`);
+    },
+  );
+
+  it.each(NODE_STEPS)('%s still reports false on a genuine no-match', (stepName, key) => {
+    const { root, base } = checkoutWith('src/features/agent/view.svelte');
+    const result = runStep(stepName, root, { BASE_SHA: base });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.output).toBe(`${key}=false`);
+  });
+
+  it('portable fixture relevance requires native tests when grep errors', () => {
+    const { root, base } = checkoutWith('src/other.ts');
+    const result = runStep('Evaluate portable fixture relevance', root, {
+      BASE_SHA: base,
+      PATH: crashingTool(root, 'grep', 2),
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.output).toBe('portable_fixtures_required=true');
+  });
+});
+
 describe('authored browser tests require their complete PR suites', () => {
   it.each([
     ['Evaluate CT relevance', 'ct_required', 'src/components/example.ct.spec.ts'],
@@ -680,6 +760,9 @@ describe('authored browser tests require their complete PR suites', () => {
       root,
     );
     expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout, 'classified by the matcher, not its crash fallback').not.toContain(
+      '(fail-safe)',
+    );
     expect(readFileSync(output, 'utf8').trim()).toBe(`electron_required=${required}`);
   });
 
@@ -709,6 +792,9 @@ describe('authored browser tests require their complete PR suites', () => {
       root,
     );
     expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout, 'classified by the matcher, not its crash fallback').not.toContain(
+      '(fail-safe)',
+    );
     expect(readFileSync(output, 'utf8').trim()).toBe('root_playwright_required=true');
   });
 });
@@ -1191,6 +1277,10 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
     PORTABLE_FIXTURES_REQUIRED: 'false',
     RESULT_test_integration: event === 'merge_group' ? 'success' : 'skipped',
     RESULT_test_ct: ct,
+    // No changed CT spec: the PR-only repetition job skips (its own gate
+    // cases live in scripts/test-ci-event-policy.py).
+    RESULT_test_ct_changed: 'skipped',
+    CT_CHANGED_SPECS: '[]',
     RESULT_test_playwright: ct,
     RESULT_monorepo_consumer_checks: 'success',
   });

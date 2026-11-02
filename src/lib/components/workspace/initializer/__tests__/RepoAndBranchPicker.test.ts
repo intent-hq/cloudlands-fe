@@ -20,6 +20,7 @@ vi.mock('$lib/client', () => ({
 
 import RepoAndBranchPicker from '../RepoAndBranchPicker.svelte';
 import type { GitLabBranchPickerProps } from '../gitlab-picker-types';
+import { m } from '$shared/paraglide/messages.js';
 
 function gitlabBranchProps(): GitLabBranchPickerProps {
   return {
@@ -275,6 +276,28 @@ describe('RepoAndBranchPicker', () => {
     expect(text).toContain('Clone');
     expect(text).toContain('and work off');
     expect(text).not.toContain('worktree');
+  });
+
+  // Accepted by design: with the git choice off (Labs) and a GitHub repo still
+  // selected, the summary must read as a clone, never as a plain folder.
+  it('still summarises a GitHub repo as a clone with the git choice off', () => {
+    const { container } = render(RepoAndBranchPicker, {
+      props: {
+        repoType: 'github',
+        githubUrl: 'https://github.com/intent-hq/monorepo',
+        repoPath: 'intent-hq/monorepo',
+        branch: 'main',
+        plainFolderMode: true,
+        plainFolder: null,
+        gitChoice: { checked: false, onCheckedChange: vi.fn() },
+      },
+    });
+
+    const text = container.textContent?.replace(/\s+/g, ' ') ?? '';
+    expect(text).toContain('Clone');
+    expect(text).toContain('and work off');
+    expect(text).not.toContain('Work in');
+    expect(text).not.toContain(m.workspace_repoAndBranchPicker_createFolder_label());
   });
 
   it('gives the default-presentation repo value the same explicit color as the branch trigger', () => {

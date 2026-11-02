@@ -572,7 +572,7 @@ describe('WorkspaceSidebarHeader plain-folder workspaces', () => {
     await screen.findByRole('menu');
   }
 
-  it('hides the branch and Transfer and shows the Plain folder label', async () => {
+  it('hides the branch, Transfer and the Plain folder pill', async () => {
     const { container } = await renderHeader({
       plainFolder: true,
       branch: '',
@@ -583,10 +583,10 @@ describe('WorkspaceSidebarHeader plain-folder workspaces', () => {
 
     expect(container.querySelector('[data-sidebar-branch-metadata]')).toBeNull();
     expect(screen.queryByText('No branch')).toBeNull();
-    expect(container.querySelector('[data-plain-folder-label]')?.textContent?.trim()).toBe(
-      'Plain folder',
-    );
+    expect(container.querySelector('[data-plain-folder-label]')).toBeNull();
+    expect(screen.queryByText('Plain folder')).toBeNull();
     expect(screen.getByText('Notes')).toBeTruthy();
+    expect(screen.queryByText('·')).toBeNull();
 
     await openMenu();
     expect(screen.queryByRole('button', { name: 'Transfer/Download…' })).toBeNull();

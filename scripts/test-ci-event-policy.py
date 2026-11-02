@@ -14,6 +14,10 @@ LIGHT = {'route', 'release-fast-path', 'pr-static', 'pr-title', 'docs-pr-scope',
 HEAVY = {'checks', 'build-web', 'test', 'test-integration', 'test-portable-fixtures', 'test-ct', 'test-playwright', 'test-electron'}
 PR_SUITES = {'checks', 'test'}
 QUEUE_ONLY = HEAVY - PR_SUITES
+# PR-only, and only when the diff adds or edits a component test spec.
+CT_CHANGED = 'test-ct-changed'
+NO_SPECS = '[]'
+SOME_SPECS = '["src/a/b.ct.spec.ts"]'
 
 
 def evaluate(expression, values, success=True):
@@ -31,10 +35,11 @@ def evaluate(expression, values, success=True):
     return bool((explicit or success) and eval(compile(tree, '<condition>', 'eval'), {'__builtins__': {}}))
 
 
-def schedule(workflow, event, fork=False, fast='false', relevant='true', route='success'):
+def schedule(workflow, event, fork=False, fast='false', relevant='true', route='success', changed=NO_SPECS):
     values = {'github.event_name': event, 'github.repository': 'intent-hq/cloudlands-fe',
               'github.event.pull_request.head.repo.full_name': 'outside/fork' if fork else 'intent-hq/cloudlands-fe',
-              'needs.release-fast-path.outputs.fast_path': fast}
+              'needs.release-fast-path.outputs.fast_path': fast,
+              'needs.release-fast-path.outputs.ct_changed_specs': changed}
     for key in ('ct_required', 'root_playwright_required', 'electron_required', 'portable_fixtures_required'):
         values['needs.release-fast-path.outputs.' + key] = relevant
     results = {}
@@ -53,11 +58,11 @@ def schedule(workflow, event, fork=False, fast='false', relevant='true', route='
     return results
 
 
-def gate(workflow, event, results, fast='false', relevant='true'):
+def gate(workflow, event, results, fast='false', relevant='true', changed=NO_SPECS):
     step = next(s for s in workflow['jobs']['gate']['steps'] if s.get('name') == 'Check results')
     values = {'github.event_name': event, **{'needs.'+k+'.result': v for k, v in results.items()}}
     body = re.sub(r'\$\{\{\s*(.*?)\s*\}\}', lambda m: values.get(m[1], ''), step['run'])
-    env = {**os.environ, 'FAST_PATH': fast}
+    env = {**os.environ, 'FAST_PATH': fast, 'CT_CHANGED_SPECS': changed}
     for key in ('CT_REQUIRED', 'ROOT_PLAYWRIGHT_REQUIRED', 'ELECTRON_REQUIRED', 'PORTABLE_FIXTURES_REQUIRED'):
         env[key] = relevant
     return subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', body], env=env, capture_output=True).returncode == 0
@@ -91,6 +96,36 @@ class EventPolicy(unittest.TestCase):
         for job in PR_SUITES:
             self.assertEqual(results[job], 'skipped', job)
         self.assertTrue(gate(self.workflow, 'pull_request', results, fast='true'))
+
+    def test_pr_repeats_changed_component_specs_only_when_some_changed(self):
+        results = schedule(self.workflow, 'pull_request', changed=SOME_SPECS)
+        self.assertEqual({n for n, r in results.items() if r == 'success'}, LIGHT | PR_SUITES | {CT_CHANGED, 'gate'})
+        self.assertTrue(gate(self.workflow, 'pull_request', results, changed=SOME_SPECS))
+        for outcome in ('skipped', 'failure', 'cancelled', ''):
+            with self.subTest(outcome=outcome):
+                self.assertFalse(gate(self.workflow, 'pull_request', {**results, CT_CHANGED: outcome}, changed=SOME_SPECS))
+        self.assertEqual(schedule(self.workflow, 'pull_request')[CT_CHANGED], 'skipped')
+        self.assertEqual(schedule(self.workflow, 'merge_group', changed=SOME_SPECS)[CT_CHANGED], 'skipped')
+
+    def test_failed_or_missing_spec_list_never_counts_as_no_specs(self):
+        for changed in ('error', ''):
+            with self.subTest(changed=changed):
+                results = schedule(self.workflow, 'pull_request', changed=changed)
+                self.assertEqual(results[CT_CHANGED], 'success')
+                self.assertFalse(gate(self.workflow, 'pull_request', {**results, CT_CHANGED: 'skipped'}, changed=changed))
+        no_specs = schedule(self.workflow, 'pull_request')
+        self.assertFalse(gate(self.workflow, 'pull_request', no_specs, changed='error'))
+
+    def test_release_shaped_pr_skips_changed_component_specs(self):
+        results = schedule(self.workflow, 'pull_request', fast='true', changed=SOME_SPECS)
+        self.assertEqual(results[CT_CHANGED], 'skipped')
+        self.assertTrue(gate(self.workflow, 'pull_request', results, fast='true', changed=SOME_SPECS))
+
+    def test_queue_gate_rejects_a_failed_changed_spec_run(self):
+        results = schedule(self.workflow, 'merge_group')
+        self.assertTrue(gate(self.workflow, 'merge_group', results, changed=SOME_SPECS))
+        for outcome in ('failure', 'cancelled', ''):
+            self.assertFalse(gate(self.workflow, 'merge_group', {**results, CT_CHANGED: outcome}))
 
     def test_consumer_caller_grants_only_declared_permissions_and_secrets(self):
         caller = self.workflow['jobs']['monorepo-consumer-checks']

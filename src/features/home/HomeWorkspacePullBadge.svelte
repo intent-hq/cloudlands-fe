@@ -12,10 +12,9 @@
   import { PullRequestStatus, type Workspace } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
   import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
-  import PlainFolderLabel from '$lib/components/workspace/PlainFolderLabel.svelte';
 
   let { workspace }: { workspace: Workspace } = $props();
-  // Plain folders have no PRs; the row shows the Plain folder label instead.
+  // Plain folders have no PRs, so the row shows no PR badge.
   const plainFolder = $derived(isPlainFolderWorkspace(workspace));
   const candidates = $derived(
     plainFolder
@@ -108,9 +107,7 @@
   });
 </script>
 
-{#if plainFolder}
-  <PlainFolderLabel />
-{:else if pull && appearance}
+{#if pull && appearance}
   <Tooltip.Provider
     ><Tooltip.Root
       ><Tooltip.Trigger

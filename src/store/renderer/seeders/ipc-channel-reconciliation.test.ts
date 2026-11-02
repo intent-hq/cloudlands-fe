@@ -498,6 +498,14 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
   // stays off; a mock bridge would create a second source of truth.
   'window:get-dock-lab',
   'window:set-dock-lab',
+  // Browser access (Settings > Machines): main owns the setting, the access key
+  // and the loopback server (src/lib/browser-access-ipc.ts). The section only
+  // renders when the real preload bridge exists, and the IPC functions reject
+  // without it; a mock bridge would invent a server that is not running.
+  'browser-access:get-state',
+  'browser-access:set-enabled',
+  'browser-access:set-port',
+  'browser-access:reset-key',
   // Dock composer native sessions (capture, annotate, record, pick): main owns
   // the screen capture, overlay window and helper processes. Both callers
   // (dock-evidence-native.ts, dock-annotation-overlay-bridge.ts) invoke only
