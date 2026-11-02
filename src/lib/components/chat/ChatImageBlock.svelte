@@ -36,6 +36,12 @@
     hydrationLoading?: boolean;
     /** Fetch the original via agent.getMessageBlock; absent → no hydration. */
     onHydrate?: () => void;
+    /**
+     * The original is over the capped `agent.getMessageBlock` read (§5.5,
+     * `messageBlockPages: 1`): keep the thumbnail, show a notice, and stop
+     * offering to load the full image.
+     */
+    tooLarge?: boolean;
   }
 
   let {
@@ -50,6 +56,7 @@
     dataIsThumbnail = false,
     hydrationLoading = false,
     onHydrate,
+    tooLarge = false,
   }: Props = $props();
   let lightboxOpen = $state(false);
   let imageActionsOpen = $state(false);
@@ -63,7 +70,7 @@
   // for the original first — the lightbox opens once hydration swaps the
   // full block in (dataTruncated then disappears from the merged block).
   const hasOriginal = $derived(!dataTruncated && !dataIsThumbnail);
-  const needsHydration = $derived(!hasOriginal && onHydrate !== undefined);
+  const needsHydration = $derived(!hasOriginal && onHydrate !== undefined && !tooLarge);
   // Same validation as the Markdown sidecar transform: intrinsic pixel
   // dimensions are positive integers, anything else renders the legacy tile.
   const isPositiveInteger = (value: unknown): value is number =>
@@ -194,8 +201,17 @@
         />
       {/if}
     </div>
+    {#if tooLarge}
+      <p class="mt-1 type-caption text-subtle" role="note" data-testid="chat-image-too-large">
+        {m.chat_imageBlock_tooLarge_label()}
+      </p>
+    {/if}
   {:else if imageUnavailable}
     <MediaUnavailable name={alt} reason="load-failed" />
+  {:else if dataTruncated && tooLarge}
+    <p class="type-caption text-subtle" role="note" data-testid="chat-image-too-large">
+      {m.chat_imageBlock_tooLarge_label()}
+    </p>
   {:else if dataTruncated}
     <!-- Legacy slim row with no persisted thumbnail: placeholder chip with
          the same on-demand fetch. -->

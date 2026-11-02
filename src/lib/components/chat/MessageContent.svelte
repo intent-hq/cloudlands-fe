@@ -545,6 +545,7 @@
         dataIsThumbnail={block.dataIsThumbnail === true}
         hydrationLoading={imageHydrationLoading(block.id)}
         onHydrate={agentId && messageId && block.id ? () => hydrateImageBlock(block.id) : undefined}
+        tooLarge={block.servedTruncation !== undefined}
       />
     </div>
   {:else if block.type === 'video' && block.source}

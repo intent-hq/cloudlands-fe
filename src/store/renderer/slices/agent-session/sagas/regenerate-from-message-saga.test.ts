@@ -1,7 +1,19 @@
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ getMessageBlock: vi.fn(), toastError: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  getMessageBlock: vi.fn(),
+  toastError: vi.fn(),
+  messageBlockPages: false,
+}));
+vi.mock('$store/renderer/slices/principal/principal-selectors', () => ({
+  selectMessageBlockPagesSupported: {
+    // eslint-disable-next-line require-yield -- selector effect stand-in
+    *effect() {
+      return mocks.messageBlockPages;
+    },
+  },
+}));
 vi.mock('$lib/client', () => ({
   appClient: { agents: { getMessageBlock: mocks.getMessageBlock } },
 }));
@@ -531,6 +543,67 @@ describe('regenerateFromMessageSaga', () => {
       expect(mocks.toastError).not.toHaveBeenCalled();
       edits[0].success(undefined as never);
       await action.promise;
+      task.cancel();
+      await task.toPromise();
+    });
+  });
+
+  describe('stored-block image references (PROTOCOL §5.5, messageBlockPages: 1)', () => {
+    afterEach(() => {
+      mocks.messageBlockPages = false;
+    });
+
+    it('sends slim images as block references and never fetches them', async () => {
+      mocks.messageBlockPages = true;
+      const { channel, edits, task } = start(
+        userMessageWith([
+          {
+            id: 'blk-thumb',
+            type: 'image',
+            data: 'dGh1bWI=',
+            mimeType: 'image/png',
+            dataTruncated: true,
+            dataIsThumbnail: true,
+          },
+          { type: 'image', attachmentId: 'img-ref', mimeType: 'image/png' },
+          { id: 'blk-omitted', type: 'image', mimeType: 'image/webp' },
+          { id: 'blk-full', type: 'image', data: 'AAAA', mimeType: 'image/jpeg' },
+        ]),
+      );
+      const action = agentSessionRegenerateFromMessageRequested(AGENT, WS, 'a9');
+      channel.put(action);
+      await settle();
+
+      expect(mocks.getMessageBlock).not.toHaveBeenCalled();
+      expect(edits).toHaveLength(1);
+      expect(edits[0].payload[4]).toEqual({
+        imageBlocks: [
+          { type: 'image', messageId: 'u9', blockId: 'blk-thumb' },
+          { type: 'image', attachmentId: 'img-ref', mimeType: 'image/png' },
+          { type: 'image', messageId: 'u9', blockId: 'blk-omitted' },
+          { type: 'image', data: 'AAAA', mimeType: 'image/jpeg' },
+        ],
+      });
+      expect(JSON.stringify(edits[0].payload)).not.toContain('dGh1bWI=');
+      edits[0].success(undefined as never);
+      await expect(action.promise).resolves.toBeUndefined();
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('fails closed when a slim image has no block id to reference', async () => {
+      mocks.messageBlockPages = true;
+      const { channel, edits, task } = start(
+        userMessageWith([{ type: 'image', mimeType: 'image/png', dataTruncated: true }]),
+      );
+      const action = agentSessionRegenerateFromMessageRequested(AGENT, WS, 'a9');
+      channel.put(action);
+      await settle();
+
+      expect(mocks.getMessageBlock).not.toHaveBeenCalled();
+      expect(edits).toHaveLength(0);
+      await expect(action.promise).rejects.toBeInstanceOf(Error);
+      expect(mocks.toastError).toHaveBeenCalledTimes(1);
       task.cancel();
       await task.toPromise();
     });

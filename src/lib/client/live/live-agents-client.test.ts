@@ -2680,6 +2680,59 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     );
   });
 
+  it('getMessageBlockPage returns the capped page fields (§5.5 messageBlockPages: 1)', async () => {
+    backend.onRequest('agent.getMessageBlock', () => ({
+      block: { type: 'tool_result', id: 'msg-1:3', tool_use_id: 'call-9', output: 'head' },
+      truncated: true,
+      field: 'output',
+      encoding: 'text',
+      totalBytes: 3_200_000,
+      nextOffset: 479_900,
+    }));
+    const client = new LiveAgentsClient();
+
+    const page = await client.getMessageBlockPage('agent-1', 'msg-1', 'msg-1:3', 'ws-1');
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.getMessageBlock',
+      params: { agentId: 'agent-1', messageId: 'msg-1', blockId: 'msg-1:3', workspaceId: 'ws-1' },
+    });
+    expect(page).toEqual({
+      block: { type: 'tool_result', id: 'msg-1:3', tool_use_id: 'call-9', output: 'head' },
+      truncated: true,
+      field: 'output',
+      encoding: 'text',
+      totalBytes: 3_200_000,
+      nextOffset: 479_900,
+    });
+  });
+
+  it('getMessageBlockPage reads absent or malformed page fields as a whole block', async () => {
+    backend.onRequest('agent.getMessageBlock', () => ({
+      block: { type: 'text', id: 'msg-1:0', text: 'hi' },
+      truncated: 'yes',
+      encoding: 'base64',
+      totalBytes: -1,
+    }));
+    const client = new LiveAgentsClient();
+
+    await expect(client.getMessageBlockPage('agent-1', 'msg-1', 'msg-1:0')).resolves.toEqual({
+      block: { type: 'text', id: 'msg-1:0', text: 'hi' },
+      truncated: false,
+      field: null,
+      encoding: null,
+      totalBytes: null,
+      nextOffset: null,
+    });
+  });
+
+  it('getMessageBlockPage rejects on a missing block envelope', async () => {
+    backend.onRequest('agent.getMessageBlock', () => ({ truncated: true }));
+    const client = new LiveAgentsClient();
+    await expect(client.getMessageBlockPage('agent-1', 'msg-1', 'msg-1:0')).rejects.toThrow(
+      'returned no block',
+    );
+  });
+
   it('getMessageBlock propagates daemon -32602 rejections (unknown ids)', async () => {
     backend.onRequest('agent.getMessageBlock', () => {
       throw new BackendError(buildErrorPayload('INVALID_PARAMS', 'unknown block id: msg-1:99'));

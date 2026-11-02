@@ -1,4 +1,5 @@
 import { selectAgentSessionWorkspaceId } from '$store/renderer/slices/agent-session/agent-session-selectors';
+import { selectMessageBlockPagesSupported } from '$store/renderer/slices/principal/principal-selectors';
 import { call, cancelled, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
@@ -146,6 +147,12 @@ function* hydrateSlimImage(
 // storedText), never a block. An image with neither bytes nor reference —
 // something the wire cannot carry — fails closed rather than silently
 // dropping the attachment from the regenerated message.
+//
+// On daemons advertising `messageBlockPages: 1` a slim inline image is sent
+// as a stored-block reference instead (PROTOCOL §5.5 "Image block
+// references in agent.editAndRegenerate"): the daemon copies the original
+// bytes server-side, so nothing is downloaded and an image over the
+// `agent.getMessageBlock` cap still replays whole.
 function* replayBlocks(
   agentId: string,
   messageId: string,
@@ -153,8 +160,14 @@ function* replayBlocks(
 ): SagaGenerator<{ imageBlocks: ImageBlocks; fileBlocks: FileBlocks }> {
   const imageBlocks: ImageBlocks = [];
   const fileBlocks: FileBlocks = [];
+  const blockReferences = yield* selectMessageBlockPagesSupported.effect();
   for (const stored of blocks) {
-    if (stored.type === 'image') {
+    if (stored.type === 'image' && blockReferences && isSlimInlineImage(stored)) {
+      if (!stored.id) {
+        throw new UnreplayableBlockError('slim image block without id', { messageId });
+      }
+      imageBlocks.push({ type: 'image', messageId, blockId: stored.id });
+    } else if (stored.type === 'image') {
       const block = isSlimInlineImage(stored)
         ? yield* hydrateSlimImage(agentId, messageId, stored)
         : stored;

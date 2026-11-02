@@ -212,6 +212,71 @@ describe('ToolCall lazy block hydration (§5.5 slim → agent.getMessageBlock)',
   });
 });
 
+describe('ToolCall capped block reads (§5.5, messageBlockPages: 1)', () => {
+  it('shows how much of a cut output is on screen', async () => {
+    render(ToolCall, {
+      props: {
+        toolUse: { id: 'msg-4:0', name: 'shell', input: { command: 'cat big.log' } } as any,
+        toolState: 'completed',
+        result: 'first part',
+        resultBlock: {
+          type: 'tool_result',
+          id: 'msg-4:1',
+          tool_use_id: 'call-4',
+          output: 'first part',
+          servedTruncation: { shownBytes: 512_000, totalBytes: 3_355_443 },
+        } as any,
+        agentId: 'agent-1',
+        messageId: 'msg-4',
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: /Run tests/ }));
+
+    const notice = screen.getByTestId('tool-call-served-truncation');
+    expect(notice.textContent?.trim()).toBe('Output truncated — showing 500Ki of 3.2Mi');
+  });
+
+  it('says only a preview is shown when the cut body could not be shown', async () => {
+    render(ToolCall, {
+      props: {
+        toolUse: {
+          id: 'msg-5:0',
+          name: 'shell',
+          input: { command: 'preview…' },
+          inputTruncated: true,
+          servedTruncation: { shownBytes: null, totalBytes: 900_000 },
+        } as any,
+        toolState: 'completed',
+        result: 'ok',
+        agentId: 'agent-1',
+        messageId: 'msg-5',
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: /Run tests/ }));
+
+    expect(screen.getByTestId('tool-call-served-truncation').textContent?.trim()).toBe(
+      'Too large to show in full — showing a preview',
+    );
+  });
+
+  it('shows no notice for a block served whole', async () => {
+    render(ToolCall, {
+      props: {
+        toolUse: { id: 'msg-6:0', name: 'shell', input: { command: 'ls' } } as any,
+        toolState: 'completed',
+        result: 'ok',
+        resultBlock: { type: 'tool_result', id: 'msg-6:1', tool_use_id: 'c', output: 'ok' } as any,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: /Run tests/ }));
+
+    expect(screen.queryByTestId('tool-call-served-truncation')).toBeNull();
+  });
+});
+
 describe('ToolCall collapsed browser screenshot preview', () => {
   const pngBase64 =
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl2kAAAAASUVORK5CYII=';

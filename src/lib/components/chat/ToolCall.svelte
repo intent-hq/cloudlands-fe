@@ -18,6 +18,7 @@
   import { hasNodeOwnedAgentPath } from '$shared/utils/agent-node';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
+  import { formatBytesBinary } from '$lib/i18n/format';
   import {
     CHAT_OPERATIONAL_ICON_CLASS,
     COMPACT_TOOL_TRAILING_CLASS,
@@ -100,6 +101,22 @@
   const hydrationPending = $derived(
     isHydrationPending($hydratedBlocks$, messageId, truncatedBlockIds),
   );
+
+  // A capped full-block read (§5.5, `messageBlockPages: 1`) that could not
+  // serve the row's body whole: the merged block carries `servedTruncation`.
+  const servedTruncation = $derived(
+    resultBlock?.servedTruncation ?? toolUse.servedTruncation ?? null,
+  );
+  const servedTruncationLabel = $derived.by(() => {
+    if (!servedTruncation) return null;
+    const { shownBytes, totalBytes } = servedTruncation;
+    return shownBytes !== null && totalBytes !== null
+      ? m.chat_toolCall_outputTruncated_label({
+          shown: formatBytesBinary(shownBytes),
+          total: formatBytesBinary(totalBytes),
+        })
+      : m.chat_toolCall_outputTooLarge_label();
+  });
 
   function requestHydration() {
     if (!agentId || !messageId) return;
@@ -344,6 +361,15 @@
     >
       <Fa icon={toolDisplay.icon} size={12} class="animate-pulse" />
       <span>{m.chat_toolCall_loadingFullOutput_label()}</span>
+    </div>
+  {/if}
+  {#if servedTruncationLabel}
+    <div
+      class="type-caption px-2 py-1 text-subtle"
+      role="note"
+      data-testid="tool-call-served-truncation"
+    >
+      {servedTruncationLabel}
     </div>
   {/if}
   {#if localImageSource}
