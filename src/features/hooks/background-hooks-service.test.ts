@@ -135,6 +135,28 @@ describe('wire requests (§5.40, fake transport)', () => {
     expect(hooks).toEqual([makeHook()]);
   });
 
+  it('listHooks follows nextCursor until the last page (hookListPages)', async () => {
+    const first = makeHook();
+    const second = makeHook({ hookId: 'hook-2' });
+    mockedRequest
+      .mockResolvedValueOnce({ hooks: [first], nextCursor: 'c-1' })
+      .mockResolvedValueOnce({ hooks: [second] });
+    expect(await listHooks('ws-1')).toEqual([first, second]);
+    expect(mockedRequest).toHaveBeenNthCalledWith(1, 'hook.list', { workspaceId: 'ws-1' });
+    expect(mockedRequest).toHaveBeenNthCalledWith(2, 'hook.list', {
+      workspaceId: 'ws-1',
+      cursor: 'c-1',
+    });
+  });
+
+  it('listHooks rejects a repeated cursor instead of looping', async () => {
+    mockedRequest
+      .mockResolvedValueOnce({ hooks: [makeHook()], nextCursor: 'c-1' })
+      .mockResolvedValueOnce({ hooks: [makeHook()], nextCursor: 'c-1' });
+    await expect(listHooks('ws-1')).rejects.toThrow();
+    expect(mockedRequest).toHaveBeenCalledTimes(2);
+  });
+
   it('listHooks passes cron/runAt schedule kinds through unmodified', async () => {
     const cronHook = makeHook({ hookId: 'hook-cron', delayMs: 0, cron: '0 9 * * *' });
     const runAtHook = makeHook({ hookId: 'hook-once', delayMs: 0, runAt: '2026-08-01T09:00:00Z' });

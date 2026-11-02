@@ -29,6 +29,9 @@ import type {
 import { backendRequest } from './backend-transport';
 import { runMutation } from './live-support';
 
+/** Rows per full-view `script.list` page (the host also caps page bytes). */
+const FULL_PAGE_LIMIT = 200;
+
 export class LiveScriptsClient implements ScriptsClient {
   async supportsLifecycle(): Promise<boolean> {
     const result = await backendRequest<{
@@ -37,28 +40,54 @@ export class LiveScriptsClient implements ScriptsClient {
     return result?.server?.capabilities?.scriptLifecycle === 1;
   }
 
-  private async requireActiveLists(): Promise<void> {
+  /** Resolves whether the full view is paged (`scriptFullPages: 1`, §5.8). */
+  private async requireActiveLists(): Promise<{ fullPages: boolean }> {
     const hello = await backendRequest<{
-      server?: { capabilities?: { scriptActiveLists?: number } };
+      server?: { capabilities?: { scriptActiveLists?: number; scriptFullPages?: number } };
     }>('client.hello', {});
     // Gate on the advertised capability, not the protocol major: majors move
     // for unrelated changes (protocol 15 still serves active lists).
     if (hello.server?.capabilities?.scriptActiveLists !== 1)
       throw new Error(m.scripts_list_unsupported_error());
+    return { fullPages: hello.server?.capabilities?.scriptFullPages === 1 };
   }
 
-  /** Explicit bulk operations only; normal discovery uses one summary page. */
+  /**
+   * Explicit bulk operations only; normal discovery uses one summary page.
+   * Returns every active definition: a host with paged full views
+   * (`scriptFullPages: 1`) is read page by page until `nextCursor` is absent.
+   */
   async list(
     workspaceId: string,
     options?: { archive?: ScriptArchiveFilter },
   ): Promise<ScriptWithState[]> {
-    await this.requireActiveLists();
-    const result = await backendRequest<{ scripts: ScriptWithState[] }>('script.list', {
-      workspaceId,
-      archive: options?.archive ?? 'active',
-    });
-    if (!Array.isArray(result?.scripts)) throw new Error(m.scripts_list_load_error());
-    return result.scripts;
+    const { fullPages } = await this.requireActiveLists();
+    const scripts: ScriptWithState[] = [];
+    const seen = new Set<string>();
+    let cursor: string | undefined;
+    do {
+      const result = await backendRequest<{ scripts: ScriptWithState[]; nextCursor?: string }>(
+        'script.list',
+        {
+          workspaceId,
+          archive: options?.archive ?? 'active',
+          ...(fullPages ? { limit: FULL_PAGE_LIMIT, ...(cursor ? { cursor } : {}) } : {}),
+        },
+      );
+      if (!Array.isArray(result?.scripts)) throw new Error(m.scripts_list_load_error());
+      scripts.push(...result.scripts);
+      const next = fullPages ? result.nextCursor : undefined;
+      if (typeof next === 'string' && next && !seen.has(next)) {
+        seen.add(next);
+        cursor = next;
+      } else if (next !== undefined && next !== null) {
+        // A repeated or malformed cursor would never finish.
+        throw new Error(m.scripts_list_load_error());
+      } else {
+        cursor = undefined;
+      }
+    } while (cursor);
+    return scripts;
   }
 
   async listPage(

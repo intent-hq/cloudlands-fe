@@ -123,10 +123,33 @@ export function foldHookEvent(
   }
 }
 
-/** `hook.list` (§5.40) — every hook in the workspace, all states. */
+/**
+ * `hook.list` (§5.40) — every active hook in the workspace. A paging host
+ * (`hookListPages: 1`) returns `nextCursor` while more rows follow; read pages
+ * until it is absent. Older hosts ignore `cursor` and never send `nextCursor`.
+ */
 export async function listHooks(workspaceId: string): Promise<BackgroundHook[]> {
-  const result = await backendRequest<{ hooks?: BackgroundHook[] }>('hook.list', { workspaceId });
-  return Array.isArray(result?.hooks) ? result.hooks : [];
+  const hooks: BackgroundHook[] = [];
+  const seen = new Set<string>();
+  let cursor: string | undefined;
+  do {
+    const result = await backendRequest<{ hooks?: BackgroundHook[]; nextCursor?: string }>(
+      'hook.list',
+      cursor ? { workspaceId, cursor } : { workspaceId },
+    );
+    if (Array.isArray(result?.hooks)) hooks.push(...result.hooks);
+    const next = result?.nextCursor;
+    if (typeof next === 'string' && next && !seen.has(next)) {
+      seen.add(next);
+      cursor = next;
+    } else if (next !== undefined && next !== null) {
+      // i18n-ignore (diagnostic for a misbehaving host, logged by the saga)
+      throw new Error('hook.list returned a repeated or malformed cursor');
+    } else {
+      cursor = undefined;
+    }
+  } while (cursor);
+  return hooks;
 }
 
 /** `hook.runNow` (§5.40) — ack only; the run's outcome arrives as `hook:*` events. */

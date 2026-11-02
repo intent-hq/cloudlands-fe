@@ -103,6 +103,53 @@ describe('LiveScriptsClient (fake transport)', () => {
     await expect(client.list('ws-1')).rejects.toThrow();
   });
 
+  it('list reads every full-view page when the host pages full lists (scriptFullPages)', async () => {
+    const second: ScriptWithState = { ...DEV_SCRIPT, id: 's-2', name: 'test' };
+    const hello = {
+      server: {
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
+        capabilities: { scriptActiveLists: 1, scriptFullPages: 1 },
+      },
+    };
+    mockedRequest
+      .mockResolvedValueOnce(hello)
+      .mockResolvedValueOnce({ scripts: [DEV_SCRIPT], nextCursor: 'c-1' })
+      .mockResolvedValueOnce({ scripts: [second] });
+    const scripts = await new LiveScriptsClient().list('ws-1');
+
+    expect(scripts).toEqual([DEV_SCRIPT, second]);
+    expect(mockedRequest).toHaveBeenNthCalledWith(2, 'script.list', {
+      workspaceId: 'ws-1',
+      archive: 'active',
+      limit: 200,
+    });
+    expect(mockedRequest).toHaveBeenNthCalledWith(3, 'script.list', {
+      workspaceId: 'ws-1',
+      archive: 'active',
+      limit: 200,
+      cursor: 'c-1',
+    });
+  });
+
+  it('list rejects a repeated full-view cursor instead of looping', async () => {
+    mockedRequest
+      .mockResolvedValueOnce({
+        server: { capabilities: { scriptActiveLists: 1, scriptFullPages: 1 } },
+      })
+      .mockResolvedValueOnce({ scripts: [DEV_SCRIPT], nextCursor: 'c-1' })
+      .mockResolvedValueOnce({ scripts: [DEV_SCRIPT], nextCursor: 'c-1' });
+    await expect(new LiveScriptsClient().list('ws-1')).rejects.toThrow();
+    expect(mockedRequest).toHaveBeenCalledTimes(3);
+  });
+
+  it('list ignores nextCursor from a host without paged full lists', async () => {
+    mockedRequest
+      .mockResolvedValueOnce({ server: { capabilities: { scriptActiveLists: 1 } } })
+      .mockResolvedValueOnce({ scripts: [DEV_SCRIPT], nextCursor: 'c-1' });
+    expect(await new LiveScriptsClient().list('ws-1')).toEqual([DEV_SCRIPT]);
+    expect(mockedRequest).toHaveBeenCalledTimes(2);
+  });
+
   it('create sends the exact §5.8 request and surfaces the created definition', async () => {
     const { runtime: _runtime, ...definition } = DEV_SCRIPT;
     mockedRequest.mockResolvedValueOnce(definition);
