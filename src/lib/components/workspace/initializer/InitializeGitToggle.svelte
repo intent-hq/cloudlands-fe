@@ -1,19 +1,18 @@
 <script lang="ts">
   /**
-   * The git choice (Labs, plain-folder workspaces), shown inside the folder
+   * The git switch (Labs, plain-folder workspaces), shown inside the folder
    * picker's "Existing folder" and "New" tabs of the New Workspace dialog and
-   * the onboarding project step, never on the clone flows. Off creates a
-   * plain-folder workspace. `kind` picks the copy: an existing folder is used
-   * through an isolated copy, a new folder is initialized as a git repository.
+   * the onboarding project step, never on the clone flows. Its label and hint
+   * follow `folder`, the folder it acts on (see `gitSwitchCopy`).
    */
   import { Switch } from '$lib/components/ui/switch';
-  import { m } from '$shared/paraglide/messages.js';
+  import { gitSwitchCopy, type GitSwitchFolder } from './git-switch-copy';
 
   interface Props {
     checked: boolean;
     disabled?: boolean;
     onCheckedChange: (checked: boolean) => void;
-    kind?: 'existing' | 'new';
+    folder: GitSwitchFolder;
     class?: string;
   }
 
@@ -21,20 +20,13 @@
     checked,
     disabled = false,
     onCheckedChange,
-    kind = 'new',
+    folder,
     class: className = '',
   }: Props = $props();
 
-  const label = $derived(
-    kind === 'existing'
-      ? m.workspace_plainFolder_isolatedCopy_label()
-      : m.workspace_plainFolder_initializeGit_label(),
-  );
-  const description = $derived(
-    kind === 'existing'
-      ? m.workspace_plainFolder_isolatedCopy_description()
-      : m.workspace_plainFolder_initializeGitChoice_description(),
-  );
+  const copy = $derived(gitSwitchCopy(folder));
+  const label = $derived(copy.label);
+  const description = $derived(copy.description);
 
   const id = `initialize-git-${crypto.randomUUID()}`;
 </script>

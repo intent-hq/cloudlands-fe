@@ -149,6 +149,11 @@ vi.mock('$lib/electron-bridge', () => ({
   invoke: vi.fn(async () => ({ success: true, data: [] })),
   shell: { open: vi.fn(async () => {}) },
 }));
+vi.mock('$lib/directory-picker-service', () => ({
+  pickDirectory: vi.fn(async ({ onSelect }: { onSelect: (path: string) => void }) =>
+    onSelect('/tmp/notes'),
+  ),
+}));
 vi.mock('$lib/config/debug', () => ({
   debugConfig: { get: (key: string) => key === 'enableFormPersistence' },
 }));
@@ -184,6 +189,7 @@ vi.mock('$lib/utils/workspace-navigation', async (orig) => ({
 }));
 
 import RepoSelector from '../RepoSelector.svelte';
+import { invoke } from '$lib/electron-bridge';
 import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { warmImport } from '../../../../../test/warm-import';
 import { m } from '$shared/paraglide/messages.js';
@@ -199,7 +205,7 @@ beforeEach(() => {
 warmImport(() => import('../../../ui/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('./mocks/MockComponent.svelte'));
 
-const DROPDOWN_HEADING = 'What repo should we work on?';
+const DROPDOWN_HEADING = 'What should we work on?';
 
 async function openDropdown(props: Record<string, unknown> = {}) {
   const rendered = render(RepoSelector, { props });
@@ -218,13 +224,21 @@ async function found(query: () => HTMLElement | null) {
 }
 const anySwitch = () => screen.queryByRole('switch');
 const existingSwitch = () =>
-  screen.queryByRole('switch', { name: m.workspace_plainFolder_isolatedCopy_label() });
+  screen.queryByRole('switch', { name: m.workspace_plainFolder_switchGitRepo_label() });
+const gitRepoSwitch = () =>
+  screen.queryByRole('switch', { name: m.workspace_plainFolder_switchGitRepo_label() });
 const newSwitch = () =>
   screen.queryByRole('switch', { name: m.workspace_plainFolder_initializeGit_label() });
 
-function gitChoice(checked: boolean) {
-  return { checked, onCheckedChange: vi.fn() };
+function gitChoice(
+  checked: boolean,
+  extra: { folder?: 'git-repo' | 'folder' | null; worktree?: boolean } = {},
+) {
+  return { checked, folder: null, worktree: true, ...extra, onCheckedChange: vi.fn() };
 }
+/** The visible hint under a switch. */
+const hint = (sw: HTMLElement) =>
+  document.getElementById(sw.getAttribute('aria-describedby') ?? '')?.textContent ?? '';
 
 describe('RepoSelector git choice (Labs plain folders)', () => {
   afterEach(() => cleanup());
@@ -235,12 +249,12 @@ describe('RepoSelector git choice (Labs plain folders)', () => {
     expect(anySwitch()).toBeNull();
   });
 
-  it('shows the isolated-copy choice on Existing folder before a folder is picked', async () => {
+  it('shows the git-repo choice on Existing folder before a folder is picked', async () => {
     await openDropdown({ gitChoice: gitChoice(true) });
     await fireEvent.click(screen.getByRole('tab', { name: 'Existing folder' }));
     const sw = await found(existingSwitch);
     expect(sw.getAttribute('aria-checked')).toBe('true');
-    expect(screen.getByText(m.workspace_plainFolder_isolatedCopy_description())).toBeTruthy();
+    expect(hint(sw)).toBe(m.workspace_plainFolder_switchGitRepo_description());
     expect(screen.getByText(m.workspace_repoSelector_selectAFolder_placeholder())).toBeTruthy();
   });
 
@@ -298,5 +312,107 @@ describe('RepoSelector git choice (Labs plain folders)', () => {
     expect(anySwitch()).toBeNull();
     await fireEvent.click(screen.getByRole('tab', { name: 'New' }));
     expect(anySwitch()).toBeNull();
+  });
+
+  describe('label and hint follow the picked folder', () => {
+    afterEach(() => vi.mocked(invoke).mockReset());
+
+    it('a picked git repo reads "Branch and use git worktree" and shows its worktree setting', async () => {
+      await openDropdown({
+        gitChoice: gitChoice(false, { folder: 'git-repo', worktree: true }),
+      });
+      await fireEvent.click(screen.getByRole('tab', { name: 'Existing folder' }));
+      const sw = await found(gitRepoSwitch);
+      expect(sw.getAttribute('aria-checked')).toBe('true');
+      expect(hint(sw)).toBe(m.workspace_plainFolder_switchGitRepo_description());
+    });
+
+    it('a picked git repo worked on in place keeps the same name and sentence', async () => {
+      await openDropdown({
+        gitChoice: gitChoice(true, { folder: 'git-repo', worktree: false }),
+      });
+      await fireEvent.click(screen.getByRole('tab', { name: 'Existing folder' }));
+      const sw = await found(gitRepoSwitch);
+      expect(sw.getAttribute('aria-checked')).toBe('false');
+      expect(hint(sw)).toBe(m.workspace_plainFolder_switchGitRepo_description());
+    });
+
+    it('a picked folder without git reads "Initialize as git repository"', async () => {
+      await openDropdown({ gitChoice: gitChoice(false, { folder: 'folder' }) });
+      await fireEvent.click(screen.getByRole('tab', { name: 'Existing folder' }));
+      const sw = await found(newSwitch);
+      expect(sw.getAttribute('aria-checked')).toBe('false');
+      expect(hint(sw)).toBe(m.workspace_plainFolder_initializeGit_description());
+    });
+
+    it('New always reads "Initialize as git repository", whatever Existing folder holds', async () => {
+      await openDropdown({
+        gitChoice: gitChoice(true, { folder: 'git-repo', worktree: false }),
+      });
+      await fireEvent.click(screen.getByRole('tab', { name: 'New' }));
+      const sw = await found(newSwitch);
+      expect(sw.getAttribute('aria-checked')).toBe('true');
+      expect(hint(sw)).toBe(m.workspace_plainFolder_initializeGit_description());
+      expect(gitRepoSwitch()).toBeNull();
+    });
+
+    async function pickNonGitFolder(choice: ReturnType<typeof gitChoice>) {
+      vi.mocked(invoke).mockImplementation((async (channel: string) =>
+        channel === 'file:getDirectoryStatus'
+          ? {
+              success: true,
+              data: {
+                path: '/tmp/notes',
+                exists: true,
+                isDirectory: true,
+                isGitRepo: false,
+                isSubdirectoryOfGitRepo: false,
+              },
+            }
+          : { success: true, data: [] }) as never);
+      const onchange = vi.fn();
+      await openDropdown({ gitChoice: choice, onchange });
+      await fireEvent.click(screen.getByRole('tab', { name: 'Existing folder' }));
+      await fireEvent.click(
+        await found(() => screen.queryByText(m.workspace_repoSelector_selectAFolder_placeholder())),
+      );
+      await found(() => screen.queryByText(m.workspace_repoSelector_notGitRepository_label()));
+      return onchange;
+    }
+
+    it('a folder without git awaiting "Initialize Git here" is named by the switch', async () => {
+      await pickNonGitFolder(gitChoice(true));
+      const sw = await found(newSwitch);
+      expect(sw.getAttribute('aria-checked')).toBe('true');
+      expect(hint(sw)).toBe(m.workspace_plainFolder_initializeGit_description());
+    });
+
+    it('turning the switch off on that folder picks it as a plain folder', async () => {
+      const choice = gitChoice(true);
+      const onchange = await pickNonGitFolder(choice);
+      await fireEvent.click(await found(newSwitch));
+      expect(choice.onCheckedChange).toHaveBeenCalledWith(false, 'local');
+      await waitFor(() =>
+        expect(onchange).toHaveBeenCalledWith(
+          expect.objectContaining({
+            detail: expect.objectContaining({ path: '/tmp/notes', plainFolder: 'existing' }),
+          }),
+        ),
+      );
+    });
+  });
+
+  // User decision: the picker header is about the work, not about code, and
+  // makes no "isolated workspace" claim, with or without plain folders.
+  it.each([
+    ['plain folders on', { gitChoice: gitChoice(false), plainFolderMode: true }],
+    ['plain folders off', {}],
+  ])('header reads the same with %s', async (_label, props) => {
+    await openDropdown(props);
+    expect(screen.getByText('What should we work on?')).toBeTruthy();
+    expect(
+      screen.getByText('Clone a project, pick a folder on this computer, or start a new one.'),
+    ).toBeTruthy();
+    expect(screen.queryByText(/isolated workspace/i)).toBeNull();
   });
 });

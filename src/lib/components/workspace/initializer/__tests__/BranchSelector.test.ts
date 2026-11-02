@@ -506,6 +506,36 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
     expect(document.activeElement).toBe(toggle);
   });
 
+  // Isolation off works in the folder on its current branch, whichever control
+  // turned it off (the folder-picker git switch or this selector).
+  it('local repo: isolation turned off elsewhere selects the folder’s current branch', async () => {
+    mockGetBranches.mockResolvedValue({
+      branches: ['main', 'feature'],
+      remoteBranches: [],
+      defaultBranch: 'main',
+      currentBranch: 'feature',
+    });
+    const onchange = vi.fn();
+    const onSkipIsolationChange = vi.fn();
+    const { rerender } = render(BranchSelector, {
+      props: {
+        repoPath: '/tmp/repo',
+        repoType: 'local',
+        value: 'main',
+        skipIsolation: false,
+        onchange,
+        onSkipIsolationChange,
+      },
+    });
+    await waitFor(() => expect(mockGetBranches).toHaveBeenCalledWith('/tmp/repo', true));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(onchange.mock.lastCall?.[0].detail.branch).not.toBe('feature');
+
+    await rerender({ skipIsolation: true });
+    await waitFor(() => expect(onchange.mock.lastCall?.[0].detail).toEqual({ branch: 'feature' }));
+    expect(onSkipIsolationChange).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['explicit', true],
     ['persisted', false],

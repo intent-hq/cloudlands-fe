@@ -70,6 +70,29 @@ export function resolveInitializeGitDefault(input: InitializeGitDefaultInput): b
   return false;
 }
 
+/** What a create-surface pick is, for the isolation it implies (Labs git choice). */
+export type GitChoicePick = 'git-repo' | 'new-repo' | 'plain' | 'clone';
+
+/**
+ * `skipIsolation` implied by a pick while the git choice is shown, or null to
+ * leave it alone. A git repo follows the switch (on: its own worktree; off:
+ * in place on its current branch). A new repository (git init of a folder
+ * without git, or a new folder) is always worked on in place on `main`, with
+ * no new branch and no worktree. A clone always gets its own checkout.
+ */
+export function skipIsolationForPick(pick: GitChoicePick, initializeGit: boolean): boolean | null {
+  switch (pick) {
+    case 'git-repo':
+      return !initializeGit;
+    case 'new-repo':
+      return true;
+    case 'clone':
+      return false;
+    default:
+      return null;
+  }
+}
+
 export function readRememberedInitializeGit(
   storage: Pick<Storage, 'getItem'> | null,
 ): boolean | null {

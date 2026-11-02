@@ -156,7 +156,7 @@ import { invoke } from '$lib/electron-bridge';
 import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
 import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 
-const DROPDOWN_HEADING = 'What repo should we work on?';
+const DROPDOWN_HEADING = 'What should we work on?';
 warmImport(() => import('../../../ui/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('./mocks/MockComponent.svelte'));
 
@@ -511,20 +511,14 @@ describe('RepoSelector recent probe cancellation', () => {
 });
 
 describe('RepoSelector picker intro', () => {
-  const GIT_INTRO =
-    "Select an existing codebase or make a new one. We'll create an isolated workspace to work in.";
-  const PLAIN_INTRO =
-    'Select an existing codebase or make a new one. For a folder without Git, Intent works directly in it, with no copy and no undo.';
+  const INTRO = 'Clone a project, pick a folder on this computer, or start a new one.';
 
-  it('says Intent works in place, with no copy and no undo, when the toggle is off', async () => {
-    await openWithRecents({ plainFolderMode: true });
-    expect(screen.getByText(PLAIN_INTRO)).toBeTruthy();
-    expect(screen.queryByText(GIT_INTRO)).toBeNull();
-  });
-
-  it('keeps the isolated-workspace intro when the toggle is on', async () => {
-    await openWithRecents({ plainFolderMode: false });
-    expect(screen.getByText(GIT_INTRO)).toBeTruthy();
-    expect(screen.queryByText(PLAIN_INTRO)).toBeNull();
-  });
+  it.each([true, false])(
+    'makes no isolated-workspace claim (plain-folder mode %s)',
+    async (plainFolderMode) => {
+      await openWithRecents({ plainFolderMode });
+      expect(screen.getByText(INTRO)).toBeTruthy();
+      expect(screen.queryByText(/isolated workspace|no copy and no undo/i)).toBeNull();
+    },
+  );
 });

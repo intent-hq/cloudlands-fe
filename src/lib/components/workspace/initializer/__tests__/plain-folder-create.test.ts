@@ -11,6 +11,7 @@ import {
   newProjectDefaultParent,
   readRememberedInitializeGit,
   resolveInitializeGitDefault,
+  skipIsolationForPick,
   supportsPlainFolderCreate,
   workspacesUsingFolder,
   writeRememberedInitializeGit,
@@ -308,5 +309,25 @@ describe('needsGitInstallForProject', () => {
     expect(
       needsGitInstallForProject({ plainFolder: undefined }, { checked: false, available: false }),
     ).toBe(false);
+  });
+});
+
+describe('skipIsolationForPick', () => {
+  it('a git repo follows the switch: on branches into a worktree, off works in place', () => {
+    expect(skipIsolationForPick('git-repo', true)).toBe(false);
+    expect(skipIsolationForPick('git-repo', false)).toBe(true);
+  });
+
+  it('a new repository (git init) always works in place on main, with no worktree', () => {
+    expect(skipIsolationForPick('new-repo', true)).toBe(true);
+  });
+
+  it('a clone always gets its own checkout', () => {
+    expect(skipIsolationForPick('clone', true)).toBe(false);
+    expect(skipIsolationForPick('clone', false)).toBe(false);
+  });
+
+  it('a plain folder leaves the isolation setting alone', () => {
+    expect(skipIsolationForPick('plain', false)).toBeNull();
   });
 });

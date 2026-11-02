@@ -21,7 +21,11 @@
   import NewProjectTab from './NewProjectTab.svelte';
   import InitializeGitToggle from '$lib/components/workspace/initializer/InitializeGitToggle.svelte';
   import { createInitializeGitChoice } from '$lib/components/workspace/initializer/initialize-git-choice.svelte';
-  import { newProjectDefaultParent } from '$lib/components/workspace/initializer/plain-folder-create';
+  import {
+    newProjectDefaultParent,
+    skipIsolationForPick,
+  } from '$lib/components/workspace/initializer/plain-folder-create';
+  import type { GitSwitchFolder } from '$lib/components/workspace/initializer/git-switch-copy';
   import {
     selectWorkspaceInitializerBranchByRepo,
     selectWorkspaceInitializerDefaultParentPath,
@@ -82,9 +86,21 @@
     onSelectAndAdvance?: () => void;
     /** Hide the heading text (used in split layout where heading is in the left panel) */
     hideHeading?: boolean;
+    /**
+     * No isolated checkout: work in the folder itself. Shared with the branch
+     * selector's isolation option; the git switch shows and sets it for a git repo.
+     */
+    skipIsolation?: boolean;
+    onSkipIsolationChange?: (skipIsolation: boolean) => void;
   }
 
-  let { onProjectChange, onSelectAndAdvance, hideHeading = false }: Props = $props();
+  let {
+    onProjectChange,
+    onSelectAndAdvance,
+    hideHeading = false,
+    skipIsolation = false,
+    onSkipIsolationChange,
+  }: Props = $props();
 
   // Tab state: Clone first, like New Workspace; the effect below moves to
   // Existing folder once Clone is hidden.
@@ -334,9 +350,47 @@
     }
   }
 
-  /** Notify parent of current selection. Called from event handlers, NOT from $effect. */
-  function notifyParent() {
-    onProjectChange?.(buildSelection());
+  // What the git switch acts on in the current tab.
+  const gitSwitchFolder = $derived<GitSwitchFolder>(
+    activeTab === 'new' ? 'new' : !localRepoPath ? null : localInitGit ? 'folder' : 'git-repo',
+  );
+
+  /**
+   * The isolation a selection implies while the git switch is shown (Labs): a
+   * new repository is worked on in place on main with no new branch, a clone
+   * gets its own checkout, and a git repo follows the switch — only when it
+   * was just picked, so a later change in the branch selector is kept.
+   */
+  function syncIsolation(selection: ProjectSelection, gitRepoPicked: boolean) {
+    if (!initializeGitChoice.visible || !selection.repoPath) return;
+    const pick =
+      selection.type === 'github'
+        ? 'clone'
+        : selection.plainFolder
+          ? 'plain'
+          : selection.initGit || selection.type === 'new'
+            ? 'new-repo'
+            : 'git-repo';
+    if (pick === 'git-repo' && !gitRepoPicked) return;
+    const next = skipIsolationForPick(pick, initializeGitChoice.initializeGit);
+    if (next !== null) onSkipIsolationChange?.(next);
+  }
+
+  /**
+   * Notify parent of current selection. Called from event handlers, NOT from
+   * $effect. `gitRepoPicked`: a git repo was just picked (or its tab reopened).
+   */
+  function notifyParent(gitRepoPicked = false) {
+    const selection = buildSelection();
+    syncIsolation(selection, gitRepoPicked);
+    onProjectChange?.(selection);
+  }
+
+  /** The git switch was flipped: for a picked git repo it is the isolation setting. */
+  function handleGitSwitchChange(value: boolean) {
+    const folder = gitSwitchFolder;
+    initializeGitChoice.set(value);
+    if (folder === 'git-repo') onSkipIsolationChange?.(!value);
   }
 
   // Notify parent once on mount with pre-filled persisted values (if any)
@@ -406,7 +460,7 @@
     activationMode="manual"
     onValueChange={(value) => {
       activeTab = value as TabId;
-      notifyParent();
+      notifyParent(true);
     }}
   >
     <Tabs.List class="w-full" aria-label={m.onboarding_projectPicker_chooseProject_title()}>
@@ -420,9 +474,11 @@
     {#if initializeGitChoice.visible && activeTab !== 'github'}
       <InitializeGitToggle
         class="mt-4"
-        kind={activeTab === 'local' ? 'existing' : 'new'}
-        checked={initializeGitChoice.initializeGit}
-        onCheckedChange={(value) => initializeGitChoice.set(value)}
+        folder={gitSwitchFolder}
+        checked={gitSwitchFolder === 'git-repo'
+          ? !skipIsolation
+          : initializeGitChoice.initializeGit}
+        onCheckedChange={handleGitSwitchChange}
       />
     {/if}
 
@@ -438,7 +494,7 @@
                 localRepoPath = path;
                 localScope = scope;
                 localInitGit = initGit === true;
-                notifyParent();
+                notifyParent(true);
               }}
               onSelectAndAdvance={(path, scope, initGit) => {
                 // Capture reactive prop before state changes invalidate it.
@@ -449,7 +505,7 @@
                 localRepoPath = path;
                 localScope = scope;
                 localInitGit = initGit === true;
-                notifyParent();
+                notifyParent(true);
                 if (typeof advance === 'function') advance();
               }}
             />

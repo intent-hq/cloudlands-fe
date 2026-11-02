@@ -134,6 +134,7 @@
   import RepoAndBranchPicker from './initializer/RepoAndBranchPicker.svelte';
   import { createInitializeGitChoice } from './initializer/initialize-git-choice.svelte';
   import { confirmPlainFolderInPlace } from './initializer/plain-folder-confirm';
+  import { skipIsolationForPick } from './initializer/plain-folder-create';
   import { selectWorkspaceItems as selectPlainFolderWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import type {
     GitLabProjectPickerProps,
@@ -545,6 +546,14 @@
     plainFolderMode && repoType === 'local' && plainFolderPick && plainFolderPick.path === repoPath
       ? plainFolderPick.kind
       : null,
+  );
+  // What the picker's git switch acts on in the Existing folder tab.
+  const gitSwitchFolder = $derived<'git-repo' | 'folder' | null>(
+    repoType !== 'local' || !repoPath
+      ? null
+      : plainFolder !== null || isNewRepo
+        ? 'folder'
+        : 'git-repo',
   );
   // With the toggle off, git-only controls are hidden until a git repo is picked.
   const plainFolderCreate = $derived(
@@ -1900,24 +1909,22 @@
       !hasBlockingAttachments(contextItems),
   );
 
-  // The git repository a git pick belongs to (a subfolder pick carries its scope).
-  const plainFolderRepoRoot = $derived.by(() => {
-    if (!scope) return repoPath;
-    const suffix = scope.replace(/^[\\/]+|[\\/]+$/g, '');
-    const trimmed = repoPath.replace(/[\\/]+$/, '');
-    return suffix && trimmed.endsWith(suffix)
-      ? trimmed.slice(0, -suffix.length).replace(/[\\/]+$/, '') || repoPath
-      : repoPath;
-  });
-
   /**
-   * The user flipped the git choice in the picker's Existing folder or New tab:
-   * drop a pick made for the other mode and reopen that tab. A GitHub/GitLab
-   * selection stays until a folder is picked (cloning is always git).
+   * The user flipped the git switch in the picker's Existing folder or New tab.
+   * For a picked git repo it is the isolation setting (on: its own worktree;
+   * off: in place on its current branch), shared with the branch selector.
+   * Otherwise it drops a pick made for the other mode and reopens that tab. A
+   * GitHub/GitLab selection stays until a folder is picked (cloning is always git).
    */
   function handleInitializeGitChange(value: boolean, tab: 'local' | 'new') {
+    // Read before the choice flips: the plain-folder kind derives from it.
+    const folder = gitSwitchFolder;
     initializeGitChoice.set(value);
     if (repoType !== 'local' || !repoPath) return;
+    if (tab === 'local' && folder === 'git-repo') {
+      skipIsolation = !value;
+      return;
+    }
     if (plainFolderPick?.path === repoPath || isNewRepo) {
       repoPath = '';
       isNewRepo = false;
@@ -2057,6 +2064,15 @@
     // GitHub repos require an isolated checkout - reset skipIsolation if switching to github type
     if (event.detail.type === 'github') {
       skipIsolation = false;
+    }
+    // The git switch decides how a local pick is worked on (Labs): a git repo
+    // follows it, a new repository works in place on main with no new branch.
+    if (initializeGitChoice.visible && event.detail.type === 'local') {
+      const next = skipIsolationForPick(
+        plainFolderPick && plainFolderMode ? 'plain' : isNewRepo ? 'new-repo' : 'git-repo',
+        initializeGitChoice.initializeGit,
+      );
+      if (next !== null) skipIsolation = next;
     }
 
     // Reset GitHub auth state when repo changes - will be updated by BranchSelector
@@ -3481,6 +3497,8 @@
                 gitChoice={initializeGitChoice.visible
                   ? {
                       checked: initializeGitChoice.initializeGit,
+                      folder: gitSwitchFolder,
+                      worktree: !skipIsolation,
                       disabled: isCreating,
                       onCheckedChange: handleInitializeGitChange,
                     }
@@ -3550,17 +3568,6 @@
           {/if}
         </div>
       </div>
-
-      {#if isExpanded && initializeGitChoice.visible && plainFolderMode && repoType === 'local' && repoPath && plainFolder === null && !isNewRepo}
-        <p
-          class="mt-3 px-1 text-sm text-subtle"
-          role="status"
-          data-testid="plain-folder-git-notice"
-          transition:slide={{ axis: 'y', tier: 'moderate' }}
-        >
-          {m.workspace_plainFolder_gitRepoNotice_label({ repo: plainFolderRepoRoot })}
-        </p>
-      {/if}
 
       {#if isExpanded && repoType === 'gitlab' && ($checkoutForm$?.status === 'unavailable' || $checkoutForm$?.warmStatus === 'warming' || $checkoutForm$?.contextUrl)}
         <div class="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-sm">

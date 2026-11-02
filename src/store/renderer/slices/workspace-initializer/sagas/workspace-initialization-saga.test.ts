@@ -1102,6 +1102,79 @@ describe('workspaceInitializerSaga (registered production owner, reducer-backed 
   });
 });
 
+// In place (no isolated checkout): the workspace row names the folder's real
+// branch — its current branch, or main for a freshly initialized repository —
+// instead of a generated one that never exists in the folder.
+describe('in-place creates name the folder branch', () => {
+  beforeEach(() => {
+    mocks.validateRepoPath.mockResolvedValueOnce({ valid: true, isNewRepo: false });
+  });
+
+  it.each([
+    ['a git repo on its current branch', { branch: 'feature-x', isNewRepo: false }, 'feature-x'],
+    ['a folder initialized as a git repository', { branch: 'main', isNewRepo: true }, 'main'],
+  ])('compact: %s', async (_label, form, expected) => {
+    const action = workspaceInitializationSubmitted(
+      compactSubmission({
+        repoType: 'local',
+        repoPath: '/Users/me/project',
+        remoteSetup: null,
+        skipIsolation: true,
+        ...form,
+      }),
+      consumer,
+    );
+    appStore.dispatch(action);
+    await action.promise;
+    expect(create.mock.calls[0][0]).toMatchObject({
+      repositoryPath: '/Users/me/project',
+      skipIsolation: true,
+      isNewRepo: form.isNewRepo,
+      branch: expected,
+    });
+  });
+
+  it('compact: an isolated checkout still gets a generated branch', async () => {
+    const action = workspaceInitializationSubmitted(
+      compactSubmission({
+        repoType: 'local',
+        repoPath: '/Users/me/project',
+        remoteSetup: null,
+        branch: 'main',
+        skipIsolation: false,
+      }),
+      consumer,
+    );
+    appStore.dispatch(action);
+    await action.promise;
+    expect(create.mock.calls[0][0].branch).toBeUndefined();
+  });
+
+  it.each([
+    ['a git repo on its current branch', false, 'feature-x', 'feature-x'],
+    ['a folder initialized as a git repository', true, 'main', 'main'],
+  ])('onboarding: %s', async (_label, treatAsNewRepo, effectiveBranch, expected) => {
+    const onboardingConsumer = { id: 'onboarding-in-place', resourceId: 'resource-in-place' };
+    const action = workspaceInitializationSubmitted(
+      onboardingSubmission({
+        project: { type: 'local', repoPath: '/Users/me/project', branch: effectiveBranch },
+        skipIsolation: true,
+        treatAsNewRepo,
+        effectiveBranch,
+      }),
+      onboardingConsumer,
+    );
+    appStore.dispatch(action);
+    await action.promise;
+    expect(create.mock.calls[0][0]).toMatchObject({
+      repositoryPath: '/Users/me/project',
+      skipIsolation: true,
+      isNewRepo: treatAsNewRepo,
+      branch: expected,
+    });
+  });
+});
+
 describe('plain-folder creates (Labs, workspace.create plainFolder)', () => {
   beforeEach(() => {
     mocks.validateRepoPath.mockResolvedValueOnce({ valid: true, isNewRepo: false });
