@@ -78,14 +78,7 @@ export class LiveScriptsClient implements ScriptsClient {
       for (const row of result.scripts) {
         // A definition too big for one page arrives with `<field>Omitted`
         // markers in place of its largest fields; `script.get` serves it whole.
-        scripts.push(
-          hasOmittedFields(row)
-            ? await backendRequest<ScriptWithState>('script.get', {
-                workspaceId,
-                scriptId: row.id,
-              })
-            : row,
-        );
+        scripts.push(hasOmittedFields(row) ? await readWholeScript(workspaceId, row.id) : row);
       }
       const next = fullPages ? result.nextCursor : undefined;
       if (typeof next === 'string' && next && !seen.has(next)) {
@@ -120,7 +113,7 @@ export class LiveScriptsClient implements ScriptsClient {
 
   async get(workspaceId: string, scriptId: string): Promise<ScriptWithState> {
     await this.requireActiveLists();
-    return backendRequest('script.get', { workspaceId, scriptId });
+    return readWholeScript(workspaceId, scriptId);
   }
 
   async archive(
@@ -243,4 +236,56 @@ export class LiveScriptsClient implements ScriptsClient {
 /** Whether a paged list row had fields replaced by `<field>Omitted: true`. */
 function hasOmittedFields(row: object): boolean {
   return Object.entries(row).some(([key, value]) => key.endsWith('Omitted') && value === true);
+}
+
+/** One `script.get` reply; a cut `command` carries the paging fields (§5.8). */
+type ScriptGetPart = ScriptWithState & {
+  commandTruncated?: boolean;
+  commandBytes?: number;
+  commandOffset?: number;
+  nextCommandOffset?: number | null;
+};
+
+const SCRIPT_GET_ATTEMPTS = 3;
+
+/**
+ * Read one definition whole. A `command` too big for one reply arrives in
+ * parts (`commandOffset` in, `nextCommandOffset` out); join them, restart
+ * when the command changes between parts, and refuse a result whose byte
+ * size does not match `commandBytes`.
+ */
+async function readWholeScript(workspaceId: string, scriptId: string): Promise<ScriptWithState> {
+  for (let attempt = 0; attempt < SCRIPT_GET_ATTEMPTS; attempt++) {
+    const first = await backendRequest<ScriptGetPart>('script.get', { workspaceId, scriptId });
+    if (first?.commandTruncated !== true) return first;
+    const size = first.commandBytes;
+    let command = first.command;
+    let next = first.nextCommandOffset;
+    let changed = false;
+    while (typeof next === 'number') {
+      const part = await backendRequest<ScriptGetPart>('script.get', {
+        workspaceId,
+        scriptId,
+        commandOffset: next,
+      });
+      if (part?.commandBytes !== size || part.commandOffset !== next) {
+        changed = true;
+        break;
+      }
+      command += part.command;
+      next = part.nextCommandOffset;
+    }
+    if (changed) continue;
+    if (new TextEncoder().encode(command).length !== size)
+      throw new Error(m.scripts_list_load_error());
+    const {
+      commandTruncated: _truncated,
+      commandBytes: _bytes,
+      commandOffset: _offset,
+      nextCommandOffset: _next,
+      ...rest
+    } = first;
+    return { ...rest, command };
+  }
+  throw new Error(m.scripts_list_load_error());
 }

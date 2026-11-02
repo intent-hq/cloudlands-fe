@@ -140,11 +140,10 @@ describe('LiveScriptsClient (fake transport)', () => {
     };
     const { command: _command, ...rest } = DEV_SCRIPT;
     const omitted = { ...rest, commandOmitted: true, commandBytes: 600_000 };
-    const whole: ScriptWithState = { ...DEV_SCRIPT, command: 'x'.repeat(600_000) };
-    mockedRequest
-      .mockResolvedValueOnce(hello)
-      .mockResolvedValueOnce({ scripts: [omitted] })
-      .mockResolvedValueOnce(whole);
+    const whole: ScriptWithState = { ...DEV_SCRIPT, command: BIG_COMMAND };
+    mockedRequest.mockResolvedValueOnce(hello).mockResolvedValueOnce({ scripts: [omitted] });
+    for (const part of commandParts(BIG_COMMAND, BIG_CUTS))
+      mockedRequest.mockResolvedValueOnce(part);
     const scripts = await new LiveScriptsClient().list('ws-1');
 
     expect(scripts).toEqual([whole]);
@@ -152,6 +151,77 @@ describe('LiveScriptsClient (fake transport)', () => {
       workspaceId: 'ws-1',
       scriptId: 's-1',
     });
+  });
+
+  /** `script.get` parts of `command`, cut at the given UTF-8 byte offsets. */
+  function commandParts(command: string, cuts: number[]) {
+    const bytes = new TextEncoder().encode(command);
+    const decoder = new TextDecoder();
+    const starts = [0, ...cuts];
+    return starts.map((start, i) => {
+      const end = i + 1 < starts.length ? starts[i + 1] : bytes.length;
+      return {
+        ...DEV_SCRIPT,
+        command: decoder.decode(bytes.slice(start, end)),
+        commandTruncated: true,
+        commandBytes: bytes.length,
+        commandOffset: start,
+        nextCommandOffset: end < bytes.length ? end : null,
+      };
+    });
+  }
+
+  const ACTIVE_HELLO = {
+    server: { protocolVersion: CURRENT_PROTOCOL_VERSION, capabilities: { scriptActiveLists: 1 } },
+  };
+  // Cut points land right after a multibyte character and inside an escape run.
+  const BIG_COMMAND = `echo "${'"'.repeat(40)}é😀${'\\'.repeat(30)}" # done`;
+  const byteEnd = (marker: string) =>
+    new TextEncoder().encode(BIG_COMMAND.slice(0, BIG_COMMAND.indexOf(marker) + marker.length))
+      .length;
+  const BIG_CUTS = [byteEnd('é'), byteEnd('😀'), byteEnd('😀') + 13];
+
+  it('get joins a command served in parts', async () => {
+    const parts = commandParts(BIG_COMMAND, BIG_CUTS);
+    mockedRequest.mockResolvedValueOnce(ACTIVE_HELLO);
+    for (const part of parts) mockedRequest.mockResolvedValueOnce(part);
+    const script = await new LiveScriptsClient().get('ws-1', 's-1');
+
+    expect(script).toEqual({ ...DEV_SCRIPT, command: BIG_COMMAND });
+    expect(mockedRequest).toHaveBeenNthCalledWith(2, 'script.get', {
+      workspaceId: 'ws-1',
+      scriptId: 's-1',
+    });
+    BIG_CUTS.forEach((offset, i) =>
+      expect(mockedRequest).toHaveBeenNthCalledWith(i + 3, 'script.get', {
+        workspaceId: 'ws-1',
+        scriptId: 's-1',
+        commandOffset: offset,
+      }),
+    );
+  });
+
+  it('get restarts when the command changes between parts', async () => {
+    const stale = commandParts(BIG_COMMAND, BIG_CUTS);
+    const edited = `${BIG_COMMAND} # edited`;
+    const fresh = commandParts(edited, BIG_CUTS);
+    mockedRequest
+      .mockResolvedValueOnce(ACTIVE_HELLO)
+      .mockResolvedValueOnce(stale[0])
+      .mockResolvedValueOnce(fresh[1]);
+    for (const part of fresh) mockedRequest.mockResolvedValueOnce(part);
+    const script = await new LiveScriptsClient().get('ws-1', 's-1');
+
+    expect(script.command).toBe(edited);
+  });
+
+  it('get refuses a command whose parts do not add up to its size', async () => {
+    const parts = commandParts(BIG_COMMAND, BIG_CUTS);
+    parts[1] = { ...parts[1], command: parts[1].command.slice(1) };
+    mockedRequest.mockResolvedValueOnce(ACTIVE_HELLO);
+    for (const part of parts) mockedRequest.mockResolvedValueOnce(part);
+
+    await expect(new LiveScriptsClient().get('ws-1', 's-1')).rejects.toThrow();
   });
 
   it('list rejects a repeated full-view cursor instead of looping', async () => {
