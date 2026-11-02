@@ -8,7 +8,11 @@
     | 'remote-failed'
     | 'machine-unreachable'
     | 'machine-revoked'
-    | 'labs-off';
+    | 'labs-off'
+    | 'picker'
+    | 'picker-stale'
+    | 'picker-missing'
+    | 'picker-older-backend';
 
   interface Props {
     scene?: Scene;
@@ -27,6 +31,10 @@
       'machine-unreachable': sceneState('machine-unreachable'),
       'machine-revoked': sceneState('machine-revoked'),
       'labs-off': sceneState('labs-off'),
+      picker: sceneState('picker'),
+      'picker-stale': sceneState('picker-stale'),
+      'picker-missing': sceneState('picker-missing'),
+      'picker-older-backend': sceneState('picker-older-backend'),
     },
     captureReadiness: { selector: '[data-remote-agent-location-scene][data-ready]' },
   });
@@ -64,6 +72,13 @@
   import SimpleRichInput from '$lib/components/chat/input/SimpleRichInput.svelte';
   import AgentPlacementNotice from './AgentPlacementNotice.svelte';
   import { remoteMachinesLoaded } from './remote-machines-slice';
+  import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
+  import { setProviderEnabled } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+  import { providerModelsLoaded } from '$store/renderer/slices/provider-models/provider-models-slice';
+  import type { ProviderCatalogResult } from '$shared/provider-catalog';
+  import { selectProviderCatalogEntries } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { catalogNow } from '$lib/component-catalog/catalog-clock';
+  import { MOCK_PROVIDER_CATALOG } from '../../test/fixtures/provider-catalog.fixture';
 
   let { scene = 'remote-running' }: Props = $props();
 
@@ -89,6 +104,48 @@
     runningAgents: 1,
     addedAt: T,
   });
+
+  // Model picker scenes: what Mac mini reported, and this backend's profiles.
+  const isPickerScene = (s: Scene) => s.startsWith('picker');
+  const MAC_REPORT = {
+    intentdVersion: '0.240.0',
+    providers: [
+      { id: 'claude-code', status: 'ready', models: ['opus', 'sonnet', 'haiku'] },
+      { id: 'codex', status: 'signed-out', models: ['gpt-6', 'gpt-6-mini'] },
+    ],
+  };
+  const pickerCatalog = (s: Scene): ProviderCatalogResult => ({
+    ...MOCK_PROVIDER_CATALOG,
+    profiles:
+      s === 'picker-older-backend'
+        ? [
+            {
+              id: 'p-work',
+              providerRef: 'claude-code@p-work',
+              baseProviderId: 'claude-code',
+              name: 'Work',
+            },
+          ]
+        : [
+            {
+              id: 'p-work',
+              providerRef: 'claude-code@p-work',
+              baseProviderId: 'claude-code',
+              name: 'Work',
+              remoteCompatible: false,
+              remoteIncompatibility: { reason: 'account-folder', keys: ['CLAUDE_CONFIG_DIR'] },
+            },
+            {
+              id: 'p-key',
+              providerRef: 'codex@p-key',
+              baseProviderId: 'codex',
+              name: 'API key',
+              remoteCompatible: true,
+            },
+          ],
+  });
+  const reportedAt = (s: Scene) =>
+    new Date(catalogNow() - (s === 'picker-stale' ? 3 * 24 * 60 : 2) * 60 * 1000).toISOString();
 
   const remote = (nodeId: string, nodeName: string, os: 'macos' | 'linux', arch: string) => ({
     nodeId,
@@ -167,6 +224,7 @@
   onMount(() => {
     const dispose = startRootStoreLifecycle(store, { startSagas: () => [] });
     const previousLabs = store.state.userPreferences?.labsRemoteAgentsEnabled === true;
+    const previousProviders = selectProviderCatalogEntries.select(store.state);
     admitLegacyPrincipal();
     store.dispatch(
       setWorkspaceEntity({
@@ -196,6 +254,7 @@
     return () => {
       for (const a of agentsFor(scene)) store.dispatch(removeSession(a.id));
       store.dispatch(setLabsRemoteAgentsEnabled(previousLabs));
+      store.dispatch(providerCatalogLoaded({ providers: previousProviders }));
       store.dispatch(clearPanelLayout(WS));
       store.dispatch(removeWorkspaceEntity(WS));
       dispose();
@@ -205,17 +264,39 @@
   $effect(() => {
     const s = scene;
     store.dispatch(setLabsRemoteAgentsEnabled(s !== 'labs-off'));
+    if (isPickerScene(s)) {
+      store.dispatch(providerCatalogLoaded(pickerCatalog(s)));
+      for (const providerId of ['claude-code', 'codex'])
+        store.dispatch(setProviderEnabled({ providerId, enabled: true }));
+      // This backend's labels for the machine's model ids.
+      store.dispatch(
+        providerModelsLoaded(
+          'claude-code',
+          {
+            models: [
+              { value: 'opus', label: 'Opus 5.5', description: 'Most capable' },
+              { value: 'sonnet', label: 'Sonnet 5', description: 'Fast and capable' },
+              { value: 'haiku', label: 'Haiku 5', description: 'Quick everyday tasks' },
+            ],
+          },
+          0,
+        ),
+      );
+    }
+    const mac = machine(
+      MAC,
+      'Mac mini',
+      'macos',
+      'aarch64',
+      s === 'machine-revoked' ? 'revoked' : 'connected',
+    );
     store.dispatch(
       remoteMachinesLoaded({
         supported: true,
         machines: [
-          machine(
-            MAC,
-            'Mac mini',
-            'macos',
-            'aarch64',
-            s === 'machine-revoked' ? 'revoked' : 'connected',
-          ),
+          isPickerScene(s) && s !== 'picker-missing'
+            ? { ...mac, capabilities: MAC_REPORT, observedAt: reportedAt(s) }
+            : mac,
           machine(BOX, 'Build box', 'linux', 'x86_64', 'unreachable'),
         ],
         localFingerprint: null,

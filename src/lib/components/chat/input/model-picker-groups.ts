@@ -14,6 +14,14 @@ import {
 } from '$shared/provider-profiles';
 import { formatProviderRefLabel } from '$shared/provider-ref-label';
 
+import type { ProviderProfileSummary, RemoteIncompatibility } from '$shared/provider-catalog';
+import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
+import type { RemoteMachine } from '$shared/types/remote-machines';
+import {
+  MACHINE_PROVIDER_NOT_INSTALLED,
+  isRemoteRefSignedOut,
+  remoteIncompatibilityFor,
+} from '$features/remote-machines/remote-model-picker';
 import { formatProviderLoadError, type ProviderLoadError } from './model-picker-provider-errors';
 import { filterDefaultPseudoOptions, toDropdownOptions } from './model-picker-utils';
 
@@ -208,5 +216,74 @@ export function buildGroupedModelOptions({
     }
   }
 
+  return groups;
+}
+
+interface BuildMachineModelGroupsParams {
+  machine: RemoteMachine;
+  /** Provider refs (base ids and profile refs) in display order. */
+  providerRefs: readonly string[];
+  groupLabel: (providerRef: string) => string;
+  /** Backend catalog rows by provider ref, used only for labels and descriptions. */
+  catalogModels: Record<string, DropdownOption[] | undefined>;
+  catalogProfiles: readonly ProviderProfileSummary[];
+  defaultRemoteIncompatibility?: Record<string, RemoteIncompatibility>;
+  useDefaultOption?: DropdownOption;
+}
+
+/**
+ * One group per configuration whose base provider the machine reports as
+ * installed, listing the machine's models (labels from the backend catalog,
+ * else the raw id). A configuration that can't run on another machine, or a
+ * Default whose provider is signed out there, keeps its models greyed out;
+ * the picker names the reason above them. Profiles bring their own
+ * credentials, so a signed-out machine login does not grey them.
+ */
+export function buildMachineModelGroups({
+  machine,
+  providerRefs,
+  groupLabel,
+  catalogModels,
+  catalogProfiles,
+  defaultRemoteIncompatibility,
+  useDefaultOption,
+}: BuildMachineModelGroupsParams): DropdownGroup[] {
+  const reported = new Map(
+    (machine.capabilities?.providers ?? []).map((provider) => [provider.id, provider]),
+  );
+  const groups: DropdownGroup[] = [];
+  if (useDefaultOption) groups.push({ key: 'default', label: '', options: [useDefaultOption] });
+  for (const ref of providerRefs) {
+    const provider = reported.get(providerRefBaseId(ref));
+    if (!provider || MACHINE_PROVIDER_NOT_INSTALLED.has(provider.status)) continue;
+    const incompatibility = remoteIncompatibilityFor(
+      ref,
+      catalogProfiles,
+      defaultRemoteIncompatibility,
+    );
+    const signedOut = isRemoteRefSignedOut(machine, ref);
+    const labelled = new Map(
+      (catalogModels[ref] ?? catalogModels[providerRefBaseId(ref)] ?? []).map((option) => [
+        splitLegacyCompoundId(option.value).modelId,
+        option,
+      ]),
+    );
+    const options = provider.models.map((modelId): DropdownOption => {
+      const known = labelled.get(modelId);
+      const option: DropdownOption = known
+        ? { ...known, value: modelId }
+        : { value: modelId, label: modelId };
+      if (!incompatibility && !signedOut) return option;
+      return {
+        ...option,
+        disabled: true,
+        data: {
+          ...option.data,
+          remoteUnavailable: incompatibility ? 'incompatible' : 'signed-out',
+        },
+      };
+    });
+    groups.push({ key: ref, label: groupLabel(ref), options });
+  }
   return groups;
 }
