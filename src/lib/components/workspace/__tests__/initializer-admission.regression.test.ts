@@ -371,6 +371,32 @@ describe('actual initializer submission admission', () => {
   it('keeps ordinary owner submission functional with Multiplayer off', async () => {
     await submit();
     await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    expect(mocks.create.mock.calls[0][0]).toMatchObject({
+      repositoryPath: '/owned/test/repo',
+      skipIsolation: true,
+    });
+  });
+  it('creates from an existing folder without a branch or worktree', async () => {
+    mocks.compactFormState$.set({
+      repoPath: '/owned/plain-folder',
+      repoType: 'local',
+      isValidPath: true,
+      isNewRepo: false,
+      branch: '',
+      skipIsolation: true,
+    });
+    mocks.getBranches.mockResolvedValue({ branches: [], remoteBranches: [] });
+    mocks.branchStatus.mockResolvedValue({ ahead: 0, behind: 0, diverged: false });
+    await submit();
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledOnce());
+    expect(mocks.create.mock.calls[0][0]).toMatchObject({
+      repositoryPath: '/owned/plain-folder',
+      skipIsolation: true,
+    });
+    expect(mocks.create.mock.calls[0][0].branch).toBeUndefined();
+    expect(mocks.create.mock.calls[0][0].baseRef).toBeUndefined();
+    expect(mocks.create.mock.calls[0][0].isNewRepo).not.toBe(true);
+    expect(mocks.pull).not.toHaveBeenCalled();
   });
   it('does not persist the old branch after held validation crosses readmission', async () => {
     // Keep the branch picker's independent autosave out of this submission check.

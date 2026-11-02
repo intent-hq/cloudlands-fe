@@ -11,7 +11,12 @@
   import { clampSurface, setSurface, useSurface } from '$lib/components/ui/surface-context';
   import { OPTION_LIST_CONTAINER_CLASS } from '$lib/styles/option-list-row';
   import { useSize, type UiSize } from '$lib/components/ui/size-context';
-  import { textEntryControlClasses, textEntryHeight } from '../text-entry';
+  import {
+    textEntryControlClasses,
+    textEntryHeight,
+    textEntrySearchClasses,
+    type TextEntryVariant,
+  } from '../text-entry';
   import { OVERLAY_VIEWPORT_GUTTER } from '$lib/components/ui/overlay-positioning';
   import { useDialogPortalTarget } from '$lib/components/ui/dialog';
 
@@ -44,6 +49,10 @@
     retryText?: string;
     class?: string;
     inputClass?: string;
+    /** `search` renders the shared flat menu/picker search field. */
+    inputVariant?: TextEntryVariant;
+    /** Compact control shown beside the input, e.g. a refresh button. */
+    inputAction?: Snippet;
     inputRef?: HTMLInputElement | null;
     contentClass?: string;
     displayValue?: string;
@@ -101,6 +110,8 @@
     retryText = m.ui_combobox_retry_label(),
     class: className = '',
     inputClass = '',
+    inputVariant = 'default',
+    inputAction,
     inputRef = $bindable(null),
     contentClass = '',
     displayValue,
@@ -467,7 +478,7 @@
   }
 </script>
 
-<div class={cn('relative w-full', className)}>
+<div class={cn('relative w-full', inputVariant === 'search' && 'flex flex-col gap-1', className)}>
   <span id={labelId} class="sr-only">{ariaLabel}</span>
   {#if multiple}
     <ComboboxPrimitive.Root
@@ -500,37 +511,50 @@
 </div>
 
 {#snippet comboboxContent()}
-  <ComboboxPrimitive.Input
-    bind:ref={inputRef}
-    id={inputId}
-    aria-labelledby={accessibleLabelId}
-    aria-describedby={ariaDescribedby}
-    aria-busy={busy}
-    aria-controls={open ? listboxId : undefined}
-    aria-invalid={invalid || undefined}
-    placeholder={open ? searchPlaceholder : placeholder}
-    onfocus={handleFocus}
-    onclick={handleFocus}
-    oninput={handleInput}
-    onkeydown={handleKeydown}
-    data-size={resolvedSize}
-    class={cn(
-      'type-caption text-foreground placeholder:text-muted-foreground w-full min-w-0 rounded-(--radius-medium) border px-3',
-      textEntryControlClasses,
-      'focus-visible:outline-solid focus-visible:-outline-offset-2',
-      textEntryHeight(resolvedSize),
-      invalid && 'border-danger ring-1 ring-danger/25',
-      inputClass,
-    )}
-  >
-    {#snippet child({ props })}
-      <input
-        {...props}
-        value={visibleInputValue}
-        onkeydown={(event) => handleInputKeydown(event, props.onkeydown)}
-      />
-    {/snippet}
-  </ComboboxPrimitive.Input>
+  {#if inputAction}
+    <div class="flex min-w-0 shrink-0 items-center gap-1">
+      <div class="min-w-0 flex-1">{@render comboboxInput()}</div>
+      <div class="shrink-0">{@render inputAction()}</div>
+    </div>
+  {:else}
+    {@render comboboxInput()}
+  {/if}
+  {#snippet comboboxInput()}
+    <ComboboxPrimitive.Input
+      bind:ref={inputRef}
+      id={inputId}
+      aria-labelledby={accessibleLabelId}
+      aria-describedby={ariaDescribedby}
+      aria-busy={busy}
+      aria-controls={open ? listboxId : undefined}
+      aria-invalid={invalid || undefined}
+      placeholder={open ? searchPlaceholder : placeholder}
+      onfocus={handleFocus}
+      onclick={handleFocus}
+      oninput={handleInput}
+      onkeydown={handleKeydown}
+      data-size={resolvedSize}
+      data-variant={inputVariant === 'search' ? 'search' : undefined}
+      class={inputVariant === 'search'
+        ? cn(textEntrySearchClasses, inputClass)
+        : cn(
+            'type-caption text-foreground placeholder:text-muted-foreground w-full min-w-0 rounded-(--radius-medium) border px-3',
+            textEntryControlClasses,
+            'focus-visible:outline-solid focus-visible:-outline-offset-2',
+            textEntryHeight(resolvedSize),
+            invalid && 'border-danger ring-1 ring-danger/25',
+            inputClass,
+          )}
+    >
+      {#snippet child({ props })}
+        <input
+          {...props}
+          value={visibleInputValue}
+          onkeydown={(event) => handleInputKeydown(event, props.onkeydown)}
+        />
+      {/snippet}
+    </ComboboxPrimitive.Input>
+  {/snippet}
   {#snippet contentBody()}
     {#if header || headerAction}
       <div class="flex min-w-0 shrink-0 items-center gap-2 border-b border-border px-3 py-2">
@@ -561,6 +585,7 @@
     <ComboboxPrimitive.Viewport
       class={cn(
         OPTION_LIST_CONTAINER_CLASS,
+        inputVariant === 'search' && 'p-0',
         'max-h-72 overscroll-contain overflow-y-auto',
         viewportClass,
       )}

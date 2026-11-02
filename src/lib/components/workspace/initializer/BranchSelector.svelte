@@ -1518,10 +1518,11 @@
   );
 
   const branchGroups = $derived.by<ComboboxGroup[]>(() => {
-    const options = (values: string[]) =>
+    const options = (values: string[], nested = false) =>
       values.map((branch) => ({
         value: branch,
         label: branch,
+        class: rowLabel && nested ? 'pl-8' : undefined,
         description:
           branch === defaultBranch
             ? m.workspace_branchSelector_default_label()
@@ -1534,20 +1535,20 @@
       {
         key: 'workspace',
         label: m.workspace_branchSelector_workspaceBranches_label(),
-        options: options(workspaceBranches),
+        options: options(workspaceBranches, true),
         collapsed: workspaceBranchesCollapsed,
       },
       {
         key: 'remote',
         label: m.workspace_branchSelector_remoteBranches_label(),
-        options: options(filteredRemoteBranches),
+        options: options(filteredRemoteBranches, true),
         collapsed: !showRemoteBranches,
         keepEmpty: repoType === 'local',
       },
       {
         key: 'dependabot',
         label: m.workspace_branchSelector_dependabotBranches_label(),
-        options: options(dependabotBranches),
+        options: options(dependabotBranches, true),
         collapsed: dependabotBranchesCollapsed,
       },
     ].filter((group) => group.key !== 'remote' || repoType === 'local');
@@ -1563,6 +1564,24 @@
     else if (group.key === 'dependabot') dependabotBranchesCollapsed = !dependabotBranchesCollapsed;
   }
 </script>
+
+{#snippet refreshAction()}
+  <Button
+    onclick={handleRefresh}
+    variant="ghost"
+    size="icon-sm"
+    class="shrink-0 text-muted-foreground"
+    disabled={isLoading}
+    aria-label={m.workspace_branchSelector_refreshBranches_ariaLabel()}
+    tooltip={m.workspace_branchSelector_refreshBranches_ariaLabel()}
+  >
+    {#if isLoading}
+      <IntentMarkLoader size={14} />
+    {:else}
+      <Fa icon={faRotate} class="size-3.5!" />
+    {/if}
+  </Button>
+{/snippet}
 
 {#snippet branchOptionIcon()}
   {#if rowLabel}
@@ -1582,30 +1601,41 @@
     data-branch-group={group.key}
     aria-label={m.ui_groupedCombobox_toggleGroup_ariaLabel({ group: group.label })}
     class={rowLabel
-      ? `w-full justify-start gap-1.5 ${workspacePickerStyles.group} h-auto`
-      : 'w-full justify-start gap-1.5 px-2 text-subtle'}
+      ? `w-full justify-start gap-2 ${workspacePickerStyles.group} h-auto`
+      : 'w-full justify-start gap-2 px-2 text-subtle'}
     onclick={() => toggleGroup(group)}
   >
-    <Fa icon={faChevronDown} class={`size-2.5! shrink-0 ${expanded ? '' : '-rotate-90'}`} />
+    <span class="first-line-icon {rowLabel ? 'w-4' : 'w-3.5'}">
+      <Fa
+        icon={faChevronDown}
+        class={`${rowLabel ? 'size-4!' : 'size-3.5!'} shrink-0 ${expanded ? '' : '-rotate-90'}`}
+      />
+    </span>
     <span class="min-w-0 truncate">{group.label}</span>
     {#if group.key !== 'remote'}
       <Badge size="compact" class="rounded-full px-1.5 font-normal text-subtle">
         {formatInteger(group.options.length)}
       </Badge>
     {/if}
-    <span
-      class="ml-auto shrink-0"
-      role={group.key === 'remote' && isLoadingRemote ? 'status' : undefined}
-    >
-      {group.key === 'remote' && isLoadingRemote
-        ? m.ui_combobox_loadingOptions_message()
-        : group.key === 'remote' && !hasAttemptedRemoteFetch && remoteBranches.length === 0
-          ? m.workspace_branchSelector_groupLoad_label()
-          : expanded
-            ? m.workspace_branchSelector_groupHide_label()
-            : m.workspace_branchSelector_groupShow_label()}
-    </span>
+    {#if group.key === 'remote' && (isLoadingRemote || (!hasAttemptedRemoteFetch && remoteBranches.length === 0))}
+      <span
+        class="ml-auto shrink-0"
+        role={group.key === 'remote' && isLoadingRemote ? 'status' : undefined}
+      >
+        {isLoadingRemote
+          ? m.ui_combobox_loadingOptions_message()
+          : m.workspace_branchSelector_groupLoad_label()}
+      </span>
+    {/if}
   </Button>
+  {#if group.key === 'remote' && expanded && !isLoadingRemote && hasAttemptedRemoteFetch && group.options.length === 0}
+    <div
+      role="status"
+      class="type-caption py-2 pr-3 text-muted-foreground {rowLabel ? 'pl-8' : 'pl-6'}"
+    >
+      {m.workspace_branchSelector_noRemoteBranches_label()}
+    </div>
+  {/if}
 {/snippet}
 
 {#if disabled}
@@ -1620,7 +1650,11 @@
       <GitBranchIcon size={rowLabel ? 16 : 12} class="text-ghost shrink-0" />
     {/if}
     <span class="truncate"
-      >{selectedBranch || value || m.workspace_branchSelector_noBranchSelected_label()}</span
+      >{selectedBranch ||
+        value ||
+        (directMode
+          ? m.workspace_branchSelector_noIsolation_label({ isolationLabel })
+          : m.workspace_branchSelector_noBranchSelected_label())}</span
     >
   </div>
 {:else}
@@ -1655,6 +1689,8 @@
                   >
                 {:else if selectedBranch}
                   <span>{selectedBranch}</span>
+                {:else if directMode && repoPath}
+                  <span>{m.workspace_branchSelector_noIsolation_label({ isolationLabel })}</span>
                 {:else if !repoPath}
                   <span>{m.workspace_branchSelector_selectRepoFirst_label()}</span>
                 {:else if isLoading}
@@ -1692,7 +1728,7 @@
         role="dialog"
         aria-label={rowLabel ?? m.workspace_branchSelector_whichBranch_label()}
         class={rowLabel
-          ? 'w-[360px] max-w-[calc(100vw-1rem)] min-w-0 max-h-[min(440px,var(--bits-popover-content-available-height,calc(100dvh-1rem)))] overflow-y-auto flex flex-col'
+          ? 'w-[360px] pt-1 max-w-[calc(100vw-1rem)] min-w-0 max-h-[min(440px,var(--bits-popover-content-available-height,calc(100dvh-1rem)))] overflow-y-auto flex flex-col'
           : 'w-[400px] max-w-[calc(100vw-16px)] min-w-0 max-h-[min(600px,var(--bits-popover-content-available-height,100dvh))] overflow-y-auto flex flex-col'}
         customAnchor={modeAnchor}
         avoidCollisions={!modeAnchor}
@@ -1719,33 +1755,7 @@
         }}
         {portal}
       >
-        <!-- Header -->
-        {#if rowLabel}
-          <div class="{workspacePickerStyles.header} flex items-start gap-2 pr-2">
-            <div class="min-w-0 flex-1">
-              <h2 class={workspacePickerStyles.title}>{rowLabel}</h2>
-              <p class={workspacePickerStyles.description}>
-                {description || m.workspace_branchSelector_formMenu_description()}
-              </p>
-            </div>
-            {#if !(directMode && currentBranch)}
-              <Button
-                onclick={handleRefresh}
-                variant="ghost"
-                size="icon-sm"
-                class="-mt-1 shrink-0 text-muted-foreground"
-                disabled={isLoading}
-                aria-label={m.workspace_branchSelector_refreshBranches_ariaLabel()}
-              >
-                {#if isLoading}
-                  <IntentMarkLoader size={14} />
-                {:else}
-                  <Fa icon={faRotate} class="size-3.5!" />
-                {/if}
-              </Button>
-            {/if}
-          </div>
-        {:else}
+        {#if !rowLabel}
           <div class="shrink-0 px-3 pt-3 pb-2">
             <h2 class="type-body font-semibold text-foreground">
               {m.workspace_branchSelector_whichBranch_label()}
@@ -1756,62 +1766,15 @@
           </div>
         {/if}
 
-        {#if repoType === 'local' && typeof onSkipIsolationChange === 'function' && currentBranch}
-          <div class="shrink-0 px-2 pb-2">
-            <div
-              bind:this={isolationControlEl}
-              class={`rounded-(--radius-medium) px-3 py-2.5 ${
-                directMode
-                  ? 'border border-warning bg-warning/10'
-                  : rowLabel
-                    ? 'bg-sidebar'
-                    : 'border border-border bg-popover'
-              }`}
-            >
-              <SettingsFieldRow
-                id={`${uid}-isolation-row`}
-                htmlFor={`${uid}-isolation`}
-                activateLabel
-                label={m.workspace_branchSelector_isolation_label({ isolationLabel })}
-                description={directMode
-                  ? m.workspace_branchSelector_isolationOff_description()
-                  : m.workspace_branchSelector_isolationOn_description()}
-                class="branch-isolation-row grid-cols-[minmax(0,1fr)_auto] items-center gap-2.5 py-0 first:pt-0 last:pb-0 md:grid-cols-[minmax(0,1fr)_auto] md:items-center md:gap-2.5 [&_[data-field-label]]:py-0 [&_[data-field-label]]:font-normal [&_[data-field-leading]]:mt-0 [&_[data-field-control]]:min-h-0 [&_[data-field-control]]:w-auto [&_.space-y-1]:space-y-0"
-              >
-                {#snippet leading()}
-                  <Fa icon={directMode ? faFolder : faCodeFork} class="size-4! text-subtle" />
-                {/snippet}
-                {#snippet control({ labelId, descriptionId })}
-                  <Switch
-                    bind:ref={isolationSwitchEl}
-                    id={`${uid}-isolation`}
-                    checked={!skipIsolation}
-                    ariaLabelledby={labelId}
-                    ariaDescribedby={descriptionId}
-                    class="dark:[&_[data-switch-thumb][data-state=unchecked]]:bg-foreground"
-                    onCheckedChange={handleIsolationChange}
-                  />
-                {/snippet}
-              </SettingsFieldRow>
-              {#if directMode}
-                <div class="type-caption mt-2.5 flex items-start gap-2.5 text-foreground">
-                  <span class="first-line-icon shrink-0">
-                    <Fa icon={faExclamationTriangle} class="size-4! text-warning-ink" />
-                  </span>
-                  <p>{m.workspace_branchSelector_directWarning_description()}</p>
-                </div>
-              {/if}
-            </div>
-          </div>
-        {/if}
-
         {#if directMode && currentBranch}
-          <div class="shrink-0 px-1 pb-2">
-            <p class="type-caption px-2 pt-1 pb-1.5 font-medium text-subtle">
+          <div class="shrink-0 px-2 pb-2">
+            <p class="type-caption px-3 pt-1 pb-1.5 font-medium text-subtle">
               {m.workspace_branchSelector_folderBranch_label()}
             </p>
             <div
-              class="type-caption flex min-w-0 items-center gap-2 rounded-(--radius-row) bg-hover px-2 py-1"
+              class={rowLabel
+                ? workspacePickerStyles.row + ' flex min-w-0'
+                : 'type-caption flex min-w-0 items-center gap-2 px-2 py-1'}
             >
               {@render branchOptionIcon()}
               <span class="min-w-0 flex-1 truncate">{currentBranch}</span>
@@ -1944,18 +1907,19 @@
                 }
               }}
               class={rowLabel
-                ? 'flex min-h-0 flex-1 flex-col px-2 pb-2'
+                ? 'flex min-h-0 flex-1 flex-col gap-1 px-2'
                 : 'flex min-h-0 flex-1 flex-col px-2 pb-1'}
-              inputClass={rowLabel ? `shrink-0 ${workspacePickerStyles.search}` : 'shrink-0'}
-              viewportClass="min-h-0 max-h-none flex-1"
+              inputVariant={rowLabel ? 'search' : undefined}
+              inputAction={rowLabel ? refreshAction : undefined}
+              inputClass="shrink-0"
+              viewportClass={rowLabel
+                ? 'min-h-0 max-h-none flex-1 p-0 pb-2'
+                : 'min-h-0 max-h-none flex-1'}
               size="compact"
-              contentClass="flex min-h-0 max-h-none flex-col border-0 shadow-none"
+              contentClass={rowLabel
+                ? 'flex min-h-0 max-h-none flex-col rounded-none border-0 shadow-none'
+                : 'flex min-h-0 max-h-none flex-col border-0 shadow-none'}
             />
-            {#if showRemoteBranches && !isLoadingRemote && filteredRemoteBranches.length === 0}
-              <div role="status" class="px-3 py-2 text-subtle">
-                {m.workspace_branchSelector_noRemoteBranches_label()}
-              </div>
-            {/if}
           </div>
 
           {#if !rowLabel}<div
@@ -1987,6 +1951,42 @@
                 <Fa icon={faRotate} class="size-3.5!" />
               </Button>
             </div>{/if}
+        {/if}
+        {#if repoType === 'local' && typeof onSkipIsolationChange === 'function' && currentBranch}
+          <div class="shrink-0 border-t border-border p-2">
+            <div bind:this={isolationControlEl} class="px-3 py-2.5">
+              <SettingsFieldRow
+                id={`${uid}-isolation-row`}
+                htmlFor={`${uid}-isolation`}
+                activateLabel
+                label={m.workspace_branchSelector_isolation_label({ isolationLabel })}
+                description={directMode
+                  ? m.workspace_branchSelector_isolationOff_description()
+                  : m.workspace_branchSelector_isolationOn_description()}
+                class="branch-isolation-row grid-cols-[minmax(0,1fr)_auto] items-center gap-2.5 py-0 first:pt-0 last:pb-0 md:grid-cols-[minmax(0,1fr)_auto] md:items-center md:gap-2.5 [&_[data-field-label]]:py-0 [&_[data-field-label]]:font-normal [&_[data-field-leading]]:mt-0 [&_[data-field-control]]:min-h-0 [&_[data-field-control]]:w-auto [&_.space-y-1]:space-y-0"
+              >
+                {#snippet leading()}
+                  <Fa icon={directMode ? faFolder : faCodeFork} class="size-4! text-subtle" />
+                {/snippet}
+                {#snippet control({ labelId, descriptionId })}
+                  <Switch
+                    bind:ref={isolationSwitchEl}
+                    id={`${uid}-isolation`}
+                    checked={!skipIsolation}
+                    ariaLabelledby={labelId}
+                    ariaDescribedby={descriptionId}
+                    class="dark:[&_[data-switch-thumb][data-state=unchecked]]:bg-foreground"
+                    onCheckedChange={handleIsolationChange}
+                  />
+                {/snippet}
+              </SettingsFieldRow>
+              {#if directMode}
+                <p class="type-caption mt-2 pl-6.5 text-muted-foreground">
+                  {m.workspace_branchSelector_directWarning_description()}
+                </p>
+              {/if}
+            </div>
+          </div>
         {/if}
       </Popover.Content>
     </Popover.Root>

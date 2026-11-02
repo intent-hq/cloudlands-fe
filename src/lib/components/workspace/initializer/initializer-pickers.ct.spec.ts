@@ -309,46 +309,48 @@ for (const { name, width, height, position } of [
   });
 }
 
-test('isolation registers the first pointer click and preserves focus while changing modes', async ({
-  mount,
-  page,
-}) => {
-  await page.setViewportSize({ width: 720, height: 900 });
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await mount(Pickers);
-  const fixture = page.getByTestId('initializer-pickers-fixture');
-  const trigger = fixture.locator('button[aria-haspopup="dialog"]').nth(1);
-  const selection = page.getByTestId('initializer-selection');
-  const menu = page.getByRole('dialog');
-  const isolation = menu.getByRole('switch', { name: /Isolated/ });
-  const otherBranch = menu.getByRole('option', { name: 'feature/task-3', exact: true });
+for (const presentation of ['default', 'form'] as const) {
+  test(`isolation registers the first pointer click and preserves focus while changing modes (${presentation})`, async ({
+    mount,
+    page,
+  }) => {
+    await page.setViewportSize({ width: 720, height: 900 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await mount(Pickers, { props: { presentation } });
+    const fixture = page.getByTestId('initializer-pickers-fixture');
+    const trigger = fixture.locator('button[aria-haspopup="dialog"]').nth(1);
+    const selection = page.getByTestId('initializer-selection');
+    const menu = page.getByRole('dialog');
+    const isolation = menu.getByRole('switch', { name: /Isolated/ });
+    const otherBranch = menu.getByRole('option', { name: 'feature/task-3', exact: true });
 
-  await trigger.click();
-  await otherBranch.click();
-  await expect(selection).toContainText('"branch":"feature/task-3"');
-  await trigger.click();
-  await expect(isolation).toBeChecked();
-  await isolation.hover();
-  await page.mouse.down();
-  await expect(menu.getByRole('region', { name: 'Select a branch' })).toBeVisible();
-  await page.mouse.up();
-  await expect(selection).toContainText('"skipIsolation":true');
-  await expect(selection).toContainText('"branch":"main"');
-  await expect(menu).toBeVisible();
-  await expect(isolation).not.toBeChecked();
-  await expect(menu.getByRole('combobox')).toHaveCount(0);
-  await isolation.focus();
-  await isolation.press('Space');
-  await expect(selection).toContainText('"skipIsolation":false');
-  await expect(otherBranch).toBeVisible();
-  await expect(isolation).toBeFocused();
+    await trigger.click();
+    await otherBranch.click();
+    await expect(selection).toContainText('"branch":"feature/task-3"');
+    await trigger.click();
+    await expect(isolation).toBeChecked();
+    await isolation.hover();
+    await page.mouse.down();
+    await expect(menu.getByRole('region', { name: 'Select a branch' })).toBeVisible();
+    await page.mouse.up();
+    await expect(selection).toContainText('"skipIsolation":true');
+    await expect(selection).toContainText('"branch":"main"');
+    await expect(menu).toBeVisible();
+    await expect(isolation).not.toBeChecked();
+    await expect(menu.getByRole('combobox')).toHaveCount(0);
+    await isolation.focus();
+    await isolation.press('Space');
+    await expect(selection).toContainText('"skipIsolation":false');
+    await expect(otherBranch).toBeVisible();
+    await expect(isolation).toBeFocused();
 
-  await menu.locator('label', { hasText: 'Isolated worktree' }).click();
-  await expect(selection).toContainText('"skipIsolation":true');
-  await page.keyboard.press('Escape');
-  await expect(menu).toHaveCount(0);
-  await expect(trigger).toBeFocused();
-});
+    await menu.locator('label', { hasText: 'Isolated worktree' }).click();
+    await expect(selection).toContainText('"skipIsolation":true');
+    await page.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+  });
+}
 
 for (const { position, contract } of [
   { position: 'top', contract: 'trigger width changes below the trigger' },
@@ -681,5 +683,43 @@ for (const height of [900, 360]) {
     expect(rowBox!.y).toBeGreaterThanOrEqual(menuBox!.y);
     expect(rowBox!.y + rowBox!.height).toBeLessThanOrEqual(menuBox!.y + menuBox!.height + 0.5);
     expect(menuBox!.y + menuBox!.height).toBeLessThanOrEqual(height);
+  });
+}
+
+for (const height of [320, 700]) {
+  test(`last branch stays fully reachable at the dropdown bottom at ${height}px`, async ({
+    mount,
+    page,
+  }) => {
+    await page.setViewportSize({ width: 480, height });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await mount(Pickers, {
+      props: {
+        presentation: 'form',
+        scenario: 'clone',
+        branchPreview: 'groups-closed',
+      },
+    });
+    const menu = page.getByRole('dialog');
+    const last = menu.getByRole('option').last();
+    await expect(last).toBeVisible();
+    await last.evaluate((element) => {
+      for (let node = element.parentElement; node; node = node.parentElement) {
+        if (getComputedStyle(node).overflowY === 'auto' && node.scrollHeight > node.clientHeight) {
+          node.scrollTop = node.scrollHeight;
+          break;
+        }
+      }
+    });
+    await expect(last).toBeInViewport({ ratio: 1 });
+    const branch = (await last.innerText()).trim();
+    await last.click();
+    await expect(menu).toBeHidden();
+    await expect
+      .poll(
+        async () =>
+          JSON.parse((await page.getByTestId('initializer-selection').textContent())!).branch,
+      )
+      .toBe(branch);
   });
 }

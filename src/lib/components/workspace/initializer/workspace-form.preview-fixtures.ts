@@ -22,8 +22,17 @@ import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload
 type WorkspaceFormScenario =
   'default' | 'long' | 'empty' | 'config-error' | 'orchestration' | 'many-repos';
 
-export function setupWorkspaceFormPreview(scenario: WorkspaceFormScenario) {
+export function setupWorkspaceFormPreview(
+  scenario: WorkspaceFormScenario,
+  onOpenExternal?: (url: string) => void,
+) {
   const restores: Array<() => void> = [];
+  restores.push(
+    overrideMockIpcHandler('shell:openExternal', (params: { url: string }) => {
+      onOpenExternal?.(params.url);
+      return { success: true };
+    }),
+  );
   const previousForm = selectCompactWorkspaceInitializerFormState.select(store.state);
   store.dispatch(setCompactWorkspaceInitializerFormState(null));
   restores.push(() => store.dispatch(setCompactWorkspaceInitializerFormState(previousForm)));

@@ -10,7 +10,6 @@
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { acquireMarkerAttribute } from '$lib/utils/marker-attribute-lease';
   import { m } from '$shared/paraglide/messages.js';
-  import { provideWorkspaceSetupView } from '$lib/components/workspace/initializer/workspace-setup-view';
 
   interface Props {
     open?: boolean;
@@ -29,8 +28,6 @@
   let isExpanded = $state(true);
   let initializerRef: CompactWorkspaceInitializer | null = $state(null);
   let contentRef: HTMLElement | null = $state(null);
-  let setupBack = $state<(() => void) | null>(null);
-  provideWorkspaceSetupView((back) => (setupBack = back));
 
   function close() {
     open = false;
@@ -41,10 +38,7 @@
   // overlay (e.g. a lightbox opened above this modal) handles Escape
   $effect(() => {
     if (!open || staticPosition) return;
-    return pushEscapeLayer(() => {
-      if (setupBack) setupBack();
-      else close();
-    });
+    return pushEscapeLayer(close);
   });
 
   // Prepare the form; Dialog.Content owns initial focus on the primary action.
@@ -84,18 +78,13 @@
   bind:contentRef
   size="editor"
   allowOverflow
-  title={setupBack ? m.modals_setupScript_title() : m.modals_newSpace_title()}
-  onBack={setupBack ?? undefined}
+  title={m.modals_newSpace_title()}
   closeLabel={m.ui_updateToast_close_ariaLabel()}
   escapeKeydownBehavior="ignore"
   onClose={close}
 >
   {#if isExpanded}
-    <div
-      class="workspace-sidebar-surface transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
-      class:setup-active={Boolean(setupBack)}
-      aria-hidden="true"
-    ></div>
+    <div class="workspace-sidebar-surface" aria-hidden="true"></div>
   {/if}
   <div class="workspace-form min-w-0">
     {#if initializer}
@@ -107,6 +96,7 @@
         autoFocus={false}
         defaultToSidebarRepository
         oncreate={close}
+        onNavigateAway={close}
       />
     {/if}
   </div>
@@ -173,10 +163,6 @@
     background: var(--color-background);
   }
 
-  .workspace-sidebar-surface.setup-active {
-    opacity: 0;
-  }
-
   @container (min-width: 51rem) {
     .workspace-sidebar-surface {
       display: block;
@@ -214,5 +200,18 @@
 
   :global(body[data-new-space-modal-open] [data-slot='dialog-content']) {
     z-index: var(--layer-tooltip);
+  }
+
+  :global(
+    body[data-new-space-modal-open] [data-slot='dialog-content']:not([data-new-space-modal])
+  ) {
+    z-index: calc(var(--layer-tooltip) + 2);
+  }
+
+  :global(
+    body[data-new-space-modal-open]
+      [data-slot='dialog-overlay']:has(+ [data-slot='dialog-content']:not([data-new-space-modal]))
+  ) {
+    z-index: calc(var(--layer-tooltip) + 1);
   }
 </style>

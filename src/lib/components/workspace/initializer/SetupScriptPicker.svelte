@@ -136,7 +136,9 @@
       <SetupScriptTrigger
         bind:ref={trigger}
         presentation="form"
-        value={setupScriptDisplayName(scriptName, scriptNameSource)}
+        value={!repositoryKey && !githubUrl && !value.trim() && scriptNameSource === 'custom'
+          ? m.workspace_setupScriptPicker_choose_label()
+          : setupScriptDisplayName(scriptName, scriptNameSource)}
         {loading}
         expanded={open}
         triggerProps={props}
@@ -173,10 +175,13 @@
       {open}
       bind:inputRef={searchInput}
       ariaLabel={m.workspace_setupScriptEditor_setupScript_label()}
+      placeholder={m.workspace_setupScriptPicker_search_placeholder()}
+      searchPlaceholder={m.workspace_setupScriptPicker_search_placeholder()}
       staticPosition
+      inputVariant="search"
       size="compact"
-      class="flex min-h-0 flex-1 flex-col gap-2 p-2"
-      inputClass="shrink-0 border-0 focus-visible:outline-none {workspacePickerStyles.search}"
+      class="flex min-h-0 flex-1 flex-col gap-1 px-2 pt-1 pb-2"
+      inputClass="shrink-0"
       rowClass={workspacePickerStyles.row}
       viewportClass="min-h-0 max-h-none flex-1 p-0"
       contentClass="flex min-h-0 max-h-none flex-1 flex-col border-0 shadow-none"

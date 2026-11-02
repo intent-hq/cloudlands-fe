@@ -2,12 +2,7 @@
   import { onMount, onDestroy, tick, type Snippet } from 'svelte';
   import { cn } from '$lib/utils';
   import Fa from 'svelte-fa';
-  import {
-    faCheck,
-    faChevronDown,
-    faChevronRight,
-    faSearch,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faCheck, faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
   import Portal from '../Portal.svelte';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
@@ -63,8 +58,6 @@
     sideOffset?: number;
     /** Whether search is enabled */
     searchable?: boolean;
-    /** Opt into the bordered search-input composition with a leading search icon. */
-    searchChrome?: boolean;
     /** Current search text */
     searchValue?: string;
     /** Selection mode */
@@ -95,6 +88,8 @@
     rowClass?: string;
     /** Extra classes for the search input. */
     inputClass?: string;
+    /** Accessible name for the search field. */
+    searchAriaLabel?: string;
     /** Called when value changes */
     onchange?: (value: string | string[], event?: MouseEvent) => void;
     /** Called when open state changes */
@@ -107,6 +102,8 @@
     groupHeader?: Snippet<[DropdownGroupProps]>;
     /** Header content (e.g., description text) */
     header?: Snippet;
+    /** Compact controls beside the search field, e.g. clear or refresh. */
+    searchAction?: Snippet;
     /** Footer content (e.g., "Create new..." action) */
     footer?: Snippet;
     /** Empty state when no results */
@@ -129,7 +126,6 @@
     side = 'bottom',
     sideOffset = 4,
     searchable = true,
-    searchChrome = false,
     searchValue = $bindable(''),
     multiple = false,
     closeOnSelect = true,
@@ -145,12 +141,14 @@
     headerClass = '',
     rowClass = '',
     inputClass = '',
+    searchAriaLabel = m.ui_dropdown_search_ariaLabel(),
     onchange,
     onopenchange,
     trigger,
     item,
     groupHeader,
     header,
+    searchAction,
     footer,
     empty,
     defaultHighlightValue,
@@ -588,7 +586,9 @@
     // Composed controls own selection keys; an unconsumed Escape dismisses this layer.
     if (
       e.target instanceof Element &&
-      e.target.closest('[data-dropdown-header], [data-dropdown-footer]') &&
+      e.target.closest(
+        '[data-dropdown-header], [data-dropdown-footer], [data-dropdown-search-action]',
+      ) &&
       (e.key !== 'Escape' || e.defaultPrevented)
     )
       return;
@@ -835,25 +835,15 @@
 
   <!-- Search Input -->
   {#if searchable}
-    <div class={cn('w-full', isPortal && 'shrink-0', searchChrome && 'relative p-2')}>
-      {#if searchChrome}
-        <Fa
-          icon={faSearch}
-          class="pointer-events-none absolute left-4.5 top-1/2 -translate-y-1/2 size-3 text-subtle"
-        />
-      {/if}
+    <div class={cn('flex w-full items-center gap-1 px-2 pt-1 pb-1', isPortal && 'shrink-0')}>
       <Input
         bind:ref={inputRef}
         type="text"
-        class={cn(
-          searchChrome
-            ? 'pl-7'
-            : 'w-full bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground outline-none border-none ring-0 focus:outline-none!',
-          inputClass,
-        )}
+        variant="search"
+        class={inputClass}
         {placeholder}
         role="searchbox"
-        aria-label={m.ui_dropdown_search_ariaLabel()}
+        aria-label={searchAriaLabel}
         aria-controls={listboxId}
         aria-activedescendant={highlightedIndex >= 0
           ? `${uid}-option-${highlightedIndex}`
@@ -863,6 +853,11 @@
         onkeydown={handleKeyDown}
         noFocusStyle
       />
+      {#if searchAction}
+        <div class="flex shrink-0 items-center gap-1" data-dropdown-search-action>
+          {@render searchAction()}
+        </div>
+      {/if}
     </div>
     <!-- Screen reader announcement for filtered results -->
     {#if searchValue}
@@ -885,6 +880,7 @@
     class={cn(
       isPortal || fillContentHeight ? 'flex-1 min-h-0' : 'max-h-[300px]',
       'overflow-y-auto p-1',
+      searchable && 'pt-0',
     )}
   >
     <ListHighlight
@@ -936,13 +932,8 @@
     {#if !hasResults}
       {#if searchValue && allOptions.length > 0}
         <!-- Search yielded no results but there are options available -->
-        <div
-          class="type-caption flex flex-col items-start gap-1 py-1 px-2 text-left text-muted-foreground"
-        >
+        <div class="type-caption py-1 px-3 text-left text-muted-foreground">
           <span>{m.ui_dropdown_noResultsFor_label({ query: searchValue })}</span>
-          <span class="type-caption text-muted-foreground"
-            >{m.ui_dropdown_tryDifferentSearch_description()}</span
-          >
         </div>
       {:else if empty}
         {@render empty()}

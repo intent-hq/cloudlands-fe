@@ -1089,7 +1089,7 @@ describe('NewSpaceModal model-picker composition', () => {
 
     await fireEvent.click(trigger);
     await screen.findByRole('option', { name: /GPT 5\.6/ }, { timeout: 5000 });
-    const search = await screen.findByRole('searchbox', { name: 'Search options' });
+    const search = await screen.findByRole('searchbox', { name: 'Search models...' });
     await fireEvent.input(search, { target: { value: 'GPT 5.6' } });
     await fireEvent.keyDown(search, { key: 'Enter' });
     await waitFor(() => expect(trigger.textContent).toContain('GPT 5.6'));
@@ -1102,7 +1102,7 @@ describe('NewSpaceModal model-picker composition', () => {
     expect(screen.getByRole('dialog', { name: 'New Workspace' })).toBe(dialog);
 
     await fireEvent.click(trigger);
-    const reopenedSearch = await screen.findByRole('searchbox', { name: 'Search options' });
+    const reopenedSearch = await screen.findByRole('searchbox', { name: 'Search models...' });
     await fireEvent.keyDown(reopenedSearch, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
     expect(document.activeElement).toBe(trigger);
@@ -1161,7 +1161,7 @@ describe('NewSpaceModal model-picker composition', () => {
     const listbox = await screen.findByRole('listbox');
     const content = dropdownContent(listbox);
 
-    const search = within(content).getByRole('searchbox', { name: 'Search options' });
+    const search = within(content).getByRole('searchbox', { name: 'Search models...' });
     expect(search.getAttribute('aria-controls')).toBe(listbox.id);
     expect(listbox.contains(search)).toBe(false);
     await within(listbox).findByRole('option', { name: /^GPT 5\.12 Last model/ });

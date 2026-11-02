@@ -296,8 +296,6 @@
     size?: 'xs' | 'sm' | 'icon';
     /** Stretch the trigger to its container. */
     fullWidth?: boolean;
-    /** Short explanation shown at the top of the open menu. */
-    description?: string;
     /** Field label rendered inside a full-width trigger, before the value. */
     rowLabel?: string;
     /** Keep the field label accessible without showing it in a compact trigger. */
@@ -368,7 +366,6 @@
     variant = 'ghost-light',
     size = 'sm',
     fullWidth = false,
-    description,
     rowLabel,
     showRowLabel = true,
     showTriggerIcons = true,
@@ -2384,17 +2381,10 @@
         onToggle={toggleGroup}
         onRefresh={handleRefreshProvider}
       />
-    {:else if group.key !== 'default' && (rowLabel || baseHasProfiles(group.parentKey ?? group.key))}
-      <!-- Tabs show icons only; name the configuration being browsed (§5.54).
-           Form rows always name the provider so the icon rail is never the only cue. -->
-      <div
-        class={rowLabel
-          ? cn('truncate', workspacePickerStyles.group)
-          : 'truncate px-2 pt-1.5 pb-0.5 text-xs text-subtle'}
-        data-testid="model-picker-profile-group"
-      >
+    {:else if group.key !== 'default' && baseHasProfiles(group.parentKey ?? group.key)}
+      <span class="sr-only" data-testid="model-picker-profile-group">
         {group.label}
-      </div>
+      </span>
       {#if isProfileSignedOut(group.key)}
         <!-- Same cue as a provider's sign-in failure; the models stay selectable. -->
         <div
@@ -2506,13 +2496,10 @@
     variant={variant === 'outline' ? 'outline' : variant === 'default' ? 'default' : 'ghost'}
     size={size === 'xs' ? 'xs' : 'sm'}
     searchable={!hasNoAvailableProvider}
-    searchChrome
-    placeholder={m.ui_dropdown_search_ariaLabel()}
+    placeholder={m.chat_modelPicker_searchModels_placeholder()}
+    searchAriaLabel={m.chat_modelPicker_searchModels_placeholder()}
     class={cn('min-w-0 max-w-full', fullWidth && 'w-full')}
-    headerClass={cn(
-      'model-picker-header border-b-0!',
-      rowLabel ? 'pt-3' : !hasNoAvailableProvider && 'pt-9',
-    )}
+    headerClass="model-picker-header border-b-0!"
     triggerClass={cn(
       'px-2!',
       rowLabel && showRowLabel ? 'max-w-none' : 'max-w-full',
@@ -2522,12 +2509,11 @@
     )}
     contentClass={cn(
       'model-picker-panel max-w-[calc(100vw-16px)] bg-popover! text-foreground! w-96 min-h-0 flex flex-col rounded-xl pl-12',
-      rowLabel && 'model-picker-form',
+      rowLabel && '[&>[data-scroll-container]]:px-2',
       menuMaxHeight === 440 ? 'h-[440px]' : 'h-[360px]',
       pointerInteraction && 'model-picker-pointer',
     )}
     rowClass={rowLabel ? workspacePickerStyles.row : undefined}
-    inputClass={rowLabel ? workspacePickerStyles.search : undefined}
     contentMaxHeight={menuMaxHeight}
     side={menuSide}
     sideOffset={menuSideOffset}
@@ -2602,6 +2588,54 @@
       {/if}
     {/snippet}
 
+    {#snippet searchAction()}
+      <span class="inline-flex size-(--control-height-compact) shrink-0">
+        {#if modelSearchValue}
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            iconOnly
+            class="shrink-0"
+            aria-label={m.chat_modelPicker_clearSearch_ariaLabel()}
+            onclick={clearModelSearch}
+          >
+            <Fa icon={faXmark} class="size-3" />
+          </Button>
+        {/if}
+      </span>
+      {#if refreshProviderId}
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          iconOnly={true}
+          title={m.chat_modelPicker_refreshGroup_title({
+            group: providerDisplayName(refreshProviderId),
+          })}
+          aria-label={m.chat_modelPicker_refreshGroup_title({
+            group: providerDisplayName(refreshProviderId),
+          })}
+          class={cn(
+            'shrink-0 text-subtle hover:bg-muted/40',
+            refreshingProviders.has(refreshProviderId) && 'opacity-50!',
+          )}
+          data-testid="model-provider-refresh-button"
+          aria-busy={refreshingProviders.has(refreshProviderId)}
+          disabled={refreshingProviders.has(refreshProviderId)}
+          onclick={() => void handleRefreshProvider(refreshProviderId)}
+        >
+          {#if refreshingProviders.has(refreshProviderId)}
+            <IntentMarkLoader size={12} />
+          {:else}
+            <Fa
+              icon={faArrowsRotate}
+              size={10}
+              class="text-subtle transition-transform duration-spring-slow ease-spring-slow motion-reduce:transition-none"
+            />
+          {/if}
+        </Button>
+      {/if}
+    {/snippet}
+
     {#snippet header()}
       <div
         class="absolute inset-y-0 left-0 flex w-12 flex-col items-center gap-1 border-r border-border bg-muted/20 py-2"
@@ -2662,61 +2696,6 @@
           </Button>
         {/if}
       </div>
-      {#if modelSearchValue}
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          iconOnly
-          class={cn('absolute right-10 z-20', rowLabel ? 'top-2.5' : 'top-1.5')}
-          aria-label={m.chat_modelPicker_clearSearch_ariaLabel()}
-          onclick={clearModelSearch}
-        >
-          <Fa icon={faXmark} class="size-3" />
-        </Button>
-      {/if}
-      {#if refreshProviderId}
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          iconOnly={true}
-          title={m.chat_modelPicker_refreshGroup_title({
-            group: providerDisplayName(refreshProviderId),
-          })}
-          aria-label={m.chat_modelPicker_refreshGroup_title({
-            group: providerDisplayName(refreshProviderId),
-          })}
-          class={cn(
-            'absolute right-2 text-subtle hover:bg-muted/40',
-            rowLabel ? 'top-2.5' : 'top-1.5',
-            refreshingProviders.has(refreshProviderId) && 'opacity-50!',
-          )}
-          data-testid="model-provider-refresh-button"
-          aria-busy={refreshingProviders.has(refreshProviderId)}
-          disabled={refreshingProviders.has(refreshProviderId)}
-          onclick={() => void handleRefreshProvider(refreshProviderId)}
-        >
-          {#if refreshingProviders.has(refreshProviderId)}
-            <IntentMarkLoader size={12} />
-          {:else}
-            <Fa
-              icon={faArrowsRotate}
-              size={10}
-              class="text-subtle transition-transform duration-spring-slow ease-spring-slow motion-reduce:transition-none"
-            />
-          {/if}
-        </Button>
-      {/if}
-      {#if rowLabel}<h2 class={cn(workspacePickerStyles.title, 'px-3 pr-16')}>{rowLabel}</h2>{/if}
-      {#if description}
-        <p
-          class={rowLabel
-            ? cn(workspacePickerStyles.description, 'px-3 pb-2')
-            : 'px-3 pb-2 text-xs text-muted-foreground'}
-          data-testid="model-picker-description"
-        >
-          {description}
-        </p>
-      {/if}
       {#if showModelWarning && warningMessage}
         <div class="px-3 py-2.5 border-b border-border bg-warning/5">
           <div class="flex items-start gap-2" role="alert">
@@ -2820,30 +2799,6 @@
 </ContentDialog>
 
 <style>
-  :global(.model-picker-panel:not(.model-picker-form) > div:has(> input[role='searchbox'])) {
-    position: absolute;
-    top: 0.25rem;
-    left: 3.5rem;
-    right: 2.5rem;
-    width: auto;
-    padding: 0;
-    z-index: 10;
-    background: transparent;
-    border-radius: var(--radius-medium);
-  }
-  :global(.model-picker-panel:not(.model-picker-form) > div:has(> input[role='searchbox']) > svg) {
-    display: none;
-  }
-  :global(.model-picker-panel:not(.model-picker-form) input[role='searchbox']) {
-    height: 2rem;
-    padding: 0 1.75rem 0 0.25rem;
-    border: 0;
-    background: transparent;
-    box-shadow: none;
-    outline: none;
-    border-radius: var(--radius-medium);
-    caret-color: var(--color-foreground);
-  }
   :global(.model-picker-panel.model-picker-pointer) {
     transition: opacity var(--spring-fast) var(--spring-fast-ease);
     @starting-style {

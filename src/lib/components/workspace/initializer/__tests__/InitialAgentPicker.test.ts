@@ -1724,8 +1724,11 @@ describe('InitialAgentPicker specialist dropdown', () => {
 
   it('opens the specialist menu without leaving single-agent mode', async () => {
     const onTeamModeChange = vi.fn();
+    const onNavigateAway = vi.fn();
+    const { navigateToSettings } = await import('$lib/utils/workspace-navigation');
+    vi.mocked(navigateToSettings).mockClear();
     render(InitialAgentPicker, {
-      props: { selectedSpecialist: null, isTeamMode: false, onTeamModeChange },
+      props: { selectedSpecialist: null, isTeamMode: false, onTeamModeChange, onNavigateAway },
     });
 
     const trigger = specialistTrigger();
@@ -1738,6 +1741,14 @@ describe('InitialAgentPicker specialist dropdown', () => {
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
     expect(manageSpecialistsItem()).not.toBeNull();
     expect(onTeamModeChange).not.toHaveBeenCalled();
+    await fireEvent.click(manageSpecialistsItem()!);
+    await waitFor(() =>
+      expect(navigateToSettings).toHaveBeenCalledWith({ view: 'create-specialist' }),
+    );
+    expect(onNavigateAway).toHaveBeenCalledOnce();
+    expect(onNavigateAway.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(navigateToSettings).mock.invocationCallOrder[0],
+    );
   });
 
   it('selects one specialist, clears the model override, and exposes the checked choice on reopen', async () => {

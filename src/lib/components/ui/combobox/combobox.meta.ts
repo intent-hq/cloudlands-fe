@@ -13,6 +13,7 @@ export const comboboxMetadata = parseUiComponentMetadata({
     'src/features/discussions/components/DiscussionReferencePicker.svelte',
     'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
     'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
+    'src/lib/components/ui/menu-search.preview.svelte',
     'src/lib/components/workspace/initializer/BranchSelector.svelte',
     'src/lib/components/workspace/initializer/InitialAgentPicker.svelte',
   ],

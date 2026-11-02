@@ -158,38 +158,33 @@ describe('Dropdown filtered rows', () => {
   );
 });
 
-describe('Dropdown search chrome', () => {
+describe('Dropdown search', () => {
   beforeEach(setupDropdownEnv);
   afterEach(cleanupDropdownEnv);
 
-  it.each([undefined, true])(
-    'preserves search keyboard selection with chrome %s',
-    async (searchChrome) => {
-      const onchange = vi.fn();
-      const { container } = render(Dropdown, {
-        props: {
-          options: [
-            { value: 'a', label: 'Alpha' },
-            { value: 'b', label: 'Beta' },
-          ],
-          portal: false,
-          searchChrome,
-          onchange,
-        },
-      });
-      await fireEvent.click(container.querySelector('button')!);
-      const search = screen.getByRole('searchbox', { name: 'Search options' });
-      expect(document.activeElement).toBe(search);
-      if (searchChrome === undefined) expect(search.classList.contains('border-none')).toBe(true);
-      await fireEvent.input(search, { target: { value: 'Beta' } });
-      await waitFor(() => expect(screen.queryByRole('option', { name: 'Alpha' })).toBeNull());
-      const beta = screen.getByRole('option', { name: 'Beta' });
-      expect(search.getAttribute('aria-activedescendant')).toBe(beta.id);
-      await fireEvent.keyDown(search, { key: 'Enter' });
-      expect(onchange).toHaveBeenCalledWith('b', undefined);
-      expect(screen.queryByRole('searchbox')).toBeNull();
-    },
-  );
+  it('preserves search keyboard selection', async () => {
+    const onchange = vi.fn();
+    const { container } = render(Dropdown, {
+      props: {
+        options: [
+          { value: 'a', label: 'Alpha' },
+          { value: 'b', label: 'Beta' },
+        ],
+        portal: false,
+        onchange,
+      },
+    });
+    await fireEvent.click(container.querySelector('button')!);
+    const search = screen.getByRole('searchbox', { name: 'Search options' });
+    expect(document.activeElement).toBe(search);
+    await fireEvent.input(search, { target: { value: 'Beta' } });
+    await waitFor(() => expect(screen.queryByRole('option', { name: 'Alpha' })).toBeNull());
+    const beta = screen.getByRole('option', { name: 'Beta' });
+    expect(search.getAttribute('aria-activedescendant')).toBe(beta.id);
+    await fireEvent.keyDown(search, { key: 'Enter' });
+    expect(onchange).toHaveBeenCalledWith('b', undefined);
+    expect(screen.queryByRole('searchbox')).toBeNull();
+  });
 });
 
 describe('Dropdown portal positioning', () => {
@@ -377,7 +372,7 @@ describe('Dropdown compatibility modes', () => {
     },
   );
 
-  it.each(['Header action', 'Footer action'])(
+  it.each(['Header action', 'Footer action', 'Search action'])(
     'does not intercept selection keys from %s',
     async (name) => {
       render(DropdownSupplementHarness);
@@ -396,7 +391,7 @@ describe('Dropdown compatibility modes', () => {
       await fireEvent.click(control);
       expect(
         JSON.parse(screen.getByTestId('slot-actions').textContent!)[
-          name.startsWith('Header') ? 'header' : 'footer'
+          name.startsWith('Header') ? 'header' : name.startsWith('Footer') ? 'footer' : 'search'
         ],
       ).toBe(1);
       await fireEvent.keyDown(control, { key: 'Escape' });

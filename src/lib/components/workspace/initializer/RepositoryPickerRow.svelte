@@ -43,31 +43,43 @@
   const forgeLabels = { github: 'GitHub', gitlab: 'GitLab' }; // i18n-ignore (brand names)
 </script>
 
-{#snippet selectedCheck()}
-  <Indicator
-    state={(checked ?? selected) ? 'checked' : 'empty'}
-    class={workspacePickerStyles.check}
-  />
+{#snippet formTrailing()}
+  {#if checked ?? selected}
+    <Indicator state="checked" class={cn(workspacePickerStyles.check, 'self-center')} />
+  {/if}
 {/snippet}
 
 <ActionRow
   {...button}
-  trailing={formStyle ? selectedCheck : undefined}
+  trailing={formStyle ? formTrailing : undefined}
   role={option ? 'option' : undefined}
   {selected}
   class={formStyle
-    ? cn(workspacePickerStyles.row, 'cursor-pointer', className)
+    ? cn(
+        workspacePickerStyles.row,
+        'cursor-pointer focus-visible:outline-none [--menu-icon-size:1.25rem]',
+        className,
+      )
     : `gap-2 py-1.5 cursor-pointer ${className}`}
 >
   {#snippet leading()}
     {#if avatarUrl}
-      <PrincipalAvatar {avatarUrl} label={owner || name} size={16} referrerpolicy="no-referrer" />
+      <PrincipalAvatar
+        {avatarUrl}
+        label={owner || name}
+        size={formStyle ? 20 : 16}
+        referrerpolicy="no-referrer"
+      />
     {:else if owner && provider === 'github'}
-      <GitHubAvatar identity={owner} class="size-4 rounded-full">
-        {#snippet fallback()}<PrincipalAvatar label={owner} size={16} />{/snippet}
+      <GitHubAvatar
+        identity={owner}
+        size={formStyle ? 20 : 16}
+        class={formStyle ? 'size-5 rounded-full' : 'size-4 rounded-full'}
+      >
+        {#snippet fallback()}<PrincipalAvatar label={owner} size={formStyle ? 20 : 16} />{/snippet}
       </GitHubAvatar>
     {:else}
-      <PrincipalAvatar label={owner || name} size={16} />
+      <PrincipalAvatar label={owner || name} size={formStyle ? 20 : 16} />
     {/if}
   {/snippet}
   {#snippet title()}
@@ -77,7 +89,7 @@
         {name}
         {#if suffix}<span class="text-subtle ml-1">({suffix})</span>{/if}
       </span>
-      {#if showForge && provider}
+      {#if showForge && provider && !formStyle}
         <span role="img" aria-label={forgeLabels[provider]} class="text-subtle shrink-0">
           <Fa icon={provider === 'github' ? faGithub : faGitlab} size={12} />
         </span>

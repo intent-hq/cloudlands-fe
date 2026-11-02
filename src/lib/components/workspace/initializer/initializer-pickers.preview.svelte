@@ -65,7 +65,9 @@
       currentBranch: 'main',
     });
     appClient.integrations.githubBranches = async () => ({
-      branches: ['main', 'feature/inline-picker'],
+      branches: showBranchDesign
+        ? ['main', ...Array.from({ length: 30 }, (_, index) => `feature/task-${index}`)]
+        : ['main', 'feature/inline-picker'],
       defaultBranch: 'main',
     });
     appClient.integrations.githubBranchesCached = async () => ({ cached: false, branches: [] });
@@ -83,6 +85,7 @@
 
   interface Props {
     position?: 'top' | 'bottom' | 'stacked';
+    presentation?: 'default' | 'form';
     scenario?: 'local' | 'clone' | 'long' | 'remote';
     locale?: Locale;
     branchPreview?: 'groups-closed' | 'workspace-open' | 'remote-open' | 'direct-mode';
@@ -101,6 +104,9 @@
       remote: { props: { scenario: 'remote' } },
       'remote-de': { props: { scenario: 'remote', locale: 'de' } },
       'groups-closed': { props: { branchPreview: 'groups-closed' } },
+      'form-list': {
+        props: { presentation: 'form', scenario: 'clone', branchPreview: 'groups-closed' },
+      },
       'workspace-open': { props: { branchPreview: 'workspace-open' } },
       'remote-open': { props: { branchPreview: 'remote-open' } },
       'direct-mode': { props: { branchPreview: 'direct-mode' } },
@@ -113,7 +119,13 @@
   import RepoAndBranchPicker from './RepoAndBranchPicker.svelte';
   import * as Tabs from '$lib/components/ui/tabs';
 
-  let { position = 'top', scenario = 'local', locale = 'en', branchPreview }: Props = $props();
+  let {
+    position = 'top',
+    scenario = 'local',
+    locale = 'en',
+    branchPreview,
+    presentation = 'default',
+  }: Props = $props();
   const initialScenario = untrack(() => scenario);
   let branch = $state(initialScenario === 'long' ? 'feature/a-long-selected-branch-name' : 'main');
   let repoPath = $state(
@@ -179,6 +191,7 @@
   data-picker-ready={!branchPreview || previewReady}
 >
   <RepoAndBranchPicker
+    {presentation}
     {repoPath}
     {repoType}
     {githubUrl}

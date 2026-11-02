@@ -80,12 +80,7 @@
       if (event.key === 'Enter') event.stopPropagation();
     }}
   >
-    {#if rowLabel}
-      <div class={workspacePickerStyles.header}>
-        <h2 class={workspacePickerStyles.title}>{rowLabel}</h2>
-        <p class="{workspacePickerStyles.description} break-all">{projectPath}</p>
-      </div>
-    {:else}
+    {#if !rowLabel}
       <p class="break-all type-caption text-foreground">{projectPath}</p>
     {/if}
     <GitLabPickerList

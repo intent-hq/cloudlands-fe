@@ -4,24 +4,17 @@
    * Uses local state so changes only apply on Done, and Cancel discards them.
    */
   import { FormDialog } from '$lib/components/patterns/confirm';
-  import * as Popover from '$lib/components/ui/popover';
-  import { useDialogPortalTarget } from '$lib/components/ui/dialog';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
-  import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { isTextEntryTarget } from '$lib/utils/text-entry';
   import { untrack, type Snippet } from 'svelte';
-  import { Button, type ButtonProps } from '$lib/components/ui/button';
+  import { Button } from '$lib/components/ui/button';
   import type { ProjectType, SetupScriptNameSource } from '$features/setup-scripts';
   import { m } from '$shared/paraglide/messages.js';
-  import { workspacePickerStyles } from '$lib/components/workspace/initializer/workspace-picker-styles';
-  import { fade } from '$lib/motion';
 
   interface Props {
     open?: boolean;
     static?: boolean;
-    presentation?: 'dialog' | 'popover' | 'inline';
-    trigger?: Snippet<[ButtonProps]>;
     editor?: Snippet<[string, (value: string) => void]>;
     repoPath?: string;
     /** Qualified repository identity for last-used defaults, separate from a filesystem path. */
@@ -45,8 +38,6 @@
   let {
     open = $bindable(false),
     static: staticPosition = false,
-    presentation = 'dialog',
-    trigger,
     editor,
     repoPath = '',
     repositoryKey,
@@ -61,8 +52,6 @@
     onClose,
     onCommit,
   }: Props = $props();
-  const isMobile = new IsMobile();
-  const dialogPortalTarget = useDialogPortalTarget();
   let wasOpen = false;
   let closed = false;
 
@@ -72,6 +61,7 @@
   let localScriptNameSource = $state<SetupScriptNameSource>('named');
   let localIsCustomScript = $state(false);
   let editorExpanded = $state(true);
+  let editorSession = $state(0);
   let escapeKeydownBehavior = $state<'close' | 'ignore'>('close');
   const localHasUnsavedChanges = $derived(
     localValue !== value ||
@@ -89,6 +79,9 @@
         localScriptNameSource = createNew ? 'custom' : scriptNameSource;
         localIsCustomScript = createNew || isCustomScript;
         editorExpanded = true;
+        // A dialog outro can retain the old editor during a rapid reopen.
+        // Each draft needs fresh internal selection and edit provenance.
+        editorSession += 1;
         closed = false;
       });
     }
@@ -168,16 +161,8 @@
         bind:scriptNameSource={localScriptNameSource}
         bind:isCustomScript={localIsCustomScript}
         contentOnly
-        presentation={presentation === 'popover'
-          ? 'picker'
-          : presentation === 'inline'
-            ? 'workspace'
-            : 'editor'}
-        contentClass={presentation === 'popover'
-          ? 'min-h-0'
-          : presentation === 'inline'
-            ? 'h-full min-h-0'
-            : 'h-[min(34rem,calc(100dvh-12rem))] min-h-80'}
+        presentation="editor"
+        contentClass="h-[min(34rem,calc(100dvh-12rem))] min-h-80"
       />
     {/await}
   {/if}
@@ -193,99 +178,24 @@
   {/if}
 {/snippet}
 
-{#if presentation === 'popover'}
-  <Popover.Root bind:open onOpenChange={(next) => !next && close()}>
-    <Popover.Trigger>
-      {#snippet child({ props })}{@render trigger?.(props)}{/snippet}
-    </Popover.Trigger>
-    <Popover.Content
-      role="dialog"
-      aria-label={m.workspace_setupScriptEditor_setupScript_label()}
-      side={isMobile.current ? 'bottom' : 'left'}
-      align={isMobile.current ? 'end' : 'start'}
-      sideOffset={isMobile.current ? 4 : 24}
-      portalProps={{ to: dialogPortalTarget() }}
-      strategy={dialogPortalTarget() ? 'absolute' : 'fixed'}
-      class="flex w-[440px] max-w-[calc(100vw-1rem)] min-h-0 flex-col overflow-hidden p-0"
-      style="max-height: min(560px, var(--bits-popover-content-available-height, calc(100dvh - 1rem)))"
-      {escapeKeydownBehavior}
-      onfocusin={handleFocusIn}
-    >
-      <div class={workspacePickerStyles.header}>
-        <h2 class={workspacePickerStyles.title}>{m.workspace_compactInitializer_setup_label()}</h2>
-        <p class={workspacePickerStyles.description}>
-          {m.workspace_setupScriptPicker_description()}
-        </p>
-      </div>
-      <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        {@render editorContent()}
-      </div>
-      <div class="flex shrink-0 items-center justify-end gap-2 border-t border-border px-3 py-3">
-        <Button variant="ghost" size="sm" onclick={handleCancel}
-          >{m.modals_setupScript_cancel_label()}</Button
-        >
-        <Button variant="primary" size="sm" onclick={handleDone}
-          >{m.chat_shared_apply_label()}</Button
-        >
-      </div>
-    </Popover.Content>
-  </Popover.Root>
-{:else if presentation === 'inline'}
-  {#if open}
-    <!-- svelte-ignore a11y_no_noninteractive_element_interactions (tracks editor focus for Escape ownership) -->
-    <div
-      class="setup-script-inline"
-      role="region"
-      aria-label={m.workspace_setupScriptEditor_setupScript_label()}
-      onfocusin={handleFocusIn}
-      in:fade={{ tier: 'moderate' }}
-      out:fade={{ tier: 'moderate' }}
-    >
-      <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {@render editorContent()}
-      </div>
-      <div class="flex shrink-0 items-center justify-end gap-2 pt-3">
-        {@render submitAction()}
-      </div>
-    </div>
-  {/if}
-{:else}
-  <FormDialog
-    bind:open
-    static={staticPosition}
-    title={m.modals_setupScript_title()}
-    description={m.workspace_compactInitializer_setup_description()}
-    showCloseButton={false}
-    {escapeKeydownBehavior}
-    onfocusin={handleFocusIn}
-    enterKey="ignore"
-    modEnter="ignore"
-    size="editor"
-    onSubmit={handleDone}
-    onCancel={handleCancel}
-  >
+<FormDialog
+  bind:open
+  static={staticPosition}
+  title={m.modals_setupScript_title()}
+  showCloseButton={false}
+  {escapeKeydownBehavior}
+  onfocusin={handleFocusIn}
+  enterKey="ignore"
+  modEnter="ignore"
+  size="editor"
+  onSubmit={handleDone}
+  onCancel={handleCancel}
+>
+  {#key editorSession}
     {@render editorContent()}
-    {#snippet footer()}
-      <Button variant="ghost" onclick={handleCancel}>{m.modals_setupScript_cancel_label()}</Button>
-      {@render submitAction()}
-    {/snippet}
-  </FormDialog>
-{/if}
-
-<style>
-  .setup-script-inline {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    min-height: 0;
-    max-height: calc(100dvh - 12rem);
-  }
-
-  @container (width < 48rem) {
-    .setup-script-inline {
-      padding-bottom: 1rem;
-    }
-  }
-</style>
+  {/key}
+  {#snippet footer()}
+    <Button variant="ghost" onclick={handleCancel}>{m.modals_setupScript_cancel_label()}</Button>
+    {@render submitAction()}
+  {/snippet}
+</FormDialog>

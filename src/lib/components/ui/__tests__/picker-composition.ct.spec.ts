@@ -38,8 +38,9 @@ for (const portal of [false, true]) {
     await trigger.click();
     await page.getByRole('button', { name: 'Header action' }).press('Enter');
     await page.getByRole('button', { name: 'Footer action' }).press('Enter');
+    await page.getByRole('button', { name: 'Search action' }).press('Enter');
     await expect(page.getByTestId('slot-actions')).toHaveText(
-      JSON.stringify({ header: 1, footer: 1 }),
+      JSON.stringify({ header: 1, footer: 1, search: 1 }),
     );
     await expect(page.getByTestId('supplement-result')).toHaveText(
       JSON.stringify({ value: 'alpha', changes: 0, actions: 1 }),

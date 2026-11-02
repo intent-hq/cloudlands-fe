@@ -55,9 +55,11 @@
     faPlus,
     faChevronDown,
     faArrowLeft,
+    faArrowUpRightFromSquare,
   } from '@fortawesome/free-solid-svg-icons';
   import { onDestroy, tick, untrack } from 'svelte';
   import Fa from 'svelte-fa';
+  import { handleLink } from '$features/navigation/link-handler';
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
   import AddRemoteSetupModal from './AddRemoteSetupModal.svelte';
   import GitLabProjectPicker from './GitLabProjectPicker.svelte';
@@ -97,6 +99,7 @@
     getRecentRepoLabel,
     getRecentRepoIdentity,
     getRecentRepoTooltip,
+    getRepoFolderName,
     matchesRecentRepoSearch,
   } from './recent-repo-display';
   import { Tooltip } from '$lib/components/ui/tooltip';
@@ -530,10 +533,43 @@
   let formQuery = $state('');
   let formSearchElement = $state<HTMLInputElement | null>(null);
   let formListElement = $state<HTMLDivElement | undefined>();
+  const formRepositoryChoices = $derived.by(() => {
+    if (recentRepos.some(isCurrentRepo)) return recentRepos;
+    let current: WorkspaceInitializerRecentRepo | undefined;
+    if (gitlabSelected && gitlab?.instanceBaseUrl && gitlab.selectedProjectPath) {
+      const projectPath = gitlab.selectedProjectPath;
+      const url = `${gitlab.instanceBaseUrl}/${projectPath}`;
+      current = {
+        path: url,
+        type: 'github',
+        githubUrl: url,
+        name: projectPath.split('/').at(-1)!,
+        owner: projectPath.split('/').slice(0, -1).join('/'),
+        repositoryIdentity: {
+          provider: 'gitlab',
+          instanceBaseUrl: gitlab.instanceBaseUrl,
+          projectPath,
+        },
+      };
+    } else if (!gitlabSelected && selectedValue) {
+      const github =
+        selectedRepoType === 'github' ? parseGitHubUrl(confirmedGithubUrl || selectedValue) : null;
+      current = github
+        ? {
+            path: `${github.owner}/${github.repo}`,
+            type: 'github',
+            githubUrl: `https://github.com/${github.owner}/${github.repo}`,
+            name: github.repo,
+            owner: github.owner,
+          }
+        : { path: selectedValue, type: 'local', name: getRepoFolderName(selectedValue) };
+    }
+    return current ? [current, ...recentRepos] : recentRepos;
+  });
   const formRepos = $derived(
     formQuery.trim() === ''
-      ? recentRepos
-      : recentRepos.filter((repo) => matchesRecentRepoSearch(repo, formQuery.trim())),
+      ? formRepositoryChoices
+      : formRepositoryChoices.filter((repo) => matchesRecentRepoSearch(repo, formQuery.trim())),
   );
 
   function isFormRepoDisabled(repo: WorkspaceInitializerRecentRepo): boolean {
@@ -1226,6 +1262,10 @@
 
   // Handle selecting a recent repo
   function handleSelectRepo(repo: any) {
+    if (rowLabel && isCurrentRepo(repo)) {
+      isOpen = false;
+      return;
+    }
     const identity = getRecentRepoIdentity(repo, gitlab?.instanceBaseUrl);
     if (repo.type !== 'local' && identity?.provider === 'gitlab') {
       if (
@@ -1580,7 +1620,12 @@
                 : undefined)
             )?.ownerAvatarUrl
           : undefined}
-      <div class="group/recent-repo flex min-w-0 items-center" data-recent-repo-row>
+      <div
+        class="group/recent-repo flex min-w-0 items-center {rowLabel
+          ? 'rounded-(--radius-row)'
+          : ''} {rowLabel && isSelected(repo, index) ? 'bg-selected' : ''}"
+        data-recent-repo-row
+      >
         {#snippet repoRow()}
           <RepositoryPickerRow
             {owner}
@@ -1612,21 +1657,44 @@
         {:else}
           {@render repoRow()}
         {/if}
-        <Button
-          variant="ghost"
-          type="button"
-          size="icon-compact"
-          iconOnly
-          data-remove-recent-repo
-          class="mr-2 shrink-0 opacity-0 pointer-events-none group-hover/recent-repo:opacity-100 group-hover/recent-repo:pointer-events-auto group-focus-within/recent-repo:opacity-100 group-focus-within/recent-repo:pointer-events-auto"
-          aria-label={m.workspace_repoSelector_removeRecent_ariaLabel({
-            repository: repo.path,
-          })}
-          title={m.workspace_repoSelector_removeRecent_tooltip()}
-          onclick={(event) => handleDismissRecentRepo(event, repo)}
-        >
-          <Fa icon={faXmark} size={12} />
-        </Button>
+        {#if rowLabel && identity}
+          {@const repositoryUrl = `${identity.instanceBaseUrl.replace(/\/$/, '')}/${identity.projectPath}`}
+          <Button
+            variant="ghost"
+            size="icon-compact"
+            iconOnly
+            href={repositoryUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            tooltip={m.browser_embedded_openExternal_tooltip()}
+            aria-label={m.browser_embedded_openExternal_ariaLabel()}
+            class="mr-1 shrink-0 text-subtle"
+            onclick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              void handleLink(repositoryUrl, { event, forceExternal: true });
+            }}
+          >
+            <Fa icon={faArrowUpRightFromSquare} size={12} />
+          </Button>
+        {/if}
+        {#if !rowLabel}
+          <Button
+            variant="ghost"
+            type="button"
+            size="icon-compact"
+            iconOnly
+            data-remove-recent-repo
+            class="mr-2 shrink-0 opacity-0 pointer-events-none group-hover/recent-repo:opacity-100 group-hover/recent-repo:pointer-events-auto group-focus-within/recent-repo:opacity-100 group-focus-within/recent-repo:pointer-events-auto"
+            aria-label={m.workspace_repoSelector_removeRecent_ariaLabel({
+              repository: repo.path,
+            })}
+            title={m.workspace_repoSelector_removeRecent_tooltip()}
+            onclick={(event) => handleDismissRecentRepo(event, repo)}
+          >
+            <Fa icon={faXmark} size={12} />
+          </Button>
+        {/if}
       </div>
     {/each}
   {/snippet}
@@ -1754,7 +1822,7 @@
       role="dialog"
       aria-label={rowLabel ?? m.workspace_repoSelector_whichRepo_label()}
       class={rowLabel
-        ? `w-[360px] max-w-[calc(100vw-1rem)] min-w-0 max-h-[min(440px,var(--bits-popover-content-available-height,calc(100dvh-1rem)))] flex flex-col pt-1 ${formStep === 'browse' ? 'overflow-hidden' : 'overflow-y-auto'}`
+        ? `w-[360px] max-w-[calc(100vw-1rem)] min-w-0 max-h-[min(440px,var(--bits-popover-content-available-height,calc(100dvh-1rem)))] flex flex-col ${formStep === 'browse' ? 'overflow-hidden' : 'overflow-y-auto'}`
         : 'w-[400px] max-w-[calc(100vw-16px)] min-w-0 max-h-[min(600px,var(--bits-popover-content-available-height,100dvh))] overflow-y-auto flex flex-col'}
       side={rowLabel ? (isMobile.current ? 'bottom' : 'left') : undefined}
       sideOffset={rowLabel ? (isMobile.current ? 4 : 24) : undefined}
@@ -1774,16 +1842,12 @@
       portal
     >
       {#if rowLabel && formStep === 'browse'}
-        <div class={workspacePickerStyles.header}>
-          <h2 class={workspacePickerStyles.title}>{rowLabel}</h2>
-          <p class={workspacePickerStyles.description}>
-            {m.workspace_repoSelector_formMenu_description()}
-          </p>
-        </div>
         <div class="shrink-0 px-2 pt-1">
           <Input
             bind:ref={formSearchElement}
-            type="search"
+            variant="search"
+            type="text"
+            role="searchbox"
             data-repo-search
             data-testid="repo-form-search"
             value={formQuery}
@@ -1792,19 +1856,17 @@
             placeholder={m.workspace_repoSelector_search_placeholder()}
             aria-label={m.workspace_repoSelector_search_placeholder()}
             aria-controls={`${pickerId}-form-repos`}
-            class="{workspacePickerStyles.search} bg-sidebar border-none"
-            noFocusStyle
           />
         </div>
         <div
           bind:this={formListElement}
           id={`${pickerId}-form-repos`}
-          class="min-h-0 flex-1 overflow-y-auto overscroll-contain {workspacePickerStyles.rows} pb-0"
+          class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pt-1"
           data-testid="recent-repositories"
           role="group"
           aria-label={m.workspace_repoSelector_recent_label()}
         >
-          {#if isLoading && recentRepos.length === 0}
+          {#if isLoading && formRepositoryChoices.length === 0}
             <div role="status">
               {#each [1, 2, 3] as { }}
                 <div class="flex min-h-10 items-center gap-2 px-3 py-2">
@@ -1821,16 +1883,16 @@
             {@render recentRepoRows(formRepos, (repo) => isCurrentRepo(repo))}
           {/if}
         </div>
-        <div class="shrink-0 px-2 pb-2">
+        <div class="shrink-0 border-t border-border p-2">
           <Button
             variant="ghost"
             type="button"
             wrapContent={false}
             data-testid="repo-form-add"
-            class="w-full {workspacePickerStyles.row} text-muted-foreground hover:text-foreground"
+            class="{workspacePickerStyles.row} w-full"
             onclick={openAddStep}
           >
-            <Fa icon={faPlus} class={workspacePickerStyles.icon} />
+            <Fa icon={faPlus} class="size-4 shrink-0" />
             <span>{m.workspace_repoSelector_addRepository_label()}</span>
           </Button>
         </div>

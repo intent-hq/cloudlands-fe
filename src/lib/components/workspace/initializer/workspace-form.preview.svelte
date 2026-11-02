@@ -37,12 +37,23 @@
   import { selectWorkspaceInitializerGitAvailability } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
 
   let { scenario = 'default', modal = false }: Props = $props();
+  let openedLinks = $state<string[]>([]);
   const gitAvailable$ = selectWorkspaceInitializerGitAvailability();
   if (untrack(() => modal)) {
-    onDestroy(setupWorkspaceFormPreview(untrack(() => scenario)));
+    onDestroy(
+      setupWorkspaceFormPreview(
+        untrack(() => scenario),
+        (url) => {
+          openedLinks = [...openedLinks, url];
+        },
+      ),
+    );
   }
 </script>
 
 <div class="w-full min-w-0 p-4" data-workspace-form-ready={$gitAvailable$ === true}>
   <NewSpaceModal open static={!modal} />
+  <output class="sr-only" data-testid="workspace-external-links"
+    >{JSON.stringify(openedLinks)}</output
+  >
 </div>

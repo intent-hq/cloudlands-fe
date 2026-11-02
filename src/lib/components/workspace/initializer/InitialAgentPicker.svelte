@@ -35,7 +35,7 @@
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { faPlus } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { onMount, untrack } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import {
     getProviderAvailability,
     type ProviderAvailabilityResult,
@@ -115,6 +115,7 @@
 
   interface Props {
     presentation?: 'form' | 'footer';
+    onNavigateAway?: () => void;
     /** Selected specialist ID - null means blank agent */
     selectedSpecialist?: string | null;
     /** Selected model - undefined means use specialist default */
@@ -146,6 +147,7 @@
 
   let {
     presentation = 'form',
+    onNavigateAway,
     selectedSpecialist = $bindable<string | null>(defaultSingleAgentSpecialistId),
     selectedModel = $bindable<string | undefined>(undefined),
     modelWasOverridden = $bindable<boolean>(false),
@@ -602,6 +604,8 @@
   // Specialist dropdown state
   let specialistDropdownOpen = $state(false);
   let agentSearchInput = $state<HTMLInputElement | null>(null);
+  let agentField = $state<HTMLDivElement>();
+  let agentMenuBelow = $state(false);
   $effect(() => {
     if (!specialistDropdownOpen) return;
     return pushEscapeLayer(() => {
@@ -829,6 +833,8 @@
 
   async function openSpecialistSettings() {
     specialistDropdownOpen = false;
+    onNavigateAway?.();
+    await tick();
     await navigateToSettings({ view: 'create-specialist' });
   }
 </script>
@@ -838,8 +844,19 @@
   class:footer={presentation === 'footer'}
   data-testid="initial-agent-picker"
 >
-  <div class={presentation === 'footer' ? 'min-w-0' : 'w-full'}>
-    <Popover.Root bind:open={specialistDropdownOpen}>
+  <div bind:this={agentField} class={presentation === 'footer' ? 'min-w-0' : 'w-full'}>
+    <Popover.Root
+      bind:open={specialistDropdownOpen}
+      onOpenChange={(open) => {
+        if (!open) return;
+        const bounds = agentField?.getBoundingClientRect();
+        // A wide field can leave neither horizontal side room for the menu.
+        // Floating placement flips between sides; use below in that case.
+        agentMenuBelow =
+          isMobile.current ||
+          (!!bounds && bounds.left < 392 && window.innerWidth - bounds.right < 392);
+      }}
+    >
       <Popover.Trigger>
         {#snippet child({ props })}
           <Button
@@ -878,9 +895,17 @@
       <Popover.Content
         role="dialog"
         aria-label={m.workspace_initialAgentPicker_agent_label()}
-        side={presentation === 'footer' ? 'top' : isMobile.current ? 'bottom' : 'left'}
-        sideOffset={presentation === 'footer' || isMobile.current ? 4 : 24}
-        align={presentation === 'footer' ? 'start' : isMobile.current ? 'end' : 'start'}
+        side={presentation === 'footer'
+          ? 'top'
+          : isMobile.current || agentMenuBelow
+            ? 'bottom'
+            : 'left'}
+        sideOffset={presentation === 'footer' || isMobile.current || agentMenuBelow ? 4 : 24}
+        align={presentation === 'footer'
+          ? 'start'
+          : isMobile.current || agentMenuBelow
+            ? 'end'
+            : 'start'}
         preventScroll={false}
         class="flex min-h-0 w-[360px] max-w-[calc(100vw-1rem)] flex-col overflow-hidden p-0"
         style="max-height: {SPECIALIST_MENU_MAX_HEIGHT}"
@@ -904,8 +929,9 @@
           emptyText={m.workspace_agentsList_noSearchResults_label()}
           staticPosition
           size="compact"
-          class="flex min-h-0 flex-1 flex-col gap-2 p-2"
-          inputClass="shrink-0 {workspacePickerStyles.search}"
+          class="flex min-h-0 flex-1 flex-col gap-1 px-2 pt-1 pb-2"
+          inputVariant="search"
+          inputClass="shrink-0"
           rowClass={workspacePickerStyles.row}
           viewportClass="min-h-0 max-h-none flex-1 p-0"
           contentClass="flex min-h-0 max-h-none flex-1 flex-col border-0 shadow-none"
@@ -957,7 +983,6 @@
       triggerClass={presentation === 'footer'
         ? 'h-9 min-w-0 max-w-36 px-2 text-sm font-normal'
         : workspacePickerStyles.fieldTrigger}
-      description={m.workspace_initialAgentPicker_modelMenu_description()}
       showReasoning
       reasoningEffort={displayedReasoningEffort}
       onReasoningChange={handleReasoningChange}

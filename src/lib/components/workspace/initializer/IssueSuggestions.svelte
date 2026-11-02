@@ -1830,7 +1830,7 @@
       >
         <Fa
           icon={faPlus}
-          size={11}
+          size={iconOnly ? 16 : 11}
           class="transform transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {isOpen
             ? '-rotate-45'
             : ''}"
@@ -1862,13 +1862,14 @@
         />
         <Input
           bind:ref={searchInputEl}
+          variant={iconOnly ? 'search' : 'default'}
           noFocusStyle={iconOnly}
           type="text"
           bind:value={searchQuery}
           placeholder={getSearchPlaceholder(activeSource)}
-          class="context-picker-search min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground focus:ring-0 focus:outline-none {iconOnly
-            ? 'border-0 rounded-none px-0 shadow-none bg-transparent!'
-            : ''}"
+          class="context-picker-search min-w-0 flex-1 {iconOnly
+            ? ''
+            : 'bg-transparent text-sm outline-none placeholder:text-muted-foreground focus:ring-0 focus:outline-none'}"
         />
         <!-- Refreshing indicator -->
         {#if isRefreshing}

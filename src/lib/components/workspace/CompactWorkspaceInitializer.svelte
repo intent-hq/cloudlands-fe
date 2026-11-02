@@ -26,7 +26,6 @@
   import { v4 as uuidv4 } from 'uuid';
   import { registerWorkspaceInitializationPreparation } from './initializer/workspace-initialization-preparation';
   import SetupScriptPicker from './initializer/SetupScriptPicker.svelte';
-  import { useWorkspaceSetupView } from './initializer/workspace-setup-view';
   import {
     SETUP_SCRIPT_TEMPLATES,
     getTemplateContent,
@@ -324,6 +323,7 @@
     /** Use the sidebar repository once when mounting the New Workspace dialog. */
     defaultToSidebarRepository?: boolean;
     oncreate?: () => void;
+    onNavigateAway?: () => void;
     /** Let a containing dialog own initial focus instead of focusing the prompt. */
     autoFocus?: boolean;
     /** Show contextual hints for first-time users */
@@ -334,6 +334,7 @@
     initialRepo,
     defaultToSidebarRepository = false,
     oncreate,
+    onNavigateAway,
     autoFocus = true,
     showFirstTimeHints = false,
   }: Props = $props();
@@ -747,37 +748,12 @@
   let showSetupScript = $state(false); // Always collapsed on mount
   let showSetupScriptPicker = $state(false);
   let createSetupScript = $state(false);
-  const setupViewHost = useWorkspaceSetupView();
-  const inlineSetupOpen = $derived(Boolean(setupViewHost) && showSetupScript);
-  let setupReturnFocus: HTMLElement | null = null;
-  let wasInlineSetupOpen = false;
   function openSetupScript(createNew = false) {
-    setupReturnFocus =
-      controlsContainer?.querySelector<HTMLElement>('[data-setup-script-trigger]') ?? null;
-    // A standalone dialog must capture the field, not the disappearing picker action.
-    if (!setupViewHost) setupReturnFocus?.focus();
+    // The editor captures the persistent field as its focus-return target.
+    controlsContainer?.querySelector<HTMLElement>('[data-setup-script-trigger]')?.focus();
     createSetupScript = createNew;
     showSetupScript = true;
-    if (setupViewHost)
-      controlsContainer?.closest('[data-slot="dialog-body"]')?.scrollTo({ top: 0 });
   }
-  $effect(() => {
-    const active = inlineSetupOpen;
-    setupViewHost?.(
-      active
-        ? () => {
-            showSetupScript = false;
-          }
-        : null,
-    );
-    if (wasInlineSetupOpen && !active) {
-      void tick().then(() => {
-        if (setupReturnFocus?.isConnected) setupReturnFocus.focus();
-      });
-    }
-    wasInlineSetupOpen = active;
-  });
-  onDestroy(() => setupViewHost?.(null));
   let setupScriptName = $state('Custom');
   let setupScriptNameSource = $state<SetupScriptNameSource>('custom');
   let isCustomSetupScript = $state(false);
@@ -3153,13 +3129,7 @@
     onchange={handleFileInputChange}
   />
 
-  <div
-    class="initializer-layout"
-    class:expanded={isExpanded}
-    class:setup-active={inlineSetupOpen}
-    aria-hidden={inlineSetupOpen || undefined}
-    inert={inlineSetupOpen}
-  >
+  <div class="initializer-layout" class:expanded={isExpanded}>
     <div
       class="prompt-pane min-w-0 transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
     >
@@ -3276,62 +3246,13 @@
               />
             </div>
             <div class="prompt-actions">
-              <!-- Mic latch button: click starts dictation, click again (Esc
-             cancels) stops and transcribes into this prompt at the caret. -->
-              {#if micTranscribing}
-                <!-- Clickable while transcribing: cancel abandons the in-flight
-                 session (a hung provider's late result is discarded) and
-                 returns the button to idle immediately. -->
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost-light"
-                  onclick={handleMicCancelTranscription}
-                  tooltip={m.chat_richInput_micCancelTranscribing_label()}
-                  tooltipSide="top"
-                  aria-label={m.chat_richInput_micCancelTranscribing_label()}
-                  data-testid="initializer-mic-button"
-                >
-                  <IntentMarkLoader size={16} />
-                </Button>
-              {:else if micRecording}
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost-light"
-                  onclick={handleMicClick}
-                  tooltip={m.chat_richInput_micStop_label()}
-                  tooltipSide="top"
-                  aria-label={m.chat_richInput_micStop_label()}
-                  aria-pressed="true"
-                  class="text-danger animate-pulse"
-                  data-testid="initializer-mic-button"
-                >
-                  <Fa icon={faMicrophone} />
-                </Button>
-              {:else}
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost-light"
-                  onclick={handleMicClick}
-                  tooltip={m.chat_richInput_micStart_label()}
-                  tooltipSide="top"
-                  aria-label={m.chat_richInput_micStart_label()}
-                  aria-pressed="false"
-                  data-testid="initializer-mic-button"
-                >
-                  <Fa icon={faMicrophone} />
-                </Button>
-              {/if}
-
               <!-- Enhance prompt button (§5.31 auggie-only gate) -->
               {#if enhanceAvailable}
                 <Button
                   type="button"
                   onclick={isEnhancing ? handleCancelEnhance : handleEnhancePrompt}
                   size="icon"
-                  variant="ghost-light"
+                  variant="ghost"
                   disabled={!initialPrompt.trim() && !isEnhancing}
                   tooltip={isEnhancing
                     ? m.workspace_compactInitializer_stopEnhancing_tooltip()
@@ -3351,11 +3272,62 @@
                 type="button"
                 onclick={handleImageButtonClick}
                 size="icon"
-                variant="ghost-light"
-                title={m.workspace_compactInitializer_addFiles_tooltip()}
+                variant="ghost"
+                tooltip={m.workspace_compactInitializer_addFiles_tooltip()}
+                tooltipSide="top"
               >
                 <Fa icon={faPaperclip} />
               </Button>
+              <div class="ml-auto flex items-center">
+                <!-- Mic latch button: click starts dictation, click again (Esc
+             cancels) stops and transcribes into this prompt at the caret. -->
+                {#if micTranscribing}
+                  <!-- Clickable while transcribing: cancel abandons the in-flight
+                 session (a hung provider's late result is discarded) and
+                 returns the button to idle immediately. -->
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    onclick={handleMicCancelTranscription}
+                    tooltip={m.chat_richInput_micCancelTranscribing_label()}
+                    tooltipSide="top"
+                    aria-label={m.chat_richInput_micCancelTranscribing_label()}
+                    data-testid="initializer-mic-button"
+                  >
+                    <IntentMarkLoader size={16} />
+                  </Button>
+                {:else if micRecording}
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    onclick={handleMicClick}
+                    tooltip={m.chat_richInput_micStop_label()}
+                    tooltipSide="top"
+                    aria-label={m.chat_richInput_micStop_label()}
+                    aria-pressed="true"
+                    class="text-danger animate-pulse"
+                    data-testid="initializer-mic-button"
+                  >
+                    <Fa icon={faMicrophone} />
+                  </Button>
+                {:else}
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    onclick={handleMicClick}
+                    tooltip={m.chat_richInput_micStart_label()}
+                    tooltipSide="top"
+                    aria-label={m.chat_richInput_micStart_label()}
+                    aria-pressed="false"
+                    data-testid="initializer-mic-button"
+                  >
+                    <Fa icon={faMicrophone} />
+                  </Button>
+                {/if}
+              </div>
             </div>
           </div>
         {/if}
@@ -3495,6 +3467,7 @@
         <div class="mt-3 border-t border-border pt-3">
           <InitialAgentPicker
             presentation="form"
+            {onNavigateAway}
             bind:selectedSpecialist
             {selectedModel}
             onModelChange={(model) => {
@@ -3576,14 +3549,15 @@
           {#snippet createButton(progressLabel?: Snippet)}
             <Button
               variant="primary"
-              class="w-full h-auto min-h-11 justify-between gap-3 py-2 type-body font-medium"
+              wrapContent={false}
+              class="w-full h-auto min-h-11 justify-start gap-3 py-2 type-body font-medium"
               data-dialog-primary-action
               onclick={handleSubmit}
               disabled={!isValid || isCreating || isEnhancing || isProcessingImages}
             >
               {#if isCreating}
                 <IntentMarkLoader size={14} />
-                <span class="min-w-0 text-left">
+                <span class="min-w-0 flex-1 text-left">
                   {#if isPulling}
                     {m.workspace_compactInitializer_pullingLatest_label()}
                   {:else if progressLabel}
@@ -3593,7 +3567,7 @@
                   {/if}
                 </span>
               {:else}
-                <span class="min-w-0 whitespace-normal text-left"
+                <span class="min-w-0 flex-1 whitespace-normal text-left"
                   >{m.workspace_compactInitializer_createWorkspace_label()}</span
                 >
                 <!-- Always rendered so the button never resizes when validity flips;
@@ -3623,6 +3597,7 @@
                  button rather than a child of its content slot. -->
               {#key activeCreateProgressId}
                 <CreateButtonProgress
+                  class="w-full"
                   progressId={activeCreateProgressId}
                   fallbackLabel={CREATION_STAGES[creationStage]}
                 >
@@ -3640,7 +3615,6 @@
     {/if}
   </div>
   <SetupScriptModal
-    presentation={setupViewHost ? 'inline' : 'dialog'}
     createNew={createSetupScript}
     bind:open={showSetupScript}
     repoPath={repoType === 'gitlab' ? '' : repoPath}
@@ -3738,17 +3712,6 @@
     grid-template-areas: 'prompt' 'settings';
   }
 
-  .initializer-layout.setup-active {
-    max-height: calc(100dvh - 12rem);
-    overflow: hidden;
-    pointer-events: none;
-  }
-
-  .setup-active .prompt-pane,
-  .setup-active .settings-pane {
-    opacity: 0;
-  }
-
   .prompt-pane {
     grid-area: prompt;
   }
@@ -3795,7 +3758,7 @@
     align-items: start;
     min-height: 2.75rem;
     margin-inline: 0;
-    column-gap: 0.5rem;
+    column-gap: 0.25rem;
   }
 
   .prompt-actions {
@@ -3816,8 +3779,7 @@
 
   .prompt-footer :global(.context-picker-trigger) {
     grid-column: 1;
-    padding-inline-start: 0.375rem;
-    justify-content: flex-start;
+    justify-content: center;
   }
 
   @container (min-width: 48rem) {

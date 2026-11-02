@@ -5,19 +5,23 @@
   let value = $state('alpha');
   let changes = $state(0);
   let actions = $state(0);
-  let slotActions = $state({ header: 0, footer: 0 });
+  let slotActions = $state({ header: 0, footer: 0, search: 0 });
 </script>
 
 <Dropdown
   bind:value
   {portal}
   animate={false}
+  searchable
   options={[
     { value: 'alpha', label: 'Alpha' },
     { value: 'beta', label: 'Beta' },
   ]}
   onchange={() => (changes += 1)}
 >
+  {#snippet searchAction()}
+    <Button onclick={() => (slotActions.search += 1)}>Search action</Button>
+  {/snippet}
   {#snippet header()}
     <Button onclick={() => (slotActions.header += 1)}>Header action</Button>
   {/snippet}
