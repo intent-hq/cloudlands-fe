@@ -17,6 +17,8 @@ import { ACPServer } from '../../acp-official/main/server/acp-server';
 import type { ACPServerConfig } from '../../acp-official/main/server/acp-server';
 import { getBackendClient } from '../../backend/main/backend.ipc';
 import { isProjectionRejected } from '$shared/utils/note-content';
+import { requestAllPages } from '$shared/utils/paged-list';
+import { COMMENT_LIST_PAGE_LIMIT, NOTE_LIST_PAGE_LIMIT } from '$shared/constants/notes';
 import { Logger } from '$shared/logger';
 import type { Result, PullRequestInfo } from '$shared/types';
 import type { UserContext, ToolPermissions } from '../../tools/types';
@@ -256,19 +258,19 @@ export class ProtocolAdapter {
     // contentPreview; agents fetch full bodies via getNote. Falls back to a
     // plain full list on daemons that reject the unknown param (-32602).
     try {
-      let result: { notes: any[] };
+      // §5.2 bounded reads: page with `limit` + `nextToken`.
+      const page = (params: Record<string, unknown>) =>
+        getBackendClient().request<{ notes: any[] }>('note.list', params);
       try {
-        result = await getBackendClient().request<{ notes: any[] }>('note.list', {
-          workspaceId,
-          projection: 'slim',
-        });
+        return await requestAllPages(
+          page,
+          { workspaceId, projection: 'slim', limit: NOTE_LIST_PAGE_LIMIT },
+          'notes',
+        );
       } catch (error) {
         if (!isProjectionRejected(error)) throw error;
-        result = await getBackendClient().request<{ notes: any[] }>('note.list', {
-          workspaceId,
-        });
+        return await requestAllPages(page, { workspaceId, limit: NOTE_LIST_PAGE_LIMIT }, 'notes');
       }
-      return Array.isArray(result?.notes) ? result.notes : [];
     } catch (error) {
       logger.error('Failed to list notes', error as Error);
       return [];
@@ -475,11 +477,12 @@ export class ProtocolAdapter {
       };
       if (params.filters?.status !== undefined) daemonParams.status = params.filters.status;
       if (params.filters?.author !== undefined) daemonParams.author = params.filters.author;
-      const result = await getBackendClient().request<{ threads: any[] }>(
-        'comment.list',
-        daemonParams,
+      // §5.2 bounded reads: page with `limit` + `nextToken`.
+      const threads: any[] = await requestAllPages(
+        (p) => getBackendClient().request<{ threads: any[] }>('comment.list', p),
+        { ...daemonParams, limit: COMMENT_LIST_PAGE_LIMIT },
+        'threads',
       );
-      const threads = Array.isArray(result?.threads) ? result.threads : [];
       const comments: any[] = [];
       for (const thread of threads) {
         const threadComments = Array.isArray(thread?.comments) ? thread.comments : [];

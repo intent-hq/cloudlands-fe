@@ -24,3 +24,13 @@ export function isSpecNote(noteId: string | undefined | null): boolean {
  * render-only with a banner; agents and MCP keep full access.
  */
 export const NOTE_VIEW_MAX_CONTENT_BYTES = 500_000;
+
+/**
+ * Page size the app asks for on `note.list` / `note.subscribe` (§5.2 "Bounded
+ * note and comment reads"): the daemon's maximum, so a large workspace loads in
+ * the fewest pages. Daemons without paging ignore `limit` and send every note.
+ */
+export const NOTE_LIST_PAGE_LIMIT = 500;
+
+/** Page size the app asks for on `comment.list` / `comment.subscribe` (threads). */
+export const COMMENT_LIST_PAGE_LIMIT = 500;

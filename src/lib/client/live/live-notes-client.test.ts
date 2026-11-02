@@ -679,6 +679,32 @@ describe('LiveNotesClient mutations (fake transport)', () => {
 // the sole data path; there is no legacy `note:*` events-driven refetch.
 // Snapshots/deltas reconcile per channel and merge; workspace add/delete
 // re-reconciles the channel set, each channel emitting independently.
+describe('LiveNotesClient.list paging (ยง5.2 "Bounded note and comment reads")', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('walks note.list pages with limit + nextToken and returns every note', async () => {
+    mockedRequest
+      .mockResolvedValueOnce({ notes: [{ id: 'a', title: 'A' }], nextToken: 'p2' })
+      .mockResolvedValueOnce({ notes: [{ id: 'b', title: 'B' }], nextToken: null });
+    const notes = await new LiveNotesClient().list('ws-1', { projection: 'slim' });
+    expect(notes.map((n) => n.id)).toEqual(['a', 'b']);
+    expect(mockedRequest.mock.calls).toEqual([
+      ['note.list', { workspaceId: 'ws-1', projection: 'slim', limit: 500 }],
+      ['note.list', { workspaceId: 'ws-1', projection: 'slim', limit: 500, nextToken: 'p2' }],
+    ]);
+  });
+
+  it('reads an unpaged daemon reply in one request', async () => {
+    mockedRequest.mockResolvedValueOnce({ notes: [{ id: 'a' }, { id: 'b' }] });
+    const notes = await new LiveNotesClient().list('ws-1');
+    expect(notes.map((n) => n.id)).toEqual(['a', 'b']);
+    expect(mockedRequest).toHaveBeenCalledTimes(1);
+    expect(mockedRequest).toHaveBeenCalledWith('note.list', { workspaceId: 'ws-1', limit: 500 });
+  });
+});
+
 describe('LiveNotesClient.subscribe typed per-workspace note channel (PROTOCOL ยง6.9)', () => {
   const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
   const requestsFor = (method: string) =>
@@ -751,8 +777,8 @@ describe('LiveNotesClient.subscribe typed per-workspace note channel (PROTOCOL ย
 
     await vi.waitFor(() => {
       expect(requestsFor('note.subscribe')).toEqual([
-        { workspaceId: 'ws-1' },
-        { workspaceId: 'ws-2' },
+        { workspaceId: 'ws-1', limit: 500 },
+        { workspaceId: 'ws-2', limit: 500 },
       ]);
     });
     unsubscribe();
@@ -790,7 +816,7 @@ describe('LiveNotesClient.subscribe typed per-workspace note channel (PROTOCOL ย
     const client = new LiveNotesClient();
     const unsubscribe = client.subscribe(handler);
     await vi.waitFor(() =>
-      expect(requestsFor('note.subscribe')).toEqual([{ workspaceId: 'ws-1' }]),
+      expect(requestsFor('note.subscribe')).toEqual([{ workspaceId: 'ws-1', limit: 500 }]),
     );
     await flush();
     pushSnapshot('chan-1', 0, [wireNote('a', 'ws-1', 'A')]);
@@ -799,8 +825,8 @@ describe('LiveNotesClient.subscribe typed per-workspace note channel (PROTOCOL ย
     fireWorkspaceSetEvent('workspace:created');
     await vi.waitFor(() => {
       expect(requestsFor('note.subscribe')).toEqual([
-        { workspaceId: 'ws-1' },
-        { workspaceId: 'ws-2' },
+        { workspaceId: 'ws-1', limit: 500 },
+        { workspaceId: 'ws-2', limit: 500 },
       ]);
     });
     await flush();
@@ -856,8 +882,8 @@ describe('LiveNotesClient.subscribe typed per-workspace note channel (PROTOCOL ย
       const unsubscribe = client.subscribe(() => {});
       await vi.advanceTimersByTimeAsync(0);
       expect(requestsFor('note.subscribe')).toEqual([
-        { workspaceId: 'ws-1' },
-        { workspaceId: 'ws-2' },
+        { workspaceId: 'ws-1', limit: 500 },
+        { workspaceId: 'ws-2', limit: 500 },
       ]);
       expect(ws2Attempts).toBe(1);
 
@@ -887,8 +913,8 @@ describe('LiveNotesClient.subscribe typed per-workspace note channel (PROTOCOL ย
     for (const handler of [...reconnectHandlers]) handler();
     await vi.waitFor(() => {
       expect(requestsFor('note.subscribe').slice(2)).toEqual([
-        { workspaceId: 'ws-1' },
-        { workspaceId: 'ws-2' },
+        { workspaceId: 'ws-1', limit: 500 },
+        { workspaceId: 'ws-2', limit: 500 },
       ]);
       expect(requestsFor('note.unsubscribe')).toEqual([
         { subscriptionId: 'chan-4', workspaceId: 'ws-2' },

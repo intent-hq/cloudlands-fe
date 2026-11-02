@@ -18,6 +18,8 @@ import {
 import type { Result, NoteComment } from '../../shared/types';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { m } from '$shared/paraglide/messages.js';
+import { requestAllPages } from '$shared/utils/paged-list';
+import { COMMENT_LIST_PAGE_LIMIT } from '$shared/constants/notes';
 
 interface ListCommentsParams {
   status?: 'open' | 'resolved' | 'pending' | 'all';
@@ -102,13 +104,18 @@ class CommentsClient {
     params?: ListCommentsParams,
   ): Promise<Result<NoteComment[], string>> {
     try {
-      const result = await backendRequest<{ threads?: unknown[] }>('comment.list', {
-        workspaceId,
-        noteId,
-        includeComments: true,
-        ...(params?.status && params.status !== 'all' ? { status: params.status } : {}),
-      });
-      const threads = Array.isArray(result?.threads) ? result.threads : [];
+      // §5.2 bounded reads: page with `limit` + `nextToken`.
+      const threads = await requestAllPages(
+        (p) => backendRequest<{ threads?: unknown[] }>('comment.list', p),
+        {
+          workspaceId,
+          noteId,
+          includeComments: true,
+          limit: COMMENT_LIST_PAGE_LIMIT,
+          ...(params?.status && params.status !== 'all' ? { status: params.status } : {}),
+        },
+        'threads',
+      );
       let comments: NoteComment[] = [];
       for (const t of threads) {
         if (!t || typeof t !== 'object') continue;

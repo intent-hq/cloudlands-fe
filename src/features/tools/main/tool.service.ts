@@ -23,6 +23,8 @@ import type { CommandResult } from '../types';
 import { WorkspaceService } from '../../workspace/main/workspace.service';
 import { getBackendClient } from '../../backend/main/backend.ipc';
 import { isProjectionRejected } from '../../../shared/utils/note-content';
+import { requestAllPages } from '../../../shared/utils/paged-list';
+import { NOTE_LIST_PAGE_LIMIT } from '../../../shared/constants/notes';
 import { Logger } from '../../../shared/logger';
 import { executionManager } from './execution-manager';
 import * as path from 'path';
@@ -519,19 +521,16 @@ export class ToolService implements IToolService {
     // plain full list on daemons that reject the unknown param (-32602).
     let notes: any[];
     try {
-      let result: { notes: any[] };
+      // §5.2 bounded reads: page with `limit` + `nextToken`.
+      const page = (params: Record<string, unknown>) =>
+        getBackendClient().request<{ notes: any[] }>('note.list', params);
+      const scope = { workspaceId: context.workspaceId, limit: NOTE_LIST_PAGE_LIMIT };
       try {
-        result = await getBackendClient().request<{ notes: any[] }>('note.list', {
-          workspaceId: context.workspaceId,
-          projection: 'slim',
-        });
+        notes = await requestAllPages(page, { ...scope, projection: 'slim' }, 'notes');
       } catch (error) {
         if (!isProjectionRejected(error)) throw error;
-        result = await getBackendClient().request<{ notes: any[] }>('note.list', {
-          workspaceId: context.workspaceId,
-        });
+        notes = await requestAllPages(page, scope, 'notes');
       }
-      notes = Array.isArray(result?.notes) ? result.notes : [];
     } catch (error) {
       throw new Error((error as Error).message);
     }
@@ -676,19 +675,17 @@ export class ToolService implements IToolService {
     // Get note count (slim projection §5.2 — only the row count is needed)
     let noteCount = 0;
     try {
-      let result: { notes: any[] };
+      const page = (params: Record<string, unknown>) =>
+        getBackendClient().request<{ notes: any[] }>('note.list', params);
+      const scope = { workspaceId: context.workspaceId, limit: NOTE_LIST_PAGE_LIMIT };
+      let notes: unknown[];
       try {
-        result = await getBackendClient().request<{ notes: any[] }>('note.list', {
-          workspaceId: context.workspaceId,
-          projection: 'slim',
-        });
+        notes = await requestAllPages(page, { ...scope, projection: 'slim' }, 'notes');
       } catch (fallbackError) {
         if (!isProjectionRejected(fallbackError)) throw fallbackError;
-        result = await getBackendClient().request<{ notes: any[] }>('note.list', {
-          workspaceId: context.workspaceId,
-        });
+        notes = await requestAllPages(page, scope, 'notes');
       }
-      noteCount = Array.isArray(result?.notes) ? result.notes.length : 0;
+      noteCount = notes.length;
     } catch (error) {
       logger.debug('Error getting note count', { error });
     }
