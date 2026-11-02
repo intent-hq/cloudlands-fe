@@ -2585,8 +2585,6 @@
   "workspace_plainFolder_initializeGit_label": "Git リポジトリとして初期化",
   "workspace_plainFolder_isolatedCopy_description": "オン: Intent は新しいブランチ上のコピーで作業します。オフ: エージェントはこのフォルダーを直接変更します。コピー、ブランチ、元に戻す機能はありません。",
   "workspace_plainFolder_isolatedCopy_label": "分離されたコピーで作業",
-  "workspace_plainFolder_label": "通常フォルダー",
-  "workspace_plainFolder_label_tooltip": "Git なし: エージェントはこれらのファイルを直接編集します。バージョン管理や元に戻す機能はありません。",
   "workspace_purge_menu_label": "ワークスペースフォルダーを削除",
   "workspace_purge_confirm_title": "「{title}」のフォルダーを削除しますか？",
   "workspace_purge_confirm_description": "空き容量を確保するため、ワークスペースのフォルダーをディスクから削除します。コミットされていない変更や追跡されていないファイルも削除されます。会話、ノート、タスク、git ブランチは保持されます。後でアーカイブを解除すると、新しいチェックアウトから始まります。",

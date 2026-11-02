@@ -28,7 +28,6 @@
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import CheckoutModePill from '$lib/components/workspace/CheckoutModePill.svelte';
-  import PlainFolderLabel from '$lib/components/workspace/PlainFolderLabel.svelte';
   import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
   import Button from '$lib/components/ui/button/button.svelte';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
@@ -896,7 +895,7 @@
           contentContainerClass="p-0! space-y-0!"
           showArrow={false}
           interactive
-          class={`h-5 min-w-0 cursor-copy items-center overflow-hidden border-none bg-transparent p-0 text-left font-inherit text-muted-foreground outline-none hover:underline focus:outline-none focus-visible:outline-none ${$workspace?.branch || plainFolder ? 'shrink' : 'flex-1'}`}
+          class={`h-5 min-w-0 cursor-copy items-center overflow-hidden border-none bg-transparent p-0 text-left font-inherit text-muted-foreground outline-none hover:underline focus:outline-none focus-visible:outline-none ${$workspace?.branch && !plainFolder ? 'shrink' : 'flex-1'}`}
           bind:open={repoTooltipOpen}
           onOpenChange={handleRepoTooltipOpenChange}
           disableCloseOnTriggerClick
@@ -952,9 +951,7 @@
             </div>
           {/snippet}
         </TooltipRich>
-        {#if plainFolder}
-          <PlainFolderLabel />
-        {:else if $workspace?.branch}
+        {#if !plainFolder && $workspace?.branch}
           <TooltipRich
             side="bottom"
             align="start"

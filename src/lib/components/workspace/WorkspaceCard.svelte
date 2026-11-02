@@ -57,7 +57,6 @@
   import { selectReviewMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import { constructPrUrl } from '$lib/components/workspace/sidebar/sidebar-changes-utils';
   import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
-  import PlainFolderLabel from './PlainFolderLabel.svelte';
   import {
     buildWorkspacePRPresentationModel,
     type WorkspacePRPresentationRow,
@@ -882,10 +881,6 @@
         >
           {trailingLabel}
         </span>
-      {/if}
-
-      {#if plainFolder}
-        <PlainFolderLabel />
       {/if}
 
       {#if primaryPr}

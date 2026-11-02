@@ -173,12 +173,14 @@ describe('Home workspace PR status', () => {
 });
 
 describe('Home workspace row badge for plain-folder workspaces', () => {
-  it('shows the Plain folder label instead of a PR badge', () => {
+  it('shows neither a PR badge nor a Plain folder pill', () => {
     const view = render(HomeWorkspacePullBadge, {
       workspace: workspace({ plainFolder: true, branch: '' }),
     });
     expect(view.queryByText('Open')).toBeNull();
-    expect(view.getByText('Plain folder')).toBeTruthy();
+    expect(view.container.querySelector('[data-home-workspace-pr-badge]')).toBeNull();
+    expect(view.queryByText('Plain folder')).toBeNull();
+    expect(view.container.querySelector('[data-plain-folder-label]')).toBeNull();
   });
 
   it('keeps the PR badge and no label for a git workspace', () => {
