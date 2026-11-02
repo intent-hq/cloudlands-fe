@@ -1278,6 +1278,15 @@ export function __getProtocolMismatchForTesting(
 ): ConnectionProtocolMismatchEvent | null {
   return protocolMismatchById.get(id) ?? null;
 }
+/**
+ * Token-free connections list for a Browser access tab bound to
+ * `windowBackendId` (the same shape `connections:list` returns to a window).
+ */
+export function listConnectionsForBrowserAccess(
+  windowBackendId: string,
+): Promise<ConnectionsListResult> {
+  return listConnections(windowBackendId);
+}
 export function __listConnectionsForTesting(
   windowBackendId?: string,
 ): Promise<ConnectionsListResult> {

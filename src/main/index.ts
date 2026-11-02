@@ -331,6 +331,10 @@ import {
 import { createDockMenuController } from './dock-menu-controller';
 import { getDockEnabledLocalPref, setDockEnabledLocalPref } from './local-prefs';
 import { isDockLabEnabled, loadDockLabEnabled, registerDockLabHandlers } from './dock-lab';
+import {
+  setupBrowserAccess,
+  shutdownBrowserAccess,
+} from '../features/browser-access/main/browser-access.ipc';
 import { registerExternalEditorsHandlers } from '../features/external-editors/main/external-editors.ipc';
 import { setupFileIPC } from '../features/file/main/file.ipc';
 import { setupPanelLayoutHistoryIPC } from '../features/layout/main/panel-layout-history.ipc';
@@ -542,6 +546,11 @@ async function performGracefulShutdown() {
     // if the environment is torn down too quickly, the assertion at conpty.cc:110
     // fires. This delay gives those threads time to finish.
     await new Promise((resolve) => setTimeout(resolve, 300));
+
+    // Stop Browser access first so no browser bridge outlives the backends.
+    await shutdownBrowserAccess().catch((error: unknown) =>
+      logger.warn('Browser access shutdown failed', error),
+    );
 
     // Dispose every pooled backend JSON-RPC client (closes the UDS/WSS sockets).
     try {
@@ -1653,6 +1662,9 @@ const bootFlow = app.whenReady().then(async () => {
     startupMetrics.start('secondaryIPC');
     logger.info('Setting up secondary IPC handlers in background');
 
+    // Browser access (Settings → Devices): serve the web UI to a browser behind a
+    // front-end such as `tailscale serve` when the user turned it on.
+    void setupBrowserAccess();
     setupFirstVisitStateIPC();
     setupPanelLayoutHistoryIPC();
     setupUserActivityIPC();

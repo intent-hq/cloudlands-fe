@@ -29,6 +29,11 @@ import { canRequestDeviceUpdate } from '$lib/utils/device-update-eligibility';
 import { formatConnectionLabel, formatGuestSessionLabel } from '$lib/utils/connection-label';
 import { resolveBackendTransport } from '$lib/client/live/backend-transport-factory';
 import { getWebDaemonStatusSource } from '$lib/client/live/web-daemon-status';
+import {
+  fetchBrowserAccessConnections,
+  getBrowserAccessHost,
+  openBrowserAccessBackend,
+} from '$lib/client/live/browser-access-host';
 import { expectsElectronPreloadBridge, isElectronPlatform } from '$lib/utils/platform-capabilities';
 import { takeEveryByContextFIFO, takeLatestInContext } from '../../../utils/context-saga-effects';
 import {
@@ -187,6 +192,9 @@ async function invokeConnectionsList(): Promise<ConnectionsListResult> {
   // must still wait for its real per-window connections:list response.
   if (!expectsElectronPreloadBridge() && !isElectronPlatform()) {
     resolveBackendTransport();
+    // Served by a desktop app's Browser access: list its connections (token-free).
+    const browserAccessHost = getBrowserAccessHost();
+    if (browserAccessHost) return fetchBrowserAccessConnections(browserAccessHost);
     const browserBackend = getWebDaemonStatusSource();
     if (browserBackend) {
       const id = 'browser-websocket';
@@ -235,6 +243,10 @@ async function invokeRotateConnectionSecret(
 }
 
 async function invokeOpenConnection(params: OpenConnectionParams): Promise<OpenConnectionResult> {
+  // Browser access: each backend opens in its own tab, bridged by the desktop.
+  if (!expectsElectronPreloadBridge() && !isElectronPlatform() && getBrowserAccessHost()) {
+    return openBrowserAccessBackend(params.id);
+  }
   const api = getApi();
   if (!api) throw new Error('electronAPI is not available');
   return (await api.invoke(CONNECTIONS.OPEN, params)) as OpenConnectionResult;
