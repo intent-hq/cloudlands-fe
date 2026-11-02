@@ -273,6 +273,25 @@ describe('RepoSelector git choice (Labs plain folders)', () => {
     expect(await found(newSwitch)).toBeTruthy();
   });
 
+  it('keeps the choice off for the folder tabs after the picker is dismissed and reopened', async () => {
+    const rendered = await openDropdown({
+      value: 'https://github.com/octo/alpha',
+      gitChoice: gitChoice(false),
+    });
+    await fireEvent.click(screen.getByRole('tab', { name: 'Existing folder' }));
+    expect((await found(existingSwitch)).getAttribute('aria-checked')).toBe('false');
+
+    await fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByText(DROPDOWN_HEADING)).toBeNull());
+    await fireEvent.click(rendered.container.querySelector('button')!);
+    await waitFor(() => expect(screen.getByText(DROPDOWN_HEADING)).toBeTruthy());
+
+    await fireEvent.click(screen.getByRole('tab', { name: 'Existing folder' }));
+    expect((await found(existingSwitch)).getAttribute('aria-checked')).toBe('false');
+    await fireEvent.click(screen.getByRole('tab', { name: 'New' }));
+    expect((await found(newSwitch)).getAttribute('aria-checked')).toBe('false');
+  });
+
   it('renders no git choice when plain folders are unavailable', async () => {
     await openDropdown();
     await fireEvent.click(screen.getByRole('tab', { name: 'Existing folder' }));

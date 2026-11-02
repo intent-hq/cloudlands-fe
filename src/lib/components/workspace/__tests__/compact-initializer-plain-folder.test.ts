@@ -302,6 +302,7 @@ import { INITIALIZE_GIT_CHOICE_STORAGE_KEY } from '../initializer/plain-folder-c
 
 type PickerCallbacks = {
   onRepoChange: (event: { detail: Record<string, unknown> }) => void;
+  onBranchChange: (event: { detail: { branch: string } }) => void;
 };
 const picker = () =>
   (window as unknown as { __mockRepoAndBranchPicker: PickerCallbacks }).__mockRepoAndBranchPicker;
@@ -461,6 +462,67 @@ describe('New Workspace — plain-folder git choice (Labs)', () => {
     await waitFor(() => expect(plainFolder.confirm).toHaveBeenCalledTimes(1));
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  describe('the unsafe direction is impossible', () => {
+    it.each([
+      ['an existing folder', 'existing', false],
+      ['a new folder', 'new', true],
+    ])(
+      'with the choice on, %s pick never creates a plain folder',
+      async (_label, kind, isNewRepo) => {
+        plainFolder.available$.set(true);
+        plainFolder.defaultState$.set('on');
+        mountDialog();
+        await screen.findByTestId('picker-git-choice');
+        // Even a pick tagged as a plain folder is a git pick while the choice is on.
+        const target = isNewRepo ? join(root, 'pick') : folder;
+        await pick({ path: target, plainFolder: kind, isNewRepo });
+        // A git pick of an existing folder gets its branch from the branch selector.
+        if (!isNewRepo) picker().onBranchChange({ detail: { branch: 'main' } });
+        await waitFor(() =>
+          expect(screen.getByTestId('picker-repo-path').textContent).toBe(target),
+        );
+        expect(screen.getByTestId('picker-plain-folder').textContent).toBe('');
+        expect(screen.getByTestId('picker-plain-folder-mode').textContent).toBe('false');
+
+        await submit();
+        // The dispatched submission decides git vs plain folder.
+        const submission = await waitFor(() => {
+          const action = mocks.dispatch.mock.calls
+            .map(([a]) => a as { type?: string; payload?: { submission?: object } })
+            .find((a) => a?.type === 'workspaceInitializer/initializationSubmission');
+          expect(action?.payload?.submission).toBeTruthy();
+          return action!.payload!.submission as Record<string, unknown>;
+        });
+        expect(submission.repoPath).toBe(target);
+        expect(submission.plainFolder ?? null).toBeNull();
+        expect(plainFolder.confirm).not.toHaveBeenCalled();
+        for (const [params] of mocks.create.mock.calls)
+          expect((params as Record<string, unknown>).plainFolder).not.toBe(true);
+      },
+    );
+
+    it('with the choice off, every create from an existing folder shows the in-place warning first', async () => {
+      plainFolder.available$.set(true);
+      plainFolder.defaultState$.set('off');
+      plainFolder.confirm.mockResolvedValue(false);
+      mountDialog();
+      await screen.findByTestId('picker-git-choice');
+      await pick({ path: folder, plainFolder: 'existing' });
+
+      await submit();
+      await waitFor(() => expect(plainFolder.confirm).toHaveBeenCalledTimes(1));
+      await submit();
+      await waitFor(() => expect(plainFolder.confirm).toHaveBeenCalledTimes(2));
+      expect(mocks.create).not.toHaveBeenCalled();
+
+      plainFolder.confirm.mockResolvedValue(true);
+      await submit();
+      await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+      expect(plainFolder.confirm).toHaveBeenCalledTimes(3);
+      expect(mocks.create.mock.calls[0][0]).toMatchObject({ plainFolder: true });
+    });
   });
 
   it('defaults on with a forge or git workspace and keeps git behavior', async () => {
@@ -676,6 +738,35 @@ describe('New Workspace — plain-folder git choice (Labs)', () => {
       expect(screen.getByTestId('picker-repo-type').textContent).toBe('github');
       expect(screen.getByTestId('picker-repo-path').textContent).toBe('acme/app');
       expect(folderOpens()).toBe(0);
+    });
+
+    // Accepted by design: git off in a folder tab, picker dismissed without a
+    // folder, GitHub repo still selected → a normal git clone, never a plain folder.
+    it('still clones the GitHub repo as git after the choice is turned off without a folder pick', async () => {
+      mocks.compactFormState$.set(githubSaved);
+      plainFolder.available$.set(true);
+      plainFolder.defaultState$.set('on');
+      mountDialog();
+      const sw = await screen.findByTestId('picker-git-choice');
+      await fireEvent.click(sw);
+      await waitFor(() => expect(sw.getAttribute('aria-checked')).toBe('false'));
+
+      // The summary keeps the clone selection (the real picker words it "Clone <repo> …").
+      expect(screen.getByTestId('picker-repo-type').textContent).toBe('github');
+      expect(screen.getByTestId('picker-github-url').textContent).toBe(
+        'https://github.com/acme/app',
+      );
+      expect(screen.getByTestId('picker-plain-folder').textContent).toBe('');
+      expect(screen.queryByTestId('plain-folder-git-notice')).toBeNull();
+      // Reopening the picker still shows the choice off for the folder tabs.
+      expect(screen.getByTestId('picker-git-choice').getAttribute('aria-checked')).toBe('false');
+
+      await submit();
+      await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+      expect(plainFolder.confirm).not.toHaveBeenCalled();
+      const params = mocks.create.mock.calls[0][0] as Record<string, unknown>;
+      expect(params.plainFolder).not.toBe(true);
+      expect(params).toMatchObject({ githubUrl: 'https://github.com/acme/app' });
     });
 
     it('turning the choice back on does not clear a local git repo pick', async () => {
