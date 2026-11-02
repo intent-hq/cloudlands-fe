@@ -309,6 +309,17 @@ first free port from 9223, so read the actual value from its output, e.g.
 and embedded tabs — is a target) and attach CDP locally. See
 `../../docs/fe/CDP_MCP_TOOLS.md`. This loop is unavailable on a headless remote host.
 
+### Serving the production web build (`serve:web`)
+
+`pnpm run serve:web` (monorepo: `make web-serve`) serves `dist/web` from
+`build:web` with the same `/intentd/ws` bridge, via `scripts/web-serve.mjs`. It never
+authenticates: by default it listens on a 0600 Unix socket (`WEB_SERVE_SOCKET`, default
+`.dev/web-serve/web.sock`) and a front-end you point at it (`tailscale serve --bg
+unix:<path>`, `ssh -L 8080:<path>`, Caddy) supplies reach and TLS.
+`WEB_SERVE_REQUIRE_HEADER=Name=value[,value]` requires a front-end identity header (for
+example `Tailscale-User-Login=you@example.com`). `WEB_SERVE_PORT` opts into loopback TCP
+for single-user hosts only. Never front it with a public tunnel such as Tailscale Funnel.
+
 ### Caveats
 
 - The web build has no Electron preload: daemon RPCs work over the WS transport, but
