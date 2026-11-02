@@ -810,7 +810,7 @@
         aria-label={tab.label}
         tabindex="0"
         class={cn(
-          'sidebar-section min-h-0 flex-1 basis-0 flex-col overflow-hidden rounded-(--radius-large) bg-card ring-1 ring-inset ring-border/50 outline-none dark:bg-surface-4',
+          'sidebar-section min-h-0 flex-1 basis-0 flex-col overflow-hidden rounded-(--radius-large) bg-selected ring-1 ring-inset ring-border/50 outline-none dark:bg-surface-4',
           !panelOnly && visibleTabIds.length > 1 && 'min-h-40',
         )}
         style:max-height={panelOnly ? `${flyout?.maxHeight}px` : undefined}
@@ -1079,14 +1079,3 @@
     {/each}
   </div>
 </div>
-
-<style>
-  .sidebar-section {
-    --selected: var(--card);
-    --color-selected: hsl(var(--selected));
-  }
-
-  :global(.dark) .sidebar-section {
-    --selected: var(--theme-selected);
-  }
-</style>
