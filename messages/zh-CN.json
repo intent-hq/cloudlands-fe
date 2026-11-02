@@ -1118,7 +1118,7 @@
   "chat_streamingStatus_memoryWait_label": "正在等待内存余量 — {used}/{cap} 运行中。",
   "chat_streamingStatus_modelUnavailable_after": "不可用",
   "chat_streamingStatus_modelUnavailable_before": "模型",
-  "chat_streamingStatus_quotaExceeded_after": "— 重试不会成功",
+  "chat_streamingStatus_quotaExceeded_after": "— 重置后重试，或切换提供商",
   "chat_streamingStatus_quotaExceeded_before": "已达到使用上限：",
   "chat_streamingStatus_responseFailed_label": "响应失败",
   "chat_streamingStatus_retryOnProvider_label": "在 {provider} 上重试",

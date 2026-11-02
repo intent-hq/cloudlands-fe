@@ -1118,7 +1118,7 @@
   "chat_streamingStatus_memoryWait_label": "Esperando memoria disponible — {used}/{cap} en ejecución.",
   "chat_streamingStatus_modelUnavailable_after": "no está disponible",
   "chat_streamingStatus_modelUnavailable_before": "Modelo",
-  "chat_streamingStatus_quotaExceeded_after": "— reintentarlo no funcionará",
+  "chat_streamingStatus_quotaExceeded_after": "— reinténtalo cuando se restablezca o cambia de proveedor",
   "chat_streamingStatus_quotaExceeded_before": "Límite de uso alcanzado para",
   "chat_streamingStatus_responseFailed_label": "Error en la respuesta",
   "chat_streamingStatus_retryOnProvider_label": "Reintentar con {provider}",

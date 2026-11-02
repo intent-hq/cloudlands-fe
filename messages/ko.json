@@ -1118,7 +1118,7 @@
   "chat_streamingStatus_memoryWait_label": "메모리 여유 대기 중 — {used}/{cap} 실행 중.",
   "chat_streamingStatus_modelUnavailable_after": "을(를) 사용할 수 없습니다",
   "chat_streamingStatus_modelUnavailable_before": "모델",
-  "chat_streamingStatus_quotaExceeded_after": "— 다시 시도해도 성공하지 않습니다",
+  "chat_streamingStatus_quotaExceeded_after": "— 한도가 초기화된 후 다시 시도하거나 공급자를 전환하세요",
   "chat_streamingStatus_quotaExceeded_before": "사용 한도에 도달했습니다:",
   "chat_streamingStatus_responseFailed_label": "응답 실패",
   "chat_streamingStatus_retryOnProvider_label": "{provider}에서 다시 시도",

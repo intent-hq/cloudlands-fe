@@ -67,8 +67,9 @@
      * Provider usage-limit recovery (#4455): set when the daemon reported
      * `errorCode: "quota-exceeded"` for the failed turn. `providerId` is the
      * provider that ran out (already excluded from `quotaRetryProviders`).
-     * Retrying the same provider cannot succeed, so the banner offers the
-     * available alternatives instead of a bare "Try again".
+     * The banner leads with the available alternatives but keeps a plain
+     * retry on the same provider: usage limits reset, so a later retry there
+     * can succeed.
      */
     quotaExceeded?: { providerId: string; displayName?: string } | null;
     /**
@@ -440,6 +441,18 @@
                 {m.chat_streamingStatus_retryOnProvider_label({ provider: alt.displayName })}
               </Button>
             {/each}
+            {#if onRetry}
+              <Button
+                variant="secondary"
+                size="sm"
+                onclick={onRetry}
+                data-testid="quota-retry-same-provider"
+                class="shrink-0 text-muted-foreground"
+              >
+                <Fa icon={faRotateRight} class="size-3" />
+                {m.chat_shared_retry_label()}
+              </Button>
+            {/if}
           {:else if status === 'model-unavailable' && modelUnavailable && onRetryWithModel}
             <Button
               variant="default"
