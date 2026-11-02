@@ -75,6 +75,8 @@ export type UserPreferencesState = {
   labsRemoteAgentsEnabled: boolean;
   /** Offers plain-folder (git-optional) creation only; existing plain-folder workspaces keep working when off. */
   labsPlainFolderWorkspacesEnabled: boolean;
+  /** Shows Settings > Mobile > Browser access; turning it off also stops the server. */
+  labsBrowserAccessEnabled: boolean;
   /**
    * Internal gate for the native review pull-request flow. Off for everyone, so PR creation
    * keeps the classic flow; not persisted and has no UI. Tests and previews turn it on.
@@ -158,6 +160,7 @@ export const initialState: UserPreferencesStoreState = {
   labsGitLabEnabled: false,
   labsRemoteAgentsEnabled: false,
   labsPlainFolderWorkspacesEnabled: false,
+  labsBrowserAccessEnabled: false,
   nativeReviewEnabled: false,
   preferencesHydrated: false,
   ...fontSettingsInitialState,
@@ -458,6 +461,17 @@ export const setLabsPlainFolderWorkspacesEnabled = labsPlainFolderWorkspacesPref
 
 export const toggleLabsPlainFolderWorkspaces = labsPlainFolderWorkspacesPreference.toggleAction;
 
+const labsBrowserAccessPreference = createBooleanPreference<UserPreferencesStoreState>({
+  sliceName: 'userPreferences',
+  field: 'labsBrowserAccessEnabled',
+  setActionName: 'setLabsBrowserAccessEnabled',
+  toggleActionName: 'toggleLabsBrowserAccess',
+});
+
+export const setLabsBrowserAccessEnabled = labsBrowserAccessPreference.setAction;
+
+export const toggleLabsBrowserAccess = labsBrowserAccessPreference.toggleAction;
+
 const nativeReviewPreference = createBooleanPreference<UserPreferencesStoreState>({
   sliceName: 'userPreferences',
   field: 'nativeReviewEnabled',
@@ -587,6 +601,7 @@ labsMultiplayerPreference.register(userPreferencesReducer);
 labsGitLabPreference.register(userPreferencesReducer);
 labsRemoteAgentsPreference.register(userPreferencesReducer);
 labsPlainFolderWorkspacesPreference.register(userPreferencesReducer);
+labsBrowserAccessPreference.register(userPreferencesReducer);
 nativeReviewPreference.register(userPreferencesReducer);
 userPreferencesReducer.with(setUpdateChannel, (state, { payload: [channel] }) => ({
   ...state,

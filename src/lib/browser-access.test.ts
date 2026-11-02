@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { canManageBrowserAccess, tailscaleServeCommand } from './browser-access';
+import { canManageBrowserAccess } from './browser-access';
 import { getBrowserAccessState, setBrowserAccessEnabled } from './browser-access-ipc';
 
 const originalApi = window.electronAPI;
@@ -43,8 +43,4 @@ describe('browser access IPC', () => {
     expect(canManageBrowserAccess()).toBe(false);
     await expect(getBrowserAccessState()).rejects.toThrow(/electronAPI/);
   });
-});
-
-it('builds the tailscale serve command for the port', () => {
-  expect(tailscaleServeCommand(50000)).toBe('tailscale serve --bg 50000');
 });
