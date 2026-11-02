@@ -14,7 +14,7 @@ test('large script inventory opens and retains output without a cleanup window',
   const sidebar = page.getByRole('region', { name: 'Workspace shell' });
   const firstScript = sidebar.locator('[data-sidebar-shell-script="synthetic-0"]');
   await expect(sidebar.locator('[data-sidebar-shell-script]')).toHaveCount(1003);
-  await firstScript.getByRole('button', { name: 'Open in...' }).click();
+  await firstScript.getByRole('button', { name: 'Actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Show in bottom bar' }).click();
   await expect(page.getByText("printf 'synthetic check 0'", { exact: true })).toBeVisible();
   await expect(
