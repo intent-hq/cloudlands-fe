@@ -41,7 +41,7 @@ vi.mock('../client-identity', () => ({
     return changed;
   },
 }));
-vi.mock('../connections-store', () => ({
+vi.mock('../desktop-connections-store', () => ({
   list: () =>
     edge.list?.() ??
     Promise.resolve(

@@ -40,7 +40,7 @@ vi.mock('electron', () => ({
   default: { app: appEmitter },
 }));
 
-vi.mock('../connections-store', () => ({
+vi.mock('../desktop-connections-store', () => ({
   listSyncRecords: vi.fn(async () => []),
   applyRemoteSyncRecord: vi.fn(async () => true),
   onConnectionsMutated: (listener: () => void) => {
@@ -76,7 +76,7 @@ import {
   storeSyncAdapter,
   type KeychainSyncLifecycle,
 } from '../keychain-sync-lifecycle';
-import { applyRemoteSyncRecord } from '../connections-store';
+import { applyRemoteSyncRecord } from '../desktop-connections-store';
 import type { ReconcileResult } from '../keychain-sync';
 
 function reconcileResult(overrides: Partial<ReconcileResult> = {}): ReconcileResult {

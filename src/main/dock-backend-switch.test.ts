@@ -91,7 +91,7 @@ vi.mock('electron', async () => {
     }),
   };
 });
-vi.mock('../features/backend/main/connections-store', () => ({
+vi.mock('../features/backend/main/desktop-connections-store', () => ({
   list: fixture.list,
   getActiveId: fixture.getActiveId,
   setActiveId: fixture.setActiveId,

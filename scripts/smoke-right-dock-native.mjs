@@ -23,7 +23,7 @@ try {
         name: 'isolated-dock-native-smoke',
         enforce: 'pre',
         resolveId(id) {
-          if (id.endsWith('/connections-store')) return '\0smoke-connections';
+          if (id.endsWith('/desktop-connections-store')) return '\0smoke-connections';
           if (id.endsWith('/shared/logger')) return '\0smoke-logger';
         },
         load(id) {
