@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.272.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.271.2...v2.272.0) (2026-11-02)
+
+
+### 🚀 Features
+
+* **remote-machines:** switch a remote agent's model among its machine's models ([#4035](https://github.com/intent-hq/cloudlands-fe/issues/4035)) ([5498008](https://github.com/intent-hq/cloudlands-fe/commit/54980080c0a2cea5f0907ec973e4241b988ea4e0))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.110 ([#4042](https://github.com/intent-hq/cloudlands-fe/issues/4042)) ([d65712a](https://github.com/intent-hq/cloudlands-fe/commit/d65712ad56c0e687dc75103937742d15bc0035c0))
+
 ## [2.271.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.271.1...v2.271.2) (2026-11-02)
 
 
