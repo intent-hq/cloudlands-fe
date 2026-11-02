@@ -70,7 +70,52 @@ describe('LiveSpecialistsClient (fake transport)', () => {
 
     const defs = await client.list();
 
-    expect(mockedRequest).toHaveBeenCalledWith('specialist.list');
+    expect(mockedRequest).toHaveBeenCalledWith('specialist.list', { limit: 500 });
+    expect(defs).toEqual([COORDINATOR_DEF, USER_DEF]);
+  });
+
+  it('listCatalog follows nextToken and keeps the first page diagnostics', async () => {
+    const diagnostics = [
+      {
+        path: '/home/u/.claude/agents/bad.md',
+        source: 'user' as const,
+        code: 'invalid' as const,
+        message: 'bad',
+      },
+    ];
+    mockedRequest
+      .mockResolvedValueOnce({
+        specialists: [COORDINATOR_DEF],
+        importDiagnostics: diagnostics,
+        nextToken: 'page-2',
+      })
+      .mockResolvedValueOnce({ specialists: [USER_DEF], nextToken: null });
+    const client = new LiveSpecialistsClient();
+
+    const catalog = await client.listCatalog('codex');
+
+    expect(mockedRequest.mock.calls).toEqual([
+      ['specialist.list', { provider: 'codex', limit: 500 }],
+      ['specialist.list', { provider: 'codex', limit: 500, nextToken: 'page-2' }],
+    ]);
+    expect(catalog).toEqual({
+      specialists: [COORDINATOR_DEF, USER_DEF],
+      importDiagnostics: diagnostics,
+    });
+  });
+
+  it('listCatalog pages an unscoped catalog with only limit and the token', async () => {
+    mockedRequest
+      .mockResolvedValueOnce({ specialists: [COORDINATOR_DEF], nextToken: 'page-2' })
+      .mockResolvedValueOnce({ specialists: [USER_DEF] });
+    const client = new LiveSpecialistsClient();
+
+    const defs = await client.list();
+
+    expect(mockedRequest.mock.calls).toEqual([
+      ['specialist.list', { limit: 500 }],
+      ['specialist.list', { limit: 500, nextToken: 'page-2' }],
+    ]);
     expect(defs).toEqual([COORDINATOR_DEF, USER_DEF]);
   });
 
@@ -88,7 +133,9 @@ describe('LiveSpecialistsClient (fake transport)', () => {
 
       expect(await client.list(provider)).toEqual([def]);
       expect(mockedRequest.mock.calls).toEqual([
-        provider === undefined ? ['specialist.list'] : ['specialist.list', { provider }],
+        provider === undefined
+          ? ['specialist.list', { limit: 500 }]
+          : ['specialist.list', { provider, limit: 500 }],
       ]);
     },
   );
@@ -108,8 +155,8 @@ describe('LiveSpecialistsClient (fake transport)', () => {
     const unsubscribe = client.subscribe(handler);
     await vi.waitFor(() => expect(handler).toHaveBeenCalledExactlyOnceWith([COORDINATOR_DEF]));
     expect(mockedRequest.mock.calls).toEqual([
-      ['specialist.list', { provider: 'codex' }],
-      ['specialist.list'],
+      ['specialist.list', { provider: 'codex', limit: 500 }],
+      ['specialist.list', { limit: 500 }],
     ]);
     unsubscribe();
   });
@@ -168,7 +215,7 @@ describe('LiveSpecialistsClient (fake transport)', () => {
       await vi.advanceTimersByTimeAsync(100);
 
       // Refetch is the global specialist.list (no workspaceId).
-      expect(mockedRequest).toHaveBeenLastCalledWith('specialist.list');
+      expect(mockedRequest).toHaveBeenLastCalledWith('specialist.list', { limit: 500 });
       expect(handler).toHaveBeenCalledWith([COORDINATOR_DEF, USER_DEF]);
       unsubscribe();
     });
@@ -348,7 +395,7 @@ describe('LiveSpecialistsClient (fake transport)', () => {
         });
         await vi.waitFor(() => expect(handler).toHaveBeenCalledWith([COORDINATOR_DEF, USER_DEF]));
         expect(mockedRequest).toHaveBeenCalledTimes(1);
-        expect(mockedRequest).toHaveBeenCalledWith('specialist.list');
+        expect(mockedRequest).toHaveBeenCalledWith('specialist.list', { limit: 500 });
 
         // The refreshed id is released on dispose.
         unsubscribe();
@@ -650,6 +697,7 @@ it('routes list and project mutations without changing user-library writes', asy
   expect(mockedRequest).toHaveBeenLastCalledWith('specialist.list', {
     provider: 'codex',
     workspaceId: 'workspace-A',
+    limit: 500,
   });
   await client.delete('custom', 'project', '/repo', 'workspace-A');
   expect(mockedRequest).toHaveBeenLastCalledWith('specialist.delete', {
