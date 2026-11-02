@@ -638,8 +638,10 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   or tag the individual test `{ tag: '@quarantine' }` — never a whole file — with an open
   tracking issue and an owner. Quarantined tests still run as an advisory step on shard 1;
   the PR that fixes the flake removes the tag.
-- **Browser suites never run on PR updates** (PRs run type/lint, unit tests and static
-  checks). Merge-queue entries touching CT-contract paths, specs or anything they
+- **Full browser suites never run on PR updates** (PRs run type/lint, unit tests and static
+  checks). The one exception: `test-ct-changed` runs each `.ct.spec.ts` the PR adds or
+  edits 20 times with retries off (`scripts/ct-changed-specs.mjs`; fewer per spec when
+  many change), so any failing repetition is red on the PR, not in the queue. Merge-queue entries touching CT-contract paths, specs or anything they
   transitively import (`scripts/ct-contract-paths.mjs`, shared with `verify:changed`) run the four CT
   shards; root Playwright and Electron lifetime test/harness/config changes run their
   suites. Everything also runs nightly at 02:17 UTC (`nightly-browser-tests.yml`) and on
