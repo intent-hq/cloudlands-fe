@@ -2,7 +2,18 @@
  * Browser access requests: each action invokes the matching main-process
  * channel and settles with main's new state.
  */
-import { all, call, cancelled, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import {
+  all,
+  call,
+  cancelled,
+  delay,
+  put,
+  take,
+  takeEvery,
+  type SagaGenerator,
+} from 'typed-redux-saga';
+
+import { canManageBrowserAccess } from '$lib/browser-access';
 
 import {
   getBrowserAccessState,
@@ -17,6 +28,15 @@ import {
   setBrowserAccessEnabledRequested,
   setBrowserAccessPortRequested,
 } from '../browser-access-slice';
+import {
+  selectLabsBrowserAccessEnabled,
+  selectUserPreferencesHydrated,
+} from '../../user-preferences/user-preferences-selectors';
+import { userPreferencesHydrated } from '../../user-preferences/user-preferences-slice';
+
+/** Main registers its handlers shortly after the first window opens; retry briefly. */
+const GATE_ATTEMPTS = 10;
+const GATE_RETRY_MS = 1_000;
 
 type RequestAction =
   | ReturnType<typeof loadBrowserAccessRequested>
@@ -43,8 +63,29 @@ function* settle(
   }
 }
 
+/**
+ * Browser access is a Labs experiment. A server left on while the flag is off
+ * (for example, enabled before the flag existed) would run where nobody can
+ * see it, so once preferences load, turn it off.
+ */
+export function* enforceBrowserAccessLabsGate(): SagaGenerator<void> {
+  if (!canManageBrowserAccess()) return;
+  if (!(yield* selectUserPreferencesHydrated.effect())) yield* take(userPreferencesHydrated);
+  if (yield* selectLabsBrowserAccessEnabled.effect()) return;
+  for (let attempt = 0; attempt < GATE_ATTEMPTS; attempt++) {
+    try {
+      const state: BrowserAccessState = yield* call(getBrowserAccessState);
+      if (state.enabled) yield* put(setBrowserAccessEnabledRequested(false));
+      return;
+    } catch {
+      yield* delay(GATE_RETRY_MS);
+    }
+  }
+}
+
 export function* browserAccessSaga(): SagaGenerator<void> {
   yield* all([
+    call(enforceBrowserAccessLabsGate),
     takeEvery(loadBrowserAccessRequested, (action) => settle(action, getBrowserAccessState)),
     takeEvery(setBrowserAccessEnabledRequested, (action) =>
       settle(action, () => setBrowserAccessEnabled(action.payload[0])),

@@ -75,11 +75,19 @@ function createController(): BrowserAccessController {
 export async function setupBrowserAccess(): Promise<void> {
   const current = createController();
   controller = current;
+  // Reads wait for the saved settings, so callers never see pre-load defaults.
+  const loaded = current.load().then(
+    () => undefined,
+    (error: unknown) => logger.warn('Failed to load browser access settings', error),
+  );
   ipcMain.handle(
     BROWSER_ACCESS_CHANNELS.GET_STATE,
     createSafeValidatedHandler(
       EmptySchema,
-      async () => current.state(),
+      async () => {
+        await loaded;
+        return current.state();
+      },
       BROWSER_ACCESS_CHANNELS.GET_STATE,
     ),
   );
@@ -107,11 +115,7 @@ export async function setupBrowserAccess(): Promise<void> {
       BROWSER_ACCESS_CHANNELS.RESET_KEY,
     ),
   );
-  try {
-    await current.load();
-  } catch (error) {
-    logger.warn('Failed to load browser access settings', error);
-  }
+  await loaded;
 }
 
 /** Stop serving during app shutdown (the setting is kept). */
