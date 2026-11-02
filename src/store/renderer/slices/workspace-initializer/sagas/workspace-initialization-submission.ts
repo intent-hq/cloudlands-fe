@@ -376,7 +376,13 @@ export function* prepareCompactWorkspaceInitialization(
                 ? undefined
                 : String(remoteSetup?.workspacePath || s.repoPath),
               githubUrl: s.repoType === 'github' && s.githubUrl ? s.githubUrl : undefined,
-              branch: prBranchActive ? s.selectedPRBranch : undefined,
+              // In place, the row names the folder's own branch (its current
+              // one, or main for a new repository), never a generated one.
+              branch: prBranchActive
+                ? s.selectedPRBranch
+                : s.skipIsolation && s.repoType === 'local' && baseBranch
+                  ? String(baseBranch)
+                  : undefined,
               baseRef: prBranchActive
                 ? s.selectedPRTargetBranch || undefined
                 : s.skipIsolation && !baseBranch
@@ -569,6 +575,10 @@ export function* prepareOnboardingWorkspaceInitialization(
           repositoryPath: isGithubPick ? undefined : project.repoPath,
           githubUrl: project.githubUrl,
           baseRef: treatAsNewRepo ? 'main' : effectiveBranch,
+          // In place, the row names the folder's own branch (see compact).
+          ...(s.skipIsolation && project.type !== 'github'
+            ? { branch: treatAsNewRepo ? 'main' : effectiveBranch || undefined }
+            : {}),
           isNewRepo: treatAsNewRepo,
           skipIsolation: s.skipIsolation || undefined,
           scope: project.scope || undefined,
