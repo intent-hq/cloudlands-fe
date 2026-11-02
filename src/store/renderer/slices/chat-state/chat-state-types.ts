@@ -66,10 +66,11 @@ export interface ModelUnavailableInfo {
 /**
  * A turn that failed because the provider's usage/quota limit was hit, as
  * reported by the daemon's structured `errorCode: "quota-exceeded"` on
- * `agent:failed`. Retrying the SAME provider cannot succeed (the daemon
- * classifies quota rejections as terminal), so the recovery affordance is a
- * switch to a different provider — hence `providerId`, the provider that ran
- * out, which the banner excludes from the alternatives it offers.
+ * `agent:failed`. The daemon classifies quota rejections as terminal, so it
+ * never auto-retries them; the banner leads with a switch to a different
+ * provider — hence `providerId`, the provider that ran out, which it excludes
+ * from the alternatives it offers — and keeps a plain user-initiated retry on
+ * the same provider, because usage limits reset.
  *
  * Structured rather than string-matched on purpose: the auth-failure banner
  * matches prose against per-provider `authErrorPatterns`, which is fragile

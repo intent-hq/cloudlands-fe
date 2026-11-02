@@ -2130,6 +2130,7 @@ describe('ChatPanel mounted lifecycle', () => {
 
       const banner = view.container.querySelector('[data-testid="error-quota-exceeded"]');
       expect(banner).not.toBeNull();
+      expect(banner!.textContent).toMatch(/retry once it resets, or switch provider/i);
       expect(banner!.textContent).not.toMatch(/will not succeed/i);
 
       const retry = screen.getByTestId('quota-retry-same-provider');

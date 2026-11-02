@@ -447,7 +447,7 @@
                 size="sm"
                 onclick={onRetry}
                 data-testid="quota-retry-same-provider"
-                class="shrink-0 text-muted-foreground"
+                class="type-caption h-7 shrink-0 gap-1.5 px-2 text-muted-foreground"
               >
                 <Fa icon={faRotateRight} class="size-3" />
                 {m.chat_shared_retry_label()}
