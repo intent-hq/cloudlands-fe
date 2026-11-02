@@ -250,5 +250,13 @@ test('keeps a turn gap between a drained row without working status and the queu
   await expect(queue).toBeVisible();
   await expect(component.locator('[data-streaming-typing-row]')).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('drained-row-gap.png') });
-  expect(await gap(drained, queue)).toBeGreaterThanOrEqual(16);
+  // Relational, not a pinned value: the status-less pending row keeps the same
+  // turn boundary as a confirmed user row, and the queue card stays below it.
+  const confirmed = component.locator(
+    '[data-message-role="user"][data-message-id="attention-user-11"]',
+  );
+  const bottomMargin = (row: Locator) =>
+    row.evaluate((element) => getComputedStyle(element).marginBottom);
+  expect(await bottomMargin(drained)).toBe(await bottomMargin(confirmed));
+  expect(await gap(drained, queue)).toBeGreaterThanOrEqual(0);
 });

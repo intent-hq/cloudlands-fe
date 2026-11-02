@@ -7655,12 +7655,11 @@
                 />
               {/if}
               <div>
-                <!-- Without a working status, the final pending row keeps the
-                     confirmed user-row gap so it never sits flush on the queue card. -->
+                <!-- The final pending row keeps its turn gap even without a working
+                     status, so it never sits flush on the queue card. -->
                 <div
                   class="w-full"
-                  class:mb-6={ownsStatus}
-                  class:mb-7={!ownsStatus && index === pendingConversationMessages.length - 1}
+                  class:mb-6={ownsStatus || index === pendingConversationMessages.length - 1}
                   data-message-id={message.id}
                   data-message-role="user"
                   data-send-app-message-id={message.appMessageId}
