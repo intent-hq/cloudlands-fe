@@ -1,4 +1,6 @@
 <script lang="ts">
+  import DisclosureIcon from '$lib/components/icons/DisclosureIcon.svelte';
+
   import { untrack } from 'svelte';
   import { Input } from '$lib/components/ui/input';
   import { selectNativeReviewEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
@@ -67,7 +69,6 @@
     faArrowsRotate,
     faArrowUpRightFromSquare,
     faCheck,
-    faChevronDown,
     faCodeMerge,
     faCodePullRequest,
     faEye,
@@ -608,7 +609,7 @@
         {:else if native.nativeMode}
           <NativeSidebarReview review={native} />
         {:else if $canAdministerHost$ && !$githubAuthIsAuthenticated$}
-          <GitHubAuthBanner onSuccess={() => {}} />
+          <GitHubAuthBanner compact onSuccess={() => {}} />
         {:else}
           {@const stagedDescription = hasStaged
             ? stagedChanges.length === 1
@@ -918,6 +919,7 @@
         {#if isOwner && !$githubAuthIsAuthenticated$}
           {#key authBannerKey}
             <GitHubAuthBanner
+              compact
               message={m.workspace_prSection_connectToGithub_label()}
               onSuccess={handleGitHubAuthSuccess}
               autoStart={authBannerKey > 0}
@@ -943,32 +945,23 @@
           <div>
             <!-- PR header -->
             <div
-              class="relative flex h-8 min-w-0 items-center gap-2 group w-full rounded-md px-2 hover:bg-muted"
+              class="relative flex h-7 min-w-0 items-center gap-1 group w-full rounded-md px-2 hover:bg-muted"
               title={getPRStatusTooltip(pr)}
             >
               {#if hasPRFiles}
                 <Button
-                  variant="ghost-light"
-                  size="icon-xs"
-                  class="absolute left-0.75 bg-sidebar opacity-0 group-hover:opacity-100 hover:text-foreground! -ml-1"
+                  variant="ghost"
+                  size="icon-compact"
+                  class="shrink-0 text-muted-foreground hover:text-foreground"
                   onclick={(e: MouseEvent) => {
                     e.stopPropagation();
                     togglePRExpanded(prKey(pr));
                   }}
+                  aria-expanded={isPRExpanded}
+                  aria-label={m.workspace_prSection_toggleFileList_tooltip()}
                   title={m.workspace_prSection_toggleFileList_tooltip()}
                 >
-                  <Fa
-                    icon={faChevronDown}
-                    size={12}
-                    class="text-subtle shrink-0 transition-transform {isPRExpanded
-                      ? 'rotate-0'
-                      : 'rotate-90'}"
-                  />
-                  <LineChangesBadge
-                    additions={prTotalAdditions}
-                    deletions={prTotalDeletions}
-                    size="xs"
-                  />
+                  <DisclosureIcon expanded={isPRExpanded} />
                 </Button>
               {/if}
 
@@ -976,7 +969,7 @@
               <Button
                 variant="ghost"
                 type="button"
-                class="flex h-8 items-center gap-2 flex-1 min-w-0 px-2 -mx-2 type-caption font-normal text-left cursor-pointer"
+                class="flex h-7 items-center gap-2 flex-1 min-w-0 px-2 -mx-2 type-caption font-normal text-left cursor-pointer"
                 onclick={onOpenFullPanel}
               >
                 <span class="type-caption text-subtle truncate flex-1">
@@ -1009,12 +1002,20 @@
                 {/if}
               </Button>
 
+              {#if hasPRFiles}
+                <LineChangesBadge
+                  additions={prTotalAdditions}
+                  deletions={prTotalDeletions}
+                  size="xs"
+                />
+              {/if}
+
               <div
                 class="absolute -right-1 pl-1 bg-sidebar flex items-center opacity-0 group-hover:opacity-100 transition-opacity"
               >
                 <Button
                   variant="ghost-light"
-                  size="icon-xs"
+                  size="icon-compact"
                   class="shrink-0"
                   disabled={!pr.url}
                   onclick={() =>
@@ -1032,12 +1033,10 @@
 
             <!-- Expanded panel content - PR files -->
             {#if isPRExpanded}
-              <div
-                class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px"
-                transition:slide={{ tier: 'moderate' }}
-              >
+              <div class="pl-8 space-y-px" transition:slide={{ tier: 'moderate' }}>
                 {#each prFiles as file (file.path)}
                   <FileRow
+                    compact
                     contextKey={`${workspaceId}:${prKey(pr)}`}
                     {file}
                     muted={true}

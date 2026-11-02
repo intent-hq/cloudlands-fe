@@ -99,7 +99,6 @@ describe('WorkspaceAgentsList single-line rows', () => {
     expect(view.container.textContent).not.toContain('preview for');
 
     for (const row of view.container.querySelectorAll<HTMLElement>('[data-agent-panel-row]')) {
-      expect(row.className).toContain('h-10');
       expect(row.querySelector('[data-avatar-variant="emphasized"]')).toBeTruthy();
       expect(row.querySelector('[data-agent-row-trailing]')).toBeTruthy();
     }
@@ -178,7 +177,7 @@ describe('WorkspaceAgentsList single-line rows', () => {
     const retiredToggle = view.container.querySelector<HTMLElement>('[data-agent-retired-toggle]');
     expect(retiredToggle).toBeTruthy();
     expect(retiredToggle?.getAttribute('aria-expanded')).toBe('false');
-    expect(retiredToggle?.textContent).toContain('1 retired agents');
+    expect(retiredToggle?.getAttribute('aria-label')).toContain('1 retired agents');
 
     await fireEvent.click(retiredToggle!);
     expect(retiredToggle?.getAttribute('aria-expanded')).toBe('true');
@@ -215,7 +214,7 @@ describe('WorkspaceAgentsList single-line rows', () => {
     // even though no retired row is hydrated, and nothing loads eagerly.
     const retiredToggle = view.container.querySelector<HTMLElement>('[data-agent-retired-toggle]');
     expect(retiredToggle).toBeTruthy();
-    expect(retiredToggle?.textContent).toContain('3 retired agents');
+    expect(retiredToggle?.getAttribute('aria-label')).toContain('3 retired agents');
     expect(onLoadRetired).not.toHaveBeenCalled();
     expect(view.container.querySelector('[data-agent-retired-loading]')).toBeNull();
 
@@ -238,7 +237,7 @@ describe('WorkspaceAgentsList single-line rows', () => {
       onLoadRetired,
     });
     expect(view.container.querySelector('[data-agent-retired-loading]')).toBeNull();
-    expect(retiredToggle?.textContent).toContain('1 retired agents');
+    expect(retiredToggle?.getAttribute('aria-label')).toContain('1 retired agents');
     expect(view.container.querySelector(`[data-agent-panel-row="${retired.id}"]`)).toBeTruthy();
     expect(onLoadRetired).toHaveBeenCalledTimes(1);
   });
@@ -367,9 +366,9 @@ describe('WorkspaceAgentsList single-line rows', () => {
     const backgroundToggle = view.container.querySelector<HTMLElement>(
       '[data-agent-background-toggle]',
     );
-    expect(delegatedToggle?.textContent).toContain('4 delegated agents');
+    expect(delegatedToggle?.getAttribute('aria-label')).toContain('4 delegated agents');
     expect(delegatedToggle?.getAttribute('aria-expanded')).toBe('false');
-    expect(backgroundToggle?.textContent).toContain('2 background agents');
+    expect(backgroundToggle?.getAttribute('aria-label')).toContain('2 background agents');
     expect(backgroundToggle?.getAttribute('aria-expanded')).toBe('false');
     expect(onLoadDelegated).not.toHaveBeenCalled();
     expect(onLoadBackground).not.toHaveBeenCalled();
@@ -394,7 +393,7 @@ describe('WorkspaceAgentsList single-line rows', () => {
       delegatedAgentsLoaded: true,
     });
     expect(view.container.querySelector('[data-agent-delegated-loading]')).toBeNull();
-    expect(delegatedToggle?.textContent).toContain('1 delegated agents');
+    expect(delegatedToggle?.getAttribute('aria-label')).toContain('1 delegated agents');
     expect(view.container.querySelector(`[data-agent-panel-row="${child.id}"]`)).toBeTruthy();
     const groupToggle = view.container.querySelector<HTMLElement>(
       `[data-agent-delegation-toggle="${coordinator.id}"]`,
@@ -433,7 +432,7 @@ describe('WorkspaceAgentsList single-line rows', () => {
       backgroundAgentsLoaded: true,
     });
     expect(view.container.querySelector('[data-agent-background-loading]')).toBeNull();
-    expect(backgroundToggle?.textContent).toContain('1 background agents');
+    expect(backgroundToggle?.getAttribute('aria-label')).toContain('1 background agents');
     expect(view.container.querySelector(`[data-agent-panel-row="${background.id}"]`)).toBeTruthy();
     expect(onLoadBackground).toHaveBeenCalledTimes(1);
   });
@@ -497,7 +496,7 @@ describe('WorkspaceAgentsList single-line rows', () => {
     const backgroundToggle = legacy.container.querySelector<HTMLElement>(
       '[data-agent-background-toggle]',
     );
-    expect(backgroundToggle?.textContent).toContain('1 background agents');
+    expect(backgroundToggle?.getAttribute('aria-label')).toContain('1 background agents');
     await fireEvent.click(backgroundToggle!);
     expect(onLoadBackground).not.toHaveBeenCalled();
     expect(onLoadDelegated).not.toHaveBeenCalled();
@@ -551,7 +550,7 @@ describe('WorkspaceAgentsList single-line rows', () => {
     });
     appStore.dispatch(bulkUpsertSessions([child]));
     await view.rerender({ ...props, agents: [topLevel, child], delegatedAgentsLoaded: true });
-    expect(delegatedToggle?.textContent).toContain('1 delegated agents');
+    expect(delegatedToggle?.getAttribute('aria-label')).toContain('1 delegated agents');
     expect(delegatedToggle?.getAttribute('aria-expanded')).toBe('true');
     expect(
       view.container.querySelector(
@@ -565,7 +564,7 @@ describe('WorkspaceAgentsList single-line rows', () => {
     await waitFor(() =>
       expect(view.container.querySelector(`[data-agent-panel-row="${child.id}"]`)).toBeNull(),
     );
-    expect(delegatedToggle?.textContent).toContain('1 delegated agents');
+    expect(delegatedToggle?.getAttribute('aria-label')).toContain('1 delegated agents');
     await fireEvent.click(delegatedToggle!);
     await waitFor(() =>
       expect(view.container.querySelector(`[data-agent-panel-row="${child.id}"]`)).toBeTruthy(),
@@ -589,15 +588,15 @@ describe('WorkspaceAgentsList single-line rows', () => {
       delegatedAgentsLoaded: true,
       retiredCount: 1,
     });
-    expect(delegatedToggle?.textContent).toContain('2 delegated agents');
+    expect(delegatedToggle?.getAttribute('aria-label')).toContain('2 delegated agents');
     expect(
       view.container.querySelector(
         `[data-agent-delegated-section] [data-agent-panel-row="${orphan.id}"]`,
       ),
     ).toBeTruthy();
-    expect(view.container.querySelector('[data-agent-retired-toggle]')?.textContent).toContain(
-      '1 retired agents',
-    );
+    expect(
+      view.container.querySelector('[data-agent-retired-toggle]')?.getAttribute('aria-label'),
+    ).toContain('1 retired agents');
 
     // Once the Background bin loads the parent, the child nests under it
     // (per-parent group inside the Background section) and the Delegated
@@ -620,8 +619,8 @@ describe('WorkspaceAgentsList single-line rows', () => {
       backgroundAgentsLoaded: true,
       retiredCount: 1,
     });
-    expect(delegatedToggle?.textContent).toContain('2 delegated agents');
-    expect(backgroundToggle?.textContent).toContain('1 background agents');
+    expect(delegatedToggle?.getAttribute('aria-label')).toContain('2 delegated agents');
+    expect(backgroundToggle?.getAttribute('aria-label')).toContain('1 background agents');
     const groupToggle = view.container.querySelector<HTMLElement>(
       `[data-agent-delegation-toggle="${backgroundParent.id}"]`,
     );
@@ -648,7 +647,7 @@ describe('WorkspaceAgentsList single-line rows', () => {
       ).toBeNull(),
     );
     expect(delegatedToggle?.getAttribute('aria-expanded')).toBe('true');
-    expect(delegatedToggle?.textContent).toContain('2 delegated agents');
+    expect(delegatedToggle?.getAttribute('aria-label')).toContain('2 delegated agents');
     expect(
       view.container.querySelector(
         `[data-agent-delegated-section] [data-agent-panel-row="${child.id}"]`,
@@ -712,9 +711,9 @@ describe('WorkspaceAgentsList single-line rows', () => {
     const otherBar = view.container.querySelector<HTMLElement>(
       `[data-agent-delegation-toggle="${other.id}"]`,
     );
-    expect(coordinatorBar?.textContent).toContain('1 / 2 delegated running');
+    expect(coordinatorBar?.getAttribute('aria-label')).toContain('1 / 2 delegated running');
     expect(coordinatorBar?.getAttribute('aria-expanded')).toBe('false');
-    expect(otherBar?.textContent).toContain('1 / 1 delegated running');
+    expect(otherBar?.getAttribute('aria-label')).toContain('1 / 1 delegated running');
     expect(
       view.container.querySelector(`[data-agent-delegation-toggle="${childless.id}"]`),
     ).toBeNull();
@@ -726,7 +725,7 @@ describe('WorkspaceAgentsList single-line rows', () => {
     const delegatedToggle = view.container.querySelector<HTMLElement>(
       '[data-agent-delegated-toggle]',
     );
-    expect(delegatedToggle?.textContent).toContain('2 / 3 delegated agents running');
+    expect(delegatedToggle?.getAttribute('aria-label')).toContain('2 / 3 delegated agents running');
     expect(delegatedToggle?.getAttribute('aria-expanded')).toBe('false');
 
     // Expanding one bar requests that parent's children only, with skeleton
@@ -765,9 +764,9 @@ describe('WorkspaceAgentsList single-line rows', () => {
     ).toBeNull();
     expect(view.container.querySelector(`[data-agent-panel-row="${childA.id}"]`)).toBeTruthy();
     expect(view.container.querySelector(`[data-agent-panel-row="${childB.id}"]`)).toBeTruthy();
-    expect(coordinatorBar?.textContent).toContain('2 delegated');
-    expect(otherBar?.textContent).toContain('1 / 1 delegated running');
-    expect(delegatedToggle?.textContent).toContain('2 / 3 delegated agents running');
+    expect(coordinatorBar?.getAttribute('aria-label')).toContain('2 delegated');
+    expect(otherBar?.getAttribute('aria-label')).toContain('1 / 1 delegated running');
+    expect(delegatedToggle?.getAttribute('aria-label')).toContain('2 / 3 delegated agents running');
     expect(onLoadDelegated).toHaveBeenCalledTimes(1);
 
     // Collapsing a loaded parent hides its rows and shows the loaded running
@@ -776,7 +775,7 @@ describe('WorkspaceAgentsList single-line rows', () => {
     await waitFor(() =>
       expect(view.container.querySelector(`[data-agent-panel-row="${childA.id}"]`)).toBeNull(),
     );
-    expect(coordinatorBar?.textContent).toContain('1 / 2 delegated running');
+    expect(coordinatorBar?.getAttribute('aria-label')).toContain('1 / 2 delegated running');
     await fireEvent.click(coordinatorBar!);
     await waitFor(() =>
       expect(view.container.querySelector(`[data-agent-panel-row="${childA.id}"]`)).toBeTruthy(),
@@ -810,10 +809,10 @@ describe('WorkspaceAgentsList single-line rows', () => {
     });
     expect(view.container.querySelector('[data-agent-delegated-loading]')).toBeNull();
     expect(view.container.querySelector(`[data-agent-panel-row="${childC.id}"]`)).toBeTruthy();
-    expect(otherBar?.textContent).toContain('1 delegated');
-    expect(delegatedToggle?.textContent).toContain('3 delegated agents');
+    expect(otherBar?.getAttribute('aria-label')).toContain('1 delegated');
+    expect(delegatedToggle?.getAttribute('aria-label')).toContain('3 delegated agents');
     await fireEvent.click(delegatedToggle!);
-    expect(delegatedToggle?.textContent).toContain('1 / 3 delegated agents running');
+    expect(delegatedToggle?.getAttribute('aria-label')).toContain('1 / 3 delegated agents running');
   });
 
   it('does not request a per-parent load while the whole-bin read is in flight or the parent is already loading', async () => {
@@ -831,7 +830,7 @@ describe('WorkspaceAgentsList single-line rows', () => {
     const bar = view.container.querySelector<HTMLElement>(
       `[data-agent-delegation-toggle="${parent.id}"]`,
     );
-    expect(bar?.textContent).toContain('1 delegated');
+    expect(bar?.getAttribute('aria-label')).toContain('1 delegated');
     await fireEvent.click(bar!);
     expect(onLoadDelegated).not.toHaveBeenCalled();
     await fireEvent.click(bar!);
@@ -871,7 +870,7 @@ describe('WorkspaceAgentsList single-line rows', () => {
     const delegatedToggle = view.container.querySelector<HTMLElement>(
       '[data-agent-delegated-toggle]',
     );
-    expect(delegatedToggle?.textContent).toContain('1 delegated agents');
+    expect(delegatedToggle?.getAttribute('aria-label')).toContain('1 delegated agents');
     await fireEvent.click(delegatedToggle!);
     await waitFor(() => expect(onLoadDelegated).toHaveBeenCalledTimes(1));
     expect(onLoadDelegated).toHaveBeenLastCalledWith();
@@ -915,9 +914,9 @@ describe('WorkspaceAgentsList single-line rows', () => {
     const coordinatorBar = view.container.querySelector<HTMLElement>(
       `[data-agent-delegation-toggle="${coordinator.id}"]`,
     );
-    expect(delegatedToggle?.textContent).toContain('1 / 3 delegated agents running');
+    expect(delegatedToggle?.getAttribute('aria-label')).toContain('1 / 3 delegated agents running');
     expect(delegatedToggle?.getAttribute('aria-expanded')).toBe('false');
-    expect(coordinatorBar?.textContent).toContain('1 / 2 delegated running');
+    expect(coordinatorBar?.getAttribute('aria-label')).toContain('1 / 2 delegated running');
     expect(coordinatorBar?.getAttribute('aria-expanded')).toBe('false');
     expect(onLoadDelegated).not.toHaveBeenCalled();
     expect(onLoadOrphanedDelegated).not.toHaveBeenCalled();
@@ -971,11 +970,11 @@ describe('WorkspaceAgentsList single-line rows', () => {
         ),
       ).toBeTruthy();
     }
-    expect(delegatedToggle?.textContent).toContain('3 delegated agents');
+    expect(delegatedToggle?.getAttribute('aria-label')).toContain('3 delegated agents');
     const orphanBar = view.container.querySelector<HTMLElement>(
       `[data-agent-delegated-section] [data-agent-delegation-toggle="${orphans[0].id}"]`,
     );
-    expect(orphanBar?.textContent).toContain('1 delegated');
+    expect(orphanBar?.getAttribute('aria-label')).toContain('1 delegated');
     expect(orphanBar?.getAttribute('aria-expanded')).toBe('false');
     expect(coordinatorBar?.getAttribute('aria-expanded')).toBe('false');
     expect(view.container.querySelectorAll('[data-agent-delegation-toggle]')).toHaveLength(2);
@@ -994,7 +993,7 @@ describe('WorkspaceAgentsList single-line rows', () => {
     await waitFor(() =>
       expect(view.container.querySelector(`[data-agent-panel-row="${orphans[0].id}"]`)).toBeNull(),
     );
-    expect(delegatedToggle?.textContent).toContain('1 / 3 delegated agents running');
+    expect(delegatedToggle?.getAttribute('aria-label')).toContain('1 / 3 delegated agents running');
     await fireEvent.click(delegatedToggle!);
     await waitFor(() =>
       expect(
@@ -1049,7 +1048,7 @@ describe('WorkspaceAgentsList single-line rows', () => {
     const backgroundToggle = view.container.querySelector<HTMLElement>(
       '[data-agent-background-toggle]',
     );
-    expect(backgroundToggle?.textContent).toContain('1 background agents');
+    expect(backgroundToggle?.getAttribute('aria-label')).toContain('1 background agents');
 
     // The background parent's child (loaded through the per-parent read) nests
     // under its parent inside the Background section, and stays out of the
@@ -1147,7 +1146,7 @@ describe('WorkspaceAgentsList single-line rows', () => {
     const delegatedToggle = view.container.querySelector<HTMLElement>(
       '[data-agent-delegated-toggle]',
     );
-    expect(delegatedToggle?.textContent).toContain('1 delegated agents');
+    expect(delegatedToggle?.getAttribute('aria-label')).toContain('1 delegated agents');
     await fireEvent.click(delegatedToggle!);
     await waitFor(() => expect(onLoadOrphanedDelegated).toHaveBeenCalledTimes(1));
     expect(view.container.querySelector('[data-agent-delegated-loading]')).toBeTruthy();
@@ -1166,14 +1165,14 @@ describe('WorkspaceAgentsList single-line rows', () => {
       ),
     ).toBeTruthy();
     expect(view.container.querySelector(`[data-agent-panel-row="${grandchild.id}"]`)).toBeNull();
-    expect(delegatedToggle?.textContent).toContain('1 delegated agents');
+    expect(delegatedToggle?.getAttribute('aria-label')).toContain('1 delegated agents');
     // Collapsed, the running badge counts the served rows only: the running
     // grandchild never leaks into it.
     await fireEvent.click(delegatedToggle!);
     await waitFor(() =>
       expect(view.container.querySelector(`[data-agent-panel-row="${orphan.id}"]`)).toBeNull(),
     );
-    expect(delegatedToggle?.textContent).toContain('1 delegated agents');
+    expect(delegatedToggle?.getAttribute('aria-label')).toContain('1 delegated agents');
     expect(delegatedToggle?.textContent).not.toContain('running');
 
     // An empty orphan-only read re-baselined the daemon total to 0: the bin
@@ -1261,7 +1260,7 @@ describe('WorkspaceAgentsList single-line rows', () => {
     expect(childInBin()).toBeNull();
     expect(orphanInBin()).toBeTruthy();
     expect(view.container.querySelector('[data-agent-delegated-loading]')).toBeNull();
-    expect(delegatedToggle.textContent).toContain('1 delegated agents');
+    expect(delegatedToggle.getAttribute('aria-label')).toContain('1 delegated agents');
 
     // The Background read failed (not loaded, not loading) and a hydration
     // re-read reset the orphan membership: the bin cannot fall back to the
@@ -1339,7 +1338,7 @@ describe('WorkspaceAgentsList single-line rows', () => {
     const delegatedToggle = legacy.container.querySelector<HTMLElement>(
       '[data-agent-delegated-toggle]',
     );
-    expect(delegatedToggle?.textContent).toContain('2 delegated agents');
+    expect(delegatedToggle?.getAttribute('aria-label')).toContain('2 delegated agents');
     await fireEvent.click(delegatedToggle!);
     expect(onLoadOrphanedDelegated).not.toHaveBeenCalled();
     expect(
@@ -1374,7 +1373,7 @@ describe('WorkspaceAgentsList single-line rows', () => {
     const bar = view.container.querySelector<HTMLElement>(
       `[data-agent-delegation-toggle="${first.id}"]`,
     );
-    expect(bar?.textContent).toContain('1 / 2 delegated running');
+    expect(bar?.getAttribute('aria-label')).toContain('1 / 2 delegated running');
     expect(bar?.getAttribute('aria-expanded')).toBe('false');
     expect(bar?.closest('[data-index]')).toBeTruthy();
     expect(view.container.querySelectorAll('[data-agent-delegation-toggle]')).toHaveLength(1);
@@ -1410,7 +1409,7 @@ describe('WorkspaceAgentsList single-line rows', () => {
       `[data-agent-delegation-toggle="${first.id}"]`,
     );
     expect(hydratedBar?.getAttribute('aria-expanded')).toBe('true');
-    expect(hydratedBar?.textContent).toContain('2 delegated');
+    expect(hydratedBar?.getAttribute('aria-label')).toContain('2 delegated');
     expect(view.container.querySelector(`[data-agent-delegation-loading]`)).toBeNull();
     const childRow = view.container.querySelector<HTMLElement>(
       `[data-agent-panel-row="${children[0].id}"]`,
@@ -1544,7 +1543,7 @@ describe('WorkspaceAgentsList single-line rows', () => {
 
     // Collapsed: no retired rows rendered at all.
     const retiredToggle = view.container.querySelector<HTMLElement>('[data-agent-retired-toggle]');
-    expect(retiredToggle?.textContent).toContain('40 retired agents');
+    expect(retiredToggle?.getAttribute('aria-label')).toContain('40 retired agents');
     expect(view.container.querySelector('[data-agent-retired-section]')).toBeNull();
 
     // Expanded: rows render through VirtualList slots, not all 21 eagerly.

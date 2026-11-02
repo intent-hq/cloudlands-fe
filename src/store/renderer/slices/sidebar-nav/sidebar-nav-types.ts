@@ -18,6 +18,7 @@ export type SidebarNavState = {
   multiSelectSelectedTabIdsByWorkspaceId: Record<string, string[]>;
   noteOrderByWorkspaceId: Record<string, string[]>;
   collapsedNoteIdsByWorkspaceId: Record<string, string[]>;
+  expandedNoteIdsByWorkspaceId: Record<string, string[]>;
   chiefActiveAgentId: string | null;
   statsOverlayOpen: boolean;
   /**

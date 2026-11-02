@@ -168,7 +168,7 @@ describe('WorkspaceShellList development script controls', () => {
   }
 
   async function chooseSurface(row: HTMLElement, name: string) {
-    await fireEvent.click(within(row).getByRole('button', { name: 'Open in...' }));
+    await fireEvent.click(within(row).getByRole('button', { name: /^(Open in\.\.\.|Actions)$/ }));
     await fireEvent.click(await screen.findByRole('menuitem', { name }));
   }
 
@@ -409,7 +409,6 @@ describe('WorkspaceShellList development script controls', () => {
       ['restarting', 'Worker'],
     ]) {
       expect(within(scriptRow(id)).getByRole('button', { name: 'Stop' })).toBeTruthy();
-      expect(within(scriptRow(id)).getByRole('button', { name: `Restart ${name}` })).toBeTruthy();
       expect(within(scriptRow(id)).queryByRole('button', { name: `Start ${name}` })).toBeNull();
     }
     for (const [id, name] of [
@@ -451,7 +450,7 @@ describe('WorkspaceShellList development script controls', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Start Build' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
-    await fireEvent.click(screen.getByRole('button', { name: 'Restart Dev' }));
+    await chooseSurface(scriptRow('running'), 'Restart Dev');
 
     expect(mocks.dispatch.mock.calls.map(([action]) => action)).toEqual([
       { type: 'scripts/startScriptRequested', payload: [WS, 'idle'] },
@@ -477,7 +476,7 @@ describe('WorkspaceShellList development script controls', () => {
     expect(screen.queryByText('offline')).toBeNull();
   });
 
-  it('keeps pending controls disabled, busy, and geometrically stable', () => {
+  it('keeps pending controls disabled, busy, and geometrically stable', async () => {
     mocks.scripts[WS] = [script('idle', 'Build', 'idle'), script('running', 'Dev', 'running')];
     mocks.operations[WS] = {
       idle: { action: 'start', pending: true },
@@ -487,14 +486,15 @@ describe('WorkspaceShellList development script controls', () => {
 
     const start = screen.getByRole('button', { name: 'Start Build' }) as HTMLButtonElement;
     const stop = screen.getByRole('button', { name: 'Stop' }) as HTMLButtonElement;
-    const restart = screen.getByRole('button', { name: 'Restart Dev' }) as HTMLButtonElement;
+    await fireEvent.click(within(scriptRow('running')).getByRole('button', { name: 'Actions' }));
+    const restart = await screen.findByRole('menuitem', { name: 'Restart Dev' });
     expect(start.disabled).toBe(true);
     expect(start.getAttribute('aria-busy')).toBe('true');
     expect(stop.disabled).toBe(true);
-    expect(stop.getAttribute('aria-busy')).toBeNull();
-    expect(restart.disabled).toBe(true);
+    expect(stop.getAttribute('aria-busy')).toBe('true');
+    expect(restart.getAttribute('aria-disabled')).toBe('true');
     expect(restart.getAttribute('aria-busy')).toBe('true');
     expect(within(start).getByRole('status')).toBeTruthy();
-    expect(within(restart).getByRole('status')).toBeTruthy();
+    expect(within(stop).getByRole('status')).toBeTruthy();
   });
 });

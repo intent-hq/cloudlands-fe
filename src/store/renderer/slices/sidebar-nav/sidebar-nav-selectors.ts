@@ -202,6 +202,11 @@ export const selectWorkspaceCollapsedNoteIds = store.createSelector(
     state.sidebarNav.collapsedNoteIdsByWorkspaceId[workspaceId] ?? [],
 );
 
+export const selectWorkspaceExpandedNoteIds = store.createSelector(
+  (state, workspaceId: string): string[] =>
+    state.sidebarNav.expandedNoteIdsByWorkspaceId?.[workspaceId] ?? [],
+);
+
 export const selectChiefActiveAgentId = store.createSelector(
   (state): string | null => state.sidebarNav.chiefActiveAgentId,
 );

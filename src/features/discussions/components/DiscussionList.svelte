@@ -28,7 +28,7 @@
 </script>
 
 <section class="mb-4 min-w-0" aria-label={m.workspace_discussion_list_label()}>
-  <h3 class="px-2.5 py-1.5 type-caption text-muted-foreground">
+  <h3 class="px-2 py-1.5 type-caption text-muted-foreground">
     {m.workspace_discussion_list_label()}
   </h3>
   <ListView
@@ -40,7 +40,7 @@
     virtualize={false}
   >
     {#snippet row({ item })}
-      <ListRow class="min-h-9 gap-2.5 px-2.5 py-2" data-workspace-discussion-open={item.id}>
+      <ListRow class="min-h-9 gap-2.5 px-2 py-2" data-workspace-discussion-open={item.id}>
         {#snippet leading()}
           <Fa icon={faComment} class="text-muted-foreground" />
         {/snippet}

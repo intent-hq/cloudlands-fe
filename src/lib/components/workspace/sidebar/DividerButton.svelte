@@ -6,7 +6,8 @@
    * Has a background to "cut through" the divider line
    */
   import Fa from 'svelte-fa';
-  import { faArrowDown, faArrowRight, faXmark } from '@fortawesome/free-solid-svg-icons';
+  import { faArrowDown, faArrowRight } from '@fortawesome/free-solid-svg-icons';
+  import DisclosureIcon from '$lib/components/icons/DisclosureIcon.svelte';
   import type { Snippet } from 'svelte';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import { Tooltip as TooltipPrimitive } from 'bits-ui';
@@ -30,7 +31,7 @@
     onclick,
     disabled = false,
     loading = false,
-    expanded = false,
+    expanded,
     showArrow = true,
     arrowUp = false,
     arrowRight = false,
@@ -53,7 +54,7 @@
   {#if loading}
     <IntentMarkLoader size={12} />
   {:else}
-    {#if arrowUp && showArrow}
+    {#if arrowUp && showArrow && expanded === undefined}
       <Fa icon={faArrowDown} size="xs" class="text-ghost rotate-180" />
     {/if}
     {#if icon}
@@ -62,9 +63,9 @@
     {#if children}
       {@render children()}
     {/if}
-    {#if !arrowUp && showArrow}
-      {#if expanded}
-        <Fa icon={faXmark} size="xs" class="text-ghost" />
+    {#if showArrow && (expanded !== undefined || !arrowUp)}
+      {#if expanded !== undefined}
+        <DisclosureIcon {expanded} />
       {:else if arrowRight}
         <Fa icon={faArrowRight} size="xs" class="text-ghost" />
       {:else}
@@ -86,6 +87,7 @@
             class={buttonClass}
             {onclick}
             {disabled}
+            aria-expanded={expanded}
             {...restProps}
             {...props}
           >
@@ -107,7 +109,15 @@
     </TooltipPrimitive.Root>
   </TooltipPrimitive.Provider>
 {:else}
-  <Button variant="ghost" type="button" class={buttonClass} {onclick} {disabled} {...restProps}>
+  <Button
+    variant="ghost"
+    type="button"
+    class={buttonClass}
+    {onclick}
+    {disabled}
+    aria-expanded={expanded}
+    {...restProps}
+  >
     {@render buttonContent()}
   </Button>
 {/if}

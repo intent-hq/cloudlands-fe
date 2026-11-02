@@ -631,7 +631,6 @@ describe('WorkspaceAgentsList rendering', () => {
       standalone.id,
     ]);
     for (const row of panelRows(container)) {
-      expect(row.className).toContain('h-10');
       expect(row.closest('[data-lazy-agent-card]')).toBeTruthy();
     }
     expect(container.querySelector('[data-testid="agent-card-preview"]')).toBeNull();
@@ -647,13 +646,15 @@ describe('WorkspaceAgentsList rendering', () => {
     expect(toggle?.getAttribute('aria-expanded')).toBe('false');
     expect(toggle?.querySelector('[data-agent-avatar-with-state]')).toBeNull();
     expect(toggle?.querySelector('[data-agent-avatar]')).toBeNull();
-    expect(toggle?.textContent).toContain(
+    expect(toggle?.getAttribute('aria-label')).toBe(
       m.workspace_agentsList_delegatedRunning_label({ running: '1', total: '1' }),
     );
     expect(rowFor(container, child.id)).toBeNull();
     await fireEvent.click(toggle!);
     expect(toggle?.getAttribute('aria-expanded')).toBe('true');
-    expect(toggle?.textContent).toContain(m.workspace_agentsList_delegated_label({ count: '1' }));
+    expect(toggle?.getAttribute('aria-label')).toBe(
+      m.workspace_agentsList_delegated_label({ count: '1' }),
+    );
     expect(rowFor(container, child.id)).toBeTruthy();
     expect(container.querySelectorAll('[data-agent-delegation-toggle]')).toHaveLength(1);
   });

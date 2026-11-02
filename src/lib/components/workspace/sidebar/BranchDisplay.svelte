@@ -199,7 +199,7 @@
           disabled={branchRename.saving}
           size="compact"
           aria-labelledby={`${fieldId}-working`}
-          class="text-ui font-normal"
+          class="type-caption font-normal"
           placeholder={m.workspace_sidebarHeader_branchName_placeholder()}
         />
       {:else}

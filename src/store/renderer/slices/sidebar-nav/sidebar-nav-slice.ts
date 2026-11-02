@@ -17,6 +17,7 @@ export const MULTISELECT_SIDEBAR_SELECTED_TABS_PREFIX = 'multiselect-sidebar-';
 export const MULTISELECT_SIDEBAR_TAB_ORDER_KEY = 'multiselect-sidebar-tab-order';
 export const WORKSPACE_NOTE_ORDER_PREFIX = 'workspace-note-order-';
 export const WORKSPACE_COLLAPSED_NOTES_PREFIX = 'workspace-collapsed-notes-';
+export const WORKSPACE_EXPANDED_NOTES_PREFIX = 'workspace-expanded-notes-';
 
 // ── Initial State ──
 export const initialState: SidebarNavState = {
@@ -28,6 +29,7 @@ export const initialState: SidebarNavState = {
   multiSelectSelectedTabIdsByWorkspaceId: {},
   noteOrderByWorkspaceId: {},
   collapsedNoteIdsByWorkspaceId: {},
+  expandedNoteIdsByWorkspaceId: {},
   chiefActiveAgentId: null,
   statsOverlayOpen: false,
   autoArchiveIdleAfterDays: null,
@@ -97,6 +99,10 @@ export const toggleWorkspaceCollapsedNote = createAction<[workspaceId: string, n
   'sidebarNav/toggleWorkspaceCollapsedNote',
 );
 
+export const setWorkspaceNoteExpanded = createAction<
+  [workspaceId: string, noteId: string, expanded: boolean]
+>('sidebarNav/setWorkspaceNoteExpanded');
+
 // Usage-stats overlay
 export const setStatsOverlayOpen = createAction<[open: boolean]>('sidebarNav/setStatsOverlayOpen');
 
@@ -116,7 +122,12 @@ export const hydrateSidebarNav = createAction(
 export const hydrateWorkspaceSidebarUi = createAction<
   [
     workspaceId: string,
-    data: { selectedTabIds?: string[]; noteOrder?: string[]; collapsedNoteIds?: string[] },
+    data: {
+      selectedTabIds?: string[];
+      noteOrder?: string[];
+      collapsedNoteIds?: string[];
+      expandedNoteIds?: string[];
+    },
   ]
 >('sidebarNav/hydrateWorkspaceSidebarUi');
 
@@ -187,6 +198,28 @@ sidebarNavReducer.with(
     };
   },
 );
+sidebarNavReducer.with(
+  setWorkspaceNoteExpanded,
+  (state, { payload: [workspaceId, noteId, expanded] }) => {
+    const collapsed = (state.collapsedNoteIdsByWorkspaceId[workspaceId] ?? []).filter(
+      (id) => id !== noteId,
+    );
+    const opened = (state.expandedNoteIdsByWorkspaceId?.[workspaceId] ?? []).filter(
+      (id) => id !== noteId,
+    );
+    return {
+      ...state,
+      collapsedNoteIdsByWorkspaceId: {
+        ...state.collapsedNoteIdsByWorkspaceId,
+        [workspaceId]: expanded ? collapsed : [...collapsed, noteId],
+      },
+      expandedNoteIdsByWorkspaceId: {
+        ...state.expandedNoteIdsByWorkspaceId,
+        [workspaceId]: expanded ? [...opened, noteId] : opened,
+      },
+    };
+  },
+);
 sidebarNavReducer.with(openPanel, (state, { payload: [item] }) => ({
   ...state,
   panelItem: item,
@@ -215,6 +248,10 @@ sidebarNavReducer.with(hydrateWorkspaceSidebarUi, (state, { payload: [workspaceI
           ...state.noteOrderByWorkspaceId,
           [workspaceId]: data.noteOrder,
         },
+  expandedNoteIdsByWorkspaceId:
+    data.expandedNoteIds === undefined
+      ? state.expandedNoteIdsByWorkspaceId
+      : { ...state.expandedNoteIdsByWorkspaceId, [workspaceId]: data.expandedNoteIds },
   collapsedNoteIdsByWorkspaceId:
     data.collapsedNoteIds === undefined
       ? state.collapsedNoteIdsByWorkspaceId
