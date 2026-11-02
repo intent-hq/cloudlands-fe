@@ -582,7 +582,7 @@ Prompt.`;
   });
 
   describe('role/teamAgents/icon frontmatter (PROTOCOL §5.11 lenient reads)', () => {
-    it.each(['lead', 'orchestrator', 'internal'])(
+    it.each(['orchestrator', 'internal'])(
       'should parse the %s role and the icon scalar',
       (role) => {
         const content = `---
@@ -606,7 +606,7 @@ Prompt.`;
     );
 
     it('should read unknown role values as an omitted key (never rejects)', () => {
-      expect(parseRoleScalar('lead')).toBe('lead');
+      expect(parseRoleScalar('lead')).toBeUndefined();
       expect(parseRoleScalar('orchestrator')).toBe('orchestrator');
       expect(parseRoleScalar('internal')).toBe('internal');
       expect(parseRoleScalar('sidekick')).toBeUndefined();

@@ -513,7 +513,7 @@ describe('agentCreationSaga', () => {
   });
 
   it('restores the workspace specialist without reusing prior agent overrides', async () => {
-    mocks.backendRequest.mockResolvedValue({ specialistId: 'implementor' });
+    mocks.backendRequest.mockResolvedValue({ specialistId: 'developer' });
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
     const current = state('', [], 'codex', { codex: 'settings-model' });
     const previous = {
@@ -533,10 +533,10 @@ describe('agentCreationSaga', () => {
     expect(mocks.createAgent).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        name: 'Implementor',
+        name: 'Developer',
         nameExplicitlySet: false,
         provider: 'codex',
-        metadata: { specialist: 'implementor' },
+        metadata: { specialist: 'developer' },
       }),
     );
     const config = mocks.createAgent.mock.calls[0][1];
@@ -547,7 +547,7 @@ describe('agentCreationSaga', () => {
   });
 
   it('reads Settings again for each creation while keeping specialist memory', async () => {
-    mocks.backendRequest.mockResolvedValue({ specialistId: 'implementor' });
+    mocks.backendRequest.mockResolvedValue({ specialistId: 'developer' });
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
     let current = state('', [], 'codex', { codex: 'first-model' });
     const { channel, task } = start(() => current);
@@ -555,14 +555,14 @@ describe('agentCreationSaga', () => {
     await settle();
     expect(mocks.createAgent.mock.calls[0][1]).toMatchObject({
       provider: 'codex',
-      metadata: { specialist: 'implementor' },
+      metadata: { specialist: 'developer' },
     });
     current = state('', [], 'claude-code', { 'claude-code': 'new-model' });
     channel.put(createAgentRequested(WS));
     await settle();
     expect(mocks.createAgent.mock.calls[1][1]).toMatchObject({
       provider: 'claude-code',
-      metadata: { specialist: 'implementor' },
+      metadata: { specialist: 'developer' },
     });
     expect(mocks.backendRequest).toHaveBeenCalledTimes(2);
     task.cancel();
@@ -603,7 +603,15 @@ describe('agentCreationSaga', () => {
     task.cancel();
   });
 
-  it.each([undefined, 'removed', 'verifier', 'chief-of-staff', 'pr-reviewer'])(
+  it.each([
+    undefined,
+    'removed',
+    'spec-writer',
+    'implementor',
+    'verifier',
+    'chief-of-staff',
+    'pr-reviewer',
+  ])(
     'falls back to the configured specialist for unavailable preference %s',
     async (specialistId) => {
       mocks.backendRequest.mockResolvedValue({ specialistId });
@@ -1055,21 +1063,26 @@ describe('agentCreationSaga', () => {
     await task.toPromise();
   });
 
-  it('falls back to implementor when specialists.default is unset', async () => {
-    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
-    const { channel, task } = start();
-    channel.put(runAgentForNoteRequested(WS, NOTE, 'Task note'));
-    await settle();
+  it.each(['', 'spec-writer', 'implementor'])(
+    'runs a general agent when specialists.default is unavailable: %s',
+    async (defaultId) => {
+      mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+      const { channel, task } = start(() => state(defaultId));
+      channel.put(runAgentForNoteRequested(WS, NOTE, 'Task note'));
+      await settle();
 
-    expect(mocks.createAgent).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        metadata: { taskNoteId: NOTE, source: 'task-run', specialist: 'implementor' },
-      }),
-    );
-    task.cancel();
-    await task.toPromise();
-  });
+      expect(mocks.createAgent).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          metadata: { taskNoteId: NOTE, source: 'task-run' },
+          behaviorPrompt: undefined,
+          model: undefined,
+        }),
+      );
+      task.cancel();
+      await task.toPromise();
+    },
+  );
 
   it('builds the initial message from cached content without fetching for a full row', async () => {
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
@@ -1201,7 +1214,7 @@ describe('agentCreationSaga', () => {
     await task.toPromise();
   });
 
-  it('falls back to implementor when specialists.default is a hidden specialist', async () => {
+  it('falls back to a general agent when specialists.default is a hidden specialist', async () => {
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
     const hidden: FileSpecialist = {
       id: 'chief-of-staff',
@@ -1220,14 +1233,16 @@ describe('agentCreationSaga', () => {
     expect(mocks.createAgent).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        metadata: { taskNoteId: NOTE, source: 'task-run', specialist: 'implementor' },
+        metadata: { taskNoteId: NOTE, source: 'task-run' },
+        behaviorPrompt: undefined,
+        model: undefined,
       }),
     );
     task.cancel();
     await task.toPromise();
   });
 
-  it('falls back to implementor when specialists.default is gated invisible (pr-reviewer without GitHub auth)', async () => {
+  it('falls back to a general agent when specialists.default is gated invisible (pr-reviewer without GitHub auth)', async () => {
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
     const { channel, task } = start(() => state('pr-reviewer'));
     channel.put(runAgentForNoteRequested(WS, NOTE, 'Task note'));
@@ -1236,7 +1251,9 @@ describe('agentCreationSaga', () => {
     expect(mocks.createAgent).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        metadata: { taskNoteId: NOTE, source: 'task-run', specialist: 'implementor' },
+        metadata: { taskNoteId: NOTE, source: 'task-run' },
+        behaviorPrompt: undefined,
+        model: undefined,
       }),
     );
     task.cancel();

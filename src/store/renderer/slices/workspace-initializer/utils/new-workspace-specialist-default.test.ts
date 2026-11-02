@@ -104,10 +104,6 @@ describe('resolveNewWorkspaceSpecialistDefault', () => {
 });
 
 describe('selectNewWorkspaceDefaultSpecialist', () => {
-  const catalogOrchestratorId = SPECIALISTS.find(
-    (s) => s.role === 'lead' || s.role === 'orchestrator',
-  )?.id;
-
   function mockState(workspaceInitializer: Partial<WorkspaceInitializerState>): StoreState {
     return {
       workspaceInitializer: { ...workspaceInitializerInitialState, ...workspaceInitializer },
@@ -116,19 +112,25 @@ describe('selectNewWorkspaceDefaultSpecialist', () => {
     } as unknown as StoreState;
   }
 
-  it('resolves the remembered team mode to the orchestrator from the store', () => {
-    expect(catalogOrchestratorId).toBeDefined();
+  it('falls back to General for remembered team mode after the built-in lead is removed', () => {
     const state = mockState({ lastSubmittedAgent: { isTeamMode: true } });
-    expect(selectNewWorkspaceDefaultSpecialist.select(state)).toBe(catalogOrchestratorId);
+    expect(selectNewWorkspaceDefaultSpecialist.select(state)).toBeNull();
   });
 
-  it('resolves the in-progress single-agent selection from the store', () => {
-    const state = mockState({
-      compactFormState: { repoPath: '/repo', isTeamMode: false, selectedSpecialist: 'implementor' },
-      lastSubmittedAgent: { isTeamMode: true, selectedSpecialist: null },
-    });
-    expect(selectNewWorkspaceDefaultSpecialist.select(state)).toBe('implementor');
-  });
+  it.each(['spec-writer', 'implementor'])(
+    'falls back to General for removed saved selection %s',
+    (selectedSpecialist) => {
+      const state = mockState({
+        compactFormState: { repoPath: '/repo', isTeamMode: false, selectedSpecialist },
+      });
+      expect(selectNewWorkspaceDefaultSpecialist.select(state)).toBeNull();
+      expect(
+        selectNewWorkspaceDefaultSpecialist.select(
+          mockState({ lastSubmittedAgent: { selectedSpecialist } }),
+        ),
+      ).toBeNull();
+    },
+  );
 
   it('resolves the first-launch default from the store when nothing is remembered', () => {
     expect(selectNewWorkspaceDefaultSpecialist.select(mockState({}))).toBe(

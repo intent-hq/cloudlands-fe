@@ -85,17 +85,8 @@ describe('Specialist Configuration', () => {
   });
 
   describe('getSpecialistById', () => {
-    it('should return spec-writer specialist', () => {
-      const specialist = getSpecialistById('spec-writer');
-      expect(specialist).toBeDefined();
-      expect(specialist!.id).toBe('spec-writer');
-    });
-
-    it('should return implementor specialist', () => {
-      const specialist = getSpecialistById('implementor');
-      expect(specialist).toBeDefined();
-      expect(specialist!.id).toBe('implementor');
-      expect(specialist!.name).toBe('Implementor');
+    it.each(['spec-writer', 'implementor'])('does not include retired built-in %s', (id) => {
+      expect(getSpecialistById(id)).toBeUndefined();
     });
 
     it('does not include verifier in the built-in catalog', () => {
@@ -169,8 +160,6 @@ describe('Specialist Configuration', () => {
   describe('Specialist ID Validation', () => {
     it('all specialists have valid IDs matching type constraints', () => {
       const validIds = [
-        'spec-writer',
-        'implementor',
         'pr-reviewer',
         'vulnerability-scanner',
         'ui-designer',
@@ -249,8 +238,8 @@ describe('Specialist Configuration', () => {
 
       expect(ids).not.toContain('pr-reviewer');
       // Other specialists should still be present
-      expect(ids).toContain('spec-writer');
-      expect(ids).toContain('implementor');
+      expect(ids).not.toContain('spec-writer');
+      expect(ids).not.toContain('implementor');
       expect(ids).not.toContain('verifier');
     });
 
@@ -269,7 +258,7 @@ describe('Specialist Configuration', () => {
     // Model resolution is daemon-owned: the main process passes the
     // frontmatter model through verbatim ('' when no model).
     it('falls back to the caller coding agent for built-in specialists without an explicit codingAgent', () => {
-      const resolved = getEffectiveSpecialist('implementor', 'codex');
+      const resolved = getEffectiveSpecialist('developer', 'codex');
 
       expect(resolved).not.toBeNull();
       expect(resolved?.codingAgent).toBe('codex');
@@ -332,11 +321,11 @@ describe('Specialist Configuration', () => {
     it('does not apply electron-store overrides (Wave 2)', () => {
       mockSettingsData['specialists-overrides'] = {
         codingAgentOverrides: {
-          implementor: 'codex',
+          developer: 'codex',
         },
       };
 
-      const resolved = getEffectiveSpecialist('implementor', 'auggie');
+      const resolved = getEffectiveSpecialist('developer', 'auggie');
 
       expect(resolved).not.toBeNull();
       // Override from electron-store is no longer applied
@@ -414,7 +403,7 @@ describe('Specialist Configuration', () => {
     });
 
     it('resolves file-based specialist overrides correctly', async () => {
-      // Write a user file that overrides the bundled implementor specialist
+      // Preserve a user-authored specialist even when its old built-in id is retired
       await ensureSpecialistsDirectory();
       await writeSpecialistFile({
         id: 'implementor',

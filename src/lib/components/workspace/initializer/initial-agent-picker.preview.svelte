@@ -36,13 +36,14 @@
   }
 
   interface Props {
-    state?: 'populated' | 'empty' | 'compact' | 'welcome' | 'crowded';
+    state?: 'populated' | 'empty' | 'compact' | 'welcome' | 'crowded' | 'builtin';
   }
   export const preview = definePreview<Props>({
     id: 'initial-agent-picker',
     title: 'Initial agent picker',
     defaultState: 'populated',
     states: {
+      builtin: { props: { state: 'builtin' } },
       populated: { props: { state: 'populated' } },
       empty: { props: { state: 'empty' } },
       compact: { props: { state: 'compact' } },
@@ -54,6 +55,7 @@
 
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
+  import { SPECIALISTS } from '$lib/constants/specialists';
   import InitialAgentPicker from './InitialAgentPicker.svelte';
   import SpecialistDropdown from '$lib/components/chat/SpecialistDropdown.svelte';
   import RegularAgentWelcome from '$lib/components/chat/RegularAgentWelcome.svelte';
@@ -99,35 +101,43 @@
   store.dispatch(
     setFileSpecialists(
       untrack(() =>
-        scenario === 'empty'
-          ? []
-          : [
-              {
-                id: 'fixture-developer',
-                name: 'Developer',
-                description: 'Builds and verifies focused changes.',
-                model: 'fixture-model',
-                codingAgent: 'codex',
-                behaviorPrompt:
-                  '## Developer\n\nWork on one focused task at a time.\n\nInspect the relevant components before changing them.\n\nUse the existing design system.\n\nPreserve keyboard and pointer behavior.\n\nVerify narrow and wide layouts.\n\nRun focused tests and report the results.',
-                filePath: '/fixture/developer.md',
-                source: 'user',
-                icon: 'developer',
-              },
-              {
-                id: 'fixture-long',
-                name: 'A specialist with a very long descriptive name',
-                description:
-                  'Investigates difficult rendering problems and verifies accessible behavior in narrow application panels.',
-                model: 'fixture-model',
-                codingAgent: 'codex',
-                behaviorPrompt: '',
-                filePath: '/fixture/long.md',
-                source: 'user',
-                icon: 'reviewer',
-              },
-              ...(scenario === 'crowded' ? crowdedSpecialists() : []),
-            ],
+        scenario === 'builtin'
+          ? SPECIALISTS.map((specialist) => ({
+              ...specialist,
+              model: '',
+              behaviorPrompt: specialist.defaultBehaviorPrompt,
+              filePath: `/fixture/${specialist.id}.md`,
+              source: 'user' as const,
+            }))
+          : scenario === 'empty'
+            ? []
+            : [
+                {
+                  id: 'fixture-developer',
+                  name: 'Developer',
+                  description: 'Builds and verifies focused changes.',
+                  model: 'fixture-model',
+                  codingAgent: 'codex',
+                  behaviorPrompt:
+                    '## Developer\n\nWork on one focused task at a time.\n\nInspect the relevant components before changing them.\n\nUse the existing design system.\n\nPreserve keyboard and pointer behavior.\n\nVerify narrow and wide layouts.\n\nRun focused tests and report the results.',
+                  filePath: '/fixture/developer.md',
+                  source: 'user',
+                  icon: 'developer',
+                },
+                {
+                  id: 'fixture-long',
+                  name: 'A specialist with a very long descriptive name',
+                  description:
+                    'Investigates difficult rendering problems and verifies accessible behavior in narrow application panels.',
+                  model: 'fixture-model',
+                  codingAgent: 'codex',
+                  behaviorPrompt: '',
+                  filePath: '/fixture/long.md',
+                  source: 'user',
+                  icon: 'reviewer',
+                },
+                ...(scenario === 'crowded' ? crowdedSpecialists() : []),
+              ],
       ),
     ),
   );

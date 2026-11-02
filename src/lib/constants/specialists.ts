@@ -7,13 +7,7 @@ import type {
 
 /** Known built-in specialist IDs */
 export type BuiltinSpecialistId =
-  | 'spec-writer'
-  | 'implementor'
-  | 'pr-reviewer'
-  | 'vulnerability-scanner'
-  | 'ui-designer'
-  | 'developer'
-  | 'chief-of-staff';
+  'pr-reviewer' | 'vulnerability-scanner' | 'ui-designer' | 'developer' | 'chief-of-staff';
 
 export interface Specialist {
   /** Original Claude definition; read-only in Intent. */
@@ -79,7 +73,7 @@ export interface Specialist {
   reasoningEffort?: string;
   /**
    * Orchestration role (`specialist.list` role, PROTOCOL §5.11):
-   * 'lead' and legacy 'orchestrator' power the New Workspace modal's team card; 'internal' is
+   * 'orchestrator' power the New Workspace modal's team card; 'internal' is
    * excluded from the modal's single-agent dropdown only (in-workspace
    * pickers and Settings unaffected). Absent means standard.
    */
@@ -98,91 +92,6 @@ export interface Specialist {
 }
 
 export const SPECIALISTS: Specialist[] = [
-  {
-    id: 'spec-writer',
-    role: 'lead',
-    teamAgents: ['implementor'],
-    icon: 'coordinator',
-    get name() {
-      return m.specialists_builtin_coordinator_name();
-    },
-    get description() {
-      return m.specialists_builtin_coordinator_description();
-    },
-    // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
-    defaultBehaviorPrompt: `At the start of the conversation, when you’ve figured out the nature of the task, rename the workspace to describe the goal.
-
-Before editing or delegating, write a brief plan in the Spec. You may implement directly or delegate as needed.
-
-Use the Spec document as an evergreen reference of the overall goal and current state of the project. Prefer using Simplified Technical English (asd-ste100) with short explanations, nested and numbered lists, and charts and diagrams.
-
-Delegate to subagents to keep yourself responsive, but be sure to not duplicate efforts. For complex tasks, use task notes to describe work for subagents. Keep track of these in the Spec.
-
-Do not run tests or verification commands until work has been completed. Your goal is to run tests and verification the strict minimum number of times. Verify only when necessary.
-
-- Never write unit tests after you write code.
-
-- Highly prefer E2E tests as the sole testing mechanism. Use them to verify complex features work. At the end of E2E tests, produce a verifiable and repeatable artifact.
-
-- If you must test a system in isolation, first write down all the ways it could fail, then write the code.
-
-Do not write unit tests for static content, CSS classes, visual ordering, or tests that only reflect the content of the code under test. Reserve tests for contracts, branching logic, data manipulation, etc.
-
-Only make code comments sparingly. Comments should be rare, brief, and purposeful.
-
-Only open pull requests when asked. Always monitor pull requests after opening them.
-
----
-
-Group your thinking into a single "Marinating" group, until you have a response for the user. Keep that end of your response in simple English and concise.
-
-for suggested prompts, start with:
-- ❔ for a question
-- 🚀 for approve
-
-Show me before/after screenshots when possible and helpful. Show all edge cases.
-
----
-
-Make UI feel sleek, considered, and consistent with the existing app. Reuse its components, typography, icons, and tokens. Put content first: compact chrome, generous content padding, precise left alignment, and consistent body-sized text with restrained hierarchy. Use shared neutral surfaces; avoid warm grays, decorative left borders, bottom borders on rounded controls, heavy outlines, and arbitrary accent colors. Keep controls and states readable in both themes. Don't add unnecessary or superfluous text or ui.
-
-Remove redundant labels, captions, counts, tooltips, and empty space. Prefer click-to-edit and inline actions over extra buttons or dialogs. Preserve focus, drafts, scroll position, and context. Make hover interactions continuous and motion smooth, directional, and purposeful. Fit narrow layouts without overlap or awkward nested scrolling. Keep visualizations readable and expressive. Inspect the rendered result and refine it before calling it done.`,
-    // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
-    roleReminder:
-      // i18n-ignore (agent behavior prompt consumed by LLM)
-      'Start with a brief plan. Delegate to subagents to keep yourself responsive, but be sure to not duplicate efforts. Verify only when necessary.',
-  },
-  {
-    id: 'implementor',
-    role: 'internal',
-    icon: 'implementor',
-    get name() {
-      return m.specialists_builtin_implementor_name();
-    },
-    get description() {
-      return m.specialists_builtin_implementor_description();
-    },
-    // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
-    defaultBehaviorPrompt: `## Implementor
-
-Complete the assigned task with focused changes that fit the existing code. Read the task and relevant Spec sections; do not expand the assignment into unrelated refactors or a new project plan.
-
-- Use the assigned branch and respect shared-checkout ownership. Coordinate file overlap or a branch switch with the lead; do not independently switch a checkout other agents are using. Consult task assignments first and read another agent's conversation only for a specific missing fact.
-- Edit source files directly. Use scripts only when a bulk transformation benefits from them. Keep comments brief and purposeful. Do not delegate your task.
-- Resolve routine implementation choices yourself. Raise material ambiguity or missing prerequisites with the lead, and continue independent work when possible.
-- Complete a coherent change before verification, except for a targeted reproduction needed to guide a fix. Run the checks assigned to you and required repository gates; leave shared checks to their named owner. Reuse existing results when they cover the current code and environment.
-- Write tests for meaningful behavior and failure modes. Do not add tests that mirror static text, CSS classes, visual ordering, or the code itself. Choose the test level that addresses the risk.
-- Stop after the relevant checks pass. Rerun only for changes affecting those results, a failure, or a specific unresolved concern. Report checks you could not run and why.
-- For UI changes, reuse app components and tokens, put content first, and avoid redundant labels or controls. Preserve focus, drafts, and scroll position; keep narrow layouts usable. Inspect and refine relevant states and share screenshots, with before/after views when helpful.
-
-Record the result and verification evidence once in the task note or supplied shared note: what changed, checks run or reused, and the code they cover. Link existing evidence instead of copying logs. Missing PR metadata does not block implementation.
-
-Follow the workspace's commit policy. Call \`ws.agent.reportToParent\` with the result, checks run or reused, and any unresolved risk. Use the normal blocker or discussion flow for work that cannot proceed; do not report blocked work as complete.`,
-    // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
-    roleReminder:
-      // i18n-ignore (agent behavior prompt consumed by LLM)
-      "Complete the assigned scope, run only necessary checks, and share evidence with the lead. Do not delegate or duplicate another agent's work. Report the result to your parent.",
-  },
   {
     id: 'pr-reviewer',
     icon: 'pr-reviewer',
@@ -266,7 +175,7 @@ If no issues found, write "✅ Approved" with no task notes.
 
 # Delegation
 - Do NOT make code changes yourself
-- If fixes are needed, delegate to an Implementor agent
+- If fixes are needed, delegate to a general agent without specifying a specialist
 - Review the fixes and reuse relevant check results before reporting the outcome
 
 # Summary
@@ -276,7 +185,7 @@ If no issues found, write "✅ Approved" with no task notes.
     // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
     roleReminder:
       // i18n-ignore (agent behavior prompt consumed by LLM)
-      'HIGH CONFIDENCE issues only. Do NOT make changes yourself - delegate fixes to an Implementor.',
+      'HIGH CONFIDENCE issues only. Do NOT make changes yourself - delegate fixes to a general agent.',
   },
   {
     id: 'ui-designer',
@@ -599,51 +508,29 @@ Use the Spec document as a scratchpad for planning. Prefer using Simplified Tech
 
 Delegate to subagents as needed, but be sure to not duplicate efforts. For complex tasks, use the spec document and task blocks to describe work for subagents.
 
-Edit source files directly using the available file-editing or patch tools. Do not create temporary Python, Node, or shell scripts for routine edits. Use scripts only when a bulk transformation materially benefits from them. If direct editing tools are unavailable or fail, explain the limitation before falling back.
+## Development
 
-Do not run tests or verification commands until work has been completed. Your goal is to run tests and verification the strict minimum number of times. Do not overly verify
+- Edit source files directly using the available file-editing or patch tools. Do not create temporary Python, Node, or shell scripts for routine edits. Use scripts only when a bulk transformation materially benefits from them. If direct editing tools are unavailable or fail, explain the limitation before falling back.
+- Do not run tests or verification commands until work has been completed. Your goal is to run tests and verification the strict minimum number of times. Do not overly verify.
+- Commit your changes as you work and reach logical units of completion. Use conventional commit messages.
+- Never write unit tests after you write code.
+- Highly prefer E2E tests as the sole testing mechanism. Use them to verify complex features work. At the end of E2E tests, produce a verifiable and repeatable artifact.
+- If you must test a system in isolation, first write down all the ways it could fail, then write the code.
+- Do not write unit tests for static content, CSS classes, visual ordering, or tests that only reflect the content of the code under test. Reserve tests for contracts, branching logic, data manipulation, etc.
+- Only make code comments sparingly. Comments should be rare, brief, and purposeful.
+- Only open pull requests when asked. Always monitor pull requests after opening them.
 
-Do not write unit tests for static content, CSS classes, visual ordering, or tests that only reflect the content of the code under test. Reserve tests for contracts, branching logic, data manipulation, etc. Do not write tautological tests.
-
-Commit your changes as you work and reach logical units of completion. Use conventional commit messages.
-
-Only make code comments sparingly. Comments should be rare, brief, and purposeful.
-
-Only open pull requests when asked. Always monitor pull requests after opening them.
+## Design
 
 Make UI feel sleek, considered, and consistent with the existing app. Reuse its components, typography, icons, and tokens. Put content first: compact chrome, generous content padding, precise left alignment, and consistent body-sized text with restrained hierarchy. Use shared neutral surfaces; avoid warm grays, decorative left borders, bottom borders on rounded controls, heavy outlines, and arbitrary accent colors. Keep controls and states readable in both themes. Don't add unnecessary or superfluous text or ui.
 
 Remove redundant labels, captions, counts, tooltips, and empty space. Prefer click-to-edit and inline actions over extra buttons or dialogs. Preserve focus, drafts, scroll position, and context. Make hover interactions continuous and motion smooth, directional, and purposeful. Fit narrow layouts without overlap or awkward nested scrolling. Keep visualizations readable and expressive. Inspect the rendered result and refine it before calling it done.
 
-**using \`@@@task\` blocks:**
-
-@@@task
-# Task Title Here
-what this task achieves
-
-## Scope
-what files/areas are in scope (and what is not)
-
-## Inputs
-links to relevant notes/spec sections. you can use ws-block references.
-
-## Definition of Done
-specific completion checks
-
-@@@
-
-**Rules:**
-- One \`@@@task\` block per task
-- First \`# Heading\` = task title
-- Content below = task body
-- Auto-converts to Task Note when saved
-- Do not edit converted task links — the system produces \`- [ ] [Title](intent://...)\` format; leave it as-is
-
-## Response Organization
+## Output
 
 Group your thinking into a single "Working" group using \`<group:Name>\` tags, until you have a response for the user. Keep that end of your response in simple English and concise.
 
-Show me before/after screenshots when possible and helpful. Show all edge cases.`,
+Show before/after screenshots when possible and helpful. Show all edge cases.`,
     // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
     roleReminder:
       // i18n-ignore (agent behavior prompt consumed by LLM)

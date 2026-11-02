@@ -1,7 +1,7 @@
 /**
  * Specialist Delegation Tests
  *
- * Tests that specialist agents (Lead and Implementor)
+ * Tests that specialist agents
  * are used properly and delegate correctly.
  *
  * Uses actual prompts from the codebase to ensure tests stay in sync.
@@ -21,10 +21,8 @@ describe('Specialist Prompts', () => {
   describe('Prompt Loading', () => {
     it('should load all specialist prompts', () => {
       const specialists = getSpecialists();
-      expect(specialists).toHaveLength(7);
+      expect(specialists).toHaveLength(5);
       expect(specialists.map((s) => s.id)).toEqual([
-        'spec-writer',
-        'implementor',
         'pr-reviewer',
         'ui-designer',
         'vulnerability-scanner',
@@ -33,32 +31,22 @@ describe('Specialist Prompts', () => {
       ]);
     });
 
-    it('should load spec-writer behavior prompt', () => {
-      const specWriter = getSpecialist('spec-writer');
-      expect(specWriter).toBeDefined();
-      expect(specWriter!.defaultBehaviorPrompt).toBeDefined();
-      expect(specWriter!.defaultBehaviorPrompt.length).toBeGreaterThan(100);
-    });
-
-    it('should load implementor behavior prompt', () => {
-      const implementor = getSpecialist('implementor');
-      expect(implementor).toBeDefined();
-      expect(implementor!.defaultBehaviorPrompt).toBeDefined();
-      expect(implementor!.defaultBehaviorPrompt.length).toBeGreaterThan(100);
+    it.each(['spec-writer', 'implementor'])('does not load retired specialist %s', (id) => {
+      expect(getSpecialist(id)).toBeUndefined();
     });
   });
 });
 
 describe('Specialist Behavior Validation', () => {
-  describe('Lead Behavior', () => {
-    it('allows optional delegation and direct implementation from Lead', () => {
-      const behavior = getSpecialistBehavior('spec-writer');
+  describe('Developer Behavior', () => {
+    it('allows optional delegation and direct implementation from Developer', () => {
+      const behavior = getSpecialistBehavior('developer');
       expect(behavior).toBeDefined();
       expect(behavior!.delegationExpected).toBeUndefined();
       expect(behavior!.implementationExpected).toBe(true);
     });
 
-    it.each(['spec-writer', 'developer'])('allows %s to implement without delegation', (id) => {
+    it.each(['developer'])('allows %s to implement without delegation', (id) => {
       const actions: AgentAction[] = [
         { agentId: 'agent-1', actionType: 'tool_call', toolName: 'read_note', timestamp: 1 },
         { agentId: 'agent-1', actionType: 'tool_call', toolName: 'write_file', timestamp: 2 },
@@ -69,7 +57,7 @@ describe('Specialist Behavior Validation', () => {
       expect(result.violations).toEqual([]);
     });
 
-    it.each(['spec-writer', 'developer'])('allows %s to delegate', (id) => {
+    it.each(['developer'])('allows %s to delegate', (id) => {
       const actions: AgentAction[] = [
         { agentId: 'agent-1', actionType: 'tool_call', toolName: 'read_note', timestamp: 1 },
         { agentId: 'agent-1', actionType: 'tool_call', toolName: 'delegate_task', timestamp: 2 },
@@ -80,44 +68,12 @@ describe('Specialist Behavior Validation', () => {
       expect(result.valid).toBe(true);
     });
   });
-
-  describe('Implementor Behavior', () => {
-    it('should expect implementation from implementor', () => {
-      const behavior = getSpecialistBehavior('implementor');
-      expect(behavior).toBeDefined();
-      expect(behavior!.delegationExpected).toBe(false);
-      expect(behavior!.implementationExpected).toBe(true);
-    });
-
-    it('should flag implementor delegating as violation', () => {
-      const actions: AgentAction[] = [
-        { agentId: 'agent-1', actionType: 'tool_call', toolName: 'read_file', timestamp: 1 },
-        { agentId: 'agent-1', actionType: 'tool_call', toolName: 'delegate_task', timestamp: 2 },
-        { agentId: 'agent-1', actionType: 'delegation', timestamp: 3 },
-      ];
-
-      const result = validateAgentActions('implementor', actions);
-      expect(result.valid).toBe(false);
-      expect(result.violations.some((v) => v.includes('forbidden action'))).toBe(true);
-    });
-
-    it('should pass when implementor writes code', () => {
-      const actions: AgentAction[] = [
-        { agentId: 'agent-1', actionType: 'tool_call', toolName: 'read_file', timestamp: 1 },
-        { agentId: 'agent-1', actionType: 'tool_call', toolName: 'write_file', timestamp: 2 },
-        { agentId: 'agent-1', actionType: 'completion', timestamp: 3 },
-      ];
-
-      const result = validateAgentActions('implementor', actions);
-      expect(result.valid).toBe(true);
-    });
-  });
 });
 
 describe('Edge Cases', () => {
   describe('Empty Inputs', () => {
     it('should handle empty actions array', () => {
-      const result = validateAgentActions('spec-writer', []);
+      const result = validateAgentActions('developer', []);
       expect(result.valid).toBe(true);
       expect(result.violations).toEqual([]);
     });
@@ -146,7 +102,7 @@ describe('Edge Cases', () => {
         { agentId: 'agent-1', actionType: 'tool_call', timestamp: 1 }, // No toolName
         { agentId: 'agent-1', actionType: 'delegation', timestamp: 2 },
       ];
-      const result = validateAgentActions('spec-writer', actions);
+      const result = validateAgentActions('developer', actions);
       // Should not throw, should process normally
       expect(result).toBeDefined();
     });
@@ -176,7 +132,7 @@ describe('Wave Execution Validation', () => {
         fromAgentId: 'a1',
         toAgentId: 'a2',
         taskNoteId: 't1',
-        specialist: 'implementor',
+        specialist: null,
         waitMode: 'after_all',
         wave: 1,
         timestamp: 100,
@@ -185,7 +141,7 @@ describe('Wave Execution Validation', () => {
         fromAgentId: 'a1',
         toAgentId: 'a3',
         taskNoteId: 't2',
-        specialist: 'implementor',
+        specialist: null,
         waitMode: 'after_all',
         wave: 1,
         timestamp: 110,
@@ -194,7 +150,7 @@ describe('Wave Execution Validation', () => {
         fromAgentId: 'a1',
         toAgentId: 'a4',
         taskNoteId: 't3',
-        specialist: 'implementor',
+        specialist: null,
         waitMode: 'after_all',
         wave: 2,
         timestamp: 200,
@@ -211,7 +167,7 @@ describe('Wave Execution Validation', () => {
         fromAgentId: 'a1',
         toAgentId: 'a2',
         taskNoteId: 't1',
-        specialist: 'implementor',
+        specialist: null,
         waitMode: 'after_all',
         wave: 1,
         timestamp: 100,
@@ -220,7 +176,7 @@ describe('Wave Execution Validation', () => {
         fromAgentId: 'a1',
         toAgentId: 'a3',
         taskNoteId: 't2',
-        specialist: 'implementor',
+        specialist: null,
         waitMode: 'after_all',
         wave: 2,
         timestamp: 50,
@@ -238,7 +194,7 @@ describe('Wave Execution Validation', () => {
         fromAgentId: 'a1',
         toAgentId: 'a2',
         taskNoteId: 't1',
-        specialist: 'implementor',
+        specialist: null,
         waitMode: 'none',
         wave: 1,
         timestamp: 100,
@@ -247,7 +203,7 @@ describe('Wave Execution Validation', () => {
         fromAgentId: 'a1',
         toAgentId: 'a3',
         taskNoteId: 't2',
-        specialist: 'implementor',
+        specialist: null,
         waitMode: 'none',
         wave: 2,
         timestamp: 200,

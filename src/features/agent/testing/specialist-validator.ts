@@ -5,8 +5,7 @@
  * behave according to their roles and delegate properly.
  *
  * Key validations:
- * - Lead can implement directly or delegate
- * - Implementor focuses on assigned tasks, doesn't expand scope
+ * - Developer can implement directly or delegate
  */
 
 import type { Specialist } from '$lib/constants/specialists';
@@ -48,19 +47,6 @@ export interface SpecialistBehavior {
 }
 
 const SPECIALIST_BEHAVIORS: SpecialistBehavior[] = [
-  {
-    id: 'spec-writer',
-    expectedActions: ['read_note', 'delegate_task', 'create_agent', 'add_to_note', 'edit_note'],
-    forbiddenActions: [],
-    implementationExpected: true,
-  },
-  {
-    id: 'implementor',
-    expectedActions: ['read_file', 'write_file', 'edit_file', 'apply_diff', 'run_command'],
-    forbiddenActions: ['delegate_task', 'create_agent'],
-    delegationExpected: false,
-    implementationExpected: true,
-  },
   {
     id: 'pr-reviewer',
     expectedActions: ['read_file', 'read_note', 'add_comment', 'delegate_task', 'create_agent'],

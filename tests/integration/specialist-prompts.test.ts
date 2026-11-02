@@ -72,10 +72,8 @@ describe('Specialist Prompts Verification', () => {
 
   describe('Specialist Definitions', () => {
     it('includes the current bundled specialists', () => {
-      expect(SPECIALISTS).toHaveLength(7);
+      expect(SPECIALISTS).toHaveLength(5);
       expect(SPECIALISTS.map((s) => s.id)).toEqual([
-        'spec-writer',
-        'implementor',
         'pr-reviewer',
         'ui-designer',
         'vulnerability-scanner',
@@ -86,13 +84,9 @@ describe('Specialist Prompts Verification', () => {
 
     it('should not pin a model on any built-in specialist', () => {
       // Absent defaultModel means inherit the global default.
-      const specWriter = getSpecialistById('spec-writer');
-      const implementor = getSpecialistById('implementor');
       const prReviewer = getSpecialistById('pr-reviewer');
       const uiDesigner = getSpecialistById('ui-designer');
 
-      expect(specWriter!.defaultModel).toBeUndefined();
-      expect(implementor!.defaultModel).toBeUndefined();
       expect(prReviewer!.defaultModel).toBeUndefined();
       expect(uiDesigner!.defaultModel).toBeUndefined();
     });
@@ -144,11 +138,11 @@ describe('Specialist Prompts Verification', () => {
       const formatted = await formatSpecialistsForPrompt();
 
       expect(formatted).toContain('## Agent Specialists');
-      expect(formatted).toContain('Implementor');
-      expect(formatted).toContain('implementor');
+      expect(formatted).not.toContain('Implementor');
+      expect(formatted).not.toContain('`implementor`');
       expect(formatted).not.toContain('`verifier`');
       // All specialists should be included so agents know about them
-      expect(formatted).toContain('spec-writer');
+      expect(formatted).not.toContain('`spec-writer`');
       expect(formatted).toContain(
         '| **Vulnerability Scanner** | `vulnerability-scanner` | Finds real, exploitable security vulnerabilities in code |',
       );

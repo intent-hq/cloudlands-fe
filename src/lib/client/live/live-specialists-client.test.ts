@@ -74,7 +74,7 @@ describe('LiveSpecialistsClient (fake transport)', () => {
     expect(defs).toEqual([COORDINATOR_DEF, USER_DEF]);
   });
 
-  it.each(['lead', 'orchestrator', 'internal'] as const)(
+  it.each(['orchestrator', 'internal'] as const)(
     'preserves the %s role from the daemon catalog',
     async (role) => {
       const definition: SpecialistDef = { ...COORDINATOR_DEF, role };
