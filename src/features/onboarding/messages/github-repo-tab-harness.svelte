@@ -7,7 +7,7 @@
     setGithubRepos,
     type GithubRepoItem,
   } from '$store/renderer/slices/github-repos/github-repos-slice';
-  import { getItems } from '@themislib/themis/utils/collections/collection-utils';
+  import { selectGithubRepos } from '$store/renderer/slices/github-repos/github-repos-selectors';
 
   let {
     repos,
@@ -24,7 +24,7 @@
   }
 
   const previousAuth = appStore.state.githubAuth;
-  const previousRepos = getItems(appStore.state.githubRepos.repos);
+  const previousRepos = selectGithubRepos.select(appStore.state);
   appStore.dispatch(
     setGitHubAuthState({
       isAuthenticated: true,
