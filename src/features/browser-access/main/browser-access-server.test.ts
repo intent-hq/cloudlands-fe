@@ -8,7 +8,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import zlib from 'node:zlib';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { WebSocket as WsWebSocket } from 'ws';
 
 import { LoginRateLimiter, SESSION_COOKIE, deriveSessionToken } from './browser-access-auth';
@@ -449,6 +449,33 @@ describe('Browser access server: WebSocket bridge', () => {
       ws!.once('close', (closeCode) => resolve(closeCode)),
     );
     expect(code).toBe(1011);
+  });
+
+  it('cuts the backend off immediately on reset, even if the browser ignores the close', async () => {
+    const dir = tempDir();
+    const socketPath = path.join(dir, 'spy.sock');
+    const received: string[] = [];
+    const upstreams: net.Socket[] = [];
+    const daemon = net.createServer((socket) => {
+      upstreams.push(socket);
+      socket.on('data', (chunk) => received.push(String(chunk)));
+    });
+    await new Promise<void>((resolve) => daemon.listen(socketPath, resolve));
+    cleanups.push(() => new Promise((resolve) => daemon.close(resolve)));
+    const { port, server } = await start({ openUpstream: async () => net.connect(socketPath) });
+    const { ws } = await connectWs(port, 'local', sameOrigin(port));
+    ws!.send('{"id":1}');
+    await vi.waitFor(() => expect(received.join('')).toContain('"id":1'));
+    // An uncooperative browser: stop reading so it never answers the close frame.
+    (ws as unknown as { _socket: net.Socket })._socket.pause();
+    const upstreamClosed = new Promise<void>((resolve) =>
+      upstreams[0]!.once('close', () => resolve()),
+    );
+    server.disconnectAll();
+    ws!.send('{"id":2}');
+    await upstreamClosed;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(received.join('')).not.toContain('"id":2');
   });
 
   it('disconnects every browser when asked (access key reset)', async () => {

@@ -224,7 +224,10 @@ function readForm(request: http.IncomingMessage): Promise<URLSearchParams | null
  * Pipe one browser WebSocket to an upstream newline-delimited stream. Browser
  * frames that arrive before the upstream connects are queued.
  */
-function bridgeWebSocket(socket: WsWebSocket, upstreamPromise: Promise<Duplex>): void {
+function bridgeWebSocket(
+  socket: WsWebSocket,
+  upstreamPromise: Promise<Duplex>,
+): (code: number, reason: string) => void {
   let upstream: Duplex | null = null;
   let connected = false;
   let closed = false;
@@ -238,6 +241,11 @@ function bridgeWebSocket(socket: WsWebSocket, upstreamPromise: Promise<Duplex>):
     if (socket.readyState === socket.OPEN || socket.readyState === socket.CONNECTING) {
       socket.close(code, reason.slice(0, 120));
     }
+  };
+  /** Revoke the bridge now: drop the backend and the socket without waiting for the browser. */
+  const revoke = (code: number, reason: string): void => {
+    shutdown(code, reason);
+    socket.terminate();
   };
 
   socket.on('message', (data, isBinary) => {
@@ -285,6 +293,7 @@ function bridgeWebSocket(socket: WsWebSocket, upstreamPromise: Promise<Duplex>):
         `backend unavailable: ${error instanceof Error ? error.message : String(error)}`,
       ),
   );
+  return revoke;
 }
 
 export function createBrowserAccessServer(deps: BrowserAccessServerDeps): BrowserAccessServer {
@@ -293,6 +302,8 @@ export function createBrowserAccessServer(deps: BrowserAccessServerDeps): Browse
   const limiter = deps.rateLimiter ?? new LoginRateLimiter();
   const gzipCache = new Map<string, { key: string; data: Promise<Buffer> }>();
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE_BYTES });
+  /** Live bridges, revoked synchronously on key reset and shutdown. */
+  const bridges = new Set<(code: number, reason: string) => void>();
 
   const gzipped = (file: string, stat: fs.Stats): Promise<Buffer> => {
     const key = `${stat.mtimeMs}:${stat.size}`;
@@ -525,7 +536,9 @@ export function createBrowserAccessServer(deps: BrowserAccessServerDeps): Browse
     }
     wss.handleUpgrade(request, socket, head, (ws) => {
       log.info(`[BrowserAccess] bridging a browser to backend ${connectionId}`);
-      bridgeWebSocket(ws, deps.openUpstream(connectionId));
+      const revoke = bridgeWebSocket(ws, deps.openUpstream(connectionId));
+      bridges.add(revoke);
+      ws.once('close', () => bridges.delete(revoke));
     });
   });
 
@@ -541,9 +554,12 @@ export function createBrowserAccessServer(deps: BrowserAccessServerDeps): Browse
       });
     },
     disconnectAll(): void {
-      for (const client of wss.clients) client.close(4401, 'access key reset');
+      for (const revoke of [...bridges]) revoke(4401, 'access key reset');
+      bridges.clear();
     },
     close(): Promise<void> {
+      for (const revoke of [...bridges]) revoke(1001, 'browser access stopped');
+      bridges.clear();
       for (const client of wss.clients) client.terminate();
       return new Promise((resolve) => {
         server.close(() => resolve());
