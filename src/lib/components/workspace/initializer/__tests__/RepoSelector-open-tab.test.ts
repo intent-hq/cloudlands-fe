@@ -644,7 +644,7 @@ describe('RepoSelector openOnLocalTab (plain-folder toggle turned off)', () => {
     mocks.dispatch.mockReset();
   });
 
-  it('opens on "Copy local repo" and drops a GitHub selection the consumer cleared', async () => {
+  it('opens on "Existing folder" and drops a GitHub selection the consumer cleared', async () => {
     const rendered = render(RepoSelector, { props: { value: 'octo/alpha' } });
     const trigger = rendered.container.querySelector('button')!;
     expect(trigger.textContent).toContain('octo/alpha');
@@ -653,8 +653,8 @@ describe('RepoSelector openOnLocalTab (plain-folder toggle turned off)', () => {
     (rendered.component as unknown as { openOnLocalTab: () => void }).openOnLocalTab();
 
     await waitFor(() => expect(screen.getByText(DROPDOWN_HEADING)).toBeTruthy());
-    expect(tabButton('Copy local repo').getAttribute('aria-selected')).toBe('true');
-    expect(tabButton('Pick a repo').getAttribute('aria-selected')).toBe('false');
+    expect(tabButton('Existing folder').getAttribute('aria-selected')).toBe('true');
+    expect(tabButton('Clone').getAttribute('aria-selected')).toBe('false');
     expect(trigger.textContent).not.toContain('octo/alpha');
   });
 
@@ -662,13 +662,13 @@ describe('RepoSelector openOnLocalTab (plain-folder toggle turned off)', () => {
     const rendered = render(RepoSelector, { props: { value: '' } });
     (rendered.component as unknown as { openOnLocalTab: () => void }).openOnLocalTab();
     await waitFor(() => expect(screen.getByText(DROPDOWN_HEADING)).toBeTruthy());
-    expect(tabButton('Copy local repo').getAttribute('aria-selected')).toBe('true');
+    expect(tabButton('Existing folder').getAttribute('aria-selected')).toBe('true');
 
     await fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByText(DROPDOWN_HEADING)).toBeNull());
     await fireEvent.click(rendered.container.querySelector('button')!);
     await waitFor(() => expect(screen.getByText(DROPDOWN_HEADING)).toBeTruthy());
-    expect(tabButton('Pick a repo').getAttribute('aria-selected')).toBe('true');
+    expect(tabButton('Clone').getAttribute('aria-selected')).toBe('true');
   });
 });
 

@@ -1891,7 +1891,7 @@
                 </div>
               {/if}
             {:else if activeTab === 'new'}
-              <!-- New repo: parent folder + folder name -->
+              <!-- New: parent folder + folder name -->
               <Button
                 type="button"
                 variant="plain"
