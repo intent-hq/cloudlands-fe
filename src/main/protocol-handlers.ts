@@ -709,8 +709,9 @@ export function setupWorkspaceFileProtocolHandler() {
       let rescueAttempted = false;
       const chunks: Buffer[] = [];
 
-      // A window over the read budget rides a transfer connection on a
-      // remote backend; small windows (range probes) stay on the main client.
+      // Every window rides a transfer connection on a remote backend: even a
+      // window under the read budget grows by a third as base64, so none may
+      // share the main connection (the local socket keeps one connection).
       function requestFileChunk(
         from: JsonRpcClient,
         workspaceId: string,
@@ -718,16 +719,13 @@ export function setupWorkspaceFileProtocolHandler() {
         offset: number,
         length: number,
       ): Promise<WorkspaceFileChunk> {
-        const params = { workspaceId, path, offset, length };
-        return length > ASSET_READ_MAX_BYTES
-          ? requestRouted<WorkspaceFileChunk>(
-              from,
-              'file.readChunk',
-              params,
-              undefined,
-              backendId ?? LOCAL_CONNECTION_ID,
-            )
-          : from.request<WorkspaceFileChunk>('file.readChunk', params);
+        return requestRouted<WorkspaceFileChunk>(
+          from,
+          'file.readChunk',
+          { workspaceId, path, offset, length },
+          undefined,
+          backendId ?? LOCAL_CONNECTION_ID,
+        );
       }
 
       async function readChunk(offset: number, length: number): Promise<WorkspaceFileChunk> {
