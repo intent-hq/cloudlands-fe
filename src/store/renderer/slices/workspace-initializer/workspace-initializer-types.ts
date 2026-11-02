@@ -34,6 +34,11 @@ export interface WorkspaceInitializerRepoSelection {
   isValidPath?: boolean;
   scope?: string;
   remoteSetup?: WorkspaceInitializerRemoteSetup;
+  /**
+   * A plain (non-git) folder remembered from the last create (Labs). The next
+   * form re-checks the folder before restoring it as an existing plain folder.
+   */
+  plainFolder?: true;
 }
 
 export interface WorkspaceInitializerRecentRepo {

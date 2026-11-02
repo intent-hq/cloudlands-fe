@@ -1265,16 +1265,60 @@ describe('plain-folder creates (Labs, workspace.create plainFolder)', () => {
     expect(update.mock.calls.filter(([params]) => 'prNumber' in (params as object))).toEqual([]);
   });
 
-  it('does not remember a plain folder as the next form repository', async () => {
+  it.each(['existing', 'new'] as const)(
+    'remembers a %s plain folder as an existing plain-folder selection',
+    async (kind) => {
+      const completionActions: RecordedAction[] = [];
+      stops.push(
+        appStore.runSaga(function* () {
+          while (true) {
+            completionActions.push(
+              (yield* take([
+                setWorkspaceInitializerLastSelectedRepo,
+                setCompactWorkspaceInitializerFormState,
+              ])) as RecordedAction,
+            );
+          }
+        }),
+      );
+      const action = workspaceInitializationSubmitted(
+        compactSubmission({
+          repoType: 'local',
+          repoPath: '/Users/me/Documents/notes',
+          remoteSetup: null,
+          branch: '',
+          isValidPath: kind === 'existing',
+          plainFolder: kind,
+          formPersistence: true,
+        }),
+        consumer,
+      );
+      appStore.dispatch(action);
+
+      await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+      await vi.waitFor(() => expect(completionActions).toHaveLength(2));
+      const remembered = completionActions.find(
+        (a) => a.type === setWorkspaceInitializerLastSelectedRepo.type,
+      );
+      expect(remembered?.payload).toEqual([
+        { path: '/Users/me/Documents/notes', type: 'local', isValidPath: true, plainFolder: true },
+      ]);
+      // The saved form state never reopens the folder as a git pick.
+      expect(
+        completionActions.find((a) => a.type === setCompactWorkspaceInitializerFormState.type),
+      ).toMatchObject({
+        payload: expect.arrayContaining([expect.objectContaining({ repoPath: '' })]),
+      });
+    },
+  );
+
+  it('does not remember a plain folder without form persistence', async () => {
     const completionActions: RecordedAction[] = [];
     stops.push(
       appStore.runSaga(function* () {
         while (true) {
           completionActions.push(
-            (yield* take([
-              setWorkspaceInitializerLastSelectedRepo,
-              setCompactWorkspaceInitializerFormState,
-            ])) as RecordedAction,
+            (yield* take([setWorkspaceInitializerLastSelectedRepo])) as RecordedAction,
           );
         }
       }),
@@ -1286,18 +1330,15 @@ describe('plain-folder creates (Labs, workspace.create plainFolder)', () => {
         remoteSetup: null,
         branch: '',
         plainFolder: 'existing',
-        formPersistence: true,
+        formPersistence: false,
       }),
       consumer,
     );
     appStore.dispatch(action);
 
     await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
-    await vi.waitFor(() => expect(completionActions).toHaveLength(1));
-    expect(completionActions[0]).toMatchObject({
-      type: setCompactWorkspaceInitializerFormState.type,
-      payload: expect.arrayContaining([expect.objectContaining({ repoPath: '' })]),
-    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(completionActions).toEqual([]);
   });
 
   it('ignores a stale plain-folder flag on a forge clone pick', async () => {
