@@ -31,6 +31,8 @@ export interface BrowserAccessControllerDeps {
   readonly webRoot: string;
   readonly createServer: (getAccessKey: () => string) => BrowserAccessServer;
   readonly log?: Pick<Console, 'info' | 'warn'>;
+  /** Whether the experimental feature is unlocked; the server never runs otherwise. */
+  readonly isAllowed?: () => boolean;
 }
 
 export interface BrowserAccessController {
@@ -55,6 +57,7 @@ export function createBrowserAccessController(
   deps: BrowserAccessControllerDeps,
 ): BrowserAccessController {
   const log = deps.log ?? console;
+  const isAllowed = deps.isAllowed ?? (() => true);
   let enabled = false;
   let port = BROWSER_ACCESS_DEFAULT_PORT;
   let accessKey = '';
@@ -120,12 +123,13 @@ export function createBrowserAccessController(
           accessKey = generateAccessKey();
           await deps.prefs.set(PREF_ACCESS_KEY, accessKey);
         }
-        if (enabled) await startServer();
+        if (enabled && isAllowed()) await startServer();
         return state();
       }),
     state,
     setEnabled: (next) =>
       serialize(async () => {
+        if (next && !isAllowed()) throw new Error('browser access is not unlocked in this app');
         if (!next) await stopServer();
         await deps.prefs.set(PREF_ENABLED, next);
         enabled = next;
@@ -138,7 +142,7 @@ export function createBrowserAccessController(
         if (!isValidBrowserAccessPort(next)) throw new Error(`invalid port: ${next}`);
         await deps.prefs.set(PREF_PORT, next);
         port = next;
-        if (enabled) await startServer();
+        if (enabled && isAllowed()) await startServer();
         return state();
       }),
     resetKey: () =>
