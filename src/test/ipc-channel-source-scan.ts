@@ -513,7 +513,7 @@ function wrapperCallChannels(source: string, name: string, context: FileChannelC
   const callRe = new RegExp(`\\b${name}\\b`, 'g');
   for (const match of source.matchAll(callRe)) {
     if (isOnCommentLine(source, match.index)) continue;
-    let i = skipGenericArguments(source, match.index + match[0].length);
+    const i = skipGenericArguments(source, match.index + match[0].length);
     if (source[i] === '(') {
       const [first] = readCallArguments(source, i + 1);
       if (first) channels.push(...channelsInExpression(first, context));

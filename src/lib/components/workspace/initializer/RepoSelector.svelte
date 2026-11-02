@@ -231,6 +231,18 @@
     }
   }
 
+  /** Open the dropdown on the local folder tab (the "Initialize as git" toggle was turned off). */
+  export function openOnLocalTab() {
+    if (selectedValue && !value) {
+      selectedValue = '';
+      inputValue = '';
+      selectedRepoType = 'local';
+      confirmedGithubUrl = '';
+    }
+    openOnTab = 'local';
+    isOpen = true;
+  }
+
   // State
   // svelte-ignore state_referenced_locally - intentional initial capture; prop only seeds the selection
   let selectedValue = $state(value);
@@ -242,6 +254,7 @@
    *  can target it exactly rather than matching any focused text field. */
   let githubInputElement = $state<HTMLInputElement | null>(null);
   let isOpen = $state(false); // Track dropdown open state
+  let openOnTab: 'local' | null = null; // One-shot tab for the next open
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let isDialogOpen = $state(false); // Track if a native dialog is open (prevents dropdown from closing)
   const isLoading = $derived(
@@ -768,7 +781,10 @@
       selectedRepoType,
     });
 
-    if (gitlabSelected && authenticatedForges.some((forge) => forge.id === 'gitlab')) {
+    if (openOnTab) {
+      activeTab = openOnTab;
+      openOnTab = null;
+    } else if (gitlabSelected && authenticatedForges.some((forge) => forge.id === 'gitlab')) {
       preferredForge = 'gitlab';
       activeTab = 'gitlab';
     } else if (currentValue) {
