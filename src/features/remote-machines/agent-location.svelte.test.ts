@@ -87,6 +87,17 @@ describe('header machine pill', () => {
     expect(pill?.getAttribute('aria-label')).toBe('Runs on Mac mini · macOS arm64');
   });
 
+  it('adds no nested control inside the row or header button', () => {
+    seed(session());
+    for (const variant of ['icon', 'pill'] as const) {
+      const { container, unmount } = render(AgentLocationBadge, { agentId: AGENT, variant });
+      const badge = container.querySelector<HTMLElement>('[data-agent-machine-badge]');
+      expect(badge?.getAttribute('title')).toBe('Runs on Mac mini · macOS arm64');
+      expect(container.querySelector('[role="button"], [tabindex], button')).toBeNull();
+      unmount();
+    }
+  });
+
   it('renders nothing for a local agent', () => {
     seed(session({ placement: undefined, nodeId: undefined, nodeName: undefined }));
     const { container } = render(AgentLocationBadge, { agentId: AGENT, variant: 'pill' });
