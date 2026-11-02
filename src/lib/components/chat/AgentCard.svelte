@@ -89,6 +89,7 @@
   import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
   import { backgroundModeMenuItems } from './agent-background-menu';
+  import { pinMenuItems } from './agent-pin-menu';
   import { isReplaceAgentEligible } from '$shared/utils/replace-agent-eligibility';
   import TaskProgressControl from './TaskProgressControl.svelte';
   import type { TaskProgressItem } from './workspace-task-fallback';
@@ -370,6 +371,11 @@
         },
       },
     ];
+
+    if (panelRow) {
+      const wsId = $agent$?.workspaceId ?? workspace?.id;
+      items.push(...pinMenuItems($agent$, wsId ? String(wsId) : undefined, closeContextMenu));
+    }
 
     items.push(...backgroundModeMenuItems($agent$, $backgroundPending$, closeContextMenu));
 

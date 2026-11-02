@@ -923,6 +923,19 @@ export class LiveAgentsClient implements AgentsClient {
       changes: { notificationsMuted: params.notificationsMuted },
     });
   }
+  async setPinned(params: {
+    agentId: string;
+    workspaceId: string;
+    pinned: boolean;
+  }): Promise<MutationResult> {
+    // `agent.update` (§5.5) partial writer; `pinned` must be a boolean (the
+    // daemon rejects anything else with -32602) and never counts as activity.
+    return runMutation('agent.update', {
+      agentId: params.agentId,
+      workspaceId: params.workspaceId,
+      changes: { pinned: params.pinned },
+    });
+  }
   async setBackground(params: {
     agentId: string;
     workspaceId: string;

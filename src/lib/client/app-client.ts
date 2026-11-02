@@ -1022,6 +1022,17 @@ export interface AgentsClient {
     workspaceId: string;
     notificationsMuted: boolean;
   }): Promise<MutationResult>;
+  /**
+   * Pin or unpin an agent in the sidebar (`agent.update { changes: { pinned } }`,
+   * §5.5). The daemon persists the flag without advancing `updatedAt`, serves
+   * it on `AgentLite.pinned`, and emits `agent:updated`. Transport / daemon
+   * errors fold into `{ success: false, error }`.
+   */
+  setPinned(params: {
+    agentId: string;
+    workspaceId: string;
+    pinned: boolean;
+  }): Promise<MutationResult>;
   /** Persist foreground/background mode through the partial agent.update writer. */
   setBackground(params: {
     agentId: string;

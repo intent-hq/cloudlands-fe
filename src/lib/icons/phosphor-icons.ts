@@ -146,6 +146,7 @@ import PlusIcon from 'phosphor-svelte/lib/PlusIcon';
 import PlusMinusIcon from 'phosphor-svelte/lib/PlusMinusIcon';
 import ProhibitIcon from 'phosphor-svelte/lib/ProhibitIcon';
 import PushPinIcon from 'phosphor-svelte/lib/PushPinIcon';
+import PushPinSlashIcon from 'phosphor-svelte/lib/PushPinSlashIcon';
 import PuzzlePieceIcon from 'phosphor-svelte/lib/PuzzlePieceIcon';
 import QrCodeIcon from 'phosphor-svelte/lib/QrCodeIcon';
 import QuestionIcon from 'phosphor-svelte/lib/QuestionIcon';
@@ -392,6 +393,7 @@ const iconComponents: Record<string, Component<any>> = {
   'thumbs-down': ThumbsDownIcon,
   'thumbs-up': ThumbsUpIcon,
   thumbtack: PushPinIcon,
+  'thumbtack-slash': PushPinSlashIcon,
   ticket: TicketIcon,
   trash: TrashIcon,
   'triangle-exclamation': WarningIcon,
@@ -619,6 +621,7 @@ export const faTerminal = icon('terminal');
 export const faThumbsDown = icon('thumbs-down');
 export const faThumbsUp = icon('thumbs-up');
 export const faThumbtack = icon('thumbtack');
+export const faThumbtackSlash = icon('thumbtack-slash');
 export const faTicket = icon('ticket');
 export const faTimes = icon('xmark');
 export const faTimesCircle = icon('circle-xmark');
