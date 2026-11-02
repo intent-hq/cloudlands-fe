@@ -11,7 +11,7 @@
  * hydration) are cleared too.
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SpecialistDef } from '$lib/client/app-client';
 
 const mocks = vi.hoisted(() => {
@@ -226,19 +226,6 @@ import InitialAgentPicker from '../InitialAgentPicker.svelte';
 import ProviderSelectionHarness from './mocks/ProviderSelectionHarness.svelte';
 import { store as mockAppStore } from '$store/renderer/store';
 import { LiveSpecialistsClient } from '$lib/client/live/live-specialists-client';
-
-const scrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
-beforeAll(() => {
-  Object.defineProperty(Element.prototype, 'scrollIntoView', {
-    configurable: true,
-    writable: true,
-    value: vi.fn(),
-  });
-});
-afterAll(() => {
-  if (scrollIntoView) Object.defineProperty(Element.prototype, 'scrollIntoView', scrollIntoView);
-  else Reflect.deleteProperty(Element.prototype, 'scrollIntoView');
-});
 
 const emitStoreState = () => (mockAppStore as unknown as { emitState: () => void }).emitState();
 

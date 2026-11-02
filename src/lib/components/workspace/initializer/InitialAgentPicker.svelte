@@ -8,6 +8,7 @@
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { workspacePickerStyles } from './workspace-picker-styles';
+  import { canPlaceBeside } from '$lib/components/ui/overlay-positioning';
   import { cn } from '$lib/utils';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
 
@@ -849,12 +850,9 @@
       bind:open={specialistDropdownOpen}
       onOpenChange={(open) => {
         if (!open) return;
-        const bounds = agentField?.getBoundingClientRect();
         // A wide field can leave neither horizontal side room for the menu.
         // Floating placement flips between sides; use below in that case.
-        agentMenuBelow =
-          isMobile.current ||
-          (!!bounds && bounds.left < 392 && window.innerWidth - bounds.right < 392);
+        agentMenuBelow = !canPlaceBeside(agentField, 360);
       }}
     >
       <Popover.Trigger>

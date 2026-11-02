@@ -289,6 +289,8 @@
   {#if isFormPresentation}
     <RepoSelector
       {gitlab}
+      {plainFolderMode}
+      {gitChoice}
       bind:this={repoSelector}
       variant="ghost"
       gitlabSelected={repoType === 'gitlab'}
@@ -301,7 +303,7 @@
       triggerValueClass="text-foreground"
       triggerContentClass="gap-1"
     />
-    {#if !isNewRepo && hasRepo}
+    {#if !isNewRepo && hasRepo && !(plainFolder && repoType === 'local')}
       <div class="min-w-0">
         {#if repoType === 'gitlab'}
           {#if gitlabBranch}

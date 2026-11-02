@@ -109,11 +109,14 @@
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
   import { workspacePickerStyles } from './workspace-picker-styles';
+  import { canPlaceBeside } from '$lib/components/ui/overlay-positioning';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 
   const logger = createLogger('RepoSelector');
   const dialogPortalTarget = useDialogPortalTarget();
   const isMobile = new IsMobile();
+  let formTriggerElement = $state<HTMLButtonElement | HTMLAnchorElement | null>(null);
+  let formMenuBelow = $state(false);
 
   // Effective isolated-checkout mode (worktree vs CoW clone) for creation copy.
   // Re-resolves when workspace items hydrate (cowSupported is read off them).
@@ -951,6 +954,7 @@
 
   // Handle dropdown open - set correct tab when opening
   function handleDropdownOpen() {
+    formMenuBelow = !canPlaceBeside(formTriggerElement, 360);
     // Clear search term when opening so all repos show
     searchTerm = '';
     if (rowLabel && formStep === 'browse') {
@@ -1976,6 +1980,7 @@
       {#snippet child({ props })}
         <Button
           {...props}
+          bind:ref={formTriggerElement}
           {variant}
           wrapContent={!rowLabel}
           class={`w-full ${triggerClass ?? ''}`}
@@ -2054,9 +2059,9 @@
       class={rowLabel
         ? `w-[360px] max-w-[calc(100vw-1rem)] min-w-0 max-h-[min(440px,var(--bits-popover-content-available-height,calc(100dvh-1rem)))] flex flex-col ${formStep === 'browse' ? 'overflow-hidden' : 'overflow-y-auto'}`
         : 'w-[400px] max-w-[calc(100vw-16px)] min-w-0 max-h-[min(600px,var(--bits-popover-content-available-height,100dvh))] overflow-y-auto flex flex-col'}
-      side={rowLabel ? (isMobile.current ? 'bottom' : 'left') : undefined}
-      sideOffset={rowLabel ? (isMobile.current ? 4 : 24) : undefined}
-      align={rowLabel ? (isMobile.current ? 'end' : 'start') : undefined}
+      side={rowLabel ? (isMobile.current || formMenuBelow ? 'bottom' : 'left') : undefined}
+      sideOffset={rowLabel ? (isMobile.current || formMenuBelow ? 4 : 24) : undefined}
+      align={rowLabel ? (isMobile.current || formMenuBelow ? 'end' : 'start') : undefined}
       onkeydown={(event) => {
         if (
           rowLabel &&

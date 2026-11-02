@@ -359,9 +359,6 @@ function dropdownContent(listbox: HTMLElement) {
 const COORDINATOR = /Coordinator/;
 const GENERAL = /^General/;
 
-// jsdom has no layout; the agent combobox scrolls its active row into view.
-if (!HTMLElement.prototype.scrollIntoView) HTMLElement.prototype.scrollIntoView = () => {};
-
 let disposeStore: () => void;
 let cancelCatalog: () => void;
 let cancelInitialization: () => void;

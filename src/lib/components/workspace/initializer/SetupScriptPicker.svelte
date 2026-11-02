@@ -21,6 +21,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import SetupScriptTrigger from './SetupScriptTrigger.svelte';
   import { workspacePickerStyles } from './workspace-picker-styles';
+  import { canPlaceBeside } from '$lib/components/ui/overlay-positioning';
 
   let {
     open = $bindable(false),
@@ -49,6 +50,7 @@
   } = $props();
 
   const isMobile = new IsMobile();
+  let menuBelow = $state(false);
   const dialogPortalTarget = useDialogPortalTarget();
   let searchInput = $state<HTMLInputElement | null>(null);
   let trigger = $state<HTMLButtonElement | HTMLAnchorElement | null>(null);
@@ -128,7 +130,10 @@
 <Popover.Root
   bind:open
   onOpenChange={(next) => {
-    if (next) openingEditor = false;
+    if (next) {
+      openingEditor = false;
+      menuBelow = !canPlaceBeside(trigger, 360);
+    }
   }}
 >
   <Popover.Trigger>
@@ -149,9 +154,9 @@
   <Popover.Content
     role="dialog"
     aria-label={m.workspace_setupScriptEditor_setupScript_label()}
-    side={isMobile.current ? 'bottom' : 'left'}
-    align={isMobile.current ? 'end' : 'start'}
-    sideOffset={isMobile.current ? 4 : 24}
+    side={isMobile.current || menuBelow ? 'bottom' : 'left'}
+    align={isMobile.current || menuBelow ? 'end' : 'start'}
+    sideOffset={isMobile.current || menuBelow ? 4 : 24}
     portalProps={{ to: dialogPortalTarget() }}
     strategy={dialogPortalTarget() ? 'absolute' : 'fixed'}
     preventScroll={false}

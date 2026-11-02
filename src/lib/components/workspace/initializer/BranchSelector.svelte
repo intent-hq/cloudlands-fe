@@ -16,7 +16,7 @@
   import { useDialogPortalTarget } from '$lib/components/ui/dialog';
   import { Combobox, type ComboboxGroup } from '$lib/components/ui/combobox';
   import { Tooltip } from '$lib/components/ui/tooltip';
-  import { OVERLAY_VIEWPORT_GUTTER } from '$lib/components/ui/overlay-positioning';
+  import { OVERLAY_VIEWPORT_GUTTER, canPlaceBeside } from '$lib/components/ui/overlay-positioning';
   import { toast } from '$lib/components/ui/toast';
   import { debugConfig } from '$lib/config/debug';
   import { createLogger } from '$lib/utils/client-logger';
@@ -172,6 +172,7 @@
   } | null = null;
   let searchInputElement = $state<HTMLInputElement | null>(null);
   let isOpen = $state(false); // Track dropdown open state
+  let formMenuBelow = $state(false);
   let containerEl: HTMLDivElement | undefined = $state(); // Container for positioning
   let triggerEl: HTMLButtonElement | null = $state(null); // Focus target after a selection closes the content
   let directCheckoutFooterEl: HTMLDivElement | undefined = $state();
@@ -1306,6 +1307,7 @@
         });
 
       if (justOpened) {
+        formMenuBelow = !canPlaceBeside(triggerEl, 360);
         // Refresh branch status when dropdown opens to clear stale indicators
         if (selectedBranch && repoType === 'local') {
           fetchBranchStatus(selectedBranch);
@@ -1743,14 +1745,26 @@
         side={modeAnchor
           ? 'bottom'
           : rowLabel
-            ? isMobile.current
+            ? isMobile.current || formMenuBelow
               ? 'bottom'
               : 'left'
             : dropUp
               ? 'top'
               : 'bottom'}
-        align={modeAnchor ? 'start' : rowLabel ? (isMobile.current ? 'end' : 'start') : 'center'}
-        sideOffset={modeAnchor ? 0 : rowLabel ? (isMobile.current ? 4 : 24) : undefined}
+        align={modeAnchor
+          ? 'start'
+          : rowLabel
+            ? isMobile.current || formMenuBelow
+              ? 'end'
+              : 'start'
+            : 'center'}
+        sideOffset={modeAnchor
+          ? 0
+          : rowLabel
+            ? isMobile.current || formMenuBelow
+              ? 4
+              : 24
+            : undefined}
         portalProps={{ to: dialogPortalTarget() }}
         strategy={dialogPortalTarget() ? 'absolute' : 'fixed'}
         onOpenAutoFocus={(event) => {

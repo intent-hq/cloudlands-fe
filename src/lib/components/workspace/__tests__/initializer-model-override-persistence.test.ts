@@ -17,10 +17,6 @@ import type {
 } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
 import { createWorkspaceInitializationDispatchAdapter } from './workspace-initialization-dispatch.test-helper';
 
-beforeEach(() => {
-  Element.prototype.scrollIntoView ??= vi.fn();
-});
-
 const mocks = vi.hoisted(() => {
   function writable<T>(initial: T) {
     let value = initial;

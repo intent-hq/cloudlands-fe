@@ -2,6 +2,7 @@ import { expect, test, wheelUntilScrolled } from '../../../../test/ct-test';
 import type { Locator } from '@playwright/test';
 import Pickers from './initializer-pickers.preview.svelte';
 import InitialAgentPicker from './initial-agent-picker.preview.svelte';
+import RepoAndBranchPicker from './RepoAndBranchPicker.svelte';
 
 test.beforeEach(async ({ page }) => {
   await page.route(/^https:\/\/github\.com\/fixture-owner\.png(?:\?.*)?$/, (route) =>
@@ -721,5 +722,47 @@ for (const height of [320, 700]) {
           JSON.parse((await page.getByTestId('initializer-selection').textContent())!).branch,
       )
       .toBe(branch);
+  });
+}
+
+for (const plainFolder of ['existing', 'new'] as const) {
+  test(`form keeps Labs plain-folder controls available for a ${plainFolder} folder`, async ({
+    mount,
+    page,
+  }) => {
+    const changes: Array<{ checked: boolean; tab: 'local' | 'new' }> = [];
+    await mount(RepoAndBranchPicker, {
+      props: {
+        presentation: 'form',
+        repoType: 'local',
+        repoPath: '/fixture/plain-folder',
+        plainFolder,
+        plainFolderMode: true,
+        isNewRepo: plainFolder === 'new',
+        gitChoice: {
+          checked: false,
+          folder: 'folder',
+          onCheckedChange: (checked: boolean, tab: 'local' | 'new') => {
+            changes.push({ checked, tab });
+          },
+        },
+      },
+    });
+    await expect(page.getByRole('button', { name: /^Select a branch:/ })).toHaveCount(0);
+    await page.getByRole('button', { name: /^Codebase\b/ }).click();
+    const menu = page.getByRole('dialog', { name: 'Codebase', exact: true });
+    await menu.getByRole('button', { name: 'Add codebase', exact: true }).click();
+    await menu
+      .getByRole('tab', {
+        name: plainFolder === 'existing' ? 'Existing folder' : 'New',
+        exact: true,
+      })
+      .click();
+    const toggle = menu.getByRole('switch', { name: 'Initialize as git repository', exact: true });
+    await expect(toggle).toHaveAttribute('aria-checked', 'false');
+    await toggle.click();
+    await expect
+      .poll(() => changes)
+      .toEqual([{ checked: true, tab: plainFolder === 'existing' ? 'local' : 'new' }]);
   });
 }
