@@ -4,8 +4,12 @@
  */
 import { all, call, cancelled, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
-import { invokeBrowserAccess } from '$lib/browser-access-ipc';
-import { BROWSER_ACCESS_CHANNELS } from '$shared/ipc/channels';
+import {
+  getBrowserAccessState,
+  resetBrowserAccessKey,
+  setBrowserAccessEnabled,
+  setBrowserAccessPort,
+} from '$lib/browser-access-ipc';
 import type { BrowserAccessState } from '$shared/types/browser-access';
 import {
   loadBrowserAccessRequested,
@@ -22,12 +26,11 @@ type RequestAction =
 
 function* settle(
   action: RequestAction,
-  channel: string,
-  payload: Record<string, unknown>,
+  request: () => Promise<BrowserAccessState>,
 ): SagaGenerator<void> {
   let settled = false;
   try {
-    const result: BrowserAccessState = yield* call(invokeBrowserAccess, channel, payload);
+    const result: BrowserAccessState = yield* call(request);
     yield* put(action.success(result));
     settled = true;
   } catch (error) {
@@ -42,17 +45,13 @@ function* settle(
 
 export function* browserAccessSaga(): SagaGenerator<void> {
   yield* all([
-    takeEvery(loadBrowserAccessRequested, (action) =>
-      settle(action, BROWSER_ACCESS_CHANNELS.GET_STATE, {}),
-    ),
+    takeEvery(loadBrowserAccessRequested, (action) => settle(action, getBrowserAccessState)),
     takeEvery(setBrowserAccessEnabledRequested, (action) =>
-      settle(action, BROWSER_ACCESS_CHANNELS.SET_ENABLED, { enabled: action.payload[0] }),
+      settle(action, () => setBrowserAccessEnabled(action.payload[0])),
     ),
     takeEvery(setBrowserAccessPortRequested, (action) =>
-      settle(action, BROWSER_ACCESS_CHANNELS.SET_PORT, { port: action.payload[0] }),
+      settle(action, () => setBrowserAccessPort(action.payload[0])),
     ),
-    takeEvery(resetBrowserAccessKeyRequested, (action) =>
-      settle(action, BROWSER_ACCESS_CHANNELS.RESET_KEY, {}),
-    ),
+    takeEvery(resetBrowserAccessKeyRequested, (action) => settle(action, resetBrowserAccessKey)),
   ]);
 }

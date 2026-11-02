@@ -9,7 +9,6 @@ import { app, ipcMain } from 'electron';
 
 import { BROWSER_ACCESS_CHANNELS } from '../../../shared/ipc/channels';
 import { m } from '../../../shared/paraglide/messages.js';
-import type { BrowserAccessState } from '../../../shared/types/browser-access';
 import {
   BrowserAccessSetEnabledSchema,
   BrowserAccessSetPortSchema,
@@ -76,24 +75,38 @@ function createController(): BrowserAccessController {
 export async function setupBrowserAccess(): Promise<void> {
   const current = createController();
   controller = current;
-  const handle = <T>(
-    channel: string,
-    schema: Parameters<typeof createSafeValidatedHandler<T>>[0],
-    run: (request: T) => Promise<BrowserAccessState>,
-  ): void => {
-    ipcMain.handle(
-      channel,
-      createSafeValidatedHandler(schema, async (_event, request) => run(request), channel),
-    );
-  };
-  handle(BROWSER_ACCESS_CHANNELS.GET_STATE, EmptySchema, async () => current.state());
-  handle(BROWSER_ACCESS_CHANNELS.SET_ENABLED, BrowserAccessSetEnabledSchema, (request) =>
-    current.setEnabled(request.enabled),
+  ipcMain.handle(
+    BROWSER_ACCESS_CHANNELS.GET_STATE,
+    createSafeValidatedHandler(
+      EmptySchema,
+      async () => current.state(),
+      BROWSER_ACCESS_CHANNELS.GET_STATE,
+    ),
   );
-  handle(BROWSER_ACCESS_CHANNELS.SET_PORT, BrowserAccessSetPortSchema, (request) =>
-    current.setPort(request.port),
+  ipcMain.handle(
+    BROWSER_ACCESS_CHANNELS.SET_ENABLED,
+    createSafeValidatedHandler(
+      BrowserAccessSetEnabledSchema,
+      async (_event, request) => current.setEnabled(request.enabled),
+      BROWSER_ACCESS_CHANNELS.SET_ENABLED,
+    ),
   );
-  handle(BROWSER_ACCESS_CHANNELS.RESET_KEY, EmptySchema, () => current.resetKey());
+  ipcMain.handle(
+    BROWSER_ACCESS_CHANNELS.SET_PORT,
+    createSafeValidatedHandler(
+      BrowserAccessSetPortSchema,
+      async (_event, request) => current.setPort(request.port),
+      BROWSER_ACCESS_CHANNELS.SET_PORT,
+    ),
+  );
+  ipcMain.handle(
+    BROWSER_ACCESS_CHANNELS.RESET_KEY,
+    createSafeValidatedHandler(
+      EmptySchema,
+      async () => current.resetKey(),
+      BROWSER_ACCESS_CHANNELS.RESET_KEY,
+    ),
+  );
   try {
     await current.load();
   } catch (error) {

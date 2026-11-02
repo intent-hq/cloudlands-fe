@@ -1,7 +1,9 @@
 /**
- * Browser access IPC: the browser-access saga calls `invokeBrowserAccess`;
+ * Browser access IPC: one function per BROWSER_ACCESS channel, called by the
+ * browser-access saga;
  * main owns the setting and the server.
  */
+import { BROWSER_ACCESS_CHANNELS } from '$shared/ipc/channels';
 import type { BrowserAccessState } from '$shared/types/browser-access';
 
 interface BrowserAccessIpcLike {
@@ -34,14 +36,36 @@ function parseBrowserAccessState(payload: unknown): BrowserAccessState | null {
   };
 }
 
-/** Invoke a BROWSER_ACCESS channel; rejects when there is no bridge or the reply is malformed. */
-export async function invokeBrowserAccess(
-  channel: string,
-  payload: Record<string, unknown>,
-): Promise<BrowserAccessState> {
-  const bridge = getBridge();
-  if (!bridge) throw new Error('electronAPI is not available');
-  const state = parseBrowserAccessState(await bridge.invoke(channel, payload));
-  if (!state) throw new Error(`Malformed ${channel} response`);
+function expectState(payload: unknown): BrowserAccessState {
+  const state = parseBrowserAccessState(payload);
+  if (!state) throw new Error('Malformed browser access response');
   return state;
+}
+
+function missingBridge(): Error {
+  return new Error('electronAPI is not available');
+}
+
+export async function getBrowserAccessState(): Promise<BrowserAccessState> {
+  const bridge = getBridge();
+  if (!bridge) throw missingBridge();
+  return expectState(await bridge.invoke(BROWSER_ACCESS_CHANNELS.GET_STATE, {}));
+}
+
+export async function setBrowserAccessEnabled(enabled: boolean): Promise<BrowserAccessState> {
+  const bridge = getBridge();
+  if (!bridge) throw missingBridge();
+  return expectState(await bridge.invoke(BROWSER_ACCESS_CHANNELS.SET_ENABLED, { enabled }));
+}
+
+export async function setBrowserAccessPort(port: number): Promise<BrowserAccessState> {
+  const bridge = getBridge();
+  if (!bridge) throw missingBridge();
+  return expectState(await bridge.invoke(BROWSER_ACCESS_CHANNELS.SET_PORT, { port }));
+}
+
+export async function resetBrowserAccessKey(): Promise<BrowserAccessState> {
+  const bridge = getBridge();
+  if (!bridge) throw missingBridge();
+  return expectState(await bridge.invoke(BROWSER_ACCESS_CHANNELS.RESET_KEY, {}));
 }
