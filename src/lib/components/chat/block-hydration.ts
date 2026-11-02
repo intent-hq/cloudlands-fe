@@ -13,7 +13,10 @@
  */
 
 import type { ContentBlock } from '$shared/types';
-import type { HydratedBlockEntry } from '$store/renderer/slices/chat-state/chat-state-types';
+import type {
+  HydratedBlockEntry,
+  HydratedBlockTruncation,
+} from '$store/renderer/slices/chat-state/chat-state-types';
 import { hydratedBlockKey } from '$store/renderer/slices/chat-state/chat-state-types';
 
 /** True when the daemon served this block slim-truncated (any body kind). */
@@ -22,6 +25,32 @@ function isSlimTruncatedBlock(block: ContentBlock | null | undefined): boolean {
   return (
     block.inputTruncated === true || block.outputTruncated === true || block.dataTruncated === true
   );
+}
+
+/**
+ * A capped read served the block cut (§5.5 "Capped and paged block reads").
+ * A string body cut on a character boundary (`encoding: "text"`) replaces the
+ * slim preview: it keeps its type and is far longer. Any other cut — a
+ * structured body served as a JSON text slice, an image without its bytes,
+ * or a block reduced to `{ id, type }` — keeps the slim block, whose
+ * structured preview or thumbnail still renders correctly. Either way the
+ * block is marked with `servedTruncation` so the view shows a notice.
+ */
+function mergeTruncatedBlock(
+  slim: ContentBlock,
+  served: ContentBlock,
+  truncation: HydratedBlockTruncation,
+): ContentBlock {
+  const body = truncation.field
+    ? (served as unknown as Record<string, unknown>)[truncation.field]
+    : undefined;
+  if (truncation.encoding === 'text' && typeof body === 'string') {
+    return {
+      ...served,
+      servedTruncation: { shownBytes: truncation.shownBytes, totalBytes: truncation.totalBytes },
+    };
+  }
+  return { ...slim, servedTruncation: { shownBytes: null, totalBytes: truncation.totalBytes } };
 }
 
 /**
@@ -42,7 +71,9 @@ export function mergeHydratedContent(
     const entry = hydrated[hydratedBlockKey(messageId, block.id)];
     if (entry?.status === 'loaded') {
       changed = true;
-      return entry.block;
+      return entry.truncation
+        ? mergeTruncatedBlock(block, entry.block, entry.truncation)
+        : entry.block;
     }
     return block;
   });

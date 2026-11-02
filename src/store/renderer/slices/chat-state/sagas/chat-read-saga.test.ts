@@ -5,7 +5,17 @@ const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   getConversation: vi.fn(),
   getMessageBlock: vi.fn(),
+  getMessageBlockPage: vi.fn(),
+  messageBlockPages: false,
   invoke: vi.fn(() => Promise.resolve()),
+}));
+vi.mock('$store/renderer/slices/principal/principal-selectors', () => ({
+  selectMessageBlockPagesSupported: {
+    // eslint-disable-next-line require-yield -- selector effect stand-in
+    *effect() {
+      return mocks.messageBlockPages;
+    },
+  },
 }));
 vi.mock('$lib/client', () => ({
   appClient: {
@@ -13,6 +23,7 @@ vi.mock('$lib/client', () => ({
       get: mocks.get,
       getConversation: mocks.getConversation,
       getMessageBlock: mocks.getMessageBlock,
+      getMessageBlockPage: mocks.getMessageBlockPage,
     },
     chat: {},
   },
@@ -888,6 +899,104 @@ describe('chatReadSaga lazy block hydration (§5.5 slim → agent.getMessageBloc
     const cached = run.chat().byAgentId[AGENT]?.hydratedBlocks;
     expect(cached?.[hydratedBlockKey('msg-1', 'msg-1:0')]).toMatchObject({ status: 'loaded' });
     expect(cached?.[hydratedBlockKey('msg-2', 'msg-2:1')]).toMatchObject({ status: 'loaded' });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+});
+
+describe('chatReadSaga capped block reads (§5.5, messageBlockPages: 1)', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    mocks.messageBlockPages = false;
+  });
+
+  const MSG = 'msg-1';
+  const BLOCK = 'msg-1:2';
+  const KEY = hydratedBlockKey(MSG, BLOCK);
+
+  it('without the capability keeps the original whole-block read', async () => {
+    mocks.getMessageBlock.mockResolvedValue({ type: 'tool_result', id: BLOCK, output: 'body' });
+    const run = harness();
+    run.dispatch(messageBlockHydrationRequested(AGENT, MSG, BLOCK));
+    await settle();
+
+    expect(mocks.getMessageBlockPage).not.toHaveBeenCalled();
+    expect(mocks.getMessageBlock).toHaveBeenCalledTimes(1);
+    expect(run.chat().byAgentId[AGENT]?.hydratedBlocks?.[KEY]).not.toHaveProperty('truncation');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('records a cut text body with the shown and total sizes', async () => {
+    mocks.messageBlockPages = true;
+    mocks.getMessageBlockPage.mockResolvedValue({
+      block: { type: 'tool_result', id: BLOCK, tool_use_id: 'call-1', output: 'head' },
+      truncated: true,
+      field: 'output',
+      encoding: 'text',
+      totalBytes: 3_200_000,
+      nextOffset: 479_900,
+    });
+    const run = harness();
+    run.dispatch(messageBlockHydrationRequested(AGENT, MSG, BLOCK));
+    await settle();
+
+    expect(mocks.getMessageBlock).not.toHaveBeenCalled();
+    expect(mocks.getMessageBlockPage).toHaveBeenCalledWith(AGENT, MSG, BLOCK, undefined);
+    expect(run.chat().byAgentId[AGENT]?.hydratedBlocks?.[KEY]).toMatchObject({
+      status: 'loaded',
+      block: { output: 'head' },
+      truncation: { field: 'output', encoding: 'text', shownBytes: 479_900, totalBytes: 3_200_000 },
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('records an over-cap image with no shown size', async () => {
+    mocks.messageBlockPages = true;
+    mocks.getMessageBlockPage.mockResolvedValue({
+      block: {
+        type: 'image',
+        id: BLOCK,
+        mimeType: 'image/png',
+        dataTruncated: true,
+        dataBytes: 900_000,
+      },
+      truncated: true,
+      field: 'data',
+      encoding: null,
+      totalBytes: 900_000,
+      nextOffset: null,
+    });
+    const run = harness();
+    run.dispatch(messageBlockHydrationRequested(AGENT, MSG, BLOCK));
+    await settle();
+
+    expect(run.chat().byAgentId[AGENT]?.hydratedBlocks?.[KEY]).toMatchObject({
+      status: 'loaded',
+      truncation: { field: 'data', shownBytes: null, totalBytes: 900_000 },
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('a whole block served under the cap carries no truncation', async () => {
+    mocks.messageBlockPages = true;
+    mocks.getMessageBlockPage.mockResolvedValue({
+      block: { type: 'tool_result', id: BLOCK, output: 'body' },
+      truncated: false,
+      field: 'output',
+      encoding: 'text',
+      totalBytes: 4,
+      nextOffset: null,
+    });
+    const run = harness();
+    run.dispatch(messageBlockHydrationRequested(AGENT, MSG, BLOCK));
+    await settle();
+
+    const entry = run.chat().byAgentId[AGENT]?.hydratedBlocks?.[KEY];
+    expect(entry).toMatchObject({ status: 'loaded', block: { output: 'body' } });
+    expect(entry).not.toHaveProperty('truncation');
     run.task.cancel();
     await run.task.toPromise();
   });

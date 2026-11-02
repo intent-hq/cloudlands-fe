@@ -14,6 +14,9 @@ import {
   pendingScopeReleased,
 } from '../../pending-submissions/pending-submissions-slice';
 import { selectAgentSessionWorkspaceId } from '$store/renderer/slices/agent-session/agent-session-selectors';
+import { selectMessageBlockPagesSupported } from '$store/renderer/slices/principal/principal-selectors';
+import type { MessageBlockPage } from '$lib/client/app-client';
+import type { HydratedBlockTruncation } from '../chat-state-types';
 /**
  * Chat read saga — SINGLE-TRANSFER hydration. Opening a chat transfers the
  * conversation once: the standing `chat.subscribe` subscription's seq-0
@@ -379,6 +382,24 @@ function* snapshotRecoveryWorker(action: ReturnType<typeof chatTranscriptSnapsho
  * duplicate workers takeEvery still spawns for re-dispatches that arrive
  * while the state already reads `loading`.
  */
+/**
+ * The truncation record of a capped first page, or undefined when the block
+ * arrived whole. A paged body slice starts at offset 0, so its size is the
+ * next page's offset (or the whole body when the slice reached the end); a
+ * dropped body (over-cap image, unfittable block) has no shown size.
+ */
+function pageTruncation(page: MessageBlockPage): HydratedBlockTruncation | undefined {
+  if (!page.truncated) return undefined;
+  const body = page.field ? (page.block as unknown as Record<string, unknown>)[page.field] : null;
+  const sliced = page.encoding !== null && typeof body === 'string';
+  return {
+    field: page.field,
+    encoding: page.encoding,
+    shownBytes: sliced ? (page.nextOffset ?? page.totalBytes) : null,
+    totalBytes: page.totalBytes,
+  };
+}
+
 function* hydrateMessageBlockWorker(
   inFlightBlocks: Set<string>,
   action: ReturnType<typeof messageBlockHydrationRequested>,
@@ -391,12 +412,28 @@ function* hydrateMessageBlockWorker(
   if (entry?.status !== 'loading') return;
   inFlightBlocks.add(key);
   try {
+    const workspaceId = yield* selectAgentSessionWorkspaceId.effect(agentId);
+    // Capped reads (`messageBlockPages: 1`) can serve the block cut; older
+    // daemons serve it whole through the original call.
+    if (yield* selectMessageBlockPagesSupported.effect()) {
+      const page = yield* call(
+        [appClient.agents, appClient.agents.getMessageBlockPage],
+        agentId,
+        messageId,
+        blockId,
+        workspaceId,
+      );
+      yield* put(
+        messageBlockHydrated(agentId, messageId, blockId, page.block, pageTruncation(page)),
+      );
+      return;
+    }
     const block = yield* call(
       [appClient.agents, appClient.agents.getMessageBlock],
       agentId,
       messageId,
       blockId,
-      yield* selectAgentSessionWorkspaceId.effect(agentId),
+      workspaceId,
     );
     yield* put(messageBlockHydrated(agentId, messageId, blockId, block));
   } catch (error) {

@@ -1365,6 +1365,8 @@ export interface ToolUseBlock {
   inputTruncated?: boolean;
   /** Slim projection (§5.5): byte size of the full `input` body. */
   inputBytes?: number;
+  /** Client-only: a capped full-block read could not serve it whole (see ContentBlock). */
+  servedTruncation?: ContentBlock['servedTruncation'];
 }
 
 export interface ToolResultBlock {

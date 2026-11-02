@@ -16,6 +16,7 @@ import type {
   ChatAgentState,
   ChatStateSlice,
   HydratedBlockEntry,
+  HydratedBlockTruncation,
   StatusEvent,
   LastAttemptedMessage,
   LiveStreamPhase,
@@ -193,7 +194,7 @@ function setHydratedBlock(
   key: string,
   entry:
     | { status: 'loading' }
-    | { status: 'loaded'; block: ContentBlock }
+    | { status: 'loaded'; block: ContentBlock; truncation?: HydratedBlockTruncation }
     | { status: 'error'; error: string },
 ): Record<string, HydratedBlockEntry> {
   const current = agent.hydratedBlocks ?? {};
@@ -1073,9 +1074,18 @@ export const messageBlockHydrationRequested = createAction<
   [agentId: string, messageId: string, blockId: string]
 >('chatState/messageBlockHydrationRequested');
 
-/** The full block arrived: cache it for rendering (bounded, oldest evicted). */
+/**
+ * The block arrived: cache it for rendering (bounded, oldest evicted).
+ * `truncation` is set when a capped read served it cut (§5.5).
+ */
 export const messageBlockHydrated = createAction<
-  [agentId: string, messageId: string, blockId: string, block: ContentBlock]
+  [
+    agentId: string,
+    messageId: string,
+    blockId: string,
+    block: ContentBlock,
+    truncation?: HydratedBlockTruncation,
+  ]
 >('chatState/messageBlockHydrated');
 
 /** The fetch failed: record the error so the next expand can retry. */
@@ -1481,12 +1491,16 @@ chatStateReducer.with(
 );
 chatStateReducer.with(
   messageBlockHydrated,
-  (state, { payload: [agentId, messageId, blockId, block] }) => {
+  (state, { payload: [agentId, messageId, blockId, block, truncation] }) => {
     const agent = getAgent(state, agentId);
     const key = hydratedBlockKey(messageId, blockId);
     return updateAgent(state, agentId, {
       agentId,
-      hydratedBlocks: setHydratedBlock(agent, key, { status: 'loaded', block }),
+      hydratedBlocks: setHydratedBlock(agent, key, {
+        status: 'loaded',
+        block,
+        ...(truncation ? { truncation } : {}),
+      }),
     });
   },
 );

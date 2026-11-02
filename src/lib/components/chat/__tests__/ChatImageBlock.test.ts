@@ -131,6 +131,37 @@ describe('ChatImageBlock', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
+  it('keeps the thumbnail of an over-cap image with a notice and no load request', async () => {
+    const onHydrate = vi.fn();
+    render(ChatImageBlock, {
+      props: {
+        data: pngData,
+        mimeType: 'image/png',
+        alt: 'screenshot.png',
+        dataTruncated: true,
+        dataIsThumbnail: true,
+        onHydrate,
+        tooLarge: true,
+      },
+    });
+
+    expect(screen.getByRole('img').getAttribute('src')).toBe(`data:image/png;base64,${pngData}`);
+    expect(screen.getByTestId('chat-image-too-large').textContent?.trim()).toBe(
+      'The full image is too large to show',
+    );
+    await fireEvent.click(screen.getByRole('button', { name: /view screenshot\.png full size/i }));
+    expect(onHydrate).not.toHaveBeenCalled();
+  });
+
+  it('replaces the load chip with the notice when an over-cap image has no thumbnail', () => {
+    render(ChatImageBlock, {
+      props: { mimeType: 'image/png', dataTruncated: true, onHydrate: vi.fn(), tooLarge: true },
+    });
+
+    expect(screen.queryByTestId('chat-image-placeholder')).toBeNull();
+    expect(screen.getByTestId('chat-image-too-large')).toBeTruthy();
+  });
+
   it('shows an image actions menu whose trigger does not open the lightbox', async () => {
     render(ChatImageBlock, {
       props: { data: pngData, mimeType: 'image/png', alt: 'screenshot.png' },
