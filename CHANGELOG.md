@@ -4,6 +4,20 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.267.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.266.3...v2.267.0) (2026-11-02)
+
+
+### 🚀 Features
+
+* **backend:** make a machine available to the current backend ([#3888](https://github.com/intent-hq/cloudlands-fe/issues/3888)) ([ce1c6e2](https://github.com/intent-hq/cloudlands-fe/commit/ce1c6e26be954badbdca1aca9618e62a910bb1a4))
+* rename New Workspace source tabs and hide Clone without a forge ([#3999](https://github.com/intent-hq/cloudlands-fe/issues/3999)) ([11e6b60](https://github.com/intent-hq/cloudlands-fe/commit/11e6b603ec39a2af388119d3bc32fef84bc28158))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.104 ([#4009](https://github.com/intent-hq/cloudlands-fe/issues/4009)) ([16d6374](https://github.com/intent-hq/cloudlands-fe/commit/16d63742df2b0932fa5201dfec8a65af40611a18))
+* **hud:** read only the newest user-message page for dock recency ([#3996](https://github.com/intent-hq/cloudlands-fe/issues/3996)) ([c94ca03](https://github.com/intent-hq/cloudlands-fe/commit/c94ca037b06bbb1a480dd404849d9ceacc369a24))
+
 ## [2.266.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.266.2...v2.266.3) (2026-11-02)
 
 
