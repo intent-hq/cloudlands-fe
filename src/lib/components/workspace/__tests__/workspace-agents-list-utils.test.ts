@@ -112,6 +112,45 @@ describe('getFlatWorkspaceAgentRows', () => {
     ]);
   });
 
+  it('lists pinned agents first by recency alone, below the coordinator, then the usual order', () => {
+    const agents = [
+      makeAgent('active-unpinned', { isResponding: true, updatedAt: '2026-01-01T00:00:09.000Z' }),
+      makeAgent('idle-unpinned', {
+        status: AgentStatus.Completed,
+        updatedAt: '2026-01-01T00:00:08.000Z',
+      }),
+      makeAgent('pinned-active-old', {
+        pinned: true,
+        isResponding: true,
+        updatedAt: '2026-01-01T00:00:01.000Z',
+      }),
+      makeAgent('pinned-idle-new', {
+        pinned: true,
+        status: AgentStatus.Completed,
+        updatedAt: '2026-01-01T00:00:05.000Z',
+      }),
+      makeAgent('coordinator', {
+        metadata: { specialist: 'spec-writer' } as any,
+        status: AgentStatus.RuntimeIdle,
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      }),
+      makeAgent('explicitly-unpinned', {
+        pinned: false,
+        status: AgentStatus.Completed,
+        updatedAt: '2026-01-01T00:00:07.000Z',
+      }),
+    ];
+
+    expect(getFlatWorkspaceAgentRows(agents).map(({ agent }) => agent.id)).toEqual([
+      'coordinator',
+      'pinned-idle-new',
+      'pinned-active-old',
+      'active-unpinned',
+      'idle-unpinned',
+      'explicitly-unpinned',
+    ]);
+  });
+
   it('keeps an idle coordinator above active siblings', () => {
     const agents = [
       makeAgent('standalone', { isResponding: true, updatedAt: '2026-01-01T00:00:02.000Z' }),
@@ -363,6 +402,49 @@ describe('buildWorkspaceAgentListRows', () => {
     ]);
   });
 
+  it('marks only the first unpinned top-level row after pinned ones for the divider', () => {
+    const pinnedParent = makeAgent('pinned-parent', { pinned: true });
+    const pinnedChild = makeAgent('pinned-child', {
+      pinned: true,
+      metadata: { createdByAgentId: 'pinned-parent' } as any,
+    });
+    const unpinnedChild = makeAgent('unpinned-child', {
+      metadata: { createdByAgentId: 'pinned-parent' } as any,
+    });
+    const pinnedOther = makeAgent('pinned-other', { pinned: true });
+    const first = makeAgent('first-unpinned');
+    const second = makeAgent('second-unpinned');
+    const rows = buildWorkspaceAgentListRows(
+      [pinnedParent, pinnedOther, first, second],
+      options({
+        getChildren: (id) => (id === 'pinned-parent' ? [pinnedChild, unpinnedChild] : []),
+        isExpanded: () => true,
+      }),
+    );
+
+    const withDivider = rows.filter((row) => row.kind === 'agent' && row.dividerBefore);
+    expect(withDivider.map((row) => row.key)).toEqual(['agent:first-unpinned']);
+    // The divider sits after the pinned parent's whole subtree.
+    expect(rows.map((row) => row.key)).toEqual([
+      'agent:pinned-parent',
+      'group:pinned-parent',
+      'agent:pinned-child',
+      'agent:unpinned-child',
+      'agent:pinned-other',
+      'agent:first-unpinned',
+      'agent:second-unpinned',
+    ]);
+  });
+
+  it('draws no divider when every row, or no row, is pinned', () => {
+    const pinned = [makeAgent('a', { pinned: true }), makeAgent('b', { pinned: true })];
+    const unpinned = [makeAgent('c'), makeAgent('d', { pinned: false })];
+    for (const agents of [pinned, unpinned]) {
+      const rows = buildWorkspaceAgentListRows(agents, options());
+      expect(rows.some((row) => row.kind === 'agent' && row.dividerBefore)).toBe(false);
+    }
+  });
+
   it('nests expanded children (and their own groups) one level deeper', () => {
     const rows = buildWorkspaceAgentListRows(
       [parent, childless],
@@ -574,6 +656,28 @@ describe('WorkspaceAgentsList rendering', () => {
     expect(toggle?.textContent).toContain(m.workspace_agentsList_delegated_label({ count: '1' }));
     expect(rowFor(container, child.id)).toBeTruthy();
     expect(container.querySelectorAll('[data-agent-delegation-toggle]')).toHaveLength(1);
+  });
+
+  it('draws one pinned divider between the pinned rows and the rest', async () => {
+    const older = mount('pinned-older', { pinned: true, updatedAt: '2026-01-01T00:00:01.000Z' });
+    const newer = mount('pinned-newer', { pinned: true, updatedAt: '2026-01-01T00:00:02.000Z' });
+    const recent = mount('unpinned-recent', { updatedAt: '2026-01-01T00:00:09.000Z' });
+    const agents = [recent, older, newer];
+    appStore.dispatch(bulkUpsertSessions(agents));
+    const { container } = render(WorkspaceAgentsList, { props: { agents, workspaceId } });
+
+    await waitFor(() => expect(rowFor(container, recent.id)).toBeTruthy());
+    expect(panelRows(container).map((row) => row.dataset.agentPanelRow)).toEqual([
+      newer.id,
+      older.id,
+      recent.id,
+    ]);
+    const dividers = container.querySelectorAll('[data-agent-pinned-divider]');
+    expect(dividers).toHaveLength(1);
+    const dividerRow = dividers[0]!.closest('[data-agent-list-row="agent"]');
+    expect(
+      dividerRow?.querySelector('[data-agent-panel-row]')?.getAttribute('data-agent-panel-row'),
+    ).toBe(recent.id);
   });
 
   it('renders large flat lists through the virtual path and keeps smaller or coordinator lists nested', async () => {

@@ -27,6 +27,38 @@ describe('MessageComposer', () => {
     expect(onSend).toHaveBeenCalledWith('Ship it', []);
   });
 
+  it('keeps draft editing available while sending is gated', async () => {
+    const onSend = vi.fn();
+    const onValueChange = vi.fn();
+    const view = render(MessageComposer, {
+      props: { value: 'Keep this draft', sendDisabled: true, onSend, onValueChange },
+    });
+    const textbox = view.getByRole('textbox');
+    expect(textbox.hasAttribute('disabled')).toBe(false);
+    await fireEvent.input(textbox, { target: { value: 'Continue writing while waiting' } });
+    expect(onValueChange).toHaveBeenCalledWith('Continue writing while waiting');
+    expect(view.getByRole('button', { name: 'Send' }).hasAttribute('disabled')).toBe(true);
+    await fireEvent.keyDown(textbox, { key: 'Enter' });
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('keeps IME confirmation and held Enter from sending duplicate drafts', async () => {
+    const onSend = vi.fn();
+    const { getByRole } = render(MessageComposer, {
+      props: { value: 'One deliberate reply', onSend },
+    });
+    const textbox = getByRole('textbox');
+    await fireEvent.compositionStart(textbox);
+    await fireEvent.keyDown(textbox, { key: 'Enter' });
+    expect(onSend).not.toHaveBeenCalled();
+    await fireEvent.compositionEnd(textbox);
+    await fireEvent.keyDown(textbox, { key: 'Enter', keyCode: 229 });
+    expect(onSend).not.toHaveBeenCalled();
+    await fireEvent.keyDown(textbox, { key: 'Enter' });
+    await fireEvent.keyDown(textbox, { key: 'Enter', repeat: true });
+    expect(onSend).toHaveBeenCalledTimes(1);
+  });
+
   it('morphs between stop and queue while streaming', async () => {
     const empty = render(MessageComposerHarness, { props: { initialStatus: 'streaming' } });
     await fireEvent.click(empty.getByRole('button', { name: 'Stop' }));

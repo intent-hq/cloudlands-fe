@@ -292,6 +292,25 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
     expect(specialists().defaultSpecialistId).toBe('');
   });
 
+  it('hydrates workspace.autoArchiveIdleAfterDays into the sidebar-nav slice (number, null-off)', () => {
+    const days = () =>
+      (appStore.state as { sidebarNav: { autoArchiveIdleAfterDays: number | null } }).sidebarNav
+        .autoArchiveIdleAfterDays;
+    applySettingsChanges([{ path: 'workspace.autoArchiveIdleAfterDays', value: 7 }]);
+    expect(days()).toBe(7);
+
+    // Non-number garbage is ignored (except null, which means off).
+    applySettingsChanges([{ path: 'workspace.autoArchiveIdleAfterDays', value: 'soon' }]);
+    expect(days()).toBe(7);
+
+    applySettingsChanges([{ path: 'workspace.autoArchiveIdleAfterDays', value: 0 }]);
+    expect(days()).toBe(0);
+
+    applySettingsChanges([{ path: 'workspace.autoArchiveIdleAfterDays', value: 3 }]);
+    applySettingsChanges([{ path: 'workspace.autoArchiveIdleAfterDays', value: null }]);
+    expect(days()).toBe(0);
+  });
+
   it('ignores non-string model.defaultReasoningEffort values', () => {
     applySettingsChanges([{ path: 'model.defaultReasoningEffort', value: 'medium' }]);
     applySettingsChanges([

@@ -6,7 +6,7 @@
  * land after a newer one even though the browser transport answers concurrent
  * requests out of order.
  */
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
@@ -93,6 +93,65 @@ describe('presence-bridge-seeder', () => {
 
     await expect(report(focusA)).rejects.toThrow('boom');
     await expect(report(focusB)).resolves.toEqual({ typingSource: 'ts-3' });
+  });
+});
+
+/**
+ * In the desktop app every window shares its backend's pooled daemon
+ * connection, so the report must reach main's per-backend merge
+ * (`PresenceAggregator`); a direct `presence.update` from one window would
+ * replace the presence of every other window on that backend.
+ */
+describe('presence-bridge-seeder in the Electron renderer', () => {
+  type Bridge = { invoke: (...args: unknown[]) => Promise<unknown> };
+  let bridge: Bridge;
+  let originalInvoke: Bridge['invoke'];
+  let userAgent: { mockRestore: () => void };
+
+  beforeAll(async () => {
+    await import('./presence-bridge-seeder');
+  });
+
+  beforeEach(() => {
+    bridge = (window as unknown as { electronAPI: Bridge }).electronAPI;
+    originalInvoke = bridge.invoke;
+    userAgent = vi
+      .spyOn(navigator, 'userAgent', 'get')
+      .mockReturnValue(`${navigator.userAgent} Electron/39.0.0`);
+  });
+
+  afterEach(() => {
+    bridge.invoke = originalInvoke;
+    userAgent.mockRestore();
+    vi.clearAllMocks();
+  });
+
+  it('forwards the report verbatim to main instead of sending presence.update itself', async () => {
+    const forwarded = vi.fn(async () => ({ typingSource: 'ts-main' }));
+    bridge.invoke = forwarded;
+
+    await expect(report(focusA)).resolves.toEqual({ typingSource: 'ts-main' });
+    expect(forwarded).toHaveBeenCalledWith(IPC_CHANNELS.PRESENCE.REPORT, focusA);
+    expect(mockedRequest).not.toHaveBeenCalled();
+  });
+
+  it('keeps forwarded reports in order', async () => {
+    let settleFirst!: (value: PresenceReportResult) => void;
+    const forwarded = vi
+      .fn<(...args: unknown[]) => Promise<PresenceReportResult>>()
+      .mockImplementationOnce(() => new Promise((resolve) => (settleFirst = resolve)))
+      .mockResolvedValueOnce({ typingSource: 'ts-2' });
+    bridge.invoke = forwarded;
+
+    const first = report(focusA);
+    const second = report(focusB);
+    await Promise.resolve();
+    expect(forwarded).toHaveBeenCalledTimes(1);
+
+    settleFirst({ typingSource: 'ts-1' });
+    await expect(first).resolves.toEqual({ typingSource: 'ts-1' });
+    await expect(second).resolves.toEqual({ typingSource: 'ts-2' });
+    expect(forwarded.mock.calls.map((call) => call[1])).toEqual([focusA, focusB]);
   });
 });
 

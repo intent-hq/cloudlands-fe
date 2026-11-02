@@ -97,7 +97,6 @@ const flush = async () => {
 beforeAll(() => {
   // jsdom does not implement Element#scrollTo (used after each navigation).
   Element.prototype.scrollTo = (() => {}) as never;
-  Element.prototype.scrollIntoView = (() => {}) as never;
 });
 
 beforeEach(() => {

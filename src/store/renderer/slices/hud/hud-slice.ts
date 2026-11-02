@@ -16,6 +16,11 @@
 
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
+import type {
+  DockPlacementCommand,
+  DockPlacementFailure,
+  DockPlacementSnapshot,
+} from '$shared/dock-placement';
 import type { Workspace, WorkspaceDisplayStatus } from '$shared/types';
 import { replaceWorkspaceList, setWorkspaceEntity } from '../workspace/workspace-slice';
 import {
@@ -185,6 +190,15 @@ export interface HudState {
    * manual open) and dispatches `hudTakeoverRequestCleared`.
    */
   takeoverRequestWorkspaceId: string | null;
+  dockConversationAtByWorkspaceId: Record<string, number>;
+  dockRecencyNow: number;
+  dockPlacement: DockPlacementSnapshot | null;
+  dockPlacementError: DockPlacementFailure | null;
+  dockDragStartResult: { id: number; token: string | null } | null;
+  dockResizeStartResult: { id: number; token: string | null } | null;
+  dockFocusRequest: number;
+  dockMachineSwitching: string | null;
+  dockMachineSwitchError: boolean;
 }
 
 export const HUD_FEED_LIMIT = 50;
@@ -204,11 +218,48 @@ export const initialState: HudState = {
   questionsByAgentId: {},
   gridFilter: EMPTY_HUD_GRID_FILTER,
   takeoverRequestWorkspaceId: null,
+  dockConversationAtByWorkspaceId: {},
+  dockRecencyNow: 0,
+  dockPlacement: null,
+  dockPlacementError: null,
+  dockDragStartResult: null,
+  dockResizeStartResult: null,
+  dockFocusRequest: 0,
+  dockMachineSwitching: null,
+  dockMachineSwitchError: false,
 };
+
+export const dockPlacementCommandRequested = createAction<[command: DockPlacementCommand]>(
+  'hud/dockPlacementCommandRequested',
+);
+export const dockPlacementReceived = createAction<[snapshot: DockPlacementSnapshot]>(
+  'hud/dockPlacementReceived',
+);
+export const dockPlacementFailed =
+  createAction<[failure: DockPlacementFailure]>('hud/dockPlacementFailed');
+export const dockDragStartResolved = createAction<[token: string | null]>(
+  'hud/dockDragStartResolved',
+);
+export const dockResizeStartResolved = createAction<[token: string | null]>(
+  'hud/dockResizeStartResolved',
+);
+export const dockMachineSwitchRequested = createAction<[backendId: string]>(
+  'hud/dockMachineSwitchRequested',
+);
+export const dockMachineSwitchRestored = createAction('hud/dockMachineSwitchRestored');
+export const dockMachineSwitchFinished = createAction<[backendId: string, failed: boolean]>(
+  'hud/dockMachineSwitchFinished',
+);
+
+export const dockFocusRequested = createAction('hud/dockFocusRequested');
 
 // ── Actions ──
 
 export const hudActivated = createAction('hud/activated');
+export const dockActivated = createAction('hud/dockActivated');
+export const dockConversationsLoaded = createAction<
+  [latestByWorkspaceId: Record<string, number>, now: number]
+>('hud/dockConversationsLoaded');
 export const hudDeactivated = createAction('hud/deactivated');
 export const hudFeedEntryReceived = createAction<[entry: HudFeedEntry]>('hud/feedEntryReceived');
 export const hudAttentionChanged =
@@ -316,6 +367,27 @@ export function computeBurnRatePerMin(samples: readonly HudRateHistorySample[]):
 export const hudReducer = createReducer<HudState>(initialState);
 hudReducer.with(hudActivated, () => ({ ...initialState, active: true }));
 hudReducer.with(hudDeactivated, () => initialState);
+hudReducer.with(dockActivated, () => ({ ...initialState, active: true }));
+hudReducer.with(dockMachineSwitchRestored, (state) => ({
+  ...state,
+  dockMachineSwitching: null,
+  dockMachineSwitchError: true,
+}));
+hudReducer.with(dockMachineSwitchRequested, (state, { payload: [backendId] }) =>
+  state.dockMachineSwitching
+    ? state
+    : { ...state, dockMachineSwitching: backendId, dockMachineSwitchError: false },
+);
+hudReducer.with(dockMachineSwitchFinished, (state, { payload: [backendId, failed] }) =>
+  state.dockMachineSwitching !== backendId
+    ? state
+    : { ...state, dockMachineSwitching: null, dockMachineSwitchError: failed },
+);
+hudReducer.with(dockConversationsLoaded, (state, { payload: [latestByWorkspaceId, now] }) => ({
+  ...state,
+  dockConversationAtByWorkspaceId: latestByWorkspaceId,
+  dockRecencyNow: now,
+}));
 hudReducer.with(hudFeedEntryReceived, (state, { payload: [entry] }) => {
   if (!state.active) return state;
   if (state.feed.some((existing) => existing.id === entry.id)) return state;
@@ -438,4 +510,34 @@ hudReducer.with(hudGridFilterStatesCleared, (state) =>
 hudReducer.with(hudGridFilterHydrated, (state, { payload: [filter] }) => {
   if (!state.active) return state;
   return { ...state, gridFilter: filter };
+});
+
+hudReducer.with(dockPlacementReceived, (state, { payload: [snapshot] }) => {
+  if (!state.active || (state.dockPlacement && snapshot.revision < state.dockPlacement.revision))
+    return state;
+  return { ...state, dockPlacement: snapshot, dockPlacementError: null };
+});
+hudReducer.with(dockPlacementFailed, (state, { payload: [failure] }) => ({
+  ...state,
+  dockPlacementError: failure,
+}));
+hudReducer.with(dockFocusRequested, (state) => ({
+  ...state,
+  dockFocusRequest: state.dockFocusRequest + 1,
+}));
+
+hudReducer.with(dockDragStartResolved, (state, { payload: [token] }) => {
+  if (!state.active) return state;
+  return {
+    ...state,
+    dockDragStartResult: { id: (state.dockDragStartResult?.id ?? 0) + 1, token },
+  };
+});
+
+hudReducer.with(dockResizeStartResolved, (state, { payload: [token] }) => {
+  if (!state.active) return state;
+  return {
+    ...state,
+    dockResizeStartResult: { id: (state.dockResizeStartResult?.id ?? 0) + 1, token },
+  };
 });

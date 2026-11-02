@@ -21,7 +21,6 @@ const { mockPage } = vi.hoisted(() => ({
 vi.mock('$app/state', () => ({ page: mockPage }));
 
 const originalResizeObserver = globalThis.ResizeObserver;
-const originalScrollIntoView = Element.prototype.scrollIntoView;
 
 beforeEach(() => {
   mockPage.url = new URL('http://localhost/sandbox');
@@ -30,13 +29,11 @@ beforeEach(() => {
     unobserve() {}
     disconnect() {}
   };
-  Element.prototype.scrollIntoView = vi.fn();
 });
 
 afterEach(() => {
   cleanup();
   globalThis.ResizeObserver = originalResizeObserver;
-  Element.prototype.scrollIntoView = originalScrollIntoView;
   localStorage.clear();
   document.documentElement.className = '';
   document.documentElement.removeAttribute('style');

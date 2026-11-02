@@ -107,10 +107,6 @@ describe('PanelLayout drag preview overlay', () => {
       if (this.getAttribute('data-testid') === 'panel-workspace-inset') return PANEL_WIDTH * 2;
       return this.classList.contains('panel-drag-preview-split') ? 1000 : 0;
     });
-    Object.defineProperty(HTMLElement.prototype, 'getAnimations', {
-      configurable: true,
-      value: () => [],
-    });
     storeContext = initAppStore(appStore);
   });
 

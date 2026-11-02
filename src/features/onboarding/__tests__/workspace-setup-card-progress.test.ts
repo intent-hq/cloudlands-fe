@@ -205,3 +205,55 @@ describe('WorkspaceSetupCard live clone progress', () => {
     expect(bar.getAttribute('aria-valuenow')).toBe('100');
   });
 });
+
+describe('WorkspaceSetupCard git vs plain-folder copy', () => {
+  beforeEach(() => {
+    setSliceState(initialState);
+    mockStore.specialists = [];
+  });
+
+  function renderSteps(status: 'active' | 'done', plainFolder?: boolean) {
+    return render(WorkspaceSetupCard, {
+      props: {
+        repoName: 'notes',
+        repoPath: '/home/me/notes',
+        branch: status === 'done' ? 'feature' : undefined,
+        repoStatus: status,
+        branchStatus: status,
+        agentStatus: 'pending' as const,
+        ...(plainFolder === undefined ? {} : { plainFolder }),
+      },
+    });
+  }
+
+  it('git: says an isolated copy and a branch are being created', () => {
+    const text = renderSteps('active').container.textContent ?? '';
+    expect(text).toContain('Creating an isolated copy of');
+    expect(text).toContain('Creating a new branch');
+  });
+
+  it('plain folder: opens the folder with no copy or branch step while creating', () => {
+    const text = renderSteps('active', true).container.textContent ?? '';
+    expect(text).toContain('Opening');
+    expect(text).not.toContain('isolated copy');
+    expect(text).not.toMatch(/branch/i);
+  });
+
+  it('git: says an isolated copy and a branch were created', () => {
+    const text = renderSteps('done').container.textContent ?? '';
+    expect(text).toContain('We created an isolated copy of');
+    expect(text).toMatch(/branch/i);
+  });
+
+  it('plain folder: says agents work directly in the folder with no copy, branch or undo', () => {
+    renderSteps('done', true);
+    const line = screen.getByTestId('setup-card-plain-folder').textContent ?? '';
+    expect(line).toContain('Working directly in your folder');
+    expect(line).toContain('no copy and no branch');
+    expect(line).toContain('no undo');
+    const text = document.body.textContent ?? '';
+    expect(text).not.toContain('isolated copy');
+    expect(text).not.toContain('Branch created');
+    expect(text).not.toContain('new branch');
+  });
+});

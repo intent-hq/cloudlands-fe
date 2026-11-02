@@ -98,16 +98,21 @@ function isValidTabId(value: string): value is TabId {
 // Managers can use Shells for saved scripts; raw terminals and browsers stay owner-only.
 export const OWNER_ONLY_TAB_IDS: ReadonlySet<TabId> = new Set<TabId>(['browser', 'shell']);
 
+// Git-only sections never show in plain-folder workspaces (no git, checkout or forge).
+export const GIT_ONLY_TAB_IDS: ReadonlySet<TabId> = new Set<TabId>(['changes']);
+
 export function normalizeSelectedTabs(
   tabIds: string[],
   isCollaborator = false,
   showPeople = true,
   canOperateScripts = false,
+  plainFolder = false,
 ): Set<TabId> {
   const normalized = tabIds.filter(
     (tabId) =>
       isValidTabId(tabId) &&
       (tabId !== 'people' || showPeople) &&
+      !(plainFolder && GIT_ONLY_TAB_IDS.has(tabId as TabId)) &&
       !(
         isCollaborator &&
         OWNER_ONLY_TAB_IDS.has(tabId as TabId) &&

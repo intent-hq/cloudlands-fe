@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Tooltip as TooltipPrimitive } from 'bits-ui';
+  import { untrack } from 'svelte';
   import { cn } from '$lib/utils.js';
   import type { Snippet } from 'svelte';
   import TooltipTriggerWrapper from './tooltip-trigger-wrapper.svelte';
@@ -59,6 +60,7 @@
 
   // Keep the ID on the rendered node; the floating layer drops it (intent#5201).
   const contentId = $props.id();
+  let triggerRef = $state<HTMLElement | null>(null);
   const tether = TooltipPrimitive.createTether();
 
   // Variant styles
@@ -103,6 +105,27 @@
   $effect(() => {
     if (disabled && open) handleOpenChange(false);
   });
+
+  // bits-ui drops focus that lands while the trigger is disabled and never
+  // re-checks it. Callers that enable help after measuring (e.g. a clipped
+  // name) would leave a keyboard user who focused first without the tooltip
+  // until they refocus (intent#8081), so open for the focused trigger here.
+  let wasDisabled: boolean | undefined;
+  $effect(() => {
+    const isDisabled = disabled;
+    const becameEnabled = wasDisabled === true && !isDisabled;
+    wasDisabled = isDisabled;
+    if (becameEnabled) untrack(openForKeyboardFocusedTrigger);
+  });
+
+  function openForKeyboardFocusedTrigger() {
+    if (!content || open) return;
+    const focused = document.activeElement;
+    const trigger = triggerRef;
+    if (!trigger?.id || !(focused instanceof HTMLElement) || !trigger.contains(focused)) return;
+    if (!focused.matches(':focus-visible')) return;
+    tether.open(trigger.id);
+  }
 </script>
 
 <!-- Wrap in Provider to ensure context is available even when mounted in isolation
@@ -117,6 +140,7 @@
     {tether}
   >
     <TooltipPrimitive.Trigger
+      bind:ref={triggerRef}
       class={cn('inline-flex', className)}
       {disabled}
       {onclick}

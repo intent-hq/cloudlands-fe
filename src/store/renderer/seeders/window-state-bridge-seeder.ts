@@ -1,6 +1,7 @@
 /**
  * Window workspace-state invoke bridge — forwards `window:set-in-workspace`,
  * `window:set-open-workspace-tabs`, `window:set-theme`, `window:set-title`,
+ * `window:set-translucency`,
  * `window:set-browser-focused`, `window:set-full-screen`,
  * `window:get-full-screen`, `window:cycle-focus`, and `window:close` to the
  * real Electron preload bridge (`window.electronAPI.invoke`) when present.
@@ -30,8 +31,8 @@
  *
  * Same pattern as auto-update-bridge-seeder: forward verbatim when the
  * preload bridge exists; resolve undefined when it does not (browser dev /
- * bridge-less build) — every caller is fire-and-forget or try/catch-guarded,
- * matching the former allowlist disposition.
+ * bridge-less build). The dock machine selector treats that absent response
+ * as a failed switch; the remaining callers are fire-and-forget or guarded.
  */
 import { emitMockIpcEvent, registerMockIpcHandler } from '$shared/ipc-mock-router';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
@@ -42,6 +43,10 @@ const WINDOW_STATE_INVOKE_CHANNELS = [
   IPC_CHANNELS.WINDOW.SET_THEME,
   IPC_CHANNELS.WINDOW.SET_TITLE,
   IPC_CHANNELS.WINDOW.SET_BROWSER_FOCUSED,
+  IPC_CHANNELS.WINDOW.SET_DOCK_POINTER_REGION,
+  IPC_CHANNELS.WINDOW.DOCK_RENDERER_READY,
+  IPC_CHANNELS.WINDOW.SWITCH_DOCK_BACKEND,
+  IPC_CHANNELS.WINDOW.SET_TRANSLUCENCY,
 ] as const;
 
 /** Forward the selected app theme to Electron's registered main-process handler. */
@@ -65,6 +70,10 @@ export function registerWindowStateBridge(): void {
       if (bridge && typeof bridge.invoke === 'function') {
         return bridge.invoke(channel, payload);
       }
+      if (channel === IPC_CHANNELS.WINDOW.SET_DOCK_POINTER_REGION) {
+        return { success: false, supported: false };
+      }
+      if (channel === IPC_CHANNELS.WINDOW.DOCK_RENDERER_READY) return { shown: false };
       return undefined;
     });
   }

@@ -65,6 +65,11 @@ export type TabState = {
   browserTabRecoveryRequests: Record<string, string>;
   /** Distinguish already-started navigations from renderer commands; never persisted. */
   browserTabNavigations: Record<string, BrowserTabNavigation>;
+  /**
+   * Tabs an agent is acting on right now (main's agent drawing hold), so the
+   * offscreen host draws them at full frame rate; never persisted.
+   */
+  browserTabsAgentDrawing: Record<string, true>;
 };
 
 const MAX_RECENTLY_CLOSED_TABS = 10;
@@ -198,6 +203,7 @@ const initialState: TabState = {
   mountedBrowserTabLeases: {},
   browserTabRecoveryRequests: {},
   browserTabNavigations: {},
+  browserTabsAgentDrawing: {},
 };
 
 const pruneClosedTabAt = (
@@ -298,6 +304,9 @@ export const requestBrowserTabNavigation = createAction<[tabId: string, url: str
 export const consumeBrowserTabNavigation = createAction<
   [tabId: string, navigation: BrowserTabNavigation]
 >('tabState/consumeBrowserTabNavigation');
+export const browserTabAgentDrawingChanged = createAction<[tabId: string, active: boolean]>(
+  'tabState/browserTabAgentDrawingChanged',
+);
 
 /** Actions whose reducer handlers may change the canonical current workspace tab. */
 export const CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS = [
@@ -323,6 +332,15 @@ tabStateReducer.with(consumeBrowserTabNavigation, (state, { payload: [tabId, nav
   // An older action must not consume a newer command, even for the same URL.
   if (state.browserTabNavigations[tabId] !== navigation) return state;
   return { ...state, browserTabNavigations: omitKey(state.browserTabNavigations, tabId) };
+});
+tabStateReducer.with(browserTabAgentDrawingChanged, (state, { payload: [tabId, active] }) => {
+  if (Boolean(state.browserTabsAgentDrawing[tabId]) === active) return state;
+  return {
+    ...state,
+    browserTabsAgentDrawing: active
+      ? { ...state.browserTabsAgentDrawing, [tabId]: true }
+      : omitKey(state.browserTabsAgentDrawing, tabId),
+  };
 });
 tabStateReducer.with(requestBrowserTabRecovery, (state, { payload: [tabId, requestId] }) => {
   if (state.browserTabRecoveryRequests[tabId] === requestId) return state;

@@ -2,8 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, Function>(),
-  sendToWorkspaceWindows: vi.fn(),
-  getBackendIdForIpcSender: vi.fn(() => 'remote-1'),
   access: vi.fn(),
   mkdir: vi.fn(),
   writeFile: vi.fn(),
@@ -45,64 +43,12 @@ vi.mock('fs', () => ({
   createReadStream: mocks.createReadStream,
 }));
 
-vi.mock('../../../system/main/system.ipc', () => ({
-  sendToWorkspaceWindows: mocks.sendToWorkspaceWindows,
-}));
-
-vi.mock('../../../backend/main/backend.ipc', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../backend/main/backend.ipc')>()),
-  getBackendIdForIpcSender: mocks.getBackendIdForIpcSender,
-}));
-
 vi.mock('../../../../shared/main/file-sync-utils', () => ({
   renameWithRetry: mocks.renameWithRetry,
 }));
 
 import { FILE_CHANNELS } from '../../../../shared/ipc/channels';
 import { setupFileIPC } from '../file.ipc';
-
-describe('file IPC content emitter contract', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.handlers.clear();
-    mocks.access.mockRejectedValue(new Error('missing'));
-    mocks.mkdir.mockResolvedValue(undefined);
-    mocks.writeFile.mockResolvedValue(undefined);
-    mocks.renameWithRetry.mockResolvedValue(undefined);
-  });
-
-  it('emits static file:content-changed payload after local file writes', async () => {
-    setupFileIPC();
-    const handler = mocks.handlers.get(FILE_CHANNELS.WRITE);
-    expect(handler).toBeDefined();
-
-    const sender = { id: 7 };
-    const result = await handler?.(
-      { sender },
-      {
-        workspaceId: 'ws-1',
-        path: '/repo/src/app.ts',
-        content: 'updated content',
-      },
-    );
-
-    expect(result).toEqual({ success: true, data: { bytesWritten: 'updated content'.length } });
-    // Only the saving window's host receives the update.
-    expect(mocks.getBackendIdForIpcSender).toHaveBeenCalledWith(sender);
-    expect(mocks.sendToWorkspaceWindows).toHaveBeenCalledWith(
-      'ws-1',
-      'file:content-changed',
-      {
-        workspaceId: 'ws-1',
-        path: '/repo/src/app.ts',
-        relativePath: '/repo/src/app.ts',
-        content: 'updated content',
-        source: 'user',
-      },
-      'remote-1',
-    );
-  });
-});
 
 describe('file:read-chunk / file:hash (chunked remote attachment upload)', () => {
   beforeEach(() => {

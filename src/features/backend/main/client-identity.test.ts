@@ -3,6 +3,11 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 
+vi.mock('../../desktop/main/desktop-native', async (importActual) => {
+  const actual = await importActual<typeof import('../../desktop/main/desktop-native')>();
+  return { ...actual, desktopNativeAvailable: vi.fn(() => false) };
+});
+
 /**
  * Stable §5.17 client identity: a UUID minted once per install, persisted in
  * the FE-local prefs file, and re-presented on every `client.hello`. Regression

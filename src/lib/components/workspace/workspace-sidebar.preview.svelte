@@ -72,6 +72,20 @@
     pullRequests: [pr(47, { status: PullRequestStatus.Merged }), pr(48)],
   });
 
+  const plainFolderWorkspace = workspaceFixture({
+    id: WorkspaceId(`${PREVIEW_FIXTURE_IDS.workspace}-plain-folder`),
+    title: 'Draft the quarterly newsletter',
+    branch: '',
+    plainFolder: true,
+    repositoryOwner: undefined,
+    repositoryName: undefined,
+    repositoryPath: '/Users/me/Documents/Newsletter',
+    worktreePath: undefined,
+    statusMessage: 'Collecting notes for the October issue.',
+    // A stale PR on the row must not surface for a plain folder.
+    pullRequests: [pr(49)],
+  });
+
   const keySlotWorkspaces = [
     busyWorkspace,
     reviewWorkspace,
@@ -106,6 +120,9 @@
       'key-slots': {
         props: { width: 360, workspaces: keySlotWorkspaces },
         setup: () => setupSidebarKeySlots(keySlotWorkspaces),
+      },
+      'plain-folder': {
+        props: { width: 360, workspaces: [plainFolderWorkspace, reviewWorkspace] },
       },
       'activity-times': {
         props: { width: 248, workspaces: activityWorkspaces },

@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import Combobox from './combobox.svelte';
 
 const options = [
@@ -15,10 +15,6 @@ async function open() {
 }
 
 describe('Combobox accepted-selection callback', () => {
-  beforeAll(() => {
-    // Static content invokes this native API, which jsdom does not provide.
-    Element.prototype.scrollIntoView = vi.fn();
-  });
   afterEach(cleanup);
 
   it.each(['pointer', 'keyboard'] as const)(

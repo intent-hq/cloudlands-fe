@@ -3,6 +3,7 @@
   import PullRequestCreator from './PullRequestCreator.svelte';
   import type { Workspace } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
+  import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
 
   interface Props {
     workspace: Workspace | null;
@@ -33,8 +34,8 @@
   }: Props = $props();
 </script>
 
-<!-- Pull Request Creator -->
-{#if showPRCreator}
+<!-- Pull Request Creator (plain folders have no PRs) -->
+{#if showPRCreator && !isPlainFolderWorkspace(_workspace)}
   <PullRequestCreator
     workspaceId={_workspace?.id}
     onClose={() => onPRCreatorClose?.()}

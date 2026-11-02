@@ -132,6 +132,8 @@ const TRANSCRIBE_RESULT = {
 };
 
 beforeEach(() => {
+  // The current workspace tab is on screen unless a scenario opens Home.
+  window.history.replaceState(null, '', '/workspace/ws-1');
   mockState = baseState();
   dispatched.length = 0;
   getWorkspaceVocabularyTermsMock.mockResolvedValue([]);
@@ -539,6 +541,7 @@ describe('handleFinishedRecording', () => {
     // No active workspace → the insertion runs synchronously, so its throw
     // propagates into the flow instead of a timer callback.
     mockState.tabState.currentTabId = null;
+    window.history.replaceState(null, '', '/');
     const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
     const insertText = vi.fn(() => {
       throw new Error('boom');
@@ -1427,6 +1430,40 @@ describe('runTranscriptionFlow', () => {
     await vi.advanceTimersByTimeAsync(1000);
     await flow;
     expect(insertText).toHaveBeenCalledWith(TRANSCRIBE_RESULT.text);
+    expect(sendComposer).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('transcription from Home or Settings', () => {
+  // Home and Settings keep the last workspace (ws-1) as the current tab; its
+  // chat composer is not mounted, so the transcript must not be routed there.
+  it.each(['/', '/settings'])(
+    'inserts into the focused editable without workspace context on %s',
+    async (path) => {
+      window.history.replaceState(null, '', path);
+      const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
+      const focusComposer = vi.fn();
+      const insertText = vi.fn().mockReturnValue(true);
+
+      await handleFinishedRecording(RECORDING, { transcribe, focusComposer, insertText });
+
+      expect(transcribe).toHaveBeenCalledWith(
+        RECORDING.blob,
+        RECORDING.mimeType,
+        undefined,
+        undefined,
+      );
+      expect(focusComposer).not.toHaveBeenCalled();
+      expect(insertText).toHaveBeenCalledWith(TRANSCRIBE_RESULT.text);
+    },
+  );
+
+  it('sends the focused composer for a no-audio send gesture from Home', async () => {
+    window.history.replaceState(null, '', '/');
+    const sendComposer = vi.fn().mockReturnValue(true);
+    const focusComposer = vi.fn();
+    await runTranscriptionFlow(null, { autoSend: true }, { sendComposer, focusComposer });
+    expect(focusComposer).not.toHaveBeenCalled();
     expect(sendComposer).toHaveBeenCalledTimes(1);
   });
 });

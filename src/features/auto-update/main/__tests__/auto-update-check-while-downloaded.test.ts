@@ -58,6 +58,7 @@ vi.mock('electron-updater', () => {
         autoDownload: false,
         autoInstallOnAppQuit: false,
         allowDowngrade: false,
+        isUpdateSupported: vi.fn(() => true),
         setFeedURL: vi.fn(),
         checkForUpdates: vi.fn(),
         downloadUpdate: vi.fn(),

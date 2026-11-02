@@ -539,7 +539,7 @@ const providers = providerRegistry.getByTrigger('@file');
 Converts a mention candidate to a prompt token string.
 
 ```typescript
-import { toPromptToken } from '$lib/services/mentions/format';
+import { toPromptToken } from '$lib/services/mentions/registry';
 
 const token = toPromptToken({
   type: 'file',
@@ -1187,7 +1187,8 @@ console.log('File provider results:', results);
 - `search-service.ts` - Debounced search with caching
 - `providers/index.ts` - Provider implementations
 - `types.ts` - Type definitions
-- `format.ts` - Prompt token formatting
+- `registry.ts` - Mention token registry: save format, patterns, parsing, chips and previews for every mention type
+- `chip.ts` - `readMentionChip`: read a rendered chip back (click and hover handlers)
 - `icon-map.ts` - Icon mappings
 - `breadcrumb-controller.svelte.ts` - Navigation controller
 

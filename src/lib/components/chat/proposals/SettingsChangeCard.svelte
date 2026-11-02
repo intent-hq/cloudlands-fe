@@ -20,6 +20,7 @@
     selectProposalStatus,
   } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-selectors';
   import { getProposalId } from './proposal-id';
+  import { loadCardSettingDefinition } from './settings-proposal-definitions';
   import { m } from '$shared/paraglide/messages.js';
   import ProposalCardHeader from './ProposalCardHeader.svelte';
 
@@ -64,6 +65,10 @@
   let statusElement = $state<HTMLElement | undefined>();
   let isDismissed = $state(false);
   let editedFields = $state<Record<string, unknown>>(restoreEditedFields());
+  // Daemon settings outside the app schema: their definitions come from the
+  // daemon (settings.get), so values format and enums edit like schema rows.
+  let daemonDefinitions = $state<Record<string, AppSettingDefinition>>({});
+  const requestedDefinitions = new Set<string>();
   let now = $state(Date.now());
 
   const proposalId = $derived(getProposalId(proposal));
@@ -88,6 +93,21 @@
     }, 30_000);
     return () => window.clearInterval(intervalId);
   });
+
+  $effect(() => {
+    for (const row of rows) {
+      if (findAppSettingDefinition(row.key) || requestedDefinitions.has(row.key)) continue;
+      requestedDefinitions.add(row.key);
+      const key = row.key;
+      void loadCardSettingDefinition(key).then((definition) => {
+        if (definition) daemonDefinitions = { ...daemonDefinitions, [key]: definition };
+      });
+    }
+  });
+
+  function findCardDefinition(path: string): AppSettingDefinition | undefined {
+    return findAppSettingDefinition(path) ?? daemonDefinitions[path];
+  }
 
   $effect(() => {
     if (!statusMessage) return;
@@ -118,7 +138,7 @@
     if (fields.length > 0)
       return fields.map((field) => fieldToRow(field, changesByPath.get(field.key)));
     return getProposalChanges(currentProposal).map((change) => {
-      const definition = findAppSettingDefinition(change.path);
+      const definition = findCardDefinition(change.path);
       return {
         key: change.path,
         label: definition?.label ?? change.path,
@@ -145,7 +165,7 @@
   }
 
   function formatRowValue(row: DisplayRow, value: unknown): string {
-    const definition = findAppSettingDefinition(row.key);
+    const definition = findCardDefinition(row.key);
     if (definition) return formatSettingValue(definition, value);
     if (value === null || value === undefined || value === '')
       return m.chat_shared_valueNone_label();
@@ -156,7 +176,7 @@
   }
 
   function getRowDefinition(row: DisplayRow): AppSettingDefinition | undefined {
-    return findAppSettingDefinition(row.key);
+    return findCardDefinition(row.key);
   }
 
   function isEditableEnum(row: DisplayRow): boolean {

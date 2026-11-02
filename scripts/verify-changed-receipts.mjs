@@ -57,6 +57,16 @@ const CONFIG_FILES = [
   // Generated from gitignored environment input; tests import it directly.
   'src/main/build-config.generated.ts',
 ];
+// Lines a config file rewrites on every commit or regeneration without changing
+// any outcome. They are masked out, keeping the field name, so a commit or rebase
+// over identical code keeps earlier passes. No test reads the real commit hash:
+// the suites that use it mock or inject the value.
+const VOLATILE_CONFIG_LINES = {
+  'src/main/build-config.generated.ts': [
+    /^([ \t]*GIT_COMMIT_HASH:).*$/m,
+    /^([ \t]*\*[ \t]*Generated at:).*$/m,
+  ],
+};
 const CONFIG_PATTERN = /^tsconfig[^/]*\.json$/;
 const VITEST_CONFIGS = ['vitest.config.ts', 'tests/integration/vitest.integration.config.ts'];
 const ENVIRONMENT_KEYS = [
@@ -219,6 +229,18 @@ export function importClosure(entries, root) {
   return [...seen].sort();
 }
 
+/** Content digest of a config file with its volatile lines masked; null if absent. */
+function configFileDigest(file, content) {
+  if (!content) return null;
+  const volatile = VOLATILE_CONFIG_LINES[file];
+  if (!volatile) return sha256(content);
+  const text = volatile.reduce(
+    (masked, line) => masked.replace(line, '$1 <volatile>'),
+    content.toString('utf8'),
+  );
+  return sha256(text);
+}
+
 /** Setup and global-setup modules named as string literals in a Vitest config. */
 export function vitestSetupFiles(root, configFile) {
   const source = readIfFile(resolve(root, configFile))?.toString('utf8');
@@ -250,8 +272,7 @@ export function configurationIdentity(root, options = {}) {
   ].filter((file) => readIfFile(resolve(root, file)) !== null);
   const files = {};
   for (const file of new Set([...configFiles, ...importClosure(graphEntries, root)])) {
-    const content = readIfFile(resolve(root, file));
-    files[file] = content ? sha256(content) : null;
+    files[file] = configFileDigest(file, readIfFile(resolve(root, file)));
   }
   const runnerFiles = importClosure(RUNNER_ENTRIES, runnerRoot);
   const runner = Object.fromEntries(

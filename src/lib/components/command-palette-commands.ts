@@ -74,6 +74,48 @@ export const COMMAND_PALETTE_COMMANDS = [
     icon: faFlask,
   },
   {
+    id: 'enable-experimental-plain-folders',
+    get label() {
+      return m.lib_commandPalette_enableExperimentalPlainFolders_label();
+    },
+    icon: faFlask,
+  },
+  {
+    id: 'disable-experimental-plain-folders',
+    get label() {
+      return m.lib_commandPalette_disableExperimentalPlainFolders_label();
+    },
+    icon: faFlask,
+  },
+  {
+    id: 'enable-experimental-browser-access',
+    get label() {
+      return m.lib_commandPalette_enableExperimentalBrowserAccess_label();
+    },
+    icon: faFlask,
+  },
+  {
+    id: 'disable-experimental-browser-access',
+    get label() {
+      return m.lib_commandPalette_disableExperimentalBrowserAccess_label();
+    },
+    icon: faFlask,
+  },
+  {
+    id: 'enable-experimental-dock',
+    get label() {
+      return m.lib_commandPalette_enableExperimentalDock_label();
+    },
+    icon: faFlask,
+  },
+  {
+    id: 'disable-experimental-dock',
+    get label() {
+      return m.lib_commandPalette_disableExperimentalDock_label();
+    },
+    icon: faFlask,
+  },
+  {
     id: 'new-terminal',
     get label() {
       return m.lib_commandPalette_newTerminal_command();

@@ -281,10 +281,13 @@ describe('native Mac packaging entry point', () => {
     const calls = execute.mock.calls;
     expect(calls.map((call) => call[1])).toEqual([
       ['scripts/pnpm-run.mjs', 'build'],
+      ['scripts/pnpm-run.mjs', 'build:web'],
       ['scripts/ensure-native-deps.cjs'],
       ['scripts/copy-sidecar.cjs'],
       ['scripts/fetch-tailcat.cjs', `--targets=darwin-${arch}`],
       ['scripts/build-speech-helper.cjs'],
+      ['scripts/build-dock-helper.cjs'],
+      ['scripts/pnpm-run.mjs', 'build:dock-composer-helpers'],
       ['scripts/build-keychain-helper.cjs'],
       ['scripts/validate-macos-native.cjs', arch],
       ['--mac', `--${arch}`, '--publish', 'never'],

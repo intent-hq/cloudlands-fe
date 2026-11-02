@@ -8,13 +8,14 @@
   import Fa from 'svelte-fa';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import BranchSelector, { type BranchListInfo, type BranchStatus } from './BranchSelector.svelte';
-  import RepoSelector from './RepoSelector.svelte';
+  import RepoSelector, { type RepoSelectorGitChoice } from './RepoSelector.svelte';
   import GitLabBranchPicker from './GitLabBranchPicker.svelte';
   import type { GitLabProjectPickerProps, GitLabBranchPickerProps } from './gitlab-picker-types';
   import { m } from '$shared/paraglide/messages.js';
 
   type RepoSelectorHandle = {
     focusInput: () => void;
+    openOnLocalTab: (tab?: 'local' | 'new') => void;
   };
 
   export interface RemoteSetup {
@@ -42,6 +43,7 @@
     isValidPath?: boolean;
     scope?: string;
     remoteSetup?: RemoteSetup;
+    plainFolder?: 'existing' | 'new';
   }
 
   export interface BranchChangeDetail {
@@ -81,6 +83,12 @@
     detectedGitHubOwner?: string | null;
     /** Detected GitHub repo for the selected local repo (shown as dimmed suffix) */
     detectedGitHubRepo?: string | null;
+    /** "Initialize as git repository" is off (Labs); forwarded to the repo selector. */
+    plainFolderMode?: boolean;
+    /** The selection is a plain folder (Labs): no branch is shown. */
+    plainFolder?: 'existing' | 'new' | null;
+    /** The git choice (Labs), forwarded to the repo selector's folder tabs. */
+    gitChoice?: RepoSelectorGitChoice;
   }
 
   let {
@@ -107,6 +115,9 @@
     isLoading = false,
     detectedGitHubOwner = null,
     detectedGitHubRepo = null,
+    plainFolderMode = false,
+    plainFolder = null,
+    gitChoice,
   }: Props = $props();
 
   const isMetadataPresentation = $derived(presentation === 'metadata');
@@ -136,6 +147,9 @@
         branch: SLOT,
       }),
     ),
+  );
+  const workInFolderParts = $derived(
+    sentenceParts(m.workspace_repoAndBranchPicker_workInFolder_label({ repo: SLOT })),
   );
   const workOnRemoteParts = $derived(
     sentenceParts(
@@ -262,12 +276,19 @@
   export function focusInput() {
     repoSelector?.focusInput?.();
   }
+
+  /** Open the repo picker on its local folder tab. */
+  export function openFolderSelection(tab: 'local' | 'new' = 'local') {
+    repoSelector?.openOnLocalTab?.(tab);
+  }
 </script>
 
 <div class={pickerClass}>
   {#if field === 'repo'}
     <RepoSelector
       {gitlab}
+      {plainFolderMode}
+      {gitChoice}
       bind:this={repoSelector}
       variant="ghost"
       gitlabSelected={repoType === 'gitlab'}
@@ -328,6 +349,8 @@
     {/if}
     <RepoSelector
       {gitlab}
+      {plainFolderMode}
+      {gitChoice}
       bind:this={repoSelector}
       variant="ghost"
       value=""
@@ -341,6 +364,35 @@
     {#if !isMetadataPresentation && workOnRepoParts[1]}
       <span class="text-sm text-subtle whitespace-nowrap shrink-0">{workOnRepoParts[1]}</span>
     {/if}
+  {:else if plainFolder && repoType === 'local'}
+    <!-- Plain folder (Labs): the folder only, no branch -->
+    {#if !isMetadataPresentation}
+      {#if plainFolder === 'new'}
+        <Fa icon={faPlus} size="sm" class="ml-0.75 mr-2 shrink-0" />
+        <span class="text-sm text-subtle whitespace-nowrap shrink-0"
+          >{m.workspace_repoAndBranchPicker_createFolder_label()}</span
+        >
+      {:else if workInFolderParts[0]}
+        <span class="text-sm text-subtle whitespace-nowrap shrink-0">{workInFolderParts[0]}</span>
+      {/if}
+    {/if}
+    <RepoSelector
+      {gitlab}
+      {plainFolderMode}
+      {gitChoice}
+      variant="ghost"
+      value={repoPath}
+      onchange={handleRepoChange}
+      triggerClass={repoTriggerClass}
+      displayValue={isMetadataPresentation ? metadataRepoName : undefined}
+      triggerValueClass={isMetadataPresentation ? metadataValueClass : defaultValueClass}
+      triggerContentClass={isMetadataPresentation ? 'gap-1.5' : 'gap-0.75'}
+      showTriggerChevron={isMetadataPresentation}
+      triggerChevronClass={metadataChevronClass}
+    />
+    {#if !isMetadataPresentation && plainFolder !== 'new' && workInFolderParts[1]}
+      <span class="text-sm text-subtle whitespace-nowrap shrink-0">{workInFolderParts[1]}</span>
+    {/if}
   {:else if isNewRepo}
     <!-- New repo mode: show create with repo selector -->
     {#if !isMetadataPresentation}
@@ -351,6 +403,8 @@
     {/if}
     <RepoSelector
       {gitlab}
+      {plainFolderMode}
+      {gitChoice}
       variant="ghost"
       value={repoPath}
       onchange={handleRepoChange}
@@ -364,6 +418,8 @@
   {:else if ((repoType === 'github' && githubUrl) || repoType === 'gitlab') && isMetadataPresentation}
     <RepoSelector
       {gitlab}
+      {plainFolderMode}
+      {gitChoice}
       gitlabSelected={repoType === 'gitlab'}
       variant="ghost"
       value={repoType === 'gitlab' ? '' : repoPath}
@@ -385,6 +441,8 @@
     {/if}
     <RepoSelector
       {gitlab}
+      {plainFolderMode}
+      {gitChoice}
       gitlabSelected={repoType === 'gitlab'}
       variant="ghost"
       value={repoType === 'gitlab' ? '' : repoPath}
@@ -435,6 +493,8 @@
   {:else if repoType === 'remote' && remoteSetup && isMetadataPresentation}
     <RepoSelector
       {gitlab}
+      {plainFolderMode}
+      {gitChoice}
       variant="ghost"
       value={remoteSetup.name}
       onchange={handleRepoChange}
@@ -455,6 +515,8 @@
     {/if}
     <RepoSelector
       {gitlab}
+      {plainFolderMode}
+      {gitChoice}
       variant="ghost"
       value={remoteSetup.name}
       onchange={handleRepoChange}
@@ -510,6 +572,8 @@
   {:else if isMetadataPresentation}
     <RepoSelector
       {gitlab}
+      {plainFolderMode}
+      {gitChoice}
       variant="ghost"
       value={repoPath}
       onchange={handleRepoChange}
@@ -532,6 +596,8 @@
     {/if}
     <RepoSelector
       {gitlab}
+      {plainFolderMode}
+      {gitChoice}
       variant="ghost"
       value={repoPath}
       onchange={handleRepoChange}

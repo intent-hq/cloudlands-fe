@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { waitForLayerExit } from '../../../../../test/layer-exit';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 
 const mocks = vi.hoisted(() => {
@@ -146,7 +147,7 @@ import { invoke } from '$lib/electron-bridge';
 import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
 import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 
-const DROPDOWN_HEADING = 'What repo should we work on?';
+const DROPDOWN_HEADING = 'What should we work on?';
 warmImport(() => import('../../../ui/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('./mocks/MockComponent.svelte'));
 
@@ -315,6 +316,7 @@ describe('RepoSelector recent hydration and refresh ownership', () => {
     async (change) => {
       const held = holdRegistry();
       const rendered = await openDropdown();
+      const heading = screen.getByText(DROPDOWN_HEADING);
       const before = mocks.appState as unknown as StoreState;
       const next = admit();
       if (change === 'readmission')
@@ -339,7 +341,7 @@ describe('RepoSelector recent hydration and refresh ownership', () => {
       expect(recents()).toEqual([saved]);
       expect(writes()).toHaveLength(0);
       if (change === 'store') expect(store.dispatch).not.toHaveBeenCalled();
-      expect(screen.queryByText(DROPDOWN_HEADING)).toBeNull();
+      await waitForLayerExit(heading);
       rendered.unmount();
     },
   );

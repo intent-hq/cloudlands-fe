@@ -17,9 +17,13 @@ import {
   join,
   put,
   take,
+  takeLeading,
   type SagaGenerator,
 } from 'typed-redux-saga';
 
+import { dockPlacementSaga } from './dock-placement-saga';
+import { dockMachineSaga } from './dock-machine-saga';
+import { dockRecencySaga } from './dock-recency-saga';
 import { takeSingleFlightInContext } from '../../../utils/context-saga-effects';
 import { getLocalStorageJSON, setLocalStorageJSON } from '../../../utils/safe-local-storage-saga';
 import {
@@ -70,6 +74,7 @@ import { hydrateAgentsRequested, setAgents } from '../../workspace-agents/worksp
 import { selectHudGridFilter, selectHudWorkspaceEntities } from '../hud-selectors';
 import {
   hudActivated,
+  dockActivated,
   hudAttentionChanged,
   hudDeactivated,
   hudDisplayStatusChanged,
@@ -656,12 +661,32 @@ function* hudActiveLifetime(): SagaGenerator<void> {
   }
 }
 
-/** Root-owned HUD lifetime. The route only dispatches activation intent. */
-export function* hudSaga(): SagaGenerator<never> {
-  while (true) {
-    yield* take(hudActivated);
-    const lifetime = yield* fork(hudActiveLifetime);
+function* hudRouteLifetime(): SagaGenerator<void> {
+  const lifetime = yield* fork(hudActiveLifetime);
+  try {
     yield* take(hudDeactivated);
+  } finally {
     yield* cancel(lifetime);
   }
+}
+
+function* dockRouteLifetime(): SagaGenerator<void> {
+  const placement = yield* fork(dockPlacementSaga);
+  const machine = yield* fork(dockMachineSaga);
+  const recency = yield* fork(dockRecencySaga);
+  try {
+    yield* call(hudRouteLifetime);
+  } finally {
+    yield* cancel(recency);
+    yield* cancel(placement);
+    yield* cancel(machine);
+  }
+}
+
+/** Each route activation has one owner; teardown cancels its attached work. */
+export function* hudSaga(): SagaGenerator<void> {
+  yield* all([
+    takeLeading(hudActivated, hudRouteLifetime),
+    takeLeading(dockActivated, dockRouteLifetime),
+  ]);
 }

@@ -10,7 +10,6 @@ import {
   navigateToAppRoute,
   navigateToAppRouteSaga,
   openAndShowWorkspace,
-  parseWorkspaceRoute,
   showWorkspaceSaga,
   workspaceRoute,
 } from './show-workspace';
@@ -39,28 +38,6 @@ describe('workspaceRoute', () => {
 
   it('omits an empty query', () => {
     expect(workspaceRoute('ws-1', {})).toBe('/workspace/ws-1');
-  });
-});
-
-describe('parseWorkspaceRoute', () => {
-  it.each([
-    ['/workspace/ws-1', 'ws-1'],
-    ['/workspace/ws-1/', 'ws-1'],
-    ['/workspace/ws-1?note=n1#top', 'ws-1'],
-    ['/workspace/a%2Fb', 'a/b'],
-  ])('reads the workspace id from %s', (route, workspaceId) => {
-    expect(parseWorkspaceRoute(route)).toBe(workspaceId);
-  });
-
-  it.each([
-    '/',
-    '/settings',
-    '/workspace/new',
-    '/workspace/',
-    '/workspace/ws-1/files',
-    '/workspace/%E0',
-  ])('is null for %s', (route) => {
-    expect(parseWorkspaceRoute(route)).toBeNull();
   });
 });
 

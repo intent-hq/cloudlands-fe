@@ -1108,3 +1108,33 @@ describe('encoder feedback and existing gauge', () => {
     expect(screen.queryByRole('status')).toBeNull();
   });
 });
+
+describe('encoder rotation from Home or Settings', () => {
+  // Home and Settings keep the last workspace (ws-1) as the current tab; the
+  // encoder must not act on it as if it were on screen.
+  it.each(['/', '/settings'])('leaves the off-screen agent effort alone on %s', async (path) => {
+    ready();
+    window.history.replaceState(null, '', path);
+    const device = manager();
+    device.turn();
+    await flush();
+    expect(mutations()).toHaveLength(0);
+    expect(effort()).toBeNull();
+  });
+
+  it('enters the activity list at the most recent workspace on a ccw detent from Home', () => {
+    window.history.replaceState(null, '', '/');
+    const device = manager();
+    mocks.dispatch(hydrateHardwareConsoleEncoderBehavior('workspace-switch'));
+    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CC', act: 2 } });
+    expect(device.showWorkspace).toHaveBeenCalledExactlyOnceWith('ws-2');
+  });
+
+  it('enters the activity list at the least recent workspace on a cw detent from Home', () => {
+    window.history.replaceState(null, '', '/');
+    const device = manager();
+    mocks.dispatch(hydrateHardwareConsoleEncoderBehavior('workspace-switch'));
+    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CW', act: 2 } });
+    expect(device.showWorkspace).toHaveBeenCalledExactlyOnceWith('ws-1');
+  });
+});

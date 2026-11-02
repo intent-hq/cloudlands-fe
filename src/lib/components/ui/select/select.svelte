@@ -1,6 +1,7 @@
 <script lang="ts">
   import { setContext, type Snippet } from 'svelte';
   import { Select as SelectPrimitive } from 'bits-ui';
+  import { setOwnedPopupClose } from '$lib/components/ui/owned-popup-context';
 
   const uid = $props.id();
   const fallbackTriggerId = `${uid}-trigger`;
@@ -41,6 +42,11 @@
     children,
     staticPosition = false,
   }: Props = $props();
+
+  setOwnedPopupClose(() => {
+    open = false;
+    onopenchange?.(false);
+  });
 
   setContext('canonical-select', {
     get triggerId() {

@@ -34,7 +34,7 @@ const rerun =
   'corepack pnpm run test:ct -- src/features/home/home-workspace-links.ct.spec.ts --workers=1';
 const limits = [
   'Real HomeWorkspaceDetail, HomeWorkspaceChat and ChatPanel; seeded Redux transcript; production workspaceNavigationTabSaga and panelLayoutSaga.',
-  'CT $app/navigation.goto is a no-op. Selected workspace and produced panel tabs are asserted; actual SvelteKit route paint, navigation rejection and Electron browser loading are not verified.',
+  'CT $app/navigation.goto updates browser history without unmounting the preview. Selected workspace and produced panel tabs are asserted; actual SvelteKit route paint, navigation rejection and Electron browser loading are not verified.',
   'The marker-removed comparison reproduces the old missing-workspace-entry boundary using current code. It is not a screenshot of the historical source revision.',
 ];
 async function snapshot(page: Page): Promise<Snapshot> {
@@ -198,20 +198,33 @@ test('preview link uses its workspace panel instead of an enclosing Home panel',
   expect(Object.keys((await snapshot(page)).owner.panels)).toEqual(['source-preview-owner']);
 });
 
-for (const modifier of ['Meta', 'Control'] as const) {
-  test(`preview chat ${modifier} file click enters owner and opens adjacent panel`, async ({
+const nativePlatform =
+  process.platform === 'darwin'
+    ? 'MacIntel'
+    : process.platform === 'win32'
+      ? 'Win32'
+      : 'Linux x86_64';
+const nativeModifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+for (const activation of [
+  { name: 'native primary-modifier file click', platform: nativePlatform, keyboard: false },
+  { name: 'Linux Control+Enter file activation', platform: 'Linux x86_64', keyboard: true },
+]) {
+  test(`preview chat ${activation.name} enters owner and opens adjacent panel`, async ({
     mount,
     page,
   }) => {
+    // navigator.platform controls the app's modifier choice, not Chromium's
+    // native mouse semantics. Align clicks with this local browser's host;
+    // exercise the other platform's handler through explicit keyboard input.
     await page.evaluate(
       (platform) =>
         Object.defineProperty(navigator, 'platform', { value: platform, configurable: true }),
-      modifier === 'Meta' ? 'MacIntel' : 'Linux x86_64',
+      activation.platform,
     );
     const component = await mount(Harness);
-    await component
-      .getByRole('link', { name: 'Review destination', exact: true })
-      .click({ modifiers: [modifier] });
+    const link = component.getByRole('link', { name: 'Review destination', exact: true });
+    if (activation.keyboard) await link.press('Control+Enter');
+    else await link.click({ modifiers: [nativeModifier] });
     await expect.poll(async () => (await snapshot(page)).selectedWorkspaceId).toBe('preview-owner');
     await expect
       .poll(async () => focused((await snapshot(page)).owner)?.filePath)

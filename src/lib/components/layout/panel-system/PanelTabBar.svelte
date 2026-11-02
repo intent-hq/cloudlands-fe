@@ -70,6 +70,7 @@
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { writable } from 'svelte/store';
+  import AgentLocationBadge from '$features/remote-machines/AgentLocationBadge.svelte';
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
   import { stripWorkspacePrefix } from '$lib/utils/file-utils';
   import { toNativePath } from '$lib/utils/path-utils';
@@ -1540,6 +1541,9 @@
                 >
                   {getTabTitle(activeTab)}
                 </span>
+                {#if activeTab.type === 'agent' && activeTab.agentId}
+                  <AgentLocationBadge agentId={activeTab.agentId} variant="pill" />
+                {/if}
               {/if}
               <svg
                 viewBox="0 0 8 14"
@@ -1986,6 +1990,12 @@
   }
   .pane-stack-selector {
     width: 194px;
+  }
+  /* A remote agent's machine pill widens the chip so the title keeps its room. */
+  .pane-stack-selector:has(:global([data-agent-machine-badge])) {
+    width: auto;
+    min-width: 194px;
+    max-width: 340px;
   }
   :global(.panel-selector-button) {
     height: 36px;

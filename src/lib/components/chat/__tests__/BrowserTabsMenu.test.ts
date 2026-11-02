@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { waitForLayerExit } from '../../../../test/layer-exit';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const { dispatchMock, focusPanelMock, layoutState, setActiveTabMock, agentState, mockState } =
@@ -288,6 +289,7 @@ describe('permanent close actions (intent#4762)', () => {
     seedLayout(1, 1);
     renderMenu();
     await fireEvent.click(screen.getByTestId('browser-tabs-trigger'));
+    const chooser = screen.getByRole('dialog', { name: '2 browser tabs' });
     const closeButtons = screen.getAllByTestId('browser-tab-close');
     expect(closeButtons).toHaveLength(2);
     expect(closeButtons[0].getAttribute('aria-label')).toContain('Visible 1');
@@ -301,6 +303,7 @@ describe('permanent close actions (intent#4762)', () => {
       panelId: 'browser',
       destroy: true,
     });
+    await waitForLayerExit(chooser);
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(setActiveTabMock).not.toHaveBeenCalled();
     expect(focusPanelMock).not.toHaveBeenCalled();
@@ -344,9 +347,12 @@ describe('permanent close actions (intent#4762)', () => {
     agentState.running = true;
     renderMenu();
     await fireEvent.click(screen.getByTestId('browser-tabs-trigger'));
+    const chooser = screen.getByRole('dialog', { name: '2 browser tabs' });
     await fireEvent.click(screen.getAllByTestId('browser-tab-close')[0]);
 
     expect(tabActions().some((a) => a.type === closeTabType)).toBe(false);
+    // The chooser plays its exit while the confirmation opens.
+    await waitForLayerExit(chooser);
     const dialog = screen.getByRole('dialog');
     expect(dialog.getAttribute('aria-modal')).toBe('true');
 
@@ -361,7 +367,9 @@ describe('permanent close actions (intent#4762)', () => {
     agentState.running = true;
     renderMenu();
     await fireEvent.click(screen.getByTestId('browser-tabs-trigger'));
+    const chooser = screen.getByRole('dialog', { name: '2 browser tabs' });
     await fireEvent.click(screen.getByTestId('browser-tabs-close-hidden'));
+    await waitForLayerExit(chooser);
     expect(screen.getByRole('dialog')).toBeTruthy();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Cancel', exact: true }));
@@ -379,13 +387,14 @@ describe('permanent close actions (intent#4762)', () => {
       const trigger = screen.getByTestId('browser-tabs-trigger');
       trigger.focus();
       await fireEvent.click(trigger);
+      const chooser = screen.getByRole('dialog', { name: '2 browser tabs' });
       const close = screen.getAllByTestId('browser-tab-close')[0];
       close.focus();
       await fireEvent.click(close);
 
       const confirm = await screen.findByRole('button', { name: 'Close tab', exact: true });
       await waitFor(() => expect(document.activeElement).toBe(confirm));
-      expect(screen.queryByRole('dialog', { name: '2 browser tabs' })).toBeNull();
+      await waitForLayerExit(chooser);
       if (dismissal === 'escape') await fireEvent.keyDown(confirm, { key: 'Escape' });
       else {
         await fireEvent.click(

@@ -6,6 +6,7 @@ import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
   EXEMPT_MARKER,
+  importsRepositoryScanner,
   inspectDeclaredSuites,
   listDeclaredSuites,
   matchesTrigger,
@@ -613,6 +614,89 @@ describe('selectDeclaredSuites', () => {
       ]),
     ).toEqual(['scripts/a.test.ts', 'scripts/z.test.ts']);
     expect(selectDeclaredSuites(suites, ['src/lib/utils.test.ts', 'README.md'])).toEqual([]);
+  });
+});
+
+describe('importsRepositoryScanner', () => {
+  const scannerSuite = (specifier: string, clause = '{ scanMainInvokeHandlers }') =>
+    lines(
+      `import ${clause} from '${specifier}';`,
+      "import { getRegisteredMockIpcChannels } from '$shared/ipc-mock-router';",
+      'it("x", () => expect(getRegisteredMockIpcChannels()).toBeDefined());',
+    );
+  const seederSuite = 'src/store/renderer/seeders/a.test.ts';
+
+  it('detects the IPC source scanner by relative path, alias, or extension', () => {
+    expect(
+      importsRepositoryScanner(scannerSuite('../../../test/ipc-channel-source-scan'), seederSuite),
+    ).toBe('src/test/ipc-channel-source-scan');
+    expect(
+      importsRepositoryScanner(scannerSuite('@/test/ipc-channel-source-scan.ts'), seederSuite),
+    ).toBe('src/test/ipc-channel-source-scan');
+    expect(
+      importsRepositoryScanner(scannerSuite('./ipc-channel-source-scan.js'), 'src/test/a.test.ts'),
+    ).toBe('src/test/ipc-channel-source-scan');
+    expect(
+      importsRepositoryScanner(
+        lines("const scan = await import('../../../test/ipc-channel-source-scan');"),
+        seederSuite,
+      ),
+    ).toBe('src/test/ipc-channel-source-scan');
+  });
+
+  it('ignores type-only imports and unrelated helpers', () => {
+    expect(
+      importsRepositoryScanner(
+        scannerSuite('../../../test/ipc-channel-source-scan', 'type { MainHandlerScan }'),
+        seederSuite,
+      ),
+    ).toBeUndefined();
+    expect(
+      importsRepositoryScanner(
+        scannerSuite('../../../test/ipc-channel-source-scan', '{ type MainHandlerScan }'),
+        seederSuite,
+      ),
+    ).toBeUndefined();
+    expect(
+      importsRepositoryScanner(scannerSuite('../../../test/ipc-path-parity'), seederSuite),
+    ).toBeUndefined();
+  });
+});
+
+describe('inspectDeclaredSuites with a repository scanner import', () => {
+  // cloudlands-fe#4017: the IPC channel reconciliation suite imports the seeders
+  // from `src/`, so the read-without-import rule passed it over and
+  // `verify:changed` never ran it for a new renderer invoke call site.
+  const scannerSuite = lines(
+    "import fs from 'node:fs';",
+    "import './index';",
+    "import { collectGroupAliases } from '../../../test/ipc-channel-source-scan';",
+    "const SRC_ROOT = new URL('../../..', import.meta.url).pathname;",
+    'it("x", () => expect(fs.readdirSync(SRC_ROOT)).toBeDefined());',
+  );
+  const file = 'src/store/renderer/seeders/scanner.test.ts';
+
+  it('flags a scanner suite that declares no triggers even though it imports src/', () => {
+    expect(requiresTriggerDeclaration(scannerSuite, file)).toBe(false);
+    const result = inspectDeclaredSuites([{ path: file, content: scannerSuite }]);
+    expect(result.violations.map((entry) => [entry.path, entry.message])).toEqual([
+      [
+        file,
+        `imports the repository scanner src/test/ipc-channel-source-scan but declares no ${TRIGGER_MARKER}, so \`verify:changed\` never selects it when a scanned file changes`,
+      ],
+    ]);
+  });
+
+  it('accepts the scanner suite once it declares triggers or an exemption', () => {
+    const declared = inspectDeclaredSuites([
+      { path: file, content: lines(`// ${TRIGGER_MARKER} src/**/*.{ts,svelte}`, scannerSuite) },
+    ]);
+    expect(declared.violations).toEqual([]);
+    expect(declared.suites).toEqual([{ path: file, triggers: ['src/**/*.{ts,svelte}'] }]);
+    const exempt = inspectDeclaredSuites([
+      { path: file, content: lines(`// ${EXEMPT_MARKER} scans only fixtures`, scannerSuite) },
+    ]);
+    expect(exempt.violations).toEqual([]);
   });
 });
 

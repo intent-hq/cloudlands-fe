@@ -89,6 +89,7 @@ import {
   chatQueuedRetryRecordUpdated,
   chatQueuedSendStarted,
   chatSendFailed,
+  chatReset,
   chatSendStarted,
   chatStopCompleted,
   chatStopInitiated,
@@ -97,6 +98,7 @@ import {
   sendQueuedMessagesNowRequested,
   clearQueuedMessagesRequested,
   transcriptHydrationSettled,
+  transcriptHydrationFailed,
 } from '../chat-state-slice';
 import {
   selectChatLastAttemptedMessage,
@@ -162,27 +164,29 @@ function hasSendableMessageContent(
   );
 }
 
-function* waitForTranscriptRefresh(agentId: string, wsId: string): SagaGenerator<void> {
+function* waitForTranscriptRefresh(agentId: string, wsId: string): SagaGenerator<boolean> {
   while (true) {
     const { settled, unmounted } = yield* race({
-      settled: take(transcriptHydrationSettled),
+      // Every terminal history outcome must release this agent's send FIFO.
+      settled: take([transcriptHydrationSettled, transcriptHydrationFailed, chatReset]),
       unmounted: take(workspaceUnmounted),
     });
-    if (unmounted?.payload[0] === wsId) return;
+    if (unmounted?.payload[0] === wsId) return true;
     if (!settled || settled.payload[0] !== agentId) continue;
+    if (settled.type === chatReset.type) return false;
     yield* delay(0);
     const status = yield* selectTranscriptHydration.effect(agentId);
-    if (status !== 'loading') return;
+    if (status !== 'loading') return status === 'settled';
   }
 }
 
-function* hydrateBeforeSend(agentId: string, wsId: string): SagaGenerator<void> {
+function* hydrateBeforeSend(agentId: string, wsId: string): SagaGenerator<boolean> {
   const session = yield* selectAgentSession.effect(agentId);
-  if (session && session.messages.length > 0) return;
+  if (session && session.messages.length > 0) return true;
   const hydration = yield* selectTranscriptHydration.effect(agentId);
-  if (session && hydration === 'settled') return;
+  if (session && hydration === 'settled') return true;
   yield* put(refreshChatTranscriptRequested(wsId, agentId));
-  yield* call(waitForTranscriptRefresh, agentId, wsId);
+  return yield* call(waitForTranscriptRefresh, agentId, wsId);
 }
 
 function* sendQueuedNow(
@@ -476,8 +480,14 @@ function* dispatchToLifecycle(
   }
 
   if (!(yield* current())) return;
-  yield* call(hydrateBeforeSend, agentId, wsId);
+  const historyReady = yield* call(hydrateBeforeSend, agentId, wsId);
   if (!(yield* current())) return;
+  if (!historyReady) {
+    yield* put(chatLastAttemptedMessageSet(agentId, buildRecordedAttempt(content, options)));
+    yield* settle('rejected');
+    yield* put(chatSendFailed(agentId, m.agent_chatSend_historyFailed_error()));
+    return;
+  }
   const recordedAttempt = buildRecordedAttempt(content, options);
   const isResponding = yield* selectAgentIsResponding.effect(agentId);
   if (!skipQueueCheck && isResponding) {

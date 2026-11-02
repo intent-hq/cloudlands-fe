@@ -1,3 +1,9 @@
+import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+import { setChiefActiveAgentId } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import {
+  openWorkspaceFile,
+  openWorkspaceNote,
+} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { store } from '$store/renderer/store';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -20,15 +26,19 @@ vi.mock('$lib/utils/navigation.client', async () => {
 
 describe('handleNotificationNavigate', () => {
   let dispose: () => void;
+  let dispatchSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.route.mockReset().mockResolvedValue(undefined);
     window.history.replaceState({}, '', '/workspace/open-ws');
     dispose = store.init();
     store.dispatch(openWorkspaceTab('open-ws'));
+    dispatchSpy = vi.spyOn(store, 'dispatch');
   });
 
   afterEach(() => {
+    dispatchSpy.mockRestore();
     dispose();
     window.history.replaceState({}, '', '/');
   });
@@ -95,5 +105,93 @@ describe('handleNotificationNavigate', () => {
 
     expect(mocks.route).not.toHaveBeenCalled();
     expect(selectIsWorkspaceTabOpen.select(store.state, 'closed-ws')).toBe(false);
+  });
+  it('opens the selected agent after entering its workspace', async () => {
+    let finishNavigation!: () => void;
+    mocks.route.mockReturnValue(new Promise<void>((resolve) => (finishNavigation = resolve)));
+    const work = handleNotificationNavigate({ workspaceId: 'workspace-one', agentId: 'agent-two' });
+    expect(dispatchSpy).not.toHaveBeenCalled();
+    finishNavigation();
+    await work;
+    expect(mocks.route).toHaveBeenCalledWith('/workspace/workspace-one');
+    expect(dispatchSpy).toHaveBeenCalledWith(
+      openAgentTabRequested('workspace-one', { agentId: 'agent-two' }),
+    );
+  });
+
+  it('selects the exact Assistant thread', async () => {
+    await handleNotificationNavigate({ workspaceId: CHIEF_WORKSPACE_ID, agentId: 'chief-thread' });
+    expect(dispatchSpy).toHaveBeenCalledWith(setChiefActiveAgentId('chief-thread'));
+    expect(mocks.route).toHaveBeenCalledWith('/');
+  });
+
+  it('opens an exact transcript file after its workspace navigation finishes', async () => {
+    await handleNotificationNavigate({
+      workspaceId: 'workspace-one',
+      workspaceTarget: {
+        type: 'file',
+        filePath: 'src/app.ts',
+        line: 42,
+        gitRootId: 'root-two',
+      },
+    });
+    expect(dispatchSpy).toHaveBeenCalledWith(
+      openWorkspaceFile('workspace-one', 'src/app.ts', {
+        line: 42,
+        gitRootId: 'root-two',
+        filePathIsLiteral: true,
+      }),
+    );
+  });
+
+  it('does not open a stale note when a newer conversation overtakes navigation', async () => {
+    let finishOlder!: () => void;
+    mocks.route.mockReturnValueOnce(new Promise<void>((resolve) => (finishOlder = resolve)));
+    const older = handleNotificationNavigate({
+      workspaceId: 'workspace-one',
+      workspaceTarget: { type: 'note', noteId: 'note-old' },
+    });
+    await handleNotificationNavigate({
+      workspaceId: 'workspace-one',
+      workspaceTarget: { type: 'note', noteId: 'note-new' },
+    });
+    finishOlder();
+    await older;
+    expect(dispatchSpy).toHaveBeenCalledWith(openWorkspaceNote('workspace-one', 'note-new'));
+    expect(dispatchSpy).not.toHaveBeenCalledWith(openWorkspaceNote('workspace-one', 'note-old'));
+  });
+
+  it('keeps the latest agent selection when an older navigation finishes late', async () => {
+    let finishOlder!: () => void;
+    mocks.route.mockReturnValueOnce(new Promise<void>((resolve) => (finishOlder = resolve)));
+    const older = handleNotificationNavigate({
+      workspaceId: 'workspace-one',
+      agentId: 'agent-old',
+    });
+    await handleNotificationNavigate({ workspaceId: 'workspace-one', agentId: 'agent-new' });
+    finishOlder();
+    await older;
+    expect(dispatchSpy).toHaveBeenCalledWith(
+      openAgentTabRequested('workspace-one', { agentId: 'agent-new' }),
+    );
+    expect(dispatchSpy).not.toHaveBeenCalledWith(
+      openAgentTabRequested('workspace-one', { agentId: 'agent-old' }),
+    );
+  });
+
+  it.each(['/dock', '/hud', '/annotation/toolbar', '/dev-console'])(
+    'keeps the auxiliary %s renderer on its own route',
+    async (route) => {
+      window.history.replaceState({}, '', route);
+      await handleNotificationNavigate({ workspaceId: 'workspace-one', agentId: 'agent-two' });
+      expect(mocks.route).not.toHaveBeenCalled();
+      expect(dispatchSpy).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not activate an agent when workspace navigation failed', async () => {
+    mocks.route.mockRejectedValue(new Error('Navigation unavailable'));
+    await handleNotificationNavigate({ workspaceId: 'workspace-one', agentId: 'agent-two' });
+    expect(dispatchSpy).not.toHaveBeenCalled();
   });
 });

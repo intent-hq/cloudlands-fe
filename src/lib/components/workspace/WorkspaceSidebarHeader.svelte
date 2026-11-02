@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { workspaceRepositoryLabel } from './utils/workspace-repository-label';
   import { truncatedTitle } from '$lib/actions/observe-overflow';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import SidebarIcon from '$lib/components/icons/SidebarIcon.svelte';
@@ -44,6 +45,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
   import { renameWorkspaceTitle } from '$features/workspace/rename-workspace-title';
+  import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
 
   interface Props {
     workspace: Workspace | null;
@@ -73,12 +75,10 @@
   let isSavingBranch = $state(false);
 
   const statusDescriptionId = $props.id();
+  // Plain folders have no branch to show, rename or transfer.
+  const plainFolder = $derived(isPlainFolderWorkspace(workspace));
   const currentStatusMessage = $derived(workspace?.statusMessage?.trim() ?? '');
-  const repositoryLabel = $derived(
-    workspace?.repositoryOwner && workspace?.repositoryName
-      ? `${workspace.repositoryOwner}/${workspace.repositoryName}`
-      : (workspace?.repositoryPath?.split('/').pop() ?? ''),
-  );
+  const repositoryLabel = $derived(workspaceRepositoryLabel(workspace));
 
   async function handleDelete() {
     if (isDeleting || !workspace) return;
@@ -419,7 +419,7 @@
   });
 
   const transferAction: MenuAction | null = $derived(
-    workspace && !$hidesOwnerActions$
+    workspace && !plainFolder && !$hidesOwnerActions$
       ? {
           id: 'transfer-workspace',
           label: m.workspace_card_transfer_label(),
@@ -580,9 +580,11 @@
         >
           {repositoryLabel}
         </span>
-        <span class="flex h-5 shrink-0 items-center leading-5" aria-hidden="true">·</span>
+        {#if !plainFolder}
+          <span class="flex h-5 shrink-0 items-center leading-5" aria-hidden="true">·</span>
+        {/if}
       {/if}
-      {#if workspace}
+      {#if workspace && !plainFolder}
         <div class="flex h-5 min-w-0 flex-1 items-center leading-5" data-sidebar-branch-metadata>
           {#if isEditingBranch}
             <Input

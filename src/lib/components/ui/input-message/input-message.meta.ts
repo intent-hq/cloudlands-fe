@@ -10,6 +10,7 @@ export const inputMessageMetadata = parseUiComponentMetadata({
   category: 'pattern',
   owner: 'design-system',
   callers: [
+    'src/features/hud/components/DockConversationPanel.svelte',
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
     'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
     'src/lib/component-catalog/renderers/ScreenStatesCatalogPreview.svelte',

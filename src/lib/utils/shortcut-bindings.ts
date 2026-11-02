@@ -19,6 +19,7 @@ export const SHORTCUT_DEFAULTS = {
   'workspace.new-note': 'mod+alt+n',
   'workspace.new-terminal': 'mod+alt+t',
   'workspace.new-browser': 'mod+alt+b',
+  'workspace.set-aside': 'mod+shift+s',
   'chat.send': 'enter',
   'chat.force-send': 'mod+enter',
   'chat.new-line': 'shift+enter',

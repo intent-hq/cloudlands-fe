@@ -258,7 +258,9 @@ export function setupProviderProfilesPreview({
   appStore.dispatch(providerProfilesLoaded(profiles, revision, defaults));
   const stop = appStore.runSaga(function* previewProfilesSaga() {
     yield* providerProfilesSaga({
-      authStatus: async (providerRef: string) => PREVIEW_AUTH[providerRef],
+      authStatus: async (providerRef: string) => ({
+        authenticated: PREVIEW_AUTH[providerRef],
+      }),
     });
   });
   return () => {

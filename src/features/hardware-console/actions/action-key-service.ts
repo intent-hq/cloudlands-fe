@@ -48,7 +48,7 @@ import { cancelPttRecording } from '../voice/ptt-controller';
 import { isConsoleOwner } from '../owner-gate';
 import { getActionKeyDefinition, type ActionKeyContext } from './action-key-registry';
 import { ENCODER_HUD_HIDE_MS } from '../encoder/encoder-service';
-import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
+import { getVisibleWorkspaceId } from '$features/workspace/visible-workspace';
 
 const logger = createLogger('HardwareConsoleActionKeys');
 
@@ -90,7 +90,10 @@ export interface ActionKeyDeps {
   focusComposer?: (agentId: string) => void;
   /** Console-owner gate (#1928). Defaults to the store-backed `isConsoleOwner`. */
   isOwner?: () => boolean;
-  /** Current workspace-tab seam. */
+  /**
+   * Visible-workspace seam. Defaults to `getVisibleWorkspaceId`: null on
+   * Home and Settings, which keep the last workspace tab selected.
+   */
   getCurrentWorkspaceId?: () => string | null;
 }
 
@@ -156,9 +159,7 @@ async function showUnavailableToast(message: string): Promise<void> {
 function buildContext(deps: ActionKeyDeps): ActionKeyContext {
   return {
     state: appStore.state,
-    workspaceId: (
-      deps.getCurrentWorkspaceId ?? (() => selectCurrentWorkspaceTabId.select(appStore.state))
-    )(),
+    workspaceId: (deps.getCurrentWorkspaceId ?? getVisibleWorkspaceId)(),
     dispatch: (action) => appStore.dispatch(action as { type: string }),
     navigate: deps.navigate ?? navigateToRoute,
     showWorkspace: deps.showWorkspace ?? openAndShowWorkspace,

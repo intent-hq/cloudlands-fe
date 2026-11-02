@@ -327,9 +327,7 @@ export function mapWorkspacePRs(
       const url = pr.url || buildPrUrl(pr.number);
       const repo = prRepoFromUrl(pr.url);
       const crossRepo =
-        repo !== undefined &&
-        workspaceRepo !== undefined &&
-        repo.toLowerCase() !== workspaceRepo.toLowerCase()
+        repo !== undefined && repo.toLowerCase() !== workspaceRepo?.toLowerCase()
           ? repo
           : undefined;
       return {

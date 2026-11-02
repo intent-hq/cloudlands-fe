@@ -1,13 +1,16 @@
 // Scripts launched by `pnpm run` (including `corepack pnpm run`) must spawn nested pnpm
 // commands through the pnpm that started them: the bare `pnpm` on PATH can be a different
 // version, which refuses to run because it does not match the `packageManager` pin.
-// pnpm exposes its own JS entry point as `npm_execpath` to every script it runs.
+// pnpm exposes its own JS entry point as `npm_execpath` to every script it runs. Under
+// `pnpm exec`, though, the user agent still says pnpm while `npm_execpath` can be left over
+// from an earlier npm (`.../npm/bin/npm-cli.js`), so only an entry whose file name names
+// pnpm is reused; anything else falls back to the pnpm on PATH.
 //
 // Without that entry, the PATH fallback on Windows must go through `cmd.exe` (Node refuses
 // to spawn `pnpm.cmd` directly), and `shell: true` joins the arguments into one unquoted
 // command line. Each argument is therefore quoted and caret-escaped for cmd.exe first, so
 // spaces and metacharacters survive as a single argv entry.
-const JS_ENTRY_RE = /\.[cm]?js$/i;
+const PNPM_ENTRY_RE = /(?:^|[\\/])[^\\/]*pnpm[^\\/]*\.[cm]?js$/i;
 const CMD_META_RE = /([()\][%!^"`<>&|;, *?])/g;
 
 export function quoteForCmd(arg) {
@@ -23,7 +26,7 @@ export function pnpmInvocation(pnpmArgs, options = {}) {
   const execPath = options.execPath ?? process.execPath;
   const entry = env.npm_execpath;
   const launchedByPnpm = (env.npm_config_user_agent ?? '').startsWith('pnpm/');
-  if (entry && launchedByPnpm && JS_ENTRY_RE.test(entry)) {
+  if (entry && launchedByPnpm && PNPM_ENTRY_RE.test(entry)) {
     return { executable: execPath, args: [entry, ...pnpmArgs], shell: false };
   }
   if (platform === 'win32') {

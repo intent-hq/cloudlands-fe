@@ -78,10 +78,6 @@ async function mount(workspaceId: string, expectedPanelCount = 2) {
 
 beforeEach(() => {
   vi.stubGlobal('ResizeObserver', TestResizeObserver);
-  Object.defineProperty(HTMLElement.prototype, 'getAnimations', {
-    configurable: true,
-    value: () => [],
-  });
   // Mirror real gutter geometry: a vertical gutter spans the full container
   // width (8px tall); a horizontal gutter is 8px wide.
   vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function () {

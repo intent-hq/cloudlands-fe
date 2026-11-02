@@ -39,10 +39,6 @@ function props(node: PanelLayoutNode, panelOrder: string[]) {
 }
 
 beforeEach(() => {
-  Object.defineProperty(HTMLElement.prototype, 'getAnimations', {
-    configurable: true,
-    value: () => [],
-  });
   vi.stubGlobal(
     'ResizeObserver',
     class {
@@ -55,7 +51,6 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
-  Reflect.deleteProperty(HTMLElement.prototype, 'getAnimations');
   vi.unstubAllGlobals();
 });
 

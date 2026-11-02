@@ -30,6 +30,7 @@ export const initialState: SidebarNavState = {
   collapsedNoteIdsByWorkspaceId: {},
   chiefActiveAgentId: null,
   statsOverlayOpen: false,
+  autoArchiveIdleAfterDays: null,
 };
 
 // ── Actions ──
@@ -53,6 +54,29 @@ export const togglePinWorkspace = createAction<[id: string]>('sidebarNav/toggleP
  */
 export const setWorkspaceLabel = createAction<[workspaceId: string, label: string | null]>(
   'sidebarNav/setWorkspaceLabel',
+);
+/**
+ * Turn a workspace's auto-archive opt-out on (`true`) or off via
+ * `workspace.update`. Applied right away and rolled back with an error toast
+ * if the call fails.
+ */
+export const setWorkspaceAutoArchiveDisabled = createAction<
+  [workspaceId: string, disabled: boolean]
+>('sidebarNav/setWorkspaceAutoArchiveDisabled');
+/**
+ * Hydrate `workspace.autoArchiveIdleAfterDays` from the settings snapshot or a
+ * `settings:changed` delta; `0` means idle auto-archive is off.
+ */
+export const autoArchiveIdleAfterDaysHydrated = createAction<[days: number]>(
+  'sidebarNav/autoArchiveIdleAfterDaysHydrated',
+);
+/**
+ * Forget the hydrated auto-archive setting when the settings authority (host
+ * connection or owner admission) changes, so the previous host's value never
+ * drives the menu while the new snapshot is read.
+ */
+export const autoArchiveIdleAfterDaysCleared = createAction(
+  'sidebarNav/autoArchiveIdleAfterDaysCleared',
 );
 export const setMultiSelectSidebarSelectedTabs = createAction<
   [workspaceId: string, tabIds: string[]]
@@ -118,6 +142,14 @@ sidebarNavReducer.with(togglePinWorkspace, (state, { payload: [id] }) => {
     pinnedWorkspaceIds: [...state.pinnedWorkspaceIds, id],
   };
 });
+sidebarNavReducer.with(autoArchiveIdleAfterDaysHydrated, (state, { payload: [days] }) => ({
+  ...state,
+  autoArchiveIdleAfterDays: days,
+}));
+sidebarNavReducer.with(autoArchiveIdleAfterDaysCleared, (state) => ({
+  ...state,
+  autoArchiveIdleAfterDays: null,
+}));
 sidebarNavReducer.with(
   setMultiSelectSidebarSelectedTabs,
   (state, { payload: [workspaceId, tabIds] }) => ({

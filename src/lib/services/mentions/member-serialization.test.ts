@@ -1,13 +1,14 @@
 /** @vitest-environment jsdom */
 import { describe, expect, it } from 'vitest';
-import { toPromptToken } from './format';
+import { toPromptToken } from './registry';
 import type { MentionCandidate } from './types';
 import { plainTextToEditorHTML } from '$lib/components/chat/input/editor-text-serialization';
 import { processHTMLToMarkdown, processMarkdownToHTML } from '$lib/utils/markdown-processor';
 import { injectMentionSpans } from '$lib/utils/markdown-mention-injector';
 import { classifyMarkdownContent } from '$lib/utils/markdown-content-complexity';
 import { findInlineMentions } from '$lib/components/chat/mention-match-utils';
-import { parseMemberMention, memberMentionsToText } from '$lib/utils/member-mention-token';
+import { parseMemberMention } from '$lib/utils/member-mention-token';
+import { mentionTokensToText } from './registry';
 import { stripUserMessagePrefixes } from '$lib/utils/text-utils';
 
 const member: MentionCandidate = {
@@ -31,9 +32,7 @@ function documentFor(html: string): HTMLElement {
 describe('member mention text persistence', () => {
   it('uses readable handles in plain-text previews without changing the stored token', () => {
     const token = toPromptToken(member);
-    expect(memberMentionsToText(`Please ${token} review`)).toBe(
-      'Please @alice.dev_ops-team review',
-    );
+    expect(mentionTokensToText(`Please ${token} review`)).toBe('Please @alice.dev_ops-team review');
     expect(stripUserMessagePrefixes(`[Current view] ${token} please`)).toBe(
       '@alice.dev_ops-team please',
     );

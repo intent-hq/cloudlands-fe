@@ -6,6 +6,7 @@
   import { ListEmpty } from '$lib/components/ui/list';
   import VirtualList from '$lib/components/ui/VirtualList.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
+  import { Separator } from '$lib/components/ui/separator';
   import { faChevronDown, faRotateLeft } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { untrack } from 'svelte';
@@ -588,7 +589,18 @@
     </div>
   {:else if row.kind === 'agent'}
     {@const agent = row.agent}
-    <div class="w-full" style:padding-left={indentFor(row.depth)} data-agent-list-row="agent">
+    <div
+      class="relative w-full"
+      style:padding-left={indentFor(row.depth)}
+      data-agent-list-row="agent"
+    >
+      {#if row.dividerBefore}
+        <!-- Pinned agents sit above this line; drawn inside the row so every
+             row keeps the uniform virtual-list height. -->
+        <div class="pointer-events-none absolute inset-x-2 top-0" data-agent-pinned-divider>
+          <Separator decorative />
+        </div>
+      {/if}
       {#if lazy}
         <LazyAgentCard
           cacheKey={agent.id}

@@ -56,10 +56,9 @@ const shownAgent = () => screen.getByTestId('home-chat').getAttribute('data-show
 const renderDetail = () => render(HomeWorkspaceDetail, { workspace, onclose: vi.fn() });
 
 beforeAll(() => {
-  // jsdom lacks the pointer-capture and scroll APIs the bits-ui select calls.
+  // jsdom lacks the pointer-capture APIs the bits-ui select calls.
   Element.prototype.hasPointerCapture ??= () => false;
   Element.prototype.releasePointerCapture ??= () => undefined;
-  Element.prototype.scrollIntoView ??= () => undefined;
 });
 beforeEach(() => {
   mocks.dispatch.mockClear();

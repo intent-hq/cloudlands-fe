@@ -1687,15 +1687,10 @@ a<b>c
     // through the safety-net alone.
     replaceNotes([convertedSpecNote, linkedTaskNote]);
 
-    await waitFor(
-      () => {
-        expect(container.querySelector('[data-type="taskItem"]')).toBeTruthy();
-        expect(
-          container.querySelector(`[data-linked-task-note-id="${TASK_NOTE_ID}"]`),
-        ).toBeTruthy();
-      },
-      { timeout: 2500 },
-    );
+    await waitFor(() => {
+      expect(container.querySelector('[data-type="taskItem"]')).toBeTruthy();
+      expect(container.querySelector(`[data-linked-task-note-id="${TASK_NOTE_ID}"]`)).toBeTruthy();
+    });
 
     await waitFor(() => {
       expect(container.textContent).toContain(convertedTitle);
@@ -1791,12 +1786,9 @@ a<b>c
 
       replaceNotes([createNote(SPEC_NOTE_ID, 'Spec', IMAGE_MARKDOWN)]);
 
-      await waitFor(
-        () => {
-          expect(renderedImageSrcs(view.container)).toContain(RESOLVED_IMAGE_SRC);
-        },
-        { timeout: 2500 },
-      );
+      await waitFor(() => {
+        expect(renderedImageSrcs(view.container)).toContain(RESOLVED_IMAGE_SRC);
+      });
     });
   });
 

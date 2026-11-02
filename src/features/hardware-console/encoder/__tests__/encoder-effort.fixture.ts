@@ -331,6 +331,8 @@ export function useEncoderEffortHarness() {
     vi.useFakeTimers();
     vi.clearAllMocks();
     __resetSettingsReadCacheForTests();
+    // The current workspace tab is on screen unless a scenario opens Home.
+    window.history.replaceState(null, '', '/workspace/ws-1');
     state = makeState();
     mocks.state.current = state;
     channel = stdChannel();

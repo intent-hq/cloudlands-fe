@@ -15,6 +15,7 @@ export const separatorMetadata = parseUiComponentMetadata({
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
     'src/lib/components/file-explorer/file-explorer-layout.svelte',
     'src/lib/components/ui/sidebar/sidebar-separator.svelte',
+    'src/lib/components/workspace/WorkspaceAgentsList.svelte',
   ],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/separator/separator.test.ts',

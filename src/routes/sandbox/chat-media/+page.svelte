@@ -3,6 +3,8 @@
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import MediaLoadingPlaceholder from '$lib/components/ui/MediaLoadingPlaceholder.svelte';
   import MediaUnavailable from '$lib/components/ui/MediaUnavailable.svelte';
+  import ChatImageBlock from '$lib/components/chat/ChatImageBlock.svelte';
+  import ToolCall from '$lib/components/chat/ToolCall.svelte';
 
   let retryCount = $state(0);
   const workspaceId = $derived(page.url.searchParams.get('workspace') || undefined);
@@ -13,6 +15,12 @@
     '![Architecture preview](data:image/png;base64,invalid)',
     'The conversation continues here without a large error card.',
   ].join('\n\n');
+  // §5.5 capped block reads: blocks a capped `agent.getMessageBlock` could not serve whole.
+  const thumbnail =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  const cutOutput = Array.from({ length: 40 }, (_, i) => `line ${i + 1}: build step output`).join(
+    '\n',
+  );
 </script>
 
 <svelte:head>
@@ -44,6 +52,37 @@
     <p class="type-caption text-muted-foreground" role="status">
       Retry callback invoked {retryCount} times. This row demonstrates the control only.
     </p>
+  </section>
+
+  <section class="grid min-w-0 max-w-2xl gap-3" aria-label="Truncated message blocks">
+    <h2 class="type-body font-medium!">Too large to show in full</h2>
+    <ToolCall
+      saved={{ expanded: true }}
+      toolUse={{
+        type: 'tool_use',
+        id: 'sandbox-msg:0',
+        name: 'launch-process',
+        input: { command: 'cat build.log' },
+      }}
+      result={cutOutput}
+      resultBlock={{
+        type: 'tool_result',
+        id: 'sandbox-msg:1',
+        tool_use_id: 'sandbox-call',
+        output: cutOutput,
+        servedTruncation: { shownBytes: 479_900, totalBytes: 3_355_443 },
+      }}
+    />
+    <ChatImageBlock
+      data={thumbnail}
+      mimeType="image/png"
+      width={1600}
+      height={900}
+      dataTruncated
+      dataIsThumbnail
+      onHydrate={() => {}}
+      tooLarge
+    />
   </section>
 
   <section class="grid w-full min-w-0 max-w-xs gap-3" aria-label="Narrow media states">

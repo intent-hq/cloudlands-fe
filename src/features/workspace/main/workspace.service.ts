@@ -869,6 +869,12 @@ export class WorkspaceService {
       const daemonLabel = (daemonWorkspace as { label?: unknown }).label;
       if (typeof daemonLabel === 'string') merged.label = daemonLabel;
       else delete merged.label;
+      // `autoArchiveDisabled` is likewise omitted while false.
+      if ((daemonWorkspace as { autoArchiveDisabled?: unknown }).autoArchiveDisabled === true) {
+        merged.autoArchiveDisabled = true;
+      } else {
+        delete merged.autoArchiveDisabled;
+      }
 
       if (requestedPrStatus !== undefined) {
         if (requestedPrStatus === null) {

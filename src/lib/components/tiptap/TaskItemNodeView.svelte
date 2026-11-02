@@ -43,7 +43,7 @@
   import { writable } from 'svelte/store';
   import type { NoteId, TaskStatus } from '$shared/types';
   import TaskStatusIcon from './TaskStatusIcon.svelte';
-  import { toPromptToken } from '$lib/services/mentions/format';
+  import { toPromptToken } from '$lib/services/mentions/registry';
   import Checkbox from '../ui/checkbox/checkbox.svelte';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';

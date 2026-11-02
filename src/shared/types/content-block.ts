@@ -170,6 +170,14 @@ export interface ContentBlock {
   attachmentId?: string;
   /** Byte length for attachment-reference file blocks */
   size?: number;
+  /**
+   * Client-only, never on the wire: set by the chat view's block hydration
+   * merge when a capped `agent.getMessageBlock` read (PROTOCOL §5.5,
+   * `messageBlockPages: 1`) could not serve the whole block. `shownBytes` is
+   * the size of the body part on screen, or null when only the slim preview
+   * or thumbnail is shown; `totalBytes` is the full body size when known.
+   */
+  servedTruncation?: { shownBytes: number | null; totalBytes: number | null };
 }
 
 /**

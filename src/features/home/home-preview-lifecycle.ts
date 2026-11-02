@@ -7,14 +7,16 @@ import { setupHomeIntegrationsFixtures } from './home-integrations-browser-fixtu
 import { setupHomeAssistantActivityFixtures } from './home-assistant-activity-browser-fixtures';
 import { setupHomeAssistantRenameFixtures } from './home-assistant-rename-browser-fixtures';
 import { setupHomeAssistantNewChatFixtures } from './home-assistant-new-chat-browser-fixtures';
+import { homeWorkspacesSaga } from './home-workspaces-saga';
 
-export function startHomePreviewFixtures() {
+export function startHomePreviewFixtures({ homePreferences = true } = {}) {
   return startHomePreview(() => {
     const stopIntegrations = setupHomeIntegrationsFixtures(store);
     const stopActivity = setupHomeAssistantActivityFixtures();
     const stopRenames = setupHomeAssistantRenameFixtures();
     const stopNewChats = setupHomeAssistantNewChatFixtures();
     return [
+      ...(homePreferences ? [store.runSaga(homeWorkspacesSaga)] : []),
       () => {
         stopNewChats();
         stopRenames();

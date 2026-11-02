@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import GitLabProjectPicker from '../GitLabProjectPicker.svelte';
 import type { GitLabProjectPickerProps } from '../gitlab-picker-types';
 
@@ -30,9 +30,6 @@ function props(): GitLabProjectPickerProps {
   };
 }
 
-beforeAll(() => {
-  Element.prototype.scrollIntoView = vi.fn();
-});
 afterEach(cleanup);
 
 describe('GitLab project presentation', () => {

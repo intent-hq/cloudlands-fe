@@ -126,6 +126,7 @@ describe('browserIpcSaga', () => {
       ['browser:list-tabs-request', handlers['browser:list-tabs-request']],
       ['browser:tab-navigated', handlers['browser:tab-navigated']],
       ['browser:tab-owner-changed', handlers['browser:tab-owner-changed']],
+      ['browser:agent-drawing', handlers['browser:agent-drawing']],
     ]);
 
     first.cancel();
@@ -140,12 +141,32 @@ describe('browserIpcSaga', () => {
       ['browser:list-tabs-request', 'browser:list-tabs-request-listener'],
       ['browser:tab-navigated', 'browser:tab-navigated-listener'],
       ['browser:tab-owner-changed', 'browser:tab-owner-changed-listener'],
+      ['browser:agent-drawing', 'browser:agent-drawing-listener'],
     ]);
 
     const restarted = start();
-    expect(on).toHaveBeenCalledTimes(18);
+    expect(on).toHaveBeenCalledTimes(20);
     restarted.cancel();
     await restarted.toPromise();
+  });
+
+  // Main's agent drawing hold names the tab an agent is acting on, so the
+  // offscreen host can draw it at full frame rate; malformed payloads drop.
+  it('records agent drawing start and end for a tab', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+
+    await emit({ tabId: 'tab-a', active: true }, 'browser:agent-drawing');
+    await emit({ tabId: 'tab-a', active: false }, 'browser:agent-drawing');
+    await emit({ active: true }, 'browser:agent-drawing');
+    await emit({ tabId: '', active: true }, 'browser:agent-drawing');
+
+    expect(actions).toEqual([
+      { type: 'tabState/browserTabAgentDrawingChanged', payload: ['tab-a', true] },
+      { type: 'tabState/browserTabAgentDrawingChanged', payload: ['tab-a', false] },
+    ]);
+    task.cancel();
+    await task.toPromise();
   });
 
   // intent-hq/intent#7855: main's registration wait timed out; the window

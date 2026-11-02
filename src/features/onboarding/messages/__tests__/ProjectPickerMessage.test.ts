@@ -79,6 +79,13 @@ function mockDaemon(): Array<Record<string, unknown>> {
   return dirStatusCalls;
 }
 
+/** The step opens on Clone while forge status is unknown; switch to Existing folder. */
+async function openExistingFolderTab(): Promise<void> {
+  await fireEvent.click(
+    screen.getByRole('tab', { name: m.onboarding_projectPicker_existingFolder_label() }),
+  );
+}
+
 async function pickLocalFolder(
   directoryStatus: Record<string, unknown>,
 ): Promise<ProjectSelection[]> {
@@ -87,6 +94,7 @@ async function pickLocalFolder(
   const selections: ProjectSelection[] = [];
   render(ProjectPickerMessage, { props: { onProjectChange: (s) => selections.push(s) } });
 
+  await openExistingFolderTab();
   await fireEvent.click(screen.getByRole('button', { name: 'Browse for a folder' }));
   await waitFor(() => expect(selections.at(-1)?.repoPath).toBe(LOCAL_PATH));
   return selections;
@@ -98,7 +106,7 @@ async function openGithubTab(
 ): Promise<HTMLInputElement> {
   render(ProjectPickerMessage, { props: { onProjectChange } });
   const tabButton = screen.getByRole('tab', {
-    name: m.onboarding_projectPicker_githubRepo_label(),
+    name: m.onboarding_projectPicker_clone_label(),
   });
   await fireEvent.click(tabButton);
   return waitFor(() => {
@@ -236,6 +244,7 @@ describe('ProjectPickerMessage — GitHub tab picked-repo selection', () => {
     const onProjectChange = vi.fn();
     render(ProjectPickerMessage, { props: { onProjectChange } });
     await waitFor(() => expect(onProjectChange).toHaveBeenCalled());
+    await openExistingFolderTab();
     onProjectChange.mockClear();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Browse for a folder' }));

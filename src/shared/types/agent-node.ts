@@ -59,6 +59,8 @@ export const AgentCheckpointSchema = z.object({
 export const AgentNodeFieldsSchema = z.object({
   nodeId: z.string().min(1).optional(),
   leaseId: z.string().min(1).optional(),
+  /** The remote machine's configured display name. */
+  nodeName: z.string().min(1).optional(),
   placement: AgentResolvedPlacementSchema.optional(),
   effectiveIsolation: z
     .enum(['pending', 'isolated', 'shared', 'worktree', 'direct', 'cow'])

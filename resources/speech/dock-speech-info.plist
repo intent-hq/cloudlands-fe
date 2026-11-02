@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Embedded into intent-dock-speech via -sectcreate __TEXT __info_plist
+     (build-dock-speech.cjs). Speech and microphone authorization abort without
+     usage descriptions in the responsible bundle; embedding them keeps the
+     helper runnable standalone as well as under Intent.app, whose Info.plist
+     carries the same keys via electron-builder extendInfo. -->
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>app.cloudlands.intent.dock-speech</string>
+  <key>CFBundleName</key>
+  <string>intent-dock-speech</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>Intent uses macOS speech recognition to transcribe your voice into text for dictation.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Intent uses the microphone to transcribe your voice into text for dictation.</string>
+</dict>
+</plist>

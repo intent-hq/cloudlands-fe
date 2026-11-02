@@ -1034,7 +1034,6 @@ describe('WorkspaceTabStrip', () => {
 
   describe('parent effects flushed from tracking effects and teardown paths', () => {
     let defaultMatchMedia: (query: string) => MediaQueryList;
-    let getAnimations: typeof Element.prototype.getAnimations;
 
     beforeEach(() => {
       const matchMedia = vi.mocked(window.matchMedia);
@@ -1043,13 +1042,10 @@ describe('WorkspaceTabStrip', () => {
         ...defaultMatchMedia(query),
         matches: query.includes('prefers-reduced-motion'),
       }));
-      getAnimations = Element.prototype.getAnimations;
-      Element.prototype.getAnimations = () => [];
     });
 
     afterEach(() => {
       vi.mocked(window.matchMedia).mockImplementation(defaultMatchMedia);
-      Element.prototype.getAnimations = getAnimations;
     });
 
     function renderHarness(

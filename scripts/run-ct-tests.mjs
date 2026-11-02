@@ -39,11 +39,13 @@
  * The launcher pins `PLAYWRIGHT_HTML_OPEN=never` unless the caller opts in
  * from an interactive terminal (see `usage()`).
  *
- * Test runs hold the same host-wide `ct-<CT_PORT>` lock `verify:changed` uses
+ * Test runs hold the same host-wide `ct-<port>` lock `verify:changed` uses
  * (intent-hq/intent#4964): the CT runtime reuses any endpoint already
  * listening on its port, so an unlocked second run from another worktree
  * would test against that tree's component registry and then fail with
- * ECONNREFUSED when the first run exits.
+ * ECONNREFUSED when the first run exits. Without CT_PORT the port is derived
+ * from the worktree (scripts/verification-lock.mjs `ctPort`), so separate
+ * worktrees do not contend for one lock by default.
  *
  * Before a test run it also provisions the gitignored Paraglide bundle
  * (src/shared/paraglide) through the same stale-aware `ensureI18nFresh`
@@ -51,6 +53,13 @@
  * is missing or its recorded input hash no longer matches messages/*.json, so
  * a fresh worktree's first CT run builds without a manual generate:i18n. The
  * CI helpers and `--help` skip the preflight.
+ *
+ * Right before a test run starts it checks the host load (scripts/host-load.mjs):
+ * on a shared dev host another workspace can keep the load far above the CPU
+ * count, and the resulting setup and page-call timeouts look like real failures
+ * (on 2026-11-01 a CT stress check that passes 480/480 in 12 minutes hit 225
+ * timeouts in 2 hours). A host at 1.5x its CPU count or more gets a warning
+ * naming the busiest commands, repeated after a failed run.
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { readdirSync, statSync } from 'node:fs';
@@ -59,6 +68,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ensureI18nFresh } from './check-deps-fresh.mjs';
 import { CT_BROWSER, resolveCtAlignedPlaywrightCli, resolveCtBrowser } from './ct-browser.mjs';
+import { checkHostLoad, hostLoadReminder, hostLoadWarning } from './host-load.mjs';
 import { nonFontPackagesFromDryRun } from './playwright-os-deps-lib.mjs';
 import {
   acquireVerificationLock,
@@ -90,17 +100,21 @@ export function usage() {
     'Runs Playwright component tests with the CT-aligned playwright CLI.',
     'All arguments are forwarded to `playwright test -c playwright-ct.config.ts`.',
     'Tests that pass only on retry fail the run; retries and reports are preserved.',
+    'A host already loaded past 1.5x its CPU count is reported before the run (and again',
+    'after a failed one), since its timeouts may come from other workspaces.',
     '',
     'Launcher options:',
     `  ${OPEN_REPORT_FLAG}     Serve the HTML report after the run (same as ${CT_HTML_REPORT_ENV}=open).`,
     '  --help, -h        Show this help.',
     '',
     'Environment:',
-    '  CT_PORT           Component server port (default 3100). The port keys the component',
-    '                    server, the host-wide ct-<CT_PORT> lock verify:changed uses, and the',
-    '                    playwright/.cache-<CT_PORT> bundle cache (bare playwright/.cache when',
-    '                    unset or blank), so runs on distinct ports never share a server or a',
-    '                    bundle — even within one worktree; use a free port to run concurrently.',
+    '  CT_PORT           Component server port. Default: a per-worktree port hashed from',
+    '                    this package path (10100-14099), or 3100 on CI. The port keys the',
+    '                    component server and the host-wide ct-<port> lock verify:changed uses,',
+    '                    so separate worktrees never share either. An explicit CT_PORT also',
+    '                    keys the playwright/.cache-<CT_PORT> bundle cache (bare',
+    '                    playwright/.cache when unset or blank); set one to run two CT runs',
+    '                    concurrently in the same worktree.',
     '  VERIFY_CHANGED_LOCK_TIMEOUT_MS',
     '                    How long to wait for that lock (default 240000, capped at 300000).',
     `  ${CT_HTML_REPORT_ENV}=open|always|on-failure|never`,
@@ -328,6 +342,25 @@ export function heapExhaustionHint({ code, signal, env }) {
   ].join('\n');
 }
 
+/**
+ * Warn before a test run when the host is far busier than its CPU count, and
+ * wrap `exit` so a failed run repeats the warning as its last word (Playwright's
+ * own output would otherwise bury it). `check` / `log` are injectable for tests.
+ */
+export function guardHostLoad({
+  exit,
+  check = checkHostLoad,
+  log = (message) => console.error(message),
+}) {
+  const report = check();
+  if (!report) return exit;
+  log(hostLoadWarning(report, 'run-ct-tests'));
+  return (code) => {
+    if (code !== 0) log(hostLoadReminder(report, 'run-ct-tests'));
+    exit(code);
+  };
+}
+
 /** How long a signalled Playwright child gets to tear down before SIGKILL. */
 export const CHILD_SHUTDOWN_GRACE_MS = 10_000;
 
@@ -549,16 +582,17 @@ async function main(argv) {
       console.error(
         `[run-ct-tests] ${error instanceof Error ? error.message : error}\n` +
           `[run-ct-tests] another CT run owns port ${ctPort()}; wait for it to finish or ` +
-          'set a free CT_PORT (two worktrees must not share one component server)',
+          'set a free CT_PORT (two runs must not share one component server)',
       );
       process.exit(1);
     }
   }
 
-  const exit = (code) => {
+  const releaseAndExit = (code) => {
     releaseLock();
     process.exit(code);
   };
+  const exit = args[0] === 'test' ? guardHostLoad({ exit: releaseAndExit }) : releaseAndExit;
   const child = runPlaywright({ cliPath: launchCliPath, args, env, exit });
   forwardSignalsToChild({ child });
 }

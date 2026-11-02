@@ -135,6 +135,37 @@ describe('terminals-scripts-seeder terminal bridges', () => {
       expect(createdEvents).toEqual([]);
     });
 
+    it('forwards a profile sign-in env to terminal.create, dropping non-string values', async () => {
+      terminals.create.mockResolvedValueOnce({ success: true, id: 'login-terminal' });
+      await mockInvoke('terminal:createWithCommand', {
+        workspaceId: '__root__',
+        command: 'claude auth login',
+        env: { CLAUDE_CONFIG_DIR: '/home/me/.claude-work', BAD: 3 },
+        interactive: true,
+      });
+      expect(terminals.create).toHaveBeenCalledExactlyOnceWith({
+        workspaceId: '__root__',
+        cols: 80,
+        rows: 24,
+        env: { CLAUDE_CONFIG_DIR: '/home/me/.claude-work' },
+      });
+    });
+
+    it('omits env from terminal.create when none (or only invalid values) is passed', async () => {
+      terminals.create.mockResolvedValueOnce({ success: true, id: 'plain-terminal' });
+      await mockInvoke('terminal:createWithCommand', {
+        workspaceId: 'ws-1',
+        command: 'true',
+        env: ['not', 'a', 'record'],
+      });
+      expect(terminals.create).toHaveBeenCalledExactlyOnceWith({
+        workspaceId: 'ws-1',
+        cols: 80,
+        rows: 24,
+        command: 'true',
+      });
+    });
+
     it('rejects missing workspaceId/command without calling the daemon', async () => {
       const response = await mockInvoke<{ ok: boolean }>('terminal:createWithCommand', {
         workspaceId: 'ws-1',

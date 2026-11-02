@@ -201,10 +201,6 @@ beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function () {
     return this.getAttribute('data-testid') === 'panel-workspace-inset' ? PANEL_WIDTH : 0;
   });
-  Object.defineProperty(HTMLElement.prototype, 'getAnimations', {
-    configurable: true,
-    value: () => [],
-  });
   storeContext = initAppStore(appStore);
 });
 

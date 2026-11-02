@@ -37,6 +37,15 @@ describe('navigation.client', () => {
   });
 
   describe('navigateToRoute', () => {
+    it.each(['/dock', '/dock/companion'])(
+      'keeps %s in the notch when Settings navigation arrives',
+      async (route) => {
+        window.history.pushState({}, '', route);
+        await navigateToRoute('/settings');
+        expect(gotoMock).not.toHaveBeenCalled();
+      },
+    );
+
     it('no-ops in the HUD window (pathname /hud)', async () => {
       window.history.pushState({}, '', '/hud');
 

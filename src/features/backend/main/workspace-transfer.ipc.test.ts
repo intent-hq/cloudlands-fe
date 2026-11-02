@@ -20,9 +20,17 @@ vi.mock('./workspace-transfer-relay', () => ({
 }));
 
 const getBackendClientForIpcEvent = vi.fn();
+const openBackendWindow = vi.fn();
 vi.mock('./backend.ipc', () => ({
   buildConfigForConnection: vi.fn(),
   getBackendClientForIpcEvent: (event: unknown) => getBackendClientForIpcEvent(event),
+  openBackendWindow: (id: string) => openBackendWindow(id),
+}));
+
+const showWorkspaceInBackendWindow = vi.fn();
+vi.mock('../../../main/window', () => ({
+  showWorkspaceInBackendWindow: (backendId: string, workspaceId: string) =>
+    showWorkspaceInBackendWindow(backendId, workspaceId),
 }));
 
 vi.mock('./json-rpc-client', () => ({ JsonRpcClient: vi.fn() }));
@@ -103,6 +111,40 @@ describe('workspace-transfer IPC — per-window affinity wiring', () => {
     const handler = await getHandler(TRANSFER.CANCEL);
     await handler(event(11));
     expect(cancel).toHaveBeenCalledWith(11);
+  });
+
+  it('wires openTargetWorkspace to open the backend window, then show the workspace', async () => {
+    const order: string[] = [];
+    openBackendWindow.mockReset().mockImplementation(async (id: string) => {
+      order.push(`open:${id}`);
+      return { id };
+    });
+    showWorkspaceInBackendWindow.mockReset().mockImplementation((backendId, workspaceId) => {
+      order.push(`show:${backendId}:${workspaceId}`);
+      return true;
+    });
+    const handler = await getHandler(TRANSFER.CANCEL);
+    await handler(event(1)); // force lazy relay creation
+    const deps = createWorkspaceTransferRelay.mock.calls[0][0] as {
+      openTargetWorkspace(connectionId: string, workspaceId: string): Promise<void>;
+    };
+
+    await deps.openTargetWorkspace('conn-1', 'ws-1');
+
+    expect(order).toEqual(['open:conn-1', 'show:conn-1:ws-1']);
+  });
+
+  it('openTargetWorkspace rejects without showing when the backend window cannot open', async () => {
+    openBackendWindow.mockReset().mockRejectedValue(new Error('secret unavailable'));
+    showWorkspaceInBackendWindow.mockReset();
+    const handler = await getHandler(TRANSFER.CANCEL);
+    await handler(event(1));
+    const deps = createWorkspaceTransferRelay.mock.calls[0][0] as {
+      openTargetWorkspace(connectionId: string, workspaceId: string): Promise<void>;
+    };
+
+    await expect(deps.openTargetWorkspace('conn-1', 'ws-1')).rejects.toThrow('secret unavailable');
+    expect(showWorkspaceInBackendWindow).not.toHaveBeenCalled();
   });
 
   it('wires isOwnerGone to webContents liveness (missing or destroyed ⇒ gone)', async () => {

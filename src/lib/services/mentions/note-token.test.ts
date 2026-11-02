@@ -1,11 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { toPromptToken } from './format';
+import { mentionTokensToText } from './registry';
+import { toPromptToken } from './registry';
 import { findInlineMentions } from '$lib/components/chat/mention-match-utils';
-import {
-  noteMentionsToText,
-  parseNoteMention,
-  serializeNoteMention,
-} from '$lib/utils/note-mention-token';
+import { parseNoteMention, serializeNoteMention } from '$lib/utils/note-mention-token';
 import { stripUserMessagePrefixes } from '$lib/utils/text-utils';
 
 const NOTE_ID = '3f2a9c1e-7b4d-4e8a-9f10-2c5d6e7f8a9b';
@@ -122,9 +119,9 @@ describe('serializeNoteMention / parseNoteMention', () => {
 });
 
 describe('plain-text previews of note mentions', () => {
-  it('noteMentionsToText renders tokens as @<title>', () => {
-    expect(noteMentionsToText(`@note[${NOTE_ID}:${TITLE}] read it`)).toBe(`@${TITLE} read it`);
-    expect(noteMentionsToText('@note[ws-2/n1:Plan] ok')).toBe('@Plan ok');
+  it('mentionTokensToText renders tokens as @<title>', () => {
+    expect(mentionTokensToText(`@note[${NOTE_ID}:${TITLE}] read it`)).toBe(`@${TITLE} read it`);
+    expect(mentionTokensToText('@note[ws-2/n1:Plan] ok')).toBe('@Plan ok');
   });
 
   it('stripUserMessagePrefixes shows the note title, not the raw id token', () => {

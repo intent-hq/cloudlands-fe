@@ -48,6 +48,7 @@ import {
 } from '../provider-settings-slice';
 
 import { providerProfilesSaga } from './provider-profiles-saga';
+import { providerProfileSetupSaga } from './provider-profile-setup-saga';
 import { providerFastModeSaga } from './provider-fast-mode-saga';
 
 const logger = createLogger('ProviderSettingsSaga');
@@ -386,6 +387,7 @@ export function* providerSettingsSaga() {
       call(persistProviderSettingsQueue, updates),
       call(providerFastModeSaga),
       call(providerProfilesSaga),
+      call(providerProfileSetupSaga),
       takeEvery([setAtomicDefaultModel, setSelectedModel], queueModelWorker, updates),
       takeEvery(setActiveProvider, queueActiveProviderWorker, updates),
       takeEvery(toggleProvider, queueToggleProviderWorker, updates),

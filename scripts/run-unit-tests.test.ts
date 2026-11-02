@@ -7,6 +7,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -33,7 +34,7 @@ afterEach(() => {
 });
 
 function fixture(realVitest = false, monorepo = false) {
-  const temporary = mkdtempSync(join(tmpdir(), 'test-unit-args-'));
+  const temporary = realpathSync(mkdtempSync(join(tmpdir(), 'test-unit-args-')));
   roots.push(temporary);
   const root = monorepo ? join(temporary, 'packages/cloudlands-fe') : temporary;
   const write = (file: string, content: string, mode?: number) => {
@@ -118,8 +119,7 @@ else process.exitCode = Number(process.env.TEST_EXIT || 0);
 }
 
 function run(root: string, args: string[], env: NodeJS.ProcessEnv = {}) {
-  // Use the installed pnpm even when a direct Vitest invocation inherited npm's npm_execpath.
-  const invocation = pnpmInvocation(['run', 'test:unit', ...args], { env: {} });
+  const invocation = pnpmInvocation(['run', 'test:unit', ...args]);
   const result = spawnSync(invocation.executable, invocation.args, {
     cwd: root,
     env: {

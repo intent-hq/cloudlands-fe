@@ -17,7 +17,7 @@ overrides:
 
 patchedDependencies:
   bits-ui@2.18.1:
-    hash: 3c106d315f0ed37af1e9c7c840c5c2b56408f0d51beb0baca95d0f4b42103595
+    hash: 94c91791e7fe22fe5c619520544e9fa2c979fffcf3899ee48ea438fe16bfd053
     path: patches/bits-ui@2.18.1.patch
   brace-expansion@5.0.8:
     hash: 1dd6d68223b3644c1125dff1fdb53ca7a3f3939698c438371ac86e2a7ceb8ab7
@@ -51,9 +51,6 @@ importers:
       fast-equals:
         specifier: ^6.0.4
         version: 6.0.4
-      file-icon:
-        specifier: ^6.0.0
-        version: 6.0.0
       flatstr:
         specifier: ^1.0.12
         version: 1.0.12
@@ -160,6 +157,9 @@ importers:
       '@tailwindcss/typography':
         specifier: ^0.5.20
         version: 0.5.20(tailwindcss@4.3.3)
+      '@testing-library/dom':
+        specifier: ^10.4.1
+        version: 10.4.1
       '@testing-library/svelte':
         specifier: ^5.4.2
         version: 5.4.2(svelte@5.57.1(@typescript-eslint/types@8.70.1))(vite@6.4.3(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))(vitest@4.1.11)
@@ -285,7 +285,7 @@ importers:
         version: 4.13.0
       bits-ui:
         specifier: ^2.15.5
-        version: 2.18.1(patch_hash=3c106d315f0ed37af1e9c7c840c5c2b56408f0d51beb0baca95d0f4b42103595)(@internationalized/date@3.12.4)(@sveltejs/kit@2.70.3(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@6.2.4(svelte@5.57.1(@typescript-eslint/types@8.70.1))(vite@6.4.3(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1)))(svelte@5.57.1(@typescript-eslint/types@8.70.1))(typescript@6.0.3)(vite@6.4.3(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1)))(svelte@5.57.1(@typescript-eslint/types@8.70.1))
+        version: 2.18.1(patch_hash=94c91791e7fe22fe5c619520544e9fa2c979fffcf3899ee48ea438fe16bfd053)(@internationalized/date@3.12.4)(@sveltejs/kit@2.70.3(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@6.2.4(svelte@5.57.1(@typescript-eslint/types@8.70.1))(vite@6.4.3(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1)))(svelte@5.57.1(@typescript-eslint/types@8.70.1))(typescript@6.0.3)(vite@6.4.3(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1)))(svelte@5.57.1(@typescript-eslint/types@8.70.1))
       canvas-confetti:
         specifier: ^1.9.4
         version: 1.9.4
@@ -355,6 +355,9 @@ importers:
       monaco-editor:
         specifier: ^0.57.0
         version: 0.57.0
+      node-api-headers:
+        specifier: ^1.9.0
+        version: 1.9.0
       node-gyp:
         specifier: ^13.0.2
         version: 13.0.2
@@ -3847,10 +3850,6 @@ packages:
   file-entry-cache@11.1.5:
     resolution: {integrity: sha512-+PFTHITI08JIGhnNpGNI8T8inUpgZfk3GNEqfT9R2zZV2iFXg3CvqzSl/uEhs7TSGujYRELEANyDvS8Fj7+S7Q==}
 
-  file-icon@6.0.0:
-    resolution: {integrity: sha512-cNWEJlqKoqcCt8v9ybKL1k69oHqbmEdNSHKUI2o/RmrCiBnG+yJXThfIeljiqfEs/PW1HeazJj2/SJABhtaawQ==}
-    engines: {node: '>=20'}
-
   filelist@1.0.6:
     resolution: {integrity: sha512-5giy2PkLYY1cP39p17Ech+2xlpTRL9HLspOfEgm0L6CwBXBTgsK5ou0JtzYuepxkaQ/tvhCFIJ5uXo0OrM2DxA==}
 
@@ -4629,6 +4628,9 @@ packages:
   node-addon-api@7.1.1:
     resolution: {integrity: sha512-5m3bsyrjFWE1xf7nz7YXdN4udnVtXK6/Yfgn5qnahL6bCkf2yKt4k3nuTKAtT4r3IG8JNR2ncsIMdZuAzJjHQQ==}
 
+  node-api-headers@1.9.0:
+    resolution: {integrity: sha512-2oNILP4jXwRB4ywnYKjVk1YyJ96n2D4EOVJO6S3oYZ5PtbJrw3Yt9TpAuX3nBLMuzn74rnfGQrv13pS9vC+YiA==}
+
   node-api-version@0.2.1:
     resolution: {integrity: sha512-2xP/IGGMmmSQpI1+O/k72jF/ykvZ89JeuKX3TLJAYPDVLUalrshrLHkeVcCCZqG/eEa635cr8IBYzgnDvM2O8Q==}
 
@@ -4722,10 +4724,6 @@ packages:
   p-locate@5.0.0:
     resolution: {integrity: sha512-LaNjtRWUBY++zB5nE/NwcaoMylSPk+S+ZHNB1TzdbMJMny6dynpAGt7X/tl/QYq3TIeE6nxHppbo2LGymrG5Pw==}
     engines: {node: '>=10'}
-
-  p-map@7.0.4:
-    resolution: {integrity: sha512-tkAQEw8ysMzmkhgw8k+1U/iPhWNhykKnSk4Rd5zLoPJCuJaGRPo6YposrZgaxHKzDHdDWWZvE/Sk7hsL2X/CpQ==}
-    engines: {node: '>=18'}
 
   p-try@2.2.0:
     resolution: {integrity: sha512-R4nPAVTAU0B9D35/Gk3uJf/7XYbQcyohSKdvAxIRSNghFl4e71hVoGnBNQz9cWaXxO2I10KTC+3jMdvvoKw6dQ==}
@@ -8281,7 +8279,7 @@ snapshots:
 
   binaryen@130.0.0: {}
 
-  bits-ui@2.18.1(patch_hash=3c106d315f0ed37af1e9c7c840c5c2b56408f0d51beb0baca95d0f4b42103595)(@internationalized/date@3.12.4)(@sveltejs/kit@2.70.3(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@6.2.4(svelte@5.57.1(@typescript-eslint/types@8.70.1))(vite@6.4.3(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1)))(svelte@5.57.1(@typescript-eslint/types@8.70.1))(typescript@6.0.3)(vite@6.4.3(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1)))(svelte@5.57.1(@typescript-eslint/types@8.70.1)):
+  bits-ui@2.18.1(patch_hash=94c91791e7fe22fe5c619520544e9fa2c979fffcf3899ee48ea438fe16bfd053)(@internationalized/date@3.12.4)(@sveltejs/kit@2.70.3(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@6.2.4(svelte@5.57.1(@typescript-eslint/types@8.70.1))(vite@6.4.3(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1)))(svelte@5.57.1(@typescript-eslint/types@8.70.1))(typescript@6.0.3)(vite@6.4.3(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1)))(svelte@5.57.1(@typescript-eslint/types@8.70.1)):
     dependencies:
       '@floating-ui/core': 1.7.5
       '@floating-ui/dom': 1.7.6
@@ -9275,10 +9273,6 @@ snapshots:
     dependencies:
       flat-cache: 6.1.23
 
-  file-icon@6.0.0:
-    dependencies:
-      p-map: 7.0.4
-
   filelist@1.0.6:
     dependencies:
       minimatch: 5.1.9
@@ -10071,6 +10065,8 @@ snapshots:
 
   node-addon-api@7.1.1: {}
 
+  node-api-headers@1.9.0: {}
+
   node-api-version@0.2.1:
     dependencies:
       semver: 7.8.5
@@ -10224,8 +10220,6 @@ snapshots:
   p-locate@5.0.0:
     dependencies:
       p-limit: 3.1.0
-
-  p-map@7.0.4: {}
 
   p-try@2.2.0: {}
 

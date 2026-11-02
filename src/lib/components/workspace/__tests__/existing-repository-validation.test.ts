@@ -1,7 +1,7 @@
 import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceInitializationOutcome } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
 import { createWorkspaceInitializationDispatchAdapter } from './workspace-initialization-dispatch.test-helper';
 
@@ -275,22 +275,6 @@ function deferred<T>() {
 }
 
 describe('existing repository creation boundary (#5771)', () => {
-  const originalScrollIntoView = Object.getOwnPropertyDescriptor(
-    HTMLElement.prototype,
-    'scrollIntoView',
-  );
-  beforeAll(() => {
-    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
-      configurable: true,
-      writable: true,
-      value: vi.fn(),
-    });
-  });
-  afterAll(() => {
-    if (originalScrollIntoView)
-      Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', originalScrollIntoView);
-    else delete (HTMLElement.prototype as Partial<HTMLElement>).scrollIntoView;
-  });
   let root: string;
   let repo: string;
   let nonGit: string;

@@ -54,10 +54,14 @@ function fileToDataUrl(file: File): Promise<string> {
 }
 
 export interface ImageContextItemsOptions {
+  /** Optional composer lifetime; canceled reads must not publish items or notifications. */
+  signal?: AbortSignal;
   /** Per-file size cap in bytes; oversized files are rejected with a toast. */
   maxBytes: number;
   /** Test seam: file → data-URL reader (defaults to FileReader). */
   readFile?: (file: File) => Promise<string>;
+  /** Retained for existing callers; staged thumbnails announce success, failures still notify. */
+  announceSuccess?: boolean;
 }
 
 /**
@@ -70,11 +74,12 @@ export async function imageFilesToContextItems(
   files: File[],
   options: ImageContextItemsOptions,
 ): Promise<ContextItem[]> {
-  const { maxBytes, readFile = fileToDataUrl } = options;
+  const { maxBytes, readFile = fileToDataUrl, signal } = options;
   const items: ContextItem[] = [];
   const oversizedFiles: string[] = [];
 
   for (const file of files) {
+    if (signal?.aborted) return [];
     if (file.size > maxBytes) {
       // Over the cap — rejected up front instead of failing at send time.
       oversizedFiles.push(file.name);
@@ -83,6 +88,7 @@ export async function imageFilesToContextItems(
 
     try {
       const dataUrl = await readFile(file);
+      if (signal?.aborted) return [];
       // Extract base64 data from data URL (remove "data:image/...;base64," prefix)
       const parsed = parseImageDataUrl(dataUrl);
       if (!parsed) {
@@ -104,11 +110,13 @@ export async function imageFilesToContextItems(
         ...(!isSupportedImageMimeType(mimeType) ? { placementFileName: fileName } : {}),
       });
     } catch (error) {
+      if (signal?.aborted) return [];
       logger.error('Failed to add image to context', { fileName: file.name, error });
       notify.error(m.chat_richInput_addImageFailed_error({ name: file.name }));
     }
   }
 
+  if (signal?.aborted) return [];
   if (items.length > 0) {
     logger.debug(`Added ${items.length} image(s) to context`);
   }

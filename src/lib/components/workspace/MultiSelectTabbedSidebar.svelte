@@ -58,6 +58,7 @@
     faPlus,
   } from '@fortawesome/free-solid-svg-icons';
   import { buildWorkspacePRPresentationModel } from './sidebar/workspace-pr-presentation';
+  import { selectGitRoots } from '$store/renderer/slices/git-roots/git-roots-selectors';
   import { constructPrUrl, legacyWorkspacePullRequest } from './sidebar/sidebar-changes-utils';
   import { selectReviewMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import { onMount, tick, untrack, type Snippet } from 'svelte';
@@ -80,7 +81,7 @@
   import { selectWorkspacePeopleTilePeople } from '$store/renderer/slices/presence/presence-selectors';
   import { openWorkspaceDiscussion } from '$features/discussions/discussion-navigation';
   import WorkspaceTokenUsage from './sidebar/WorkspaceTokenUsage.svelte';
-  import SidebarPrDropdown from './sidebar/SidebarPrDropdown.svelte';
+  import WorkspacePullRequests from './sidebar/WorkspacePullRequests.svelte';
   import WorkspaceAgentsList from './WorkspaceAgentsList.svelte';
   import WorkspaceShellList from './WorkspaceShellList.svelte';
   import SidebarSectionTabs from './sidebar/SidebarSectionTabs.svelte';
@@ -113,11 +114,13 @@
   import {
     normalizeSelectedTabs,
     orderSelectedTabs,
+    GIT_ONLY_TAB_IDS,
     OWNER_ONLY_TAB_IDS,
     TAB_DEFINITIONS,
     type TabId,
   } from './multi-select-sidebar-tabs';
   import { m } from '$shared/paraglide/messages.js';
+  import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
 
   interface Props {
     workspaceId: string;
@@ -247,6 +250,7 @@
   const canCreateDiscussion$ = selectDiscussionCanCreate(workspaceIdStore);
   const activePullRequest$ = selectWorkspaceActivePullRequest(workspaceIdStore);
   const prMonitors$ = selectReviewMonitors(workspaceIdStore);
+  const gitRoots$ = selectGitRoots(workspaceIdStore);
   // Every PR attributable to the workspace (branch PRs, cross-repo entries,
   // agent PR monitors), deduplicated and ordered by status priority.
   const workspacePrRows = $derived.by(() => {
@@ -260,6 +264,7 @@
       workspacePRs: ws.pullRequests,
       activePR: $activePullRequest$ ?? ws.activePullRequest ?? legacyWorkspacePullRequest(ws),
       monitors: $prMonitors$,
+      secondaryRoots: $gitRoots$,
       workspaceRepo,
       buildPrUrl: (prNumber, fallbackUrl) =>
         constructPrUrl(prNumber, ws.repositoryOwner, ws.repositoryName, fallbackUrl),
@@ -287,18 +292,33 @@
   const scriptContext$ = selectWorkspaceSavedScriptContext(workspaceIdStore);
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
   const isCollaborator = $derived($isCollaborator$);
+  const plainFolder = $derived(isPlainFolderWorkspace($workspace));
   const presencePeople$ = selectWorkspacePeopleTilePeople(workspaceIdStore);
   const peopleInvites$ = selectWorkspacePeopleInvites(workspaceIdStore);
   const showPeople = $derived($presencePeople$.length > 0 || $peopleInvites$.length > 0);
   const selectedTabIds = selectMultiSelectSidebarSelectedTabIds(workspaceIdStore);
   const selectedTabs = $derived(
-    normalizeSelectedTabs($selectedTabIds, isCollaborator, showPeople, !!$scriptContext$),
+    normalizeSelectedTabs(
+      $selectedTabIds,
+      isCollaborator,
+      showPeople,
+      !!$scriptContext$,
+      plainFolder,
+    ),
   );
   let agentSearchQuery = $state('');
   let contextSearchQuery = $state('');
   const activeTabId = $derived(
     panelOnly && flyout?.open && flyout.tabId
-      ? [...normalizeSelectedTabs([flyout.tabId], isCollaborator, showPeople, !!$scriptContext$)][0]
+      ? [
+          ...normalizeSelectedTabs(
+            [flyout.tabId],
+            isCollaborator,
+            showPeople,
+            !!$scriptContext$,
+            plainFolder,
+          ),
+        ][0]
       : (orderSelectedTabs(selectedTabs)[0] ?? 'agents'),
   );
   // Expanded sidebars stack every selected pane in sidebar order; collapsed previews show one.
@@ -782,7 +802,7 @@
     data-direction={direction}
     data-stacked={visibleTabIds.length > 1 || undefined}
   >
-    {#each TAB_DEFINITIONS.filter(({ id }) => (id !== 'people' || showPeople) && !(isCollaborator && OWNER_ONLY_TAB_IDS.has(id) && !(id === 'shell' && $scriptContext$))) as tab (tab.id)}
+    {#each TAB_DEFINITIONS.filter(({ id }) => (id !== 'people' || showPeople) && !(plainFolder && GIT_ONLY_TAB_IDS.has(id)) && !(isCollaborator && OWNER_ONLY_TAB_IDS.has(id) && !(id === 'shell' && $scriptContext$))) as tab (tab.id)}
       {@const tabId = tab.id}
       <section
         id={`${panelId}-${tabId}`}
@@ -790,7 +810,7 @@
         aria-label={tab.label}
         tabindex="0"
         class={cn(
-          'sidebar-section min-h-0 flex-1 basis-0 flex-col overflow-hidden rounded-(--radius-large) bg-card ring-1 ring-inset ring-border/50 outline-none dark:bg-surface-4',
+          'sidebar-section min-h-0 flex-1 basis-0 flex-col overflow-hidden rounded-(--radius-large) bg-selected ring-1 ring-inset ring-border/50 outline-none dark:bg-surface-4',
           !panelOnly && visibleTabIds.length > 1 && 'min-h-40',
         )}
         style:max-height={panelOnly ? `${flyout?.maxHeight}px` : undefined}
@@ -806,6 +826,15 @@
         data-active={visibleTabIds.includes(tabId) || undefined}
       >
         {#if mountedTabIds.includes(tabId)}
+          {#if tabId === 'changes'}
+            <WorkspacePullRequests
+              {workspaceId}
+              active={active && visibleTabIds.includes(tabId)}
+              rows={workspacePrRows}
+              truncated={($workspace?.pullRequestsTotal ?? 0) >
+                ($workspace?.pullRequests?.length ?? 0)}
+            />
+          {/if}
           {#if tab && !tab.hideHeader}
             <div class="shrink-0 px-5 pt-3 pb-2" data-sidebar-section-header>
               <h6 class="flex min-h-7 items-center gap-2 text-sm font-medium text-foreground">
@@ -917,9 +946,6 @@
                     {/if}
                   {:else if tabId === 'changes'}
                     {@render changesRefreshAction?.()}
-                    {#if workspacePrRows.length > 0}
-                      <SidebarPrDropdown rows={workspacePrRows} {workspaceId} side="bottom" />
-                    {/if}
                   {/if}
                 </span>
               </h6>
@@ -1053,14 +1079,3 @@
     {/each}
   </div>
 </div>
-
-<style>
-  .sidebar-section {
-    --selected: var(--card);
-    --color-selected: hsl(var(--selected));
-  }
-
-  :global(.dark) .sidebar-section {
-    --selected: var(--theme-selected);
-  }
-</style>

@@ -9,6 +9,7 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { waitForLayerExit } from '../../../../test/layer-exit';
 import { tick } from 'svelte';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { StoreState } from '$store/renderer/types';
@@ -489,7 +490,8 @@ describe('workspace sidebar Open in submenu', () => {
 
     await fireEvent.keyDown(editor, { key: 'ArrowLeft' });
     await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('false'));
-    expect(screen.getByRole('menu')).toBe(root);
+    await waitForLayerExit(submenu);
+    expect(screen.getAllByRole('menu')).toEqual([root]);
   });
 
   it.each([
@@ -567,7 +569,8 @@ describe('live WorkspaceProgressCard Open in submenu', () => {
 
     await fireEvent.keyDown(editor, { key: 'ArrowLeft' });
     await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('false'));
-    expect(screen.getByRole('menu')).toBe(root);
+    await waitForLayerExit(submenu);
+    expect(screen.getAllByRole('menu')).toEqual([root]);
     await fireEvent.click(archive);
     expect(mockDispatch).toHaveBeenCalledWith(requestArchiveWorkspace('ws-local'));
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());

@@ -91,6 +91,7 @@ function start({
   collaborator = false,
   conversationFocused = false,
   scriptEntries = [],
+  plainFolder = false,
 }: {
   agents?: AgentSession[];
   tabs?: PanelTab[];
@@ -98,6 +99,7 @@ function start({
   collaborator?: boolean;
   conversationFocused?: boolean;
   scriptEntries?: ScriptListEntry[];
+  plainFolder?: boolean;
 } = {}) {
   let state = withLegacyPrincipal(
     {
@@ -109,6 +111,7 @@ function start({
           id: workspaceId,
           myRole: collaborator ? 'collaborator' : 'owner',
           worktreePath: workspacePath,
+          ...(plainFolder ? { plainFolder: true, branch: '' } : {}),
         } as never),
       ),
       workspaceAgents: workspaceAgentsReducer(undefined, setAgents(workspaceId, agents)),
@@ -217,6 +220,14 @@ describe('sidebar section destinations', () => {
     run.activate('context');
     expect(run.active()).toMatchObject({ type: 'note', noteId: 'spec' });
     expect(run.tabs()).toHaveLength(2);
+  });
+
+  it('never opens the changes list for a plain-folder workspace', () => {
+    const run = start({ plainFolder: true });
+    run.activate('changes');
+    expect(run.tabs()).toHaveLength(0);
+    run.activate('context');
+    expect(run.active()).toMatchObject({ type: 'note', noteId: 'spec', workspaceId });
   });
 
   it.each([

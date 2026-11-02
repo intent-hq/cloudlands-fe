@@ -21,7 +21,12 @@ import {
 import { selectScriptMonitors } from '$store/renderer/slices/script-monitor/script-monitor-selectors';
 import { removeWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 import { selectWorkspaceTerminalState } from '$store/renderer/slices/terminals/terminals-selectors';
-import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
+import { closeWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
+import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
+import {
+  clearPanelLayoutForWorkspace,
+  getPanelLayoutManager,
+} from '$features/layout/panel-layout-adapter';
 import {
   monitorFixture as active,
   monitorSummaryFixture as summary,
@@ -118,7 +123,10 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   stop();
+  store.dispatch(closeWorkspaceTab(ws));
+  clearPanelLayoutForWorkspace(ws);
   store.dispatch(removeWorkspaceEntity(ws));
+  window.history.replaceState({}, '', '/');
 });
 async function mount() {
   store.dispatch(scriptMonitorsSubscribeRequested(ws));
@@ -333,6 +341,7 @@ describe('script monitor controls', () => {
     );
   });
   it('opens archived scripts in both placements, reusing the pane, without starting a run', async () => {
+    window.history.replaceState({}, '', `/workspace/${ws}`);
     scripts = [{ ...scriptFixture, archivedAt: '2026-10-02T10:01:00Z' }];
     await mount();
     for (let i = 0; i < 2; i++) {
@@ -357,6 +366,30 @@ describe('script monitor controls', () => {
     expect(backendRequest).not.toHaveBeenCalledWith('script.start', expect.anything());
     expect(backendRequest).not.toHaveBeenCalledWith('script.restart', expect.anything());
   });
+  // Regression: from the Home preview the script opened in the hidden workspace only.
+  const scriptShown = {
+    panel: () =>
+      getPanelLayoutManager(ws)
+        .getAllTabs()
+        .some((tab) => tab.scriptId === active.scriptId),
+    'bottom bar': () =>
+      selectWorkspaceTerminalState.select(store.state, ws).isOpen &&
+      selectWorkspaceTerminalState.select(store.state, ws).selectedScriptId === active.scriptId,
+  };
+  it.each([
+    ['panel', /panel/i],
+    ['bottom bar', /bottom/i],
+  ] as const)(
+    'switches from Home to the workspace before showing the script in a %s',
+    async (placement, name) => {
+      await mount();
+      await menu();
+      await fireEvent.click(screen.getByRole('menuitem', { name }));
+      await waitFor(() => expect(scriptShown[placement]()).toBe(true));
+      expect(window.location.pathname).toBe(`/workspace/${ws}`);
+      expect(selectCurrentWorkspaceTabId.select(store.state)).toBe(ws);
+    },
+  );
   it('disables script navigation when its definition is gone', async () => {
     scripts = [];
     await mount();

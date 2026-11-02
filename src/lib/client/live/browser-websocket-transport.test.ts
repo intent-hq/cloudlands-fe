@@ -946,7 +946,9 @@ describe('observational node capabilities', () => {
             agentNodes: 1,
             agentPlatformRouting: 1,
             workspaceMembershipEvents: 1,
+            rawScreenshotRetention: 1,
             noteTruncatedRead: 1,
+            remoteMachines: 1,
           },
         },
       },
@@ -958,7 +960,10 @@ describe('observational node capabilities', () => {
           localNodeIsolation: 0,
           agentPlatformRouting: 1,
           workspaceMembershipEvents: 1,
+          rawScreenshotRetention: 1,
+          chiefAttachments: 0,
           noteTruncatedRead: 1,
+          remoteMachines: 1,
         },
       },
     });
@@ -988,7 +993,10 @@ describe('observational node capabilities', () => {
           capabilities: {
             agentNodes: '1',
             workspaceMembershipEvents: true,
+            rawScreenshotRetention: true,
+            chiefAttachments: '1',
             noteTruncatedRead: '1',
+            remoteMachines: '1',
           },
         },
       },
@@ -1000,7 +1008,10 @@ describe('observational node capabilities', () => {
           localNodeIsolation: 0,
           agentPlatformRouting: 0,
           workspaceMembershipEvents: 0,
+          rawScreenshotRetention: 0,
+          chiefAttachments: 0,
           noteTruncatedRead: 0,
+          remoteMachines: 0,
         },
       },
     });
@@ -1026,7 +1037,14 @@ describe('observational node capabilities', () => {
       id: oldId,
       result: {
         clientId: 'old',
-        server: { capabilities: { agentNodes: 1, workspaceMembershipEvents: 1 } },
+        server: {
+          capabilities: {
+            agentNodes: 1,
+            workspaceMembershipEvents: 1,
+            rawScreenshotRetention: 1,
+            chiefAttachments: 1,
+          },
+        },
       },
     });
     await older;
@@ -1037,7 +1055,10 @@ describe('observational node capabilities', () => {
           localNodeIsolation: 0,
           agentPlatformRouting: 0,
           workspaceMembershipEvents: 0,
+          rawScreenshotRetention: 0,
+          chiefAttachments: 0,
           noteTruncatedRead: 0,
+          remoteMachines: 0,
         },
       },
     });
@@ -1261,7 +1282,10 @@ describe('monitor replacement hello admission', () => {
                 localNodeIsolation: 0,
                 agentPlatformRouting: 0,
                 workspaceMembershipEvents: 0,
+                rawScreenshotRetention: 0,
+                chiefAttachments: 0,
                 noteTruncatedRead: 0,
+                remoteMachines: 0,
               },
             },
           });

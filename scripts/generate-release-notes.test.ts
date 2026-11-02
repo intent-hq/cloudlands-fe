@@ -77,13 +77,10 @@ describe('generate-release-notes CLI', () => {
     await import('./generate-release-notes.mjs?t=' + Date.now());
 
     // Poll for the output files instead of a fixed sleep to avoid CI flakiness
-    await vi.waitFor(
-      () => {
-        readFileSync(outFile, 'utf8');
-        readFileSync(manifestFile, 'utf8');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      readFileSync(outFile, 'utf8');
+      readFileSync(manifestFile, 'utf8');
+    });
 
     // Verify markdown output
     const markdown = readFileSync(outFile, 'utf8');
@@ -177,13 +174,10 @@ describe('generate-release-notes CLI', () => {
       vi.resetModules();
       await import('./generate-release-notes.mjs?t=' + Date.now());
       // Poll for the output files instead of a fixed sleep to avoid CI flakiness
-      await vi.waitFor(
-        () => {
-          readFileSync(outFile, 'utf8');
-          readFileSync(manifestFile, 'utf8');
-        },
-        { timeout: 5000 },
-      );
+      await vi.waitFor(() => {
+        readFileSync(outFile, 'utf8');
+        readFileSync(manifestFile, 'utf8');
+      });
 
       // Every cloudlands-fe API call used FE_TOKEN; no intentd API calls were made
       const feCalls = authByUrl.filter((c) => c.url.includes('/repos/intent-hq/cloudlands-fe/'));
@@ -266,13 +260,10 @@ describe('generate-release-notes CLI', () => {
     try {
       vi.resetModules();
       await import('./generate-release-notes.mjs?t=' + Date.now());
-      await vi.waitFor(
-        () => {
-          readFileSync(outFile, 'utf8');
-          readFileSync(manifestFile, 'utf8');
-        },
-        { timeout: 5000 },
-      );
+      await vi.waitFor(() => {
+        readFileSync(outFile, 'utf8');
+        readFileSync(manifestFile, 'utf8');
+      });
 
       const markdown = readFileSync(outFile, 'utf8');
       expect(markdown).toContain('## Backend daemon (intentd)');
@@ -348,13 +339,10 @@ describe('generate-release-notes CLI', () => {
 
     vi.resetModules();
     await import('./generate-release-notes.mjs?t=' + Date.now());
-    await vi.waitFor(
-      () => {
-        readFileSync(outFile, 'utf8');
-        readFileSync(manifestFile, 'utf8');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      readFileSync(outFile, 'utf8');
+      readFileSync(manifestFile, 'utf8');
+    });
 
     const markdown = readFileSync(outFile, 'utf8');
     expect(markdown).toContain(
@@ -412,13 +400,10 @@ describe('generate-release-notes CLI', () => {
 
     vi.resetModules();
     await import('./generate-release-notes.mjs?t=' + Date.now());
-    await vi.waitFor(
-      () => {
-        readFileSync(outFile, 'utf8');
-        readFileSync(manifestFile, 'utf8');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      readFileSync(outFile, 'utf8');
+      readFileSync(manifestFile, 'utf8');
+    });
 
     // Fail-soft: notes are still generated with the pin line + compare link,
     // without a commit list or a misleading "No changes." claim
@@ -486,13 +471,10 @@ describe('generate-release-notes CLI', () => {
     try {
       vi.resetModules();
       await import('./generate-release-notes.mjs?t=' + Date.now());
-      await vi.waitFor(
-        () => {
-          readFileSync(outFile, 'utf8');
-          readFileSync(manifestFile, 'utf8');
-        },
-        { timeout: 5000 },
-      );
+      await vi.waitFor(() => {
+        readFileSync(outFile, 'utf8');
+        readFileSync(manifestFile, 'utf8');
+      });
 
       // No intentd API call is attempted without a usable token
       expect(fetchCalls.some((url) => url.includes('/repos/intent-hq/intentd/'))).toBe(false);
@@ -557,13 +539,10 @@ describe('generate-release-notes CLI', () => {
 
     vi.resetModules();
     await import('./generate-release-notes.mjs?t=' + Date.now());
-    await vi.waitFor(
-      () => {
-        readFileSync(outFile, 'utf8');
-        readFileSync(manifestFile, 'utf8');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      readFileSync(outFile, 'utf8');
+      readFileSync(manifestFile, 'utf8');
+    });
 
     // Invalid base is warned about and ignored: no intentd traffic, plain pin line
     expect(fetchCalls.some((url) => url.includes('/repos/intent-hq/intentd/'))).toBe(false);

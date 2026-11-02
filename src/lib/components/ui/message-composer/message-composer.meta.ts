@@ -15,7 +15,10 @@ export const messageComposerMetadata = {
   ],
   category: 'primitive',
   owner: 'design-system',
-  callers: ['src/lib/component-catalog/renderers/MessageComposerCatalogPreview.svelte'],
+  callers: [
+    'src/features/hud/components/DockConversationPanel.svelte',
+    'src/lib/component-catalog/renderers/MessageComposerCatalogPreview.svelte',
+  ],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/message-composer/message-composer.test.ts',
   removalGate: 'Retain while exported; composer, queue, file, suggestion, and history tests pass.',

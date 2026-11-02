@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getOwnedPopupContext, getOwnedPopupClose } from '$lib/components/ui/owned-popup-context';
   import { DropdownMenu as MenuPrimitive } from 'bits-ui';
   import { setContext, tick } from 'svelte';
   import { cn } from '$lib/utils.js';
@@ -44,6 +45,14 @@
     /** Appearance shared by descendant submenus, including portalled content. */
     subContentClass?: string;
   } = $props();
+
+  const popupOwner = getOwnedPopupContext();
+  const closeOwnedPopup = getOwnedPopupClose();
+  $effect(() => {
+    const element = ref;
+    if (!element || !popupOwner) return;
+    return popupOwner.register(element, closeOwnedPopup);
+  });
 
   const rootStaticPosition = useStaticOverlay();
   setContext(SUBMENU_CONTENT_CLASS, () => subContentClass);
@@ -114,7 +123,7 @@
     {@render children?.()}
   </MenuPrimitive.ContentStatic>
 {:else if portal}
-  <MenuPrimitive.Portal {...portalProps}>
+  <MenuPrimitive.Portal {...portalProps} to={portalProps?.to ?? popupOwner?.target()}>
     <MenuPrimitive.Content
       bind:ref
       {id}

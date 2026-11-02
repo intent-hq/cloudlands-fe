@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   acquireBrowserTabMount,
+  browserTabAgentDrawingChanged,
   closeWorkspaceTab,
   consumeBrowserTabRecovery,
   consumeBrowserTabNavigation,
@@ -54,6 +55,7 @@ describe('tabStateReducer', () => {
     mountedBrowserTabLeases: {},
     browserTabRecoveryRequests: {},
     browserTabNavigations: {},
+    browserTabsAgentDrawing: {},
   };
 
   const makeState = (overrides: Partial<TabState> = {}): TabState => ({
@@ -81,6 +83,16 @@ describe('tabStateReducer', () => {
       tabStateReducer(released, releaseBrowserTabMount('browser-a', 'mount-2'))
         .mountedBrowserTabLeases,
     ).toEqual({});
+  });
+
+  it('tracks agent drawing per tab without persisting it', () => {
+    const drawing = tabStateReducer(initialState, browserTabAgentDrawingChanged('tab-a', true));
+    expect(drawing.browserTabsAgentDrawing).toEqual({ 'tab-a': true });
+    expect(tabStateReducer(drawing, browserTabAgentDrawingChanged('tab-a', true))).toBe(drawing);
+    expect(serializeWorkspaceTabsState(drawing)).toEqual(serializeWorkspaceTabsState(initialState));
+    const ended = tabStateReducer(drawing, browserTabAgentDrawingChanged('tab-a', false));
+    expect(ended.browserTabsAgentDrawing).toEqual({});
+    expect(tabStateReducer(ended, browserTabAgentDrawingChanged('tab-a', false))).toBe(ended);
   });
 
   it('consumes only the current recovery request without persisting DOM intent', () => {

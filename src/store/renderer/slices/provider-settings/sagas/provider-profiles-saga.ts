@@ -25,6 +25,7 @@ import {
   providerProfileCheckRequested,
   providerProfileCreateRequested,
   providerProfileDeleteRequested,
+  providerProfileIdentityChanged,
   providerProfileMutationFailed,
   providerProfileMutationSucceeded,
   providerProfileReorderRequested,
@@ -57,14 +58,23 @@ import { checkSingleProviderRequested } from '../../agent-availability/agent-ava
 const logger = createLogger('ProviderProfilesSaga');
 
 export interface ProviderProfilesSagaDeps {
-  /** `host.providerAuthStatus { providerId: providerRef }` verdict: true / false / unknown. */
-  authStatus(providerRef: string, force: boolean): Promise<boolean | undefined>;
+  /**
+   * `host.providerAuthStatus { providerId: providerRef }` verdict: true / false /
+   * unknown, plus the signed-in email when the provider reports `identity`.
+   */
+  authStatus(providerRef: string, force: boolean): Promise<ProfileAuthVerdict>;
 }
+
+export type ProfileAuthVerdict = { authenticated: boolean | undefined; email?: string };
 
 const defaultDeps: ProviderProfilesSagaDeps = {
   async authStatus(providerRef, force) {
     const verdicts = await getProviderAuthVerdicts({ providerId: providerRef, force });
-    return verdicts[providerRef]?.authenticated;
+    const verdict = verdicts[providerRef];
+    return {
+      authenticated: verdict?.authenticated,
+      ...(verdict?.email ? { email: verdict.email } : {}),
+    };
   },
 };
 
@@ -77,14 +87,20 @@ function toStatus(authenticated: boolean | undefined): ProviderProfileStatus {
 function* checkProfile(deps: ProviderProfilesSagaDeps, profile: ProviderProfile, force: boolean) {
   yield* put(providerProfileStatusChanged(profile.id, 'checking'));
   let status: ProviderProfileStatus = 'configured';
+  let email: string | undefined;
   try {
-    status = toStatus(yield* call([deps, deps.authStatus], profile.providerRef, force));
+    const verdict = yield* call([deps, deps.authStatus], profile.providerRef, force);
+    status = toStatus(verdict.authenticated);
+    if (verdict.authenticated === true) email = verdict.email;
   } catch (error) {
     logger.warn('Provider profile status check failed', { profileId: profile.id, error });
   }
   // A profile deleted while its probe was pending must not reappear.
-  if (yield* selectProviderProfile.effect(profile.id))
+  if (yield* selectProviderProfile.effect(profile.id)) {
     yield* put(providerProfileStatusChanged(profile.id, status));
+    // An unknown verdict keeps the last account; signed out clears it.
+    if (status !== 'configured') yield* put(providerProfileIdentityChanged(profile.id, email));
+  }
 }
 
 function* loadProfiles(deps: ProviderProfilesSagaDeps) {
@@ -314,7 +330,9 @@ function* ensureSummaryStatuses(
     yield* fork(function* () {
       let status: ProviderProfileStatus = 'configured';
       try {
-        status = toStatus(yield* call([deps, deps.authStatus], profile.providerRef, false));
+        status = toStatus(
+          (yield* call([deps, deps.authStatus], profile.providerRef, false)).authenticated,
+        );
       } catch (error) {
         logger.warn('Provider profile status check failed', { profileId: profile.id, error });
       } finally {

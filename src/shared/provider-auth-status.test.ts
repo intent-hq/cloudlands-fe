@@ -92,6 +92,7 @@ describe('toAuthVerdictMap', () => {
     expect(map['claude-code']).toEqual({
       authenticated: true,
       authDetails: 'dev@example.com · Example Org',
+      email: 'dev@example.com',
     });
     // Daemons without the `identity` field degrade silently: no key at all.
     expect(map['codex']).toStrictEqual({ authenticated: true });

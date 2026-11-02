@@ -250,6 +250,8 @@ export const mockUserPreferences: UserPreferencesState = {
   labsMultiplayerEnabled: true,
   labsGitLabEnabled: false,
   labsRemoteAgentsEnabled: false,
+  labsPlainFolderWorkspacesEnabled: false,
+  labsBrowserAccessEnabled: false,
   nativeReviewEnabled: false,
   preferencesHydrated: true,
   labsSettingsVisible: false,

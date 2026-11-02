@@ -314,14 +314,29 @@ import { setupDroidIPC } from '../features/droid/main/droid.ipc';
 import { setupGrokIPC } from '../features/grok/main/grok.ipc';
 import { setupUnslothIPC } from '../features/unsloth/main/unsloth.ipc';
 import { setupAntigravityIPC } from '../features/antigravity/main/antigravity.ipc';
-import { setupFeatureCodesIPC } from '../features/feature-codes/main/feature-codes.ipc';
+import { featureCodesService } from '../features/feature-codes/main/feature-codes.service';
 import { setupProviderAvailabilityIPC } from '../features/providers/main/provider-availability.service';
 import { setupConfigIPC, getConfigManager } from '../features/config/main/config.ipc';
 
 import { setupEventsIPC } from '../features/events/main/events.ipc';
+import { setupDockEvidenceIPC } from '../features/hud/main/dock-evidence.ipc';
+import { isDockAnnotationWindow } from './dock-annotation-identity';
+import {
+  closeDockWindow,
+  createDockWindow,
+  focusDockWindow,
+  getDockWindow,
+  isDockWindow,
+} from './dock-window';
+import { createDockMenuController } from './dock-menu-controller';
+import { getDockEnabledLocalPref, setDockEnabledLocalPref } from './local-prefs';
+import { isDockLabEnabled, loadDockLabEnabled, registerDockLabHandlers } from './dock-lab';
+import {
+  setupBrowserAccess,
+  shutdownBrowserAccess,
+} from '../features/browser-access/main/browser-access.ipc';
 import { registerExternalEditorsHandlers } from '../features/external-editors/main/external-editors.ipc';
 import { setupFileIPC } from '../features/file/main/file.ipc';
-import { registerIDEHandlers } from '../features/ide/main/ide.ipc';
 import { setupPanelLayoutHistoryIPC } from '../features/layout/main/panel-layout-history.ipc';
 import { setupLogIPC } from '../features/log/main/log.ipc';
 import { setupNotificationIPC } from '../features/notifications/main/notification.ipc';
@@ -340,6 +355,7 @@ import {
 } from '../features/backend/main/backend.ipc';
 import { registerWorkspaceTransferHandlers } from '../features/backend/main/workspace-transfer.ipc';
 import { registerWorkspaceImportHandlers } from '../features/backend/main/workspace-import.ipc';
+import { registerRemoteMachinesHandlers } from '../features/backend/main/remote-machines.ipc';
 import { getConnectionMode, getDaemonVersionInfo } from '../features/backend/main/connection-mode';
 import { list as listGuestSessions } from '../features/backend/main/guest-sessions-store';
 import { getActiveId, list as listConnections } from '../features/backend/main/connections-store';
@@ -380,6 +396,7 @@ import { sendWorkspaceCommand as sendWorkspaceMenuCommand } from './menu-workspa
 import { openNewWindowFromMenu } from './menu-new-window';
 import { toggleWindowDevTools } from './menu-devtools-toggle';
 import { handleMenuZoom } from './menu-zoom';
+import { createSettingsMenuItem } from './menu-settings';
 
 import { registerMissingAgentHandlers } from '../features/agent/main/agent-missing.ipc';
 import { registerVoiceLocalHandlers } from '../features/voice/main/voice-local.ipc';
@@ -529,6 +546,11 @@ async function performGracefulShutdown() {
     // if the environment is torn down too quickly, the assertion at conpty.cc:110
     // fires. This delay gives those threads time to finish.
     await new Promise((resolve) => setTimeout(resolve, 300));
+
+    // Stop Browser access first so no browser bridge outlives the backends.
+    await shutdownBrowserAccess().catch((error: unknown) =>
+      logger.warn('Browser access shutdown failed', error),
+    );
 
     // Dispose every pooled backend JSON-RPC client (closes the UDS/WSS sockets).
     try {
@@ -926,16 +948,7 @@ const bootFlow = app.whenReady().then(async () => {
 
     // Add Settings on Windows (before Close Window)
     if (!isMacOS) {
-      fileMenuItems.push({
-        label: m.menu_settings(),
-        accelerator: 'CmdOrCtrl+,',
-        click: () => {
-          const focusedWindow = BrowserWindow.getFocusedWindow();
-          if (focusedWindow && !focusedWindow.isDestroyed()) {
-            focusedWindow.webContents.send('navigate', '/settings');
-          }
-        },
-      });
+      fileMenuItems.push(createSettingsMenuItem(m.menu_settings()));
       fileMenuItems.push({ type: 'separator' });
     }
 
@@ -998,6 +1011,17 @@ const bootFlow = app.whenReady().then(async () => {
     );
   };
 
+  const dockMenuController = createDockMenuController({
+    createWindow: createDockWindow,
+    getWindow: getDockWindow,
+    closeWindow: () => closeDockWindow(),
+    focusWindow: () => focusDockWindow(),
+    readEnabledPreference: getDockEnabledLocalPref,
+    writeEnabledPreference: (enabled) =>
+      isShuttingDown ? Promise.resolve() : setDockEnabledLocalPref(enabled),
+    onStateChange: () => app.emit('dock-window-state-changed'),
+  });
+
   // Function to rebuild and set the application menu. Callers fire-and-forget
   // (`void rebuildMenu()`): the only await, in buildFileMenu, catches internally.
   const rebuildMenu = async () => {
@@ -1010,6 +1034,24 @@ const bootFlow = app.whenReady().then(async () => {
       { role: 'minimize', label: m.menu_minimize(), accelerator: 'CmdOrCtrl+M' },
       { role: 'zoom', label: m.menu_window_fill() },
       { type: 'separator' },
+      // The dock is an experimental Labs feature: its items exist only while the lab is on.
+      ...(isDockLabEnabled()
+        ? ([
+            {
+              label: m.menu_show_intent_dock(),
+              type: 'checkbox',
+              checked: dockMenuController.isEnabled(),
+              click: (menuItem) => void dockMenuController.setEnabled(menuItem.checked),
+            },
+            {
+              label: m.menu_focus_intent_dock(),
+              accelerator: 'CmdOrCtrl+Shift+D',
+              enabled: dockMenuController.isEnabled(),
+              click: () => dockMenuController.focus(),
+            },
+            { type: 'separator' },
+          ] satisfies Electron.MenuItemConstructorOptions[])
+        : []),
       {
         label: m.menu_select_previous_tab(),
         accelerator: 'CmdOrCtrl+[',
@@ -1047,7 +1089,11 @@ const bootFlow = app.whenReady().then(async () => {
     // Add the app's open windows to the Window menu, labeled by kind + backend.
     // External webview popups (OAuth/auth flows) are not app windows — skip them.
     const liveWindows = (BrowserWindow.getAllWindows() as BrowserWindowType[]).filter(
-      (w) => !w.isDestroyed() && !isWebviewPopupWindow(w),
+      (w) =>
+        !w.isDestroyed() &&
+        !isWebviewPopupWindow(w) &&
+        !isDockWindow(w) &&
+        !isDockAnnotationWindow(w),
     );
     if (liveWindows.length > 0) {
       let connections: Awaited<ReturnType<typeof listConnections>> = [];
@@ -1332,16 +1378,7 @@ const bootFlow = app.whenReady().then(async () => {
             },
           },
           { type: 'separator' },
-          {
-            label: m.menu_settings(),
-            accelerator: 'CmdOrCtrl+,',
-            click: () => {
-              const focusedWindow = BrowserWindow.getFocusedWindow();
-              if (focusedWindow && !focusedWindow.isDestroyed()) {
-                focusedWindow.webContents.send('navigate', '/settings');
-              }
-            },
-          },
+          createSettingsMenuItem(m.menu_settings()),
           {
             label: m.menu_install_cli(),
             click: async () => {
@@ -1444,6 +1481,10 @@ const bootFlow = app.whenReady().then(async () => {
   // Rebuild menu when the active backend changes (backend switch or boot
   // restore of a remote) — the Help ▸ Sample intentd Process item is gated on
   // win32 + local sidecar (#1889)
+  app.on('dock-window-state-changed', () => {
+    void rebuildMenu();
+  });
+
   app.on('backend-connection-changed', () => {
     void rebuildMenu();
   });
@@ -1541,11 +1582,11 @@ const bootFlow = app.whenReady().then(async () => {
   setupWorkspaceSummaryIPC();
   setupFileIPC();
   setupSystemIPC();
+  setupDockEvidenceIPC();
   setupDevConsoleIPC();
   setupPowerStateIPC();
   await setupConfigIPC();
-  registerIDEHandlers(); // Needed for IDE integration
-  registerExternalEditorsHandlers(); // Needed for external editor detection and opening
+  registerExternalEditorsHandlers(); // Needed for the native "Open with…" chooser
   registerWorkspacePRHandlers(); // Needed for PR operations
   registerMissingAgentHandlers(); // Needed for agent context operations
   registerDeepLinkHandlers(); // Needed for deep link and file operations
@@ -1561,11 +1602,12 @@ const bootFlow = app.whenReady().then(async () => {
   setupGrokIPC(); // Needed for grok:get-models
   setupUnslothIPC(); // Needed for unsloth:get-models
   setupAntigravityIPC(); // Needed for antigravity:get-models
-  // Feature codes for gating experimental features; registers handlers after an
-  // async service init, so it is not awaited on the startup critical path.
-  setupFeatureCodesIPC().catch((error: unknown) =>
-    logger.error('Failed to set up feature codes IPC:', error as Error),
-  );
+  // Feature codes gate experimental providers in provider availability. The
+  // service init is async, so it is not awaited on the startup critical path.
+  // (The feature-codes:* channels are answered by the renderer bridge seeder.)
+  featureCodesService
+    .init()
+    .catch((error: unknown) => logger.error('Failed to initialize feature codes:', error as Error));
   setupProviderAvailabilityIPC(); // Needed for providers:get-availability
   setupEventsIPC(); // Needed for events:query
   registerSetupScriptsHandlers(); // Needed for onboarding setup scripts
@@ -1595,15 +1637,20 @@ const bootFlow = app.whenReady().then(async () => {
   registerBackendHandlers(); // Needed for live JSON-RPC transport (workspaces domain)
   registerWorkspaceTransferHandlers(); // Workspace transfer relay (wizard steps 3–4)
   registerWorkspaceImportHandlers(); // Import Workspace from File (File menu)
+  registerRemoteMachinesHandlers(); // Make a machine available to the current backend
 
   // Every critical handler a renderer invokes on boot now exists: let the
   // window creators in ./window.ts proceed (they all await this gate).
+  // The dock lab is main-owned and off by default; the dock restores only while it is on.
+  await loadDockLabEnabled();
+  registerDockLabHandlers({
+    show: () => dockMenuController.setEnabled(true),
+    hide: () => dockMenuController.dismiss(),
+    onChange: () => void rebuildMenu(),
+  });
   markRendererWindowsAllowed();
-
-  // Hydrate the main-process provider catalog cache (non-blocking): the
-  // JSON-RPC client queues the request until the daemon socket connects.
-  const { primeProviderCatalog } = await import('./utils/provider-catalog-accessor.js');
-  primeProviderCatalog();
+  if (isDockLabEnabled()) await dockMenuController.restore();
+  void rebuildMenu();
 
   startupMetrics.end('criticalIPC');
 
@@ -1615,6 +1662,9 @@ const bootFlow = app.whenReady().then(async () => {
     startupMetrics.start('secondaryIPC');
     logger.info('Setting up secondary IPC handlers in background');
 
+    // Browser access (Settings → Devices): serve the web UI to a browser behind a
+    // front-end such as `tailscale serve` when the user turned it on.
+    void setupBrowserAccess();
     setupFirstVisitStateIPC();
     setupPanelLayoutHistoryIPC();
     setupUserActivityIPC();
@@ -2154,7 +2204,14 @@ app.on('activate', async () => {
   // IPC-readiness wait lives inside the creators (see ./app-activate.ts).
   await handleActivate<BrowserWindowType>({
     whenBootWindowsReady: () => bootWindowsGate.ready,
-    getAllWindows: getAppWindows,
+    shouldIgnoreActivation: () => {
+      const focused = BrowserWindow.getFocusedWindow();
+      return !!focused && (isDockWindow(focused) || isDockAnnotationWindow(focused));
+    },
+    getAllWindows: () =>
+      getAppWindows().filter(
+        (window: BrowserWindowType) => !isDockWindow(window) && !isDockAnnotationWindow(window),
+      ),
     getMainWindow,
     getClaimedWindow: () => getActivationFocusClaim<BrowserWindowType>(),
     focusWindow: (targetWindow) => {

@@ -48,10 +48,6 @@ warmImport(() => import('$lib/components/patterns/confirm/ConfirmHost.svelte'));
 let fixture: ReturnType<typeof installSidebarNativeFixture>;
 let dispose: () => void;
 beforeEach(() => {
-  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
-    configurable: true,
-    value: vi.fn(),
-  });
   dispose = initAppStore(store).dispose;
   resetConfirmServiceForTests();
 });

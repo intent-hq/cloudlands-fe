@@ -1,7 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
+import { isolatedProfileHome } from '../test/fixtures/isolated-profile-home';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -14,7 +13,7 @@ afterEach(() => {
 
 async function load(buildId: string, packaged = true) {
   vi.resetModules();
-  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ib-')));
+  const home = isolatedProfileHome(buildId || 'manual-321-1');
   roots.push(home);
   const paths = new Map<string, string>([
     ['home', home],

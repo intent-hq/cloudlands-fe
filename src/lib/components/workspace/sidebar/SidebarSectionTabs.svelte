@@ -15,6 +15,7 @@
     setMultiSelectSidebarSelectedTabs,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
+    selectIsPlainFolderWorkspace,
     selectIsWorkspaceCollaborator,
     selectWorkspaceSavedScriptContext,
   } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -27,6 +28,7 @@
   } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import {
     TAB_DEFINITIONS,
+    GIT_ONLY_TAB_IDS,
     OWNER_ONLY_TAB_IDS,
     normalizeSelectedTabs,
     orderSelectedTabs,
@@ -60,6 +62,7 @@
   const selected$ = selectMultiSelectSidebarSelectedTabIds(workspaceId$);
   const collaborator$ = selectIsWorkspaceCollaborator(workspaceId$);
   const scriptContext$ = selectWorkspaceSavedScriptContext(workspaceId$);
+  const plainFolder$ = selectIsPlainFolderWorkspace(workspaceId$);
   const people$ = selectWorkspacePeopleTilePeople(workspaceId$);
   const invites$ = selectWorkspacePeopleInvites(workspaceId$);
   const showPeople = $derived($people$.length > 0 || $invites$.length > 0);
@@ -70,12 +73,19 @@
     TAB_DEFINITIONS.filter(
       ({ id }) =>
         (id !== 'people' || showPeople) &&
+        !($plainFolder$ && GIT_ONLY_TAB_IDS.has(id)) &&
         !($collaborator$ && OWNER_ONLY_TAB_IDS.has(id) && !(id === 'shell' && $scriptContext$)),
     ),
   );
   const savedSelection = $derived(
     orderSelectedTabs(
-      normalizeSelectedTabs($selected$, $collaborator$, showPeople, !!$scriptContext$),
+      normalizeSelectedTabs(
+        $selected$,
+        $collaborator$,
+        showPeople,
+        !!$scriptContext$,
+        $plainFolder$,
+      ),
     ),
   );
   // The collapsed rail previews one pane; the saved group shows again once the preview closes.

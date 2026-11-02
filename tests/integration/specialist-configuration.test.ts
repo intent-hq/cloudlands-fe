@@ -76,10 +76,6 @@ vi.mock('../../src/main/utils/github-auth-status', () => ({
 describe('Specialist Configuration', () => {
   beforeAll(async () => {
     expect(resolveSpecialistRoot).not.toHaveBeenCalled();
-    // specialists.service resolves tiers via the main-process catalog cache;
-    // seed it directly (no live daemon in unit tests).
-    const accessor = await import('../../src/main/utils/provider-catalog-accessor');
-    accessor.setProviderCatalogCacheForTests(MOCK_PROVIDER_CATALOG);
     await initSpecialistsService();
     await refreshSpecialistsFromFiles();
   });

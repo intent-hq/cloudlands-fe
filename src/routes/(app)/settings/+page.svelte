@@ -21,7 +21,8 @@
   import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
   import MobileSettings from '$features/settings/MobileSettings.svelte';
   import GuestSessionsSettings from '$lib/components/settings/GuestSessionsSettings.svelte';
-  import BackendSyncSettings from '$lib/components/settings/BackendSyncSettings.svelte';
+  import DevicesConnectionSections from '$lib/components/settings/DevicesConnectionSections.svelte';
+  import BrowserAccessSection from '$lib/components/settings/BrowserAccessSection.svelte';
   import VoiceSettings from '$lib/components/settings/VoiceSettings.svelte';
   import GitWorkspaceSettings from '$lib/components/settings/GitWorkspaceSettings.svelte';
   import OpenInAppsSettings from '$lib/components/settings/OpenInAppsSettings.svelte';
@@ -84,6 +85,7 @@
 
   import SettingsSidebarBack from '$lib/components/settings/SettingsSidebarBack.svelte';
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
+  import DockLabSettings from '$lib/components/settings/DockLabSettings.svelte';
   import { getNavigatorHid } from '$features/hardware-console/device/platform';
   import { watchSupportedDevicePresence } from '$features/hardware-console/device/presence';
   import { getHardwareConsoleManager } from '$features/hardware-console/instance';
@@ -155,6 +157,7 @@
     devices: 'devices',
     machines: 'devices',
     'backend-sync': 'devices',
+    'browser-access': 'mobile',
     mobile: 'mobile',
     'websocket-api': 'mobile',
     'remote-access': 'mobile',
@@ -189,6 +192,7 @@
     'workspace-api': 'advanced',
     'agent-features': 'agent-behavior',
     'agent-backend': 'advanced',
+    labs: 'advanced',
     'utility-default-model': 'providers',
     hardware: 'advanced',
     connection: 'advanced',
@@ -591,23 +595,12 @@
           <AdministratorSettings tab={activeTab} workspaceId={settingsWorkspaceId} />
         {/if}
 
-        <!-- Machines -->
         {#if activeTab === 'devices'}
           <div id="devices" class="scroll-mt-20">
             <DevicesSettings />
           </div>
 
-          <!-- Backend sync (iCloud Keychain) -->
-          <div id="backend-sync" class="scroll-mt-20">
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_backendSync()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section data-slot="settings-section-body" class="px-6 py-4">
-                <BackendSyncSettings />
-              </section>
-            </div>
-          </div>
+          <DevicesConnectionSections />
         {/if}
 
         {#if activeTab === 'mobile'}
@@ -616,6 +609,7 @@
               <MobileSettings />
             </div>
           </div>
+          <BrowserAccessSection />
         {/if}
 
         <!-- Guest sessions (multiplayer w4: hosting roster + joined hosts) -->
@@ -1184,6 +1178,12 @@
                   </div>
                 </section>
               </div>
+            </div>
+          {/if}
+
+          {#if isElectronPlatform()}
+            <div id="labs" data-highlight-id="labs" use:highlightTarget>
+              <DockLabSettings />
             </div>
           {/if}
         {/if}

@@ -75,7 +75,23 @@ describe('themeSaga', () => {
     );
     mocks.resetInstance.mockImplementation(() => mocks.manager.dispose());
   });
-  afterEach(() => document.documentElement.classList.remove('dark', 'light'));
+  afterEach(() => {
+    document.documentElement.classList.remove('dark', 'light');
+    delete document.documentElement.dataset.auxiliaryWindow;
+  });
+
+  it.each(['dock', 'dock-annotation'])(
+    'does not change process-wide native theme from %s',
+    async (windowKind) => {
+      document.documentElement.dataset.auxiliaryWindow = windowKind;
+      mocks.manager.getTheme.mockReturnValue('light');
+      const task = runSaga({ dispatch: vi.fn() }, themeSaga);
+      await settle();
+      expect(mocks.invoke).not.toHaveBeenCalled();
+      task.cancel();
+      await task.toPromise();
+    },
+  );
 
   it('hydrates an exact manager snapshot, applies preference, and suppresses its synchronous echo', async () => {
     mocks.manager.setTheme.mockImplementation((theme: string) => {

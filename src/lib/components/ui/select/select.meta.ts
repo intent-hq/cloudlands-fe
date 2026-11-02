@@ -30,6 +30,7 @@ export const selectMetadata = parseUiComponentMetadata({
   owner: '007-B6',
   callers: [
     'src/features/host-membership/HostInvitationDialog.svelte',
+    'src/features/hud/components/DockConversationPanel.svelte',
     'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
     'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
     'src/lib/components/chat/TaskProgressControl.svelte',

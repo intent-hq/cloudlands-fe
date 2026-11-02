@@ -30,7 +30,7 @@ export function withLegacyPrincipal(input: object, role: 'owner' | 'guest' = 'ow
 /** Admit a caller in component tests using the real store but no transport sagas. */
 export function admitLegacyPrincipal(
   role: 'owner' | 'guest' = 'owner',
-  capabilities: { workspaceLabels?: 1 } = {},
+  capabilities: { workspaceLabels?: 1; workspaceAutoArchiveOptOut?: 1 } = {},
 ): void {
   const { connections: current } = store.state;
   store.dispatch(
