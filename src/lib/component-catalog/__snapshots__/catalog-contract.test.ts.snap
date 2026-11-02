@@ -16501,7 +16501,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
     "interrupted-agents-retry",
     "add-remote-setup-modal",
   ],
-  "dom": "<body>
+  "dom": "<body data-new-space-modal-open="">
   <div>
     <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
       <header class="entry-header svelte-<scope>">
@@ -18411,14 +18411,15 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                     <div class="bg-muted/40 min-h-96 overflow-hidden py-4 relative rounded-md svelte-<scope>">
                       <div id="c<id>-new-space-modal-portal">
                       <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
-                      <div aria-labelledby="bits-<id>" aria-modal="true" class="app-no-drag bg-surface-3 dialog-editorial-content flex flex-col max-w-6xl min-h-0 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-visible overlay-surface overscroll-contain p-0 relative shadow-surface-3 text-popover-foreground w-full z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-size="editor" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+                      <div aria-labelledby="bits-<id>" aria-modal="true" class="app-no-drag bg-surface-3 dialog-editorial-content flex flex-col max-w-6xl min-h-0 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-visible overlay-surface overscroll-contain p-0 relative shadow-surface-3 text-popover-foreground w-full z-[var(--layer-modal)]" data-dialog-content="" data-model-picker-collision-boundary="" data-new-space-modal="" data-overlay-surface="true" data-size="editor" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
                         <div class="dialog-layout flex flex-1 flex-col min-h-0 min-w-0 svelte-<scope>">
                           <div class="flex flex-col gap-1.5 m-0 min-w-0 pr-14 pt-6 px-6 shrink-0" data-slot="dialog-header">
                             <div aria-level="2" class="[anchor-name:--dialog-title] font-bold text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
                               "New Workspace"
                           <div class="min-h-0 min-w-0 overflow-y-auto overscroll-contain pb-6 pt-5 px-6" data-slot="dialog-body">
                             <div class="gap-4 grid grid-cols-1 min-w-0">
-                              <div class="min-w-0">
+                              <div aria-hidden="true" class="duration-spring-moderate ease-spring-moderate motion-reduce:transition-none svelte-<scope> transition-opacity workspace-sidebar-surface">
+                              <div class="min-w-0 svelte-<scope> workspace-form">
                                 <div class="gap-4 grid">
                                   <textarea aria-label="Initial prompt" class="aria-invalid:border-danger bg-transparent border border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) flex focus-visible:outline-none focus-visible:shadow-none hover:bg-hover min-h-20 motion-reduce:transition-none placeholder:text-muted-foreground px-3 py-2 read-only:text-muted-foreground rounded-(--radius-medium) shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="textarea">
                                   <div class="gap-2 grid">
@@ -18437,14 +18438,14 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                     <label class="data-[invalid=true]:text-danger data-[state=focus]:text-foreground data-[state=hover]:text-foreground duration-(--spring-fast) flex font-medium gap-2 group-data-[disabled=true]:opacity-60 group-data-[disabled=true]:pointer-events-none group-data-[invalid=true]:text-danger group-focus-within:text-foreground group-hover:text-foreground items-center min-w-0 motion-reduce:transition-none peer-disabled:cursor-not-allowed peer-disabled:opacity-60 select-none text-muted-foreground tracking-normal transition-[color] type-caption" data-label-root="" data-size="default" data-slot="label" for="c<id>" id="bits-<id>">
                                       "Setup script"
                                     <div>
-                                      <button aria-expanded="false" aria-haspopup="dialog" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-border cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-2 group/button h-(--control-height-medium) inline-flex isolate items-center justify-between min-w-0 motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-foreground text-left transition-[color,opacity] type-caption w-full whitespace-nowrap" data-slot="button" id="c<id>" type="button">
+                                      <button aria-expanded="false" aria-haspopup="dialog" aria-label="Setup script" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border border-border cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-2 group/button h-(--control-height-medium) inline-flex isolate items-center justify-between min-w-0 motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-foreground text-left transition-[color,opacity] type-caption w-full whitespace-nowrap" data-setup-script-trigger="true" data-slot="button" id="c<id>" type="button">
                                         <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-hover/button:bg-hover inset-0 motion-reduce:transition-none pointer-events-none shadow-none transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                                         <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                                           <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                            <span class="flex gap-2 items-center min-w-0">
+                                            <span class="flex flex-1 gap-2 items-center min-w-0">
                                               <span class="truncate">
                                                 "pnpm install"
-                                            <svg aria-hidden="true" class="shrink-0 text-muted-foreground" role="img">
+                                            <svg aria-hidden="true" class="shrink-0 size-3 text-muted-foreground" data-icon="chevron-right" data-weight="regular" role="img">
                                               <rect>
                                               <path>
                                   <div>
@@ -18466,13 +18467,15 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                     <div class="bg-muted/40 min-h-96 overflow-hidden py-4 relative rounded-md svelte-<scope>">
                       <div id="c<id>-setup-script-modal-portal">
                       <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
-                      <div aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content flex flex-col max-w-6xl min-h-0 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-hidden overlay-surface overscroll-contain p-0 relative shadow-surface-3 text-popover-foreground w-full z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-size="editor" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
+                      <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content flex flex-col max-w-6xl min-h-0 motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-hidden overlay-surface overscroll-contain p-0 relative shadow-surface-3 text-popover-foreground w-full z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-size="editor" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
                         <form class="flex flex-1 flex-col gap-4 min-h-0 min-w-0" data-slot="form">
                           <fieldset class="contents">
                             <div class="dialog-layout flex flex-1 flex-col min-h-0 min-w-0 svelte-<scope>">
                               <div class="flex flex-col gap-1.5 m-0 min-w-0 pr-14 pt-6 px-6 shrink-0" data-slot="dialog-header">
                                 <div aria-level="2" class="[anchor-name:--dialog-title] font-bold text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
                                   "Setup Script"
+                                <div class="break-words text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
+                                  "Choose what runs after the workspace is created, such as installing dependencies."
                               <div class="min-h-0 min-w-0 overflow-y-auto overscroll-contain pb-5 pt-5 px-6" data-slot="dialog-body">
                                 <div class="gap-4 grid grid-cols-1 min-w-0">
                                   <div class="gap-3 grid">

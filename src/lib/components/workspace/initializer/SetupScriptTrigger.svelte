@@ -14,6 +14,7 @@
     onOpen,
     presentation = 'default',
     triggerProps,
+    ref = $bindable(null),
   }: {
     value: string;
     loading?: boolean;
@@ -21,6 +22,7 @@
     onOpen: () => void;
     presentation?: 'default' | 'form';
     triggerProps?: ButtonProps;
+    ref?: HTMLButtonElement | HTMLAnchorElement | null;
   } = $props();
   const id = $props.id();
 </script>
@@ -31,6 +33,7 @@
   {/if}
   <Button
     {...triggerProps}
+    bind:ref
     id={triggerProps?.id ?? id}
     type="button"
     variant={presentation === 'form' ? 'ghost' : 'outline'}
@@ -42,6 +45,7 @@
     aria-label={m.workspace_setupScriptEditor_setupScript_label()}
     aria-haspopup="dialog"
     aria-expanded={expanded}
+    data-setup-script-trigger
     onclick={triggerProps?.onclick ?? onOpen}
   >
     {#if presentation === 'form'}

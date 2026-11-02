@@ -25,7 +25,7 @@
   import { goto } from '$app/navigation';
   import { v4 as uuidv4 } from 'uuid';
   import { registerWorkspaceInitializationPreparation } from './initializer/workspace-initialization-preparation';
-  import SetupScriptTrigger from './initializer/SetupScriptTrigger.svelte';
+  import SetupScriptPicker from './initializer/SetupScriptPicker.svelte';
   import { useWorkspaceSetupView } from './initializer/workspace-setup-view';
   import {
     SETUP_SCRIPT_TEMPLATES,
@@ -36,8 +36,8 @@
     repoIdentityKey,
     toRepoConfigSubset,
     type RepoIdentity,
-    setupScriptDisplayName,
     REPO_CONFIG_SCRIPT_NAME,
+    type SetupScriptChoice,
     type SetupScriptNameSource,
   } from '$features/setup-scripts';
   import { getLastUsedSetupScript } from '$features/setup-scripts/last-used';
@@ -745,13 +745,18 @@
   // form state.
   let setupScript = $state('');
   let showSetupScript = $state(false); // Always collapsed on mount
+  let showSetupScriptPicker = $state(false);
+  let createSetupScript = $state(false);
   const setupViewHost = useWorkspaceSetupView();
   const inlineSetupOpen = $derived(Boolean(setupViewHost) && showSetupScript);
   let setupReturnFocus: HTMLElement | null = null;
   let wasInlineSetupOpen = false;
-  function openSetupScript() {
+  function openSetupScript(createNew = false) {
     setupReturnFocus =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      controlsContainer?.querySelector<HTMLElement>('[data-setup-script-trigger]') ?? null;
+    // A standalone dialog must capture the field, not the disappearing picker action.
+    if (!setupViewHost) setupReturnFocus?.focus();
+    createSetupScript = createNew;
     showSetupScript = true;
     if (setupViewHost)
       controlsContainer?.closest('[data-slot="dialog-body"]')?.scrollTo({ top: 0 });
@@ -778,6 +783,14 @@
   let isCustomSetupScript = $state(false);
   let setupScriptExplicit = false;
   let repoConfigError = $state(false);
+
+  function selectSetupScript(choice: SetupScriptChoice) {
+    setupScript = choice.content;
+    setupScriptName = choice.name;
+    setupScriptNameSource = choice.source;
+    isCustomSetupScript = choice.source === 'custom';
+    setupScriptExplicit = true;
+  }
 
   // Repo-committed setup script from <repo>/.intent/config.json (local repos
   // read the file over IPC; GitHub repos use `github.repoConfig.get`).
@@ -1818,6 +1831,7 @@
     untrack(() => {
       if (previousSetupScriptProbeKey !== key) {
         showSetupScript = false;
+        showSetupScriptPicker = false;
         previousSetupScriptProbeKey = key;
         repoConfigScript = null;
         repoConfigScriptRepo = null;
@@ -1837,6 +1851,7 @@
         repoConfigScriptRepo = null;
         setupScriptExplicit = false;
         showSetupScript = false;
+        showSetupScriptPicker = false;
 
         // On initial mount, don't override if there's already a setup script
         // set (e.g., from restored form state). On repo switches, always
@@ -2498,6 +2513,7 @@
     // These are preserved so the user's last agent selection persists across workspace creations
     setupScript = '';
     showSetupScript = false;
+    showSetupScriptPicker = false;
     setupScriptName = 'Custom';
     setupScriptNameSource = 'custom';
     isCustomSetupScript = false;
@@ -3435,12 +3451,20 @@
         </div>
         <!-- Setup script -->
         <div class="grid gap-2">
-          <SetupScriptTrigger
-            presentation="form"
-            value={setupScriptDisplayName(setupScriptName, setupScriptNameSource)}
+          <SetupScriptPicker
+            bind:open={showSetupScriptPicker}
+            value={setupScript}
+            scriptName={setupScriptName}
+            scriptNameSource={setupScriptNameSource}
+            repositoryKey={setupScriptRepoKey ?? undefined}
+            githubUrl={repoType === 'github' ? githubUrl : null}
+            repoConfigScript={repoConfigScriptRepo === setupScriptProbeKey
+              ? repoConfigScript
+              : null}
             loading={isRepoConfigLoading}
-            expanded={showSetupScript}
-            onOpen={openSetupScript}
+            onSelect={selectSetupScript}
+            onEdit={() => openSetupScript()}
+            onCreate={() => openSetupScript(true)}
           />
           {#if repoConfigError}
             <p class="text-sm text-subtle" role="status">
@@ -3617,6 +3641,7 @@
   </div>
   <SetupScriptModal
     presentation={setupViewHost ? 'inline' : 'dialog'}
+    createNew={createSetupScript}
     bind:open={showSetupScript}
     repoPath={repoType === 'gitlab' ? '' : repoPath}
     repositoryKey={setupScriptRepoKey ?? undefined}

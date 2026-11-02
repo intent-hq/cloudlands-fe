@@ -36,6 +36,8 @@
     /** True identity of `scriptName` — drives display-label localization. */
     scriptNameSource?: SetupScriptNameSource;
     isCustomScript?: boolean;
+    /** Start a blank draft without changing the current selection until Done. */
+    createNew?: boolean;
     onClose?: () => void;
     onCommit?: () => void;
   }
@@ -55,6 +57,7 @@
     scriptName = $bindable('Custom'),
     scriptNameSource = $bindable('named'),
     isCustomScript = $bindable(false),
+    createNew = false,
     onClose,
     onCommit,
   }: Props = $props();
@@ -80,10 +83,11 @@
   $effect(() => {
     if (open && !wasOpen) {
       untrack(() => {
-        localValue = value;
-        localScriptName = scriptName;
-        localScriptNameSource = scriptNameSource;
-        localIsCustomScript = isCustomScript;
+        localValue = createNew ? '' : value;
+        // i18n-ignore (stored setup-script identity)
+        localScriptName = createNew ? 'Custom' : scriptName;
+        localScriptNameSource = createNew ? 'custom' : scriptNameSource;
+        localIsCustomScript = createNew || isCustomScript;
         editorExpanded = true;
         closed = false;
       });

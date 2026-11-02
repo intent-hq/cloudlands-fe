@@ -53,6 +53,21 @@ test('new workspace pickers restore focus and preserve the prompt when dismissed
     await expect(trigger).toBeFocused();
     await expect(prompt).toHaveText('Refine the workspace navigation.');
   }
+  const model = dialog.getByRole('button', { name: /^Model / });
+  await model.click();
+  const modelPanel = page.locator('[data-slot="dropdown-content"]:visible');
+  const effort = modelPanel.getByTestId('effort-picker-trigger');
+  await effort.focus();
+  await effort.press('Enter');
+  await expect(page.getByRole('option', { name: 'High', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(effort).toBeFocused();
+  await expect(modelPanel).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(modelPanel).toBeHidden();
+  await expect(model).toBeFocused();
+  await expect(dialog).toBeVisible();
+  await expect(prompt).toHaveText('Refine the workspace navigation.');
   await testInfo.attach('wide-light', {
     body: await page.screenshot({ path: testInfo.outputPath('wide-light.png') }),
     contentType: 'image/png',
@@ -117,6 +132,21 @@ test('long selections leave all form controls reachable in a narrow dark window'
   });
   await page.keyboard.press('Escape');
   await expect(model).toBeFocused();
+  const setup = dialog.getByRole('button', { name: 'Setup script', exact: true });
+  await setup.scrollIntoViewIfNeeded();
+  await setup.click();
+  const setupPicker = page.getByRole('dialog', { name: 'Setup script', exact: true });
+  await expect(setupPicker.getByRole('combobox')).toBeInViewport();
+  const createScript = setupPicker.getByRole('button', { name: 'Create Script', exact: true });
+  await createScript.scrollIntoViewIfNeeded();
+  await expect(createScript).toBeInViewport();
+  await testInfo.attach('narrow-dark-setup-picker', {
+    body: await page.screenshot({ path: testInfo.outputPath('narrow-dark-setup-picker.png') }),
+    contentType: 'image/png',
+  });
+  await page.keyboard.press('Escape');
+  await expect(setupPicker).toBeHidden();
+  await expect(setup).toBeFocused();
   await create.scrollIntoViewIfNeeded();
   await testInfo.attach('narrow-dark', {
     body: await page.screenshot({ path: testInfo.outputPath('narrow-dark.png') }),
@@ -124,7 +154,7 @@ test('long selections leave all form controls reachable in a narrow dark window'
   });
 });
 
-test('setup edits apply explicitly and survive reopening while cancelled edits are discarded', async ({
+test('setup search applies choices and edit or create keeps drafts staged until saved', async ({
   mount,
   page,
 }, testInfo) => {
@@ -136,6 +166,8 @@ test('setup edits apply explicitly and survive reopening while cancelled edits a
   const setup = dialog.getByRole('button', { name: 'Setup script', exact: true });
   await expect(setup).toContainText('From repo config');
   const originalFrame = await dialog.elementHandle();
+  const picker = page.getByRole('dialog', { name: 'Setup script', exact: true });
+  const search = picker.getByRole('combobox', { name: 'Setup script', exact: true });
   const popup = page.getByRole('dialog', { name: 'Setup Script', exact: true });
   const editor = popup.getByRole('textbox', { name: 'Editor content', exact: true });
   const code = popup.locator('.monaco-editor .view-lines');
@@ -147,7 +179,37 @@ test('setup edits apply explicitly and survive reopening while cancelled edits a
     await page.keyboard.type(value);
     await expect(code).toContainText(value);
   }
+  async function openEditor(create = false) {
+    await setup.click();
+    await picker
+      .getByRole('button', { name: create ? 'Create Script' : 'Edit commands', exact: true })
+      .click();
+    await expect(picker).toBeHidden();
+  }
   await setup.click();
+  await expect(search).toBeFocused();
+  await testInfo.attach('setup-picker', {
+    body: await page.screenshot({ path: testInfo.outputPath('setup-picker.png') }),
+    contentType: 'image/png',
+  });
+  await search.fill('rust');
+  await expect(picker.getByRole('option')).toHaveCount(1);
+  await picker.getByRole('option', { name: 'Rust (cargo)', exact: true }).click();
+  await expect(picker).toBeHidden();
+  await expect(setup).toBeFocused();
+  await expect(setup).toContainText('Rust (cargo)');
+  await setup.click();
+  await search.fill('repo');
+  await search.press('ArrowDown');
+  await search.press('Enter');
+  await expect(setup).toContainText('From repo config');
+  await expect(picker).toBeHidden();
+  await expect(prompt).toHaveText('Keep this workspace draft.');
+  await setup.click();
+  await search.fill('no-matching-script');
+  await expect(picker.getByRole('option')).toHaveCount(0);
+  await picker.getByRole('button', { name: 'Edit commands', exact: true }).click();
+  await expect(picker).toBeHidden();
   await expect(page.getByRole('dialog')).toHaveCount(1);
   expect(await popup.evaluate((element, original) => element === original, originalFrame)).toBe(
     true,
@@ -156,21 +218,28 @@ test('setup edits apply explicitly and survive reopening while cancelled edits a
   await popup.getByRole('button', { name: 'Go back', exact: true }).click();
   await expect(popup).toBeHidden();
   await expect(setup).toContainText('From repo config');
+  await expect(setup).toBeFocused();
 
-  await setup.click();
+  await openEditor(true);
+  await expect(code).toHaveText('');
+  await enterCommands('echo cancelled-new-script');
+  await popup.getByRole('button', { name: 'Go back', exact: true }).click();
+  await expect(setup).toContainText('From repo config');
+  await openEditor();
   await expect(code).not.toContainText('cancelled-draft');
+  await expect(code).not.toContainText('cancelled-new-script');
   await enterCommands('echo applied-commands');
   await popup.getByRole('button', { name: 'Save & Done', exact: true }).click();
   await expect(popup).toBeHidden();
   await expect(setup).toContainText('Custom');
 
-  await setup.click();
+  await openEditor();
   await expect(code).toContainText('echo applied-commands');
   await enterCommands('echo escape-discard');
   await popup.getByRole('button', { name: 'Go back', exact: true }).focus();
   await page.keyboard.press('Escape');
   await expect(popup).toBeHidden();
-  await setup.click();
+  await openEditor();
   await expect(code).toContainText('echo applied-commands');
   await expect(code).not.toContainText('escape-discard');
   await testInfo.attach('setup-editor', {
@@ -181,6 +250,15 @@ test('setup edits apply explicitly and survive reopening while cancelled edits a
   await expect(popup).toBeHidden();
   await expect(setup).toBeFocused();
   await expect(dialog).toBeVisible();
+  await expect(prompt).toHaveText('Keep this workspace draft.');
+  await openEditor(true);
+  await expect(code).toHaveText('');
+  await enterCommands('echo created-commands');
+  await popup.getByRole('button', { name: 'Save & Done', exact: true }).click();
+  await openEditor();
+  await expect(code).toContainText('echo created-commands');
+  await popup.getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(setup).toBeFocused();
   await expect(prompt).toHaveText('Keep this workspace draft.');
 });
 

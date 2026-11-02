@@ -406,9 +406,9 @@ describe('CompactWorkspaceInitializer repo-config setup script detection', () =>
   });
 });
 
-// The labeled setup field stays mounted across loading transitions, and the
-// Create shortcut hint changes visibility without changing the form's height.
-describe('CompactWorkspaceInitializer modal height stability', () => {
+// Loading keeps the setup control labeled; disabled creation must not advertise
+// an available keyboard shortcut to assistive technology.
+describe('CompactWorkspaceInitializer setup and creation accessibility', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
@@ -444,13 +444,11 @@ describe('CompactWorkspaceInitializer modal height stability', () => {
     expect(trigger.contains(result.getByText(REPO_CONFIG_SCRIPT_NAME))).toBe(true);
   });
 
-  it('never remounts the shortcut hint span on a validity flip — visibility only', async () => {
-    // Single render: start invalid (no repo selected) with the hint mounted
-    // but invisible, reserving its space so the button never resizes.
+  it('announces the Create shortcut only when creation is available', async () => {
     const result = renderInitializer();
-    const hint = result.getByText(/↵/);
-    expect(hint.classList.contains('invisible')).toBe(true);
-    expect(hint.getAttribute('aria-hidden')).toBe('true');
+    const create = result.getByRole('button', { name: /^Create workspace/ });
+    expect(create.hasAttribute('disabled')).toBe(true);
+    expect(result.getByText(/↵/).closest('[aria-hidden="true"]')).not.toBeNull();
 
     // Flip the form to valid by driving the picker callbacks.
     await waitFor(() => expect(pickerCallbacks()).toBeTruthy());
@@ -460,12 +458,9 @@ describe('CompactWorkspaceInitializer modal height stability', () => {
     pickerCallbacks().onBranchChange({ detail: { branch: 'main' } });
 
     await waitFor(() => {
-      expect(result.getByText(/↵/).classList.contains('invisible')).toBe(false);
+      expect(create.hasAttribute('disabled')).toBe(false);
     });
-    // Element identity preserved: the span was toggled, not remounted.
-    const visibleHint = result.getByText(/↵/);
-    expect(visibleHint).toBe(hint);
-    expect(visibleHint.getAttribute('aria-hidden')).toBeNull();
+    expect(result.getByText(/↵/).closest('[aria-hidden="true"]')).toBeNull();
   });
 });
 

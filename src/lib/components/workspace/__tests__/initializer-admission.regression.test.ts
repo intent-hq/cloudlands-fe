@@ -810,7 +810,8 @@ describe('actual initializer qualified GitLab workspace creation', () => {
       await renderCheckout('direct');
       await waitFor(() => expect(session.repoConfig).toHaveBeenCalledOnce());
       await fireEvent.click(screen.getByRole('button', { name: 'Setup script' }));
-      await fireEvent.click(screen.getByTestId('choose-' + choice));
+      await fireEvent.click(await screen.findByRole('button', { name: 'Edit commands' }));
+      await fireEvent.click(await screen.findByTestId('choose-' + choice));
       pending.resolve({
         status: 'ready',
         value: {
