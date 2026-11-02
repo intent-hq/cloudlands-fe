@@ -32,6 +32,7 @@ const {
   windowBackends,
   workspaceWindows,
   webContentsWindows,
+  LOCAL_TEST_CONFIG,
 } = vi.hoisted(() => ({
   protocolHandle: vi.fn(),
   onBeforeRequest: vi.fn(),
@@ -44,6 +45,8 @@ const {
   workspaceWindows: new Map<string, number[]>(),
   /** webContentsId → owning windowId (absent = not a BrowserWindow). */
   webContentsWindows: new Map<number, number>(),
+  /** Local-socket config: every request stays on the pooled client. */
+  LOCAL_TEST_CONFIG: { transport: 'uds' as const, socketPath: '/tmp/intentd.sock' },
 }));
 
 vi.mock('electron', () => ({
@@ -64,10 +67,10 @@ vi.mock('electron', () => ({
 }));
 
 vi.mock('../../features/backend/main/backend.ipc', () => ({
-  getBackendClient: () => ({ request: mockRequest }),
+  getBackendClient: () => ({ request: mockRequest, getConfig: () => LOCAL_TEST_CONFIG }),
   getBackendClientForConnection: (id: string) => {
     const request = pooledRequests.get(id);
-    return request ? { request } : undefined;
+    return request ? { request, getConfig: () => LOCAL_TEST_CONFIG } : undefined;
   },
   getLiveBackendIds: () => [...pooledRequests.keys()],
 }));
@@ -1488,6 +1491,7 @@ describe('setupWorkspaceAssetProtocolHandler', () => {
       expect(remoteRequest).toHaveBeenCalledExactlyOnceWith('note.readAsset', {
         workspaceId: 'ws-1',
         asset: 'movie.mp4',
+        maxBytes: 480_000,
       });
       expect(mockRequest).not.toHaveBeenCalled();
       expect(res.status).toBe(200);
@@ -1577,9 +1581,42 @@ describe('setupWorkspaceAssetProtocolHandler', () => {
     expect(mockRequest).toHaveBeenCalledWith('note.readAsset', {
       workspaceId: 'ws-1',
       asset: 'asset-1',
+      maxBytes: 480_000,
     });
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toBe('image/png');
+    expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes);
+  });
+
+  it('reads an asset over the bounded reply cap whole with note.readAssetChunk', async () => {
+    // PROTOCOL §5.9 "Bounded object reads": the capped reply carries no bytes.
+    const bytes = Buffer.from('a large saved image');
+    mockRequest
+      .mockResolvedValueOnce({
+        assetId: 'asset-1',
+        mimeType: 'image/png',
+        data: '',
+        sizeKb: 1,
+        truncated: true,
+        totalBytes: bytes.length,
+      })
+      .mockResolvedValueOnce({
+        assetId: 'asset-1',
+        mimeType: 'image/png',
+        content: bytes.toString('base64'),
+        bytesRead: bytes.length,
+        size: bytes.length,
+      });
+
+    const res = await getAssetHandler()(new Request('workspace-asset://ws-1/asset-1'));
+
+    expect(mockRequest).toHaveBeenNthCalledWith(2, 'note.readAssetChunk', {
+      workspaceId: 'ws-1',
+      asset: 'asset-1',
+      offset: 0,
+      length: 16 * 1024 * 1024,
+    });
+    expect(res.status).toBe(200);
     expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes);
   });
 
@@ -1594,6 +1631,7 @@ describe('setupWorkspaceAssetProtocolHandler', () => {
     expect(mockRequest).toHaveBeenCalledWith('note.readAsset', {
       workspaceId: 'ws-unknown',
       asset: 'asset-1',
+      maxBytes: 480_000,
     });
     expect(res.status).toBe(200);
   });
@@ -1615,6 +1653,7 @@ describe('setupWorkspaceAssetProtocolHandler', () => {
     expect(remoteRequest).toHaveBeenCalledWith('note.readAsset', {
       workspaceId: 'ws-orphan',
       asset: 'asset-1',
+      maxBytes: 480_000,
     });
     expect(mockRequest).not.toHaveBeenCalled();
     expect(res.status).toBe(200);
@@ -1647,6 +1686,7 @@ describe('setupWorkspaceAssetProtocolHandler', () => {
     expect(remoteRequest).toHaveBeenCalledWith('note.readAsset', {
       workspaceId: 'ws-heal-asset',
       asset: 'asset-1',
+      maxBytes: 480_000,
     });
     expect(res.status).toBe(200);
     expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes);
@@ -1662,6 +1702,7 @@ describe('setupWorkspaceAssetProtocolHandler', () => {
     expect(remoteRequest).toHaveBeenCalledWith('note.readAsset', {
       workspaceId: 'ws-remote',
       asset: 'asset-1',
+      maxBytes: 480_000,
     });
     expect(mockRequest).not.toHaveBeenCalled();
     expect(res.status).toBe(200);
@@ -1722,6 +1763,7 @@ describe('setupWorkspaceAssetProtocolHandler', () => {
       expect(requestB).toHaveBeenCalledWith('note.readAsset', {
         workspaceId: 'ws-dup-asset',
         asset: 'asset-1',
+        maxBytes: 480_000,
       });
       expect(requestA).not.toHaveBeenCalled();
       expect(mockRequest).not.toHaveBeenCalled();

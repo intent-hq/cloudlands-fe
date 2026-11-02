@@ -323,9 +323,12 @@ describe('node path boundaries', () => {
         { method: 'git.diffs', params: { workspaceId, paths: ['src/no-content.ts'] } },
         {
           method: 'git.showFile',
-          params: { workspaceId, filePath: 'src/no-content.ts', ref: ':0' },
+          params: { workspaceId, filePath: 'src/no-content.ts', ref: ':0', maxBytes: 480_000 },
         },
-        { method: 'file.read', params: { workspaceId, path: 'src/no-content.ts' } },
+        {
+          method: 'file.read',
+          params: { workspaceId, path: 'src/no-content.ts', maxBytes: 480_000 },
+        },
       ]),
     );
   });

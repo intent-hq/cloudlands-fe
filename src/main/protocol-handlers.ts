@@ -21,6 +21,7 @@ import { ANY_HOST } from '../features/system/main/window-workspace-tracking';
 import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
 import { JsonRpcError } from '../features/backend/main/json-rpc-errors';
 import type { JsonRpcClient } from '../features/backend/main/json-rpc-client';
+import { requestRouted } from '../features/backend/main/transfer-connections';
 import { createVideoPreview } from './utils/video-preview';
 
 /**
@@ -437,11 +438,12 @@ export function setupWorkspaceAssetProtocolHandler() {
         return new Response('Asset not found', { status: 404 });
       }
       let client = resolved.client;
-      let result: { assetId: string; mimeType: string; data: string; sizeKb: number };
+      let result: ReadAssetResult;
       try {
         result = (await client.request('note.readAsset', {
           workspaceId,
           asset: assetId,
+          maxBytes: ASSET_READ_MAX_BYTES,
         })) as typeof result;
       } catch (error) {
         // Wrong-stamp heal: the resolved backend does not know the workspace —
@@ -456,9 +458,15 @@ export function setupWorkspaceAssetProtocolHandler() {
         result = (await client.request('note.readAsset', {
           workspaceId,
           asset: assetId,
+          maxBytes: ASSET_READ_MAX_BYTES,
         })) as typeof result;
       }
-      const bytes = new Uint8Array(Buffer.from(result.data, 'base64'));
+      // An asset over the bounded reply cap arrives without its bytes; read
+      // it whole in chunks over a transfer connection (PROTOCOL §5.9).
+      const bytes =
+        result.truncated === true
+          ? await readAssetChunks(client, workspaceId, assetId, backendId ?? LOCAL_CONNECTION_ID)
+          : new Uint8Array(Buffer.from(result.data, 'base64'));
       const isVideo = result.mimeType === 'video/mp4' || result.mimeType === 'video/webm';
       const headers = {
         ...corsHeaders,
@@ -516,6 +524,49 @@ export function setupWorkspaceAssetProtocolHandler() {
 
 /** Decoded bytes requested per daemon `file.readChunk` call (the daemon's 16 MiB cap). */
 export const WORKSPACE_FILE_CHUNK_BYTES = 16 * 1024 * 1024;
+
+/** `maxBytes` for `note.readAsset`: the daemon's bounded object reply cap. */
+const ASSET_READ_MAX_BYTES = 480_000;
+
+type ReadAssetResult = {
+  assetId: string;
+  mimeType: string;
+  data: string;
+  sizeKb: number;
+  truncated?: boolean;
+  totalBytes?: number;
+};
+
+/** Every byte of a note asset, read with `note.readAssetChunk` windows. */
+async function readAssetChunks(
+  client: JsonRpcClient,
+  workspaceId: string,
+  assetId: string,
+  backendId: string,
+): Promise<Uint8Array<ArrayBuffer>> {
+  const parts: Buffer[] = [];
+  let offset = 0;
+  for (;;) {
+    const chunk = await requestRouted<WorkspaceFileChunk>(
+      client,
+      'note.readAssetChunk',
+      { workspaceId, asset: assetId, offset, length: WORKSPACE_FILE_CHUNK_BYTES },
+      undefined,
+      backendId,
+    );
+    const buffer = Buffer.from(chunk.content, 'base64');
+    if (buffer.length !== chunk.bytesRead) {
+      throw new Error(
+        `note.readAssetChunk content/bytesRead mismatch (${buffer.length} vs ${chunk.bytesRead})`,
+      );
+    }
+    if (chunk.size > WORKSPACE_FILE_MAX_BYTES) throw new Error('Asset too large');
+    parts.push(buffer);
+    offset += buffer.length;
+    if (buffer.length < WORKSPACE_FILE_CHUNK_BYTES || offset >= chunk.size) break;
+  }
+  return new Uint8Array(Buffer.concat(parts));
+}
 
 /** Refuse workspace media beyond this size, including ranged video requests. */
 export const WORKSPACE_FILE_MAX_BYTES = 128 * 1024 * 1024;
@@ -658,16 +709,32 @@ export function setupWorkspaceFileProtocolHandler() {
       let rescueAttempted = false;
       const chunks: Buffer[] = [];
 
+      // A window over the read budget rides a transfer connection on a
+      // remote backend; small windows (range probes) stay on the main client.
+      function requestFileChunk(
+        from: JsonRpcClient,
+        workspaceId: string,
+        path: string,
+        offset: number,
+        length: number,
+      ): Promise<WorkspaceFileChunk> {
+        const params = { workspaceId, path, offset, length };
+        return length > ASSET_READ_MAX_BYTES
+          ? requestRouted<WorkspaceFileChunk>(
+              from,
+              'file.readChunk',
+              params,
+              undefined,
+              backendId ?? LOCAL_CONNECTION_ID,
+            )
+          : from.request<WorkspaceFileChunk>('file.readChunk', params);
+      }
+
       async function readChunk(offset: number, length: number): Promise<WorkspaceFileChunk> {
         request.signal.throwIfAborted();
         let chunk: WorkspaceFileChunk;
         try {
-          chunk = (await client.request('file.readChunk', {
-            workspaceId,
-            path: filePath,
-            offset,
-            length,
-          })) as WorkspaceFileChunk;
+          chunk = await requestFileChunk(client, workspaceId, filePath, offset, length);
         } catch (error) {
           // Wrong-stamp heal: the resolved backend does not know the workspace
           // — retry once from the positively confirmed owner (or rethrow → 404).
@@ -683,12 +750,7 @@ export function setupWorkspaceFileProtocolHandler() {
           backendId = rescued.backendId;
           fallback = 'ownership-probe';
           client = rescued.client;
-          chunk = (await client.request('file.readChunk', {
-            workspaceId,
-            path: filePath,
-            offset,
-            length,
-          })) as WorkspaceFileChunk;
+          chunk = await requestFileChunk(client, workspaceId, filePath, offset, length);
         }
         if (
           !Number.isSafeInteger(chunk.size) ||

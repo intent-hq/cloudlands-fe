@@ -2,7 +2,7 @@ import { call, type SagaGenerator } from 'typed-redux-saga';
 import { appClient } from '$lib/client';
 import { invoke } from '$lib/electron-bridge';
 import { isMissingWorkingTreeFile } from '$features/file-tracking/components/diff/is-missing-working-tree-file';
-import { backendRequest } from '$lib/client/live/backend-transport';
+import { readFileText } from '$lib/client/live/bounded-object-read';
 import {
   batchedGitBranchBaseDiff,
   batchedGitDiff,
@@ -105,13 +105,9 @@ export function* readTrackedDiff(
     } else if (gitRootId || request.workspacePath || filePath.startsWith('/')) {
       try {
         if (gitRootId) {
-          const content = yield* call(backendRequest<string | { content?: string }>, 'file.read', {
-            workspaceId,
-            path: filePath,
-            gitRootId,
-          });
+          const content = yield* call(readFileText, { workspaceId, path: filePath, gitRootId });
           if (!allowed()) return result;
-          result.newContent = typeof content === 'string' ? content : (content?.content ?? '');
+          result.newContent = content ?? '';
           return result;
         }
         const response = yield* call(invoke<FileReadResponse>, 'file:read', {

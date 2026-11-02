@@ -670,8 +670,14 @@ describe('CommitsTimeline', () => {
     expect((change.content as { newContent: string }).newContent).toBe('new');
     expect((change.content as { oldContent: string }).oldContent).toBe('old');
     expect(mockShowFile.mock.calls).toEqual([
-      ['git.showFile', { workspaceId: 'ws-1', filePath: 'src/a.ts', ref: 'abc' }],
-      ['git.showFile', { workspaceId: 'ws-1', filePath: 'src/a.ts', ref: 'abc^' }],
+      [
+        'git.showFile',
+        { workspaceId: 'ws-1', filePath: 'src/a.ts', ref: 'abc', maxBytes: 480_000 },
+      ],
+      [
+        'git.showFile',
+        { workspaceId: 'ws-1', filePath: 'src/a.ts', ref: 'abc^', maxBytes: 480_000 },
+      ],
     ]);
   });
 });

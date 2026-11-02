@@ -230,9 +230,14 @@ export async function withTransferConnection<T>(
 
 /**
  * The bulk-payload methods that ride a per-transfer connection on remote
- * backends: attachment placement/upload plus the chunked download read
- * (`file.readChunk`, a ~21 MiB base64 frame per chunk). Everything else
- * stays on the main channel.
+ * backends: attachment placement/upload, the chunked downloads
+ * (`file.readChunk`, `git.showFileChunk`, `note.readAssetChunk`, up to a
+ * ~21 MiB base64 frame per chunk) and the workspace export chunks
+ * (`workspace.export.read`). Everything else stays on the main channel; the
+ * whole-object reads (`file.read`, `git.showFile`, `note.readAsset`) are
+ * capped under the read budget there (PROTOCOL §5.9 "Bounded object reads").
+ * The monorepo `check-transfer-methods` consumer check keeps this set in
+ * step with intentd's BulkTransfer methods.
  */
 const TRANSFER_METHODS = new Set([
   'file.placeAttachment',
@@ -241,6 +246,9 @@ const TRANSFER_METHODS = new Set([
   'file.attachmentUpload.commit',
   'file.attachmentUpload.abort',
   'file.readChunk',
+  'git.showFileChunk',
+  'note.readAssetChunk',
+  'workspace.export.read',
 ]);
 
 /** Whether `method` is a bulk-transfer call that should route here. */
@@ -367,6 +375,27 @@ export async function requestOverTransferConnection<T = unknown>(
     },
     backendId,
   );
+}
+
+/**
+ * Send one request from main-process code that holds a backend client: a
+ * transfer method on a remote backend rides a per-transfer connection, and
+ * everything else (and every request on the local socket) goes on `client`.
+ */
+export function requestRouted<T = unknown>(
+  client: Pick<JsonRpcClient, 'request' | 'getConfig'>,
+  method: string,
+  params?: unknown,
+  options?: { timeoutMs?: number },
+  backendId: string = LOCAL_CONNECTION_ID,
+): Promise<T> {
+  const config = client.getConfig();
+  if (shouldUseTransferConnection(method, config)) {
+    return requestOverTransferConnection<T>(config, method, params, options, backendId);
+  }
+  return options === undefined
+    ? client.request<T>(method, params)
+    : client.request<T>(method, params, options);
 }
 
 /** Dispose transfer sockets owned by one backend without disturbing other backends. */

@@ -29,9 +29,11 @@ import {
 } from './backend.ipc';
 import { JsonRpcClient } from './json-rpc-client';
 import { getOrCreateClientId } from './client-identity';
+import { requestRouted } from './transfer-connections';
 import {
   createWorkspaceTransferRelay,
   type FileSink,
+  type RelayRpcClient,
   type TargetClientHandle,
   type WorkspaceTransferRelay,
 } from './workspace-transfer-relay';
@@ -127,6 +129,20 @@ function isOwnerGone(ownerId: number): boolean {
   return !contents || contents.isDestroyed();
 }
 
+/**
+ * The source client as the relay sees it: export chunks
+ * (`workspace.export.read`, up to ~21 MiB of base64 each) ride a per-transfer
+ * connection on a remote backend so they never block the main connection;
+ * control calls and notifications stay on the main client.
+ */
+function routeSourceTransfers(source: JsonRpcClient, backendId: string): RelayRpcClient {
+  return {
+    request: (method, params, options) => requestRouted(source, method, params, options, backendId),
+    on: (event, listener) => source.on(event, listener),
+    off: (event, listener) => source.off(event, listener),
+  };
+}
+
 function getRelay(): WorkspaceTransferRelay {
   if (!relay) {
     relay = createWorkspaceTransferRelay({
@@ -157,9 +173,11 @@ export function registerWorkspaceTransferHandlers(): void {
     // The SOURCE is the backend bound to the invoking window — not the global
     // primary client, which may point at a different daemon.
     let source: JsonRpcClient;
+    let sourceBackendId: string;
     try {
       const bound = getBackendClientForIpcEvent(event);
       source = bound.client;
+      sourceBackendId = bound.backendId;
       if (params.proposalId) {
         if (
           !params.sourceWorkspacePath ||
@@ -204,7 +222,7 @@ export function registerWorkspaceTransferHandlers(): void {
         ...(params.proposalId ? { failurePhase: 'preflight' } : {}),
       };
     }
-    return getRelay().start(params, source, event.sender.id);
+    return getRelay().start(params, routeSourceTransfers(source, sourceBackendId), event.sender.id);
   });
 
   ipcMain.handle(TRANSFER.FINALIZE, async (event, params: TransferFinalizeParams) => {
