@@ -547,6 +547,8 @@
       ? plainFolderPick.kind
       : null,
   );
+  // A GitHub or GitLab selection is always a git workspace, so the toggle reads on.
+  const forgeSelected = $derived(repoType === 'gitlab' || (repoType === 'github' && !!repoPath));
   // With the toggle off, git-only controls are hidden until a git repo is picked.
   const plainFolderCreate = $derived(
     plainFolderMode && repoType === 'local' && (plainFolder !== null || !repoPath),
@@ -1911,9 +1913,32 @@
       : repoPath;
   });
 
+  /** Turning git off leaves a GitHub/GitLab selection and opens folder selection. */
+  function clearForgeSelection() {
+    if (repoType === 'gitlab') appStore.dispatch(checkoutClosed(checkoutFormId));
+    repoType = 'local';
+    repoPath = '';
+    githubUrl = '';
+    branch = '';
+    scope = '';
+    isNewRepo = false;
+    isValidPath = false;
+    remoteSetup = null;
+    plainFolderPick = null;
+    selectedPRBranch = '';
+    selectedPRTargetBranch = '';
+    selectedPRNumber = null;
+    githubAuthNeeded = 'none';
+    void tick().then(() => repoAndBranchPicker?.openFolderSelection?.());
+  }
+
   /** The user flipped "Initialize as git repository": drop a pick made for the other mode. */
   function handleInitializeGitChange(value: boolean) {
     initializeGitChoice.set(value);
+    if (!value && forgeSelected) {
+      clearForgeSelection();
+      return;
+    }
     if (repoType !== 'local' || !repoPath) return;
     if (plainFolderPick?.path === repoPath || isNewRepo) {
       repoPath = '';
@@ -3539,10 +3564,10 @@
         </div>
       </div>
 
-      {#if isExpanded && initializeGitChoice.visible && (repoType === 'local' || !repoPath)}
+      {#if isExpanded && initializeGitChoice.visible && (repoType !== 'remote' || !repoPath)}
         <div class="mt-3 px-1" transition:slide={{ axis: 'y', tier: 'moderate' }}>
           <InitializeGitToggle
-            checked={initializeGitChoice.initializeGit}
+            checked={initializeGitChoice.initializeGit || forgeSelected}
             disabled={isCreating}
             onCheckedChange={handleInitializeGitChange}
           />

@@ -1,6 +1,7 @@
 // @vitest-environment node
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
-import { Linter, RuleTester } from 'eslint';
+import { ESLint, Linter, RuleTester } from 'eslint';
 import { describe, expect, it } from 'vitest';
 import { disableDirectives, suppressedLines } from './lib/disable-directives.js';
 import rule from './require-disable-reason.js';
@@ -136,4 +137,105 @@ tester.run('require-disable-reason', rule, {
       errors: [notLineScoped],
     },
   ],
+});
+
+// The rules whose messages tell the reader to disable them on one line with a reason:
+// for each, a reasoned disable is the sanctioned escape hatch, so this rule must check
+// the directive wherever the rule runs.
+function offersReasonedDisable(ruleModule) {
+  return Object.values(ruleModule.meta?.messages ?? {}).some(
+    (message) => /\bdisabl/i.test(message) && /\breason\b/i.test(message),
+  );
+}
+
+function isOn(setting) {
+  const severity = Array.isArray(setting) ? setting[0] : setting;
+  return severity !== undefined && severity !== 0 && severity !== 'off';
+}
+
+describe('repository config', () => {
+  const eslint = new ESLint();
+
+  // A later config block's options for a rule replace an earlier block's for the same
+  // file, so a block that lists only its own rule would silently drop the others.
+  // Checking every tracked file catches that and a newly added reasoned-disable rule.
+  it('checks the reason for exactly the enabled rules that offer a reasoned disable', async () => {
+    const files = execFileSync('git', ['ls-files', '*.js', '*.mjs', '*.cjs', '*.ts', '*.svelte'], {
+      encoding: 'utf8',
+    })
+      .split('\n')
+      .filter(Boolean);
+    const offered = new Set();
+    const mismatches = [];
+    for (const file of files) {
+      const config = await eslint.calculateConfigForFile(file);
+      if (!config) continue;
+      const pluginRules = config.plugins?.intent?.rules ?? {};
+      const expected = Object.entries(pluginRules)
+        .filter(
+          ([name, ruleModule]) =>
+            name !== 'require-disable-reason' && offersReasonedDisable(ruleModule),
+        )
+        .map(([name]) => `intent/${name}`)
+        .filter((name) => {
+          offered.add(name);
+          return isOn(config.rules[name]);
+        })
+        .sort();
+      const setting = config.rules['intent/require-disable-reason'];
+      const checked = isOn(setting) ? [...(setting[1]?.rules ?? [])].sort() : [];
+      if (JSON.stringify(checked) !== JSON.stringify(expected)) {
+        mismatches.push({ file, checked, expected });
+      }
+    }
+    // Guards the message scan itself: a reworded message must not drop a rule unnoticed.
+    expect([...offered].sort()).toEqual([
+      'intent/no-class-name-assertions-in-tests',
+      'intent/no-fixed-wait-timeout-in-tests',
+      'intent/no-hand-written-typing-check',
+      'intent/no-one-shot-animation-count',
+      'intent/no-raw-mouse-wheel-in-ct',
+      'intent/no-unarmed-outside-click-in-ct',
+      'intent/no-wait-for-timeout-in-ct',
+    ]);
+    expect(mismatches.slice(0, 10)).toEqual([]);
+  }, 120_000);
+
+  // The check the rule exists for: a bare disable for any of these rules fails `pnpm lint`.
+  it.each([
+    [
+      'intent/no-one-shot-animation-count',
+      'src/lib/components/example/__tests__/example.ct.spec.ts',
+    ],
+    [
+      'intent/no-unarmed-outside-click-in-ct',
+      'src/lib/components/example/__tests__/example.ct.spec.ts',
+    ],
+    ['intent/no-raw-mouse-wheel-in-ct', 'src/lib/components/example/__tests__/example.ct.spec.ts'],
+    ['intent/no-wait-for-timeout-in-ct', 'src/lib/components/example/__tests__/example.ct.spec.ts'],
+    ['intent/no-hand-written-typing-check', 'src/lib/components/example/example.ts'],
+    ['intent/no-class-name-assertions-in-tests', 'src/features/example/__tests__/example.test.ts'],
+    ['intent/no-fixed-wait-timeout-in-tests', 'src/features/example/__tests__/example.test.ts'],
+    ['intent/no-fixed-wait-timeout-in-tests', 'scripts/example.test.mjs'],
+  ])(
+    'fails a bare disable of %s in %s',
+    async (ruleName, file) => {
+      const lint = async (directive) => {
+        const [result] = await eslint.lintText(`${directive}\nexport const value = 1;\n`, {
+          filePath: path.resolve(file),
+        });
+        return result.messages
+          .filter((message) => message.ruleId === 'intent/require-disable-reason')
+          .map(({ messageId, line, severity }) => ({ messageId, line, severity }));
+      };
+      expect(await lint(`// eslint-disable-next-line ${ruleName}`)).toEqual([
+        { messageId: 'missingReason', line: 1, severity: 2 },
+      ]);
+      expect(await lint(`/* eslint-disable ${ruleName} -- whole file */`)).toEqual([
+        { messageId: 'notLineScoped', line: 1, severity: 2 },
+      ]);
+      expect(await lint(`// eslint-disable-next-line ${ruleName} -- deliberate`)).toEqual([]);
+    },
+    120_000,
+  );
 });

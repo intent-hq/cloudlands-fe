@@ -208,7 +208,3 @@ export class MockStreamManager extends EventEmitter {
     // No-op for mock - all operations are synchronous
   }
 }
-
-function createMockStreamManager(): MockStreamManager {
-  return new MockStreamManager();
-}
