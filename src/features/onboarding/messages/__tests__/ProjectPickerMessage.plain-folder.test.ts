@@ -70,7 +70,11 @@ import { INITIALIZE_GIT_CHOICE_STORAGE_KEY } from '$lib/components/workspace/ini
 import ProjectPickerMessage, { type ProjectSelection } from '../ProjectPickerMessage.svelte';
 
 const backendRequestMock = vi.mocked(backendRequest);
-const toggleName = () => m.workspace_plainFolder_initializeGit_label();
+/** Either tab's git choice: "Existing folder" or "New" copy. */
+const toggleName = () =>
+  new RegExp(
+    `^(${m.workspace_plainFolder_isolatedCopy_label()}|${m.workspace_plainFolder_initializeGit_label()})$`,
+  );
 
 function mockDaemon(
   statusFor: (path: string) => Record<string, unknown> = () => ({ exists: false }),
@@ -203,6 +207,25 @@ describe('ProjectPickerMessage — plain-folder toggle (Labs)', () => {
       screen.getByRole('tab', { name: m.onboarding_projectPicker_clone_label() }),
     );
     await waitFor(() => expect(screen.queryByRole('switch', { name: toggleName() })).toBeNull());
+  });
+
+  it('names the choice per tab: an isolated copy for Existing folder, git init for New', async () => {
+    setPlainFolderLabs(true);
+    settleForgeAuth({ github: true });
+    loadWorkspaces([]);
+    renderPicker();
+    await screen.findByRole('switch', { name: m.workspace_plainFolder_isolatedCopy_label() });
+    expect(
+      screen.queryByRole('switch', { name: m.workspace_plainFolder_initializeGit_label() }),
+    ).toBeNull();
+
+    await fireEvent.click(
+      screen.getByRole('tab', { name: m.onboarding_projectPicker_new_label() }),
+    );
+    await screen.findByRole('switch', { name: m.workspace_plainFolder_initializeGit_label() });
+    expect(
+      screen.queryByRole('switch', { name: m.workspace_plainFolder_isolatedCopy_label() }),
+    ).toBeNull();
   });
 
   it('creates a new project as a plain folder under ~/Documents with the toggle off', async () => {

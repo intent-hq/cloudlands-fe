@@ -578,11 +578,20 @@ jobs:
             echo "root_playwright_required=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if node -e 'const fs = require("node:fs"); const paths = fs.readFileSync(process.argv[1], "utf8").split("\0"); const pattern = new RegExp(process.argv[2]); process.exit(paths.some(path => pattern.test(path)) ? 0 : 1);' "$changed_paths" '^(test/|playwright\.config\.ts$|playwright/(app-stubs/|(root|ct)-spec-pattern\.mjs$)|svelte\.config\.js$|package\.json$|pnpm-lock\.yaml$)'; then
-            echo "root_playwright_required=true" | tee -a "$GITHUB_OUTPUT"
-          else
-            echo "root_playwright_required=false" | tee -a "$GITHUB_OUTPUT"
-          fi
+          # Matcher contract: exit 0 = match, exit 3 = no match. Any other status
+          # means the matcher itself failed (Node startup error, a throwing host
+          # --require preload, an unreadable path list) — require the suite, never
+          # skip it (intent-hq/intent#8299).
+          match_status=0
+          node -e 'const fs = require("node:fs"); const paths = fs.readFileSync(process.argv[1], "utf8").split("\0"); const pattern = new RegExp(process.argv[2]); process.exit(paths.some(path => pattern.test(path)) ? 0 : 3);' "$changed_paths" '^(test/|playwright\.config\.ts$|playwright/(app-stubs/|(root|ct)-spec-pattern\.mjs$)|svelte\.config\.js$|package\.json$|pnpm-lock\.yaml$)' || match_status=$?
+          case "$match_status" in
+            0) echo "root_playwright_required=true" | tee -a "$GITHUB_OUTPUT" ;;
+            3) echo "root_playwright_required=false" | tee -a "$GITHUB_OUTPUT" ;;
+            *)
+              echo "relevance matcher exited $match_status — requiring the root Playwright suite (fail-safe)"
+              echo "root_playwright_required=true" | tee -a "$GITHUB_OUTPUT"
+              ;;
+          esac
 
       - name: Evaluate Electron relevance
         id: electron
@@ -601,11 +610,20 @@ jobs:
             echo "electron_required=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if node -e 'const fs = require("node:fs"); const paths = fs.readFileSync(process.argv[1], "utf8").split("\0"); const pattern = new RegExp(process.argv[2]); process.exit(paths.some(path => pattern.test(path)) ? 0 : 1);' "$changed_paths" '^(test/(electron-browser-lifetime[^/]*|fixtures/(browser-lifetime|repository-checkout|pr-monitor-native|dock-placement-native)/|vite-harness-cache\.)|src/(features/backend/main/(repository-checkout[^/]*|pr-monitor-lifecycle[^/]*|backend\.ipc|json-rpc-client)\.ts$|lib/client/live/(repository-checkout-transport|pr-monitor-transport|electron-ipc-transport)\.ts$|shared/types/(repository-checkout|pr-monitor)\.ts$|preload/index\.template\.ts$|shared/dock-placement\.ts$|main/ipc-schemas\.ts$)|\.github/workflows/(intent-pr|browser-tests)\.yml$|playwright(\.manual)?\.config\.ts$|playwright/(app-stubs/|(root|ct)-spec-pattern\.mjs$)|svelte\.config\.js$|package\.json$|pnpm-lock\.yaml$)'; then
-            echo "electron_required=true" | tee -a "$GITHUB_OUTPUT"
-          else
-            echo "electron_required=false" | tee -a "$GITHUB_OUTPUT"
-          fi
+          # Matcher contract: exit 0 = match, exit 3 = no match. Any other status
+          # means the matcher itself failed (Node startup error, a throwing host
+          # --require preload, an unreadable path list) — require the suite, never
+          # skip it (intent-hq/intent#8299).
+          match_status=0
+          node -e 'const fs = require("node:fs"); const paths = fs.readFileSync(process.argv[1], "utf8").split("\0"); const pattern = new RegExp(process.argv[2]); process.exit(paths.some(path => pattern.test(path)) ? 0 : 3);' "$changed_paths" '^(test/(electron-browser-lifetime[^/]*|fixtures/(browser-lifetime|repository-checkout|pr-monitor-native|dock-placement-native)/|vite-harness-cache\.)|src/(features/backend/main/(repository-checkout[^/]*|pr-monitor-lifecycle[^/]*|backend\.ipc|json-rpc-client)\.ts$|lib/client/live/(repository-checkout-transport|pr-monitor-transport|electron-ipc-transport)\.ts$|shared/types/(repository-checkout|pr-monitor)\.ts$|preload/index\.template\.ts$|shared/dock-placement\.ts$|main/ipc-schemas\.ts$)|\.github/workflows/(intent-pr|browser-tests)\.yml$|playwright(\.manual)?\.config\.ts$|playwright/(app-stubs/|(root|ct)-spec-pattern\.mjs$)|svelte\.config\.js$|package\.json$|pnpm-lock\.yaml$)' || match_status=$?
+          case "$match_status" in
+            0) echo "electron_required=true" | tee -a "$GITHUB_OUTPUT" ;;
+            3) echo "electron_required=false" | tee -a "$GITHUB_OUTPUT" ;;
+            *)
+              echo "relevance matcher exited $match_status — requiring Electron lifetime tests (fail-safe)"
+              echo "electron_required=true" | tee -a "$GITHUB_OUTPUT"
+              ;;
+          esac
 
       - name: Evaluate portable fixture relevance
         id: portable-fixtures
@@ -619,11 +637,18 @@ jobs:
             echo "portable_fixtures_required=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if grep -z -E '^(src/features/dev-console/|src/features/backend/main/(backend-connection|__tests__/isolated-test-package)\.test\.ts$|src/main/isolated-test-profile[^/]*\.ts$|src/test/fixtures/isolated-profile-home\.ts$|src/test(-global)?-setup\.ts$|scripts/run-unit-tests\.mjs$|vitest\.config\.ts$|scripts/vitest-native-deps\.mjs$|package\.json$|pnpm-lock\.yaml$|\.github/workflows/intent-pr\.yml$)' "$changed_paths" >/dev/null; then
-            echo "portable_fixtures_required=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "portable_fixtures_required=false" >> "$GITHUB_OUTPUT"
-          fi
+          # grep exits 0 on a match and 1 on no match; any other status (2 =
+          # error) must require the suite, never skip it (intent-hq/intent#8299).
+          match_status=0
+          grep -z -E '^(src/features/dev-console/|src/features/backend/main/(backend-connection|__tests__/isolated-test-package)\.test\.ts$|src/main/isolated-test-profile[^/]*\.ts$|src/test/fixtures/isolated-profile-home\.ts$|src/test(-global)?-setup\.ts$|scripts/run-unit-tests\.mjs$|vitest\.config\.ts$|scripts/vitest-native-deps\.mjs$|package\.json$|pnpm-lock\.yaml$|\.github/workflows/intent-pr\.yml$)' "$changed_paths" >/dev/null || match_status=$?
+          case "$match_status" in
+            0) echo "portable_fixtures_required=true" >> "$GITHUB_OUTPUT" ;;
+            1) echo "portable_fixtures_required=false" >> "$GITHUB_OUTPUT" ;;
+            *)
+              echo "relevance grep exited $match_status — requiring portable fixture tests (fail-safe)"
+              echo "portable_fixtures_required=true" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
 
   # Consolidated typecheck + lint job. Previously four separate ubuntu-latest
   # jobs (typecheck-renderer, typecheck-main, typecheck-preload,

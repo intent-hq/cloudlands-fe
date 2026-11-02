@@ -418,6 +418,7 @@
     {#if initializeGitChoice.visible && activeTab !== 'github'}
       <InitializeGitToggle
         class="mt-4"
+        kind={activeTab === 'local' ? 'existing' : 'new'}
         checked={initializeGitChoice.initializeGit}
         onCheckedChange={(value) => initializeGitChoice.set(value)}
       />
