@@ -4,3 +4,8 @@ export declare function viteHarnessCacheDir(
   name: string,
   options?: { override?: string; root?: string; workerIndex?: number },
 ): string;
+
+export declare function settleDepsOptimizer(
+  server: import('vite').ViteDevServer,
+  options?: { timeoutMs?: number },
+): Promise<void>;
