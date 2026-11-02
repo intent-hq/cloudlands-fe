@@ -29,7 +29,7 @@
     setGitHubAuthState({
       isAuthenticated: true,
       requiresDaemonAuth: false,
-      user: { login: 'octocat', name: 'Octo Cat', email: null, avatar_url: '' },
+      user: { login: 'octocat', name: null, email: null, avatar_url: '' },
       needsScopeUpdate: false,
       oauthUrl: null,
     }),
