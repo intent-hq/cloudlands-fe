@@ -201,6 +201,9 @@ describe('ProjectPickerMessage — plain-folder toggle (Labs)', () => {
     settleForgeAuth({ github: true });
     loadWorkspaces([]);
     renderPicker();
+    await fireEvent.click(
+      screen.getByRole('tab', { name: m.onboarding_projectPicker_existingFolder_label() }),
+    );
     await screen.findByRole('switch', { name: toggleName() });
 
     await fireEvent.click(
@@ -209,11 +212,50 @@ describe('ProjectPickerMessage — plain-folder toggle (Labs)', () => {
     await waitFor(() => expect(screen.queryByRole('switch', { name: toggleName() })).toBeNull());
   });
 
+  /** The visible hint under the git choice switch. */
+  const toggleHint = (toggle: HTMLElement) =>
+    document.getElementById(toggle.getAttribute('aria-describedby') ?? '')?.textContent ?? '';
+
+  it('never tells the user to turn the New tab choice off while it is already off', async () => {
+    setPlainFolderLabs(true);
+    settleForgeAuth();
+    loadWorkspaces([]);
+    renderPicker();
+    await fireEvent.click(
+      screen.getByRole('tab', { name: m.onboarding_projectPicker_new_label() }),
+    );
+    const toggle = await screen.findByRole('switch', {
+      name: m.workspace_plainFolder_initializeGit_label(),
+    });
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(toggleHint(toggle)).not.toMatch(/turn off/i);
+    expect(toggleHint(toggle)).toBe(m.workspace_plainFolder_initializeGitChoice_description());
+
+    await fireEvent.click(toggle);
+    await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('true'));
+    expect(toggleHint(toggle)).toBe(m.workspace_plainFolder_initializeGitChoice_description());
+  });
+
+  it('describes both states on the Existing folder tab', async () => {
+    setPlainFolderLabs(true);
+    settleForgeAuth();
+    loadWorkspaces([]);
+    renderPicker();
+    const toggle = await screen.findByRole('switch', {
+      name: m.workspace_plainFolder_isolatedCopy_label(),
+    });
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(toggleHint(toggle)).toBe(m.workspace_plainFolder_isolatedCopy_description());
+  });
+
   it('names the choice per tab: an isolated copy for Existing folder, git init for New', async () => {
     setPlainFolderLabs(true);
     settleForgeAuth({ github: true });
     loadWorkspaces([]);
     renderPicker();
+    await fireEvent.click(
+      screen.getByRole('tab', { name: m.onboarding_projectPicker_existingFolder_label() }),
+    );
     await screen.findByRole('switch', { name: m.workspace_plainFolder_isolatedCopy_label() });
     expect(
       screen.queryByRole('switch', { name: m.workspace_plainFolder_initializeGit_label() }),
@@ -379,11 +421,41 @@ describe('ProjectPickerMessage — source tabs and Clone visibility', () => {
 
   const tabNames = () => screen.getAllByRole('tab').map((tab) => tab.textContent?.trim());
 
-  it.each([false, true])('labels the tabs Existing folder, Clone, New (Labs %s)', (labs) => {
+  const selectedTab = () =>
+    screen
+      .getAllByRole('tab')
+      .find((tab) => tab.getAttribute('aria-selected') === 'true')
+      ?.textContent?.trim();
+
+  it.each([false, true])('orders the tabs Clone, Existing folder, New (Labs %s)', (labs) => {
     setPlainFolderLabs(labs);
     settleForgeAuth({ github: true });
     renderPicker();
-    expect(tabNames()).toEqual(['Existing folder', 'Clone', 'New']);
+    expect(tabNames()).toEqual(['Clone', 'Existing folder', 'New']);
+  });
+
+  it.each([
+    ['GitHub', { github: true }],
+    ['GitLab', { gitlab: true }],
+  ])('opens on Clone with %s connected', (_label, forge) => {
+    settleForgeAuth(forge);
+    renderPicker();
+    expect(selectedTab()).toBe('Clone');
+  });
+
+  it('opens on Existing folder with no forge connected', async () => {
+    settleForgeAuth();
+    const selections = renderPicker();
+    await waitFor(() => expect(tabNames()).toEqual(['Existing folder', 'New']));
+    expect(selectedTab()).toBe('Existing folder');
+    expect(selections.at(-1)?.type).toBe('local');
+  });
+
+  it('keeps a persisted local pick on Existing folder with a forge connected', async () => {
+    settleForgeAuth({ github: true });
+    sessionStorage.setItem('workspace-prefill', JSON.stringify({ repoPath: '/tmp/repo' }));
+    renderPicker();
+    expect(selectedTab()).toBe('Existing folder');
   });
 
   it('hides Clone once forge status is known and nothing is connected', async () => {
@@ -395,14 +467,14 @@ describe('ProjectPickerMessage — source tabs and Clone visibility', () => {
   it('keeps Clone with GitLab connected', () => {
     settleForgeAuth({ gitlab: true });
     renderPicker();
-    expect(tabNames()).toEqual(['Existing folder', 'Clone', 'New']);
+    expect(tabNames()).toEqual(['Clone', 'Existing folder', 'New']);
   });
 
   it('keeps Clone when the GitHub status read failed', () => {
     settleForgeAuth();
     appStore.dispatch(githubAuthStatusUnavailable());
     renderPicker();
-    expect(tabNames()).toEqual(['Existing folder', 'Clone', 'New']);
+    expect(tabNames()).toEqual(['Clone', 'Existing folder', 'New']);
   });
 
   it('moves a GitHub prefill off the hidden Clone tab to Existing folder', async () => {

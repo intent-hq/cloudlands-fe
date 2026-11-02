@@ -3,8 +3,9 @@
   /**
    * ProjectPickerMessage — Message 2 of the onboarding flow.
    *
-   * Tabbed picker: Existing folder | Clone | New. Clone is hidden once forge
-   * status is known and neither GitHub nor GitLab is connected.
+   * Tabbed picker: Clone | Existing folder | New (the New Workspace dialog's
+   * order). Clone is hidden once forge status is known and neither GitHub nor
+   * GitLab is connected; the step opens on Clone, or Existing folder when hidden.
    * Pre-fills from Redux persistence. On valid selection:
    *   - emits project config
    *   - triggers sidebar slide-in
@@ -85,8 +86,9 @@
 
   let { onProjectChange, onSelectAndAdvance, hideHeading = false }: Props = $props();
 
-  // Tab state
-  let activeTab = $state<TabId>('local');
+  // Tab state: Clone first, like New Workspace; the effect below moves to
+  // Existing folder once Clone is hidden.
+  let activeTab = $state<TabId>('github');
 
   // Local repo state
   let localRepoPath = $state('');
@@ -364,15 +366,15 @@
 
   const allTabs: { id: TabId; label: string }[] = [
     {
-      id: 'local',
-      get label() {
-        return m.onboarding_projectPicker_existingFolder_label();
-      },
-    },
-    {
       id: 'github',
       get label() {
         return m.onboarding_projectPicker_clone_label();
+      },
+    },
+    {
+      id: 'local',
+      get label() {
+        return m.onboarding_projectPicker_existingFolder_label();
       },
     },
     {
