@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.272.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.272.0...v2.272.1) (2026-11-02)
+
+
+### 🐛 Bug Fixes
+
+* match sidebar panel background to tab bar ([#4043](https://github.com/intent-hq/cloudlands-fe/issues/4043)) ([7d7472a](https://github.com/intent-hq/cloudlands-fe/commit/7d7472a4e9085d742db881f8aaf4cbdecc4fd821))
+
 ## [2.272.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.271.2...v2.272.0) (2026-11-02)
 
 
