@@ -865,7 +865,7 @@ describe('actual initializer qualified GitLab workspace creation', () => {
         },
       });
       await waitFor(() => expect(screen.queryByText(/Detecting setup script/)).toBeNull());
-      expect(screen.getByText('Custom')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Setup script' }).textContent).toContain('Custom');
       await fireEvent.click(
         document.querySelector<HTMLButtonElement>('[data-dialog-primary-action]')!,
       );
