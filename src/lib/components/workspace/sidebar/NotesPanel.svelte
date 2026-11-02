@@ -615,7 +615,7 @@
                     />
                     {#if isUnread}
                       <span
-                        class="absolute top-0 right-0 w-1.5 h-1.5 bg-background border border-muted-foreground/50 rounded-full"
+                        class="note-unread-dot"
                         title={m.workspace_notesPanel_unreadChanges_tooltip()}
                       ></span>
                     {/if}
@@ -732,7 +732,7 @@
                     </div>
                     {#if isUnread}
                       <span
-                        class="absolute top-0 right-0 w-1.5 h-1.5 bg-background border border-muted-foreground/50 rounded-full"
+                        class="note-unread-dot"
                         title={m.workspace_notesPanel_unreadChanges_tooltip()}
                       ></span>
                     {/if}
@@ -759,7 +759,7 @@
                     <ResourceIconTile kind="note" />
                     {#if isUnread}
                       <span
-                        class="absolute top-0 right-0 w-1.5 h-1.5 bg-background border border-muted-foreground/50 rounded-full"
+                        class="note-unread-dot"
                         title={m.workspace_notesPanel_unreadChanges_tooltip()}
                       ></span>
                     {/if}
@@ -839,6 +839,22 @@
 {/if}
 
 <style>
+  .note-unread-dot {
+    position: absolute;
+    inset-inline-end: 0;
+    inset-block-start: 0;
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background-color: hsl(var(--workspace-status-unread));
+  }
+
+  @media (forced-colors: active) {
+    .note-unread-dot {
+      background-color: CanvasText;
+    }
+  }
+
   input.inline-edit-input::selection {
     background: hsl(var(--ring) / 0.3);
   }

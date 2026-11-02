@@ -107,9 +107,7 @@
 </script>
 
 <div class="min-w-0" data-people-activity>
-  <h3
-    class="px-2 py-1.5 text-[11px] leading-4 text-muted-foreground /* a11y-ignore: Figma People activity uses 11px compact text */"
-  >
+  <h3 class="px-2 py-1.5 type-caption text-muted-foreground">
     {m.workspace_resizablePanels_activity_label()}
   </h3>
 
@@ -130,15 +128,15 @@
           data-message-preview={item.messagePreview ? true : undefined}
           class="{item.continuation
             ? 'min-h-[26px] py-0.5'
-            : 'min-h-[42px] py-1.5'} items-center gap-2.5 px-2 [&_[data-slot=list-row-title]]:whitespace-normal [&_[data-slot=list-row-title]]:break-words [&_[data-slot=list-row-title]]:[overflow-wrap:anywhere] [&_[data-slot=list-row-title]]:text-[11px] [&_[data-slot=list-row-title]]:leading-4 [&_[data-slot=list-row-leading]]:h-auto [&_[data-slot=list-row-leading]]:self-center [&_[data-slot=list-row-trailing]]:h-auto [&_[data-slot=list-row-trailing]]:self-center [&_[data-slot=list-row-trailing]]:text-[11px] [&_[data-slot=list-row-trailing]]:leading-4 /* a11y-ignore: Figma People activity uses 11px compact text */"
+            : 'min-h-9 py-1.5'} gap-2.5 px-2 [&_[data-slot=list-row-title]]:whitespace-normal [&_[data-slot=list-row-title]]:break-words [&_[data-slot=list-row-title]]:[overflow-wrap:anywhere]"
         >
           {#snippet leading()}
-            <span class="block w-[30px] shrink-0" aria-hidden="true">
+            <span class="block w-6 shrink-0" aria-hidden="true">
               {#if !item.continuation}
                 <PrincipalAvatar
                   label={item.name}
                   avatarUrl={item.avatarUrl}
-                  size={30}
+                  size={24}
                   class="border border-border"
                 />
               {/if}
@@ -157,7 +155,7 @@
               <RelativeTime
                 date={item.timestamp}
                 compact
-                class="whitespace-nowrap text-[11px] leading-4 text-muted-foreground /* a11y-ignore: Figma People activity uses 11px compact text */"
+                class="whitespace-nowrap type-caption text-muted-foreground"
               />
             </span>
           {/snippet}
