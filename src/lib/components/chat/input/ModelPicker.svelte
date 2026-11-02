@@ -2023,7 +2023,9 @@
   // Only applies to pickers tied to an existing agent — onboarding doesn't need this.
   $effect(() => {
     if (!agentId) return;
-    if (isGuestLocked) return;
+    // A remote agent's model is fixed on its machine (and the backend catalog
+    // says nothing about it): no fallback toast, fallback info or setModel.
+    if (isGuestLocked || remoteLocation) return;
     // A disabled provider is re-homed by the daemon on the next send; the FE
     // must not `agent.setModel` its way around the gate (intent#5737).
     if (isSelectedModelProviderDisabled) return;
@@ -2141,7 +2143,7 @@
 
   $effect(() => {
     if (!silentFallback) return;
-    if (isGuestLocked) return;
+    if (isGuestLocked || remoteLocation) return;
     if (isApplyingModelUpdate || pendingModelUpdate) return;
     if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return;
     if (!isSelectedModelMissingAfterLoad) return;

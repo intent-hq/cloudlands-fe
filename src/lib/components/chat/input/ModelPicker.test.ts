@@ -3268,6 +3268,51 @@ describe('ModelPicker multi-provider mode', () => {
     // Reset for other tests
     activeProviderId$.set('auggie');
   });
+
+  it('remote agent: an unavailable model never auto-falls back (no toast, fallback info or setModel)', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    const { notify } = await import('$lib/components/patterns/notify');
+    mockSvelteDispatch.mockClear();
+    vi.mocked(getModelsForProvider).mockImplementation((providerId) =>
+      Promise.resolve(
+        providerId === 'opencode'
+          ? [{ value: 'opencode:real-model', label: 'Real Model', description: 'Real' }]
+          : [],
+      ),
+    );
+    enabledProviderIds$.set(['auggie', 'opencode']);
+    activeProviderId$.set('opencode');
+    // The backend's catalog says nothing about the machine's models.
+    mockAgentSession$.set({
+      id: 'test-agent',
+      workspaceId: 'ws-1',
+      provider: 'opencode',
+      nodeId: 'node-mac',
+      nodeName: 'Mac mini',
+      placement: { target: 'remote', checkout: 'isolated' },
+    });
+    const onModelChange = vi.fn();
+
+    try {
+      render(ModelPicker, {
+        props: { selectedModel: 'opencode:nonexistent-xyz', agentId: 'test-agent', onModelChange },
+      });
+      await waitFor(() => {
+        expect(vi.mocked(getModelsForProvider)).toHaveBeenCalledWith('opencode');
+      });
+      await new Promise((r) => setTimeout(r, 150));
+
+      expect(onModelChange).not.toHaveBeenCalled();
+      expect(vi.mocked(notify.info)).not.toHaveBeenCalled();
+      expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+      expect(
+        mockSvelteDispatch.mock.calls.map(([action]) => (action as { type?: string }).type),
+      ).not.toContain('model/setModelFallbackInfo');
+    } finally {
+      mockAgentSession$.set(undefined);
+      activeProviderId$.set('auggie');
+    }
+  });
 });
 
 describe('ModelPicker availability gating', () => {
