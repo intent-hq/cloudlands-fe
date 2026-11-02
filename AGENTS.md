@@ -307,7 +307,19 @@ run the dev Electron FE on a machine with a display using `pnpm run dev:cdp` (se
 first free port from 9223, so read the actual value from its output, e.g.
 `CDP targets: http://127.0.0.1:<port>/json/list` — and every webContents — app window
 and embedded tabs — is a target) and attach CDP locally. See
-`../../docs/fe/CDP_MCP_TOOLS.md`. This loop is unavailable on a headless remote host.
+`../../docs/fe/CDP_MCP_TOOLS.md`.
+
+On a headless remote host, run the built app instead: `pnpm run build`, then
+`pnpm run electron:headless -- --route '/settings?tab=devices'`
+([`scripts/headless-electron.mjs`](scripts/headless-electron.mjs)). On Linux without a
+display it re-runs under `xvfb-run -a` (install the `xvfb` package if missing). It
+launches the production build with a throwaway `--user-data-dir` profile, connects to the
+existing daemon (`--socket`, else `INTENTD_SOCKET` or the platform default; no sidecar is
+spawned), prints `screenshot: <path>` and exits 0. `--wait-for <css>` gates the capture,
+and `--check <module>` runs a default-exported `async ({ app, page, route })` against the
+live app (a throw exits 1); `--help` lists the rest. The renderer talks to the real daemon,
+so actions in a check change real daemon state. This found three main-process bugs that
+unit tests missed during the Browser access work (cloudlands-fe#4017).
 
 ### Caveats
 
