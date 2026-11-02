@@ -373,5 +373,6 @@
   "dock_assistant_label": ["fr"],
   "settings_section_labs": "*",
   "dock_statusGroup_label": ["de", "es", "ko"],
-  "chat_screenEvidence_image_label": ["fr"]
+  "chat_screenEvidence_image_label": ["fr"],
+  "remoteAgent_location_tooltipWithState": "*"
 }

@@ -142,6 +142,8 @@
     faTriangleExclamation,
     faCircleInfo,
   } from '@fortawesome/free-solid-svg-icons';
+  import { faDesktop } from '$lib/icons/phosphor-icons';
+  import { agentMachineLocation } from '$features/remote-machines/agent-location';
   import Fa from 'svelte-fa';
 
   const logger = createLogger('ModelPicker');
@@ -488,7 +490,16 @@
     workspaceIdStore.set(workspaceId ?? '');
   });
   const isGuestLocked = $derived(!!agentId && !!workspaceId && $isWorkspaceCollaborator$);
-  const effectiveLocked = $derived(isLocked || isGuestLocked);
+  // A remote agent keeps the provider and model it was launched with: intentd
+  // refuses `agent.setModel` (`remote-model-change-unsupported`), and the
+  // backend's models say nothing about the machine. Lock the picker and name
+  // the machine instead of offering choices that fail.
+  const remoteLocation = $derived(
+    agentId && !isGuestLocked && $agentSession$?.id === agentId
+      ? agentMachineLocation($agentSession$)
+      : null,
+  );
+  const effectiveLocked = $derived(isLocked || isGuestLocked || remoteLocation !== null);
 
   // §5.54 profile state the daemon reports on this agent's AgentLite row.
   const boundSession = $derived(
@@ -1764,12 +1775,17 @@
     );
   });
   const modelAccessibleLabel = $derived(
-    triggerProfileName
-      ? m.chat_modelPicker_modelWithProfile_ariaLabel({
+    remoteLocation
+      ? m.chat_modelPicker_remoteMachine_ariaLabel({
           model: currentModelLabel,
-          provider: providerDisplayName(triggerProviderId),
+          machine: remoteLocation.name,
         })
-      : currentModelLabel,
+      : triggerProfileName
+        ? m.chat_modelPicker_modelWithProfile_ariaLabel({
+            model: currentModelLabel,
+            provider: providerDisplayName(triggerProviderId),
+          })
+        : currentModelLabel,
   );
   const triggerAccessibleLabel = $derived(
     [
@@ -1790,7 +1806,9 @@
   const lockedButtonTitle = $derived(
     isGuestLocked
       ? m.chat_modelPicker_guestLocked_title()
-      : lockedTitle?.trim() ||
+      : remoteLocation
+        ? m.chat_modelPicker_remoteLocked_title({ machine: remoteLocation.name })
+        : lockedTitle?.trim() ||
           m.chat_modelPicker_modelLocked_title({ model: triggerAccessibleLabel }),
   );
   // The in-flight commit window is announced with `aria-busy` and re-entry is
@@ -1893,6 +1911,7 @@
   const showModelWarning = $derived(
     !!agentId &&
       !isGuestLocked &&
+      !remoteLocation &&
       (replacementRequired !== null || isSelectedModelUnavailable || $fallbackInfo$ !== null),
   );
 
@@ -2004,7 +2023,9 @@
   // Only applies to pickers tied to an existing agent — onboarding doesn't need this.
   $effect(() => {
     if (!agentId) return;
-    if (isGuestLocked) return;
+    // A remote agent's model is fixed on its machine (and the backend catalog
+    // says nothing about it): no fallback toast, fallback info or setModel.
+    if (isGuestLocked || remoteLocation) return;
     // A disabled provider is re-homed by the daemon on the next send; the FE
     // must not `agent.setModel` its way around the gate (intent#5737).
     if (isSelectedModelProviderDisabled) return;
@@ -2122,7 +2143,7 @@
 
   $effect(() => {
     if (!silentFallback) return;
-    if (isGuestLocked) return;
+    if (isGuestLocked || remoteLocation) return;
     if (isApplyingModelUpdate || pendingModelUpdate) return;
     if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return;
     if (!isSelectedModelMissingAfterLoad) return;
@@ -2277,14 +2298,23 @@
 
 {#if effectiveLocked}
   <!-- Show locked state without dropdown -->
+  <!-- A remote lock stays focusable at full contrast so its explanation can be read. -->
   <Button
     {variant}
     size={buttonSize}
-    class={cn(buttonClass, 'cursor-default')}
+    class={cn(
+      buttonClass,
+      'cursor-default',
+      remoteLocation && 'pointer-events-auto! cursor-default! opacity-100! min-w-0 shrink!',
+    )}
     title={lockedButtonTitle}
     tooltip={lockedButtonTitle}
+    tooltipClass={remoteLocation ? 'min-w-0' : undefined}
+    labelClass={remoteLocation ? 'flex items-center justify-start gap-1.5' : undefined}
     aria-label={triggerAccessibleLabel}
-    disabled={true}
+    disabled={!remoteLocation}
+    aria-disabled={remoteLocation ? 'true' : undefined}
+    data-remote-model-lock={remoteLocation ? '' : undefined}
   >
     {#if isCompact}
       <Fa icon={faLock} class="h-4 w-4" />
@@ -2295,8 +2325,19 @@
       {#if hasProviderIcon(triggerProviderId)}
         <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
       {/if}
-      <span class="flex-1 text-left truncate">{triggerLabel}</span>
-      {#if triggerProfileName}
+      <span class={cn('flex-1 text-left truncate', remoteLocation && 'min-w-[1.75rem]!')}
+        >{triggerLabel}</span
+      >
+      {#if remoteLocation}
+        <span
+          class="inline-flex min-w-[0.875rem]! max-w-28 shrink-[4] items-center gap-1 overflow-hidden text-subtle"
+          aria-hidden="true"
+          data-remote-model-machine
+        >
+          <Fa icon={faDesktop} class="size-3!" />
+          <span class="truncate">{remoteLocation.name}</span>
+        </span>
+      {:else if triggerProfileName}
         <span class="min-w-0 max-w-24 shrink truncate text-subtle" aria-hidden="true"
           >{triggerProfileName}</span
         >
@@ -2319,7 +2360,16 @@
           <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
         {/if}
         <span class="text-xs truncate">{triggerLabel}</span>
-        {#if triggerProfileName}
+        {#if remoteLocation}
+          <span
+            class="inline-flex min-w-[0.875rem]! max-w-28 shrink-[4] items-center gap-1 overflow-hidden text-xs text-subtle"
+            aria-hidden="true"
+            data-remote-model-machine
+          >
+            <Fa icon={faDesktop} class="size-3!" />
+            <span class="truncate">{remoteLocation.name}</span>
+          </span>
+        {:else if triggerProfileName}
           <span class="text-xs min-w-0 max-w-24 shrink truncate text-subtle" aria-hidden="true"
             >{triggerProfileName}</span
           >

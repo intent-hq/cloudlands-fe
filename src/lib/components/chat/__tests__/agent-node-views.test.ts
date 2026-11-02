@@ -124,7 +124,8 @@ describe('node agents in existing views', () => {
       ]),
     );
     const view = render(AgentCard, { agentId: id, statusLabel: 'Existing label' });
-    expect(screen.getByTestId('agent-card-status').textContent).toBe('Provisioning');
+    // A remote agent's provisioning reads "Starting…" (local placements keep "Provisioning").
+    expect(screen.getByTestId('agent-card-status').textContent).toBe('Starting…');
     appStore.dispatch(bulkUpsertSessions([makeAgent()]));
     await waitFor(() => expect(screen.getByTestId('agent-card-status').textContent).toBe('Halted'));
     appStore.dispatch(bulkUpsertSessions([makeAgent({ status: AgentStatus.Resuming })]));

@@ -202,6 +202,13 @@ describe('Button', () => {
     expect(onkeydown).toHaveBeenCalledWith(expect.objectContaining({ key: 'Enter' }));
   });
 
+  it('applies tooltipClass to the tooltip trigger wrapper', () => {
+    render(Button, { props: { tooltip: 'Shrinkable action', tooltipClass: 'min-w-0' } });
+    const button = screen.getByRole('button', { name: 'Shrinkable action' });
+    // eslint-disable-next-line intent/no-class-name-assertions-in-tests -- forwarding the given class is tooltipClass's contract
+    expect(button.parentElement?.closest('span')?.classList.contains('min-w-0')).toBe(true);
+  });
+
   it('disables an open tooltip reactively without remounting its button', async () => {
     const view = render(Button, {
       props: { tooltip: 'Stable action help', tooltipDelayDuration: 0 },

@@ -330,6 +330,7 @@
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import AttentionRequestBanner from './AttentionRequestBanner.svelte';
+  import AgentPlacementNotice from '$features/remote-machines/AgentPlacementNotice.svelte';
   import {
     getMessageNavigationStartScrollTop,
     getUserMessageNavigationItems,
@@ -7587,6 +7588,7 @@
         {/if}
 
         {#if workspace?.id && agentId}
+          <AgentPlacementNotice {agentId} />
           <AttentionRequestBanner {agentId} />
         {/if}
 

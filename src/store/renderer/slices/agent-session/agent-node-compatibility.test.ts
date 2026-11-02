@@ -154,6 +154,22 @@ describe('node agent compatibility', () => {
     state = agentSessionReducer(state, bulkUpsertSessions([session()]));
     expect(row(state)).toMatchObject(remote);
   });
+  it('keeps the machine name and placement error when an agent.list row omits them', () => {
+    // agent.list rows and agent-channel deltas strip the placed-agent fields;
+    // only detail reads carry them.
+    const detail = {
+      ...remote,
+      nodeName: 'Build box',
+      placementError: { code: 'remote-launch-failed', detail: 'node-capacity: full' },
+    };
+    let state = agentSessionReducer(initialState, upsertSession(session(detail)));
+    state = agentSessionReducer(state, bulkUpsertSessions([session({ name: 'Renamed' })]));
+    expect(row(state)).toMatchObject({
+      name: 'Renamed',
+      nodeName: 'Build box',
+      placementError: detail.placementError,
+    });
+  });
   it('starts a reused agent ID with only its new workspace node provenance', () => {
     let state = agentSessionReducer(initialState, upsertSession(session(remote)));
     state = agentSessionReducer(
