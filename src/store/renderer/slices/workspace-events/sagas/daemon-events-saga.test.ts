@@ -371,6 +371,7 @@ describe('daemonEventsSaga', () => {
       'github:auth-changed',
       'sourceControl:auth-changed',
       'principal:identity-changed',
+      'remoteMachine:changed',
       'client:updated',
       'client:connected',
       'client:disconnected',
