@@ -8149,6 +8149,8 @@
   "dock_composer_recordingEnd_chip": "録画 {n} 終了",
   "dock_composer_markUp_label": "注釈を付ける",
   "dock_composer_play_label": "再生",
+  "dock_composer_capturePending_label": "スクリーンショットを撮影中…",
+  "dock_composer_captureComplete_label": "スクリーンショットを撮影しました",
   "dock_composer_done_label": "完了",
   "dock_annotationToolbar_save_label": "添付",
   "dock_annotationToolbar_clear_label": "注釈を消去",

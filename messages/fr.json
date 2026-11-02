@@ -8149,6 +8149,8 @@
   "dock_composer_recordingEnd_chip": "Fin de l’enregistrement {n}",
   "dock_composer_markUp_label": "Annoter",
   "dock_composer_play_label": "Lire",
+  "dock_composer_capturePending_label": "Capture d’écran en cours…",
+  "dock_composer_captureComplete_label": "Capture d’écran effectuée",
   "dock_composer_done_label": "Terminé",
   "dock_annotationToolbar_save_label": "Joindre",
   "dock_annotationToolbar_clear_label": "Effacer les annotations",

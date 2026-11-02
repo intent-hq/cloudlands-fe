@@ -8149,6 +8149,8 @@
   "dock_composer_recordingEnd_chip": "Recording {n} ends",
   "dock_composer_markUp_label": "Mark up",
   "dock_composer_play_label": "Play",
+  "dock_composer_capturePending_label": "Taking screenshot…",
+  "dock_composer_captureComplete_label": "Screenshot captured",
   "dock_composer_done_label": "Done",
   "dock_annotationToolbar_save_label": "Attach",
   "dock_annotationToolbar_clear_label": "Clear annotations",
