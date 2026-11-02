@@ -311,7 +311,7 @@ and embedded tabs — is a target) and attach CDP locally. See
 
 ### Serving the production web build (`serve:web`)
 
-`pnpm run serve:web` (monorepo: `make web-serve`) serves `dist/web` from
+`pnpm run serve:web` serves `dist/web` from
 `build:web` with the same `/intentd/ws` bridge, via `scripts/web-serve.mjs`. It never
 authenticates: by default it listens on a 0600 Unix socket (`WEB_SERVE_SOCKET`, default
 `.dev/web-serve/web.sock`) and a front-end you point at it (`tailscale serve --bg
