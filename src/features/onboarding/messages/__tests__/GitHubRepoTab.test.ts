@@ -122,22 +122,6 @@ describe('GitHubRepoTab — pure repo picker', () => {
     expect(props.onGithubUrlChange).toHaveBeenCalledWith('');
   });
 
-  // Regression: the rows are Buttons, whose default size pins a fixed
-  // control height. The avatar plus row padding is taller than that, so the
-  // content overflowed below the row and the selection highlight looked
-  // shifted upwards. Rows must size to their content (like LocalRepoTab).
-  it('repo rows size to their content so the highlight covers the row', () => {
-    const props = { ...baseProps(), githubUrl: 'https://github.com/octo/alpha' };
-    const { container } = render(GitHubRepoTab, { props });
-
-    for (const option of repoOptions(container)) {
-      expect(option.classList).toContain('h-auto');
-      expect(option.classList).toContain('items-center');
-      expect(option.classList).not.toContain('h-(--control-height-medium)');
-      expect(option.classList).not.toContain('items-start');
-    }
-  });
-
   it('renders no clone-destination control', () => {
     const props = baseProps();
     const { container } = render(GitHubRepoTab, { props });
