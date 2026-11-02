@@ -5,7 +5,7 @@ import type {
 } from '$shared/types/remote-machines';
 
 /** One pending operation per key: a saved connection id (expose), machine id (remove) or credential id (revoke). */
-export type RemoteMachineOperation = 'exposing' | 'removing' | 'revoking';
+export type RemoteMachineOperation = 'exposing' | 'removing' | 'revoking' | 'refreshing';
 
 export interface RemoteMachinesState {
   /** `client.hello` on the current backend advertises `remoteMachines: 1`. */

@@ -22,6 +22,7 @@ import { remoteMachinesSaga } from './remote-machines-saga';
 import {
   executorRevokeRequested,
   remoteMachineExposeRequested,
+  remoteMachineRefreshRequested,
   remoteMachinesRefreshRequested,
   remoteMachineUnexposeRequested,
 } from './remote-machines-slice';
@@ -330,6 +331,44 @@ describe('remote machines saga — un-expose and revoke', () => {
     dispatch(executorRevokeRequested('cred-9'));
     await vi.waitFor(() => expect(store.state.remoteMachines.executorBackends).toEqual([]));
     expect(ui.confirm).toHaveBeenLastCalledWith(expect.objectContaining({ destructive: true }));
+  });
+});
+
+describe('remote machines saga — refresh one machine', () => {
+  it("stores the machine's fresh report", async () => {
+    const mock = backend();
+    const fresh = {
+      ...MACHINE,
+      observedAt: '2026-11-02T12:00:00Z',
+      capabilities: { providers: [{ id: 'codex', status: 'ready', models: ['gpt-5'] }] },
+    };
+    mock.onRequest('remoteMachines.refresh', () => ({ machine: fresh }));
+    start();
+    dispatch(remoteMachineRefreshRequested('d-mac'));
+    await vi.waitFor(() =>
+      expect(store.state.remoteMachines.machines['d-mac']?.capabilities?.providers).toEqual([
+        { id: 'codex', status: 'ready', models: ['gpt-5'] },
+      ]),
+    );
+    await settle();
+    expect(mock.requests.find((r) => r.method === 'remoteMachines.refresh')?.params).toEqual({
+      machineId: 'd-mac',
+    });
+  });
+
+  it('reads the list again when the machine cannot be reached', async () => {
+    const mock = backend();
+    mock.onRequest('remoteMachines.refresh', () => {
+      throw new Error('machine-unreachable');
+    });
+    invoke.mockResolvedValue(null);
+    start();
+    dispatch(remoteMachineRefreshRequested('d-mac'));
+    await vi.waitFor(() =>
+      expect(mock.requests.map((r) => r.method)).toContain('remoteMachines.list'),
+    );
+    await settle();
+    expect(store.state.remoteMachines.failures).toEqual({});
   });
 });
 
