@@ -917,8 +917,32 @@ describe('ModelPicker guest / collaborator lock', () => {
       );
     });
 
+    const withDefaultEnv = (env: unknown[]) => {
+      mockProviderSettingsState.current = {
+        enabledProviders: { auggie: true, codex: true, 'claude-code': true },
+        profiles: {
+          loadStatus: 'success',
+          defaults: {
+            'claude-code': { baseProviderId: 'claude-code', name: 'Default', env },
+          },
+        },
+      };
+    };
+
+    it("keeps an API-key Default selectable when the machine isn't signed in", async () => {
+      withMachine();
+      withDefaultEnv([{ key: 'ANTHROPIC_API_KEY', kind: 'set', value: '********' }]);
+      renderAgentPicker('gpt-5');
+      await fireEvent.click(screen.getByRole('button'));
+      await fireEvent.click(await screen.findByRole('tab', { name: /Claude Code/ }));
+      const opus = await screen.findByRole('option', { name: /opus/ });
+      expect(opus.hasAttribute('data-disabled')).toBe(false);
+      expect(screen.queryByTestId('model-picker-remote-signed-out')).toBeNull();
+    });
+
     it("greys out a provider that isn't signed in on the machine", async () => {
       withMachine();
+      withDefaultEnv([]);
       renderAgentPicker('gpt-5');
       await fireEvent.click(screen.getByRole('button'));
       await fireEvent.click(await screen.findByRole('tab', { name: /Claude Code/ }));

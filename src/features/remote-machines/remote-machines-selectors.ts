@@ -84,3 +84,16 @@ export const selectRemoteModelSwitchSupport = store.createSelector(
     });
   },
 );
+
+/**
+ * Whether each base provider's Default saves env overrides, from the
+ * admin-only profile list's Default rows; empty until that list is read.
+ */
+export const selectDefaultHasOverrides = store.createSelector((state): Record<string, boolean> =>
+  Object.fromEntries(
+    Object.values(state.providerSettings?.profiles?.defaults ?? {}).map((config) => [
+      config.baseProviderId,
+      config.env.length > 0,
+    ]),
+  ),
+);

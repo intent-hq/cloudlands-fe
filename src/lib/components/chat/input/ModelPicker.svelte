@@ -150,6 +150,7 @@
   import { agentMachineLocation } from '$features/remote-machines/agent-location';
   import {
     selectCurrentBackendLabel,
+    selectDefaultHasOverrides,
     selectRemoteMachine,
     selectRemoteMachineOperations,
     selectRemoteMachinesVisible,
@@ -219,7 +220,7 @@
   function providerTabLabel(providerId: string): string {
     const label = providerDisplayName(providerId);
     if (remoteScoped && remoteLocation)
-      return isRemoteRefSignedOut($remoteMachine$, providerId)
+      return remoteSignedOutCue(providerId)
         ? m.chat_modelPicker_remoteProviderTabSignedOut_label({
             provider: label,
             machine: remoteLocation.name,
@@ -539,6 +540,7 @@
     selectProviderCatalogDefaultRemoteIncompatibility(workspaceIdStore);
   const backendLabel$ = selectCurrentBackendLabel();
   const remoteMachinesPending$ = selectRemoteMachineOperations();
+  const defaultHasOverrides$ = selectDefaultHasOverrides();
   const remoteLocation = $derived(
     agentId && !isGuestLocked && $agentSession$?.id === agentId
       ? agentMachineLocation($agentSession$, $remoteMachine$)
@@ -583,6 +585,16 @@
   );
   function refreshRemoteMachine() {
     if (remoteLocation) appStore.dispatch(remoteMachineRefreshRequested(remoteLocation.nodeId));
+  }
+  /**
+   * The machine's own login for `providerRef` is signed out and matters: not
+   * for a Default known to save its own credentials (an API key).
+   */
+  function remoteSignedOutCue(providerRef: string): boolean {
+    return (
+      isRemoteRefSignedOut($remoteMachine$, providerRef) &&
+      $defaultHasOverrides$[providerRefBaseId(providerRef)] !== true
+    );
   }
   /** Why the browsed configuration can't run on the agent's machine, or null. */
   function remoteIncompatibleReason(providerRef: string): string | null {
@@ -1480,6 +1492,7 @@
         catalogModels: { ...remoteCatalogModels, ...allProviderModels },
         catalogProfiles: $providerProfiles$,
         defaultRemoteIncompatibility: $defaultRemoteIncompatibility$,
+        defaultHasOverrides: $defaultHasOverrides$,
         useDefaultOption: showDefaultOption ? useDefaultOption : undefined,
       });
     }
@@ -2557,7 +2570,7 @@
           <Fa icon={faLock} class="mt-0.5 size-3! shrink-0" />
           <span class="min-w-0 leading-tight">{incompatibleReason}</span>
         </div>
-      {:else if isRemoteRefSignedOut($remoteMachine$, group.key)}
+      {:else if remoteSignedOutCue(group.key)}
         <div
           class="flex items-start gap-2 px-2 pt-1 pb-1 text-xs"
           role="status"
@@ -2810,7 +2823,7 @@
               onkeydown={(event) => handleProviderTabKeydown(event, providerTabId)}
             >
               <ProviderIcon providerId={providerTabId} class="size-4" size={16} />
-              {#if isProfileSignedOut(providerTabId) || (remoteScoped && isRemoteRefSignedOut($remoteMachine$, providerTabId))}
+              {#if isProfileSignedOut(providerTabId) || (remoteScoped && remoteSignedOutCue(providerTabId))}
                 <span
                   class="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-warning"
                   aria-hidden="true"

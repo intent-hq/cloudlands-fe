@@ -212,10 +212,27 @@ describe('buildMachineModelGroups', () => {
     expect(options[0].data?.remoteUnavailable).toBe('incompatible');
   });
 
-  it('greys out a signed-out Default but not a profile with its own credentials', () => {
-    expect(byKey.codex.options).toMatchObject([
+  it('keeps a signed-out Default selectable unless it is known to have no overrides', () => {
+    // Unknown (the profile list is admin-only): the daemon decides.
+    expect(byKey.codex.options).toEqual([{ value: 'gpt-6', label: 'gpt-6' }]);
+    const build = (defaultHasOverrides: Record<string, boolean>) =>
+      buildMachineModelGroups({
+        machine: machine(),
+        providerRefs: ['codex'],
+        groupLabel: (ref) => ref,
+        catalogModels: {},
+        catalogProfiles: [],
+        defaultHasOverrides,
+      })[0].options;
+    // No overrides: only the machine's sign-in can run it.
+    expect(build({ codex: false })).toMatchObject([
       { value: 'gpt-6', disabled: true, data: { remoteUnavailable: 'signed-out' } },
     ]);
+    // An API key in the Default's overrides runs without the machine's sign-in.
+    expect(build({ codex: true })).toEqual([{ value: 'gpt-6', label: 'gpt-6' }]);
+  });
+
+  it('never greys a profile with its own credentials for a signed-out machine', () => {
     expect(byKey['codex@p-key'].options).toEqual([{ value: 'gpt-6', label: 'gpt-6' }]);
   });
 

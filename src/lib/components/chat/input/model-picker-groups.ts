@@ -228,6 +228,12 @@ interface BuildMachineModelGroupsParams {
   catalogModels: Record<string, DropdownOption[] | undefined>;
   catalogProfiles: readonly ProviderProfileSummary[];
   defaultRemoteIncompatibility?: Record<string, RemoteIncompatibility>;
+  /**
+   * Whether each base provider's Default saves env overrides (an API key
+   * runs without the machine's sign-in), from the admin-only profile list.
+   * Absent when unknown.
+   */
+  defaultHasOverrides?: Record<string, boolean>;
   useDefaultOption?: DropdownOption;
 }
 
@@ -235,9 +241,10 @@ interface BuildMachineModelGroupsParams {
  * One group per configuration whose base provider the machine reports as
  * installed, listing the machine's models (labels from the backend catalog,
  * else the raw id). A configuration that can't run on another machine, or a
- * Default whose provider is signed out there, keeps its models greyed out;
- * the picker names the reason above them. Profiles bring their own
- * credentials, so a signed-out machine login does not grey them.
+ * Default with no overrides whose provider is signed out there, keeps its
+ * models greyed out; the picker names the reason above them. Profiles and
+ * Defaults with overrides may bring their own credentials (an API key), so
+ * a signed-out machine login greys them only when that is known not to be so.
  */
 export function buildMachineModelGroups({
   machine,
@@ -246,6 +253,7 @@ export function buildMachineModelGroups({
   catalogModels,
   catalogProfiles,
   defaultRemoteIncompatibility,
+  defaultHasOverrides,
   useDefaultOption,
 }: BuildMachineModelGroupsParams): DropdownGroup[] {
   const reported = new Map(
@@ -261,7 +269,10 @@ export function buildMachineModelGroups({
       catalogProfiles,
       defaultRemoteIncompatibility,
     );
-    const signedOut = isRemoteRefSignedOut(machine, ref);
+    // Only a Default known to have no overrides needs the machine's sign-in;
+    // otherwise the picker names the sign-in state and the daemon decides.
+    const signedOut =
+      isRemoteRefSignedOut(machine, ref) && defaultHasOverrides?.[providerRefBaseId(ref)] === false;
     const labelled = new Map(
       (catalogModels[ref] ?? catalogModels[providerRefBaseId(ref)] ?? []).map((option) => [
         splitLegacyCompoundId(option.value).modelId,
