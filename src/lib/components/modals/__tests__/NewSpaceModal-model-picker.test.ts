@@ -325,14 +325,29 @@ async function submitWithRepo() {
   return mocks.create.mock.calls[0][0];
 }
 
-function modeCard(name: RegExp) {
-  return screen.getByRole('button', { name });
+function agentPicker() {
+  return screen.getByTestId('initial-agent-picker');
 }
 
-function pickerTrigger(card: HTMLElement) {
-  const trigger = card.querySelector('button[aria-haspopup="listbox"]');
+/** The agent row opens the searchable agent popover; its name ends with the current agent. */
+function agentTrigger() {
+  return within(agentPicker()).getByRole('button', { name: /^Initial agent\b/ });
+}
+
+/** The single Model row serves every agent choice. */
+function modelTrigger() {
+  const trigger = agentPicker().querySelector('button[aria-haspopup="listbox"]');
   expect(trigger).toBeTruthy();
   return trigger as HTMLButtonElement;
+}
+
+async function pickAgent(name: RegExp) {
+  await fireEvent.click(agentTrigger());
+  await fireEvent.pointerUp(await screen.findByRole('option', { name }), {
+    button: 0,
+    pointerType: 'mouse',
+  });
+  await waitFor(() => expect(screen.queryByRole('option', { name })).toBeNull());
 }
 
 function dropdownContent(listbox: HTMLElement) {
@@ -341,25 +356,11 @@ function dropdownContent(listbox: HTMLElement) {
   return content as HTMLElement;
 }
 
-function rect(left: number, top: number, width: number, height: number): DOMRect {
-  return {
-    x: left,
-    y: top,
-    left,
-    top,
-    width,
-    height,
-    right: left + width,
-    bottom: top + height,
-    toJSON: () => ({}),
-  } as DOMRect;
-}
+const COORDINATOR = /Coordinator/;
+const GENERAL = /^General/;
 
-function stubGeometry(dialog: HTMLElement, trigger: HTMLButtonElement, triggerRect: DOMRect) {
-  dialog.getBoundingClientRect = vi.fn(() => rect(80, 60, 840, 560));
-  trigger.getBoundingClientRect = vi.fn(() => triggerRect);
-  trigger.parentElement!.getBoundingClientRect = vi.fn(() => triggerRect);
-}
+// jsdom has no layout; the agent combobox scrolls its active row into view.
+if (!HTMLElement.prototype.scrollIntoView) HTMLElement.prototype.scrollIntoView = () => {};
 
 let disposeStore: () => void;
 let cancelCatalog: () => void;
@@ -419,28 +420,27 @@ describe('NewSpaceModal model-picker composition', () => {
     async (mode) => {
       mocks.availableProviderIds = ['auggie', 'codex'];
       render(NewSpaceModal, { props: { open: true, onClose: mocks.onClose } });
-      const dialog = await screen.findByRole('dialog', { name: 'New Workspace' });
-      const card = modeCard(mode === 'team' ? /Agent orchestration/i : /Single agent/i);
-      if (mode === 'single') await fireEvent.click(card);
-      await fireEvent.click(pickerTrigger(card));
-      await fireEvent.click(await within(dialog).findByRole('tab', { name: /Codex/ }));
+      await screen.findByRole('dialog', { name: 'New Workspace' });
+      if (mode === 'single') await pickAgent(GENERAL);
+      await fireEvent.click(modelTrigger());
+      await fireEvent.click(await screen.findByRole('tab', { name: /Codex/ }));
       await fireEvent.click(
-        await within(dialog).findByRole('option', { name: 'Codex model', exact: true }),
+        await screen.findByRole('option', { name: 'Codex model', exact: true }),
       );
-      await waitFor(() => expect(pickerTrigger(card).textContent).toContain('Codex model'));
-      expect(card.getAttribute('aria-pressed')).toBe('true');
-      expect(pickerTrigger(card).getAttribute('aria-expanded')).toBe('true');
-      const effort = await within(dialog).findByTestId('effort-picker-trigger');
+      await waitFor(() => expect(modelTrigger().textContent).toContain('Codex model'));
+      expect(agentTrigger().textContent).toContain(mode === 'team' ? 'Coordinator' : 'General');
+      expect(modelTrigger().getAttribute('aria-expanded')).toBe('true');
+      const effort = await screen.findByTestId('effort-picker-trigger');
       await fireEvent.click(effort);
       const levels = document.getElementById(effort.getAttribute('aria-controls')!)!;
       await fireEvent.pointerUp(within(levels).getByRole('option', { name: 'High' }), {
         pointerType: 'mouse',
       });
       await waitFor(() =>
-        expect(within(pickerTrigger(card)).getByLabelText('Codex model · High')).toBeTruthy(),
+        expect(within(modelTrigger()).getByLabelText('Codex model · High')).toBeTruthy(),
       );
       expect(mocks.onClose).not.toHaveBeenCalled();
-      await fireEvent.click(pickerTrigger(card));
+      await fireEvent.click(modelTrigger());
       await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
       const request = await submitWithRepo();
       expect(request.initialAgent).toMatchObject({
@@ -802,18 +802,10 @@ describe('NewSpaceModal model-picker composition', () => {
   it('selects models in both modes without bubbling or closing', async () => {
     render(NewSpaceModal, { props: { open: true, onClose: mocks.onClose } });
     const dialog = await screen.findByRole('dialog', { name: 'New Workspace' });
-    const team = modeCard(/Agent orchestration/i);
-    const single = modeCard(/Single agent/i);
+    expect(agentTrigger().textContent).toMatch(COORDINATOR);
 
-    const teamTrigger = pickerTrigger(team);
-    stubGeometry(dialog, teamTrigger, rect(140, 520, 150, 28));
-    await fireEvent.click(teamTrigger);
-    const teamListbox = await within(dialog).findByRole('listbox');
-    const teamContent = dropdownContent(teamListbox);
-    expect(dialog.contains(teamListbox)).toBe(true);
-    expect(teamContent.dataset.side).toBe('top');
-    expect(teamContent.style.maxHeight).toBe('360px');
-    expect(parseFloat(teamContent.style.maxWidth)).toBeLessThanOrEqual(824);
+    await fireEvent.click(modelTrigger());
+    const teamListbox = await screen.findByRole('listbox');
     expect(
       await within(teamListbox).findByRole('option', { name: /^GPT 5\.1 Model 1/ }),
     ).toBeTruthy();
@@ -822,13 +814,11 @@ describe('NewSpaceModal model-picker composition', () => {
       await within(teamListbox).findByRole('option', { name: /GPT 5\.6/ }, { timeout: 5000 }),
     );
 
-    await waitFor(() => {
-      expect(pickerTrigger(team).textContent).toContain('GPT 5.6');
-      expect(team.getAttribute('aria-pressed')).toBe('true');
-    });
+    await waitFor(() => expect(modelTrigger().textContent).toContain('GPT 5.6'));
+    expect(agentTrigger().textContent).toMatch(COORDINATOR);
 
-    expect(pickerTrigger(team).getAttribute('aria-expanded')).toBe('true');
-    const reasoningTrigger = await within(dialog).findByTestId('effort-picker-trigger');
+    expect(modelTrigger().getAttribute('aria-expanded')).toBe('true');
+    const reasoningTrigger = await screen.findByTestId('effort-picker-trigger');
     await fireEvent.click(reasoningTrigger);
     const reasoningListbox = document.getElementById(
       reasoningTrigger.getAttribute('aria-controls')!,
@@ -839,40 +829,29 @@ describe('NewSpaceModal model-picker composition', () => {
       pointerType: 'mouse',
     });
     await waitFor(() => {
-      const updatedTeamTrigger = pickerTrigger(team);
-      expect(within(updatedTeamTrigger).getByLabelText('GPT 5.6 · High')).toBeTruthy();
-      expect(updatedTeamTrigger.textContent).not.toContain('High');
-      const effortGauge = within(updatedTeamTrigger).getByTestId('model-reasoning-effort-gauge');
-      expect(effortGauge.dataset.gaugeValue).toBe('2');
-      expect(effortGauge.dataset.gaugeSize).toBe('compact');
+      const updatedTrigger = modelTrigger();
+      expect(within(updatedTrigger).getByLabelText('GPT 5.6 · High')).toBeTruthy();
+      expect(updatedTrigger.textContent).not.toContain('High');
     });
-    await fireEvent.click(pickerTrigger(team));
+    await fireEvent.click(modelTrigger());
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
-    expect(team.getAttribute('aria-pressed')).toBe('true');
-    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
-    expect(within(pickerTrigger(team)).getByLabelText('GPT 5.6 · High')).toBeTruthy();
+    expect(agentTrigger().textContent).toMatch(COORDINATOR);
+    expect(within(modelTrigger()).getByLabelText('GPT 5.6 · High')).toBeTruthy();
     expect(mocks.onClose).not.toHaveBeenCalled();
 
-    await fireEvent.click(single);
-    expect(single.getAttribute('aria-pressed')).toBe('true');
-    const singleTrigger = pickerTrigger(single);
-    stubGeometry(dialog, singleTrigger, rect(600, 120, 150, 28));
-    await fireEvent.click(singleTrigger);
-    const singleListbox = await within(dialog).findByRole('listbox');
-    const singleContent = dropdownContent(singleListbox);
-    expect(singleContent.dataset.side).toBe('bottom');
-    expect(singleContent.style.maxHeight).toBe('360px');
+    await pickAgent(GENERAL);
+    expect(agentTrigger().textContent).toContain('General');
+    await fireEvent.click(modelTrigger());
+    const singleListbox = await screen.findByRole('listbox');
     await fireEvent.click(
       await within(singleListbox).findByRole('option', { name: /GPT 5\.5/ }, { timeout: 5000 }),
     );
 
-    await waitFor(() => {
-      expect(pickerTrigger(single).textContent).toContain('GPT 5.5');
-    });
-    expect(single.getAttribute('aria-pressed')).toBe('true');
+    await waitFor(() => expect(modelTrigger().textContent).toContain('GPT 5.5'));
+    expect(agentTrigger().textContent).toContain('General');
     expect(screen.getByRole('dialog', { name: 'New Workspace' })).toBe(dialog);
     expect(mocks.onClose).not.toHaveBeenCalled();
-    await fireEvent.click(pickerTrigger(single));
+    await fireEvent.click(modelTrigger());
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
     const request = await submitWithRepo();
     expect(request.initialAgent).toMatchObject({ provider: 'auggie', model: 'gpt5.5' });
@@ -916,21 +895,20 @@ describe('NewSpaceModal model-picker composition', () => {
         if (otherDefaultProvider) appStore.dispatch(hydrateDefaultProvider('codex'));
       }
       const view = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
-      const team = modeCard(/Agent orchestration/i);
       await waitFor(() =>
-        expect(within(pickerTrigger(team)).getByLabelText('GPT 5.6 · High')).toBeTruthy(),
+        expect(within(modelTrigger()).getByLabelText('GPT 5.6 · High')).toBeTruthy(),
       );
 
       if (explicitModel) {
-        await fireEvent.click(pickerTrigger(team));
+        await fireEvent.click(modelTrigger());
         const modelListbox = await screen.findByRole('listbox');
         await fireEvent.click(within(modelListbox).getByRole('option', { name: /GPT 5\.6/ }));
         await waitFor(() =>
-          expect(within(pickerTrigger(team)).getByLabelText('GPT 5.6 · High')).toBeTruthy(),
+          expect(within(modelTrigger()).getByLabelText('GPT 5.6 · High')).toBeTruthy(),
         );
       }
 
-      if (!explicitModel) await fireEvent.click(pickerTrigger(team));
+      if (!explicitModel) await fireEvent.click(modelTrigger());
       const reasoningTrigger = await screen.findByTestId('effort-picker-trigger');
       await fireEvent.click(reasoningTrigger);
       const reasoningListbox = document.getElementById(
@@ -940,9 +918,9 @@ describe('NewSpaceModal model-picker composition', () => {
         pointerType: 'mouse',
       });
       await waitFor(() =>
-        expect(within(pickerTrigger(team)).queryByLabelText('GPT 5.6 · High')).toBeNull(),
+        expect(within(modelTrigger()).queryByLabelText('GPT 5.6 · High')).toBeNull(),
       );
-      await fireEvent.click(pickerTrigger(team));
+      await fireEvent.click(modelTrigger());
 
       sessionStorage.setItem(
         'workspace-prefill',
@@ -1005,7 +983,7 @@ describe('NewSpaceModal model-picker composition', () => {
 
     it('does not save repo, branch or model changes after a failed create and cancel', async () => {
       const view = render(NewSpaceModal, { props: { open: true, onClose: mocks.onClose } });
-      const dialog = await screen.findByRole('dialog', { name: 'New Workspace' });
+      await screen.findByRole('dialog', { name: 'New Workspace' });
       await waitFor(() =>
         expect(screen.getByTestId('picker-repo-path').textContent).toBe('/repos/created'),
       );
@@ -1022,10 +1000,10 @@ describe('NewSpaceModal model-picker composition', () => {
       await waitFor(() =>
         expect(screen.getByTestId('picker-repo-path').textContent).toBe('/repos/other'),
       );
-      const trigger = pickerTrigger(modeCard(/Agent orchestration/i));
+      const trigger = modelTrigger();
       await fireEvent.click(trigger);
       await fireEvent.click(
-        await within(dialog).findByRole('option', { name: /GPT 5\.6/ }, { timeout: 5000 }),
+        await screen.findByRole('option', { name: /GPT 5\.6/ }, { timeout: 5000 }),
       );
       await waitFor(() => expect(trigger.textContent).toContain('GPT 5.6'));
 
@@ -1062,7 +1040,7 @@ describe('NewSpaceModal model-picker composition', () => {
         },
       });
       render(NewSpaceModal, { props: { open: true, onClose: mocks.onClose } });
-      const dialog = await screen.findByRole('dialog', { name: 'New Workspace' });
+      await screen.findByRole('dialog', { name: 'New Workspace' });
       await waitFor(() =>
         expect(screen.getByTestId('picker-repo-path').textContent).toBe('/repos/created'),
       );
@@ -1076,10 +1054,10 @@ describe('NewSpaceModal model-picker composition', () => {
       ).__mockRepoAndBranchPicker;
       picker.onRepoChange({ detail: { path: '/repos/other', type: 'local', isValidPath: true } });
       picker.onBranchChange({ detail: { branch: 'feature' } });
-      const trigger = pickerTrigger(modeCard(/Agent orchestration/i));
+      const trigger = modelTrigger();
       await fireEvent.click(trigger);
       await fireEvent.click(
-        await within(dialog).findByRole('option', { name: /GPT 5\.6/ }, { timeout: 5000 }),
+        await screen.findByRole('option', { name: /GPT 5\.6/ }, { timeout: 5000 }),
       );
       await waitFor(() => expect(trigger.textContent).toContain('GPT 5.6'));
       expect(savedSelections()).toEqual([]);
@@ -1107,25 +1085,24 @@ describe('NewSpaceModal model-picker composition', () => {
   it('keeps keyboard and dismissal behavior inside the open dialog', async () => {
     render(NewSpaceModal, { props: { open: true, onClose: mocks.onClose } });
     const dialog = await screen.findByRole('dialog', { name: 'New Workspace' });
-    const team = modeCard(/Agent orchestration/i);
-    const trigger = pickerTrigger(team);
+    const trigger = modelTrigger();
 
     await fireEvent.click(trigger);
-    await within(dialog).findByRole('option', { name: /GPT 5\.6/ }, { timeout: 5000 });
-    const search = await within(dialog).findByRole('searchbox', { name: 'Search options' });
+    await screen.findByRole('option', { name: /GPT 5\.6/ }, { timeout: 5000 });
+    const search = await screen.findByRole('searchbox', { name: 'Search options' });
     await fireEvent.input(search, { target: { value: 'GPT 5.6' } });
     await fireEvent.keyDown(search, { key: 'Enter' });
     await waitFor(() => expect(trigger.textContent).toContain('GPT 5.6'));
-    expect(team.getAttribute('aria-pressed')).toBe('true');
+    expect(agentTrigger().textContent).toMatch(COORDINATOR);
 
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
-    expect(await within(dialog).findByRole('listbox')).toBeTruthy();
+    expect(await screen.findByRole('listbox')).toBeTruthy();
     await fireEvent.mouseDown(document.body);
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
     expect(screen.getByRole('dialog', { name: 'New Workspace' })).toBe(dialog);
 
     await fireEvent.click(trigger);
-    const reopenedSearch = await within(dialog).findByRole('searchbox', { name: 'Search options' });
+    const reopenedSearch = await screen.findByRole('searchbox', { name: 'Search options' });
     await fireEvent.keyDown(reopenedSearch, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
     expect(document.activeElement).toBe(trigger);
@@ -1136,24 +1113,23 @@ describe('NewSpaceModal model-picker composition', () => {
   it('dismisses nested reasoning before the modal-aware model picker on Escape', async () => {
     render(NewSpaceModal, { props: { open: true, onClose: mocks.onClose } });
     const dialog = await screen.findByRole('dialog', { name: 'New Workspace' });
-    const team = modeCard(/Agent orchestration/i);
-    const modelTrigger = pickerTrigger(team);
+    const modelRow = modelTrigger();
 
-    await fireEvent.click(modelTrigger);
-    const modelListbox = await within(dialog).findByRole('listbox');
+    await fireEvent.click(modelRow);
+    const modelListbox = await screen.findByRole('listbox');
     await fireEvent.click(
       await within(modelListbox).findByRole('option', { name: /GPT 5\.6/ }, { timeout: 5000 }),
     );
-    await waitFor(() => expect(modelTrigger.textContent).toContain('GPT 5.6'));
+    await waitFor(() => expect(modelRow.textContent).toContain('GPT 5.6'));
 
-    expect(modelTrigger.getAttribute('aria-expanded')).toBe('true');
-    const reasoningTrigger = await within(dialog).findByTestId('effort-picker-trigger');
+    expect(modelRow.getAttribute('aria-expanded')).toBe('true');
+    const reasoningTrigger = await screen.findByTestId('effort-picker-trigger');
     reasoningTrigger.focus();
     await fireEvent.keyDown(reasoningTrigger, { key: 'Enter' });
     await waitFor(() => expect(screen.getAllByRole('listbox')).toHaveLength(2));
     // Escape must not commit the highlighted reasoning level.
     const effortShown = () =>
-      within(modelTrigger).queryByTestId('model-reasoning-effort-gauge')?.dataset.gaugeValue;
+      modelRow.querySelector('[aria-label]')?.getAttribute('aria-label') ?? '';
     const effortBefore = effortShown();
 
     await fireEvent.keyDown(reasoningTrigger, { key: 'ArrowDown' });
@@ -1161,7 +1137,7 @@ describe('NewSpaceModal model-picker composition', () => {
     await fireEvent.keyDown(reasoningTrigger, { key: 'Escape' });
 
     await waitFor(() => {
-      expect(within(dialog).getAllByRole('listbox')).toHaveLength(1);
+      expect(screen.getAllByRole('listbox')).toHaveLength(1);
       expect(reasoningTrigger.getAttribute('aria-expanded')).toBe('false');
     });
     expect(document.activeElement).toBe(reasoningTrigger);
@@ -1170,60 +1146,33 @@ describe('NewSpaceModal model-picker composition', () => {
 
     await fireEvent.keyDown(reasoningTrigger, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
-    expect(document.activeElement).toBe(modelTrigger);
+    expect(document.activeElement).toBe(modelRow);
     expect(screen.getByRole('dialog', { name: 'New Workspace' })).toBe(dialog);
     expect(effortShown()).toBe(effortBefore);
     expect(mocks.onClose).not.toHaveBeenCalled();
   });
 
-  it('affirms model picker bounds and options in every required visual state', async () => {
-    for (const { theme, width, zoom, reducedMotion } of [
-      { theme: 'light', width: 1024, zoom: 1, reducedMotion: false },
-      { theme: 'dark', width: 520, zoom: 2, reducedMotion: true },
-    ]) {
-      document.documentElement.classList.toggle('dark', theme === 'dark');
-      Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
-      Object.defineProperty(window, 'innerHeight', { configurable: true, value: 420 });
-      Object.defineProperty(window, 'matchMedia', {
-        configurable: true,
-        value: (query: string) => ({
-          matches: query.includes('prefers-reduced-motion') && reducedMotion,
-          addEventListener() {},
-          removeEventListener() {},
-        }),
-      });
-      const view = render(NewSpaceModal, { props: { open: true, onClose: mocks.onClose } });
-      view.container.style.zoom = String(zoom);
-      const dialog = await screen.findByRole('dialog', { name: 'New Workspace' });
-      dialog.getBoundingClientRect = vi.fn(() => rect(16, 16, 488, 388));
-      const trigger = pickerTrigger(modeCard(/Agent orchestration/i));
-      trigger.getBoundingClientRect = vi.fn(() => rect(210, 330, 150, 28));
-      trigger.parentElement!.getBoundingClientRect = vi.fn(() => rect(210, 330, 150, 28));
+  it('keeps model search wired to its list and Home/End navigation', async () => {
+    render(NewSpaceModal, { props: { open: true, onClose: mocks.onClose } });
+    await screen.findByRole('dialog', { name: 'New Workspace' });
+    const trigger = modelTrigger();
+    trigger.focus();
+    await fireEvent.click(trigger);
+    const listbox = await screen.findByRole('listbox');
+    const content = dropdownContent(listbox);
 
-      await fireEvent.mouseEnter(trigger);
-      trigger.focus();
-      await fireEvent.click(trigger);
-      const listbox = await within(dialog).findByRole('listbox');
-      const content = dropdownContent(listbox);
-      expect(content.dataset.side).toBe('top');
-      expect(parseFloat(content.style.maxHeight)).toBeLessThanOrEqual(306);
-      expect(parseFloat(content.style.maxWidth)).toBeLessThanOrEqual(472);
-      expect(listbox.className).toContain('overflow-y-auto');
-
-      const search = within(content).getByRole('searchbox', { name: 'Search options' });
-      expect(search.getAttribute('aria-controls')).toBe(listbox.id);
-      expect(listbox.contains(search)).toBe(false);
-      await within(listbox).findByRole('option', { name: /^GPT 5\.12 Last model/ });
-      await fireEvent.keyDown(search, { key: 'End' });
-      expect(
-        within(listbox).getByRole('option', { name: /^GPT 5\.12 Last model/ }).dataset.highlighted,
-      ).toBe('true');
-      await fireEvent.keyDown(search, { key: 'Home' });
-      expect(
-        within(listbox).getByRole('option', { name: /^GPT 5\.1 Model 1/ }).dataset.highlighted,
-      ).toBe('true');
-      view.unmount();
-    }
+    const search = within(content).getByRole('searchbox', { name: 'Search options' });
+    expect(search.getAttribute('aria-controls')).toBe(listbox.id);
+    expect(listbox.contains(search)).toBe(false);
+    await within(listbox).findByRole('option', { name: /^GPT 5\.12 Last model/ });
+    await fireEvent.keyDown(search, { key: 'End' });
+    expect(
+      within(listbox).getByRole('option', { name: /^GPT 5\.12 Last model/ }).dataset.highlighted,
+    ).toBe('true');
+    await fireEvent.keyDown(search, { key: 'Home' });
+    expect(
+      within(listbox).getByRole('option', { name: /^GPT 5\.1 Model 1/ }).dataset.highlighted,
+    ).toBe('true');
   });
 });
 

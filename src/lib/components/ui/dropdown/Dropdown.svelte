@@ -44,6 +44,8 @@
     placeholder?: string;
     /** Whether to use a portal to render content (useful when inside overflow:hidden containers) */
     portal?: boolean;
+    /** Positioned portal host, such as a dialog, to retain its stacking and focus scope. */
+    portalTarget?: HTMLElement;
     /** Render the open panel in normal flow without portal or positioning observers. */
     staticPosition?: boolean;
     /** Disable panel and row transitions for immediate keyboard/filter flows. */
@@ -119,6 +121,7 @@
     groups = [],
     placeholder = m.ui_dropdown_select_placeholder(),
     portal = false,
+    portalTarget,
     staticPosition = false,
     animate = true,
     collisionBoundary = null,
@@ -375,6 +378,13 @@
     const spaceAbove = Math.max(0, rect.top - topBoundary - 4);
     const preferredDropdownHeight = contentMaxHeight ?? (portal ? 300 : 360);
     const contentRef = portal ? portalContentRef : inlineContentRef;
+    // A dialog is transformed, so its portal uses local absolute coordinates.
+    // The Portal wrapper is positioned and may sit after the dialog's body.
+    const portalParent = portalContentRef?.offsetParent;
+    const portalBounds = portalTarget
+      ? (portalParent instanceof HTMLElement ? portalParent : portalTarget).getBoundingClientRect()
+      : null;
+    const portalPosition = portalTarget ? 'absolute' : 'fixed';
     if (side === 'left') {
       const width = contentRef?.offsetWidth || (portal ? 432 : 332);
       const right = rect.left - sideOffset;
@@ -386,7 +396,7 @@
         const left = right - width;
         inlineSide = 'left';
         if (portal) {
-          portalStyle = `position: fixed; top: ${top}px; left: ${left}px; max-height: ${maxHeight}px;`;
+          portalStyle = `position: ${portalPosition}; top: ${top - (portalBounds?.top ?? 0)}px; left: ${left - (portalBounds?.left ?? 0)}px; max-height: ${maxHeight}px;`;
           return;
         }
         const containerRect = containerRef?.getBoundingClientRect() ?? rect;
@@ -406,9 +416,9 @@
 
     if (portal) {
       if (opensAbove) {
-        portalStyle = `position: fixed; bottom: ${viewportHeight - rect.top + 4}px; left: ${left}px; min-width: ${rect.width}px; max-height: ${maxHeight}px;`;
+        portalStyle = `position: ${portalPosition}; bottom: ${(portalBounds?.bottom ?? viewportHeight) - rect.top + 4}px; left: ${left - (portalBounds?.left ?? 0)}px; min-width: ${rect.width}px; max-height: ${maxHeight}px;`;
       } else {
-        portalStyle = `position: fixed; top: ${rect.bottom + 4}px; left: ${left}px; min-width: ${rect.width}px; max-height: ${maxHeight}px;`;
+        portalStyle = `position: ${portalPosition}; top: ${rect.bottom + 4 - (portalBounds?.top ?? 0)}px; left: ${left - (portalBounds?.left ?? 0)}px; min-width: ${rect.width}px; max-height: ${maxHeight}px;`;
       }
       return;
     }
@@ -793,7 +803,7 @@
 
 <!-- Portal content (renders outside overflow:hidden containers) -->
 {#if open && portal && !staticPosition}
-  <Portal zIndex={100}>
+  <Portal target={portalTarget ?? 'body'} zIndex={100}>
     <!-- svelte-ignore a11y_no_static_element_interactions (keyboard boundary for nested popup controls) -->
     <div
       bind:this={portalContentRef}

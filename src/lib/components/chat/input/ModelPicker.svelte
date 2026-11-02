@@ -35,6 +35,7 @@
   } from './ModelPickerProviderNotice.svelte';
   import ModelProviderErrorItem from './ModelProviderErrorItem.svelte';
   import { ContentDialog } from '$lib/components/patterns/confirm';
+  import { useDialogPortalTarget } from '$lib/components/ui/dialog';
   import { createAgentModelMutator } from './agent-model-mutator';
   import {
     selectAgentModelMutationPending,
@@ -400,6 +401,7 @@
     reasoningDisabled = false,
   }: Props = $props();
 
+  const dialogPortalTarget = useDialogPortalTarget();
   const workspaceIdStore = writable(untrack(() => workspaceId) ?? '');
   const defaultProviderId$ = selectContextDefaultProvider(workspaceIdStore);
   const directActiveProviderId$ = selectActiveProviderId();
@@ -2532,6 +2534,7 @@
     fillContentHeight
     animate={false}
     {portal}
+    portalTarget={modalAware ? dialogPortalTarget() : undefined}
     {collisionBoundary}
     {groupHeader}
     footer={showDropdownFooter ? dropdownFooter : undefined}

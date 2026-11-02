@@ -55,7 +55,7 @@ export function setupWorkspaceFormPreview(scenario: WorkspaceFormScenario) {
   );
   restores.push(
     setupModelPickerPreviewHandler('codex', [
-      { value: 'gpt-5.4', label: 'GPT-5.4' },
+      { value: 'gpt-5.4', label: 'GPT-5.4', effortLevels: ['low', 'medium', 'high'] },
       { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex' },
     ]),
   );
