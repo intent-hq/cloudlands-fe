@@ -1349,10 +1349,12 @@ function applySessionUpsert(
     for (const key of [
       'nodeId',
       'leaseId',
+      'nodeName',
       'placement',
       'effectiveIsolation',
       'nodeState',
       'nodePath',
+      'placementError',
     ] as const) {
       if (
         !Object.prototype.hasOwnProperty.call(session, key) &&

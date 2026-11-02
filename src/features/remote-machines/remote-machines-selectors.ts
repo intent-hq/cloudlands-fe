@@ -49,3 +49,13 @@ export const selectConnectionLabel = store.createSelector((state, connectionId: 
 export const selectCurrentBackendLabel = store.createSelector((state) =>
   selectConnectionLabel.select(state, state.connections.windowBackendId),
 );
+
+/**
+ * The current backend's `remoteMachines.list` row for `machineId`, or null.
+ * Not gated on the Labs flag: rows are only loaded while it is on, and agent
+ * location badges fall back to the agent's own fields without one.
+ */
+export const selectRemoteMachine = store.createSelector(
+  (state, machineId?: string): RemoteMachine | null =>
+    (machineId ? state.remoteMachines.machines[machineId] : undefined) ?? null,
+);

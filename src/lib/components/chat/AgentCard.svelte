@@ -92,6 +92,7 @@
   import { pinMenuItems } from './agent-pin-menu';
   import { isReplaceAgentEligible } from '$shared/utils/replace-agent-eligibility';
   import TaskProgressControl from './TaskProgressControl.svelte';
+  import AgentLocationBadge from '$features/remote-machines/AgentLocationBadge.svelte';
   import type { TaskProgressItem } from './workspace-task-fallback';
 
   interface Props {
@@ -875,6 +876,7 @@
                   : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
               ></span>
             </div>
+            <AgentLocationBadge {agentId} hidden={inline && !panelRow} />
             {#if isNotificationsMuted && (!inline || panelRow)}
               <span
                 class="inline-flex shrink-0 items-center text-subtle"

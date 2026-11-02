@@ -55,6 +55,9 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAllWorkspaceAgents: () => constantReadable([]),
 }));
+vi.mock('$features/remote-machines/remote-machines-selectors', () => ({
+  selectRemoteMachine: () => constantReadable(null),
+}));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: () => constantReadable(null),
   selectAgentProvider: () => constantReadable(undefined),

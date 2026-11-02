@@ -356,7 +356,16 @@ const availableEnabledProviderIds$ = derived(
   ([enabled, override]) => override ?? enabled,
 );
 const mockAgentSession$ = writable<
-  { id: string; workspaceId: string; provider?: string; model?: string | null } | undefined
+  | {
+      id: string;
+      workspaceId: string;
+      provider?: string;
+      model?: string | null;
+      nodeId?: string;
+      nodeName?: string;
+      placement?: { target: 'local' | 'remote'; checkout: 'isolated' };
+    }
+  | undefined
 >(undefined);
 // Guest-local Antigravity sign-in state (`selectIsProviderModelAccessAllowed`).
 const antigravityModelsAllowed$ = writable(true);
@@ -695,6 +704,60 @@ describe('ModelPicker guest / collaborator lock', () => {
     expect(screen.queryByRole('status')).toBeNull();
     expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
     expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+  });
+
+  it('remote agent: locks the model, names the machine and explains why, with no warning or mutation', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    // The backend's own providers say nothing about the machine.
+    availableProviderOverride$.set([]);
+    mockAgentSession$.set({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: 'auggie',
+      nodeId: 'node-mac',
+      nodeName: 'Mac mini',
+      placement: { target: 'remote', checkout: 'isolated' },
+    });
+
+    renderAgentPicker();
+
+    const button = screen.getByRole('button');
+    // Focusable at full contrast so the explanation can be read (not `disabled`).
+    expect(button.hasAttribute('disabled')).toBe(false);
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(button.getAttribute('title')).toBe(
+      "This agent's model can't be changed while it runs on Mac mini. Create a new agent to use another model.",
+    );
+    await waitFor(() => {
+      expect(button.textContent).toContain('Sonnet 4.6');
+    });
+    expect(button.querySelector('[data-remote-model-machine]')?.textContent).toContain('Mac mini');
+    expect(button.getAttribute('aria-label')).toContain('on Mac mini');
+
+    await fireEvent.click(button);
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(screen.queryByRole('option')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(button.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+    expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+  });
+
+  it('local agent with placement target local keeps the unlocked picker', async () => {
+    mockAgentSession$.set({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: 'auggie',
+      placement: { target: 'local', checkout: 'isolated' },
+    });
+
+    renderAgentPicker();
+
+    const button = screen.getByRole('button');
+    expect(button.hasAttribute('disabled')).toBe(false);
+    expect(button.getAttribute('aria-disabled')).toBeNull();
+    expect(button.querySelector('[data-remote-model-machine]')).toBeNull();
   });
 
   it('guest window: an Antigravity agent reads the host catalog even without local Antigravity sign-in', async () => {
