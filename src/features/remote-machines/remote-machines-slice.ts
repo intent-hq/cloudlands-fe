@@ -19,6 +19,12 @@ export const initialState: RemoteMachinesState = {
 };
 
 export const remoteMachinesRefreshRequested = createAction('remoteMachines/refreshRequested');
+/** Ask one machine for a fresh capabilities report (`remoteMachines.refresh`). */
+export const remoteMachineRefreshRequested = createAction<[machineId: string]>(
+  'remoteMachines/machineRefreshRequested',
+);
+/** Pending key of a machine's report refresh (machine ids alone key removals). */
+export const machineRefreshKey = (machineId: string) => `refresh:${machineId}`;
 export const remoteMachinesLoaded = createAction<
   [
     snapshot: {

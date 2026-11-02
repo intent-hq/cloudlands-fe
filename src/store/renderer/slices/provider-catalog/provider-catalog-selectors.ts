@@ -20,7 +20,7 @@ import { isProviderAuthenticationErrorForEntry } from '$shared/provider-catalog'
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import { store } from '../../store';
 import type { ProviderCatalogEntry } from './provider-catalog-types';
-import type { ProviderProfileSummary } from '$shared/provider-catalog';
+import type { ProviderProfileSummary, RemoteIncompatibility } from '$shared/provider-catalog';
 import {
   isProviderProfileRef,
   providerRefBaseId,
@@ -73,6 +73,18 @@ export const selectProviderCatalogDefaultNames = store.createSelector(
       : state.providerCatalog?.defaultNames;
     return names && Object.keys(names).length > 0 ? names : NO_DEFAULT_NAMES;
   },
+);
+
+/**
+ * Default configurations that can't run on another machine (§5.54 catalog
+ * `defaultRemoteIncompatibility`) by base provider id. Undefined when the
+ * catalog omits it: every Default is compatible, or the daemon predates it.
+ */
+export const selectProviderCatalogDefaultRemoteIncompatibility = store.createSelector(
+  (state, workspaceId?: string): Record<string, RemoteIncompatibility> | undefined =>
+    workspaceId
+      ? state.providerCatalog?.byWorkspaceId?.[workspaceId]?.catalog.defaultRemoteIncompatibility
+      : state.providerCatalog?.defaultRemoteIncompatibility,
 );
 
 /** All provider ids in registry order. */

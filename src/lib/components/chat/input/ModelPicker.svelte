@@ -115,7 +115,11 @@
   import { selectHidesAgentCreationActions } from '$store/renderer/slices/workspace/workspace-selectors';
   import { getAgentProvider } from '$shared/types/agent-session';
   import { formatProviderLoadError, type ProviderLoadError } from './model-picker-provider-errors';
-  import { AUGGIE_LEGACY_GROUP_KEY, buildGroupedModelOptions } from './model-picker-groups';
+  import {
+    AUGGIE_LEGACY_GROUP_KEY,
+    buildGroupedModelOptions,
+    buildMachineModelGroups,
+  } from './model-picker-groups';
   import {
     filterDefaultPseudoOptions,
     findModelFallbackOption,
@@ -144,6 +148,27 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { faDesktop } from '$lib/icons/phosphor-icons';
   import { agentMachineLocation } from '$features/remote-machines/agent-location';
+  import {
+    selectCurrentBackendLabel,
+    selectDefaultHasOverrides,
+    selectRemoteMachine,
+    selectRemoteMachineOperations,
+    selectRemoteMachinesVisible,
+    selectRemoteModelSwitchSupport,
+  } from '$features/remote-machines/remote-machines-selectors';
+  import {
+    machineRefreshKey,
+    remoteMachineRefreshRequested,
+  } from '$features/remote-machines/remote-machines-slice';
+  import {
+    isRemoteRefSignedOut,
+    machineReportFreshness,
+    remoteIncompatibilityFor,
+    remoteIncompatibilityMessage,
+  } from '$features/remote-machines/remote-model-picker';
+  import { formatDistanceToNow } from '$lib/utils/date';
+  import { selectProviderCatalogDefaultRemoteIncompatibility } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { providerProfilesRequested } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import Fa from 'svelte-fa';
 
   const logger = createLogger('ModelPicker');
@@ -194,6 +219,16 @@
   }
   function providerTabLabel(providerId: string): string {
     const label = providerDisplayName(providerId);
+    if (remoteScoped && remoteLocation)
+      return remoteSignedOutCue(providerId)
+        ? m.chat_modelPicker_remoteProviderTabSignedOut_label({
+            provider: label,
+            machine: remoteLocation.name,
+          })
+        : m.chat_modelPicker_remoteProviderTab_label({
+            provider: label,
+            machine: remoteLocation.name,
+          });
     return isProfileSignedOut(providerId)
       ? m.chat_modelPicker_profileSignedOut_ariaLabel({ provider: label })
       : label;
@@ -490,16 +525,87 @@
     workspaceIdStore.set(workspaceId ?? '');
   });
   const isGuestLocked = $derived(!!agentId && !!workspaceId && $isWorkspaceCollaborator$);
-  // A remote agent keeps the provider and model it was launched with: intentd
-  // refuses `agent.setModel` (`remote-model-change-unsupported`), and the
-  // backend's models say nothing about the machine. Lock the picker and name
-  // the machine instead of offering choices that fail.
+  // A remote agent runs on another machine, so the backend's own models say
+  // nothing about it. Backends that support it switch the model on that
+  // machine (PROTOCOL nodes.md "Switching a remote agent's model"): the picker
+  // then lists only the machine's reported providers and models. Older
+  // backends refuse every change (`remote-model-change-unsupported`), so the
+  // picker stays locked and names the machine, as it does with the Labs flag
+  // off (no machine report to list) and for a revoked machine.
+  const remoteNodeId$ = writable('');
+  const remoteMachine$ = selectRemoteMachine(remoteNodeId$);
+  const remoteMachinesVisible$ = selectRemoteMachinesVisible();
+  const remoteSwitchSupport$ = selectRemoteModelSwitchSupport(workspaceIdStore);
+  const defaultRemoteIncompatibility$ =
+    selectProviderCatalogDefaultRemoteIncompatibility(workspaceIdStore);
+  const backendLabel$ = selectCurrentBackendLabel();
+  const remoteMachinesPending$ = selectRemoteMachineOperations();
+  const defaultHasOverrides$ = selectDefaultHasOverrides();
   const remoteLocation = $derived(
     agentId && !isGuestLocked && $agentSession$?.id === agentId
-      ? agentMachineLocation($agentSession$)
+      ? agentMachineLocation($agentSession$, $remoteMachine$)
       : null,
   );
-  const effectiveLocked = $derived(isLocked || isGuestLocked || remoteLocation !== null);
+  $effect(() => {
+    remoteNodeId$.set(remoteLocation?.nodeId ?? '');
+  });
+  const remoteScoped = $derived(
+    remoteLocation !== null &&
+      remoteLocation.state !== 'revoked' &&
+      $remoteMachinesVisible$ &&
+      $remoteSwitchSupport$ === 'supported',
+  );
+  // The catalog alone can't tell without profile rows; the profile list's
+  // Default rows can. Until it is read, the picker stays locked. The list is
+  // admin-only, so other members keep the locked picker in that case.
+  $effect(() => {
+    if (
+      remoteLocation &&
+      $remoteMachinesVisible$ &&
+      $canAdministerHost$ &&
+      $remoteSwitchSupport$ === 'unknown'
+    )
+      untrack(() => appStore.dispatch(providerProfilesRequested()));
+  });
+  const remoteLocked = $derived(remoteLocation !== null && !remoteScoped);
+  const remoteReportNow = $derived.by(() => {
+    void $remoteMachine$;
+    void dropdownOpen;
+    return Date.now();
+  });
+  const remoteFreshness = $derived(
+    remoteScoped ? machineReportFreshness($remoteMachine$, remoteReportNow) : 'fresh',
+  );
+  const remoteReportedAgo = $derived(
+    $remoteMachine$?.observedAt ? formatDistanceToNow($remoteMachine$.observedAt) : '',
+  );
+  const remoteRefreshing = $derived(
+    !!remoteLocation &&
+      $remoteMachinesPending$[machineRefreshKey(remoteLocation.nodeId)] === 'refreshing',
+  );
+  function refreshRemoteMachine() {
+    if (remoteLocation) appStore.dispatch(remoteMachineRefreshRequested(remoteLocation.nodeId));
+  }
+  /**
+   * The machine's own login for `providerRef` is signed out and matters: not
+   * for a Default known to save its own credentials (an API key).
+   */
+  function remoteSignedOutCue(providerRef: string): boolean {
+    return (
+      isRemoteRefSignedOut($remoteMachine$, providerRef) &&
+      $defaultHasOverrides$[providerRefBaseId(providerRef)] !== true
+    );
+  }
+  /** Why the browsed configuration can't run on the agent's machine, or null. */
+  function remoteIncompatibleReason(providerRef: string): string | null {
+    const incompatibility = remoteIncompatibilityFor(
+      providerRef,
+      $providerProfiles$,
+      $defaultRemoteIncompatibility$,
+    );
+    return incompatibility ? remoteIncompatibilityMessage(incompatibility, $backendLabel$) : null;
+  }
+  const effectiveLocked = $derived(isLocked || isGuestLocked || remoteLocked);
 
   // §5.54 profile state the daemon reports on this agent's AgentLite row.
   const boundSession = $derived(
@@ -530,6 +636,14 @@
       const entry = $providerCatalogs$[pid];
       if (entry) models[pid] = toDropdownOptions(entry.models);
     }
+    return models;
+  });
+  // Labels for a remote agent's machine models: any cached backend catalog.
+  const remoteCatalogModels = $derived.by(() => {
+    if (!remoteScoped) return {};
+    const models: Record<string, DropdownOption[]> = {};
+    for (const [pid, entry] of Object.entries($providerCatalogs$))
+      if (entry) models[pid] = toDropdownOptions(entry.models);
     return models;
   });
   const allProviderErrors = $derived.by(() => {
@@ -1285,9 +1399,11 @@
   // authoritative and can transiently empty the available-provider set until
   // the reconnect listener re-runs the check and heals the map. Daemon-down
   // and degraded failures are surfaced by the daemon-health UI instead.
+  // A remote agent's providers are the machine's, not the backend's.
   const hasNoAvailableProvider = $derived(
     !providerId &&
       !isGuestLocked &&
+      !remoteScoped &&
       $hasCheckedOnce$ &&
       $daemonHealth$ === 'healthy' &&
       $availableEnabledProviderIds$.length === 0,
@@ -1357,6 +1473,29 @@
     void $providerCatalogEntries$;
     // Group labels read the renamed Default (catalog `defaultNames`).
     void $providerDefaultNames$;
+    if (remoteScoped) {
+      // Only the machine's providers and models; the backend's own
+      // availability does not matter there, its settings still do.
+      const machine = $remoteMachine$;
+      if (!machine || remoteFreshness === 'missing') return [];
+      return buildMachineModelGroups({
+        machine,
+        providerRefs: expandProviderIdsWithProfiles(
+          $providerCatalogEntries$.map((entry) => entry.id),
+          $providerProfiles$,
+        ).filter(
+          (ref) =>
+            (allowProviderSwitch || ref === normalizeProviderId(effectiveProviderId)) &&
+            !isProviderDisabledInSettings($enabledProviders$, ref),
+        ),
+        groupLabel: providerDisplayName,
+        catalogModels: { ...remoteCatalogModels, ...allProviderModels },
+        catalogProfiles: $providerProfiles$,
+        defaultRemoteIncompatibility: $defaultRemoteIncompatibility$,
+        defaultHasOverrides: $defaultHasOverrides$,
+        useDefaultOption: showDefaultOption ? useDefaultOption : undefined,
+      });
+    }
     return buildGroupedModelOptions({
       workspaceId,
       showDefaultOption,
@@ -1476,7 +1615,8 @@
 
   const providerTabIds = $derived.by(() => [
     ...new Set([
-      ...selectableProviderIds.map((id) => normalizeProviderId(id)),
+      // A remote agent's rail shows only the machine's providers.
+      ...(remoteScoped ? [] : selectableProviderIds.map((id) => normalizeProviderId(id))),
       ...groupedModelOptions
         .filter((group) => group.key !== 'default')
         .map((group) => group.parentKey ?? group.key),
@@ -1554,6 +1694,7 @@
     // existing terminal error/Retry surface rather than disabled error rows.
     // Pending retries and partial/cached success keep their groups/default row.
     if (
+      !remoteScoped &&
       !hasLoadedModelOptions &&
       blockingLoadError &&
       allProvidersLoaded &&
@@ -1825,12 +1966,15 @@
       reasoningLevels.length === 0,
   );
   const refreshProviderId = $derived(activeBrowseProviderId || preferredBrowseProviderId);
+  // A remote agent's list comes from its machine: the backend's own catalog
+  // loads and failures say nothing about it.
   const showDropdownFooter = $derived(
     showReasoningFooter ||
-      codexFallbackWarning !== null ||
-      (!allProvidersLoaded && Object.keys(allProviderModels).length > 0) ||
-      activeProviderIssue !== null ||
-      refreshingProviders.has(refreshProviderId),
+      (!remoteScoped &&
+        (codexFallbackWarning !== null ||
+          (!allProvidersLoaded && Object.keys(allProviderModels).length > 0) ||
+          activeProviderIssue !== null ||
+          refreshingProviders.has(refreshProviderId))),
   );
 
   const railProviderIds = $derived(providerTabIds);
@@ -2407,6 +2551,40 @@
         onToggle={toggleGroup}
         onRefresh={handleRefreshProvider}
       />
+    {:else if remoteScoped && remoteLocation && group.key !== 'default'}
+      {@const incompatibleReason = remoteIncompatibleReason(group.key)}
+      {#if baseHasProfiles(group.key)}
+        <div
+          class="truncate px-2 pt-1.5 pb-0.5 text-xs text-subtle"
+          data-testid="model-picker-profile-group"
+        >
+          {group.label}
+        </div>
+      {/if}
+      {#if incompatibleReason}
+        <div
+          class="flex items-start gap-2 px-2 pt-1 pb-1 text-xs text-subtle"
+          role="status"
+          data-testid="model-picker-remote-incompatible"
+        >
+          <Fa icon={faLock} class="mt-0.5 size-3! shrink-0" />
+          <span class="min-w-0 leading-tight">{incompatibleReason}</span>
+        </div>
+      {:else if remoteSignedOutCue(group.key)}
+        <div
+          class="flex items-start gap-2 px-2 pt-1 pb-1 text-xs"
+          role="status"
+          data-testid="model-picker-remote-signed-out"
+        >
+          <ModelProviderErrorItem
+            providerId={group.key}
+            providerLabel={group.label}
+            error={m.chat_modelPicker_remoteSignedOut_label({ machine: remoteLocation.name })}
+            hint={m.chat_modelPicker_remoteSignedOut_hint({ machine: remoteLocation.name })}
+            compact={true}
+          />
+        </div>
+      {/if}
     {:else if group.key !== 'default' && baseHasProfiles(group.parentKey ?? group.key)}
       <!-- Tabs show icons only; name the configuration being browsed (§5.54). -->
       <div
@@ -2435,63 +2613,65 @@
   {/snippet}
 
   {#snippet dropdownFooter()}
-    {#if codexFallbackWarning}
-      <div class="px-3 py-2">
-        <ModelPickerProviderNotice
-          warning={codexFallbackWarning.message}
-          docsUrl={codexFallbackWarning.docsUrl}
-          show={true}
-          variant="warning"
-          class="max-w-none"
-        />
-      </div>
-    {/if}
-    {#if !allProvidersLoaded && Object.keys(allProviderModels).length > 0}
-      <div class="px-3 py-2 flex items-center gap-2 text-xs text-muted-foreground">
-        <IntentMarkLoader size={12} />
-        <span>{m.chat_modelPicker_loadingMore_label()}</span>
-      </div>
-    {/if}
-    {#if footerProviderWarnings.length > 0}
-      <div class="px-3 py-2 space-y-1.5 text-xs">
-        {#each footerProviderWarnings as warning (warning.providerId)}
-          <div class="flex items-start gap-2 text-muted-foreground" role="status">
-            <ModelProviderErrorItem
-              providerId={warning.providerId}
-              providerLabel={warning.providerName}
-              error={warning.message}
-              hint={warning.hint}
-              compact={true}
-            />
-          </div>
-        {/each}
-      </div>
-    {/if}
-    {#if activeProviderIssue || refreshingProviders.has(refreshProviderId)}
-      <div class="flex flex-wrap items-center gap-2 px-3 py-2">
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          disabled={refreshingProviders.has(refreshProviderId)}
-          aria-label={m.chat_modelPicker_retry_label()}
-          aria-busy={refreshingProviders.has(refreshProviderId)}
-          onclick={() => handleRefreshProvider(refreshProviderId)}
-        >
-          {#if refreshingProviders.has(refreshProviderId)}<IntentMarkLoader size={12} />{/if}
-          {m.chat_modelPicker_retry_label()}
-        </Button>
-        {#if activeProviderIssue}
+    {#if !remoteScoped}
+      {#if codexFallbackWarning}
+        <div class="px-3 py-2">
+          <ModelPickerProviderNotice
+            warning={codexFallbackWarning.message}
+            docsUrl={codexFallbackWarning.docsUrl}
+            show={true}
+            variant="warning"
+            class="max-w-none"
+          />
+        </div>
+      {/if}
+      {#if !allProvidersLoaded && Object.keys(allProviderModels).length > 0}
+        <div class="px-3 py-2 flex items-center gap-2 text-xs text-muted-foreground">
+          <IntentMarkLoader size={12} />
+          <span>{m.chat_modelPicker_loadingMore_label()}</span>
+        </div>
+      {/if}
+      {#if footerProviderWarnings.length > 0}
+        <div class="px-3 py-2 space-y-1.5 text-xs">
+          {#each footerProviderWarnings as warning (warning.providerId)}
+            <div class="flex items-start gap-2 text-muted-foreground" role="status">
+              <ModelProviderErrorItem
+                providerId={warning.providerId}
+                providerLabel={warning.providerName}
+                error={warning.message}
+                hint={warning.hint}
+                compact={true}
+              />
+            </div>
+          {/each}
+        </div>
+      {/if}
+      {#if activeProviderIssue || refreshingProviders.has(refreshProviderId)}
+        <div class="flex flex-wrap items-center gap-2 px-3 py-2">
           <Button
             type="button"
-            variant="link"
+            variant="secondary"
             size="sm"
-            onclick={() => activeProviderIssue && showProviderDetails(activeProviderIssue)}
+            disabled={refreshingProviders.has(refreshProviderId)}
+            aria-label={m.chat_modelPicker_retry_label()}
+            aria-busy={refreshingProviders.has(refreshProviderId)}
+            onclick={() => handleRefreshProvider(refreshProviderId)}
           >
-            {m.chat_modelPicker_errorDetails_label()}
+            {#if refreshingProviders.has(refreshProviderId)}<IntentMarkLoader size={12} />{/if}
+            {m.chat_modelPicker_retry_label()}
           </Button>
-        {/if}
-      </div>
+          {#if activeProviderIssue}
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              onclick={() => activeProviderIssue && showProviderDetails(activeProviderIssue)}
+            >
+              {m.chat_modelPicker_errorDetails_label()}
+            </Button>
+          {/if}
+        </div>
+      {/if}
     {/if}
     {#if showReasoningFooter}
       <div class="w-full min-w-0 px-3 py-2" data-testid="model-reasoning-section">
@@ -2566,7 +2746,7 @@
         {#if isCompact}
           <Fa icon={faSettings} class="h-4 w-4" />
         {:else if isTriggerLabelResolved}
-          {#if showModelWarning}
+          {#if showModelWarning || (remoteScoped && remoteFreshness !== 'fresh')}
             <Fa icon={faTriangleExclamation} class="h-3 w-3 text-warning-ink shrink-0" />
           {:else if usingEarlierProfileSettings}
             <Fa icon={faCircleInfo} class="h-3 w-3 text-muted-foreground shrink-0" />
@@ -2577,7 +2757,16 @@
           <span class="truncate" use:truncatedTitle={triggerTitle ? undefined : triggerLabel}
             >{triggerLabel}</span
           >
-          {#if triggerProfileName}
+          {#if remoteLocation}
+            <span
+              class="inline-flex min-w-[0.875rem]! max-w-28 shrink-[4] items-center gap-1 overflow-hidden text-subtle"
+              aria-hidden="true"
+              data-remote-model-machine
+            >
+              <Fa icon={faDesktop} class="size-3!" />
+              <span class="truncate">{remoteLocation.name}</span>
+            </span>
+          {:else if triggerProfileName}
             <span
               class="min-w-0 max-w-24 shrink truncate text-subtle"
               aria-hidden="true"
@@ -2611,7 +2800,9 @@
           class="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto"
           role="tablist"
           aria-orientation="vertical"
-          aria-label={m.chat_modelPicker_modelProviders_label()}
+          aria-label={remoteScoped && remoteLocation
+            ? m.chat_modelPicker_remoteMachine_providers_label({ machine: remoteLocation.name })
+            : m.chat_modelPicker_modelProviders_label()}
           data-testid="model-provider-tabs"
         >
           {#each railProviderIds as providerTabId (providerTabId)}
@@ -2632,7 +2823,7 @@
               onkeydown={(event) => handleProviderTabKeydown(event, providerTabId)}
             >
               <ProviderIcon providerId={providerTabId} class="size-4" size={16} />
-              {#if isProfileSignedOut(providerTabId)}
+              {#if isProfileSignedOut(providerTabId) || (remoteScoped && remoteSignedOutCue(providerTabId))}
                 <span
                   class="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-warning"
                   aria-hidden="true"
@@ -2674,7 +2865,7 @@
           <Fa icon={faXmark} class="size-3" />
         </Button>
       {/if}
-      {#if refreshProviderId}
+      {#if refreshProviderId && !remoteScoped}
         <Button
           variant="ghost"
           size="icon-xs"
@@ -2704,6 +2895,74 @@
             />
           {/if}
         </Button>
+      {/if}
+      {#if remoteScoped && remoteLocation}
+        <!-- The machine whose models these are, and how recent its report is. -->
+        <div
+          class="flex items-center gap-2 border-y border-border px-3 py-2"
+          data-testid="model-picker-remote-header"
+        >
+          <Fa icon={faDesktop} class="size-3.5! shrink-0 text-muted-foreground" />
+          <div class="min-w-0 flex-1">
+            <div class="truncate text-xs font-medium text-foreground">
+              {m.chat_modelPicker_remoteMachine_title({ machine: remoteLocation.name })}
+            </div>
+            <div class="truncate text-xs text-subtle">
+              {[
+                remoteLocation.platform,
+                remoteFreshness === 'missing' || !remoteReportedAgo
+                  ? m.chat_modelPicker_remoteMachine_noReport()
+                  : m.chat_modelPicker_remoteMachine_reported({ time: remoteReportedAgo }),
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            iconOnly={true}
+            title={m.chat_modelPicker_remoteMachine_refresh_label({ machine: remoteLocation.name })}
+            aria-label={m.chat_modelPicker_remoteMachine_refresh_label({
+              machine: remoteLocation.name,
+            })}
+            class={cn('text-subtle hover:bg-muted/40', remoteRefreshing && 'opacity-50!')}
+            data-testid="model-picker-remote-refresh"
+            aria-busy={remoteRefreshing}
+            disabled={remoteRefreshing}
+            onclick={refreshRemoteMachine}
+          >
+            {#if remoteRefreshing}
+              <IntentMarkLoader size={12} />
+            {:else}
+              <Fa icon={faArrowsRotate} size={10} class="text-subtle" />
+            {/if}
+          </Button>
+        </div>
+        {#if remoteFreshness === 'stale'}
+          <div
+            class="border-b border-border bg-warning/5 px-3 py-2.5"
+            data-testid="model-picker-remote-stale"
+          >
+            <div class="flex items-start gap-2" role="status">
+              <Fa
+                icon={faTriangleExclamation}
+                class="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning-ink"
+              />
+              <div class="min-w-0">
+                <div class="text-xs leading-tight font-medium text-foreground">
+                  {m.chat_modelPicker_remoteStale_title()}
+                </div>
+                <div class="mt-0.5 text-xs leading-tight text-subtle">
+                  {m.chat_modelPicker_remoteStale_description({
+                    machine: remoteLocation.name,
+                    time: remoteReportedAgo,
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        {/if}
       {/if}
       {#if showModelWarning && warningMessage}
         <div class="px-3 py-2.5 border-b border-border bg-warning/5">
@@ -2778,15 +3037,42 @@
     {/snippet}
 
     {#snippet empty()}
-      <ModelPickerEmptyState
-        {isLoadingModels}
-        blockingLoadError={activeProviderIssue ?? blockingLoadError}
-        retryInFooter={activeProviderIssue !== null || refreshingProviders.has(refreshProviderId)}
-        {hasNoAvailableProvider}
-        hostManaged={!$canAdministerHost$}
-        onOpenProviderSettings={openProviderSettings}
-        onRetry={handleRetry}
-      />
+      {#if remoteScoped && remoteLocation && remoteFreshness === 'missing'}
+        <div
+          class="flex flex-1 flex-col items-center justify-center gap-2 px-6 py-6 text-center"
+          role="status"
+          data-testid="model-picker-remote-missing"
+        >
+          <Fa icon={faCircleInfo} class="size-4! text-muted-foreground" />
+          <div class="text-sm font-medium text-foreground">
+            {m.chat_modelPicker_remoteMissing_title({ machine: remoteLocation.name })}
+          </div>
+          <div class="text-xs text-subtle">
+            {m.chat_modelPicker_remoteMissing_description({ machine: remoteLocation.name })}
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            class="mt-1"
+            disabled={remoteRefreshing}
+            aria-busy={remoteRefreshing}
+            onclick={refreshRemoteMachine}
+          >
+            {#if remoteRefreshing}<IntentMarkLoader size={12} />{/if}
+            {m.remoteAgent_notice_checkAgain_label()}
+          </Button>
+        </div>
+      {:else}
+        <ModelPickerEmptyState
+          {isLoadingModels}
+          blockingLoadError={activeProviderIssue ?? blockingLoadError}
+          retryInFooter={activeProviderIssue !== null || refreshingProviders.has(refreshProviderId)}
+          {hasNoAvailableProvider}
+          hostManaged={!$canAdministerHost$}
+          onOpenProviderSettings={openProviderSettings}
+          onRetry={handleRetry}
+        />
+      {/if}
     {/snippet}
   </Dropdown>
 {/if}

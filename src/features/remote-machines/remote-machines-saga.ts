@@ -34,6 +34,8 @@ import {
   remoteMachineOperationStarted,
   remoteMachineRemoved,
   remoteMachinesLoaded,
+  machineRefreshKey,
+  remoteMachineRefreshRequested,
   remoteMachinesRefreshRequested,
   remoteMachineUnexposeRequested,
 } from './remote-machines-slice';
@@ -315,6 +317,34 @@ function* revokeExecutor(action: ReturnType<typeof executorRevokeRequested>): Sa
   }
 }
 
+/**
+ * Ask one machine for a fresh report. A failure updates the machine's state
+ * on the backend, so the list is read again rather than kept as a failure.
+ */
+function* refreshMachine(
+  action: ReturnType<typeof remoteMachineRefreshRequested>,
+): SagaGenerator<void> {
+  if (!labsEnabled()) return;
+  const [machineId] = action.payload;
+  const key = machineRefreshKey(machineId);
+  if (store.state.remoteMachines.pending[key]) return;
+  const started = generation();
+  yield* put(remoteMachineOperationStarted(key, 'refreshing'));
+  let machine: RemoteMachine | null = null;
+  try {
+    const result = yield* call(backendRequest<{ machine?: unknown }>, 'remoteMachines.refresh', {
+      machineId,
+    });
+    machine = parseRemoteMachine(result?.machine);
+  } catch {
+    machine = null;
+  }
+  if (started !== generation()) return;
+  if (machine) yield* put(remoteMachineChanged(machine));
+  else yield* call(refresh);
+  yield* put(remoteMachineOperationSettled(key, null));
+}
+
 export function* remoteMachinesSaga(): SagaGenerator<void> {
   yield* takeLatest(
     [remoteMachinesRefreshRequested, backendReconnected, setLabsRemoteAgentsEnabled],
@@ -323,4 +353,5 @@ export function* remoteMachinesSaga(): SagaGenerator<void> {
   yield* takeEvery(remoteMachineExposeRequested, expose);
   yield* takeEvery(remoteMachineUnexposeRequested, unexpose);
   yield* takeEvery(executorRevokeRequested, revokeExecutor);
+  yield* takeEvery(remoteMachineRefreshRequested, refreshMachine);
 }

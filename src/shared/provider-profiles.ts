@@ -34,6 +34,19 @@ const ProfileReadActivationSchema = z
   .object({ runningProcesses: z.number().int().nonnegative() })
   .passthrough();
 
+/**
+ * §5.54 "Remote compatibility": whether the configuration can run a remote
+ * agent. Absent on daemons that predate it; `remoteIncompatibility` is
+ * present exactly when `remoteCompatible` is false.
+ */
+const RemoteCompatibilityFields = {
+  remoteCompatible: z.boolean().optional(),
+  remoteIncompatibility: z
+    .object({ reason: z.string(), keys: z.array(z.string()) })
+    .passthrough()
+    .optional(),
+};
+
 const ProviderProfileSchema = z
   .object({
     id: z.string().min(1),
@@ -47,6 +60,7 @@ const ProviderProfileSchema = z
     activation: ProfileReadActivationSchema.optional(),
     /** Quota failover may switch to this profile. Absent reads as `false`. */
     backup: z.boolean().optional(),
+    ...RemoteCompatibilityFields,
   })
   .passthrough();
 
@@ -67,6 +81,7 @@ const DefaultConfigSchema = z
     env: z.array(EnvEntryReadSchema),
     settingsFingerprint: z.string().optional(),
     activation: ProfileReadActivationSchema.optional(),
+    ...RemoteCompatibilityFields,
   })
   .passthrough();
 

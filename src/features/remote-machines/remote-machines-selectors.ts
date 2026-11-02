@@ -5,6 +5,11 @@ import type { RemoteMachine } from '$shared/types/remote-machines';
 import { formatConnectionLabel } from '$lib/utils/connection-label';
 import { store } from '$store/renderer/store';
 import { selectLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+import {
+  selectProviderCatalogDefaultRemoteIncompatibility,
+  selectProviderCatalogProfiles,
+} from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+import { remoteModelSwitchSupport, type RemoteModelSwitchSupport } from './remote-model-picker';
 
 /**
  * Every remote-machine surface shows only while the Labs "Remote agents" flag
@@ -58,4 +63,37 @@ export const selectCurrentBackendLabel = store.createSelector((state) =>
 export const selectRemoteMachine = store.createSelector(
   (state, machineId?: string): RemoteMachine | null =>
     (machineId ? state.remoteMachines.machines[machineId] : undefined) ?? null,
+);
+
+/**
+ * Whether the backend lets a remote agent switch its model (see
+ * `remoteModelSwitchSupport`). Reads the profile list's Default rows when
+ * the catalog alone can't tell.
+ */
+export const selectRemoteModelSwitchSupport = store.createSelector(
+  (state, workspaceId?: string): RemoteModelSwitchSupport => {
+    const profiles = state.providerSettings?.profiles;
+    return remoteModelSwitchSupport({
+      catalogProfiles: selectProviderCatalogProfiles.select(state, workspaceId),
+      defaultRemoteIncompatibility: selectProviderCatalogDefaultRemoteIncompatibility.select(
+        state,
+        workspaceId,
+      ),
+      profileDefaults: Object.values(profiles?.defaults ?? {}),
+      profilesLoadStatus: profiles?.loadStatus ?? 'idle',
+    });
+  },
+);
+
+/**
+ * Whether each base provider's Default saves env overrides, from the
+ * admin-only profile list's Default rows; empty until that list is read.
+ */
+export const selectDefaultHasOverrides = store.createSelector((state): Record<string, boolean> =>
+  Object.fromEntries(
+    Object.values(state.providerSettings?.profiles?.defaults ?? {}).map((config) => [
+      config.baseProviderId,
+      config.env.length > 0,
+    ]),
+  ),
 );
