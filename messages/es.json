@@ -2593,6 +2593,8 @@
   "settings_browserAccess_tailscale_label": "Comando de Tailscale",
   "settings_browserAccess_toggle_label": "Permitir el acceso desde el navegador",
   "settings_browserAccess_unavailable_description": "Esta compilación no incluye la versión para navegador de Intent.",
+  "settings_browserAccess_warning_description": "El acceso desde el navegador no comprueba quién se conecta. Cualquiera que pueda llegar a este puerto y tenga la clave de acceso obtiene el control total de esta aplicación y de todos los equipos a los que se conecta, exactamente como si fuera tú. Accede solo a través de una red privada de confianza, como tu propia tailnet. Nunca lo expongas a Internet.",
+  "settings_browserAccess_warning_title": "Sin autenticación ni permisos",
   "settings_section_browserAccess": "Acceso desde el navegador",
   "workspace_plainFolder_confirm_action": "Usar esta carpeta",
   "workspace_plainFolder_confirm_description": "Los agentes editan los archivos de {folder} directamente. No hay control de versiones ni forma de deshacer.",

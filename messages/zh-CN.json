@@ -2593,6 +2593,8 @@
   "settings_browserAccess_tailscale_label": "Tailscale 命令",
   "settings_browserAccess_toggle_label": "允许浏览器访问",
   "settings_browserAccess_unavailable_description": "此版本不包含 Intent 的浏览器版本。",
+  "settings_browserAccess_warning_description": "浏览器访问不会验证连接者的身份。任何能访问此端口并持有访问密钥的人，都能像你本人一样完全控制此应用及其连接的所有机器。请仅通过可信的私有网络（例如你自己的 tailnet）访问，切勿暴露到互联网。",
+  "settings_browserAccess_warning_title": "没有身份验证或权限控制",
   "settings_section_browserAccess": "浏览器访问",
   "workspace_plainFolder_confirm_action": "使用此文件夹",
   "workspace_plainFolder_confirm_description": "智能体会直接编辑 {folder} 中的文件。没有版本控制，也无法撤销。",

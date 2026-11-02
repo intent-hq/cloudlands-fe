@@ -2593,6 +2593,8 @@
   "settings_browserAccess_tailscale_label": "Commande Tailscale",
   "settings_browserAccess_toggle_label": "Autoriser l’accès depuis le navigateur",
   "settings_browserAccess_unavailable_description": "Cette version n’inclut pas la version navigateur d’Intent.",
+  "settings_browserAccess_warning_description": "L’accès depuis le navigateur ne vérifie pas qui se connecte. Toute personne qui peut atteindre ce port et possède la clé d’accès obtient le contrôle total de cette app et de toutes les machines auxquelles elle se connecte, exactement comme si c’était vous. N’y accédez que via un réseau privé de confiance, comme votre propre tailnet. Ne l’exposez jamais sur Internet.",
+  "settings_browserAccess_warning_title": "Aucune authentification ni autorisation",
   "settings_section_browserAccess": "Accès depuis le navigateur",
   "workspace_plainFolder_confirm_action": "Utiliser ce dossier",
   "workspace_plainFolder_confirm_description": "Les agents modifient directement les fichiers de {folder}. Il n'y a ni gestion de versions ni annulation.",
