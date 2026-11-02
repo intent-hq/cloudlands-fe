@@ -179,31 +179,27 @@ test('secondary file buttons retain native and modifier activation inside the Ch
   await expect.poll(() => actions.length).toBe(5);
 });
 
-test('file disclosures keep their native keyboard action inside Changes', async ({
+test('commit file disclosure keeps its native keyboard action inside Changes', async ({
   mount,
   page,
 }, testInfo) => {
   const component = await mount(Preview, {
     hooksConfig: { previewScene: { scene: 'changes-summary', state: 'disclosures' } },
   });
-  const toggles = component.getByRole('button', { name: 'Toggle file list', exact: true });
-  await expect(toggles).toHaveCount(2);
-  for (const toggle of await toggles.all()) {
-    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    await toggle.focus();
-    await page.keyboard.press('Enter');
-    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    await expect(toggle).toBeFocused();
-  }
-  await expect(component.getByText('control.ts', { exact: true })).toHaveCount(2);
-  await testInfo.attach('expanded-commit-and-pr-files', {
+  const toggle = component.getByRole('button', { name: 'Toggle file list', exact: true });
+  await expect(toggle).toHaveCount(1);
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await toggle.focus();
+  await page.keyboard.press('Enter');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(toggle).toBeFocused();
+  await expect(component.getByText('control.ts', { exact: true })).toHaveCount(1);
+  await testInfo.attach('expanded-commit-files', {
     body: await component.screenshot(),
     contentType: 'image/png',
   });
-  for (const toggle of await toggles.all()) {
-    await toggle.focus();
-    await page.keyboard.press('Space');
-    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  }
+  await toggle.focus();
+  await page.keyboard.press('Space');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await expect(component.getByText('control.ts', { exact: true })).toHaveCount(0);
 });

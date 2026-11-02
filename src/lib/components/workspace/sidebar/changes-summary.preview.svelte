@@ -98,19 +98,6 @@
       title: 'Changes summary',
       path: '/preview/workspace',
       repositoryPath: '/preview/repo',
-      pullRequests: disclosures
-        ? [
-            {
-              id: 'preview-pr',
-              number: 42,
-              title: 'Polish the sidebar',
-              status: PullRequestStatus.Open,
-              url: 'https://example.test/pull/42',
-              createdAt: timestamp,
-              updatedAt: timestamp,
-            },
-          ]
-        : [],
       myRole: readOnly ? 'collaborator' : 'owner',
       branch,
       baseRef: 'main',
@@ -145,7 +132,9 @@
                 )
               : []),
           ]
-        : [],
+        : disclosures
+          ? [pr(42, 'intent', 'Polish the sidebar')]
+          : [],
     } as never),
   );
   const paths =
