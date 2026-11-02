@@ -180,37 +180,42 @@
   store.dispatch(setHasLoadedInitialData(workspaceId, scenario !== 'loading'));
   store.dispatch(setLoading(workspaceId, scenario === 'loading'));
   store.dispatch(
-    gitRootsUpdated(workspaceId, showRoots ? [
-      {
-        id: 'summary-root',
-        workspaceId,
-        path: '/preview/workspace/packages/component',
-        branch: 'feature/component',
-        registeredCommitSha: disclosures ? 'older-component' : undefined,
-        source: 'agent',
-        createdAt: timestamp,
-        updatedAt: timestamp,
-        repoOwner: 'intent-hq',
-        repoName: 'cloudlands-fe',
-        pullRequests: prs && prs !== 'single' ? [frontendPR] : [],
-      },
-      ...(prs && prs !== 'single'
+    gitRootsUpdated(
+      workspaceId,
+      showRoots
         ? [
             {
-              id: 'backend-root',
+              id: 'summary-root',
               workspaceId,
-              path: '/preview/workspace/packages/intentd',
-              branch: 'feature/guide',
-              source: 'agent' as const,
-              repoOwner: 'intent-hq',
-              repoName: 'intentd',
-              pullRequests: [backendPR],
+              path: '/preview/workspace/packages/component',
+              branch: 'feature/component',
+              registeredCommitSha: disclosures ? 'older-component' : undefined,
+              source: 'agent',
               createdAt: timestamp,
               updatedAt: timestamp,
+              repoOwner: 'intent-hq',
+              repoName: 'cloudlands-fe',
+              pullRequests: prs && prs !== 'single' ? [frontendPR] : [],
             },
+            ...(prs && prs !== 'single'
+              ? [
+                  {
+                    id: 'backend-root',
+                    workspaceId,
+                    path: '/preview/workspace/packages/intentd',
+                    branch: 'feature/guide',
+                    source: 'agent' as const,
+                    repoOwner: 'intent-hq',
+                    repoName: 'intentd',
+                    pullRequests: [backendPR],
+                    createdAt: timestamp,
+                    updatedAt: timestamp,
+                  },
+                ]
+              : []),
           ]
-        : []),
-    ] : []),
+        : [],
+    ),
   );
   store.dispatch(
     setSecondaryRootGit(workspaceId, 'summary-root', {
