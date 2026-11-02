@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.268.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.268.0...v2.268.1) (2026-11-02)
+
+
+### 🐛 Bug Fixes
+
+* **chat:** show the workspace before opening a monitored script ([#4013](https://github.com/intent-hq/cloudlands-fe/issues/4013)) ([908815c](https://github.com/intent-hq/cloudlands-fe/commit/908815c66cd4269c22b9025961f11ce8865e00bc))
+* polish the onboarding project step for plain folders ([#4016](https://github.com/intent-hq/cloudlands-fe/issues/4016)) ([9fe75fb](https://github.com/intent-hq/cloudlands-fe/commit/9fe75fb7e17325c747f1b7fed199caef74fe2f70))
+* remove the Plain folder pill from workspace surfaces ([#4014](https://github.com/intent-hq/cloudlands-fe/issues/4014)) ([423ad0a](https://github.com/intent-hq/cloudlands-fe/commit/423ad0a20f292420ba2ae5855e8f81ed311908c1))
+
 ## [2.268.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.267.0...v2.268.0) (2026-11-02)
 
 
