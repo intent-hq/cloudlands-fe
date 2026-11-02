@@ -2,9 +2,9 @@
  * Repository default for the New space dialog when the sidebar has a
  * repository selected (`defaultToSidebarRepository`).
  *
- * A workspace created through "Pick a repo" is cloned into its own folder, so
+ * A workspace created through "Clone" is cloned into its own folder, so
  * the daemon records `repositoryPath === worktreePath` for it. Such clones (and
- * daemon-managed clone/cache directories) are not "Copy local repo" sources:
+ * daemon-managed clone/cache directories) are not "Existing folder" sources:
  * for a GitHub group the default is a user checkout from the group when one
  * exists, otherwise the GitHub pick. A saved GitHub pick of the same repository
  * is the user's last choice for it and is kept as is.

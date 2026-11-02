@@ -1232,7 +1232,7 @@
 
         // Apply repo and branch settings — a repoPath prefill is always a
         // local repo, so set the full selection (clearing any restored
-        // github state) so the picker opens on the Copy local repo tab
+        // github state) so the picker opens on the Existing folder tab
         const hasCheckoutDraft = data.repositoryCheckoutDraft !== undefined;
         const checkoutDraft = readRepositoryCheckoutDraft(data.repositoryCheckoutDraft);
         if (hasCheckoutDraft) restoreCheckout(checkoutDraft, !checkoutDraft);

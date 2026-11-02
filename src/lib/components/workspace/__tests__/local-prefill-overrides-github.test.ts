@@ -5,7 +5,7 @@ import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
  * Regression test: a `workspace-prefill` entry with `repoPath` (a local-source
  * "Work on…" click) must set the FULL repo selection — repoType 'local' with
  * githubUrl cleared — and must win over form state restored from
- * persistence, so the modal opens on the Copy local repo tab instead of the
+ * persistence, so the modal opens on the Existing folder tab instead of the
  * github tab left behind by a persisted last selection.
  */
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
