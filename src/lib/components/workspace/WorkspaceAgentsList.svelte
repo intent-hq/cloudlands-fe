@@ -654,7 +654,7 @@
         <span class="min-w-0 flex-1 truncate text-left"
           >{m.workspace_agentsList_delegatedGroup_label()}</span
         >
-        <span class="shrink-0 text-[11px] leading-none tabular-nums">
+        <span class="shrink-0 type-caption leading-none tabular-nums">
           {!isExpanded && row.running > 0
             ? m.workspace_agentsList_runningCount_label({
                 running: formatInteger(row.running),

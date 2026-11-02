@@ -477,7 +477,7 @@
           size="xs"
         />
       {/if}
-      <span class="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+      <span class="shrink-0 type-caption tabular-nums text-muted-foreground">
         <RelativeTime date={commit.date} compact />
       </span>
     </div>

@@ -191,7 +191,7 @@
         {/if}
       </div>
       {#if subtitle()}
-        <div class="max-w-[40%] shrink truncate text-[11px] text-muted-foreground">
+        <div class="max-w-[40%] shrink truncate type-caption text-muted-foreground">
           {subtitle()}
         </div>
       {/if}

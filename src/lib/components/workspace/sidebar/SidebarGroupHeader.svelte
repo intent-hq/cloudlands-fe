@@ -27,7 +27,7 @@
   <span class="min-w-0 flex-1 truncate text-left">{title}</span>
   {#if meta}
     <span
-      class="min-w-4 shrink-0 text-center text-[11px] font-normal leading-none tabular-nums text-muted-foreground"
+      class="min-w-4 shrink-0 text-center type-caption font-normal leading-none tabular-nums text-muted-foreground"
       >{meta}</span
     >
   {/if}

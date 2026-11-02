@@ -601,7 +601,7 @@
         disableHoverableContent={false}
         disableCloseOnTriggerClick={true}
       >
-        <span class="min-w-0 truncate text-[11px] text-subtle">
+        <span class="min-w-0 truncate type-caption text-subtle">
           {m.workspace_commitDrawer_autoCommit_label()}
         </span>
         <Switch
