@@ -53,6 +53,7 @@ import { chatSendSaga } from './slices/chat-state/sagas/chat-send-saga';
 import { chatSubscribeSaga } from './slices/chat-state/sagas/chat-subscribe-saga';
 import { switchTimingSaga } from './slices/chat-state/sagas/switch-timing-saga';
 import { connectionsSaga } from './slices/connections/sagas/connections-saga';
+import { browserAccessSaga } from './slices/browser-access/sagas/browser-access-saga';
 import { guestSessionsSaga } from './slices/guest-sessions/sagas/guest-sessions-saga';
 import { principalSaga } from './slices/principal/sagas/principal-saga';
 import { presenceFollowSaga } from './slices/presence-follow/sagas/presence-follow-saga';
@@ -162,6 +163,7 @@ export const sagas = [
   connectionsSaga,
   hudSaga,
   guestSessionsSaga,
+  browserAccessSaga,
   presenceSaga,
   workspaceDiscussionSaga,
   presenceFollowSaga,

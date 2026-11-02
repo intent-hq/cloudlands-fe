@@ -68,6 +68,7 @@ import { browserTabRegistryReducer } from './slices/browser-tab-registry/browser
 import { sentryAuthReducer } from './slices/sentry-auth/sentry-auth-slice';
 import { contextReducer } from './slices/context/context-slice';
 import { setupScriptsReducer } from './slices/setup-scripts/setup-scripts-slice';
+import { browserAccessReducer } from './slices/browser-access/browser-access-slice';
 import { mcpSettingsReducer } from './slices/mcp-settings/mcp-settings-slice';
 import { commentsReducer } from './slices/comments/comments-slice';
 import { taskAgentAssociationsReducer } from './slices/task-agent-associations/task-agent-associations-slice';
@@ -197,6 +198,7 @@ export const reducers = {
   browserTabRegistry: browserTabRegistryReducer,
   context: contextReducer,
   setupScripts: setupScriptsReducer,
+  browserAccess: browserAccessReducer,
   mcpSettings: mcpSettingsReducer,
   comments: commentsReducer,
   taskAgentAssociations: taskAgentAssociationsReducer,
