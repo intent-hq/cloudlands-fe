@@ -22,6 +22,7 @@ export const spinnerMetadata = parseUiComponentMetadata({
     'src/features/discussions/components/DiscussionMicrophone.svelte',
     'src/features/file-tracking/components/diff/PatchBlockContent.svelte',
     'src/features/home/HomeAssistantThreads.svelte',
+    'src/features/hud/components/DockAnnotationToolbar.svelte',
     'src/features/onboarding/messages/GitHubRepoTab.svelte',
     'src/features/onboarding/messages/ProviderCard.svelte',
     'src/features/onboarding/steps/OnboardingForgeStep.svelte',
