@@ -27,8 +27,7 @@ import { selectMcpError } from '$store/renderer/slices/mcp-settings/mcp-settings
 import { setError as setMcpError } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 import { selectThemeError } from '$store/renderer/slices/theme/theme-selectors';
 import { setThemeError } from '$store/renderer/slices/theme/theme-slice';
-import { setActiveFeatures } from '$store/renderer/slices/feature-codes/feature-codes-slice';
-import { BROWSER_ACCESS_FEATURE_ID } from '$shared/types/browser-access';
+import { setLabsBrowserAccessEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import {
   selectCodeFontFamily,
   selectNotificationEnabled,
@@ -644,14 +643,14 @@ describe('settings tab route and focus behavior', () => {
     expect(document.getElementById(sectionId)).not.toBeNull();
   });
 
-  it('shows experimental Browser access on Mobile only after its feature code', async () => {
-    appStore.dispatch(setActiveFeatures([]));
+  it('shows experimental Browser access on Mobile only while its Labs flag is on', async () => {
+    appStore.dispatch(setLabsBrowserAccessEnabled(false));
     renderSettings('/settings?tab=mobile');
     await waitFor(() => expect(document.getElementById('websocket-api')).not.toBeNull());
     expect(document.getElementById('browser-access')).toBeNull();
     cleanup();
 
-    appStore.dispatch(setActiveFeatures([BROWSER_ACCESS_FEATURE_ID]));
+    appStore.dispatch(setLabsBrowserAccessEnabled(true));
     renderSettings('/settings?tab=devices#browser-access');
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Mobile' }).getAttribute('aria-current')).toBe(
@@ -659,7 +658,7 @@ describe('settings tab route and focus behavior', () => {
       ),
     );
     expect(document.getElementById('browser-access')).not.toBeNull();
-    appStore.dispatch(setActiveFeatures([]));
+    appStore.dispatch(setLabsBrowserAccessEnabled(false));
   });
 
   it('activates selected specialist views', async () => {

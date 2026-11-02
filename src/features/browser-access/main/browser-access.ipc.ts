@@ -18,8 +18,6 @@ import { createSafeValidatedHandler } from '../../../main/ipc-validation-middlew
 import { getLocalPref, setLocalPref } from '../../../main/local-prefs';
 import { getMainActiveLocale } from '../../../main/main-locale';
 import { Logger } from '../../../shared/logger';
-import { BROWSER_ACCESS_FEATURE_ID } from '../../../shared/types/browser-access';
-import { featureCodesService } from '../../feature-codes/main/feature-codes.service';
 import { createBackendSocket } from '../../backend/main/backend-connection';
 import {
   buildConfigForConnection,
@@ -50,7 +48,6 @@ function createController(): BrowserAccessController {
     prefs: { get: (key) => getLocalPref(key), set: (key, value) => setLocalPref(key, value) },
     webRoot: resolveWebRoot(),
     log,
-    isAllowed: () => featureCodesService.isFeatureEnabled(BROWSER_ACCESS_FEATURE_ID),
     createServer: (getAccessKey) =>
       createBrowserAccessServer({
         webRoot: resolveWebRoot(),
@@ -111,7 +108,6 @@ export async function setupBrowserAccess(): Promise<void> {
     ),
   );
   try {
-    await featureCodesService.init();
     await current.load();
   } catch (error) {
     logger.warn('Failed to load browser access settings', error);

@@ -40,6 +40,7 @@
     selectLabsGitLabEnabled,
     selectLabsRemoteAgentsEnabled,
     selectLabsPlainFolderWorkspacesEnabled,
+    selectLabsBrowserAccessEnabled,
     selectLabsMultiplayerEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
@@ -148,6 +149,7 @@
   const labsGitLabEnabled$ = selectLabsGitLabEnabled();
   const labsRemoteAgentsEnabled$ = selectLabsRemoteAgentsEnabled();
   const labsPlainFolders$ = selectLabsPlainFolderWorkspacesEnabled();
+  const labsBrowserAccess$ = selectLabsBrowserAccessEnabled();
   // Collaborators (multiplayer w3) are refused on terminal + browser methods and
   // cannot create workspaces, so those commands and result groups are withheld.
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
@@ -175,7 +177,7 @@
         !(!$labsGitLabEnabled$ && command.id === 'disable-experimental-gitlab') &&
         !($labsRemoteAgentsEnabled$ && command.id === 'enable-experimental-remote-agents') &&
         !(!$labsRemoteAgentsEnabled$ && command.id === 'disable-experimental-remote-agents') &&
-        !isLabCommandHidden(command.id, $dockLabEnabled, $labsPlainFolders$),
+        !isLabCommandHidden(command.id, $dockLabEnabled, $labsPlainFolders$, $labsBrowserAccess$),
     ),
   );
   const currentChanges$ = selectCurrentChanges(workspaceIdStore);

@@ -52,7 +52,7 @@ class FakeServer implements BrowserAccessServer {
 
 function setup(
   stored: Record<string, unknown> = {},
-  options: { withBuild?: boolean; busy?: number[]; allowed?: () => boolean } = {},
+  options: { withBuild?: boolean; busy?: number[] } = {},
 ) {
   const prefs = new Map<string, unknown>(Object.entries(stored));
   const servers: FakeServer[] = [];
@@ -64,7 +64,6 @@ function setup(
     },
     webRoot: webRoot(options.withBuild ?? true),
     log: { info() {}, warn() {} },
-    isAllowed: options.allowed,
     createServer: (getAccessKey) => {
       const server = new FakeServer(busy, getAccessKey);
       servers.push(server);
@@ -76,20 +75,6 @@ function setup(
 }
 
 describe('createBrowserAccessController', () => {
-  it('never serves while the experimental feature is locked', async () => {
-    let unlocked = false;
-    const { controller, servers } = setup(
-      { [PREF_ENABLED]: true, [PREF_PORT]: 50010 },
-      { allowed: () => unlocked },
-    );
-    expect(await controller.load()).toMatchObject({ enabled: true, running: false });
-    await expect(controller.setEnabled(true)).rejects.toThrow(/not unlocked/);
-    await controller.setPort(50011);
-    expect(servers).toHaveLength(0);
-    unlocked = true;
-    expect(await controller.setEnabled(true)).toMatchObject({ running: true, port: 50011 });
-  });
-
   it('starts off with a generated, persisted access key and the default port', async () => {
     const { controller, prefs, servers } = setup();
     const state = await controller.load();

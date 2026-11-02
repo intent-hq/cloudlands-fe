@@ -4,9 +4,6 @@
  * and the server; the renderer reads and changes it over BROWSER_ACCESS IPC.
  */
 
-/** Experimental feature id: Browser access stays hidden and off until its code is entered (Cmd+K). */
-export const BROWSER_ACCESS_FEATURE_ID = 'browser-access';
-
 /** Default loopback port. */
 export const BROWSER_ACCESS_DEFAULT_PORT = 47120;
 /** Lowest port the setting accepts (avoids privileged ports). */

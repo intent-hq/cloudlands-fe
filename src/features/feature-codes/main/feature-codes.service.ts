@@ -23,8 +23,6 @@ const CODE_REGISTRY: ReadonlyMap<string, string> = new Map([
   ['ab86e93de0fec19bf005cbdcc44f55f8ae844bc173dd323b42c6e16de7b58e2d', 'remote-workspaces'],
   // SHA-256 of the enable_figma_mcp activation code
   ['6156f1c9c227f56ee98669b41a6a674a20f53ccb65b6fd9c55f2dc599a9733a1', 'enable_figma_mcp'],
-  // SHA-256 of the Browser access activation code (Settings > Mobile > Browser access)
-  ['2a4d5f70cf8556d2c6c2c47f90113cde39930f6c62f6186cfd28a3d4f94a9f17', 'browser-access'],
 ]);
 
 const STORE_KEY = 'featureCodes';

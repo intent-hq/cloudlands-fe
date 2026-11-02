@@ -1,19 +1,18 @@
 <script lang="ts">
   /**
    * Browser access (Settings → Mobile), shown only in the desktop app because
-   * main owns the setting and the server, and only once its experimental
-   * feature code has been entered (Cmd+K). The warning stays visible while the
+   * main owns the setting and the server, and only while the experimental
+   * Labs flag is on (Cmd+K → Enable experimental browser access). The warning stays visible while the
    * feature is off so nobody turns it on without reading it.
    */
   import Fa from 'svelte-fa';
   import { faTriangleExclamation } from '$lib/icons/phosphor-icons';
   import { m } from '$shared/paraglide/messages.js';
   import { canManageBrowserAccess } from '$lib/browser-access';
-  import { selectIsFeatureEnabled } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
-  import { BROWSER_ACCESS_FEATURE_ID } from '$shared/types/browser-access';
+  import { selectLabsBrowserAccessEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import BrowserAccessSettings from './BrowserAccessSettings.svelte';
 
-  const unlocked$ = selectIsFeatureEnabled(BROWSER_ACCESS_FEATURE_ID);
+  const unlocked$ = selectLabsBrowserAccessEnabled();
 </script>
 
 {#if canManageBrowserAccess() && $unlocked$}
