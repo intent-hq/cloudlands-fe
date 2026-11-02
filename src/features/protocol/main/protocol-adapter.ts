@@ -17,7 +17,7 @@ import { ACPServer } from '../../acp-official/main/server/acp-server';
 import type { ACPServerConfig } from '../../acp-official/main/server/acp-server';
 import { getBackendClient } from '../../backend/main/backend.ipc';
 import { isProjectionRejected } from '$shared/utils/note-content';
-import { requestAllPages } from '$shared/utils/paged-list';
+import { requestAllPages, requestWholeNote } from '$shared/utils/paged-list';
 import { COMMENT_LIST_PAGE_LIMIT, NOTE_LIST_PAGE_LIMIT } from '$shared/constants/notes';
 import { Logger } from '$shared/logger';
 import type { Result, PullRequestInfo } from '$shared/types';
@@ -302,10 +302,10 @@ export class ProtocolAdapter {
     });
 
     try {
-      const result = await getBackendClient().request<{ note: any }>('note.get', {
-        workspaceId: actualWorkspaceId,
-        noteId: actualNoteId,
-      });
+      const result = (await requestWholeNote(
+        (params) => getBackendClient().request('note.get', params),
+        { workspaceId: actualWorkspaceId, noteId: actualNoteId },
+      )) as { note: any } | undefined;
       const note = result?.note ?? null;
       return isMcpStyle ? note : { ok: true, data: note };
     } catch (error) {

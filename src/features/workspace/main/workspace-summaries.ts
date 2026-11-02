@@ -11,7 +11,7 @@ import { m } from '$shared/paraglide/messages.js';
 import type { Note, WorkspaceId, WorkspaceTask } from '../../../shared/types';
 import { NOTE_LIST_PAGE_LIMIT, SPEC_NOTE_ID } from '../../../shared/constants/notes';
 import { isProjectionRejected } from '../../../shared/utils/note-content';
-import { requestAllPages } from '../../../shared/utils/paged-list';
+import { requestAllPages, requestWholeNote } from '../../../shared/utils/paged-list';
 import { getSpecTaskNotes } from '../../../shared/utils/task-stats';
 import { getBackendClient } from '../../backend/main/backend.ipc';
 
@@ -39,9 +39,10 @@ export async function getWorkspaceTasks(workspaceId: WorkspaceId): Promise<Works
         'notes',
       ) as Promise<Note[]>,
       (
-        getBackendClient().request('note.get', { workspaceId, noteId: SPEC_NOTE_ID }) as Promise<
-          { note?: Note } | Note | undefined
-        >
+        requestWholeNote((params) => getBackendClient().request('note.get', params), {
+          workspaceId,
+          noteId: SPEC_NOTE_ID,
+        }) as Promise<{ note?: Note } | Note | undefined>
       ).catch(() => undefined),
     ]);
     const spec =

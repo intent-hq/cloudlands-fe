@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { MAX_LIST_PAGES, nextPageToken, requestAllPages } from '../paged-list';
+import { MAX_LIST_PAGES, nextPageToken, requestAllPages, requestWholeNote } from '../paged-list';
 
 describe('requestAllPages', () => {
   it('walks nextToken pages and repeats the first page params', async () => {
@@ -55,5 +55,99 @@ describe('nextPageToken', () => {
     expect(nextPageToken({ nextToken: '' })).toBeUndefined();
     expect(nextPageToken({ nextToken: 3 })).toBeUndefined();
     expect(nextPageToken(null)).toBeUndefined();
+  });
+});
+
+/** A daemon double that serves `content` in `chunk`-byte `note.get` pages. */
+function contentPages(content: string, chunk: number, revs: number[] = []) {
+  const bytes = new TextEncoder().encode(content);
+  let reads = 0;
+  return vi.fn(async (params: Record<string, unknown>) => {
+    const rev = revs[Math.min(reads++, revs.length - 1)] ?? 1;
+    const offset = typeof params.contentOffset === 'number' ? params.contentOffset : 0;
+    let end = Math.min(offset + chunk, bytes.length);
+    while (end < bytes.length && (bytes[end] & 0xc0) === 0x80) end--;
+    const piece = new TextDecoder().decode(bytes.slice(offset, end));
+    if (offset === 0 && end === bytes.length) return { note: { id: 'n', rev, content } };
+    return {
+      note: {
+        id: 'n',
+        rev,
+        content: piece,
+        contentTruncated: true,
+        contentBytes: bytes.length,
+        contentOffset: offset,
+        nextContentOffset: end < bytes.length ? end : null,
+      },
+    };
+  });
+}
+
+describe('requestWholeNote', () => {
+  const content = 'aé€😀"\\\n'.repeat(500);
+
+  it('follows nextContentOffset and rebuilds multi-byte content byte for byte', async () => {
+    const request = contentPages(content, 97);
+    const result = (await requestWholeNote(request, { workspaceId: 'ws', noteId: 'n' })) as {
+      note: Record<string, unknown>;
+    };
+    expect(result.note.content).toBe(content);
+    expect(result.note).not.toHaveProperty('contentTruncated');
+    expect(result.note).not.toHaveProperty('nextContentOffset');
+    expect(request.mock.calls.length).toBeGreaterThan(2);
+    expect(request.mock.calls[1][0]).toEqual({
+      workspaceId: 'ws',
+      noteId: 'n',
+      contentOffset: expect.any(Number),
+    });
+  });
+
+  it('reads a whole reply (older daemon or small note) in one request', async () => {
+    const request = contentPages('small', 97);
+    const result = (await requestWholeNote(request, { noteId: 'n' })) as {
+      note: Record<string, unknown>;
+    };
+    expect(result.note.content).toBe('small');
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it('restarts when the note changes between pages', async () => {
+    const request = contentPages(content, 4_000, [1, 2, 3, 3, 3, 3]);
+    const result = (await requestWholeNote(request, { noteId: 'n' })) as {
+      note: Record<string, unknown>;
+    };
+    expect(result.note.content).toBe(content);
+    expect(result.note.rev).toBe(3);
+  });
+
+  it('keeps the truncated first reply when the pages do not add up', async () => {
+    const request = vi.fn(async (params: Record<string, unknown>) =>
+      params.contentOffset === undefined
+        ? {
+            note: {
+              rev: 1,
+              content: 'ab',
+              contentTruncated: true,
+              contentBytes: 10,
+              contentOffset: 0,
+              nextContentOffset: 2,
+            },
+          }
+        : {
+            note: {
+              rev: 1,
+              content: 'c',
+              contentTruncated: true,
+              contentBytes: 10,
+              contentOffset: 2,
+              nextContentOffset: null,
+            },
+          },
+    );
+    const result = (await requestWholeNote(request, { noteId: 'n' })) as {
+      note: Record<string, unknown>;
+    };
+    expect(result.note.content).toBe('ab');
+    expect(result.note.contentTruncated).toBe(true);
   });
 });

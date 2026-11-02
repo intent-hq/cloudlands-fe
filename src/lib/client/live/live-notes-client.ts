@@ -14,7 +14,7 @@ import { m } from '$shared/paraglide/messages.js';
 import { AuthorType, ContentType, NoteVisibility } from '$shared/types';
 import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
 import { isProjectionRejected } from '$shared/utils/note-content';
-import { requestAllPages } from '$shared/utils/paged-list';
+import { requestAllPages, requestWholeNote } from '$shared/utils/paged-list';
 import { NOTE_LIST_PAGE_LIMIT } from '$shared/constants/notes';
 import type { Author, CreateNoteRequest, Note, NoteVersion } from '$shared/types';
 import type {
@@ -223,13 +223,19 @@ export class LiveNotesClient implements NotesClient {
     const workspaceId = explicitWorkspaceId ?? (await resolveNoteWorkspaceId(noteId));
     if (!workspaceId) return null;
     try {
-      const result = await backendRequest<{ note?: unknown } | unknown>('note.get', {
-        workspaceId,
-        noteId,
-        ...(options?.maxContentBytes !== undefined
-          ? { maxContentBytes: options.maxContentBytes }
-          : {}),
-      });
+      // A bounded view read (`maxContentBytes`) wants the render-only prefix;
+      // every other read loads the whole note through the content cursor.
+      const result =
+        options?.maxContentBytes !== undefined
+          ? await backendRequest<{ note?: unknown } | unknown>('note.get', {
+              workspaceId,
+              noteId,
+              maxContentBytes: options.maxContentBytes,
+            })
+          : await requestWholeNote((params) => backendRequest('note.get', params), {
+              workspaceId,
+              noteId,
+            });
       const raw =
         result && typeof result === 'object' && 'note' in result
           ? (result as { note?: unknown }).note

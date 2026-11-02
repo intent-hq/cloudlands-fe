@@ -974,6 +974,32 @@ describe('LiveNotesClient.get truncated reads (§5.2 "Truncated note reads")', (
     expect(mockedRequest).toHaveBeenCalledWith('note.get', { workspaceId: 'ws-1', noteId: 'n1' });
   });
 
+  it('loads the whole note through the content cursor when a default read is cut', async () => {
+    const page = (content: string, offset: number, next: number | null) => ({
+      note: {
+        ...rawNote,
+        content,
+        contentTruncated: true,
+        contentBytes: 12,
+        contentOffset: offset,
+        nextContentOffset: next,
+      },
+    });
+    mockedRequest
+      .mockResolvedValueOnce(page('héllo', 0, 6))
+      .mockResolvedValueOnce(page(' wor', 6, 10))
+      .mockResolvedValueOnce(page('ld', 10, null));
+    const note = await new LiveNotesClient().get('n1', 'ws-1');
+
+    expect(mockedRequest.mock.calls.map(([, params]) => params)).toEqual([
+      { workspaceId: 'ws-1', noteId: 'n1' },
+      { workspaceId: 'ws-1', noteId: 'n1', contentOffset: 6 },
+      { workspaceId: 'ws-1', noteId: 'n1', contentOffset: 10 },
+    ]);
+    expect(note?.content).toBe('héllo world');
+    expect(note?.contentTruncated).toBeUndefined();
+  });
+
   it('reports support only for the exact noteTruncatedRead: 1 capability', async () => {
     const client = new LiveNotesClient();
     mockedCapabilities.mockResolvedValue({ server: { capabilities: { noteTruncatedRead: 1 } } });

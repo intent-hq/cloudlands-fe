@@ -23,7 +23,7 @@ import type { CommandResult } from '../types';
 import { WorkspaceService } from '../../workspace/main/workspace.service';
 import { getBackendClient } from '../../backend/main/backend.ipc';
 import { isProjectionRejected } from '../../../shared/utils/note-content';
-import { requestAllPages } from '../../../shared/utils/paged-list';
+import { requestAllPages, requestWholeNote } from '../../../shared/utils/paged-list';
 import { NOTE_LIST_PAGE_LIMIT } from '../../../shared/constants/notes';
 import { Logger } from '../../../shared/logger';
 import { executionManager } from './execution-manager';
@@ -552,10 +552,10 @@ export class ToolService implements IToolService {
 
     let note: any;
     try {
-      const result = await getBackendClient().request<{ note: any }>('note.get', {
-        workspaceId: context.workspaceId,
-        noteId,
-      });
+      const result = (await requestWholeNote(
+        (params) => getBackendClient().request('note.get', params),
+        { workspaceId: context.workspaceId, noteId },
+      )) as { note: any } | undefined;
       note = result?.note ?? null;
     } catch (error) {
       throw new Error((error as Error).message);
