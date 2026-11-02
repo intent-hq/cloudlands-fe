@@ -128,7 +128,7 @@ const HOOK_LIST_PAGE_LIMIT = 200;
 
 /**
  * `hook.list` (§5.40) — every active hook in the workspace, read in explicit
- * pages: a paging host (`hookListPages: 1`) returns `nextCursor` while more
+ * pages: a paging host (`boundedReads: 1`) returns `nextCursor` while more
  * rows follow. Older hosts ignore `limit`/`cursor` and return the whole list.
  */
 export async function listHooks(workspaceId: string): Promise<BackgroundHook[]> {

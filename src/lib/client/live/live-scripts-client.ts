@@ -40,22 +40,22 @@ export class LiveScriptsClient implements ScriptsClient {
     return result?.server?.capabilities?.scriptLifecycle === 1;
   }
 
-  /** Resolves whether the full view is paged (`scriptFullPages: 1`, §5.8). */
+  /** Resolves whether the host pages lists by default (`boundedReads: 1`, §5.8). */
   private async requireActiveLists(): Promise<{ fullPages: boolean }> {
     const hello = await backendRequest<{
-      server?: { capabilities?: { scriptActiveLists?: number; scriptFullPages?: number } };
+      server?: { capabilities?: { scriptActiveLists?: number; boundedReads?: number } };
     }>('client.hello', {});
     // Gate on the advertised capability, not the protocol major: majors move
     // for unrelated changes (protocol 15 still serves active lists).
     if (hello.server?.capabilities?.scriptActiveLists !== 1)
       throw new Error(m.scripts_list_unsupported_error());
-    return { fullPages: hello.server?.capabilities?.scriptFullPages === 1 };
+    return { fullPages: hello.server?.capabilities?.boundedReads === 1 };
   }
 
   /**
    * Explicit bulk operations only; normal discovery uses one summary page.
    * Returns every active definition: a host with paged full views
-   * (`scriptFullPages: 1`) is read page by page until `nextCursor` is absent.
+   * (`boundedReads: 1`) is read page by page until `nextCursor` is absent.
    */
   async list(
     workspaceId: string,

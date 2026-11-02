@@ -103,12 +103,12 @@ describe('LiveScriptsClient (fake transport)', () => {
     await expect(client.list('ws-1')).rejects.toThrow();
   });
 
-  it('list reads every full-view page when the host pages full lists (scriptFullPages)', async () => {
+  it('list reads every full-view page when the host pages full lists (boundedReads)', async () => {
     const second: ScriptWithState = { ...DEV_SCRIPT, id: 's-2', name: 'test' };
     const hello = {
       server: {
         protocolVersion: CURRENT_PROTOCOL_VERSION,
-        capabilities: { scriptActiveLists: 1, scriptFullPages: 1 },
+        capabilities: { scriptActiveLists: 1, boundedReads: 1 },
       },
     };
     mockedRequest
@@ -134,7 +134,7 @@ describe('LiveScriptsClient (fake transport)', () => {
   it('list rejects a repeated full-view cursor instead of looping', async () => {
     mockedRequest
       .mockResolvedValueOnce({
-        server: { capabilities: { scriptActiveLists: 1, scriptFullPages: 1 } },
+        server: { capabilities: { scriptActiveLists: 1, boundedReads: 1 } },
       })
       .mockResolvedValueOnce({ scripts: [DEV_SCRIPT], nextCursor: 'c-1' })
       .mockResolvedValueOnce({ scripts: [DEV_SCRIPT], nextCursor: 'c-1' });

@@ -135,7 +135,7 @@ describe('wire requests (§5.40, fake transport)', () => {
     expect(hooks).toEqual([makeHook()]);
   });
 
-  it('listHooks follows nextCursor until the last page (hookListPages)', async () => {
+  it('listHooks follows nextCursor until the last page (boundedReads)', async () => {
     const first = makeHook();
     const second = makeHook({ hookId: 'hook-2' });
     mockedRequest
