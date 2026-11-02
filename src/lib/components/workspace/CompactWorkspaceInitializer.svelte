@@ -932,7 +932,10 @@
    * first: one that has become a git repository opens as a git repo, and a
    * missing or unreadable one, or Labs off, preselects nothing.
    */
+  let folderSelectionRevision = 0;
+
   async function restoreRememberedPlainFolder(path: string) {
+    const revision = folderSelectionRevision;
     let status: {
       exists: boolean;
       isDirectory: boolean;
@@ -947,7 +950,8 @@
       logger.warn('Failed to check the remembered plain folder', err);
     }
     // Anything picked while the folder was checked wins.
-    if (!mounted || repoPath || repoType === 'gitlab') return;
+    if (!mounted || revision !== folderSelectionRevision || repoPath || repoType === 'gitlab')
+      return;
     if (!status?.exists || !status.isDirectory) return;
     if (status.isGitRepo || status.isSubdirectoryOfGitRepo) {
       applyLastSelectedRepo({
@@ -1957,6 +1961,7 @@
    * GitHub/GitLab selection stays until a folder is picked (cloning is always git).
    */
   function handleInitializeGitChange(value: boolean, tab: 'local' | 'new') {
+    folderSelectionRevision++;
     // Read before the choice flips: the plain-folder kind derives from it.
     const folder = gitSwitchFolder;
     initializeGitChoice.set(value);
@@ -2075,6 +2080,7 @@
     }>,
   ) {
     appStore.dispatch(checkoutClosed(checkoutFormId));
+    folderSelectionRevision++;
     repoPath = event.detail.path;
     repoType = event.detail.type === 'remote' ? 'remote' : event.detail.type;
     plainFolderPick = event.detail.plainFolder

@@ -1129,6 +1129,43 @@ describe('New Workspace — plain-folder git choice (Labs)', () => {
       );
     });
 
+    it.each(['switch', 'folder'])(
+      'keeps a newer %s choice while restoration is pending',
+      async (choice) => {
+        const { invoke } = await import('$lib/electron-bridge');
+        const original = vi.mocked(invoke).getMockImplementation()!;
+        let resolveStatus!: (value: unknown) => void;
+        const pending = new Promise((resolve) => {
+          resolveStatus = resolve;
+        });
+        vi.mocked(invoke).mockImplementation((channel, ...args) =>
+          channel === 'file:getDirectoryStatus' ? pending : original(channel, ...args),
+        );
+        try {
+          mocks.lastSelectedRepo$.set(rememberedPlain());
+          reopenDialog();
+          await waitFor(() =>
+            expect(invoke).toHaveBeenCalledWith('file:getDirectoryStatus', { path: folder }),
+          );
+          if (choice === 'switch')
+            await fireEvent.click(await screen.findByTestId('picker-git-choice'));
+          else await pick({ path: join(root, 'newer'), plainFolder: 'existing' });
+          resolveStatus({
+            success: true,
+            data: { exists: true, isDirectory: true, isGitRepo: false },
+          });
+          await pending;
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          expect(screen.getByTestId('picker-repo-path').textContent).toBe(
+            choice === 'switch' ? '' : join(root, 'newer'),
+          );
+          if (choice === 'switch') expect(toggle()!.getAttribute('aria-checked')).toBe('true');
+        } finally {
+          vi.mocked(invoke).mockImplementation(original);
+        }
+      },
+    );
+
     it('never restores a plain folder with Labs off', async () => {
       plainFolder.available$.set(false);
       mocks.lastSelectedRepo$.set(rememberedPlain());
