@@ -1,3 +1,5 @@
+import type { Page } from '@playwright/test';
+import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import { expect, test } from '../../../test/ct-test';
 import DockRail from './DockRail.svelte';
 import DockActionTestHost from './DockActionTestHost.svelte';
@@ -6,6 +8,46 @@ import { dockRailPreview } from './dock-rail.preview-fixtures';
 test.beforeEach(async ({ page }) => {
   await page.addStyleTag({ content: '#root { height: 100vh; }' });
 });
+
+const SET_DOCK_POINTER_REGION = IPC_CHANNELS.WINDOW.SET_DOCK_POINTER_REGION;
+
+/**
+ * Stub the Electron bridge and keep the latest native pointer-region report.
+ * Only that channel is recorded: the first active report is followed by a
+ * one-off DOCK_RENDERER_READY call with an empty payload, and recording every
+ * channel let that call overwrite the menu region whenever the menu opened in
+ * the same frame as the dock's first expansion (a load-dependent race).
+ */
+async function recordDockPointerRegions(page: Page): Promise<void> {
+  await page.evaluate((regionChannel) => {
+    Object.assign(window, { __dockRegions: { active: false, regions: [] } });
+    window.electronAPI = {
+      invoke: async (channel: string, payload: unknown) => {
+        if (channel === regionChannel) Object.assign(window, { __dockRegions: payload });
+        return { success: true };
+      },
+      on: () => 'dock-focus',
+      offById: () => undefined,
+    } as unknown as typeof window.electronAPI;
+  }, SET_DOCK_POINTER_REGION);
+}
+
+function dockRegionsCover(page: Page, point: { x: number; y: number }): Promise<boolean> {
+  return page.evaluate(({ x, y }) => {
+    const state = (
+      window as unknown as {
+        __dockRegions: {
+          active: boolean;
+          regions: Array<{ x: number; y: number; width: number; height: number }>;
+        };
+      }
+    ).__dockRegions;
+    return (
+      state.active &&
+      state.regions.some((r) => x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height)
+    );
+  }, point);
+}
 
 test('keeps the first keyboard move when a menu is reopened', async ({ mount, page }) => {
   const annotated: string[] = [];
@@ -68,17 +110,7 @@ test('supports secondary click, Menu, and Shift+F10 with focus return and native
   page,
 }) => {
   await page.setViewportSize({ width: 680, height: 600 });
-  await page.evaluate(() => {
-    Object.assign(window, { __dockRegions: [] });
-    window.electronAPI = {
-      invoke: async (_channel: string, payload: unknown) => {
-        Object.assign(window, { __dockRegions: payload });
-        return { success: true };
-      },
-      on: () => 'dock-focus',
-      offById: () => undefined,
-    } as unknown as typeof window.electronAPI;
-  });
+  await recordDockPointerRegions(page);
   const opened: string[] = [];
   const annotated: string[] = [];
   const component = await mount(DockRail, {
@@ -104,27 +136,7 @@ test('supports secondary click, Menu, and Shift+F10 with focus return and native
   expect(menuBox.x).toBeGreaterThanOrEqual(0);
   expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(680);
   await expect
-    .poll(() =>
-      page.evaluate(
-        ({ x, y }) => {
-          const state = (
-            window as unknown as {
-              __dockRegions: {
-                active: boolean;
-                regions: Array<{ x: number; y: number; width: number; height: number }>;
-              };
-            }
-          ).__dockRegions;
-          return (
-            state.active &&
-            state.regions.some(
-              (r) => x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height,
-            )
-          );
-        },
-        { x: menuBox.x + 10, y: menuBox.y + 10 },
-      ),
-    )
+    .poll(() => dockRegionsCover(page, { x: menuBox.x + 10, y: menuBox.y + 10 }))
     .toBe(true);
   await page.keyboard.press('Escape');
   await expect(menu).toHaveCount(0);
@@ -149,6 +161,39 @@ test('supports secondary click, Menu, and Shift+F10 with focus return and native
   await page.getByRole('menuitem', { name: 'Open Workspace' }).click();
   await expect.poll(() => opened.length).toBe(1);
   expect(opened).toEqual([await first.getAttribute('data-workspace-id')]);
+});
+
+test('reports the menu region when the menu opens in the same frame as the first expansion', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 680, height: 600 });
+  await recordDockPointerRegions(page);
+  const component = await mount(DockRail, {
+    props: { staticData: true, workspaces: dockRailPreview.states['four-mixed'].props.workspaces },
+  });
+  // Focus and open the menu in one task so a single region report carries both
+  // the first expansion and the menu, as happens when the frame runs late.
+  await component
+    .locator('button[data-workspace-id]')
+    .first()
+    .evaluate((button: HTMLButtonElement) => {
+      button.focus();
+      button.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'F10',
+          shiftKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+  const menu = page.getByRole('menu');
+  await expect(menu).toBeVisible();
+  const menuBox = (await menu.boundingBox())!;
+  await expect
+    .poll(() => dockRegionsCover(page, { x: menuBox.x + 10, y: menuBox.y + 10 }))
+    .toBe(true);
 });
 
 test('keeps the menu visible in forced colors and closes it on native window blur', async ({
