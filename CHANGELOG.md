@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.270.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.269.1...v2.270.0) (2026-11-02)
+
+
+### 🚀 Features
+
+* **chat:** show capped message blocks and regenerate images by reference ([#4019](https://github.com/intent-hq/cloudlands-fe/issues/4019)) ([d63e023](https://github.com/intent-hq/cloudlands-fe/commit/d63e023bef5947842f066c12407068fa6ae2b182))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.107 ([#4030](https://github.com/intent-hq/cloudlands-fe/issues/4030)) ([1f22b85](https://github.com/intent-hq/cloudlands-fe/commit/1f22b857c2e47269333ce47e2903aaa62a359ebd))
+* folder-picker git switch names and does what happens to the picked folder ([#4027](https://github.com/intent-hq/cloudlands-fe/issues/4027)) ([2f47646](https://github.com/intent-hq/cloudlands-fe/commit/2f47646a8f8864717427f5032a6ea1eba37de54a))
+
 ## [2.269.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.269.0...v2.269.1) (2026-11-02)
 
 
