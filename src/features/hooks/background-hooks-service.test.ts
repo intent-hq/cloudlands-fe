@@ -128,10 +128,10 @@ describe('foldHookEvent (§6.5 hook:* lifecycle)', () => {
 describe('wire requests (§5.40, fake transport)', () => {
   afterEach(() => vi.clearAllMocks());
 
-  it('listHooks forwards hook.list { workspaceId } and unwraps hooks', async () => {
+  it('listHooks forwards hook.list { workspaceId, limit } and unwraps hooks', async () => {
     mockedRequest.mockResolvedValueOnce({ hooks: [makeHook()] });
     const hooks = await listHooks('ws-1');
-    expect(mockedRequest).toHaveBeenCalledWith('hook.list', { workspaceId: 'ws-1' });
+    expect(mockedRequest).toHaveBeenCalledWith('hook.list', { workspaceId: 'ws-1', limit: 200 });
     expect(hooks).toEqual([makeHook()]);
   });
 
@@ -142,9 +142,13 @@ describe('wire requests (§5.40, fake transport)', () => {
       .mockResolvedValueOnce({ hooks: [first], nextCursor: 'c-1' })
       .mockResolvedValueOnce({ hooks: [second] });
     expect(await listHooks('ws-1')).toEqual([first, second]);
-    expect(mockedRequest).toHaveBeenNthCalledWith(1, 'hook.list', { workspaceId: 'ws-1' });
+    expect(mockedRequest).toHaveBeenNthCalledWith(1, 'hook.list', {
+      workspaceId: 'ws-1',
+      limit: 200,
+    });
     expect(mockedRequest).toHaveBeenNthCalledWith(2, 'hook.list', {
       workspaceId: 'ws-1',
+      limit: 200,
       cursor: 'c-1',
     });
   });

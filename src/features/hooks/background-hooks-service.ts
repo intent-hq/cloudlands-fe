@@ -123,10 +123,13 @@ export function foldHookEvent(
   }
 }
 
+/** Rows per `hook.list` page on a paging host (the host also caps page bytes). */
+const HOOK_LIST_PAGE_LIMIT = 200;
+
 /**
- * `hook.list` (§5.40) — every active hook in the workspace. A paging host
- * (`hookListPages: 1`) returns `nextCursor` while more rows follow; read pages
- * until it is absent. Older hosts ignore `cursor` and never send `nextCursor`.
+ * `hook.list` (§5.40) — every active hook in the workspace, read in explicit
+ * pages: a paging host (`hookListPages: 1`) returns `nextCursor` while more
+ * rows follow. Older hosts ignore `limit`/`cursor` and return the whole list.
  */
 export async function listHooks(workspaceId: string): Promise<BackgroundHook[]> {
   const hooks: BackgroundHook[] = [];
@@ -135,7 +138,7 @@ export async function listHooks(workspaceId: string): Promise<BackgroundHook[]> 
   do {
     const result = await backendRequest<{ hooks?: BackgroundHook[]; nextCursor?: string }>(
       'hook.list',
-      cursor ? { workspaceId, cursor } : { workspaceId },
+      { workspaceId, limit: HOOK_LIST_PAGE_LIMIT, ...(cursor ? { cursor } : {}) },
     );
     if (Array.isArray(result?.hooks)) hooks.push(...result.hooks);
     const next = result?.nextCursor;
