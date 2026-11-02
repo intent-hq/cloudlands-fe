@@ -46,7 +46,6 @@
   import { formatInteger } from '$lib/i18n/format';
   import { renameWorkspaceTitle } from '$features/workspace/rename-workspace-title';
   import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
-  import PlainFolderLabel from './PlainFolderLabel.svelte';
 
   interface Props {
     workspace: Workspace | null;
@@ -581,11 +580,11 @@
         >
           {repositoryLabel}
         </span>
-        <span class="flex h-5 shrink-0 items-center leading-5" aria-hidden="true">·</span>
+        {#if !plainFolder}
+          <span class="flex h-5 shrink-0 items-center leading-5" aria-hidden="true">·</span>
+        {/if}
       {/if}
-      {#if plainFolder}
-        <PlainFolderLabel />
-      {:else if workspace}
+      {#if workspace && !plainFolder}
         <div class="flex h-5 min-w-0 flex-1 items-center leading-5" data-sidebar-branch-metadata>
           {#if isEditingBranch}
             <Input

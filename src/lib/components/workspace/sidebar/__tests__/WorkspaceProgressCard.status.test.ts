@@ -1334,7 +1334,7 @@ describe('WorkspaceProgressCard plain-folder workspaces', () => {
     mocks.role.hidesOwnerActions = false;
   });
 
-  it('hides the branch, git workflow action and Transfer, and shows the Plain folder label', async () => {
+  it('hides the branch, git workflow action, Transfer and the Plain folder pill', async () => {
     const { container } = await renderProgressCard({
       plainFolder: true,
       branch: '',
@@ -1346,9 +1346,8 @@ describe('WorkspaceProgressCard plain-folder workspaces', () => {
 
     expect(container.querySelector('[data-sidebar-branch-control]')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Merge PR' })).toBeNull();
-    expect(container.querySelector('[data-plain-folder-label]')?.textContent?.trim()).toBe(
-      'Plain folder',
-    );
+    expect(container.querySelector('[data-plain-folder-label]')).toBeNull();
+    expect(screen.queryByText('Plain folder')).toBeNull();
     expect(screen.getByRole('button', { name: 'Notes' })).toBeTruthy();
 
     await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);

@@ -67,9 +67,11 @@ describe('Home workspace list PR count', () => {
     expect(view.getByText('+2')).toBeTruthy();
   });
 
-  it('hides the extra-PR count for a plain-folder workspace', () => {
+  it('hides the extra-PR count and shows no Plain folder pill for a plain-folder workspace', () => {
     const view = renderRow(workspace({ plainFolder: true, branch: '' }));
     expect(view.queryByText('+2')).toBeNull();
-    expect(view.getByText('Plain folder')).toBeTruthy();
+    expect(view.queryByText('Plain folder')).toBeNull();
+    expect(view.container.querySelector('[data-plain-folder-label]')).toBeNull();
+    expect(view.container.querySelector('[data-home-workspace-pr-badge]')).toBeNull();
   });
 });

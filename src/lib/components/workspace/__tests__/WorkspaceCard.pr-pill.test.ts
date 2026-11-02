@@ -425,16 +425,15 @@ describe('WorkspaceCard PR items', () => {
 });
 
 describe('WorkspaceCard plain-folder workspaces', () => {
-  it('shows the Plain folder label and no PR badge for a plain-folder workspace', () => {
+  it('shows no PR badge and no Plain folder pill for a plain-folder workspace', () => {
     const workspace = makeWorkspaceWithPr({ plainFolder: true, branch: '' });
     mocks.monitors.push(makeMonitor({ workspaceId: workspace.id }));
 
     const { container } = render(WorkspaceCard, { props: { workspace } });
 
     expect(container.querySelector('[data-workspace-card-pr-list]')).toBeNull();
-    expect(container.querySelector('[data-plain-folder-label]')?.textContent?.trim()).toBe(
-      'Plain folder',
-    );
+    expect(container.querySelector('[data-plain-folder-label]')).toBeNull();
+    expect(container.textContent).not.toContain('Plain folder');
   });
 
   it('keeps the PR badge and no label for a git workspace', () => {
