@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.266.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.266.2...v2.266.3) (2026-11-02)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.103 ([#4003](https://github.com/intent-hq/cloudlands-fe/issues/4003)) ([0547b6c](https://github.com/intent-hq/cloudlands-fe/commit/0547b6cb1846914ed875f1fabf6573b231e768df))
+* **scripts:** warn when CT runs start on a host loaded past its CPU count ([#3994](https://github.com/intent-hq/cloudlands-fe/issues/3994)) ([8f56d83](https://github.com/intent-hq/cloudlands-fe/commit/8f56d832927ade3f5212eaf1386e92eb4e019311))
+* show the plain-folder git toggle with a GitHub or GitLab repo selected ([#3997](https://github.com/intent-hq/cloudlands-fe/issues/3997)) ([ebea9f0](https://github.com/intent-hq/cloudlands-fe/commit/ebea9f042662f5374ccdc762a3d0fd01a2ee144a))
+
 ## [2.266.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.266.1...v2.266.2) (2026-11-01)
 
 
