@@ -7655,9 +7655,15 @@
                 />
               {/if}
               <div>
+                <!-- Above a visible queue card, the final pending row keeps its turn
+                     gap even without a working status so it never sits flush on the
+                     card. Without a queue it stays unpadded so confirmation does not
+                     shift the bottom-aligned row. -->
                 <div
                   class="w-full"
-                  class:mb-6={ownsStatus}
+                  class:mb-6={ownsStatus ||
+                    (queuedMessagesVisibility.showQueue &&
+                      index === pendingConversationMessages.length - 1)}
                   data-message-id={message.id}
                   data-message-role="user"
                   data-send-app-message-id={message.appMessageId}
