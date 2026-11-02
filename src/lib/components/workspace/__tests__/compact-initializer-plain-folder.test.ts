@@ -856,7 +856,7 @@ describe('New Workspace — plain-folder git choice (Labs)', () => {
 
       await submit();
       await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
-      expect(params()).toMatchObject({ repositoryPath: repo, skipIsolation: true });
+      expect(params()).toMatchObject({ repositoryPath: repo, skipIsolation: true, branch: 'main' });
       expect(params().plainFolder).toBeUndefined();
       expect(params().isNewRepo).toBe(false);
       expect(plainFolder.confirm).not.toHaveBeenCalled();
@@ -911,7 +911,8 @@ describe('New Workspace — plain-folder git choice (Labs)', () => {
           skipIsolation: true,
           baseRef: 'main',
         });
-        expect(params().branch).toBeUndefined();
+        // The row names the folder's real branch, not a generated one.
+        expect(params().branch).toBe('main');
         expect(params().plainFolder).toBeUndefined();
         expect(plainFolder.confirm).not.toHaveBeenCalled();
       },
