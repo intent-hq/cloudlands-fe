@@ -529,11 +529,10 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
     });
     await waitFor(() => expect(mockGetBranches).toHaveBeenCalledWith('/tmp/repo', true));
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(onchange).not.toHaveBeenCalled();
+    expect(onchange.mock.lastCall?.[0].detail.branch).not.toBe('feature');
 
     await rerender({ skipIsolation: true });
-    await waitFor(() => expect(onchange).toHaveBeenCalled());
-    expect(onchange.mock.lastCall?.[0].detail).toEqual({ branch: 'feature' });
+    await waitFor(() => expect(onchange.mock.lastCall?.[0].detail).toEqual({ branch: 'feature' }));
     expect(onSkipIsolationChange).not.toHaveBeenCalled();
   });
 

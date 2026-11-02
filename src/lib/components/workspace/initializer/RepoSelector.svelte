@@ -152,9 +152,16 @@
 
   type RemoteSetup = WorkspaceInitializerRemoteSetup;
 
-  /** The git choice (Labs plain folders) shown in the folder tabs. */
+  /** The git switch (Labs plain folders) shown in the folder tabs. */
   export interface RepoSelectorGitChoice {
+    /** The git choice: initialize a folder without git, or not. */
     checked: boolean;
+    /** The current Existing folder pick, or null when nothing local is picked. */
+    folder?: 'git-repo' | 'folder' | null;
+    /** For a picked git repo the switch shows its isolation: its own worktree. */
+    worktree?: boolean;
+    /** The picked git repo's branch, named when it is used in place. */
+    branch?: string;
     disabled?: boolean;
     /** `tab` is the folder tab the choice was flipped in. */
     onCheckedChange: (checked: boolean, tab: 'local' | 'new') => void;
@@ -1562,6 +1569,14 @@
     isOpen = false;
   }
 
+  // The git switch was flipped. A folder without git still awaiting
+  // "Initialize Git here" is picked as a plain folder when it is turned off.
+  function handleGitSwitchChange(value: boolean, tab: 'local' | 'new') {
+    const pending = tab === 'local' && showNonGitFolderPrompt ? nonGitFolderPath : '';
+    gitChoice?.onCheckedChange(value, tab);
+    if (pending && !value) selectPlainFolder(pending, 'existing');
+  }
+
   // Handle when user wants to choose a different folder
   function handleChooseDifferentFolder() {
     showNonGitFolderPrompt = false;
@@ -1804,12 +1819,19 @@
           <div class="shrink-0 px-3 mb-3">
             {#if gitChoice && (activeTab === 'local' || activeTab === 'new')}
               {@const tab = activeTab}
+              {@const folder =
+                tab === 'new'
+                  ? 'new'
+                  : showNonGitFolderPrompt && nonGitFolderPath
+                    ? 'folder'
+                    : (gitChoice.folder ?? null)}
               <InitializeGitToggle
                 class="mb-3 px-1"
-                kind={tab === 'local' ? 'existing' : 'new'}
-                checked={gitChoice.checked}
+                {folder}
+                branch={gitChoice.branch}
+                checked={folder === 'git-repo' ? gitChoice.worktree !== false : gitChoice.checked}
                 disabled={gitChoice.disabled}
-                onCheckedChange={(value) => gitChoice.onCheckedChange(value, tab)}
+                onCheckedChange={(value) => handleGitSwitchChange(value, tab)}
               />
             {/if}
             {#if activeTab === 'gitlab' && gitlab}

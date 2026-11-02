@@ -793,11 +793,37 @@ describe('New Workspace — plain-folder git choice (Labs)', () => {
    */
   describe('switch per folder type', () => {
     const params = () => mocks.create.mock.calls[0][0] as Record<string, unknown>;
+    let repo: string;
+
+    beforeEach(() => {
+      repo = join(root, 'repo');
+      mkdirSync(repo);
+      registerMockIpcHandler('file:getDirectoryStatus', async ({ path }: { path: string }) => {
+        let exists = true;
+        let isDirectory = false;
+        try {
+          isDirectory = statSync(path).isDirectory();
+        } catch {
+          exists = false;
+        }
+        return {
+          success: true,
+          data: {
+            path,
+            exists,
+            isDirectory,
+            isEmpty: exists && isDirectory ? readdirSync(path).length === 0 : true,
+            isGitRepo: path === repo,
+            isSubdirectoryOfGitRepo: false,
+          },
+        };
+      });
+    });
 
     async function pickGitRepo() {
-      await pick({ path: folder });
+      await pick({ path: repo });
       picker().onBranchChange({ detail: { branch: 'main' } });
-      await waitFor(() => expect(screen.getByTestId('picker-repo-path').textContent).toBe(folder));
+      await waitFor(() => expect(screen.getByTestId('picker-repo-path').textContent).toBe(repo));
     }
 
     it('git repo, switch on: a new branch in a separate worktree', async () => {
@@ -811,7 +837,7 @@ describe('New Workspace — plain-folder git choice (Labs)', () => {
 
       await submit();
       await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
-      expect(params()).toMatchObject({ repositoryPath: folder, baseRef: 'main' });
+      expect(params()).toMatchObject({ repositoryPath: repo, baseRef: 'main' });
       expect(params().skipIsolation).toBeUndefined();
       expect(params().plainFolder).toBeUndefined();
     });
@@ -830,7 +856,7 @@ describe('New Workspace — plain-folder git choice (Labs)', () => {
 
       await submit();
       await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
-      expect(params()).toMatchObject({ repositoryPath: folder, skipIsolation: true });
+      expect(params()).toMatchObject({ repositoryPath: repo, skipIsolation: true });
       expect(params().plainFolder).toBeUndefined();
       expect(params().isNewRepo).toBe(false);
       expect(plainFolder.confirm).not.toHaveBeenCalled();
@@ -850,7 +876,7 @@ describe('New Workspace — plain-folder git choice (Labs)', () => {
       expect(sw.getAttribute('aria-checked')).toBe('false');
       expect(localStorage.setItem).toHaveBeenCalledWith(INITIALIZE_GIT_CHOICE_STORAGE_KEY, 'false');
       // The pick stays: a git repo is never dropped by the switch.
-      expect(screen.getByTestId('picker-repo-path').textContent).toBe(folder);
+      expect(screen.getByTestId('picker-repo-path').textContent).toBe(repo);
       expect(folderOpens()).toBe(0);
 
       // Turning isolation back on in the branch selector turns the switch on.

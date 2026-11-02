@@ -1750,6 +1750,8 @@
                         <div class="max-w-5xl mx-auto">
                           <ProjectPickerMessage
                             onProjectChange={handleOnboardingProjectChange}
+                            skipIsolation={onboardingSkipIsolation}
+                            onSkipIsolationChange={(value) => (onboardingSkipIsolation = value)}
                             onSelectAndAdvance={() => {
                               if (canAdvanceFromProject) {
                                 appStore.dispatch(goToStep('configuring'));
