@@ -30,12 +30,33 @@ function fail(message) {
   process.exit(1);
 }
 
+const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+const SIGNAL_GRACE_MS = CLOSE_TIMEOUT_MS + 5_000;
+
+function exitCodeFor(signal) {
+  return 128 + os.constants.signals[signal];
+}
+
+function groupAlive(pgid) {
+  try {
+    process.kill(-pgid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function reexecUnderXvfb(argv) {
   const { command, args } = xvfbCommand(process.execPath, scriptPath, argv);
+  // Own process group: xvfb-run is a shell that dies on a signal without
+  // passing it on, so cancellation is delivered to the whole group (xvfb-run,
+  // Xvfb and the inner runner, which closes Electron and removes its profile).
   const child = spawn(command, args, {
     stdio: 'inherit',
+    detached: true,
     env: { ...process.env, [XVFB_MARKER]: '1' },
   });
+  let cancelledBy = null;
   child.on('error', (error) => {
     if (error.code === 'ENOENT') {
       fail(
@@ -45,7 +66,27 @@ function reexecUnderXvfb(argv) {
     }
     fail(`xvfb-run failed to start: ${error.message}`);
   });
-  child.on('exit', (code, signal) => process.exit(signal ? 1 : (code ?? 1)));
+  child.on('exit', (code, signal) => {
+    if (!cancelledBy) process.exit(signal ? 1 : (code ?? 1));
+  });
+  for (const signal of SIGNALS) {
+    process.on(signal, async () => {
+      if (cancelledBy || !child.pid) return;
+      cancelledBy = signal;
+      try {
+        process.kill(-child.pid, signal);
+      } catch {
+        // The group is already gone.
+      }
+      // Wait for the inner cleanup, then force whatever remains.
+      const deadline = Date.now() + SIGNAL_GRACE_MS;
+      while (groupAlive(child.pid) && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      if (groupAlive(child.pid)) process.kill(-child.pid, 'SIGKILL');
+      process.exit(exitCodeFor(signal));
+    });
+  }
 }
 
 function assertBuilt() {
@@ -112,6 +153,20 @@ async function run(options) {
   const consoleErrors = [];
   let app;
   let failure;
+  let cleanup;
+  const cleanupOnce = () =>
+    (cleanup ??= (async () => {
+      if (app) await closeApp(app);
+      if (options.keepProfile) console.log(`profile: ${userDataDir}`);
+      else fs.rmSync(userDataDir, { recursive: true, force: true });
+    })());
+  for (const signal of SIGNALS) {
+    process.once(signal, async () => {
+      console.error(`electron:headless: ${signal}, closing the app`);
+      await cleanupOnce().catch((error) => console.error(error));
+      process.exit(exitCodeFor(signal));
+    });
+  }
   try {
     app = await electron.launch({
       ...electronLaunchOptions({ appDir, userDataDir, socket }),
@@ -149,9 +204,7 @@ async function run(options) {
   } catch (error) {
     failure = error;
   } finally {
-    if (app) await closeApp(app);
-    if (options.keepProfile) console.log(`profile: ${userDataDir}`);
-    else fs.rmSync(userDataDir, { recursive: true, force: true });
+    await cleanupOnce();
   }
   if (consoleErrors.length > 0) {
     console.log(`console errors (${consoleErrors.length}):`);
