@@ -14,7 +14,7 @@ import { m } from '$shared/paraglide/messages.js';
 import type { AgentSession } from '$shared/types';
 import type { RemoteMachine } from '$shared/types/remote-machines';
 
-export type AgentMachineState = 'ready' | 'unreachable' | 'revoked';
+type AgentMachineState = 'ready' | 'unreachable' | 'revoked';
 
 export interface AgentMachineLocation {
   nodeId: string;
@@ -47,7 +47,7 @@ export function machinePlatformLabel(os?: string, arch?: string): string | null 
 }
 
 /** True when the agent is placed on another machine. */
-export function isRemoteAgent(agent: AgentSession | null | undefined): boolean {
+function isRemoteAgent(agent: AgentSession | null | undefined): boolean {
   return agent?.placement?.target === 'remote';
 }
 
