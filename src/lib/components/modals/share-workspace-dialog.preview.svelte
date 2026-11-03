@@ -24,6 +24,7 @@
     principals: HostPrincipal[];
     sharingEnabled?: boolean | null;
     sharingChecking?: boolean;
+    resolving?: boolean;
     sharingEnabling?: boolean;
     sharingError?: string | null;
     canAdministerHost?: boolean;
@@ -180,6 +181,9 @@
       'link-first': { props: { ...sharingSetup, sharingEnabled: true } },
       'link-slow': { props: { ...sharingSetup, sharingEnabled: true, inviteDelayMs: 750 } },
       'sharing-disabled': { props: sharingSetup },
+      resolving: {
+        props: { ...sharingSetup, sharingEnabled: null, sharingChecking: true, resolving: true },
+      },
       'sharing-checking': {
         props: { ...sharingSetup, sharingEnabled: null, sharingChecking: true },
       },

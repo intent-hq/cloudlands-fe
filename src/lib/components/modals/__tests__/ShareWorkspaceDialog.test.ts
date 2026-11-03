@@ -244,6 +244,51 @@ describe('ShareWorkspaceDialog — owner gate', () => {
   });
 });
 
+describe('ShareWorkspaceDialog — first answers pending', () => {
+  // Regression: opening Share flashed the connect card, the setup card and an
+  // empty roster in turn while the host's answers arrived one by one.
+  it('shows one loading placeholder instead of provisional cards, then the settled controls', async () => {
+    const onCreateInvite = vi.fn();
+    const pending = {
+      ...baseProps,
+      githubConnected: false,
+      sharingEnabled: null,
+      sharingChecking: true,
+      members: [],
+      invites: [],
+      loading: true,
+      resolving: true,
+      onCreateInvite,
+    };
+    const { rerender } = render(ShareWorkspaceDialog, { props: pending });
+    expect(screen.getByRole('status', { name: 'Loading…' })).toBeTruthy();
+    expect(screen.queryByTestId('share-github-required')).toBeNull();
+    expect(screen.queryByRole('switch', { name: 'Enable sharing' })).toBeNull();
+    expect(screen.queryByTestId('share-link-submit')).toBeNull();
+    expect(screen.queryByTestId('share-members-loading')).toBeNull();
+
+    await rerender({
+      ...baseProps,
+      sharingEnabled: true,
+      sharingChecking: false,
+      loading: false,
+      resolving: false,
+      onCreateInvite,
+    });
+    expect(screen.queryByRole('status', { name: 'Loading…' })).toBeNull();
+    await fireEvent.click(screen.getByTestId('share-link-submit'));
+    expect(onCreateInvite).toHaveBeenCalledExactlyOnceWith('');
+  });
+
+  it('keeps ready controls usable through a passive prerequisite recheck', async () => {
+    const onCreateInvite = vi.fn();
+    renderDialog({ sharingEnabled: true, sharingChecking: true, onCreateInvite });
+    expect(screen.queryByRole('switch', { name: 'Enable sharing' })).toBeNull();
+    await fireEvent.click(screen.getByTestId('share-link-submit'));
+    expect(onCreateInvite).toHaveBeenCalledExactlyOnceWith('');
+  });
+});
+
 describe('ShareWorkspaceDialog — forge gate', () => {
   it('leaves an unpinned invite available while canonical GitLab status is pending', async () => {
     const onCreateInvite = vi.fn();
@@ -1144,6 +1189,13 @@ describe('ShareWorkspaceDialog — invite an existing user', () => {
     await waitFor(() => expect(trigger.textContent).toContain('@erin'));
     await fireEvent.click(screen.getByTestId('share-existing-guest-invite'));
     expect(onAddMember).toHaveBeenCalledExactlyOnceWith('p-erin');
+  });
+
+  it('does not pop the section in during a re-read when no guest can be invited', async () => {
+    const { rerender } = renderDialog({ principals: [] });
+    expect(screen.queryByTestId('share-existing-guest')).toBeNull();
+    await rerender({ ...baseProps, principals: [], loading: true });
+    expect(screen.queryByTestId('share-existing-guest')).toBeNull();
   });
 
   it('keeps the invitation target through an in-flight refresh and gates submission until settled', async () => {

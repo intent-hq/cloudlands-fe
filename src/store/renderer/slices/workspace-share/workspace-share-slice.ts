@@ -107,6 +107,12 @@ export interface ShareIntegrationAuth {
 export interface WorkspaceShareState {
   integrationAuth: ShareIntegrationAuth;
   /**
+   * `integrationAuth` was read for this dialog session. Until then its
+   * `false` flags are unknown, not "disconnected": the dialog shows a loading
+   * placeholder instead of the connect-a-forge card.
+   */
+  integrationAuthLoaded: boolean;
+  /**
    * The daemon refused an invite with `github-identity-required` this
    * session: the owner has no forge, whatever the cached status says.
    */
@@ -178,6 +184,7 @@ export interface WorkspaceShareState {
 
 export const initialState: WorkspaceShareState = {
   integrationAuth: { github: false, gitlab: false },
+  integrationAuthLoaded: false,
   ownerForgeMissing: false,
   sharingContext: null,
   sharingEnabled: null,
@@ -419,11 +426,15 @@ workspaceShareReducer.with(
   sharePrerequisitesStarted,
   (state, { payload: [{ target, enabling }] }) => {
     if (!targets(state, target) || state.withheld || !target.authority) return state;
+    // A passive recheck for the same host keeps the settled answer on screen
+    // (no setup card flashing over ready controls); a new host starts unknown.
+    const known =
+      !enabling && state.sharingContext === target.authority ? state.sharingEnabled : null;
     return {
       ...state,
       sharingContext: target.authority,
       createError: enabling ? null : state.createError,
-      sharingEnabled: null,
+      sharingEnabled: known,
       sharingChecking: !enabling,
       sharingEnabling: enabling,
       sharingError: null,
@@ -675,13 +686,12 @@ export const shareOwnerForgeMissing = createAction<[target: WorkspaceShareTarget
 workspaceShareReducer.with(shareOwnerForgeMissing, (state, { payload: [target] }) =>
   targets(state, target) ? { ...state, ownerForgeMissing: true } : state,
 );
-workspaceShareReducer.with(shareIntegrationAuthRequested, (state) => ({
-  ...state,
-  integrationAuth: { github: false, gitlab: false },
-}));
+// A re-read keeps the last answer: resetting it would flash the connect card.
 workspaceShareReducer.with(shareIntegrationAuthLoaded, (state, { payload: [target, auth] }) => {
   if (!targets(state, target)) return state;
-  if (auth.known === false) return { ...state, integrationAuth: auth };
+  if (auth.known === false) {
+    return { ...state, integrationAuth: auth, integrationAuthLoaded: true };
+  }
   // No forge hides the link form, and a connected one clears a latched
   // refusal: either way a create error from before must not reappear.
   const forgeless = !auth.github && !auth.gitlab;
@@ -689,6 +699,7 @@ workspaceShareReducer.with(shareIntegrationAuthLoaded, (state, { payload: [targe
   return {
     ...state,
     integrationAuth: auth,
+    integrationAuthLoaded: true,
     ownerForgeMissing: forgeless && state.ownerForgeMissing,
     ...(clear ? { createError: null } : {}),
   };

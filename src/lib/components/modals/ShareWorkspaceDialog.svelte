@@ -25,6 +25,7 @@
   import { Select } from '$lib/components/ui/select';
   import { ListView } from '$lib/components/patterns/collection';
   import { ContentDialog } from '$lib/components/patterns/confirm';
+  import { LoadingState } from '$lib/components/patterns/screen';
   import { notify } from '$lib/components/patterns/notify';
   import { formatInteger, formatRelativeTime } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
@@ -114,6 +115,11 @@
     /** The workspace's guest cap; `null` while unknown (no gating). */
     guestLimit?: number | null;
     loading?: boolean;
+    /**
+     * The first forge, sharing-prerequisite and roster answers are still
+     * outstanding: one loading placeholder stands in for the controls.
+     */
+    resolving?: boolean;
     loadError?: string | null;
     creating?: boolean;
     createError?: string | null;
@@ -179,6 +185,7 @@
     guestCount = null,
     guestLimit = null,
     loading = false,
+    resolving = false,
     loadError = null,
     creating = false,
     createError = null,
@@ -204,9 +211,10 @@
   const busy = $derived(
     revokingInviteId !== null || removingPrincipalId !== null || addingPrincipalId !== null,
   );
+  /** A passive recheck of an enabled host keeps the controls; only enabling hides them. */
   const sharingReady = $derived(
-    (canAdministerHost ? sharingEnabled === true : sharingEnabled !== false) &&
-      !sharingChecking &&
+    !resolving &&
+      (canAdministerHost ? sharingEnabled === true : sharingEnabled !== false) &&
       !sharingEnabling,
   );
   /** GitLab counts as an identity forge only once the daemon serves the seam. */
@@ -614,7 +622,7 @@
   <ContentDialog
     {open}
     bind:contentRef={dialogContent}
-    title={sharingReady && workspaceTitle
+    title={(sharingReady || resolving) && workspaceTitle
       ? m.workspace_share_namedTitle_label({ title: workspaceTitle })
       : m.workspace_share_dialog_title()}
     titleId="share-workspace-title"
@@ -628,6 +636,8 @@
           <p class="text-sm text-subtle" role="status" data-testid="share-owner-only">
             {m.workspace_share_ownerOnly_notice()}
           </p>
+        {:else if resolving}
+          <LoadingState recipe="form" count={2} label={m.workspace_share_loading_label()} />
         {:else}
           {#if !forgeConnected && !canAdministerHost}
             <p class="text-sm text-subtle" role="status" data-testid="share-forge-owner-required">
@@ -692,7 +702,7 @@
             class="space-y-4.5"
             data-testid="share-invite-controls"
           >
-            {#if principals.length > 0 || loading || selectedPrincipalId}
+            {#if principals.length > 0 || selectedPrincipalId}
               <section
                 class="space-y-2"
                 aria-labelledby="share-existing-guest-label"

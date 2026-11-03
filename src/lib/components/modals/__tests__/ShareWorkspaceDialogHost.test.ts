@@ -56,6 +56,8 @@ beforeEach(() => {
       open: true,
       workspaceId: 'ws-1',
       workspaceTitle: 'Workspace',
+      integrationAuthLoaded: true,
+      loadStatus: 'loaded',
     },
     userPreferences: { ...preferenceDefaults, labsGitLabEnabled: true },
     identity: identityDefaults,
@@ -66,9 +68,35 @@ beforeEach(() => {
   });
 });
 
+/** `forge: false` leaves the owner without a forge, so the connect box shows. */
+function setupState(enabling: boolean, forge = true) {
+  const share = mocks.state.workspaceShare as WorkspaceShareState;
+  const target = {
+    workspaceId: 'ws-1',
+    session: share.session,
+    authority: selectPrincipalActionContext.select(mocks.state as unknown as StoreState),
+  };
+  mocks.state.workspaceShare = {
+    ...workspaceShareReducer(share, sharePrerequisitesStarted({ target, enabling })),
+    // Sharing setup follows the connect box: the owner has a forge here.
+    integrationAuth: { github: forge, gitlab: false },
+  };
+  return target;
+}
+
+function settledState(enabled: boolean, forge = true) {
+  const target = setupState(false, forge);
+  mocks.state.workspaceShare = workspaceShareReducer(
+    mocks.state.workspaceShare as WorkspaceShareState,
+    sharePrerequisitesSettled({ target, enabled, error: null }),
+  );
+  return target;
+}
+
 it.each([true, false])(
   'keeps generic account setup on Connections when GitLab is enabled=%s at activation',
   async (enabled) => {
+    settledState(false, false);
     render(ShareWorkspaceDialogHost);
     const link = screen.getByRole('button', { name: 'Open Connections' });
     mocks.state.userPreferences = { ...preferenceDefaults, labsGitLabEnabled: enabled };
@@ -85,6 +113,7 @@ it.each([true, false])(
 it.each(['guest', 'unresolved'] as const)(
   'withholds a stale Connections action after authority becomes %s',
   async (role) => {
+    settledState(false, false);
     render(ShareWorkspaceDialogHost);
     const link = screen.getByRole('button', { name: 'Open Connections' });
     mocks.state = withLegacyPrincipal(mocks.state, 'guest');
@@ -96,27 +125,8 @@ it.each(['guest', 'unresolved'] as const)(
   },
 );
 
-function setupState(enabling: boolean) {
-  const share = mocks.state.workspaceShare as WorkspaceShareState;
-  const target = {
-    workspaceId: 'ws-1',
-    session: share.session,
-    authority: selectPrincipalActionContext.select(mocks.state as unknown as StoreState),
-  };
-  mocks.state.workspaceShare = {
-    ...workspaceShareReducer(share, sharePrerequisitesStarted({ target, enabling })),
-    // Sharing setup follows the connect box: the owner has a forge here.
-    integrationAuth: { github: true, gitlab: false },
-  };
-  return target;
-}
-
 it('dispatches inline enable without closing the dialog or navigating', async () => {
-  const target = setupState(false);
-  mocks.state.workspaceShare = workspaceShareReducer(
-    mocks.state.workspaceShare as WorkspaceShareState,
-    sharePrerequisitesSettled({ target, enabled: false, error: null }),
-  );
+  settledState(false);
   render(ShareWorkspaceDialogHost);
   mocks.dispatch.mockClear();
   await fireEvent.click(screen.getByRole('switch', { name: 'Enable sharing' }));
@@ -124,12 +134,38 @@ it('dispatches inline enable without closing the dialog or navigating', async ()
   expect(mocks.navigate).not.toHaveBeenCalled();
 });
 
-it('forwards checking and enabling progress and removes setup after success', async () => {
-  const target = setupState(false);
+it('shows a loading placeholder, not the forge or setup cards, until the first answers arrive', async () => {
+  mocks.state.workspaceShare = {
+    ...(mocks.state.workspaceShare as WorkspaceShareState),
+    integrationAuthLoaded: false,
+  };
+  render(ShareWorkspaceDialogHost);
+  expect(screen.getByRole('status', { name: 'Loading…' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Open Connections' })).toBeNull();
+  expect(screen.queryByRole('switch', { name: 'Enable sharing' })).toBeNull();
+  mocks.state.workspaceShare = {
+    ...(mocks.state.workspaceShare as WorkspaceShareState),
+    integrationAuthLoaded: true,
+  };
+  setupState(false);
+  mocks.emitState();
+  await tick();
+  expect(screen.getByRole('status', { name: 'Loading…' })).toBeTruthy();
+  expect(screen.queryByRole('switch', { name: 'Enable sharing' })).toBeNull();
+  settledState(false);
+  mocks.emitState();
+  await tick();
+  expect(screen.queryByRole('status', { name: 'Loading…' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Open Connections' })).toBeTruthy();
+  expect(screen.getByRole('switch', { name: 'Enable sharing' })).toBeTruthy();
+});
+
+it('forwards enabling progress and removes setup after success', async () => {
+  const target = settledState(false);
   render(ShareWorkspaceDialogHost);
   expect(
     (screen.getByRole('switch', { name: 'Enable sharing' }) as HTMLButtonElement).disabled,
-  ).toBe(true);
+  ).toBe(false);
   setupState(true);
   mocks.emitState();
   await tick();
@@ -146,11 +182,7 @@ it('forwards checking and enabling progress and removes setup after success', as
 });
 
 it('refuses a stale inline enable control after host administration is lost', async () => {
-  const target = setupState(false);
-  mocks.state.workspaceShare = workspaceShareReducer(
-    mocks.state.workspaceShare as WorkspaceShareState,
-    sharePrerequisitesSettled({ target, enabled: false, error: null }),
-  );
+  settledState(false);
   render(ShareWorkspaceDialogHost);
   const control = screen.getByRole('switch', { name: 'Enable sharing' });
   mocks.state = withLegacyPrincipal(mocks.state, 'guest');
@@ -162,11 +194,7 @@ it('refuses a stale inline enable control after host administration is lost', as
 it.each(['backend', 'identity', 'session'])(
   'refuses a stale inline enable control after %s changes',
   async (change) => {
-    const target = setupState(false);
-    mocks.state.workspaceShare = workspaceShareReducer(
-      mocks.state.workspaceShare as WorkspaceShareState,
-      sharePrerequisitesSettled({ target, enabled: false, error: null }),
-    );
+    settledState(false);
     render(ShareWorkspaceDialogHost);
     const control = screen.getByRole('switch', { name: 'Enable sharing' });
     const root = mocks.state as unknown as StoreState;
@@ -208,6 +236,7 @@ it.each([undefined, false, true])(
       members: createCollection('principalId', [member]),
       pendingRolePrincipalIds: ['guest'],
     };
+    settledState(true);
     render(ShareWorkspaceDialogHost);
     const trigger = screen.queryByRole('button', {
       name: 'Role for Alex',
