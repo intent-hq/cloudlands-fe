@@ -31,6 +31,8 @@
  * `connections-store.ts`; this module has no store imports.
  */
 
+import { TOMBSTONE_TTL_MS, accountKeyFor } from './connection-sync-identity';
+export { TOMBSTONE_TTL_MS, accountKeyFor } from './connection-sync-identity';
 import { spawn } from 'child_process';
 import { isIsolatedTestBuild } from '../../../main/isolated-test-profile';
 import { promises as fs } from 'fs';
@@ -61,9 +63,6 @@ export const KEYCHAIN_SERVICE_GUEST_SESSIONS = 'com.cloudlands.intent.guest-sess
 /** Current payload schema version. Items with a NEWER `v` (written by a newer
  * app) freeze their account: neither pulled nor overwritten by a push. */
 export const KEYCHAIN_PAYLOAD_VERSION = 1;
-
-/** Tombstones older than this are purged from the keychain on reconcile. */
-export const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 const HELPER_TIMEOUT_MS = 15_000;
 /** Exact cap on collected helper stdout; overflow is sliced off (truncated
@@ -117,14 +116,6 @@ export interface KeychainSyncRecord {
   deleted?: boolean;
   /** When the tombstone was written (ms since epoch); TTL anchor. */
   deletedAt?: number;
-}
-
-/**
- * Keychain account key for a backend: normalized `host:port`, mirroring the
- * local store's host+port dedupe identity (host trimmed + lowercased).
- */
-export function accountKeyFor(host: string, port: number): string {
-  return `${host.trim().toLowerCase()}:${port}`;
 }
 
 /**

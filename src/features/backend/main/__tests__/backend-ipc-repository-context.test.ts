@@ -14,8 +14,8 @@ vi.mock('../client-identity', () => ({
   persistClientId: async () => {},
   setLocalHostIdentity: () => false,
 }));
-vi.mock('../connections-store', async (original) => ({
-  ...(await original<typeof import('../connections-store')>()),
+vi.mock('../desktop-connections-store', async (original) => ({
+  ...(await original<typeof import('../desktop-connections-store')>()),
   list: async () => [
     {
       id: 'host-A',

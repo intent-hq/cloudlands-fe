@@ -42,7 +42,7 @@ vi.mock('../../../backend/main/guest-sessions-store', () => ({
 }));
 const findMatching = vi.fn();
 const add = vi.fn();
-vi.mock('../../../backend/main/connections-store', () => ({
+vi.mock('../../../backend/main/desktop-connections-store', () => ({
   get findMatching() {
     return findMatching;
   },

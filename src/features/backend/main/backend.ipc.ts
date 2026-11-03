@@ -1,3 +1,4 @@
+import { buildConfigForRecord, ConnectionSecretUnavailableError } from './connection-config';
 import { collaborationMachineName } from '../../../shared/collaboration-machine-name';
 import { assertNormalAppOperation, isIsolatedTestBuild } from '../../../main/isolated-test-profile';
 import { createNativeReviewFeed } from './native-review-feed';
@@ -105,7 +106,7 @@ import { computeDaemonVersionRefresh } from './daemon-version-refresh';
 import { daemonHelloBuildKey, extractDaemonHelloBuildInfo } from './daemon-hello-build-info';
 import { detectOrphanedSidecar } from './intentd-orphan';
 import { defaultKill, restartOrphanedSidecar } from './orphan-recovery';
-import * as connectionsStore from './connections-store';
+import * as connectionsStore from './desktop-connections-store';
 import * as guestSessionsStore from './guest-sessions-store';
 import {
   authenticateInvitedCredential,
@@ -3764,25 +3765,6 @@ function refreshGuestSessionsForPoolChange(id: string, parent?: PoolOwner): void
 }
 
 /**
- * Resolve the transport config + cert-mismatch identity for a connection id.
- * `local` maps to the env/UDS default (no pinned cert); a remote id builds the
- * pinned `wss` config from its stored host/port/fingerprint + decrypted token.
- * Throws for an unknown/incomplete connection or a missing token — the caller
- * runs this BEFORE any teardown so a bad target never disrupts the live backend.
- *
- * Exported for the workspace-transfer relay, which builds a second,
- * short-lived JsonRpcClient to the chosen target while the active client
- * stays pinned to the source.
- */
-class ConnectionSecretUnavailableError extends Error {
-  constructor() {
-    // i18n-ignore (internal error)
-    super('Connection secret unavailable');
-    this.name = 'ConnectionSecretUnavailableError';
-  }
-}
-
-/**
  * The dial envelope of a remote backend id, whichever registry holds it: a
  * paired (owner) backend from the connections store or a guest session from
  * the guest-sessions store. Both share one id space (random UUIDs), so the
@@ -3832,6 +3814,17 @@ export async function resolveBackendRecord(id: string): Promise<{
   };
 }
 
+/**
+ * Resolve the transport config + cert-mismatch identity for a connection id.
+ * `local` maps to the env/UDS default (no pinned cert); a remote id builds the
+ * pinned `wss` config from its stored host/port/fingerprint + decrypted token.
+ * Throws for an unknown/incomplete connection or a missing token — the caller
+ * runs this BEFORE any teardown so a bad target never disrupts the live backend.
+ *
+ * Exported for the workspace-transfer relay, which builds a second,
+ * short-lived JsonRpcClient to the chosen target while the active client
+ * stays pinned to the source.
+ */
 export async function buildConfigForConnection(
   id: string,
   tokenOverride?: string,
@@ -3847,35 +3840,7 @@ export async function buildConfigForConnection(
   if (!record) {
     throw new Error(`Unknown or incomplete connection: ${id}`);
   }
-  let token: string | null | undefined = tokenOverride;
-  if (token === undefined) {
-    try {
-      token = await record.getToken();
-    } catch {
-      throw new ConnectionSecretUnavailableError();
-    }
-  }
-  if (!token) {
-    throw new Error(`No stored token for connection: ${id}`);
-  }
-  // The store's list() already sanitizes `hosts` (a legacy loopback primary
-  // is excluded whenever a routable candidate exists), so the race dials
-  // hosts[0] first — not the raw stored primary, which can be loopback on
-  // records synced from before self-publish filtered it out.
-  const dialHosts = record.hosts;
-  return {
-    config: {
-      transport: 'wss',
-      host: dialHosts[0],
-      hosts: dialHosts,
-      port: record.port,
-      token,
-      fingerprint: record.fingerprint,
-      tcAddress: record.tcAddress ?? undefined,
-    },
-    ...(record.invitedIdentity ? { invitedCredential: { ...record.invitedIdentity, token } } : {}),
-    meta: { id, host: record.host, port: record.port },
-  };
+  return buildConfigForRecord(record, tokenOverride);
 }
 
 /**
