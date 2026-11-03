@@ -44,6 +44,67 @@ export async function requestAllPages(
   return rows;
 }
 
+/**
+ * Keep the last row for each `threadId`, in order of last appearance. A paged
+ * `comment.list` walk serves a thread again when it gets a reply mid-walk
+ * (§5.2), and the later row is the newer one. Rows without a `threadId` are
+ * kept after the threads.
+ */
+export function latestThreadRows(rows: unknown[]): unknown[] {
+  const byId = new Map<string, unknown>();
+  const rest: unknown[] = [];
+  for (const row of rows) {
+    const id =
+      row && typeof row === 'object' ? (row as Record<string, unknown>).threadId : undefined;
+    if (typeof id !== 'string' || !id) {
+      rest.push(row);
+      continue;
+    }
+    byId.delete(id);
+    byId.set(id, row);
+  }
+  return [...byId.values(), ...rest];
+}
+
+/**
+ * A `comment.list` row marked `commentsTruncated` (§5.2) carries only the
+ * oldest comments that fit one page. Returns a promise of the row with every
+ * comment, read through `comment.getThread` (`rootComment` + `replies`), or
+ * `null` when the row is whole. On a failed or malformed read the promise
+ * resolves to the row unchanged.
+ */
+export function completeCommentThread(
+  row: unknown,
+  getThread: (threadId: string) => Promise<unknown>,
+): Promise<Record<string, unknown>> | null {
+  if (!row || typeof row !== 'object') return null;
+  const thread = row as Record<string, unknown>;
+  if (thread.commentsTruncated !== true || typeof thread.threadId !== 'string') return null;
+  return getThread(thread.threadId).then(
+    (full) => {
+      if (!full || typeof full !== 'object') return thread;
+      const { rootComment, replies } = full as { rootComment?: unknown; replies?: unknown };
+      if (!rootComment || typeof rootComment !== 'object' || !Array.isArray(replies)) return thread;
+      const { commentsTruncated: _cut, ...whole } = thread;
+      return { ...whole, comments: [rootComment, ...replies] };
+    },
+    () => thread,
+  );
+}
+
+/**
+ * Read every `comment.list` page (`threads`), keep each thread's latest row
+ * and complete cut threads through `getThread`.
+ */
+export async function requestAllCommentThreads(
+  request: (params: Record<string, unknown>) => Promise<unknown>,
+  params: Record<string, unknown>,
+  getThread: (threadId: string) => Promise<unknown>,
+): Promise<unknown[]> {
+  const rows = latestThreadRows(await requestAllPages(request, params, 'threads'));
+  return Promise.all(rows.map((row) => completeCommentThread(row, getThread) ?? row));
+}
+
 /** Hard stop for a note content walk (`note.get` `contentOffset` pages). */
 const MAX_NOTE_CONTENT_PAGES = 1_000;
 

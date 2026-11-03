@@ -29,7 +29,7 @@ import type {
   Unsubscribe,
 } from '../app-client';
 import { backendRequest } from './backend-transport';
-import { requestAllPages } from '$shared/utils/paged-list';
+import { completeCommentThread, requestAllCommentThreads } from '$shared/utils/paged-list';
 import { COMMENT_LIST_PAGE_LIMIT } from '$shared/constants/notes';
 import { createDeltaSubscription } from './delta-subscription';
 import type { TypedChannelDescriptor } from './delta-subscription';
@@ -137,10 +137,11 @@ async function fetchComments(noteId: string, explicitWorkspaceId?: string): Prom
     // renderer needs a flat `CommentV2[]`, so request the nested comments and
     // flatten them in order.
     // §5.2 bounded reads: page with `limit` + `nextToken`.
-    const threads = await requestAllPages(
+    // A cut thread (`commentsTruncated`) is read whole via `comment.getThread`.
+    const threads = await requestAllCommentThreads(
       (p) => backendRequest<{ threads?: unknown[] }>('comment.list', p),
       { workspaceId, noteId, includeComments: true, limit: COMMENT_LIST_PAGE_LIMIT },
-      'threads',
+      (threadId) => backendRequest('comment.getThread', { workspaceId, noteId, threadId }),
     );
     const out: CommentV2[] = [];
     for (const t of threads) {
@@ -317,6 +318,15 @@ export class LiveCommentsClient implements CommentsClient {
     return createDeltaSubscription<CommentV2[]>({
       channel,
       getId: (raw) => (typeof raw.threadId === 'string' ? raw.threadId : ''),
+      // A cut snapshot thread (`commentsTruncated`) is read whole.
+      complete: (raw) =>
+        completeCommentThread(raw, (threadId) =>
+          backendRequest('comment.getThread', {
+            workspaceId: channelWorkspaceId,
+            noteId,
+            threadId,
+          }),
+        ),
       normalize: (raw) => {
         if (raw.noteId !== noteId || !Array.isArray(raw.comments)) return null;
         return raw.comments.flatMap((value: unknown) => {

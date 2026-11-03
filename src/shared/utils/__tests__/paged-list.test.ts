@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
-import { MAX_LIST_PAGES, nextPageToken, requestAllPages, requestWholeNote } from '../paged-list';
+import {
+  MAX_LIST_PAGES,
+  completeCommentThread,
+  latestThreadRows,
+  nextPageToken,
+  requestAllCommentThreads,
+  requestAllPages,
+  requestWholeNote,
+} from '../paged-list';
 
 describe('requestAllPages', () => {
   it('walks nextToken pages and repeats the first page params', async () => {
@@ -149,5 +157,62 @@ describe('requestWholeNote', () => {
     };
     expect(result.note.content).toBe('ab');
     expect(result.note.contentTruncated).toBe(true);
+  });
+});
+
+describe('comment.list walks', () => {
+  it('keeps the later row of a thread served twice (replied to mid-walk)', () => {
+    expect(
+      latestThreadRows([
+        { threadId: 'a', v: 1 },
+        { threadId: 'b', v: 1 },
+        { other: true },
+        { threadId: 'a', v: 2 },
+      ]),
+    ).toEqual([{ threadId: 'b', v: 1 }, { threadId: 'a', v: 2 }, { other: true }]);
+  });
+
+  it('completes a commentsTruncated thread through comment.getThread', async () => {
+    const getThread = vi.fn(async () => ({
+      threadId: 't',
+      rootComment: { id: 'c1' },
+      replies: [{ id: 'c2' }, { id: 'c3' }],
+    }));
+    const row = { threadId: 't', comments: [{ id: 'c1' }], commentsTruncated: true };
+    expect(await completeCommentThread(row, getThread)).toEqual({
+      threadId: 't',
+      comments: [{ id: 'c1' }, { id: 'c2' }, { id: 'c3' }],
+    });
+    expect(getThread).toHaveBeenCalledWith('t');
+    expect(completeCommentThread({ threadId: 'u', comments: [] }, getThread)).toBeNull();
+  });
+
+  it('keeps the cut row when comment.getThread fails or is malformed', async () => {
+    const row = { threadId: 't', comments: [], commentsTruncated: true };
+    expect(await completeCommentThread(row, async () => Promise.reject(new Error('x')))).toBe(row);
+    expect(await completeCommentThread(row, async () => ({ rootComment: null }))).toBe(row);
+  });
+
+  it('requestAllCommentThreads dedupes pages and completes cut threads', async () => {
+    const pages: Record<string, unknown> = {
+      first: {
+        threads: [
+          { threadId: 'a', comments: [{ id: 'a1' }] },
+          { threadId: 'b', comments: [{ id: 'b1' }], commentsTruncated: true },
+        ],
+        nextToken: 't1',
+      },
+      t1: { threads: [{ threadId: 'a', comments: [{ id: 'a1' }, { id: 'a2' }] }], nextToken: null },
+    };
+    const request = vi.fn(
+      async (params: Record<string, unknown>) =>
+        pages[typeof params.nextToken === 'string' ? params.nextToken : 'first'],
+    );
+    const getThread = vi.fn(async () => ({ rootComment: { id: 'b1' }, replies: [{ id: 'b2' }] }));
+    expect(await requestAllCommentThreads(request, { limit: 100 }, getThread)).toEqual([
+      { threadId: 'b', comments: [{ id: 'b1' }, { id: 'b2' }] },
+      { threadId: 'a', comments: [{ id: 'a1' }, { id: 'a2' }] },
+    ]);
+    expect(getThread).toHaveBeenCalledTimes(1);
   });
 });

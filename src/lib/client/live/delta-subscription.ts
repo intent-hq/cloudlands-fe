@@ -106,6 +106,8 @@ export class DeltaReconciler<T> {
   private readonly items = new Map<string, T>();
   /** Ids a delta removed since the last snapshot (paged-snapshot fill guard). */
   private readonly removedSinceSnapshot = new Set<string>();
+  /** Ids a delta added or updated since the snapshot (see `completeRow`). */
+  private readonly changedSinceSnapshot = new Set<string>();
   private expectedSeq = 0;
   private seeded = false;
   /** Bumped by every snapshot and reset, so a stale continuation stops. */
@@ -120,6 +122,7 @@ export class DeltaReconciler<T> {
   reset(): void {
     this.items.clear();
     this.removedSinceSnapshot.clear();
+    this.changedSinceSnapshot.clear();
     this.expectedSeq = 0;
     this.seeded = false;
     this.epochValue += 1;
@@ -134,6 +137,7 @@ export class DeltaReconciler<T> {
   applySnapshot(seq: number, rawItems: unknown[]): void {
     this.items.clear();
     this.removedSinceSnapshot.clear();
+    this.changedSinceSnapshot.clear();
     this.epochValue += 1;
     for (const raw of rawItems) this.upsert(raw);
     this.expectedSeq = seq + 1;
@@ -143,8 +147,13 @@ export class DeltaReconciler<T> {
   /** Apply a contiguous delta; `false` means a gap → caller should resnapshot. */
   applyDelta(seq: number, delta: DeltaPayload): boolean {
     if (!this.seeded || seq !== this.expectedSeq) return false;
-    for (const raw of delta.added ?? []) this.upsert(raw);
-    for (const raw of delta.updated ?? []) this.upsert(raw);
+    for (const raw of [...(delta.added ?? []), ...(delta.updated ?? [])]) {
+      this.upsert(raw);
+      if (raw && typeof raw === 'object') {
+        const id = this.getId(raw as Record<string, unknown>);
+        if (id) this.changedSinceSnapshot.add(id);
+      }
+    }
     for (const id of delta.removedIds ?? []) {
       this.items.delete(String(id));
       this.removedSinceSnapshot.add(String(id));
@@ -165,6 +174,18 @@ export class DeltaReconciler<T> {
       if (!id || this.items.has(id) || this.removedSinceSnapshot.has(id)) continue;
       this.upsert(raw);
     }
+  }
+
+  /**
+   * Replace a snapshot row with its completed form (`config.complete`). A row
+   * a delta added, updated or removed since the snapshot is newer, so it is
+   * kept; a row no longer present is not re-added.
+   */
+  completeRow(raw: Record<string, unknown>): boolean {
+    const id = this.getId(raw);
+    if (!id || !this.items.has(id) || this.changedSinceSnapshot.has(id)) return false;
+    this.upsert(raw);
+    return true;
   }
 
   /** Current collection as an array. */
@@ -237,6 +258,12 @@ export interface DeltaSubscriptionConfig<T> {
   normalize: (raw: Record<string, unknown>) => T | null;
   /** Receives the reconciled collection on every change. */
   handler: SubscriptionHandler<T[]>;
+  /**
+   * Snapshot rows the daemon cut to fit a page (e.g. `commentsTruncated`):
+   * return a promise of the whole row, or `null` for a whole row. A row a
+   * delta changed in the meantime keeps the delta's state.
+   */
+  complete?: (raw: Record<string, unknown>) => Promise<Record<string, unknown>> | null;
 }
 
 /**
@@ -630,10 +657,30 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
         const rows = reply[continuation.key];
         target.fillFromPage(Array.isArray(rows) ? rows : []);
         emit();
+        completeRows(target, Array.isArray(rows) ? rows : []);
         token = typeof reply.nextToken === 'string' && reply.nextToken ? reply.nextToken : null;
       }
       recovery.setFailures(0);
     })();
+  };
+
+  // Complete cut snapshot rows (`config.complete`) unless a newer snapshot,
+  // a reset or disposal superseded them.
+  const completeRows = (target: DeltaReconciler<T>, rows: unknown[]) => {
+    const complete = config.complete;
+    if (!complete) return;
+    const epoch = target.epoch;
+    for (const raw of rows) {
+      if (!raw || typeof raw !== 'object') continue;
+      const pending = complete(raw as Record<string, unknown>);
+      if (!pending) continue;
+      void pending
+        .then((whole) => {
+          if (disposed || target.epoch !== epoch) return;
+          if (target.completeRow(whole)) emit();
+        })
+        .catch(() => {});
+    }
   };
 
   // Route a push (fresh or replayed from the pre-ack buffer) to its channel.
@@ -650,6 +697,7 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
           state.seeded = true;
           state.reconciler.applySnapshot(push.seq, push.snapshot ?? []);
           emit();
+          completeRows(state.reconciler, push.snapshot ?? []);
           if (push.nextToken) {
             continueSnapshot(state.reconciler, state.params, push.nextToken, {
               failures: () => state.continuationFailures,
@@ -682,6 +730,7 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
     if (push.kind === 'snapshot') {
       reconciler.applySnapshot(push.seq, push.snapshot ?? []);
       emit();
+      completeRows(reconciler, push.snapshot ?? []);
       if (push.nextToken) {
         continueSnapshot(reconciler, params, push.nextToken, {
           failures: () => continuationFailures,

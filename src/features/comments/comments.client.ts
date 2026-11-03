@@ -18,7 +18,7 @@ import {
 import type { Result, NoteComment } from '../../shared/types';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { m } from '$shared/paraglide/messages.js';
-import { requestAllPages } from '$shared/utils/paged-list';
+import { requestAllCommentThreads } from '$shared/utils/paged-list';
 import { COMMENT_LIST_PAGE_LIMIT } from '$shared/constants/notes';
 
 interface ListCommentsParams {
@@ -105,7 +105,8 @@ class CommentsClient {
   ): Promise<Result<NoteComment[], string>> {
     try {
       // §5.2 bounded reads: page with `limit` + `nextToken`.
-      const threads = await requestAllPages(
+      // A cut thread (`commentsTruncated`) is read whole via `comment.getThread`.
+      const threads = await requestAllCommentThreads(
         (p) => backendRequest<{ threads?: unknown[] }>('comment.list', p),
         {
           workspaceId,
@@ -114,7 +115,7 @@ class CommentsClient {
           limit: COMMENT_LIST_PAGE_LIMIT,
           ...(params?.status && params.status !== 'all' ? { status: params.status } : {}),
         },
-        'threads',
+        (threadId) => backendRequest('comment.getThread', { workspaceId, noteId, threadId }),
       );
       let comments: NoteComment[] = [];
       for (const t of threads) {
