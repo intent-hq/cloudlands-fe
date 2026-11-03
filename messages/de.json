@@ -6934,6 +6934,7 @@
   "workspace_initialAgentPicker_model_label": "Modell",
   "workspace_initialAgentPicker_startOn_label": "Starten auf",
   "workspace_initialAgentPicker_startOnNewRepo_description": "Neue Repositorys starten auf {backend}",
+  "workspace_initialAgentPicker_startOnPlainFolder_description": "Ordner ohne Git starten auf {backend}",
   "workspace_initialAgentPicker_teamMode_label": "Agenten-Orchestrierung",
   "workspace_isolationMode_cowCheckout_label": "CoW-Checkout",
   "workspace_isolationMode_worktree_label": "Worktree",

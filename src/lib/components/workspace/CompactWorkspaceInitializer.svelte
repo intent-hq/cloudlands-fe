@@ -551,6 +551,11 @@
       ? plainFolderPick.kind
       : null,
   );
+  // Start On: a remote agent starts from the workspace's last commit, which a
+  // new repository or a plain folder lacks, so its first agent stays here.
+  const startOnBackendOnly = $derived<'new-repo' | 'plain-folder' | null>(
+    plainFolder !== null ? 'plain-folder' : isNewRepo ? 'new-repo' : null,
+  );
   // What the picker's git switch acts on in the Existing folder tab.
   const gitSwitchFolder = $derived<'git-repo' | 'folder' | null>(
     repoType !== 'local' || !repoPath
@@ -2466,8 +2471,8 @@
           selectedReasoningEffort,
           isTeamMode,
           selectedProvider,
-          // A new repository has no commit for a remote agent to start from.
-          startOnMachineId: isNewRepo
+          // A new repository or a plain folder has no commit for a remote agent to start from.
+          startOnMachineId: startOnBackendOnly
             ? ''
             : selectEffectiveStartOn.select(appStore.state, startOnMachineId),
         },
@@ -2691,8 +2696,8 @@
       selectedReasoningEffort,
       isTeamMode,
       selectedProvider,
-      // A new repository has no commit for a remote agent to start from.
-      startOnMachineId: isNewRepo
+      // A new repository or a plain folder has no commit for a remote agent to start from.
+      startOnMachineId: startOnBackendOnly
         ? ''
         : selectEffectiveStartOn.select(appStore.state, startOnMachineId),
       skipIsolation,
@@ -3661,7 +3666,7 @@
               if (model && !automatic) modelPickedThisSession = true;
             }}
             bind:startOnMachineId
-            startOnBackendOnly={isNewRepo}
+            {startOnBackendOnly}
             bind:selectedReasoningEffort
             onReasoningEffortChange={() => (effortPickedThisSession = true)}
             onSetupPick={() => (setupPickedThisSession = true)}

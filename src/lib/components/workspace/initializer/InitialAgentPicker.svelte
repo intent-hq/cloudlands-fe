@@ -163,10 +163,11 @@
     /** The user picked a Start On option. */
     onStartOnChange?: (machineId: string) => void;
     /**
-     * Only the current backend can take the first agent: a new repository has
-     * no commit for a remote agent to start from.
+     * Only the current backend can take the first agent, and why: a new
+     * repository has no commit for a remote agent to start from, and a plain
+     * folder has no git at all. Null when any machine can.
      */
-    startOnBackendOnly?: boolean;
+    startOnBackendOnly?: 'new-repo' | 'plain-folder' | null;
     /** Callback when reasoning effort changes */
     onReasoningEffortChange?: (effort: string | undefined) => void;
     /** Callback when team mode changes */
@@ -197,7 +198,7 @@
     onSetupPick,
     startOnMachineId = $bindable<string>(''),
     onStartOnChange,
-    startOnBackendOnly = false,
+    startOnBackendOnly = null,
   }: Props = $props();
 
   // Start On (PROTOCOL nodes.md "Placement subset"): the machine the first
@@ -1108,11 +1109,15 @@
       value={effectiveStartOn}
       options={$startOnOptions$}
       onChange={handleStartOnChange}
-      lockedReason={startOnBackendOnly
-        ? m.workspace_initialAgentPicker_startOnNewRepo_description({
+      lockedReason={startOnBackendOnly === 'plain-folder'
+        ? m.workspace_initialAgentPicker_startOnPlainFolder_description({
             backend: $startOnOptions$[0]?.label ?? '',
           })
-        : undefined}
+        : startOnBackendOnly === 'new-repo'
+          ? m.workspace_initialAgentPicker_startOnNewRepo_description({
+              backend: $startOnOptions$[0]?.label ?? '',
+            })
+          : undefined}
     />
   {/if}
 </div>
