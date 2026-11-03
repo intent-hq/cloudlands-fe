@@ -22,7 +22,7 @@ import { supportsReviewMonitoring, type PrMonitorSession } from '$shared/types/p
  */
 import type { PrincipalDiscovery } from '$shared/types/principal';
 import { parseProtocolVersion, type ProtocolVersion } from '$shared/protocol-version';
-import { pickNodeCapabilities } from '$shared/node-capabilities';
+import { pickNodeCapabilities, type NodeCapabilitySnapshot } from '$shared/node-capabilities';
 import { assertScopedFileReadSupport } from '$shared/root-file-read-support';
 import {
   classifyStartupReply,
@@ -268,7 +268,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
   private clientId: string | undefined;
   private helloConfirmed = false;
   private acknowledgedHello: unknown = null;
-  private nodeCapabilities: Readonly<Record<string, number>> | null = null;
+  private nodeCapabilities: NodeCapabilitySnapshot | null = null;
   private capabilityHelloGeneration = 0;
   private reviewMonitoring: unknown;
   private readonly reviewMonitoringRecipient: number | undefined;

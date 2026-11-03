@@ -17,6 +17,9 @@ const PRODUCERS = new Set([
 /** Reads the observed hello: `observeBackendNodeCapabilities()` or a passed-in observer. */
 const OBSERVES = /\bobserve(?:Backend)?(?:Node)?Capabilities\b/;
 
+/** Main-process reads of the snapshot itself: `client.getNodeCapabilities()?.<key>`. */
+const MAIN_READ = /\bgetNodeCapabilities\(\)\??\.(\w+)/g;
+
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const full = path.join(dir, entry.name);
@@ -47,13 +50,15 @@ function consumers(): Map<string, string[]> {
     const relative = path.relative(SRC, file).split(path.sep).join('/');
     if (PRODUCERS.has(relative) || relative.startsWith('test/')) continue;
     const source = readFileSync(file, 'utf8');
-    if (OBSERVES.test(source)) found.set(relative, gatedKeys(source));
+    const keys = [...source.matchAll(MAIN_READ)].map((match) => match[1]);
+    if (OBSERVES.test(source)) keys.push(...gatedKeys(source));
+    if (keys.length > 0) found.set(relative, [...new Set(keys)]);
   }
   return found;
 }
 
 describe('node capability list', () => {
-  it('lists every capability a renderer consumer gates on (intent-hq/intent#8423)', () => {
+  it('lists every capability a consumer gates on (intent-hq/intent#8423)', () => {
     const listed = new Set<string>(NODE_CAPABILITY_KEYS);
     const missing = [...consumers()].flatMap(([file, keys]) =>
       keys.filter((key) => !listed.has(key)).map((key) => `${file}: ${key}`),
@@ -70,6 +75,8 @@ describe('node capability list', () => {
       'noteTruncatedRead',
       'rawScreenshotRetention',
       'agentNodes',
+      // Main-process reads (daemon-links.ts, remote-machines.ipc.ts).
+      'remoteLinkTraffic',
     ])
       expect(keys).toContain(key);
   });

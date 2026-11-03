@@ -13,7 +13,7 @@ import { EventEmitter } from 'node:events';
 import type { Duplex } from 'node:stream';
 import { StringDecoder } from 'node:string_decoder';
 import { parseProtocolVersion, type ProtocolVersion } from '$shared/protocol-version';
-import { pickNodeCapabilities } from '$shared/node-capabilities';
+import { pickNodeCapabilities, type NodeCapabilitySnapshot } from '$shared/node-capabilities';
 import {
   classifyStartupReply,
   type DaemonStartupState,
@@ -271,7 +271,7 @@ export class JsonRpcClient extends EventEmitter {
   private readonly repositoryObservers = new Set<(event: RepositoryConnectionEvent) => void>();
   private helloAttempt: object | null = null;
   private acknowledgedHello: unknown = null;
-  private nodeCapabilities: Readonly<Record<string, number>> | null = null;
+  private nodeCapabilities: NodeCapabilitySnapshot | null = null;
   // How the current connection's winning candidate reached the daemon
   // (multi-host race only; null for a single-host dial and whenever no socket
   // is connected).
@@ -615,7 +615,7 @@ export class JsonRpcClient extends EventEmitter {
   }
 
   /** Observe only the current acknowledged identity; never send or renew hello. */
-  getNodeCapabilities(): Readonly<Record<string, number>> | null {
+  getNodeCapabilities(): NodeCapabilitySnapshot | null {
     return this.getRepositoryConnection() ? this.nodeCapabilities : null;
   }
 
