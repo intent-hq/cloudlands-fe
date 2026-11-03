@@ -52,9 +52,10 @@ export type DockMediaClipboardResult =
 export type DockMediaClipboardContent =
   | {
       kind: 'image';
-      /** The file other apps were given; `size` lets a paste match it to its event. */
+      /** The file other apps were given: its byte size and SHA-256 (hex) identify it. */
       name: string;
       size: number;
+      sha256: string;
       pixels: DockCapturedPixels;
       marks: DockMediaClipboardMark[];
     }
@@ -64,8 +65,9 @@ export type DockMediaClipboardContent =
       mimeType: string;
       /** Main-readable file the destination draft places from. */
       sourcePath: string;
-      /** Its byte size; a paste also uses it to match the entry to its event. */
+      /** Its byte size and SHA-256 (hex): a paste uses the entry only for this exact file. */
       size: number;
+      sha256: string;
       durationMs: number;
       hasMicAudio: boolean;
     };

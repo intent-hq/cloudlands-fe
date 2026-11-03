@@ -5,9 +5,10 @@
    * recording) with two main-owned boundaries replaced:
    *
    * - main's media clipboard, by an in-memory clipboard that follows main's rules:
-   *   a write is recorded and becomes readable as Intent media of the same byte
-   *   size; `foreign()` models another app writing since; `replace()` another
-   *   Intent copy (a different file); `failWrites` refuses writes; reads can be
+   *   a write is recorded and becomes readable as Intent media described by the
+   *   written file's size and SHA-256; `foreign()` models another app writing since;
+   *   `replace()` another Intent copy with the same name and size but different
+   *   bytes; `failWrites` refuses writes; reads can be
    *   held (`holdReads`) to model a slow clipboard read; the Copy/Cut menu answers
    *   `menu`;
    * - main's `workspace-file://` protocol, by a fetch stub answering the recording's
@@ -39,6 +40,11 @@
   let movie: 'ok' | 'missing' | 'short' = 'ok';
 
   const toBase64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
+  const sha256 = async (bytes: Uint8Array) =>
+    Array.from(
+      new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(bytes))),
+      (byte) => byte.toString(16).padStart(2, '0'),
+    ).join('');
   const MOVIE = new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112, 105, 115, 111, 109, 1, 2, 3, 4]);
 
   const realFetch = window.fetch;
@@ -53,7 +59,7 @@
 
   const restore = [
     // eslint-disable-next-line intent/no-component-async-data-fetch -- test harness standing in for main at the IPC boundary
-    overrideMockIpcHandler(DOCK_MEDIA_CHANNELS.CLIPBOARD_WRITE, (payload) => {
+    overrideMockIpcHandler(DOCK_MEDIA_CHANNELS.CLIPBOARD_WRITE, async (payload) => {
       const request = payload as DockMediaClipboardWrite;
       if (failWrites) return { ok: false, error: 'failed' };
       writes.push({
@@ -64,6 +70,7 @@
       });
       lastBytes = request.bytes;
       const size = request.bytes.byteLength;
+      const digest = await sha256(request.bytes);
       content =
         request.kind === 'clip'
           ? {
@@ -72,6 +79,7 @@
               mimeType: request.mimeType,
               sourcePath: `/clipboard/${request.name}`,
               size,
+              sha256: digest,
               durationMs: request.durationMs,
               hasMicAudio: request.hasMicAudio,
             }
@@ -80,6 +88,7 @@
                 kind: 'image',
                 name: request.name,
                 size,
+                sha256: digest,
                 pixels: { ...request.intent.pixels, base64: toBase64(request.intent.raw) },
                 marks: request.intent.marks,
               }
@@ -104,8 +113,9 @@
     foreign: () => {
       content = null;
     },
+    /** Another Intent copy: same file name and byte size, different bytes. */
     replace: () => {
-      if (content) content = { ...content, size: content.size + 1 };
+      if (content) content = { ...content, sha256: 'f'.repeat(64) };
     },
     setFailWrites: (value: boolean) => (failWrites = value),
     setMenu: (value: 'copy' | 'cut' | null) => (menu = value),

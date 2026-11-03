@@ -4,6 +4,7 @@
  * well for a PNG); a paste only recognises a file in that folder with valid
  * metadata; a failed write leaves nothing behind; old entries are pruned.
  */
+import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -104,6 +105,7 @@ describe('dock media clipboard', () => {
       kind: 'image',
       name: 'screenshot-20261103.png',
       size: png.byteLength,
+      sha256: createHash('sha256').update(png).digest('hex'),
       pixels: { ...screenshot.intent.pixels, base64: Buffer.from([9, 9, 9]).toString('base64') },
       marks: [mark],
     });
@@ -121,6 +123,7 @@ describe('dock media clipboard', () => {
       size: clip.bytes.byteLength,
       durationMs: 42_000,
       hasMicAudio: true,
+      sha256: createHash('sha256').update(clip.bytes).digest('hex'),
     });
     // The file lives in main's folder, not in any draft: it outlives the source.
     expect((content as { sourcePath: string }).sourcePath.startsWith(root)).toBe(true);
