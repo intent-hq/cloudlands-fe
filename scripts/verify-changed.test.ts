@@ -1727,6 +1727,15 @@ describe('verification planning', () => {
     expect(plan.checks.map((check) => check.id)).toContain('svelte-check');
   });
 
+  it.each(['tsconfig.json', 'scripts/run-svelte-check.mjs'])(
+    'runs svelte-check when its own input %s changes',
+    (file) => {
+      const root = fixtureRoot({ [file]: '{}' });
+      const plan = createVerificationPlan([file], { root });
+      expect(plan.checks.map((check) => check.id)).toContain('svelte-check');
+    },
+  );
+
   it.each(['edit', 'delete', 'rename'])(
     'keeps a fixture %s on the focused component lane',
     (change) => {
