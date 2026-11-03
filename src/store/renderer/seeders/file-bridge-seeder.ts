@@ -46,6 +46,7 @@
 import { registerMockIpcHandler } from '$shared/ipc-mock-router';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { readFileText } from '$lib/client/live/bounded-object-read';
 import { detectPlatform } from '$lib/utils/platform-capabilities';
 
 /** Coerce a possibly-unknown argument into a plain object record. */
@@ -76,9 +77,9 @@ function readWorkspaceId(record: Record<string, unknown>): string | undefined {
   return readString(record, 'workspaceId');
 }
 
-/** Daemon `file.read` (bare string result). */
+/** Daemon `file.read`, whole even past the bounded reply cap. */
 async function daemonRead(workspaceId: string, path: string): Promise<string> {
-  return await backendRequest<string>('file.read', { workspaceId, path });
+  return (await readFileText({ workspaceId, path })) ?? '';
 }
 
 /** Daemon `file.write` (`{ ok, path, size }`; parents are created). */

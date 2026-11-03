@@ -122,6 +122,54 @@ const agentMemoryUsage: AgentMemoryUsageWirePayload = {
   ],
 };
 
+// Agents this machine runs for other daemons (§5.5 `remoteOwner`): built
+// from the executor launch, so they carry no agent name.
+const remoteAgentMemoryUsage = {
+  ...agentMemoryUsage,
+  totalBytes: 4_026_531_840,
+  agents: [
+    agentMemoryUsage.agents[0],
+    {
+      agentId: '7d4e91b2-0c3a-4f5e-8a61-2b9c0d7e3f41',
+      workspaceId: 'ws-remote-docs',
+      provider: 'claude-code',
+      model: 'claude-sonnet-4',
+      remoteOwner: { backendId: 'backend-3f9a1c', backendName: 'Studio MacBook Pro' },
+      rootPid: 49120,
+      processCount: 1,
+      memoryBytes: 536_870_912,
+      processes: [
+        {
+          pid: 49120,
+          parentPid: 4120,
+          name: 'claude-code-acp',
+          cmdline: '/usr/local/bin/claude-code-acp --stdio',
+          memoryBytes: 536_870_912,
+        },
+      ],
+    },
+    agentMemoryUsage.agents[1],
+    {
+      agentId: 'c81f0a6d-55e2-4b8a-9d73-61e0f2a4b9c5',
+      workspaceId: 'ws-remote-ci',
+      provider: 'codex',
+      remoteOwner: { backendId: 'a92e04d7-1b6c-4f3a-8e5d-0c7b9a2f6e18', backendName: '' },
+      rootPid: 49388,
+      processCount: 1,
+      memoryBytes: 268_435_456,
+      processes: [
+        {
+          pid: 49388,
+          parentPid: 4120,
+          name: 'codex',
+          cmdline: '/usr/local/bin/codex --acp',
+          memoryBytes: 268_435_456,
+        },
+      ],
+    },
+  ],
+} satisfies AgentMemoryUsageWirePayload;
+
 const generation = () => selectDaemonConnectionGeneration.select(store.state);
 
 // Live uptime is base uptime plus time elapsed since the last successful
@@ -134,6 +182,10 @@ interface Scenario {
   transport?: BackendTransportInfo;
   /** Report agent-attributed memory and seed the breakdown the row opens. */
   agentMemory?: boolean;
+  /** Seed the breakdown with agents run for other backends (needs `agentMemory`). */
+  remoteAgents?: boolean;
+  /** `system.status.remoteLinks`; omitted models an older daemon. */
+  remoteLinks?: { backends: number; machines: number };
   failures?:
     | { kind: DaemonStatusCheckFailureKind; count: number }
     | DaemonStatusCheckFailureKind[]
@@ -154,7 +206,14 @@ let liveScenes = 0;
 
 // The trigger is a dot; open it and the "Status - …" submenu to see the
 // details panel this preview is about.
-function setup({ stats = true, transport, agentMemory = false, failures }: Scenario) {
+function setup({
+  stats = true,
+  transport,
+  agentMemory = false,
+  remoteAgents = false,
+  remoteLinks,
+  failures,
+}: Scenario) {
   return () => {
     if (liveScenes > 0) {
       throw new Error(
@@ -166,7 +225,10 @@ function setup({ stats = true, transport, agentMemory = false, failures }: Scena
     if (stats) {
       store.dispatch(
         systemStatusSuccess(
-          agentMemory ? agentMemoryStatusPayload : statusPayload,
+          {
+            ...(agentMemory ? agentMemoryStatusPayload : statusPayload),
+            ...(remoteLinks ? { remoteLinks } : {}),
+          },
           lastSuccessAt(),
           generation(),
         ),
@@ -176,7 +238,9 @@ function setup({ stats = true, transport, agentMemory = false, failures }: Scena
       // No saga runs in the preview, so the breakdown's first open shows this
       // seeded sample instead of waiting on agent.memoryUsage.
       store.dispatch(agentMemoryUsageRequested());
-      store.dispatch(agentMemoryUsageSucceeded(agentMemoryUsage));
+      store.dispatch(
+        agentMemoryUsageSucceeded(remoteAgents ? remoteAgentMemoryUsage : agentMemoryUsage),
+      );
     }
     if (failures === 'heartbeat') {
       store.dispatch(heartbeatFailed());
@@ -221,6 +285,26 @@ export const preview = definePreview<Record<string, never>>({
       }),
     },
     'agent-memory': { props: {}, setup: setup({ agentMemory: true }) },
+    'remote-agents': {
+      props: {},
+      setup: setup({
+        agentMemory: true,
+        remoteAgents: true,
+        remoteLinks: { backends: 2, machines: 1 },
+      }),
+    },
+    'remote-agents-no-links': {
+      props: {},
+      setup: setup({
+        agentMemory: true,
+        remoteAgents: true,
+        remoteLinks: { backends: 0, machines: 0 },
+      }),
+    },
+    'connected-daemons': {
+      props: {},
+      setup: setup({ agentMemory: true, remoteLinks: { backends: 0, machines: 1 } }),
+    },
     'degraded-timeout': {
       props: {},
       setup: setup({ failures: { kind: 'timeout', count: 1 } }),

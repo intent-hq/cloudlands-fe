@@ -115,7 +115,7 @@ test('Machines replaces the local icon editor when another machine is edited', a
     props: { expanded: true },
     hooksConfig: { previewScene: { scene: 'devices-settings', state: 'local-expanded' } },
   });
-  const localName = m.layout_daemonStatus_localConnection_label();
+  const localName = m.settings_devices_localMachine_label({ name: 'Clément’s Mac Studio' });
   const local = page.getByRole('article', { name: localName });
   const picker = local.getByTestId('device-icon-picker-trigger');
   await expect(picker).toBeVisible();

@@ -438,6 +438,8 @@ export interface WorkspaceAccessRemovedNotice {
   title: string | undefined;
   /** Display label of the guest session's host. */
   hostLabel: string;
+  /** A leave started in this window, so say "you left", not "removed". */
+  selfInitiated?: boolean;
 }
 
 /**
@@ -450,11 +452,14 @@ export async function showWorkspaceAccessRemovedToast(
   notice: WorkspaceAccessRemovedNotice,
 ): Promise<void> {
   const toast = await getToast();
+  const params = {
+    title: notice.title || m.workspace_page_space_title(),
+    host: notice.hostLabel,
+  };
   toast.info(
-    m.guestSessions_accessRemoved_toast({
-      title: notice.title || m.workspace_page_space_title(),
-      host: notice.hostLabel,
-    }),
+    notice.selfInitiated
+      ? m.guestSessions_leftWorkspace_toast(params)
+      : m.guestSessions_accessRemoved_toast(params),
     { id: `workspace-access-removed:${notice.workspaceId}` },
   );
 }

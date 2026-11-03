@@ -81,6 +81,7 @@ describe('registered-root file read support', () => {
     expect(request).toHaveBeenCalledExactlyOnceWith('file.read', {
       workspaceId: 'ws',
       path: 'new.md',
+      maxBytes: 480_000,
     });
   });
 });

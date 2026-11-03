@@ -21,6 +21,7 @@ import {
   selectProviderDisplayName,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { providerRefBaseId, providerRefLabelParts } from '$shared/provider-profiles';
+import { selectHidesProviderProfileNames } from '$store/renderer/slices/workspace/workspace-selectors';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
 
@@ -88,7 +89,8 @@ function parseSwitchRow(
  * Short label for one side: a profile's own name, `<Provider> · Default` for
  * the bare configuration, and `Removed profile` for a reference whose
  * profile is gone — said only once the (workspace) catalog has loaded;
- * before that the base provider name stands in.
+ * before that the base provider name stands in. A guest never sees profile
+ * names, so every side reads as its base provider.
  */
 function describeRef(providerRef: string, workspaceId?: string): string {
   const state = appStore.state;
@@ -98,6 +100,7 @@ function describeRef(providerRef: string, workspaceId?: string): string {
     : selectProviderCatalogLoaded.select(state);
   const baseName =
     selectProviderDisplayName.select(state, baseId, loaded ? workspaceId : undefined) || baseId;
+  if (selectHidesProviderProfileNames.select(state, workspaceId ?? '')) return baseName;
   const parts = providerRefLabelParts(
     providerRef,
     selectProviderCatalogProfiles.select(state, workspaceId),

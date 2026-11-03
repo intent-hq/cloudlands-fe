@@ -198,7 +198,7 @@ describe('panel header agent identity', () => {
 });
 
 describe('header machine location', () => {
-  it.each([true, false])('places the remote pill beside the switcher: remote=%s', (remote) => {
+  it.each([true, false])('shows no machine pill in the header: remote=%s', (remote) => {
     mocks.remote = remote;
     const { container } = render(PanelTabBar, {
       props: {
@@ -208,16 +208,9 @@ describe('header machine location', () => {
         workspaceId: 'workspace-1',
       },
     });
-    const selector = container.querySelector('[data-panel-header-identity]')!;
-    const pill = container.querySelector('[data-agent-machine-badge="pill"]');
-    if (remote) {
-      expect(pill).not.toBeNull();
-      expect(selector.contains(pill)).toBe(false);
-      expect(selector.nextElementSibling?.contains(pill)).toBe(true);
-      expect(pill?.closest('button')).toBeNull();
-      expect(pill?.getAttribute('title')).toBe('Runs on Mac mini · macOS arm64');
-    } else {
-      expect(pill).toBeNull();
-    }
+    const header = container.querySelector('[data-panel-tabless-header]')!;
+    expect(header.querySelector('[data-pane-stack-selector-trigger]')).not.toBeNull();
+    expect(header.querySelector('[data-agent-machine-badge]')).toBeNull();
+    expect(header.textContent).not.toContain('Mac mini');
   });
 });

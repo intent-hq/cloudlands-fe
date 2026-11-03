@@ -211,9 +211,10 @@ export function validateInviteCredential(
  * presented identity is the host owner's own account, which never joins its
  * own host as a guest — from intentd #1986; `identity-unverifiable` — the
  * GitLab instance named by `invite.prove` refuses anonymous reads and the
- * host has no connection of its own to it). The closed set is the ONLY
- * server-authored text that ever leaves {@link InviteRpcError}: a code
- * outside it maps to `null`.
+ * host has no connection of its own to it; `github-identity-required` — the
+ * host owner has no GitHub or GitLab connected, so no invite can be redeemed).
+ * The closed set is the ONLY server-authored text that ever leaves
+ * {@link InviteRpcError}: a code outside it maps to `null`.
  */
 const INVITE_ERROR_CODES = [
   'invite-not-found',
@@ -230,6 +231,7 @@ const INVITE_ERROR_CODES = [
   'identity-unverifiable',
   'owner-self-join',
   'invite-scope-mismatch',
+  'github-identity-required',
 ] as const;
 
 export type InviteErrorCode = (typeof INVITE_ERROR_CODES)[number];

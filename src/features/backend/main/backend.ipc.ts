@@ -1,4 +1,5 @@
 import { buildConfigForRecord, ConnectionSecretUnavailableError } from './connection-config';
+import { collectListPages } from '$shared/paged-list';
 import { collaborationMachineName } from '../../../shared/collaboration-machine-name';
 import { assertNormalAppOperation, isIsolatedTestBuild } from '../../../main/isolated-test-profile';
 import { createNativeReviewFeed } from './native-review-feed';
@@ -73,6 +74,7 @@ import {
   buildMainClientHelloParams,
   getOrCreateClientId,
   persistClientId,
+  getLocalMachineName,
   setLocalHostIdentity,
 } from './client-identity';
 import {
@@ -2680,7 +2682,11 @@ async function hydrateGuestWorkspacesOriginal(id: string, owner?: PoolOwner): Pr
         guestMembershipEpochs.get(id) === epoch,
       { credential: guard.credential },
     );
-    const result = await poolRequest(owner, client, 'workspace.list');
+    const result = await collectListPages(
+      (params) => poolRequest<Record<string, unknown>>(owner, client, 'workspace.list', params),
+      undefined,
+      'workspaces',
+    );
     if (!stillValid()) return;
     const refs = extractWorkspaceRefs(result);
     if (refs === null) {
@@ -2847,9 +2853,12 @@ async function captureLocalDeviceKindOriginal(owner?: PoolOwner): Promise<void> 
     );
     if (backendClients.get(LOCAL_CONNECTION_ID) !== client) return;
     const identityChanged = setLocalHostIdentity(result);
-    if (
-      await connectionsStore.setDetectedDeviceKind(LOCAL_CONNECTION_ID, extractDeviceKind(result))
-    ) {
+    const kindChanged = await connectionsStore.setDetectedDeviceKind(
+      LOCAL_CONNECTION_ID,
+      extractDeviceKind(result),
+    );
+    // A new `prettyHostname` renames the local Machines row (`machineName`).
+    if (kindChanged || identityChanged) {
       await broadcastConnectionsChangedOwned(owner);
     }
     if (identityChanged && backendClients.get(LOCAL_CONNECTION_ID) === client) {
@@ -3285,6 +3294,7 @@ async function listConnectionsOriginal(
   const localVersionInfo = getConnectionMode() === 'external' ? getDaemonVersionInfo() : null;
   const localUpdateSupported =
     getConnectionMode() === 'external' ? getLocalUpdateSupported() : null;
+  const localMachineName = getLocalMachineName();
   return {
     connections: connections
       .filter((c) => !isSelfConnectionRecord(c, selfKeys))
@@ -3308,6 +3318,7 @@ async function listConnectionsOriginal(
                   ? { daemonVersion: localVersionInfo.daemonVersion }
                   : {}),
                 ...(localUpdateSupported !== null ? { updateSupported: localUpdateSupported } : {}),
+                ...(localMachineName ? { machineName: localMachineName } : {}),
               }
             : {}),
           status,
@@ -4760,8 +4771,7 @@ function registerConnectionsHandlers(): void {
           });
           const role = invitedRole(remote);
           if (role) {
-            if (!allowed(remote.principal.identity?.provider))
-              throw new Error('Multiplayer is unavailable');
+            if (!allowed()) throw new Error('Multiplayer is unavailable');
             const invited = await guestSessionsStore.add({
               ...params,
               principalId: remote.principal.id,

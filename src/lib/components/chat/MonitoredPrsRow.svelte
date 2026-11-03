@@ -36,6 +36,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { safeDisclosureTransition } from './disclosure-motion';
   import { writable } from 'svelte/store';
+  import { selectWorkspaceManagementDenied } from '$store/renderer/slices/workspace/workspace-selectors';
   import { formatMergeQueueSummary } from '$lib/utils/merge-queue';
   import * as Menu from '$lib/components/ui/menu';
   import { Button } from '$lib/components/ui/button';
@@ -135,6 +136,9 @@
   const monitors$ = selectAgentReviewMonitors(workspaceIdStore, agentIdStore);
   const snapshotStatus$ = selectPrMonitorsSnapshotStatus(workspaceIdStore);
   const workspace$ = selectWorkspaceById(workspaceIdStore);
+  // `prMonitor.flush` and `prMonitor.cancel` are manager-only; a guest keeps the open links.
+  // Hidden only on confirmed denial, so owners keep them while authority loads.
+  const managementDenied$ = selectWorkspaceManagementDenied(workspaceIdStore);
 
   // Only ACTIVE monitors get chips; completed rows live on the PR-list
   // surface, cancelled rows are excluded server-side.
@@ -540,17 +544,19 @@
                   data-testid="monitored-pr-menu"
                   data-viewport-padding="12"
                 >
-                  <Menu.Item
-                    class="type-caption h-auto w-full min-w-0 items-start whitespace-normal py-1.5 text-left"
-                    data-testid="monitored-pr-check-flush-item"
-                    disabled={menuActionsUnavailable}
-                    onSelect={handleCheckAndFlush}
-                  >
-                    {#snippet leading()}<Fa icon={faArrowsRotate} />{/snippet}
-                    <span class="min-w-0 break-words">
-                      {m.chat_monitoredPrs_checkAndFlush_label()}
-                    </span>
-                  </Menu.Item>
+                  {#if !$managementDenied$}
+                    <Menu.Item
+                      class="type-caption h-auto w-full min-w-0 items-start whitespace-normal py-1.5 text-left"
+                      data-testid="monitored-pr-check-flush-item"
+                      disabled={menuActionsUnavailable}
+                      onSelect={handleCheckAndFlush}
+                    >
+                      {#snippet leading()}<Fa icon={faArrowsRotate} />{/snippet}
+                      <span class="min-w-0 break-words">
+                        {m.chat_monitoredPrs_checkAndFlush_label()}
+                      </span>
+                    </Menu.Item>
+                  {/if}
                   <Menu.Item
                     class="type-caption h-auto w-full min-w-0 items-start whitespace-normal py-1.5 text-left"
                     data-testid="monitored-pr-open-in-app-item"
@@ -573,18 +579,20 @@
                       {m.chat_monitoredPrs_openInExternalBrowser_label()}
                     </span>
                   </Menu.Item>
-                  <Menu.Separator />
-                  <Menu.Item
-                    class="type-caption h-auto w-full min-w-0 items-start whitespace-normal py-1.5 text-left"
-                    data-testid="monitored-pr-cancel-item"
-                    disabled={menuActionsUnavailable}
-                    onSelect={handleCancel}
-                  >
-                    {#snippet leading()}<Fa icon={faXmark} />{/snippet}
-                    <span class="min-w-0 break-words">
-                      {m.chat_monitoredPrs_cancel_label()}
-                    </span>
-                  </Menu.Item>
+                  {#if !$managementDenied$}
+                    <Menu.Separator />
+                    <Menu.Item
+                      class="type-caption h-auto w-full min-w-0 items-start whitespace-normal py-1.5 text-left"
+                      data-testid="monitored-pr-cancel-item"
+                      disabled={menuActionsUnavailable}
+                      onSelect={handleCancel}
+                    >
+                      {#snippet leading()}<Fa icon={faXmark} />{/snippet}
+                      <span class="min-w-0 break-words">
+                        {m.chat_monitoredPrs_cancel_label()}
+                      </span>
+                    </Menu.Item>
+                  {/if}
                 </div>
               </Menu.Content>
             </Menu.Root>

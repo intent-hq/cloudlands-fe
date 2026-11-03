@@ -59,7 +59,15 @@
   </div>
   {#if activeTab === 'script'}
     <div class="min-h-0 min-w-0 flex-1 overflow-auto" data-testid="hook-script-content-script">
-      <CodeBlock code={hook?.code ?? ''} language="javascript" noMargin />
+      {#if hook?.codeOmitted}
+        <p class="p-2 text-xs text-subtle" data-testid="hook-script-content-too-large">
+          {m.chat_backgroundHooks_modal_codeTooLarge_description({
+            size: (hook.codeBytes ?? 0).toLocaleString(),
+          })}
+        </p>
+      {:else}
+        <CodeBlock code={hook?.code ?? ''} language="javascript" noMargin />
+      {/if}
     </div>
   {:else}
     <div

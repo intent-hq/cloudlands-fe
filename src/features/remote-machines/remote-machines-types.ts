@@ -10,6 +10,11 @@ export type RemoteMachineOperation = 'exposing' | 'removing' | 'revoking' | 'ref
 export interface RemoteMachinesState {
   /** `client.hello` on the current backend advertises `remoteMachines: 1`. */
   supported: boolean;
+  /**
+   * `client.hello` also advertises `remoteInitialAgent: 1`: `workspace.create`
+   * accepts `initialAgent.placement`. Older backends may ignore the field.
+   */
+  initialAgentPlacement: boolean;
   /** The current backend's exposed machines, keyed by machine (daemon) id. */
   machines: Record<string, RemoteMachine>;
   /** WSS certificate fingerprint of this computer's own daemon, to match its row. */

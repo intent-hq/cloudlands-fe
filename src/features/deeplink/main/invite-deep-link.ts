@@ -653,7 +653,7 @@ async function proveIdentity(
   const current = () =>
     attempt.current() &&
     attempt.local.current() &&
-    attempt.allowed(identity.provider) &&
+    attempt.allowed() &&
     (!identity.collaboration || identity.collaboration.allowed());
   if (!current()) return { kind: 'cancelled' };
   void consent?.cancelledWhileWaiting.then(() => {
@@ -1285,7 +1285,7 @@ async function joinAsReturningGuest(
     const identity = remote.principal.identity;
     if (inspection.pinIdentity && (!identity || !identitiesEqual(identity, inspection.pinIdentity)))
       continue;
-    if (!attempt.allowed(identity?.provider)) throw new InviteCancelledError();
+    if (!attempt.allowed()) throw new InviteCancelledError();
     verified.push({
       session,
       token,
@@ -1334,8 +1334,7 @@ async function joinAsReturningGuest(
   }
   if (decision === null && !(await showConfirmJoin(selected.login, labels, attempt.parent)))
     return { kind: 'handled' };
-  if (!attempt.current() || !attempt.allowed(selected.identity?.provider))
-    return { kind: 'handled' };
+  if (!attempt.current() || !attempt.allowed()) return { kind: 'handled' };
   let cancelled = false;
   void consent.cancelledWhileWaiting.then(() => {
     cancelled = true;
@@ -1379,7 +1378,7 @@ async function joinAsReturningGuest(
     labels,
     attempt,
     undefined,
-    () => !cancelled && attempt.current() && attempt.allowed(selected.identity?.provider),
+    () => !cancelled && attempt.current() && attempt.allowed(),
     true,
   );
   return { kind: 'handled' };
@@ -1712,6 +1711,8 @@ function classifyInviteFailure(error: unknown): InviteFailureReason {
       return 'workspace-full';
     case 'owner-self-join':
       return 'owner-self-join';
+    case 'github-identity-required':
+      return 'host-forge-required';
     default:
       return 'generic';
   }

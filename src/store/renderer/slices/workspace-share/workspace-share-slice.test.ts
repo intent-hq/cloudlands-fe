@@ -14,6 +14,7 @@ import {
   shareInvitesExpired,
   sharePrerequisitesStarted,
   sharePrerequisitesSettled,
+  sharePrerequisitesAbandoned,
   closeShareDialog,
   getRosterState,
   initialRosterState,
@@ -27,7 +28,11 @@ import {
   shareInviteCreated,
   shareInviteCreateFailed,
   shareInviteCreateRequested,
+  shareIntegrationAuthLoaded,
+  shareOwnerForgeMissing,
   shareInviteRevokeRequested,
+  shareIntegrationAuthLoaded,
+  shareIntegrationAuthRequested,
   shareMemberAddRequested,
   shareMemberRemoveRequested,
   shareMemberRoleRequested,
@@ -376,6 +381,59 @@ describe('workspaceShareReducer', () => {
       }),
     );
     expect(current).toMatchObject({ creating: false, createdLink: link });
+  });
+
+  // A no-forge refusal leaves an inline error; once the forge status reads as
+  // disconnected the form is hidden, and reconnecting must not bring it back
+  // with that stale error.
+  it('drops a create error when the forge status loads disconnected, so a reconnect starts clean', () => {
+    const creating = reduce(opened(), shareInviteCreateRequested({ pinLogin: '' }));
+    const refused = reduce(
+      creating,
+      shareInviteCreateFailed({ target: target(creating), request: 1, error: 'no forge' }),
+    );
+    const connected = reduce(
+      refused,
+      shareIntegrationAuthLoaded(target(refused), { github: true, gitlab: false }),
+    );
+    expect(connected.createError).toBe('no forge');
+    const disconnected = reduce(
+      connected,
+      shareIntegrationAuthLoaded(target(connected), { github: false, gitlab: false }),
+    );
+    expect(disconnected.createError).toBeNull();
+    const reconnected = reduce(
+      disconnected,
+      shareIntegrationAuthLoaded(target(disconnected), { github: true, gitlab: false }),
+    );
+    expect(reconnected).toMatchObject({ createError: null, creating: false });
+  });
+
+  it('clears the owner-has-no-forge latch and its error once a forge status loads connected', () => {
+    const creating = reduce(opened(), shareInviteCreateRequested({ pinLogin: '' }));
+    const latched = reduce(
+      creating,
+      shareOwnerForgeMissing(target(creating)),
+      shareInviteCreateFailed({ target: target(creating), request: 1, error: 'no forge' }),
+    );
+    expect(latched).toMatchObject({ ownerForgeMissing: true, createError: 'no forge' });
+    const unknown = reduce(
+      latched,
+      shareIntegrationAuthLoaded(target(latched), { github: false, gitlab: false, known: false }),
+    );
+    expect(unknown.ownerForgeMissing).toBe(true);
+    const connected = reduce(
+      unknown,
+      shareIntegrationAuthLoaded(target(unknown), { github: true, gitlab: false }),
+    );
+    expect(connected).toMatchObject({ ownerForgeMissing: false, createError: null });
+    expect(
+      reduce(
+        connected,
+        closeShareDialog(),
+        openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'W' }),
+      ).ownerForgeMissing,
+    ).toBe(false);
   });
 
   it('tracks invite creation: requested → created clears the error and stores the link handle', () => {
@@ -852,6 +910,51 @@ describe('sharing prerequisite settlements', () => {
     expect(enabled.creating).toBe(false);
   });
 
+  it('keeps the settled answer through a passive recheck of the same host only', () => {
+    const scoped = { ...target(opened()), authority: 'host-a' };
+    const settled = reduce(
+      opened(),
+      sharePrerequisitesStarted({ target: scoped, enabling: false }),
+      sharePrerequisitesSettled({ target: scoped, enabled: true, error: null }),
+    );
+    const recheck = reduce(settled, sharePrerequisitesStarted({ target: scoped, enabling: false }));
+    expect(recheck.sharingEnabled).toBe(true);
+    expect(recheck.sharingChecking).toBe(true);
+    const otherHost = reduce(
+      settled,
+      sharePrerequisitesStarted({ target: { ...scoped, authority: 'host-b' }, enabling: false }),
+    );
+    expect(otherHost.sharingEnabled).toBeNull();
+    const enabling = reduce(settled, sharePrerequisitesStarted({ target: scoped, enabling: true }));
+    expect(enabling.sharingEnabled).toBeNull();
+  });
+
+  it('keeps a settled error on screen through a passive recheck of the same host', () => {
+    const scoped = { ...target(opened()), authority: 'host-a' };
+    const failed = reduce(
+      opened(),
+      sharePrerequisitesStarted({ target: scoped, enabling: false }),
+      sharePrerequisitesSettled({ target: scoped, enabled: null, error: 'read failed' }),
+    );
+    const recheck = reduce(failed, sharePrerequisitesStarted({ target: scoped, enabling: false }));
+    expect(recheck.sharingError).toBe('read failed');
+    const enabling = reduce(failed, sharePrerequisitesStarted({ target: scoped, enabling: true }));
+    expect(enabling.sharingError).toBeNull();
+  });
+
+  it('clears in-flight flags when a started check is abandoned, for its own target only', () => {
+    const scoped = { ...target(opened()), authority: 'host-a' };
+    const checking = reduce(
+      opened(),
+      sharePrerequisitesStarted({ target: scoped, enabling: false }),
+    );
+    const abandoned = reduce(checking, sharePrerequisitesAbandoned({ target: scoped }));
+    expect(abandoned.sharingChecking).toBe(false);
+    expect(abandoned.sharingEnabling).toBe(false);
+    const otherHost = sharePrerequisitesAbandoned({ target: { ...scoped, authority: 'host-b' } });
+    expect(reduce(checking, otherHost)).toBe(checking);
+  });
+
   it('rejects replies from an old authority, closed dialog, and previous session', () => {
     const original = opened();
     const scoped = { ...target(original), authority: 'host-a' };
@@ -1039,5 +1142,41 @@ describe('workspace invite read fences', () => {
     expect(reduce(state, sharePeopleInvitesLoaded(read))).toBe(state);
     state = reduce(state, shareInvitesExpired(Date.parse(invite.expiresAt)));
     expect(getItems(state.invites)).toEqual([]);
+  });
+});
+
+describe('integration auth', () => {
+  it('is unknown until read and keeps the last answer through a re-read', () => {
+    const state = opened();
+    expect(state.integrationAuthLoaded).toBe(false);
+    const loaded = reduce(
+      state,
+      shareIntegrationAuthLoaded(target(state), { github: true, gitlab: false }),
+    );
+    expect(loaded.integrationAuthLoaded).toBe(true);
+    const rereading = reduce(loaded, shareIntegrationAuthRequested('ws-1'));
+    expect(rereading.integrationAuth).toEqual({ github: true, gitlab: false });
+    expect(rereading.integrationAuthLoaded).toBe(true);
+    const stale = reduce(
+      rereading,
+      closeShareDialog(),
+      openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'My Space' }),
+    );
+    expect(stale.integrationAuthLoaded).toBe(false);
+    expect(
+      reduce(stale, shareIntegrationAuthLoaded(target(state), { github: true, gitlab: true })),
+    ).toBe(stale);
+  });
+
+  // A manager without the owner's execution projection gets `known: false`:
+  // that is still the answer, so the loading placeholder must end.
+  it('counts an unknown owner status as read', () => {
+    const state = opened();
+    const unknown = reduce(
+      state,
+      shareIntegrationAuthLoaded(target(state), { github: false, gitlab: false, known: false }),
+    );
+    expect(unknown.integrationAuthLoaded).toBe(true);
+    expect(unknown.integrationAuth.known).toBe(false);
   });
 });

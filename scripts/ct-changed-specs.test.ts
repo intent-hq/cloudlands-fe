@@ -18,10 +18,12 @@ import {
   CT_AFFECTED_BUDGET,
   CT_CHANGED_MIN_REPEAT_EACH,
   CT_CHANGED_REPEAT_EACH,
+  CT_CHANGED_TEST_RUN_BUDGET,
   affectedCtSpecs,
   changedCtSpecs,
   changedFiles,
   ctChangedRepeatEach,
+  listedCtTests,
   main,
   overBudgetNote,
   playwrightFilter,
@@ -76,7 +78,7 @@ function graphOf(edges: Record<string, string[]>, headSpecs: string[]) {
   };
 }
 
-function run(argv: string[]) {
+function run(argv: string[], readReport?: (path: string) => string) {
   const out: string[] = [];
   const err: string[] = [];
   let written = '';
@@ -86,9 +88,47 @@ function run(argv: string[]) {
     write: (text: string) => {
       written += text;
     },
+    ...(readReport ? { readReport } : {}),
   });
   return { code, out, err, written };
 }
+
+// A Playwright `--list --reporter=json` report: one suite per spec file, each
+// holding `tests` specs of one test, the second half nested in a describe.
+function listReport(files: Record<string, number>, errors: unknown[] = []) {
+  return {
+    config: {},
+    errors,
+    stats: {},
+    suites: Object.entries(files).map(([file, tests]) => {
+      const spec = (i: number) => ({ title: `t${i}`, tests: [{ projectName: 'chromium' }] });
+      const top = Math.ceil(tests / 2);
+      return {
+        file,
+        specs: Array.from({ length: top }, (_, i) => spec(i)),
+        suites: [
+          { title: 'nested', specs: Array.from({ length: tests - top }, (_, i) => spec(i)) },
+        ],
+      };
+    }),
+  };
+}
+
+// The 10 dock specs of cloudlands-fe#4047 as `--list` discovered them: 86 tests,
+// which a spec-file budget
+// planned at 20 repetitions (1720 runs); the 45-minute job could not finish.
+const DOCK_4047 = {
+  'dock-annotation-overlay.ct.spec.ts': 8,
+  'dock-conversation-paste.ct.spec.ts': 6,
+  'dock-conversation.ct.spec.ts': 21,
+  'dock-edge-shell.ct.spec.ts': 4,
+  'dock-intro.ct.spec.ts': 8,
+  'dock-mode-visual.ct.spec.ts': 22,
+  'dock-motion-audit.ct.spec.ts': 8,
+  'dock-notch-picker.ct.spec.ts': 1,
+  'dock-rail-preview.ct.spec.ts': 5,
+  'dock-side-hover.ct.spec.ts': 3,
+};
 
 describe('changedCtSpecs', () => {
   it('keeps exactly the files Playwright CT discovers, sorted and deduplicated', () => {
@@ -413,13 +453,106 @@ describe('--filters', () => {
 });
 
 describe('repetition count', () => {
-  it('repeats a few specs 20 times and scales down for mass edits', () => {
+  it('spreads a budget of test runs over the discovered tests, 3 to 20 each', () => {
     expect(CT_CHANGED_REPEAT_EACH).toBe(20);
+    expect(CT_CHANGED_MIN_REPEAT_EACH).toBe(3);
+    expect(CT_CHANGED_TEST_RUN_BUDGET).toBe(800);
     expect(ctChangedRepeatEach(1)).toBe(20);
-    expect(ctChangedRepeatEach(10)).toBe(20);
-    expect(ctChangedRepeatEach(40)).toBe(5);
-    expect(ctChangedRepeatEach(1000)).toBe(CT_CHANGED_MIN_REPEAT_EACH);
-    expect(run(['--repeat-each', '["src/a.ct.spec.ts"]']).written).toBe('20\n');
+    expect(ctChangedRepeatEach(40)).toBe(20);
+    expect(ctChangedRepeatEach(41)).toBe(19);
+    expect(ctChangedRepeatEach(86)).toBe(9);
+    expect(ctChangedRepeatEach(266)).toBe(3);
+    // Past the budget the floor holds: never fewer than 3 repetitions.
+    expect(ctChangedRepeatEach(1000)).toBe(3);
+  });
+
+  it('rejects a test count that is not a positive integer', () => {
+    for (const count of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => ctChangedRepeatEach(count), String(count)).toThrow(/positive number/);
+    }
+  });
+
+  it('sizes by tests, not files: one large spec and many small ones', () => {
+    // The #4047 case: 10 specs, 86 tests -> 9 repetitions, 774 runs.
+    expect(listedCtTests(listReport(DOCK_4047)).total).toBe(86);
+    expect(ctChangedRepeatEach(listedCtTests(listReport(DOCK_4047)).total)).toBe(9);
+    // One spec holding the same 86 tests gets the same 9, not 20.
+    expect(ctChangedRepeatEach(listedCtTests(listReport({ 'big.ct.spec.ts': 86 })).total)).toBe(9);
+    // Ten one-test specs keep the full 20.
+    const small = Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`s${i}.ct.spec.ts`, 1]));
+    expect(ctChangedRepeatEach(listedCtTests(listReport(small)).total)).toBe(20);
+  });
+});
+
+describe('listedCtTests', () => {
+  it('counts tests per spec file through nested suites', () => {
+    expect(listedCtTests(listReport({ 'a.ct.spec.ts': 3, 'b.ct.spec.ts': 1 }))).toEqual({
+      total: 4,
+      files: [
+        { file: 'a.ct.spec.ts', tests: 3 },
+        { file: 'b.ct.spec.ts', tests: 1 },
+      ],
+    });
+  });
+
+  it('fails closed on discovery errors, zero tests and malformed reports', () => {
+    expect(() =>
+      listedCtTests(
+        listReport({ 'a.ct.spec.ts': 2 }, [{ message: 'SyntaxError in a.ct.spec.ts' }]),
+      ),
+    ).toThrow(/discovery failed: SyntaxError/);
+    expect(() => listedCtTests(listReport({ 'a.ct.spec.ts': 0 }))).toThrow(/no tests/);
+    expect(() => listedCtTests(listReport({}))).toThrow(/no tests/);
+    for (const report of [
+      null,
+      [],
+      {},
+      { errors: [] },
+      { suites: [] },
+      { errors: [], suites: [{ file: 'a', specs: [{ title: 'x' }] }] },
+      { errors: [], suites: [null] },
+    ]) {
+      expect(() => listedCtTests(report), JSON.stringify(report)).toThrow();
+    }
+  });
+});
+
+describe('--repeat-each-listed', () => {
+  const reading = (report: unknown) => () => JSON.stringify(report);
+
+  it('prints the repetitions for the listed tests and logs the plan', () => {
+    const { code, written, err } = run(
+      ['--repeat-each-listed', 'list.json'],
+      reading(listReport(DOCK_4047)),
+    );
+    expect(code).toBe(0);
+    expect(written).toBe('9\n');
+    expect(err.at(-1)).toBe(
+      'Discovered 86 tests in 10 spec files; repeating each 9 times (774 runs; budget 800, 3-20 repetitions).',
+    );
+  });
+
+  it('exits 1 without a count for an unreadable, malformed, failed or empty listing', () => {
+    const cases: Array<() => string> = [
+      () => {
+        throw new Error('ENOENT: list.json');
+      },
+      () => 'not json',
+      () => '',
+      reading({ suites: 'x' }),
+      reading(listReport({ 'a.ct.spec.ts': 1 }, [{ message: 'boom' }])),
+      reading(listReport({ 'a.ct.spec.ts': 0 })),
+    ];
+    for (const readReport of cases) {
+      const { code, written } = run(['--repeat-each-listed', 'list.json'], readReport);
+      expect(code).toBe(1);
+      expect(written).toBe('');
+    }
+  });
+
+  it('rejects the retired spec-count mode and a missing report path', () => {
+    expect(run(['--repeat-each', '["src/a.ct.spec.ts"]']).code).toBe(2);
+    expect(run(['--repeat-each-listed']).code).toBe(2);
   });
 });
 
@@ -519,14 +652,39 @@ describe('test-ct-changed workflow job', () => {
 
   // Runs the workflow's own step under bash with `node scripts/run-ct-tests.mjs`
   // replaced by a stub that records its argv, one argument per line.
-  function runTestStep(specs: string) {
+  // A `--list` call instead writes `list` (a Playwright JSON report) to
+  // $PLAYWRIGHT_JSON_OUTPUT_FILE, records its argv and exits `listExit`.
+  function runTestStep(
+    specs: string,
+    list: unknown = listReport({ 'a.ct.spec.ts': 2 }),
+    listExit = 0,
+  ) {
     const dir = tempDir();
     const bin = join(dir, 'bin');
     mkdirSync(bin);
     const record = join(dir, 'argv');
+    const listRecord = join(dir, 'list-argv');
+    const listJson = join(dir, 'list-fixture.json');
+    writeFileSync(listJson, JSON.stringify(list));
     writeFileSync(
       join(bin, 'node'),
-      `#!/usr/bin/env bash\nif [ "$1" = scripts/run-ct-tests.mjs ]; then shift; printf '%s\\n' "$@" > "${record}"; exit 0; fi\nNODE_OPTIONS= exec "${process.execPath}" "$@"\n`,
+      [
+        '#!/usr/bin/env bash',
+        'if [ "$1" = scripts/run-ct-tests.mjs ]; then',
+        '  shift',
+        '  for arg in "$@"; do',
+        '    if [ "$arg" = --list ]; then',
+        `      printf '%s\\n' "$@" > "${listRecord}"`,
+        `      cp "${listJson}" "$PLAYWRIGHT_JSON_OUTPUT_FILE"`,
+        `      exit ${listExit}`,
+        '    fi',
+        '  done',
+        `  printf '%s\\n' "$@" > "${record}"`,
+        '  exit 0',
+        'fi',
+        `NODE_OPTIONS= exec "${process.execPath}" "$@"`,
+        '',
+      ].join('\n'),
     );
     chmodSync(join(bin, 'node'), 0o755);
     const result = spawnSync(
@@ -543,11 +701,19 @@ describe('test-ct-changed workflow job', () => {
         },
       },
     );
-    let argv: string[] = [];
-    try {
-      argv = readFileSync(record, 'utf8').trimEnd().split('\n');
-    } catch {}
-    return { status: result.status, argv, stderr: result.stderr };
+    const lines = (path: string) => {
+      try {
+        return readFileSync(path, 'utf8').trimEnd().split('\n');
+      } catch {
+        return [];
+      }
+    };
+    return {
+      status: result.status,
+      argv: lines(record),
+      listArgv: lines(listRecord),
+      stderr: result.stderr,
+    };
   }
 
   it('passes every changed spec, 20 repetitions and no retries to the CT launcher', () => {
@@ -561,10 +727,46 @@ describe('test-ct-changed workflow job', () => {
     expect(argv).not.toContain('--pass-with-no-tests');
   });
 
+  it('lists the same filtered, unquarantined tests first and repeats by their count', () => {
+    const specs = Object.keys(DOCK_4047).map((file) => `src/features/hud/components/${file}`);
+    const { status, argv, listArgv, stderr } = runTestStep(
+      JSON.stringify(specs),
+      listReport(DOCK_4047),
+    );
+    expect(status, stderr).toBe(0);
+    expect(listArgv).toEqual([
+      ...specs.map(playwrightFilter),
+      '--list',
+      '--grep-invert',
+      '@quarantine\\b',
+      '--reporter=json',
+    ]);
+    expect(argv.slice(0, specs.length)).toEqual(specs.map(playwrightFilter));
+    expect(argv).toContain('--repeat-each=9');
+    expect(argv).toContain('--retries=0');
+    expect(argv).toContain('--grep-invert');
+    expect(stderr).toContain('Discovered 86 tests in 10 spec files; repeating each 9 times');
+  });
+
+  it('fails without launching tests when discovery errors, finds nothing or exits non-zero', () => {
+    const spec = '["src/a/one.ct.spec.ts"]';
+    for (const [list, exit] of [
+      [listReport({ 'a.ct.spec.ts': 1 }, [{ message: 'load error' }]), 0],
+      [listReport({ 'a.ct.spec.ts': 0 }), 0],
+      [{ unexpected: true }, 0],
+      [listReport({ 'a.ct.spec.ts': 2 }), 1],
+    ] as const) {
+      const { status, argv } = runTestStep(spec, list, exit);
+      expect(status, JSON.stringify(list)).not.toBe(0);
+      expect(argv).toEqual([]);
+    }
+  });
+
   it('fails before launching tests when the spec list is an error marker', () => {
-    const { status, argv } = runTestStep('error');
+    const { status, argv, listArgv } = runTestStep('error');
     expect(status).not.toBe(0);
     expect(argv).toEqual([]);
+    expect(listArgv).toEqual([]);
   });
 });
 

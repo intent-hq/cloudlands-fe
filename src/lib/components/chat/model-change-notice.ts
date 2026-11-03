@@ -18,6 +18,7 @@ import {
 } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { isProviderProfileRef, providerRefBaseId } from '$shared/provider-profiles';
 import { formatProviderRefLabel } from '$shared/provider-ref-label';
+import { selectHidesProviderProfileNames } from '$store/renderer/slices/workspace/workspace-selectors';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
 
@@ -84,7 +85,8 @@ function describeSide(
  * A side of a switch that involves a named profile (§5.54) reads
  * `<Model> (<Provider> · <Profile>)`: never the internal profile reference.
  * The bare side reads `Default` when its provider has profiles, and a
- * reference whose profile is gone reads as a removed profile.
+ * reference whose profile is gone reads as a removed profile. A guest never
+ * sees profile names: each side reads `<Model> (<Provider>)`.
  */
 function describeProfileSide(
   providerRef: string | undefined,
@@ -104,15 +106,16 @@ function describeProfileSide(
     baseId,
     loaded ? workspaceId : undefined,
   );
-  const provider = loaded
-    ? formatProviderRefLabel(
-        providerRef,
-        baseName,
-        selectProviderCatalogProfiles.select(state, workspaceId),
-        baseId,
-        selectProviderCatalogDefaultNames.select(state, workspaceId),
-      )
-    : baseName;
+  const provider =
+    loaded && !selectHidesProviderProfileNames.select(state, workspaceId ?? '')
+      ? formatProviderRefLabel(
+          providerRef,
+          baseName,
+          selectProviderCatalogProfiles.select(state, workspaceId),
+          baseId,
+          selectProviderCatalogDefaultNames.select(state, workspaceId),
+        )
+      : baseName;
   if (!model) return m.chat_modelChangeNotice_profileDefaultModel_label({ provider });
   // A profile serves its own catalog; before it loads (or after removal) the
   // base provider's names still describe the same model ids.

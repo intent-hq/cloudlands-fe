@@ -132,6 +132,7 @@ vi.mock('../json-rpc-client', () => {
 
 vi.mock('../client-identity', () => ({
   getOrCreateClientId: vi.fn(async () => 'cli-test'),
+  getLocalMachineName: () => undefined,
   persistClientId: vi.fn(async () => {}),
 }));
 
@@ -6449,7 +6450,7 @@ it('reopens a saved instance through IPC after navigation policy is republished 
   const publish = findHandler(COLLABORATION_AUTH.POLICY)!;
   const open = findHandler('connections:open')!;
   try {
-    await publish(event, { multiplayer: true, gitlab: false });
+    await publish(event, { multiplayer: true });
     await expect(open(event, { id: member.id })).resolves.toEqual({
       status: 'opened',
       id: member.id,
@@ -6458,7 +6459,7 @@ it('reopens a saved instance through IPC after navigation policy is republished 
     sender.emit('did-navigate-in-page');
     await expect(open(event, { id: member.id })).rejects.toThrow(/Multiplayer is unavailable/);
     mod.disconnectBackendClient(member.id);
-    await publish(event, { multiplayer: true, gitlab: false });
+    await publish(event, { multiplayer: true });
     await expect(open(event, { id: member.id })).resolves.toEqual({
       status: 'opened',
       id: member.id,
@@ -6467,7 +6468,7 @@ it('reopens a saved instance through IPC after navigation policy is republished 
     expect(openOrFocus).toHaveBeenNthCalledWith(1, member.id);
     expect(openOrFocus).toHaveBeenNthCalledWith(2, member.id);
     expect(store.setActiveId).not.toHaveBeenCalled();
-    await publish(event, { multiplayer: false, gitlab: false });
+    await publish(event, { multiplayer: false });
     await expect(open(event, { id: member.id })).rejects.toThrow(/Multiplayer is unavailable/);
     expect(openOrFocus).toHaveBeenCalledTimes(2);
   } finally {

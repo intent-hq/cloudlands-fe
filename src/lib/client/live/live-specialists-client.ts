@@ -40,6 +40,15 @@ const logger = createLogger('LiveSpecialistsClient');
  */
 const REFETCH_DEBOUNCE_MS = 100;
 
+/** Rows per `specialist.list` page (the daemon's maximum). */
+const SPECIALIST_PAGE_LIMIT = 500;
+
+/** Safety stop for `nextToken` paging. */
+const MAX_CATALOG_PAGES = 100;
+
+/** One `specialist.list` page: the catalog plus its continuation token. */
+type PagedSpecialistCatalog = SpecialistCatalog & { nextToken?: string | null };
+
 export class LiveSpecialistsClient implements SpecialistsClient {
   /**
    * Raw `specialist.list` fetch — throws on transport/daemon failure. The
@@ -55,18 +64,80 @@ export class LiveSpecialistsClient implements SpecialistsClient {
   ): Promise<SpecialistCatalog> {
     // Preview context belongs to this request; global subscriptions keep
     // using the daemon's default context rather than the last picker choice.
-    const result =
-      provider === undefined && workspaceId === undefined && !options?.includeProject
-        ? await backendRequest<SpecialistCatalog>('specialist.list')
-        : await backendRequest<SpecialistCatalog>('specialist.list', {
-            ...(provider ? { provider } : {}),
-            ...(workspaceId ? { workspaceId } : {}),
-            ...(options?.includeProject ? { includeProject: true } : {}),
-          });
-    return {
-      specialists: Array.isArray(result?.specialists) ? result.specialists : [],
-      importDiagnostics: result?.importDiagnostics,
+    const scope = {
+      ...(provider ? { provider } : {}),
+      ...(workspaceId ? { workspaceId } : {}),
+      ...(options?.includeProject ? { includeProject: true } : {}),
     };
+    // Daemons with `boundedReads` page the catalog (PROTOCOL §5.11 "Catalog
+    // list pages"); follow `nextToken` to assemble all of it. Older daemons
+    // ignore `limit` and send no token, so the first reply is the whole catalog.
+    const specialists: SpecialistDef[] = [];
+    const seen = new Set<string>();
+    let importDiagnostics: SpecialistCatalog['importDiagnostics'];
+    let nextToken: string | undefined;
+    for (let page = 0; page < MAX_CATALOG_PAGES; page++) {
+      const result = await backendRequest<PagedSpecialistCatalog>('specialist.list', {
+        ...scope,
+        limit: SPECIALIST_PAGE_LIMIT,
+        ...(nextToken ? { nextToken } : {}),
+      });
+      // Offset tokens can repeat a row when the catalog changes mid-drain;
+      // keep the first copy so keyed lists never see duplicate ids.
+      for (const def of Array.isArray(result?.specialists) ? result.specialists : []) {
+        if (seen.has(def.id)) continue;
+        seen.add(def.id);
+        specialists.push(def);
+      }
+      if (page === 0) importDiagnostics = result?.importDiagnostics;
+      nextToken = typeof result?.nextToken === 'string' ? result.nextToken : undefined;
+      if (!nextToken) break;
+    }
+    if (nextToken) logger.warn('specialist.list paging stopped at the page limit');
+    const hydrated = await Promise.all(
+      specialists.map((def) =>
+        def.behaviorPromptOmitted ? this.hydrateOmittedPrompt(def, provider, workspaceId) : def,
+      ),
+    );
+    return { specialists: hydrated, importDiagnostics };
+  }
+
+  /**
+   * A specialist whose prompt alone exceeds a page arrives with
+   * `behaviorPromptOmitted` and no body. Read the full definition with
+   * `specialist.get`; when that fails, or returns a different tier or another
+   * cut body, keep the marker so the store refuses to save over the real prompt.
+   */
+  private async hydrateOmittedPrompt(
+    def: SpecialistDef,
+    provider?: string,
+    workspaceId?: string,
+  ): Promise<SpecialistDef> {
+    try {
+      const result = await backendRequest<{ specialist?: SpecialistDef }>('specialist.get', {
+        id: def.id,
+        ...(provider ? { provider } : {}),
+        ...(workspaceId ? { workspaceId } : {}),
+      });
+      const full = result?.specialist;
+      if (
+        full &&
+        full.id === def.id &&
+        full.source === def.source &&
+        !full.behaviorPromptOmitted &&
+        typeof full.behaviorPrompt === 'string'
+      ) {
+        return {
+          ...def,
+          ...full,
+          behaviorPromptOmitted: undefined,
+          behaviorPromptBytes: undefined,
+        };
+      }
+    } catch (error) {
+      logger.warn(`specialist.get for omitted prompt of ${def.id} failed`, error);
+    }
+    return def;
   }
 
   async list(provider?: string, workspaceId?: string): Promise<SpecialistDef[]> {

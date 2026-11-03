@@ -129,6 +129,53 @@ describe('discussion message presentation', () => {
     expect(container.querySelectorAll('[data-discussion-agent-mention]')).toHaveLength(1);
     expect(container.querySelector('[data-discussion-agent-targets]')).toBeNull();
   });
+  it('shows a renamed agent by its current name and opens it by ID from a human message', async () => {
+    const { container } = render(DiscussionMessageView, {
+      workspaceId: 'ws',
+      sourcePanelId: 'pane',
+      message: {
+        ...message,
+        body: '@Agent d4e317 tell us about this codebase',
+        recipientAgentIds: ['agent-1'],
+      },
+      agentMentions: [{ agentId: 'agent-1', name: 'Agent d4e317', start: 0, end: 13 }],
+      agentNames: { 'agent-1': 'Codebase guide' },
+    });
+    const chip = screen.getByRole('button', { name: '@Codebase guide' });
+    expect(chip.getAttribute('data-discussion-agent-mention')).toBe('agent-1');
+    expect(container.textContent).not.toContain('Agent d4e317');
+    await fireEvent.click(chip);
+    expect(navigation).toHaveBeenCalledExactlyOnceWith(
+      {
+        kind: 'agent',
+        label: 'Codebase guide',
+        url: 'intent://local/ws/agent/agent-1',
+        agentId: 'agent-1',
+      },
+      'ws',
+      'pane',
+      expect.any(MouseEvent),
+    );
+  });
+  it('relabels renamed agent authors and mentions in the reply preview', () => {
+    render(DiscussionMessageView, {
+      workspaceId: 'ws',
+      message: {
+        ...message,
+        author: { ...author, principalId: null, agentId: 'agent-1', displayName: 'Agent d4e317' },
+        replyTo: {
+          ...original,
+          author: { ...author, principalId: null, agentId: 'agent-2', displayName: 'Old helper' },
+          body: 'Ask @Agent d4e317 about it',
+        },
+      },
+      replyAgentMentions: [{ agentId: 'agent-1', name: 'Agent d4e317', start: 4, end: 17 }],
+      agentNames: { 'agent-1': 'Codebase guide', 'agent-2': 'Helper' },
+    });
+    expect(screen.getAllByRole('button', { name: 'Open agent Codebase guide' })).toHaveLength(2);
+    const reply = screen.getByRole('button', { name: 'Jump to message from Helper' });
+    expect(reply.textContent).toContain('Ask @Codebase guide about it');
+  });
   it('uses safe read-only markdown for agents and keeps navigable references in the same bubble', async () => {
     const { container } = render(DiscussionMessageView, {
       workspaceId: 'ws',

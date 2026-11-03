@@ -17,13 +17,14 @@
   import DeviceIcon from '$lib/components/DeviceIcon.svelte';
   import DeviceIconPicker from '$lib/components/DeviceIconPicker.svelte';
   import RemoteTunnelSettings from '$features/devices/RemoteTunnelSettings.svelte';
+  import TailcatUnavailableNote from '$features/devices/TailcatUnavailableNote.svelte';
   import { cn } from '$lib/utils';
   import {
     CONNECTION_ACCENT_CLASSES,
     CONNECTION_ACCENT_COLORS,
     connectionAccentOptions,
   } from '$lib/utils/connection-accents';
-  import { formatConnectionLabel } from '$lib/utils/connection-label';
+  import { formatConnectionLabel, formatLocalMachineLabel } from '$lib/utils/connection-label';
   import { canRequestDeviceUpdate, isDaemonBehindPin } from '$lib/utils/device-update-eligibility';
   import { m } from '$shared/paraglide/messages.js';
   import {
@@ -39,6 +40,7 @@
   import {
     selectConnectedIds,
     selectCurrentConnectionId,
+    selectHostManagesConnections,
     selectKeychainSyncState,
     selectPinnedDaemonVersion,
     selectConnectionWorkflow,
@@ -89,6 +91,9 @@
   let { device, panelMode, onOpenPanel, onClosePanel, onRequestRemove }: Props = $props();
   const pinnedVersion$ = selectPinnedDaemonVersion();
   const connectedIds$ = selectConnectedIds();
+  // intent-web dials the remote itself for tunnel settings, so they do not
+  // depend on this tab holding a live connection to it.
+  const hostManagesConnections$ = selectHostManagesConnections();
   const currentConnectionId$ = selectCurrentConnectionId();
   const syncState$ = selectKeychainSyncState();
   const remoteSupported$ = selectRemoteMachinesVisible();
@@ -209,11 +214,7 @@
   const savedDeviceIcon = $derived(device.deviceIcon ?? 'auto');
   const accentOptions = $derived(connectionAccentOptions(savedAccent));
   const displayName = $derived(
-    device.isLocal
-      ? $currentConnectionId$ === device.id
-        ? m.layout_daemonStatus_localConnection_label()
-        : m.settings_devices_hostMachine_label()
-      : formatConnectionLabel(device),
+    device.isLocal ? formatLocalMachineLabel(device) : formatConnectionLabel(device),
   );
   const openStatus = $derived(device.status ?? 'not-open');
   const trimmedName = $derived(name.trim());
@@ -834,10 +835,11 @@
         <div class="space-y-3">
           <RemoteTunnelSettings
             deviceId={device.id}
-            connected={$connectedIds$.includes(device.id)}
+            connected={$hostManagesConnections$ || $connectedIds$.includes(device.id)}
             disabled={busy !== null || $openWorkflow$?.phase === 'running'}
             onConnect={connectDevice}
           />
+          <TailcatUnavailableNote />
           <SettingsFieldRow
             id={`device-${device.id}-detect-hosts-field`}
             compact
@@ -852,22 +854,24 @@
               ariaLabelledby={`device-${device.id}-detect-hosts-field-label`}
             />
           </SettingsFieldRow>
-          <SettingsFieldRow
-            id={`device-${device.id}-push-to-cloud-field`}
-            compact
-            label={m.settings_devices_pushToCloud_label()}
-            description={syncSupported
-              ? m.settings_devices_pushToCloud_description()
-              : m.settings_backendSync_unsupported_description()}
-          >
-            <Switch
-              id={`device-${device.id}-push-to-cloud`}
-              size="sm"
-              bind:checked={() => pushToCloud, setPushToCloud}
-              disabled={busy !== null || !syncSupported}
-              ariaLabelledby={`device-${device.id}-push-to-cloud-field-label`}
-            />
-          </SettingsFieldRow>
+          {#if !$hostManagesConnections$}
+            <SettingsFieldRow
+              id={`device-${device.id}-push-to-cloud-field`}
+              compact
+              label={m.settings_devices_pushToCloud_label()}
+              description={syncSupported
+                ? m.settings_devices_pushToCloud_description()
+                : m.settings_backendSync_unsupported_description()}
+            >
+              <Switch
+                id={`device-${device.id}-push-to-cloud`}
+                size="sm"
+                bind:checked={() => pushToCloud, setPushToCloud}
+                disabled={busy !== null || !syncSupported}
+                ariaLabelledby={`device-${device.id}-push-to-cloud-field-label`}
+              />
+            </SettingsFieldRow>
+          {/if}
         </div>
       </div>
 

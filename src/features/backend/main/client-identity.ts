@@ -74,6 +74,16 @@ export function setLocalHostIdentity(result: unknown): boolean {
   return changed;
 }
 
+/**
+ * This machine's display name for its own Machines row: the local daemon's
+ * `prettyHostname` once captured, else the OS hostname; `undefined` when both
+ * are blank.
+ */
+export function getLocalMachineName(): string | undefined {
+  const { hostname, prettyHostname } = getClientHostIdentity();
+  return prettyHostname || hostname.trim() || undefined;
+}
+
 /** This app's host identification as presented on `client.hello`. */
 export function getClientHostIdentity(): ClientHostIdentity {
   return { hostname: osHostname(), ...localHostIdentity };

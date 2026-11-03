@@ -57,6 +57,7 @@ vi.mock('../json-rpc-client', () => ({
 
 vi.mock('../client-identity', () => ({
   getOrCreateClientId: vi.fn(async () => 'cli-test'),
+  getLocalMachineName: () => undefined,
   persistClientId: vi.fn(async () => {}),
 }));
 

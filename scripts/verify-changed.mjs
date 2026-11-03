@@ -106,6 +106,12 @@ const LOCALE_COMPLETENESS_INPUTS = new Set([
 const VISUAL_TEST_RE = /\.visual\.spec\.ts$/;
 const INTEGRATION_TEST_RE = /^tests\/integration\/.*\.test\.ts$/;
 const VITEST_EXCLUDED_RE = /(?:^|\/)remote-(?:env|git)\.test\.ts$/;
+// Non-test code whose unit-suite importers `vitest related` follows: shared test
+// helpers and lint rules as well as product and script sources. The unit config
+// excludes tests/integration/, so its helpers have no importers there; changed
+// integration tests run directly in their own lane. A file nothing imports
+// resolves to an empty, passing selection (`vitest related` sets passWithNoTests).
+const RELATED_SOURCE_RE = /^(?:(?:src|scripts|playwright|eslint-rules)\/|tests\/(?!integration\/))/;
 const FULL_RISK_FILES = new Set([
   'package.json',
   'pnpm-lock.yaml',
@@ -114,6 +120,10 @@ const FULL_RISK_FILES = new Set([
   'vitest.config.ts',
   'scripts/vitest-native-deps.mjs',
 ]);
+// svelte-check's own inputs: its tsconfig decides which files it checks (an
+// over-wide include can silently drop the whole project past the size limit),
+// and the wrapper decides how the run is guarded.
+const SVELTE_CHECK_INPUT_FILES = new Set(['tsconfig.json', 'scripts/run-svelte-check.mjs']);
 // Files that decide which root specs playwright.config.ts runs: the config and the
 // modules it reads its testDir/testMatch/testIgnore from (root-spec-pattern.mjs
 // builds on ct-spec-pattern.mjs's matchers). The pull_request workflow's root
@@ -521,7 +531,7 @@ export function createVerificationPlan(files, options = {}) {
   const directUnit = [...new Set([...directTests('vitest'), ...deletedUnitDirectories])];
   const relatedSources = existing.filter(
     (file) =>
-      /^(?:src|scripts|playwright)\//.test(file) &&
+      RELATED_SOURCE_RE.test(file) &&
       CODE_EXTENSIONS.has(extname(file)) &&
       !UNIT_TEST_RE.test(file),
   );
@@ -549,7 +559,7 @@ export function createVerificationPlan(files, options = {}) {
     // A resolved snapshot selects its runner above; it did not change source or types.
     if (snapshots.get(file)) continue;
     addBoundary(boundaries, file);
-    if (file.endsWith('.svelte')) svelteCheck = true;
+    if (file.endsWith('.svelte') || SVELTE_CHECK_INPUT_FILES.has(file)) svelteCheck = true;
     if (file === 'tsconfig.json') boundaries.add('renderer');
     else if (file === 'tsconfig.main.json') boundaries.add('main');
     else if (file === 'tsconfig.preload.json') boundaries.add('preload');

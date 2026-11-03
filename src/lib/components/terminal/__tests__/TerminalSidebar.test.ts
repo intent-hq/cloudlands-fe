@@ -10,6 +10,8 @@ const { mockDispatch, scriptEntries, selectorWorkspaceArgs, asyncActionHandlers,
       reset: () => {},
       detect: null as ((action: any) => void) | null,
       remove: null as ((action: any) => void) | null,
+      /** When set, create/update definitions fail with this daemon message. */
+      refuse: null as string | null,
     },
     notify: { success: vi.fn(), info: vi.fn(), error: vi.fn(), warning: vi.fn() },
   }));
@@ -125,6 +127,12 @@ vi.mock('$store/renderer/store', async () => {
         asyncActionHandlers.detect
       ) {
         asyncActionHandlers.detect(action);
+      } else if (
+        asyncActionHandlers.refuse &&
+        (action.type === 'scripts/createScriptDefinitionRequested' ||
+          action.type === 'scripts/updateScriptDefinitionRequested')
+      ) {
+        finishWorkflow(action, 'failure', undefined, asyncActionHandlers.refuse);
       } else if (action.type === 'scripts/createScriptDefinitionRequested') {
         const [workspaceId, input] = action.payload;
         action.success({ id: 'new-command', workspaceId, ...input });
@@ -189,6 +197,7 @@ beforeEach(() => {
   scriptEntries.byWorkspaceId = {};
   asyncActionHandlers.detect = null;
   asyncActionHandlers.remove = null;
+  asyncActionHandlers.refuse = null;
   selectorWorkspaceArgs.length = 0;
 });
 
@@ -272,6 +281,26 @@ describe('TerminalSidebar detection flow', () => {
         ],
       }),
     );
+  });
+
+  it('shows the daemon refusal when adding a script fails and keeps the form open', async () => {
+    asyncActionHandlers.refuse =
+      'script.create: `name` is 4097 bytes; the limit is 4096 bytes (UTF-8)';
+    render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+    await fireEvent.click(screen.getByTitle('Add script'));
+    await fireEvent.input(screen.getByPlaceholderText('Name'), {
+      target: { value: 'n'.repeat(4097) },
+    });
+    await fireEvent.input(screen.getByPlaceholderText('Command, e.g. npm run dev'), {
+      target: { value: 'pnpm test' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Add', exact: true }));
+    await waitFor(() =>
+      expect(notify.error).toHaveBeenCalledWith(
+        'script.create: `name` is 4097 bytes; the limit is 4096 bytes (UTF-8)',
+      ),
+    );
+    expect(screen.getByPlaceholderText('Name')).toBeTruthy();
   });
 
   it.each([false, true])('detects local scripts with existing scripts: %s', async (populated) => {
@@ -681,6 +710,21 @@ describe('TerminalSidebar script inline rename', () => {
       ),
     );
     expect(container.querySelector('[data-edit-script="script-1"]')).toBeNull();
+  });
+
+  it('shows the daemon refusal when a rename fails', async () => {
+    asyncActionHandlers.refuse =
+      'script.create: `name` is 5000 bytes; the limit is 4096 bytes (UTF-8)';
+    const { container } = render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+    await fireEvent.doubleClick(screen.getByRole('button', { name: /^build/ }));
+    const input = container.querySelector<HTMLInputElement>('[data-edit-script="script-1"]');
+    await fireEvent.input(input!, { target: { value: 'x'.repeat(5000) } });
+    await fireEvent.keyDown(input!, { key: 'Enter' });
+    await waitFor(() =>
+      expect(notify.error).toHaveBeenCalledWith(
+        'script.create: `name` is 5000 bytes; the limit is 4096 bytes (UTF-8)',
+      ),
+    );
   });
 
   it('commits a non-empty rename on blur', async () => {

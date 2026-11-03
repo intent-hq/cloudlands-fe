@@ -116,18 +116,25 @@ function generation(): number {
 }
 
 /**
- * `remoteMachines: 1` from the current hello, or null while unknown: the
- * transport clears its capability snapshot whenever another `client.hello` is
- * in flight, and reports no snapshot until that reply lands.
+ * `remoteMachines: 1` (and `remoteInitialAgent: 1`) from the current hello, or
+ * null while unknown: the transport clears its capability snapshot whenever
+ * another `client.hello` is in flight, and reports no snapshot until that
+ * reply lands.
  */
-async function readSupported(): Promise<boolean | null> {
+async function readSupported(): Promise<{
+  supported: boolean;
+  initialAgentPlacement: boolean;
+} | null> {
   try {
     const hello = (await observeBackendNodeCapabilities()) as {
-      server?: { capabilities?: { remoteMachines?: unknown } | null };
+      server?: {
+        capabilities?: { remoteMachines?: unknown; remoteInitialAgent?: unknown } | null;
+      };
     } | null;
     const capabilities = hello?.server?.capabilities;
     if (!capabilities) return null;
-    return capabilities.remoteMachines === 1;
+    const supported = capabilities.remoteMachines === 1;
+    return { supported, initialAgentPlacement: supported && capabilities.remoteInitialAgent === 1 };
   } catch {
     return null;
   }
@@ -177,7 +184,8 @@ function* readSnapshot(): SagaGenerator<Parameters<typeof remoteMachinesLoaded>[
     yield* delay(CAPABILITY_RETRY_MS);
     known = yield* call(readSupported);
   }
-  const supported = known === true;
+  const supported = known?.supported === true;
+  const initialAgentPlacement = known?.initialAgentPlacement === true;
   let machines: RemoteMachine[] = [];
   let localFingerprint: string | null = null;
   if (supported) {
@@ -189,7 +197,7 @@ function* readSnapshot(): SagaGenerator<Parameters<typeof remoteMachinesLoaded>[
     localFingerprint = yield* call(readLocalFingerprint);
   }
   const executorBackends = yield* call(readExecutorBackends);
-  return { supported, machines, localFingerprint, executorBackends };
+  return { supported, initialAgentPlacement, machines, localFingerprint, executorBackends };
 }
 
 /**

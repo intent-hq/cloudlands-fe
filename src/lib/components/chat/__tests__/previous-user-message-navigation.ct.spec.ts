@@ -1,7 +1,6 @@
 import type { Locator } from '@playwright/experimental-ct-svelte';
 import type { AgentMessage } from '$shared/types';
 import {
-  clickAndSettle,
   expect,
   expectMotionToSettle,
   motionSnapshot,
@@ -49,11 +48,7 @@ test('newer previous-message navigation wins over a pending return to bottom', a
   await down.expectAtBottom(true);
   for (const current of [24, 23, 22]) {
     const source = component.locator(`[data-message-id="user-${current}"]`);
-    await source.hover();
-    await clickAndSettle(
-      source.getByRole('button', { name: 'Scroll to previous message' }),
-      scroll,
-    );
+    await activatePreviousMessageAndSettle(source, scroll);
   }
 
   // Control animation time so the second trusted action always precedes the
@@ -188,6 +183,23 @@ async function hoverPreviousMessage(source: Locator, afterHover: () => Promise<v
   await afterHover();
   // The one-time update can move a previously ready row away from the pointer.
   await waitForPreviousMessageReady(source);
+}
+
+async function activatePreviousMessageAndSettle(source: Locator, scroll: Locator) {
+  // The action bar takes pointer events only while its row is hovered, and a click
+  // checks its hit target before it moves the pointer. Follow-bottom can move the row
+  // after a hover, so the click retries against the message text until the test times
+  // out (this ejected cloudlands-fe#4078 from the merge queue). Re-hovering cannot close
+  // that window under load, so activate the same action from the keyboard instead.
+  const action = source.getByRole('button', { name: 'Scroll to previous message' });
+  const before = await expectMotionToSettle(scroll, {
+    message: `${String(scroll)} should settle before activating ${String(action)}`,
+  });
+  await action.press('Enter');
+  await expectMotionToSettle(scroll, {
+    changedFrom: before,
+    message: `activating ${String(action)} should move ${String(scroll)}, which should then settle`,
+  });
 }
 
 for (const shiftAfterHover of [false, true]) {

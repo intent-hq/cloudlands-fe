@@ -17,7 +17,6 @@ import {
   selectPrincipalConnectionContext,
 } from '../../principal/principal-selectors';
 import type { PrincipalState } from '../../principal/principal-types';
-import { selectLabsGitLabEnabled } from '../../user-preferences/user-preferences-selectors';
 import {
   selectHostMembershipContext,
   selectHostMembershipState,
@@ -126,11 +125,7 @@ function* execute(action: ReturnType<typeof hostMembershipRequested>): SagaGener
     }
     if (command.kind === 'create') {
       const host = canonicalInviteHost(command.input.pinProvider, command.input.pinHost ?? '');
-      if (
-        !command.input.pinLogin.trim() ||
-        !host ||
-        (command.input.pinProvider === 'gitlab' && !(yield* selectLabsGitLabEnabled.effect()))
-      ) {
+      if (!command.input.pinLogin.trim() || !host) {
         yield* put(hostMembershipFailed(target, m.collaboration_pin_invalid_error()));
         return;
       }
@@ -217,11 +212,15 @@ function* execute(action: ReturnType<typeof hostMembershipRequested>): SagaGener
           ? describeInviteFailureReason('identity-unverifiable', {
               identityHost: command.kind === 'create' ? command.input.pinHost : undefined,
             })
-          : code === 'listener-down'
-            ? m.workspace_share_listenerDown_error()
-            : code === 'tunnel-down'
-              ? m.workspace_share_tunnelDown_error()
-              : m.collaboration_host_request_error();
+          : code === 'github-unreachable'
+            ? m.workspace_share_forgeUnreachable_error()
+            : code === 'github-identity-required'
+              ? m.workspace_share_forgeRequired_error()
+              : code === 'listener-down'
+                ? m.workspace_share_listenerDown_error()
+                : code === 'tunnel-down'
+                  ? m.workspace_share_tunnelDown_error()
+                  : m.collaboration_host_request_error();
     if (isForbiddenErrorResponse(error)) {
       clearHostInviteLinks(target.session);
       yield* put(hostMembershipDenied(target, message));

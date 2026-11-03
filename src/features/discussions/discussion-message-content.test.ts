@@ -41,6 +41,39 @@ describe('discussion message presentation content', () => {
       '!',
     ]);
   });
+  it('labels a validated span with the agent current name and links by agent ID', () => {
+    const selected = { ...mention, name: 'Agent d4e317', start: 0, end: 13 };
+    const body = '@Agent d4e317 tell us about this codebase';
+    const parts = discussionMessageParts(body, 'ws', [selected], [], {
+      'agent-1': 'Codebase guide',
+    });
+    expect(parts).toEqual([
+      { ...selected, name: 'Codebase guide', kind: 'mention' },
+      ' tell us about this codebase',
+    ]);
+    expect(discussionMessageMarkdown(parts, 'ws')).toBe(
+      '[@Codebase guide](intent://local/ws/agent/agent-1) tell us about this codebase',
+    );
+  });
+  it('keeps the saved name for unknown or unnamed agents and still validates the saved span', () => {
+    const selected = { ...mention, name: 'Old name', start: 0, end: 9 };
+    expect(
+      discussionMessageParts('@Old name hi', 'ws', [selected], [], {
+        other: 'Someone',
+        'agent-1': ' ',
+      }),
+    ).toEqual([{ ...selected, kind: 'mention' }, ' hi']);
+    const stale = discussionMessageParts(
+      '@Old name hi',
+      'ws',
+      [{ ...selected, name: 'Renamed' }],
+      [],
+      {
+        'agent-1': 'Renamed',
+      },
+    );
+    expect(stale.some((part) => typeof part !== 'string' && 'agentId' in part)).toBe(false);
+  });
   it('does not split a larger name or render duplicate overlapping spans', () => {
     expect(discussionMessageParts('Hi @DeveloperExtra', 'ws', [mention])).toEqual([
       'Hi ',

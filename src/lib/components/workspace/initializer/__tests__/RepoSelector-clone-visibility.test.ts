@@ -38,7 +38,6 @@ const mocks = vi.hoisted(() => {
     authenticated: false,
     cloneVisible: true,
     hostMember: false,
-    labsGitLab: false,
     navigateToSettings: vi.fn(async () => {}),
     selector,
     state,
@@ -171,7 +170,6 @@ vi.mock('$store/renderer/slices/workspace-initializer/plain-folder-selectors', a
 }));
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', async (orig) => ({
   ...(await orig<object>()),
-  selectLabsGitLabEnabled: mocks.selector(() => mocks.labsGitLab),
 }));
 vi.mock('$store/renderer/slices/host-execution/host-execution-selectors', async (orig) => ({
   ...(await orig<object>()),
@@ -190,7 +188,6 @@ beforeEach(() => {
   mocks.authenticated = false;
   mocks.cloneVisible = true;
   mocks.hostMember = false;
-  mocks.labsGitLab = false;
   mocks.navigateToSettings.mockClear();
 });
 import { warmImport } from '../../../../../test/warm-import';
@@ -297,23 +294,16 @@ describe('RepoSelector Clone visibility', () => {
     expect(selectedTab()).toBe('Existing folder');
   });
 
-  it('offers a connect link to Settings → Connections when Clone is hidden', async () => {
+  it('offers a GitHub-or-GitLab connect link to Settings → Connections when Clone is hidden', async () => {
     mocks.cloneVisible = false;
     await openDropdown();
-    const link = screen.getByRole('button', { name: 'Connect GitHub to clone a repository' });
+    const link = screen.getByRole('button', {
+      name: 'Connect GitHub or GitLab to clone a repository',
+    });
     await fireEvent.click(link);
     expect(mocks.navigateToSettings).toHaveBeenCalledWith({
       tab: 'connections',
       hash: 'integrations',
     });
-  });
-
-  it('names GitLab in the connect link when GitLab (Labs) is on', async () => {
-    mocks.cloneVisible = false;
-    mocks.labsGitLab = true;
-    await openDropdown();
-    expect(
-      screen.getByRole('button', { name: 'Connect GitHub or GitLab to clone a repository' }),
-    ).toBeTruthy();
   });
 });

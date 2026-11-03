@@ -1,7 +1,8 @@
 /**
  * @vitest-environment jsdom
  *
- * Where a remote agent runs: the header pill and the conversation notices.
+ * Where a remote agent runs: the agent-row machine badge and the conversation
+ * notices.
  * Badges describe existing work, so they show with the Labs flag off; the
  * machine list (flag on) adds "access revoked" and the "Check again" action.
  */
@@ -78,38 +79,34 @@ beforeEach(() => {
 });
 afterEach(() => cleanup());
 
-describe('header machine pill', () => {
+describe('agent row machine badge', () => {
   it('names the machine for a remote agent with the Labs flag off', () => {
     seed(session());
-    const { container } = render(AgentLocationBadge, { agentId: AGENT, variant: 'pill' });
-    const pill = container.querySelector('[data-agent-machine-badge="pill"]');
-    expect(pill?.textContent).toContain('Mac mini');
-    expect(pill?.getAttribute('aria-label')).toBe('Runs on Mac mini · macOS arm64');
+    const { container } = render(AgentLocationBadge, { agentId: AGENT });
+    const badge = container.querySelector('[data-agent-machine-badge="icon"]');
+    expect(badge?.getAttribute('aria-label')).toBe('Runs on Mac mini · macOS arm64');
   });
 
-  it('adds no nested control inside the row or header button', () => {
+  it('adds no nested control inside the row button', () => {
     seed(session());
-    for (const variant of ['icon', 'pill'] as const) {
-      const { container, unmount } = render(AgentLocationBadge, { agentId: AGENT, variant });
-      const badge = container.querySelector<HTMLElement>('[data-agent-machine-badge]');
-      expect(badge?.getAttribute('title')).toBe('Runs on Mac mini · macOS arm64');
-      expect(container.querySelector('[role="button"], [tabindex], button')).toBeNull();
-      unmount();
-    }
+    const { container } = render(AgentLocationBadge, { agentId: AGENT });
+    const badge = container.querySelector<HTMLElement>('[data-agent-machine-badge]');
+    expect(badge?.getAttribute('title')).toBe('Runs on Mac mini · macOS arm64');
+    expect(container.querySelector('[role="button"], [tabindex], button')).toBeNull();
   });
 
   it('renders nothing for a local agent', () => {
     seed(session({ placement: undefined, nodeId: undefined, nodeName: undefined }));
-    const { container } = render(AgentLocationBadge, { agentId: AGENT, variant: 'pill' });
+    const { container } = render(AgentLocationBadge, { agentId: AGENT });
     expect(container.querySelector('[data-agent-machine-badge]')).toBeNull();
   });
 
   it('marks access revoked from the machine list', () => {
     seed(session(), { labs: true, machine: machine('revoked') });
-    const { container } = render(AgentLocationBadge, { agentId: AGENT, variant: 'pill' });
-    const pill = container.querySelector('[data-agent-machine-badge]');
-    expect(pill?.getAttribute('data-agent-machine-state')).toBe('revoked');
-    expect(pill?.getAttribute('aria-label')).toContain('Access revoked');
+    const { container } = render(AgentLocationBadge, { agentId: AGENT });
+    const badge = container.querySelector('[data-agent-machine-badge]');
+    expect(badge?.getAttribute('data-agent-machine-state')).toBe('revoked');
+    expect(badge?.getAttribute('aria-label')).toContain('Access revoked');
   });
 });
 

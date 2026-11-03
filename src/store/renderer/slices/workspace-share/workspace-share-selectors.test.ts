@@ -35,6 +35,7 @@ import {
   selectShareSharingError,
   selectShareCanManage,
   selectShareCanSetMemberRole,
+  selectShareDialogResolving,
   selectShareOwnerPrincipalId,
   selectShareInvitablePrincipals,
   selectWorkspaceRosterCanManage,
@@ -54,6 +55,9 @@ import {
   initialState,
   openShareDialog,
   shareDataLoaded,
+  shareDataRequested,
+  shareDataFailed,
+  shareIntegrationAuthLoaded,
   sharePrincipalsLoaded,
   shareRosterLoaded,
   shareRosterMemberRemoveRequested,
@@ -276,6 +280,114 @@ it('hides prerequisite status as soon as host identity changes', () => {
   expect(selectShareSharingChecking.select(root)).toBe(false);
   expect(selectShareSharingEnabling.select(root)).toBe(false);
   expect(selectShareSharingError.select(root)).toBeNull();
+});
+
+describe('selectShareDialogResolving', () => {
+  function opened() {
+    const root = stateWith(
+      { 'ws-1': 'owner' },
+      openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'Space' }),
+    );
+    const target = {
+      workspaceId: 'ws-1',
+      session: root.workspaceShare.session,
+      authority: selectPrincipalActionContext.select(root),
+    };
+    const apply = (...actions: Parameters<typeof workspaceShareReducer>[1][]) => {
+      root.workspaceShare = actions.reduce(workspaceShareReducer, root.workspaceShare);
+    };
+    return { root, target, apply };
+  }
+
+  it('stays resolving until forge auth, prerequisites and the first roster read settle', () => {
+    const { root, target, apply } = opened();
+    apply(shareDataRequested());
+    expect(selectShareDialogResolving.select(root)).toBe(true);
+    apply(shareIntegrationAuthLoaded(target, { github: true, gitlab: false }));
+    expect(selectShareDialogResolving.select(root)).toBe(true);
+    apply(sharePrerequisitesStarted({ target, enabling: false }));
+    expect(selectShareDialogResolving.select(root)).toBe(true);
+    apply(sharePrerequisitesSettled({ target, enabled: true, error: null }));
+    expect(selectShareDialogResolving.select(root)).toBe(true);
+    apply(
+      shareDataLoaded({
+        target,
+        generation: 0,
+        members: [owner],
+        invites: [],
+        guestCount: 0,
+        guestLimit: 5,
+      }),
+    );
+    expect(selectShareDialogResolving.select(root)).toBe(false);
+  });
+
+  it('keeps settled content through later re-reads and prerequisite rechecks', () => {
+    const { root, target, apply } = opened();
+    apply(
+      shareIntegrationAuthLoaded(target, { github: true, gitlab: false }),
+      sharePrerequisitesStarted({ target, enabling: false }),
+      sharePrerequisitesSettled({ target, enabled: true, error: null }),
+      shareDataLoaded({
+        target,
+        generation: 0,
+        members: [owner],
+        invites: [],
+        guestCount: 0,
+        guestLimit: 5,
+      }),
+    );
+    apply(shareDataRequested(), sharePrerequisitesStarted({ target, enabling: false }));
+    expect(selectShareSharingEnabled.select(root)).toBe(true);
+    expect(selectShareDialogResolving.select(root)).toBe(false);
+  });
+
+  it('settles on a prerequisite or roster failure so the error can render', () => {
+    const { root, target, apply } = opened();
+    apply(
+      shareIntegrationAuthLoaded(target, { github: true, gitlab: false }),
+      shareDataRequested(),
+      sharePrerequisitesStarted({ target, enabling: false }),
+      sharePrerequisitesSettled({ target, enabled: null, error: 'setup failed' }),
+    );
+    expect(selectShareDialogResolving.select(root)).toBe(true);
+    apply(shareDataFailed({ target, error: 'read failed' }));
+    expect(selectShareDialogResolving.select(root)).toBe(false);
+    apply(sharePrerequisitesStarted({ target, enabling: false }));
+    expect(selectShareDialogResolving.select(root)).toBe(false);
+  });
+
+  it('does not wait on prerequisites a non-admin never reads', () => {
+    const { root, target, apply } = opened();
+    root.principal.snapshot!.capabilities.hostMembership = true;
+    root.principal.snapshot!.principal.hostRole = 'member';
+    root.workspace.workspaces.map['ws-1'].canManage = true;
+    root.workspace.hasLoaded = true;
+    root.workspace.loadedBackendId = root.connections.windowBackendId;
+    root.workspace.capabilityContext = selectPrincipalActionContext.select(root);
+    expect(selectShareCanManage.select(root)).toBe(true);
+    apply(
+      shareIntegrationAuthLoaded(target, { github: false, gitlab: false }),
+      shareDataLoaded({
+        target,
+        generation: 0,
+        members: [owner],
+        invites: [],
+        guestCount: null,
+        guestLimit: null,
+      }),
+    );
+    expect(selectShareDialogResolving.select(root)).toBe(false);
+  });
+
+  it('never covers the owner-only notice', () => {
+    const state = stateWith(
+      { 'ws-1': 'collaborator' },
+      openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'Space' }),
+    );
+    expect(selectShareCanManage.select(state)).toBe(false);
+    expect(selectShareDialogResolving.select(state)).toBe(false);
+  });
 });
 
 it('uses authoritative ownership for role controls even with a collaborator projection', () => {

@@ -114,7 +114,10 @@
 
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import { modelIdForDisplay, resolveModelDisplayName } from '$shared/utils/model-display-name';
-  import { selectHidesAgentCreationActions } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+    selectHidesAgentCreationActions,
+    selectHidesProviderProfileNames,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
   import { getAgentProvider } from '$shared/types/agent-session';
   import { formatProviderLoadError, type ProviderLoadError } from './model-picker-provider-errors';
   import {
@@ -149,7 +152,7 @@
     faCircleInfo,
   } from '@fortawesome/free-solid-svg-icons';
   import { faDesktop } from '$lib/icons/phosphor-icons';
-  import { agentMachineLocation } from '$features/remote-machines/agent-location';
+  import { agentMachineLocation, machineLocation } from '$features/remote-machines/agent-location';
   import {
     selectCurrentBackendLabel,
     selectDefaultHasOverrides,
@@ -339,6 +342,12 @@
     showRowLabel?: boolean;
     /** Show decorative provider and reasoning icons inside the trigger. */
     showTriggerIcons?: boolean;
+    /**
+     * Show the selected profile name beside the model. When false, a narrow
+     * trigger keeps the model; the accessible label still names the profile, and
+     * so does the hover tooltip unless a model warning replaces it.
+     */
+    showProfileName?: boolean;
     /** Preferred side for the open menu; `left` falls back to vertical without room. */
     menuSide?: 'bottom' | 'left';
     /** Gap between the trigger and a `left`-side menu. */
@@ -347,6 +356,12 @@
     menuMaxHeight?: 360 | 440;
     workspaceId?: string;
     agentId?: string;
+    /**
+     * Machine an agent that is not created yet will start on (New Workspace →
+     * Start On): the picker lists that machine's models like a remote agent's.
+     * Ignored with `agentId`, whose own placement decides.
+     */
+    machineId?: string;
     showManageLink?: boolean;
     portal?: boolean;
     modalAware?: boolean;
@@ -406,11 +421,13 @@
     rowLabel,
     showRowLabel = true,
     showTriggerIcons = true,
+    showProfileName = true,
     menuSide = 'bottom',
     menuSideOffset,
     menuMaxHeight = 360,
     workspaceId,
     agentId,
+    machineId,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     showManageLink = true,
     portal = true,
@@ -549,6 +566,9 @@
     workspaceIdStore.set(workspaceId ?? '');
   });
   const isGuestLocked = $derived(!!agentId && !!workspaceId && $isWorkspaceCollaborator$);
+  // Profile names are the host administrator's private configuration: a guest
+  // sees the bare provider, never a profile (or "Removed profile") label.
+  const hidesProfileNames$ = selectHidesProviderProfileNames(workspaceIdStore);
   // A remote agent runs on another machine, so the backend's own models say
   // nothing about it. Backends that support it switch the model on that
   // machine (PROTOCOL nodes.md "Switching a remote agent's model"): the picker
@@ -566,9 +586,11 @@
   const remoteMachinesPending$ = selectRemoteMachineOperations();
   const defaultHasOverrides$ = selectDefaultHasOverrides();
   const remoteLocation = $derived(
-    agentId && !isGuestLocked && $agentSession$?.id === agentId
-      ? agentMachineLocation($agentSession$, $remoteMachine$)
-      : null,
+    agentId
+      ? !isGuestLocked && $agentSession$?.id === agentId
+        ? agentMachineLocation($agentSession$, $remoteMachine$)
+        : null
+      : machineLocation(machineId ?? '', $remoteMachine$),
   );
   $effect(() => {
     remoteNodeId$.set(remoteLocation?.nodeId ?? '');
@@ -1927,7 +1949,7 @@
   // once its base provider has profiles (`Default` for the original one).
   const triggerProfileName = $derived.by(() => {
     const ref = triggerProviderId;
-    if (!ref) return undefined;
+    if (!ref || $hidesProfileNames$) return undefined;
     const baseId = normalizeProviderId(providerRefBaseId(ref));
     const isProfile = isProviderProfileRef(ref);
     return providerRefProfileName(
@@ -2797,7 +2819,7 @@
               <Fa icon={faDesktop} class="size-3!" />
               <span class="truncate">{remoteLocation.name}</span>
             </span>
-          {:else if triggerProfileName}
+          {:else if triggerProfileName && showProfileName}
             <span
               class="min-w-0 max-w-24 shrink truncate text-subtle"
               aria-hidden="true"

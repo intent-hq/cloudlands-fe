@@ -11,7 +11,6 @@ import {
   setAgentFontStyle,
   setChatAuroraEnabled,
   setGithubLinkDefaultAction,
-  setLabsGitLabEnabled,
   setLabsRemoteAgentsEnabled,
   setPauseAnimationsWhenUnfocused,
   setShellTransparencyEnabled,
@@ -286,22 +285,11 @@ describe('settings-proposal-actions', () => {
     expect(mocks.dispatch).not.toHaveBeenCalled();
   });
 
-  it('applies and reverses the GitLab lab preference', async () => {
-    const result = await applySettingsProposalWork(makeDetail(makeProposal('labs.gitlab', true)));
-
-    expect(mocks.dispatch).toHaveBeenCalledWith(setLabsGitLabEnabled(true));
-    expect(result.reverseChanges).toEqual([
-      {
-        path: 'labs.gitlab',
-        value: false,
-        apply: { kind: 'redux-action', action: 'userPreferences/setLabsGitLabEnabled' },
-      },
-    ]);
-
-    mocks.dispatch.mockClear();
-    await undoSettingsProposalWork(result.reverseChanges);
-
-    expect(mocks.dispatch).toHaveBeenCalledWith(setLabsGitLabEnabled(false));
+  it('rejects the retired GitLab lab setting: GitLab is always on', async () => {
+    await expect(
+      applySettingsProposalWork(makeDetail(makeProposal('labs.gitlab', true))),
+    ).rejects.toThrow('Unknown or unsupported setting "labs.gitlab"');
+    expect(mocks.dispatch).not.toHaveBeenCalled();
   });
 
   it('applies and reverses the remote agents lab preference', async () => {

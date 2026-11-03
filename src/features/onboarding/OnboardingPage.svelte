@@ -51,7 +51,7 @@
     selectGitLabAuthIsAuthenticating,
     selectGitLabAuthIsConfigured,
   } from '$store/renderer/slices/gitlab-auth/gitlab-auth-selectors';
-  import { selectLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { selectDaemonSupportsSourceControlAuth } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
 
   import ProjectPickerMessage from '$features/onboarding/messages/ProjectPickerMessage.svelte';
   import type { IssueSelectionData } from '$lib/components/workspace/initializer/IssueSuggestions.svelte';
@@ -872,9 +872,9 @@
   const isRequirementsStep = $derived($onboardingStep$ === 'requirements');
   const isWelcomeStep = $derived($onboardingStep$ === 'welcome');
   const isForgeStep = $derived($onboardingStep$ === 'forge');
-  const gitlabEnabled$ = selectLabsGitLabEnabled();
+  const gitlabSupported$ = selectDaemonSupportsSourceControlAuth();
   const gitlabConfigured$ = selectGitLabAuthIsConfigured();
-  const forgeCopy = $derived(onboardingForgeCopy($gitlabEnabled$ || $gitlabConfigured$));
+  const forgeCopy = $derived(onboardingForgeCopy($gitlabSupported$ || $gitlabConfigured$));
   // Git may be skipped at the requirements gate (Labs, no forge); a git
   // project then prompts to install it instead of advancing.
   const projectNeedsGit = $derived(needsGitInstallForProject(projectSelection, $gitRequirement$));

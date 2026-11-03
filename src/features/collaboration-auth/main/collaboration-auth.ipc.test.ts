@@ -81,13 +81,13 @@ afterEach(() => {
 
 describe('collaboration main IPC local routing', () => {
   it('requires fresh policy after in-page navigation while old captured opens remain cancelled', async () => {
-    await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true, gitlab: false });
+    await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true });
     const originalOpen = captureCollaborationPolicy(41);
     expect(originalOpen()).toBe(true);
     state.parent.webContents.emit('did-navigate-in-page');
     expect(originalOpen()).toBe(false);
     expect(captureCollaborationPolicy(41)()).toBe(false);
-    await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true, gitlab: false });
+    await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true });
     expect(captureCollaborationPolicy(41)()).toBe(true);
     expect(originalOpen()).toBe(false);
   });
@@ -95,13 +95,12 @@ describe('collaboration main IPC local routing', () => {
   it.each(['destroyed', 'render-process-gone', 'did-navigate', 'did-navigate-in-page', 'flag'])(
     'ends the real captured attempt on %s and never revives it',
     async (event) => {
-      await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true, gitlab: false });
+      await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true });
       const attempt = captureInviteAttempt();
-      if (event === 'flag')
-        await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: false, gitlab: false });
+      if (event === 'flag') await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: false });
       else state.parent.webContents.emit(event);
       await attempt.cancelled;
-      await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true, gitlab: false });
+      await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true });
       expect(attempt.current()).toBe(false);
       expect(attempt.admit()).toBe(false);
     },
@@ -116,7 +115,7 @@ describe('collaboration main IPC local routing', () => {
     async (scope, action) => {
       const first = prepareCollaborationIdentity({ scope, pinIdentity: pin });
       const firstView = state.parent.webContents.send.mock.calls.at(-1)![1];
-      await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true, gitlab: false });
+      await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true });
       await invoke(COLLABORATION_AUTH.ACTION, {
         requestId: firstView.requestId,
         action: { type: action },
@@ -125,7 +124,7 @@ describe('collaboration main IPC local routing', () => {
       const attempt = captureInviteAttempt();
       const second = prepareCollaborationIdentity({ scope: 'host', pinIdentity: pin }, { attempt });
       const secondView = state.parent.webContents.send.mock.calls.at(-1)![1];
-      await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true, gitlab: false });
+      await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true });
       try {
         expect(attempt.current()).toBe(true);
         await invoke(COLLABORATION_AUTH.ACTION, {
@@ -150,7 +149,7 @@ describe('collaboration main IPC local routing', () => {
     const done = prepareCollaborationIdentity({ scope: 'workspace', pinIdentity: pin });
     const view = state.parent.webContents.send.mock.calls[0][1];
     expect(state.localRequest).not.toHaveBeenCalled();
-    await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true, gitlab: false });
+    await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true });
     await invoke(COLLABORATION_AUTH.ACTION, {
       requestId: view.requestId,
       action: { type: 'confirm' },
@@ -171,12 +170,12 @@ describe('collaboration main IPC local routing', () => {
     expect(JSON.stringify(state.parent.webContents.send.mock.calls)).not.toMatch(
       /token|localRequest|secret/,
     );
-    await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: false, gitlab: false });
+    await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: false });
     if (result.kind === 'ready') expect(result.prepared.allowed()).toBe(false);
   });
   it('off policy blocks direct open IPC and auth, while leaving the invitation pin intact', async () => {
     const done = prepareCollaborationIdentity({ scope: 'host', pinIdentity: pin });
-    await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: false, gitlab: true });
+    await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: false });
     expect(await done).toEqual({
       kind: 'cancelled',
       request: { scope: 'host', pinIdentity: pin },
@@ -184,13 +183,13 @@ describe('collaboration main IPC local routing', () => {
     });
     expect(state.localRequest).not.toHaveBeenCalled();
     await invoke(COLLABORATION_AUTH.OPEN);
-    await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: false, gitlab: true });
+    await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: false });
     expect(state.localRequest).not.toHaveBeenCalled();
   });
   it('another window and stale or malformed responses cannot confirm an account', async () => {
     const done = prepareCollaborationIdentity({ scope: 'workspace', pinIdentity: pin });
     const view = state.parent.webContents.send.mock.calls[0][1];
-    await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true, gitlab: true });
+    await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true });
     for (const [id, requestId, action] of [
       [99, view.requestId, { type: 'confirm' }],
       [41, 'stale', { type: 'confirm' }],
@@ -207,7 +206,7 @@ describe('collaboration main IPC local routing', () => {
   });
   it('invalidates a flow when the captured local connection ends', async () => {
     const done = prepareCollaborationIdentity({ scope: 'workspace', pinIdentity: pin });
-    await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true, gitlab: true });
+    await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true });
     state.current = false;
     state.status?.('disconnected');
     expect(await done).toMatchObject({ kind: 'error', code: 'local-connection-changed' });
@@ -220,7 +219,7 @@ describe('collaboration main IPC local routing', () => {
       { scope: 'host', pinIdentity: pin, hostLabel: 'A' },
       { attempt: { id: 'A', metadataRevision: 1, current: () => true } },
     );
-    const actionA = invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true, gitlab: false });
+    const actionA = invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true });
     const b = prepareCollaborationIdentity(
       { scope: 'workspace', pinIdentity: pin, hostLabel: 'B' },
       { attempt: { id: 'B', metadataRevision: 2, current: () => true } },
@@ -236,7 +235,7 @@ describe('collaboration main IPC local routing', () => {
       grantedScopes: ['gist'],
     });
     await actionA;
-    await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true, gitlab: false });
+    await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true });
     await invoke(COLLABORATION_AUTH.ACTION, {
       requestId: viewB.requestId,
       action: { type: 'confirm' },
@@ -262,7 +261,7 @@ describe('collaboration main IPC local routing', () => {
   it('window navigation invalidates an already prepared continuation', async () => {
     const done = prepareCollaborationIdentity({ scope: 'host', pinIdentity: pin });
     const view = state.parent.webContents.send.mock.calls[0][1];
-    await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true, gitlab: false });
+    await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true });
     await invoke(COLLABORATION_AUTH.ACTION, {
       requestId: view.requestId,
       action: { type: 'confirm' },

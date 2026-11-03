@@ -46,20 +46,6 @@ export const COMMAND_PALETTE_COMMANDS = [
     icon: faCommentDots,
   },
   {
-    id: 'enable-experimental-gitlab',
-    get label() {
-      return m.lib_commandPalette_enableExperimentalGitlab_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'disable-experimental-gitlab',
-    get label() {
-      return m.lib_commandPalette_disableExperimentalGitlab_label();
-    },
-    icon: faFlask,
-  },
-  {
     id: 'enable-experimental-remote-agents',
     get label() {
       return m.lib_commandPalette_enableExperimentalRemoteAgents_label();

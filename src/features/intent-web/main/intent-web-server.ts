@@ -114,10 +114,41 @@ export async function createIntentWebServer(options: WebServerOptions) {
       ? 'local'
       : (list.find((r) => r.id === active)?.id ?? list[0]?.id ?? null);
   };
+  // Filled in once the server exists; a machine with a live browser bridge
+  // reads as connected in every tab's Machines list.
+  let bridged = (): Set<string> => new Set();
   const listConnections = async (requested: string | null) => {
-    const connections = await records();
-    const id = connections.some((r) => r.id === requested) ? requested : await defaultBackend();
+    const list = await records();
+    const id = list.some((r) => r.id === requested) ? requested : await defaultBackend();
+    // Read live bridges after the awaits so the status is current when sent.
+    const live = bridged();
+    const connections = list.map((r) => ({
+      ...r,
+      status: live.has(r.id) ? ('connected' as const) : ('not-open' as const),
+    }));
     return { connections, activeId: id, windowBackendId: id };
+  };
+  // One push in flight at a time, plus one trailing re-run for changes made
+  // meanwhile: pushes cannot land out of order, and bursts collapse.
+  let publishing = false;
+  let publishAgain = false;
+  const publishList = () => {
+    if (publishing) {
+      publishAgain = true;
+      return;
+    }
+    publishing = true;
+    void (async () => {
+      do {
+        publishAgain = false;
+        try {
+          publish('connections:changed', await listConnections(null));
+        } catch {
+          // The next change publishes again.
+        }
+      } while (publishAgain);
+      publishing = false;
+    })();
   };
   const config = async (id: string) => {
     const record = (await records()).find((r) => r.id === id);
@@ -230,6 +261,7 @@ export async function createIntentWebServer(options: WebServerOptions) {
     res.end(JSON.stringify(value));
   };
   const server = createBrowserAccessServer({
+    onBridgesChanged: publishList,
     webRoot: options.webRoot,
     getAccessKey: options.getAccessKey,
     listConnections,
@@ -248,7 +280,7 @@ const ids=${JSON.stringify((await records()).map((r) => r.id))};
 let backend=new URLSearchParams(location.search).get('backend');
 try { if(ids.includes(backend)) sessionStorage.setItem('intent.browserAccess.backend',backend); else backend=sessionStorage.getItem('intent.browserAccess.backend'); } catch {}
 if(!ids.includes(backend)) backend=${JSON.stringify(await defaultBackend())};
-globalThis.__INTENT_RUNTIME_CONFIG__=Object.freeze({backendId:backend,intentdWsUrl:backend?'/intentd/ws/'+encodeURIComponent(backend):null,connectionsUrl:${JSON.stringify(PREFIX)},hostCapabilities:['connections.manage'],tailcatAvailable:${options.tailcatAvailable},localAvailable:${!!options.localSocket}});
+globalThis.__INTENT_RUNTIME_CONFIG__=Object.freeze({backendId:backend,intentdWsUrl:backend?'/intentd/ws/'+encodeURIComponent(backend):null,connectionsUrl:${JSON.stringify(PREFIX)},eventsUrl:'/__intent-web/events',hostCapabilities:['connections.manage'],tailcatAvailable:${options.tailcatAvailable},localAvailable:${!!options.localSocket}});
 })();`,
     handleAuthenticatedRequest: async (req, res) => {
       const url = new URL(req.url ?? '/', 'http://localhost');
@@ -399,11 +431,8 @@ globalThis.__INTENT_RUNTIME_CONFIG__=Object.freeze({backendId:backend,intentdWsU
       return true;
     },
   });
-  const unsubscribe = store.onConnectionsMutated(() => {
-    void listConnections(null)
-      .then((value) => publish('connections:changed', value))
-      .catch(() => {});
-  });
+  bridged = () => server.bridgedBackendIds?.() ?? new Set();
+  const unsubscribe = store.onConnectionsMutated(publishList);
   return {
     ...server,
     disconnectAll: () => {

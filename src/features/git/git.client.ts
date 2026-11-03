@@ -22,6 +22,7 @@ import type {
 } from '../../shared/types';
 import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { showFileText } from '$lib/client/live/bounded-object-read';
 import { m } from '$shared/paraglide/messages.js';
 
 /** Fold a thrown transport/daemon error into a failed Result. */
@@ -225,12 +226,7 @@ class GitClient {
     ref: string,
   ): Promise<Result<string, string>> {
     try {
-      const result = await backendRequest<{ content?: unknown }>('git.showFile', {
-        workspaceId,
-        filePath,
-        ref,
-      });
-      return { ok: true, data: typeof result?.content === 'string' ? result.content : '' };
+      return { ok: true, data: await showFileText({ workspaceId, filePath, ref }) };
     } catch (error) {
       return toError(error, m.git_client_showFileFailed_error());
     }

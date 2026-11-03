@@ -20,13 +20,7 @@ import {
   type SagaGenerator,
 } from 'typed-redux-saga';
 
-import { selectLabsGitLabEnabled } from '../../user-preferences/user-preferences-selectors';
 import {
-  setLabsGitLabEnabled,
-  toggleLabsGitLab,
-} from '../../user-preferences/user-preferences-slice';
-import {
-  selectGitLabAuthIsAuthenticating,
   selectGitLabAuthDeviceFlow,
   selectGitLabAuthTarget,
   selectGitLabAuthIsCancelling,
@@ -248,10 +242,6 @@ function* pollDeviceFlowWorker(
 ): SagaGenerator<void> {
   const [flow] = action.payload;
   if (flow === null) return;
-  if (!(yield* selectLabsGitLabEnabled.effect())) {
-    yield* put(cancelGitLabAuth());
-    return;
-  }
   // The poll belongs to the intent that produced the flow, not a new one.
   const generation = fence.generation;
   const host = yield* selectGitLabAuthTarget.effect();
@@ -613,7 +603,6 @@ function* startGitLabDeviceAuthWorker(
   fence: IntentFence,
   action: ReturnType<typeof startGitLabDeviceAuth>,
 ): SagaGenerator<void> {
-  if (!(yield* selectLabsGitLabEnabled.effect())) return;
   yield* call(startDeviceAuth, action.payload[0], fence, bumpIntent(fence));
 }
 
@@ -622,10 +611,6 @@ function* connectGitLabWithTokenWorker(
   action: ReturnType<typeof connectGitLabWithToken>,
 ): SagaGenerator<void> {
   const { host, tokenRef } = action.payload;
-  if (!(yield* selectLabsGitLabEnabled.effect())) {
-    takeGitLabPatToken(tokenRef);
-    return;
-  }
   yield* call(connectWithToken, host, tokenRef, fence, bumpIntent(fence));
 }
 
@@ -660,16 +645,6 @@ function* gitlabAuthChangedWorker(
   yield* call(authChanged, fence, status, host);
 }
 
-function* gitlabLabChangedWorker(): SagaGenerator<void> {
-  if (
-    !(yield* selectLabsGitLabEnabled.effect()) &&
-    (yield* selectGitLabAuthIsAuthenticating.effect())
-  ) {
-    // Cancel only pending setup. Revoking a saved credential is a separate explicit action.
-    yield* put(cancelGitLabAuth());
-  }
-}
-
 export function* gitlabAuthSaga(): SagaGenerator<void> {
   const fence: IntentFence = { generation: 0, statusRevision: 0, deviceIntents: new Map() };
   // Only the latest initialize may hydrate: an older read (mount-time default
@@ -682,5 +657,4 @@ export function* gitlabAuthSaga(): SagaGenerator<void> {
   yield* takeEvery(logoutGitLab, logoutGitLabWorker, fence);
   yield* takeEvery(gitlabAuthChanged, gitlabAuthChangedWorker, fence);
   yield* takeLatest(setGitLabDeviceFlowInfo, pollDeviceFlowWorker, fence);
-  yield* takeEvery([setLabsGitLabEnabled, toggleLabsGitLab], gitlabLabChangedWorker);
 }

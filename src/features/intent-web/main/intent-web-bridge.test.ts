@@ -11,6 +11,11 @@ import { expect, it } from 'vitest';
 import { createIntentWebServer } from './intent-web-server';
 import { deriveSessionToken, SESSION_COOKIE } from '../../browser-access/main/browser-access-auth';
 const { WebSocket, WebSocketServer } = createRequire(import.meta.url)('ws') as typeof import('ws');
+async function browsersClosed(ws: { close(): void; readyState: number }) {
+  const closing = once(ws as never, 'close');
+  ws.close();
+  await closing;
+}
 it('routes two saved machines independently and closes only the forgotten bridge', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'web-bridge-'));
   const daemons: Array<{
@@ -96,6 +101,17 @@ it('routes two saved machines independently and closes only the forgotten bridge
       ws.send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'test.echo', params: {} }));
       expect(JSON.parse(String((await reply)[0]))).toEqual({ jsonrpc: '2.0', id: 1, result: name });
     }
+    const statuses = async () => {
+      const response = await fetch(origin + '/__intent-web/connections', { headers });
+      const { connections } = (await response.json()) as {
+        connections: Array<{ id: string; status?: string }>;
+      };
+      return Object.fromEntries(connections.map((c) => [c.id, c.status]));
+    };
+    // A machine with a live browser bridge reads as connected in every tab's list.
+    expect(await statuses()).toEqual({ [ids[0]]: 'connected', [ids[1]]: 'connected' });
+    const events = await fetch(origin + '/__intent-web/events', { headers });
+    const reader = events.body!.getReader();
     const closed = once(browsers[0], 'close');
     expect(
       (
@@ -108,8 +124,17 @@ it('routes two saved machines independently and closes only the forgotten bridge
     ).toBe(200);
     await closed;
     expect(browsers[1].readyState).toBe(WebSocket.OPEN);
-    server.disconnectAll();
-    await once(browsers[1], 'close');
+    await browsersClosed(browsers[1]);
+    // Closing the last bridge pushes the change to open tabs.
+    let pushed = '';
+    while (!pushed.includes('"status":"not-open"')) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      pushed += new TextDecoder().decode(value);
+    }
+    expect(pushed).toContain('event: connections:changed');
+    expect(await statuses()).toEqual({ [ids[1]]: 'not-open' });
+    await reader.cancel();
   } finally {
     for (const ws of browsers) ws.terminate();
     await server.close();

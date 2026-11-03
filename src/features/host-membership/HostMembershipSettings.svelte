@@ -7,7 +7,6 @@
   import { formatDateTime } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
-  import { selectLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
     selectHostUserPresence,
     selectHostMembers,
@@ -42,7 +41,6 @@
   const members$ = selectHostMembers();
   const invites$ = selectHostInvites();
   const context$ = selectHostMembershipContext();
-  const gitlab$ = selectLabsGitLabEnabled();
   const presence$ = selectHostUserPresence();
   const users = $derived(
     instanceUserRows(
@@ -329,7 +327,6 @@
     busy={$state$.busy || suspended}
     creating={$state$.creating}
     error={$state$.error}
-    gitlabEnabled={$gitlab$}
     {createdLink}
     onClose={closeInvitation}
     onCreate={(input) => send({ kind: 'create', input })}

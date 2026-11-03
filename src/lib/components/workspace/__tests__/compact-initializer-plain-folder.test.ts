@@ -625,6 +625,53 @@ describe('New Workspace — plain-folder git choice (Labs)', () => {
     });
   });
 
+  it('never sends a remote placement for a plain folder (no commit to start from)', async () => {
+    // Remote machines are on and the remembered Start On machine is usable.
+    admittedFixture.state = {
+      ...admittedFixture.state,
+      userPreferences: {
+        ...(admittedFixture.state.userPreferences as object),
+        labsRemoteAgentsEnabled: true,
+      },
+      remoteMachines: {
+        supported: true,
+        initialAgentPlacement: true,
+        machines: {
+          'node-mac': {
+            id: 'node-mac',
+            name: 'Mac mini',
+            hosts: [],
+            port: 7443,
+            fingerprint: 'fp',
+            state: 'connected',
+            runningAgents: 0,
+            addedAt: '2026-11-01T00:00:00Z',
+          },
+        },
+        localFingerprint: null,
+        executorBackends: null,
+        pending: {},
+        failures: {},
+      },
+    };
+    mocks.lastSubmittedAgent$.set({
+      selectedSpecialist: null,
+      isTeamMode: false,
+      startOnMachineId: 'node-mac',
+    } as never);
+    plainFolder.available$.set(true);
+    plainFolder.defaultState$.set('off');
+    mountDialog();
+    await waitFor(() => expect(toggle()).toBeTruthy());
+    await pick({ path: join(root, 'new-project'), plainFolder: 'new' });
+
+    await submit();
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    const params = mocks.create.mock.calls[0][0] as { initialAgent?: Record<string, unknown> };
+    expect(params).toMatchObject({ plainFolder: true });
+    expect(params.initialAgent).not.toHaveProperty('placement');
+  });
+
   it('shows the daemon rejection when a plain folder turns out to be inside a git repository', async () => {
     // The folder status was unavailable, so the daemon decides at create.
     const rejection =

@@ -49,7 +49,7 @@ function harness(role: 'owner' | 'member' | 'guest' = 'owner', legacy = false) {
   let state = (legacy ? withLegacyPrincipal : withHostPrincipal)(
     {
       hostMembership: initialState,
-      userPreferences: { labsMultiplayerEnabled: true, labsGitLabEnabled: true },
+      userPreferences: { labsMultiplayerEnabled: true },
     },
     role === 'member' && legacy ? 'guest' : (role as 'owner' | 'guest'),
   );
@@ -612,6 +612,68 @@ describe('owner host membership wire and authority', () => {
       }
     },
   );
+  it('explains a no-forge (github-identity-required) refusal of a host invitation without the server text', async () => {
+    const h = harness();
+    try {
+      h.dispatch(hostMembershipOpened(h.target));
+      await settle();
+      h.dispatch(
+        hostMembershipRequested(h.target, {
+          kind: 'create',
+          input: { pinLogin: 'sam', pinProvider: 'github' },
+        }),
+      );
+      mocks.request.mockRejectedValueOnce({
+        message: secret,
+        data: { code: 'github-identity-required' },
+      });
+      await settle();
+      const forgeError = h.state().hostMembership.error;
+      expect(forgeError).toBeTruthy();
+      expect(forgeError).not.toContain(secret);
+      mocks.request.mockRejectedValueOnce({ message: secret });
+      h.dispatch(
+        hostMembershipRequested(h.target, {
+          kind: 'create',
+          input: { pinLogin: 'sam', pinProvider: 'github' },
+        }),
+      );
+      await settle();
+      expect(h.state().hostMembership.error).toBeTruthy();
+      expect(h.state().hostMembership.error).not.toBe(forgeError);
+    } finally {
+      h.dispatch(hostMembershipClosed(h.target));
+      h.task.cancel();
+    }
+  });
+  it('explains a github-unreachable refusal of a host invitation as retryable', async () => {
+    const h = harness();
+    try {
+      h.dispatch(hostMembershipOpened(h.target));
+      await settle();
+      const errors: unknown[] = [];
+      for (const code of ['github-unreachable', 'github-identity-required', null]) {
+        mocks.request.mockRejectedValueOnce(
+          code ? { message: secret, data: { code } } : { message: secret },
+        );
+        h.dispatch(
+          hostMembershipRequested(h.target, {
+            kind: 'create',
+            input: { pinLogin: 'sam', pinProvider: 'github' },
+          }),
+        );
+        await settle();
+        errors.push(h.state().hostMembership.error);
+      }
+      expect(errors[0]).toBeTruthy();
+      expect(errors[0]).not.toContain(secret);
+      expect(errors[0]).not.toBe(errors[1]);
+      expect(errors[0]).not.toBe(errors[2]);
+    } finally {
+      h.dispatch(hostMembershipClosed(h.target));
+      h.task.cancel();
+    }
+  });
   it('withholds forbidden host administration and never exposes the server error text', async () => {
     const h = harness();
     try {
@@ -631,36 +693,28 @@ describe('owner host membership wire and authority', () => {
       h.task.cancel();
     }
   });
-  it.each(['gitlab-disabled', 'invalid-host'] as const)(
-    'rejects %s without issuing an invitation',
-    async (reason) => {
-      const h = harness();
-      try {
-        h.dispatch(hostMembershipOpened(h.target));
-        await settle();
-        if (reason === 'gitlab-disabled')
-          h.change({
-            ...h.state(),
-            userPreferences: { ...h.state().userPreferences, labsGitLabEnabled: false },
-          });
-        mocks.request.mockClear();
-        h.dispatch(
-          hostMembershipRequested(h.target, {
-            kind: 'create',
-            input: {
-              pinLogin: 'sam',
-              pinProvider: 'gitlab',
-              pinHost: reason === 'invalid-host' ? 'https://forge.example/path' : 'forge.example',
-            },
-          }),
-        );
-        await settle();
-        expect(mocks.request).not.toHaveBeenCalled();
-        expect(h.state().hostMembership.error).toBeTruthy();
-      } finally {
-        h.dispatch(hostMembershipClosed(h.target));
-        h.task.cancel();
-      }
-    },
-  );
+  it.each(['invalid-host'] as const)('rejects %s without issuing an invitation', async (reason) => {
+    const h = harness();
+    try {
+      h.dispatch(hostMembershipOpened(h.target));
+      await settle();
+      mocks.request.mockClear();
+      h.dispatch(
+        hostMembershipRequested(h.target, {
+          kind: 'create',
+          input: {
+            pinLogin: 'sam',
+            pinProvider: 'gitlab',
+            pinHost: reason === 'invalid-host' ? 'https://forge.example/path' : 'forge.example',
+          },
+        }),
+      );
+      await settle();
+      expect(mocks.request).not.toHaveBeenCalled();
+      expect(h.state().hostMembership.error).toBeTruthy();
+    } finally {
+      h.dispatch(hostMembershipClosed(h.target));
+      h.task.cancel();
+    }
+  });
 });

@@ -16,7 +16,6 @@
   interface ShareDialogPreviewProps {
     githubConnected: boolean;
     gitlabConnected: boolean;
-    gitlabEnabled: boolean;
     identitySeamSupported: boolean;
     identityProvider: IdentityProvider | null;
     members: WorkspaceMember[];
@@ -24,9 +23,13 @@
     principals: HostPrincipal[];
     sharingEnabled?: boolean | null;
     sharingChecking?: boolean;
+    resolving?: boolean;
     sharingEnabling?: boolean;
     sharingError?: string | null;
     canAdministerHost?: boolean;
+    hostMembershipSupported?: boolean;
+    forgeStatusKnown?: boolean;
+    ownerForgeMissing?: boolean;
     workspaceTitle?: string;
     guestLimit?: number;
     inviteDelayMs?: number;
@@ -115,17 +118,25 @@
   const bothConnected: ShareDialogPreviewProps = {
     githubConnected: true,
     gitlabConnected: true,
-    gitlabEnabled: true,
     identitySeamSupported: true,
     identityProvider: 'gitlab',
     members: [owner, gitlabGuest, githubGuest, legacyGuest],
     invites: [gitlabPinnedInvite, githubPinnedInvite, openInvite],
     principals: [knownGuest],
   };
+  /** The daemon refuses every invite until the owner connects a forge. */
+  const noForge: ShareDialogPreviewProps = {
+    ...bothConnected,
+    githubConnected: false,
+    gitlabConnected: false,
+    identityProvider: null,
+    members: [owner],
+    invites: [],
+    principals: [],
+  };
   const sharingSetup: ShareDialogPreviewProps = {
     ...bothConnected,
     gitlabConnected: false,
-    gitlabEnabled: false,
     identityProvider: 'github',
     members: [{ ...owner, displayName: 'Sam Breed', login: 'wookiehangover' }],
     invites: [],
@@ -167,6 +178,9 @@
       'link-first': { props: { ...sharingSetup, sharingEnabled: true } },
       'link-slow': { props: { ...sharingSetup, sharingEnabled: true, inviteDelayMs: 750 } },
       'sharing-disabled': { props: sharingSetup },
+      resolving: {
+        props: { ...sharingSetup, sharingEnabled: null, sharingChecking: true, resolving: true },
+      },
       'sharing-checking': {
         props: { ...sharingSetup, sharingEnabled: null, sharingChecking: true },
       },
@@ -180,7 +194,6 @@
       },
       'sharing-admin-required': { props: { ...sharingSetup, canAdministerHost: false } },
       'both-connected': { props: bothConnected },
-      'gitlab-lab-off': { props: { ...bothConnected, gitlabEnabled: false } },
       'gitlab-only': {
         props: { ...bothConnected, githubConnected: false, invites: [gitlabPinnedInvite] },
       },
@@ -193,15 +206,21 @@
           invites: [{ ...githubPinnedInvite, pinIdentity: undefined }, openInvite],
         },
       },
-      'no-forge': {
+      'no-forge': { props: noForge },
+      'no-forge-existing-guests': {
+        props: { ...noForge, members: [owner, githubGuest], invites: [openInvite] },
+      },
+      'no-forge-member': { props: { ...noForge, canAdministerHost: false } },
+      'no-forge-host-member': {
+        props: { ...noForge, canAdministerHost: false, hostMembershipSupported: true },
+      },
+      'no-forge-host-member-refused': {
         props: {
-          ...bothConnected,
-          githubConnected: false,
-          gitlabConnected: false,
-          identityProvider: null,
-          members: [owner],
-          invites: [],
-          principals: [],
+          ...noForge,
+          canAdministerHost: false,
+          hostMembershipSupported: true,
+          forgeStatusKnown: false,
+          ownerForgeMissing: true,
         },
       },
     },

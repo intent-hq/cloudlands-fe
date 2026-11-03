@@ -13,6 +13,7 @@ import {
   getProviderSwitchNotice,
   type ProviderFailoverNoticeInfo,
 } from '../provider-failover-notice';
+import { withWorkspaceViewer } from '../../../../test/fixtures/principal-state';
 
 let mockStoreState: Record<string, unknown> = {};
 
@@ -43,6 +44,26 @@ function catalogState(profiles = PROFILES, loaded = true): Record<string, unknow
         { id: 'codex', displayName: 'OpenAI Codex' },
       ]),
       profiles: createCollection('id', profiles),
+    },
+  };
+}
+
+/** `ws-1` serves `workspaceProfiles`; the global catalog serves `globalProfiles`. */
+function workspaceCatalogState(
+  workspaceProfiles: typeof PROFILES,
+  globalProfiles = PROFILES,
+): Record<string, unknown> {
+  return {
+    providerCatalog: {
+      ...(catalogState(globalProfiles).providerCatalog as object),
+      byWorkspaceId: {
+        'ws-1': {
+          catalog: {
+            providers: [{ id: 'claude-code', displayName: 'Claude Code' }],
+            profiles: workspaceProfiles,
+          },
+        },
+      },
     },
   };
 }
@@ -152,26 +173,23 @@ describe('formatProviderFailoverLabel', () => {
   });
 
   it('waits for the workspace catalog before calling a profile removed', () => {
-    mockStoreState = catalogState();
+    mockStoreState = withWorkspaceViewer(catalogState(), 'ws-1', 'owner');
     expect(formatProviderFailoverLabel(notice(), FALLBACK, 'ws-1')).toBe(
       'Claude Code ran out of quota — continuing on Claude Code (backup)',
     );
-    mockStoreState = {
-      providerCatalog: {
-        ...(catalogState().providerCatalog as object),
-        byWorkspaceId: {
-          'ws-1': {
-            catalog: {
-              providers: [{ id: 'claude-code', displayName: 'Claude Code' }],
-              profiles: [PROFILES[1]],
-            },
-          },
-        },
-      },
-    };
+    mockStoreState = withWorkspaceViewer(workspaceCatalogState([PROFILES[1]]), 'ws-1', 'owner');
     expect(formatProviderFailoverLabel(notice(), FALLBACK, 'ws-1')).toBe(
       'Removed profile ran out of quota — continuing on Work (backup)',
     );
+  });
+
+  it("never shows a guest the host's profile names, nor a removed profile", () => {
+    mockStoreState = withWorkspaceViewer(workspaceCatalogState([PROFILES[1]]), 'ws-1', 'guest');
+    const label = formatProviderFailoverLabel(notice(), FALLBACK, 'ws-1');
+    expect(label).toBe('Claude Code ran out of quota — continuing on Claude Code (backup)');
+    expect(
+      formatProviderFailoverLabel(notice({ toProvider: 'claude-code' }), FALLBACK, 'ws-1'),
+    ).toBe('Claude Code ran out of quota — continuing on Claude Code (backup)');
   });
 
   it('never shows an internal profile reference', () => {
@@ -292,19 +310,7 @@ describe('formatProviderFailoverLabel — returned home', () => {
   });
 
   it('reads the owning workspace catalog', () => {
-    mockStoreState = {
-      providerCatalog: {
-        ...(catalogState([]).providerCatalog as object),
-        byWorkspaceId: {
-          'ws-1': {
-            catalog: {
-              providers: [{ id: 'claude-code', displayName: 'Claude Code' }],
-              profiles: [PROFILES[0]],
-            },
-          },
-        },
-      },
-    };
+    mockStoreState = withWorkspaceViewer(workspaceCatalogState([PROFILES[0]], []), 'ws-1', 'owner');
     expect(formatProviderFailoverLabel(returned(), FALLBACK, 'ws-1')).toBe(
       'Personal quota reset — back on Personal',
     );

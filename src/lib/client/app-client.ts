@@ -415,6 +415,19 @@ export interface WorkspaceCreateResult extends MutationResult {
    * the bridge-mapped values.
    */
   errorCode?: string;
+  /** Set with `errorCode: "launch-failed"`: the workspace was created anyway. */
+  launchFailure?: WorkspaceCreateLaunchFailure;
+}
+
+/**
+ * A `workspace.create` whose remote initial agent failed to start after the
+ * workspace committed (PROTOCOL nodes.md "Placement subset", `launch-failed`):
+ * `data.workspaceId`, `data.launch.agentId` and `data.cause.message`.
+ */
+export interface WorkspaceCreateLaunchFailure {
+  workspaceId: string;
+  agentId?: string;
+  cause?: string;
 }
 
 /**
@@ -2177,6 +2190,14 @@ export interface SpecialistDef {
   icon?: string;
   prompt?: string;
   behaviorPrompt?: string;
+  /**
+   * Set by a paged `specialist.list` when this row's prompt alone exceeds the
+   * page budget: `behaviorPrompt`/`prompt` are absent and `behaviorPromptBytes`
+   * is their size (PROTOCOL §5.11 "Catalog list pages"). The client re-reads
+   * the row with `specialist.get`; a row that still carries it must not be saved.
+   */
+  behaviorPromptOmitted?: boolean;
+  behaviorPromptBytes?: number;
   source: 'project' | 'user' | 'bundled';
   isCustomized?: boolean;
   path?: string;

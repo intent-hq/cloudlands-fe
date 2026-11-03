@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { runInNewContext } from 'node:vm';
 import { afterEach, expect, it, vi } from 'vitest';
 import { SESSION_COOKIE, deriveSessionToken } from '../../browser-access/main/browser-access-auth';
 import { createIntentWebServer } from './intent-web-server';
@@ -98,6 +99,26 @@ it('publishes standalone capabilities and no local backend when none is availabl
   expect(source).toContain('connections.manage');
   expect(source).toContain('localAvailable');
   expect((await (await call('/__intent-web/connections')).json()).windowBackendId).toBeNull();
+});
+it('binds an unbound tab to no backend and names the events stream', async () => {
+  const { call } = await start();
+  const source = await (await call('/runtime-config.js')).text();
+  const sandbox = {
+    location: { search: '' },
+    sessionStorage: { getItem: () => null, setItem: () => {} },
+    URLSearchParams,
+  } as Record<string, unknown>;
+  sandbox.globalThis = sandbox;
+  runInNewContext(source, sandbox);
+  expect(sandbox.__INTENT_RUNTIME_CONFIG__).toMatchObject({
+    backendId: null,
+    intentdWsUrl: null,
+    connectionsUrl: '/__intent-web/connections',
+    eventsUrl: '/__intent-web/events',
+    hostCapabilities: ['connections.manage'],
+    tailcatAvailable: false,
+    localAvailable: false,
+  });
 });
 it('lists a present local daemon first, defaults to it and refuses to forget it', async () => {
   const { call } = await start('/tmp/intentd-test.sock');

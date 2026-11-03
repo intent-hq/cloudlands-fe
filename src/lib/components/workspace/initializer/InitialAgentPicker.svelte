@@ -71,6 +71,25 @@
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import { DEFAULT_NEW_WORKSPACE_SPECIALIST_ID } from '$lib/constants/specialists';
+  import StartOnPicker from './StartOnPicker.svelte';
+  import { buildMachineModelGroups } from '$lib/components/chat/input/model-picker-groups';
+  import { expandProviderIdsWithProfiles } from '$shared/provider-profiles';
+  import { selectProviderCatalogDefaultRemoteIncompatibility } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import {
+    selectDefaultHasOverrides,
+    selectRemoteMachines,
+    selectRemoteMachinesVisible,
+    selectRemoteModelSwitchSupport,
+    selectStartOnOptions,
+    selectStartOnVisible,
+  } from '$features/remote-machines/remote-machines-selectors';
+  import { remoteMachinesRefreshRequested } from '$features/remote-machines/remote-machines-slice';
+  import { machineReportFreshness } from '$features/remote-machines/remote-model-picker';
+  import {
+    machineModelFallback,
+    resolveStartOn,
+    START_ON_BACKEND,
+  } from '$features/remote-machines/start-on';
 
   const logger = createLogger('InitialAgentPicker');
   // Unique per mount: the picker can render more than once on a page.
@@ -131,8 +150,25 @@
     selectedProvider?: string;
     /** Callback when specialist changes */
     onSpecialistChange?: (specialistId: string | null) => void;
-    /** Callback when model changes */
-    onModelChange?: (model: string | undefined) => void;
+    /**
+     * Callback when model changes. `automatic` marks a model the picker chose
+     * because the Start On machine can't run the current one.
+     */
+    onModelChange?: (model: string | undefined, automatic?: boolean) => void;
+    /**
+     * Remembered Start On choice: a machine id, or '' for the current backend.
+     * The row resolves it against the machines available now.
+     */
+    startOnMachineId?: string;
+    /** The user picked a Start On option. */
+    onStartOnChange?: (machineId: string) => void;
+    /**
+     * Only the current backend can take the first agent, and why: a new
+     * repository has no commit for a remote agent to start from, a plain
+     * folder has no git at all, and a remote agent takes no image or file
+     * attachments. Null when any machine can.
+     */
+    startOnBackendOnly?: 'new-repo' | 'plain-folder' | 'attachments' | null;
     /** Callback when reasoning effort changes */
     onReasoningEffortChange?: (effort: string | undefined) => void;
     /** Callback when team mode changes */
@@ -161,7 +197,80 @@
     onTeamModeChange,
     onProviderChange,
     onSetupPick,
+    startOnMachineId = $bindable<string>(''),
+    onStartOnChange,
+    startOnBackendOnly = null,
   }: Props = $props();
+
+  // Start On (PROTOCOL nodes.md "Placement subset"): the machine the first
+  // agent starts on. The Model row then lists that machine's models.
+  const startOnVisible$ = selectStartOnVisible();
+  const startOnOptions$ = selectStartOnOptions();
+  const startOnMachines$ = selectRemoteMachines();
+  const effectiveStartOn = $derived(
+    $startOnVisible$ && !startOnBackendOnly
+      ? resolveStartOn(startOnMachineId, $startOnMachines$)
+      : START_ON_BACKEND,
+  );
+  const startOnMachine = $derived(
+    $startOnMachines$.find((machine) => machine.id === effectiveStartOn) ?? null,
+  );
+  const remoteMachinesVisible$ = selectRemoteMachinesVisible();
+  const remoteSwitchSupport$ = selectRemoteModelSwitchSupport();
+  const defaultRemoteIncompatibility$ = selectProviderCatalogDefaultRemoteIncompatibility();
+  const defaultHasOverrides$ = selectDefaultHasOverrides();
+  onMount(() => {
+    // Machine states change without an event; read them fresh for the row.
+    if ($remoteMachinesVisible$) appStore.dispatch(remoteMachinesRefreshRequested());
+  });
+
+  function handleStartOnChange(machineId: string) {
+    onSetupPick?.();
+    startOnMachineId = machineId;
+    onStartOnChange?.(machineId);
+  }
+
+  // A model the chosen machine can't run (missing there, or an account-folder
+  // configuration), whether picked or inherited, falls back to one it can, as
+  // the daemon would refuse it.
+  $effect(() => {
+    const machine = startOnMachine;
+    if (!effectiveStartOn || !machine || $remoteSwitchSupport$ !== 'supported') return;
+    if (machineReportFreshness(machine, Date.now()) === 'missing') return;
+    const groups = buildMachineModelGroups({
+      machine,
+      providerRefs: expandProviderIdsWithProfiles(
+        $catalogEntries$.map((entry) => entry.id),
+        $providerProfiles$,
+      ).filter((ref) => !isProviderDisabledInSettings($enabledProviders$, ref)),
+      groupLabel: (ref) => ref,
+      catalogModels: {},
+      catalogProfiles: $providerProfiles$,
+      defaultRemoteIncompatibility: $defaultRemoteIncompatibility$,
+      defaultHasOverrides: $defaultHasOverrides$,
+    });
+    const fallback = machineModelFallback({
+      groups,
+      providerRef: selectedProvider,
+      // The daemon resolves an inherited specialist/Settings model before
+      // remote admission, so check it as well as an explicit override.
+      model: modelWasOverridden ? selectedModel : activeDefaultModel,
+    });
+    if (fallback) untrack(() => applyMachineFallback(fallback));
+  });
+
+  function applyMachineFallback(pick: { providerId: string; modelId: string }) {
+    overrideProvider = pick.providerId;
+    overrideModel = pick.modelId;
+    selectedModel = pick.modelId;
+    modelWasOverridden = true;
+    if (pick.providerId !== selectedProvider) {
+      selectedProvider = pick.providerId;
+      onProviderChange?.(pick.providerId);
+    }
+    reconcileReasoningEffort(pick.modelId);
+    onModelChange?.(pick.modelId, true);
+  }
 
   function updateReasoningEffort(effort: string | undefined) {
     if (selectedReasoningEffort === effort) return;
@@ -975,6 +1084,7 @@
       rowLabel={m.workspace_initialAgentPicker_model_label()}
       showRowLabel={presentation !== 'footer'}
       showTriggerIcons={false}
+      showProfileName={false}
       menuSide={presentation === 'footer' || isMobile.current ? 'bottom' : 'left'}
       menuSideOffset={24}
       menuMaxHeight={440}
@@ -989,12 +1099,35 @@
       defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
       fallbackToCatalogDefault
       fallbackProviderId={selectedProvider}
+      machineId={effectiveStartOn || undefined}
       silentFallback
       portal={true}
       modalAware={true}
       collisionBoundary="viewport"
     />
   {/key}
+
+  {#if $startOnVisible$}
+    <StartOnPicker
+      {presentation}
+      value={effectiveStartOn}
+      options={$startOnOptions$}
+      onChange={handleStartOnChange}
+      lockedReason={startOnBackendOnly === 'plain-folder'
+        ? m.workspace_initialAgentPicker_startOnPlainFolder_description({
+            backend: $startOnOptions$[0]?.label ?? '',
+          })
+        : startOnBackendOnly === 'new-repo'
+          ? m.workspace_initialAgentPicker_startOnNewRepo_description({
+              backend: $startOnOptions$[0]?.label ?? '',
+            })
+          : startOnBackendOnly === 'attachments'
+            ? m.workspace_initialAgentPicker_startOnAttachments_description({
+                backend: $startOnOptions$[0]?.label ?? '',
+              })
+            : undefined}
+    />
+  {/if}
 </div>
 
 <style>

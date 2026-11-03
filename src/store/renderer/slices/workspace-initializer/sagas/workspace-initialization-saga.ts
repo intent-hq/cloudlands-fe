@@ -10,6 +10,8 @@ import {
 } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
+import { notify } from '$lib/components/patterns/notify';
+import { m } from '$shared/paraglide/messages.js';
 import type { ContextItem } from '$lib/components/chat/input/context-api';
 import {
   redeemStagedAttachments,
@@ -315,6 +317,8 @@ function* initialize(action: InitializationRun): SagaGenerator<void> {
   let agentId = request.resume?.agentId;
   let workspacePath = request.resume?.workspacePath;
   let pullCompleted = false;
+  // Set while a created workspace still has to be read and installed.
+  let installPending = request.resume?.install === true;
   const dispatch = appStore.dispatch;
   if (!current(action, dispatch)) {
     const failure = new Error('initialization-cancelled');
@@ -345,17 +349,63 @@ function* initialize(action: InitializationRun): SagaGenerator<void> {
         progressId,
       });
       if (!current(action, dispatch)) throw new Error('initialization-cancelled');
+      const startOnNodeId = startOnPlacementNodeId(request.createRequest);
+      let workspace: Workspace;
       if (!result.ok) {
-        const failure = Object.assign(new Error(result.error), { errorCode: result.errorCode });
-        throw failure;
+        // A remote start failure after the workspace committed (PROTOCOL
+        // nodes.md "Placement subset"): the workspace and its agent exist, so
+        // open it and warn rather than offer a Create that would duplicate it.
+        const launchNodeId = result.errorCode === 'launch-failed' ? startOnNodeId : undefined;
+        const message = launchNodeId
+          ? m.workspace_startOn_launchFailed_error({
+              machine: startOnMachineName(launchNodeId),
+              cause: result.launchFailure?.cause ?? result.error,
+            })
+          : result.error;
+        const launch = launchNodeId ? result.launchFailure : undefined;
+        if (!launch) throw Object.assign(new Error(message), { errorCode: result.errorCode });
+        // Keep its identity first: if the read below fails, the failure is
+        // resumable and a retry installs this workspace instead of creating.
+        workspaceId = launch.workspaceId;
+        agentId = launch.agentId;
+        installPending = true;
+        stage = 'post-create';
+        const kept = yield* call(fetchCreatedWorkspace, launch.workspaceId);
+        if (!current(action, dispatch)) throw new Error('initialization-cancelled');
+        if (!kept.workspace) {
+          throw Object.assign(new Error(message), { errorCode: result.errorCode });
+        }
+        yield* call(notify.warning, message);
+        workspace = kept.workspace;
+      } else {
+        if (startOnNodeId && !isOnMachine(result.data.initialAgent, startOnNodeId))
+          yield* call(
+            notify.warning,
+            m.workspace_startOn_notOnMachine_warning({
+              machine: startOnMachineName(startOnNodeId),
+            }),
+          );
+        workspace = result.data.workspace;
+        agentId = result.data.initialAgent?.id;
       }
-      const workspace = result.data.workspace;
       workspaceId = workspace.id;
-      agentId = result.data.initialAgent?.id;
       workspacePath = workspace.worktreePath || workspace.repositoryPath || workspace.path;
       stage = 'post-create';
       yield* call(installWorkspace, action, workspace, dispatch, agentId);
       if (!current(action, dispatch)) throw new Error('initialization-cancelled');
+      installPending = false;
+    } else if (installPending && workspaceId) {
+      stage = 'post-create';
+      const kept = yield* call(fetchCreatedWorkspace, workspaceId);
+      if (!current(action, dispatch)) throw new Error('initialization-cancelled');
+      if (!kept.workspace) {
+        throw new Error(m.workspace_loader_openFailed_error({ error: kept.error }));
+      }
+      workspacePath =
+        kept.workspace.worktreePath || kept.workspace.repositoryPath || kept.workspace.path;
+      yield* call(installWorkspace, action, kept.workspace, dispatch, agentId);
+      if (!current(action, dispatch)) throw new Error('initialization-cancelled');
+      installPending = false;
     }
     if (!workspaceId) throw new Error('missing-workspace-id');
     stage = request.heldMessage ? 'attachments' : 'post-create';
@@ -430,6 +480,7 @@ function* initialize(action: InitializationRun): SagaGenerator<void> {
             workspaceId,
             agentId,
             workspacePath,
+            ...(installPending ? { install: true } : {}),
           }),
         ),
       );
@@ -571,6 +622,46 @@ function* resume(action: ResumeAction): SagaGenerator<void> {
     success: (result: WorkspaceInitializationResult) => action.success(result),
     failure: (error: Error) => action.failure(error),
   });
+}
+
+/** Read the workspace a `launch-failed` create committed; `error` says why it can't be read. */
+async function fetchCreatedWorkspace(
+  workspaceId: string,
+): Promise<{ workspace: Workspace; error?: undefined } | { workspace: null; error: string }> {
+  try {
+    const workspace = await appClient.workspaces.get(workspaceId);
+    return workspace ? { workspace } : { workspace: null, error: workspaceId };
+  } catch (error) {
+    logger.warn('Could not read the workspace kept by a failed remote start', {
+      workspaceId,
+      error,
+    });
+    return { workspace: null, error: errorMessage(error) };
+  }
+}
+
+/** Start On: the machine `initialAgent.placement` names, if any. */
+function startOnPlacementNodeId(createRequest: unknown): string | undefined {
+  const placement = (createRequest as { initialAgent?: { placement?: { nodeId?: unknown } } })
+    ?.initialAgent?.placement;
+  return typeof placement?.nodeId === 'string' ? placement.nodeId : undefined;
+}
+
+function startOnMachineName(nodeId: string): string {
+  return (
+    appStore.state.remoteMachines?.machines[nodeId]?.name ?? m.remoteAgent_location_unknownMachine()
+  );
+}
+
+/** The created initial agent runs on `nodeId` (an older backend may ignore the placement). */
+function isOnMachine(initialAgent: unknown, nodeId: string): boolean {
+  const agent = (initialAgent ?? {}) as {
+    nodeId?: unknown;
+    placement?: { target?: unknown; nodeId?: unknown };
+  };
+  return (
+    agent.placement?.target === 'remote' && (agent.nodeId ?? agent.placement?.nodeId) === nodeId
+  );
 }
 
 export function* workspaceInitializationSaga(): SagaGenerator<void> {

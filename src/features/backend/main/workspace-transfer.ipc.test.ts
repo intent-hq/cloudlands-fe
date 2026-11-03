@@ -35,6 +35,16 @@ vi.mock('../../../main/window', () => ({
 
 vi.mock('./json-rpc-client', () => ({ JsonRpcClient: vi.fn() }));
 vi.mock('./client-identity', () => ({ getOrCreateClientId: vi.fn(async () => 'client-1') }));
+const { requestRouted } = vi.hoisted(() => ({ requestRouted: vi.fn(async () => ({ data: '' })) }));
+vi.mock('./transfer-connections', () => ({ requestRouted }));
+
+/** The relay sees the source through a wrapper that routes transfer methods. */
+const routedSource = () =>
+  expect.objectContaining({
+    request: expect.any(Function),
+    on: expect.any(Function),
+    off: expect.any(Function),
+  });
 
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
@@ -77,7 +87,31 @@ describe('workspace-transfer IPC — per-window affinity wiring', () => {
     await handler(invoking, PARAMS);
 
     expect(getBackendClientForIpcEvent).toHaveBeenCalledWith(invoking);
-    expect(start).toHaveBeenCalledWith(PARAMS, client, 7);
+    expect(start).toHaveBeenCalledWith(PARAMS, routedSource(), 7);
+  });
+
+  it('START hands the relay a source that sends export chunks through requestRouted', async () => {
+    const handler = await getHandler(TRANSFER.START);
+    const client = { request: vi.fn(), on: vi.fn(), off: vi.fn() };
+    getBackendClientForIpcEvent.mockReturnValue({ client, backendId: 'remote-1' });
+
+    await handler(event(7), PARAMS);
+    const source = start.mock.calls[0][1] as {
+      request: (m: string, p?: unknown, o?: { timeoutMs?: number }) => Promise<unknown>;
+      on: (e: 'notification', l: () => void) => unknown;
+    };
+    const params = { exportId: 'exp-1', seq: 3, workspaceId: 'ws-1' };
+    await source.request('workspace.export.read', params, { timeoutMs: 1000 });
+    expect(requestRouted).toHaveBeenCalledWith(
+      client,
+      'workspace.export.read',
+      params,
+      { timeoutMs: 1000 },
+      'remote-1',
+    );
+    const listener = () => {};
+    source.on('notification', listener);
+    expect(client.on).toHaveBeenCalledWith('notification', listener);
   });
 
   it('START from a second window carries that window sender id', async () => {
@@ -86,7 +120,7 @@ describe('workspace-transfer IPC — per-window affinity wiring', () => {
     getBackendClientForIpcEvent.mockReturnValue({ client });
 
     await handler(event(42), PARAMS);
-    expect(start).toHaveBeenCalledWith(PARAMS, client, 42);
+    expect(start).toHaveBeenCalledWith(PARAMS, routedSource(), 42);
   });
 
   it('START surfaces a client-resolution failure without touching the relay', async () => {
@@ -214,7 +248,7 @@ describe('inline transfer source validation', () => {
     getBackendClientForIpcEvent.mockReturnValue({ client, backendId: 'source' });
     await handler(event(7), params);
     expect(client.request).toHaveBeenCalledWith('workspace.get', { workspaceId: 'ws-1' });
-    expect(start).toHaveBeenCalledWith(params, client, 7);
+    expect(start).toHaveBeenCalledWith(params, routedSource(), 7);
   });
   it.each([
     { id: 'ws-1', worktreePath: '/other' },

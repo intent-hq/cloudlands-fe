@@ -1,0 +1,266 @@
+# Publishes @intent-hq/web to npm at the cloudlands-fe version, once per
+# release, and keeps its dist-tags on the release channels: `alpha` (each
+# publish), `beta` (Promote Beta) and `latest` (Release Stable).
+#
+# Publish: every successful tag-push run of Release Alpha (release-alpha.yml),
+# i.e. each alpha cut from a release-please v*.*.* tag. workflow_dispatch with
+# `tag` (re)publishes an existing tag, e.g. after a failed run or for a Release
+# Alpha rebuild started by hand (those runs carry no tag, so they are skipped
+# here).
+#
+# Channel sync: every successful Promote Beta (promote-beta.yml) or Release
+# Stable (release-stable.yml) run moves `beta` or `latest` to the version that
+# channel's feed on intent-hq/cloudlands-releases now serves
+# (scripts/intent-web-dist-tag-sync.mjs). The feed, not the run, names the
+# version, so a sync is idempotent and repairs a missed one. workflow_dispatch
+# with `channel` syncs one by hand.
+#
+# npm trusted publishing (GitHub Actions OIDC): no NPM_TOKEN. npm accepts the
+# OIDC token only from GitHub-hosted runners and only for this workflow file,
+# so the package is built and smoke-tested by intent-web-package.yml and the
+# tarball is published from a separate ubuntu-24.04 job. `--provenance`
+# asks npm for a signed build attestation explicitly, so a publish without one
+# fails instead of shipping silently unattested. One-time setup (first manual publish, then the
+# Trusted Publisher entry for this filename) is in
+# docs/intent-web-package.md.
+#
+# Safe to rerun: an already-published version is skipped
+# (scripts/intent-web-publish-plan.mjs), an older tag publishes under the
+# `backfill` dist-tag so `alpha` never moves backwards, and a channel sync
+# never moves `beta` or `latest` backwards.
+name: Publish Intent Web
+
+on:
+  workflow_run:
+    workflows: ['Release Alpha', 'Promote Beta', 'Release Stable']
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag to publish (e.g., v2.276.0); leave empty to only sync a channel'
+        required: false
+        type: string
+      channel:
+        description: 'Move this channel dist-tag (beta, or stable = latest) to the version the channel serves'
+        required: false
+        type: choice
+        options: ['none', 'beta', 'stable']
+        default: 'none'
+
+permissions:
+  contents: read
+
+# Queue every run: a newer pending release must never replace an older one
+# that has not published yet (same pattern as release-alpha.yml).
+concurrency:
+  group: publish-intent-web
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  resolve:
+    # Only successful tag-push alphas; a hand-started Release Alpha rebuild
+    # runs on a branch and names its tag only in inputs this event cannot read.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.tag != '') ||
+      (github.event.workflow_run.name == 'Release Alpha' &&
+      github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
+      packaged: ${{ steps.packaged.outputs.packaged }}
+    steps:
+      - name: Resolve release tag
+        id: tag
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_TAG: ${{ github.event.workflow_run.head_branch }}
+          INPUT_TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then TAG="$INPUT_TAG"; else TAG="$RUN_TAG"; fi
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?(\+[a-zA-Z0-9.-]+)?$ ]]; then
+            echo "::error::Invalid tag '$TAG'. Expected v<semver> (e.g., v1.2.3)."
+            exit 1
+          fi
+          if ! gh api "repos/${REPO}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
+            echo "::error::Tag '$TAG' does not exist on ${REPO}."
+            exit 1
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout release tag
+        uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ steps.tag.outputs.tag }}
+          persist-credentials: false
+
+      # Tags cut before the package existed have nothing to publish.
+      - name: Check the tag can be packaged
+        id: packaged
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          PKG_VERSION=$(jq -r .version package.json)
+          if [ "$PKG_VERSION" != "$VERSION" ]; then
+            echo "::error::Tag ${TAG} does not match package.json version ${PKG_VERSION}."
+            exit 1
+          fi
+          if [ -f scripts/build-intent-web-package.mjs ]; then
+            echo "packaged=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::${TAG} predates the @intent-hq/web package; nothing to publish."
+            echo "packaged=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  package:
+    needs: resolve
+    if: ${{ needs.resolve.outputs.packaged == 'true' }}
+    uses: ./.github/workflows/intent-web-package.yml
+    permissions:
+      contents: read
+      actions: read
+    secrets:
+      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
+    with:
+      ref: refs/tags/${{ needs.resolve.outputs.tag }}
+
+  publish:
+    needs: [resolve, package]
+    # GitHub-hosted on purpose: npm trusted publishing rejects OIDC tokens
+    # from self-hosted and third-party runners.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      # Publication tools come from this workflow's commit; the tarball was
+      # built from the tag.
+      - name: Checkout publication tools
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          sparse-checkout: scripts/intent-web-publish-plan.mjs
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      # Trusted publishing needs npm >= 11.5.1; the same floor as the sync
+      # job keeps the two jobs on one CLI.
+      - name: Install npm with trusted publishing
+        run: |
+          npm install --global npm@^11.21.0
+          npm --version
+
+      - name: Download package tarball
+        uses: actions/download-artifact@v7
+        with:
+          name: intent-web-package
+          path: ${{ runner.temp }}/intent-web-package
+
+      - name: Plan publish
+        id: plan
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: node scripts/intent-web-publish-plan.mjs "$VERSION"
+
+      - name: Publish to npm
+        if: ${{ steps.plan.outputs.publish == 'true' }}
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+          DIST_TAG: ${{ steps.plan.outputs.dist_tag }}
+        run: |
+          TARBALL="$RUNNER_TEMP/intent-web-package/intent-hq-web-${VERSION}.tgz"
+          if [ ! -f "$TARBALL" ]; then
+            echo "::error::Expected tarball $TARBALL in the intent-web-package artifact."
+            ls -la "$RUNNER_TEMP/intent-web-package"
+            exit 1
+          fi
+          if ! npm publish "$TARBALL" --access public --tag "$DIST_TAG" --provenance; then
+            echo "::error::npm publish of @intent-hq/web@${VERSION} failed; see npm's output above. If npm answered 401/403 (not authorized), check \"Allow npm publish\" under Allowed actions on npmjs.com → @intent-hq/web → Settings → Trusted Publisher (docs/intent-web-package.md), then rerun this workflow."
+            exit 1
+          fi
+          echo "::notice::Published @intent-hq/web@${VERSION} (dist-tag ${DIST_TAG})."
+
+  sync-channel:
+    # Promote Beta and Release Stable only rewrite the feeds of an existing
+    # release, so the version is read from the feed and nothing is built.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.channel != 'none') ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      (github.event.workflow_run.name == 'Promote Beta' || github.event.workflow_run.name == 'Release Stable'))
+    # GitHub-hosted for npm trusted publishing, as in the publish job.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Resolve channel
+        id: channel
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_NAME: ${{ github.event.workflow_run.name }}
+          INPUT_CHANNEL: ${{ inputs.channel }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then CHANNEL="$INPUT_CHANNEL"
+          elif [ "$RUN_NAME" = "Promote Beta" ]; then CHANNEL=beta
+          elif [ "$RUN_NAME" = "Release Stable" ]; then CHANNEL=stable
+          else CHANNEL=""; fi
+          if [ "$CHANNEL" != "beta" ] && [ "$CHANNEL" != "stable" ]; then
+            echo "::error::No channel to sync for event '${EVENT_NAME}' (run '${RUN_NAME}')."
+            exit 1
+          fi
+          echo "channel=${CHANNEL}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout publication tools
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/intent-web-publish-plan.mjs
+            scripts/intent-web-dist-tag-sync.mjs
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      # `npm dist-tag` does the OIDC exchange only from npm 11.21.0 (not in
+      # 12.0 or 12.1); the printed version shows which CLI a failed sync ran.
+      - name: Install npm with trusted publishing
+        run: |
+          npm install --global npm@^11.21.0
+          npm --version
+
+      - name: Plan dist-tag sync
+        id: sync
+        env:
+          CHANNEL: ${{ steps.channel.outputs.channel }}
+        run: node scripts/intent-web-dist-tag-sync.mjs "$CHANNEL"
+
+      - name: Move dist-tag
+        if: ${{ steps.sync.outputs.sync == 'true' }}
+        env:
+          VERSION: ${{ steps.sync.outputs.version }}
+          DIST_TAG: ${{ steps.sync.outputs.dist_tag }}
+        run: |
+          if ! npm dist-tag add "@intent-hq/web@${VERSION}" "$DIST_TAG"; then
+            node scripts/intent-web-dist-tag-sync.mjs --failure "$VERSION" "$DIST_TAG"
+            exit 1
+          fi
+          echo "::notice::Moved dist-tag ${DIST_TAG} to @intent-hq/web@${VERSION}."

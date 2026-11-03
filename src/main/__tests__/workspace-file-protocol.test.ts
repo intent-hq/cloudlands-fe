@@ -32,6 +32,9 @@ const {
   windowBackends,
   workspaceWindows,
   webContentsWindows,
+  LOCAL_TEST_CONFIG,
+  pooledConfigs,
+  transfer,
 } = vi.hoisted(() => ({
   protocolHandle: vi.fn(),
   onBeforeRequest: vi.fn(),
@@ -44,6 +47,15 @@ const {
   workspaceWindows: new Map<string, number[]>(),
   /** webContentsId → owning windowId (absent = not a BrowserWindow). */
   webContentsWindows: new Map<number, number>(),
+  /** Local-socket config: every request stays on the pooled client. */
+  LOCAL_TEST_CONFIG: { transport: 'uds' as const, socketPath: '/tmp/intentd.sock' },
+  /** backendId → connection config, for backends that are not local. */
+  pooledConfigs: new Map<string, unknown>(),
+  /** Transfer-connection stand-in: requests routed off the main connection. */
+  transfer: {
+    calls: [] as Array<{ method: string; params: unknown; backendId?: string }>,
+    reply: null as ((params: unknown) => unknown) | null,
+  },
 }));
 
 vi.mock('electron', () => ({
@@ -64,10 +76,12 @@ vi.mock('electron', () => ({
 }));
 
 vi.mock('../../features/backend/main/backend.ipc', () => ({
-  getBackendClient: () => ({ request: mockRequest }),
+  getBackendClient: () => ({ request: mockRequest, getConfig: () => LOCAL_TEST_CONFIG }),
   getBackendClientForConnection: (id: string) => {
     const request = pooledRequests.get(id);
-    return request ? { request } : undefined;
+    return request
+      ? { request, getConfig: () => pooledConfigs.get(id) ?? LOCAL_TEST_CONFIG }
+      : undefined;
   },
   getLiveBackendIds: () => [...pooledRequests.keys()],
 }));
@@ -75,6 +89,33 @@ vi.mock('../../features/backend/main/backend.ipc', () => ({
 vi.mock('../../features/system/main/system.ipc', () => ({
   getWindowIdsForWorkspace: (workspaceId: string) => workspaceWindows.get(workspaceId) ?? [],
 }));
+
+// Remote-backend transfer calls land in `transfer` instead of a real socket;
+// everything else uses the real routing (local configs stay on the client).
+vi.mock('../../features/backend/main/transfer-connections', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../../features/backend/main/transfer-connections')>();
+  return {
+    ...actual,
+    requestRouted: (
+      client: { getConfig(): { transport: string } },
+      method: string,
+      params?: unknown,
+      options?: { timeoutMs?: number },
+      backendId?: string,
+    ) => {
+      if (
+        client.getConfig().transport !== 'uds' &&
+        actual.isTransferMethod(method) &&
+        transfer.reply
+      ) {
+        transfer.calls.push({ method, params, backendId });
+        return Promise.resolve(transfer.reply(params));
+      }
+      return actual.requestRouted(client as never, method, params, options, backendId);
+    },
+  };
+});
 
 vi.mock('../window-backend', () => ({
   getBackendIdForWindow: (window: { id: number }) => windowBackends.get(window.id) ?? 'local',
@@ -1071,6 +1112,47 @@ describe('setupWorkspaceFileProtocolHandler', () => {
     expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes);
   });
 
+  it('sends every file.readChunk window of a remote backend over a transfer connection', async () => {
+    // Regression: a Range of exactly the read budget (480,000 decoded bytes,
+    // 640,000 as base64) must not ride the main connection either.
+    const size = 1_000_000;
+    const remote = bindWorkspaceToBackend('ws-remote', 'conn-remote');
+    pooledConfigs.set('conn-remote', {
+      transport: 'wss',
+      host: 'remote.example',
+      port: 5181,
+      token: 't',
+    });
+    transfer.calls = [];
+    transfer.reply = (params) => {
+      const { offset, length } = params as { offset: number; length: number };
+      const n = Math.max(0, Math.min(length, size - offset));
+      return chunk(Buffer.alloc(n, 0x61), n, size);
+    };
+    try {
+      const res = await getHandler()(
+        appRequest('workspace-file://ws-remote/artifacts/demo.mp4', { Range: 'bytes=0-479999' }),
+      );
+      expect(res.status).toBe(206);
+      expect(res.headers.get('Content-Length')).toBe('480000');
+      expect(remote).not.toHaveBeenCalled();
+      expect(transfer.calls.map((c) => c.method)).toEqual(['file.readChunk', 'file.readChunk']);
+      expect(transfer.calls[1]).toEqual({
+        method: 'file.readChunk',
+        params: {
+          workspaceId: 'ws-remote',
+          path: 'artifacts/demo.mp4',
+          offset: 0,
+          length: 480_000,
+        },
+        backendId: 'conn-remote',
+      });
+    } finally {
+      transfer.reply = null;
+      pooledConfigs.delete('conn-remote');
+    }
+  });
+
   it('serves a bounded MP4 byte range with correct playback headers', async () => {
     const allBytes = Buffer.from('0123456789');
     mockRequest
@@ -1488,6 +1570,7 @@ describe('setupWorkspaceAssetProtocolHandler', () => {
       expect(remoteRequest).toHaveBeenCalledExactlyOnceWith('note.readAsset', {
         workspaceId: 'ws-1',
         asset: 'movie.mp4',
+        maxBytes: 480_000,
       });
       expect(mockRequest).not.toHaveBeenCalled();
       expect(res.status).toBe(200);
@@ -1577,9 +1660,42 @@ describe('setupWorkspaceAssetProtocolHandler', () => {
     expect(mockRequest).toHaveBeenCalledWith('note.readAsset', {
       workspaceId: 'ws-1',
       asset: 'asset-1',
+      maxBytes: 480_000,
     });
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toBe('image/png');
+    expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes);
+  });
+
+  it('reads an asset over the bounded reply cap whole with note.readAssetChunk', async () => {
+    // PROTOCOL §5.9 "Bounded object reads": the capped reply carries no bytes.
+    const bytes = Buffer.from('a large saved image');
+    mockRequest
+      .mockResolvedValueOnce({
+        assetId: 'asset-1',
+        mimeType: 'image/png',
+        data: '',
+        sizeKb: 1,
+        truncated: true,
+        totalBytes: bytes.length,
+      })
+      .mockResolvedValueOnce({
+        assetId: 'asset-1',
+        mimeType: 'image/png',
+        content: bytes.toString('base64'),
+        bytesRead: bytes.length,
+        size: bytes.length,
+      });
+
+    const res = await getAssetHandler()(new Request('workspace-asset://ws-1/asset-1'));
+
+    expect(mockRequest).toHaveBeenNthCalledWith(2, 'note.readAssetChunk', {
+      workspaceId: 'ws-1',
+      asset: 'asset-1',
+      offset: 0,
+      length: 16 * 1024 * 1024,
+    });
+    expect(res.status).toBe(200);
     expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes);
   });
 
@@ -1594,6 +1710,7 @@ describe('setupWorkspaceAssetProtocolHandler', () => {
     expect(mockRequest).toHaveBeenCalledWith('note.readAsset', {
       workspaceId: 'ws-unknown',
       asset: 'asset-1',
+      maxBytes: 480_000,
     });
     expect(res.status).toBe(200);
   });
@@ -1615,6 +1732,7 @@ describe('setupWorkspaceAssetProtocolHandler', () => {
     expect(remoteRequest).toHaveBeenCalledWith('note.readAsset', {
       workspaceId: 'ws-orphan',
       asset: 'asset-1',
+      maxBytes: 480_000,
     });
     expect(mockRequest).not.toHaveBeenCalled();
     expect(res.status).toBe(200);
@@ -1647,6 +1765,7 @@ describe('setupWorkspaceAssetProtocolHandler', () => {
     expect(remoteRequest).toHaveBeenCalledWith('note.readAsset', {
       workspaceId: 'ws-heal-asset',
       asset: 'asset-1',
+      maxBytes: 480_000,
     });
     expect(res.status).toBe(200);
     expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes);
@@ -1662,6 +1781,7 @@ describe('setupWorkspaceAssetProtocolHandler', () => {
     expect(remoteRequest).toHaveBeenCalledWith('note.readAsset', {
       workspaceId: 'ws-remote',
       asset: 'asset-1',
+      maxBytes: 480_000,
     });
     expect(mockRequest).not.toHaveBeenCalled();
     expect(res.status).toBe(200);
@@ -1722,6 +1842,7 @@ describe('setupWorkspaceAssetProtocolHandler', () => {
       expect(requestB).toHaveBeenCalledWith('note.readAsset', {
         workspaceId: 'ws-dup-asset',
         asset: 'asset-1',
+        maxBytes: 480_000,
       });
       expect(requestA).not.toHaveBeenCalled();
       expect(mockRequest).not.toHaveBeenCalled();

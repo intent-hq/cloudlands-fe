@@ -39,9 +39,10 @@ import {
 } from '$lib/client/live/live-settings-client';
 import { isWorkspaceGuest } from '$features/workspace-sharing/utils/workspace-guest';
 import { canonicalInviteHost } from '$features/workspace-sharing/utils/invite-pin';
-import { selectLabsGitLabEnabled } from '../../user-preferences/user-preferences-selectors';
 import { clearGithubUserSearch } from '../../github-user-search/github-user-search-slice';
 import { selectGitLabAuthHost } from '../../gitlab-auth/gitlab-auth-selectors';
+import { checkGitHubAuthStatus } from '../../github-auth/github-auth-slice';
+import { checkGitLabAuthStatus } from '../../gitlab-auth/gitlab-auth-slice';
 import { selectGitHubAuthIsAuthenticated } from '../../github-auth/github-auth-selectors';
 import {
   selectGitLabAuthIsConfigured,
@@ -111,7 +112,10 @@ import {
   shareEnableRequested,
   sharePrerequisitesStarted,
   sharePrerequisitesSettled,
+  sharePrerequisitesAbandoned,
   shareIntegrationAuthRequested,
+  shareOwnerForgeMissing,
+  type ShareIntegrationAuth,
   shareIntegrationAuthLoaded,
   closeShareDialog,
   openShareDialog,
@@ -340,6 +344,9 @@ function* sharingPrerequisites(
   const enabling = action.type === shareEnableRequested.type;
   if (enabling && (yield* selectShareSharingEnabled.effect()) === true) return;
   yield* put(sharePrerequisitesStarted({ target, enabling }));
+  // Every exit without a settlement clears the in-flight flags: a stuck
+  // `sharingChecking` would make each later request return early above.
+  let settled = false;
   try {
     let values = yield* call(readSharingPrerequisites);
     if (!(yield* stillTargets(target)) || !(yield* selectCanAdministerHost.effect())) return;
@@ -356,6 +363,7 @@ function* sharingPrerequisites(
       }
     }
     const enabled = values.every(Boolean);
+    settled = true;
     yield* put(
       sharePrerequisitesSettled({
         target,
@@ -370,6 +378,7 @@ function* sharingPrerequisites(
     const message = error instanceof Error ? error.message : '';
     const missingTailcat =
       /tailcat/i.test(message) && /not found|not installed|missing|no such file/i.test(message);
+    settled = true;
     yield* put(
       sharePrerequisitesSettled({
         target,
@@ -383,12 +392,16 @@ function* sharingPrerequisites(
               : m.workspace_share_sharingLoadFailed_error(),
       }),
     );
+  } finally {
+    if (!settled) yield* put(sharePrerequisitesAbandoned({ target }));
   }
 }
 
 /** Inline error for an invite failure unrelated to host setup. */
 function createInviteErrorMessage(code: ShareFailure['code'], requestedPin: string): string {
   switch (code) {
+    case 'github-unreachable':
+      return m.workspace_share_forgeUnreachable_error();
     case 'invite-pin-unknown':
       return m.workspace_share_pinUnknown_error({ login: `@${requestedPin}` });
     case 'identity-unverifiable':
@@ -435,11 +448,10 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
   if (
     requestedPin &&
     pin?.provider === 'gitlab' &&
-    (independentPins
-      ? !(yield* selectLabsGitLabEnabled.effect())
-      : !(yield* selectCanAdministerHost.effect()) ||
-        !(yield* selectGitLabStatusReady.effect()) ||
-        pin.host !== (yield* selectGitLabAuthHost.effect()))
+    !independentPins &&
+    (!(yield* selectCanAdministerHost.effect()) ||
+      !(yield* selectGitLabStatusReady.effect()) ||
+      pin.host !== (yield* selectGitLabAuthHost.effect()))
   ) {
     yield* put(
       shareInviteCreateFailed({ target, request, error: m.workspace_share_createFailed_error() }),
@@ -474,6 +486,27 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
       return;
     }
     logFailure('Creating an invite', target.workspaceId, outcome);
+    if (outcome.code === 'github-identity-required') {
+      yield* put(shareOwnerForgeMissing(target));
+      const administrator = yield* selectCanAdministerHost.effect();
+      yield* put(
+        shareInviteCreateFailed({
+          target,
+          request,
+          error: administrator
+            ? m.workspace_share_forgeRequired_error()
+            : m.workspace_share_forgeOwnerRequired_notice(),
+        }),
+      );
+      // The cached status said connected but the daemon has no live forge:
+      // check both again. A change re-reads the dialog's forge status, which
+      // swaps an owner's dialog to its connect box.
+      if (administrator) {
+        yield* put(checkGitHubAuthStatus());
+        yield* put(checkGitLabAuthStatus());
+      }
+      return;
+    }
     yield* put(
       shareInviteCreateFailed({
         target,
@@ -709,16 +742,21 @@ function* loadIntegrationAuth(
   // canonical status; members use only the existing allowlisted execution projection.
   const owner = yield* selectCanAdministerHost.effect();
   const execution = yield* selectHostExecutionContext.effect();
-  const github = owner
-    ? yield* selectGitHubAuthIsAuthenticated.effect()
-    : execution?.repositoryConnections.some((r) => r.provider === 'github' && r.configured) ===
-      true;
-  const gitlab =
-    owner &&
-    (yield* selectGitLabStatusReady.effect()) &&
-    (yield* selectGitLabAuthIsConfigured.effect());
-  if (yield* stillTargets(target))
-    yield* put(shareIntegrationAuthLoaded(target, { github, gitlab }));
+  const configured = (provider: 'github' | 'gitlab') =>
+    execution?.repositoryConnections.some((r) => r.provider === provider && r.configured) === true;
+  const auth: ShareIntegrationAuth = owner
+    ? {
+        github: yield* selectGitHubAuthIsAuthenticated.effect(),
+        gitlab:
+          (yield* selectGitLabStatusReady.effect()) &&
+          (yield* selectGitLabAuthIsConfigured.effect()),
+      }
+    : execution
+      ? { github: configured('github'), gitlab: configured('gitlab') }
+      : // Without the projection the owner's status is unknown; the daemon's
+        // refusal latches `ownerForgeMissing` instead.
+        { github: false, gitlab: false, known: false };
+  if (yield* stillTargets(target)) yield* put(shareIntegrationAuthLoaded(target, auth));
 }
 
 export function* refreshIntegrationAuthAfterReconnect(): SagaGenerator<void> {

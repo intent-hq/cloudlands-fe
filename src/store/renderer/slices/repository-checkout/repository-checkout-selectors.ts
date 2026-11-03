@@ -5,17 +5,11 @@ import {
   selectCanCreateWorkspace,
   selectPrincipalActionContext,
 } from '../principal/principal-selectors';
-import { selectLabsGitLabEnabled } from '../user-preferences/user-preferences-selectors';
 
 /** Renderer correlation only; the main process and daemon retain real authority. */
 export const selectCheckoutAdmission = store.createSelector((state) => {
   const principal = selectPrincipalActionContext.select(state);
-  if (
-    !principal ||
-    !selectCanCreateWorkspace.select(state) ||
-    !selectLabsGitLabEnabled.select(state)
-  )
-    return null;
+  if (!principal || !selectCanCreateWorkspace.select(state)) return null;
   return JSON.stringify([
     principal,
     state.hostExecution.generation,
