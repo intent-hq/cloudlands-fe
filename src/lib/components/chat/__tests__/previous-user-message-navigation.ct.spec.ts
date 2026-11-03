@@ -1,10 +1,22 @@
 import type { Locator } from '@playwright/experimental-ct-svelte';
 import type { AgentMessage } from '$shared/types';
-import { expect, test, wheelUntilScrolled } from '../../../../test/ct-test';
+import {
+  clickAndSettle,
+  expect,
+  expectMotionToSettle,
+  motionSnapshot,
+  test,
+  wheelUntilScrolled,
+} from '../../../../test/ct-test';
 import ChatMessageNavigatorIntegrationHost from './ChatMessageNavigatorIntegrationHost.svelte';
 
 // Chromium hides native scrollbars in headless mode unless this default is removed.
 test.use({ launchOptions: { ignoreDefaultArgs: ['--hide-scrollbars'] } });
+
+// How long the transcript must stay still before a destination counts as settled. Longer
+// than the helper's default so focus, lazy layout and follow-bottom corrections that run a
+// few frames after the scroll animation have also landed.
+const DESTINATION_QUIET_MS = 300;
 
 function bottomArrow(component: Locator) {
   const command = component.getByTestId('chat-floating-scroll-to-bottom-button');
@@ -38,8 +50,10 @@ test('newer previous-message navigation wins over a pending return to bottom', a
   for (const current of [24, 23, 22]) {
     const source = component.locator(`[data-message-id="user-${current}"]`);
     await source.hover();
-    await source.getByRole('button', { name: 'Scroll to previous message' }).click();
-    await page.waitForTimeout(700);
+    await clickAndSettle(
+      source.getByRole('button', { name: 'Scroll to previous message' }),
+      scroll,
+    );
   }
 
   // Control animation time so the second trusted action always precedes the
@@ -496,12 +510,16 @@ for (const sourceRole of ['user', 'assistant'] as const) {
       const sourceId = sourceRole === 'assistant' ? 'response-automated-21' : 'last';
       const source = component.locator(`[data-message-id="${sourceId}"]`);
       await source.hover();
+      const atBottom = await motionSnapshot(scroll);
       await source
         .getByRole('button', {
           name: sourceRole === 'assistant' ? 'Previous user message' : 'Scroll to previous message',
         })
         .press('Enter');
-      await page.waitForTimeout(700);
+      await expectMotionToSettle(scroll, {
+        changedFrom: atBottom,
+        quietMs: DESTINATION_QUIET_MS,
+      });
       await expect(first).toContainText('First authored prompt');
       const offset = await first.evaluate(
         (node, container) =>
@@ -520,7 +538,10 @@ for (const sourceRole of ['user', 'assistant'] as const) {
       }
       await first.hover();
       await first.getByRole('button', { name: 'Scroll to previous message' }).click();
-      await page.waitForTimeout(700);
+      // The transcript may already be at the top, so wait for the end state rather than a
+      // change, then for it to stay there.
+      await expect.poll(() => scroll.evaluate((node) => node.scrollTop)).toBe(0);
+      await expectMotionToSettle(scroll, { quietMs: DESTINATION_QUIET_MS });
       const fallbackPosition = await scroll.evaluate((node) => node.scrollTop);
       expect(fallbackPosition).toBe(0);
       await testInfo.attach('first-message-navigation', {
@@ -1182,7 +1203,7 @@ for (const input of ['PageUp', 'PageDown', 'Home', 'End', 'scrollbar'] as const)
     }
     await expect.poll(() => scroll.evaluate((node) => node.scrollTop)).not.toBe(before);
     // Wait out Chromium's keyboard scrolling before measuring the reader position.
-    await page.waitForTimeout(350);
+    await expectMotionToSettle(scroll);
     const readingOffset = async () =>
       source.evaluate(
         (node, container) =>

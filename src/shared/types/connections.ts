@@ -213,6 +213,13 @@ export interface ConnectionRecord {
    * valid — absent is equivalent to `true`. Never set for the local entry.
    */
   detectHosts?: boolean;
+  /**
+   * This machine's own name, set only on the synthesized local entry of
+   * list/broadcast payloads (never persisted): the local daemon's reported
+   * `host.status.prettyHostname`, else the OS hostname. Absent when neither is
+   * known; the UI then reads "This machine (local)".
+   */
+  machineName?: string;
   /** True for the synthesized local sidecar entry. */
   isLocal: boolean;
   /** Present on list/broadcast payloads; never persisted. */

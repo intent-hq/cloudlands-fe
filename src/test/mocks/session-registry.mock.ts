@@ -129,7 +129,3 @@ export class MockSessionRegistry {
     this.callLog.push({ method, args, timestamp: Date.now() });
   }
 }
-
-function createMockSessionRegistry(): MockSessionRegistry {
-  return new MockSessionRegistry();
-}

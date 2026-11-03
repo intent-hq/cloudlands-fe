@@ -21,7 +21,8 @@
   import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
   import MobileSettings from '$features/settings/MobileSettings.svelte';
   import GuestSessionsSettings from '$lib/components/settings/GuestSessionsSettings.svelte';
-  import BackendSyncSettings from '$lib/components/settings/BackendSyncSettings.svelte';
+  import DevicesConnectionSections from '$lib/components/settings/DevicesConnectionSections.svelte';
+  import BrowserAccessSection from '$lib/components/settings/BrowserAccessSection.svelte';
   import VoiceSettings from '$lib/components/settings/VoiceSettings.svelte';
   import GitWorkspaceSettings from '$lib/components/settings/GitWorkspaceSettings.svelte';
   import OpenInAppsSettings from '$lib/components/settings/OpenInAppsSettings.svelte';
@@ -44,6 +45,7 @@
   import { Switch } from '$lib/components/ui/switch';
   import * as ToggleGroup from '$lib/components/ui/toggle-group';
   import { selectDaemonTransport } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
+  import { selectHostManagesConnections } from '$store/renderer/slices/connections/connections-selectors';
   import { selectIsCollaboratorOnlyClient } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     selectPrincipalActionContext,
@@ -112,6 +114,9 @@
   const collaborationContext$ = selectPrincipalActionContext();
   const hostAdministrationDenied$ = selectHostAdministrationDenied();
   const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
+  // intent-web serves this page and owns the machines list: there is no
+  // keychain sync and no mobile pairing on that host.
+  const hostManagesConnections$ = selectHostManagesConnections();
 
   // UDS socket path of the connected intentd; null hides the Connection section
   // (external-ws, unknown transport, or missing target).
@@ -156,6 +161,7 @@
     devices: 'devices',
     machines: 'devices',
     'backend-sync': 'devices',
+    'browser-access': 'mobile',
     mobile: 'mobile',
     'websocket-api': 'mobile',
     'remote-access': 'mobile',
@@ -266,12 +272,13 @@
   const hiddenTabs = $derived.by(() => {
     const tabs: SettingsTab[] = $isCollaboratorOnlyClient$ ? ['providers', 'connections'] : [];
     if (!$labsMultiplayerEnabled$) tabs.push('collaboration');
+    if ($hostManagesConnections$) tabs.push('mobile');
     return tabs;
   });
   $effect(() => {
     if (
       hiddenTabs.includes(activeTab) &&
-      (activeTab === 'collaboration' || $hostAdministrationDenied$)
+      (activeTab === 'collaboration' || activeTab === 'mobile' || $hostAdministrationDenied$)
     ) {
       setActiveTab('display');
     }
@@ -598,24 +605,18 @@
             <DevicesSettings />
           </div>
 
-          <div id="backend-sync" class="scroll-mt-20">
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_backendSync()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section data-slot="settings-section-body" class="px-6 py-4">
-                <BackendSyncSettings />
-              </section>
-            </div>
-          </div>
+          {#if !$hostManagesConnections$}
+            <DevicesConnectionSections />
+          {/if}
         {/if}
 
-        {#if activeTab === 'mobile'}
+        {#if activeTab === 'mobile' && !hiddenTabs.includes('mobile')}
           <div id="mobile" data-highlight-id="mobile" use:highlightTarget class="scroll-mt-20">
             <div id="websocket-api" data-highlight-id="websocket-api" use:highlightTarget>
               <MobileSettings />
             </div>
           </div>
+          <BrowserAccessSection />
         {/if}
 
         <!-- Guest sessions (multiplayer w4: hosting roster + joined hosts) -->

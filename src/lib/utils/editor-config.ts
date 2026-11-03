@@ -1,5 +1,6 @@
 import type { EditorOptions } from '@tiptap/core';
-import { readMentionChip } from '$lib/services/mentions/chip';
+import { folderSidebarTarget, readMentionChip } from '$lib/services/mentions/chip';
+import { locateItemInSidebarRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import { Extension } from '@tiptap/core';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import StarterKit from '@tiptap/starter-kit';
@@ -1128,6 +1129,12 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
                 }),
               );
             }
+          } else if (chip.folderPath !== undefined) {
+            if (workspace?.id) {
+              appStore.dispatch(
+                locateItemInSidebarRequested(workspace.id, folderSidebarTarget(chip.folderPath)),
+              );
+            }
           } else if (chip.note) {
             // A chip rebuilt from `@note[<ws>/<id>:<title>]` names a sibling
             // workspace: route through its workspace-qualified link.
@@ -1148,7 +1155,6 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
               );
             }
           }
-          // Note: folder/source-folder mentions currently don't navigate anywhere
           return true; // Handled
         }
 

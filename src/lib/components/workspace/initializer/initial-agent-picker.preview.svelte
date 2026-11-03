@@ -1,5 +1,15 @@
 <script module lang="ts">
   import { definePreview } from '$lib/component-catalog/preview-definition';
+  import { catalogNow } from '$lib/component-catalog/catalog-clock';
+  import { store } from '$store/renderer/store';
+  import type { RemoteMachine, RemoteMachineState } from '$shared/types/remote-machines';
+  import { remoteMachinesLoaded } from '$features/remote-machines/remote-machines-slice';
+  import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
+  import { selectConnections } from '$store/renderer/slices/connections/connections-selectors';
+  import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+  import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
+  import { selectProviderCatalogEntries } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { setupPreviewProviders } from '$lib/components/settings/provider-selector.preview';
   import {
     setupModelPickerPreviewHandler,
@@ -35,8 +45,96 @@
     };
   }
 
+  function startOnMachine(id: string, name: string, state: RemoteMachineState): RemoteMachine {
+    return {
+      id,
+      name,
+      platform: { os: 'macos', arch: 'aarch64' },
+      hosts: ['192.0.2.4'],
+      port: 5179,
+      fingerprint: `fp-${id}`,
+      state,
+      runningAgents: 0,
+      capabilities: {
+        providers: [{ id: 'codex', status: 'ready', models: ['fixture-model'] }],
+      },
+      observedAt: new Date(catalogNow()).toISOString(),
+      addedAt: '2026-11-01T00:00:00Z',
+    };
+  }
+
+  /** Labs on, a backend advertising remoteInitialAgent, and the scene's machines. */
+  function setupStartOnFixture(scenario: string) {
+    const before = store.state;
+    const previousLabs = before.userPreferences?.labsRemoteAgentsEnabled === true;
+    const previousConnections = selectConnections.select(before);
+    store.dispatch(
+      connectionsListReceived({
+        connections: [
+          {
+            id: 'intent1',
+            label: 'intent1',
+            host: '192.0.2.1',
+            port: 5179,
+            fingerprint: 'AA:01',
+            isLocal: false,
+            status: 'connected',
+          },
+        ],
+        activeId: 'intent1',
+        windowBackendId: 'intent1',
+      }),
+    );
+    store.dispatch(setLabsRemoteAgentsEnabled(true));
+    // A catalog with remote-compatibility fields: the backend switches remote models.
+    store.dispatch(
+      providerCatalogLoaded({
+        providers: selectProviderCatalogEntries.select(store.state),
+        defaultRemoteIncompatibility: {},
+      }),
+    );
+    store.dispatch(
+      remoteMachinesLoaded({
+        supported: true,
+        initialAgentPlacement: true,
+        machines:
+          scenario === 'start-on-none'
+            ? []
+            : [
+                startOnMachine('d-mac', 'Mac mini', 'connected'),
+                ...(scenario === 'start-on-unreachable'
+                  ? [startOnMachine('d-lab', 'Lab PC', 'unreachable')]
+                  : []),
+              ],
+        localFingerprint: null,
+        executorBackends: null,
+      }),
+    );
+    return () => {
+      store.dispatch(setLabsRemoteAgentsEnabled(previousLabs));
+      store.dispatch(backendReconnected());
+      store.dispatch(
+        connectionsListReceived({
+          connections: previousConnections,
+          activeId: before.connections.activeId,
+          windowBackendId: before.connections.windowBackendId,
+        }),
+      );
+    };
+  }
+
   interface Props {
-    state?: 'populated' | 'empty' | 'compact' | 'welcome' | 'crowded';
+    state?:
+      | 'populated'
+      | 'orchestration'
+      | 'sidebar'
+      | 'empty'
+      | 'compact'
+      | 'welcome'
+      | 'crowded'
+      | 'start-on-none'
+      | 'start-on-machine'
+      | 'start-on-unreachable';
   }
   export const preview = definePreview<Props>({
     id: 'initial-agent-picker',
@@ -44,10 +142,16 @@
     defaultState: 'populated',
     states: {
       populated: { props: { state: 'populated' } },
+      orchestration: { props: { state: 'orchestration' } },
+      sidebar: { props: { state: 'sidebar' } },
       empty: { props: { state: 'empty' } },
       compact: { props: { state: 'compact' } },
       welcome: { props: { state: 'welcome' } },
       crowded: { props: { state: 'crowded' } },
+      // New Workspace → Start On (remote initial agent).
+      'start-on-none': { props: { state: 'start-on-none' } },
+      'start-on-machine': { props: { state: 'start-on-machine' } },
+      'start-on-unreachable': { props: { state: 'start-on-unreachable' } },
     },
   });
 </script>
@@ -58,7 +162,6 @@
   import SpecialistDropdown from '$lib/components/chat/SpecialistDropdown.svelte';
   import RegularAgentWelcome from '$lib/components/chat/RegularAgentWelcome.svelte';
   import type { AgentSession } from '$shared/types/agent-session';
-  import { store } from '$store/renderer/store';
   import {
     setFileSpecialists,
     setFileSpecialistsLoaded,
@@ -74,12 +177,16 @@
   let selected = $state<string | null>(
     untrack(() => (scenario === 'welcome' ? 'fixture-developer' : null)),
   );
+  let teamMode = $state(untrack(() => scenario === 'orchestration'));
   const welcomeSession = $derived({
     id: 'fixture-welcome-agent',
     backendSessionId: null,
     metadata: { specialist: selected },
   } as AgentSession);
   onDestroy(setupPickerProviders());
+  const startOn = untrack(() => scenario.startsWith('start-on-'));
+  let startOnMachineId = $state(untrack(() => (scenario === 'start-on-machine' ? 'd-mac' : '')));
+  if (startOn) onDestroy(setupStartOnFixture(untrack(() => scenario)));
   // Enough rows to overflow the specialist menu's height cap.
   const crowdedSpecialists = () =>
     Array.from({ length: 8 }, (_, index) => ({
@@ -126,6 +233,18 @@
                 source: 'user',
                 icon: 'reviewer',
               },
+              {
+                id: 'fixture-coordinator',
+                name: 'Coordinator',
+                description: 'Plans the work and delegates it.',
+                model: 'fixture-model',
+                codingAgent: 'codex',
+                behaviorPrompt: '',
+                filePath: '/fixture/coordinator.md',
+                source: 'user',
+                icon: 'coordinator',
+                role: 'orchestrator',
+              },
               ...(scenario === 'crowded' ? crowdedSpecialists() : []),
             ],
       ),
@@ -140,7 +259,10 @@
   });
 </script>
 
-<section class="w-full min-w-0 p-4" data-testid="specialist-fixture">
+<section
+  class="w-full min-w-0 p-4 {scenario === 'sidebar' ? 'max-w-[300px]' : ''}"
+  data-testid="specialist-fixture"
+>
   {#if scenario === 'compact'}
     <SpecialistDropdown value={selected} onchange={(value) => (selected = value)} />
   {:else if scenario === 'welcome'}
@@ -149,7 +271,14 @@
       onSpecialistChange={(value) => (selected = value)}
     />
   {:else}
-    <InitialAgentPicker bind:selectedSpecialist={selected} selectedProvider="codex" />
+    <InitialAgentPicker
+      bind:selectedSpecialist={selected}
+      bind:isTeamMode={teamMode}
+      bind:startOnMachineId
+      selectedProvider="codex"
+    />
   {/if}
-  <output class="sr-only" data-testid="specialist-selection">{selected ?? 'general'}</output>
+  <output class="sr-only" data-testid="specialist-selection"
+    >{teamMode ? 'orchestration' : (selected ?? 'general')}</output
+  >
 </section>

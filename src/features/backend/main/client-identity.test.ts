@@ -209,4 +209,38 @@ describe('client-identity (REV-2 main-client hello params)', () => {
     expect(setLocalHostIdentity(null)).toBe(true);
     expect(await buildMainClientHelloParams()).not.toHaveProperty('deviceKind');
   });
+
+  describe('getLocalMachineName', () => {
+    afterEach(() => {
+      vi.doUnmock('node:os');
+      vi.doUnmock('os');
+    });
+
+    async function importWithOsHostname(name: string) {
+      for (const id of ['node:os', 'os'])
+        vi.doMock(id, async (importActual) => {
+          const actual = await importActual<typeof import('node:os')>();
+          return { ...actual, default: { ...actual, hostname: () => name }, hostname: () => name };
+        });
+      return import('./client-identity');
+    }
+
+    it('prefers the local daemon-reported pretty hostname', async () => {
+      const identity = await importWithOsHostname('clements-mac-studio.local');
+      identity.setLocalHostIdentity({ prettyHostname: '  Clément’s Mac Studio ' });
+      expect(identity.getLocalMachineName()).toBe('Clément’s Mac Studio');
+    });
+
+    it('falls back to the OS hostname until the daemon reports one', async () => {
+      const identity = await importWithOsHostname(' clements-mac-studio.local ');
+      expect(identity.getLocalMachineName()).toBe('clements-mac-studio.local');
+      identity.setLocalHostIdentity({ prettyHostname: '   ' });
+      expect(identity.getLocalMachineName()).toBe('clements-mac-studio.local');
+    });
+
+    it('is undefined when neither name is known', async () => {
+      const identity = await importWithOsHostname('   ');
+      expect(identity.getLocalMachineName()).toBeUndefined();
+    });
+  });
 });

@@ -65,7 +65,9 @@ export type DecodedInlineMention =
   /** `legacy` is the whitespace-delimited `@note/<id>` form (no saved title). */
   | { kind: 'note'; note: NoteMention; legacy: boolean }
   | { kind: 'runtime'; mention: RuntimeMention }
-  | { kind: 'file'; path: string; line?: number; label: string };
+  | { kind: 'file'; path: string; line?: number; label: string }
+  /** `@<path>/`: `path` has no trailing slash. */
+  | { kind: 'folder'; path: string; label: string };
 
 function decodeContext(context: ContextMention): DecodedInlineMention {
   return {
@@ -103,9 +105,9 @@ export function decodeInlineMention(match: InlineMentionMatch): DecodedInlineMen
       };
     }
     case 'folder':
-      // Folder mention: @path/to/dir/, shown like a legacy @path/to/dir chip.
+      // Folder mention: @path/to/dir/, labelled by its last segment.
       return {
-        kind: 'file',
+        kind: 'folder',
         path: parsed.path,
         label: parsed.path.split('/').pop() || parsed.path,
       };

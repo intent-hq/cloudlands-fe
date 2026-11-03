@@ -9,6 +9,7 @@ import { pendingRetentionSaga } from './slices/pending-submissions/sagas/pending
 import { invitationAccountSearchSaga } from './slices/invitation-account-search/sagas/invitation-account-search-saga';
 import { hostUserPresenceSaga } from './slices/host-membership/sagas/host-user-presence-saga';
 import { personalDevicesSaga } from '$features/devices/personal-devices-saga';
+import { remoteMachinesSaga } from '$features/remote-machines/remote-machines-saga';
 import { hostMembershipSaga } from './slices/host-membership/sagas/host-membership-saga';
 import { repositoryContextSaga } from './slices/repository-context/sagas/repository-context-saga';
 import { repositoryCheckoutSaga } from './slices/repository-checkout/sagas/repository-checkout-saga';
@@ -52,6 +53,7 @@ import { chatSendSaga } from './slices/chat-state/sagas/chat-send-saga';
 import { chatSubscribeSaga } from './slices/chat-state/sagas/chat-subscribe-saga';
 import { switchTimingSaga } from './slices/chat-state/sagas/switch-timing-saga';
 import { connectionsSaga } from './slices/connections/sagas/connections-saga';
+import { browserAccessSaga } from './slices/browser-access/sagas/browser-access-saga';
 import { guestSessionsSaga } from './slices/guest-sessions/sagas/guest-sessions-saga';
 import { principalSaga } from './slices/principal/sagas/principal-saga';
 import { presenceFollowSaga } from './slices/presence-follow/sagas/presence-follow-saga';
@@ -161,6 +163,7 @@ export const sagas = [
   connectionsSaga,
   hudSaga,
   guestSessionsSaga,
+  browserAccessSaga,
   presenceSaga,
   workspaceDiscussionSaga,
   presenceFollowSaga,
@@ -268,6 +271,7 @@ export const sagas = [
   browserPersistenceSaga,
   browserClientsSaga,
   personalDevicesSaga,
+  remoteMachinesSaga,
   fileContentPruneSaga,
   terminalCreationSaga,
   terminalPersistenceSaga,

@@ -23,3 +23,16 @@ export interface ImageReferenceBlock {
 
 /** Either arm of an image block as accepted by the daemon. */
 export type WireImageBlock = InlineImageBlock | ImageReferenceBlock;
+
+/**
+ * A stored image block named by id instead of carrying bytes (PROTOCOL §5.5
+ * "Image block references in agent.editAndRegenerate"). Only
+ * `agent.editAndRegenerate` accepts it, and only on daemons advertising
+ * `server.capabilities.messageBlockPages === 1`; the daemon resolves it
+ * against the same agent's transcript before truncating.
+ */
+export interface MessageBlockImageReference {
+  type: 'image';
+  messageId: string;
+  blockId: string;
+}

@@ -110,6 +110,19 @@ export const selectLabsRemoteAgentsEnabled = store.createSelector((state) => {
   return state.userPreferences?.labsRemoteAgentsEnabled === true;
 });
 
+/**
+ * Entry-point policy for creating NEW plain-folder workspaces only. Never use this to
+ * gate behavior of existing plain-folder workspaces (read `Workspace.plainFolder`).
+ */
+export const selectLabsPlainFolderWorkspacesEnabled = store.createSelector((state) => {
+  return state.userPreferences?.labsPlainFolderWorkspacesEnabled === true;
+});
+
+/** Experimental Browser access (Settings > Mobile) is shown only when this Labs flag is on. */
+export const selectLabsBrowserAccessEnabled = store.createSelector((state) => {
+  return state.userPreferences?.labsBrowserAccessEnabled === true;
+});
+
 export const selectCounterScale = store.createSelector((state) => {
   return 1 / state.userPreferences.zoomFactor;
 });

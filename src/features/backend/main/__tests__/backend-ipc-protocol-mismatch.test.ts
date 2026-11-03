@@ -65,6 +65,7 @@ vi.mock('../keychain-sync-lifecycle', () => ({
 
 vi.mock('../client-identity', () => ({
   getOrCreateClientId: vi.fn(async () => 'cli-test'),
+  getLocalMachineName: () => undefined,
   persistClientId: vi.fn(async () => {}),
 }));
 
@@ -93,7 +94,7 @@ const store = vi.hoisted(() => ({
   getDetectHosts: vi.fn(),
   setHosts: vi.fn(),
 }));
-vi.mock('../connections-store', () => ({
+vi.mock('../desktop-connections-store', () => ({
   LOCAL_CONNECTION_ID: 'local',
   list: store.list,
   getActiveId: store.getActiveId,

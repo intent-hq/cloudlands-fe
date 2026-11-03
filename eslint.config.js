@@ -40,8 +40,11 @@ import noRawWorkspaceNavigationRule from './eslint-rules/no-raw-workspace-naviga
 import noOneShotAnimationCountRule from './eslint-rules/no-one-shot-animation-count.js';
 import noUnarmedOutsideClickInCtRule from './eslint-rules/no-unarmed-outside-click-in-ct.js';
 import noRawMouseWheelInCtRule from './eslint-rules/no-raw-mouse-wheel-in-ct.js';
+import noWaitForTimeoutInCtRule from './eslint-rules/no-wait-for-timeout-in-ct.js';
 import noHandWrittenTypingCheckRule from './eslint-rules/no-hand-written-typing-check.js';
 import noScrollIntoViewPrototypeStubRule from './eslint-rules/no-scroll-into-view-prototype-stub.js';
+import noFixedWaitTimeoutInTestsRule from './eslint-rules/no-fixed-wait-timeout-in-tests.js';
+import requireDisableReasonRule from './eslint-rules/require-disable-reason.js';
 import noDirectReducedMotionQueryRule, {
   SOURCE_OF_TRUTH_FILES as reducedMotionSourceOfTruthFiles,
   TEST_FILE_GLOBS as reducedMotionTestFileGlobs,
@@ -53,6 +56,16 @@ const wallClockAssertionsBaseline =
   baselineCounts(lintBaseline['no-wall-clock-assertions-in-tests']) ?? {};
 const classNameAssertionsBaseline =
   baselineCounts(lintBaseline['no-class-name-assertions-in-tests']) ?? {};
+const fixedWaitTimeoutBaseline =
+  baselineCounts(lintBaseline['no-fixed-wait-timeout-in-tests']) ?? {};
+const waitForTimeoutInCtBaseline = baselineCounts(lintBaseline['no-wait-for-timeout-in-ct']) ?? {};
+// The component-test rules whose sanctioned escape hatch is a reasoned single-line disable.
+const componentTestReasonedDisableRules = [
+  'intent/no-one-shot-animation-count',
+  'intent/no-unarmed-outside-click-in-ct',
+  'intent/no-raw-mouse-wheel-in-ct',
+  'intent/no-wait-for-timeout-in-ct',
+];
 
 const intentPlugin = {
   rules: {
@@ -70,10 +83,13 @@ const intentPlugin = {
     'no-one-shot-animation-count': noOneShotAnimationCountRule,
     'no-unarmed-outside-click-in-ct': noUnarmedOutsideClickInCtRule,
     'no-raw-mouse-wheel-in-ct': noRawMouseWheelInCtRule,
+    'no-wait-for-timeout-in-ct': noWaitForTimeoutInCtRule,
     'no-direct-reduced-motion-query': noDirectReducedMotionQueryRule,
     'no-raw-workspace-navigation': noRawWorkspaceNavigationRule,
     'no-hand-written-typing-check': noHandWrittenTypingCheckRule,
     'no-scroll-into-view-prototype-stub': noScrollIntoViewPrototypeStubRule,
+    'no-fixed-wait-timeout-in-tests': noFixedWaitTimeoutInTestsRule,
+    'require-disable-reason': requireDisableReasonRule,
   },
 };
 
@@ -542,7 +558,9 @@ export default [
       '**/playwright/.cache/**',
       '**/playwright-report/**',
       '**/e2e/**',
-      '**/test/**',
+      // Package-root Playwright suite only; src/test/** (shared test helpers and their
+      // tests) must stay linted. Mirrors the vitest.config.ts exclude.
+      'test/**',
     ],
   },
   javascriptConfig,
@@ -704,6 +722,15 @@ export default [
   // cloudlands-fe#3516, intent-hq/intent#7255). Use wheelUntilScrolled from
   // src/test/ct-test.ts; a wheel that must not scroll disables the rule on its line with a
   // reason. No baseline.
+  //
+  // A fixed page.waitForTimeout guesses how long motion takes; on a slow runner the next
+  // click lands mid-animation and is dropped because Playwright hit-tests only pointerdown
+  // (cloudlands-fe#3955; the flake ejected cloudlands-fe#3920 from the merge queue). Use
+  // clickAndSettle / expectMotionToSettle from src/test/ct-test.ts. The baseline maps
+  // today's specs to their sleep counts and may only shrink.
+  //
+  // Each of these rules accepts a single-line eslint-disable with a reason as its escape
+  // hatch; intent/require-disable-reason checks that the directive gives one.
   {
     files: ['src/**/*.ct.spec.ts'],
     plugins: {
@@ -713,12 +740,34 @@ export default [
       'intent/no-one-shot-animation-count': 'error',
       'intent/no-unarmed-outside-click-in-ct': 'error',
       'intent/no-raw-mouse-wheel-in-ct': 'error',
+      'intent/no-wait-for-timeout-in-ct': ['error', { baseline: waitForTimeoutInCtBaseline }],
+      'intent/require-disable-reason': ['error', { rules: componentTestReasonedDisableRules }],
+    },
+  },
+  // Testing Library waits and vi.waitFor / vi.waitUntil default to half the CI-scaled test
+  // budget (src/test-setup.ts; 15 s locally, 30 s on CI). The fixed 3-5 s limits tests added
+  // to get past the old 1 s default are stricter than that on CI (cloudlands-fe#3958,
+  // #3964). The baseline lists the deliberate cases with their owner and reason; counts
+  // only shrink. A reasoned single-line eslint-disable is the other escape hatch, and
+  // intent/require-disable-reason checks that it gives the reason.
+  {
+    files: ['**/*.test.{js,mjs,cjs,ts}'],
+    plugins: {
+      intent: intentPlugin,
+    },
+    rules: {
+      'intent/no-fixed-wait-timeout-in-tests': ['error', { baseline: fixedWaitTimeoutBaseline }],
+      'intent/require-disable-reason': [
+        'error',
+        { rules: ['intent/no-fixed-wait-timeout-in-tests'] },
+      ],
     },
   },
   // A unit test that asserts an element's className / classList / class attribute pins
   // how a style is spelled, not what the user sees (cloudlands-fe#3463; AGENTS.md "Do
-  // not write decorative appearance tests"). Same ratchet as above: the baseline maps
-  // today's offenders to their assertion counts and may only shrink.
+  // not write decorative appearance tests"). The baseline maps today's offenders to their
+  // assertion counts and may only shrink. A reasoned single-line eslint-disable is the
+  // other escape hatch, and intent/require-disable-reason checks that it gives the reason.
   {
     files: ['src/**/*.test.ts'],
     plugins: {
@@ -728,6 +777,17 @@ export default [
       'intent/no-class-name-assertions-in-tests': [
         'error',
         { baseline: classNameAssertionsBaseline },
+      ],
+      // These files also match the block above, and a later block's options replace an
+      // earlier block's, so this list names both rules.
+      'intent/require-disable-reason': [
+        'error',
+        {
+          rules: [
+            'intent/no-fixed-wait-timeout-in-tests',
+            'intent/no-class-name-assertions-in-tests',
+          ],
+        },
       ],
     },
   },
@@ -1058,12 +1118,19 @@ export default [
   // editor (intent-hq/intent#8068 via cloudlands-fe#3848; intent-hq/intent#8115 via
   // cloudlands-fe#3865). isTextEntryTarget / isMultilineTextEntryTarget in
   // src/lib/utils/text-entry.ts are the one check. A non-typing use disables the rule on
-  // its line with a reason. No baseline: enforced at zero.
+  // its line with a reason, which intent/require-disable-reason checks. No baseline:
+  // enforced at zero.
   {
     files: ['src/**/*.{js,ts,svelte}'],
     ignores: [...productionModuleIgnores, 'src/lib/utils/text-entry.ts'],
     plugins: { intent: intentPlugin },
-    rules: { 'intent/no-hand-written-typing-check': 'error' },
+    rules: {
+      'intent/no-hand-written-typing-check': 'error',
+      'intent/require-disable-reason': [
+        'error',
+        { rules: ['intent/no-hand-written-typing-check'] },
+      ],
+    },
   },
   // flushSync from an $effect cleanup, onDestroy callback, or action destroy()
   // flushes unrelated effects mid-teardown; any component mounted by that flush

@@ -60,6 +60,7 @@ vi.mock('../DirectoryPickerModal.svelte', async () => ({
 }));
 
 import { m } from '$shared/paraglide/messages.js';
+import { pickDirectory } from '$lib/directory-picker-service';
 import LocalRepoTab from '../LocalRepoTab.svelte';
 import { warmImport } from '../../../../test/warm-import';
 
@@ -168,5 +169,26 @@ describe('LocalRepoTab — recent repos filtering', () => {
       expect(paths).toHaveLength(1);
       expect(paths[0]).toContain('/ws/standalone');
     });
+  });
+});
+
+describe('LocalRepoTab — folder picker title', () => {
+  afterEach(() => {
+    cleanup();
+    vi.mocked(pickDirectory).mockClear();
+  });
+
+  it.each([
+    [false, 'Select Repository Folder'],
+    [true, 'Select folder'],
+  ])('titles the picker for plainFolderMode %s as "%s"', async (plainFolderMode, title) => {
+    render(LocalRepoTab, { props: { ...baseProps(), plainFolderMode } });
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.onboarding_localRepoTab_browse_ariaLabel() }),
+    );
+
+    await waitFor(() =>
+      expect(pickDirectory).toHaveBeenCalledWith(expect.objectContaining({ title })),
+    );
   });
 });

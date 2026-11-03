@@ -1,3 +1,4 @@
+// @verify-changed-triggers: vite.config.mjs
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { describe, expect, it } from 'vitest';

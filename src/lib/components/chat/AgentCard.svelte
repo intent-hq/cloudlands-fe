@@ -82,11 +82,17 @@
   import { selectSpecialistName } from '$store/renderer/slices/specialists/specialists-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
-  import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+    selectHidesAgentLifecycleActions,
+    selectIsPlainFolderWorkspace,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
   import { backgroundModeMenuItems } from './agent-background-menu';
+  import { pinMenuItems } from './agent-pin-menu';
   import { isReplaceAgentEligible } from '$shared/utils/replace-agent-eligibility';
   import TaskProgressControl from './TaskProgressControl.svelte';
+  import AgentLocationBadge from '$features/remote-machines/AgentLocationBadge.svelte';
   import type { TaskProgressItem } from './workspace-task-fallback';
 
   interface Props {
@@ -367,6 +373,11 @@
       },
     ];
 
+    if (panelRow) {
+      const wsId = $agent$?.workspaceId ?? workspace?.id;
+      items.push(...pinMenuItems($agent$, wsId ? String(wsId) : undefined, closeContextMenu));
+    }
+
     items.push(...backgroundModeMenuItems($agent$, $backgroundPending$, closeContextMenu));
 
     // Per-agent notification mute (daemon-owned `notificationsMuted`, §5.5):
@@ -394,13 +405,18 @@
       });
     }
 
-    if ($agent$?.effectiveIsolation === 'isolated') {
+    // Plain folders have no git checkpoints to merge or discard.
+    const hubWorkspaceId = $agent$?.workspaceId ?? workspace?.id;
+    const plainFolder =
+      isPlainFolderWorkspace(workspace) ||
+      (!!hubWorkspaceId &&
+        selectIsPlainFolderWorkspace.select(appStore.state, String(hubWorkspaceId)));
+    const isolated = $agent$?.effectiveIsolation === 'isolated';
+    if ($nodeCapabilities$.agentNodes && isolated && !plainFolder) {
       items.push({
         id: 'hub-merge',
-        label: $nodeCapabilities$.agentNodes
-          ? m.agent_hub_merge()
-          : m.agent_placement_unavailable(),
-        disabled: !$nodeCapabilities$.agentNodes || $hubBusy$ || !$agent$?.checkpoint?.id,
+        label: m.agent_hub_merge(),
+        disabled: $hubBusy$ || !$agent$?.checkpoint?.id,
         onClick: () => {
           void manageHub('merge');
         },
@@ -408,7 +424,7 @@
       items.push({
         id: 'hub-discard',
         label: m.agent_hub_discard(),
-        disabled: !$nodeCapabilities$.agentNodes || $hubBusy$,
+        disabled: $hubBusy$,
         onClick: () => {
           void manageHub('discard');
         },
@@ -730,11 +746,11 @@
       type={isEditing ? undefined : 'button'}
       class="flex w-full min-w-0 max-w-full text-left gap-2 transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none {isEditing
         ? 'overflow-visible'
-        : 'overflow-hidden'} {isEditing ? 'cursor-text' : 'cursor-pointer'} group border {panelRow
-        ? `h-10 items-center rounded-md border-transparent px-2 py-2 type-caption font-normal text-foreground dark:hover:bg-muted/60 focus-visible:-outline-offset-2 focus-visible:bg-selected dark:focus-visible:bg-muted focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-0 ${selected ? 'bg-selected dark:bg-muted' : 'bg-transparent hover:bg-hover'}`
+        : 'overflow-hidden'} {isEditing ? 'cursor-text' : 'cursor-pointer'} group {panelRow
+        ? `h-9 items-center rounded-md px-2 py-1.5 type-caption font-normal text-foreground dark:hover:bg-muted/60 focus-visible:-outline-offset-2 focus-visible:bg-selected dark:focus-visible:bg-muted focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-0 ${selected ? 'bg-selected dark:bg-muted' : 'bg-transparent hover:bg-hover'}`
         : inline
-          ? `type-body items-center rounded-md ${inlineRowClass}`
-          : 'px-1.75 pt-1.25 pb-1.5'} {panelRow
+          ? `border type-body items-center rounded-md ${inlineRowClass}`
+          : 'border px-1.75 pt-1.25 pb-1.5'} {panelRow
         ? ''
         : selected || showBorder
           ? `bg-background border-border ${glowClass} shadow-xs`
@@ -859,6 +875,7 @@
                   : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
               ></span>
             </div>
+            <AgentLocationBadge {agentId} hidden={inline && !panelRow} />
             {#if isNotificationsMuted && (!inline || panelRow)}
               <span
                 class="inline-flex shrink-0 items-center text-subtle"

@@ -70,6 +70,7 @@ import {
 import { Logger } from '../../../shared/logger';
 import { stampWindowWithBackend } from '../../../main/window-backend';
 import { registerDockAnnotationWindow } from '../../../main/dock-annotation-identity';
+import { fixWebContentsZoom } from '../../../main/fixed-zoom';
 import {
   createDockElementPicker,
   type DockElementHit,
@@ -689,6 +690,7 @@ export class DockAnnotationController implements AnnotationService {
       return true;
     }
     if (request.action === 'commit') {
+      if (session.marks.length === 0) return false;
       // The marked image is the dock's now; the screen starts clean, and the next
       // mark captures a new image. The session (and mouse mode, if on) stays.
       if (session.mode !== 'still') {
@@ -704,7 +706,7 @@ export class DockAnnotationController implements AnnotationService {
       return true;
     }
     if (request.action === 'clear') {
-      // Like Done, the screen starts clean and the next mark captures a new image,
+      // Like Attach, the screen starts clean and the next mark captures a new image,
       // but nothing is attached (the dock drops the image) and the tool stays.
       if (session.mode !== 'still') {
         session.image = null;
@@ -1472,6 +1474,7 @@ function createOverlayWindow(display: Display, backendId: string): BrowserWindow
   });
   // Classified as the dock annotation overlay before any document (even about:blank) loads.
   registerDockAnnotationWindow(window);
+  fixWebContentsZoom(window.webContents);
   // One step below the dock's floating level so the dock stays the composer above it.
   window.setAlwaysOnTop(true, 'floating', -1);
   if (process.platform === 'darwin')

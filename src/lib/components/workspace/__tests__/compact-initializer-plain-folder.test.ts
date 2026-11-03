@@ -1,0 +1,1249 @@
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+/** @vitest-environment jsdom */
+/**
+ * Plain-folder workspaces (Labs) in the New Workspace dialog: the git choice
+ * handed to the folder picker's Existing folder / New tabs (no switch row in
+ * the dialog itself), hidden git-only controls, the
+ * in-place/no-undo warning (cancel creates nothing) and the plain-folder
+ * `workspace.create` request. With the Labs flag off the dialog renders and
+ * creates exactly as today.
+ */
+
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { WorkspaceInitializationOutcome } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
+import { createWorkspaceInitializationDispatchAdapter } from './workspace-initialization-dispatch.test-helper';
+
+const admittedFixture = vi.hoisted(() => ({ state: {} as Record<string, unknown> }));
+const plainFolder = vi.hoisted(() => {
+  function writable<T>(initial: T) {
+    let value = initial;
+    const subscribers = new Set<(value: T) => void>();
+    return {
+      subscribe(run: (value: T) => void) {
+        subscribers.add(run);
+        run(value);
+        return () => subscribers.delete(run);
+      },
+      set(next: T) {
+        value = next;
+        for (const run of subscribers) run(next);
+      },
+    };
+  }
+  return {
+    available$: writable(false),
+    defaultState$: writable<'on' | 'off' | 'pending'>('pending'),
+    gitAvailable$: writable<boolean | null | 'unknown'>(true),
+    confirm: vi.fn(async (_folder: string, _workspaces: unknown[]) => true),
+  };
+});
+beforeEach(() => {
+  admittedFixture.state = withLegacyPrincipal({});
+});
+
+const mocks = vi.hoisted(() => {
+  const readable = <T>(getter: () => T) => ({
+    subscribe(run: (value: T) => void) {
+      run(getter());
+      return () => {};
+    },
+  });
+  function writable<T>(initial: T) {
+    let value = initial;
+    const subscribers = new Set<(value: T) => void>();
+    return {
+      subscribe(run: (value: T) => void) {
+        subscribers.add(run);
+        run(value);
+        return () => subscribers.delete(run);
+      },
+      set(next: T) {
+        value = next;
+        for (const run of subscribers) run(next);
+      },
+      get() {
+        return value;
+      },
+    };
+  }
+  const coordinator = {
+    id: 'spec-writer',
+    name: 'Coordinator',
+    description: '',
+    role: 'orchestrator',
+  };
+  const developer = { id: 'developer', name: 'Developer', description: '' };
+  return {
+    readable,
+    dispatch: vi.fn(),
+    goto: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    getBranches: vi.fn(),
+    toastError: vi.fn(),
+    pull: vi.fn(async () => ({ success: true })),
+    setReasoningEffort: vi.fn(),
+    initializationOutcome$: writable<Partial<WorkspaceInitializationOutcome> | undefined>(
+      undefined,
+    ),
+    hydrated$: writable(false),
+    lastSelectedRepo$: writable<Record<string, unknown> | null>(null),
+    formPersistence: { enabled: false },
+    compactFormState$: writable<{
+      selectedSpecialist?: string | null;
+      selectedModel?: string;
+      modelWasOverridden?: boolean;
+      selectedReasoningEffort?: string;
+      isTeamMode?: boolean;
+      skipIsolation?: boolean;
+      repoPath?: string;
+      repoType?: string;
+      isValidPath?: boolean;
+      isNewRepo?: boolean;
+      branch?: string;
+    } | null>(null),
+    lastSubmittedAgent$: writable<{
+      selectedSpecialist: string | null;
+      selectedModel?: string;
+      modelWasOverridden?: boolean;
+      selectedReasoningEffort?: string;
+      isTeamMode: boolean;
+      selectedProvider?: string;
+    } | null>(null),
+    specialists$: writable([coordinator, developer]),
+    customSpecialistsLoaded$: writable(true),
+    fileSpecialistsLoaded$: writable(true),
+    coordinator,
+    developer,
+  };
+});
+
+vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
+
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+  return createAppStoreMockModule({
+    state: () => ({ ...admittedFixture.state, workspaceCreateProgress: { byProgressId: {} } }),
+    dispatch: mocks.dispatch,
+  });
+});
+
+vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
+  selectWorkspaceInitializerAgentForRepo: { select: () => null },
+  selectWorkspaceInitializerGitAvailability: () => plainFolder.gitAvailable$,
+  selectWorkspaceInitializerHydrated: () => mocks.hydrated$,
+  selectCompactWorkspaceInitializerFormState: () => mocks.compactFormState$,
+  selectWorkspaceInitializerLastSelectedRepo: () => mocks.lastSelectedRepo$,
+  selectWorkspaceInitializerLastSubmittedAgent: () => mocks.lastSubmittedAgent$,
+  selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
+  selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
+  selectWorkspaceInitializerBranchByRepo: () => mocks.readable(() => ({})),
+  selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
+  selectWorkspaceInitializerDraftAuthority: () =>
+    mocks.readable(() => ({ restore: undefined, clear: undefined })),
+  selectWorkspaceInitializationOutcomeForConsumer: () => mocks.initializationOutcome$,
+  selectWorkspaceInitializationResume: { select: () => undefined },
+}));
+
+vi.mock('$store/renderer/slices/model/model-selectors', () => ({
+  selectAvailableModels: () => mocks.readable(() => []),
+  selectSelectedModel: () => mocks.readable(() => undefined),
+}));
+
+vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
+  selectActiveProviderId: () => mocks.readable(() => 'auggie'),
+  selectEnabledProviders: () => mocks.readable(() => ({})),
+}));
+
+vi.mock('$store/renderer/slices/hardware-console/hardware-console-selectors', () => ({
+  selectPttRecording: () => mocks.readable(() => false),
+  selectVoiceTranscribing: () => mocks.readable(() => false),
+}));
+
+vi.mock('$store/renderer/slices/voice-settings/voice-settings-selectors', () => ({
+  selectEffectiveVoiceEngine: () => mocks.readable(() => 'os'),
+}));
+
+vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
+  selectSpecialists: Object.assign(() => mocks.specialists$, {
+    select: vi.fn(() => mocks.specialists$.get()),
+  }),
+  selectCustomSpecialistsLoaded: () => mocks.customSpecialistsLoaded$,
+  selectFileSpecialistsLoaded: () => mocks.fileSpecialistsLoaded$,
+  selectEffectiveBehaviorPrompt: { select: vi.fn(() => undefined) },
+  selectEffectiveModel: { select: vi.fn(() => undefined) },
+  selectEffectiveCodingAgent: { select: vi.fn(() => undefined) },
+  selectUserOverrides: { select: vi.fn(() => ({ modelOverrides: {} })) },
+  selectOrchestratorSpecialist: Object.assign(() => mocks.readable(() => mocks.coordinator), {
+    select: vi.fn(() => mocks.coordinator),
+  }),
+}));
+
+vi.mock('$features/setup-scripts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$features/setup-scripts')>()),
+  SETUP_SCRIPT_TEMPLATES: [],
+  getTemplateContent: vi.fn(() => ''),
+  chooseDefaultSetupScript: vi.fn(() => ({ content: '', name: 'Custom', source: 'custom' })),
+  fetchRepoConfigSetupScript: vi.fn(async () => null),
+  fetchGitHubRepoConfigSetupScript: vi.fn(async () => null),
+  probeRepoConfigSetupScript: vi.fn(),
+  repoIdentityKey: vi.fn((identity: { path: string | null }) => identity.path),
+  createRepoConfigProbeScheduler: vi.fn(() => ({
+    onSelectionChange: vi.fn(),
+    settled: vi.fn(async () => {}),
+    dispose: vi.fn(),
+  })),
+  resolveSetupScriptParam: vi.fn(() => undefined),
+  REPO_CONFIG_SCRIPT_NAME: 'Repo config',
+}));
+
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceItems: () => mocks.readable(() => []),
+}));
+
+vi.mock('$lib/components/ui/toast', () => ({
+  toast: { error: mocks.toastError, success: vi.fn(), warning: vi.fn(), message: vi.fn() },
+}));
+
+vi.mock('$lib/config/debug', () => ({
+  debugConfig: {
+    get: vi.fn((key: string) => key === 'enableFormPersistence' && mocks.formPersistence.enabled),
+  },
+}));
+
+vi.mock('$lib/client', () => ({
+  appClient: {
+    agents: { setReasoningEffort: mocks.setReasoningEffort },
+    git: {
+      pull: mocks.pull,
+      getBranches: mocks.getBranches,
+      branchStatus: vi.fn(async () => null),
+    },
+    drafts: {
+      get: vi.fn(async () => null),
+      set: vi.fn(async () => undefined),
+      clear: vi.fn(async () => undefined),
+    },
+  },
+}));
+
+vi.mock('$lib/client/live/live-prompt-enhancement', () => ({
+  enhancePrompt: vi.fn(async (p: string) => ({ enhanced: p })),
+  isEnhancePromptAvailable: vi.fn(() => true),
+}));
+
+vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
+  workspaceClient: { create: mocks.create, update: mocks.update },
+}));
+
+// The component gates git-dependent paths on `window.electronAPI` (provided by
+// test-setup) and `invoke('system:check-git')`, which must report git present
+// for the form to become valid.
+vi.mock('$lib/electron-bridge', () => ({
+  isElectron: vi.fn(() => true),
+  invoke: vi.fn(async (channel: string, ...args: unknown[]) => {
+    if (channel === 'system:check-git') {
+      return { success: true, data: { available: true, version: '2.44.0' } };
+    }
+    // The folder check runs against the real temp folders (registered per test).
+    if (channel === 'file:getDirectoryStatus') {
+      const { mockInvoke } = await import('$shared/ipc-mock-router');
+      return mockInvoke(channel, ...args);
+    }
+    return { success: true, data: null };
+  }),
+  listen: vi.fn(async () => () => {}),
+  listenSync: vi.fn(() => () => {}),
+  emit: vi.fn(async () => {}),
+}));
+
+vi.mock('$lib/components/ui/RichTextarea.svelte', async () => ({
+  default: (await import('./mocks/MockRichTextarea.svelte')).default,
+}));
+
+vi.mock('$lib/components/modals/PullConflictDialog.svelte', async () => ({
+  default: (await import('../initializer/__tests__/mocks/MockComponent.svelte')).default,
+}));
+
+vi.mock('$lib/components/modals/SetupScriptModal.svelte', async () => ({
+  default: (await import('../initializer/__tests__/mocks/MockComponent.svelte')).default,
+}));
+
+vi.mock('$lib/components/workspace/initializer/InitialAgentPicker.svelte', async () => ({
+  default: (await import('../initializer/__tests__/mocks/MockComponent.svelte')).default,
+}));
+
+vi.mock('$lib/components/workspace/initializer/IssueSuggestions.svelte', async () => ({
+  default: (await import('./mocks/MockIssueSuggestions.svelte')).default,
+  preloadIssues: vi.fn(),
+}));
+
+vi.mock('$lib/components/workspace/initializer/RepoAndBranchPicker.svelte', async () => ({
+  default: (await import('./mocks/MockRepoAndBranchPicker.svelte')).default,
+}));
+
+vi.mock('$store/renderer/slices/workspace-initializer/plain-folder-selectors', () => ({
+  selectPlainFolderCreationAvailable: () => plainFolder.available$,
+  selectInitializeGitDefaultState: () => plainFolder.defaultState$,
+}));
+
+vi.mock('$lib/components/workspace/initializer/plain-folder-confirm', () => ({
+  confirmPlainFolderInPlace: plainFolder.confirm,
+}));
+
+vi.mock('$lib/components/chat/AttachmentPreview.svelte', async () => ({
+  default: (await import('../initializer/__tests__/mocks/MockComponent.svelte')).default,
+}));
+
+vi.mock('svelte-fa', async () => ({
+  default: (await import('../initializer/__tests__/mocks/MockComponent.svelte')).default,
+}));
+
+import CompactWorkspaceInitializer from '../CompactWorkspaceInitializer.svelte';
+import { existsSync, mkdtempSync, mkdirSync, rmSync, statSync, readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { registerMockIpcHandler, resetMockIpcRouter } from '$shared/ipc-mock-router';
+import { m } from '$shared/paraglide/messages.js';
+import {
+  setCompactWorkspaceInitializerFormState,
+  setWorkspaceInitializerLastSelectedRepo,
+} from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+import { INITIALIZE_GIT_CHOICE_STORAGE_KEY } from '../initializer/plain-folder-create';
+
+type PickerCallbacks = {
+  onRepoChange: (event: { detail: Record<string, unknown> }) => void;
+  onBranchChange: (event: { detail: { branch: string } }) => void;
+};
+const picker = () =>
+  (window as unknown as { __mockRepoAndBranchPicker: PickerCallbacks }).__mockRepoAndBranchPicker;
+/** The git choice the dialog hands to the folder picker (rendered by the stand-in). */
+const toggle = () => screen.queryByTestId('picker-git-choice');
+/** The old switch row under the source summary. */
+const dialogSwitchRow = () =>
+  document.querySelector('[data-testid="initialize-git-toggle"]') ??
+  screen.queryByRole('switch', { name: m.workspace_plainFolder_initializeGit_label() });
+const registry = () => window as unknown as Record<string, unknown>;
+const folderOpens = () =>
+  (registry().__mockRepoAndBranchPickerFolderOpens as number | undefined) ?? 0;
+const folderOpenTabs = () =>
+  (registry().__mockRepoAndBranchPickerFolderOpenTabs as string[] | undefined) ?? [];
+const gitOnlyKeys = [
+  'githubUrl',
+  'branch',
+  'baseRef',
+  'isNewRepo',
+  'skipIsolation',
+  'setupScript',
+  'scope',
+];
+
+describe('New Workspace — plain-folder git choice (Labs)', () => {
+  let root: string;
+  let folder: string;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    delete registry().__mockRepoAndBranchPickerFolderOpens;
+    delete registry().__mockRepoAndBranchPickerFolderOpenTabs;
+    delete registry().__mockRepoAndBranchPickerGitChoiceTab;
+    vi.mocked(localStorage.getItem).mockImplementation(() => null);
+    plainFolder.available$.set(false);
+    plainFolder.defaultState$.set('pending');
+    plainFolder.gitAvailable$.set(true);
+    plainFolder.confirm.mockResolvedValue(true);
+    mocks.initializationOutcome$.set(undefined);
+    mocks.dispatch.mockImplementation(
+      createWorkspaceInitializationDispatchAdapter({
+        create: mocks.create,
+        pull: mocks.pull,
+        setOutcome: (outcome) => mocks.initializationOutcome$.set(outcome),
+      }),
+    );
+    sessionStorage.clear();
+    resetMockIpcRouter();
+    root = mkdtempSync(join(tmpdir(), 'workspace-plain-folder-'));
+    folder = join(root, 'notes');
+    mkdirSync(folder);
+    registerMockIpcHandler('file:getDirectoryStatus', async ({ path }: { path: string }) => {
+      let exists = true;
+      let isDirectory = false;
+      try {
+        isDirectory = statSync(path).isDirectory();
+      } catch {
+        exists = false;
+      }
+      return {
+        success: true,
+        data: {
+          path,
+          exists,
+          isDirectory,
+          isEmpty: exists && isDirectory ? readdirSync(path).length === 0 : true,
+          isGitRepo: exists && existsSync(join(path, '.git')),
+          isSubdirectoryOfGitRepo: false,
+        },
+      };
+    });
+    mocks.hydrated$.set(true);
+    mocks.lastSelectedRepo$.set(null);
+    mocks.formPersistence.enabled = false;
+    mocks.compactFormState$.set(null);
+    mocks.lastSubmittedAgent$.set(null);
+    mocks.specialists$.set([mocks.coordinator, mocks.developer]);
+    mocks.customSpecialistsLoaded$.set(true);
+    mocks.fileSpecialistsLoaded$.set(true);
+    mocks.create.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
+    mocks.getBranches.mockResolvedValue({
+      branches: ['main'],
+      remoteBranches: [],
+      defaultBranch: 'main',
+      currentBranch: 'main',
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    resetMockIpcRouter();
+    sessionStorage.clear();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  function mountDialog() {
+    sessionStorage.setItem('workspace-prefill', JSON.stringify({ prompt: 'Organize my notes' }));
+    return render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+  }
+
+  async function pick(detail: Record<string, unknown>) {
+    await waitFor(() => expect(picker()).toBeTruthy());
+    picker().onRepoChange({
+      detail: { type: 'local', isNewRepo: false, isValidPath: true, ...detail },
+    });
+  }
+
+  async function submit() {
+    const create = document.querySelector<HTMLButtonElement>('[data-dialog-primary-action]');
+    expect(create).toBeTruthy();
+    await waitFor(() => expect(create!.disabled).toBe(false));
+    await fireEvent.click(create!);
+  }
+
+  const setupScriptHidden = () =>
+    screen.getByTestId('initializer-setup-script').classList.contains('hidden');
+
+  it('with Labs off renders no toggle and keeps every git control', async () => {
+    plainFolder.defaultState$.set('off');
+    mountDialog();
+    await waitFor(() => expect(picker()).toBeTruthy());
+    expect(toggle()).toBeNull();
+    expect(screen.getByTestId('issue-suggestions')).toBeTruthy();
+    expect(setupScriptHidden()).toBe(false);
+    expect(screen.getByTestId('picker-plain-folder-mode').textContent).toBe('false');
+  });
+
+  it('stays hidden while the default is undecided', async () => {
+    plainFolder.available$.set(true);
+    mountDialog();
+    await waitFor(() => expect(picker()).toBeTruthy());
+    expect(toggle()).toBeNull();
+    expect(screen.getByTestId('picker-plain-folder-mode').textContent).toBe('false');
+  });
+
+  it('renders no git switch row under the source summary', async () => {
+    plainFolder.available$.set(true);
+    plainFolder.defaultState$.set('on');
+    mountDialog();
+    await waitFor(() => expect(toggle()).toBeTruthy());
+    expect(dialogSwitchRow()).toBeNull();
+  });
+
+  it('turning the choice off in Existing folder leads to the in-place warning', async () => {
+    plainFolder.available$.set(true);
+    plainFolder.defaultState$.set('on');
+    plainFolder.confirm.mockResolvedValue(false);
+    mountDialog();
+    const sw = await screen.findByTestId('picker-git-choice');
+    await fireEvent.click(sw);
+    await waitFor(() =>
+      expect(screen.getByTestId('picker-plain-folder-mode').textContent).toBe('true'),
+    );
+    await pick({ path: folder, plainFolder: 'existing' });
+    await waitFor(() =>
+      expect(screen.getByTestId('picker-plain-folder').textContent).toBe('existing'),
+    );
+    await submit();
+    await waitFor(() => expect(plainFolder.confirm).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  describe('the unsafe direction is impossible', () => {
+    it.each([
+      ['an existing folder', 'existing', false],
+      ['a new folder', 'new', true],
+    ])(
+      'with the choice on, %s pick never creates a plain folder',
+      async (_label, kind, isNewRepo) => {
+        plainFolder.available$.set(true);
+        plainFolder.defaultState$.set('on');
+        mountDialog();
+        await screen.findByTestId('picker-git-choice');
+        // Even a pick tagged as a plain folder is a git pick while the choice is on.
+        const target = isNewRepo ? join(root, 'pick') : folder;
+        await pick({ path: target, plainFolder: kind, isNewRepo });
+        // A git pick of an existing folder gets its branch from the branch selector.
+        if (!isNewRepo) picker().onBranchChange({ detail: { branch: 'main' } });
+        await waitFor(() =>
+          expect(screen.getByTestId('picker-repo-path').textContent).toBe(target),
+        );
+        expect(screen.getByTestId('picker-plain-folder').textContent).toBe('');
+        expect(screen.getByTestId('picker-plain-folder-mode').textContent).toBe('false');
+
+        await submit();
+        // The dispatched submission decides git vs plain folder.
+        const submission = await waitFor(() => {
+          const action = mocks.dispatch.mock.calls
+            .map(([a]) => a as { type?: string; payload?: { submission?: object } })
+            .find((a) => a?.type === 'workspaceInitializer/initializationSubmission');
+          expect(action?.payload?.submission).toBeTruthy();
+          return action!.payload!.submission as Record<string, unknown>;
+        });
+        expect(submission.repoPath).toBe(target);
+        expect(submission.plainFolder ?? null).toBeNull();
+        expect(plainFolder.confirm).not.toHaveBeenCalled();
+        for (const [params] of mocks.create.mock.calls)
+          expect((params as Record<string, unknown>).plainFolder).not.toBe(true);
+      },
+    );
+
+    it('with the choice off, every create from an existing folder shows the in-place warning first', async () => {
+      plainFolder.available$.set(true);
+      plainFolder.defaultState$.set('off');
+      plainFolder.confirm.mockResolvedValue(false);
+      mountDialog();
+      await screen.findByTestId('picker-git-choice');
+      await pick({ path: folder, plainFolder: 'existing' });
+
+      await submit();
+      await waitFor(() => expect(plainFolder.confirm).toHaveBeenCalledTimes(1));
+      await submit();
+      await waitFor(() => expect(plainFolder.confirm).toHaveBeenCalledTimes(2));
+      expect(mocks.create).not.toHaveBeenCalled();
+
+      plainFolder.confirm.mockResolvedValue(true);
+      await submit();
+      await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+      expect(plainFolder.confirm).toHaveBeenCalledTimes(3);
+      expect(mocks.create.mock.calls[0][0]).toMatchObject({ plainFolder: true });
+    });
+  });
+
+  it('defaults on with a forge or git workspace and keeps git behavior', async () => {
+    plainFolder.available$.set(true);
+    plainFolder.defaultState$.set('on');
+    mountDialog();
+    const sw = await screen.findByTestId('picker-git-choice');
+    expect(sw.getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByTestId('issue-suggestions')).toBeTruthy();
+    expect(setupScriptHidden()).toBe(false);
+  });
+
+  it('defaults off: hides branch, setup script and issue/PR suggestions', async () => {
+    plainFolder.available$.set(true);
+    plainFolder.defaultState$.set('off');
+    mountDialog();
+    const sw = await screen.findByTestId('picker-git-choice');
+    expect(sw.getAttribute('aria-checked')).toBe('false');
+    expect(screen.getByTestId('picker-plain-folder-mode').textContent).toBe('true');
+    expect(screen.queryByTestId('issue-suggestions')).toBeNull();
+    expect(setupScriptHidden()).toBe(true);
+  });
+
+  it('does not change a remembered choice when the default would differ', async () => {
+    vi.mocked(localStorage.getItem).mockImplementation((key) =>
+      key === INITIALIZE_GIT_CHOICE_STORAGE_KEY ? 'false' : null,
+    );
+    plainFolder.available$.set(true);
+    plainFolder.defaultState$.set('on');
+    mountDialog();
+    const sw = await screen.findByTestId('picker-git-choice');
+    expect(sw.getAttribute('aria-checked')).toBe('false');
+    await fireEvent.click(sw);
+    await waitFor(() => expect(sw.getAttribute('aria-checked')).toBe('true'));
+    expect(localStorage.setItem).toHaveBeenCalledWith(INITIALIZE_GIT_CHOICE_STORAGE_KEY, 'true');
+  });
+
+  it('warns before using an existing folder in place; cancel creates nothing', async () => {
+    plainFolder.available$.set(true);
+    plainFolder.defaultState$.set('off');
+    plainFolder.confirm.mockResolvedValue(false);
+    mountDialog();
+    await waitFor(() => expect(toggle()).toBeTruthy());
+    await pick({ path: folder, plainFolder: 'existing' });
+    await waitFor(() =>
+      expect(screen.getByTestId('picker-plain-folder').textContent).toBe('existing'),
+    );
+
+    await submit();
+    await waitFor(() => expect(plainFolder.confirm).toHaveBeenCalledTimes(1));
+    expect(plainFolder.confirm.mock.calls[0][0]).toBe(folder);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it('creates a plain-folder workspace in an existing folder after the warning', async () => {
+    plainFolder.available$.set(true);
+    plainFolder.defaultState$.set('off');
+    mountDialog();
+    await waitFor(() => expect(toggle()).toBeTruthy());
+    await pick({ path: folder, plainFolder: 'existing' });
+
+    await submit();
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    expect(plainFolder.confirm).toHaveBeenCalledTimes(1);
+    const params = mocks.create.mock.calls[0][0] as Record<string, unknown>;
+    expect(params).toMatchObject({ repositoryPath: folder, plainFolder: true });
+    for (const key of gitOnlyKeys) expect(params).not.toHaveProperty(key);
+  });
+
+  it('creates a new plain folder without the in-place warning', async () => {
+    plainFolder.available$.set(true);
+    plainFolder.defaultState$.set('off');
+    mountDialog();
+    await waitFor(() => expect(toggle()).toBeTruthy());
+    const target = join(root, 'new-project');
+    await pick({ path: target, plainFolder: 'new' });
+
+    await submit();
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    expect(plainFolder.confirm).not.toHaveBeenCalled();
+    expect(mocks.create.mock.calls[0][0]).toMatchObject({
+      repositoryPath: target,
+      plainFolder: true,
+    });
+  });
+
+  it('never sends a remote placement for a plain folder (no commit to start from)', async () => {
+    // Remote machines are on and the remembered Start On machine is usable.
+    admittedFixture.state = {
+      ...admittedFixture.state,
+      userPreferences: {
+        ...(admittedFixture.state.userPreferences as object),
+        labsRemoteAgentsEnabled: true,
+      },
+      remoteMachines: {
+        supported: true,
+        initialAgentPlacement: true,
+        machines: {
+          'node-mac': {
+            id: 'node-mac',
+            name: 'Mac mini',
+            hosts: [],
+            port: 7443,
+            fingerprint: 'fp',
+            state: 'connected',
+            runningAgents: 0,
+            addedAt: '2026-11-01T00:00:00Z',
+          },
+        },
+        localFingerprint: null,
+        executorBackends: null,
+        pending: {},
+        failures: {},
+      },
+    };
+    mocks.lastSubmittedAgent$.set({
+      selectedSpecialist: null,
+      isTeamMode: false,
+      startOnMachineId: 'node-mac',
+    } as never);
+    plainFolder.available$.set(true);
+    plainFolder.defaultState$.set('off');
+    mountDialog();
+    await waitFor(() => expect(toggle()).toBeTruthy());
+    await pick({ path: join(root, 'new-project'), plainFolder: 'new' });
+
+    await submit();
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    const params = mocks.create.mock.calls[0][0] as { initialAgent?: Record<string, unknown> };
+    expect(params).toMatchObject({ plainFolder: true });
+    expect(params.initialAgent).not.toHaveProperty('placement');
+  });
+
+  it('shows the daemon rejection when a plain folder turns out to be inside a git repository', async () => {
+    // The folder status was unavailable, so the daemon decides at create.
+    const rejection =
+      '/work/repo/notes is inside the git repository /work/repo; choose a folder outside any git repository or create a git workspace';
+    mocks.create.mockResolvedValue({
+      ok: false,
+      error: rejection,
+      errorCode: 'plain-folder-path-rejected',
+    });
+    plainFolder.available$.set(true);
+    plainFolder.defaultState$.set('off');
+    mountDialog();
+    await waitFor(() => expect(toggle()).toBeTruthy());
+    await pick({ path: join(root, 'new-project'), plainFolder: 'new' });
+
+    await submit();
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(rejection)).toBeTruthy();
+  });
+
+  it('a git subfolder pick with the switch off works in place, with no git-repo notice', async () => {
+    plainFolder.available$.set(true);
+    plainFolder.defaultState$.set('off');
+    mountDialog();
+    await waitFor(() => expect(toggle()).toBeTruthy());
+    await pick({ path: join(root, 'repo', 'docs'), scope: 'docs' });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('picker-skip-isolation').textContent).toBe('true'),
+    );
+    expect(screen.queryByTestId('plain-folder-git-notice')).toBeNull();
+    expect(screen.getByTestId('picker-plain-folder').textContent).toBe('');
+    expect(screen.getByTestId('issue-suggestions')).toBeTruthy();
+  });
+
+  it('drops a plain-folder pick when the choice is turned on and reopens that tab', async () => {
+    plainFolder.available$.set(true);
+    plainFolder.defaultState$.set('off');
+    mountDialog();
+    const sw = await screen.findByTestId('picker-git-choice');
+    await pick({ path: folder, plainFolder: 'existing' });
+    await waitFor(() => expect(screen.getByTestId('picker-repo-path').textContent).toBe(folder));
+
+    await fireEvent.click(sw);
+    await waitFor(() => expect(screen.getByTestId('picker-repo-path').textContent).toBe(''));
+    expect(screen.getByTestId('picker-plain-folder').textContent).toBe('');
+    await waitFor(() => expect(folderOpenTabs()).toEqual(['local']));
+  });
+
+  it('reopens folder selection on New when a new plain-folder pick is dropped there', async () => {
+    plainFolder.available$.set(true);
+    plainFolder.defaultState$.set('off');
+    (window as unknown as Record<string, unknown>).__mockRepoAndBranchPickerGitChoiceTab = 'new';
+    mountDialog();
+    const sw = await screen.findByTestId('picker-git-choice');
+    await pick({ path: join(root, 'new-project'), plainFolder: 'new' });
+    await waitFor(() => expect(screen.getByTestId('picker-plain-folder').textContent).toBe('new'));
+
+    await fireEvent.click(sw);
+    await waitFor(() => expect(screen.getByTestId('picker-repo-path').textContent).toBe(''));
+    await waitFor(() => expect(folderOpenTabs()).toEqual(['new']));
+  });
+
+  describe('with a GitHub or GitLab repository selected', () => {
+    const githubSaved = {
+      repoPath: 'acme/app',
+      repoType: 'github',
+      githubUrl: 'https://github.com/acme/app',
+      branch: 'main',
+      isValidPath: true,
+    };
+
+    // Regression: a GitHub repo restored from the last create hid the git
+    // choice, even after switching the repo picker to a folder tab.
+    it('hands the git choice to the picker for a GitHub repo restored from the last create', async () => {
+      mocks.compactFormState$.set(githubSaved);
+      plainFolder.available$.set(true);
+      plainFolder.defaultState$.set('on');
+      mountDialog();
+      await waitFor(() =>
+        expect(screen.getByTestId('picker-repo-type').textContent).toBe('github'),
+      );
+      const sw = await screen.findByTestId('picker-git-choice');
+      expect(sw.getAttribute('aria-checked')).toBe('true');
+      expect(dialogSwitchRow()).toBeNull();
+    });
+
+    it('shows the remembered choice in the folder tabs while a forge repo is selected', async () => {
+      vi.mocked(localStorage.getItem).mockImplementation((key) =>
+        key === INITIALIZE_GIT_CHOICE_STORAGE_KEY ? 'false' : null,
+      );
+      mocks.compactFormState$.set(githubSaved);
+      plainFolder.available$.set(true);
+      plainFolder.defaultState$.set('on');
+      mountDialog();
+      const sw = await screen.findByTestId('picker-git-choice');
+      expect(sw.getAttribute('aria-checked')).toBe('false');
+      expect(dialogSwitchRow()).toBeNull();
+    });
+
+    it('renders no git switch in the dialog for a GitHub clone pick', async () => {
+      plainFolder.available$.set(true);
+      plainFolder.defaultState$.set('off');
+      mountDialog();
+      await waitFor(() => expect(toggle()).toBeTruthy());
+      await pick({
+        path: 'acme/app',
+        type: 'github',
+        githubUrl: 'https://github.com/acme/app',
+      });
+      await waitFor(() =>
+        expect(screen.getByTestId('picker-repo-type').textContent).toBe('github'),
+      );
+      expect(dialogSwitchRow()).toBeNull();
+    });
+
+    it('turning the choice off in a folder tab keeps the GitHub repo until a folder is picked', async () => {
+      mocks.compactFormState$.set(githubSaved);
+      plainFolder.available$.set(true);
+      plainFolder.defaultState$.set('on');
+      mountDialog();
+      const sw = await screen.findByTestId('picker-git-choice');
+
+      await fireEvent.click(sw);
+      await waitFor(() => expect(sw.getAttribute('aria-checked')).toBe('false'));
+      expect(localStorage.setItem).toHaveBeenCalledWith(INITIALIZE_GIT_CHOICE_STORAGE_KEY, 'false');
+      expect(screen.getByTestId('picker-repo-type').textContent).toBe('github');
+      expect(screen.getByTestId('picker-repo-path').textContent).toBe('acme/app');
+      expect(folderOpens()).toBe(0);
+    });
+
+    // Accepted by design: git off in a folder tab, picker dismissed without a
+    // folder, GitHub repo still selected → a normal git clone, never a plain folder.
+    it('still clones the GitHub repo as git after the choice is turned off without a folder pick', async () => {
+      mocks.compactFormState$.set(githubSaved);
+      plainFolder.available$.set(true);
+      plainFolder.defaultState$.set('on');
+      mountDialog();
+      const sw = await screen.findByTestId('picker-git-choice');
+      await fireEvent.click(sw);
+      await waitFor(() => expect(sw.getAttribute('aria-checked')).toBe('false'));
+
+      // The summary keeps the clone selection (the real picker words it "Clone <repo> …").
+      expect(screen.getByTestId('picker-repo-type').textContent).toBe('github');
+      expect(screen.getByTestId('picker-github-url').textContent).toBe(
+        'https://github.com/acme/app',
+      );
+      expect(screen.getByTestId('picker-plain-folder').textContent).toBe('');
+      expect(screen.queryByTestId('plain-folder-git-notice')).toBeNull();
+      // Reopening the picker still shows the choice off for the folder tabs.
+      expect(screen.getByTestId('picker-git-choice').getAttribute('aria-checked')).toBe('false');
+
+      await submit();
+      await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+      expect(plainFolder.confirm).not.toHaveBeenCalled();
+      const params = mocks.create.mock.calls[0][0] as Record<string, unknown>;
+      expect(params.plainFolder).not.toBe(true);
+      expect(params).toMatchObject({ githubUrl: 'https://github.com/acme/app' });
+    });
+
+    it('turning the choice back on does not clear a local git repo pick', async () => {
+      plainFolder.available$.set(true);
+      plainFolder.defaultState$.set('on');
+      mountDialog();
+      const sw = await screen.findByTestId('picker-git-choice');
+      await pick({ path: folder });
+      await waitFor(() => expect(screen.getByTestId('picker-repo-path').textContent).toBe(folder));
+      await fireEvent.click(sw);
+      await fireEvent.click(sw);
+      expect(screen.getByTestId('picker-repo-path').textContent).toBe(folder);
+      expect(folderOpens()).toBe(0);
+    });
+  });
+
+  /**
+   * The switch's meaning depends on the picked folder (user decision):
+   * git repo — on: new branch in a separate worktree; off: in place on its
+   * current branch (the branch selector's isolation-off mode, one setting).
+   * Folder without git, or a new folder — on: git init in place, working on
+   * main with no new branch and no worktree; off: plain folder (warned).
+   */
+  describe('switch per folder type', () => {
+    const params = () => mocks.create.mock.calls[0][0] as Record<string, unknown>;
+    let repo: string;
+
+    beforeEach(() => {
+      repo = join(root, 'repo');
+      mkdirSync(repo);
+      registerMockIpcHandler('file:getDirectoryStatus', async ({ path }: { path: string }) => {
+        let exists = true;
+        let isDirectory = false;
+        try {
+          isDirectory = statSync(path).isDirectory();
+        } catch {
+          exists = false;
+        }
+        return {
+          success: true,
+          data: {
+            path,
+            exists,
+            isDirectory,
+            isEmpty: exists && isDirectory ? readdirSync(path).length === 0 : true,
+            isGitRepo: path === repo,
+            isSubdirectoryOfGitRepo: false,
+          },
+        };
+      });
+    });
+
+    async function pickGitRepo() {
+      await pick({ path: repo });
+      picker().onBranchChange({ detail: { branch: 'main' } });
+      await waitFor(() => expect(screen.getByTestId('picker-repo-path').textContent).toBe(repo));
+    }
+
+    it('git repo, switch on: a new branch in a separate worktree', async () => {
+      plainFolder.available$.set(true);
+      plainFolder.defaultState$.set('on');
+      mountDialog();
+      await screen.findByTestId('picker-git-choice');
+      await pickGitRepo();
+      expect(screen.getByTestId('picker-git-choice-folder').textContent).toBe('git-repo');
+      expect(toggle()!.getAttribute('aria-checked')).toBe('true');
+
+      await submit();
+      await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+      expect(params()).toMatchObject({ repositoryPath: repo, baseRef: 'main' });
+      expect(params().skipIsolation).toBeUndefined();
+      expect(params().plainFolder).toBeUndefined();
+    });
+
+    it('git repo, switch off: works in the folder on its current branch, no worktree', async () => {
+      plainFolder.available$.set(true);
+      plainFolder.defaultState$.set('off');
+      mountDialog();
+      await screen.findByTestId('picker-git-choice');
+      await pickGitRepo();
+      await waitFor(() =>
+        expect(screen.getByTestId('picker-skip-isolation').textContent).toBe('true'),
+      );
+      expect(screen.getByTestId('picker-git-choice-folder').textContent).toBe('git-repo');
+      expect(toggle()!.getAttribute('aria-checked')).toBe('false');
+
+      await submit();
+      await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+      expect(params()).toMatchObject({ repositoryPath: repo, skipIsolation: true, branch: 'main' });
+      expect(params().plainFolder).toBeUndefined();
+      expect(params().isNewRepo).toBe(false);
+      expect(plainFolder.confirm).not.toHaveBeenCalled();
+    });
+
+    it('the switch and the branch selector isolation option are one setting', async () => {
+      plainFolder.available$.set(true);
+      plainFolder.defaultState$.set('on');
+      mountDialog();
+      const sw = await screen.findByTestId('picker-git-choice');
+      await pickGitRepo();
+
+      await fireEvent.click(sw);
+      await waitFor(() =>
+        expect(screen.getByTestId('picker-skip-isolation').textContent).toBe('true'),
+      );
+      expect(sw.getAttribute('aria-checked')).toBe('false');
+      expect(localStorage.setItem).toHaveBeenCalledWith(INITIALIZE_GIT_CHOICE_STORAGE_KEY, 'false');
+      // The pick stays: a git repo is never dropped by the switch.
+      expect(screen.getByTestId('picker-repo-path').textContent).toBe(repo);
+      expect(folderOpens()).toBe(0);
+
+      // Turning isolation back on in the branch selector turns the switch on.
+      (
+        picker() as unknown as { onSkipIsolationChange: (value: boolean) => void }
+      ).onSkipIsolationChange(false);
+      await waitFor(() => expect(sw.getAttribute('aria-checked')).toBe('true'));
+      expect(screen.getByTestId('picker-skip-isolation').textContent).toBe('false');
+    });
+
+    it.each([
+      ['an existing folder without git', false],
+      ['a new folder', true],
+    ])(
+      'switch on, %s: git init in place, on main, with no new branch and no worktree',
+      async (_label, isNew) => {
+        plainFolder.available$.set(true);
+        plainFolder.defaultState$.set('on');
+        mountDialog();
+        await screen.findByTestId('picker-git-choice');
+        const target = isNew ? join(root, 'new-project') : folder;
+        await pick({ path: target, isNewRepo: true });
+        await waitFor(() =>
+          expect(screen.getByTestId('picker-skip-isolation').textContent).toBe('true'),
+        );
+
+        await submit();
+        await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+        expect(params()).toMatchObject({
+          repositoryPath: target,
+          isNewRepo: true,
+          skipIsolation: true,
+          baseRef: 'main',
+        });
+        // The row names the folder's real branch, not a generated one.
+        expect(params().branch).toBe('main');
+        expect(params().plainFolder).toBeUndefined();
+        expect(plainFolder.confirm).not.toHaveBeenCalled();
+      },
+    );
+
+    it('with Labs off, initializing git keeps today’s request', async () => {
+      plainFolder.defaultState$.set('off');
+      mountDialog();
+      await waitFor(() => expect(picker()).toBeTruthy());
+      await pick({ path: folder, isNewRepo: true });
+
+      await submit();
+      await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+      expect(params()).toMatchObject({ repositoryPath: folder, isNewRepo: true });
+      expect(params().skipIsolation).toBeUndefined();
+    });
+
+    it('tells the picker which kind of folder is picked', async () => {
+      plainFolder.available$.set(true);
+      plainFolder.defaultState$.set('off');
+      mountDialog();
+      await screen.findByTestId('picker-git-choice');
+      expect(screen.getByTestId('picker-git-choice-folder').textContent).toBe('');
+      await pick({ path: folder, plainFolder: 'existing' });
+      await waitFor(() =>
+        expect(screen.getByTestId('picker-git-choice-folder').textContent).toBe('folder'),
+      );
+    });
+  });
+
+  describe('Git not installed (Git not required without a forge)', () => {
+    const gitBanner = () => screen.queryByText('Git is not installed');
+
+    it('hides the banner and allows a plain-folder create with the toggle off', async () => {
+      plainFolder.gitAvailable$.set(false);
+      plainFolder.available$.set(true);
+      plainFolder.defaultState$.set('off');
+      mountDialog();
+      await waitFor(() => expect(toggle()).toBeTruthy());
+      await waitFor(() => expect(gitBanner()).toBeNull());
+      await pick({ path: folder, plainFolder: 'existing' });
+      expect(gitBanner()).toBeNull();
+      await submit();
+      await waitFor(() => expect(mocks.create).toHaveBeenCalled());
+    });
+
+    it('prompts to install Git for a git workspace (toggle on)', async () => {
+      plainFolder.gitAvailable$.set(false);
+      plainFolder.available$.set(true);
+      plainFolder.defaultState$.set('on');
+      mountDialog();
+      await waitFor(() => expect(toggle()).toBeTruthy());
+      expect(gitBanner()).toBeTruthy();
+      expect(screen.getByText('Download Git →')).toBeTruthy();
+      const create = document.querySelector<HTMLButtonElement>('[data-dialog-primary-action]');
+      expect(create?.disabled).toBe(true);
+    });
+
+    it('keeps the banner with Labs off', async () => {
+      plainFolder.gitAvailable$.set(false);
+      mountDialog();
+      await waitFor(() => expect(picker()).toBeTruthy());
+      expect(gitBanner()).toBeTruthy();
+    });
+  });
+  describe('remembers the last plain-folder selection', () => {
+    const rememberedPlain = () => ({
+      path: folder,
+      type: 'local',
+      isValidPath: true,
+      plainFolder: true,
+    });
+
+    function lastDispatched<T>(type: string): T | undefined {
+      const actions = mocks.dispatch.mock.calls
+        .map(([a]) => a as { type?: string; payload?: unknown[] })
+        .filter((a) => a?.type === type);
+      return actions.at(-1)?.payload?.[0] as T | undefined;
+    }
+
+    /** Create, then reopen the dialog from what the create remembered. */
+    async function createThenReopen(detail: Record<string, unknown>) {
+      mountDialog();
+      await waitFor(() => expect(toggle()).toBeTruthy());
+      await pick(detail);
+      await submit();
+      await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+      await waitFor(() =>
+        expect(lastDispatched(setWorkspaceInitializerLastSelectedRepo.type)).toBeTruthy(),
+      );
+      const remembered = lastDispatched<Record<string, unknown>>(
+        setWorkspaceInitializerLastSelectedRepo.type,
+      )!;
+      const formState = lastDispatched<Record<string, unknown>>(
+        setCompactWorkspaceInitializerFormState.type,
+      );
+      cleanup();
+      sessionStorage.clear();
+      mocks.dispatch.mockClear();
+      mocks.create.mockClear();
+      mocks.lastSelectedRepo$.set(remembered);
+      mocks.compactFormState$.set((formState ?? null) as never);
+      vi.mocked(localStorage.getItem).mockImplementation((key) =>
+        key === INITIALIZE_GIT_CHOICE_STORAGE_KEY ? 'false' : null,
+      );
+      reopenDialog();
+      return remembered;
+    }
+
+    /** A plain reopen: a prefill would take precedence over the remembered selection. */
+    const reopenDialog = () => render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+
+    beforeEach(() => {
+      mocks.create.mockResolvedValue({ ok: true, data: { workspace: { id: 'ws-1' } } });
+      mocks.formPersistence.enabled = true;
+      plainFolder.available$.set(true);
+      plainFolder.defaultState$.set('off');
+    });
+
+    it('reopens an Existing folder plain folder with the switch off', async () => {
+      const remembered = await createThenReopen({ path: folder, plainFolder: 'existing' });
+      expect(remembered).toMatchObject(rememberedPlain());
+      await waitFor(() =>
+        expect(screen.getByTestId('picker-plain-folder').textContent).toBe('existing'),
+      );
+      expect(screen.getByTestId('picker-repo-path').textContent).toBe(folder);
+      expect(screen.getByTestId('picker-git-choice').getAttribute('aria-checked')).toBe('false');
+    });
+
+    it('reopens a plain folder made with New as an existing folder', async () => {
+      const target = join(root, 'new-project');
+      mocks.create.mockImplementation(async () => {
+        mkdirSync(target);
+        return { ok: true, data: { workspace: { id: 'ws-1' } } };
+      });
+      const remembered = await createThenReopen({ path: target, plainFolder: 'new' });
+      expect(remembered).toMatchObject({ path: target, type: 'local', plainFolder: true });
+      await waitFor(() =>
+        expect(screen.getByTestId('picker-plain-folder').textContent).toBe('existing'),
+      );
+      expect(screen.getByTestId('picker-repo-path').textContent).toBe(target);
+      expect(screen.getByTestId('picker-git-choice').getAttribute('aria-checked')).toBe('false');
+    });
+
+    it('still asks for the in-place confirmation when creating in the restored folder', async () => {
+      mocks.lastSelectedRepo$.set(rememberedPlain());
+      plainFolder.confirm.mockResolvedValue(false);
+      reopenDialog();
+      await waitFor(() =>
+        expect(screen.getByTestId('picker-plain-folder').textContent).toBe('existing'),
+      );
+      await submit();
+      await waitFor(() => expect(plainFolder.confirm).toHaveBeenCalledTimes(1));
+      expect(plainFolder.confirm.mock.calls[0][0]).toBe(folder);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(mocks.create).not.toHaveBeenCalled();
+    });
+
+    it('keeps the plain folder selected when the dialog stays open after a create', async () => {
+      mountDialog();
+      await waitFor(() => expect(toggle()).toBeTruthy());
+      await pick({ path: folder, plainFolder: 'existing' });
+      await submit();
+      await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+      await waitFor(() =>
+        expect(lastDispatched(setCompactWorkspaceInitializerFormState.type)).toBeTruthy(),
+      );
+      expect(screen.getByTestId('picker-repo-path').textContent).toBe(folder);
+      expect(screen.getByTestId('picker-plain-folder').textContent).toBe('existing');
+      // The saved form state never reopens a plain folder as a git pick.
+      expect(
+        lastDispatched<Record<string, unknown>>(setCompactWorkspaceInitializerFormState.type),
+      ).toMatchObject({ repoPath: '' });
+      expect(
+        lastDispatched<Record<string, unknown>>(setWorkspaceInitializerLastSelectedRepo.type),
+      ).toMatchObject(rememberedPlain());
+    });
+
+    it('preselects nothing when the remembered folder no longer exists', async () => {
+      mocks.lastSelectedRepo$.set({ ...rememberedPlain(), path: join(root, 'gone') });
+      reopenDialog();
+      await waitFor(() => expect(toggle()).toBeTruthy());
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(screen.getByTestId('picker-repo-path').textContent).toBe('');
+      expect(screen.getByTestId('picker-plain-folder').textContent).toBe('');
+      expect(mocks.toastError).not.toHaveBeenCalled();
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+
+    it('preselects a remembered folder that has since become a git repo as a git repo', async () => {
+      mkdirSync(join(folder, '.git'));
+      mocks.lastSelectedRepo$.set(rememberedPlain());
+      reopenDialog();
+      await waitFor(() => expect(screen.getByTestId('picker-repo-path').textContent).toBe(folder));
+      expect(screen.getByTestId('picker-repo-type').textContent).toBe('local');
+      expect(screen.getByTestId('picker-plain-folder').textContent).toBe('');
+      await waitFor(() =>
+        expect(screen.getByTestId('picker-git-choice-folder').textContent).toBe('git-repo'),
+      );
+    });
+
+    it.each(['switch', 'folder'])(
+      'keeps a newer %s choice while restoration is pending',
+      async (choice) => {
+        const { invoke } = await import('$lib/electron-bridge');
+        const original = vi.mocked(invoke).getMockImplementation()!;
+        let resolveStatus!: (value: unknown) => void;
+        const pending = new Promise((resolve) => {
+          resolveStatus = resolve;
+        });
+        vi.mocked(invoke).mockImplementation((channel, ...args) =>
+          channel === 'file:getDirectoryStatus' ? pending : original(channel, ...args),
+        );
+        try {
+          mocks.lastSelectedRepo$.set(rememberedPlain());
+          reopenDialog();
+          await waitFor(() =>
+            expect(invoke).toHaveBeenCalledWith('file:getDirectoryStatus', { path: folder }),
+          );
+          if (choice === 'switch')
+            await fireEvent.click(await screen.findByTestId('picker-git-choice'));
+          else await pick({ path: join(root, 'newer'), plainFolder: 'existing' });
+          resolveStatus({
+            success: true,
+            data: { exists: true, isDirectory: true, isGitRepo: false },
+          });
+          await pending;
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          expect(screen.getByTestId('picker-repo-path').textContent).toBe(
+            choice === 'switch' ? '' : join(root, 'newer'),
+          );
+          if (choice === 'switch') expect(toggle()!.getAttribute('aria-checked')).toBe('true');
+        } finally {
+          vi.mocked(invoke).mockImplementation(original);
+        }
+      },
+    );
+
+    it('never restores a plain folder with Labs off', async () => {
+      plainFolder.available$.set(false);
+      mocks.lastSelectedRepo$.set(rememberedPlain());
+      reopenDialog();
+      await waitFor(() => expect(picker()).toBeTruthy());
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(screen.getByTestId('picker-repo-path').textContent).toBe('');
+      expect(screen.getByTestId('picker-plain-folder').textContent).toBe('');
+    });
+
+    it('keeps restoring a remembered git repo as today', async () => {
+      mocks.lastSelectedRepo$.set({ path: folder, type: 'local', isValidPath: true });
+      reopenDialog();
+      await waitFor(() => expect(screen.getByTestId('picker-repo-path').textContent).toBe(folder));
+      expect(screen.getByTestId('picker-plain-folder').textContent).toBe('');
+      expect(screen.getByTestId('picker-git-choice-folder').textContent).toBe('git-repo');
+    });
+
+    it('keeps restoring a remembered GitHub repo as today', async () => {
+      mocks.lastSelectedRepo$.set({
+        path: 'acme/app',
+        type: 'github',
+        githubUrl: 'https://github.com/acme/app',
+        isValidPath: true,
+      });
+      reopenDialog();
+      await waitFor(() =>
+        expect(screen.getByTestId('picker-repo-type').textContent).toBe('github'),
+      );
+      expect(screen.getByTestId('picker-repo-path').textContent).toBe('acme/app');
+      expect(screen.getByTestId('picker-plain-folder').textContent).toBe('');
+    });
+  });
+});

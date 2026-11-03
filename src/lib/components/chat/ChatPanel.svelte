@@ -330,6 +330,7 @@
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import AttentionRequestBanner from './AttentionRequestBanner.svelte';
+  import AgentPlacementNotice from '$features/remote-machines/AgentPlacementNotice.svelte';
   import {
     getMessageNavigationStartScrollTop,
     getUserMessageNavigationItems,
@@ -467,6 +468,7 @@
   import { getQueueSurfaceAuthors } from '$lib/utils/message-authorship';
   import { isAutomatedChatMessage } from '$lib/utils/previous-user-message';
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
+  import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
   import { store as appStore } from '$store/renderer/store';
   import { rememberWorkspaceInitializerRecentSpecialist } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import { getEffectiveShortcut } from '$lib/utils/effective-shortcuts';
@@ -1020,6 +1022,7 @@
     specialistId?: string;
     setupScript?: string;
     skipWorktree?: boolean;
+    plainFolder?: boolean;
   } | null>(null);
 
   function handleFocusSetupTerminal() {
@@ -4447,6 +4450,7 @@
           // (PROTOCOL §5.25); the card renders the script text.
           setupScript: workspaceSetupScriptText(workspace.setupScript),
           skipWorktree: workspace.skipWorktree,
+          plainFolder: isPlainFolderWorkspace(workspace),
         };
         // `setupScript` is detail-only (absent from slim `workspace.list`
         // rows), so an undefined value on the list-backed prop does not mean
@@ -5915,10 +5919,10 @@
   /**
    * Providers we can offer as a quota retry target: the
    * "enabled ∧ visible ∧ probe-available ∧ signed-in" set minus the provider
-   * that just ran out (`selectQuotaRetryProviderIds`). Offering the exhausted
-   * one back would only reproduce the same failure, a signed-out one would be
-   * a dead end, and an empty list makes StreamingStatus fall back to the plain
-   * error banner rather than dangling a dead action.
+   * that just ran out (`selectQuotaRetryProviderIds`). The exhausted one is
+   * covered by the banner's plain Retry (limits reset), a signed-out one would
+   * be a dead end, and an empty list makes StreamingStatus fall back to the
+   * plain error banner rather than dangling a dead action.
    */
   const quotaRetryProviders = $derived.by(() => {
     const quota = $chatQuotaExceeded$;
@@ -6677,6 +6681,7 @@
                 ? handleFocusSetupTerminal
                 : undefined}
               skipIsolation={onboardingContext.skipWorktree}
+              plainFolder={onboardingContext.plainFolder}
             />
           </div>
         {:else if shouldShowTranscriptSkeleton( { isFirstHydrationLoading, hasSession: Boolean($agentSession$), hydrationSettled: $transcriptHydration$ === 'settled', hasMessages: $agentMessages$.length > 0 || pendingConversationMessages.length > 0, isStreaming: $agentSessionIsStreaming$, hasPendingInitialPrompt: Boolean(pendingInitialPrompt) } )}
@@ -6719,6 +6724,7 @@
                         ? handleFocusSetupTerminal
                         : undefined}
                       skipIsolation={onboardingContext.skipWorktree}
+                      plainFolder={onboardingContext.plainFolder}
                     />
                   </div>
                 {/if}
@@ -6842,6 +6848,7 @@
                         ? handleFocusSetupTerminal
                         : undefined}
                       skipIsolation={onboardingContext.skipWorktree}
+                      plainFolder={onboardingContext.plainFolder}
                     />
                   </div>
                 {/if}
@@ -7026,6 +7033,7 @@
                       ? handleFocusSetupTerminal
                       : undefined}
                     skipIsolation={onboardingContext.skipWorktree}
+                    plainFolder={onboardingContext.plainFolder}
                   />
                 </div>
               {/if}
@@ -7580,6 +7588,7 @@
         {/if}
 
         {#if workspace?.id && agentId}
+          <AgentPlacementNotice {agentId} />
           <AttentionRequestBanner {agentId} />
         {/if}
 
@@ -7646,9 +7655,15 @@
                 />
               {/if}
               <div>
+                <!-- Above a visible queue card, the final pending row keeps its turn
+                     gap even without a working status so it never sits flush on the
+                     card. Without a queue it stays unpadded so confirmation does not
+                     shift the bottom-aligned row. -->
                 <div
                   class="w-full"
-                  class:mb-6={ownsStatus}
+                  class:mb-6={ownsStatus ||
+                    (queuedMessagesVisibility.showQueue &&
+                      index === pendingConversationMessages.length - 1)}
                   data-message-id={message.id}
                   data-message-role="user"
                   data-send-app-message-id={message.appMessageId}

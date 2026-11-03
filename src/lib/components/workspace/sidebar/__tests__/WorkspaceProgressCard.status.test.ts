@@ -1,10 +1,11 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, fireEvent, waitFor, screen } from '@testing-library/svelte';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { render, fireEvent, waitFor, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import type { Note, Workspace } from '$shared/types';
+import type { GuestSessionRecord } from '$shared/types/guest-sessions';
 import { WorkspaceStatusEnum } from '$shared/types';
 import type { LiveClient, WorkspaceBrowserClient } from '$shared/types/browser-clients';
 import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
@@ -98,7 +99,13 @@ const mocks = vi.hoisted(() => {
       { select: getter },
     );
   const notifySelectors = () => selectorSubscribers.forEach((notify) => notify());
-  const role = { hidesOwnerActions: false, context: 'backend-a:principal-a' };
+  const role = {
+    hidesOwnerActions: false,
+    context: 'backend-a:principal-a',
+    canLeave: false,
+    leaving: false,
+    guestSession: null as GuestSessionRecord | null,
+  };
   return {
     role,
     dispatch,
@@ -137,6 +144,23 @@ vi.mock('$store/renderer/store', async () => {
     dispatch: mocks.dispatch,
   });
 });
+
+vi.mock('$store/renderer/slices/guest-sessions/guest-sessions-selectors', () => ({
+  selectCanLeaveWorkspace: mocks.selector(() => mocks.role.canLeave),
+  selectIsLeavingWorkspace: mocks.selector(() => mocks.role.leaving),
+  selectWindowGuestSession: mocks.selector(() => mocks.role.guestSession),
+}));
+
+vi.mock('$store/renderer/slices/guest-sessions/guest-sessions-slice', () => ({
+  guestLeaveConfirmed: vi.fn((confirmation: unknown) => ({
+    type: 'guestSessions/leaveConfirmed',
+    payload: [confirmation],
+  })),
+  leaveGuestWorkspaceRequested: vi.fn((id: string, workspaceId: string) => ({
+    type: 'guestSessions/leaveWorkspaceRequested',
+    payload: [id, workspaceId],
+  })),
+}));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectCanSetWorkspacePrimaryClient: mocks.selector(() => !mocks.role.hidesOwnerActions),
@@ -369,6 +393,9 @@ describe('WorkspaceProgressCard status message', () => {
     mocks.storeState.browserClients = browserClientsInitialState;
     mocks.storeState.userPreferences = undefined;
     mocks.role.hidesOwnerActions = false;
+    mocks.role.canLeave = false;
+    mocks.role.leaving = false;
+    mocks.role.guestSession = null;
     delete mocks.workspaceEntity.canManage;
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText: mocks.clipboardWrite },
@@ -509,6 +536,173 @@ describe('WorkspaceProgressCard status message', () => {
 
     expect(screen.queryByRole('button', { name: 'Share…' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Transfer/Download…' })).toBeNull();
+  });
+
+  describe('Leave (guest window)', () => {
+    const baseDispatch = mocks.dispatch.getMockImplementation()!;
+    afterEach(() => {
+      mocks.dispatch.mockImplementation(baseDispatch);
+    });
+
+    const GUEST_SESSION = {
+      id: 'guest-1',
+      label: 'studio.local',
+      host: '10.0.0.7',
+      hosts: ['10.0.0.7'],
+      port: 8443,
+      fingerprint: 'AB:CD',
+      tcAddress: null,
+      hostname: 'studio.local',
+      principalId: 'principal-guest',
+      login: 'octocat',
+      tokenEncrypted: true,
+      hostRole: 'guest',
+      pairedAt: 100,
+      workspaces: [{ id: 'ws-1', title: 'Active Workspace' }],
+      updatedAt: 1,
+    } as GuestSessionRecord;
+
+    function asGuest() {
+      mocks.storeState.userPreferences = { labsMultiplayerEnabled: true };
+      mocks.role.hidesOwnerActions = true;
+      mocks.role.canLeave = true;
+      mocks.role.guestSession = GUEST_SESSION;
+    }
+
+    async function openLeaveDialog() {
+      const view = await renderProgressCard({ myRole: 'collaborator' });
+      await fireEvent.click(view.container.querySelector('[data-workspace-actions-trigger]')!);
+      await fireEvent.click(screen.getByRole('button', { name: 'Leave…' }));
+      return view;
+    }
+
+    async function confirmLeave() {
+      const dialog = await screen.findByRole('dialog');
+      expect(dialog.textContent).toContain('Leave this workspace?');
+      expect(dialog.textContent).toContain('Active Workspace');
+      await fireEvent.click(within(dialog).getByRole('button', { name: 'Leave', exact: true }));
+    }
+
+    const leaveRequested = {
+      type: 'guestSessions/leaveWorkspaceRequested',
+      payload: ['guest-1', 'ws-1'],
+    };
+
+    it('offers Leave in place of Share, after a divider, for a guest who can leave', async () => {
+      asGuest();
+      const { container } = await renderProgressCard({ myRole: 'collaborator' });
+      await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+
+      const leave = screen.getByRole('button', { name: 'Leave…' });
+      expect(screen.queryByRole('button', { name: 'Share…' })).toBeNull();
+      expect(leave.dataset.iconName).toBe('right-from-bracket');
+      const items = Array.from(leave.parentElement!.children);
+      expect(items[items.indexOf(leave) - 1]?.getAttribute('data-testid')).toBe('menu-divider');
+    });
+
+    it('does not offer Leave when the window cannot leave this workspace', async () => {
+      mocks.role.hidesOwnerActions = true;
+      const { container } = await renderProgressCard({ myRole: 'collaborator' });
+      await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+
+      expect(screen.queryByRole('button', { name: 'Leave…' })).toBeNull();
+    });
+
+    it('shows a disabled Leaving… item while a leave is in flight', async () => {
+      asGuest();
+      mocks.role.leaving = true;
+      const { container } = await renderProgressCard({ myRole: 'collaborator' });
+      await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+
+      const leaving = screen.getByRole('button', { name: 'Leaving…' }) as HTMLButtonElement;
+      expect(leaving.disabled).toBe(true);
+    });
+
+    it('asks for confirmation, then records it and leaves through the guest-sessions flow', async () => {
+      asGuest();
+      await openLeaveDialog();
+      expect(mocks.dispatch).not.toHaveBeenCalledWith(leaveRequested);
+
+      await confirmLeave();
+
+      await waitFor(() => expect(mocks.dispatch).toHaveBeenCalledWith(leaveRequested));
+      expect(mocks.dispatch).toHaveBeenCalledWith({
+        type: 'guestSessions/leaveConfirmed',
+        payload: [
+          expect.objectContaining({
+            id: 'guest-1',
+            workspaceId: 'ws-1',
+            context: 'backend-a:principal-a',
+          }),
+        ],
+      });
+      expect(mocks.toastError).not.toHaveBeenCalled();
+    });
+
+    it('sends nothing when the dialog is cancelled', async () => {
+      asGuest();
+      await openLeaveDialog();
+      const dialog = await screen.findByRole('dialog');
+      await fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+      expect(mocks.dispatch).not.toHaveBeenCalledWith(leaveRequested);
+    });
+
+    it('sends nothing when the identity changed while the dialog was open', async () => {
+      asGuest();
+      await openLeaveDialog();
+      mocks.role.context = 'backend-a:principal-b';
+      try {
+        await confirmLeave();
+      } finally {
+        mocks.role.context = 'backend-a:principal-a';
+      }
+
+      expect(mocks.dispatch).not.toHaveBeenCalledWith(leaveRequested);
+    });
+
+    it('reports a failed leave, but stays quiet on a cancelled one', async () => {
+      asGuest();
+      const { GuestSessionOperationError } =
+        await import('$store/renderer/slices/guest-sessions/guest-sessions-types');
+      for (const [code, toasts] of [
+        ['ipc', 1],
+        ['cancelled', 0],
+      ] as const) {
+        mocks.toastError.mockReset();
+        mocks.dispatch.mockImplementation(((action: { type: string }) =>
+          action.type === leaveRequested.type
+            ? Promise.reject(new GuestSessionOperationError(code))
+            : action) as typeof mocks.dispatch);
+        const view = await openLeaveDialog();
+        await confirmLeave();
+        await waitFor(() => expect(mocks.dispatch).toHaveBeenCalledWith(leaveRequested));
+        await tick();
+        expect(mocks.toastError).toHaveBeenCalledTimes(toasts);
+        view.unmount();
+        mocks.dispatch.mockClear();
+      }
+      expect(mocks.toastError).not.toHaveBeenCalledWith(expect.stringContaining('studio'));
+    });
+
+    it('explains a leave refused because access is inherited through host membership', async () => {
+      asGuest();
+      mocks.dispatch.mockImplementation(((action: { type: string }) =>
+        action.type === leaveRequested.type
+          ? Promise.resolve({
+              id: 'guest-1',
+              workspaceId: 'ws-1',
+              left: false,
+              refused: 'host-membership-required',
+            })
+          : action) as typeof mocks.dispatch);
+      await openLeaveDialog();
+      await confirmLeave();
+
+      await waitFor(() =>
+        expect(mocks.toastError).toHaveBeenCalledWith(m.collaboration_workspace_inherited_error()),
+      );
+    });
   });
 
   it('offers Transfer, Archive and Delete to the workspace owner', async () => {
@@ -1316,4 +1510,61 @@ describe('WorkspaceProgressCard primary browser client', () => {
       );
     },
   );
+});
+
+describe('WorkspaceProgressCard plain-folder workspaces', () => {
+  beforeEach(() => {
+    mocks.dispatch.mockClear();
+    mocks.notes.length = 0;
+    mocks.progressActions.length = 0;
+    mocks.progressActions.push({
+      id: 'merge-pr',
+      label: 'Merge PR',
+      iconKey: 'code-pull-request',
+      url: 'https://github.com/augment/intent/pull/7',
+    });
+    mocks.storeState.browserClients = browserClientsInitialState;
+    mocks.storeState.userPreferences = undefined;
+    mocks.role.hidesOwnerActions = false;
+  });
+
+  it('hides the branch, git workflow action, Transfer and the Plain folder pill', async () => {
+    const { container } = await renderProgressCard({
+      plainFolder: true,
+      branch: '',
+      baseRef: undefined,
+      repositoryOwner: undefined,
+      repositoryName: undefined,
+      repositoryPath: '/Users/me/Documents/Notes',
+    });
+
+    expect(container.querySelector('[data-sidebar-branch-control]')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Merge PR' })).toBeNull();
+    expect(container.querySelector('[data-plain-folder-label]')).toBeNull();
+    expect(screen.queryByText('Plain folder')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Notes' })).toBeTruthy();
+
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+    expect(screen.queryByRole('button', { name: 'Transfer/Download…' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Archive Workspace' })).toBeTruthy();
+  });
+
+  it('keeps the branch, git workflow action and Transfer for a git workspace', async () => {
+    const { container } = await renderProgressCard({
+      plainFolder: undefined,
+      branch: 'feature/status',
+      repositoryOwner: 'augment',
+      repositoryName: 'intent',
+      repositoryPath: undefined,
+    });
+
+    expect(container.querySelector('[data-sidebar-branch-control]')?.textContent).toContain(
+      'feature/status',
+    );
+    expect(screen.getByRole('button', { name: 'Merge PR' })).toBeTruthy();
+    expect(container.querySelector('[data-plain-folder-label]')).toBeNull();
+
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+    expect(screen.getByRole('button', { name: 'Transfer/Download…' })).toBeTruthy();
+  });
 });

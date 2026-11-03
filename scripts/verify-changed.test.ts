@@ -33,7 +33,7 @@ import {
   verificationLockKey,
   vitestExcludePatterns,
 } from './verify-changed.mjs';
-import { HELD_LOCK_ENV, lockOwner } from './verification-lock.mjs';
+import { HELD_LOCK_ENV, lockOwner, worktreeCtPort } from './verification-lock.mjs';
 import { createCtGateFixture } from './test-fixtures/ct-gate.mjs';
 import { loadTransferSelectionFixtures } from './transfer-selection-fixtures.mjs';
 
@@ -1491,10 +1491,14 @@ describe('verification planning', () => {
       'src/lib/component-catalog/catalog.ts': '',
       'src/foo.test.ts': '',
       'src/lib/example.ts': '',
+      'playwright/ct-port.ts': '',
+      'playwright/ct-port.test.ts': '',
+      'playwright/root-harness-import-guard.test.ts': '',
     });
     const ids = (files: string[]) =>
       createVerificationPlan(files, { root, ctTests: [] }).checks.map((check) => check.id);
     for (const file of [
+      'playwright/ct-port.ts',
       'src/lib/styles/tokens.css',
       'src/lib/styles/removed.css',
       'src/app.css',
@@ -1515,10 +1519,14 @@ describe('verification planning', () => {
       'src/lib/component-catalog/catalog.ts',
       'src/lib/component-catalog/geometry-probe.ts',
       'scripts/verify-changed.mjs',
+      // cloudlands-fe#4060: Vitest suites under playwright/ are not harness inputs.
+      'playwright/ct-port.test.ts',
+      'playwright/root-harness-import-guard.test.ts',
     ]) {
       expect(ids([file]), file).not.toContain('ct-full');
       expect(ids([file]), file).not.toContain('ct-related');
     }
+    expect(ids(['playwright/ct-port.test.ts'])).toContain('vitest-direct');
   });
 
   it('keeps CT specs and their imported previews on the related lane, not the full suite', () => {
@@ -1726,6 +1734,15 @@ describe('verification planning', () => {
     expect(plan.checks.map((check) => check.id)).toContain('ct-related');
     expect(plan.checks.map((check) => check.id)).toContain('svelte-check');
   });
+
+  it.each(['tsconfig.json', 'scripts/run-svelte-check.mjs'])(
+    'runs svelte-check when its own input %s changes',
+    (file) => {
+      const root = fixtureRoot({ [file]: '{}' });
+      const plan = createVerificationPlan([file], { root });
+      expect(plan.checks.map((check) => check.id)).toContain('svelte-check');
+    },
+  );
 
   it.each(['edit', 'delete', 'rename'])(
     'keeps a fixture %s on the focused component lane',
@@ -2206,6 +2223,32 @@ describe('verification planning', () => {
     expect(related?.args).toContain('playwright/ct-spec-pattern.mjs');
   });
 
+  it.each([
+    ['a shared test helper', 'tests/helpers/contrast.ts'],
+    ['a nested test helper', 'tests/member-controls/harness.ts'],
+    ['a lint rule', 'eslint-rules/no-example.js'],
+    ['a lint rule library', 'eslint-rules/lib/scope.js'],
+  ])('feeds %s to vitest related so the suites importing it run', (_name, file) => {
+    const root = fixtureRoot({ [file]: 'export const value = 1;' });
+    const plan = createVerificationPlan([file], { root, ctTests: [], declaredSuites: [] });
+    const related = plan.checks.find((check) => check.id === 'vitest-related');
+    expect(related?.args.slice(-1)).toEqual([file]);
+    expect(plan.checks.map((check) => check.id)).not.toContain('vitest-full');
+    expect(plan.fallbackReasons).toEqual([]);
+  });
+
+  it('keeps tests, integration helpers and data files out of the related lane', () => {
+    const files = [
+      'tests/unit/example.test.ts',
+      'eslint-rules/no-example.test.js',
+      'tests/integration/helpers/server.ts',
+      'eslint-rules/baselines/no-example.json',
+    ];
+    const root = fixtureRoot(Object.fromEntries(files.map((file) => [file, ''])));
+    const plan = createVerificationPlan(files, { root, ctTests: [], declaredSuites: [] });
+    expect(plan.checks.map((check) => check.id)).not.toContain('vitest-related');
+  });
+
   it('runs the whole Playwright browser suite when its config changes', () => {
     const root = fixtureRoot({ 'playwright.config.ts': '', 'test/a.spec.ts': '' });
     const plan = createVerificationPlan(['playwright.config.ts', 'test/a.spec.ts'], {
@@ -2587,11 +2630,18 @@ describe('expensive-check coordination', () => {
   });
 
   it('uses per-kind keys and bounded default waits', () => {
-    expect(verificationLockKey(testCheck('ct', 'ct'), {})).toBe('ct-3100');
+    const worktreeKey = `ct-${worktreeCtPort()}`;
+    expect(worktreeKey).not.toBe('ct-3100');
+    expect(verificationLockKey(testCheck('ct', 'ct'), {})).toBe(worktreeKey);
     expect(verificationLockKey(testCheck('ct', 'ct'), { CT_PORT: '03101' })).toBe('ct-3101');
     expect(verificationLockKey(testCheck('ct', 'ct'), { CT_PORT: ' 3102 ' })).toBe('ct-3102');
-    expect(verificationLockKey(testCheck('ct', 'ct'), { CT_PORT: '' })).toBe('ct-3100');
-    expect(verificationLockKey(testCheck('ct', 'ct'), { CT_PORT: ' ' })).toBe('ct-3100');
+    expect(verificationLockKey(testCheck('ct', 'ct'), { CT_PORT: '3100' })).toBe('ct-3100');
+    expect(verificationLockKey(testCheck('ct', 'ct'), { CT_PORT: '' })).toBe(worktreeKey);
+    expect(verificationLockKey(testCheck('ct', 'ct'), { CT_PORT: ' ' })).toBe(worktreeKey);
+    expect(verificationLockKey(testCheck('ct', 'ct'), { CI: 'true' })).toBe('ct-3100');
+    expect(verificationLockKey(testCheck('ct', 'ct'), { CI: 'true', CT_PORT: '3999' })).toBe(
+      'ct-3999',
+    );
     expect(verificationLockKey(testCheck('vitest', 'vitest-full'), {})).toBe('vitest-full');
     expect(verificationLockKey(testCheck('tsc', null), {})).toBeNull();
     expect(lockTimeout('ct-3100', undefined)).toBe(240_000);

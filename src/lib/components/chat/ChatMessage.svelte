@@ -16,9 +16,12 @@
     faUser,
     faTerminal,
     faPlay,
+    faFolder,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { memberMentionLabel, memberMentionSubtitle } from '$lib/utils/member-mention-token';
+  import { folderSidebarTarget } from '$lib/services/mentions/chip';
+  import { locateItemInSidebarRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { Button } from '$lib/components/ui/button';
   import { onDestroy } from 'svelte';
   import StreamingMessageContent from './StreamingMessageContent.svelte';
@@ -158,6 +161,13 @@
     const workspaceId = getOwningWorkspaceId();
     if (!workspaceId) return;
     appStore.dispatch(openWorkspaceFile(workspaceId, path, getPanelOptions(event, line)));
+  }
+
+  function revealChatFolder(path: string) {
+    if (readOnly || !canOpenAgentPath(appStore.state, agentId)) return;
+    const workspaceId = getOwningWorkspaceId();
+    if (!workspaceId) return;
+    appStore.dispatch(locateItemInSidebarRequested(workspaceId, folderSidebarTarget(path)));
   }
 
   function openChatNote(noteId: string, event?: MouseEvent) {
@@ -746,6 +756,15 @@
           label: mention.name,
           id: mention.id,
           icon: mention.kind === 'terminal' ? faTerminal : faPlay,
+        });
+      } else if (decoded.kind === 'folder') {
+        segments.push({
+          type: 'mention',
+          mentionType: 'folder',
+          label: decoded.label,
+          id: decoded.path,
+          icon: faFolder,
+          path: decoded.path,
         });
       } else {
         segments.push({
@@ -1928,6 +1947,8 @@
                                 event: e,
                               });
                             }
+                          } else if (segment.path && segment.mentionType === 'folder') {
+                            revealChatFolder(segment.path);
                           } else if (segment.path) {
                             openChatFile(segment.path, e, segment.line);
                           } else if (segment.noteId) {

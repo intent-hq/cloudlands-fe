@@ -139,6 +139,11 @@ corepack pnpm run test:playwright
 A test that budgets wall time (perf guards, alignment work bounds) must fit its timeout
 under CI runner load, not just in isolation — the local 30 s `testTimeout` by default
 (`vitest.config.ts` raises it to 60 s on CI, from `scripts/vitest-timeouts.mjs`) or the documented per-test budget; catalog contract entries derive theirs from their snapshot size (`src/lib/component-catalog/catalog-contract-budget.ts`).
+Testing Library waits and `vi.waitFor` / `vi.waitUntil` default to half that budget
+(`src/test-setup.ts`). `intent/no-fixed-wait-timeout-in-tests` (in `pnpm run lint`) flags a
+fixed `timeout` on them, and a fixed per-test limit that would cut off such a wait, and
+names the escape hatches; deliberate cases are baselined under
+`eslint-rules/baselines/no-fixed-wait-timeout-in-tests/`.
 `intent/no-wall-clock-assertions-in-tests` (in `pnpm run lint`) flags a raw
 `performance.now()` / `Date.now()` elapsed-time assertion against a millisecond budget and
 names the alternatives; today's offenders are baselined under
@@ -248,10 +253,11 @@ For focused browser validation, run:
 corepack pnpm run test:ct -- src/features/agent/components/agent-avatar/__tests__/agent-avatar-waiting.ct.spec.ts
 ```
 
-The CT harness defaults to port 3100 (the `CT_PORT` env var overrides it). A run holds
-the host-wide `ct-<CT_PORT>` lock, so a second run on an occupied port waits for the
-first instead of reusing its server; set a free `CT_PORT` to run concurrently (see
-[Verification](#verification)). The port also keys the generated bundle cache
+Without `CT_PORT`, each worktree gets its own CT port, hashed from its package path into
+10100-14099 (CI keeps 3100); the run's `waiting … for ct-<port> lock` line names it. An
+explicit `CT_PORT` always wins. A run holds
+the host-wide `ct-<port>` lock, so a second run on the same port waits for the first
+instead of reusing its server (see [Verification](#verification)). An explicit port also keys the generated bundle cache
 (`playwright/.cache-<CT_PORT>`; bare `playwright/.cache` when unset), so per-port runs are
 isolated for server, lock, and cache — including within one worktree. The run exits with Playwright's
 status as soon as the tests finish — the HTML report is written to `playwright-report/`
@@ -301,7 +307,19 @@ run the dev Electron FE on a machine with a display using `pnpm run dev:cdp` (se
 first free port from 9223, so read the actual value from its output, e.g.
 `CDP targets: http://127.0.0.1:<port>/json/list` — and every webContents — app window
 and embedded tabs — is a target) and attach CDP locally. See
-`../../docs/fe/CDP_MCP_TOOLS.md`. This loop is unavailable on a headless remote host.
+`../../docs/fe/CDP_MCP_TOOLS.md`.
+
+On a headless remote host, run the built app instead: `pnpm run build`, then
+`pnpm run electron:headless -- --route '/settings?tab=devices'`
+([`scripts/headless-electron.mjs`](scripts/headless-electron.mjs)). On Linux without a
+display it re-runs under `xvfb-run -a` (install the `xvfb` package if missing). It
+launches the production build with a throwaway `--user-data-dir` profile, connects to the
+existing daemon (`--socket`, else `INTENTD_SOCKET` or the platform default; no sidecar is
+spawned), prints `screenshot: <path>` and exits 0. `--wait-for <css>` gates the capture,
+and `--check <module>` runs a default-exported `async ({ app, page, route })` against the
+live app (a throw exits 1); `--help` lists the rest. The renderer talks to the real daemon,
+so actions in a check change real daemon state. This found three main-process bugs that
+unit tests missed during the Browser access work (cloudlands-fe#4017).
 
 ### Caveats
 
@@ -376,9 +394,10 @@ for renderer changes, and `lint:architecture` for `src/`, `AGENTS.md` and
 Lane selection in detail: [What verify:changed selects](../../docs/fe/DEVELOPER_GUIDE.md#what-verifychanged-selects).
 Rules that follow from it:
 
-- A suite that reads the tree from disk is invisible to `vitest related`: declare
-  `// @verify-changed-triggers: <paths or globs>` in its leading comments or opt out with
-  `// @verify-changed-exempt: <reason>` (`lint:verify-changed-triggers`; cloudlands-fe#2256, #2314).
+- A suite that reads the tree from disk (directly or via the IPC source scanner) is invisible
+  to `vitest related`: declare `// @verify-changed-triggers: <paths or globs>` in its leading
+  comments or opt out with `// @verify-changed-exempt: <reason>` (`lint:verify-changed-triggers`;
+  cloudlands-fe#2256, #2314, #4017).
 - Mark any new component-inventory or `*.meta` ledger suite `// @ui-invariant` (or
   `// @ui-invariant-exempt: <reason>`); `node scripts/ui-invariant-suites.mjs --list` / `--check`.
 - New architecture gates go into `lint:architecture` in `package.json`, never a separate
@@ -391,11 +410,11 @@ Rules that follow from it:
 - Workflow edits: `pnpm run lint:workflows` (part of `lint:architecture`) runs the pinned
   actionlint with shellcheck; add path-scoped ignores with a reason there.
 
-Playwright CT holds a host-wide `ct-<CT_PORT>` lock (default `ct-3100`) and the full Vitest
+Playwright CT holds a host-wide `ct-<port>` lock (per-worktree port by default; see above) and the full Vitest
 fallback holds `vitest-full`. A second run waits (240 s / 120 s by default,
 `VERIFY_CHANGED_LOCK_TIMEOUT_MS` up to 300000 ms) and then fails naming the owner's pid and
-worktree; never stop a lock owner — pick a free `CT_PORT` to run CT concurrently
-(intent-hq/intent#4964).
+worktree; never stop a lock owner — two runs in one worktree share its port, so pick a free
+`CT_PORT` to run CT concurrently there (intent-hq/intent#4964).
 
 After any structural change (moving files, changing imports, extracting modules):
 
@@ -632,8 +651,13 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   or tag the individual test `{ tag: '@quarantine' }` — never a whole file — with an open
   tracking issue and an owner. Quarantined tests still run as an advisory step on shard 1;
   the PR that fixes the flake removes the tag.
-- **Browser suites never run on PR updates** (PRs run type/lint, unit tests and static
-  checks). Merge-queue entries touching CT-contract paths, specs or anything they
+- **Full browser suites never run on PR updates** (PRs run type/lint, unit tests and static
+  checks). The exceptions: `test-ct-changed` runs each `.ct.spec.ts` the PR adds or
+  edits 20 times with retries off (`scripts/ct-changed-specs.mjs`; fewer per spec when
+  many change), so any failing repetition is red on the PR, not in the queue; and
+  `test-ct-affected` runs once each the existing specs that load a changed file, nearest
+  first, up to 40 per PR (`--affected` in the same script; the job log and summary list
+  any over the cap). Merge-queue entries touching CT-contract paths, specs or anything they
   transitively import (`scripts/ct-contract-paths.mjs`, shared with `verify:changed`) run the four CT
   shards; root Playwright and Electron lifetime test/harness/config changes run their
   suites. Everything also runs nightly at 02:17 UTC (`nightly-browser-tests.yml`) and on
@@ -668,6 +692,14 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   the wheel's direction; keep your own end-position assertion after it. Lint
   (`intent/no-raw-mouse-wheel-in-ct`) rejects the raw call; disable it on the line, with
   the reason, only when the test checks that a wheel does NOT scroll.
+- Wait for motion, never a fixed `page.waitForTimeout`: Playwright hit-tests only
+  pointerdown, so a target still moving at mouseup loses the click (cloudlands-fe#3955).
+  `clickAndSettle(control, region)` (`src/test/ct-test.ts`) clicks, waits for `region` to
+  change, then for its box, scroll and finite animations to stay still;
+  `expectMotionToSettle(region, { changedFrom: await motionSnapshot(region) })` does the
+  same after another trigger. Lint (`intent/no-wait-for-timeout-in-ct`) caps each spec's
+  sleeps at its baseline (`eslint-rules/baselines/`, shrink-only); keep a sleep, disabled
+  on the line with the reason, only to observe a quiet period.
 - **Every CT spec imports `test` / `expect` from `src/test/ct-test.ts`** — lint-enforced
   (`no-restricted-imports`; only type imports may come from
   `@playwright/experimental-ct-svelte`). The module gives every test a fresh browser

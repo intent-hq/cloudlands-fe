@@ -20,7 +20,7 @@ const script = {
 for (const collapsed of [false, true]) {
   test(`reveal opens a note's folded ancestor chain (${collapsed ? 'collapsed' : 'pinned'})`, async ({
     mount,
-  }) => {
+  }, testInfo) => {
     const component = await mount(SidebarTabsPreview, {
       props: { collapsed, nestedNote: true, locate: note },
     });
@@ -29,6 +29,12 @@ for (const collapsed of [false, true]) {
     else await context.click();
     const parent = component.locator('[data-note-id="sidebar-preview-note-8"]');
     const ancestor = component.locator('[data-note-id="sidebar-preview-note-7"]');
+    await expect(parent).toHaveCount(0);
+    await expect(ancestor.getByRole('button', { name: 'Expand', exact: true })).toBeVisible();
+    const initialReveal = component.locator('[data-sidebar-preview-locate]');
+    await initialReveal.focus();
+    await initialReveal.press('Enter');
+    await expect(parent).toBeInViewport();
     await parent.hover();
     await parent.getByRole('button', { name: 'Collapse', exact: true }).click();
     await ancestor.hover();
@@ -47,6 +53,10 @@ for (const collapsed of [false, true]) {
         .poll(() => row.evaluate((node) => node.contains(document.activeElement)))
         .toBe(true);
     await expect(component.locator('[data-sidebar-section="context"]')).toBeVisible();
+    await testInfo.attach('revealed-note-ancestor-chain', {
+      body: await component.screenshot(),
+      contentType: 'image/png',
+    });
   });
 }
 

@@ -128,7 +128,9 @@ const controlSchema = z.discriminatedUnion('action', [
         action: z.literal('annotation-media'),
         media: z
           .object({
-            capture: z.object(button).strict(),
+            capture: z
+              .object({ ...button, revision: z.number().int().nonnegative().safe() })
+              .strict(),
             record: z
               .object({
                 ...button,

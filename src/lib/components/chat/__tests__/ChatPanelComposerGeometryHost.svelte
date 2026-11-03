@@ -82,6 +82,7 @@
     settleSubmission,
     submissionStage,
     queuePhase,
+    drainedRow = false,
     followUp,
     historyNotice,
     messages,
@@ -112,6 +113,8 @@
     settleSubmission?: 'history' | 'queue' | 'rejected' | 'uncertain' | 'evidence';
     submissionStage?: 'started' | 'ack';
     queuePhase?: 'ready' | 'foreign' | 'restored';
+    /** With `queuePhase`, show a drained (processing) row above the queue card with no working status. */
+    drainedRow?: boolean;
     followUp?: 'blocker' | 'discussion';
     historyNotice?: 'blocker-report' | 'discussion-request' | 'turn-failure' | 'interruption';
     messages?: AgentMessage[];
@@ -589,6 +592,26 @@
     if (scope) store.dispatch(pendingEvidenceObserved(scope, 'queue', queue, Date.now()));
     beginSubmissionRead(agentId, workspaceId, 'queue').complete(queue);
     beginSubmissionRead(agentId, workspaceId, 'history').complete([]);
+    const drainedScope = store.state.pendingSubmissions.byAgentId[agentId]?.scope;
+    if (drainedRow && drainedScope)
+      store.dispatch(
+        pendingEvidenceObserved(
+          drainedScope,
+          'processing',
+          [
+            {
+              id: 'drained-row',
+              turnId: 'drained-row',
+              content: 'Delivered ahead of the queued file',
+              queuedAt: timestamp,
+              position: 0,
+              author,
+              submissionIds: ['drained-row'],
+            },
+          ],
+          Date.now(),
+        ),
+      );
     if (queuePhase === 'restored')
       store.dispatch(
         updateSession(agentId, {

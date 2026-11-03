@@ -11,7 +11,6 @@
     selectAllTabs,
     selectFocusedPanelId,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-  import { Button } from '$lib/components/ui/button';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import {
     markNoteRead,
@@ -50,13 +49,6 @@
     openAgentTabRequested,
   } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectPendingLocateInSidebar } from '$store/renderer/slices/app-layout/app-layout-selectors';
-  import {
-    faArrowUpRightFromSquare,
-    faCompressAlt,
-    faExpandAlt,
-    faPencil,
-    faPlus,
-  } from '@fortawesome/free-solid-svg-icons';
   import { buildWorkspacePRPresentationModel } from './sidebar/workspace-pr-presentation';
   import { selectGitRoots } from '$store/renderer/slices/git-roots/git-roots-selectors';
   import { constructPrUrl, legacyWorkspacePullRequest } from './sidebar/sidebar-changes-utils';
@@ -64,7 +56,7 @@
   import { onMount, tick, untrack, type Snippet } from 'svelte';
   import { prefersReducedMotion } from '$lib/utils/reduced-motion';
   import { writable } from 'svelte/store';
-  import Fa from 'svelte-fa';
+  import SidebarActionIcon from './sidebar/SidebarActionIcon.svelte';
   import CreateAgentSection from './CreateAgentSection.svelte';
   import ExpandableFileSearch from './sidebar/ExpandableFileSearch.svelte';
   import { FilesPanel, SidebarChangesPanel, isSpecNote } from './sidebar';
@@ -103,22 +95,25 @@
   import { createTerminalRequested } from '$store/renderer/slices/terminals/terminals-slice';
   import {
     setMultiSelectSidebarSelectedTabs,
-    toggleWorkspaceCollapsedNote,
+    setWorkspaceNoteExpanded,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
     selectMultiSelectSidebarSelectedTabIds,
     selectWorkspaceCollapsedNoteIds,
+    selectWorkspaceExpandedNoteIds,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { selectIsCollapsed } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import {
     normalizeSelectedTabs,
     orderSelectedTabs,
+    GIT_ONLY_TAB_IDS,
     OWNER_ONLY_TAB_IDS,
     TAB_DEFINITIONS,
     type TabId,
   } from './multi-select-sidebar-tabs';
   import { m } from '$shared/paraglide/messages.js';
+  import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
 
   interface Props {
     workspaceId: string;
@@ -290,18 +285,33 @@
   const scriptContext$ = selectWorkspaceSavedScriptContext(workspaceIdStore);
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
   const isCollaborator = $derived($isCollaborator$);
+  const plainFolder = $derived(isPlainFolderWorkspace($workspace));
   const presencePeople$ = selectWorkspacePeopleTilePeople(workspaceIdStore);
   const peopleInvites$ = selectWorkspacePeopleInvites(workspaceIdStore);
   const showPeople = $derived($presencePeople$.length > 0 || $peopleInvites$.length > 0);
   const selectedTabIds = selectMultiSelectSidebarSelectedTabIds(workspaceIdStore);
   const selectedTabs = $derived(
-    normalizeSelectedTabs($selectedTabIds, isCollaborator, showPeople, !!$scriptContext$),
+    normalizeSelectedTabs(
+      $selectedTabIds,
+      isCollaborator,
+      showPeople,
+      !!$scriptContext$,
+      plainFolder,
+    ),
   );
   let agentSearchQuery = $state('');
   let contextSearchQuery = $state('');
   const activeTabId = $derived(
     panelOnly && flyout?.open && flyout.tabId
-      ? [...normalizeSelectedTabs([flyout.tabId], isCollaborator, showPeople, !!$scriptContext$)][0]
+      ? [
+          ...normalizeSelectedTabs(
+            [flyout.tabId],
+            isCollaborator,
+            showPeople,
+            !!$scriptContext$,
+            plainFolder,
+          ),
+        ][0]
       : (orderSelectedTabs(selectedTabs)[0] ?? 'agents'),
   );
   // Expanded sidebars stack every selected pane in sidebar order; collapsed previews show one.
@@ -496,6 +506,7 @@
   function revealNoteAncestors(noteId: string): boolean {
     const notesById = new Map($notes.map((note) => [note.id as string, note]));
     const collapsed = new Set(selectWorkspaceCollapsedNoteIds.select(appStore.state, workspaceId));
+    const expandedIds = new Set(selectWorkspaceExpandedNoteIds.select(appStore.state, workspaceId));
     const visited = new Set([noteId]);
     let note = notesById.get(noteId);
     let expanded = false;
@@ -504,8 +515,8 @@
       visited.add(parentId);
       note = notesById.get(parentId);
       if (!note) break;
-      if (collapsed.has(parentId)) {
-        appStore.dispatch(toggleWorkspaceCollapsedNote(workspaceId, parentId));
+      if (collapsed.has(parentId) || !expandedIds.has(parentId)) {
+        appStore.dispatch(setWorkspaceNoteExpanded(workspaceId, parentId, true));
         expanded = true;
       }
     }
@@ -785,7 +796,7 @@
     data-direction={direction}
     data-stacked={visibleTabIds.length > 1 || undefined}
   >
-    {#each TAB_DEFINITIONS.filter(({ id }) => (id !== 'people' || showPeople) && !(isCollaborator && OWNER_ONLY_TAB_IDS.has(id) && !(id === 'shell' && $scriptContext$))) as tab (tab.id)}
+    {#each TAB_DEFINITIONS.filter(({ id }) => (id !== 'people' || showPeople) && !(plainFolder && GIT_ONLY_TAB_IDS.has(id)) && !(isCollaborator && OWNER_ONLY_TAB_IDS.has(id) && !(id === 'shell' && $scriptContext$))) as tab (tab.id)}
       {@const tabId = tab.id}
       <section
         id={`${panelId}-${tabId}`}
@@ -793,7 +804,7 @@
         aria-label={tab.label}
         tabindex="0"
         class={cn(
-          'sidebar-section min-h-0 flex-1 basis-0 flex-col overflow-hidden rounded-(--radius-large) bg-card ring-1 ring-inset ring-border/50 outline-none dark:bg-surface-4',
+          'sidebar-section min-h-0 flex-1 basis-0 flex-col overflow-hidden rounded-(--radius-large) bg-selected ring-1 ring-inset ring-border/50 outline-none dark:bg-surface-4',
           !panelOnly && visibleTabIds.length > 1 && 'min-h-40',
         )}
         style:max-height={panelOnly ? `${flyout?.maxHeight}px` : undefined}
@@ -822,7 +833,7 @@
             <div class="shrink-0 px-5 pt-3 pb-2" data-sidebar-section-header>
               <h6 class="flex min-h-7 items-center gap-2 text-sm font-medium text-foreground">
                 <span class="min-w-0 truncate">{tab.label}</span>
-                <span class="ml-auto flex min-w-0 items-center gap-1">
+                <span class="ml-auto flex min-w-0 items-center gap-0.5">
                   {#if tabId === 'people' && $canCreateDiscussion$}
                     <SidebarHeaderAction
                       icon="plus"
@@ -870,34 +881,22 @@
                       active={active && visibleTabIds.includes('files')}
                       onKeydown={(event) => filesPanelRef?.handleSearchKeyDown(event)}
                     />
-                    <Button
-                      variant="ghost"
-                      size="icon-compact"
-                      class="shrink-0 text-muted-foreground"
-                      tooltip={m.workspace_multiSelectSidebar_newFile_tooltip()}
+                    <SidebarHeaderAction
+                      icon="plus"
+                      label={m.workspace_multiSelectSidebar_newFile_tooltip()}
                       onclick={() => filesPanelRef?.startCreatingFile()}
-                    >
-                      <Fa icon={faPlus} class="size-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-compact"
-                      class="shrink-0 {showOnlyChangedFiles
-                        ? 'bg-selected text-foreground dark:bg-muted'
-                        : 'text-muted-foreground'}"
-                      aria-pressed={showOnlyChangedFiles}
-                      tooltip={showOnlyChangedFiles
+                    />
+                    <SidebarHeaderAction
+                      icon="filter"
+                      pressed={showOnlyChangedFiles}
+                      label={showOnlyChangedFiles
                         ? m.workspace_multiSelectSidebar_showAllFiles_tooltip()
                         : m.workspace_multiSelectSidebar_showOnlyChangedFiles_tooltip()}
                       onclick={() => (showOnlyChangedFiles = !showOnlyChangedFiles)}
-                    >
-                      <Fa icon={faPencil} class="size-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-compact"
-                      class="shrink-0 text-muted-foreground"
-                      tooltip={hasExpandedDirectories
+                    />
+                    <SidebarHeaderAction
+                      icon={hasExpandedDirectories ? 'collapse' : 'expand'}
+                      label={hasExpandedDirectories
                         ? m.workspace_multiSelectSidebar_collapseAll_tooltip()
                         : m.workspace_multiSelectSidebar_expandAll_tooltip()}
                       onclick={async () => {
@@ -908,12 +907,7 @@
                         }
                         filesExpandedTick++;
                       }}
-                    >
-                      <Fa
-                        icon={hasExpandedDirectories ? faCompressAlt : faExpandAlt}
-                        class="size-3.5"
-                      />
-                    </Button>
+                    />
                     {#if $fileExplorerWorkspacePath}
                       <OpenComboButton
                         filePath={$fileExplorerWorkspacePath}
@@ -923,7 +917,7 @@
                         variant="sidebar"
                         iconOnly
                       >
-                        <Fa icon={faArrowUpRightFromSquare} class="size-4" />
+                        <SidebarActionIcon icon="open" />
                         <span class="sr-only">{m.ui_openCombo_openInApp_tooltip()}</span>
                       </OpenComboButton>
                     {/if}
@@ -936,8 +930,8 @@
           {/if}
           {#key workspaceId}
             <div
-              class="min-h-0 flex-1 pr-3 pb-2 {tabId === 'files' ? 'pl-1' : 'pl-3'} {tabId ===
-                'files' || tabId === 'changes'
+              class="min-h-0 flex-1 pb-2 {tabId === 'files' ? 'px-2' : 'px-3'} {tabId === 'files' ||
+              tabId === 'changes'
                 ? 'overflow-hidden'
                 : 'overflow-y-auto'}"
               data-sidebar-section-scroll={tabId}
@@ -1062,14 +1056,3 @@
     {/each}
   </div>
 </div>
-
-<style>
-  .sidebar-section {
-    --selected: var(--card);
-    --color-selected: hsl(var(--selected));
-  }
-
-  :global(.dark) .sidebar-section {
-    --selected: var(--theme-selected);
-  }
-</style>

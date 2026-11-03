@@ -1,11 +1,13 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import { faTerminal, faWandMagicSparkles } from '@fortawesome/free-solid-svg-icons';
+  import { faPlus, faTerminal, faWandMagicSparkles } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
+  import { ActionRow, Indicator } from '$lib/components/ui/menu';
+  import { workspacePickerStyles } from './workspace-picker-styles';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
   import SetupScriptAgent from './SetupScriptAgent.svelte';
-  import { slide } from '$lib/motion';
+  import { fly, slide } from '$lib/motion';
   import { untrack } from 'svelte';
   import {
     SETUP_SCRIPT_TEMPLATES,
@@ -44,6 +46,7 @@
     triggerClass?: string;
     contentOnly?: boolean;
     contentClass?: string;
+    presentation?: 'editor' | 'picker' | 'workspace';
     onchange?: (value: string) => void;
   }
 
@@ -62,11 +65,16 @@
     triggerClass = '',
     contentOnly = false,
     contentClass = '',
+    presentation = 'editor',
     onchange,
   }: Props = $props();
 
   // Agent panel state
   let showAgentPanel = $state(false);
+  let pickerEditorOpen = $state(untrack(() => isCustomScript));
+  let pickerTemplatesOpen = $state(false);
+  let pickerVariablesOpen = $state(false);
+  let pickerRoot: HTMLDivElement | undefined = $state();
 
   let codeEditorRef: ReturnType<typeof CodeEditor> | undefined = $state();
   let selectedScriptId = $state('');
@@ -150,7 +158,17 @@
       customNameSource = script.source;
       onchange?.(value);
     }
-    requestAnimationFrame(() => codeEditorRef?.focus());
+    if (presentation === 'picker') {
+      pickerEditorOpen = false;
+      pickerTemplatesOpen = false;
+      requestAnimationFrame(() =>
+        pickerRoot
+          ?.querySelector<HTMLButtonElement>('[data-setup-source][aria-pressed=true]')
+          ?.focus(),
+      );
+    } else {
+      requestAnimationFrame(() => codeEditorRef?.focus());
+    }
   }
 
   function handleEditorChange(newValue: string) {
@@ -173,6 +191,63 @@
     const template = SETUP_SCRIPT_TEMPLATES.find((t) => t.id === 'generic');
     return template ? `template-${template.id}` : '';
   })();
+
+  const pickerSelection = $derived(
+    hasUserEdited || !selectedScriptId ? 'custom' : selectedScriptId,
+  );
+  const pickerChoices = $derived.by(() => {
+    const choices: Array<{ id: string; name: string }> = [];
+    if (repoConfigScript) {
+      choices.push({
+        id: REPO_CONFIG_SCRIPT_ID,
+        name: setupScriptDisplayName(REPO_CONFIG_SCRIPT_NAME, 'repo-config'),
+      });
+    }
+    if (lastUsedScript) {
+      choices.push({
+        id: LAST_USED_SCRIPT_ID,
+        name: m.workspace_setupScriptEditor_lastUsed_label(),
+      });
+    }
+    for (const template of SETUP_SCRIPT_TEMPLATES) {
+      const id = `template-${template.id}`;
+      if (id === COPY_CONFIG_TEMPLATE_ID || id === selectedScriptId) {
+        choices.push({ id, name: template.name });
+      }
+    }
+    choices.push({
+      id: 'custom',
+      name: m.workspace_setupScriptPicker_custom_label(),
+    });
+    return choices;
+  });
+  const otherTemplates = $derived(
+    SETUP_SCRIPT_TEMPLATES.filter(
+      (template) => !pickerChoices.some((choice) => choice.id === `template-${template.id}`),
+    ),
+  );
+
+  function chooseCustomScript() {
+    selectedScriptId = '';
+    hasUserEdited = true;
+    customName = 'Custom'; // i18n-ignore (stored setup-script identity)
+    customNameSource = 'custom';
+    showAgentPanel = false;
+    pickerEditorOpen = true;
+    requestAnimationFrame(() => codeEditorRef?.focus());
+  }
+
+  function handlePickerScriptGenerated(script: { name: string; content: string }) {
+    isProgrammaticChange = true;
+    selectedScriptId = '';
+    value = script.content;
+    customName = script.name;
+    customNameSource = 'named';
+    hasUserEdited = true;
+    onchange?.(value);
+    showAgentPanel = false;
+    requestAnimationFrame(() => codeEditorRef?.focus());
+  }
 
   // Track previous repo path to detect changes
   let previousRepoPath = $state<string | null>(null);
@@ -300,195 +375,355 @@
   });
 </script>
 
-{#snippet expandedContentSnippet()}
-  <!-- Stack sources above the editor on compact screens; both regions scroll independently. -->
-  <div
-    class="grid flex-1 min-h-0 min-w-0 grid-cols-1 grid-rows-[minmax(0,1fr)_minmax(0,2fr)] md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] md:grid-rows-1"
+{#snippet pickerChoice(choice: { id: string; name: string })}
+  <ActionRow
+    selected={pickerSelection === choice.id}
+    aria-pressed={pickerSelection === choice.id}
+    data-setup-source={choice.id}
+    class={workspacePickerStyles.row}
+    onclick={() => (choice.id === 'custom' ? chooseCustomScript() : handleScriptSelect(choice.id))}
   >
-    <!-- Left column: script sources -->
-    <div class="flex flex-col min-h-0 min-w-0 overflow-y-auto p-2 md:pr-4">
-      <!-- Auto-generate -->
-      <div class="mb-4">
-        <h4 class="type-caption font-medium text-muted-foreground mb-1.5 px-2">
-          {m.workspace_setupScriptEditor_generate_label()}
-        </h4>
-        <p class="text-xs text-subtle px-2 mb-2">
-          {m.workspace_setupScriptEditor_generate_description()}
-        </p>
-        {#if showAgentPanel && repoPath}
-          <div transition:slide={{ tier: 'moderate' }}>
-            <SetupScriptAgent
-              {repoPath}
-              onScriptGenerated={(script) => {
-                isProgrammaticChange = true;
-                selectedScriptId = '';
-                value = script.content;
-                customName = script.name;
-                hasUserEdited = true;
-                onchange?.(value);
-                showAgentPanel = false;
-                requestAnimationFrame(() => codeEditorRef?.focus());
-              }}
-              onClose={() => (showAgentPanel = false)}
-            />
-          </div>
-        {:else}
+    {#snippet leading()}<Fa icon={faTerminal} class={workspacePickerStyles.icon} />{/snippet}
+    {#snippet title()}<span class="block truncate">{choice.name}</span>{/snippet}
+    {#snippet trailing()}
+      <Indicator state={pickerSelection === choice.id ? 'checked' : 'empty'} />
+    {/snippet}
+  </ActionRow>
+{/snippet}
+
+{#snippet pickerContentSnippet()}
+  <div class={`${workspacePickerStyles.rows} min-w-0`} bind:this={pickerRoot}>
+    {#if !pickerEditorOpen}
+      <div role="group" aria-label={m.workspace_setupScriptEditor_setupScript_label()}>
+        {#each pickerChoices as choice (choice.id)}{@render pickerChoice(choice)}{/each}
+      </div>
+      <div class="mt-2 border-t border-border pt-2">
+        <ActionRow
+          aria-expanded={pickerTemplatesOpen}
+          class={workspacePickerStyles.row}
+          onclick={() => (pickerTemplatesOpen = !pickerTemplatesOpen)}
+        >
+          {#snippet leading()}<Fa icon={faPlus} class={workspacePickerStyles.icon} />{/snippet}
+          {#snippet title()}{m.workspace_setupScriptEditor_templates_label()}{/snippet}
+        </ActionRow>
+      </div>
+      {#if pickerTemplatesOpen}
+        <div transition:slide={{ tier: 'moderate' }}>
+          {#each otherTemplates as template (template.id)}
+            {@render pickerChoice({
+              id: `template-${template.id}`,
+              name: template.name,
+            })}
+          {/each}
+        </div>
+      {/if}
+      <div class="mt-2 border-t border-border pt-2">
+        <ActionRow class={workspacePickerStyles.row} onclick={() => (pickerEditorOpen = true)}>
+          {#snippet leading()}<Fa icon={faTerminal} class={workspacePickerStyles.icon} />{/snippet}
+          {#snippet title()}{m.workspace_setupScriptPicker_edit_label()}{/snippet}
+        </ActionRow>
+        <ActionRow
+          class={workspacePickerStyles.row}
+          disabled={!repoPath}
+          onclick={() => {
+            pickerEditorOpen = true;
+            showAgentPanel = true;
+          }}
+        >
+          {#snippet leading()}<Fa
+              icon={faWandMagicSparkles}
+              class={workspacePickerStyles.icon}
+            />{/snippet}
+          {#snippet title()}{m.workspace_setupScriptEditor_autoGenerate_label()}{/snippet}
+        </ActionRow>
+      </div>
+    {:else}
+      <div class="mb-2 flex items-center justify-between gap-3 px-2">
+        <div class="min-w-0">
+          <h3 class={workspacePickerStyles.title}>
+            {m.workspace_setupScriptPicker_commands_label()}
+          </h3>
+          <p class="type-caption truncate text-muted-foreground">{displayLabel}</p>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onclick={() => {
+            pickerEditorOpen = false;
+            showAgentPanel = false;
+          }}
+        >
+          {m.workspace_setupScriptPicker_choose_label()}
+        </Button>
+      </div>
+      {#if showAgentPanel && repoPath}
+        <SetupScriptAgent
+          {repoPath}
+          onScriptGenerated={handlePickerScriptGenerated}
+          onClose={() => (showAgentPanel = false)}
+        />
+      {:else}
+        <div
+          class="h-44 min-w-0 overflow-hidden rounded-(--radius-medium) border border-border bg-background py-2"
+        >
+          <CodeEditor
+            bind:this={codeEditorRef}
+            bind:value
+            language="shell"
+            lineNumbers={false}
+            lineWrapping={wordWrap}
+          />
+        </div>
+        <div class="mt-2 px-1">
           <Button
             variant="ghost"
             size="sm"
-            class="w-full justify-start text-subtle"
-            onclick={() => (showAgentPanel = true)}
-            disabled={!repoPath}
+            active={pickerVariablesOpen}
+            aria-expanded={pickerVariablesOpen}
+            onclick={() => (pickerVariablesOpen = !pickerVariablesOpen)}
           >
-            <Fa icon={faWandMagicSparkles} class="mr-1.5" />
-            {m.workspace_setupScriptEditor_autoGenerate_label()}
+            {m.workspace_setupScriptEditor_variables_label()}
           </Button>
-        {/if}
-      </div>
-
-      <!-- Repo-committed script from .intent/config.json -->
-      {#if repoConfigScript}
-        <div class="mb-4">
-          <h4 class="type-caption font-medium text-muted-foreground mb-1.5 px-2">
-            {m.workspace_setupScriptEditor_repoConfig_label()}
-          </h4>
-          <Button
-            variant="ghost"
-            truncateLabel={false}
-            active={selectedScriptId === REPO_CONFIG_SCRIPT_ID}
-            aria-pressed={selectedScriptId === REPO_CONFIG_SCRIPT_ID}
-            class="w-full h-auto justify-start whitespace-normal text-left px-2 py-1.5"
-            onclick={() => handleScriptSelect(REPO_CONFIG_SCRIPT_ID)}
-          >
-            <div class="min-w-0 w-full">
-              <span class="text-sm"
-                >{setupScriptDisplayName(REPO_CONFIG_SCRIPT_NAME, 'repo-config')}</span
-              >
-              <p class="text-xs text-subtle mt-0.5">
-                {m.workspace_setupScriptEditor_repoConfig_description()}
-              </p>
-            </div>
-          </Button>
-        </div>
-      {/if}
-
-      <!-- Last-used script for this repo (localStorage) -->
-      {#if lastUsedScript}
-        <div class="mb-4">
-          <h4 class="type-caption font-medium text-muted-foreground mb-1.5 px-2">
-            {m.workspace_setupScriptEditor_lastUsed_label()}
-          </h4>
-          <Button
-            variant="ghost"
-            truncateLabel={false}
-            active={selectedScriptId === LAST_USED_SCRIPT_ID}
-            aria-pressed={selectedScriptId === LAST_USED_SCRIPT_ID}
-            class="w-full h-auto justify-start whitespace-normal text-left px-2 py-1.5"
-            onclick={() => handleScriptSelect(LAST_USED_SCRIPT_ID)}
-          >
-            <div class="min-w-0 w-full">
-              <span class="text-sm"
-                >{setupScriptDisplayName(lastUsedScript.name, lastUsedScript.nameSource)}</span
-              >
-              <p class="text-xs text-subtle mt-0.5">
-                {m.workspace_setupScriptEditor_lastUsed_description()}
-              </p>
-            </div>
-          </Button>
-        </div>
-      {/if}
-
-      <!-- Templates -->
-      <div class="mb-4">
-        <h4 class="type-caption font-medium text-muted-foreground mb-1.5 px-2">
-          {m.workspace_setupScriptEditor_templates_label()}
-        </h4>
-        {#each SETUP_SCRIPT_TEMPLATES as template (template.id)}
-          <Button
-            variant="ghost"
-            truncateLabel={false}
-            active={selectedScriptId === `template-${template.id}`}
-            aria-pressed={selectedScriptId === `template-${template.id}`}
-            class="w-full h-auto justify-start whitespace-normal text-left px-2 py-1.5"
-            onclick={() => handleScriptSelect(`template-${template.id}`)}
-          >
-            <div class="min-w-0 w-full">
-              <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span class="text-sm">{template.name}</span>
-                {#if template.projectType === projectType}
-                  <span
-                    class="type-caption px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium shrink-0"
-                    >{m.workspace_setupScriptEditor_recommended_label()}</span
-                  >
-                {/if}
-              </div>
-              <p class="text-xs text-subtle mt-0.5">{template.description}</p>
-            </div>
-          </Button>
-        {/each}
-      </div>
-    </div>
-
-    <!-- Right column: variables + editor -->
-    <div class="flex flex-col min-w-0 min-h-0">
-      <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-1.5 bg-muted/30 shrink-0">
-        <span class="type-caption font-medium text-muted-foreground shrink-0"
-          >{m.workspace_setupScriptEditor_variables_label()}</span
-        >
-        <div class="flex flex-wrap gap-1.5">
-          {#each SETUP_SCRIPT_VARIABLES as variable (variable.name)}
+          {#if pickerVariablesOpen}
             <Tooltip.Provider delayDuration={100}>
-              <Tooltip.Root delayDuration={100}>
-                <Tooltip.Trigger>
-                  <code
-                    class="type-caption px-1.5 py-0.5 rounded bg-background/80 text-muted-foreground font-mono cursor-pointer hover:bg-background hover:text-foreground transition-colors"
-                  >
-                    ${variable.name}
-                  </code>
-                </Tooltip.Trigger>
-                <Tooltip.Content side="bottom" class="max-w-xs z-[200]">
-                  <p class="text-xs">{variable.description}</p>
-                  <p class="mt-1 text-xs text-muted-foreground">
-                    {m.workspace_setupScriptEditor_example_before()}
-                    <code class="type-caption">{variable.example}</code>
-                  </p>
-                </Tooltip.Content>
-              </Tooltip.Root>
+              <div class="mt-2 flex flex-wrap gap-2 px-2">
+                {#each SETUP_SCRIPT_VARIABLES as variable (variable.name)}
+                  <Tooltip.Root>
+                    <Tooltip.Trigger
+                      ><code class="type-caption text-muted-foreground">${variable.name}</code
+                      ></Tooltip.Trigger
+                    >
+                    <Tooltip.Content side="top" class="max-w-xs">
+                      <p>{variable.description}</p>
+                      <code class="type-caption">{variable.example}</code>
+                    </Tooltip.Content>
+                  </Tooltip.Root>
+                {/each}
+              </div>
             </Tooltip.Provider>
-          {/each}
+          {/if}
         </div>
-      </div>
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div
-        class="flex-1 min-h-0 min-w-0 overflow-hidden py-3 bg-background"
-        onkeydown={(e) => {
-          if (e.altKey && e.key === 'z') {
-            e.preventDefault();
-            wordWrap = !wordWrap;
-          }
-        }}
-      >
-        <CodeEditor
-          bind:this={codeEditorRef}
-          bind:value
-          language="shell"
-          lineNumbers={true}
-          lineWrapping={wordWrap}
+      {/if}
+    {/if}
+  </div>
+{/snippet}
+
+{#snippet sourcesContent()}
+  <!-- Auto-generate -->
+  <div class="mb-4">
+    <h4 class="type-caption font-medium text-muted-foreground mb-1.5 px-2">
+      {m.workspace_setupScriptEditor_generate_label()}
+    </h4>
+    <p class="text-xs text-subtle px-2 mb-2">
+      {m.workspace_setupScriptEditor_generate_description()}
+    </p>
+    {#if showAgentPanel && repoPath}
+      <div transition:slide={{ tier: 'moderate' }}>
+        <SetupScriptAgent
+          {repoPath}
+          onScriptGenerated={(script) => {
+            isProgrammaticChange = true;
+            selectedScriptId = '';
+            value = script.content;
+            customName = script.name;
+            hasUserEdited = true;
+            onchange?.(value);
+            showAgentPanel = false;
+            requestAnimationFrame(() => codeEditorRef?.focus());
+          }}
+          onClose={() => (showAgentPanel = false)}
         />
       </div>
+    {:else}
+      <Button
+        variant="ghost"
+        size="sm"
+        class="w-full justify-start text-subtle"
+        onclick={() => (showAgentPanel = true)}
+        disabled={!repoPath}
+      >
+        <Fa icon={faWandMagicSparkles} class="mr-1.5" />
+        {m.workspace_setupScriptEditor_autoGenerate_label()}
+      </Button>
+    {/if}
+  </div>
+
+  <!-- Repo-committed script from .intent/config.json -->
+  {#if repoConfigScript}
+    <div class="mb-4">
+      <h4 class="type-caption font-medium text-muted-foreground mb-1.5 px-2">
+        {m.workspace_setupScriptEditor_repoConfig_label()}
+      </h4>
+      <Button
+        variant="ghost"
+        truncateLabel={false}
+        active={selectedScriptId === REPO_CONFIG_SCRIPT_ID}
+        aria-pressed={selectedScriptId === REPO_CONFIG_SCRIPT_ID}
+        class="w-full h-auto justify-start whitespace-normal text-left px-2 py-1.5"
+        onclick={() => handleScriptSelect(REPO_CONFIG_SCRIPT_ID)}
+      >
+        <div class="min-w-0 w-full">
+          <span class="text-sm"
+            >{setupScriptDisplayName(REPO_CONFIG_SCRIPT_NAME, 'repo-config')}</span
+          >
+          <p class="text-xs text-subtle mt-0.5">
+            {m.workspace_setupScriptEditor_repoConfig_description()}
+          </p>
+        </div>
+      </Button>
     </div>
+  {/if}
+
+  <!-- Last-used script for this repo (localStorage) -->
+  {#if lastUsedScript}
+    <div class="mb-4">
+      <h4 class="type-caption font-medium text-muted-foreground mb-1.5 px-2">
+        {m.workspace_setupScriptEditor_lastUsed_label()}
+      </h4>
+      <Button
+        variant="ghost"
+        truncateLabel={false}
+        active={selectedScriptId === LAST_USED_SCRIPT_ID}
+        aria-pressed={selectedScriptId === LAST_USED_SCRIPT_ID}
+        class="w-full h-auto justify-start whitespace-normal text-left px-2 py-1.5"
+        onclick={() => handleScriptSelect(LAST_USED_SCRIPT_ID)}
+      >
+        <div class="min-w-0 w-full">
+          <span class="text-sm"
+            >{setupScriptDisplayName(lastUsedScript.name, lastUsedScript.nameSource)}</span
+          >
+          <p class="text-xs text-subtle mt-0.5">
+            {m.workspace_setupScriptEditor_lastUsed_description()}
+          </p>
+        </div>
+      </Button>
+    </div>
+  {/if}
+
+  <!-- Templates -->
+  <div class="mb-4">
+    <h4 class="type-caption font-medium text-muted-foreground mb-1.5 px-2">
+      {m.workspace_setupScriptEditor_templates_label()}
+    </h4>
+    {#each SETUP_SCRIPT_TEMPLATES as template (template.id)}
+      <Button
+        variant="ghost"
+        truncateLabel={false}
+        active={selectedScriptId === `template-${template.id}`}
+        aria-pressed={selectedScriptId === `template-${template.id}`}
+        class="w-full h-auto justify-start whitespace-normal text-left px-2 py-1.5"
+        onclick={() => handleScriptSelect(`template-${template.id}`)}
+      >
+        <div class="min-w-0 w-full">
+          <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span class="text-sm">{template.name}</span>
+            {#if template.projectType === projectType}
+              <span
+                class="type-caption px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium shrink-0"
+                >{m.workspace_setupScriptEditor_recommended_label()}</span
+              >
+            {/if}
+          </div>
+          <p class="text-xs text-subtle mt-0.5">{template.description}</p>
+        </div>
+      </Button>
+    {/each}
+  </div>
+{/snippet}
+
+{#snippet commandsContent()}
+  <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-1.5 bg-muted/30 shrink-0">
+    <span class="type-caption font-medium text-muted-foreground shrink-0"
+      >{m.workspace_setupScriptEditor_variables_label()}</span
+    >
+    <div class="flex flex-wrap gap-1.5">
+      {#each SETUP_SCRIPT_VARIABLES as variable (variable.name)}
+        <Tooltip.Provider delayDuration={100}>
+          <Tooltip.Root delayDuration={100}>
+            <Tooltip.Trigger>
+              <code
+                class="type-caption px-1.5 py-0.5 rounded bg-background/80 text-muted-foreground font-mono cursor-pointer hover:bg-background hover:text-foreground transition-colors"
+              >
+                ${variable.name}
+              </code>
+            </Tooltip.Trigger>
+            <Tooltip.Content side="bottom" class="max-w-xs z-[200]">
+              <p class="text-xs">{variable.description}</p>
+              <p class="mt-1 text-xs text-muted-foreground">
+                {m.workspace_setupScriptEditor_example_before()}
+                <code class="type-caption">{variable.example}</code>
+              </p>
+            </Tooltip.Content>
+          </Tooltip.Root>
+        </Tooltip.Provider>
+      {/each}
+    </div>
+  </div>
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="flex-1 min-h-0 min-w-0 overflow-hidden py-3 bg-background"
+    onkeydown={(e) => {
+      if (e.altKey && e.key === 'z') {
+        e.preventDefault();
+        wordWrap = !wordWrap;
+      }
+    }}
+  >
+    <CodeEditor
+      bind:this={codeEditorRef}
+      bind:value
+      language="shell"
+      lineNumbers={true}
+      lineWrapping={wordWrap}
+    />
+  </div>
+{/snippet}
+
+{#snippet expandedContentSnippet()}
+  <!-- Each pane owns its scrolling; the workspace variant follows the containing form's columns. -->
+  <div
+    class={presentation === 'workspace'
+      ? 'setup-workspace-layout'
+      : 'grid flex-1 min-h-0 min-w-0 grid-cols-1 grid-rows-[minmax(0,1fr)_minmax(0,2fr)] md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] md:grid-rows-1'}
+  >
+    {#if presentation === 'workspace'}
+      <div
+        class="flex min-h-0 min-w-0 flex-col overflow-y-auto"
+        in:fly={{ tier: 'moderate', axis: 'x', distance: -8 }}
+      >
+        {@render sourcesContent()}
+      </div>
+      <div class="flex min-h-0 min-w-0 flex-col" in:fly={{ tier: 'moderate', axis: 'x' }}>
+        {@render commandsContent()}
+      </div>
+    {:else}
+      <div class="flex flex-col min-h-0 min-w-0 overflow-y-auto p-2 md:pr-4">
+        {@render sourcesContent()}
+      </div>
+      <div class="flex flex-col min-w-0 min-h-0">
+        {@render commandsContent()}
+      </div>
+    {/if}
   </div>
 {/snippet}
 
 {#if contentOnly}
   <!-- Content only mode: just render the expanded content -->
   {#if expanded}
-    <div
-      class="{contentClass} flex flex-col gap-3 flex-1 min-h-0 min-w-0"
-      transition:slide={{ tier: 'moderate' }}
-    >
-      {@render expandedContentSnippet()}
-    </div>
+    {#if presentation === 'picker'}
+      <div class="{contentClass} min-w-0">{@render pickerContentSnippet()}</div>
+    {:else if presentation === 'workspace'}
+      <div class="{contentClass} flex min-h-0 min-w-0 flex-1 flex-col">
+        {@render expandedContentSnippet()}
+      </div>
+    {:else}
+      <div
+        class="{contentClass} flex flex-col gap-3 flex-1 min-h-0 min-w-0"
+        transition:slide={{ tier: 'moderate' }}
+      >
+        {@render expandedContentSnippet()}
+      </div>
+    {/if}
   {/if}
 {:else}
   <div class={compact ? '' : 'w-full'}>
@@ -521,3 +756,23 @@
     </div>
   {/if}
 {/if}
+
+<style>
+  .setup-workspace-layout {
+    display: grid;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 2fr);
+    gap: 1rem;
+  }
+
+  @container (min-width: 48rem) {
+    .setup-workspace-layout {
+      grid-template-columns: 18rem minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr);
+      column-gap: 2rem;
+    }
+  }
+</style>

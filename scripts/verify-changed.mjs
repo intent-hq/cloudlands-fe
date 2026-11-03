@@ -4,7 +4,6 @@ import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'n
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { escape as escapeGlob, globSync } from 'glob';
-import ts from 'typescript';
 import { CT_TEST_DIR, hasCtSpecSuffix, isCtSpec } from '../playwright/ct-spec-pattern.mjs';
 import { isIgnoredRootSpec, isRootSpec, ROOT_TEST_DIR } from '../playwright/root-spec-pattern.mjs';
 import { checkDepsFresh, checkNodeSupport, ensureI18nFresh } from './check-deps-fresh.mjs';
@@ -29,6 +28,7 @@ import {
   selectDeclaredSuites,
   TRIGGER_MARKER,
 } from './verify-changed-triggers.mjs';
+import { VITEST_INCLUDE_GLOB, vitestExclusions } from './vitest-suite-files.mjs';
 import {
   buildCoverage,
   laneConfig,
@@ -106,6 +106,12 @@ const LOCALE_COMPLETENESS_INPUTS = new Set([
 const VISUAL_TEST_RE = /\.visual\.spec\.ts$/;
 const INTEGRATION_TEST_RE = /^tests\/integration\/.*\.test\.ts$/;
 const VITEST_EXCLUDED_RE = /(?:^|\/)remote-(?:env|git)\.test\.ts$/;
+// Non-test code whose unit-suite importers `vitest related` follows: shared test
+// helpers and lint rules as well as product and script sources. The unit config
+// excludes tests/integration/, so its helpers have no importers there; changed
+// integration tests run directly in their own lane. A file nothing imports
+// resolves to an empty, passing selection (`vitest related` sets passWithNoTests).
+const RELATED_SOURCE_RE = /^(?:(?:src|scripts|playwright|eslint-rules)\/|tests\/(?!integration\/))/;
 const FULL_RISK_FILES = new Set([
   'package.json',
   'pnpm-lock.yaml',
@@ -114,6 +120,10 @@ const FULL_RISK_FILES = new Set([
   'vitest.config.ts',
   'scripts/vitest-native-deps.mjs',
 ]);
+// svelte-check's own inputs: its tsconfig decides which files it checks (an
+// over-wide include can silently drop the whole project past the size limit),
+// and the wrapper decides how the run is guarded.
+const SVELTE_CHECK_INPUT_FILES = new Set(['tsconfig.json', 'scripts/run-svelte-check.mjs']);
 // Files that decide which root specs playwright.config.ts runs: the config and the
 // modules it reads its testDir/testMatch/testIgnore from (root-spec-pattern.mjs
 // builds on ct-spec-pattern.mjs's matchers). The pull_request workflow's root
@@ -353,145 +363,6 @@ export function testRunner(file) {
   return 'vitest';
 }
 
-// Vitest's default `test.include`; vitest.config.ts does not override it.
-const VITEST_INCLUDE_GLOB = '**/*.{test,spec}.?(c|m)[jt]s?(x)';
-
-// Bounded static interpretation only: never evaluate a project's config while
-// planning. Unknown expressions must not establish equivalent inventory coverage.
-function literalProperty(object, name) {
-  if (
-    !object ||
-    !ts.isObjectLiteralExpression(object) ||
-    object.properties.some(
-      (property) => ts.isSpreadAssignment(property) || ts.isComputedPropertyName(property.name),
-    )
-  )
-    return null;
-  const matches = object.properties.filter((property) => property.name.text === name);
-  if (matches.length > 1 || (matches.length && !ts.isPropertyAssignment(matches[0]))) return null;
-  return matches[0]?.initializer;
-}
-
-function vitestExclusions(root, configFile = 'vitest.config.ts') {
-  const unknown = { patterns: [], exclusionsKnown: false, complete: false };
-  const configPath = resolve(root, configFile);
-  if (!existsSync(configPath)) return unknown;
-  const source = ts.createSourceFile(
-    configPath,
-    readFileSync(configPath, 'utf8'),
-    ts.ScriptTarget.Latest,
-    false,
-  );
-  if (source.parseDiagnostics.length) return unknown;
-  const imports = new Map();
-  for (const statement of source.statements.filter(ts.isImportDeclaration)) {
-    const clause = statement.importClause;
-    if (clause?.name) imports.set(clause.name.text, [statement.moduleSpecifier.text, 'default']);
-    if (clause?.namedBindings && ts.isNamedImports(clause.namedBindings)) {
-      for (const binding of clause.namedBindings.elements)
-        imports.set(binding.name.text, [
-          statement.moduleSpecifier.text,
-          (binding.propertyName ?? binding.name).text,
-        ]);
-    }
-  }
-  const imported = (node, module, name) =>
-    node && ts.isIdentifier(node) && imports.get(node.text)?.join(':') === `${module}:${name}`;
-  const shadowed = new Set();
-  const forgetBindings = (node) => {
-    if (ts.isIdentifier(node)) {
-      imports.delete(node.text);
-      shadowed.add(node.text);
-    } else if (ts.isBindingElement(node)) forgetBindings(node.name);
-    else ts.forEachChild(node, forgetBindings);
-  };
-  for (const statement of source.statements.filter(ts.isVariableStatement))
-    for (const declaration of statement.declarationList.declarations)
-      forgetBindings(declaration.name);
-  const exports = source.statements.filter(ts.isExportAssignment);
-  if (exports.length !== 1 || exports[0].isExportEquals) return unknown;
-  let config = exports[0].expression;
-  if (
-    ts.isCallExpression(config) &&
-    imported(config.expression, 'vitest/config', 'defineConfig') &&
-    config.arguments.length === 1
-  ) {
-    config = config.arguments[0];
-    if (ts.isArrowFunction(config) && config.parameters.length === 0 && ts.isBlock(config.body)) {
-      const statements = config.body.statements;
-      const returned = statements.at(-1);
-      if (
-        !returned ||
-        !ts.isReturnStatement(returned) ||
-        !statements.slice(0, -1).every(ts.isVariableStatement)
-      )
-        return unknown;
-      // A callback-local binding must not masquerade as one of the known imports.
-      for (const statement of statements.slice(0, -1))
-        for (const declaration of statement.declarationList.declarations)
-          forgetBindings(declaration.name);
-      config = returned.expression;
-    }
-  }
-  const test = literalProperty(config, 'test');
-  const exclude = literalProperty(test, 'exclude');
-  if (exclude === null || (exclude && !ts.isArrayLiteralExpression(exclude))) return unknown;
-  // Discovery and execution filters need a real config evaluator; keep the scan then.
-  const complete =
-    literalProperty(config, 'root') === undefined &&
-    [
-      'include',
-      'dir',
-      'root',
-      'projects',
-      'workspace',
-      'testNamePattern',
-      'typecheck',
-      'related',
-      'changed',
-      'shard',
-      'tagsFilter',
-      'cliExclude',
-      'listTags',
-      'clearCache',
-      'mergeReports',
-    ].every((name) => literalProperty(test, name) === undefined);
-  const patterns = [];
-  let exclusionsKnown = true;
-  for (const element of exclude?.elements ?? []) {
-    if (ts.isStringLiteral(element)) {
-      patterns.push(element.text);
-      continue;
-    }
-    // The repo's one computed exclusion source has an existing pure helper.
-    // Accept only its imported call with the exact root .gitignore argument.
-    const call = ts.isSpreadElement(element) ? element.expression : null;
-    const argument =
-      call && ts.isCallExpression(call) && call.arguments.length === 1 ? call.arguments[0] : null;
-    const callee = argument && ts.isCallExpression(argument) ? argument.expression : null;
-    if (
-      call &&
-      ts.isCallExpression(call) &&
-      imported(call.expression, './scripts/gitignore-dir-excludes.mjs', 'gitignoreDirExcludes') &&
-      callee &&
-      ts.isPropertyAccessExpression(callee) &&
-      callee.name.text === 'join' &&
-      (imported(callee.expression, 'path', 'default') ||
-        imported(callee.expression, 'node:path', 'default')) &&
-      argument.arguments.length === 2 &&
-      ts.isIdentifier(argument.arguments[0]) &&
-      argument.arguments[0].text === '__dirname' &&
-      !shadowed.has('__dirname') &&
-      ts.isStringLiteral(argument.arguments[1]) &&
-      argument.arguments[1].text === '.gitignore' &&
-      existsSync(resolve(root, '.gitignore'))
-    ) {
-      patterns.push(...gitignoreDirExcludes(resolve(root, '.gitignore')));
-    } else exclusionsKnown = false;
-  }
-  return { patterns, exclusionsKnown, complete: complete && exclusionsKnown };
-}
-
 export function vitestExcludePatterns(root = REPO_ROOT) {
   return vitestExclusions(root).patterns;
 }
@@ -660,7 +531,7 @@ export function createVerificationPlan(files, options = {}) {
   const directUnit = [...new Set([...directTests('vitest'), ...deletedUnitDirectories])];
   const relatedSources = existing.filter(
     (file) =>
-      /^(?:src|scripts|playwright)\//.test(file) &&
+      RELATED_SOURCE_RE.test(file) &&
       CODE_EXTENSIONS.has(extname(file)) &&
       !UNIT_TEST_RE.test(file),
   );
@@ -688,7 +559,7 @@ export function createVerificationPlan(files, options = {}) {
     // A resolved snapshot selects its runner above; it did not change source or types.
     if (snapshots.get(file)) continue;
     addBoundary(boundaries, file);
-    if (file.endsWith('.svelte')) svelteCheck = true;
+    if (file.endsWith('.svelte') || SVELTE_CHECK_INPUT_FILES.has(file)) svelteCheck = true;
     if (file === 'tsconfig.json') boundaries.add('renderer');
     else if (file === 'tsconfig.main.json') boundaries.add('main');
     else if (file === 'tsconfig.preload.json') boundaries.add('preload');

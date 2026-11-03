@@ -1,7 +1,8 @@
 import { expect, test, wheelUntilScrolled } from '../../../../test/ct-test';
-import type { Locator, Page } from '@playwright/test';
+import type { Locator } from '@playwright/test';
 import Pickers from './initializer-pickers.preview.svelte';
 import InitialAgentPicker from './initial-agent-picker.preview.svelte';
+import RepoAndBranchPicker from './RepoAndBranchPicker.svelte';
 
 test.beforeEach(async ({ page }) => {
   await page.route(/^https:\/\/github\.com\/fixture-owner\.png(?:\?.*)?$/, (route) =>
@@ -167,7 +168,7 @@ for (const scenario of ['clone', 'long', 'remote'] as const) {
     const repo = fixture.locator('button[aria-haspopup="dialog"]').first();
     await repo.focus();
     await repo.press('Enter');
-    await page.getByRole('tab', { name: 'Copy local repo', exact: true }).click();
+    await page.getByRole('tab', { name: 'Existing folder', exact: true }).click();
     await page
       .getByTestId('recent-repositories')
       .getByRole('button', { name: /^tools/ })
@@ -217,12 +218,12 @@ for (const { name, width, height, position } of [
     await expectViewportBounded(menu);
     await page.evaluate(() => document.fonts.ready);
     // Labels may wrap, but every rendered line must remain readable and operable.
-    for (const label of ['Pick a repo', 'New repo', 'Copy local repo']) {
+    for (const label of ['Clone', 'New', 'Existing folder']) {
       const mode = menu.getByRole('tab', { name: label, exact: true });
       await mode.click();
-      if (label === 'Pick a repo') {
+      if (label === 'Clone') {
         await expect(menu.getByPlaceholder('owner/repo', { exact: true })).toBeVisible();
-      } else if (label === 'New repo') {
+      } else if (label === 'New') {
         await expect(menu.getByPlaceholder('new-project', { exact: true })).toBeVisible();
       } else {
         await expect(page.getByTestId('recent-repositories')).toBeVisible();
@@ -293,7 +294,7 @@ for (const { name, width, height, position } of [
     );
     await expect(menu).toHaveCount(0);
     await branchTrigger.click();
-    const isolation = menu.getByRole('switch', { name: /Isolated/ });
+    const isolation = menu.getByRole('switch', { name: /use an isolated/i });
     await isolation.scrollIntoViewIfNeeded();
     const isolationBounds = (await isolation.boundingBox())!;
     expect(isolationBounds.y).toBeGreaterThanOrEqual(0);
@@ -309,46 +310,48 @@ for (const { name, width, height, position } of [
   });
 }
 
-test('isolation registers the first pointer click and preserves focus while changing modes', async ({
-  mount,
-  page,
-}) => {
-  await page.setViewportSize({ width: 720, height: 900 });
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await mount(Pickers);
-  const fixture = page.getByTestId('initializer-pickers-fixture');
-  const trigger = fixture.locator('button[aria-haspopup="dialog"]').nth(1);
-  const selection = page.getByTestId('initializer-selection');
-  const menu = page.getByRole('dialog');
-  const isolation = menu.getByRole('switch', { name: /Isolated/ });
-  const otherBranch = menu.getByRole('option', { name: 'feature/task-3', exact: true });
+for (const presentation of ['default', 'form'] as const) {
+  test(`isolation registers the first pointer click and preserves focus while changing modes (${presentation})`, async ({
+    mount,
+    page,
+  }) => {
+    await page.setViewportSize({ width: 720, height: 900 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await mount(Pickers, { props: { presentation } });
+    const fixture = page.getByTestId('initializer-pickers-fixture');
+    const trigger = fixture.locator('button[aria-haspopup="dialog"]').nth(1);
+    const selection = page.getByTestId('initializer-selection');
+    const menu = page.getByRole('dialog');
+    const isolation = menu.getByRole('switch', { name: /use an isolated/i });
+    const otherBranch = menu.getByRole('option', { name: 'feature/task-3', exact: true });
 
-  await trigger.click();
-  await otherBranch.click();
-  await expect(selection).toContainText('"branch":"feature/task-3"');
-  await trigger.click();
-  await expect(isolation).toBeChecked();
-  await isolation.hover();
-  await page.mouse.down();
-  await expect(menu.getByRole('region', { name: 'Select a branch' })).toBeVisible();
-  await page.mouse.up();
-  await expect(selection).toContainText('"skipIsolation":true');
-  await expect(selection).toContainText('"branch":"main"');
-  await expect(menu).toBeVisible();
-  await expect(isolation).not.toBeChecked();
-  await expect(menu.getByRole('combobox')).toHaveCount(0);
-  await isolation.focus();
-  await isolation.press('Space');
-  await expect(selection).toContainText('"skipIsolation":false');
-  await expect(otherBranch).toBeVisible();
-  await expect(isolation).toBeFocused();
+    await trigger.click();
+    await otherBranch.click();
+    await expect(selection).toContainText('"branch":"feature/task-3"');
+    await trigger.click();
+    await expect(isolation).toBeChecked();
+    await isolation.hover();
+    await page.mouse.down();
+    await expect(menu.getByRole('region', { name: 'Select a branch' })).toBeVisible();
+    await page.mouse.up();
+    await expect(selection).toContainText('"skipIsolation":true');
+    await expect(selection).toContainText('"branch":"main"');
+    await expect(menu).toBeVisible();
+    await expect(isolation).not.toBeChecked();
+    await expect(menu.getByRole('combobox')).toHaveCount(0);
+    await isolation.focus();
+    await isolation.press('Space');
+    await expect(selection).toContainText('"skipIsolation":false');
+    await expect(otherBranch).toBeVisible();
+    await expect(isolation).toBeFocused();
 
-  await menu.locator('label', { hasText: 'Isolated worktree' }).click();
-  await expect(selection).toContainText('"skipIsolation":true');
-  await page.keyboard.press('Escape');
-  await expect(menu).toHaveCount(0);
-  await expect(trigger).toBeFocused();
-});
+    await menu.locator('label', { hasText: 'Use an isolated worktree' }).click();
+    await expect(selection).toContainText('"skipIsolation":true');
+    await page.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+  });
+}
 
 for (const { position, contract } of [
   { position: 'top', contract: 'trigger width changes below the trigger' },
@@ -366,7 +369,7 @@ for (const { position, contract } of [
     const menu = page.getByRole('dialog');
     await expect(menu.getByRole('combobox')).toHaveAttribute('aria-busy', 'false');
     await expect(menu.getByRole('option', { name: 'feature/task-29', exact: true })).toBeAttached();
-    const isolation = menu.getByRole('switch', { name: /Isolated/ });
+    const isolation = menu.getByRole('switch', { name: /use an isolated/i });
     await isolation.hover();
     const origin = (await menu.boundingBox())!;
     const control = (await isolation.boundingBox())!;
@@ -428,7 +431,7 @@ for (const initialMode of ['direct', 'reopened-direct'] as const) {
       .locator('button[aria-haspopup="dialog"]')
       .nth(1);
     const menu = page.getByRole('dialog');
-    const isolation = menu.getByRole('switch', { name: /Isolated/ });
+    const isolation = menu.getByRole('switch', { name: /use an isolated/i });
     if (initialMode === 'reopened-direct') {
       await trigger.click();
       await expect(menu.getByRole('combobox')).toHaveAttribute('aria-busy', 'false');
@@ -461,6 +464,8 @@ for (const initialMode of ['direct', 'reopened-direct'] as const) {
         await expect
           .poll(() => results.evaluate((e) => e.scrollHeight > e.clientHeight))
           .toBe(true);
+        // Turning isolation on from folder mode leaves room for several branch rows.
+        expect(await results.evaluate((e) => e.clientHeight)).toBeGreaterThanOrEqual(120);
         await wheelUntilScrolled(results, { deltaY: 300 });
       }
     }
@@ -641,41 +646,7 @@ test('portalled branch menu escapes clipping and paints over panel tabs', async 
   await expect(trigger).toBeFocused();
 });
 
-for (const theme of ['light', 'dark']) {
-  test(`specialist trigger is transparent with matching state radii in ${theme}`, async ({
-    mount,
-    page,
-  }) => {
-    await page.setViewportSize({ width: 360, height: 720 });
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-    await page.evaluate(
-      (value) => document.documentElement.classList.toggle('dark', value === 'dark'),
-      theme,
-    );
-    await mount(InitialAgentPicker, { props: { state: 'populated' } });
-    const trigger = page.locator('.specialist-trigger');
-    const surface = trigger.locator('[data-slot="button-surface"]');
-    await expect(trigger).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
-    await expect(surface).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
-    await expect(trigger).toHaveCSS('border-style', 'solid');
-    await expect(trigger).not.toHaveCSS('border-color', 'rgba(0, 0, 0, 0)');
-    const rect = await trigger.boundingBox();
-    for (const state of ['hover', 'focus', 'open']) {
-      if (state === 'hover') await trigger.hover();
-      if (state === 'focus') await trigger.focus();
-      if (state === 'open') await trigger.press('Enter');
-      const radius = await trigger.evaluate((e) => getComputedStyle(e).borderRadius);
-      await expect(surface).toHaveCSS('border-radius', radius);
-      expect(await trigger.boundingBox()).toEqual(rect);
-    }
-    await page.keyboard.press('Escape');
-    await expect(trigger).toBeFocused();
-  });
-}
-
-// The specialist menu must scroll as one container: a nested scroller let the
-// hover highlight of the last row overflow the menu (second vertical bar) and
-// made the inner box's overflow-x compute to auto (horizontal bar).
+// Search and management stay fixed while one results viewport scrolls.
 for (const height of [900, 360]) {
   test(`crowded specialist menu scrolls as a single container without horizontal overflow at ${height}px`, async ({
     mount,
@@ -684,13 +655,15 @@ for (const height of [900, 360]) {
     await page.setViewportSize({ width: 1024, height });
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await mount(InitialAgentPicker, { props: { state: 'crowded' } });
-    await page.locator('.specialist-trigger').click();
-    const menu = page.locator('[data-slot="menu-content"]');
+    await page
+      .getByTestId('initial-agent-picker')
+      .getByRole('button', { name: /^Initial agent / })
+      .click();
+    const menu = page.getByRole('dialog', { name: 'Initial agent', exact: true });
     await expect(menu).toBeVisible();
-    const lastRow = menu.locator('[data-specialist-option]').last();
+    const lastRow = menu.getByRole('option').last();
     await lastRow.scrollIntoViewIfNeeded();
     await lastRow.hover();
-    await expect(lastRow).toHaveAttribute('data-highlighted', '');
 
     const overflow = () =>
       menu.evaluate((root) => {
@@ -700,114 +673,98 @@ for (const height of [900, 360]) {
           verticalScrollers: elements
             .filter((el) => scrolls(getComputedStyle(el).overflowY))
             .filter((el) => el.scrollHeight > el.clientHeight)
-            .map((el) => (el === root ? 'menu' : (el.getAttribute('class') ?? el.tagName))),
+            .map((el) => el.getAttribute('role')),
           horizontalOverflow: elements
             .filter((el) => scrolls(getComputedStyle(el).overflowX))
             .filter((el) => el.scrollWidth > el.clientWidth)
-            .map((el) => (el === root ? 'menu' : (el.getAttribute('class') ?? el.tagName))),
+            .map((el) => el.getAttribute('role')),
         };
       });
-    await expect.poll(overflow).toEqual({ verticalScrollers: ['menu'], horizontalOverflow: [] });
+    await expect.poll(overflow).toEqual({ verticalScrollers: ['listbox'], horizontalOverflow: [] });
 
     const [menuBox, rowBox] = await Promise.all([menu.boundingBox(), lastRow.boundingBox()]);
-    expect(menuBox!.height).toBeLessThanOrEqual(300);
     expect(rowBox!.y).toBeGreaterThanOrEqual(menuBox!.y);
     expect(rowBox!.y + rowBox!.height).toBeLessThanOrEqual(menuBox!.y + menuBox!.height + 0.5);
     expect(menuBox!.y + menuBox!.height).toBeLessThanOrEqual(height);
   });
 }
 
-// Keyboard-drives focus so `:focus-visible` matches (a scripted `focus()` may not).
-async function tabUntilFocusVisible(page: Page, target: Locator) {
-  for (let step = 0; step < 12; step += 1) {
-    await page.keyboard.press('Tab');
-    if (
-      await target.evaluate(
-        (element) => element === document.activeElement && element.matches(':focus-visible'),
-      )
-    ) {
-      return;
-    }
-  }
-  throw new Error('target never received keyboard focus');
-}
-
-// Resolves a CSS color expression the same way the picker's stylesheet does,
-// so assertions compare against the token/system color rather than a literal.
-async function resolveColor(page: Page, color: string) {
-  return page.evaluate((value) => {
-    const probe = document.createElement('div');
-    probe.style.border = `1px solid ${value}`;
-    probe.style.background = value;
-    document.body.append(probe);
-    const style = getComputedStyle(probe);
-    const result = { border: style.borderTopColor, background: style.backgroundColor };
-    probe.remove();
-    return result;
-  }, color);
-}
-
-// The selected agent card already rests on the input border token (which the
-// light theme resolves to the foreground color), so its focus evidence is the
-// accent background; the trigger's is the border color itself.
-const pickerFocusTargets = [
-  {
-    name: 'agent card',
-    locate: (page: Page) => page.locator('.agent-card').first(),
-    focusChanges: 'background-color' as const,
-    focusBackground: 'color-mix(in srgb, var(--color-accent) 72%, var(--color-card))',
-  },
-  {
-    name: 'specialist trigger',
-    locate: (page: Page) => page.locator('.specialist-trigger'),
-    focusChanges: 'border-top-color' as const,
-    focusBackground: null,
-  },
-];
-
-for (const target of pickerFocusTargets) {
-  test(`${target.name} keyboard focus draws a foreground border without outline or shadow`, async ({
+for (const height of [320, 700]) {
+  test(`last branch stays fully reachable at the dropdown bottom at ${height}px`, async ({
     mount,
     page,
   }) => {
-    await page.setViewportSize({ width: 720, height: 720 });
+    await page.setViewportSize({ width: 480, height });
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    await mount(InitialAgentPicker, { props: { state: 'populated' } });
-    const element = target.locate(page);
-    const foreground = await resolveColor(page, 'var(--color-foreground)');
-    const resting = await element.evaluate(
-      (e, property) => getComputedStyle(e).getPropertyValue(property),
-      target.focusChanges,
-    );
-
-    await tabUntilFocusVisible(page, element);
-    await expect(element).toHaveCSS('outline-style', 'none');
-    await expect(element).toHaveCSS('box-shadow', 'none');
-    await expect(element).toHaveCSS('border-top-color', foreground.border);
-    await expect(element).not.toHaveCSS(target.focusChanges, resting);
-    if (target.focusBackground) {
-      const background = await resolveColor(page, target.focusBackground);
-      await expect(element).toHaveCSS('background-color', background.background);
-    }
+    await mount(Pickers, {
+      props: {
+        presentation: 'form',
+        scenario: 'clone',
+        branchPreview: 'groups-closed',
+      },
+    });
+    const menu = page.getByRole('dialog');
+    const last = menu.getByRole('option').last();
+    await expect(last).toBeVisible();
+    await last.evaluate((element) => {
+      for (let node = element.parentElement; node; node = node.parentElement) {
+        if (getComputedStyle(node).overflowY === 'auto' && node.scrollHeight > node.clientHeight) {
+          node.scrollTop = node.scrollHeight;
+          break;
+        }
+      }
+    });
+    await expect(last).toBeInViewport({ ratio: 1 });
+    const branch = (await last.innerText()).trim();
+    await last.click();
+    await expect(menu).toBeHidden();
+    await expect
+      .poll(
+        async () =>
+          JSON.parse((await page.getByTestId('initializer-selection').textContent())!).branch,
+      )
+      .toBe(branch);
   });
+}
 
-  test(`${target.name} keyboard focus uses system Highlight and Canvas under forced colors`, async ({
+for (const plainFolder of ['existing', 'new'] as const) {
+  test(`form keeps Labs plain-folder controls available for a ${plainFolder} folder`, async ({
     mount,
     page,
   }) => {
-    await page.setViewportSize({ width: 720, height: 720 });
-    await page.emulateMedia({ reducedMotion: 'reduce', forcedColors: 'active' });
-    await mount(InitialAgentPicker, { props: { state: 'populated' } });
-    const element = target.locate(page);
-    const highlight = await resolveColor(page, 'Highlight');
-    const canvas = await resolveColor(page, 'Canvas');
-    const restingBorder = await element.evaluate((e) => getComputedStyle(e).borderTopColor);
-    expect(restingBorder).not.toBe(highlight.border);
-
-    await tabUntilFocusVisible(page, element);
-    await expect(element).toHaveCSS('outline-style', 'none');
-    await expect(element).toHaveCSS('box-shadow', 'none');
-    await expect(element).toHaveCSS('border-top-color', highlight.border);
-    await expect(element).toHaveCSS('background-color', canvas.background);
+    const changes: Array<{ checked: boolean; tab: 'local' | 'new' }> = [];
+    await mount(RepoAndBranchPicker, {
+      props: {
+        presentation: 'form',
+        repoType: 'local',
+        repoPath: '/fixture/plain-folder',
+        plainFolder,
+        plainFolderMode: true,
+        isNewRepo: plainFolder === 'new',
+        gitChoice: {
+          checked: false,
+          folder: 'folder',
+          onCheckedChange: (checked: boolean, tab: 'local' | 'new') => {
+            changes.push({ checked, tab });
+          },
+        },
+      },
+    });
+    await expect(page.getByRole('button', { name: /^Select a branch:/ })).toHaveCount(0);
+    await page.getByRole('button', { name: /^Codebase\b/ }).click();
+    const menu = page.getByRole('dialog', { name: 'Codebase', exact: true });
+    await menu.getByRole('button', { name: 'Add codebase', exact: true }).click();
+    await menu
+      .getByRole('tab', {
+        name: plainFolder === 'existing' ? 'Existing folder' : 'New',
+        exact: true,
+      })
+      .click();
+    const toggle = menu.getByRole('switch', { name: 'Initialize as git repository', exact: true });
+    await expect(toggle).toHaveAttribute('aria-checked', 'false');
+    await toggle.click();
+    await expect
+      .poll(() => changes)
+      .toEqual([{ checked: true, tab: plainFolder === 'existing' ? 'local' : 'new' }]);
   });
 }

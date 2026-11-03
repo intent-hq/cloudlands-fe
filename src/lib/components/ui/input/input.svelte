@@ -7,12 +7,16 @@
     textEntryControlClasses,
     textEntryFocusResetClasses,
     textEntryHeight,
+    textEntrySearchClasses,
+    type TextEntryVariant,
   } from '../text-entry';
   import { cn, type WithElementRef } from '$lib/utils.js';
 
   type InputType = Exclude<HTMLInputTypeAttribute, 'file'>;
   type SharedProps = Omit<HTMLInputAttributes, 'size' | 'type'> & {
     size?: UiSize | number;
+    /** `search` is the shared flat menu/picker search field. */
+    variant?: TextEntryVariant;
     noFocusStyle?: boolean;
     message?: string;
     error?: string;
@@ -33,6 +37,7 @@
     type,
     size,
     files = $bindable(),
+    variant = 'default',
     noFocusStyle = false,
     message,
     error,
@@ -99,14 +104,21 @@
     {id}
     data-slot={dataSlot}
     data-size={resolvedSize}
-    class={cn(
-      'type-caption text-foreground selection:bg-primary selection:text-primary-foreground placeholder:text-muted-foreground flex w-full min-w-0 rounded-(--radius-medium) border px-3 py-1',
-      textEntryControlClasses,
-      textEntryCaretFocusClasses,
-      textEntryHeight(resolvedSize),
-      noFocusStyle && textEntryFocusResetClasses,
-      className,
-    )}
+    data-variant={variant === 'search' ? 'search' : undefined}
+    class={variant === 'search'
+      ? cn(
+          'flex selection:bg-primary selection:text-primary-foreground',
+          textEntrySearchClasses,
+          className,
+        )
+      : cn(
+          'type-caption text-foreground selection:bg-primary selection:text-primary-foreground placeholder:text-muted-foreground flex w-full min-w-0 rounded-(--radius-medium) border px-3 py-1',
+          textEntryControlClasses,
+          textEntryCaretFocusClasses,
+          textEntryHeight(resolvedSize),
+          noFocusStyle && textEntryFocusResetClasses,
+          className,
+        )}
     {type}
     size={nativeSize}
     aria-describedby={describedBy}

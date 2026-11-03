@@ -29,6 +29,22 @@ import { canRequestDeviceUpdate } from '$lib/utils/device-update-eligibility';
 import { formatConnectionLabel, formatGuestSessionLabel } from '$lib/utils/connection-label';
 import { resolveBackendTransport } from '$lib/client/live/backend-transport-factory';
 import { getWebDaemonStatusSource } from '$lib/client/live/web-daemon-status';
+import {
+  addHostConnection,
+  bindBrowserAccessList,
+  captureHostFingerprint,
+  fetchBrowserAccessConnections,
+  forgetHostConnection,
+  getBrowserAccessHost,
+  getManagingHost,
+  getPageHost,
+  openBrowserAccessBackend,
+  rotateHostConnectionSecret,
+  testHostConnection,
+  updateHostConnection,
+  HostRequestError,
+  type BrowserAccessHost,
+} from '$lib/client/live/browser-access-host';
 import { expectsElectronPreloadBridge, isElectronPlatform } from '$lib/utils/platform-capabilities';
 import { takeEveryByContextFIFO, takeLatestInContext } from '../../../utils/context-saga-effects';
 import {
@@ -82,6 +98,7 @@ import type {
 import {
   addConnectionRequested,
   authRejectedReceived,
+  browserHostDetected,
   certMismatchReceived,
   certWarningsReceived,
   captureFingerprintRequested,
@@ -121,7 +138,10 @@ type ConnectionsEvent =
   | { kind: 'cert-warnings'; payload: ConnectionCertWarningsEvent }
   | { kind: 'protocol-mismatch'; payload: ConnectionProtocolMismatchEvent }
   | { kind: 'auth-rejected'; payload: ConnectionAuthRejectedEvent }
-  | { kind: 'sync-status'; payload: KeychainSyncUiStatus };
+  | { kind: 'sync-status'; payload: KeychainSyncUiStatus }
+  // intent-web's event stream closed for good: the session ended, or the host
+  // stopped answering. Live updates stop until the page reloads.
+  | { kind: 'host-stream-closed'; signedOut: boolean };
 
 function getApi(): Window['electronAPI'] | undefined {
   return typeof window !== 'undefined' ? window.electronAPI : undefined;
@@ -131,8 +151,70 @@ function toError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
 
+/**
+ * A managing host pushes the same `connections:*` events over SSE. List
+ * pushes carry the host's default backend, so each is rebound to this tab.
+ * EventSource reconnects on its own after a drop, but pushes sent during the
+ * gap are lost, so every reconnect lists again. A stream that closes for good
+ * (the host refused the reconnect, e.g. an expired session) is reported.
+ */
+function subscribeHostEvents(
+  host: BrowserAccessHost,
+  emit: (event: ConnectionsEvent) => void,
+): () => void {
+  if (!host.eventsUrl || typeof EventSource === 'undefined') return () => {};
+  const source = new EventSource(host.eventsUrl, { withCredentials: true });
+  let disposed = false;
+  let opened = false;
+  const relist = async () => {
+    const list = await fetchBrowserAccessConnections(host);
+    if (!disposed) emit({ kind: 'changed', payload: list });
+  };
+  source.addEventListener('open', () => {
+    if (opened) void relist().catch(() => {});
+    opened = true;
+  });
+  source.addEventListener('error', () => {
+    if (source.readyState !== EventSource.CLOSED) return;
+    // Re-list once: it refreshes what the gap missed and tells an ended
+    // session (401) apart from a host that stopped answering.
+    void relist().then(
+      () => !disposed && emit({ kind: 'host-stream-closed', signedOut: false }),
+      (error: unknown) =>
+        !disposed &&
+        emit({
+          kind: 'host-stream-closed',
+          signedOut: error instanceof HostRequestError && error.status === 401,
+        }),
+    );
+  });
+  const on = (name: string, handler: (payload: never) => void) =>
+    source.addEventListener(name, (event) => {
+      try {
+        handler(JSON.parse((event as MessageEvent<string>).data) as never);
+      } catch {
+        // A malformed push is dropped; the next list or push refreshes state.
+      }
+    });
+  on(CONNECTIONS_CHANGED_EVENT, (payload: ConnectionsChangedEvent) =>
+    emit({ kind: 'changed', payload: bindBrowserAccessList(host, payload) }),
+  );
+  on(CONNECTION_CERT_MISMATCH_EVENT, (payload: ConnectionCertMismatchEvent) =>
+    emit({ kind: 'cert-mismatch', payload }),
+  );
+  on(CONNECTION_AUTH_REJECTED_EVENT, (payload: ConnectionAuthRejectedEvent) =>
+    emit({ kind: 'auth-rejected', payload }),
+  );
+  return () => {
+    disposed = true;
+    source.close();
+  };
+}
+
 function createConnectionsEventChannel(): EventChannel<ConnectionsEvent> {
   return eventChannel<ConnectionsEvent>((emit) => {
+    const host = getManagingHost();
+    if (host) return subscribeHostEvents(host, emit);
     const api = getApi();
     if (!api?.on) return () => {};
 
@@ -187,6 +269,9 @@ async function invokeConnectionsList(): Promise<ConnectionsListResult> {
   // must still wait for its real per-window connections:list response.
   if (!expectsElectronPreloadBridge() && !isElectronPlatform()) {
     resolveBackendTransport();
+    // Served by a desktop app's Browser access: list its connections (token-free).
+    const browserAccessHost = getBrowserAccessHost();
+    if (browserAccessHost) return fetchBrowserAccessConnections(browserAccessHost);
     const browserBackend = getWebDaemonStatusSource();
     if (browserBackend) {
       const id = 'browser-websocket';
@@ -201,12 +286,16 @@ async function invokeConnectionsList(): Promise<ConnectionsListResult> {
 async function invokeCaptureFingerprint(
   params: CaptureFingerprintParams,
 ): Promise<CaptureFingerprintResult> {
+  const host = getManagingHost();
+  if (host) return captureHostFingerprint(host, params);
   const api = getApi();
   if (!api) throw new Error('electronAPI is not available');
   return (await api.invoke(CONNECTIONS.CAPTURE_FINGERPRINT, params)) as CaptureFingerprintResult;
 }
 
 async function invokeAddConnection(params: AddConnectionParams): Promise<AddConnectionResult> {
+  const host = getManagingHost();
+  if (host) return addHostConnection(host, params);
   const api = getApi();
   if (!api) throw new Error('electronAPI is not available');
   return (await api.invoke(CONNECTIONS.ADD, params)) as AddConnectionResult;
@@ -215,12 +304,16 @@ async function invokeAddConnection(params: AddConnectionParams): Promise<AddConn
 async function invokeUpdateConnection(
   params: UpdateConnectionParams,
 ): Promise<UpdateConnectionResult> {
+  const host = getManagingHost();
+  if (host) return updateHostConnection(host, params);
   const api = getApi();
   if (!api) throw new Error('electronAPI is not available');
   return (await api.invoke(CONNECTIONS.UPDATE, params)) as UpdateConnectionResult;
 }
 
 async function invokeTestConnection(params: TestConnectionParams): Promise<TestConnectionResult> {
+  const host = getManagingHost();
+  if (host) return testHostConnection(host, params);
   const api = getApi();
   if (!api) throw new Error('electronAPI is not available');
   return (await api.invoke(CONNECTIONS.TEST, params)) as TestConnectionResult;
@@ -229,12 +322,20 @@ async function invokeTestConnection(params: TestConnectionParams): Promise<TestC
 async function invokeRotateConnectionSecret(
   params: RotateConnectionSecretParams,
 ): Promise<RotateConnectionSecretResult> {
+  const host = getManagingHost();
+  if (host) return rotateHostConnectionSecret(host, params);
   const api = getApi();
   if (!api) throw new Error('electronAPI is not available');
   return (await api.invoke(CONNECTIONS.ROTATE_SECRET, params)) as RotateConnectionSecretResult;
 }
 
 async function invokeOpenConnection(params: OpenConnectionParams): Promise<OpenConnectionResult> {
+  // Browser access: each backend opens in its own tab, bridged by the host.
+  // A tab with no backend yet becomes the opened backend's tab.
+  const pageHost = getPageHost();
+  if (pageHost) {
+    return openBrowserAccessBackend(params.id, undefined, undefined, pageHost.backendId === null);
+  }
   const api = getApi();
   if (!api) throw new Error('electronAPI is not available');
   return (await api.invoke(CONNECTIONS.OPEN, params)) as OpenConnectionResult;
@@ -243,6 +344,8 @@ async function invokeOpenConnection(params: OpenConnectionParams): Promise<OpenC
 async function invokeForgetConnection(
   params: ForgetConnectionParams,
 ): Promise<ForgetConnectionResult> {
+  const host = getManagingHost();
+  if (host) return forgetHostConnection(host, params.id);
   const api = getApi();
   if (!api) throw new Error('electronAPI is not available');
   return (await api.invoke(CONNECTIONS.FORGET, params)) as ForgetConnectionResult;
@@ -436,6 +539,25 @@ function* announceDaemonsBehindPin(
   }
   tracker.evaluatedById = evaluated;
   tracker.toastedIds = toasted;
+}
+
+/**
+ * intent-web stopped sending live updates. Reloading the page reconnects, or
+ * shows the sign-in page when the session ended.
+ */
+async function showHostStreamClosedToast(signedOut: boolean): Promise<void> {
+  const [{ notify }, { m }] = await Promise.all([
+    import('$lib/components/patterns/notify'),
+    import('$shared/paraglide/messages.js'),
+  ]);
+  notify.error(signedOut ? m.intentWeb_sessionEnded_error() : m.intentWeb_updatesStopped_error(), {
+    id: 'intent-web-events-closed',
+    duration: Number.POSITIVE_INFINITY,
+    action: {
+      label: signedOut ? m.intentWeb_signIn_action() : m.intentWeb_reload_action(),
+      onClick: () => globalThis.location?.reload(),
+    },
+  });
 }
 
 async function invokeSyncGetState(): Promise<KeychainSyncStateResult> {
@@ -707,6 +829,8 @@ function* consumeConnectionsEvents(
       else if (event.kind === 'cert-warnings') yield* put(certWarningsReceived(event.payload));
       else if (event.kind === 'auth-rejected') yield* put(authRejectedReceived(event.payload));
       else if (event.kind === 'sync-status') yield* put(keychainSyncStatusReceived(event.payload));
+      else if (event.kind === 'host-stream-closed')
+        yield* call(showHostStreamClosedToast, event.signedOut);
       else yield* put(protocolMismatchReceived(event.payload));
     }
   } finally {
@@ -1105,6 +1229,16 @@ function* pumpUpdateActions(updateActions: Channel<UpdateBackendAction>): SagaGe
 }
 
 export function* connectionsSaga(): SagaGenerator<void> {
+  const pageHost = getPageHost();
+  if (pageHost) {
+    yield* put(
+      browserHostDetected({
+        manageConnections: pageHost.canManageConnections,
+        backendBound: pageHost.backendId !== null,
+        tailcatAvailable: pageHost.tailcatAvailable,
+      }),
+    );
+  }
   yield* fork(connectionTunnelSaga);
   const events = createConnectionsEventChannel();
   const updateActions = sagaChannel<UpdateBackendAction>();

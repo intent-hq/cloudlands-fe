@@ -31,6 +31,8 @@ vi.mock('electron', async () => {
       getURL: () => this.url,
       send: vi.fn(),
       sendInputEvent: vi.fn(),
+      setZoomMode: vi.fn(),
+      setZoomLevel: vi.fn(),
     });
     visible = false;
     show = vi.fn(() => {
@@ -89,7 +91,7 @@ vi.mock('electron', async () => {
     }),
   };
 });
-vi.mock('../features/backend/main/connections-store', () => ({
+vi.mock('../features/backend/main/desktop-connections-store', () => ({
   list: fixture.list,
   getActiveId: fixture.getActiveId,
   setActiveId: fixture.setActiveId,

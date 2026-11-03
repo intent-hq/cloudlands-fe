@@ -16,7 +16,7 @@ import { Logger } from '$shared/logger';
 import { m } from '$shared/paraglide/messages.js';
 import { parsePairingUri } from '$shared/utils/pairing-uri';
 import { getMainWindow } from '../../../main/state';
-import * as connectionsStore from '../../backend/main/connections-store';
+import * as connectionsStore from '../../backend/main/desktop-connections-store';
 import * as guestSessionsStore from '../../backend/main/guest-sessions-store';
 import {
   BackendCompatibilityError,

@@ -66,10 +66,11 @@ export interface ModelUnavailableInfo {
 /**
  * A turn that failed because the provider's usage/quota limit was hit, as
  * reported by the daemon's structured `errorCode: "quota-exceeded"` on
- * `agent:failed`. Retrying the SAME provider cannot succeed (the daemon
- * classifies quota rejections as terminal), so the recovery affordance is a
- * switch to a different provider — hence `providerId`, the provider that ran
- * out, which the banner excludes from the alternatives it offers.
+ * `agent:failed`. The daemon classifies quota rejections as terminal, so it
+ * never auto-retries them; the banner leads with a switch to a different
+ * provider — hence `providerId`, the provider that ran out, which it excludes
+ * from the alternatives it offers — and keeps a plain user-initiated retry on
+ * the same provider, because usage limits reset.
  *
  * Structured rather than string-matched on purpose: the auth-failure banner
  * matches prose against per-provider `authErrorPatterns`, which is fragile
@@ -202,6 +203,21 @@ export interface TranscriptSnapshotMeta {
 export type LiveStreamPhase = 'connecting' | 'awaiting-snapshot' | 'live' | 'resyncing' | 'delayed';
 
 /**
+ * Set on a loaded hydrated block the daemon served cut (PROTOCOL §5.5
+ * "Capped and paged block reads", `messageBlockPages: 1`): the block is too
+ * large for one read, so the app shows the part it received with a notice.
+ * `shownBytes` is the size of the received body slice (null when the body
+ * was dropped, e.g. an over-cap image); `totalBytes` is the full body size
+ * (null when unknown).
+ */
+export interface HydratedBlockTruncation {
+  field: string | null;
+  encoding: 'text' | 'json' | null;
+  shownBytes: number | null;
+  totalBytes: number | null;
+}
+
+/**
  * One lazily hydrated content block (PROTOCOL §5.5 slim projection +
  * `agent.getMessageBlock`): the FULL body fetched on demand when the user
  * expands a truncated tool row or views a truncated image. Keyed in
@@ -211,7 +227,7 @@ export type LiveStreamPhase = 'connecting' | 'awaiting-snapshot' | 'live' | 'res
  */
 export type HydratedBlockEntry =
   | { status: 'loading'; seq: number }
-  | { status: 'loaded'; seq: number; block: ContentBlock }
+  | { status: 'loaded'; seq: number; block: ContentBlock; truncation?: HydratedBlockTruncation }
   | { status: 'error'; seq: number; error: string };
 
 export interface StreamFailureCorrelation {

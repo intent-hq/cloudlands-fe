@@ -14,7 +14,7 @@ for (const viewport of [
     await mount(Harness);
     await page.getByRole('button', { name: 'Choose a branch' }).click();
     const menu = page.locator('[data-slot="popover-content"]');
-    await expect(menu.getByRole('searchbox')).toBeVisible();
+    await expect(menu.getByRole('searchbox')).toBeFocused();
     await expect
       .poll(() =>
         menu.evaluate((node) => {

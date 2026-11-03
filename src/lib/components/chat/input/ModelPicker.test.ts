@@ -41,7 +41,14 @@ const mockProviderModelsState = vi.hoisted((): ProviderModelsState => ({
 // Named profile summaries served by `providers.catalog` (§5.54). Empty by
 // default so every existing test keeps the profile-free picker.
 const mockCatalogProfiles = vi.hoisted(() => ({
-  current: [] as { id: string; providerRef: string; baseProviderId: string; name: string }[],
+  current: [] as {
+    id: string;
+    providerRef: string;
+    baseProviderId: string;
+    name: string;
+    remoteCompatible?: boolean;
+    remoteIncompatibility?: { reason: string; keys: string[] };
+  }[],
 }));
 const mockDaemonAppOwned = vi.hoisted(() => ({ current: true }));
 // providerSettings slice state (profile sign-in statuses, §5.54).
@@ -167,6 +174,15 @@ vi.mock('$store/renderer/store', async () => {
         },
       },
       daemonHealth: {},
+      // No exposed machines unless a test adds them (remote agents stay locked).
+      remoteMachines: {
+        supported: false,
+        machines: {},
+        localFingerprint: null,
+        executorBackends: null,
+        pending: {},
+        failures: {},
+      },
       ...mockRoleState.current,
     }),
     dispatch: mockSvelteDispatch,
@@ -356,7 +372,16 @@ const availableEnabledProviderIds$ = derived(
   ([enabled, override]) => override ?? enabled,
 );
 const mockAgentSession$ = writable<
-  { id: string; workspaceId: string; provider?: string; model?: string | null } | undefined
+  | {
+      id: string;
+      workspaceId: string;
+      provider?: string;
+      model?: string | null;
+      nodeId?: string;
+      nodeName?: string;
+      placement?: { target: 'local' | 'remote'; checkout: 'isolated' };
+    }
+  | undefined
 >(undefined);
 // Guest-local Antigravity sign-in state (`selectIsProviderModelAccessAllowed`).
 const antigravityModelsAllowed$ = writable(true);
@@ -579,6 +604,13 @@ describe('ModelPicker guest / collaborator lock', () => {
 
   const hostCatalog = [{ value: 'auggie:sonnet4.6', label: 'Sonnet 4.6', description: 'Smart' }];
 
+  const HOST_PROFILE = {
+    id: 'phost0000001',
+    providerRef: 'codex@phost0000001',
+    baseProviderId: 'codex',
+    name: 'Host work',
+  };
+
   const asGuestWindow = () => {
     mockRoleState.current.connections = { windowBackendId: 'host-1', hasReceivedList: true };
     mockRoleState.current.guestSessions.sessions = {
@@ -674,6 +706,43 @@ describe('ModelPicker guest / collaborator lock', () => {
     expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
   });
 
+  // The host's profiles (§5.54) are its administrator's private configuration:
+  // whether or not the guest's catalog can resolve the agent's profile, the
+  // locked chip names only the model, never the profile or "Removed profile".
+  it.each([
+    ['unknown to the guest', []],
+    ['listed in the catalog', [{ ...HOST_PROFILE }]],
+  ])("guest window: never shows the host's profile name when it is %s", async (_, profiles) => {
+    asGuestWindow();
+    availableProviderOverride$.set([]);
+    mockCatalogProfiles.current = profiles;
+    mockAgentSession$.set({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: HOST_PROFILE.providerRef,
+    });
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) =>
+      providerId.startsWith('codex')
+        ? { models: [{ value: 'gpt-5', label: 'GPT-5', description: '' }] }
+        : { models: [] },
+    );
+
+    renderAgentPicker('gpt-5');
+
+    const button = screen.getByRole('button');
+    expect(button.hasAttribute('disabled')).toBe(true);
+    await waitFor(() => expect(button.textContent).toContain('GPT-5'));
+    const labels = [
+      button.textContent ?? '',
+      button.getAttribute('title') ?? '',
+      ...[...button.querySelectorAll('[aria-label], [title]')].flatMap((el) => [
+        el.getAttribute('aria-label') ?? '',
+        el.getAttribute('title') ?? '',
+      ]),
+    ].join(' | ');
+    expect(labels).not.toMatch(/Removed profile|Host work|Default/);
+  });
+
   it('guest window: a model missing from the host catalog shows its bare id without auto-fallback', async () => {
     const { agentClient } = await import('$features/agent/agent.client');
     asGuestWindow();
@@ -695,6 +764,335 @@ describe('ModelPicker guest / collaborator lock', () => {
     expect(screen.queryByRole('status')).toBeNull();
     expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
     expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+  });
+
+  it('remote agent: locks the model, names the machine and explains why, with no warning or mutation', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    // The backend's own providers say nothing about the machine.
+    availableProviderOverride$.set([]);
+    mockAgentSession$.set({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: 'auggie',
+      nodeId: 'node-mac',
+      nodeName: 'Mac mini',
+      placement: { target: 'remote', checkout: 'isolated' },
+    });
+
+    renderAgentPicker();
+
+    const button = screen.getByRole('button');
+    // Focusable at full contrast so the explanation can be read (not `disabled`).
+    expect(button.hasAttribute('disabled')).toBe(false);
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(button.getAttribute('title')).toBe(
+      "This agent's model can't be changed while it runs on Mac mini. Create a new agent to use another model.",
+    );
+    await waitFor(() => {
+      expect(button.textContent).toContain('Sonnet 4.6');
+    });
+    expect(button.querySelector('[data-remote-model-machine]')?.textContent).toContain('Mac mini');
+    expect(button.getAttribute('aria-label')).toContain('on Mac mini');
+
+    await fireEvent.click(button);
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(screen.queryByRole('option')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(button.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+    expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+  });
+
+  it('local agent with placement target local keeps the unlocked picker', async () => {
+    mockAgentSession$.set({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: 'auggie',
+      placement: { target: 'local', checkout: 'isolated' },
+    });
+
+    renderAgentPicker();
+
+    const button = screen.getByRole('button');
+    expect(button.hasAttribute('disabled')).toBe(false);
+    expect(button.getAttribute('aria-disabled')).toBeNull();
+    expect(button.querySelector('[data-remote-model-machine]')).toBeNull();
+  });
+
+  describe('remote agent on a backend that can switch its model', () => {
+    const REMOTE_SESSION = {
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: 'codex',
+      nodeId: 'node-mac',
+      nodeName: 'Mac mini',
+      placement: { target: 'remote' as const, checkout: 'isolated' as const },
+    };
+    const WORK = {
+      id: 'p-work',
+      providerRef: 'codex@p-work',
+      baseProviderId: 'codex',
+      name: 'Work',
+      remoteCompatible: false,
+      remoteIncompatibility: { reason: 'account-folder', keys: ['CODEX_HOME'] },
+    };
+    const KEY = {
+      id: 'p-key',
+      providerRef: 'codex@p-key',
+      baseProviderId: 'codex',
+      name: 'Key',
+      remoteCompatible: true,
+    };
+    const machineRow = (extra: Record<string, unknown> = {}) => ({
+      id: 'node-mac',
+      name: 'Mac mini',
+      platform: { os: 'macos', arch: 'aarch64' },
+      hosts: [],
+      port: 7443,
+      fingerprint: 'fp',
+      state: 'connected',
+      runningAgents: 1,
+      addedAt: '2026-11-01T00:00:00Z',
+      observedAt: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
+      capabilities: {
+        providers: [
+          { id: 'codex', status: 'ready', models: ['gpt-5', 'gpt-machine-only'] },
+          { id: 'claude-code', status: 'signed-out', models: ['opus'] },
+        ],
+      },
+      ...extra,
+    });
+    const withMachine = (
+      machine: Record<string, unknown> | null = machineRow(),
+      { labs = true }: { labs?: boolean } = {},
+    ) => {
+      Object.assign(mockRoleState.current, {
+        userPreferences: { labsRemoteAgentsEnabled: labs },
+        remoteMachines: {
+          supported: true,
+          machines: machine ? { 'node-mac': machine } : {},
+          localFingerprint: null,
+          executorBackends: null,
+          pending: {},
+          failures: {},
+        },
+      });
+    };
+
+    beforeEach(() => {
+      enabledProviderIds$.set(['auggie', 'codex', 'claude-code']);
+      enabledProvidersMap$.set({ auggie: true, codex: true, 'claude-code': true });
+      // The backend itself has no Codex or Claude Code: the machine's report decides.
+      availableProviderOverride$.set(['auggie']);
+      mockAgentSession$.set(REMOTE_SESSION);
+      mockCatalogProfiles.current = [WORK, KEY];
+      vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) =>
+        providerId === 'codex'
+          ? { models: [{ value: 'gpt-5', label: 'GPT-5', description: 'Codex catalog' }] }
+          : providerId === 'auggie'
+            ? { models: hostCatalog }
+            : { models: [] },
+      );
+    });
+
+    it("lists only the machine's providers and models and switches on the machine", async () => {
+      const { agentClient } = await import('$features/agent/agent.client');
+      withMachine();
+      renderAgentPicker('gpt-5');
+
+      const button = screen.getByRole('button');
+      expect(button.getAttribute('aria-disabled')).toBeNull();
+      await waitFor(() =>
+        expect(button.querySelector('[data-remote-model-machine]')?.textContent).toContain(
+          'Mac mini',
+        ),
+      );
+      await fireEvent.click(button);
+
+      const header = await screen.findByTestId('model-picker-remote-header');
+      expect(header.textContent).toContain('Models on Mac mini');
+      expect(header.textContent).toContain('macOS arm64');
+      expect(header.textContent).toMatch(/Reported/);
+      // The backend's own catalog loads say nothing about the machine.
+      expect(screen.queryByText(/Loading more models/)).toBeNull();
+      const rail = screen.getByTestId('model-provider-tabs');
+      expect(rail.getAttribute('aria-label')).toBe('Providers on Mac mini');
+      // Auggie runs on the backend but the machine never reported it.
+      const labels = within(rail)
+        .getAllByRole('tab')
+        .map((tab) => tab.getAttribute('aria-label') ?? '');
+      expect(labels).toHaveLength(4);
+      expect(labels.every((label) => !/Auggie/.test(label))).toBe(true);
+      expect(labels.some((label) => /Claude Code.*not signed in/.test(label))).toBe(true);
+
+      const machineOnly = await screen.findByRole('option', { name: /gpt-machine-only/ });
+      expect(screen.getByRole('option', { name: /GPT-5/ })).toBeTruthy();
+      await fireEvent.click(machineOnly);
+      await waitFor(() =>
+        expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledWith(
+          'agent-1',
+          'gpt-machine-only',
+          'ws-1',
+          'codex',
+        ),
+      );
+    });
+
+    it('greys out a profile that uses an account folder, with the reason', async () => {
+      withMachine();
+      renderAgentPicker('gpt-5');
+      await fireEvent.click(screen.getByRole('button'));
+      await fireEvent.click(await screen.findByRole('tab', { name: /Work/ }));
+
+      const notice = await screen.findByTestId('model-picker-remote-incompatible');
+      // Names the backend the folder lives on.
+      expect(notice.textContent).toMatch(
+        /Uses an account folder on This machine \(local\), so it can't run on other machines/,
+      );
+      const options = screen.getAllByRole('option');
+      expect(options.length).toBeGreaterThan(0);
+      expect(options.every((option) => option.hasAttribute('data-disabled'))).toBe(true);
+
+      // A profile with its own key stays usable.
+      await fireEvent.click(screen.getByRole('tab', { name: /Key/ }));
+      await waitFor(() =>
+        expect(screen.queryByTestId('model-picker-remote-incompatible')).toBeNull(),
+      );
+    });
+
+    const withDefaultEnv = (env: unknown[]) => {
+      mockProviderSettingsState.current = {
+        enabledProviders: { auggie: true, codex: true, 'claude-code': true },
+        profiles: {
+          loadStatus: 'success',
+          defaults: {
+            'claude-code': { baseProviderId: 'claude-code', name: 'Default', env },
+          },
+        },
+      };
+    };
+
+    it("keeps an API-key Default selectable when the machine isn't signed in", async () => {
+      withMachine();
+      withDefaultEnv([{ key: 'ANTHROPIC_API_KEY', kind: 'set', value: '********' }]);
+      renderAgentPicker('gpt-5');
+      await fireEvent.click(screen.getByRole('button'));
+      await fireEvent.click(await screen.findByRole('tab', { name: /Claude Code/ }));
+      const opus = await screen.findByRole('option', { name: /opus/ });
+      expect(opus.hasAttribute('data-disabled')).toBe(false);
+      expect(screen.queryByTestId('model-picker-remote-signed-out')).toBeNull();
+    });
+
+    it("greys out a provider that isn't signed in on the machine", async () => {
+      withMachine();
+      withDefaultEnv([]);
+      renderAgentPicker('gpt-5');
+      await fireEvent.click(screen.getByRole('button'));
+      await fireEvent.click(await screen.findByRole('tab', { name: /Claude Code/ }));
+
+      const notice = await screen.findByTestId('model-picker-remote-signed-out');
+      expect(notice.textContent).toContain('Not signed in on Mac mini');
+      expect(notice.textContent).toContain('Sign in on Mac mini to use these models here.');
+      const opus = screen.getByRole('option', { name: /opus/ });
+      expect(opus.hasAttribute('data-disabled')).toBe(true);
+    });
+
+    it('warns when the report is more than a day old', async () => {
+      withMachine(
+        machineRow({ observedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString() }),
+      );
+      renderAgentPicker('gpt-5');
+      const button = screen.getByRole('button');
+      await waitFor(() =>
+        expect(button.querySelector('[data-icon="triangle-exclamation"]')).not.toBeNull(),
+      );
+      await fireEvent.click(button);
+      const banner = await screen.findByTestId('model-picker-remote-stale');
+      expect(banner.textContent).toContain('This list may be out of date');
+      expect(banner.textContent).toContain('Mac mini last reported its models');
+    });
+
+    it('shows no backend models before the machine reports, and asks it again', async () => {
+      withMachine(machineRow({ capabilities: undefined, observedAt: undefined }));
+      renderAgentPicker('gpt-5');
+      await fireEvent.click(screen.getByRole('button'));
+
+      const missing = await screen.findByTestId('model-picker-remote-missing');
+      expect(missing.textContent).toContain("Mac mini hasn't reported its models");
+      expect(screen.queryByRole('option')).toBeNull();
+      expect(screen.getByTestId('model-picker-remote-header').textContent).toContain(
+        'No report yet',
+      );
+      await fireEvent.click(within(missing).getByRole('button', { name: /Check again/ }));
+      expect(mockSvelteDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'remoteMachines/machineRefreshRequested',
+          payload: ['node-mac'],
+        }),
+      );
+    });
+
+    it('stays locked on an older backend whose profile rows lack remoteCompatible', async () => {
+      withMachine();
+      mockCatalogProfiles.current = [
+        { id: 'p-old', providerRef: 'codex@p-old', baseProviderId: 'codex', name: 'Old' },
+      ];
+      renderAgentPicker('gpt-5');
+      const button = screen.getByRole('button');
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+      expect(button.getAttribute('title')).toContain("can't be changed while it runs on Mac mini");
+    });
+
+    it('stays locked and reads the profile list when the catalog cannot tell', async () => {
+      withMachine();
+      mockCatalogProfiles.current = [];
+      renderAgentPicker('gpt-5');
+      expect(screen.getByRole('button').getAttribute('aria-disabled')).toBe('true');
+      await waitFor(() => expect(dispatchedTypes()).toContain('providerProfiles/requested'));
+    });
+
+    it('does not read the admin-only profile list for a non-admin, and stays locked', async () => {
+      withMachine();
+      mockCatalogProfiles.current = [];
+      // A host member who may use the picker but not administer the host.
+      withWorkspaceRole('collaborator');
+      const state = withLegacyPrincipal(mockRoleState.current);
+      state.principal.snapshot!.capabilities.hostMembership = true;
+      state.principal.snapshot!.principal.hostRole = 'member';
+      state.principal.snapshot!.principal.isAdministrator = false;
+      state.workspace.workspaces.map['ws-1'].canManage = true;
+      state.workspace.loadedBackendId = state.connections.windowBackendId;
+      state.workspace.capabilityContext = selectPrincipalActionContext.select(state);
+      Object.assign(mockRoleState.current, state);
+      renderAgentPicker('gpt-5');
+      const button = screen.getByRole('button');
+      expect(button.title).toContain("can't be changed while it runs on Mac mini");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(dispatchedTypes()).not.toContain('providerProfiles/requested');
+    });
+
+    it('unlocks once the profile list Default rows carry remoteCompatible', async () => {
+      withMachine();
+      mockCatalogProfiles.current = [];
+      mockProviderSettingsState.current = {
+        enabledProviders: { auggie: true, codex: true, 'claude-code': true },
+        profiles: {
+          loadStatus: 'success',
+          defaults: {
+            codex: { baseProviderId: 'codex', name: 'Default', env: [], remoteCompatible: true },
+          },
+        },
+      };
+      renderAgentPicker('gpt-5');
+      expect(screen.getByRole('button').getAttribute('aria-disabled')).toBeNull();
+    });
+
+    it('stays locked with the Labs flag off (no machine report to list)', async () => {
+      withMachine(machineRow(), { labs: false });
+      renderAgentPicker('gpt-5');
+      expect(screen.getByRole('button').getAttribute('aria-disabled')).toBe('true');
+    });
   });
 
   it('guest window: an Antigravity agent reads the host catalog even without local Antigravity sign-in', async () => {
@@ -1027,7 +1425,7 @@ describe('ModelPicker legacy Auggie models', () => {
 
     await fireEvent.click(screen.getByRole('button'));
     const legacyToggle = await screen.findByRole('button', { name: 'Toggle legacy models' });
-    const search = screen.getByRole('searchbox', { name: 'Search options' });
+    const search = screen.getByRole('searchbox', { name: 'Search models...' });
     expect(screen.queryByRole('option', { name: /Opus 4.1/ })).toBeNull();
 
     await fireEvent.input(search, { target: { value: 'Legacy' } });
@@ -1064,7 +1462,7 @@ describe('ModelPicker legacy Auggie models', () => {
 
     await fireEvent.click(screen.getByRole('button'));
     const legacyToggle = await screen.findByRole('button', { name: 'Toggle legacy models' });
-    const search = screen.getByRole('searchbox', { name: 'Search options' });
+    const search = screen.getByRole('searchbox', { name: 'Search models...' });
     await fireEvent.click(legacyToggle);
     expect(legacyToggle.getAttribute('aria-expanded')).toBe('true');
 
@@ -1121,7 +1519,7 @@ describe('ModelPicker default pseudo-row filtering', () => {
 
     await fireEvent.click(screen.getByRole('button'));
     await screen.findByRole('option', { name: /Sonnet 4.6/ });
-    const search = screen.getByRole('searchbox', { name: 'Search options' });
+    const search = screen.getByRole('searchbox', { name: 'Search models...' });
     await fireEvent.input(search, { target: { value: 'Default' } });
 
     await waitFor(() =>
@@ -1440,7 +1838,9 @@ describe('ModelPicker combined reasoning mode', () => {
     const listbox = screen.getByRole('listbox');
     const popover = listbox.closest('[data-slot="dropdown-content"]') as HTMLElement;
     expect(popover).toBeTruthy();
-    expect(popover.contains(screen.getByRole('searchbox', { name: 'Search options' }))).toBe(true);
+    expect(popover.contains(screen.getByRole('searchbox', { name: 'Search models...' }))).toBe(
+      true,
+    );
     const modelOption = await screen.findByRole('option', { name: /GPT-5\.6-Sol/ });
     expect(modelOption.textContent).toContain('Codex model');
     expect(modelOption.textContent).not.toContain('Effort:');
@@ -2410,14 +2810,11 @@ describe('ModelPicker multi-provider mode', () => {
       silentFallback: true,
     });
 
-    await waitFor(
-      () => {
-        expect(
-          vi.mocked(getModelsForProvider).mock.calls.filter(([provider]) => provider === 'codex'),
-        ).toHaveLength(2);
-      },
-      { timeout: 5000 },
-    );
+    await waitFor(() => {
+      expect(
+        vi.mocked(getModelsForProvider).mock.calls.filter(([provider]) => provider === 'codex'),
+      ).toHaveLength(2);
+    });
     expect(
       vi.mocked(getModelsForProvider).mock.calls.filter(([provider]) => provider === 'auggie'),
     ).toHaveLength(1);
@@ -2451,7 +2848,7 @@ describe('ModelPicker multi-provider mode', () => {
       await waitFor(() => expect(getModelsForProviderForLoadingState).toHaveBeenCalledTimes(3));
       const trigger = screen.getByRole('button');
       await fireEvent.click(trigger);
-      let search = screen.getByRole('searchbox', { name: 'Search options' });
+      let search = screen.getByRole('searchbox', { name: 'Search models...' });
       // The silent attempt must not replace the last actionable error with
       // a loading skeleton or remove the inheritance option while in flight.
       expect(screen.getByRole('option', { name: /Default model/ })).toBeTruthy();
@@ -2473,7 +2870,7 @@ describe('ModelPicker multi-provider mode', () => {
       await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
       expect(trigger.getAttribute('aria-expanded')).toBe('false');
       await fireEvent.click(trigger);
-      search = screen.getByRole('searchbox', { name: 'Search options' });
+      search = screen.getByRole('searchbox', { name: 'Search models...' });
       await waitFor(() => expect(document.activeElement).toBe(search));
       expect((await screen.findByRole('button', { name: 'Retry' })).hasAttribute('disabled')).toBe(
         false,
@@ -2542,7 +2939,7 @@ describe('ModelPicker multi-provider mode', () => {
     const { notify } = await import('$lib/components/patterns/notify');
     await waitFor(() => expect(notify.warning).toHaveBeenCalledOnce());
     expect(screen.getByRole('option', { name: /Default model/ })).toBeTruthy();
-    const search = screen.getByRole('searchbox', { name: 'Search options' });
+    const search = screen.getByRole('searchbox', { name: 'Search models...' });
     await fireEvent.input(search, { target: { value: 'unmatched-model' } });
     expect(await screen.findByText(/No results for/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
@@ -3207,6 +3604,51 @@ describe('ModelPicker multi-provider mode', () => {
 
     // Reset for other tests
     activeProviderId$.set('auggie');
+  });
+
+  it('remote agent: an unavailable model never auto-falls back (no toast, fallback info or setModel)', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    const { notify } = await import('$lib/components/patterns/notify');
+    mockSvelteDispatch.mockClear();
+    vi.mocked(getModelsForProvider).mockImplementation((providerId) =>
+      Promise.resolve(
+        providerId === 'opencode'
+          ? [{ value: 'opencode:real-model', label: 'Real Model', description: 'Real' }]
+          : [],
+      ),
+    );
+    enabledProviderIds$.set(['auggie', 'opencode']);
+    activeProviderId$.set('opencode');
+    // The backend's catalog says nothing about the machine's models.
+    mockAgentSession$.set({
+      id: 'test-agent',
+      workspaceId: 'ws-1',
+      provider: 'opencode',
+      nodeId: 'node-mac',
+      nodeName: 'Mac mini',
+      placement: { target: 'remote', checkout: 'isolated' },
+    });
+    const onModelChange = vi.fn();
+
+    try {
+      render(ModelPicker, {
+        props: { selectedModel: 'opencode:nonexistent-xyz', agentId: 'test-agent', onModelChange },
+      });
+      await waitFor(() => {
+        expect(vi.mocked(getModelsForProvider)).toHaveBeenCalledWith('opencode');
+      });
+      await new Promise((r) => setTimeout(r, 150));
+
+      expect(onModelChange).not.toHaveBeenCalled();
+      expect(vi.mocked(notify.info)).not.toHaveBeenCalled();
+      expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+      expect(
+        mockSvelteDispatch.mock.calls.map(([action]) => (action as { type?: string }).type),
+      ).not.toContain('model/setModelFallbackInfo');
+    } finally {
+      mockAgentSession$.set(undefined);
+      activeProviderId$.set('auggie');
+    }
   });
 });
 
@@ -5218,7 +5660,7 @@ describe('ModelPicker specialist inherit state (default-option plumbing)', () =>
       const inherited = await screen.findByRole('option', { name: /Default model/ });
       expect(inherited.getAttribute('aria-selected')).toBe('true');
       expect(onModelChange).not.toHaveBeenCalled();
-      await fireEvent.input(screen.getByRole('searchbox', { name: 'Search options' }), {
+      await fireEvent.input(screen.getByRole('searchbox', { name: 'Search models...' }), {
         target: { value: label },
       });
       await fireEvent.click(await screen.findByRole('option', { name: label }));
@@ -6030,6 +6472,25 @@ describe('ModelPicker named provider profiles (§5.54)', () => {
     expect(vi.mocked(getModelsForProviderForLoadingState)).not.toHaveBeenCalledWith(
       expect.stringMatching(/Client A/),
     );
+  });
+
+  it('moves the profile name into the hover tooltip when the trigger hides it', async () => {
+    mockCatalogProfiles.current = [WORK];
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'gpt-5-work',
+        providerId: WORK.providerRef,
+        portal: false,
+        showProfileName: false,
+      },
+    });
+    const trigger = screen.getByRole('button');
+    await waitFor(() => {
+      const value = trigger.querySelector('[aria-label]');
+      expect(value?.getAttribute('aria-label') ?? '').toMatch(/GPT-5 Work row.*Codex.*Work/);
+      expect(value?.getAttribute('title') ?? '').toMatch(/GPT-5 Work row.*Codex.*Work/);
+    });
+    expect(screen.queryByTestId('model-picker-profile')).toBeNull();
   });
 
   it('labels the original configuration Default once its provider has profiles', async () => {

@@ -319,6 +319,61 @@ describe('StreamingStatus rendered UI', () => {
     expect(onRetryWithModel).toHaveBeenCalledWith('gpt5.5-fast');
   });
 
+  describe('quota-exceeded recovery', () => {
+    const quotaProps = {
+      error: 'You have hit your weekly limit',
+      quotaExceeded: { providerId: 'claude-code', displayName: 'Anthropic Claude Code' },
+      quotaRetryProviders: [{ id: 'codex', displayName: 'OpenAI Codex' }],
+    };
+
+    it('offers a same-provider Retry after the provider alternatives, since limits reset', async () => {
+      const onRetry = vi.fn();
+      const onRetryWithProvider = vi.fn();
+      render(StreamingStatus, { props: { ...quotaProps, onRetry, onRetryWithProvider } });
+
+      const banner = screen.getByTestId('error-quota-exceeded');
+      expect(banner.textContent).toContain('Anthropic Claude Code');
+      expect(banner.textContent).toMatch(/retry once it resets, or switch provider/i);
+      expect(screen.queryByTestId('error-title')).toBeNull();
+
+      const switchButton = screen.getByTestId('retry-with-provider');
+      const retry = screen.getByTestId('quota-retry-same-provider');
+      expect(retry.textContent?.trim()).toBe('Retry');
+      expect(
+        switchButton.compareDocumentPosition(retry) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+
+      await fireEvent.click(retry);
+      expect(onRetry).toHaveBeenCalledOnce();
+      expect(onRetryWithProvider).not.toHaveBeenCalled();
+
+      await fireEvent.click(switchButton);
+      expect(onRetryWithProvider).toHaveBeenCalledWith('codex');
+    });
+
+    it('withholds the same-provider Retry when no retry callback is given (retired session)', () => {
+      render(StreamingStatus, { props: { ...quotaProps, onRetryWithProvider: vi.fn() } });
+
+      expect(screen.getByTestId('error-quota-exceeded')).toBeTruthy();
+      expect(screen.getByTestId('retry-with-provider')).toBeTruthy();
+      expect(screen.queryByTestId('quota-retry-same-provider')).toBeNull();
+    });
+
+    it('hides the quota banner while a retry is attempting', () => {
+      render(StreamingStatus, {
+        props: {
+          ...quotaProps,
+          isProcessing: true,
+          onRetry: vi.fn(),
+          onRetryWithProvider: vi.fn(),
+        },
+      });
+
+      expect(screen.queryByTestId('error-quota-exceeded')).toBeNull();
+      expect(screen.queryByTestId('quota-retry-same-provider')).toBeNull();
+    });
+  });
+
   it('stays hidden when nothing is streaming/processing (IDLE-1: coordinator waiting on children)', () => {
     // A coordinator whose own turn has ended but is still waiting on delegated
     // children clears `isStreaming` / `isProcessing` in the agent-session slice

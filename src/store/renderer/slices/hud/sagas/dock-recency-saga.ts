@@ -1,6 +1,6 @@
 import { all, call, delay, put, type SagaGenerator } from 'typed-redux-saga';
 import { appClient } from '$lib/client';
-import { latestDockHumanMessage } from '$features/hud/utils/dock-recency';
+import { scanDockHumanMessages, type DockHumanScan } from '$features/hud/utils/dock-recency';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { WorkspaceStatus, type AgentSession, type Workspace } from '$shared/types';
@@ -15,9 +15,8 @@ interface CachedRoster {
   readAt: number;
   agents: AgentSession[];
 }
-interface CachedConversation {
+interface CachedConversation extends DockHumanScan {
   signature: string;
-  latest: number | null;
 }
 
 /** A dock-only lifetime: HUD routes do not fan out message-index reads. */
@@ -88,13 +87,13 @@ export function* dockRecencySaga(): SagaGenerator<never> {
             Date.now() >= (retryAfter.get(key) ?? 0)
           ) {
             try {
-              const result = await appClient.agents.listUserMessages(agentId, 80, workspaceId);
-              if (result.ok) {
+              const scan = await scanDockHumanMessages(
+                (page) => appClient.agents.listUserMessages(agentId, 80, workspaceId, page),
+                cached,
+              );
+              if (scan) {
                 retryAfter.delete(key);
-                cached = {
-                  signature,
-                  latest: latestDockHumanMessage(result.items),
-                };
+                cached = { signature, ...scan };
                 conversations.set(key, cached);
               } else {
                 retryAfter.set(key, Date.now() + CACHE_MS);

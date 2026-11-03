@@ -7,9 +7,9 @@
  * (PROTOCOL.md §5.1 `workspace.getAutoCommit` / `workspace.setAutoCommit`),
  * which the daemon resolves against the global `git.autoCommit` setting
  * (§5.12) when no override is set. The former renderer-synced in-memory map
- * is retired — reads and writes go straight to the daemon, so the value
- * survives app/daemon restarts and stays consistent with the daemon-side
- * commit gate.
+ * is retired — reads go straight to the daemon, so the value survives
+ * app/daemon restarts and stays consistent with the daemon-side commit gate.
+ * Writes are served by the renderer `workspace:update-settings` seeder.
  */
 
 import { Logger } from '../../../shared/logger';
@@ -65,39 +65,6 @@ export async function getWorkspaceSettings(workspaceId: string): Promise<Workspa
     });
     return { ...defaultSettings };
   }
-}
-
-/**
- * Update settings for a workspace — persists the per-workspace override in
- * the daemon (survives restarts; the daemon emits `workspace:updated`).
- *
- * A `workspace.setAutoCommit` failure REJECTS (deliberately — callers must
- * not believe a write that never landed; the daemon returns -32602 for the
- * virtual Chief workspace, see PROTOCOL §5.1). If the set succeeds but the
- * read-back fails, the value just written is returned rather than the
- * default, so the caller never sees a value contradicting its own write.
- */
-export async function updateWorkspaceSettings(
-  workspaceId: string,
-  settings: Partial<WorkspaceSettings>,
-): Promise<WorkspaceSettings> {
-  if (settings.autoCommitEnabled !== undefined) {
-    await backendRequest('workspace.setAutoCommit', {
-      workspaceId,
-      enabled: settings.autoCommitEnabled,
-    });
-    logger.info('Updated workspace settings', { workspaceId, settings });
-    try {
-      return await fetchWorkspaceSettings(workspaceId);
-    } catch (error) {
-      logger.warn('read-back after workspace.setAutoCommit failed; returning written value', {
-        workspaceId,
-        error: (error as Error).message,
-      });
-      return { autoCommitEnabled: settings.autoCommitEnabled };
-    }
-  }
-  return getWorkspaceSettings(workspaceId);
 }
 
 /**

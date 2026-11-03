@@ -172,6 +172,7 @@ export const INVITE_ERROR_CODES = [
   'identity-unverifiable',
   'guest-limit',
   'workspace-full',
+  'github-unreachable',
 ] as const;
 
 export type InviteErrorCode = (typeof INVITE_ERROR_CODES)[number];

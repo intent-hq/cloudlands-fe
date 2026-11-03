@@ -54,6 +54,8 @@ const { WebSocket: NodeWebSocket } = nodeRequire('ws') as {
 /** Resolved connection target for the backend transport. */
 export interface BackendConnectionConfig {
   transport: 'uds' | 'tcp' | 'ws' | 'wss';
+  /** Standalone host override; null disables tunnel candidates. */
+  tailcatBinary?: string | null;
   /** UDS socket path (when `transport === 'uds'`). */
   socketPath?: string;
   /** Host (when `transport === 'tcp'` or `'wss'`). */
@@ -549,7 +551,8 @@ export function tunnelRaceAttempt(config: BackendConnectionConfig): RaceAttempt 
   const tcAddress =
     config.tcAddress?.trim() || (isTcAddress(config.host ?? '') ? config.host?.trim() : undefined);
   if (!tcAddress || !port) return null;
-  const binaryPath = resolveTailcatBinaryPath();
+  const binaryPath =
+    config.tailcatBinary === undefined ? resolveTailcatBinaryPath() : config.tailcatBinary;
   if (!binaryPath) {
     raceLogger.debug('tailcat binary unavailable; skipping tunnel race candidate');
     return null;
@@ -911,10 +914,11 @@ export function pinnedTlsConnect(
  */
 export async function captureFingerprint(
   target: { host: string; port: number; token?: string; expectedFingerprint?: string },
-  options: { timeoutMs?: number; tailcatSpawn?: TailcatSpawn } = {},
+  options: { timeoutMs?: number; tailcatSpawn?: TailcatSpawn; tailcatBinary?: string | null } = {},
 ): Promise<CaptureFingerprintResult> {
   if (isTcAddress(target.host)) {
-    const binaryPath = resolveTailcatBinaryPath();
+    const binaryPath =
+      options.tailcatBinary === undefined ? resolveTailcatBinaryPath() : options.tailcatBinary;
     if (!binaryPath) {
       return {
         ok: false,

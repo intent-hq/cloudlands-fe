@@ -34,6 +34,11 @@ export interface WorkspaceInitializerRepoSelection {
   isValidPath?: boolean;
   scope?: string;
   remoteSetup?: WorkspaceInitializerRemoteSetup;
+  /**
+   * A plain (non-git) folder remembered from the last create (Labs). The next
+   * form re-checks the folder before restoring it as an existing plain folder.
+   */
+  plainFolder?: true;
 }
 
 export interface WorkspaceInitializerRecentRepo {
@@ -44,6 +49,11 @@ export interface WorkspaceInitializerRecentRepo {
   owner?: string;
   /** Display identity only; null explicitly marks unqualified legacy metadata. */
   repositoryIdentity?: RepositoryTarget | null;
+  /**
+   * The folder of a plain-folder workspace row (Labs). A hint only: picking
+   * the entry still probes the folder; the hint applies when the probe cannot run.
+   */
+  plainFolder?: true;
 }
 
 export interface WorkspaceInitializerRecentRepoRefresh {
@@ -86,6 +96,11 @@ export interface WorkspaceInitializerAgentSettings {
   isTeamMode?: boolean;
   /** Provider the persisted `selectedModel` belongs to. */
   selectedProvider?: string;
+  /**
+   * New Workspace → Start On: the machine the first agent starts on; absent or
+   * blank for the current backend. Sent as `initialAgent.placement`.
+   */
+  startOnMachineId?: string;
 }
 
 export interface CompactWorkspaceInitializerFormState extends WorkspaceInitializerAgentSettings {
@@ -246,7 +261,16 @@ export interface WorkspaceInitializationRequest {
   entrypoint: 'compact' | 'onboarding';
   admission: string;
   createRequest?: CreateWorkspaceRequest;
-  resume?: { workspaceId: string; agentId?: string; workspacePath?: string };
+  resume?: {
+    workspaceId: string;
+    agentId?: string;
+    workspacePath?: string;
+    /**
+     * The workspace was created but never installed (its follow-up read failed
+     * after a remote `launch-failed`): read and install it before continuing.
+     */
+    install?: boolean;
+  };
   pull?: { repositoryPath: string; branch: string };
   agentTitle: string;
   coordinator: boolean;
@@ -328,6 +352,12 @@ interface WorkspaceInitializationSubmissionBase {
   branchBehind: number;
   pullEnabled: boolean;
   skipIsolation: boolean;
+  /**
+   * Plain-folder create (Labs, PROTOCOL §5.1): `'existing'` works in an
+   * existing non-git folder, `'new'` has the daemon create the folder. Absent
+   * or null keeps today's git create.
+   */
+  plainFolder?: 'existing' | 'new' | null;
   selectedPrNumber: number | null;
   draft: NonNullable<WorkspaceInitializationCompletion['draft']>;
 }

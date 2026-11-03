@@ -34,3 +34,43 @@ export function viteHarnessCacheDir(name, { override, root = process.cwd(), work
     : path.join(root, VITE_HARNESS_CACHE_ROOT, name);
   return workerIndex === undefined ? cache : path.join(cache, `worker-${workerIndex}`);
 }
+
+/**
+ * Wait until a dev server's client dependency optimizer is idle: the initial
+ * scan finished and every discovered dependency is committed to the cache.
+ *
+ * Vite scans and pre-bundles in the background after `listen()`. A harness
+ * that starts tests immediately makes the first test share CPU and the esbuild
+ * service with that work, and `server.close()` must then cancel it mid-build
+ * (the Electron browser lifetime lane's cold-start worker teardown timeout).
+ * Settling in the harness setup keeps that cost out of every test.
+ *
+ * @param {import('vite').ViteDevServer} server Listening dev server.
+ * @param {{ timeoutMs?: number }} [options] Upper bound for the whole wait.
+ * @returns {Promise<void>}
+ */
+export async function settleDepsOptimizer(server, { timeoutMs = 120_000 } = {}) {
+  const optimizer = server.environments.client.depsOptimizer;
+  if (!optimizer) return;
+  let timer;
+  const expired = new Promise((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`Vite dependency optimization did not settle in ${timeoutMs}ms.`)),
+      timeoutMs,
+    );
+  });
+  try {
+    const seen = new Set();
+    for (;;) {
+      await Promise.race([optimizer.scanProcessing, expired]);
+      const pending = Object.values(optimizer.metadata.discovered)
+        .map((dep) => dep.processing)
+        .filter((processing) => processing && !seen.has(processing));
+      if (pending.length === 0 && !optimizer.scanProcessing) return;
+      for (const processing of pending) seen.add(processing);
+      await Promise.race([Promise.all(pending), expired]);
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+}

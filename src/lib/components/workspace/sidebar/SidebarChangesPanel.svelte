@@ -565,6 +565,12 @@
     // Text entry (inputs, contenteditable, code editors) owns its own keys.
     if (isTextEntryTarget(e.target)) return;
     const target = e.target as HTMLElement;
+    if (
+      target.closest('button, [role="button"], [role="combobox"], [role="switch"]') &&
+      !target.closest('[data-file-key]')
+    ) {
+      return;
+    }
     // Summary controls own their native button and picker keyboard interactions.
     if (
       target.closest(
@@ -835,6 +841,47 @@
   });
 </script>
 
+{#snippet changesSummary()}
+  <div class="relative flex min-w-0 items-center h-8" data-changes-summary-count>
+    {#if !onRefreshActionChange}
+      {@render refreshAction()}
+    {/if}
+
+    <!-- View All Changes Button -->
+    {#if hasAnyChanges}
+      {@const isActive = isAllChangesViewActive}
+      <Button
+        variant="ghost"
+        onclick={handleOpenAllChanges}
+        size="compact"
+        wrapContent={false}
+        class="flex h-8 flex-1 justify-start items-center gap-2 px-2 py-0 type-caption font-normal text-muted-foreground rounded-md transition-colors group cursor-pointer min-w-0 {isActive
+          ? 'bg-muted text-foreground'
+          : 'hover:bg-muted'}
+                "
+      >
+        <div class="flex items-center gap-1.5 flex-1 min-w-0">
+          <span class="type-caption truncate min-w-0 text-left flex-1">
+            {totalFilesChanged === 1
+              ? m.shared_fileChangesList_fileCount_one({ count: formatInteger(totalFilesChanged) })
+              : m.shared_fileChangesList_fileCount_many({
+                  count: formatInteger(totalFilesChanged),
+                })}
+          </span>
+        </div>
+      </Button>
+    {:else}
+      <div
+        class="flex h-8 flex-1 items-center gap-2 px-2 type-caption font-normal text-muted-foreground min-w-0"
+      >
+        <span class="type-caption truncate min-w-0 text-left flex-1"
+          >{m.shared_lineChangeStats_noChanges_label()}</span
+        >
+      </div>
+    {/if}
+  </div>
+{/snippet}
+
 {#snippet refreshAction()}
   {#if isBrowsingSecondaryRoot}
     {@render secondaryRefreshAction?.()}
@@ -862,7 +909,6 @@
         </div>
       </div>
     {:else}
-      <!-- Timeline layout - always show all sections -->
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
       <div
         bind:this={changesPanelContainer}
@@ -891,47 +937,6 @@
             isOwner={canUpdateWorkspace}
           />
 
-          <div class="relative flex items-center mb-1 h-8" data-changes-summary-count>
-            {#if !onRefreshActionChange}
-              {@render refreshAction()}
-            {/if}
-
-            <!-- View All Changes Button -->
-            {#if hasAnyChanges}
-              {@const isActive = isAllChangesViewActive}
-              <Button
-                variant="ghost"
-                onclick={handleOpenAllChanges}
-                size="compact"
-                wrapContent={false}
-                class="flex h-8 flex-1 justify-start items-center gap-2 px-2 py-0 type-caption font-normal text-muted-foreground rounded-md transition-colors group cursor-pointer min-w-0 {isActive
-                  ? 'bg-muted text-foreground'
-                  : 'hover:bg-muted'}
-                "
-              >
-                <div class="flex items-center gap-1.5 flex-1 min-w-0">
-                  <!-- <Fa icon={faFolderOpen} class="opacity-30" size="xs" /> -->
-                  <span class="type-caption truncate min-w-0 text-left flex-1">
-                    {totalFilesChanged === 1
-                      ? m.workspace_sidebarChanges_filesChangedInSpace_one()
-                      : m.workspace_sidebarChanges_filesChangedInSpace_many({
-                          count: formatInteger(totalFilesChanged),
-                        })}
-                  </span>
-                  <!-- <LineChangesBadge additions={totalAdditions} deletions={totalDeletions} size="xs" /> -->
-                </div>
-              </Button>
-            {:else}
-              <div
-                class="flex h-8 flex-1 items-center gap-2 px-2 type-caption font-normal text-muted-foreground min-w-0"
-              >
-                <span class="type-caption truncate min-w-0 text-left flex-1"
-                  >{m.workspace_sidebarChanges_noChangesYet_label()}</span
-                >
-              </div>
-            {/if}
-          </div>
-
           <!-- Truncation warning banner -->
           {#if changesTruncated}
             <div class="mb-2 px-2 py-2 type-caption text-warning-ink">
@@ -956,6 +961,7 @@
           <div class="relative flex-1 flex flex-col pb-2 w-full">
             <FileChangesSection
               {workspaceId}
+              summary={changesSummary}
               {activeFilePath}
               {activeFileStaged}
               {focusedFile}
@@ -976,7 +982,7 @@
             />
 
             <!-- Commit runs through accept-changes.execute (owner-only) -->
-            {#if isOwner}
+            {#if isOwner && (hasStaged || commitDrawerOpen || isCommitting)}
               <CommitDrawer
                 {workspaceId}
                 bind:commitMessage={
@@ -996,14 +1002,16 @@
             {/if}
 
             <!-- COMMITS SECTION -->
-            <CommitsTimeline
-              {workspaceId}
-              {activeFilePath}
-              {activeFileStaged}
-              pullRequestCount={pullRequests.length}
-              {isOwner}
-              canUpdateBaseCommit={canUpdateWorkspace}
-            />
+            <div class="mt-3">
+              <CommitsTimeline
+                {workspaceId}
+                {activeFilePath}
+                {activeFileStaged}
+                pullRequestCount={pullRequests.length}
+                {isOwner}
+                canUpdateBaseCommit={canUpdateWorkspace}
+              />
+            </div>
 
             {#snippet mergePanelContent()}
               <MergePanel

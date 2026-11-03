@@ -1,0 +1,5 @@
+{
+  "owner": "presence",
+  "reason": "Runs against a real daemon: the waits cover real RPC round trips, including the daemon's 30 s transport timeout, inside CI's 60 s test budget",
+  "count": 8
+}

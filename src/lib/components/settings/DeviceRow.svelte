@@ -17,13 +17,14 @@
   import DeviceIcon from '$lib/components/DeviceIcon.svelte';
   import DeviceIconPicker from '$lib/components/DeviceIconPicker.svelte';
   import RemoteTunnelSettings from '$features/devices/RemoteTunnelSettings.svelte';
+  import TailcatUnavailableNote from '$features/devices/TailcatUnavailableNote.svelte';
   import { cn } from '$lib/utils';
   import {
     CONNECTION_ACCENT_CLASSES,
     CONNECTION_ACCENT_COLORS,
     connectionAccentOptions,
   } from '$lib/utils/connection-accents';
-  import { formatConnectionLabel } from '$lib/utils/connection-label';
+  import { formatConnectionLabel, formatLocalMachineLabel } from '$lib/utils/connection-label';
   import { canRequestDeviceUpdate, isDaemonBehindPin } from '$lib/utils/device-update-eligibility';
   import { m } from '$shared/paraglide/messages.js';
   import {
@@ -39,6 +40,7 @@
   import {
     selectConnectedIds,
     selectCurrentConnectionId,
+    selectHostManagesConnections,
     selectKeychainSyncState,
     selectPinnedDaemonVersion,
     selectConnectionWorkflow,
@@ -50,11 +52,31 @@
   import {
     faArrowsRotate,
     faCopy,
+    faLinkSlash,
     faPen,
     faPlug,
+    faServer,
     faTrash,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import RemoteMachineBadge from '$features/remote-machines/RemoteMachineBadge.svelte';
+  import RemoteMachineNotice from '$features/remote-machines/RemoteMachineNotice.svelte';
+  import {
+    selectCurrentBackendLabel,
+    selectLocalMachineFingerprint,
+    selectRemoteMachineFailures,
+    selectRemoteMachineOperations,
+    selectRemoteMachines,
+    selectRemoteMachinesVisible,
+  } from '$features/remote-machines/remote-machines-selectors';
+  import {
+    remoteMachineExposeRequested,
+    remoteMachineUnexposeRequested,
+  } from '$features/remote-machines/remote-machines-slice';
+  import {
+    canOfferExpose,
+    machineForConnection,
+  } from '$features/remote-machines/remote-machines-utils';
 
   export type DevicePanelMode = 'edit' | null;
 
@@ -69,8 +91,17 @@
   let { device, panelMode, onOpenPanel, onClosePanel, onRequestRemove }: Props = $props();
   const pinnedVersion$ = selectPinnedDaemonVersion();
   const connectedIds$ = selectConnectedIds();
+  // intent-web dials the remote itself for tunnel settings, so they do not
+  // depend on this tab holding a live connection to it.
+  const hostManagesConnections$ = selectHostManagesConnections();
   const currentConnectionId$ = selectCurrentConnectionId();
   const syncState$ = selectKeychainSyncState();
+  const remoteSupported$ = selectRemoteMachinesVisible();
+  const remoteMachines$ = selectRemoteMachines();
+  const localFingerprint$ = selectLocalMachineFingerprint();
+  const remoteOperations$ = selectRemoteMachineOperations();
+  const remoteFailures$ = selectRemoteMachineFailures();
+  const backendLabel$ = selectCurrentBackendLabel();
   let name = $state('');
   let host = $state('');
   let port = $state('');
@@ -183,11 +214,7 @@
   const savedDeviceIcon = $derived(device.deviceIcon ?? 'auto');
   const accentOptions = $derived(connectionAccentOptions(savedAccent));
   const displayName = $derived(
-    device.isLocal
-      ? $currentConnectionId$ === device.id
-        ? m.layout_daemonStatus_localConnection_label()
-        : m.settings_devices_hostMachine_label()
-      : formatConnectionLabel(device),
+    device.isLocal ? formatLocalMachineLabel(device) : formatConnectionLabel(device),
   );
   const openStatus = $derived(device.status ?? 'not-open');
   const trimmedName = $derived(name.trim());
@@ -233,6 +260,26 @@
     });
   });
   const canUpdateDaemon = $derived(canRequestDeviceUpdate(device, $connectedIds$, $pinnedVersion$));
+  // Daemon-to-daemon: owner machines (never guest sessions, which this list
+  // never holds) that are connected and are not the current backend can be
+  // made available to it, only while it advertises `remoteMachines: 1`.
+  const exposedMachine = $derived(
+    $remoteSupported$ ? machineForConnection($remoteMachines$, device, $localFingerprint$) : null,
+  );
+  const canExpose = $derived(
+    $remoteSupported$ &&
+      device.id !== $currentConnectionId$ &&
+      openStatus === 'connected' &&
+      canOfferExpose(exposedMachine),
+  );
+  const exposing = $derived($remoteOperations$[device.id] === 'exposing');
+  const unexposing = $derived(
+    !!exposedMachine && $remoteOperations$[exposedMachine.id] === 'removing',
+  );
+  const remoteFailureKey = $derived(
+    $remoteFailures$[device.id] || !exposedMachine ? device.id : exposedMachine.id,
+  );
+  const remoteFailure = $derived($remoteFailures$[remoteFailureKey] ?? null);
   const rowActions = $derived.by((): ActionDefinition[] => [
     ...(!device.isLocal
       ? [{ id: 'connect', label: m.settings_devices_connect_label(), icon: faPlug }]
@@ -246,6 +293,29 @@
               : m.layout_daemonStatus_update_action(),
             icon: faArrowsRotate,
             disabled: daemonUpdating,
+          },
+        ]
+      : []),
+    ...(canExpose
+      ? [
+          {
+            id: 'expose',
+            label: exposing
+              ? m.remoteMachines_exposing_label()
+              : m.remoteMachines_exposeAction_label({ backend: $backendLabel$ }),
+            icon: faServer,
+            disabled: exposing,
+          },
+        ]
+      : []),
+    ...(exposedMachine
+      ? [
+          {
+            id: 'unexpose',
+            label: m.remoteMachines_unexposeAction_label({ backend: $backendLabel$ }),
+            icon: faLinkSlash,
+            destructive: true,
+            disabled: unexposing,
           },
         ]
       : []),
@@ -330,6 +400,13 @@
         break;
       case 'update':
         void requestDaemonUpdate();
+        break;
+      case 'expose':
+        appStore.dispatch(remoteMachineExposeRequested(device.id));
+        break;
+      case 'unexpose':
+        if (exposedMachine)
+          appStore.dispatch(remoteMachineUnexposeRequested(exposedMachine.id, device.id));
         break;
       case 'edit':
         if (panelMode === 'edit') closePanel();
@@ -527,6 +604,9 @@
     {/snippet}
     {#snippet title()}<span id={`device-${device.id}-name`}>{displayName}</span>{/snippet}
     {#snippet meta()}
+      {#if exposedMachine}
+        <RemoteMachineBadge machine={exposedMachine} backendLabel={$backendLabel$} />
+      {/if}
       {#if openStatus === 'connected' && device.intentdVersion}
         {#if daemonBehindTooltip}
           <Tooltip content={daemonBehindTooltip} class="rounded-sm text-warning-ink">
@@ -553,6 +633,19 @@
     <p class="px-4 pb-3 type-body text-danger sm:px-5" role="alert">
       {m.settings_devices_connectFailed_error()}
     </p>
+  {/if}
+
+  {#if $remoteSupported$}
+    <RemoteMachineNotice
+      failure={remoteFailure}
+      failureKey={remoteFailureKey}
+      machine={exposedMachine}
+      connectionId={device.id}
+      machineLabel={displayName}
+      backendLabel={$backendLabel$}
+      busy={exposing || unexposing}
+      onUpdateMachine={canUpdateDaemon ? requestDaemonUpdate : undefined}
+    />
   {/if}
 
   {#if device.isLocal && panelMode === 'edit'}
@@ -742,10 +835,11 @@
         <div class="space-y-3">
           <RemoteTunnelSettings
             deviceId={device.id}
-            connected={$connectedIds$.includes(device.id)}
+            connected={$hostManagesConnections$ || $connectedIds$.includes(device.id)}
             disabled={busy !== null || $openWorkflow$?.phase === 'running'}
             onConnect={connectDevice}
           />
+          <TailcatUnavailableNote />
           <SettingsFieldRow
             id={`device-${device.id}-detect-hosts-field`}
             compact
@@ -760,22 +854,24 @@
               ariaLabelledby={`device-${device.id}-detect-hosts-field-label`}
             />
           </SettingsFieldRow>
-          <SettingsFieldRow
-            id={`device-${device.id}-push-to-cloud-field`}
-            compact
-            label={m.settings_devices_pushToCloud_label()}
-            description={syncSupported
-              ? m.settings_devices_pushToCloud_description()
-              : m.settings_backendSync_unsupported_description()}
-          >
-            <Switch
-              id={`device-${device.id}-push-to-cloud`}
-              size="sm"
-              bind:checked={() => pushToCloud, setPushToCloud}
-              disabled={busy !== null || !syncSupported}
-              ariaLabelledby={`device-${device.id}-push-to-cloud-field-label`}
-            />
-          </SettingsFieldRow>
+          {#if !$hostManagesConnections$}
+            <SettingsFieldRow
+              id={`device-${device.id}-push-to-cloud-field`}
+              compact
+              label={m.settings_devices_pushToCloud_label()}
+              description={syncSupported
+                ? m.settings_devices_pushToCloud_description()
+                : m.settings_backendSync_unsupported_description()}
+            >
+              <Switch
+                id={`device-${device.id}-push-to-cloud`}
+                size="sm"
+                bind:checked={() => pushToCloud, setPushToCloud}
+                disabled={busy !== null || !syncSupported}
+                ariaLabelledby={`device-${device.id}-push-to-cloud-field-label`}
+              />
+            </SettingsFieldRow>
+          {/if}
         </div>
       </div>
 

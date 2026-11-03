@@ -1,6 +1,7 @@
 <script lang="ts">
   import './markdown-math.css';
-  import { readMentionChip } from '$lib/services/mentions/chip';
+  import { folderSidebarTarget, readMentionChip } from '$lib/services/mentions/chip';
+  import { locateItemInSidebarRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { canLoadMediaUrl, filterFileMedia } from '$lib/utils/media-provenance';
   import { classifyMarkdownContent } from '$lib/utils/markdown-content-complexity';
   import { getAllContexts, onDestroy } from 'svelte';
@@ -330,6 +331,14 @@
             );
           }
         }
+      } else if (chip.folderPath !== undefined) {
+        if (canOpenFile?.() === false || !workspaceId) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        appStore.dispatch(
+          locateItemInSidebarRequested(workspaceId, folderSidebarTarget(chip.folderPath)),
+        );
       } else if (type === 'note' && chip.note) {
         event.preventDefault();
         event.stopPropagation();

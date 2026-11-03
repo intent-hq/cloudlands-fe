@@ -13,7 +13,6 @@ import { store as appStore } from '$store/renderer/store';
 import type { RecentRepositoriesClient } from '$lib/components/workspace/initializer/recent-repositories-client';
 import { getRecentRepoIdentity } from '$lib/components/workspace/initializer/recent-repo-display';
 import { debugConfig } from '$lib/config/debug';
-import { isElectronPlatform } from '$lib/utils/platform-capabilities';
 import { performanceMonitor } from '$lib/utils/performance';
 import { createLogger } from '$lib/utils/client-logger';
 import { handleError } from '$lib/utils/error-handling';
@@ -200,10 +199,7 @@ function* checkDirectoryStatusWorker(
   const [id, requestId, admission, path] = action.payload;
   yield* delay(300);
   if (!(yield* call(directoryCurrent, id, requestId, admission))) return;
-  if (!isElectronPlatform()) {
-    yield* put(workspaceInitializerDirectoryStatusFinished(id, requestId, 'unsupported', null));
-    return;
-  }
+  // The bridge forwards to the daemon's host.directoryStatus in every build.
   try {
     const response = yield* call(
       invoke<{ success: boolean; data?: WorkspaceInitializerDirectoryStatus }>,

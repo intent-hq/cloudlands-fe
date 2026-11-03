@@ -119,8 +119,7 @@ else process.exitCode = Number(process.env.TEST_EXIT || 0);
 }
 
 function run(root: string, args: string[], env: NodeJS.ProcessEnv = {}) {
-  // Use the installed pnpm even when a direct Vitest invocation inherited npm's npm_execpath.
-  const invocation = pnpmInvocation(['run', 'test:unit', ...args], { env: {} });
+  const invocation = pnpmInvocation(['run', 'test:unit', ...args]);
   const result = spawnSync(invocation.executable, invocation.args, {
     cwd: root,
     env: {

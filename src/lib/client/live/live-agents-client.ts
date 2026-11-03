@@ -22,6 +22,7 @@ import type {
   ContentBlock,
 } from '$shared/types';
 import type { QueuedMessage } from '$shared/types/agent-session';
+import type { MessageBlockImageReference } from '$shared/types/wire-image-block';
 import type {
   AgentCancelDeleteResult,
   AgentCreateRequest,
@@ -32,12 +33,14 @@ import type {
   AgentsClient,
   FileBlock,
   ImageBlock,
+  MessageBlockPage,
   MutationResult,
   PermissionOutcome,
   RespondPermissionResult,
   SubscriptionHandler,
   Unsubscribe,
   UserMessageIndexItem,
+  UserMessageIndexPageOptions,
   UserMessageIndexResult,
 } from '../app-client';
 import { backendRequest } from './backend-transport';
@@ -401,10 +404,52 @@ export class LiveAgentsClient implements AgentsClient {
     return block;
   }
 
-  // Full user-message index (`agent.listUserMessages`, §5.5): every
-  // user-role row as a lightweight `{ id, preview, createdAt, metadata? }`
-  // item, oldest→newest, deliberately unpaged. `previewChars` only rides
-  // along when supplied so the daemon default (300) applies otherwise.
+  // Capped block read (`agent.getMessageBlock` with `messageBlockPages: 1`,
+  // §5.5 "Capped and paged block reads"): the same request, plus the page
+  // fields describing whether the served block was cut. Fields a daemon
+  // omits or sends malformed read as "not cut" / null, never a guess.
+  async getMessageBlockPage(
+    agentId: string,
+    messageId: string,
+    blockId: string,
+    workspaceId?: string,
+  ): Promise<MessageBlockPage> {
+    const result = await backendRequest<{
+      block?: unknown;
+      truncated?: unknown;
+      field?: unknown;
+      encoding?: unknown;
+      totalBytes?: unknown;
+      nextOffset?: unknown;
+    }>('agent.getMessageBlock', {
+      agentId,
+      messageId,
+      blockId,
+      ...(workspaceId !== undefined ? { workspaceId } : {}),
+    });
+    const block = result?.block;
+    if (!isContentBlock(block)) {
+      throw new Error(
+        `agent.getMessageBlock returned no block for message ${messageId} block ${blockId}`,
+      );
+    }
+    const byteCount = (value: unknown): number | null =>
+      typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
+    return {
+      block,
+      truncated: result.truncated === true,
+      field: typeof result.field === 'string' ? result.field : null,
+      encoding: result.encoding === 'text' || result.encoding === 'json' ? result.encoding : null,
+      totalBytes: byteCount(result.totalBytes),
+      nextOffset: byteCount(result.nextOffset),
+    };
+  }
+
+  // User-message index (`agent.listUserMessages`, §5.5): user-role rows as
+  // lightweight `{ id, preview, createdAt, metadata? }` items,
+  // oldest→newest — the whole index unless `page` asks for the newest rows
+  // only. `previewChars` and the page params only ride along when supplied
+  // so the daemon defaults apply otherwise.
   // Failures fold into a typed result instead of throwing so the navigator
   // can silently degrade to its tail-derived items: -32601 (older daemon
   // lacking the method) is marked `unsupported: true`; any other failure
@@ -413,17 +458,19 @@ export class LiveAgentsClient implements AgentsClient {
     agentId: string,
     previewChars?: number,
     workspaceId?: string,
+    page?: UserMessageIndexPageOptions,
   ): Promise<UserMessageIndexResult> {
     const params: Record<string, unknown> = {
       agentId,
       ...(workspaceId !== undefined ? { workspaceId } : {}),
     };
     if (previewChars !== undefined) params.previewChars = previewChars;
+    if (page?.limit !== undefined) params.limit = page.limit;
+    if (page?.nextToken !== undefined) params.nextToken = page.nextToken;
     try {
-      const result = await backendRequest<{ items?: unknown[]; total?: unknown } | undefined>(
-        'agent.listUserMessages',
-        params,
-      );
+      const result = await backendRequest<
+        { items?: unknown[]; total?: unknown; nextToken?: unknown } | undefined
+      >('agent.listUserMessages', params);
       const rawItems = Array.isArray(result?.items) ? result.items : [];
       const items = rawItems
         .filter((raw): raw is Record<string, unknown> => !!raw && typeof raw === 'object')
@@ -441,6 +488,9 @@ export class LiveAgentsClient implements AgentsClient {
           return item;
         });
       const total = typeof result?.total === 'number' ? result.total : items.length;
+      const nextToken = result?.nextToken;
+      if (typeof nextToken === 'string' || nextToken === null)
+        return { ok: true, items, total, nextToken };
       return { ok: true, items, total };
     } catch (error) {
       const unsupported =
@@ -538,7 +588,7 @@ export class LiveAgentsClient implements AgentsClient {
     messageId: string;
     content: string;
     model?: string;
-    imageBlocks?: ImageBlock[];
+    imageBlocks?: Array<ImageBlock | MessageBlockImageReference>;
     fileBlocks?: FileBlock[];
   }): Promise<MutationResult> {
     // `agent.editAndRegenerate` (§5.5 catalog-parity extension) edits a past
@@ -914,6 +964,19 @@ export class LiveAgentsClient implements AgentsClient {
       agentId: params.agentId,
       workspaceId: params.workspaceId,
       changes: { notificationsMuted: params.notificationsMuted },
+    });
+  }
+  async setPinned(params: {
+    agentId: string;
+    workspaceId: string;
+    pinned: boolean;
+  }): Promise<MutationResult> {
+    // `agent.update` (§5.5) partial writer; `pinned` must be a boolean (the
+    // daemon rejects anything else with -32602) and never counts as activity.
+    return runMutation('agent.update', {
+      agentId: params.agentId,
+      workspaceId: params.workspaceId,
+      changes: { pinned: params.pinned },
     });
   }
   async setBackground(params: {

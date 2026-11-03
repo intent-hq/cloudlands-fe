@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Listener<T> = (value: T) => void;
 
-const mocks = vi.hoisted(() => ({ dispatch: vi.fn() }));
+const mocks = vi.hoisted(() => ({ dispatch: vi.fn(), remote: false }));
 
 const constantReadable = <T>(value: T) => ({
   subscribe(run: Listener<T>) {
@@ -55,8 +55,20 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAllWorkspaceAgents: () => constantReadable([]),
 }));
+vi.mock('$features/remote-machines/remote-machines-selectors', () => ({
+  selectRemoteMachine: () => constantReadable(null),
+}));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
-  selectAgentSession: () => constantReadable(null),
+  selectAgentSession: () =>
+    constantReadable(
+      mocks.remote
+        ? {
+            nodeId: 'mac',
+            nodeName: 'Mac mini',
+            placement: { target: 'remote', os: 'macos', arch: 'aarch64' },
+          }
+        : null,
+    ),
   selectAgentProvider: () => constantReadable(undefined),
   selectAgentIsResponding: Object.assign(() => constantReadable(false), {
     select: () => false,
@@ -123,6 +135,7 @@ beforeEach(() => {
     },
   );
   mocks.dispatch.mockClear();
+  mocks.remote = false;
   document.documentElement.className = '';
 });
 
@@ -181,5 +194,23 @@ describe('panel header agent identity', () => {
     expect(rows.map((row) => row.getAttribute('data-tab-id'))).toEqual(['tab-a', 'tab-b']);
     rows.forEach(expectChatBubbleIdentity);
     expect(container.querySelector('[data-testid="pane-stack-selector-trigger"]')).not.toBeNull();
+  });
+});
+
+describe('header machine location', () => {
+  it.each([true, false])('shows no machine pill in the header: remote=%s', (remote) => {
+    mocks.remote = remote;
+    const { container } = render(PanelTabBar, {
+      props: {
+        tabs: [tabs[0]],
+        activeTabId: 'tab-a',
+        panelId: 'panel-1',
+        workspaceId: 'workspace-1',
+      },
+    });
+    const header = container.querySelector('[data-panel-tabless-header]')!;
+    expect(header.querySelector('[data-pane-stack-selector-trigger]')).not.toBeNull();
+    expect(header.querySelector('[data-agent-machine-badge]')).toBeNull();
+    expect(header.textContent).not.toContain('Mac mini');
   });
 });

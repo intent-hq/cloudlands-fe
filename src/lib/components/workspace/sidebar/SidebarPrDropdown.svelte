@@ -1,7 +1,6 @@
 <script lang="ts">
-  import Fa from 'svelte-fa';
   import { Badge } from '$lib/components/ui/badge';
-  import { Button } from '$lib/components/ui/button';
+  import SidebarHeaderAction from './SidebarHeaderAction.svelte';
   import * as Menu from '$lib/components/ui/menu';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { handleLink } from '$features/navigation/link-handler';
@@ -111,13 +110,11 @@
     <Menu.Root bind:open {onOpenChange}>
       <Menu.Trigger>
         {#snippet child({ props })}
-          <Button
+          <SidebarHeaderAction
             {...props}
-            variant="plain"
-            size="icon"
-            class="relative size-6 shrink-0 cursor-pointer rounded text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:bg-background/80 focus-visible:text-foreground"
-            aria-label={triggerLabel}
-            title={triggerLabel}
+            icon={leadRow.status === 'merged' ? 'merge' : 'pull-request'}
+            iconClass={leadRow.foregroundClass}
+            label={triggerLabel}
             data-sidebar-pr-trigger
             data-sidebar-pr-count={rows.length}
             onpointerdown={isolate(
@@ -125,7 +122,6 @@
             )}
             onclick={isolate(props.onclick as ((event: MouseEvent) => void) | undefined)}
           >
-            <Fa icon={leadRow.statusIcon} class="size-4! {leadRow.foregroundClass}" />
             {#if rows.length > 1}
               <Badge
                 variant="secondary"
@@ -136,7 +132,7 @@
                 {formatInteger(rows.length)}
               </Badge>
             {/if}
-          </Button>
+          </SidebarHeaderAction>
         {/snippet}
       </Menu.Trigger>
       <Menu.Content

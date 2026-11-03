@@ -11,14 +11,19 @@
   import { prRepoFromUrl } from '$lib/components/workspace/sidebar/sidebar-changes-utils';
   import { PullRequestStatus, type Workspace } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
+  import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
 
   let { workspace }: { workspace: Workspace } = $props();
+  // Plain folders have no PRs, so the row shows no PR badge.
+  const plainFolder = $derived(isPlainFolderWorkspace(workspace));
   const candidates = $derived(
-    workspace.pullRequests?.length
-      ? workspace.pullRequests
-      : workspace.activePullRequest
-        ? [workspace.activePullRequest]
-        : [],
+    plainFolder
+      ? []
+      : workspace.pullRequests?.length
+        ? workspace.pullRequests
+        : workspace.activePullRequest
+          ? [workspace.activePullRequest]
+          : [],
   );
   const lifecycle = $derived.by(() => {
     // List rows can arrive in active-PR or merge order. Rank the whole pool

@@ -10,6 +10,21 @@ import { scrubHostNodeInjection } from './scrub-host-node-injection';
 import { scrubHostPythonInjection } from './scrub-host-python-injection';
 import { stripForkExecArgv } from '../scripts/vitest-fork-exec-argv.mjs';
 import { installShiftedTestClock } from './shifted-test-clock';
+// Configure @testing-library/dom (the instance @testing-library/svelte re-exports) directly:
+// importing the Svelte binding here would load Svelte into every test file, UI or not.
+import { configure as configureTestingLibrary } from '@testing-library/dom';
+import { defaultAsyncUtilTimeoutMs } from '../scripts/vitest-timeouts.mjs';
+import { installViWaitDefaultTimeout } from './test/vi-wait-default-timeout';
+
+// Testing Library's async utilities (`waitFor`, `findBy*`, `waitForElementToBeRemoved`)
+// and vitest's `vi.waitFor` / `vi.waitUntil` give up after 1s by default, while a test may
+// run for 30s locally and 60s on CI. A slow but correct first render on a loaded runner
+// outlasted that 1s and ejected a green PR from the merge queue (cloudlands-fe#3915).
+// Waits now use half the CI-scaled test budget; a test that expects a wait to fail must
+// pass its own short `timeout`. @testing-library/svelte restores its config after every
+// test, so the Testing Library limit holds suite-wide.
+configureTestingLibrary({ asyncUtilTimeout: defaultAsyncUtilTimeoutMs() });
+installViWaitDefaultTimeout(vi, defaultAsyncUtilTimeoutMs());
 
 // Nightly shifted-clock run (VITEST_SHIFTED_NOW, intent-hq/cloudlands-fe#3574): move the
 // real clock to an odd time of day before any test or vitest's fake timers read it.

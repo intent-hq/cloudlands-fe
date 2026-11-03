@@ -37,6 +37,7 @@
   } from '$store/renderer/slices/host-requirements/host-requirements-slice';
   import {
     selectGhRequirement,
+    selectGitOptional,
     selectGitRequirement,
     selectHostRequirementsChecking,
     selectHostRequirementsHasCheckedOnce,
@@ -49,6 +50,8 @@
   const git$ = selectGitRequirement();
   const node$ = selectNodeRequirement();
   const gh$ = selectGhRequirement();
+  // Labs, no forge connected: Git is needed only for git workspaces.
+  const gitOptional$ = selectGitOptional();
   const checking$ = selectHostRequirementsChecking();
   const hasCheckedOnce$ = selectHostRequirementsHasCheckedOnce();
   const daemonStats$ = selectDaemonHealthStats();
@@ -175,6 +178,8 @@
       <div class="flex items-center gap-3">
         {#if $git$.available}
           <span class="status-icon status-ok"><Fa icon={faCheck} size="sm" /></span>
+        {:else if $gitOptional$}
+          <span class="status-icon status-info"><Fa icon={faCircleInfo} size="sm" /></span>
         {:else}
           <span class="status-icon status-missing">
             <Fa icon={faTriangleExclamation} size="sm" />
@@ -186,11 +191,17 @@
             Git
             {#if $git$.available && $git$.version}
               <span class="text-muted-foreground font-normal text-sm">{$git$.version}</span>
+            {:else if $gitOptional$}
+              <span class="text-muted-foreground font-normal text-sm">
+                {m.onboarding_requirementsStep_gitOptional_label()}
+              </span>
             {/if}
           </p>
           {#if !$git$.available}
             <p class="text-sm text-muted-foreground">
-              {m.onboarding_requirementsStep_gitMissing_description()}
+              {$gitOptional$
+                ? m.onboarding_requirementsStep_gitOptional_description()
+                : m.onboarding_requirementsStep_gitMissing_description()}
             </p>
           {/if}
         </div>

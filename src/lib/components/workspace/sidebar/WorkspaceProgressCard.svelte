@@ -21,6 +21,7 @@
     faCheck,
     faFileLines,
     faGlobe,
+    faRightFromBracket,
     faRightLeft,
     faUserPlus,
   } from '@fortawesome/free-solid-svg-icons';
@@ -28,6 +29,7 @@
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import CheckoutModePill from '$lib/components/workspace/CheckoutModePill.svelte';
+  import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
   import Button from '$lib/components/ui/button/button.svelte';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
@@ -94,6 +96,16 @@
   } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
   import { setWorkspaceBrowserClientRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
   import SetPrimaryClientConfirmDialog from '$lib/components/workspace/SetPrimaryClientConfirmDialog.svelte';
+  import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
+  import {
+    selectCanLeaveWorkspace,
+    selectIsLeavingWorkspace,
+  } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
+  import {
+    captureLeaveWorkspaceTarget,
+    confirmLeaveWorkspace,
+    type LeaveWorkspaceTarget,
+  } from '$features/workspace-sharing/leave-workspace';
   import { selectCanSetWorkspacePrimaryClient } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     selectHostRole,
@@ -121,6 +133,8 @@
   const sidebarSide$ = selectSidebarSide();
   const notes = selectAllNotes(workspaceIdStore);
   const workspace = selectWorkspaceById(workspaceIdStore);
+  // Plain folders have no branch, git workflow actions or transfer.
+  const plainFolder = $derived(isPlainFolderWorkspace($workspace));
   // Owner-only actions (Transfer/Download, Archive, Delete) are refused by the
   // daemon for collaborators (`require_owner`), so the menu hides them up front.
   const hidesOwnerActions$ = selectHidesOwnerWorkspaceActions(workspaceIdStore);
@@ -436,13 +450,37 @@
       : null,
   );
 
+  // Guest-only counterpart of Share (see `leave-workspace.ts`).
+  const canLeave$ = selectCanLeaveWorkspace(workspaceIdStore);
+  const leaving$ = selectIsLeavingWorkspace(workspaceIdStore);
+  let leaveDialogOpen = $state(false);
+  let leaveTarget = $state<LeaveWorkspaceTarget | null>(null);
+  const leaveAction: MenuAction | null = $derived(
+    $canLeave$
+      ? {
+          id: 'leave-workspace',
+          label: $leaving$
+            ? m.settings_guestSessions_leaving_label()
+            : m.workspace_leave_menu_label(),
+          icon: faRightFromBracket,
+          dividerBefore: true,
+          variant: 'destructive',
+          disabled: $leaving$,
+          onClick: () => {
+            leaveTarget = captureLeaveWorkspaceTarget($workspace);
+            leaveDialogOpen = leaveTarget !== null;
+          },
+        }
+      : null,
+  );
+
   const transferAction: MenuAction | null = $derived(
-    $workspace && !$hidesOwnerActions$
+    $workspace && !plainFolder && !$hidesOwnerActions$
       ? {
           id: 'transfer-workspace',
           label: m.workspace_card_transfer_label(),
           icon: faRightLeft,
-          dividerBefore: !shareAction,
+          dividerBefore: !shareAction && !leaveAction,
           onClick: () => {
             if (!$workspace) return;
             appStore.dispatch(
@@ -581,6 +619,7 @@
     sidebarSideAction,
     primaryClientAction,
     ...(shareAction ? [shareAction] : []),
+    ...(leaveAction ? [leaveAction] : []),
     ...(transferAction ? [transferAction] : []),
   ]);
 
@@ -733,7 +772,9 @@
   // require onAcceptChanges are hidden when no handler is provided. The
   // `view-pr` action is intentionally not rendered here: the Changes launcher's
   // PR dropdown (SidebarPrDropdown) is the single PR surface in the sidebar.
-  const displayAction = $derived($progressActions$.find((action) => action.url || onAcceptChanges));
+  const displayAction = $derived(
+    plainFolder ? undefined : $progressActions$.find((action) => action.url || onAcceptChanges),
+  );
   const workflowAction = $derived(displayAction?.id === 'view-pr' ? undefined : displayAction);
 </script>
 
@@ -890,7 +931,7 @@
           contentContainerClass="p-0! space-y-0!"
           showArrow={false}
           interactive
-          class={`h-5 min-w-0 cursor-copy items-center overflow-hidden border-none bg-transparent p-0 text-left font-inherit text-muted-foreground outline-none hover:underline focus:outline-none focus-visible:outline-none ${$workspace?.branch ? 'shrink' : 'flex-1'}`}
+          class={`h-5 min-w-0 cursor-copy items-center overflow-hidden border-none bg-transparent p-0 text-left font-inherit text-muted-foreground outline-none hover:underline focus:outline-none focus-visible:outline-none ${$workspace?.branch && !plainFolder ? 'shrink' : 'flex-1'}`}
           bind:open={repoTooltipOpen}
           onOpenChange={handleRepoTooltipOpenChange}
           disableCloseOnTriggerClick
@@ -946,7 +987,7 @@
             </div>
           {/snippet}
         </TooltipRich>
-        {#if $workspace?.branch}
+        {#if !plainFolder && $workspace?.branch}
           <TooltipRich
             side="bottom"
             align="start"
@@ -1097,6 +1138,21 @@
     {/if}
   </div>
 </div>
+
+<BulkActionConfirmDialog
+  bind:open={leaveDialogOpen}
+  title={m.settings_guestSessions_leaveWorkspaceConfirm_title()}
+  description={m.settings_guestSessions_leaveWorkspaceConfirm_description({
+    workspace: leaveTarget?.workspaceTitle ?? '',
+    name: leaveTarget?.sessionLabel ?? '',
+  })}
+  confirmText={m.settings_guestSessions_leaveWorkspace_label()}
+  variant="destructive"
+  onConfirm={() => {
+    leaveDialogOpen = false;
+    void confirmLeaveWorkspace(leaveTarget);
+  }}
+/>
 
 {#if pendingPrimaryClient}
   <SetPrimaryClientConfirmDialog

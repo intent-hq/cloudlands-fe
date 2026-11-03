@@ -23,6 +23,11 @@ for (const placement of ['settings', 'composer', 'modal'] as const) {
     const effort = page.getByTestId('effort-picker-trigger');
     if (placement === 'composer') {
       await search.press('Tab');
+      await expect(page.getByRole('button', { name: 'Clear search' })).toBeFocused();
+      await page.keyboard.press('Tab');
+      await expect(page.getByTestId('model-provider-refresh-button')).toBeFocused();
+      await page.keyboard.press('Tab');
+      await expect(page.getByRole('option', { name: 'Model 2', exact: true })).toBeFocused();
       await page.keyboard.press('Tab');
       await expect(effort).toBeFocused();
       await effort.press('Enter');

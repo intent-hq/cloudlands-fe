@@ -61,6 +61,7 @@ import {
   retireAgentRequested,
   saveAgentSessionRequested,
   setAgentNotificationsMutedRequested,
+  setAgentPinnedRequested,
   setAgentBackgroundRequested,
   hydrateAgentsRequested,
   addAgent,
@@ -669,6 +670,41 @@ function* setNotificationsMuted(
   }
 }
 
+function* setPinned(action: ReturnType<typeof setAgentPinnedRequested>): SagaGenerator<void> {
+  const [wsId, agentId, pinned] = action.payload;
+  // Optimistic flip so the row moves and the menu label updates immediately;
+  // the `agent:updated` push converges the same field from the daemon.
+  const previous = yield* selectAgentSession.effect(agentId);
+  const previousPinned = previous?.pinned;
+  if (previous !== undefined) yield* put(updateSession(agentId, { pinned }));
+  let settled = false;
+  try {
+    const result = yield* call([appClient.agents, appClient.agents.setPinned], {
+      agentId,
+      workspaceId: wsId,
+      pinned,
+    });
+    if (!result.success) throw new Error(result.error || m.agent_mutation_setPinnedFailed_error());
+    yield* put(action.success(undefined as never));
+    settled = true;
+  } catch (error) {
+    const failure = mutationError(error, m.agent_mutation_setPinnedFailed_error());
+    // Roll back only while the optimistic value is still the live one, so a
+    // push that landed meanwhile is not overwritten.
+    const current = yield* selectAgentSession.effect(agentId);
+    if (previous !== undefined && current?.pinned === pinned) {
+      yield* put(updateSession(agentId, { pinned: previousPinned }));
+    }
+    yield* call(showError, failure.message);
+    yield* put(action.failure(failure));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) {
+      yield* put(action.failure(new Error(m.agent_mutation_setPinnedFailed_error())));
+    }
+  }
+}
+
 function* dismissQuestions(
   action: ReturnType<typeof agentSessionDismissQuestionsRequested>,
 ): SagaGenerator<void> {
@@ -1073,6 +1109,7 @@ export function* agentMutationSaga(): SagaGenerator<void> {
     takeEvery(renameAgentSessionRequested, renameAgent, renames),
     takeEvery(stopAgentSessionRequested, stopAgent),
     takeEvery(setAgentNotificationsMutedRequested, setNotificationsMuted),
+    takeEvery(setAgentPinnedRequested, setPinned),
     takeEvery(setAgentBackgroundRequested, setBackground),
     takeEvery(agentSessionDismissQuestionsRequested, dismissQuestions),
     takeEvery(agentProposalResolveRequested, resolveProposal),

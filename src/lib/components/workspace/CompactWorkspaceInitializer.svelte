@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ShortcutChip } from '$lib/components/ui/kbd';
   import {
     selectWorkspaceCreationVisible,
     selectPrincipalActionContext,
@@ -24,7 +25,7 @@
   import { goto } from '$app/navigation';
   import { v4 as uuidv4 } from 'uuid';
   import { registerWorkspaceInitializationPreparation } from './initializer/workspace-initialization-preparation';
-  import SetupScriptTrigger from './initializer/SetupScriptTrigger.svelte';
+  import SetupScriptPicker from './initializer/SetupScriptPicker.svelte';
   import {
     SETUP_SCRIPT_TEMPLATES,
     getTemplateContent,
@@ -34,8 +35,8 @@
     repoIdentityKey,
     toRepoConfigSubset,
     type RepoIdentity,
-    setupScriptDisplayName,
     REPO_CONFIG_SCRIPT_NAME,
+    type SetupScriptChoice,
     type SetupScriptNameSource,
   } from '$features/setup-scripts';
   import { getLastUsedSetupScript } from '$features/setup-scripts/last-used';
@@ -126,12 +127,17 @@
   import Button from '../ui/button/button.svelte';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import CreateButtonProgress from './initializer/CreateButtonProgress.svelte';
+  import { selectEffectiveStartOn } from '$features/remote-machines/remote-machines-selectors';
   import InitialAgentPicker from './initializer/InitialAgentPicker.svelte';
   import IssueSuggestions, {
     preloadIssues,
     type IssueSelectionData,
   } from './initializer/IssueSuggestions.svelte';
   import RepoAndBranchPicker from './initializer/RepoAndBranchPicker.svelte';
+  import { createInitializeGitChoice } from './initializer/initialize-git-choice.svelte';
+  import { confirmPlainFolderInPlace } from './initializer/plain-folder-confirm';
+  import { skipIsolationForPick } from './initializer/plain-folder-create';
+  import { selectWorkspaceItems as selectPlainFolderWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import type {
     GitLabProjectPickerProps,
     GitLabBranchPickerProps,
@@ -322,6 +328,7 @@
     /** Use the sidebar repository once when mounting the New Workspace dialog. */
     defaultToSidebarRepository?: boolean;
     oncreate?: () => void;
+    onNavigateAway?: () => void;
     /** Let a containing dialog own initial focus instead of focusing the prompt. */
     autoFocus?: boolean;
     /** Show contextual hints for first-time users */
@@ -332,6 +339,7 @@
     initialRepo,
     defaultToSidebarRepository = false,
     oncreate,
+    onNavigateAway,
     autoFocus = true,
     showFirstTimeHints = false,
   }: Props = $props();
@@ -532,6 +540,30 @@
   let branch = $state(savedState?.branch ?? '');
   let isNewRepo = $state(savedState?.isNewRepo ?? false);
   let isValidPath = $state(savedState?.isValidPath ?? false);
+  // Plain-folder workspaces (Labs). The pick is bound to its path, so any other
+  // repo change (restore, prefill, new pick) drops it.
+  const initializeGitChoice = createInitializeGitChoice();
+  const plainFolderMode = $derived(!initializeGitChoice.initializeGit);
+  let plainFolderPick = $state<{ path: string; kind: 'existing' | 'new' } | null>(null);
+  let isConfirmingPlainFolder = $state(false);
+  const plainFolder = $derived(
+    plainFolderMode && repoType === 'local' && plainFolderPick && plainFolderPick.path === repoPath
+      ? plainFolderPick.kind
+      : null,
+  );
+  // What the picker's git switch acts on in the Existing folder tab.
+  const gitSwitchFolder = $derived<'git-repo' | 'folder' | null>(
+    repoType !== 'local' || !repoPath
+      ? null
+      : plainFolder !== null || isNewRepo
+        ? 'folder'
+        : 'git-repo',
+  );
+  // With the toggle off, git-only controls are hidden until a git repo is picked.
+  const plainFolderCreate = $derived(
+    plainFolderMode && repoType === 'local' && (plainFolder !== null || !repoPath),
+  );
+  const plainFolderWorkspaces$ = selectPlainFolderWorkspaceItems();
   const checkoutFormId = uuidv4();
   const labsGitLab$ = selectLabsGitLabEnabled();
   const gitlabInstance$ = selectGitLabAuthInstanceBaseUrl();
@@ -677,6 +709,18 @@
   // Context items for attachments: images (thumbnail pills) and staged
   // non-image files (path-only until placed at workspace.create redemption)
   let contextItems = $state<ContextItem[]>([]);
+  // Start On: a remote agent starts from the workspace's last commit, which a
+  // new repository or a plain folder lacks, and takes no image or file
+  // attachments, so in those cases the first agent stays here.
+  const startOnBackendOnly = $derived<'new-repo' | 'plain-folder' | 'attachments' | null>(
+    plainFolder !== null
+      ? 'plain-folder'
+      : isNewRepo
+        ? 'new-repo'
+        : contextItems.some((item) => item.type !== 'folder' && isPreviewableAttachment(item))
+          ? 'attachments'
+          : null,
+  );
   // Use saved state first, then fall back to last submitted values, then defaults
   // NOTE: selectedSpecialist can be null (meaning "General / no specialist").
   // We check !== undefined instead of using ?? because null is a valid value
@@ -722,6 +766,9 @@
   // Track if team mode is selected (the orchestrator specialist coordinates).
   // Defaults to single-agent mode on first launch; a remembered choice wins.
   let isTeamMode = $state<boolean>(savedAgentSettings?.isTeamMode ?? false);
+  // Start On: remembered machine id ('' = the current backend). The row
+  // resolves it against the machines available now (selectEffectiveStartOn).
+  let startOnMachineId = $state<string>(savedAgentSettings?.startOnMachineId ?? '');
 
   function resetUnavailableSpecialist(): void {
     selectedSpecialist = isTeamMode
@@ -743,11 +790,27 @@
   // form state.
   let setupScript = $state('');
   let showSetupScript = $state(false); // Always collapsed on mount
+  let showSetupScriptPicker = $state(false);
+  let createSetupScript = $state(false);
+  function openSetupScript(createNew = false) {
+    // The editor captures the persistent field as its focus-return target.
+    controlsContainer?.querySelector<HTMLElement>('[data-setup-script-trigger]')?.focus();
+    createSetupScript = createNew;
+    showSetupScript = true;
+  }
   let setupScriptName = $state('Custom');
   let setupScriptNameSource = $state<SetupScriptNameSource>('custom');
   let isCustomSetupScript = $state(false);
   let setupScriptExplicit = false;
   let repoConfigError = $state(false);
+
+  function selectSetupScript(choice: SetupScriptChoice) {
+    setupScript = choice.content;
+    setupScriptName = choice.name;
+    setupScriptNameSource = choice.source;
+    isCustomSetupScript = choice.source === 'custom';
+    setupScriptExplicit = true;
+  }
 
   // Repo-committed setup script from <repo>/.intent/config.json (local repos
   // read the file over IPC; GitHub repos use `github.repoConfig.get`).
@@ -810,6 +873,8 @@
   // 'unknown' = the probe couldn't run (transport failure / daemon unreachable)
   const gitAvailability$ = selectWorkspaceInitializerGitAvailability();
   const gitAvailable = $derived($gitAvailability$);
+  // A plain-folder create needs no git, so it never shows the git banners or hint.
+  const gitNoticeAvailability = $derived(plainFolderCreate ? true : gitAvailable);
 
   // GitHub auth state - tracks if user needs to authenticate for private repos
   let githubAuthNeeded = $state<'none' | 'not-authenticated' | 'no-access'>('none');
@@ -848,6 +913,7 @@
     if (!settings || agentSetupPinned()) return;
     if (settings.selectedSpecialist !== undefined) selectedSpecialist = settings.selectedSpecialist;
     if (settings.isTeamMode !== undefined) isTeamMode = settings.isTeamMode;
+    if (settings.startOnMachineId !== undefined) startOnMachineId = settings.startOnMachineId;
     selectedProvider = settings.selectedProvider ?? selectedProvider;
     const model = settings.selectedModel;
     // A persisted bare model id belongs to the provider persisted with it;
@@ -896,6 +962,48 @@
     scope = data.scope || '';
   }
 
+  /**
+   * Reopen a plain folder remembered from the last create (Labs) as an
+   * existing plain folder with the git switch off. The folder is checked
+   * first: one that has become a git repository opens as a git repo, and a
+   * missing or unreadable one, or Labs off, preselects nothing.
+   */
+  let folderSelectionRevision = 0;
+
+  async function restoreRememberedPlainFolder(path: string) {
+    const revision = folderSelectionRevision;
+    let status: {
+      exists: boolean;
+      isDirectory: boolean;
+      isGitRepo: boolean;
+      isSubdirectoryOfGitRepo?: boolean;
+      relativePathFromGitRoot?: string;
+    } | null = null;
+    try {
+      const result = await invoke<any>('file:getDirectoryStatus', { path });
+      status = result?.success && result.data ? result.data : null;
+    } catch (err) {
+      logger.warn('Failed to check the remembered plain folder', err);
+    }
+    // Anything picked while the folder was checked wins.
+    if (!mounted || revision !== folderSelectionRevision || repoPath || repoType === 'gitlab')
+      return;
+    if (!status?.exists || !status.isDirectory) return;
+    if (status.isGitRepo || status.isSubdirectoryOfGitRepo) {
+      applyLastSelectedRepo({
+        path,
+        type: 'local',
+        isValidPath: true,
+        scope: status.isSubdirectoryOfGitRepo ? status.relativePathFromGitRoot : undefined,
+      });
+      return;
+    }
+    if (!initializeGitChoice.available) return;
+    if (initializeGitChoice.initializeGit) initializeGitChoice.set(false);
+    applyLastSelectedRepo({ path, type: 'local', isValidPath: true });
+    plainFolderPick = { path, kind: 'existing' };
+  }
+
   $effect(() => {
     if (!$workspaceInitializerHydrated$ || didApplyHydratedCompactState) return;
     if ($compactFormState$) {
@@ -922,6 +1030,7 @@
         settings.selectedProvider ??
         $defaultProviderId$) === provider;
     isTeamMode = settings.isTeamMode ?? false;
+    startOnMachineId = settings.startOnMachineId ?? '';
     selectedSpecialist =
       settings.selectedSpecialist !== undefined
         ? settings.selectedSpecialist
@@ -998,7 +1107,9 @@
     if (hydrationAction === 'wait') return;
 
     didApplyHydratedLastSelectedRepo = true;
-    if (hydrationAction === 'restore' && lastSelectedRepo) {
+    if (hydrationAction === 'restore' && lastSelectedRepo?.plainFolder) {
+      void restoreRememberedPlainFolder(lastSelectedRepo.path);
+    } else if (hydrationAction === 'restore' && lastSelectedRepo) {
       applyLastSelectedRepo(lastSelectedRepo);
     } else if (hydrationAction === 'restore-recent' && recentRepos.length > 0) {
       // Fall back to the most recently used repository
@@ -1208,7 +1319,7 @@
 
         // Apply repo and branch settings — a repoPath prefill is always a
         // local repo, so set the full selection (clearing any restored
-        // github state) so the picker opens on the Copy local repo tab
+        // github state) so the picker opens on the Existing folder tab
         const hasCheckoutDraft = data.repositoryCheckoutDraft !== undefined;
         const checkoutDraft = readRepositoryCheckoutDraft(data.repositoryCheckoutDraft);
         if (hasCheckoutDraft) restoreCheckout(checkoutDraft, !checkoutDraft);
@@ -1788,6 +1899,7 @@
     untrack(() => {
       if (previousSetupScriptProbeKey !== key) {
         showSetupScript = false;
+        showSetupScriptPicker = false;
         previousSetupScriptProbeKey = key;
         repoConfigScript = null;
         repoConfigScriptRepo = null;
@@ -1807,6 +1919,7 @@
         repoConfigScriptRepo = null;
         setupScriptExplicit = false;
         showSetupScript = false;
+        showSetupScriptPicker = false;
 
         // On initial mount, don't override if there's already a setup script
         // set (e.g., from restored form state). On repo switches, always
@@ -1862,19 +1975,51 @@
   // A failed/placing attachment pill also blocks (retry or remove to proceed).
   const isValid = $derived(
     $canCreateWorkspace$ &&
-      (gitAvailable === true || gitAvailable === 'unknown') &&
-      (repoType === 'gitlab'
-        ? $checkoutCanCreate$
-        : !!repoPath &&
-          isValidPath &&
-          // No worktree on a local folder needs no branch (it may not be a repo).
-          (isNewRepo ||
-            !!branch ||
-            repoType === 'remote' ||
-            (skipIsolation && repoType === 'local')) &&
-          (repoType !== 'github' || githubAuthNeeded === 'none')) &&
+      // A plain folder needs no git.
+      (plainFolder !== null || gitAvailable === true || gitAvailable === 'unknown') &&
+      (plainFolder !== null
+        ? !!repoPath && isValidPath
+        : repoType === 'gitlab'
+          ? $checkoutCanCreate$
+          : !!repoPath &&
+            isValidPath &&
+            // No worktree on a local folder needs no branch (it may not be a repo).
+            (isNewRepo ||
+              !!branch ||
+              repoType === 'remote' ||
+              (skipIsolation && repoType === 'local')) &&
+            (repoType !== 'github' || githubAuthNeeded === 'none')) &&
       !hasBlockingAttachments(contextItems),
   );
+
+  /**
+   * The user flipped the git switch in the picker's Existing folder or New tab.
+   * For a picked git repo it is the isolation setting (on: its own worktree;
+   * off: in place on its current branch), shared with the branch selector.
+   * Otherwise it drops a pick made for the other mode and reopens that tab. A
+   * GitHub/GitLab selection stays until a folder is picked (cloning is always git).
+   */
+  function handleInitializeGitChange(value: boolean, tab: 'local' | 'new') {
+    folderSelectionRevision++;
+    // Read before the choice flips: the plain-folder kind derives from it.
+    const folder = gitSwitchFolder;
+    initializeGitChoice.set(value);
+    if (repoType !== 'local' || !repoPath) return;
+    if (tab === 'local' && folder === 'git-repo') {
+      skipIsolation = !value;
+      return;
+    }
+    if (plainFolderPick?.path === repoPath || isNewRepo) {
+      repoPath = '';
+      isNewRepo = false;
+      isValidPath = false;
+      branch = '';
+      scope = '';
+      plainFolderPick = null;
+      // Clearing the pick remounts the picker; keep the user in the same tab.
+      void tick().then(() => repoAndBranchPicker?.openFolderSelection?.(tab));
+    }
+  }
 
   // Derived GitHub repo info for IssueSuggestions
   const githubRepoInfo = $derived.by(() => {
@@ -1908,10 +2053,13 @@
     if (!isExpanded) return;
 
     function handleGlobalKeydown(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        collapse();
-      }
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      // The containing dialog owns dismissal; menus own their own Escape.
+      if (controlsContainer?.closest('[data-slot="dialog-content"]')) return;
+      if (e.target instanceof Element && e.target.closest('[role="menu"], [role="listbox"]'))
+        return;
+      e.preventDefault();
+      collapse();
     }
 
     window.addEventListener('keydown', handleGlobalKeydown);
@@ -1970,11 +2118,18 @@
       isValidPath?: boolean;
       scope?: string;
       remoteSetup?: any;
+      plainFolder?: 'existing' | 'new';
     }>,
   ) {
     appStore.dispatch(checkoutClosed(checkoutFormId));
+    folderSelectionRevision++;
     repoPath = event.detail.path;
     repoType = event.detail.type === 'remote' ? 'remote' : event.detail.type;
+    plainFolderPick = event.detail.plainFolder
+      ? { path: event.detail.path, kind: event.detail.plainFolder }
+      : null;
+    // A plain folder has no PR context; drop one picked before switching.
+    if (plainFolderPick) selectedPRNumber = null;
     isNewRepo = event.detail.isNewRepo || false;
     isValidPath = event.detail.isValidPath ?? false;
     scope = event.detail.scope || '';
@@ -1997,6 +2152,15 @@
     // GitHub repos require an isolated checkout - reset skipIsolation if switching to github type
     if (event.detail.type === 'github') {
       skipIsolation = false;
+    }
+    // The git switch decides how a local pick is worked on (Labs): a git repo
+    // follows it, a new repository works in place on main with no new branch.
+    if (initializeGitChoice.visible && event.detail.type === 'local') {
+      const next = skipIsolationForPick(
+        plainFolderPick && plainFolderMode ? 'plain' : isNewRepo ? 'new-repo' : 'git-repo',
+        initializeGitChoice.initializeGit,
+      );
+      if (next !== null) skipIsolation = next;
     }
 
     // Reset GitHub auth state when repo changes - will be updated by BranchSelector
@@ -2072,6 +2236,22 @@
       hasBlockingAttachments(contextItems)
     )
       return;
+    // Agents edit an existing plain folder in place with no undo: confirm first.
+    // Cancel creates nothing.
+    if (!continuation && plainFolder === 'existing') {
+      if (isConfirmingPlainFolder) return;
+      const confirmedPath = repoPath;
+      isConfirmingPlainFolder = true;
+      let confirmed = false;
+      try {
+        confirmed = await confirmPlainFolderInPlace(confirmedPath, $plainFolderWorkspaces$);
+      } finally {
+        isConfirmingPlainFolder = false;
+      }
+      if (!confirmed || !mounted || plainFolder !== 'existing' || repoPath !== confirmedPath)
+        return;
+      if (!isValid || isCreating) return;
+    }
     const repositoryCheckout =
       repoType === 'gitlab' ? selectCheckoutSelection.select(appStore.state, checkoutFormId) : null;
     if (repoType === 'gitlab' && !repositoryCheckout) return;
@@ -2268,6 +2448,7 @@
         branchBehind,
         pullEnabled: shouldPullBeforeCreate,
         skipIsolation,
+        plainFolder,
         selectedPrNumber: selectedPRNumber,
         draft: {
           ownerId: draftOwnerId,
@@ -2297,6 +2478,10 @@
           selectedReasoningEffort,
           isTeamMode,
           selectedProvider,
+          // A new repository or a plain folder has no commit for a remote agent to start from.
+          startOnMachineId: startOnBackendOnly
+            ? ''
+            : selectEffectiveStartOn.select(appStore.state, startOnMachineId),
         },
         rememberAgentRepoKey,
         setupScriptExplicit,
@@ -2431,6 +2616,15 @@
       isNewRepo = false;
       isValidPath = true;
     }
+    // A plain folder now exists (one made with New too), so it stays selected
+    // as an existing plain folder; the in-place warning still guards each create.
+    const keptPlainFolder = !preserveSubmission && plainFolder !== null && !!repoPath;
+    if (keptPlainFolder) {
+      plainFolderPick = { path: repoPath, kind: 'existing' };
+      isValidPath = true;
+      branch = '';
+      scope = '';
+    }
     if (
       !preserveSubmission &&
       debugConfig.get('enableFormPersistence') &&
@@ -2444,6 +2638,7 @@
           ...(githubUrl ? { githubUrl } : {}),
           isValidPath,
           ...(scope ? { scope } : {}),
+          ...(keptPlainFolder ? { plainFolder: true as const } : {}),
         }),
       );
     }
@@ -2466,13 +2661,14 @@
     // These are preserved so the user's last agent selection persists across workspace creations
     setupScript = '';
     showSetupScript = false;
+    showSetupScriptPicker = false;
     setupScriptName = 'Custom';
     setupScriptNameSource = 'custom';
     isCustomSetupScript = false;
 
     // Restore the last used setup script for the preserved repo so the next
     // workspace creation defaults to the same script
-    if (repoPath && repoType !== 'gitlab') {
+    if (repoPath && repoType !== 'gitlab' && !keptPlainFolder) {
       restoreLastUsedSetupScript(repoPath);
     }
 
@@ -2507,15 +2703,21 @@
       selectedReasoningEffort,
       isTeamMode,
       selectedProvider,
+      // A new repository or a plain folder has no commit for a remote agent to start from.
+      startOnMachineId: startOnBackendOnly
+        ? ''
+        : selectEffectiveStartOn.select(appStore.state, startOnMachineId),
       skipIsolation,
       remoteSetup, // null at this point
-      // Repo selection — preserved so the next form re-opens on the same repo
-      repoPath,
+      // Repo selection — preserved so the next form re-opens on the same repo.
+      // A plain folder is not saved here (it would reopen as a git pick): the
+      // next form restores it from the last selected repo after re-checking it.
+      repoPath: keptPlainFolder ? '' : repoPath,
       repoType,
       githubUrl,
       branch,
       isNewRepo,
-      isValidPath,
+      isValidPath: keptPlainFolder ? false : isValidPath,
       scope,
       scopeRepoPath: scope ? repoPath : undefined,
     };
@@ -3094,7 +3296,7 @@
 <svelte:window onkeydowncapture={handleMicEscape} />
 
 <!-- Compact Initializer -->
-<div class="w-full mx-auto" bind:this={controlsContainer}>
+<div class="workspace-initializer w-full mx-auto" bind:this={controlsContainer}>
   <!-- Hidden file input for file attachment (images inserted inline, other files as mentions) -->
   <Input
     type="file"
@@ -3105,445 +3307,373 @@
     onchange={handleFileInputChange}
   />
 
-  <!-- Bordered container: Linear issues + Text area -->
-  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
-  <div
-    class="relative w-full rounded-lg border border-border bg-background transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
-    class:drag-over={isDraggingOver}
-    ondragover={handleDragOver}
-    ondragleave={handleDragLeave}
-    ondrop={handleDrop}
-    onpaste={handlePaste}
-    onclick={(event) => {
-      if (event.isTrusted && !hasFiredClick) {
-        hasFiredClick = true;
-      }
-    }}
-    role="region"
-  >
-    <!-- Drag overlay -->
-    {#if isDraggingOver}
+  <div class="initializer-layout" class:expanded={isExpanded}>
+    <div
+      class="prompt-pane min-w-0 transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
+    >
+      <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
       <div
-        class="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-primary/5 pointer-events-none"
-      >
-        <div class="flex flex-col items-center gap-2 text-primary-ink">
-          <Fa icon={faPaperclip} class="w-6 h-6" />
-          <span class="text-sm font-medium">{m.workspace_compactInitializer_dropFiles_label()}</span
-          >
-        </div>
-      </div>
-    {/if}
-
-    <!-- Text area -->
-    <div class="w-full relative overflow-hidden rounded-t-xl">
-      <RichTextarea
-        ariaLabel={m.ui_richTextarea_prompt_ariaLabel()}
-        bind:this={richTextarea}
-        bind:value={initialPrompt}
-        placeholder={m.workspace_compactInitializer_prompt_placeholder()}
-        disabled={isEnhancing || isCreating}
-        repoPath={repoType === 'local' ? repoPath : undefined}
-        onfocus={() => {
-          isExpanded = true;
-        }}
-        onkeydown={(event) => {
-          if (
-            event.isTrusted &&
-            !hasFiredType &&
-            !event.metaKey &&
-            !(event.ctrlKey && !event.altKey)
-          ) {
-            // Allow single chars, IME (Process/Dead), and non-BMP (length > 1)
-            const isTyping =
-              event.key.length === 1 ||
-              event.key === 'Process' ||
-              event.key === 'Dead' ||
-              event.key === 'Unidentified';
-            if (isTyping) {
-              hasFiredType = true;
-            }
+        class="prompt-composer relative w-full rounded-lg {isExpanded
+          ? 'bg-transparent'
+          : 'bg-background'} transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
+        class:collapsed={!isExpanded}
+        class:drag-over={isDraggingOver}
+        ondragover={handleDragOver}
+        ondragleave={handleDragLeave}
+        ondrop={handleDrop}
+        onpaste={handlePaste}
+        onclick={(event) => {
+          if (event.isTrusted && !hasFiredClick) {
+            hasFiredClick = true;
           }
         }}
-        onblur={handleBlur}
-        onsubmit={handleSubmit}
-        onchange={handleContentChange}
-        minHeight={147}
-        maxHeight={Math.min(window?.innerHeight * 0.3 || 300, 500)}
-        class="bg-transparent border-none"
-      />
-
-      {#if isEnhancing}
-        <div class="enhance-shimmer-wrapper">
-          <div class="enhance-shimmer"></div>
-        </div>
-      {/if}
-    </div>
-
-    <!-- Attachment previews: image thumbnails plus staged non-image file
-         chips (placed at workspace.create; failed pills show retry) -->
-    {#if contextItems.some(isPreviewableAttachment)}
-      <div class="px-2.5 pt-2 pb-1 flex flex-wrap gap-2 items-center">
-        {#each contextItems.filter(isPreviewableAttachment) as item (item.id)}
-          <AttachmentPreview
-            id={item.id}
-            name={item.label}
-            type={item.type === 'folder'
-              ? 'folder'
-              : item.file?.type || item.imageMimeType || item.attachmentMimeType || ''}
-            size={item.file?.size ?? item.attachmentSize}
-            file={item.file}
-            imageData={item.imageData}
-            imageMimeType={item.imageMimeType}
-            onRemove={removeContextItem}
-            variant={isImageAttachment(item) ? 'thumbnail' : 'chip'}
-            placementStatus={item.placementStatus}
-            placementError={item.placementError}
-            onRetry={retryStagedItem}
-          />
-        {/each}
-      </div>
-    {/if}
-
-    <!-- Linear issue row (inside border, top-left) -->
-    {#if isExpanded}
-      <div
-        class="linear-row flex items-center gap-2 px-2.5 pt-1 pb-2.5 overflow-x-auto relative"
-        transition:slide={{ axis: 'y', tier: 'moderate' }}
+        role="region"
       >
-        <IssueSuggestions
-          onSelect={handleIssueSelect}
-          repositoryOwner={githubRepoInfo?.owner}
-          repositoryName={githubRepoInfo?.repo}
-        />
+        <!-- Drag overlay -->
+        {#if isDraggingOver}
+          <div
+            class="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-primary/5 pointer-events-none"
+          >
+            <div class="flex flex-col items-center gap-2 text-primary-ink">
+              <Fa icon={faPaperclip} class="w-6 h-6" />
+              <span class="text-sm font-medium"
+                >{m.workspace_compactInitializer_dropFiles_label()}</span
+              >
+            </div>
+          </div>
+        {/if}
 
-        <!-- Mic latch button: click starts dictation, click again (Esc
+        <!-- Text area -->
+        <div class="prompt-input w-full relative overflow-hidden rounded-t-xl">
+          <RichTextarea
+            ariaLabel={m.ui_richTextarea_prompt_ariaLabel()}
+            bind:this={richTextarea}
+            bind:value={initialPrompt}
+            placeholder={m.workspace_compactInitializer_prompt_placeholder()}
+            disabled={isEnhancing || isCreating}
+            repoPath={repoType === 'local' ? repoPath : undefined}
+            onfocus={() => {
+              isExpanded = true;
+            }}
+            onkeydown={(event) => {
+              if (
+                event.isTrusted &&
+                !hasFiredType &&
+                !event.metaKey &&
+                !(event.ctrlKey && !event.altKey)
+              ) {
+                // Allow single chars, IME (Process/Dead), and non-BMP (length > 1)
+                const isTyping =
+                  event.key.length === 1 ||
+                  event.key === 'Process' ||
+                  event.key === 'Dead' ||
+                  event.key === 'Unidentified';
+                if (isTyping) {
+                  hasFiredType = true;
+                }
+              }
+            }}
+            onblur={handleBlur}
+            onsubmit={handleSubmit}
+            onchange={handleContentChange}
+            minHeight={isExpanded ? 260 : 147}
+            maxHeight={Math.min(window?.innerHeight * 0.5 || 400, 500)}
+            class="bg-transparent border-none"
+          />
+
+          {#if isEnhancing}
+            <div class="enhance-shimmer-wrapper">
+              <div class="enhance-shimmer"></div>
+            </div>
+          {/if}
+        </div>
+
+        <!-- Attachment previews: image thumbnails plus staged non-image file
+         chips (placed at workspace.create; failed pills show retry) -->
+        {#if contextItems.some(isPreviewableAttachment)}
+          <div class="px-2.5 pt-2 pb-1 flex flex-wrap gap-2 items-center">
+            {#each contextItems.filter(isPreviewableAttachment) as item (item.id)}
+              <AttachmentPreview
+                id={item.id}
+                name={item.label}
+                type={item.type === 'folder'
+                  ? 'folder'
+                  : item.file?.type || item.imageMimeType || item.attachmentMimeType || ''}
+                size={item.file?.size ?? item.attachmentSize}
+                file={item.file}
+                imageData={item.imageData}
+                imageMimeType={item.imageMimeType}
+                onRemove={removeContextItem}
+                variant={isImageAttachment(item) ? 'thumbnail' : 'chip'}
+                placementStatus={item.placementStatus}
+                placementError={item.placementError}
+                onRetry={retryStagedItem}
+              />
+            {/each}
+          </div>
+        {/if}
+
+        {#if isExpanded}
+          <div class="prompt-footer" transition:slide={{ axis: 'y', tier: 'moderate' }}>
+            <div class="prompt-context">
+              {#if !plainFolderCreate}
+                <IssueSuggestions
+                  iconOnly
+                  onSelect={handleIssueSelect}
+                  repositoryOwner={githubRepoInfo?.owner}
+                  repositoryName={githubRepoInfo?.repo}
+                />
+              {/if}
+            </div>
+            <div class="prompt-actions">
+              <!-- Enhance prompt button (§5.31 auggie-only gate) -->
+              {#if enhanceAvailable}
+                <Button
+                  type="button"
+                  onclick={isEnhancing ? handleCancelEnhance : handleEnhancePrompt}
+                  size="icon"
+                  variant="ghost"
+                  disabled={!initialPrompt.trim() && !isEnhancing}
+                  tooltip={isEnhancing
+                    ? m.workspace_compactInitializer_stopEnhancing_tooltip()
+                    : m.workspace_compactInitializer_enhancePrompt_tooltip()}
+                  tooltipSide="top"
+                >
+                  {#if isEnhancing}
+                    <Fa icon={faStop} class="text-danger" />
+                  {:else}
+                    <Fa icon={faMagicWandSparkles} />
+                  {/if}
+                </Button>
+              {/if}
+
+              <!-- File upload button -->
+              <Button
+                type="button"
+                onclick={handleImageButtonClick}
+                size="icon"
+                variant="ghost"
+                tooltip={m.workspace_compactInitializer_addFiles_tooltip()}
+                tooltipSide="top"
+              >
+                <Fa icon={faPaperclip} />
+              </Button>
+              <div class="ml-auto flex items-center">
+                <!-- Mic latch button: click starts dictation, click again (Esc
              cancels) stops and transcribes into this prompt at the caret. -->
-        <div class="absolute top-2 {enhanceAvailable ? 'right-[62px]' : 'right-9'}">
-          {#if micTranscribing}
-            <!-- Clickable while transcribing: cancel abandons the in-flight
+                {#if micTranscribing}
+                  <!-- Clickable while transcribing: cancel abandons the in-flight
                  session (a hung provider's late result is discarded) and
                  returns the button to idle immediately. -->
-            <Button
-              type="button"
-              size="icon-xs"
-              variant="ghost-light"
-              onclick={handleMicCancelTranscription}
-              tooltip={m.chat_richInput_micCancelTranscribing_label()}
-              tooltipSide="top"
-              aria-label={m.chat_richInput_micCancelTranscribing_label()}
-              data-testid="initializer-mic-button"
-            >
-              <IntentMarkLoader size={12} />
-            </Button>
-          {:else if micRecording}
-            <Button
-              type="button"
-              size="icon-xs"
-              variant="ghost-light"
-              onclick={handleMicClick}
-              tooltip={m.chat_richInput_micStop_label()}
-              tooltipSide="top"
-              aria-label={m.chat_richInput_micStop_label()}
-              aria-pressed="true"
-              class="text-danger animate-pulse"
-              data-testid="initializer-mic-button"
-            >
-              <Fa icon={faMicrophone} size="xs" />
-            </Button>
-          {:else}
-            <Button
-              type="button"
-              size="icon-xs"
-              variant="ghost-light"
-              onclick={handleMicClick}
-              tooltip={m.chat_richInput_micStart_label()}
-              tooltipSide="top"
-              aria-label={m.chat_richInput_micStart_label()}
-              aria-pressed="false"
-              data-testid="initializer-mic-button"
-            >
-              <Fa icon={faMicrophone} size="xs" />
-            </Button>
-          {/if}
-        </div>
-
-        <!-- Enhance prompt button (§5.31 auggie-only gate) -->
-        {#if enhanceAvailable}
-          <div class="absolute top-2 right-9">
-            <Button
-              type="button"
-              onclick={isEnhancing ? handleCancelEnhance : handleEnhancePrompt}
-              size="icon-xs"
-              variant="ghost-light"
-              disabled={!initialPrompt.trim() && !isEnhancing}
-              tooltip={isEnhancing
-                ? m.workspace_compactInitializer_stopEnhancing_tooltip()
-                : m.workspace_compactInitializer_enhancePrompt_tooltip()}
-              tooltipSide="top"
-            >
-              {#if isEnhancing}
-                <Fa icon={faStop} size="xs" class="text-danger" />
-              {:else}
-                <Fa icon={faMagicWandSparkles} size="xs" />
-              {/if}
-            </Button>
-          </div>
-        {/if}
-
-        <!-- File upload button -->
-        <Button
-          type="button"
-          onclick={handleImageButtonClick}
-          class="absolute top-2 right-2.5"
-          size="icon-xs"
-          variant="ghost-light"
-          title={m.workspace_compactInitializer_addFiles_tooltip()}
-        >
-          <Fa icon={faPaperclip} size="xs" />
-        </Button>
-      </div>
-    {/if}
-  </div>
-
-  <!-- First-time user hint -->
-  {#if showFirstTimeHints && !isExpanded}
-    <p class="mt-3 text-xs text-subtle leading-relaxed" transition:fade={{ tier: 'moderate' }}>
-      {m.workspace_compactInitializer_firstTimeHint_label()}
-    </p>
-  {/if}
-
-  <!-- Bottom: Agent picker, Setup script, Create button -->
-  {#if isExpanded}
-    <div class="mt-4 mb-1 w-full min-w-0" transition:slide={{ axis: 'y', tier: 'moderate' }}>
-      <!-- Git not installed banner -->
-      {#if gitAvailable === false}
-        <div
-          class="mx-0 mb-3 px-4 py-3 bg-danger-background/10 border border-danger/30 rounded-md text-sm"
-          transition:slide={{ axis: 'y', tier: 'moderate' }}
-        >
-          <div class="flex items-start gap-3">
-            <Fa icon={faExclamationTriangle} class="text-danger mt-0.5 shrink-0" />
-            <div>
-              <p class="font-medium text-danger">
-                {m.workspace_compactInitializer_gitNotInstalled_label()}
-              </p>
-              <p class="text-subtle mt-1">
-                {m.workspace_compactInitializer_gitRequired_description()}
-              </p>
-              <Button
-                variant="ghost"
-                class="mt-2 text-primary-ink hover:text-primary-ink/80 underline cursor-pointer"
-                onclick={() => {
-                  if (typeof window !== 'undefined' && window.electronAPI) {
-                    invoke('shell:openExternal', {
-                      url: 'https://git-scm.com/downloads',
-                    });
-                  }
-                }}
-              >
-                {m.workspace_compactInitializer_downloadGit_label()}
-              </Button>
-            </div>
-          </div>
-        </div>
-      {:else if gitAvailable === 'unknown'}
-        <!-- Non-blocking notice: the git probe couldn't run (transport failure) -->
-        <div
-          class="mx-0 mb-3 px-4 py-3 bg-warning/10 border border-warning/30 rounded-md text-sm"
-          transition:slide={{ axis: 'y', tier: 'moderate' }}
-        >
-          <div class="flex items-start gap-3">
-            <Fa icon={faExclamationTriangle} class="text-warning-ink mt-0.5 shrink-0" />
-            <div>
-              <p class="font-medium text-warning-ink">
-                {m.workspace_compactInitializer_gitCheckUnknown_label()}
-              </p>
-              <p class="text-subtle mt-1">
-                {m.workspace_compactInitializer_gitCheckUnknown_description()}
-              </p>
-            </div>
-          </div>
-        </div>
-      {/if}
-
-      <!-- Agent picker row -->
-      <div
-        class="flex w-full min-w-0 flex-wrap items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 shadow-xs"
-      >
-        <div class="flex-1 min-w-fit flex-col">
-          <!-- Repo + Branch picker row (above border) -->
-          {#if isExpanded}
-            <div class="repo-picker-row" transition:slide={{ axis: 'y', tier: 'moderate' }}>
-              <RepoAndBranchPicker
-                bind:this={repoAndBranchPicker}
-                repoPath={repoType === 'gitlab'
-                  ? ($checkoutForm$?.project?.projectPath ?? '')
-                  : repoPath}
-                branch={repoType === 'gitlab' ? ($checkoutForm$?.branch?.name ?? '') : branch}
-                gitlab={$labsGitLab$ || repoType === 'gitlab' ? gitlabPicker : undefined}
-                gitlabBranch={gitlabBranchPicker}
-                {repoType}
-                {githubUrl}
-                {skipIsolation}
-                {isNewRepo}
-                {remoteSetup}
-                {detectedGitHubOwner}
-                {detectedGitHubRepo}
-                suggestedBranch={selectedPRBranch}
-                onRepoChange={handleRepoChange}
-                onBranchChange={handleBranchChange}
-                onSkipIsolationChange={(value) => (skipIsolation = value)}
-                onGitHubAuthNeededChange={(value) => (githubAuthNeeded = value)}
-                onBranchStatusChange={handleBranchStatusChange}
-              />
-            </div>
-          {/if}
-        </div>
-
-        <!-- Create button -->
-        {#snippet createButton(progressLabel?: Snippet)}
-          <Button
-            variant="primary"
-            data-dialog-primary-action
-            onclick={handleSubmit}
-            disabled={!isValid || isCreating || isEnhancing || isProcessingImages}
-          >
-            {#if isCreating}
-              <IntentMarkLoader size={14} />
-              <span class="min-w-[160px] text-left">
-                {#if isPulling}
-                  {m.workspace_compactInitializer_pullingLatest_label()}
-                {:else if progressLabel}
-                  {@render progressLabel()}
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    onclick={handleMicCancelTranscription}
+                    tooltip={m.chat_richInput_micCancelTranscribing_label()}
+                    tooltipSide="top"
+                    aria-label={m.chat_richInput_micCancelTranscribing_label()}
+                    data-testid="initializer-mic-button"
+                  >
+                    <IntentMarkLoader size={16} />
+                  </Button>
+                {:else if micRecording}
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    onclick={handleMicClick}
+                    tooltip={m.chat_richInput_micStop_label()}
+                    tooltipSide="top"
+                    aria-label={m.chat_richInput_micStop_label()}
+                    aria-pressed="true"
+                    class="text-danger animate-pulse"
+                    data-testid="initializer-mic-button"
+                  >
+                    <Fa icon={faMicrophone} />
+                  </Button>
                 {:else}
-                  {CREATION_STAGES[creationStage]}
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    onclick={handleMicClick}
+                    tooltip={m.chat_richInput_micStart_label()}
+                    tooltipSide="top"
+                    aria-label={m.chat_richInput_micStart_label()}
+                    aria-pressed="false"
+                    data-testid="initializer-mic-button"
+                  >
+                    <Fa icon={faMicrophone} />
+                  </Button>
                 {/if}
-              </span>
-            {:else}
-              <span>{m.workspace_compactInitializer_createWorkspace_label()}</span>
-              <!-- Always rendered so the button never resizes when validity flips;
-                   `invisible` reserves the space while hiding it (incl. from AT). -->
-              <span
-                class="opacity-50 ml-1"
-                class:invisible={!isValid}
-                aria-hidden={!isValid ? 'true' : undefined}
-              >
-                {navigator.userAgent?.includes('Mac') ? '⌘' : 'Ctrl'} + ↵
-              </span>
-            {/if}
-          </Button>
-        {/snippet}
-        <div class="shrink-0">
-          {#if isCreating && !isPulling && activeCreateProgressId}
-            <!-- Key on the progressId: the component binds its selector at
-                 init, so a new create must destroy/recreate it. It wraps the
-                 Button so the bottom-edge bar is a sibling overlay of the
-                 button rather than a child of its content slot. -->
-            {#key activeCreateProgressId}
-              <CreateButtonProgress
-                progressId={activeCreateProgressId}
-                fallbackLabel={CREATION_STAGES[creationStage]}
-              >
-                {#snippet children(label)}
-                  {@render createButton(label)}
-                {/snippet}
-              </CreateButtonProgress>
-            {/key}
-          {:else}
-            {@render createButton()}
-          {/if}
-        </div>
+              </div>
+            </div>
+          </div>
+        {/if}
       </div>
 
-      {#if isExpanded && repoType === 'gitlab' && ($checkoutForm$?.status === 'unavailable' || $checkoutForm$?.warmStatus === 'warming' || $checkoutForm$?.contextUrl)}
-        <div class="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-sm">
-          {#if $checkoutForm$?.status === 'unavailable' && $checkoutForm$.unavailable}
-            <p class="text-subtle">{checkoutFailureMessage($checkoutForm$.unavailable)}</p>
-            <Button variant="plain" onclick={() => recoverCheckout(checkoutScope)}
-              >{m.collaboration_host_refresh_label()}</Button
-            >
-          {:else if $checkoutForm$?.warmStatus === 'warming'}
-            <p class="text-subtle">{m.gitlabCheckout_warming_description()}</p>
-          {/if}
-          {#if $checkoutForm$?.contextUrl}<a
-              class="min-w-0 truncate text-primary-ink"
-              href={$checkoutForm$.contextUrl}
-              target="_blank"
-              rel="noopener noreferrer">{$checkoutForm$.contextUrl}</a
-            >{/if}
-        </div>
+      <!-- First-time user hint -->
+      {#if showFirstTimeHints && !isExpanded}
+        <p class="mt-3 text-xs text-subtle leading-relaxed" transition:fade={{ tier: 'moderate' }}>
+          {m.workspace_compactInitializer_firstTimeHint_label()}
+        </p>
       {/if}
-
-      <!-- Error message -->
-      {#if error}
-        <div
-          class="mt-3 mb-3 px-4.5 py-2 text-sm bg-danger-background text-danger"
-          transition:slide={{ axis: 'y', tier: 'moderate' }}
-        >
-          {error}
-        </div>
-        {#if repoType === 'gitlab' && $checkoutForm$?.status === 'ready' && !isCreating}
-          <p class="text-sm text-subtle">{m.gitlabCheckout_createRecovery_description()}</p>
-          <Button variant="plain" onclick={() => recoverCheckout(checkoutScope)}
-            >{m.collaboration_host_refresh_label()}</Button
+    </div>
+    {#if isExpanded}
+      <div
+        class="settings-pane min-w-0 transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
+        transition:slide={{ axis: 'y', tier: 'moderate' }}
+      >
+        <!-- Git not installed banner -->
+        {#if gitNoticeAvailability === false}
+          <div
+            class="mx-0 mb-3 px-4 py-3 bg-danger-background/10 border border-danger/30 rounded-md text-sm"
+            transition:slide={{ axis: 'y', tier: 'moderate' }}
           >
+            <div class="flex items-start gap-3">
+              <Fa icon={faExclamationTriangle} class="text-danger mt-0.5 shrink-0" />
+              <div>
+                <p class="font-medium text-danger">
+                  {m.workspace_compactInitializer_gitNotInstalled_label()}
+                </p>
+                <p class="text-subtle mt-1">
+                  {m.workspace_compactInitializer_gitRequired_description()}
+                </p>
+                <Button
+                  variant="ghost"
+                  class="mt-2 text-primary-ink hover:text-primary-ink/80 underline cursor-pointer"
+                  onclick={() => {
+                    if (typeof window !== 'undefined' && window.electronAPI) {
+                      invoke('shell:openExternal', {
+                        url: 'https://git-scm.com/downloads',
+                      });
+                    }
+                  }}
+                >
+                  {m.workspace_compactInitializer_downloadGit_label()}
+                </Button>
+              </div>
+            </div>
+          </div>
+        {:else if gitNoticeAvailability === 'unknown'}
+          <!-- Non-blocking notice: the git probe couldn't run (transport failure) -->
+          <div
+            class="mx-0 mb-3 px-4 py-3 bg-warning/10 border border-warning/30 rounded-md text-sm"
+            transition:slide={{ axis: 'y', tier: 'moderate' }}
+          >
+            <div class="flex items-start gap-3">
+              <Fa icon={faExclamationTriangle} class="text-warning-ink mt-0.5 shrink-0" />
+              <div>
+                <p class="font-medium text-warning-ink">
+                  {m.workspace_compactInitializer_gitCheckUnknown_label()}
+                </p>
+                <p class="text-subtle mt-1">
+                  {m.workspace_compactInitializer_gitCheckUnknown_description()}
+                </p>
+              </div>
+            </div>
+          </div>
         {/if}
-      {/if}
-      <!-- Validation hint -->
-      {#if repoType !== 'gitlab' && isExpanded && !isValid && !isCreating && !error && (gitAvailable !== true || !repoPath || !isValidPath || (repoType === 'github' && githubAuthNeeded !== 'none'))}
+
+        <div class="grid min-w-0 gap-1">
+          <RepoAndBranchPicker
+            bind:this={repoAndBranchPicker}
+            presentation="form"
+            repoPath={repoType === 'gitlab'
+              ? ($checkoutForm$?.project?.projectPath ?? '')
+              : repoPath}
+            branch={repoType === 'gitlab' ? ($checkoutForm$?.branch?.name ?? '') : branch}
+            gitlab={$labsGitLab$ || repoType === 'gitlab' ? gitlabPicker : undefined}
+            gitlabBranch={gitlabBranchPicker}
+            {repoType}
+            {githubUrl}
+            {skipIsolation}
+            {isNewRepo}
+            {remoteSetup}
+            {detectedGitHubOwner}
+            {detectedGitHubRepo}
+            {plainFolderMode}
+            {plainFolder}
+            gitChoice={initializeGitChoice.visible
+              ? {
+                  checked: initializeGitChoice.initializeGit,
+                  folder: gitSwitchFolder,
+                  worktree: !skipIsolation,
+                  disabled: isCreating,
+                  onCheckedChange: handleInitializeGitChange,
+                }
+              : undefined}
+            suggestedBranch={selectedPRBranch}
+            onRepoChange={handleRepoChange}
+            onBranchChange={handleBranchChange}
+            onSkipIsolationChange={(value) => (skipIsolation = value)}
+            onGitHubAuthNeededChange={(value) => (githubAuthNeeded = value)}
+            onBranchStatusChange={handleBranchStatusChange}
+          />
+        </div>
+        <!-- Setup script -->
         <div
-          class="mt-2 px-4.5 text-sm text-subtle"
-          transition:slide={{ axis: 'y', tier: 'moderate' }}
+          class="grid gap-2"
+          class:hidden={plainFolderCreate}
+          data-testid="initializer-setup-script"
         >
-          {#if gitAvailable === false}
-            {m.workspace_compactInitializer_gitRequiredHint_label()}
-          {:else if gitAvailable === null}
-            {m.workspace_compactInitializer_checkingDependencies_label()}
-          {:else if !repoPath}
-            {m.workspace_compactInitializer_selectRepoHint_label()}
-          {:else if !isValidPath}
-            {m.workspace_compactInitializer_invalidPathHint_label()}
-          {:else if repoType === 'github' && githubAuthNeeded !== 'none'}
-            {m.workspace_compactInitializer_githubAuthRequired_label()}
+          <SetupScriptPicker
+            bind:open={showSetupScriptPicker}
+            value={setupScript}
+            scriptName={setupScriptName}
+            scriptNameSource={setupScriptNameSource}
+            repositoryKey={setupScriptRepoKey ?? undefined}
+            githubUrl={repoType === 'github' ? githubUrl : null}
+            repoConfigScript={repoConfigScriptRepo === setupScriptProbeKey
+              ? repoConfigScript
+              : null}
+            loading={isRepoConfigLoading}
+            onSelect={selectSetupScript}
+            onEdit={() => openSetupScript()}
+            onCreate={() => openSetupScript(true)}
+          />
+          {#if repoConfigError}
+            <p class="text-sm text-subtle" role="status">
+              {m.workspace_setupScript_configUnavailable_description()}
+            </p>
           {/if}
         </div>
-      {/if}
-      <!-- Use PR branch suggestion - show when a PR is selected but branch doesn't match -->
-      {#if repoType !== 'gitlab' && selectedPRBranch && branch !== selectedPRBranch && !isNewRepo}
-        <div class="mt-2" transition:slide={{ axis: 'y', tier: 'moderate' }}>
-          <Button
-            variant="plain"
-            class="flex items-center gap-2 mt-2 mb-1 px-1 text-sm text-primary-ink hover:text-primary-ink/80 cursor-pointer"
-            onclick={() => {
-              branch = selectedPRBranch;
-              // Dispatch branch change event to update the UI
-              document.dispatchEvent(
-                new CustomEvent('initializer-branch-updated', {
-                  detail: { branch: selectedPRBranch },
-                }),
-              );
-            }}
-          >
-            <Fa icon={faCodeBranch} size="sm" class="shrink-0" />
-            <span
-              >{m.workspace_branchSelector_usePrBranch_label()}
-              <strong>{selectedPRBranch}</strong></span
-            >
-          </Button>
-        </div>
-      {/if}
 
-      <div class="mt-4 w-full">
-        <div class="mb-4">
+        {#if isExpanded && repoType === 'gitlab' && ($checkoutForm$?.status === 'unavailable' || $checkoutForm$?.warmStatus === 'warming' || $checkoutForm$?.contextUrl)}
+          <div class="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-sm">
+            {#if $checkoutForm$?.status === 'unavailable' && $checkoutForm$.unavailable}
+              <p class="text-subtle">{checkoutFailureMessage($checkoutForm$.unavailable)}</p>
+              <Button variant="plain" onclick={() => recoverCheckout(checkoutScope)}
+                >{m.collaboration_host_refresh_label()}</Button
+              >
+            {:else if $checkoutForm$?.warmStatus === 'warming'}
+              <p class="text-subtle">{m.gitlabCheckout_warming_description()}</p>
+            {/if}
+            {#if $checkoutForm$?.contextUrl}<a
+                class="min-w-0 truncate text-primary-ink"
+                href={$checkoutForm$.contextUrl}
+                target="_blank"
+                rel="noopener noreferrer">{$checkoutForm$.contextUrl}</a
+              >{/if}
+          </div>
+        {/if}
+
+        <div class="mt-3 border-t border-border pt-3">
           <InitialAgentPicker
+            presentation="form"
+            {onNavigateAway}
             bind:selectedSpecialist
             {selectedModel}
-            onModelChange={(model) => {
+            onModelChange={(model, automatic) => {
               selectedModel = model;
               // An explicit pick pins the model for this form session so late
-              // hydration cannot overwrite it (intent-hq/monorepo#2678).
-              if (model) modelPickedThisSession = true;
+              // hydration cannot overwrite it (intent-hq/monorepo#2678). A
+              // model chosen for the Start On machine is not a user pick.
+              if (model && !automatic) modelPickedThisSession = true;
             }}
+            bind:startOnMachineId
+            {startOnBackendOnly}
             bind:selectedReasoningEffort
             onReasoningEffortChange={() => (effortPickedThisSession = true)}
             onSetupPick={() => (setupPickedThisSession = true)}
@@ -3552,40 +3682,152 @@
             bind:selectedProvider
           />
         </div>
-        <!-- Setup script -->
-        <div class="space-y-2">
-          <SetupScriptTrigger
-            value={setupScriptDisplayName(setupScriptName, setupScriptNameSource)}
-            loading={isRepoConfigLoading}
-            expanded={showSetupScript}
-            onOpen={() => (showSetupScript = true)}
-          />
-          {#if repoConfigError}
-            <p class="text-sm text-subtle" role="status">
-              {m.workspace_setupScript_configUnavailable_description()}
-            </p>
+
+        <!-- Error message -->
+        {#if error}
+          <div
+            class="mt-3 mb-3 px-4.5 py-2 text-sm bg-danger-background text-danger"
+            transition:slide={{ axis: 'y', tier: 'moderate' }}
+          >
+            {error}
+          </div>
+          {#if repoType === 'gitlab' && $checkoutForm$?.status === 'ready' && !isCreating}
+            <p class="text-sm text-subtle">{m.gitlabCheckout_createRecovery_description()}</p>
+            <Button variant="plain" onclick={() => recoverCheckout(checkoutScope)}
+              >{m.collaboration_host_refresh_label()}</Button
+            >
           {/if}
-          <SetupScriptModal
-            bind:open={showSetupScript}
-            repoPath={repoType === 'gitlab' ? '' : repoPath}
-            repositoryKey={setupScriptRepoKey ?? undefined}
-            githubUrl={repoType === 'github' ? githubUrl : null}
-            repoConfigScript={repoConfigScriptRepo === setupScriptProbeKey
-              ? repoConfigScript
-              : null}
-            bind:value={setupScript}
-            bind:scriptName={setupScriptName}
-            bind:scriptNameSource={setupScriptNameSource}
-            bind:isCustomScript={isCustomSetupScript}
-            onCommit={() => {
-              setupScriptExplicit = true;
-            }}
-            onClose={() => (showSetupScript = false)}
-          />
+        {/if}
+        <!-- Validation hint -->
+        {#if repoType !== 'gitlab' && isExpanded && !isValid && !isCreating && !error && (gitNoticeAvailability !== true || !repoPath || !isValidPath || (repoType === 'github' && githubAuthNeeded !== 'none'))}
+          <div
+            class="mt-2 text-sm leading-5 text-subtle"
+            transition:slide={{ axis: 'y', tier: 'moderate' }}
+          >
+            {#if gitNoticeAvailability === false}
+              {m.workspace_compactInitializer_gitRequiredHint_label()}
+            {:else if gitNoticeAvailability === null}
+              {m.workspace_compactInitializer_checkingDependencies_label()}
+            {:else if !repoPath}
+              {m.workspace_compactInitializer_selectRepoHint_label()}
+            {:else if !isValidPath}
+              {m.workspace_compactInitializer_invalidPathHint_label()}
+            {:else if repoType === 'github' && githubAuthNeeded !== 'none'}
+              {m.workspace_compactInitializer_githubAuthRequired_label()}
+            {/if}
+          </div>
+        {/if}
+        <!-- Use PR branch suggestion - show when a PR is selected but branch doesn't match -->
+        {#if repoType !== 'gitlab' && selectedPRBranch && branch !== selectedPRBranch && !isNewRepo}
+          <div class="mt-2" transition:slide={{ axis: 'y', tier: 'moderate' }}>
+            <Button
+              variant="plain"
+              class="flex items-center gap-2 mt-2 mb-1 px-1 text-sm text-primary-ink hover:text-primary-ink/80 cursor-pointer"
+              onclick={() => {
+                branch = selectedPRBranch;
+                // Dispatch branch change event to update the UI
+                document.dispatchEvent(
+                  new CustomEvent('initializer-branch-updated', {
+                    detail: { branch: selectedPRBranch },
+                  }),
+                );
+              }}
+            >
+              <Fa icon={faCodeBranch} size="sm" class="shrink-0" />
+              <span
+                >{m.workspace_branchSelector_usePrBranch_label()}
+                <strong>{selectedPRBranch}</strong></span
+              >
+            </Button>
+          </div>
+        {/if}
+
+        <div class="settings-footer mt-auto pt-6">
+          <!-- Create button -->
+          {#snippet createButton(progressLabel?: Snippet)}
+            <Button
+              variant="primary"
+              wrapContent={false}
+              class="w-full h-auto min-h-11 justify-start gap-3 py-2 type-body font-medium"
+              data-dialog-primary-action
+              onclick={handleSubmit}
+              disabled={!isValid || isCreating || isEnhancing || isProcessingImages}
+            >
+              {#if isCreating}
+                <IntentMarkLoader size={14} />
+                <span class="min-w-0 flex-1 text-left">
+                  {#if isPulling}
+                    {m.workspace_compactInitializer_pullingLatest_label()}
+                  {:else if progressLabel}
+                    {@render progressLabel()}
+                  {:else}
+                    {CREATION_STAGES[creationStage]}
+                  {/if}
+                </span>
+              {:else}
+                <span class="min-w-0 flex-1 whitespace-normal text-left"
+                  >{m.workspace_compactInitializer_createWorkspace_label()}</span
+                >
+                <!-- Always rendered so the button never resizes when validity flips;
+                   `invisible` reserves the space while hiding it (incl. from AT). -->
+                <span
+                  class="inline-flex shrink-0 items-center gap-0.5 font-normal text-primary-foreground/75"
+                  class:invisible={!isValid}
+                  aria-hidden={!isValid ? 'true' : undefined}
+                >
+                  <ShortcutChip
+                    class="flex items-center justify-center px-0.5 text-primary-foreground/60"
+                    >{navigator.userAgent?.includes('Mac') ? '⌘' : 'Ctrl'}</ShortcutChip
+                  >
+                  <ShortcutChip
+                    class="flex items-center justify-center px-0.5 text-primary-foreground/60"
+                    >↵</ShortcutChip
+                  >
+                </span>
+              {/if}
+            </Button>
+          {/snippet}
+          <div class="w-full">
+            {#if isCreating && !isPulling && activeCreateProgressId}
+              <!-- Key on the progressId: the component binds its selector at
+                 init, so a new create must destroy/recreate it. It wraps the
+                 Button so the bottom-edge bar is a sibling overlay of the
+                 button rather than a child of its content slot. -->
+              {#key activeCreateProgressId}
+                <CreateButtonProgress
+                  class="w-full"
+                  progressId={activeCreateProgressId}
+                  fallbackLabel={CREATION_STAGES[creationStage]}
+                >
+                  {#snippet children(label)}
+                    {@render createButton(label)}
+                  {/snippet}
+                </CreateButtonProgress>
+              {/key}
+            {:else}
+              {@render createButton()}
+            {/if}
+          </div>
         </div>
       </div>
-    </div>
-  {/if}
+    {/if}
+  </div>
+  <SetupScriptModal
+    createNew={createSetupScript}
+    bind:open={showSetupScript}
+    repoPath={repoType === 'gitlab' ? '' : repoPath}
+    repositoryKey={setupScriptRepoKey ?? undefined}
+    githubUrl={repoType === 'github' ? githubUrl : null}
+    repoConfigScript={repoConfigScriptRepo === setupScriptProbeKey ? repoConfigScript : null}
+    bind:value={setupScript}
+    bind:scriptName={setupScriptName}
+    bind:scriptNameSource={setupScriptNameSource}
+    bind:isCustomScript={isCustomSetupScript}
+    onCommit={() => {
+      setupScriptExplicit = true;
+    }}
+    onClose={() => (showSetupScript = false)}
+  />
 </div>
 
 <!-- Pull Conflict Dialog -->
@@ -3652,14 +3894,113 @@
 />
 
 <style>
-  .repo-picker-row,
-  .linear-row {
-    scrollbar-width: none; /* Firefox */
-    -ms-overflow-style: none; /* IE/Edge */
+  .workspace-initializer {
+    container-type: inline-size;
+    position: relative;
   }
-  .repo-picker-row::-webkit-scrollbar,
-  .linear-row::-webkit-scrollbar {
-    display: none; /* Chrome, Safari, Opera */
+
+  .initializer-layout {
+    display: grid;
+    grid-template-areas: 'prompt';
+    min-width: 0;
+    gap: 1.5rem;
+  }
+
+  .initializer-layout.expanded {
+    grid-template-areas: 'prompt' 'settings';
+  }
+
+  .prompt-pane {
+    grid-area: prompt;
+  }
+
+  .prompt-pane,
+  .prompt-composer,
+  .settings-pane {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .prompt-composer {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .prompt-composer.collapsed {
+    border: 1px solid var(--color-border);
+  }
+
+  .prompt-input {
+    flex: 1;
+  }
+
+  .expanded .prompt-input :global(.rich-textarea-editor) {
+    padding-inline: 0;
+    line-height: 1.5;
+  }
+
+  .settings-pane {
+    grid-area: settings;
+    gap: 0.25rem;
+    padding: 1rem;
+    background: var(--color-sidebar);
+  }
+
+  :global(.dark) .settings-pane {
+    background: var(--color-background);
+  }
+
+  .prompt-footer {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    min-height: 2.75rem;
+    margin-inline: 0;
+    column-gap: 0.25rem;
+  }
+
+  .prompt-actions {
+    grid-column: 2;
+    grid-row: 1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-start;
+    min-width: 0;
+    gap: 0.25rem;
+    min-height: 2.75rem;
+  }
+
+  .prompt-context {
+    display: contents;
+  }
+
+  .prompt-footer :global(.context-picker-trigger) {
+    grid-column: 1;
+    justify-content: center;
+  }
+
+  @container (min-width: 48rem) {
+    .initializer-layout.expanded {
+      grid-template-areas: 'settings prompt';
+      grid-template-columns: 19rem minmax(0, 1fr);
+      min-height: min(32rem, calc(100dvh - 12rem));
+      column-gap: 2rem;
+    }
+
+    .expanded .prompt-pane {
+      padding-block: 1rem;
+    }
+  }
+
+  @container (width < 48rem) {
+    .settings-pane {
+      margin-inline: -1rem;
+    }
+
+    .prompt-input :global(.rich-textarea-editor) {
+      min-height: 10rem !important;
+    }
   }
 
   /* Shimmer overlay for enhancement loading state */

@@ -5,6 +5,7 @@ import {
   cancelGitHubAuth,
   clearGitHubAuthError,
   githubAuthReducer,
+  githubAuthStatusUnavailable,
   initializeGitHubAuth,
   logoutCompleted,
   logoutGitHub,
@@ -19,6 +20,25 @@ import {
 } from './github-auth-slice';
 
 describe('github auth reducer', () => {
+  it('settles the status after a read succeeds or fails, never before', () => {
+    const initial = githubAuthReducer.initialState;
+    expect(initial.statusSettled).toBe(false);
+    expect(githubAuthReducer(initial, initializeGitHubAuth()).statusSettled).toBe(false);
+    const read = githubAuthReducer(
+      initial,
+      setGitHubAuthState({
+        isAuthenticated: false,
+        requiresDaemonAuth: false,
+        user: null,
+        needsScopeUpdate: false,
+        oauthUrl: null,
+      }),
+    );
+    expect(read).toMatchObject({ statusSettled: true, isAuthenticated: false });
+    const failed = githubAuthReducer(initial, githubAuthStatusUnavailable());
+    expect(failed).toMatchObject({ statusSettled: true, isAuthenticated: false });
+  });
+
   it('closes callback acceptance on cancel/logout and reopens on deliberate start/hydration', () => {
     let state = githubAuthReducer.initialState;
     expect(state.callbacksCancelled).toBe(false);

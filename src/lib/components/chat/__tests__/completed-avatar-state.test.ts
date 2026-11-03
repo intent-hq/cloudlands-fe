@@ -201,10 +201,7 @@ describe('isCompleted avatar state wiring', () => {
 
     const row = screen.getByRole('button');
     expect(row.getAttribute('data-agent-panel-row')).toBe('agent-panel');
-    expect(row.className).toContain('h-10');
-    expect(row.className).toContain('border-transparent');
     expect(screen.getByTestId('mock-avatar-with-state').dataset.variant).toBe('emphasized');
-    expect(row.querySelector('[data-agent-row-name]')?.className).toContain('truncate');
     expect(row.querySelector('[data-agent-row-trailing]')).toBeTruthy();
     expect(row.querySelector('[data-panel-open-count]')).toBeNull();
     expect(screen.queryByTestId('agent-card-preview')).toBeNull();

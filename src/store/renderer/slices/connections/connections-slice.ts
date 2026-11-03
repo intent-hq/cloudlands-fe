@@ -49,6 +49,7 @@ import type {
   ConnectionWorkflowOutcome,
   SelfPublicationOperation,
   ConnectionTunnelIntent,
+  ConnectionsBrowserHost,
 } from './connections-types';
 import type { SelfPublishedStateResult } from '$shared/types/connections';
 import type { SettingsFormRequest } from '../settings-events/settings-events-types';
@@ -83,6 +84,7 @@ export const initialState: ConnectionsState = {
   workflows: createCollection<ConnectionWorkflow, 'id'>('id'),
   selfPublication: null,
   selfPublicationBusy: false,
+  browserHost: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -96,6 +98,14 @@ export const initialState: ConnectionsState = {
  */
 export const connectionsListReceived = createAction<[result: ConnectionsListResult]>(
   'connections/listReceived',
+);
+
+/**
+ * The Browser access host serving this tab, read once from its runtime config
+ * (null: no page host, as in the desktop app).
+ */
+export const browserHostDetected = createAction<[host: ConnectionsBrowserHost | null]>(
+  'connections/browserHostDetected',
 );
 
 /**
@@ -565,4 +575,7 @@ connectionsReducer.with(keychainSyncStatusReceived, (state, { payload: [status] 
   // until the first full load, so a push arriving before it is dropped.
   if (!state.keychainSync) return state;
   return { ...state, keychainSync: { ...state.keychainSync, status } };
+});
+connectionsReducer.with(browserHostDetected, (state, { payload: [host] }) => {
+  return { ...state, browserHost: host };
 });

@@ -19,9 +19,19 @@ import {
   scriptMonitorsUnsubscribeRequested,
 } from '$store/renderer/slices/script-monitor/script-monitor-slice';
 import { selectScriptMonitors } from '$store/renderer/slices/script-monitor/script-monitor-selectors';
-import { removeWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+import {
+  removeWorkspaceEntity,
+  setWorkspaceEntity,
+} from '$store/renderer/slices/workspace/workspace-slice';
+import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+import { principalContextChanged } from '$store/renderer/slices/principal/principal-slice';
 import { selectWorkspaceTerminalState } from '$store/renderer/slices/terminals/terminals-selectors';
-import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
+import { closeWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
+import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
+import {
+  clearPanelLayoutForWorkspace,
+  getPanelLayoutManager,
+} from '$features/layout/panel-layout-adapter';
 import {
   monitorFixture as active,
   monitorSummaryFixture as summary,
@@ -114,11 +124,25 @@ beforeEach(() => {
     throw new Error(`Unexpected call: ${method}`);
   });
   stop = store.runSaga(scriptMonitorSaga);
+  admitAs('owner');
 });
+function admitAs(role: 'owner' | 'guest') {
+  admitLegacyPrincipal(role);
+  store.dispatch(
+    setWorkspaceEntity({
+      id: ws,
+      title: 'Scripts',
+      myRole: role === 'owner' ? 'owner' : 'collaborator',
+    } as never),
+  );
+}
 afterEach(() => {
   cleanup();
   stop();
+  store.dispatch(closeWorkspaceTab(ws));
+  clearPanelLayoutForWorkspace(ws);
   store.dispatch(removeWorkspaceEntity(ws));
+  window.history.replaceState({}, '', '/');
 });
 async function mount() {
   store.dispatch(scriptMonitorsSubscribeRequested(ws));
@@ -333,6 +357,7 @@ describe('script monitor controls', () => {
     );
   });
   it('opens archived scripts in both placements, reusing the pane, without starting a run', async () => {
+    window.history.replaceState({}, '', `/workspace/${ws}`);
     scripts = [{ ...scriptFixture, archivedAt: '2026-10-02T10:01:00Z' }];
     await mount();
     for (let i = 0; i < 2; i++) {
@@ -357,6 +382,30 @@ describe('script monitor controls', () => {
     expect(backendRequest).not.toHaveBeenCalledWith('script.start', expect.anything());
     expect(backendRequest).not.toHaveBeenCalledWith('script.restart', expect.anything());
   });
+  // Regression: from the Home preview the script opened in the hidden workspace only.
+  const scriptShown = {
+    panel: () =>
+      getPanelLayoutManager(ws)
+        .getAllTabs()
+        .some((tab) => tab.scriptId === active.scriptId),
+    'bottom bar': () =>
+      selectWorkspaceTerminalState.select(store.state, ws).isOpen &&
+      selectWorkspaceTerminalState.select(store.state, ws).selectedScriptId === active.scriptId,
+  };
+  it.each([
+    ['panel', /panel/i],
+    ['bottom bar', /bottom/i],
+  ] as const)(
+    'switches from Home to the workspace before showing the script in a %s',
+    async (placement, name) => {
+      await mount();
+      await menu();
+      await fireEvent.click(screen.getByRole('menuitem', { name }));
+      await waitFor(() => expect(scriptShown[placement]()).toBe(true));
+      expect(window.location.pathname).toBe(`/workspace/${ws}`);
+      expect(selectCurrentWorkspaceTabId.select(store.state)).toBe(ws);
+    },
+  );
   it('disables script navigation when its definition is gone', async () => {
     scripts = [];
     await mount();
@@ -367,6 +416,46 @@ describe('script monitor controls', () => {
     expect(
       screen.getByRole('menuitem', { name: /bottom/i }).getAttribute('aria-disabled'),
     ).not.toBe('true');
+  });
+  it('withholds the manager-only stop actions from a guest but keeps saved-script navigation', async () => {
+    admitAs('guest');
+    await mount();
+    // A guest reads only saved scripts, so navigation appears once the definition is read.
+    expect(screen.queryByRole('button', { name: /Actions for/ })).toBeNull();
+    await fireEvent.click(screen.getAllByRole('button', { name: active.scriptName })[0]);
+    await menu();
+    expect(screen.queryByRole('menuitem', { name: 'Stop monitoring' })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: /Cancel run/ })).toBeNull();
+    await fireEvent.click(screen.getByRole('menuitem', { name: /bottom/i }));
+    await waitFor(() =>
+      expect(selectWorkspaceTerminalState.select(store.state, ws)).toMatchObject({
+        isOpen: true,
+        selectedScriptId: active.scriptId,
+      }),
+    );
+    expect(backendRequest).not.toHaveBeenCalledWith('scriptMonitor.cancel', expect.anything());
+    expect(backendRequest).not.toHaveBeenCalledWith('scriptMonitor.cancelRun', expect.anything());
+  });
+  it('offers a guest no actions menu for a script it cannot read, keeping the details', async () => {
+    admitAs('guest');
+    scripts = [];
+    await mount();
+    expect(screen.getByTestId('script-monitor-row').textContent).toContain(active.scriptName);
+    expect(screen.queryByRole('button', { name: /Actions for/ })).toBeNull();
+    await fireEvent.click(screen.getAllByRole('button', { name: active.scriptName })[0]);
+    expect(await screen.findByText(/Monitoring ends at/)).toBeTruthy();
+    await waitFor(() =>
+      expect(backendRequest).toHaveBeenCalledWith('script.get', expect.anything()),
+    );
+    expect(screen.queryByRole('button', { name: /Actions for/ })).toBeNull();
+  });
+  it('keeps the owner stop actions while authority is still loading', async () => {
+    // A fresh principal context has no snapshot yet: unknown authority is not a denial.
+    store.dispatch(principalContextChanged('reloading'));
+    await mount();
+    await menu();
+    expect(screen.getByRole('menuitem', { name: 'Stop monitoring' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: /Cancel run/ })).toBeTruthy();
   });
   it('shows pending cancellation, sends only the monitor identity, and retires after daemon settlement', async () => {
     await mount();

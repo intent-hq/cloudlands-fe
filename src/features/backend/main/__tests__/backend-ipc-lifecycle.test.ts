@@ -34,6 +34,7 @@ vi.mock('../../../../main/window', async () => import('../../../../main/window-b
 vi.mock('../client-identity', () => ({
   buildMainClientHelloParams: async () => ({ clientId: 'lifecycle-control' }),
   getOrCreateClientId: async () => 'lifecycle-control',
+  getLocalMachineName: () => undefined,
   persistClientId: () => edge.persist?.() ?? Promise.resolve(),
   setLocalHostIdentity: () => {
     const changed = edge.identityChanged;
@@ -41,7 +42,7 @@ vi.mock('../client-identity', () => ({
     return changed;
   },
 }));
-vi.mock('../connections-store', () => ({
+vi.mock('../desktop-connections-store', () => ({
   list: () =>
     edge.list?.() ??
     Promise.resolve(
@@ -870,6 +871,7 @@ describe('actual main finalization fence and original pool', () => {
             rawScreenshotRetention: 1,
             chiefAttachments: 0,
             noteTruncatedRead: 0,
+            remoteMachines: 0,
           },
         },
       },

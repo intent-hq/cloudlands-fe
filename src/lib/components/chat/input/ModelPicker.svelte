@@ -23,6 +23,7 @@
     hasProviderIcon,
   } from '$features/agent/components/AgentProviderIcon.svelte';
   import { faSettings } from '$lib/icons/phosphor-icons';
+  import { workspacePickerStyles } from '$lib/components/workspace/initializer/workspace-picker-styles';
   import ModelPickerEmptyState from './ModelPickerEmptyState.svelte';
   import EffortGauge from './EffortGauge.svelte';
   import EffortPicker from './EffortPicker.svelte';
@@ -34,6 +35,7 @@
   } from './ModelPickerProviderNotice.svelte';
   import ModelProviderErrorItem from './ModelProviderErrorItem.svelte';
   import { ContentDialog } from '$lib/components/patterns/confirm';
+  import { useDialogPortalTarget } from '$lib/components/ui/dialog';
   import { createAgentModelMutator } from './agent-model-mutator';
   import {
     selectAgentModelMutationPending,
@@ -112,10 +114,17 @@
 
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import { modelIdForDisplay, resolveModelDisplayName } from '$shared/utils/model-display-name';
-  import { selectHidesAgentCreationActions } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+    selectHidesAgentCreationActions,
+    selectHidesProviderProfileNames,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
   import { getAgentProvider } from '$shared/types/agent-session';
   import { formatProviderLoadError, type ProviderLoadError } from './model-picker-provider-errors';
-  import { AUGGIE_LEGACY_GROUP_KEY, buildGroupedModelOptions } from './model-picker-groups';
+  import {
+    AUGGIE_LEGACY_GROUP_KEY,
+    buildGroupedModelOptions,
+    buildMachineModelGroups,
+  } from './model-picker-groups';
   import {
     filterDefaultPseudoOptions,
     findModelFallbackOption,
@@ -142,6 +151,29 @@
     faTriangleExclamation,
     faCircleInfo,
   } from '@fortawesome/free-solid-svg-icons';
+  import { faDesktop } from '$lib/icons/phosphor-icons';
+  import { agentMachineLocation, machineLocation } from '$features/remote-machines/agent-location';
+  import {
+    selectCurrentBackendLabel,
+    selectDefaultHasOverrides,
+    selectRemoteMachine,
+    selectRemoteMachineOperations,
+    selectRemoteMachinesVisible,
+    selectRemoteModelSwitchSupport,
+  } from '$features/remote-machines/remote-machines-selectors';
+  import {
+    machineRefreshKey,
+    remoteMachineRefreshRequested,
+  } from '$features/remote-machines/remote-machines-slice';
+  import {
+    isRemoteRefSignedOut,
+    machineReportFreshness,
+    remoteIncompatibilityFor,
+    remoteIncompatibilityMessage,
+  } from '$features/remote-machines/remote-model-picker';
+  import { formatDistanceToNow } from '$lib/utils/date';
+  import { selectProviderCatalogDefaultRemoteIncompatibility } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { providerProfilesRequested } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import Fa from 'svelte-fa';
 
   const logger = createLogger('ModelPicker');
@@ -192,6 +224,16 @@
   }
   function providerTabLabel(providerId: string): string {
     const label = providerDisplayName(providerId);
+    if (remoteScoped && remoteLocation)
+      return remoteSignedOutCue(providerId)
+        ? m.chat_modelPicker_remoteProviderTabSignedOut_label({
+            provider: label,
+            machine: remoteLocation.name,
+          })
+        : m.chat_modelPicker_remoteProviderTab_label({
+            provider: label,
+            machine: remoteLocation.name,
+          });
     return isProfileSignedOut(providerId)
       ? m.chat_modelPicker_profileSignedOut_ariaLabel({ provider: label })
       : label;
@@ -292,8 +334,34 @@
     deferUpdate?: boolean;
     variant?: 'ghost' | 'ghost-light' | 'underline' | 'outline' | 'default';
     size?: 'xs' | 'sm' | 'icon';
+    /** Stretch the trigger to its container. */
+    fullWidth?: boolean;
+    /** Field label rendered inside a full-width trigger, before the value. */
+    rowLabel?: string;
+    /** Keep the field label accessible without showing it in a compact trigger. */
+    showRowLabel?: boolean;
+    /** Show decorative provider and reasoning icons inside the trigger. */
+    showTriggerIcons?: boolean;
+    /**
+     * Show the selected profile name beside the model. When false, a narrow
+     * trigger keeps the model; the accessible label still names the profile, and
+     * so does the hover tooltip unless a model warning replaces it.
+     */
+    showProfileName?: boolean;
+    /** Preferred side for the open menu; `left` falls back to vertical without room. */
+    menuSide?: 'bottom' | 'left';
+    /** Gap between the trigger and a `left`-side menu. */
+    menuSideOffset?: number;
+    /** Open menu height in pixels; the panel still shrinks to the available space. */
+    menuMaxHeight?: 360 | 440;
     workspaceId?: string;
     agentId?: string;
+    /**
+     * Machine an agent that is not created yet will start on (New Workspace →
+     * Start On): the picker lists that machine's models like a remote agent's.
+     * Ignored with `agentId`, whose own placement decides.
+     */
+    machineId?: string;
     showManageLink?: boolean;
     portal?: boolean;
     modalAware?: boolean;
@@ -349,8 +417,17 @@
     deferUpdate = false,
     variant = 'ghost-light',
     size = 'sm',
+    fullWidth = false,
+    rowLabel,
+    showRowLabel = true,
+    showTriggerIcons = true,
+    showProfileName = true,
+    menuSide = 'bottom',
+    menuSideOffset,
+    menuMaxHeight = 360,
     workspaceId,
     agentId,
+    machineId,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     showManageLink = true,
     portal = true,
@@ -375,6 +452,7 @@
     reasoningDisabled = false,
   }: Props = $props();
 
+  const dialogPortalTarget = useDialogPortalTarget();
   const workspaceIdStore = writable(untrack(() => workspaceId) ?? '');
   const defaultProviderId$ = selectContextDefaultProvider(workspaceIdStore);
   const directActiveProviderId$ = selectActiveProviderId();
@@ -488,7 +566,92 @@
     workspaceIdStore.set(workspaceId ?? '');
   });
   const isGuestLocked = $derived(!!agentId && !!workspaceId && $isWorkspaceCollaborator$);
-  const effectiveLocked = $derived(isLocked || isGuestLocked);
+  // Profile names are the host administrator's private configuration: a guest
+  // sees the bare provider, never a profile (or "Removed profile") label.
+  const hidesProfileNames$ = selectHidesProviderProfileNames(workspaceIdStore);
+  // A remote agent runs on another machine, so the backend's own models say
+  // nothing about it. Backends that support it switch the model on that
+  // machine (PROTOCOL nodes.md "Switching a remote agent's model"): the picker
+  // then lists only the machine's reported providers and models. Older
+  // backends refuse every change (`remote-model-change-unsupported`), so the
+  // picker stays locked and names the machine, as it does with the Labs flag
+  // off (no machine report to list) and for a revoked machine.
+  const remoteNodeId$ = writable('');
+  const remoteMachine$ = selectRemoteMachine(remoteNodeId$);
+  const remoteMachinesVisible$ = selectRemoteMachinesVisible();
+  const remoteSwitchSupport$ = selectRemoteModelSwitchSupport(workspaceIdStore);
+  const defaultRemoteIncompatibility$ =
+    selectProviderCatalogDefaultRemoteIncompatibility(workspaceIdStore);
+  const backendLabel$ = selectCurrentBackendLabel();
+  const remoteMachinesPending$ = selectRemoteMachineOperations();
+  const defaultHasOverrides$ = selectDefaultHasOverrides();
+  const remoteLocation = $derived(
+    agentId
+      ? !isGuestLocked && $agentSession$?.id === agentId
+        ? agentMachineLocation($agentSession$, $remoteMachine$)
+        : null
+      : machineLocation(machineId ?? '', $remoteMachine$),
+  );
+  $effect(() => {
+    remoteNodeId$.set(remoteLocation?.nodeId ?? '');
+  });
+  const remoteScoped = $derived(
+    remoteLocation !== null &&
+      remoteLocation.state !== 'revoked' &&
+      $remoteMachinesVisible$ &&
+      $remoteSwitchSupport$ === 'supported',
+  );
+  // The catalog alone can't tell without profile rows; the profile list's
+  // Default rows can. Until it is read, the picker stays locked. The list is
+  // admin-only, so other members keep the locked picker in that case.
+  $effect(() => {
+    if (
+      remoteLocation &&
+      $remoteMachinesVisible$ &&
+      $canAdministerHost$ &&
+      $remoteSwitchSupport$ === 'unknown'
+    )
+      untrack(() => appStore.dispatch(providerProfilesRequested()));
+  });
+  const remoteLocked = $derived(remoteLocation !== null && !remoteScoped);
+  const remoteReportNow = $derived.by(() => {
+    void $remoteMachine$;
+    void dropdownOpen;
+    return Date.now();
+  });
+  const remoteFreshness = $derived(
+    remoteScoped ? machineReportFreshness($remoteMachine$, remoteReportNow) : 'fresh',
+  );
+  const remoteReportedAgo = $derived(
+    $remoteMachine$?.observedAt ? formatDistanceToNow($remoteMachine$.observedAt) : '',
+  );
+  const remoteRefreshing = $derived(
+    !!remoteLocation &&
+      $remoteMachinesPending$[machineRefreshKey(remoteLocation.nodeId)] === 'refreshing',
+  );
+  function refreshRemoteMachine() {
+    if (remoteLocation) appStore.dispatch(remoteMachineRefreshRequested(remoteLocation.nodeId));
+  }
+  /**
+   * The machine's own login for `providerRef` is signed out and matters: not
+   * for a Default known to save its own credentials (an API key).
+   */
+  function remoteSignedOutCue(providerRef: string): boolean {
+    return (
+      isRemoteRefSignedOut($remoteMachine$, providerRef) &&
+      $defaultHasOverrides$[providerRefBaseId(providerRef)] !== true
+    );
+  }
+  /** Why the browsed configuration can't run on the agent's machine, or null. */
+  function remoteIncompatibleReason(providerRef: string): string | null {
+    const incompatibility = remoteIncompatibilityFor(
+      providerRef,
+      $providerProfiles$,
+      $defaultRemoteIncompatibility$,
+    );
+    return incompatibility ? remoteIncompatibilityMessage(incompatibility, $backendLabel$) : null;
+  }
+  const effectiveLocked = $derived(isLocked || isGuestLocked || remoteLocked);
 
   // §5.54 profile state the daemon reports on this agent's AgentLite row.
   const boundSession = $derived(
@@ -519,6 +682,14 @@
       const entry = $providerCatalogs$[pid];
       if (entry) models[pid] = toDropdownOptions(entry.models);
     }
+    return models;
+  });
+  // Labels for a remote agent's machine models: any cached backend catalog.
+  const remoteCatalogModels = $derived.by(() => {
+    if (!remoteScoped) return {};
+    const models: Record<string, DropdownOption[]> = {};
+    for (const [pid, entry] of Object.entries($providerCatalogs$))
+      if (entry) models[pid] = toDropdownOptions(entry.models);
     return models;
   });
   const allProviderErrors = $derived.by(() => {
@@ -1274,9 +1445,11 @@
   // authoritative and can transiently empty the available-provider set until
   // the reconnect listener re-runs the check and heals the map. Daemon-down
   // and degraded failures are surfaced by the daemon-health UI instead.
+  // A remote agent's providers are the machine's, not the backend's.
   const hasNoAvailableProvider = $derived(
     !providerId &&
       !isGuestLocked &&
+      !remoteScoped &&
       $hasCheckedOnce$ &&
       $daemonHealth$ === 'healthy' &&
       $availableEnabledProviderIds$.length === 0,
@@ -1346,6 +1519,29 @@
     void $providerCatalogEntries$;
     // Group labels read the renamed Default (catalog `defaultNames`).
     void $providerDefaultNames$;
+    if (remoteScoped) {
+      // Only the machine's providers and models; the backend's own
+      // availability does not matter there, its settings still do.
+      const machine = $remoteMachine$;
+      if (!machine || remoteFreshness === 'missing') return [];
+      return buildMachineModelGroups({
+        machine,
+        providerRefs: expandProviderIdsWithProfiles(
+          $providerCatalogEntries$.map((entry) => entry.id),
+          $providerProfiles$,
+        ).filter(
+          (ref) =>
+            (allowProviderSwitch || ref === normalizeProviderId(effectiveProviderId)) &&
+            !isProviderDisabledInSettings($enabledProviders$, ref),
+        ),
+        groupLabel: providerDisplayName,
+        catalogModels: { ...remoteCatalogModels, ...allProviderModels },
+        catalogProfiles: $providerProfiles$,
+        defaultRemoteIncompatibility: $defaultRemoteIncompatibility$,
+        defaultHasOverrides: $defaultHasOverrides$,
+        useDefaultOption: showDefaultOption ? useDefaultOption : undefined,
+      });
+    }
     return buildGroupedModelOptions({
       workspaceId,
       showDefaultOption,
@@ -1465,7 +1661,8 @@
 
   const providerTabIds = $derived.by(() => [
     ...new Set([
-      ...selectableProviderIds.map((id) => normalizeProviderId(id)),
+      // A remote agent's rail shows only the machine's providers.
+      ...(remoteScoped ? [] : selectableProviderIds.map((id) => normalizeProviderId(id))),
       ...groupedModelOptions
         .filter((group) => group.key !== 'default')
         .map((group) => group.parentKey ?? group.key),
@@ -1543,6 +1740,7 @@
     // existing terminal error/Retry surface rather than disabled error rows.
     // Pending retries and partial/cached success keep their groups/default row.
     if (
+      !remoteScoped &&
       !hasLoadedModelOptions &&
       blockingLoadError &&
       allProvidersLoaded &&
@@ -1751,7 +1949,7 @@
   // once its base provider has profiles (`Default` for the original one).
   const triggerProfileName = $derived.by(() => {
     const ref = triggerProviderId;
-    if (!ref) return undefined;
+    if (!ref || $hidesProfileNames$) return undefined;
     const baseId = normalizeProviderId(providerRefBaseId(ref));
     const isProfile = isProviderProfileRef(ref);
     return providerRefProfileName(
@@ -1764,12 +1962,17 @@
     );
   });
   const modelAccessibleLabel = $derived(
-    triggerProfileName
-      ? m.chat_modelPicker_modelWithProfile_ariaLabel({
+    remoteLocation
+      ? m.chat_modelPicker_remoteMachine_ariaLabel({
           model: currentModelLabel,
-          provider: providerDisplayName(triggerProviderId),
+          machine: remoteLocation.name,
         })
-      : currentModelLabel,
+      : triggerProfileName
+        ? m.chat_modelPicker_modelWithProfile_ariaLabel({
+            model: currentModelLabel,
+            provider: providerDisplayName(triggerProviderId),
+          })
+        : currentModelLabel,
   );
   const triggerAccessibleLabel = $derived(
     [
@@ -1790,7 +1993,9 @@
   const lockedButtonTitle = $derived(
     isGuestLocked
       ? m.chat_modelPicker_guestLocked_title()
-      : lockedTitle?.trim() ||
+      : remoteLocation
+        ? m.chat_modelPicker_remoteLocked_title({ machine: remoteLocation.name })
+        : lockedTitle?.trim() ||
           m.chat_modelPicker_modelLocked_title({ model: triggerAccessibleLabel }),
   );
   // The in-flight commit window is announced with `aria-busy` and re-entry is
@@ -1807,12 +2012,15 @@
       reasoningLevels.length === 0,
   );
   const refreshProviderId = $derived(activeBrowseProviderId || preferredBrowseProviderId);
+  // A remote agent's list comes from its machine: the backend's own catalog
+  // loads and failures say nothing about it.
   const showDropdownFooter = $derived(
     showReasoningFooter ||
-      codexFallbackWarning !== null ||
-      (!allProvidersLoaded && Object.keys(allProviderModels).length > 0) ||
-      activeProviderIssue !== null ||
-      refreshingProviders.has(refreshProviderId),
+      (!remoteScoped &&
+        (codexFallbackWarning !== null ||
+          (!allProvidersLoaded && Object.keys(allProviderModels).length > 0) ||
+          activeProviderIssue !== null ||
+          refreshingProviders.has(refreshProviderId))),
   );
 
   const railProviderIds = $derived(providerTabIds);
@@ -1893,6 +2101,7 @@
   const showModelWarning = $derived(
     !!agentId &&
       !isGuestLocked &&
+      !remoteLocation &&
       (replacementRequired !== null || isSelectedModelUnavailable || $fallbackInfo$ !== null),
   );
 
@@ -2004,7 +2213,9 @@
   // Only applies to pickers tied to an existing agent — onboarding doesn't need this.
   $effect(() => {
     if (!agentId) return;
-    if (isGuestLocked) return;
+    // A remote agent's model is fixed on its machine (and the backend catalog
+    // says nothing about it): no fallback toast, fallback info or setModel.
+    if (isGuestLocked || remoteLocation) return;
     // A disabled provider is re-homed by the daemon on the next send; the FE
     // must not `agent.setModel` its way around the gate (intent#5737).
     if (isSelectedModelProviderDisabled) return;
@@ -2122,7 +2333,7 @@
 
   $effect(() => {
     if (!silentFallback) return;
-    if (isGuestLocked) return;
+    if (isGuestLocked || remoteLocation) return;
     if (isApplyingModelUpdate || pendingModelUpdate) return;
     if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return;
     if (!isSelectedModelMissingAfterLoad) return;
@@ -2277,14 +2488,23 @@
 
 {#if effectiveLocked}
   <!-- Show locked state without dropdown -->
+  <!-- A remote lock stays focusable at full contrast so its explanation can be read. -->
   <Button
     {variant}
     size={buttonSize}
-    class={cn(buttonClass, 'cursor-default')}
+    class={cn(
+      buttonClass,
+      'cursor-default',
+      remoteLocation && 'pointer-events-auto! cursor-default! opacity-100! min-w-0 shrink!',
+    )}
     title={lockedButtonTitle}
     tooltip={lockedButtonTitle}
+    tooltipClass={remoteLocation ? 'min-w-0' : undefined}
+    labelClass={remoteLocation ? 'flex items-center justify-start gap-1.5' : undefined}
     aria-label={triggerAccessibleLabel}
-    disabled={true}
+    disabled={!remoteLocation}
+    aria-disabled={remoteLocation ? 'true' : undefined}
+    data-remote-model-lock={remoteLocation ? '' : undefined}
   >
     {#if isCompact}
       <Fa icon={faLock} class="h-4 w-4" />
@@ -2295,8 +2515,19 @@
       {#if hasProviderIcon(triggerProviderId)}
         <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
       {/if}
-      <span class="flex-1 text-left truncate">{triggerLabel}</span>
-      {#if triggerProfileName}
+      <span class={cn('flex-1 text-left truncate', remoteLocation && 'min-w-[1.75rem]!')}
+        >{triggerLabel}</span
+      >
+      {#if remoteLocation}
+        <span
+          class="inline-flex min-w-[0.875rem]! max-w-28 shrink-[4] items-center gap-1 overflow-hidden text-subtle"
+          aria-hidden="true"
+          data-remote-model-machine
+        >
+          <Fa icon={faDesktop} class="size-3!" />
+          <span class="truncate">{remoteLocation.name}</span>
+        </span>
+      {:else if triggerProfileName}
         <span class="min-w-0 max-w-24 shrink truncate text-subtle" aria-hidden="true"
           >{triggerProfileName}</span
         >
@@ -2319,7 +2550,16 @@
           <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
         {/if}
         <span class="text-xs truncate">{triggerLabel}</span>
-        {#if triggerProfileName}
+        {#if remoteLocation}
+          <span
+            class="inline-flex min-w-[0.875rem]! max-w-28 shrink-[4] items-center gap-1 overflow-hidden text-xs text-subtle"
+            aria-hidden="true"
+            data-remote-model-machine
+          >
+            <Fa icon={faDesktop} class="size-3!" />
+            <span class="truncate">{remoteLocation.name}</span>
+          </span>
+        {:else if triggerProfileName}
           <span class="text-xs min-w-0 max-w-24 shrink truncate text-subtle" aria-hidden="true"
             >{triggerProfileName}</span
           >
@@ -2357,14 +2597,44 @@
         onToggle={toggleGroup}
         onRefresh={handleRefreshProvider}
       />
+    {:else if remoteScoped && remoteLocation && group.key !== 'default'}
+      {@const incompatibleReason = remoteIncompatibleReason(group.key)}
+      {#if baseHasProfiles(group.key)}
+        <div
+          class="truncate px-2 pt-1.5 pb-0.5 text-xs text-subtle"
+          data-testid="model-picker-profile-group"
+        >
+          {group.label}
+        </div>
+      {/if}
+      {#if incompatibleReason}
+        <div
+          class="flex items-start gap-2 px-2 pt-1 pb-1 text-xs text-subtle"
+          role="status"
+          data-testid="model-picker-remote-incompatible"
+        >
+          <Fa icon={faLock} class="mt-0.5 size-3! shrink-0" />
+          <span class="min-w-0 leading-tight">{incompatibleReason}</span>
+        </div>
+      {:else if remoteSignedOutCue(group.key)}
+        <div
+          class="flex items-start gap-2 px-2 pt-1 pb-1 text-xs"
+          role="status"
+          data-testid="model-picker-remote-signed-out"
+        >
+          <ModelProviderErrorItem
+            providerId={group.key}
+            providerLabel={group.label}
+            error={m.chat_modelPicker_remoteSignedOut_label({ machine: remoteLocation.name })}
+            hint={m.chat_modelPicker_remoteSignedOut_hint({ machine: remoteLocation.name })}
+            compact={true}
+          />
+        </div>
+      {/if}
     {:else if group.key !== 'default' && baseHasProfiles(group.parentKey ?? group.key)}
-      <!-- Tabs show icons only; name the configuration being browsed (§5.54). -->
-      <div
-        class="truncate px-2 pt-1.5 pb-0.5 text-xs text-subtle"
-        data-testid="model-picker-profile-group"
-      >
+      <span class="sr-only" data-testid="model-picker-profile-group">
         {group.label}
-      </div>
+      </span>
       {#if isProfileSignedOut(group.key)}
         <!-- Same cue as a provider's sign-in failure; the models stay selectable. -->
         <div
@@ -2385,63 +2655,65 @@
   {/snippet}
 
   {#snippet dropdownFooter()}
-    {#if codexFallbackWarning}
-      <div class="px-3 py-2">
-        <ModelPickerProviderNotice
-          warning={codexFallbackWarning.message}
-          docsUrl={codexFallbackWarning.docsUrl}
-          show={true}
-          variant="warning"
-          class="max-w-none"
-        />
-      </div>
-    {/if}
-    {#if !allProvidersLoaded && Object.keys(allProviderModels).length > 0}
-      <div class="px-3 py-2 flex items-center gap-2 text-xs text-muted-foreground">
-        <IntentMarkLoader size={12} />
-        <span>{m.chat_modelPicker_loadingMore_label()}</span>
-      </div>
-    {/if}
-    {#if footerProviderWarnings.length > 0}
-      <div class="px-3 py-2 space-y-1.5 text-xs">
-        {#each footerProviderWarnings as warning (warning.providerId)}
-          <div class="flex items-start gap-2 text-muted-foreground" role="status">
-            <ModelProviderErrorItem
-              providerId={warning.providerId}
-              providerLabel={warning.providerName}
-              error={warning.message}
-              hint={warning.hint}
-              compact={true}
-            />
-          </div>
-        {/each}
-      </div>
-    {/if}
-    {#if activeProviderIssue || refreshingProviders.has(refreshProviderId)}
-      <div class="flex flex-wrap items-center gap-2 px-3 py-2">
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          disabled={refreshingProviders.has(refreshProviderId)}
-          aria-label={m.chat_modelPicker_retry_label()}
-          aria-busy={refreshingProviders.has(refreshProviderId)}
-          onclick={() => handleRefreshProvider(refreshProviderId)}
-        >
-          {#if refreshingProviders.has(refreshProviderId)}<IntentMarkLoader size={12} />{/if}
-          {m.chat_modelPicker_retry_label()}
-        </Button>
-        {#if activeProviderIssue}
+    {#if !remoteScoped}
+      {#if codexFallbackWarning}
+        <div class="px-3 py-2">
+          <ModelPickerProviderNotice
+            warning={codexFallbackWarning.message}
+            docsUrl={codexFallbackWarning.docsUrl}
+            show={true}
+            variant="warning"
+            class="max-w-none"
+          />
+        </div>
+      {/if}
+      {#if !allProvidersLoaded && Object.keys(allProviderModels).length > 0}
+        <div class="px-3 py-2 flex items-center gap-2 text-xs text-muted-foreground">
+          <IntentMarkLoader size={12} />
+          <span>{m.chat_modelPicker_loadingMore_label()}</span>
+        </div>
+      {/if}
+      {#if footerProviderWarnings.length > 0}
+        <div class="px-3 py-2 space-y-1.5 text-xs">
+          {#each footerProviderWarnings as warning (warning.providerId)}
+            <div class="flex items-start gap-2 text-muted-foreground" role="status">
+              <ModelProviderErrorItem
+                providerId={warning.providerId}
+                providerLabel={warning.providerName}
+                error={warning.message}
+                hint={warning.hint}
+                compact={true}
+              />
+            </div>
+          {/each}
+        </div>
+      {/if}
+      {#if activeProviderIssue || refreshingProviders.has(refreshProviderId)}
+        <div class="flex flex-wrap items-center gap-2 px-3 py-2">
           <Button
             type="button"
-            variant="link"
+            variant="secondary"
             size="sm"
-            onclick={() => activeProviderIssue && showProviderDetails(activeProviderIssue)}
+            disabled={refreshingProviders.has(refreshProviderId)}
+            aria-label={m.chat_modelPicker_retry_label()}
+            aria-busy={refreshingProviders.has(refreshProviderId)}
+            onclick={() => handleRefreshProvider(refreshProviderId)}
           >
-            {m.chat_modelPicker_errorDetails_label()}
+            {#if refreshingProviders.has(refreshProviderId)}<IntentMarkLoader size={12} />{/if}
+            {m.chat_modelPicker_retry_label()}
           </Button>
-        {/if}
-      </div>
+          {#if activeProviderIssue}
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              onclick={() => activeProviderIssue && showProviderDetails(activeProviderIssue)}
+            >
+              {m.chat_modelPicker_errorDetails_label()}
+            </Button>
+          {/if}
+        </div>
+      {/if}
     {/if}
     {#if showReasoningFooter}
       <div class="w-full min-w-0 px-3 py-2" data-testid="model-reasoning-section">
@@ -2476,23 +2748,31 @@
     variant={variant === 'outline' ? 'outline' : variant === 'default' ? 'default' : 'ghost'}
     size={size === 'xs' ? 'xs' : 'sm'}
     searchable={!hasNoAvailableProvider}
-    searchChrome
-    placeholder={m.ui_dropdown_search_ariaLabel()}
-    class="min-w-0 max-w-full"
-    headerClass={cn('model-picker-header border-b-0!', !hasNoAvailableProvider && 'pt-9')}
+    placeholder={m.chat_modelPicker_searchModels_placeholder()}
+    searchAriaLabel={m.chat_modelPicker_searchModels_placeholder()}
+    class={cn('min-w-0 max-w-full', fullWidth && 'w-full')}
+    headerClass="model-picker-header border-b-0!"
     triggerClass={cn(
-      'max-w-full px-2!',
+      'px-2!',
+      rowLabel && showRowLabel ? 'max-w-none' : 'max-w-full',
       (variant === 'outline' || variant === 'default') && 'w-full justify-between border-border!',
+      fullWidth && 'w-full justify-between',
       triggerClass,
     )}
     contentClass={cn(
-      'model-picker-panel max-w-[calc(100vw-16px)] bg-popover! text-foreground! w-96 h-[360px] min-h-0 flex flex-col rounded-xl pl-12',
+      'model-picker-panel max-w-[calc(100vw-16px)] bg-popover! text-foreground! w-96 min-h-0 flex flex-col rounded-xl pl-12',
+      rowLabel && '[&>[data-scroll-container]]:px-2',
+      menuMaxHeight === 440 ? 'h-[440px]' : 'h-[360px]',
       pointerInteraction && 'model-picker-pointer',
     )}
-    contentMaxHeight={360}
+    rowClass={rowLabel ? workspacePickerStyles.row : undefined}
+    contentMaxHeight={menuMaxHeight}
+    side={menuSide}
+    sideOffset={menuSideOffset}
     fillContentHeight
     animate={false}
     {portal}
+    portalTarget={modalAware ? dialogPortalTarget() : undefined}
     {collisionBoundary}
     {groupHeader}
     footer={showDropdownFooter ? dropdownFooter : undefined}
@@ -2505,10 +2785,13 @@
       open: boolean;
       value: string | string[] | undefined;
     })}
+      {#if rowLabel}
+        <span class={showRowLabel ? workspacePickerStyles.fieldLabel : 'sr-only'}>{rowLabel}</span>
+      {/if}
       <span
         class={cn(
           'inline-flex items-center gap-2 truncate min-w-0',
-          (variant === 'outline' || variant === 'default') && 'flex-1',
+          (variant === 'outline' || variant === 'default' || fullWidth) && 'flex-1',
         )}
         title={isTriggerLabelResolved ? triggerTitle : ''}
         aria-label={isTriggerLabelResolved ? triggerAccessibleLabel : undefined}
@@ -2516,25 +2799,34 @@
         {#if isCompact}
           <Fa icon={faSettings} class="h-4 w-4" />
         {:else if isTriggerLabelResolved}
-          {#if showModelWarning}
+          {#if showModelWarning || (remoteScoped && remoteFreshness !== 'fresh')}
             <Fa icon={faTriangleExclamation} class="h-3 w-3 text-warning-ink shrink-0" />
           {:else if usingEarlierProfileSettings}
             <Fa icon={faCircleInfo} class="h-3 w-3 text-muted-foreground shrink-0" />
           {/if}
-          {#if hasProviderIcon(triggerProviderId)}
+          {#if (showTriggerIcons || variant === 'ghost-light') && hasProviderIcon(triggerProviderId)}
             <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
           {/if}
           <span class="truncate" use:truncatedTitle={triggerTitle ? undefined : triggerLabel}
             >{triggerLabel}</span
           >
-          {#if triggerProfileName}
+          {#if remoteLocation}
+            <span
+              class="inline-flex min-w-[0.875rem]! max-w-28 shrink-[4] items-center gap-1 overflow-hidden text-subtle"
+              aria-hidden="true"
+              data-remote-model-machine
+            >
+              <Fa icon={faDesktop} class="size-3!" />
+              <span class="truncate">{remoteLocation.name}</span>
+            </span>
+          {:else if triggerProfileName && showProfileName}
             <span
               class="min-w-0 max-w-24 shrink truncate text-subtle"
               aria-hidden="true"
               data-testid="model-picker-profile">{triggerProfileName}</span
             >
           {/if}
-          {#if showTriggerReasoningGauge}
+          {#if showTriggerIcons && showTriggerReasoningGauge}
             <EffortGauge
               value={currentReasoningLevelIndex}
               max={Math.max(1, reasoningLevels.length - 1)}
@@ -2547,8 +2839,61 @@
           <div class="h-3.5 w-24 bg-muted/50 rounded-sm animate-pulse"></div>
         {/if}
       </span>
-      {#if variant === 'outline' || variant === 'default'}
-        <Fa icon={faChevronDown} class="h-2 w-2 opacity-50 shrink-0" />
+      {#if !rowLabel && (variant === 'outline' || variant === 'default' || fullWidth)}
+        <Fa
+          icon={faChevronDown}
+          class={fullWidth
+            ? 'size-3 shrink-0 text-muted-foreground'
+            : 'h-2 w-2 opacity-50 shrink-0'}
+        />
+      {/if}
+    {/snippet}
+
+    {#snippet searchAction()}
+      <span class="inline-flex size-(--control-height-compact) shrink-0">
+        {#if modelSearchValue}
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            iconOnly
+            class="shrink-0"
+            aria-label={m.chat_modelPicker_clearSearch_ariaLabel()}
+            onclick={clearModelSearch}
+          >
+            <Fa icon={faXmark} class="size-3" />
+          </Button>
+        {/if}
+      </span>
+      {#if refreshProviderId && !remoteScoped}
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          iconOnly={true}
+          title={m.chat_modelPicker_refreshGroup_title({
+            group: providerDisplayName(refreshProviderId),
+          })}
+          aria-label={m.chat_modelPicker_refreshGroup_title({
+            group: providerDisplayName(refreshProviderId),
+          })}
+          class={cn(
+            'shrink-0 text-subtle hover:bg-muted/40',
+            refreshingProviders.has(refreshProviderId) && 'opacity-50!',
+          )}
+          data-testid="model-provider-refresh-button"
+          aria-busy={refreshingProviders.has(refreshProviderId)}
+          disabled={refreshingProviders.has(refreshProviderId)}
+          onclick={() => void handleRefreshProvider(refreshProviderId)}
+        >
+          {#if refreshingProviders.has(refreshProviderId)}
+            <IntentMarkLoader size={12} />
+          {:else}
+            <Fa
+              icon={faArrowsRotate}
+              size={10}
+              class="text-subtle transition-transform duration-spring-slow ease-spring-slow motion-reduce:transition-none"
+            />
+          {/if}
+        </Button>
       {/if}
     {/snippet}
 
@@ -2561,7 +2906,9 @@
           class="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto"
           role="tablist"
           aria-orientation="vertical"
-          aria-label={m.chat_modelPicker_modelProviders_label()}
+          aria-label={remoteScoped && remoteLocation
+            ? m.chat_modelPicker_remoteMachine_providers_label({ machine: remoteLocation.name })
+            : m.chat_modelPicker_modelProviders_label()}
           data-testid="model-provider-tabs"
         >
           {#each railProviderIds as providerTabId (providerTabId)}
@@ -2582,7 +2929,7 @@
               onkeydown={(event) => handleProviderTabKeydown(event, providerTabId)}
             >
               <ProviderIcon providerId={providerTabId} class="size-4" size={16} />
-              {#if isProfileSignedOut(providerTabId)}
+              {#if isProfileSignedOut(providerTabId) || (remoteScoped && remoteSignedOutCue(providerTabId))}
                 <span
                   class="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-warning"
                   aria-hidden="true"
@@ -2612,48 +2959,73 @@
           </Button>
         {/if}
       </div>
-      {#if modelSearchValue}
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          iconOnly
-          class="absolute right-10 top-1.5 z-20"
-          aria-label={m.chat_modelPicker_clearSearch_ariaLabel()}
-          onclick={clearModelSearch}
+      {#if remoteScoped && remoteLocation}
+        <!-- The machine whose models these are, and how recent its report is. -->
+        <div
+          class="flex items-center gap-2 border-y border-border px-3 py-2"
+          data-testid="model-picker-remote-header"
         >
-          <Fa icon={faXmark} class="size-3" />
-        </Button>
-      {/if}
-      {#if refreshProviderId}
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          iconOnly={true}
-          title={m.chat_modelPicker_refreshGroup_title({
-            group: providerDisplayName(refreshProviderId),
-          })}
-          aria-label={m.chat_modelPicker_refreshGroup_title({
-            group: providerDisplayName(refreshProviderId),
-          })}
-          class={cn(
-            'absolute right-2 top-1.5 text-subtle hover:bg-muted/40',
-            refreshingProviders.has(refreshProviderId) && 'opacity-50!',
-          )}
-          data-testid="model-provider-refresh-button"
-          aria-busy={refreshingProviders.has(refreshProviderId)}
-          disabled={refreshingProviders.has(refreshProviderId)}
-          onclick={() => void handleRefreshProvider(refreshProviderId)}
-        >
-          {#if refreshingProviders.has(refreshProviderId)}
-            <IntentMarkLoader size={12} />
-          {:else}
-            <Fa
-              icon={faArrowsRotate}
-              size={10}
-              class="text-subtle transition-transform duration-spring-slow ease-spring-slow motion-reduce:transition-none"
-            />
-          {/if}
-        </Button>
+          <Fa icon={faDesktop} class="size-3.5! shrink-0 text-muted-foreground" />
+          <div class="min-w-0 flex-1">
+            <div class="truncate text-xs font-medium text-foreground">
+              {m.chat_modelPicker_remoteMachine_title({ machine: remoteLocation.name })}
+            </div>
+            <div class="truncate text-xs text-subtle">
+              {[
+                remoteLocation.platform,
+                remoteFreshness === 'missing' || !remoteReportedAgo
+                  ? m.chat_modelPicker_remoteMachine_noReport()
+                  : m.chat_modelPicker_remoteMachine_reported({ time: remoteReportedAgo }),
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            iconOnly={true}
+            title={m.chat_modelPicker_remoteMachine_refresh_label({ machine: remoteLocation.name })}
+            aria-label={m.chat_modelPicker_remoteMachine_refresh_label({
+              machine: remoteLocation.name,
+            })}
+            class={cn('text-subtle hover:bg-muted/40', remoteRefreshing && 'opacity-50!')}
+            data-testid="model-picker-remote-refresh"
+            aria-busy={remoteRefreshing}
+            disabled={remoteRefreshing}
+            onclick={refreshRemoteMachine}
+          >
+            {#if remoteRefreshing}
+              <IntentMarkLoader size={12} />
+            {:else}
+              <Fa icon={faArrowsRotate} size={10} class="text-subtle" />
+            {/if}
+          </Button>
+        </div>
+        {#if remoteFreshness === 'stale'}
+          <div
+            class="border-b border-border bg-warning/5 px-3 py-2.5"
+            data-testid="model-picker-remote-stale"
+          >
+            <div class="flex items-start gap-2" role="status">
+              <Fa
+                icon={faTriangleExclamation}
+                class="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning-ink"
+              />
+              <div class="min-w-0">
+                <div class="text-xs leading-tight font-medium text-foreground">
+                  {m.chat_modelPicker_remoteStale_title()}
+                </div>
+                <div class="mt-0.5 text-xs leading-tight text-subtle">
+                  {m.chat_modelPicker_remoteStale_description({
+                    machine: remoteLocation.name,
+                    time: remoteReportedAgo,
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        {/if}
       {/if}
       {#if showModelWarning && warningMessage}
         <div class="px-3 py-2.5 border-b border-border bg-warning/5">
@@ -2690,9 +3062,9 @@
       {@const providerLoadError = option.data?.providerLoadError as ProviderLoadError | undefined}
       {@const providerLoading = option.data?.providerLoading as boolean | undefined}
 
-      <div class="flex items-center gap-2.5 w-full min-w-0 py-1">
+      <div class={cn('flex items-center w-full min-w-0', rowLabel ? 'gap-2' : 'gap-2.5 py-1')}>
         {#if providerLoading}
-          <div class="flex items-center gap-2 text-muted-foreground text-sm">
+          <div class={cn('flex items-center gap-2 text-muted-foreground', !rowLabel && 'text-sm')}>
             <IntentMarkLoader size={12} />
             <span>{option.label}</span>
           </div>
@@ -2707,7 +3079,8 @@
           <div class="flex-1 min-w-0">
             <span
               class={cn(
-                'block truncate text-sm font-normal',
+                'block truncate font-normal',
+                !rowLabel && 'text-sm',
                 option.value === USE_DEFAULT_VALUE && 'text-muted-foreground',
               )}
             >
@@ -2715,7 +3088,10 @@
             </span>
             {#if option.description}
               <div
-                class="text-xs text-subtle truncate mt-0.5"
+                class={cn(
+                  'truncate mt-0.5',
+                  rowLabel ? 'type-caption text-muted-foreground' : 'text-xs text-subtle',
+                )}
                 use:truncatedTitle={option.description}
               >
                 {option.description}
@@ -2728,15 +3104,42 @@
     {/snippet}
 
     {#snippet empty()}
-      <ModelPickerEmptyState
-        {isLoadingModels}
-        blockingLoadError={activeProviderIssue ?? blockingLoadError}
-        retryInFooter={activeProviderIssue !== null || refreshingProviders.has(refreshProviderId)}
-        {hasNoAvailableProvider}
-        hostManaged={!$canAdministerHost$}
-        onOpenProviderSettings={openProviderSettings}
-        onRetry={handleRetry}
-      />
+      {#if remoteScoped && remoteLocation && remoteFreshness === 'missing'}
+        <div
+          class="flex flex-1 flex-col items-center justify-center gap-2 px-6 py-6 text-center"
+          role="status"
+          data-testid="model-picker-remote-missing"
+        >
+          <Fa icon={faCircleInfo} class="size-4! text-muted-foreground" />
+          <div class="text-sm font-medium text-foreground">
+            {m.chat_modelPicker_remoteMissing_title({ machine: remoteLocation.name })}
+          </div>
+          <div class="text-xs text-subtle">
+            {m.chat_modelPicker_remoteMissing_description({ machine: remoteLocation.name })}
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            class="mt-1"
+            disabled={remoteRefreshing}
+            aria-busy={remoteRefreshing}
+            onclick={refreshRemoteMachine}
+          >
+            {#if remoteRefreshing}<IntentMarkLoader size={12} />{/if}
+            {m.remoteAgent_notice_checkAgain_label()}
+          </Button>
+        </div>
+      {:else}
+        <ModelPickerEmptyState
+          {isLoadingModels}
+          blockingLoadError={activeProviderIssue ?? blockingLoadError}
+          retryInFooter={activeProviderIssue !== null || refreshingProviders.has(refreshProviderId)}
+          {hasNoAvailableProvider}
+          hostManaged={!$canAdministerHost$}
+          onOpenProviderSettings={openProviderSettings}
+          onRetry={handleRetry}
+        />
+      {/if}
     {/snippet}
   </Dropdown>
 {/if}
@@ -2754,30 +3157,6 @@
 </ContentDialog>
 
 <style>
-  :global(.model-picker-panel > div:has(> input[role='searchbox'])) {
-    position: absolute;
-    top: 0.25rem;
-    left: 3.5rem;
-    right: 2.5rem;
-    width: auto;
-    padding: 0;
-    z-index: 10;
-    background: transparent;
-    border-radius: var(--radius-medium);
-  }
-  :global(.model-picker-panel > div:has(> input[role='searchbox']) > svg) {
-    display: none;
-  }
-  :global(.model-picker-panel input[role='searchbox']) {
-    height: 2rem;
-    padding: 0 1.75rem 0 0.25rem;
-    border: 0;
-    background: transparent;
-    box-shadow: none;
-    outline: none;
-    border-radius: var(--radius-medium);
-    caret-color: var(--color-foreground);
-  }
   :global(.model-picker-panel.model-picker-pointer) {
     transition: opacity var(--spring-fast) var(--spring-fast-ease);
     @starting-style {

@@ -268,98 +268,94 @@ describe('provider-status-bridge-seeder', () => {
     expect(mockedRequest).toHaveBeenCalledTimes(3);
   });
 
-  describe.each([
-    PROVIDERS_CHANNELS.GET_AVAILABILITY,
-    PROVIDERS_CHANNELS.CHECK_SINGLE,
-    'claude-code:check-availability',
-  ])('Claude discovery through %s', (channel) => {
-    const invoke = () =>
-      mockInvoke<
-        Envelope<ProviderAvailabilityResult & { available: boolean; authenticated?: boolean }> & {
-          available: boolean;
-        }
-      >(channel, channel === PROVIDERS_CHANNELS.CHECK_SINGLE ? 'claude-code' : undefined);
+  describe.each([PROVIDERS_CHANNELS.GET_AVAILABILITY, PROVIDERS_CHANNELS.CHECK_SINGLE])(
+    'Claude discovery through %s',
+    (channel) => {
+      const invoke = () =>
+        mockInvoke<
+          Envelope<ProviderAvailabilityResult & { available: boolean; authenticated?: boolean }> & {
+            available: boolean;
+          }
+        >(channel, channel === PROVIDERS_CHANNELS.CHECK_SINGLE ? 'claude-code' : undefined);
 
-    it.each([
-      {
-        name: 'npx launch',
-        row: { id: 'claude-code', installed: true, resolvedPath: '/bin/npx' },
-        available: true,
-      },
-      {
-        name: 'valid adapter override without npx',
-        row: { id: 'claude-code', installed: true, resolvedPath: null },
-        available: true,
-      },
-      { name: 'absent', row: { id: 'claude-code', installed: false }, available: false },
-      {
-        name: 'gated',
-        row: { id: 'claude-code', installed: true, gatedOff: 'disabled' },
-        available: false,
-      },
-      { name: 'missing row', row: undefined, available: false },
-    ])('uses the discovery verdict for $name without binary probes', async ({ row, available }) => {
-      routeDaemon({
-        'host.checkAuggie': { available: false },
-        'host.toolAvailability': NO_TOOLS,
-        'host.providerDiscovery': { providers: row ? [row] : [] },
-        'host.providerAuthStatus': authOne('claude-code', true),
-        'host.findBinary': { available: false },
-      });
-      const response = await invoke();
-      expect(response.success).toBe(true);
-      const status =
-        channel === PROVIDERS_CHANNELS.GET_AVAILABILITY
-          ? response.data?.providers.claudeCode
-          : channel === PROVIDERS_CHANNELS.CHECK_SINGLE
-            ? response.data
-            : response;
-      expect(status?.available).toBe(available);
-      expect(status).not.toHaveProperty('warning');
-      expect(
-        mockedRequest.mock.calls.filter(([method]) => method === 'host.providerDiscovery'),
-      ).toEqual([['host.providerDiscovery', {}]]);
-      expect(mockedRequest).not.toHaveBeenCalledWith('host.findBinary', expect.anything());
-      if (channel === PROVIDERS_CHANNELS.GET_AVAILABILITY) {
-        expect(response.data?.hasAnyProvider).toBe(available);
-        expect(mockedRequest).toHaveBeenCalledWith('host.toolAvailability', {
-          tools: [
-            'codex',
-            'cortex',
-            'opencode',
-            'pi',
-            'droid',
-            'grok',
-            'unsloth',
-            'codex-acp',
-            'npx',
-          ],
-        });
-      }
-    });
-
-    it('preserves discovery failures', async () => {
-      routeDaemon({
-        'host.checkAuggie': { available: false },
-        'host.toolAvailability': NO_TOOLS,
-        'host.findBinary': { available: true },
-        'host.providerAuthStatus': authOne('claude-code', true),
-        'host.providerDiscovery': () => {
-          throw new Error('discovery transport down');
+      it.each([
+        {
+          name: 'npx launch',
+          row: { id: 'claude-code', installed: true, resolvedPath: '/bin/npx' },
+          available: true,
         },
-      });
-      if (channel === 'claude-code:check-availability') {
-        await expect(invoke()).rejects.toThrow('discovery transport down');
-      } else {
+        {
+          name: 'valid adapter override without npx',
+          row: { id: 'claude-code', installed: true, resolvedPath: null },
+          available: true,
+        },
+        { name: 'absent', row: { id: 'claude-code', installed: false }, available: false },
+        {
+          name: 'gated',
+          row: { id: 'claude-code', installed: true, gatedOff: 'disabled' },
+          available: false,
+        },
+        { name: 'missing row', row: undefined, available: false },
+      ])(
+        'uses the discovery verdict for $name without binary probes',
+        async ({ row, available }) => {
+          routeDaemon({
+            'host.checkAuggie': { available: false },
+            'host.toolAvailability': NO_TOOLS,
+            'host.providerDiscovery': { providers: row ? [row] : [] },
+            'host.providerAuthStatus': authOne('claude-code', true),
+            'host.findBinary': { available: false },
+          });
+          const response = await invoke();
+          expect(response.success).toBe(true);
+          const status =
+            channel === PROVIDERS_CHANNELS.GET_AVAILABILITY
+              ? response.data?.providers.claudeCode
+              : response.data;
+          expect(status?.available).toBe(available);
+          expect(status).not.toHaveProperty('warning');
+          expect(
+            mockedRequest.mock.calls.filter(([method]) => method === 'host.providerDiscovery'),
+          ).toEqual([['host.providerDiscovery', {}]]);
+          expect(mockedRequest).not.toHaveBeenCalledWith('host.findBinary', expect.anything());
+          if (channel === PROVIDERS_CHANNELS.GET_AVAILABILITY) {
+            expect(response.data?.hasAnyProvider).toBe(available);
+            expect(mockedRequest).toHaveBeenCalledWith('host.toolAvailability', {
+              tools: [
+                'codex',
+                'cortex',
+                'opencode',
+                'pi',
+                'droid',
+                'grok',
+                'unsloth',
+                'codex-acp',
+                'npx',
+              ],
+            });
+          }
+        },
+      );
+
+      it('preserves discovery failures', async () => {
+        routeDaemon({
+          'host.checkAuggie': { available: false },
+          'host.toolAvailability': NO_TOOLS,
+          'host.findBinary': { available: true },
+          'host.providerAuthStatus': authOne('claude-code', true),
+          'host.providerDiscovery': () => {
+            throw new Error('discovery transport down');
+          },
+        });
         await expect(invoke()).resolves.toEqual({
           success: false,
           error: 'discovery transport down',
           ...(channel === PROVIDERS_CHANNELS.CHECK_SINGLE ? { providerId: 'claude-code' } : {}),
         });
-      }
-      expect(mockedRequest).not.toHaveBeenCalledWith('host.findBinary', expect.anything());
-    });
-  });
+        expect(mockedRequest).not.toHaveBeenCalledWith('host.findBinary', expect.anything());
+      });
+    },
+  );
 
   describe.each([PROVIDERS_CHANNELS.GET_AVAILABILITY, PROVIDERS_CHANNELS.CHECK_SINGLE])(
     'Claude runner guidance through %s',
@@ -1523,53 +1519,6 @@ describe('provider-status-bridge-seeder', () => {
         success: true,
         data: { paths: {}, secondaryPaths: {}, npxPackages: {} },
       });
-    });
-  });
-
-  describe('*:check-availability → host.findBinary', () => {
-    it("resolves each provider's binary and reports presence honestly", async () => {
-      routeDaemon({
-        'host.findBinary': (params: unknown) => ({
-          available: (params as { name: string }).name === 'codex',
-          path: '/usr/local/bin/codex',
-        }),
-      });
-
-      await expect(mockInvoke('codex:check-availability')).resolves.toEqual({
-        success: true,
-        available: true,
-      });
-      await expect(mockInvoke('claude-code:check-availability')).resolves.toEqual({
-        success: true,
-        available: false,
-      });
-      // codex keys off the real CLI, not the codex-acp adapter.
-      expect(mockedRequest).toHaveBeenCalledWith('host.findBinary', { name: 'codex' });
-      expect(mockedRequest).toHaveBeenCalledWith('host.providerDiscovery', {});
-      expect(mockedRequest).not.toHaveBeenCalledWith('host.findBinary', { name: 'claude' });
-    });
-
-    it('probes the cortex CLI via host.findBinary (no longer feature-code gated)', async () => {
-      routeDaemon({
-        'host.findBinary': (params: unknown) => ({
-          available: (params as { name: string }).name === 'cortex',
-          path: '/usr/local/bin/cortex',
-        }),
-      });
-      await expect(mockInvoke('cortex:check-availability')).resolves.toEqual({
-        success: true,
-        available: true,
-      });
-      expect(mockedRequest).toHaveBeenCalledWith('host.findBinary', { name: 'cortex' });
-    });
-
-    it('propagates daemon RPC failures (callers fold the rejection to false + warn)', async () => {
-      routeDaemon({
-        'host.findBinary': () => {
-          throw new Error('transport down');
-        },
-      });
-      await expect(mockInvoke('droid:check-availability')).rejects.toThrow('transport down');
     });
   });
 

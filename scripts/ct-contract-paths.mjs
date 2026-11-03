@@ -39,20 +39,36 @@ export const CT_CONTRACT_FILES = Object.freeze([
   'package.json',
   'pnpm-lock.yaml',
 ]);
+// Directory prefixes; `isCtContractPath` subtracts the Vitest suites under
+// `playwright/` (see isPlaywrightUnitTest).
 export const CT_CONTRACT_DIRECTORIES = Object.freeze(['src/lib/styles/', 'playwright/']);
-export const CT_CONTRACT_PATHS = Object.freeze([
-  ...CT_CONTRACT_FILES,
-  ...CT_CONTRACT_DIRECTORIES.map((directory) => `${directory}**`),
-]);
 
 const OUTPUT_KEY = 'ct_required';
 
+// Vitest suites colocated with the harness (`playwright/ct-port.test.ts`, …)
+// are not harness inputs: Playwright discovers only `.ct.spec.ts` files and no
+// CT run loads a `.test.*` module unless something imports it. cloudlands-fe#4060
+// added a comment to `playwright/root-harness-import-guard.test.ts` and paid a
+// 1.4-hour local component run plus about 1.5 hours of test-ct shards in the
+// merge queue. A suite the CT graph does reach (an import from
+// `playwright/index.ts`, a spec or a preview) still requires CT in CI through
+// `ctRequired`'s dependency set. That guarantee is CI-only: `verify:changed`
+// has no import graph, and a harness-imported suite would select no CT lane
+// locally (as for `src/**/*.test.ts`). The "this repository" test in
+// ct-contract-paths.test.ts fails if any tracked suite becomes reachable.
+// Matching is case-sensitive like Vitest's include glob, and `.spec.*` and
+// snapshot files stay contract paths.
+const PLAYWRIGHT_UNIT_TEST = /^playwright\/.*\.test\.[cm]?[jt]sx?$/;
+
+export function isPlaywrightUnitTest(file) {
+  return PLAYWRIGHT_UNIT_TEST.test(normalizeCtPath(file));
+}
+
 export function isCtContractPath(file) {
   const path = normalizeCtPath(file);
-  return (
-    CT_CONTRACT_FILES.includes(path) ||
-    CT_CONTRACT_DIRECTORIES.some((directory) => path.startsWith(directory))
-  );
+  if (CT_CONTRACT_FILES.includes(path)) return true;
+  if (isPlaywrightUnitTest(path)) return false;
+  return CT_CONTRACT_DIRECTORIES.some((directory) => path.startsWith(directory));
 }
 
 export function ctRequired(files, dependencies = new Set()) {
@@ -512,16 +528,21 @@ function readBlobs(oids, sources) {
 }
 
 // Every path a CT run on this tree can load, including unresolved candidates so
-// adding a file that a specifier would now resolve to still selects CT.
+// adding a file that a specifier would now resolve to still selects CT, and the
+// edges that reached them: `edges` maps each scanned module to every candidate
+// path it references, so callers can ask which specs load a given file.
 function ctClosure(tree, sources) {
   const dependencies = new Set();
+  const edges = new Map();
   const visited = new Set();
   const files = [...tree.keys()];
   let frontier = [];
-  const reach = (path) => {
+  const reach = (path, from) => {
     dependencies.add(path);
+    if (from !== undefined) edges.get(from).add(path);
     if (visited.has(path) || !tree.get(path) || !SCANNED_MODULE.test(path)) return;
     visited.add(path);
+    edges.set(path, new Set());
     frontier.push(path);
   };
   for (const path of files) if (isCtSpec(path)) reach(path);
@@ -538,37 +559,54 @@ function ctClosure(tree, sources) {
         sources.get(tree.get(file)),
         file,
       );
-      for (const literal of imports) for (const path of candidatePaths(file, literal)) reach(path);
+      for (const literal of imports) {
+        for (const path of candidatePaths(file, literal)) reach(path, file);
+      }
       for (const literal of cssImports) {
-        for (const path of candidatePaths(file, literal, { css: true })) reach(path);
+        for (const path of candidatePaths(file, literal, { css: true })) reach(path, file);
       }
       for (const patterns of globs) {
         if (file === CT_HARNESS_ENTRY && patterns.join() === CT_PREVIEW_REGISTRY_GLOB) continue;
         const matchers = patterns.map((pattern) => globMatcher(file, pattern));
-        for (const path of files) if (matchers.some((matches) => matches(path))) reach(path);
+        for (const path of files) if (matchers.some((matches) => matches(path))) reach(path, file);
       }
       for (const scene of scenes) {
         const suffixes = [`/${scene}.preview.ts`, `/${scene}.preview.svelte`];
         for (const path of files) {
           if (path.startsWith('src/') && suffixes.some((suffix) => path.endsWith(suffix))) {
-            reach(path);
+            reach(path, file);
           }
         }
       }
     }
   }
-  return dependencies;
+  return { dependencies, edges, specs: files.filter(isCtSpec) };
 }
 
-// Union of both trees: a dependency deleted, renamed or newly imported on
-// either side still counts. Callers need not have either revision checked out.
-export function ctSpecDependencies(base, head) {
-  const sources = new Map();
+// The CT import graph of both trees: `dependencies` and `edges` are unions, so a
+// dependency deleted, renamed or newly imported on either side still counts;
+// `headSpecs` lists the specs that exist in `head` (the ones that can run).
+// Callers need not have either revision checked out. `sources` caches blob
+// text by id across calls.
+export function ctImportGraph(base, head, sources = new Map()) {
   const dependencies = new Set();
+  const edges = new Map();
+  let headSpecs = [];
   for (const ref of new Set([base, head])) {
-    for (const path of ctClosure(readTree(ref), sources)) dependencies.add(path);
+    const closure = ctClosure(readTree(ref), sources);
+    for (const path of closure.dependencies) dependencies.add(path);
+    for (const [from, targets] of closure.edges) {
+      const union = edges.get(from) ?? new Set();
+      for (const target of targets) union.add(target);
+      edges.set(from, union);
+    }
+    if (ref === head) headSpecs = closure.specs;
   }
-  return dependencies;
+  return { dependencies, edges, headSpecs };
+}
+
+export function ctSpecDependencies(base, head) {
+  return ctImportGraph(base, head).dependencies;
 }
 
 // `-z` keeps paths verbatim (no `core.quotePath` escaping of non-ASCII names) and

@@ -54,7 +54,7 @@
   // The marker is leased per instance so overlapping modals keep it until the
   // last one detaches.
   $effect(() => {
-    if (!contentRef || staticPosition) return;
+    if (!contentRef) return;
     const releaseBody = acquireMarkerAttribute(
       contentRef.ownerDocument.body,
       'data-new-space-modal-open',
@@ -83,7 +83,10 @@
   escapeKeydownBehavior="ignore"
   onClose={close}
 >
-  <div class="min-w-0">
+  {#if isExpanded}
+    <div class="workspace-sidebar-surface" aria-hidden="true"></div>
+  {/if}
+  <div class="workspace-form min-w-0">
     {#if initializer}
       {@render initializer()}
     {:else}
@@ -93,12 +96,99 @@
         autoFocus={false}
         defaultToSidebarRepository
         oncreate={close}
+        onNavigateAway={close}
       />
     {/if}
   </div>
 </ContentDialog>
 
 <style>
+  :global([data-new-space-modal] > .dialog-layout > [data-slot='dialog-header']) {
+    padding-top: 1.5rem;
+  }
+
+  :global(body[data-new-space-modal-open] [data-slot='dialog-content']) {
+    max-width: min(60rem, calc(100vw - 2rem));
+  }
+
+  :global(
+    [data-new-space-modal] > .dialog-layout > [data-slot='dialog-header'] [data-slot='dialog-title']
+  ) {
+    font-size: var(--text-body-size);
+    line-height: 1.5rem;
+    font-weight: var(--text-body-strong-weight);
+  }
+
+  :global([data-new-space-modal] > .dialog-layout > [data-slot='dialog-body']) {
+    padding-top: 0.25rem;
+    padding-bottom: 1rem;
+  }
+
+  :global([data-new-space-modal] > .dialog-close-button) {
+    top: calc(anchor(--dialog-title top, 1.5rem) + 1.5rem / 2);
+  }
+
+  .workspace-form :global(.prompt-pane) {
+    padding-block: 0 0.5rem;
+  }
+
+  .workspace-form :global(.settings-pane) {
+    padding: 0.125rem 0 0.5rem 2.5rem;
+  }
+
+  .workspace-form :global(.settings-footer) {
+    margin-inline: -1rem 0;
+  }
+
+  .workspace-form :global(.initializer-layout.expanded) {
+    grid-template-areas: 'prompt settings';
+    grid-template-columns: minmax(0, 1fr) 18rem;
+    min-height: 0;
+  }
+
+  .workspace-sidebar-surface {
+    display: none;
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: 0;
+    width: calc(18rem + 1.5rem);
+    pointer-events: none;
+    z-index: -1;
+    background: var(--color-sidebar);
+    border-start-end-radius: var(--radius-medium);
+    border-end-end-radius: var(--radius-medium);
+  }
+
+  :global(.dark) .workspace-sidebar-surface {
+    background: var(--color-background);
+  }
+
+  @container (min-width: 51rem) {
+    .workspace-sidebar-surface {
+      display: block;
+    }
+  }
+
+  @container (width < 48rem) {
+    .workspace-form :global(.prompt-pane) {
+      padding-block: 0;
+    }
+
+    .workspace-form :global(.initializer-layout.expanded) {
+      grid-template-areas: 'prompt' 'settings';
+      grid-template-columns: minmax(0, 1fr);
+      row-gap: 1rem;
+    }
+
+    .workspace-form :global(.settings-pane) {
+      margin-inline: -1.5rem;
+      margin-bottom: -1rem;
+      padding: 1rem 1.5rem 1.5rem 2.5rem;
+      border-end-start-radius: var(--radius-medium);
+      border-end-end-radius: var(--radius-medium);
+    }
+  }
+
   :global(body[data-new-space-modal-open] [data-slot='select-content']),
   :global(body[data-new-space-modal-open] [data-slot='menu-content']) {
     z-index: var(--layer-tooltip);
@@ -110,5 +200,18 @@
 
   :global(body[data-new-space-modal-open] [data-slot='dialog-content']) {
     z-index: var(--layer-tooltip);
+  }
+
+  :global(
+    body[data-new-space-modal-open] [data-slot='dialog-content']:not([data-new-space-modal])
+  ) {
+    z-index: calc(var(--layer-tooltip) + 2);
+  }
+
+  :global(
+    body[data-new-space-modal-open]
+      [data-slot='dialog-overlay']:has(+ [data-slot='dialog-content']:not([data-new-space-modal]))
+  ) {
+    z-index: calc(var(--layer-tooltip) + 1);
   }
 </style>

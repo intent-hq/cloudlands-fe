@@ -146,6 +146,7 @@ import PlusIcon from 'phosphor-svelte/lib/PlusIcon';
 import PlusMinusIcon from 'phosphor-svelte/lib/PlusMinusIcon';
 import ProhibitIcon from 'phosphor-svelte/lib/ProhibitIcon';
 import PushPinIcon from 'phosphor-svelte/lib/PushPinIcon';
+import PushPinSlashIcon from 'phosphor-svelte/lib/PushPinSlashIcon';
 import PuzzlePieceIcon from 'phosphor-svelte/lib/PuzzlePieceIcon';
 import QrCodeIcon from 'phosphor-svelte/lib/QrCodeIcon';
 import QuestionIcon from 'phosphor-svelte/lib/QuestionIcon';
@@ -153,6 +154,7 @@ import QuotesIcon from 'phosphor-svelte/lib/QuotesIcon';
 import RobotIcon from './RobotIcon.svelte';
 import RocketIcon from 'phosphor-svelte/lib/RocketIcon';
 import ShieldIcon from 'phosphor-svelte/lib/ShieldIcon';
+import SignOutIcon from 'phosphor-svelte/lib/SignOutIcon';
 import SlidersHorizontalIcon from 'phosphor-svelte/lib/SlidersHorizontalIcon';
 import SpinnerGapIcon from 'phosphor-svelte/lib/SpinnerGapIcon';
 import SquareIcon from 'phosphor-svelte/lib/SquareIcon';
@@ -366,6 +368,7 @@ const iconComponents: Record<string, Component<any>> = {
   'quote-left': QuotesIcon,
   refresh: ArrowsClockwiseIcon,
   reply: ArrowBendUpLeftIcon,
+  'right-from-bracket': SignOutIcon,
   'right-left': ArrowsLeftRightIcon,
   robot: RobotIcon,
   rocket: RocketIcon,
@@ -392,6 +395,7 @@ const iconComponents: Record<string, Component<any>> = {
   'thumbs-down': ThumbsDownIcon,
   'thumbs-up': ThumbsUpIcon,
   thumbtack: PushPinIcon,
+  'thumbtack-slash': PushPinSlashIcon,
   ticket: TicketIcon,
   trash: TrashIcon,
   'triangle-exclamation': WarningIcon,
@@ -590,6 +594,7 @@ export const faQuestionCircle = faCircleQuestion;
 export const faQuoteLeft = icon('quote-left');
 export const faRefresh = icon('refresh');
 export const faReply = icon('reply');
+export const faRightFromBracket = icon('right-from-bracket');
 export const faRightLeft = icon('right-left');
 export const faRobot = icon('robot');
 export const faRocket = icon('rocket');
@@ -619,6 +624,7 @@ export const faTerminal = icon('terminal');
 export const faThumbsDown = icon('thumbs-down');
 export const faThumbsUp = icon('thumbs-up');
 export const faThumbtack = icon('thumbtack');
+export const faThumbtackSlash = icon('thumbtack-slash');
 export const faTicket = icon('ticket');
 export const faTimes = icon('xmark');
 export const faTimesCircle = icon('circle-xmark');

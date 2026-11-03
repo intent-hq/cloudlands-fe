@@ -16,6 +16,10 @@ export const selectGitHubAuthIsAuthenticated = store.createSelector(
   (state) => state.githubAuth.isAuthenticated,
 );
 
+export const selectGitHubAuthStatusSettled = store.createSelector(
+  (state) => state.githubAuth.statusSettled === true,
+);
+
 export const selectGitHubAuthRequiresDaemonAuth = store.createSelector(
   (state) => state.githubAuth.requiresDaemonAuth,
 );

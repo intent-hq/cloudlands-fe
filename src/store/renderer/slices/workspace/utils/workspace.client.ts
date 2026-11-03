@@ -25,6 +25,7 @@ import { Logger } from '$shared/logger';
 import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 import { invoke as invokeIpc } from '$shared/generated/ipc-client';
 import { appClient } from '$lib/client';
+import type { WorkspaceCreateLaunchFailure } from '$lib/client/app-client';
 import { m } from '$shared/paraglide/messages.js';
 
 import { store } from '../../../store';
@@ -366,6 +367,8 @@ export class WorkspaceClient {
          * the daemon sent none — consumers must exact-match daemon codes only.
          */
         errorCode?: string;
+        /** A `launch-failed` create: the workspace exists, its remote agent didn't start. */
+        launchFailure?: WorkspaceCreateLaunchFailure;
       }
   > {
     // Daemon-backed mutation (`workspace.create`, PROTOCOL §5.1) through the
@@ -405,7 +408,12 @@ export class WorkspaceClient {
     }
     const createError = result.error || m.workspace_client_createFailed_error();
     return result.errorCode
-      ? { ok: false, error: createError, errorCode: result.errorCode }
+      ? {
+          ok: false,
+          error: createError,
+          errorCode: result.errorCode,
+          ...(result.launchFailure ? { launchFailure: result.launchFailure } : {}),
+        }
       : { ok: false, error: createError };
   }
 

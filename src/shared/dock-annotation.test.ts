@@ -6,13 +6,12 @@ const area = { x: 0, y: 25, width: 1440, height: 805 };
 const bar = { width: 173, height: 38 };
 
 describe('dockToolbarPosition', () => {
-  it('sits 8 px below a notch or top pill, centred on it', () => {
+  it('keeps notch and top-pill feedback away from the top hover area', () => {
     for (const shape of ['notch', 'top-pill'] as const) {
       const dock: DockToolbarAnchor = { shape, rect: { x: 520, y: 0, width: 400, height: 60 } };
-      expect(dockToolbarPosition(dock, bar, area)).toEqual({
-        x: Math.round(520 + (400 - 173) / 2),
-        y: 68,
-      });
+      const position = dockToolbarPosition(dock, bar, area);
+      expect(position.y).toBeGreaterThan(area.y + area.height / 2);
+      expect(position.y + bar.height).toBeLessThanOrEqual(area.y + area.height);
     }
   });
 
@@ -24,6 +23,24 @@ describe('dockToolbarPosition', () => {
     expect(
       dockToolbarPosition({ shape: 'edge', side: 'right', rect: { ...rect, x: 1384 } }, bar, area),
     ).toEqual({ x: 1384 - 8 - 173, y: 381 });
+  });
+
+  it('keeps every control reachable in work areas with nonzero display origins', () => {
+    for (const offset of [
+      { x: -1440, y: 125 },
+      { x: 1920, y: -875 },
+    ]) {
+      const workArea = { ...area, ...offset };
+      const dock: DockToolbarAnchor = {
+        shape: 'notch',
+        rect: { x: offset.x + 520, y: offset.y - 25, width: 400, height: 60 },
+      };
+      const position = dockToolbarPosition(dock, bar, workArea);
+      expect(position.x).toBeGreaterThanOrEqual(workArea.x);
+      expect(position.x + bar.width).toBeLessThanOrEqual(workArea.x + workArea.width);
+      expect(position.y).toBeGreaterThan(workArea.y + workArea.height / 2);
+      expect(position.y + bar.height).toBeLessThanOrEqual(workArea.y + workArea.height);
+    }
   });
 
   it('sits below a floating dock when it fits, else above it', () => {

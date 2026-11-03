@@ -1,4 +1,5 @@
 import type { WorkspaceId } from '$shared/types/branded-ids';
+import type { MessageBlockImageReference } from '$shared/types/wire-image-block';
 import type { MergeQueueEntry } from '$lib/utils/merge-queue';
 import type { SubmissionCorrelation } from '$shared/types/agent-message';
 import type { AgentPlacement } from '$shared/types/agent-node';
@@ -301,9 +302,11 @@ export interface ResolveInterruptedResult {
 /**
  * One lightweight user-message index item (`agent.listUserMessages`, §5.5).
  * `preview` is the daemon-extracted plain text of the message,
- * server-truncated (default 300 chars); `metadata` is the persisted
- * `messageMetadata` passed through verbatim when present (omitted when
- * absent, never null) so callers can keep filtering automated rows.
+ * server-truncated (default 300 chars); `metadata` carries the persisted
+ * `messageMetadata` classification fields (`type`, `source`, `fromAgentId`,
+ * `fromPrincipalId`, `queueInfo` timing) when present (omitted when absent,
+ * never null) so callers can keep filtering automated rows. Older daemons
+ * sent the whole metadata object; the same fields read the same way.
  */
 export interface UserMessageIndexItem {
   id: string;
@@ -320,8 +323,27 @@ export interface UserMessageIndexItem {
  * `unsupported: false`.
  */
 export type UserMessageIndexResult =
-  | { ok: true; items: UserMessageIndexItem[]; total: number }
+  | {
+      ok: true;
+      items: UserMessageIndexItem[];
+      total: number;
+      /**
+       * Paged reads only (`limit` / `nextToken` supplied): the opaque cursor
+       * for the next older page, `null` once none remain. Absent on unpaged
+       * reads and from daemons that predate paging (which ignore `limit`
+       * and return the whole index), so absent means "complete".
+       */
+      nextToken?: string | null;
+    }
   | { ok: false; unsupported: boolean; error: string };
+
+/** Optional newest-first paging for `agents.listUserMessages` (§5.5). */
+export interface UserMessageIndexPageOptions {
+  /** Newest rows per page (daemon-clamped into [1, 500]). */
+  limit?: number;
+  /** Cursor from a previous page's `nextToken`, passed back verbatim. */
+  nextToken?: string;
+}
 
 /**
  * Post-refresh linkage state returned by `pr.refresh` (PROTOCOL §5.7
@@ -394,6 +416,19 @@ export interface WorkspaceCreateResult extends MutationResult {
    * the bridge-mapped values.
    */
   errorCode?: string;
+  /** Set with `errorCode: "launch-failed"`: the workspace was created anyway. */
+  launchFailure?: WorkspaceCreateLaunchFailure;
+}
+
+/**
+ * A `workspace.create` whose remote initial agent failed to start after the
+ * workspace committed (PROTOCOL nodes.md "Placement subset", `launch-failed`):
+ * `data.workspaceId`, `data.launch.agentId` and `data.cause.message`.
+ */
+export interface WorkspaceCreateLaunchFailure {
+  workspaceId: string;
+  agentId?: string;
+  cause?: string;
 }
 
 /**
@@ -599,6 +634,23 @@ export interface ImageBlock {
 }
 
 /**
+ * One capped `agent.getMessageBlock` read (PROTOCOL §5.5 "Capped and paged
+ * block reads", `messageBlockPages: 1`). `truncated: false` means `block` is
+ * the complete stored block. Otherwise `block` is cut: a paged body
+ * (`field`) is a string slice of its body text (`encoding`), an over-cap
+ * image has no `data` (`dataTruncated` + `dataBytes`), and an unfittable
+ * block keeps only `id` and `type`. `totalBytes` is the full body text size.
+ */
+export interface MessageBlockPage {
+  block: ContentBlock;
+  truncated: boolean;
+  field: string | null;
+  encoding: 'text' | 'json' | null;
+  totalBytes: number | null;
+  nextOffset: number | null;
+}
+
+/**
  * Attachment-reference file block attached to a message (PROTOCOL §5.5:
  * `{ type: "file", attachmentId, fileName, mimeType?, size? }`). Carries the
  * attachment-registry UUID plus chip-rendering metadata — never bytes or
@@ -757,10 +809,25 @@ export interface AgentsClient {
     workspaceId?: string,
   ): Promise<ContentBlock>;
   /**
-   * The full user-message index of one agent (`agent.listUserMessages`,
-   * §5.5): every **user-role** message as a lightweight
-   * `{ id, preview, createdAt, metadata? }` item, oldest→newest, deliberately
-   * unpaged (the navigator filter needs the whole set client-side).
+   * The capped `agent.getMessageBlock` read with its page fields (PROTOCOL
+   * §5.5 "Capped and paged block reads"). Call only when the daemon
+   * advertises `server.capabilities.messageBlockPages === 1`; the first page
+   * (offset 0, default 480,000-byte cap) is all the app reads. Errors
+   * propagate as rejections.
+   */
+  getMessageBlockPage(
+    agentId: string,
+    messageId: string,
+    blockId: string,
+    workspaceId?: string,
+  ): Promise<MessageBlockPage>;
+  /**
+   * The user-message index of one agent (`agent.listUserMessages`, §5.5):
+   * **user-role** messages as lightweight `{ id, preview, createdAt,
+   * metadata? }` items, oldest→newest. Without `page` the whole index is
+   * returned (the navigator filter needs the whole set client-side); with
+   * `page.limit` / `page.nextToken` only the newest rows older than the
+   * cursor are read and the result carries `nextToken`.
    * `previewChars` bounds the preview length (daemon default 300,
    * server-clamped into [1, 2000]). Never rejects: an old daemon lacking the
    * method surfaces as `{ ok: false, unsupported: true }` and any other
@@ -771,6 +838,7 @@ export interface AgentsClient {
     agentId: string,
     previewChars?: number,
     workspaceId?: string,
+    page?: UserMessageIndexPageOptions,
   ): Promise<UserMessageIndexResult>;
   /**
    * Create an agent session (`agent.create`, §5.5). The daemon returns the
@@ -799,7 +867,8 @@ export interface AgentsClient {
     messageId: string;
     content: string;
     model?: string;
-    imageBlocks?: ImageBlock[];
+    /** Block references need `messageBlockPages: 1` (see MessageBlockImageReference). */
+    imageBlocks?: Array<ImageBlock | MessageBlockImageReference>;
     fileBlocks?: FileBlock[];
   }): Promise<MutationResult>;
   /**
@@ -1000,6 +1069,17 @@ export interface AgentsClient {
     agentId: string;
     workspaceId: string;
     notificationsMuted: boolean;
+  }): Promise<MutationResult>;
+  /**
+   * Pin or unpin an agent in the sidebar (`agent.update { changes: { pinned } }`,
+   * §5.5). The daemon persists the flag without advancing `updatedAt`, serves
+   * it on `AgentLite.pinned`, and emits `agent:updated`. Transport / daemon
+   * errors fold into `{ success: false, error }`.
+   */
+  setPinned(params: {
+    agentId: string;
+    workspaceId: string;
+    pinned: boolean;
   }): Promise<MutationResult>;
   /** Persist foreground/background mode through the partial agent.update writer. */
   setBackground(params: {

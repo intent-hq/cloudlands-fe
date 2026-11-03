@@ -2285,11 +2285,14 @@ class EmbeddedBrowserCdpService {
    * returns to normal throttling, so idle background tabs cost nothing.
    *
    * Two things slow a hidden tab, and the hold lifts both:
-   * - The offscreen host parks hidden guests at opacity 0, and Chromium
-   *   treats such a guest as never drawn and slows it (measured: 1-57
-   *   frames per second, uneven). The host window is told
-   *   (`AGENT_DRAWING { tabId, active }`) to draw the guest's 1x1 box at a
-   *   near-zero, still invisible opacity for the duration.
+   * - The offscreen host parks hidden guests under an opacity-0 layer, and
+   *   Chromium slows such a guest hard (measured: mostly 1 frame per
+   *   second, uneven). The host window is told
+   *   (`AGENT_DRAWING { tabId, active }`) to lift that layer and draw the
+   *   guest's 1x1 box at a near-zero, still invisible opacity for the
+   *   duration. While the layer is lifted, every other guest it hosts runs
+   *   at about half rate (~30 fps measured) instead of ~1, so a longer
+   *   idle window or more held actions costs battery for all of them.
    * - A minimized or covered app window stops drawing altogether. The
    *   capture hold ({@link holdCaptureDrawing}) keeps the guest and its
    *   window drawing, with the same presence handshake.

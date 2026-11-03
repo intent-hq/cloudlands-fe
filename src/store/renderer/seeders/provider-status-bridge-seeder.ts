@@ -1,7 +1,6 @@
 /**
  * Provider status bridge — routes `providers:get-availability`,
- * `providers:check-single`, `providers:get-paths`, the per-provider
- * `*:check-availability` probes, and the `auggie:install` /
+ * `providers:check-single`, `providers:get-paths`, and the `auggie:install` /
  * `auggie:authenticate` guidance flows to real daemon probes
  * (`host.checkAuggie` / `host.toolAvailability` / `host.findBinary` /
  * `host.providerAuthStatus`, PROTOCOL §5.14) instead of
@@ -16,9 +15,9 @@
  * AuggieSetupGate, ProviderSelector, and AgentGrid render the truth and show
  * their static install/login guidance.
  *
- * Mirrors the main-process semantics in
- * `features/providers/main/provider-availability.service.ts`, which the
- * renderer cannot reach in this mock-router build:
+ * These are the only implementations of the aggregate reads — the mock
+ * router intercepts every renderer `invoke()` in every build, so main keeps
+ * just the `providers:check-single` recheck (forwarded here for `mock`):
  *  - auggie:      availability via `host.checkAuggie` (settings precedence +
  *                 PATH scan on the daemon).
  *  - claude-code: daemon discovery's installed and gatedOff verdict.
@@ -52,15 +51,7 @@
  * first render.
  */
 import { registerMockIpcHandler } from '$shared/ipc-mock-router';
-import {
-  AUGGIE_CHANNELS,
-  CLAUDE_CODE_CHANNELS,
-  CODEX_CHANNELS,
-  CORTEX_CHANNELS,
-  DROID_CHANNELS,
-  OPENCODE_CHANNELS,
-  PROVIDERS_CHANNELS,
-} from '$shared/ipc/channels';
+import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { store as appStore } from '$store/renderer/store';
 import {
@@ -493,7 +484,7 @@ interface ProviderDiscoveryEntry {
  * and `npxPackages[id]` the pinned package spec of npx-only providers.
  * `npx` rides along from the same round-trip so the onboarding bulk check can
  * fetch it without the aggregated auth sweep.
- * Mirrors main's getProviderPaths; degrades to empty maps on RPC failure.
+ * Degrades to empty maps on RPC failure.
  */
 registerMockIpcHandler(PROVIDERS_CHANNELS.GET_PATHS, async () => {
   try {
@@ -550,35 +541,6 @@ registerMockIpcHandler(PROVIDERS_CHANNELS.CHECK_SINGLE, async (arg) => {
     };
   }
 });
-
-/**
- * Per-provider `*:check-availability` (the `check<Provider>Availability`
- * model clients) — availability probes against the daemon host, mirroring
- * the main handlers' discovery or binary resolution. Callers read `available`
- * and fold a rejection to `false` with a warning log, so daemon RPC failures propagate
- * instead of being masked as "not installed".
- */
-const CHECK_AVAILABILITY_CHANNELS: Record<string, string> = {
-  'claude-code': CLAUDE_CODE_CHANNELS.CHECK_AVAILABILITY,
-  codex: CODEX_CHANNELS.CHECK_AVAILABILITY,
-  cortex: CORTEX_CHANNELS.CHECK_AVAILABILITY,
-  opencode: OPENCODE_CHANNELS.CHECK_AVAILABILITY,
-  droid: DROID_CHANNELS.CHECK_AVAILABILITY,
-};
-
-for (const [providerId, channel] of Object.entries(CHECK_AVAILABILITY_CHANNELS)) {
-  registerMockIpcHandler(channel, async () => {
-    const found = await readProviderStatus(async () => {
-      if (selectHostRole.select(appStore.state) === 'member' || providerId === 'claude-code') {
-        return providerStatusFromDiscovery(await fetchProviderDiscovery(), providerId);
-      }
-      return backendRequest<HostCheckResult>('host.findBinary', {
-        name: PROVIDER_BINARIES[providerId],
-      });
-    });
-    return { success: true, available: found?.available === true };
-  });
-}
 
 /** Manual install step surfaced by the INSTALL / AUTHENTICATE instructions. */
 const AUGGIE_INSTALL_COMMAND = 'npm install -g @augmentcode/auggie';

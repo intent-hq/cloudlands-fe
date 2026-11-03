@@ -76,7 +76,6 @@ import { __resetOwnClientIdForTesting } from '$lib/client/live/live-clients-clie
 import WorkspaceProgressCard from '../WorkspaceProgressCard.svelte';
 
 const own = 'exact-desktop';
-const principalRetryWait = { timeout: 3000 };
 const workspace = {
   id: WorkspaceId('ws-1'),
   title: 'Recovery fixture',
@@ -451,7 +450,7 @@ describe('actual browser lifecycle to primary menu', () => {
     failBrowserHello = false;
     store.dispatch(workspaceMounted('ws-1'));
     const remounted = render(WorkspaceProgressCard, { workspaceId: workspace.id });
-    await waitFor(() => expect(store.state.principal.status).toBe('ready'), principalRetryWait);
+    await waitFor(() => expect(store.state.principal.status).toBe('ready'));
     await capabilities();
     await openPrimaryMenu(remounted.container);
     await waitFor(() =>

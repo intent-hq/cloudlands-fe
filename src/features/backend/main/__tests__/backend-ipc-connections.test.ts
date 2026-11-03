@@ -132,6 +132,7 @@ vi.mock('../json-rpc-client', () => {
 
 vi.mock('../client-identity', () => ({
   getOrCreateClientId: vi.fn(async () => 'cli-test'),
+  getLocalMachineName: () => undefined,
   persistClientId: vi.fn(async () => {}),
 }));
 
@@ -197,7 +198,7 @@ const store = vi.hoisted(() => ({
   setHosts: vi.fn(),
   getDetectHosts: vi.fn(),
 }));
-vi.mock('../connections-store', () => ({
+vi.mock('../desktop-connections-store', () => ({
   LOCAL_CONNECTION_ID: 'local',
   list: store.list,
   getActiveId: store.getActiveId,

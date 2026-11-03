@@ -22,7 +22,7 @@
   }: {
     fixture?: 'live-empty' | 'live-marked' | 'still';
     pick?: DockAnnotationOverlayState['pick'];
-    /** Overrides the fixture's dock bounds (the tool bar sits next to them). */
+    /** Overrides the fixture's dock bounds used to position the toolbar. */
     dock?: DockAnnotationOverlayState['dock'];
     /** The composer's Screenshot/Record state as the dock sends it. */
     media?: DockAnnotationOverlayState['media'];
@@ -92,8 +92,9 @@
         toolOverride = request.tool;
         mouse = false;
       }
-      // Like main: Done commits the marks and then switches to mouse mode.
+      // Like main: Attach commits the marks and then switches to mouse mode.
       if (request.action === 'mouse' || request.action === 'commit') mouse = true;
+      if (request.action === 'commit' && fixture !== 'still') cleared = true;
       if (request.action === 'end') ended = true;
       if (request.action === 'clear') cleared = true;
       if (request.action === 'record') recordingSince = recordingSince ? null : Date.now() - 65_000;
@@ -116,6 +117,7 @@
   data-gestures={gestures}
   data-toolbar={toolbarActions}
   data-toolbar-rect={toolbarRect}
+  data-work-area={JSON.stringify(overlay?.workArea ?? null)}
 >
   <!-- A stand-in for the dock window under the overlay, so its placement is visible. -->
   {#if overlay?.dock}

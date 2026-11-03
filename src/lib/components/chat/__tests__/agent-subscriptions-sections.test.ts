@@ -274,9 +274,7 @@ async function renderWithSnapshot(wsId: string, wire: unknown, compact = false) 
   await flush();
   const value = wire as { subscriptions?: unknown[]; delegationGroups?: unknown[] };
   if ((value.subscriptions?.length ?? 0) > 0 || (value.delegationGroups?.length ?? 0) > 0) {
-    await waitFor(() => expect(screen.getByTestId('one-shot-watches')).toBeTruthy(), {
-      timeout: 5000,
-    });
+    await waitFor(() => expect(screen.getByTestId('one-shot-watches')).toBeTruthy());
   }
   return utils;
 }

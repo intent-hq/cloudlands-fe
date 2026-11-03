@@ -829,3 +829,29 @@ describe('WorkspaceHoverCard', () => {
     expect(container.textContent).not.toContain('other');
   });
 });
+
+describe('WorkspaceHoverCard plain-folder workspaces', () => {
+  const pr = {
+    id: 'pr-42',
+    number: 42,
+    url: 'https://github.com/augment/intent/pull/42',
+    title: 'Refine hover card',
+    status: PullRequestStatus.Open,
+    createdAt: baseWorkspace.createdAt,
+    updatedAt: baseWorkspace.updatedAt,
+  };
+
+  it('shows no pull requests for a plain-folder workspace', async () => {
+    const { container } = await renderHoverCard({
+      plainFolder: true,
+      branch: '',
+      activePullRequest: pr,
+    });
+    expect(container.querySelector('[data-workspace-hover-card-pr-column]')).toBeNull();
+  });
+
+  it('keeps pull requests for a git workspace', async () => {
+    const { container } = await renderHoverCard({ activePullRequest: pr });
+    expect(container.querySelector('[data-workspace-hover-card-pr-column]')).toBeTruthy();
+  });
+});

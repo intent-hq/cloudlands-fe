@@ -63,6 +63,13 @@ const TEST_FILE = /\.(?:test|spec)(?:\.[cm]?[jt]sx?)?$/;
 // Generated, gitignored output: importing it never makes a source change select the suite.
 const GENERATED_MODULE = /(?:^|\/)paraglide\//;
 const REPO_LITERAL = /^(?:src|scripts)\//;
+// Shared helpers whose callers scan the repository tree. A suite built on one
+// depends on every file it scans, which `vitest related` never sees, even when
+// the suite also imports `src/` modules and so passes the read-without-import
+// rule (cloudlands-fe#4017: the IPC channel reconciliation suite imports the
+// seeders, so `verify:changed` skipped it for a new renderer invoke call site).
+// Paths are repo-relative and extensionless.
+export const REPOSITORY_SCANNER_MODULES = new Set(['src/test/ipc-channel-source-scan']);
 
 const compare = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
@@ -196,6 +203,28 @@ function isSourceImport(specifierNode, filePath) {
   if (GENERATED_MODULE.test(resolved)) return false;
   const moduleName = resolved.replace(/\.[cm]?[jt]sx?$|\.svelte$/, '');
   return !TEST_FILE.test(moduleName) && !TEST_MODULE.test(moduleName);
+}
+
+// The repository scanner module a suite imports at runtime (static, re-export,
+// or dynamic import), or undefined. Type-only imports never run the scan.
+export function importsRepositoryScanner(content, filePath = 'suite.test.ts') {
+  const source = stripBom(content);
+  if (![...REPOSITORY_SCANNER_MODULES].some((name) => source.includes(path.posix.basename(name)))) {
+    return undefined;
+  }
+  let found;
+  const visit = (node) => {
+    if (found) return;
+    const specifierNode = moduleSpecifier(node);
+    if (specifierNode && ts.isStringLiteralLike(specifierNode)) {
+      const resolved = resolveSpecifier(specifierNode.text.split('?')[0], filePath);
+      const moduleName = resolved.replace(/\.[cm]?[jt]sx?$/, '');
+      if (REPOSITORY_SCANNER_MODULES.has(moduleName)) found = moduleName;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(parseSuite(source, filePath));
+  return found;
 }
 
 // A bare `src/...` / `scripts/...` path, which node resolves against the cwd
@@ -518,7 +547,16 @@ export function inspectDeclaredSuites(files) {
       uiInvariant.push(file.path);
       continue;
     }
-    if (requiresTriggerDeclaration(file.content, file.path)) {
+    const scanner = importsRepositoryScanner(file.content, file.path);
+    if (scanner) {
+      violations.push(
+        violation(
+          file.path,
+          `imports the repository scanner ${scanner} but declares no ${TRIGGER_MARKER}, so \`verify:changed\` never selects it when a scanned file changes`,
+          DECLARE_HINT,
+        ),
+      );
+    } else if (requiresTriggerDeclaration(file.content, file.path)) {
       violations.push(
         violation(
           file.path,

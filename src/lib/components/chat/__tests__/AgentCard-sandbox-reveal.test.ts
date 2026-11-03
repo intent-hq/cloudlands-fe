@@ -248,18 +248,23 @@ describe('AgentCard legacy sandbox retirement and hub management', () => {
       ).toBe(false);
     },
   );
-  it('shows unsupported node capability without restoring a legacy reveal fallback', async () => {
+  it('hides unsupported hub actions without restoring a legacy reveal fallback', async () => {
     seedLocality('local');
     appStore.dispatch(
       bulkUpsertSessions([
-        makeSession({ effectiveIsolation: 'isolated', metadata: { sandboxPath: SANDBOX_PATH } }),
+        makeSession({
+          nodeId: 'remote-node',
+          effectiveIsolation: 'isolated',
+          metadata: { sandboxPath: SANDBOX_PATH },
+        }),
       ]),
     );
     render(AgentCard, { props: { agentId } });
     await openContextMenu();
     expect(screen.queryByText(/^Reveal in /)).toBeNull();
-    const item = await screen.findByRole('menuitem', { name: m.agent_placement_unavailable() });
-    expect(item.getAttribute('aria-disabled')).toBe('true');
+    expect(screen.queryByRole('menuitem', { name: m.agent_hub_merge() })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: m.agent_hub_discard() })).toBeNull();
+    expect(screen.queryByText(m.agent_placement_unavailable())).toBeNull();
     expect(mockedInvoke.mock.calls.some(([channel]) => channel === 'shell:showItemInFolder')).toBe(
       false,
     );

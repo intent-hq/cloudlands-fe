@@ -6,6 +6,7 @@
     type EditorIconComponent,
   } from '$lib/components/shared/icons/editor-icon';
   import { Button } from '$lib/components/ui/button';
+  import { sidebarHeaderActionClass } from '$lib/components/workspace/sidebar/sidebar-header-action';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import * as Menu from '$lib/components/ui/menu';
   import { notify } from '$lib/components/patterns/notify';
@@ -431,11 +432,14 @@
             type="button"
             onclick={actions.length > 1 ? undefined : handlePrimaryClick}
             {...actions.length > 1 ? props : {}}
-            variant={iconOnly ? 'plain' : 'ghost'}
-            size={iconOnly ? 'icon-sm' : undefined}
+            variant={iconOnly && variant !== 'sidebar' ? 'plain' : 'ghost'}
+            size={iconOnly ? (variant === 'sidebar' ? 'icon-compact' : 'icon-sm') : undefined}
+            active={iconOnly && variant === 'sidebar' && dropdownOpen}
             wrapContent={!iconOnly}
             class={iconOnly
-              ? 'cursor-pointer text-muted-foreground hover:text-foreground focus-visible:text-foreground'
+              ? variant === 'sidebar'
+                ? sidebarHeaderActionClass
+                : 'cursor-pointer text-muted-foreground hover:text-foreground focus-visible:text-foreground'
               : 'cursor-pointer'}
             title={primaryTitle}
           >

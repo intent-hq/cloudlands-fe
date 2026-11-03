@@ -80,7 +80,6 @@ export const IPC_CHANNELS = {
     CLEANUP: 'agent:cleanup',
     GET_USER_RULES: 'agent:get-user-rules',
     GET_SPECIALIZATION_RULES: 'agent:get-specialization-rules',
-    GET_ACTIVE_STREAMS: 'agent:get-active-streams',
     TRACK_STARTED: 'agent:track-started',
     TRACK_COMPLETED: 'agent:track-completed',
     TRACK_ERROR: 'agent:track-error',
@@ -201,25 +200,21 @@ export const IPC_CHANNELS = {
   },
   // OpenCode Integration
   OPENCODE: {
-    CHECK_AVAILABILITY: 'opencode:check-availability',
     GET_MODELS: 'opencode:get-models',
   },
 
   // Claude Code Integration
   CLAUDE_CODE: {
-    CHECK_AVAILABILITY: 'claude-code:check-availability',
     GET_MODELS: 'claude-code:get-models',
   },
 
   // Codex Integration
   CODEX: {
-    CHECK_AVAILABILITY: 'codex:check-availability',
     GET_MODELS: 'codex:get-models',
   },
 
   // Cortex Integration
   CORTEX: {
-    CHECK_AVAILABILITY: 'cortex:check-availability',
     GET_MODELS: 'cortex:get-models',
   },
 
@@ -230,7 +225,6 @@ export const IPC_CHANNELS = {
 
   // Factory Droid Integration
   DROID: {
-    CHECK_AVAILABILITY: 'droid:check-availability',
     GET_MODELS: 'droid:get-models',
   },
 
@@ -525,7 +519,6 @@ export const IPC_CHANNELS = {
   FEATURE_CODES: {
     ACTIVATE: 'feature-codes:activate',
     GET_ACTIVE: 'feature-codes:get-active',
-    CLEAR: 'feature-codes:clear',
     DEACTIVATE: 'feature-codes:deactivate',
     RESTART_APP: 'feature-codes:restart-app',
   },
@@ -963,6 +956,16 @@ export const IPC_CHANNELS = {
     CLOSE_ALL_FOR_WORKSPACE: 'pip:close-all-for-workspace',
   },
 
+  // Browser access: main serves the web build to a browser behind a front-end
+  // such as `tailscale serve`. get-state → BrowserAccessState; set-enabled
+  // ({ enabled }), set-port ({ port }) and reset-key ({}) also return it.
+  BROWSER_ACCESS: {
+    GET_STATE: 'browser-access:get-state',
+    SET_ENABLED: 'browser-access:set-enabled',
+    SET_PORT: 'browser-access:set-port',
+    RESET_KEY: 'browser-access:reset-key',
+  },
+
   // WebSocket API
   WEBSOCKET_API: {
     GET_STATUS: 'websocket-api:get-status',
@@ -1135,6 +1138,15 @@ export const IPC_CHANNELS = {
     IMPORT_START: 'transfer:import-start',
     IMPORT_CANCEL: 'transfer:import-cancel',
     IMPORT_PROGRESS: 'transfer:import-progress',
+  },
+
+  // Daemon-to-daemon remote machines (PROTOCOL nodes.md "Expose flow"): main
+  // relays executor.mint → remoteMachines.add so the executor token never
+  // reaches the renderer.
+  REMOTE_MACHINES: {
+    EXPOSE: 'remote-machines:expose',
+    UNEXPOSE: 'remote-machines:unexpose',
+    MACHINE_FINGERPRINT: 'remote-machines:machine-fingerprint',
   },
 
   // Hardware console (Codex Micro / Creator Micro 2)

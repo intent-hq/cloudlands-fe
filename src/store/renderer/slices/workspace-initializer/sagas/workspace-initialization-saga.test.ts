@@ -6,7 +6,13 @@ const mocks = vi.hoisted(() => ({
   send: vi.fn(),
   clearLayout: vi.fn(),
   resolveOnboardingModel: vi.fn(),
+  validateRepoPath: vi.fn(),
 }));
+vi.mock('$lib/utils/workspace-validation', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$lib/utils/workspace-validation')>();
+  mocks.validateRepoPath.mockImplementation(actual.validateRepoPath);
+  return { ...actual, validateRepoPath: mocks.validateRepoPath };
+});
 vi.mock('$lib/components/workspace/initializer/staged-attachments', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   redeemStagedAttachments: mocks.redeem,
@@ -24,6 +30,9 @@ vi.mock('$lib/components/patterns/notify', () => ({
 }));
 
 import { appClient } from '$lib/client';
+import { notify } from '$lib/components/patterns/notify';
+import { m } from '$shared/paraglide/messages.js';
+import { remoteMachinesLoaded } from '$features/remote-machines/remote-machines-slice';
 import { registerWorkspaceInitializationPreparation } from '$lib/components/workspace/initializer/workspace-initialization-preparation';
 import {
   chooseDefaultSetupScript,
@@ -494,6 +503,176 @@ describe('workspaceInitializerSaga (registered production owner, reducer-backed 
       entrypoint: 'compact',
       status: 'success',
       prepared: { pull: false },
+    });
+  });
+
+  describe('Start On (remote initial agent)', () => {
+    const remoteAgent = () => ({ ...compactSubmission().agent, startOnMachineId: 'node-mac' });
+    beforeEach(() => {
+      appStore.dispatch(
+        remoteMachinesLoaded({
+          supported: true,
+          initialAgentPlacement: true,
+          machines: [
+            {
+              id: 'node-mac',
+              name: 'Mac mini',
+              hosts: [],
+              port: 7443,
+              fingerprint: 'fp',
+              state: 'connected',
+              runningAgents: 0,
+              addedAt: '2026-11-01T00:00:00Z',
+            },
+          ],
+          localFingerprint: null,
+          executorBackends: null,
+        }),
+      );
+    });
+
+    it('sends the placement and stays quiet when the agent runs on the machine', async () => {
+      create.mockResolvedValue({
+        ok: true,
+        data: {
+          workspace,
+          initialAgent: {
+            id: 'agent-1',
+            nodeId: 'node-mac',
+            placement: { target: 'remote', checkout: 'isolated' },
+          },
+        },
+      } as never);
+      const action = workspaceInitializationSubmitted(
+        compactSubmission({ agent: remoteAgent() }),
+        consumer,
+      );
+      appStore.dispatch(action);
+      await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+      expect(create.mock.calls[0][0]).toMatchObject({
+        initialAgent: { placement: { target: 'remote', checkout: 'isolated', nodeId: 'node-mac' } },
+      });
+      expect(notify.warning).not.toHaveBeenCalled();
+    });
+
+    it('warns when the backend started the agent somewhere else', async () => {
+      const action = workspaceInitializationSubmitted(
+        compactSubmission({ agent: remoteAgent() }),
+        consumer,
+      );
+      appStore.dispatch(action);
+      await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+      expect(notify.warning).toHaveBeenCalledWith(
+        m.workspace_startOn_notOnMachine_warning({ machine: 'Mac mini' }),
+      );
+    });
+
+    it('opens the created workspace and warns when its first agent could not start on the machine', async () => {
+      create.mockResolvedValue({
+        ok: false,
+        error: 'initial agent launch failed',
+        errorCode: 'launch-failed',
+        launchFailure: { workspaceId: 'ws-1', agentId: 'agent-9', cause: 'provider exited' },
+      } as never);
+      const get = vi.spyOn(appClient.workspaces, 'get').mockResolvedValue(workspace);
+      const action = workspaceInitializationSubmitted(
+        compactSubmission({ agent: remoteAgent() }),
+        consumer,
+      );
+      appStore.dispatch(action);
+      await expect(action.promise).resolves.toMatchObject({
+        workspaceId: 'ws-1',
+        agentId: 'agent-9',
+      });
+      expect(get).toHaveBeenCalledWith('ws-1');
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(recorded).toContainEqual(setWorkspaceEntity(workspace));
+      expect(recorded).toContainEqual(openWorkspaceTab(workspace.id));
+      expect(recorded).toContainEqual(setInitialAgentId(workspace.id, 'agent-9'));
+      expect(notify.warning).toHaveBeenCalledWith(
+        m.workspace_startOn_launchFailed_error({ machine: 'Mac mini', cause: 'provider exited' }),
+      );
+    });
+
+    it.each([
+      [
+        'rejects',
+        (get: ReturnType<typeof vi.spyOn>) => get.mockRejectedValueOnce(new Error('busy')),
+      ],
+      ['returns null', (get: ReturnType<typeof vi.spyOn>) => get.mockResolvedValueOnce(null)],
+    ])(
+      'keeps the created workspace when reading it %s, and a retry opens it without creating again',
+      async (_case, failRead) => {
+        create.mockResolvedValue({
+          ok: false,
+          error: 'initial agent launch failed',
+          errorCode: 'launch-failed',
+          launchFailure: { workspaceId: 'ws-1', agentId: 'agent-9', cause: 'provider exited' },
+        } as never);
+        const get = vi.spyOn(appClient.workspaces, 'get');
+        failRead(get);
+        get.mockResolvedValue(workspace);
+        const action = workspaceInitializationSubmitted(
+          compactSubmission({ agent: remoteAgent() }),
+          consumer,
+        );
+        appStore.dispatch(action);
+        await expect(action.promise).rejects.toThrow(
+          m.workspace_startOn_launchFailed_error({ machine: 'Mac mini', cause: 'provider exited' }),
+        );
+        expect(outcome()).toMatchObject({
+          status: 'failure',
+          workspaceId: 'ws-1',
+          agentId: 'agent-9',
+          resumable: true,
+        });
+        expect(recorded).not.toContainEqual(setWorkspaceEntity(workspace));
+
+        const resume = workspaceInitializationResumeRequested(
+          {
+            entrypoint: 'compact',
+            admission: selectPrincipalActionContext.select(appStore.state) as string,
+            stagedItems: [],
+          },
+          consumer,
+        );
+        appStore.dispatch(resume);
+        await expect(resume.promise).resolves.toMatchObject({
+          workspaceId: 'ws-1',
+          agentId: 'agent-9',
+        });
+        expect(create).toHaveBeenCalledTimes(1);
+        expect(get).toHaveBeenCalledTimes(2);
+        expect(get).toHaveBeenLastCalledWith('ws-1');
+        expect(recorded).toContainEqual(setWorkspaceEntity(workspace));
+        expect(recorded).toContainEqual(setInitialAgentId(workspace.id, 'agent-9'));
+        expect(recorded).toContainEqual(openWorkspaceTab(workspace.id));
+        expect(outcome()).toMatchObject({ seq: resume.seq, status: 'success' });
+      },
+    );
+
+    it('reports a start failure on the machine when the reply names no workspace', async () => {
+      create.mockResolvedValue({
+        ok: false,
+        error: 'provider exited',
+        errorCode: 'launch-failed',
+      } as never);
+      const action = workspaceInitializationSubmitted(
+        compactSubmission({ agent: remoteAgent() }),
+        consumer,
+      );
+      appStore.dispatch(action);
+      await expect(action.promise).rejects.toThrow(
+        m.workspace_startOn_launchFailed_error({ machine: 'Mac mini', cause: 'provider exited' }),
+      );
+    });
+
+    it('sends no placement for the backend', async () => {
+      const action = workspaceInitializationSubmitted(compactSubmission(), consumer);
+      appStore.dispatch(action);
+      await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+      expect(create.mock.calls[0][0].initialAgent).not.toHaveProperty('placement');
+      expect(notify.warning).not.toHaveBeenCalled();
     });
   });
 
@@ -1093,5 +1272,317 @@ describe('workspaceInitializerSaga (registered production owner, reducer-backed 
       entrypoint: 'compact',
       status: 'pending',
     });
+  });
+});
+
+// In place (no isolated checkout): the workspace row names the folder's real
+// branch — its current branch, or main for a freshly initialized repository —
+// instead of a generated one that never exists in the folder.
+describe('in-place creates name the folder branch', () => {
+  beforeEach(() => {
+    mocks.validateRepoPath.mockResolvedValueOnce({ valid: true, isNewRepo: false });
+  });
+
+  it.each([
+    ['a git repo on its current branch', { branch: 'feature-x', isNewRepo: false }, 'feature-x'],
+    ['a folder initialized as a git repository', { branch: 'main', isNewRepo: true }, 'main'],
+  ])('compact: %s', async (_label, form, expected) => {
+    const action = workspaceInitializationSubmitted(
+      compactSubmission({
+        repoType: 'local',
+        repoPath: '/Users/me/project',
+        remoteSetup: null,
+        skipIsolation: true,
+        ...form,
+      }),
+      consumer,
+    );
+    appStore.dispatch(action);
+    await action.promise;
+    expect(create.mock.calls[0][0]).toMatchObject({
+      repositoryPath: '/Users/me/project',
+      skipIsolation: true,
+      isNewRepo: form.isNewRepo,
+      branch: expected,
+    });
+  });
+
+  it('compact: an isolated checkout still gets a generated branch', async () => {
+    const action = workspaceInitializationSubmitted(
+      compactSubmission({
+        repoType: 'local',
+        repoPath: '/Users/me/project',
+        remoteSetup: null,
+        branch: 'main',
+        skipIsolation: false,
+      }),
+      consumer,
+    );
+    appStore.dispatch(action);
+    await action.promise;
+    expect(create.mock.calls[0][0].branch).toBeUndefined();
+  });
+
+  it.each([
+    ['a git repo on its current branch', false, 'feature-x', 'feature-x'],
+    ['a folder initialized as a git repository', true, 'main', 'main'],
+  ])('onboarding: %s', async (_label, treatAsNewRepo, effectiveBranch, expected) => {
+    const onboardingConsumer = { id: 'onboarding-in-place', resourceId: 'resource-in-place' };
+    const action = workspaceInitializationSubmitted(
+      onboardingSubmission({
+        project: { type: 'local', repoPath: '/Users/me/project', branch: effectiveBranch },
+        skipIsolation: true,
+        treatAsNewRepo,
+        effectiveBranch,
+      }),
+      onboardingConsumer,
+    );
+    appStore.dispatch(action);
+    await action.promise;
+    expect(create.mock.calls[0][0]).toMatchObject({
+      repositoryPath: '/Users/me/project',
+      skipIsolation: true,
+      isNewRepo: treatAsNewRepo,
+      branch: expected,
+    });
+  });
+});
+
+describe('plain-folder creates (Labs, workspace.create plainFolder)', () => {
+  beforeEach(() => {
+    mocks.validateRepoPath.mockResolvedValueOnce({ valid: true, isNewRepo: false });
+  });
+  const gitOnlyKeys = [
+    'githubUrl',
+    'repositoryCheckout',
+    'clonePath',
+    'isNewRepo',
+    'baseRef',
+    'branch',
+    'worktreePath',
+    'isRemote',
+    'skipIsolation',
+    'setupScript',
+    'scope',
+    'environmentConfig',
+  ];
+
+  it.each(['existing', 'new'] as const)(
+    'sends plainFolder: true with only the allowed fields for a %s compact folder',
+    async (kind) => {
+      const action = workspaceInitializationSubmitted(
+        compactSubmission({
+          repoType: 'local',
+          repoPath: '/Users/me/Documents/notes',
+          remoteSetup: null,
+          branch: '',
+          plainFolder: kind,
+          // Git-only state left over in the form never reaches the wire.
+          skipIsolation: true,
+          scope: 'sub',
+          setupScript: 'npm install',
+          setupScriptName: 'Custom',
+          setupScriptNameSource: 'custom',
+          setupScriptExplicit: true,
+          pullEnabled: true,
+          branchBehind: 3,
+        }),
+        consumer,
+      );
+      appStore.dispatch(action);
+
+      await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+      // An existing folder is accepted as-is; a new one may not exist yet.
+      expect(mocks.validateRepoPath).toHaveBeenCalledWith(
+        '/Users/me/Documents/notes',
+        kind === 'new',
+        kind === 'existing',
+      );
+      expect(pull).not.toHaveBeenCalled();
+      expect(create).toHaveBeenCalledTimes(1);
+      const params = create.mock.calls[0][0] as Record<string, unknown>;
+      expect(params).toMatchObject({
+        title: 'Work',
+        repositoryPath: '/Users/me/Documents/notes',
+        plainFolder: true,
+        initialAgent: { prompt: 'hello', provider: 'claude-code' },
+      });
+      for (const key of gitOnlyKeys) expect(params).not.toHaveProperty(key);
+      expect(outcome()).toMatchObject({ status: 'success', prepared: { pull: false } });
+    },
+  );
+
+  it('does not attach a previously picked PR to a plain-folder workspace', async () => {
+    const update = vi.spyOn(workspaceClient, 'update').mockResolvedValue({ ok: true } as never);
+    create.mockResolvedValue({
+      ok: true,
+      data: { workspace, initialAgent: { id: 'agent-1' } },
+    } as never);
+    const action = workspaceInitializationSubmitted(
+      compactSubmission({
+        repoType: 'local',
+        repoPath: '/Users/me/Documents/notes',
+        remoteSetup: null,
+        branch: '',
+        plainFolder: 'existing',
+        selectedPrNumber: 42,
+        selectedPRBranch: 'feature/pr',
+        selectedPRTargetBranch: 'main',
+      }),
+      consumer,
+    );
+    appStore.dispatch(action);
+
+    await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(update.mock.calls.filter(([params]) => 'prNumber' in (params as object))).toEqual([]);
+  });
+
+  it.each(['existing', 'new'] as const)(
+    'remembers a %s plain folder as an existing plain-folder selection',
+    async (kind) => {
+      const completionActions: RecordedAction[] = [];
+      stops.push(
+        appStore.runSaga(function* () {
+          while (true) {
+            completionActions.push(
+              (yield* take([
+                setWorkspaceInitializerLastSelectedRepo,
+                setCompactWorkspaceInitializerFormState,
+              ])) as RecordedAction,
+            );
+          }
+        }),
+      );
+      const action = workspaceInitializationSubmitted(
+        compactSubmission({
+          repoType: 'local',
+          repoPath: '/Users/me/Documents/notes',
+          remoteSetup: null,
+          branch: '',
+          isValidPath: kind === 'existing',
+          plainFolder: kind,
+          formPersistence: true,
+        }),
+        consumer,
+      );
+      appStore.dispatch(action);
+
+      await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+      await vi.waitFor(() => expect(completionActions).toHaveLength(2));
+      const remembered = completionActions.find(
+        (a) => a.type === setWorkspaceInitializerLastSelectedRepo.type,
+      );
+      expect(remembered?.payload).toEqual([
+        { path: '/Users/me/Documents/notes', type: 'local', isValidPath: true, plainFolder: true },
+      ]);
+      // The saved form state never reopens the folder as a git pick.
+      expect(
+        completionActions.find((a) => a.type === setCompactWorkspaceInitializerFormState.type),
+      ).toMatchObject({
+        payload: expect.arrayContaining([expect.objectContaining({ repoPath: '' })]),
+      });
+    },
+  );
+
+  it('does not remember a plain folder without form persistence', async () => {
+    const completionActions: RecordedAction[] = [];
+    stops.push(
+      appStore.runSaga(function* () {
+        while (true) {
+          completionActions.push(
+            (yield* take([setWorkspaceInitializerLastSelectedRepo])) as RecordedAction,
+          );
+        }
+      }),
+    );
+    const action = workspaceInitializationSubmitted(
+      compactSubmission({
+        repoType: 'local',
+        repoPath: '/Users/me/Documents/notes',
+        remoteSetup: null,
+        branch: '',
+        plainFolder: 'existing',
+        formPersistence: false,
+      }),
+      consumer,
+    );
+    appStore.dispatch(action);
+
+    await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(completionActions).toEqual([]);
+  });
+
+  it('ignores a stale plain-folder flag on a forge clone pick', async () => {
+    const action = workspaceInitializationSubmitted(
+      compactSubmission({
+        repoType: 'github',
+        repoPath: 'acme/app',
+        githubUrl: 'https://github.com/acme/app',
+        remoteSetup: null,
+        plainFolder: 'existing',
+      }),
+      consumer,
+    );
+    appStore.dispatch(action);
+
+    await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+    const params = create.mock.calls[0][0] as Record<string, unknown>;
+    expect(params).not.toHaveProperty('plainFolder');
+    expect(params).toMatchObject({ githubUrl: 'https://github.com/acme/app', baseRef: 'main' });
+  });
+
+  it.each([
+    {
+      kind: 'new' as const,
+      project: { type: 'new', repoPath: '~/Documents/my-project', branch: '' },
+    },
+    {
+      kind: 'existing' as const,
+      project: { type: 'local', repoPath: '/Users/me/notes', branch: '' },
+    },
+  ])('sends plainFolder: true for an onboarding $kind folder', async ({ kind, project }) => {
+    const onboardingConsumer = { id: 'onboarding-plain', resourceId: 'resource-plain' };
+    const action = workspaceInitializationSubmitted(
+      onboardingSubmission({
+        project,
+        plainFolder: kind,
+        treatAsNewRepo: false,
+        effectiveBranch: '',
+        setupScript: 'npm install',
+        setupScriptName: 'Custom',
+        setupScriptNameSource: 'custom',
+        pullEnabled: true,
+        branchBehind: 2,
+      }),
+      onboardingConsumer,
+    );
+    appStore.dispatch(action);
+
+    await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+    expect(pull).not.toHaveBeenCalled();
+    expect(create.mock.calls).toEqual([
+      [
+        {
+          title: '',
+          repositoryPath: project.repoPath,
+          plainFolder: true,
+          initialAgent: {
+            name: 'Developer',
+            model: 'sonnet',
+            prompt: 'hello onboarding',
+            agentType: 'workspace',
+            specialist: 'developer',
+            behaviorPrompt: undefined,
+            provider: 'claude-code',
+            contextReferences: undefined,
+            imageBlocks: undefined,
+            metadata: { source: 'onboarding', isInitialAgent: true, specialist: 'developer' },
+          },
+          progressId: action.payload.progressId,
+        },
+      ],
+    ]);
   });
 });

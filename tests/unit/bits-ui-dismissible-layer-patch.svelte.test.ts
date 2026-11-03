@@ -1,3 +1,4 @@
+// @verify-changed-triggers: patches/bits-ui@*.patch, package.json, pnpm-lock.yaml
 /**
  * Regression test for intent-hq/monorepo#1605.
  *

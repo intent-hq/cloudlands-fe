@@ -24,9 +24,13 @@
     principals: HostPrincipal[];
     sharingEnabled?: boolean | null;
     sharingChecking?: boolean;
+    resolving?: boolean;
     sharingEnabling?: boolean;
     sharingError?: string | null;
     canAdministerHost?: boolean;
+    hostMembershipSupported?: boolean;
+    forgeStatusKnown?: boolean;
+    ownerForgeMissing?: boolean;
     workspaceTitle?: string;
     guestLimit?: number;
     inviteDelayMs?: number;
@@ -122,6 +126,16 @@
     invites: [gitlabPinnedInvite, githubPinnedInvite, openInvite],
     principals: [knownGuest],
   };
+  /** The daemon refuses every invite until the owner connects a forge. */
+  const noForge: ShareDialogPreviewProps = {
+    ...bothConnected,
+    githubConnected: false,
+    gitlabConnected: false,
+    identityProvider: null,
+    members: [owner],
+    invites: [],
+    principals: [],
+  };
   const sharingSetup: ShareDialogPreviewProps = {
     ...bothConnected,
     gitlabConnected: false,
@@ -167,6 +181,9 @@
       'link-first': { props: { ...sharingSetup, sharingEnabled: true } },
       'link-slow': { props: { ...sharingSetup, sharingEnabled: true, inviteDelayMs: 750 } },
       'sharing-disabled': { props: sharingSetup },
+      resolving: {
+        props: { ...sharingSetup, sharingEnabled: null, sharingChecking: true, resolving: true },
+      },
       'sharing-checking': {
         props: { ...sharingSetup, sharingEnabled: null, sharingChecking: true },
       },
@@ -193,15 +210,22 @@
           invites: [{ ...githubPinnedInvite, pinIdentity: undefined }, openInvite],
         },
       },
-      'no-forge': {
+      'no-forge': { props: noForge },
+      'no-forge-github-only': { props: { ...noForge, gitlabEnabled: false } },
+      'no-forge-existing-guests': {
+        props: { ...noForge, members: [owner, githubGuest], invites: [openInvite] },
+      },
+      'no-forge-member': { props: { ...noForge, canAdministerHost: false } },
+      'no-forge-host-member': {
+        props: { ...noForge, canAdministerHost: false, hostMembershipSupported: true },
+      },
+      'no-forge-host-member-refused': {
         props: {
-          ...bothConnected,
-          githubConnected: false,
-          gitlabConnected: false,
-          identityProvider: null,
-          members: [owner],
-          invites: [],
-          principals: [],
+          ...noForge,
+          canAdministerHost: false,
+          hostMembershipSupported: true,
+          forgeStatusKnown: false,
+          ownerForgeMissing: true,
         },
       },
     },

@@ -4,15 +4,14 @@
   /* eslint-disable max-lines */
   import { onMount, tick, untrack } from 'svelte';
   import { prefersReducedMotion } from '$lib/utils/reduced-motion';
-  import { computeRevealScrollTop } from './reveal-scroll';
+  import { computeRevealScrollTop, findRevealIndex } from './reveal-scroll';
   import { writable } from 'svelte/store';
   import type {
     FileExplorerDisplayNode as FileNode,
     FlattenedFileNode,
   } from '$store/renderer/slices/file-explorer/file-explorer-types';
   import { ListItem } from '$lib/components/ui/list';
-  import CaretDownIcon from 'phosphor-svelte/lib/CaretDownIcon';
-  import CaretRightIcon from 'phosphor-svelte/lib/CaretRightIcon';
+  import DisclosureIcon from '$lib/components/icons/DisclosureIcon.svelte';
   import {
     faPlus,
     faArrowUpRightFromSquare,
@@ -1104,7 +1103,11 @@
   let revealScrollInFlight = false;
 
   export function scrollToPath(path: string) {
-    const index = effectiveNodes.findIndex((n) => pathMatches(n.node.path, path));
+    const index = findRevealIndex(
+      effectiveNodes.map((n) => n.node.path),
+      path,
+      $fileExplorerWorkspacePath,
+    );
     if (index < 0 || !scrollEl) return;
     const viewHeight = scrollEl.clientHeight;
     const top = viewHeight
@@ -1150,7 +1153,11 @@
   $effect(() => {
     const pending = pendingReveal;
     if (!pending || !scrollEl) return;
-    const index = effectiveNodes.findIndex((n) => pathMatches(n.node.path, pending.path));
+    const index = findRevealIndex(
+      effectiveNodes.map((n) => n.node.path),
+      pending.path,
+      $fileExplorerWorkspacePath,
+    );
     if (index < 0) return;
     if (!pending.scrolled) {
       pending.scrolled = true;
@@ -1206,7 +1213,6 @@
           {@const absoluteIndex = startIndex + i}
           {@const node = flatNode.node}
           {@const depth = flatNode.depth}
-          {@const DisclosureIcon = flatNode.isExpanded ? CaretDownIcon : CaretRightIcon}
 
           {#if node.path === CREATING_SENTINEL_PATH}
             <!-- Inline file creation input -->
@@ -1282,12 +1288,7 @@
                     class={`w-4 h-4 shrink-0 flex items-center justify-center ${node.type === 'directory' ? `opacity-50 ${gitColor}` : `[&>svg]:w-full [&>svg]:h-full`}`}
                   >
                     {#if node.type === 'directory'}
-                      <DisclosureIcon
-                        size={12}
-                        weight="regular"
-                        mirrored={false}
-                        aria-hidden="true"
-                      />
+                      <DisclosureIcon expanded={flatNode.isExpanded} />
                     {:else}
                       {@html getFileTypeIconSvg(node.name)}
                     {/if}
@@ -1334,11 +1335,8 @@
                 >
                   {#snippet iconSnippet()}
                     <DisclosureIcon
-                      size={12}
-                      weight="regular"
-                      mirrored={false}
+                      expanded={flatNode.isExpanded}
                       class="shrink-0"
-                      aria-hidden="true"
                       data-file-tree-disclosure
                     />
                   {/snippet}

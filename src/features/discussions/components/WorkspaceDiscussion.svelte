@@ -165,6 +165,9 @@
     mentionUsersHasMore={$recipients$.query === mentionQuery && $recipients$.hasMore}
     onMentionLoadMore={() =>
       store.dispatch(discussionRecipientsRequested(workspaceId, mentionQuery, true))}
+    agentNames={Object.fromEntries(
+      $agents$.filter((agent) => agent.name.trim()).map((agent) => [agent.id, agent.name]),
+    )}
     agents={$agents$
       .filter((agent) => !agent.retiredAt && agent.status !== AgentStatus.Deleted)
       .map((agent) => ({

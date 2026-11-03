@@ -23,6 +23,17 @@ export function formatConnectionLabel(conn: {
 }
 
 /**
+ * Display label for the local entry's Machines row: this machine's own name
+ * with a "(local)" suffix, or "This machine (local)" when no name is known.
+ */
+export function formatLocalMachineLabel(conn: { machineName?: string | null }): string {
+  const name = conn.machineName?.trim();
+  return name
+    ? m.settings_devices_localMachine_label({ name })
+    : m.layout_daemonStatus_localConnection_label();
+}
+
+/**
  * Primary display label for a guest session: the captured machine name
  * (`hostname`, the pretty hostname when the host reports one) wins; until it
  * arrives the stored join-time `label` (the dialled host) shows. A Tailcat

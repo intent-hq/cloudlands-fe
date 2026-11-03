@@ -2,12 +2,7 @@
   import { onMount, onDestroy, tick, type Snippet } from 'svelte';
   import { cn } from '$lib/utils';
   import Fa from 'svelte-fa';
-  import {
-    faCheck,
-    faChevronDown,
-    faChevronRight,
-    faSearch,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faCheck, faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
   import Portal from '../Portal.svelte';
   import { getOwnedPopupContext } from '$lib/components/ui/owned-popup-context';
   import { Button } from '$lib/components/ui/button';
@@ -61,18 +56,25 @@
     placeholder?: string;
     /** Whether to use a portal to render content (useful when inside overflow:hidden containers) */
     portal?: boolean;
+    /** Positioned portal host, such as a dialog, to retain its stacking and focus scope. */
+    portalTarget?: HTMLElement;
     /** Render the open panel in normal flow without portal or positioning observers. */
     staticPosition?: boolean;
     /** Disable panel and row transitions for immediate keyboard/filter flows. */
     animate?: boolean;
-    /** Optional containing boundary for collision-aware inline content. */
+    /** Containing selector/element, or "viewport", for collision-aware inline content. */
     collisionBoundary?: string | HTMLElement | null;
     /** Space kept between collision-aware content and its boundary. */
     collisionPadding?: number;
+    /**
+     * Preferred side for positioned content. `left` aligns the panel's top
+     * with the trigger and falls back to vertical placement without room.
+     */
+    side?: 'bottom' | 'left';
+    /** Gap between the trigger and a `left`-side panel. */
+    sideOffset?: number;
     /** Whether search is enabled */
     searchable?: boolean;
-    /** Opt into the bordered search-input composition with a leading search icon. */
-    searchChrome?: boolean;
     /** Current search text */
     searchValue?: string;
     /** Selection mode */
@@ -99,6 +101,12 @@
     fillContentHeight?: boolean;
     /** Custom class for the header */
     headerClass?: string;
+    /** Extra classes for every option row; per-option `class` still applies last. */
+    rowClass?: string;
+    /** Extra classes for the search input. */
+    inputClass?: string;
+    /** Accessible name for the search field. */
+    searchAriaLabel?: string;
     /** Called when value changes */
     onchange?: (value: string | string[], event?: MouseEvent) => void;
     /** Called when open state changes */
@@ -111,6 +119,8 @@
     groupHeader?: Snippet<[DropdownGroupProps]>;
     /** Header content (e.g., description text) */
     header?: Snippet;
+    /** Compact controls beside the search field, e.g. clear or refresh. */
+    searchAction?: Snippet;
     /** Footer content (e.g., "Create new..." action) */
     footer?: Snippet;
     /** Empty state when no results */
@@ -125,12 +135,14 @@
     groups = [],
     placeholder = m.ui_dropdown_select_placeholder(),
     portal = false,
+    portalTarget,
     staticPosition = false,
     animate = true,
     collisionBoundary = null,
     collisionPadding = 8,
+    side = 'bottom',
+    sideOffset = 4,
     searchable = true,
-    searchChrome = false,
     searchValue = $bindable(''),
     multiple = false,
     closeOnSelect = true,
@@ -144,12 +156,16 @@
     contentMaxHeight,
     fillContentHeight = false,
     headerClass = '',
+    rowClass = '',
+    inputClass = '',
+    searchAriaLabel = m.ui_dropdown_search_ariaLabel(),
     onchange,
     onopenchange,
     trigger,
     item,
     groupHeader,
     header,
+    searchAction,
     footer,
     empty,
     defaultHighlightValue,
@@ -172,7 +188,7 @@
   let openedWidth = $state<number | undefined>();
   let inlineContentRef = $state.raw<HTMLDivElement | null>(null);
   let inlineStyle = $state('');
-  let inlineSide = $state<'top' | 'bottom'>('bottom');
+  let inlineSide = $state<'top' | 'bottom' | 'left'>('bottom');
   let containerRef = $state.raw<HTMLDivElement | null>(null);
   let inputRef = $state.raw<HTMLInputElement | null>(null);
   const triggerId = `${uid}-trigger`;
@@ -348,9 +364,11 @@
 
   function resolveCollisionRect(): Pick<DOMRect, 'top' | 'right' | 'bottom' | 'left'> {
     const boundary =
-      typeof collisionBoundary === 'string'
-        ? document.querySelector<HTMLElement>(collisionBoundary)
-        : collisionBoundary;
+      collisionBoundary === 'viewport'
+        ? null
+        : typeof collisionBoundary === 'string'
+          ? document.querySelector<HTMLElement>(collisionBoundary)
+          : collisionBoundary;
     if (boundary) return boundary.getBoundingClientRect();
     return { top: 0, right: window.innerWidth, bottom: window.innerHeight, left: 0 };
   }
@@ -374,12 +392,38 @@
     const spaceBelow = Math.max(0, bottomBoundary - rect.bottom - 4);
     const spaceAbove = Math.max(0, rect.top - topBoundary - 4);
     const preferredDropdownHeight = contentMaxHeight ?? (portal ? 300 : 360);
+    const contentRef = portal ? portalContentRef : inlineContentRef;
+    // A dialog is transformed, so its portal uses local absolute coordinates.
+    // The Portal wrapper is positioned and may sit after the dialog's body.
+    const portalParent = portalContentRef?.offsetParent;
+    const portalBounds = portalTarget
+      ? (portalParent instanceof HTMLElement ? portalParent : portalTarget).getBoundingClientRect()
+      : null;
+    const portalPosition = portalTarget ? 'absolute' : 'fixed';
+    if (side === 'left') {
+      const width = contentRef?.offsetWidth || (portal ? 432 : 332);
+      const right = rect.left - sideOffset;
+      if (right - width >= leftBoundary) {
+        // Align tops, then lift the panel only as far as the boundary needs.
+        const maxHeight = Math.min(preferredDropdownHeight, bottomBoundary - topBoundary);
+        const height = Math.min(contentRef?.offsetHeight || maxHeight, maxHeight);
+        const top = Math.max(topBoundary, Math.min(rect.top, bottomBoundary - height));
+        const left = right - width;
+        inlineSide = 'left';
+        if (portal) {
+          portalStyle = `position: ${portalPosition}; top: ${top - (portalBounds?.top ?? 0)}px; left: ${left - (portalBounds?.left ?? 0)}px; max-height: ${maxHeight}px;`;
+          return;
+        }
+        const containerRect = containerRef?.getBoundingClientRect() ?? rect;
+        inlineStyle = `position: absolute; top: ${top - containerRect.top}px; bottom: auto; left: ${left - containerRect.left}px; max-height: ${maxHeight}px;`;
+        return;
+      }
+    }
     const opensAbove = spaceBelow < preferredDropdownHeight && spaceAbove > spaceBelow;
     inlineSide = opensAbove ? 'top' : 'bottom';
     const maxHeight = Math.min(preferredDropdownHeight, opensAbove ? spaceAbove : spaceBelow);
 
     // Clamp horizontal position so dropdown doesn't overflow the viewport
-    const contentRef = portal ? portalContentRef : inlineContentRef;
     const availableWidth = Math.max(0, rightBoundary - leftBoundary);
     const dropdownWidth = Math.min(contentRef?.offsetWidth || (portal ? 432 : 332), availableWidth);
     const left = Math.max(leftBoundary, Math.min(rect.left, rightBoundary - dropdownWidth));
@@ -387,9 +431,9 @@
 
     if (portal) {
       if (opensAbove) {
-        portalStyle = `position: fixed; bottom: ${viewportHeight - rect.top + 4}px; left: ${left}px; min-width: ${rect.width}px; max-height: ${maxHeight}px;`;
+        portalStyle = `position: ${portalPosition}; bottom: ${(portalBounds?.bottom ?? viewportHeight) - rect.top + 4}px; left: ${left - (portalBounds?.left ?? 0)}px; min-width: ${rect.width}px; max-height: ${maxHeight}px;`;
       } else {
-        portalStyle = `position: fixed; top: ${rect.bottom + 4}px; left: ${left}px; min-width: ${rect.width}px; max-height: ${maxHeight}px;`;
+        portalStyle = `position: ${portalPosition}; top: ${rect.bottom + 4 - (portalBounds?.top ?? 0)}px; left: ${left - (portalBounds?.left ?? 0)}px; min-width: ${rect.width}px; max-height: ${maxHeight}px;`;
       }
       return;
     }
@@ -559,7 +603,9 @@
     // Composed controls own selection keys; an unconsumed Escape dismisses this layer.
     if (
       e.target instanceof Element &&
-      e.target.closest('[data-dropdown-header], [data-dropdown-footer]') &&
+      e.target.closest(
+        '[data-dropdown-header], [data-dropdown-footer], [data-dropdown-search-action]',
+      ) &&
       (e.key !== 'Escape' || e.defaultPrevented)
     )
       return;
@@ -776,7 +822,7 @@
 
 <!-- Portal content (renders outside overflow:hidden containers) -->
 {#if open && portal && !staticPosition}
-  <Portal zIndex={100} target={popupOwner?.target() ?? 'body'}>
+  <Portal target={portalTarget ?? popupOwner?.target() ?? 'body'} zIndex={100}>
     <!-- svelte-ignore a11y_no_static_element_interactions (keyboard boundary for nested popup controls) -->
     <div
       bind:this={portalContentRef}
@@ -809,22 +855,15 @@
 
   <!-- Search Input -->
   {#if searchable}
-    <div class={cn('w-full', isPortal && 'shrink-0', searchChrome && 'relative p-2')}>
-      {#if searchChrome}
-        <Fa
-          icon={faSearch}
-          class="pointer-events-none absolute left-4.5 top-1/2 -translate-y-1/2 size-3 text-subtle"
-        />
-      {/if}
+    <div class={cn('flex w-full items-center gap-1 px-2 pt-1 pb-1', isPortal && 'shrink-0')}>
       <Input
         bind:ref={inputRef}
         type="text"
-        class={searchChrome
-          ? 'pl-7'
-          : 'w-full bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground outline-none border-none ring-0 focus:outline-none!'}
+        variant="search"
+        class={inputClass}
         {placeholder}
         role="searchbox"
-        aria-label={m.ui_dropdown_search_ariaLabel()}
+        aria-label={searchAriaLabel}
         aria-controls={listboxId}
         aria-activedescendant={highlightedIndex >= 0
           ? `${uid}-option-${highlightedIndex}`
@@ -834,6 +873,11 @@
         onkeydown={handleKeyDown}
         noFocusStyle
       />
+      {#if searchAction}
+        <div class="flex shrink-0 items-center gap-1" data-dropdown-search-action>
+          {@render searchAction()}
+        </div>
+      {/if}
     </div>
     <!-- Screen reader announcement for filtered results -->
     {#if searchValue}
@@ -856,6 +900,7 @@
     class={cn(
       isPortal || fillContentHeight ? 'flex-1 min-h-0' : 'max-h-[300px]',
       'overflow-y-auto p-1',
+      searchable && 'pt-0',
     )}
   >
     <ListHighlight
@@ -907,13 +952,8 @@
     {#if !hasResults}
       {#if searchValue && allOptions.length > 0}
         <!-- Search yielded no results but there are options available -->
-        <div
-          class="type-caption flex flex-col items-start gap-1 py-1 px-2 text-left text-muted-foreground"
-        >
+        <div class="type-caption py-1 px-3 text-left text-muted-foreground">
           <span>{m.ui_dropdown_noResultsFor_label({ query: searchValue })}</span>
-          <span class="type-caption text-muted-foreground"
-            >{m.ui_dropdown_tryDifferentSearch_description()}</span
-          >
         </div>
       {:else if empty}
         {@render empty()}
@@ -971,7 +1011,7 @@
         data-highlighted={isHighlighted ? 'true' : undefined}
         data-menu-item
         style="scroll-margin-top: var(--control-height-medium)"
-        class={cn(menuItem(), 'h-auto gap-1.5 overflow-hidden', option.class)}
+        class={cn(menuItem(), 'h-auto gap-1.5 overflow-hidden', rowClass, option.class)}
         role={popupRole === 'menu' ? 'menuitem' : 'option'}
         aria-selected={popupRole === 'listbox' ? isSelected(option.value) : undefined}
         aria-haspopup={option.type === 'submenu' ? 'menu' : undefined}

@@ -67,6 +67,14 @@ test('tile, text and model icon share one left edge; Send hugs the card corner',
   const component = await mount(ComposerSpecHarness, { props: { screen: 4 } });
   await expect(component.locator('[data-dock-media-attachments] .tile')).toBeVisible();
   await expect(component.locator('.screen-reference-chip').first()).toBeVisible();
+  // The picker renders its provider glyph only once the model catalog resolves the trigger label.
+  await expect(
+    component
+      .locator(
+        '[data-chat-input-primary-actions] button [data-slot="button-content"] :is(svg, img)',
+      )
+      .first(),
+  ).toBeVisible();
   const edges = await readEdges(component);
   expect(edges.tileLeft).not.toBeNull();
   expect(edges.textLeft).not.toBeNull();

@@ -138,7 +138,7 @@ const FIXTURES: Fixture[] = [
       meta: { path: 'src/lib', fullPath: 'src/lib' },
     },
     // Saved as `@src/lib/`: the trailing slash marks a folder. Chat shows it
-    // as a path chip; rich text rebuilds a folder chip.
+    // as a folder chip; rich text rebuilds a folder chip.
     expected: { type: 'folder', id: 'src/lib', label: 'src/lib/' },
   },
   {
@@ -305,8 +305,11 @@ const PATH_TYPES = new Set(['file', 'folder']);
 function expectedFor(reader: Reader, fixture: Fixture, token: string): ReadBack {
   if (!PATH_TYPES.has(fixture.expected.type)) return fixture.expected;
   if (reader === 'chat') {
-    // Chat reads every path token, folders included, as a path chip.
+    // Chat shows a path chip by its last segment; folders keep their type.
     const path = fixture.expected.id;
+    if (fixture.expected.type === 'folder') {
+      return { type: 'folder', id: path, label: path.split('/').pop()! };
+    }
     return {
       type: 'file',
       id: path,
@@ -340,6 +343,8 @@ function readChat(decoded: DecodedInlineMention): ReadBack | { type: string } {
       return { type: decoded.mention.kind, id: decoded.mention.id, label: decoded.mention.name };
     case 'file':
       return { type: 'file', id: decoded.path, label: decoded.label };
+    case 'folder':
+      return { type: 'folder', id: decoded.path, label: decoded.label };
     default:
       return { type: decoded.kind };
   }

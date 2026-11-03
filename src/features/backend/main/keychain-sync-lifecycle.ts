@@ -31,7 +31,11 @@ import {
   type ReconcileOptions,
 } from './keychain-sync';
 import { reconcileInvitedSessions, type InvitedSyncAdapter } from './invited-session-sync';
-import { applyRemoteSyncRecord, listSyncRecords, onConnectionsMutated } from './connections-store';
+import {
+  applyRemoteSyncRecord,
+  listSyncRecords,
+  onConnectionsMutated,
+} from './desktop-connections-store';
 import {
   getStoredSelfFingerprint,
   normalizeFingerprint,

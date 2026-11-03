@@ -904,7 +904,7 @@ describe('SidebarChangesPanel', () => {
       });
     });
 
-    it('shows empty state with "No changes yet" when loaded with no changes', async () => {
+    it('shows empty state with "No changes" when loaded with no changes', async () => {
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
       // Simulate loaded state
       mockFileTrackingStore.loading = false;
@@ -914,7 +914,7 @@ describe('SidebarChangesPanel', () => {
 
       await waitFor(() => {
         const text = container.textContent;
-        expect(text).toContain('No changes yet');
+        expect(text).toContain('No changes');
       });
     });
 
@@ -1721,7 +1721,7 @@ describe('SidebarChangesPanel', () => {
 
       await waitFor(() => {
         const text = container.textContent;
-        expect(text).toContain('No changes yet');
+        expect(text).toContain('No changes');
       });
     });
 
@@ -1847,9 +1847,8 @@ describe('SidebarChangesPanel', () => {
 
       await waitFor(() => {
         const text = container.textContent || '';
-        // Should show "3 files changed in Space" or similar
-        expect(text).toContain('file');
-        expect(text).toContain('changed');
+        // The compact summary keeps the exact changed-file count.
+        expect(text).toContain('3 files');
       });
     });
 

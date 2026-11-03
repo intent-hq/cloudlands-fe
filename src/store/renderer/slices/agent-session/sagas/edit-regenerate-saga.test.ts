@@ -153,6 +153,32 @@ describe('editRegenerateSaga', () => {
     await task.toPromise();
   });
 
+  it('keeps stored-block references in place, places only byte blocks, and records no retry', async () => {
+    mocks.editAndRegenerate.mockResolvedValue({ success: true });
+    const reference = { type: 'image' as const, messageId: 'm3', blockId: 'm3:1' };
+    const inline = { type: 'image' as const, data: 'aGk=', mimeType: 'image/png' };
+    const { channel, dispatched, task } = start();
+    const action = agentSessionEditAndRegenerateRequested(AGENT, WS, 'm3', 'edited', {
+      imageBlocks: [reference, inline],
+    });
+    channel.put(action);
+    await expect(action.promise).resolves.toBeUndefined();
+
+    expect(mocks.toImageReferenceBlocks).toHaveBeenCalledWith(WS, [inline]);
+    expect(mocks.editAndRegenerate).toHaveBeenCalledWith({
+      agentId: AGENT,
+      workspaceId: WS,
+      messageId: 'm3',
+      content: 'edited',
+      imageBlocks: [reference, { type: 'image', attachmentId: 'attach-0', mimeType: 'image/png' }],
+    });
+    // "Try again" resends through agent.sendMessage, which cannot carry a
+    // stored-block reference: no retry record rather than one without images.
+    expect(dispatched).toContainEqual(chatLastAttemptedMessageSet(AGENT, null));
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('keeps inline image blocks for the chief workspace (no attachment registry)', async () => {
     mocks.editAndRegenerate.mockResolvedValue({ success: true });
     const imageBlocks = [{ type: 'image' as const, data: 'aGk=', mimeType: 'image/png' }];

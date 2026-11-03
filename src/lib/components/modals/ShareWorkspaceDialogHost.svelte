@@ -35,6 +35,7 @@
   import {
     selectShareTarget,
     selectShareIntegrationAuth,
+    selectShareOwnerForgeMissing,
     selectShareSharingEnabled,
     selectShareSharingChecking,
     selectShareSharingEnabling,
@@ -49,6 +50,7 @@
     selectShareCreatedLink,
     selectShareCreateError,
     selectShareCreating,
+    selectShareDialogResolving,
     selectShareDialogOpen,
     selectShareGuestCount,
     selectShareGuestLimit,
@@ -72,6 +74,7 @@
   import { selectEffectiveIdentityProvider } from '$store/renderer/slices/identity/identity-selectors';
   import { selectDaemonSupportsIdentitySeam } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
+  import { selectHostExecutionContext } from '$store/renderer/slices/host-execution/host-execution-selectors';
   import {
     clearGithubUserSearch,
     searchGithubUsers,
@@ -120,6 +123,7 @@
   const guestCount$ = selectShareGuestCount();
   const guestLimit$ = selectShareGuestLimit();
   const loading$ = selectShareLoading();
+  const resolving$ = selectShareDialogResolving();
   const loadError$ = selectShareLoadError();
   const creating$ = selectShareCreating();
   const createError$ = selectShareCreateError();
@@ -140,6 +144,8 @@
   const userSearchError$ = selectGithubUserSearchError();
   const userSearchQuery$ = selectGithubUserSearchLastQuery();
   const integrationAuth$ = selectShareIntegrationAuth();
+  const ownerForgeMissing$ = selectShareOwnerForgeMissing();
+  const execution$ = selectHostExecutionContext();
   $effect(() => {
     const workspaceId = $workspaceId$;
     const host = $gitlabHost$ || undefined;
@@ -148,6 +154,7 @@
     $gitlabConnected$;
     $gitlabStatusReady$;
     $canManage$;
+    $execution$;
     const refresh = () => {
       if (workspaceId && open) appStore.dispatch(shareIntegrationAuthRequested(workspaceId, host));
     };
@@ -172,6 +179,8 @@
     workspaceTitle={$workspaceTitle$}
     githubConnected={$integrationAuth$.github}
     gitlabConnected={$integrationAuth$.gitlab}
+    forgeStatusKnown={$integrationAuth$.known !== false}
+    ownerForgeMissing={$ownerForgeMissing$}
     gitlabEnabled={$gitlabEnabled$}
     gitlabHost={$gitlabHost$}
     gitlabStatusReady={$gitlabStatusReady$}
@@ -205,6 +214,7 @@
     guestCount={$guestCount$}
     guestLimit={$guestLimit$}
     loading={$loading$}
+    resolving={$resolving$}
     loadError={$loadError$}
     creating={$creating$}
     createError={$createError$}

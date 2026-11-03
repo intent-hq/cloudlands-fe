@@ -50,6 +50,7 @@ export const initialState: GuestSessionsState = {
   listUnavailable: false,
   leavingIds: [],
   leavingWorkspaceKeys: [],
+  selfLeaveWorkspaceKeys: [],
   failedLeaveIds: [],
   failedLeaveWorkspaceKeys: [],
   inheritedWorkspaceKeys: [],
@@ -117,6 +118,10 @@ export const leaveWorkspaceOperationStarted = createAction<[id: string, workspac
 );
 export const leaveWorkspaceOperationSettled = createAction<[id: string, workspaceId: string]>(
   'guestSessions/leaveWorkspaceSettled',
+);
+/** The removal delta for a self-initiated leave was announced; forget the marker. */
+export const guestWorkspaceLeaveAnnounced = createAction<[id: string, workspaceId: string]>(
+  'guestSessions/leaveWorkspaceAnnounced',
 );
 
 /** Saga-owned roster read (`workspace.members.list`) for one hosted workspace. */
@@ -206,6 +211,14 @@ guestSessionsReducer.with(guestSessionsListReceived, (state, { payload: [result]
     hasReceivedList: true,
     listUnavailable: false,
     inheritedWorkspaceKeys: state.inheritedWorkspaceKeys.filter((key) => workspaceKeys.has(key)),
+    // Kept while the leave is in flight or the workspace stays gone from a
+    // retained session; a re-listed workspace (re-invite) or a forgotten
+    // session drops it so a later owner removal reads as a removal.
+    selfLeaveWorkspaceKeys: state.selfLeaveWorkspaceKeys.filter(
+      (key) =>
+        state.leavingWorkspaceKeys.includes(key) ||
+        (retained.some((session) => key.startsWith(`${session.id}:`)) && !workspaceKeys.has(key)),
+    ),
     leaveConfirmations: Object.fromEntries(
       Object.entries(state.leaveConfirmations).filter(([, confirmation]) =>
         retained.some(
@@ -277,6 +290,9 @@ guestSessionsReducer.with(
       : {
           ...state,
           leavingWorkspaceKeys: [...state.leavingWorkspaceKeys, key],
+          selfLeaveWorkspaceKeys: state.selfLeaveWorkspaceKeys.includes(key)
+            ? state.selfLeaveWorkspaceKeys
+            : [...state.selfLeaveWorkspaceKeys, key],
           failedLeaveWorkspaceKeys: withoutId(state.failedLeaveWorkspaceKeys, key),
         };
   },
@@ -296,6 +312,11 @@ guestSessionsReducer.with(leaveGuestWorkspaceRequested.success, (state, { payloa
   const key = guestWorkspaceKey(...payload.request);
   return {
     ...state,
+    // No membership was dropped by this leave, so no delta of ours follows.
+    selfLeaveWorkspaceKeys:
+      payload.response.left === true && !payload.response.refused
+        ? state.selfLeaveWorkspaceKeys
+        : withoutId(state.selfLeaveWorkspaceKeys, key),
     inheritedWorkspaceKeys:
       payload.response.refused === 'host-membership-required'
         ? state.inheritedWorkspaceKeys.includes(key)
@@ -307,9 +328,19 @@ guestSessionsReducer.with(leaveGuestWorkspaceRequested.success, (state, { payloa
 
 guestSessionsReducer.with(leaveGuestWorkspaceRequested.failure, (state, { payload }) => {
   const key = guestWorkspaceKey(...payload.request);
-  return payload.error.message === 'cancelled' || state.failedLeaveWorkspaceKeys.includes(key)
-    ? state
-    : { ...state, failedLeaveWorkspaceKeys: [...state.failedLeaveWorkspaceKeys, key] };
+  const next = state.selfLeaveWorkspaceKeys.includes(key)
+    ? { ...state, selfLeaveWorkspaceKeys: withoutId(state.selfLeaveWorkspaceKeys, key) }
+    : state;
+  return payload.error.message === 'cancelled' || next.failedLeaveWorkspaceKeys.includes(key)
+    ? next
+    : { ...next, failedLeaveWorkspaceKeys: [...next.failedLeaveWorkspaceKeys, key] };
+});
+
+guestSessionsReducer.with(guestWorkspaceLeaveAnnounced, (state, { payload: [id, workspaceId] }) => {
+  const key = guestWorkspaceKey(id, workspaceId);
+  return state.selfLeaveWorkspaceKeys.includes(key)
+    ? { ...state, selfLeaveWorkspaceKeys: withoutId(state.selfLeaveWorkspaceKeys, key) }
+    : state;
 });
 
 /** `withheld` is terminal: a load / result / failure landing on it is dropped. */

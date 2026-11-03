@@ -4,7 +4,10 @@ import type { Rectangle } from 'electron';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { Logger } from '../shared/logger';
-import { getActiveId, list as listConnections } from '../features/backend/main/connections-store';
+import {
+  getActiveId,
+  list as listConnections,
+} from '../features/backend/main/desktop-connections-store';
 import {
   DOCK_WINDOW_WIDTH,
   isPointInDockPointerRegions,
@@ -18,6 +21,7 @@ import {
 } from './window-backend';
 import { DockPlacementController } from './dock-placement-controller';
 import { attachDockCursor } from './dock-cursor';
+import { fixWebContentsZoom } from './fixed-zoom';
 import { createDockPointerPresenceTracker } from './dock-pointer-presence';
 import type { DockPlacementCommand, DockPlacementSnapshot } from '../shared/dock-placement';
 import type {
@@ -743,6 +747,7 @@ export function createDockWindow(): BrowserWindow {
   });
 
   dockWindowRef = window;
+  fixWebContentsZoom(window.webContents);
   attachLifecycleListeners(window);
   configurePlatformBehavior(window);
   dockCursor = attachDockCursor(window);

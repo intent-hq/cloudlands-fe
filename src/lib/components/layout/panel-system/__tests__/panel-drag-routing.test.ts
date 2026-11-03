@@ -80,6 +80,9 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAllWorkspaceAgents: () => readable([]),
 }));
+vi.mock('$features/remote-machines/remote-machines-selectors', () => ({
+  selectRemoteMachine: () => readable(null),
+}));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentProvider: () => readable(undefined),
   selectAgentIsResponding: Object.assign(() => readable(false), { select: () => false }),

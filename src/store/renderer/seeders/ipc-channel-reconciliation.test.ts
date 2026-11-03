@@ -1,3 +1,4 @@
+// @verify-changed-triggers: src/**/*.{ts,svelte}
 /**
  * IPC channel reconciliation — automated audit of renderer invoke call sites
  * against the channels bridged by the mock-router seeders.
@@ -498,6 +499,14 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
   // stays off; a mock bridge would create a second source of truth.
   'window:get-dock-lab',
   'window:set-dock-lab',
+  // Browser access (Settings > Machines): main owns the setting, the access key
+  // and the loopback server (src/lib/browser-access-ipc.ts). The section only
+  // renders when the real preload bridge exists, and the IPC functions reject
+  // without it; a mock bridge would invent a server that is not running.
+  'browser-access:get-state',
+  'browser-access:set-enabled',
+  'browser-access:set-port',
+  'browser-access:reset-key',
   // Dock composer native sessions (capture, annotate, record, pick): main owns
   // the screen capture, overlay window and helper processes. Both callers
   // (dock-evidence-native.ts, dock-annotation-overlay-bridge.ts) invoke only
@@ -990,5 +999,31 @@ describe('Retired file-tracking / line-attribution / file-attribution channels s
       leaked,
       'Retired channel constants must not be re-added to IPC_CHANNELS in src/shared/ipc-registry.ts.',
     ).toEqual([]);
+  });
+});
+
+/**
+ * Host HTTP: the connection API of a page host that advertises
+ * `connections.manage` (intent-web, src/features/intent-web/main/intent-web-server.ts).
+ * On such a page the connections saga sends connection writes, tunnel reads
+ * and pushed `connections:*` events through these modules as same-origin
+ * fetch / EventSource requests. That is not Electron IPC, so they stay out of
+ * the ledgers above: no seeder, allowlist, transport exemption or audit entry.
+ * A module listed here that starts calling IPC must move those channels into
+ * the ledgers instead.
+ */
+const HOST_HTTP_MODULES: ReadonlyMap<string, string> = new Map([
+  [
+    path.join('lib', 'client', 'live', 'browser-access-host.ts'),
+    'intent-web /__intent-web/connections API and the Browser access connections list',
+  ],
+]);
+
+describe('Host HTTP connection paths stay outside the IPC ledgers', () => {
+  it.each([...HOST_HTTP_MODULES.keys()])('%s talks HTTP, not IPC', (relative) => {
+    const source = fs.readFileSync(path.join(SRC_ROOT, relative), 'utf8');
+    expect(source).toMatch(/\bfetchImpl\(/);
+    expect([...source.matchAll(buildCallHeadRegex(source))].map((match) => match[0])).toEqual([]);
+    expect(source).not.toMatch(/\$lib\/electron-bridge|ipc-mock-router|electronAPI/);
   });
 });

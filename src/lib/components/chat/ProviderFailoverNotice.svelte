@@ -16,6 +16,7 @@
     selectProviderCatalogLoaded,
     selectProviderCatalogProfiles,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { selectHidesProviderProfileNames } from '$store/renderer/slices/workspace/workspace-selectors';
   import { faArrowRightArrowLeft } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
   import {
@@ -37,8 +38,11 @@
   const profiles$ = selectProviderCatalogProfiles(toStore(() => workspaceId));
   const catalogLoaded$ = selectProviderCatalogLoaded();
   const catalogEntries$ = selectProviderCatalogEntries(toStore(() => workspaceId));
+  // A guest sees bare provider names, never the host's profiles.
+  const hidesProfileNames$ = selectHidesProviderProfileNames(toStore(() => workspaceId ?? ''));
   const label = $derived.by(() => {
     void $profiles$;
+    void $hidesProfileNames$;
     void $catalogLoaded$;
     void $catalogEntries$;
     return formatProviderFailoverLabel(

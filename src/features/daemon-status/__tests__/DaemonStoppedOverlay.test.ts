@@ -90,6 +90,7 @@ import type { BackendTransportInfo } from '$store/renderer/slices/daemon-health/
 import { daemonHealthSaga } from '$store/renderer/slices/daemon-health/sagas/daemon-health-saga';
 import {
   authRejectedReceived,
+  browserHostDetected,
   certWarningsReceived,
   connectionsListReceived,
   connectOperationStarted,
@@ -840,6 +841,31 @@ describe('DaemonStoppedOverlay', () => {
         ),
       ).toBe(false);
       dispatchSpy.mockRestore();
+    });
+
+    it('offers the local machine as a tab instead of Switch to Local on an intent-web host', async () => {
+      // intent-web serves the app to a browser tab: it cannot spawn or open
+      // desktop windows, but it can open the local machine in a new tab.
+      render(DaemonStoppedOverlay);
+      dispatchAndFlush(
+        browserHostDetected({
+          manageConnections: true,
+          backendBound: true,
+          tailcatAvailable: false,
+        }),
+      );
+      await showOverlay(wsTransport);
+      bindWindowToRemote();
+
+      expect(screen.queryByTestId('daemon-stopped-spawn-sidecar')).toBeNull();
+      expect(screen.queryByText('Switch to Local')).toBeNull();
+      const openButtons = screen.getAllByTestId('daemon-stopped-open-backend');
+      expect(openButtons.map((button) => button.textContent?.trim())).toEqual([
+        expect.stringContaining('This machine (local)'),
+        expect.stringContaining('Other Mac'),
+      ]);
+      await fireEvent.click(openButtons[0]);
+      expect(invokeMock).not.toHaveBeenCalledWith(BACKEND.OPEN_LOCAL_AND_SPAWN);
     });
 
     it('surfaces a secret-unavailable open inline and prefills the re-pair modal for that backend (#3783)', async () => {

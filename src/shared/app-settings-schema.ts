@@ -246,13 +246,28 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     path: 'labs.remoteAgents',
     label: 'Remote agents (Labs)',
     description:
-      'Offer experimental remote agent setup and placement. Existing remote sessions remain available when disabled.',
+      'Offer experimental remote agent setup and placement, including making your machines available to a backend. Existing remote sessions remain available when disabled.',
     category: 'labs',
     type: 'boolean',
     source: 'local-storage',
     storageKey: 'labs:remoteAgentsEnabled',
     defaultValue: false,
     apply: { kind: 'redux-action', action: 'userPreferences/setLabsRemoteAgentsEnabled' },
+  },
+  {
+    path: 'labs.plainFolderWorkspaces',
+    label: 'Plain-folder workspaces (Labs)',
+    description:
+      'Offer an Initialize as git repository toggle when creating a workspace, so new workspaces can be plain folders without git. Existing plain-folder workspaces keep working when disabled.',
+    category: 'labs',
+    type: 'boolean',
+    source: 'local-storage',
+    storageKey: 'labs:plainFolderWorkspacesEnabled',
+    defaultValue: false,
+    apply: {
+      kind: 'redux-action',
+      action: 'userPreferences/setLabsPlainFolderWorkspacesEnabled',
+    },
   },
   {
     path: 'theme.activePresetId',

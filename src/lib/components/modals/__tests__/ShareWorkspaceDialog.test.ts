@@ -119,12 +119,12 @@ async function recipientField(provider: 'github' | 'gitlab'): Promise<HTMLInputE
   return field as HTMLInputElement;
 }
 
-it('offers explicit recipient pins on a capable host without repository authentication (#6392)', async () => {
+it('offers explicit recipient pins on a capable host with a connected forge (#6392)', async () => {
   const onCreateInvite = vi.fn();
   const onSearchUsers = vi.fn();
   renderDialog({
     githubConnected: false,
-    gitlabConnected: false,
+    gitlabConnected: true,
     identitySeamSupported: true,
     hostMembershipSupported: true,
     onCreateInvite,
@@ -141,7 +141,7 @@ it('lets a capable workspace manager pin a different canonical GitLab instance (
   const onCreateInvite = vi.fn();
   renderDialog({
     githubConnected: false,
-    gitlabConnected: false,
+    gitlabConnected: true,
     gitlabEnabled: true,
     gitlabHost: 'repository.example',
     gitlabStatusReady: false,
@@ -244,6 +244,51 @@ describe('ShareWorkspaceDialog — owner gate', () => {
   });
 });
 
+describe('ShareWorkspaceDialog — first answers pending', () => {
+  // Regression: opening Share flashed the connect card, the setup card and an
+  // empty roster in turn while the host's answers arrived one by one.
+  it('shows one loading placeholder instead of provisional cards, then the settled controls', async () => {
+    const onCreateInvite = vi.fn();
+    const pending = {
+      ...baseProps,
+      githubConnected: false,
+      sharingEnabled: null,
+      sharingChecking: true,
+      members: [],
+      invites: [],
+      loading: true,
+      resolving: true,
+      onCreateInvite,
+    };
+    const { rerender } = render(ShareWorkspaceDialog, { props: pending });
+    expect(screen.getByRole('status', { name: 'Loading…' })).toBeTruthy();
+    expect(screen.queryByTestId('share-github-required')).toBeNull();
+    expect(screen.queryByRole('switch', { name: 'Enable sharing' })).toBeNull();
+    expect(screen.queryByTestId('share-link-submit')).toBeNull();
+    expect(screen.queryByTestId('share-members-loading')).toBeNull();
+
+    await rerender({
+      ...baseProps,
+      sharingEnabled: true,
+      sharingChecking: false,
+      loading: false,
+      resolving: false,
+      onCreateInvite,
+    });
+    expect(screen.queryByRole('status', { name: 'Loading…' })).toBeNull();
+    await fireEvent.click(screen.getByTestId('share-link-submit'));
+    expect(onCreateInvite).toHaveBeenCalledExactlyOnceWith('');
+  });
+
+  it('keeps ready controls usable through a passive prerequisite recheck', async () => {
+    const onCreateInvite = vi.fn();
+    renderDialog({ sharingEnabled: true, sharingChecking: true, onCreateInvite });
+    expect(screen.queryByRole('switch', { name: 'Enable sharing' })).toBeNull();
+    await fireEvent.click(screen.getByTestId('share-link-submit'));
+    expect(onCreateInvite).toHaveBeenCalledExactlyOnceWith('');
+  });
+});
+
 describe('ShareWorkspaceDialog — forge gate', () => {
   it('leaves an unpinned invite available while canonical GitLab status is pending', async () => {
     const onCreateInvite = vi.fn();
@@ -267,32 +312,128 @@ describe('ShareWorkspaceDialog — forge gate', () => {
     await fireEvent.click(screen.getByRole('button', { name: /^(Copy|Create) link$/ }));
     expect(onCreateInvite).toHaveBeenCalledExactlyOnceWith('');
   });
-  it('offers account-free sharing without an owner Connect action to a member', async () => {
+  it('tells a member without a host forge that links need the owner, with no link or Connect action', async () => {
     const onCreateInvite = vi.fn();
     renderDialog({ githubConnected: false, canAdministerHost: false, onCreateInvite });
     expect(screen.queryByRole('button', { name: 'Connect GitHub' })).toBeNull();
-    await fireEvent.click(screen.getByRole('button', { name: /^(Copy|Create) link$/ }));
-    expect(onCreateInvite).toHaveBeenCalledExactlyOnceWith('');
+    expect(screen.getByTestId('share-forge-owner-required')).toBeTruthy();
+    expect(screen.queryByTestId('share-link-submit')).toBeNull();
+    expect(screen.queryByTestId('share-audience-trigger')).toBeNull();
+    expect(onCreateInvite).not.toHaveBeenCalled();
   });
 
-  it('offers an optional owner connection alongside account-free sharing', async () => {
+  it('shows only the connect box to an owner with no forge: no link, audience or Copy link', async () => {
     const onConnectGitHub = vi.fn();
     const onOpenConnections = vi.fn();
+    const onCreateInvite = vi.fn();
     renderDialog({
       githubConnected: false,
       gitlabEnabled: true,
+      invites: [],
       onConnectGitHub,
       onOpenConnections,
+      onCreateInvite,
     });
 
     expect(screen.getByTestId('share-github-required')).toBeTruthy();
-    expect(screen.queryByRole('combobox', { name: /Restrict to a/ })).toBeNull();
+    expect(screen.queryByTestId('share-link-submit')).toBeNull();
+    expect(screen.queryByRole('button', { name: /^(Copy|Create) link$/ })).toBeNull();
+    expect(screen.queryByTestId('share-audience-trigger')).toBeNull();
+    expect(screen.queryByText('Anyone with the link')).toBeNull();
+    // Existing guests keep access, so the roster stays visible and manageable.
     expect(screen.getAllByTestId('share-member-row')).toHaveLength(2);
 
     await fireEvent.click(screen.getByRole('button', { name: 'Connect GitHub' }));
     expect(onConnectGitHub).toHaveBeenCalledTimes(1);
     await fireEvent.click(screen.getByRole('button', { name: 'Open Connections' }));
     expect(onOpenConnections).toHaveBeenCalledTimes(1);
+    expect(onCreateInvite).not.toHaveBeenCalled();
+  });
+
+  it('keeps Revoke but withholds Copy on open invites while no forge is connected', async () => {
+    const onRevokeInvite = vi.fn();
+    renderDialog({ githubConnected: false, onRevokeInvite });
+    expect(screen.getAllByTestId('share-invite-row')).toHaveLength(1);
+    expect(screen.queryByTestId('share-invite-copy')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: /^Revoke/ }));
+    expect(onRevokeInvite).toHaveBeenCalledExactlyOnceWith(openInvite.id);
+    expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
+  });
+
+  // hostMembership:1 manager (not the host admin): the owner's forge status
+  // comes from the execution projection, or from a latched daemon refusal
+  // when the projection is unavailable.
+  it.each([
+    ['the projection reports no owner forge', { forgeStatusKnown: true }],
+    [
+      'a refusal latched "owner has no forge"',
+      { forgeStatusKnown: false, ownerForgeMissing: true },
+    ],
+  ])('hides every link action from a host-membership manager when %s', async (_case, status) => {
+    const onCreateInvite = vi.fn();
+    renderDialog({
+      githubConnected: false,
+      gitlabConnected: false,
+      identitySeamSupported: true,
+      hostMembershipSupported: true,
+      canAdministerHost: false,
+      inviteLinks,
+      onCreateInvite,
+      ...status,
+    });
+    expect(screen.getByTestId('share-forge-owner-required')).toBeTruthy();
+    expect(screen.queryByTestId('share-link-submit')).toBeNull();
+    expect(screen.queryByTestId('share-audience-trigger')).toBeNull();
+    expect(screen.queryByTestId('share-invite-copy')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Connect GitHub' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open Connections' })).toBeNull();
+    expect(onCreateInvite).not.toHaveBeenCalled();
+  });
+
+  it('keeps the link form for a host-membership manager while the owner forge status is unknown', () => {
+    renderDialog({
+      githubConnected: false,
+      gitlabConnected: false,
+      identitySeamSupported: true,
+      hostMembershipSupported: true,
+      canAdministerHost: false,
+      forgeStatusKnown: false,
+    });
+    expect(screen.queryByTestId('share-forge-owner-required')).toBeNull();
+    expect(screen.getByTestId('share-link-submit')).toBeTruthy();
+  });
+
+  it('a latched refusal also hides links from the host owner, leaving the connect box', () => {
+    renderDialog({ githubConnected: true, ownerForgeMissing: true });
+    expect(screen.getByTestId('share-github-required')).toBeTruthy();
+    expect(screen.queryByTestId('share-link-submit')).toBeNull();
+  });
+
+  it('gates an owner with no forge on a host-membership daemon too', () => {
+    renderDialog({
+      githubConnected: false,
+      gitlabConnected: false,
+      identitySeamSupported: true,
+      hostMembershipSupported: true,
+    });
+    expect(screen.getByTestId('share-github-required')).toBeTruthy();
+    expect(screen.queryByTestId('share-link-submit')).toBeNull();
+  });
+
+  it('keeps the connect box ahead of sharing setup while no forge is connected', () => {
+    renderDialog({ githubConnected: false, sharingEnabled: false, onEnableSharing: vi.fn() });
+    expect(screen.getByTestId('share-github-required')).toBeTruthy();
+    expect(screen.queryByTestId('share-link-submit')).toBeNull();
+    expect(screen.queryByTestId('share-setup-card')).toBeNull();
+  });
+
+  it('reveals the link section once a forge connects', async () => {
+    const props = { ...baseProps, githubConnected: false };
+    const { rerender } = render(ShareWorkspaceDialog, { props });
+    expect(screen.queryByTestId('share-link-submit')).toBeNull();
+    await rerender({ ...props, githubConnected: true });
+    expect(screen.queryByTestId('share-github-required')).toBeNull();
+    expect(screen.getByTestId('share-link-submit').hasAttribute('disabled')).toBe(false);
   });
 
   it('treats a GitLab connection as no identity forge while the daemon lacks the identity seam', () => {
@@ -1036,6 +1177,25 @@ describe('ShareWorkspaceDialog — invite an existing user', () => {
     await fireEvent.click(invite);
     expect(onAddMember).toHaveBeenCalledWith('p-erin');
     expect(onAddMember).toHaveBeenCalledTimes(1);
+  });
+
+  // Adding someone already on the host is not an invite: intentd only refuses
+  // invite creation and redemption without a forge, so this stays usable.
+  it('keeps adding an existing host user available while no forge is connected', async () => {
+    const onAddMember = vi.fn();
+    renderDialog({ githubConnected: false, principals: [erin, frank], onAddMember });
+    expect(screen.queryByTestId('share-link-submit')).toBeNull();
+    const trigger = await pick('@erin');
+    await waitFor(() => expect(trigger.textContent).toContain('@erin'));
+    await fireEvent.click(screen.getByTestId('share-existing-guest-invite'));
+    expect(onAddMember).toHaveBeenCalledExactlyOnceWith('p-erin');
+  });
+
+  it('does not pop the section in during a re-read when no guest can be invited', async () => {
+    const { rerender } = renderDialog({ principals: [] });
+    expect(screen.queryByTestId('share-existing-guest')).toBeNull();
+    await rerender({ ...baseProps, principals: [], loading: true });
+    expect(screen.queryByTestId('share-existing-guest')).toBeNull();
   });
 
   it('keeps the invitation target through an in-flight refresh and gates submission until settled', async () => {

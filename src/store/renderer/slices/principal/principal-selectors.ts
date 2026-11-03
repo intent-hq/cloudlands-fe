@@ -20,6 +20,16 @@ export const selectPrincipalSnapshot = store.createSelector((state) => {
     : null;
 });
 
+/**
+ * True when the connected daemon serves capped `agent.getMessageBlock` pages
+ * and accepts image block references in `agent.editAndRegenerate`
+ * (`server.capabilities.messageBlockPages === 1`, PROTOCOL §5.5). False while
+ * the principal snapshot is not ready, so callers keep the older behaviour.
+ */
+export const selectMessageBlockPagesSupported = store.createSelector(
+  (state) => selectPrincipalSnapshot.select(state)?.capabilities.messageBlockPages === 1,
+);
+
 /** Truth about the connected host, independent of saved sessions, profiles, repos and labs. */
 export const selectHostRole = store.createSelector((state): HostRole | null => {
   const snapshot = selectPrincipalSnapshot.select(state);

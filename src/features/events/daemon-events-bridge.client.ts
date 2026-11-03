@@ -2,6 +2,11 @@ import {
   selectCanReadScriptDefinition,
   selectUsesGuestScriptScope,
 } from '$store/renderer/slices/scripts/scripts-selectors';
+import { parseRemoteMachine } from '$shared/types/remote-machines';
+import {
+  remoteMachineChanged,
+  remoteMachineRemoved,
+} from '$features/remote-machines/remote-machines-slice';
 import type { Note, WorkspaceTask, WorkspaceTaskStats } from '$shared/types';
 import { workspaceTasksPushed } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import { workspaceTaskStatsPushed } from '$store/renderer/slices/workspace/workspace-slice';
@@ -203,6 +208,7 @@ import {
   principalIdentityChanged,
 } from '$store/renderer/slices/principal/principal-slice';
 import { m } from '$shared/paraglide/messages.js';
+import { AgentStatus } from '$shared/types/agent.types';
 import type {
   ContentBlock,
   MessageMetadata,
@@ -262,7 +268,11 @@ import {
   pruneRecentlyClosed,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { selectHiddenTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-import { selectWindowGuestSession } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
+import {
+  selectIsSelfLeftWorkspace,
+  selectWindowGuestSession,
+} from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
+import { guestWorkspaceLeaveAnnounced } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import { applyTaskStatusChanged } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import { applyTaskStatusChanged as applyNoteTaskStatusChanged } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import { changesEventReceived } from '$store/renderer/slices/changes/changes-slice';
@@ -1828,10 +1838,17 @@ function handleQueueProcessingEvent(event: WorkspaceEvent): void {
 function openDrainedTurn(event: WorkspaceEvent, agentId: string): void {
   const eventTimestamp = (event as { timestamp?: unknown }).timestamp;
   withHydratedSession(agentId, event.workspaceId, () => {
+    // The previous turn's completion may already have settled the session to
+    // idle. The daemon reports the drained turn as active but emits no running
+    // status edge, so promote it here; otherwise any later re-store of this
+    // session reads the stale idle status and closes the live turn again.
+    const status = appStore.state.agentSessions?.byAgentId[agentId]?.status;
+    const settledIdle = status === AgentStatus.RuntimeIdle || status === 'Idle';
     appStore.dispatch(
       updateSession(agentId, {
         liveTurnOpen: true,
         ...(typeof eventTimestamp === 'string' ? { liveTurnOpenedAt: eventTimestamp } : {}),
+        ...(settledIdle ? { status: AgentStatus.Active, isActive: true } : {}),
       }),
     );
   });
@@ -3035,6 +3052,10 @@ function handleWorkspaceMembershipRemoved(
   };
   // Resolved BEFORE the purge drops the entity.
   const title = state.workspace?.workspaces.map[workspaceId]?.title;
+  // A leave started in this window reads as "you left", not a removal. A leave
+  // started from another window (e.g. Settings in the main window) is not tracked here.
+  const selfInitiated = selectIsSelfLeftWorkspace.select(appStore.state, workspaceId);
+  if (selfInitiated) appStore.dispatch(guestWorkspaceLeaveAnnounced(session.id, workspaceId));
   const agentIds = state.agentSessions?.agentIdsByWorkspace[workspaceId] ?? [];
   const ownerAgentIds = collectOwnedTabAgentIds(workspaceId);
   appStore.dispatch(destroyOwnedTabsForWorkspace(workspaceId));
@@ -3055,6 +3076,7 @@ function handleWorkspaceMembershipRemoved(
     workspaceId,
     title,
     hostLabel: formatGuestSessionLabel(session),
+    selfInitiated,
   });
   return true;
 }
@@ -3592,6 +3614,16 @@ function handleSourceControlAuthChangedEvent(event: WorkspaceEvent): void {
  * explicit `identity.provider` change) or unlinked. Global; the identity slice
  * follows the new triple's provider.
  */
+function handleRemoteMachineChangedEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (data?.removed === true && typeof data.machineId === 'string' && data.machineId) {
+    appStore.dispatch(remoteMachineRemoved(data.machineId));
+    return;
+  }
+  const machine = parseRemoteMachine(data?.machine);
+  if (machine) appStore.dispatch(remoteMachineChanged(machine));
+}
+
 function handlePrincipalIdentityChangedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (typeof data?.principalId !== 'string' || !data.principalId.trim()) return;
@@ -3982,6 +4014,12 @@ export function routeDaemonEventsNotification(
   }
   if (type === 'principal:identity-changed') {
     handlePrincipalIdentityChangedEvent(event);
+    return;
+  }
+  // `remoteMachine:changed` is global and owner-only: an exposed machine was
+  // added, removed, changed state or reported new capabilities.
+  if (type === 'remoteMachine:changed') {
+    handleRemoteMachineChangedEvent(event);
     return;
   }
 
@@ -4900,6 +4938,9 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // `principal:identity-changed` — the host's identity forge was re-keyed
   // (`{ principalId, identity | null }`); global, folded into the identity slice.
   'principal:identity-changed',
+  // `remoteMachine:changed` — the current backend's exposed machines
+  // (`{ machine }` or `{ machineId, removed: true }`); owner connections only.
+  'remoteMachine:changed',
   // REV-2 browser-client routing (§5.17): global logical-client transitions
   // (re-read `client.list`) and the workspace-scoped daemon tab-registry
   // change events (`{ tab, changes? }`, patched into the browser-clients

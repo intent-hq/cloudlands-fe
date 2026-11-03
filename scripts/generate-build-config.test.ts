@@ -18,6 +18,7 @@ import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { generatedBuildConfigPlugin } from '../vitest.config';
+import { configurationIdentity } from './verify-changed-receipts.mjs';
 
 const SCRIPT = 'generate-build-config.cjs';
 const SCRIPTS_DIR = resolve(process.cwd(), 'scripts');
@@ -388,6 +389,41 @@ describe('generate-build-config --if-stale', () => {
       ISOLATED_TEST_BUILD_ID: '',
       ISOLATED_TEST_BACKEND_SHA: '',
     });
+  });
+
+  it('keeps the verify:changed resume fingerprint across a new commit, not an identity change', () => {
+    const root = fixtureRoot();
+    const commit = (message: string) =>
+      execFileSync(
+        'git',
+        [
+          '-c',
+          'user.name=Fixture',
+          '-c',
+          'user.email=fixture@example.com',
+          'commit',
+          '--allow-empty',
+          '-qm',
+          message,
+        ],
+        { cwd: root },
+      );
+    const fingerprint = () => configurationIdentity(root, { env: {} }).parts.files;
+    execFileSync('git', ['init', '-q'], { cwd: root });
+    commit('first');
+    expect(runGenerator(root, '--if-stale').status).toBe(0);
+    const before = { text: readFileSync(outputPath(root), 'utf8'), files: fingerprint() };
+    expect(before.files['src/main/build-config.generated.ts']).toEqual(expect.any(String));
+
+    commit('second');
+    expect(runGenerator(root, '--if-stale').status).toBe(0);
+    expect(readFileSync(outputPath(root), 'utf8')).not.toBe(before.text);
+    expect(fingerprint()).toEqual(before.files);
+
+    vi.stubEnv('INTENT_ISOLATED_TEST_BUILD_ID', 'manual-123-1');
+    vi.stubEnv('INTENT_ISOLATED_TEST_BACKEND_SHA', 'a'.repeat(40));
+    expect(runGenerator(root, '--if-stale').status).toBe(0);
+    expect(fingerprint()).not.toEqual(before.files);
   });
 
   it('refreshes the current Git commit input', () => {

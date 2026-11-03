@@ -11,6 +11,7 @@ describe('principal discovery through browser startup', () => {
   let role: 'owner' | 'member' | 'guest' = 'owner';
   let malformed = false;
   const frames: { id: number; method: string; params?: unknown }[] = [];
+  const socketUrls: string[] = [];
 
   class Socket {
     onopen: (() => void) | null = null;
@@ -18,6 +19,7 @@ describe('principal discovery through browser startup', () => {
     onclose: (() => void) | null = null;
     onerror: (() => void) | null = null;
     constructor(readonly url: string) {
+      socketUrls.push(url);
       queueMicrotask(() => this.onopen?.());
     }
     close() {}
@@ -65,6 +67,7 @@ describe('principal discovery through browser startup', () => {
     vi.stubGlobal('WebSocket', Socket);
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     frames.length = 0;
+    socketUrls.length = 0;
     role = 'owner';
     malformed = false;
     await import('$lib/browser-mock');
@@ -76,6 +79,7 @@ describe('principal discovery through browser startup', () => {
     transport = undefined;
     dispose = undefined;
     window.electronAPI = originalApi;
+    delete (globalThis as { __INTENT_RUNTIME_CONFIG__?: unknown }).__INTENT_RUNTIME_CONFIG__;
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
@@ -145,6 +149,36 @@ describe('principal discovery through browser startup', () => {
     await vi.waitFor(() => expect(selectHostRole.select(store.state)).toBe('member'));
     expect(frames.filter((frame) => frame.method === 'client.hello')).toHaveLength(hellos);
     expect(frames.filter((frame) => frame.method === 'principal.me')).toHaveLength(reads + 1);
+  });
+
+  it('binds a Browser access tab to its backend and lists the desktop connections', async () => {
+    (globalThis as { __INTENT_RUNTIME_CONFIG__?: unknown }).__INTENT_RUNTIME_CONFIG__ = {
+      intentdWsUrl: '/intentd/ws/remote-1',
+      backendId: 'remote-1',
+      connectionsUrl: '/__browser-access/connections',
+    };
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            connections: [{ id: 'remote-1', label: 'Studio', host: 'studio', port: 5181 }],
+            activeId: 'local',
+            windowBackendId: 'local',
+          }),
+        ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const store = await boot();
+    const { selectHostRole } = await import('../principal-selectors');
+    await vi.waitFor(() => expect(selectHostRole.select(store.state)).toBe('owner'));
+    expect(store.state.connections.windowBackendId).toBe('remote-1');
+    expect(store.state.connections.hasReceivedList).toBe(true);
+    expect(fetchMock).toHaveBeenCalledWith('/__browser-access/connections?backend=remote-1', {
+      credentials: 'same-origin',
+      cache: 'no-store',
+    });
+    expect(socketUrls.every((url) => url.endsWith('/intentd/ws/remote-1'))).toBe(true);
+    expect(socketUrls.length).toBeGreaterThan(0);
   });
 
   it('does not confer owner authority when the actual browser principal is malformed', async () => {

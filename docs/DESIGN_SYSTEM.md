@@ -142,6 +142,13 @@ host so one Escape closes the picker and returns focus without dismissing its pa
 Keep group actions outside selectable options; use
 `ComboboxGroup.collapsed` to hide options without discarding their selected identities.
 
+Search inside a menu or picker has one appearance: `<Input variant="search">`,
+`<Combobox inputVariant="search">`, and the built-in `Dropdown` search. It is
+body-sized and transparent on the popover surface, with a light placeholder and
+caret focus. Use a 4px top inset and a 4px gap before results. Do not add a border, focus ring, leading
+icon, title block, or custom padding. Put a compact control such as refresh or clear beside the field with
+`Combobox inputAction` or `Dropdown searchAction`. Preview: `/sandbox/menu-search`.
+
 ### …show empty, loading, or error state
 
 Import `EmptyState`, `LoadingState`, and `ErrorState` from `$lib/components/patterns/screen`; inspect

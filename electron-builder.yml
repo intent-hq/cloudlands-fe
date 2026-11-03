@@ -65,6 +65,8 @@ extraResources:
 # Unpack native modules to ensure prebuilds are accessible
 asarUnpack:
   - dist/renderer/**/*
+  # Browser access serves the web build with plain fs reads (see browser-access.ipc.ts).
+  - dist/web/**/*
   - resources/**/*
   - node_modules/express/**/*
   - node_modules/body-parser/**/*

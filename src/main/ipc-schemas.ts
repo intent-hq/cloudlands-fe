@@ -147,10 +147,6 @@ const MessageIdSchema = z.string().min(1, 'Message ID is required');
 // Workspace Schemas
 // ============================================================================
 
-export const WorkspaceGetSchema = z.object({
-  id: WorkspaceIdSchema,
-});
-
 export const WorkspaceGetCurrentSchema = z.object({}).passthrough();
 
 export const WorkspaceGetByIdSchema = z.object({
@@ -259,18 +255,9 @@ export const WorkspaceCloseSchema = z.object({
   id: WorkspaceIdSchema,
 });
 
-export const WorkspaceOpenSchema = z.object({
-  id: WorkspaceIdSchema,
-});
-
 export const WorkspaceRenameSchema = z.object({
   id: WorkspaceIdSchema,
   newName: z.string().min(1, 'New name is required').max(255, 'Name too long'),
-});
-
-export const WorkspaceRenameBranchSchema = z.object({
-  id: WorkspaceIdSchema,
-  newBranchName: z.string().min(1, 'New branch name is required'),
 });
 
 export const WorkspaceDuplicateSchema = z.object({
@@ -320,10 +307,6 @@ export const WorkspaceImportSchema = z.object({
   data: z.any(),
 });
 
-export const WorkspaceListSchema = z.object({
-  lite: z.boolean().optional(), // When true, skip heavy computations to avoid blocking other IPC operations
-});
-
 export const WorkspaceGetRecentSchema = z.object({});
 
 export const WorkspaceClearRecentSchema = z.object({});
@@ -336,15 +319,7 @@ export const WorkspaceGetHoverStatusSchema = z.object({
   workspaceId: WorkspaceIdSchema,
 });
 
-// On-demand summary endpoints (data intentionally excluded from workspace metadata payloads)
-export const WorkspaceGetDiffSummarySchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-});
-
-export const WorkspaceGetGitSummarySchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-});
-
+// On-demand task endpoint (data intentionally excluded from workspace metadata payloads)
 export const WorkspaceGetTasksSchema = z.object({
   workspaceId: WorkspaceIdSchema,
 });
@@ -368,26 +343,6 @@ export const WorkspaceRestoreSchema = z.object({
 
 export const WorkspaceGetSettingsSchema = z.object({
   id: WorkspaceIdSchema,
-});
-
-export const WorkspaceUpdateSettingsSchema = z.object({
-  id: WorkspaceIdSchema,
-  settings: z.record(z.any()),
-});
-
-export const WorkspaceGetRecentRepositoriesSchema = z.object({});
-
-export const WorkspaceAddRecentRepositorySchema = z.object({
-  repository: z.string().min(1, 'Repository is required'),
-  name: z.string().optional(),
-  owner: z.string().optional(),
-  githubUrl: z.string().optional(),
-});
-
-export const WorkspaceClearRecentRepositoriesSchema = z.object({});
-
-export const WorkspaceRemoveRecentRepositorySchema = z.object({
-  repository: z.string().min(1, 'Repository path is required'),
 });
 
 export const WorkspaceUpdateGitInfoSchema = z.object({
@@ -438,18 +393,6 @@ export const FileHashSchema = z.object({
   path: z.string().min(1, 'Path is required'),
 });
 
-export const FileWriteSchema = z.object({
-  path: z.string().min(1, 'Path is required'),
-  content: z.string(),
-  encoding: z.enum(['utf8', 'ascii', 'base64']).optional(),
-  workspaceId: z.string().optional(), // For immediate file tracking updates
-});
-
-export const FileDeleteSchema = z.object({
-  path: z.string().min(1, 'Path is required'),
-  workspaceId: z.string().optional(),
-});
-
 export const FileListSchema = z.object({
   path: z.string().min(1, 'Path is required'),
   recursive: z.boolean().optional(),
@@ -461,11 +404,6 @@ export const FileReadBatchSchema = z.object({
       path: z.string().min(1, 'Path is required'),
     }),
   ),
-  workspaceId: z.string().optional(), // For remote workspace file routing
-});
-
-export const FileExistsSchema = z.object({
-  path: z.string().min(1, 'Path is required'),
   workspaceId: z.string().optional(), // For remote workspace file routing
 });
 
@@ -502,20 +440,6 @@ export const FileGetTreeWithSizesSchema = z.object({
 });
 
 export const FileMkdirSchema = z.object({
-  path: z.string().min(1, 'Path is required'),
-});
-
-export const FileMoveSchema = z.object({
-  oldPath: z.string().min(1, 'Old path is required'),
-  newPath: z.string().min(1, 'New path is required'),
-});
-
-export const FileCopySchema = z.object({
-  sourcePath: z.string().min(1, 'Source path is required'),
-  destinationPath: z.string().min(1, 'Destination path is required'),
-});
-
-export const FileGetDirectoryStatusSchema = z.object({
   path: z.string().min(1, 'Path is required'),
 });
 
@@ -848,6 +772,12 @@ export const WindowSetFullScreenSchema = z.object({
 
 export const WindowSetDockLabSchema = z.object({ enabled: z.boolean() }).strict();
 
+export const BrowserAccessSetEnabledSchema = z.object({ enabled: z.boolean() }).strict();
+
+export const BrowserAccessSetPortSchema = z
+  .object({ port: z.number().int().min(1024).max(65_535) })
+  .strict();
+
 export const WindowSetBrowserFocusedSchema = z.object({
   browserFocused: z.boolean(),
   focusOwnerId: z.string().min(1, 'Focus owner ID is required'),
@@ -890,11 +820,6 @@ export const ShellShowItemInFolderSchema = z.object({
   path: z.string().min(1, 'Path is required'),
 });
 
-export const VscodeOpenGitDiffSchema = z.object({
-  filePath: z.string().min(1, 'File path is required'),
-  workspacePath: z.string().optional(),
-});
-
 export const VscodeOpenDiffSchema = z.object({
   oldContent: z.string(),
   newContent: z.string(),
@@ -902,31 +827,6 @@ export const VscodeOpenDiffSchema = z.object({
   newFileName: z.string().min(1, 'New file name is required'),
   filePath: z.string().min(1, 'File path is required'),
 });
-
-export const VscodeOpenFileSchema = z.object({
-  file: z.string().min(1, 'File path is required'),
-  line: z.number().int().positive().optional(),
-});
-
-// JETBRAINS_CHANNELS schemas
-export const JetbrainsOpenSchema = z.union([
-  z.string().min(1, 'Path is required'),
-  z.object({
-    folder: z.string().min(1, 'Folder path is required'),
-    file: z.string().min(1, 'File path is required'),
-  }),
-]);
-
-// XCODE_CHANNELS schemas
-export const XcodeOpenSchema = z.union([
-  z.string().min(1, 'Path is required'),
-  z.object({
-    folder: z.string().min(1, 'Folder path is required'),
-    file: z.string().optional(),
-    // Optional: list of changed file paths (relative to folder) to help find the right Xcode project in monorepos
-    changedFiles: z.array(z.string()).optional(),
-  }),
-]);
 
 // USER_MCP_CHANNELS schemas
 export const UserMcpAuthenticateSchema = z.object({

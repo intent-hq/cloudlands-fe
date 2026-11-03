@@ -157,23 +157,41 @@ test('the on-screen tool bar sits next to the dock and follows it, switches tool
     contentType: 'image/png',
   });
 
-  // The tool bar follows the dock without overlapping its new location.
+  // Notch feedback stays in the lower work area, away from hover expansion.
   const notch = { shape: 'notch', rect: { x: 440, y: 0, width: 400, height: 56 } } as const;
   await component.update({ props: { fixture: 'live-marked', pick: 'permission', dock: notch } });
-  await expect(bar).toHaveAttribute('data-tips', 'below');
+  await expect(bar).toHaveAttribute('data-tips', 'above');
   await expectAnimationsToSettle(bar, { subtree: false });
-  await expect.poll(async () => (await bounds()).y >= notch.rect.y + notch.rect.height).toBe(true);
+  const workArea = JSON.parse(
+    (await page.getByTestId('dock-annotation-harness').getAttribute('data-work-area')) ?? 'null',
+  ) as { x: number; y: number; width: number; height: number } | null;
+  const dockBounds = await page.getByTestId('dock-stand-in').boundingBox();
+  if (!workArea || !dockBounds) throw new Error('Missing dock or work-area bounds');
+  await expect
+    .poll(async () => {
+      const box = await bounds();
+      return {
+        // Leave a toolbar-height of overshoot room before reaching the dock.
+        clearOfDock: box.y - (dockBounds.y + dockBounds.height) >= box.height,
+        contained:
+          box.x >= workArea.x &&
+          box.y >= workArea.y &&
+          box.x + box.width <= workArea.x + workArea.width &&
+          box.y + box.height <= workArea.y + workArea.height,
+      };
+    })
+    .toEqual({ clearOfDock: true, contained: true });
   const below = await bounds();
-  // Under the notch there is no room above: tooltips open below the bar and stay
+  // Tooltips open above the bottom toolbar and stay
   // inside the work area (the long permission line included).
   await bar.getByRole('button', { name: 'Pick an element' }).hover();
   const tip = bar.getByRole('tooltip').filter({ hasText: 'Allow Accessibility' });
   await expect(tip).toHaveCSS('opacity', '1');
   const tipBox = (await tip.boundingBox())!;
-  expect(tipBox.y).toBeGreaterThan(below.y + below.height);
-  expect(tipBox.y).toBeGreaterThanOrEqual(25);
-  expect(tipBox.x).toBeGreaterThanOrEqual(0);
-  expect(tipBox.x + tipBox.width).toBeLessThanOrEqual(1280);
+  expect(tipBox.y + tipBox.height).toBeLessThan(below.y);
+  expect(tipBox.y).toBeGreaterThanOrEqual(workArea.y);
+  expect(tipBox.x).toBeGreaterThanOrEqual(workArea.x);
+  expect(tipBox.x + tipBox.width).toBeLessThanOrEqual(workArea.x + workArea.width);
   await testInfo.attach('notch toolbar', {
     body: await page.screenshot(),
     contentType: 'image/png',
@@ -214,8 +232,9 @@ test('the on-screen tool bar sits next to the dock and follows it, switches tool
   await expect(bar.locator('[data-attach-count]')).toHaveText('4');
   await bar.getByRole('button', { name: 'Attach' }).click();
   await expect(bar).toBeVisible();
+  await expect(bar.getByRole('button', { name: 'Attach' })).toHaveCount(0);
   await expect(bar.getByRole('button', { name: 'Mouse' })).toHaveAttribute('aria-pressed', 'true');
-  await bar.getByRole('button', { name: 'End annotating' }).click();
+  await bar.getByRole('button', { name: 'Done', exact: true }).click();
   await expect(bar).toHaveCount(0);
   const actions = JSON.parse(
     (await page.getByTestId('dock-annotation-harness').getAttribute('data-toolbar')) ?? '[]',
@@ -226,6 +245,36 @@ test('the on-screen tool bar sits next to the dock and follows it, switches tool
     { sessionId: 'fixture-live', action: 'commit' },
     { sessionId: 'fixture-live', action: 'end' },
   ]);
+});
+
+test('empty feedback offers Done and exits without an attachment', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await mount(Harness, {
+    props: {
+      fixture: 'live-empty',
+      dock: { shape: 'notch', rect: { x: 440, y: 0, width: 400, height: 56 } },
+      media: dockAnnotationMediaIdle,
+    },
+  });
+  const bar = page.getByTestId('dock-annotation-toolbar');
+  await expect(bar.getByRole('button', { name: 'Attach' })).toHaveCount(0);
+  const done = bar.getByRole('button', { name: 'Done', exact: true });
+  await expect(done).toBeEnabled();
+  await expectAnimationsToSettle(bar, { subtree: false });
+  await testInfo.attach('empty feedback', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await done.focus();
+  await done.press('Enter');
+  await expect(bar).toHaveCount(0);
+  const actions = JSON.parse(
+    (await page.getByTestId('dock-annotation-harness').getAttribute('data-toolbar')) ?? '[]',
+  );
+  expect(actions).toEqual([{ sessionId: 'fixture-live', action: 'end' }]);
+  expect(await recorded(page, 'pointers')).toEqual([]);
 });
 
 test('Screenshot and Record on the tool bar run the composer actions with its look, limit and alerts', async ({
@@ -256,8 +305,14 @@ test('Screenshot and Record on the tool bar run the composer actions with its lo
 
   // Attach is the primary action and counts the 3 marks it will attach.
   await expect(bar.locator('[data-attach-count]')).toHaveText('3');
+  const toolbarClip = async () => ({
+    x: 290,
+    y: Math.max(0, ((await bar.boundingBox())?.y ?? 0) - 48),
+    width: 700,
+    height: 150,
+  });
   // Idle with marks: the first half of the artifact.
-  const idleShot = await page.screenshot({ clip: { x: 290, y: 0, width: 700, height: 150 } });
+  const idleShot = await page.screenshot({ clip: await toolbarClip() });
   const shot = bar.getByRole('button', { name: 'Capture the screen · ⌘⇧S' });
   await shot.hover();
   await expect(bar.getByRole('tooltip').filter({ hasText: 'Capture the screen' })).toHaveCSS(
@@ -293,7 +348,7 @@ test('Screenshot and Record on the tool bar run the composer actions with its lo
   expect([ticked.x, ticked.width]).toEqual([settled.x, settled.width]);
   expect(Math.round(settled.x)).toBe(Math.round(idleX));
   const recordingShot = await page.screenshot({
-    clip: { x: 290, y: 0, width: 700, height: 150 },
+    clip: await toolbarClip(),
   });
   await stop.click();
   await expect(bar.getByRole('button', { name: 'Record the screen · ⌘⇧R' })).toHaveAttribute(
@@ -341,7 +396,7 @@ test('Screenshot and Record on the tool bar run the composer actions with its lo
   await expect(
     bar.getByRole('tooltip').filter({ hasText: 'Allow screen recording' }).first(),
   ).toHaveCSS('opacity', '1');
-  const alertShot = await page.screenshot({ clip: { x: 290, y: 0, width: 700, height: 150 } });
+  const alertShot = await page.screenshot({ clip: await toolbarClip() });
   await alerted.click();
 
   // Clear: the marks go, nothing is attached, the tool stays; Clear hides at 0 marks.
@@ -352,12 +407,19 @@ test('Screenshot and Record on the tool bar run the composer actions with its lo
   await expect(bar.getByRole('button', { name: 'Box' })).toHaveAttribute('aria-pressed', 'true');
   await expect(bar.getByRole('button', { name: 'Mouse' })).toHaveAttribute('aria-pressed', 'false');
 
+  const done = bar.getByRole('button', { name: 'Done', exact: true });
+  await expect(done).toBeEnabled();
+  await expect(bar.getByRole('button', { name: 'Attach' })).toHaveCount(0);
+  await done.focus();
+  await done.press('Enter');
+  await expect(bar).toHaveCount(0);
   expect((await toolbar()).map((row) => row.action)).toEqual([
     'capture',
     'record',
     'record',
     'capture',
     'clear',
+    'end',
   ]);
   expect(await recorded(page, 'pointers')).toEqual([]);
 
@@ -378,3 +440,74 @@ test('Screenshot and Record on the tool bar run the composer actions with its lo
     contentType: 'image/png',
   });
 });
+
+for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+  test(`screenshot feedback follows accepted capture state with ${reducedMotion} motion`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await page.emulateMedia({ reducedMotion });
+    const props = {
+      fixture: 'live-empty' as const,
+      dock: { shape: 'notch' as const, rect: { x: 440, y: 0, width: 400, height: 56 } },
+      media: {
+        ...dockAnnotationMediaIdle,
+        capture: { ...dockAnnotationMediaIdle.capture, revision: 41 },
+      },
+    };
+    const component = await mount(Harness, { props });
+    const bar = page.getByTestId('dock-annotation-toolbar');
+    const capture = bar.locator('[data-media="capture"]');
+    const update = async (pending: boolean, revision: number) =>
+      component.update({
+        props: {
+          ...props,
+          media: { ...props.media, capture: { ...props.media.capture, pending, revision } },
+        },
+      });
+    // Remounting with already accepted evidence is not a new capture.
+    await expect(capture).toHaveAttribute('data-capture-state', 'idle');
+    await capture.click();
+    await expect(capture).toHaveAttribute('data-capture-state', 'idle');
+    await update(true, 41);
+    await expect(capture).toHaveAttribute('aria-busy', 'true');
+    await expect(capture).toHaveAttribute('data-capture-state', 'pending');
+    await expect(capture.getByRole('status', { name: 'Loading' })).toBeVisible();
+    await expect(capture.getByRole('tooltip')).toHaveText('Taking screenshot…');
+    await expect(capture.getByRole('tooltip')).toHaveCSS('opacity', '1');
+    await testInfo.attach('screenshot pending', {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
+    await capture.click({ force: true });
+    // A failed/refused capture settles without an accepted revision: no success.
+    await update(false, 41);
+    await expect(capture).toHaveAttribute('data-capture-state', 'idle');
+    await capture.click();
+    await update(true, 41);
+    await update(false, 42);
+    await expect(capture).toHaveAttribute('data-capture-state', 'complete');
+    await expect(capture.locator('[data-dock-glyph="check"]')).toBeVisible();
+    await expect(capture.getByRole('tooltip')).toHaveText('Screenshot captured');
+    await expect(capture.getByRole('tooltip')).toHaveCSS('opacity', '1');
+    if (reducedMotion === 'reduce') {
+      await expect
+        .poll(() =>
+          capture.evaluate((node) =>
+            node.getAnimations().some((animation) => animation.playState === 'running'),
+          ),
+        )
+        .toBe(false);
+    }
+    await testInfo.attach('screenshot accepted', {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
+    await expect(capture).toHaveAttribute('data-capture-state', 'idle');
+    const actions = JSON.parse(
+      (await page.getByTestId('dock-annotation-harness').getAttribute('data-toolbar')) ?? '[]',
+    );
+    expect(actions.map((row: { action: string }) => row.action)).toEqual(['capture', 'capture']);
+    expect(await recorded(page, 'pointers')).toEqual([]);
+  });
+}

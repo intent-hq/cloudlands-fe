@@ -22,7 +22,9 @@
   import HomeActivityTime from './HomeActivityTime.svelte';
   import HomeWorkspaceStatus from './HomeWorkspaceStatus.svelte';
   import HomeWorkspacePullBadge from './HomeWorkspacePullBadge.svelte';
+  import HomeWorkspacePurgedBadge from './HomeWorkspacePurgedBadge.svelte';
   import HomeWorkspaceRepositoryLabel from './HomeWorkspaceRepositoryLabel.svelte';
+  import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
   import { HOME_SET_ASIDE_GROUP } from './home-set-aside';
 
   interface HomeListSection {
@@ -135,7 +137,9 @@
 
 {#snippet workspaceRow({ item }: { item: Workspace })}
   {@const displayTitle = item.title.trim() ? item.title : m.workspace_links_untitled_label()}
-  {@const pullRequestCount = item.pullRequestsTotal ?? item.pullRequests?.length ?? 0}
+  {@const pullRequestCount = isPlainFolderWorkspace(item)
+    ? 0
+    : (item.pullRequestsTotal ?? item.pullRequests?.length ?? 0)}
   <ListRow
     class="home-list-row h-12 items-center border-b border-border px-3 py-1"
     data-home-workspace={item.id}
@@ -230,6 +234,7 @@
               ></Tooltip.Root
             ></Tooltip.Provider
           >{/if}
+        <HomeWorkspacePurgedBadge workspace={item} />
         <HomeWorkspaceStatus workspace={item} />
         <span class="home-aside-slot shrink-0">
           <span
