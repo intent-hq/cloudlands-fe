@@ -34,24 +34,37 @@
 //                          arguments as regular expressions over the file
 //                          path, and SvelteKit-style `[id]` or `+page`
 //                          segments would otherwise be read as regex syntax).
-//   --repeat-each <JSON>   prints the repetition count for that list (see
-//                          ctChangedRepeatEach).
+//   --repeat-each-listed <report.json>
+//                          prints the repetition count for the tests a
+//                          Playwright `--list --reporter=json` run discovered
+//                          (see ctChangedRepeatEach). Fails (exit 1) on an
+//                          unreadable or malformed report, any discovery
+//                          error, or zero discovered tests, so the job can
+//                          never silently run nothing.
 import { execFileSync } from 'node:child_process';
-import { realpathSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { isCtSpec, normalizeCtPath } from '../playwright/ct-spec-pattern.mjs';
 import { ctImportGraph } from './ct-contract-paths.mjs';
 
 export const OUTPUT_KEY = 'ct_changed_specs';
 export const ERROR_VALUE = 'error';
-// Each changed spec runs this many times with retries off. dock-composer-spec
+// Each changed test runs this many times with retries off. dock-composer-spec
 // failed 12 of 40 runs under load, so 20 repetitions miss a flake that common
 // with a probability far below one in a thousand.
 export const CT_CHANGED_REPEAT_EACH = 20;
-// A PR that edits many specs at once (a rename or a shared-helper refactor)
-// would turn 20 repetitions into hours. Spread a fixed budget of spec-file runs
-// over the changed files instead, never dropping below a few repetitions.
-export const CT_CHANGED_RUN_BUDGET = 200;
+// The repetitions share a fixed budget of test runs, counted over the tests
+// Playwright actually discovers in the changed specs (not spec files: one large
+// spec can hold dozens of tests). A budget of spec-file runs let 10 dock specs
+// holding 86 tests plan 86 x 20 = 1720 runs; the 45-minute job was cancelled
+// after 1167 of them had passed (cloudlands-fe#4047, run 41564605167), about
+// 2.2 s of wall time per run on two workers. At that rate 800 runs take about
+// 30 minutes plus setup (install, browser, bundle build), leaving headroom
+// under the job timeout. The rate is an estimate from one run, not a
+// guarantee: slow specs or a loaded runner take longer.
+export const CT_CHANGED_TEST_RUN_BUDGET = 800;
+// Never fewer than this, even when the changed specs hold more tests than the
+// budget covers (then the job may exceed the budget rather than skip repeats).
 export const CT_CHANGED_MIN_REPEAT_EACH = 3;
 
 export const AFFECTED_OUTPUT_KEY = 'ct_affected_specs';
@@ -67,9 +80,44 @@ export const OVER_BUDGET_OUTPUT_KEY = 'ct_affected_over_budget';
 // cloudlands-fe#3876 broke, ranks 32nd of 202.
 export const CT_AFFECTED_BUDGET = 40;
 
-export function ctChangedRepeatEach(specCount) {
-  const scaled = Math.floor(CT_CHANGED_RUN_BUDGET / Math.max(1, specCount));
+// Repetitions for `testCount` discovered tests: the budget spread over them,
+// within [CT_CHANGED_MIN_REPEAT_EACH, CT_CHANGED_REPEAT_EACH].
+export function ctChangedRepeatEach(testCount) {
+  if (!Number.isInteger(testCount) || testCount <= 0) {
+    throw new Error(`expected a positive number of discovered tests, got ${testCount}`);
+  }
+  const scaled = Math.floor(CT_CHANGED_TEST_RUN_BUDGET / testCount);
   return Math.max(CT_CHANGED_MIN_REPEAT_EACH, Math.min(CT_CHANGED_REPEAT_EACH, scaled));
+}
+
+// Counts the tests in a Playwright JSON report from `--list` (each spec's
+// `tests`, through nested `suites`), per spec file. Throws on a malformed
+// report, any discovery error (a spec that failed to load would otherwise just
+// contribute no tests), or zero tests.
+export function listedCtTests(report) {
+  if (!report || typeof report !== 'object' || !Array.isArray(report.suites)) {
+    throw new Error('expected a Playwright JSON report with a suites array');
+  }
+  if (!Array.isArray(report.errors))
+    throw new Error('expected a Playwright JSON report errors array');
+  if (report.errors.length) {
+    const messages = report.errors.map((error) => error?.message ?? JSON.stringify(error));
+    throw new Error(`test discovery failed: ${messages.join('; ')}`);
+  }
+  const count = (suite) => {
+    if (!suite || typeof suite !== 'object') throw new Error('malformed suite in the report');
+    let tests = 0;
+    for (const spec of suite.specs ?? []) {
+      if (!Array.isArray(spec?.tests)) throw new Error('malformed spec in the report');
+      tests += spec.tests.length;
+    }
+    for (const child of suite.suites ?? []) tests += count(child);
+    return tests;
+  };
+  const files = report.suites.map((suite) => ({ file: String(suite.file), tests: count(suite) }));
+  const total = files.reduce((sum, { tests }) => sum + tests, 0);
+  if (total === 0) throw new Error('test discovery found no tests in the changed specs');
+  return { total, files };
 }
 
 // Added, copied and modified paths by default: a deleted spec has nothing to
@@ -188,7 +236,8 @@ export function overBudgetNote(selected, overBudget) {
 function usage() {
   return (
     'usage: ct-changed-specs.mjs --diff <base> <head> | --affected <base> <head> | ' +
-    '--filters <JSON array> | --repeat-each <JSON array> | --over-budget <JSON array> <JSON array>'
+    '--filters <JSON array> | --repeat-each-listed <report.json> | ' +
+    '--over-budget <JSON array> <JSON array>'
   );
 }
 
@@ -200,6 +249,7 @@ export function main(
     log = console.log,
     warn = console.error,
     write,
+    readReport = (path) => readFileSync(path, 'utf8'),
   } = {},
 ) {
   const writeOut = write ?? ((text) => process.stdout.write(text));
@@ -245,15 +295,29 @@ export function main(
     log(`${OUTPUT_KEY}=${value}`);
     return 0;
   }
-  if ((argv[0] === '--filters' || argv[0] === '--repeat-each') && argv.length === 2) {
+  if (argv[0] === '--repeat-each-listed' && argv.length === 2) {
+    try {
+      const { total, files } = listedCtTests(JSON.parse(readReport(argv[1])));
+      const repeat = ctChangedRepeatEach(total);
+      for (const { file, tests } of files)
+        warn(`  ${file}: ${tests} test${tests === 1 ? '' : 's'}`);
+      warn(
+        `Discovered ${total} test${total === 1 ? '' : 's'} in ${files.length} spec file${files.length === 1 ? '' : 's'}; ` +
+          `repeating each ${repeat} times (${total * repeat} runs; budget ${CT_CHANGED_TEST_RUN_BUDGET}, ` +
+          `${CT_CHANGED_MIN_REPEAT_EACH}-${CT_CHANGED_REPEAT_EACH} repetitions).`,
+      );
+      writeOut(`${repeat}\n`);
+      return 0;
+    } catch (error) {
+      warn(`ct-changed-specs: ${error instanceof Error ? error.message : error}`);
+      return 1;
+    }
+  }
+  if (argv[0] === '--filters' && argv.length === 2) {
     try {
       const specs = parseSpecList(argv[1]);
       if (specs.length === 0) throw new Error('no component test specs to run');
-      writeOut(
-        argv[0] === '--filters'
-          ? specs.map((spec) => `${playwrightFilter(spec)}\0`).join('')
-          : `${ctChangedRepeatEach(specs.length)}\n`,
-      );
+      writeOut(specs.map((spec) => `${playwrightFilter(spec)}\0`).join(''));
       return 0;
     } catch (error) {
       warn(`ct-changed-specs: ${error instanceof Error ? error.message : error}`);
