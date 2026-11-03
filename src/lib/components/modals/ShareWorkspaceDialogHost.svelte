@@ -50,6 +50,7 @@
     selectShareCreatedLink,
     selectShareCreateError,
     selectShareCreating,
+    selectShareDialogResolving,
     selectShareDialogOpen,
     selectShareGuestCount,
     selectShareGuestLimit,
@@ -122,6 +123,7 @@
   const guestCount$ = selectShareGuestCount();
   const guestLimit$ = selectShareGuestLimit();
   const loading$ = selectShareLoading();
+  const resolving$ = selectShareDialogResolving();
   const loadError$ = selectShareLoadError();
   const creating$ = selectShareCreating();
   const createError$ = selectShareCreateError();
@@ -212,6 +214,7 @@
     guestCount={$guestCount$}
     guestLimit={$guestLimit$}
     loading={$loading$}
+    resolving={$resolving$}
     loadError={$loadError$}
     creating={$creating$}
     createError={$createError$}

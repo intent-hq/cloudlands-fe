@@ -113,6 +113,7 @@ import {
   shareEnableRequested,
   sharePrerequisitesStarted,
   sharePrerequisitesSettled,
+  sharePrerequisitesAbandoned,
   shareIntegrationAuthRequested,
   shareOwnerForgeMissing,
   type ShareIntegrationAuth,
@@ -344,6 +345,9 @@ function* sharingPrerequisites(
   const enabling = action.type === shareEnableRequested.type;
   if (enabling && (yield* selectShareSharingEnabled.effect()) === true) return;
   yield* put(sharePrerequisitesStarted({ target, enabling }));
+  // Every exit without a settlement clears the in-flight flags: a stuck
+  // `sharingChecking` would make each later request return early above.
+  let settled = false;
   try {
     let values = yield* call(readSharingPrerequisites);
     if (!(yield* stillTargets(target)) || !(yield* selectCanAdministerHost.effect())) return;
@@ -360,6 +364,7 @@ function* sharingPrerequisites(
       }
     }
     const enabled = values.every(Boolean);
+    settled = true;
     yield* put(
       sharePrerequisitesSettled({
         target,
@@ -374,6 +379,7 @@ function* sharingPrerequisites(
     const message = error instanceof Error ? error.message : '';
     const missingTailcat =
       /tailcat/i.test(message) && /not found|not installed|missing|no such file/i.test(message);
+    settled = true;
     yield* put(
       sharePrerequisitesSettled({
         target,
@@ -387,6 +393,8 @@ function* sharingPrerequisites(
               : m.workspace_share_sharingLoadFailed_error(),
       }),
     );
+  } finally {
+    if (!settled) yield* put(sharePrerequisitesAbandoned({ target }));
   }
 }
 

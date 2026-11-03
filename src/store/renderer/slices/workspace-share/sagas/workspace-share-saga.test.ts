@@ -1682,6 +1682,38 @@ describe('inline sharing prerequisites', () => {
     mocks.request.mockReset();
   });
 
+  // Regression (cloudlands-fe#4084 review): a check that bailed after it
+  // started left `sharingChecking` set, so every later request returned early
+  // and the dialog stayed on its loading placeholder for good.
+  it('lets a later request recheck after a check abandoned mid-read', async () => {
+    const read = deferred<ReturnType<typeof settingReply>>();
+    let first = true;
+    replyByMethod({
+      'settings.get': ({ path }: { path: string }) => {
+        if (first) {
+          first = false;
+          return read.promise;
+        }
+        return settingReply(path, true);
+      },
+    });
+    const roles: Record<string, WorkspaceRole | undefined> = { 'ws-1': 'owner' };
+    const h = harness(loaded(), roles);
+    try {
+      h.dispatch(sharePrerequisitesRequested());
+      expect(h.state().sharingChecking).toBe(true);
+      roles['ws-1'] = 'collaborator';
+      read.resolve(settingReply('server.wsApi.enabled', true));
+      await vi.waitFor(() => expect(h.state().sharingChecking).toBe(false));
+      roles['ws-1'] = 'owner';
+      h.dispatch(sharePrerequisitesRequested());
+      await vi.waitFor(() => expect(h.state().sharingEnabled).toBe(true));
+      expect(h.state().sharingChecking).toBe(false);
+    } finally {
+      h.task.cancel();
+    }
+  });
+
   it.each([
     [false, false, false],
     [true, false, false],
