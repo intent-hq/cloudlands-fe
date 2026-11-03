@@ -137,8 +137,8 @@ describe('chat changes production owners against mock transport', () => {
     send(value);
     await vi.runAllTimersAsync();
     expect(calls('git.diffs')).toEqual([
-      ['git.diffs', { workspaceId: 'ws', paths: ['a.ts', 'b.ts'] }],
-      ['git.diffs', { workspaceId: 'ws', staged: true, paths: ['c.ts'] }],
+      ['git.diffs', { workspaceId: 'ws', paths: ['a.ts', 'b.ts'], maxBytes: 480_000 }],
+      ['git.diffs', { workspaceId: 'ws', staged: true, paths: ['c.ts'], maxBytes: 480_000 }],
     ]);
     expect(rows()[0]).toMatchObject({
       oldContent: 'old\n',
@@ -170,7 +170,9 @@ describe('chat changes production owners against mock transport', () => {
     expect(rows()[0].newContent).toBe('updated snippet');
     send(input([snippet], { showStagingControls: false, isAggregate: true }));
     await vi.runAllTimersAsync();
-    expect(calls('git.diffs')).toEqual([['git.diffs', { workspaceId: 'ws', paths: ['a.ts'] }]]);
+    expect(calls('git.diffs')).toEqual([
+      ['git.diffs', { workspaceId: 'ws', paths: ['a.ts'], maxBytes: 480_000 }],
+    ]);
     expect(rows()[0].newContent).toBe('new\n');
   });
 
@@ -187,11 +189,13 @@ describe('chat changes production owners against mock transport', () => {
     expect(calls('git.diffs')[0][1]).toEqual({
       workspaceId: 'ws',
       paths: [...singles.slice(0, 20).map((row) => row.filePath), 'merged.ts'].sort(),
+      maxBytes: 480_000,
     });
     expect(calls('git.diffs')[1][1]).toEqual({
       workspaceId: 'ws',
       staged: true,
       paths: ['merged.ts'],
+      maxBytes: 480_000,
     });
     expect(
       rows()
@@ -310,7 +314,7 @@ describe('chat changes production owners against mock transport', () => {
     send(input([change(), change('b.ts')]));
     await vi.runAllTimersAsync();
     expect(calls('git.diffs').slice(4)).toEqual([
-      ['git.diffs', { workspaceId: 'ws', paths: ['b.ts'] }],
+      ['git.diffs', { workspaceId: 'ws', paths: ['b.ts'], maxBytes: 480_000 }],
     ]);
     expect(rows().filter((row) => row.filePath === 'a.ts')).toHaveLength(2);
   });

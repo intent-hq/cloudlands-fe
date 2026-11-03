@@ -32,6 +32,8 @@
 import { registerMockIpcHandler } from '$shared/ipc-mock-router';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { gitDiffTruncatedReason, requestAllDiffPages } from '$lib/client/live/git-diff-pages';
+import { dedupedShowFile } from '$features/file-tracking/components/diff/diff-ipc-batcher';
 
 /** Daemon `host.exec` result shape (PROTOCOL §5.14). */
 interface HostExecResult {
@@ -153,6 +155,46 @@ registerMockIpcHandler(IPC_CHANNELS.GIT.NUMSTAT, async (arg) => {
   }
 });
 
+/**
+ * `git.branchDiff` is bounded (§5.6 "Response budget"): entries left out of a
+ * full page (`pageBudget`) are fetched by follow-up requests, and a file too
+ * large for any diff read (`fileTooLarge`) gets its two sides from
+ * `git.showFile` at the entry's `oldRef` / `newRef` commit SHAs. The result
+ * keeps the unbounded shape the branch-base viewer renders from.
+ */
+async function readBoundedBranchDiff(
+  workspaceId: string,
+  request: Record<string, unknown>,
+): Promise<unknown[]> {
+  const entries = await requestAllDiffPages(
+    (method, params) => backendRequest(method, params, { timeoutMs: LOCAL_TIMEOUT_MS }),
+    'git.branchDiff',
+    request,
+    'file',
+  );
+  // Through the shared diff reader, so every whole-object git.showFile read
+  // the app makes goes through one bounded path (§5.6 / bounded object reads).
+  const showAt = async (ref: unknown, filePath: string): Promise<string> => {
+    if (typeof ref !== 'string' || !ref) return '';
+    const result = await dedupedShowFile(workspaceId, ref, filePath);
+    if (result.success || result.notAFile) return result.data ?? '';
+    throw new Error(result.error ?? 'git.showFile failed');
+  };
+  return Promise.all(
+    entries.map(async (entry) => {
+      if (gitDiffTruncatedReason(entry) !== 'fileTooLarge') return entry;
+      const e = entry as Record<string, unknown>;
+      const file = typeof e.file === 'string' ? e.file : '';
+      if (!file) return entry;
+      const [oldContent, newContent] = await Promise.all([
+        showAt(e.oldRef, file),
+        showAt(e.newRef, file),
+      ]);
+      return { ...e, oldContent, newContent };
+    }),
+  );
+}
+
 // ── git:diff (branch-base committed diff only) → git.branchDiff (§5.6) ──
 
 registerMockIpcHandler(IPC_CHANNELS.GIT.DIFF, async (arg) => {
@@ -185,7 +227,7 @@ registerMockIpcHandler(IPC_CHANNELS.GIT.DIFF, async (arg) => {
     // daemon folds an unresolvable branch boundary to [] (legacy parity).
     // Keeps the legacy 60s local-op bound — large repos can outrun the
     // transport's flat 30s default.
-    const data = await backendRequest('git.branchDiff', request, { timeoutMs: LOCAL_TIMEOUT_MS });
+    const data = await readBoundedBranchDiff(workspaceId, request);
     return { success: true, data };
   } catch (error) {
     return { success: false, error: errorMessage(error) };

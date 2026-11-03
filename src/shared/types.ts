@@ -697,6 +697,12 @@ export interface DiffChunk {
   isBinary?: boolean;
   /** Whether this file was too large to diff */
   isTooLarge?: boolean;
+  /**
+   * Set when the daemon's bounded `git.diffs` read (PROTOCOL §5.6) served
+   * this file without hunks: `fileTooLarge` means no diff read serves it, so
+   * read its sides with `git.showFile` / `file.read`.
+   */
+  truncatedReason?: 'fileTooLarge' | 'pageBudget';
 }
 
 export const CURRENT_DIFF_SUMMARY_VERSION = 1 as const;
