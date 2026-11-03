@@ -34,6 +34,18 @@ interface WireSkill {
   compatibility?: string;
 }
 
+/** One paged `skill.list` reply (sent when the request carries `limit`). */
+interface WireSkillPage {
+  skills: WireSkill[];
+  nextToken?: string | null;
+}
+
+/** Rows per `skill.list` page (the daemon's maximum). */
+const SKILL_PAGE_LIMIT = 500;
+
+/** Safety stop for `nextToken` paging. */
+const MAX_SKILL_PAGES = 100;
+
 /** Map wire skill → renderer SkillInfo (strip allowedTools/compatibility). */
 function normalizeSkill(wire: WireSkill): SkillInfo {
   return {
@@ -48,9 +60,31 @@ function normalizeSkill(wire: WireSkill): SkillInfo {
 export class LiveSkillsClient implements SkillsClient {
   /** Raw `skill.list` fetch — throws on transport/daemon failure. */
   private async fetchList(workspaceId: string): Promise<SkillInfo[]> {
-    // `skill.list` (§5.34) returns a bare array of skills (name-sorted).
-    const result = await backendRequest<WireSkill[]>('skill.list', { workspaceId });
-    return Array.isArray(result) ? result.map(normalizeSkill) : [];
+    // `skill.list` (§5.34) pages large catalogs; sending `limit` selects the
+    // `{ skills, nextToken }` reply that carries the continuation token. Older
+    // daemons ignore `limit` and answer the whole name-sorted bare array.
+    const skills: SkillInfo[] = [];
+    const seen = new Set<string>();
+    let nextToken: string | undefined;
+    for (let page = 0; page < MAX_SKILL_PAGES; page++) {
+      const result = await backendRequest<WireSkill[] | WireSkillPage>('skill.list', {
+        workspaceId,
+        limit: SKILL_PAGE_LIMIT,
+        ...(nextToken ? { nextToken } : {}),
+      });
+      if (Array.isArray(result)) return result.map(normalizeSkill);
+      // Offset tokens can repeat a row when the catalog changes mid-drain;
+      // keep the first copy so keyed lists never see duplicate names.
+      for (const wire of Array.isArray(result?.skills) ? result.skills : []) {
+        if (seen.has(wire.name)) continue;
+        seen.add(wire.name);
+        skills.push(normalizeSkill(wire));
+      }
+      nextToken = typeof result?.nextToken === 'string' ? result.nextToken : undefined;
+      if (!nextToken) return skills;
+    }
+    logger.warn('skill.list paging stopped at the page limit');
+    return skills;
   }
 
   async list(workspaceId: string): Promise<SkillInfo[]> {

@@ -5789,6 +5789,7 @@
   "specialists_loader_fileNotFound_error": "未找到專家檔案",
   "specialists_loader_unknown_error": "未知錯誤",
   "specialists_mutation_deleteFailed_error": "刪除專家失敗",
+  "specialists_mutation_promptUnavailable_error": "此專家的提示詞過大，無法載入，因此無法在此儲存。請直接編輯其檔案。",
   "specialists_mutation_refreshFailed_error": "寫入後重新整理專家列表失敗",
   "specialists_mutation_saveFailed_error": "儲存專家失敗",
   "starterPrompts_connectFour_label": "建立一個四子棋遊戲",

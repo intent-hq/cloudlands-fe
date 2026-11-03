@@ -104,8 +104,8 @@ it('creates a user specialist through the real client and confirms the wire cata
     await expect(create.mock.results[0].value).resolves.toEqual(spec);
     await vi.waitFor(() => expect(specialists.creationByContext.user.status).toBe('refreshing'));
     expect(request.mock.calls.filter(([method]) => method === 'specialist.list')).toEqual([
-      ['specialist.list'],
-      ['specialist.list'],
+      ['specialist.list', { limit: 500 }],
+      ['specialist.list', { limit: 500 }],
     ]);
     releaseCatalog({
       specialists: [{ ...spec, path: '/home/test/.intent/specialists/wire-reviewer.md' }],
