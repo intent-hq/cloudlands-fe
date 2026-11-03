@@ -71,7 +71,13 @@ export const pad2 = (n: number) => String(n).padStart(2, '0');
 
 interface HourBar {
   heightPct: number;
-  /** Fresh (uncached) input's share of the bar; cache fills the remainder. */
+  /**
+   * Cache (read + write) share of the bar. The card draws cache as the base
+   * segment filling whatever the others leave; when it is 0 the input segment
+   * becomes the base instead, so the peak/best highlight still has a home.
+   */
+  cachePct: number;
+  /** Fresh (uncached) input's share of the bar. */
   inPct: number;
   outPct: number;
   /** Reasoning tokens' share of the bar; 0 when the cell reported none. */
@@ -150,6 +156,7 @@ export function hourCardModel(
 
   const bars: HourBar[] = cells.map((c, i) => ({
     heightPct: max > 0 ? +((totals[i] / max) * 100).toFixed(1) : 0,
+    cachePct: segmentPct(cacheTokens(c), totals[i]),
     inPct: segmentPct(c.inputTokens, totals[i]),
     outPct: segmentPct(c.outputTokens, totals[i]),
     thoughtPct: segmentPct(c.thoughtTokens ?? 0, totals[i]),
@@ -186,7 +193,13 @@ export function hourCardModel(
 
 interface MonthBar {
   heightPct: number;
-  /** Fresh (uncached) input's share of the bar; cache fills the remainder. */
+  /**
+   * Cache (read + write) share of the bar. The card draws cache as the base
+   * segment filling whatever the others leave; when it is 0 the input segment
+   * becomes the base instead, so the peak/best highlight still has a home.
+   */
+  cachePct: number;
+  /** Fresh (uncached) input's share of the bar. */
   inPct: number;
   outPct: number;
   /** Reasoning tokens' share of the bar; 0 when the cell reported none. */
@@ -244,6 +257,7 @@ export function monthCardModel(byMonth: UsageMonthStats[], monthsElapsed: number
     const total = active ? totals[i] : 0;
     return {
       heightPct: active ? (max > 0 ? +((totals[i] / max) * 100).toFixed(1) : 0) : 2,
+      cachePct: segmentPct(cacheTokens(c), total),
       inPct: segmentPct(c.inputTokens, total),
       outPct: segmentPct(c.outputTokens, total),
       thoughtPct: segmentPct(c.thoughtTokens ?? 0, total),

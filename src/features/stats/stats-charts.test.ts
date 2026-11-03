@@ -96,6 +96,7 @@ describe('hourCardModel (hour-of-day)', () => {
     // 600 fresh input of 1000; the 200 cache tokens are the implicit base segment.
     expect(m.bars[14]).toEqual({
       heightPct: 100,
+      cachePct: 20,
       inPct: 60,
       outPct: 20,
       thoughtPct: 0,
@@ -103,12 +104,20 @@ describe('hourCardModel (hour-of-day)', () => {
     });
     expect(m.bars[10]).toEqual({
       heightPct: 50,
+      cachePct: 20,
       inPct: 60,
       outPct: 20,
       thoughtPct: 0,
       peak: false,
     });
-    expect(m.bars[0]).toEqual({ heightPct: 0, inPct: 0, outPct: 0, thoughtPct: 0, peak: false });
+    expect(m.bars[0]).toEqual({
+      heightPct: 0,
+      cachePct: 0,
+      inPct: 0,
+      outPct: 0,
+      thoughtPct: 0,
+      peak: false,
+    });
     expect(m.hasThoughts).toBe(false);
     expect(m.hasCache).toBe(true);
     // total 1750; hours 09–18 hold 1500 (86%), hours 00–06 hold 250 (14%).
@@ -129,6 +138,7 @@ describe('hourCardModel (hour-of-day)', () => {
     expect(m.hasThoughts).toBe(true);
     expect(m.bars[14]).toEqual({
       heightPct: 100,
+      cachePct: 10,
       inPct: 60,
       outPct: 20,
       thoughtPct: 10,
@@ -136,6 +146,7 @@ describe('hourCardModel (hour-of-day)', () => {
     });
     expect(m.bars[10]).toEqual({
       heightPct: 50,
+      cachePct: 20,
       inPct: 60,
       outPct: 20,
       thoughtPct: 0,
@@ -156,6 +167,7 @@ describe('hourCardModel (hour-of-day)', () => {
     expect(m.hasThoughts).toBe(true);
     expect(m.bars[7]).toEqual({
       heightPct: 100,
+      cachePct: 99.6,
       inPct: 0.2,
       outPct: 0.2,
       // 0.0009% would round to 0; any reported thoughts keep a non-zero share.
@@ -170,7 +182,14 @@ describe('hourCardModel (hour-of-day)', () => {
     );
     const m = hourCardModel(noCache, 'hour-of-day');
     expect(m.hasCache).toBe(false);
-    expect(m.bars[3]).toEqual({ heightPct: 100, inPct: 75, outPct: 25, thoughtPct: 0, peak: true });
+    expect(m.bars[3]).toEqual({
+      heightPct: 100,
+      cachePct: 0,
+      inPct: 75,
+      outPct: 25,
+      thoughtPct: 0,
+      peak: true,
+    });
   });
 
   it('defaults the working-hours window to 09–18 (regression)', () => {
@@ -195,7 +214,14 @@ describe('hourCardModel (hour-of-day)', () => {
     expect(m.grid).toEqual([]);
     expect(m.bars).toHaveLength(24);
     for (const b of m.bars)
-      expect(b).toEqual({ heightPct: 0, inPct: 0, outPct: 0, thoughtPct: 0, peak: false });
+      expect(b).toEqual({
+        heightPct: 0,
+        cachePct: 0,
+        inPct: 0,
+        outPct: 0,
+        thoughtPct: 0,
+        peak: false,
+      });
     expect(m.hasThoughts).toBe(false);
     expect(m.hasCache).toBe(false);
     expect(m.workingHours).toBe('09–18 · 0%');
@@ -282,6 +308,7 @@ describe('monthCardModel', () => {
     expect(m.hasThoughts).toBe(false);
     expect(m.bars[2]).toEqual({
       heightPct: 100,
+      cachePct: 0,
       inPct: 80,
       outPct: 20,
       thoughtPct: 0,
@@ -291,6 +318,7 @@ describe('monthCardModel', () => {
     });
     expect(m.bars[3]).toEqual({
       heightPct: 75,
+      cachePct: 0,
       inPct: 80,
       outPct: 20,
       thoughtPct: 0,
@@ -300,6 +328,7 @@ describe('monthCardModel', () => {
     });
     expect(m.bars[11]).toEqual({
       heightPct: 2,
+      cachePct: 0,
       inPct: 0,
       outPct: 0,
       thoughtPct: 0,
@@ -323,6 +352,7 @@ describe('monthCardModel', () => {
     expect(m.hasThoughts).toBe(true);
     expect(m.bars[0]).toEqual({
       heightPct: 100,
+      cachePct: 0,
       inPct: 60,
       outPct: 20,
       thoughtPct: 20,
@@ -342,6 +372,7 @@ describe('monthCardModel', () => {
     expect(m.hasCache).toBe(true);
     expect(m.bars[1]).toEqual({
       heightPct: 100,
+      cachePct: 99.6,
       inPct: 0.2,
       outPct: 0.2,
       thoughtPct: 0.1,

@@ -46,8 +46,10 @@ async function expectVisibleMix(card: Locator, busy: number, quiet: number) {
         ]),
       ),
     );
+  // Visible means it covers at least one device pixel on this screen.
+  const devicePixel = await card.evaluate(() => 1 / window.devicePixelRatio);
   for (const sel of ['.bar-thought', '.bar-out', '.bar-in']) {
-    expect(heights[sel], `${sel} is visible`).toBeGreaterThanOrEqual(1.5);
+    expect(heights[sel], `${sel} is visible`).toBeGreaterThanOrEqual(devicePixel);
   }
   // The floors must not misrepresent the mix: cache still dominates the bar.
   expect(heights['.bar-cache']).toBeGreaterThan(
@@ -71,4 +73,34 @@ test('by-hour keeps tiny input, output and thoughts segments visible', async ({ 
 test('by-month keeps tiny input, output and thoughts segments visible', async ({ mount }) => {
   const card = await mount(TokensByMonthCard, { props: { data, yearKey: '2025' } });
   await expectVisibleMix(card, 9, 0);
+});
+
+test('by-hour still highlights the peak bar when no cache was reported', async ({ mount }) => {
+  // A provider without cache counters: the peak (10h) must stay distinguishable
+  // from its neighbour (9h) even though no cache segment exists.
+  const noCache: UsageStatsResult = {
+    ...data,
+    byHourOfDay: Array.from({ length: 24 }, (_, hour) => ({
+      hour,
+      ...empty,
+      inputTokens: hour === 10 ? 900 : hour === 9 ? 600 : 0,
+      outputTokens: hour === 10 ? 100 : hour === 9 ? 100 : 0,
+    })),
+  };
+  const card = await mount(TokensByHourCard, {
+    props: { data: noCache, mode: 'month', label: 'NOV 2026' },
+  });
+  const baseColor = (index: number) =>
+    card
+      .locator('.bar')
+      .nth(index)
+      .evaluate((node) => {
+        // The colour the user actually sees: the bar's tallest segment.
+        const segments = Array.from(node.children);
+        const tallest = segments.reduce((a, b) =>
+          b.getBoundingClientRect().height > a.getBoundingClientRect().height ? b : a,
+        );
+        return getComputedStyle(tallest).backgroundColor;
+      });
+  expect(await baseColor(10)).not.toBe(await baseColor(9));
 });

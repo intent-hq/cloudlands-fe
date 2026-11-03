@@ -81,9 +81,18 @@
             ></span>
             <span class="bar-out" class:seg-min={bar.outPct > 0} style:height="{bar.outPct}%"
             ></span>
-            <span class="bar-in" class:seg-min={bar.inPct > 0} style:height="{bar.inPct}%"></span>
-            <span class="bar-cache" class:bar-cache-best={bar.best} class:seg-stub={!bar.active}
-            ></span>
+            <!-- The base segment fills the bar and carries the best-month
+                 highlight: cache when the bar has any, else fresh input. -->
+            {#if bar.cachePct > 0}
+              <span class="bar-in" class:seg-min={bar.inPct > 0} style:height="{bar.inPct}%"></span>
+              <span class="bar-cache bar-base" class:bar-base-best={bar.best}></span>
+            {:else}
+              <span
+                class="bar-in bar-base"
+                class:bar-base-best={bar.best}
+                class:seg-stub={!bar.active}
+              ></span>
+            {/if}
           </span>
         {/each}
       </div>
@@ -276,11 +285,14 @@
   }
 
   .bar-cache {
-    flex: 1;
     background: hsl(var(--muted-foreground));
   }
 
-  .bar-cache-best {
+  .bar-base {
+    flex: 1;
+  }
+
+  .bar-base-best {
     background: hsl(var(--foreground));
   }
 
