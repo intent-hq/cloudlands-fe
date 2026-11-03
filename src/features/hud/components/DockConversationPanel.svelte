@@ -286,7 +286,8 @@
         onclick={onBack}
         data-dock-conversation-back
         aria-label={m.ui_contentHeader_goBack_tooltip()}
-        title={m.ui_contentHeader_goBack_tooltip()}><Fa icon={faArrowLeft} /></Button
+        tooltip={m.ui_contentHeader_goBack_tooltip()}
+        tooltipSide="bottom"><Fa icon={faArrowLeft} /></Button
       >
     {/snippet}
     {#snippet title()}
@@ -359,8 +360,8 @@
           size="icon-sm"
           onclick={onOpenWorkspace}
           aria-label={m.dock_conversation_openFull_ariaLabel()}
-          title={m.dock_conversation_openFull_ariaLabel()}
-          ><Fa icon={faArrowUpRightFromSquare} /></Button
+          tooltip={m.dock_conversation_openFull_ariaLabel()}
+          tooltipSide="bottom"><Fa icon={faArrowUpRightFromSquare} /></Button
         >{/if}
     {/snippet}
   </ScreenHeader>

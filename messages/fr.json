@@ -8326,8 +8326,6 @@
   "dock_recordingToolbar_discard_label": "Supprimer l’enregistrement",
   "dock_recordingToolbar_discarded_label": "Enregistrement supprimé",
   "dock_recordingToolbar_undo_label": "Annuler",
-  "dock_recordingToolbar_space_key": "Espace",
-  "dock_recordingToolbar_enter_key": "Entrée",
   "dock_mediaClipboard_copy_label": "Copier",
   "dock_mediaClipboard_cut_label": "Couper",
   "dock_mediaClipboard_copyFailed_error": "Impossible de copier dans le presse-papiers",

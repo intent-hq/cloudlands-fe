@@ -8326,8 +8326,6 @@
   "dock_recordingToolbar_discard_label": "Discard recording",
   "dock_recordingToolbar_discarded_label": "Recording discarded",
   "dock_recordingToolbar_undo_label": "Undo",
-  "dock_recordingToolbar_space_key": "Space",
-  "dock_recordingToolbar_enter_key": "Enter",
   "dock_mediaClipboard_copy_label": "Copy",
   "dock_mediaClipboard_cut_label": "Cut",
   "dock_mediaClipboard_copyFailed_error": "Couldn’t copy to the clipboard",

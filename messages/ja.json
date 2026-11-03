@@ -8326,8 +8326,6 @@
   "dock_recordingToolbar_discard_label": "録画を破棄",
   "dock_recordingToolbar_discarded_label": "録画を破棄しました",
   "dock_recordingToolbar_undo_label": "元に戻す",
-  "dock_recordingToolbar_space_key": "Space",
-  "dock_recordingToolbar_enter_key": "Enter",
   "dock_mediaClipboard_copy_label": "コピー",
   "dock_mediaClipboard_cut_label": "カット",
   "dock_mediaClipboard_copyFailed_error": "クリップボードにコピーできませんでした",
