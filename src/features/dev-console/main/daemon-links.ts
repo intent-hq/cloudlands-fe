@@ -15,7 +15,11 @@ export interface DaemonLinksClient {
     listener: (notification: { method: string; params?: unknown }) => void,
   ): unknown;
   on(event: 'reconnected', listener: () => void): unknown;
-  off(event: string, listener: (...args: never[]) => void): unknown;
+  off(
+    event: 'notification',
+    listener: (notification: { method: string; params?: unknown }) => void,
+  ): unknown;
+  off(event: 'reconnected', listener: () => void): unknown;
 }
 
 /** Batched live records, also emitted with an empty list on every start and stop. */
