@@ -1,13 +1,14 @@
 /**
  * Selector-module stand-ins for rendering ChatPanel against a mocked store.
  *
- * Each exported factory returns one module shape; the test file registers it
- * with `vi.mock(path, async () => (await import('./mocks/chat-panel-render-scaffold')).x())`.
- * For reactive selectors, spread the factory first and override only that selector:
- * `return { ...agentSessionSelectors(), selectAgentMessages: () => messages };`.
- * Every other selector module starts from the real module and overrides only
- * what the test cares about, so a selector ChatPanel starts reading later still
- * resolves (cloudlands-fe#3525):
+ * Each `*Selectors` factory resolves the real selector module with only the
+ * scaffold-driven selectors replaced; the test file passes its `importOriginal`:
+ * `vi.mock(path, async (importOriginal) => (await import('./mocks/chat-panel-render-scaffold')).xSelectors(importOriginal))`.
+ * The factory returns a promise, so await it before spreading to override one selector:
+ * `return { ...(await agentSessionSelectors(importOriginal)), selectAgentMessages: () => messages };`.
+ * Every other selector module also starts from the real module and overrides
+ * only what the test cares about, so a selector ChatPanel starts reading later
+ * still resolves (cloudlands-fe#3525, cloudlands-fe#4114):
  * `vi.mock(path, async (importOriginal) => (await import(scaffold)).withReal(importOriginal, { selectX: value }))`
  * for constant values, or `withRealSelectors(importOriginal, { selectX: liveSelector })`.
  * Real selectors read the mocked store, so a test with its own `$store/renderer/store`

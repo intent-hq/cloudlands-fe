@@ -190,6 +190,15 @@ tester.run('no-copied-chat-panel-selector-mocks', rule, {
         }
         export function appClient() { return { appClient: {} }; }`,
     },
+    {
+      filename: scaffoldFilename,
+      code: `${scaffoldHelpers}
+        function chatStateSelectors(importOriginal) {
+          return withReal(importOriginal, { selectTranscriptHydratedOnce: true });
+        }
+        const agentQueueSelectors = (importOriginal) => withReal(importOriginal);
+        export { chatStateSelectors, agentQueueSelectors };`,
+    },
     // Outside the scaffold, a local *Selectors helper is not a factory.
     { filename, code: `export function chatStateSelectors() { return stub({}); }` },
   ],
@@ -253,6 +262,35 @@ tester.run('no-copied-chat-panel-selector-mocks', rule, {
         export function chatStateSelectors(importOriginal) {
           return withRealCopy(importOriginal, {});
         }`,
+      errors: [handListed('chatStateSelectors')],
+    },
+    // Export lists are held to the same contract as inline exports.
+    {
+      filename: scaffoldFilename,
+      code: `${scaffoldHelpers}
+        function chatStateSelectors() { return stub({ selectChatError: null }); }
+        export { chatStateSelectors };`,
+      errors: [handListed('chatStateSelectors')],
+    },
+    {
+      filename: scaffoldFilename,
+      code: `${scaffoldHelpers}
+        const copied = () => stub({ selectChatError: null });
+        export { copied as chatStateSelectors };`,
+      errors: [handListed('chatStateSelectors')],
+    },
+    {
+      filename: scaffoldFilename,
+      code: `${scaffoldHelpers}
+        let chatStateSelectors = (importOriginal) => withReal(importOriginal);
+        chatStateSelectors = () => stub({});
+        export { chatStateSelectors };`,
+      errors: [handListed('chatStateSelectors')],
+    },
+    {
+      filename: scaffoldFilename,
+      code: `${scaffoldHelpers}
+        export { chatStateSelectors } from './copied-selectors';`,
       errors: [handListed('chatStateSelectors')],
     },
     // A scaffold factory called without the mock's importOriginal is hand-listed.

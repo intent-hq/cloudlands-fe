@@ -248,18 +248,34 @@ export default {
     }
 
     // Exported `*Selectors` factories and the real helpers they build on.
+    // The function an export-list entry names: a local function declaration or
+    // never-reassigned initializer. Re-exports from another file resolve to
+    // nothing, so they fail the contract.
+    function localFunction(specifier, statement) {
+      if (statement.source || specifier.local.type !== 'Identifier') return null;
+      const binding = variable(specifier.local);
+      const definition = binding?.defs[0];
+      if (!definition || binding.references.some((ref) => ref.isWrite() && !ref.init)) return null;
+      if (definition.type === 'FunctionName') return definition.node;
+      return definition.type === 'Variable' ? unwrap(definition.node.init) : null;
+    }
+
+    function exportedFunctions(statement) {
+      const { declaration } = statement;
+      if (declaration?.type === 'FunctionDeclaration') return [[declaration.id, declaration]];
+      if (declaration?.type === 'VariableDeclaration')
+        return declaration.declarations.map((item) => [item.id, unwrap(item.init)]);
+      return statement.specifiers
+        .filter((specifier) => specifier.type === 'ExportSpecifier')
+        .map((specifier) => [specifier.exported, localFunction(specifier, statement)]);
+    }
+
     function checkScaffold(program) {
       for (const statement of program.body) {
-        if (statement.type !== 'ExportNamedDeclaration' || !statement.declaration) continue;
-        const { declaration } = statement;
-        const exported =
-          declaration.type === 'FunctionDeclaration'
-            ? [[declaration.id, declaration]]
-            : declaration.type === 'VariableDeclaration'
-              ? declaration.declarations.map((item) => [item.id, unwrap(item.init)])
-              : [];
-        for (const [id, fn] of exported) {
-          const name = id?.type === 'Identifier' ? id.name : null;
+        if (statement.type !== 'ExportNamedDeclaration' || statement.exportKind === 'type')
+          continue;
+        for (const [id, fn] of exportedFunctions(statement)) {
+          const name = id?.type === 'Identifier' ? id.name : literal(id);
           if (!name || !(name.endsWith('Selectors') || realHelpers.has(`factory:${name}`)))
             continue;
           if (returnsRealExports(fn, null)) continue;
