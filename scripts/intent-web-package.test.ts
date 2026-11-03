@@ -428,7 +428,11 @@ describe('publish-intent-web.yml', () => {
     expect(release?.run).toContain('check \\"Allow npm publish\\" under Allowed actions');
     expect(plan).toBeDefined();
     expect(release?.if).toBe("${{ steps.plan.outputs.publish == 'true' }}");
-    expect(release?.run).toContain('npm publish "$TARBALL" --access public --tag "$DIST_TAG"');
+    // Trusted publishing does not add provenance on its own (2.277.0 shipped
+    // without an attestation), so the publish asks for it explicitly.
+    expect(release?.run).toContain(
+      'npm publish "$TARBALL" --access public --tag "$DIST_TAG" --provenance',
+    );
     expect(steps.indexOf(plan!)).toBeLessThan(steps.indexOf(release!));
   });
 });
