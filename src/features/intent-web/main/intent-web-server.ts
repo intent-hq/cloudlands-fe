@@ -22,6 +22,8 @@ import {
   isSameOriginUpgrade,
 } from '../../browser-access/main/browser-access-auth';
 import { createBrowserAccessServer } from '../../browser-access/main/browser-access-server';
+import { extractLocalIps, extractTcAddress } from '../../backend/main/daemon-route-info';
+import { isLoopbackHost } from '../../../shared/loopback-host';
 
 const PREFIX = '/__intent-web/connections';
 interface WebServerOptions {
@@ -197,6 +199,30 @@ export async function createIntentWebServer(options: WebServerOptions) {
     });
     return upstream;
   };
+  // Mirrors the desktop's post-toggle refresh so the tunnel route reaches the
+  // connect race. Remote daemons answer server.pairingInfo only locally, and
+  // the desktop otherwise learns routes from system.status on each connect,
+  // so fall back to that (loopback-filtered) here. Fail-soft throughout.
+  const refreshRoutes = async (
+    id: string,
+    request: (method: string, params?: unknown) => Promise<unknown>,
+  ) => {
+    try {
+      let result: unknown;
+      let ips: string[];
+      try {
+        result = await request('server.pairingInfo');
+        ips = extractLocalIps(result) ?? [];
+      } catch {
+        result = await request('system.status');
+        ips = (extractLocalIps(result) ?? []).filter((ip) => !isLoopbackHost(ip));
+      }
+      if (ips.length > 0 && (await store.getDetectHosts(id))) await store.setHosts(id, ips);
+      await store.setTcAddress(id, extractTcAddress(result));
+    } catch {
+      // The saved routes stay as they were.
+    }
+  };
   const send = (res: http.ServerResponse, value: unknown, status = 200) => {
     res.statusCode = status;
     res.setHeader('Content-Type', 'application/json');
@@ -269,12 +295,11 @@ globalThis.__INTENT_RUNTIME_CONFIG__=Object.freeze({backendId:backend,intentdWsU
                 : Promise.reject(new ApiError(500));
           try {
             client?.start();
-            send(
-              res,
-              body
-                ? await setConnectionTunnel(request, body.enabled as boolean)
-                : await getConnectionTunnel(request),
-            );
+            const result = body
+              ? await setConnectionTunnel(request, body.enabled as boolean)
+              : await getConnectionTunnel(request);
+            if (body && result.supported) await refreshRoutes(id, request);
+            send(res, result);
           } finally {
             client?.dispose();
           }

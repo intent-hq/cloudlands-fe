@@ -154,6 +154,7 @@ it('reads and updates tunnel settings with the canonical daemon request shape', 
   const rpc = vi.fn(async (_id: string, method: string, params?: unknown) => {
     if (method === 'settings.list')
       return { settings: [{ path: 'server.tunnel.enabled', value: false }] };
+    if (method === 'server.pairingInfo') return {};
     expect(params).toEqual({ changes: [{ path: 'server.tunnel.enabled', value: true }] });
     return { applied: [{ path: 'server.tunnel.enabled', value: true }] };
   });
@@ -194,7 +195,72 @@ it('reads and updates tunnel settings with the canonical daemon request shape', 
     'settings.list',
     'settings.list',
     'settings.update',
+    'server.pairingInfo',
   ]);
+});
+it('persists the advertised tunnel route after enabling the tunnel', async () => {
+  const { tunnelRaceAttempt } = await import('../../backend/main/backend-connection');
+  const { buildConfigForRecord } = await import('../../backend/main/connection-config');
+  const tcAddress = 'tc' + 'A'.repeat(52);
+  for (const pairingFails of [false, true]) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'intent-web-tunnel-route-'));
+    cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const rpc = vi.fn(async (_id: string, method: string) => {
+      if (method === 'settings.list')
+        return { settings: [{ path: 'server.tunnel.enabled', value: false }] };
+      if (method === 'settings.update')
+        return { applied: [{ path: 'server.tunnel.enabled', value: true }] };
+      if (method === 'server.pairingInfo') {
+        if (pairingFails) throw new Error('server.* methods are local-only');
+        return { tcAddress, localIps: ['10.0.0.5'] };
+      }
+      if (method === 'system.status') return { tcAddress, localIps: ['127.0.0.1', '10.0.0.6'] };
+      throw new Error(`unexpected ${method}`);
+    });
+    const server = await createIntentWebServer({
+      dataDir: dir,
+      webRoot: dir,
+      getAccessKey: () => 'key',
+      localSocket: null,
+      tailcatAvailable: true,
+      tailcatBinary: '/usr/bin/tailcat',
+      rpc,
+    });
+    const port = await server.listen(0);
+    cleanups.push(() => server.close());
+    const origin = `http://127.0.0.1:${port}`;
+    const headers = {
+      Cookie: `${SESSION_COOKIE}=${deriveSessionToken('key')}`,
+      Origin: origin,
+      'Content-Type': 'application/json',
+    };
+    const { connection } = await (
+      await fetch(origin + '/__intent-web/connections', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ ...machine, detectHosts: true }),
+      })
+    ).json();
+    await fetch(origin + `/__intent-web/connections/${connection.id}/tunnel`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ enabled: true }),
+    });
+    const { connections } = await (
+      await fetch(origin + '/__intent-web/connections', { headers })
+    ).json();
+    const record = connections.find((c: { id: string }) => c.id === connection.id);
+    expect(record.tcAddress).toBe(tcAddress);
+    expect(record.hosts).toEqual([pairingFails ? '10.0.0.6' : '10.0.0.5']);
+    const { config } = await buildConfigForRecord({
+      ...record,
+      tcAddress: record.tcAddress,
+      getToken: async () => 'token',
+    });
+    expect(tunnelRaceAttempt({ ...config, tailcatBinary: '/usr/bin/tailcat' })).toMatchObject({
+      via: 'tunnel',
+    });
+  }
 });
 it('preserves optional machine presentation settings and rejects invalid values', async () => {
   const { call } = await start();
