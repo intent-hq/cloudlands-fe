@@ -17,17 +17,44 @@ the cloudlands-fe version.
 ## How releases publish
 
 `publish-intent-web.yml` runs after every successful tag-push run of Release
-Alpha, so each alpha publishes the matching npm version under the `latest`
-dist-tag. It builds and smoke-tests the tarball on the release tag
-(`intent-web-package.yml`), then publishes that tarball from a GitHub-hosted
-runner with npm trusted publishing: OIDC, no `NPM_TOKEN`, provenance attached.
+Alpha and publishes the matching npm version. It builds and smoke-tests the
+tarball on the release tag (`intent-web-package.yml`), then publishes that
+tarball from a GitHub-hosted runner with npm trusted publishing: OIDC, no
+`NPM_TOKEN`, provenance attached.
 
 - A version that is already on npm is skipped, so reruns are safe.
 - To publish a tag again (a failed run, or a Release Alpha rebuilt by hand),
   run the workflow manually with the tag:
   `gh workflow run publish-intent-web.yml --repo intent-hq/cloudlands-fe -f tag=v2.276.0`.
-- A tag older than the current `latest` publishes under the `backfill`
-  dist-tag, so `latest` never moves backwards.
+
+## Dist-tags follow the release channels
+
+| Dist-tag   | Points at                                 | Moved by                                              |
+| ---------- | ----------------------------------------- | ----------------------------------------------------- |
+| `alpha`    | the newest published alpha                | each publish (`scripts/intent-web-publish-plan.mjs`)  |
+| `beta`     | the version the beta channel serves       | a successful Promote Beta run                         |
+| `latest`   | the version the stable channel serves     | a successful Release Stable run                       |
+| `backfill` | a tag older than `alpha`, published later | a publish by hand of an old tag, so `alpha` stays put |
+| `next`     | a prerelease version                      | a publish of a prerelease tag                         |
+
+So `npx @intent-hq/web` runs the stable version, and `@intent-hq/web@beta` or
+`@intent-hq/web@alpha` the other channels. A publish never sets `beta` or
+`latest`.
+
+After a successful Promote Beta or Release Stable run, the workflow's
+`sync-channel` job reads the version that channel now serves from its feed on
+intent-hq/cloudlands-releases (`beta/latest-mac.yml`, `stable/latest-mac.yml`)
+and moves the dist-tag there with `npm dist-tag add`
+(`scripts/intent-web-dist-tag-sync.mjs`). The feed is the source of truth, so a
+sync is safe to rerun and also repairs a missed one. To sync a channel by hand:
+`gh workflow run publish-intent-web.yml --repo intent-hq/cloudlands-fe -f channel=stable`.
+
+- No dist-tag ever moves backwards; a sync that would is skipped with a notice.
+- A channel version that is not on npm (older than the first publish) is
+  skipped with a notice.
+- If npm rejects the change, the job fails naming the Trusted Publisher
+  setting below. Until it is enabled, an `@intent-hq` owner can move the tag by
+  hand: `npm dist-tag add @intent-hq/web@<version> <beta|latest>`.
 
 ## One-time bootstrap
 
@@ -47,14 +74,19 @@ by hand. Until then the workflow fails with "@intent-hq/web is not on npm yet".
 
 2. Sign in as an owner of the `@intent-hq` npm org with 2FA enabled
    (`npm login`), then publish:
-   `npm publish /tmp/intent-web/intent-hq-web-<version>.tgz --access public`.
-   npm asks for a one-time password.
+   `npm publish /tmp/intent-web/intent-hq-web-<version>.tgz --access public --tag alpha`.
+   npm asks for a one-time password. The first version of a package also gets
+   `latest`, so `latest` stays on that alpha until a stable sync moves it to a
+   newer stable version (tags never move backwards).
 3. On npmjs.com, open the package → **Settings** → **Trusted Publisher** and
    add a GitHub Actions publisher:
    - Organization or user: `intent-hq`
    - Repository: `cloudlands-fe`
    - Workflow filename: `publish-intent-web.yml`
    - Environment: leave empty
+   - Turn on **Allow npm dist-tag**, so the workflow can move `beta` and
+     `latest`. Without it the channel sync fails and the tags must be moved by
+     hand (see above).
 4. Recommended: in the same settings, under **Publishing access**, choose
    "Require two-factor authentication and disallow tokens". Trusted publishing
    keeps working.
