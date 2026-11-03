@@ -35,7 +35,11 @@
   } from '../discussion-agent-mentions';
   import { discussionMessageParts } from '../discussion-message-content';
   import DiscussionReferencePicker from './DiscussionReferencePicker.svelte';
-  import type { DiscussionPendingDisplay, DiscussionReactionDisplay } from './discussion-display';
+  import {
+    discussionActivityAnswered,
+    type DiscussionPendingDisplay,
+    type DiscussionReactionDisplay,
+  } from './discussion-display';
   import {
     DISCUSSION_MAX_BODY_BYTES,
     DISCUSSION_MAX_RECIPIENTS,
@@ -219,6 +223,7 @@
       [author.displayName, author.login].filter((name): name is string => !!name),
     ),
   ]);
+  const activityAnswered = $derived(discussionActivityAnswered(messages));
   const mentionsByMessage = $derived(
     Object.fromEntries(messages.map((message) => [message.id, message.agentMentions ?? []])),
   );
@@ -779,7 +784,7 @@
                     confirmed,
                   )}{/if}{/snippet}
             </DiscussionMessageView>
-            {#each confirmed?.agentActivity ?? [] as activity (activity.agentId)}
+            {#each (confirmed?.agentActivity ?? []).filter((activity) => !confirmed || !activityAnswered(confirmed, activity)) as activity (activity.agentId)}
               <DiscussionAgentActivity
                 messageId={message.id}
                 {activity}
