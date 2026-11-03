@@ -68,6 +68,7 @@ export const inputMetadata = parseUiComponentMetadata({
     'src/lib/components/tiptap/BubbleMenu.svelte',
     'src/lib/components/ui/EditableName.svelte',
     'src/lib/components/ui/dropdown/Dropdown.svelte',
+    'src/lib/components/ui/menu-search.preview.svelte',
     'src/lib/components/ui/message-composer/message-composer.svelte',
     'src/lib/components/ui/panel-find-bar/PanelFindBar.svelte',
     'src/lib/components/ui/searchable-combobox/searchable-combobox.svelte',

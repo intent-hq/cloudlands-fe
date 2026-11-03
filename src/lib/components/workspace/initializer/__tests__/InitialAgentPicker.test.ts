@@ -10,7 +10,7 @@
  * are never cleared, and stale values re-applied after mount (parent
  * hydration) are cleared too.
  */
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SpecialistDef } from '$lib/client/app-client';
 
@@ -229,9 +229,9 @@ import { LiveSpecialistsClient } from '$lib/client/live/live-specialists-client'
 
 const emitStoreState = () => (mockAppStore as unknown as { emitState: () => void }).emitState();
 
-/** The single-agent card renders first (index 0); the team card's picker is index 1. */
+/** One model picker serves both agent choices. */
 const SINGLE_PICKER = 0;
-const TEAM_PICKER = 1;
+const TEAM_PICKER = 0;
 
 function teamPickerSelected(): string {
   return screen.getAllByTestId('picker-selected')[TEAM_PICKER].textContent ?? '';
@@ -241,12 +241,22 @@ function teamPickerDefault(): string {
   return screen.getAllByTestId('picker-default')[TEAM_PICKER].textContent ?? '';
 }
 
-function modeCards() {
-  return {
-    single: screen.getByRole('button', { name: /Single agent/i }),
-    team: screen.getByRole('button', { name: /Agent orchestration/i }),
-  };
+function agentTrigger() {
+  return screen.getByRole('button', { name: /^Initial agent\b/ });
 }
+
+/** Opens the Agent menu and picks the option whose name matches. */
+async function pickAgent(name: RegExp) {
+  await fireEvent.click(agentTrigger());
+  await fireEvent.pointerUp(await screen.findByRole('option', { name }), {
+    button: 0,
+    pointerType: 'mouse',
+  });
+}
+
+/** The mocked orchestrator is listed by its own name. */
+const ORCHESTRATION = /Coordinator/;
+const GENERAL = /^General/;
 
 async function flush() {
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -380,8 +390,7 @@ describe('InitialAgentPicker stale model override clearing', () => {
       await flush();
       await fireEvent.click(screen.getAllByTestId('pick-profile-model')[SINGLE_PICKER]);
       await flush();
-      await fireEvent.click(within(modeCards().single).getByRole('button', { name: /General/ }));
-      await fireEvent.click(await screen.findByRole('menuitemradio', { name: /Reviewer/ }));
+      await pickAgent(/Reviewer/);
       await flush();
       expect(selection().selectedProvider).toBe(WORK.providerRef);
     });
@@ -493,23 +502,22 @@ describe('InitialAgentPicker stale model override clearing', () => {
     );
   });
 
-  it('exposes the active work mode and updates it when a card is selected', async () => {
+  it('exposes the active work mode and updates it when another agent is picked', async () => {
+    const onTeamModeChange = vi.fn();
     render(InitialAgentPicker, {
       props: {
         selectedSpecialist: 'spec-writer',
         isTeamMode: true,
+        onTeamModeChange,
       },
     });
 
-    const { team: teamMode, single: singleAgent } = modeCards();
+    expect(agentTrigger().textContent).toMatch(ORCHESTRATION);
 
-    expect(teamMode.getAttribute('aria-pressed')).toBe('true');
-    expect(singleAgent.getAttribute('aria-pressed')).toBe('false');
+    await pickAgent(GENERAL);
 
-    await fireEvent.click(singleAgent);
-
-    expect(teamMode.getAttribute('aria-pressed')).toBe('false');
-    expect(singleAgent.getAttribute('aria-pressed')).toBe('true');
+    expect(onTeamModeChange).toHaveBeenLastCalledWith(false);
+    expect(agentTrigger().textContent).toContain('General');
   });
 
   it('does not report an automatic reset of a deleted specialist as an agent pick', async () => {
@@ -532,11 +540,11 @@ describe('InitialAgentPicker stale model override clearing', () => {
       props: { selectedSpecialist: 'spec-writer', isTeamMode: true, onSetupPick },
     });
     // Re-selecting the active mode is not a pick.
-    await fireEvent.click(modeCards().team);
+    await pickAgent(ORCHESTRATION);
     expect(onSetupPick).not.toHaveBeenCalled();
-    await fireEvent.click(modeCards().single);
+    await pickAgent(GENERAL);
     expect(onSetupPick).toHaveBeenCalledTimes(1);
-    await fireEvent.click(modeCards().team);
+    await pickAgent(ORCHESTRATION);
     expect(onSetupPick).toHaveBeenCalledTimes(2);
   });
 
@@ -549,10 +557,7 @@ describe('InitialAgentPicker stale model override clearing', () => {
     const onSpecialistChange = vi.fn();
     render(InitialAgentPicker, { props: { onTeamModeChange, onSpecialistChange } });
 
-    const { single, team } = modeCards();
-    expect(single.getAttribute('aria-pressed')).toBe('true');
-    expect(team.getAttribute('aria-pressed')).toBe('false');
-    expect(single.textContent).toContain('Developer');
+    expect(agentTrigger().textContent).toContain('Developer');
     await flush();
     expect(onTeamModeChange).not.toHaveBeenCalled();
     expect(onSpecialistChange).not.toHaveBeenCalled();
@@ -565,10 +570,8 @@ describe('InitialAgentPicker stale model override clearing', () => {
     const onSpecialistChange = vi.fn();
     render(InitialAgentPicker, { props: { onSpecialistChange } });
 
-    const { single } = modeCards();
-    expect(single.getAttribute('aria-pressed')).toBe('true');
-    expect(single.textContent).toContain('General');
-    expect(single.textContent).not.toContain('Developer');
+    expect(agentTrigger().textContent).toContain('General');
+    expect(agentTrigger().textContent).not.toContain('Developer');
     await flush();
     expect(onSpecialistChange).not.toHaveBeenCalled();
   });
@@ -580,9 +583,7 @@ describe('InitialAgentPicker stale model override clearing', () => {
     ]);
     render(InitialAgentPicker, { props: { selectedSpecialist: 'spec-writer', isTeamMode: true } });
 
-    const { single, team } = modeCards();
-    expect(team.getAttribute('aria-pressed')).toBe('true');
-    expect(single.getAttribute('aria-pressed')).toBe('false');
+    expect(agentTrigger().textContent).toMatch(ORCHESTRATION);
   });
 
   it('keeps a remembered General choice over the Developer default', () => {
@@ -592,10 +593,8 @@ describe('InitialAgentPicker stale model override clearing', () => {
     ]);
     render(InitialAgentPicker, { props: { selectedSpecialist: null, isTeamMode: false } });
 
-    const { single } = modeCards();
-    expect(single.getAttribute('aria-pressed')).toBe('true');
-    expect(single.textContent).toContain('General');
-    expect(single.textContent).not.toContain('Developer');
+    expect(agentTrigger().textContent).toContain('General');
+    expect(agentTrigger().textContent).not.toContain('Developer');
   });
 
   it('restores the incoming single-agent specialist after a round trip through orchestration', async () => {
@@ -608,14 +607,12 @@ describe('InitialAgentPicker stale model override clearing', () => {
       props: { selectedSpecialist: 'developer', isTeamMode: false, onSpecialistChange },
     });
 
-    const { single, team } = modeCards();
-    await fireEvent.click(team);
+    await pickAgent(ORCHESTRATION);
     expect(onSpecialistChange).toHaveBeenLastCalledWith('spec-writer');
-    expect(single.textContent).toContain('Developer');
 
-    await fireEvent.click(single);
+    await pickAgent(/Developer/);
     expect(onSpecialistChange).toHaveBeenLastCalledWith('developer');
-    expect(single.getAttribute('aria-pressed')).toBe('true');
+    expect(agentTrigger().textContent).toContain('Developer');
   });
 
   it('previews Settings effort when the default model settings arrive after mount', async () => {
@@ -1141,13 +1138,13 @@ describe('InitialAgentPicker stale model override clearing', () => {
     render(InitialAgentPicker, {
       props: { selectedSpecialist: null, selectedReasoningEffort: 'high' },
     });
-    await fireEvent.click(modeCards().team);
+    await pickAgent(ORCHESTRATION);
     expect(screen.getAllByTestId('picker-reasoning')[TEAM_PICKER].textContent).toBe('');
-    await fireEvent.click(modeCards().single);
+    await pickAgent(GENERAL);
     expect(screen.getAllByTestId('picker-reasoning')[SINGLE_PICKER].textContent).toBe('high');
   });
 
-  it('wires both pickers to controlled reasoning', async () => {
+  it('wires the model picker to controlled reasoning', async () => {
     mocks.specialists$.set([
       { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'fable-5' },
     ]);
@@ -1159,29 +1156,28 @@ describe('InitialAgentPicker stale model override clearing', () => {
 
     expect(screen.getAllByTestId('picker-show-reasoning').map((node) => node.textContent)).toEqual([
       'true',
-      'true',
     ]);
     await waitFor(() => expect(teamPickerDefault()).toBe('fable-5'));
     const pickerEfforts = () =>
       screen.getAllByTestId('picker-reasoning').map((node) => node.textContent);
 
-    // The single-agent picker drives the shared controlled effort.
+    // Picking drives the shared controlled effort.
     await fireEvent.click(screen.getAllByTestId('pick-reasoning')[SINGLE_PICKER]);
     expect(onReasoningEffortChange).toHaveBeenCalledTimes(1);
     expect(onReasoningEffortChange).toHaveBeenLastCalledWith('high');
-    expect(pickerEfforts()).toEqual(['high', 'high']);
+    expect(pickerEfforts()).toEqual(['high']);
 
-    // Clearing from the team picker propagates back to both pickers.
+    // Clearing propagates back to the picker.
     await fireEvent.click(screen.getAllByTestId('clear-reasoning')[TEAM_PICKER]);
     expect(onReasoningEffortChange).toHaveBeenCalledTimes(2);
     expect(onReasoningEffortChange).toHaveBeenLastCalledWith('');
-    expect(pickerEfforts()).toEqual(['', '']);
+    expect(pickerEfforts()).toEqual(['']);
 
-    // Picking from the team picker also reaches both pickers.
+    // Picking again reaches the picker.
     await fireEvent.click(screen.getAllByTestId('pick-reasoning')[TEAM_PICKER]);
     expect(onReasoningEffortChange).toHaveBeenCalledTimes(3);
     expect(onReasoningEffortChange).toHaveBeenLastCalledWith('high');
-    expect(pickerEfforts()).toEqual(['high', 'high']);
+    expect(pickerEfforts()).toEqual(['high']);
   });
 
   it('keeps effort when a cleared override falls back to a default that supports it', async () => {
@@ -1685,56 +1681,61 @@ describe('InitialAgentPicker specialist dropdown', () => {
     cleanup();
   });
 
-  /** The specialist trigger inside the single-agent card shows the displayed specialist. */
+  /** The Agent trigger shows the displayed agent and opens the agent menu. */
   function specialistTrigger() {
-    return within(modeCards().single).getByRole('button', { name: /General/ });
+    return agentTrigger();
   }
 
-  const manageSpecialistsItem = () =>
-    screen.queryByRole('menuitem', { name: /manage specialists/i });
+  const manageSpecialistsItem = () => screen.queryByRole('button', { name: /manage specialists/i });
 
-  it('selects single-agent mode instead of opening the menu while in team mode', async () => {
+  it('opens the agent menu in team mode with orchestration as the only checked choice', async () => {
+    mocks.specialists$.set([
+      { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'fable-5' },
+    ]);
     const onTeamModeChange = vi.fn();
     render(InitialAgentPicker, {
       props: { selectedSpecialist: 'spec-writer', isTeamMode: true, onTeamModeChange },
     });
 
     const trigger = specialistTrigger();
-    expect(trigger.getAttribute('aria-haspopup')).toBeNull();
-    expect(trigger.tabIndex).toBe(-1);
+    expect(trigger.getAttribute('aria-haspopup')).toBe('dialog');
 
     await fireEvent.click(trigger);
-    await flush();
-
-    const { single, team } = modeCards();
-    expect(single.getAttribute('aria-pressed')).toBe('true');
-    expect(team.getAttribute('aria-pressed')).toBe('false');
-    expect(onTeamModeChange).toHaveBeenCalledWith(false);
-    expect(manageSpecialistsItem()).toBeNull();
-
-    // Once single-agent mode is active the trigger carries the menu contract.
-    expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
-    expect(trigger.getAttribute('aria-expanded')).toBe('false');
-    expect(trigger.tabIndex).toBe(0);
+    const orchestration = await screen.findByRole('option', {
+      name: ORCHESTRATION,
+      selected: true,
+    });
+    expect(screen.getAllByRole('option', { selected: true })).toEqual([orchestration]);
+    expect(onTeamModeChange).not.toHaveBeenCalled();
   });
 
   it('opens the specialist menu without leaving single-agent mode', async () => {
     const onTeamModeChange = vi.fn();
+    const onNavigateAway = vi.fn();
+    const { navigateToSettings } = await import('$lib/utils/workspace-navigation');
+    vi.mocked(navigateToSettings).mockClear();
     render(InitialAgentPicker, {
-      props: { selectedSpecialist: null, isTeamMode: false, onTeamModeChange },
+      props: { selectedSpecialist: null, isTeamMode: false, onTeamModeChange, onNavigateAway },
     });
 
     const trigger = specialistTrigger();
-    expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
+    expect(trigger.getAttribute('aria-haspopup')).toBe('dialog');
     expect(manageSpecialistsItem()).toBeNull();
 
     await fireEvent.click(trigger);
-    await screen.findByRole('menuitem', { name: /manage specialists/i });
+    await screen.findByRole('button', { name: /manage specialists/i });
 
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
     expect(manageSpecialistsItem()).not.toBeNull();
-    expect(modeCards().single.getAttribute('aria-pressed')).toBe('true');
     expect(onTeamModeChange).not.toHaveBeenCalled();
+    await fireEvent.click(manageSpecialistsItem()!);
+    await waitFor(() =>
+      expect(navigateToSettings).toHaveBeenCalledWith({ view: 'create-specialist' }),
+    );
+    expect(onNavigateAway).toHaveBeenCalledOnce();
+    expect(onNavigateAway.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(navigateToSettings).mock.invocationCallOrder[0],
+    );
   });
 
   it('selects one specialist, clears the model override, and exposes the checked choice on reopen', async () => {
@@ -1753,24 +1754,24 @@ describe('InitialAgentPicker specialist dropdown', () => {
 
     const trigger = specialistTrigger();
     await fireEvent.click(trigger);
-    const general = await screen.findByRole('menuitemradio', { name: /General/ });
-    const developer = screen.getByRole('menuitemradio', { name: /Developer/ });
-    expect(general.getAttribute('aria-checked')).toBe('true');
-    expect(developer.getAttribute('aria-checked')).toBe('false');
+    const general = await screen.findByRole('option', { name: /General/ });
+    const developer = screen.getByRole('option', { name: /Developer/ });
+    expect(general.getAttribute('aria-selected')).toBe('true');
+    expect(developer.getAttribute('aria-selected')).not.toBe('true');
 
-    await fireEvent.click(developer);
-    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    await fireEvent.pointerUp(developer, { button: 0, pointerType: 'mouse' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Initial agent' })).toBeNull());
     expect(onSpecialistChange).toHaveBeenCalledExactlyOnceWith('developer');
     expect(onModelChange).toHaveBeenCalledExactlyOnceWith(undefined);
     expect(screen.getAllByTestId('picker-selected')[SINGLE_PICKER].textContent).toBe('');
-    expect(modeCards().single.getAttribute('aria-pressed')).toBe('true');
+    expect(trigger.textContent).toContain('Developer');
 
     await fireEvent.click(trigger);
-    const selected = await screen.findByRole('menuitemradio', { name: /Developer/, checked: true });
-    expect(screen.getAllByRole('menuitemradio', { checked: true })).toEqual([selected]);
-    expect(
-      screen.getByRole('menuitemradio', { name: /General/ }).getAttribute('aria-checked'),
-    ).toBe('false');
+    const selected = await screen.findByRole('option', { name: /Developer/, selected: true });
+    expect(screen.getAllByRole('option', { selected: true })).toEqual([selected]);
+    expect(screen.getByRole('option', { name: /General/ }).getAttribute('aria-selected')).not.toBe(
+      'true',
+    );
   });
 
   const catalogSpecialists = [
@@ -1780,12 +1781,10 @@ describe('InitialAgentPicker specialist dropdown', () => {
     { id: 'writer', name: 'Writer', description: 'Writes things' },
   ];
 
-  async function openedOptionIds() {
+  async function openedOptionLabels() {
     await fireEvent.click(specialistTrigger());
-    await screen.findByRole('menuitemradio', { name: /General/ });
-    return [...document.querySelectorAll('[data-specialist-option]')].map((el) =>
-      el.getAttribute('data-specialist-option'),
-    );
+    await screen.findByRole('option', { name: /General/ });
+    return screen.getAllByRole('option').map((el) => el.textContent?.trim());
   }
 
   it('lists recently used specialists first, newest first, under General', async () => {
@@ -1793,12 +1792,13 @@ describe('InitialAgentPicker specialist dropdown', () => {
     mocks.recentSpecialistIds$.set(['writer', 'deleted-specialist', 'reviewer']);
     render(InitialAgentPicker, { props: { selectedSpecialist: null, isTeamMode: false } });
 
-    expect(await openedOptionIds()).toEqual([
-      'general',
-      'writer',
-      'reviewer',
-      'developer',
-      'researcher',
+    expect(await openedOptionLabels()).toEqual([
+      'General',
+      'Writer',
+      'Reviewer',
+      'Coordinator',
+      'Developer',
+      'Researcher',
     ]);
   });
 
@@ -1806,25 +1806,13 @@ describe('InitialAgentPicker specialist dropdown', () => {
     mocks.specialists$.set(catalogSpecialists);
     render(InitialAgentPicker, { props: { selectedSpecialist: null, isTeamMode: false } });
 
-    expect(await openedOptionIds()).toEqual([
-      'general',
-      'developer',
-      'reviewer',
-      'researcher',
-      'writer',
+    expect(await openedOptionLabels()).toEqual([
+      'General',
+      'Coordinator',
+      'Developer',
+      'Reviewer',
+      'Researcher',
+      'Writer',
     ]);
-  });
-
-  it('keeps both model pickers inline and bounded by the modal collision boundary', () => {
-    render(InitialAgentPicker, { props: { selectedSpecialist: 'spec-writer', isTeamMode: true } });
-
-    const pickers = screen.getAllByTestId('mock-model-picker');
-    expect(pickers).toHaveLength(2);
-    for (const picker of pickers) {
-      expect(picker.getAttribute('data-portal')).toBe('false');
-      expect(picker.getAttribute('data-collision-boundary')).toBe(
-        '[data-model-picker-collision-boundary]',
-      );
-    }
   });
 });
