@@ -6,12 +6,15 @@ import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  CT_CONTRACT_PATHS,
+  CT_CONTRACT_DIRECTORIES,
+  CT_CONTRACT_FILES,
   CT_HARNESS_ENTRY,
   CT_PREVIEW_REGISTRY_GLOB,
   changedFiles,
   ctRequired,
+  ctSpecDependencies,
   isCtContractPath,
+  isPlaywrightUnitTest,
   main,
   sourceReferences,
 } from './ct-contract-paths.mjs';
@@ -100,6 +103,13 @@ describe('isCtContractPath', () => {
     'playwright-ct.config.ts',
     'playwright/index.ts',
     'playwright/app-stubs/stores.ts',
+    'playwright/index.html',
+    'playwright/ct-port.ts',
+    'playwright/ct-spec-pattern.mjs',
+    'playwright/ct-evidence/first-failure.ct.spec.ts',
+    'playwright/ct-lifetime/timeout.ct.spec.ts',
+    'playwright/future.spec.ts',
+    'playwright/__snapshots__/ct-port.test.ts.snap',
     'scripts/run-ct-tests.mjs',
     'scripts/ct-browser.mjs',
     'scripts/playwright-os-deps-lib.mjs',
@@ -131,16 +141,32 @@ describe('isCtContractPath', () => {
     'e2e/playwright/index.ts',
     '.github/workflows/intent-pr.yml',
     'src/lib/components/ui/button/button.keyboard.ct.spec.ts',
+    // Vitest suites that live next to the harness; the harness never loads them.
+    'playwright/root-harness-import-guard.test.ts',
+    'playwright/ct-port.test.ts',
+    'playwright/app-stubs/navigation.test.ts',
+    './playwright/ct-workers.test.ts',
+    'playwright/nested/helper.test.mjs',
   ])('does not match %s', (file) => {
     expect(isCtContractPath(file)).toBe(false);
   });
 
+  it('classifies only Vitest-style .test files under playwright/ as harness unit tests', () => {
+    expect(isPlaywrightUnitTest('playwright/ct-port.test.ts')).toBe(true);
+    expect(isPlaywrightUnitTest('playwright/a/b.test.cjs')).toBe(true);
+    expect(isPlaywrightUnitTest('playwright/ct-port.ts')).toBe(false);
+    expect(isPlaywrightUnitTest('playwright/ct-evidence/first-failure.ct.spec.ts')).toBe(false);
+    expect(isPlaywrightUnitTest('playwright/ct-port.test.ts.snap')).toBe(false);
+    expect(isPlaywrightUnitTest('playwright/ct-port.TEST.ts')).toBe(false);
+    expect(isPlaywrightUnitTest('src/foo.test.ts')).toBe(false);
+  });
+
   it('exports the CT harness dependency paths', () => {
-    expect([...CT_CONTRACT_PATHS].sort()).toEqual([
+    expect([...CT_CONTRACT_DIRECTORIES].sort()).toEqual(['playwright/', 'src/lib/styles/']);
+    expect([...CT_CONTRACT_FILES].sort()).toEqual([
       'package.json',
       'patches/playwright-core@1.58.2.patch',
       'playwright-ct.config.ts',
-      'playwright/**',
       'pnpm-lock.yaml',
       'scripts/ct-browser.mjs',
       'scripts/playwright-os-deps-lib.mjs',
@@ -148,7 +174,6 @@ describe('isCtContractPath', () => {
       'src/app.css',
       'src/lib/component-catalog/capture-stability.ts',
       'src/lib/component-catalog/preview-definition.ts',
-      'src/lib/styles/**',
       'src/test/ct-test.ts',
     ]);
   });
@@ -159,6 +184,17 @@ describe('ctRequired and main', () => {
     expect(ctRequired(['src/lib/example.ts', 'src/lib/styles/tokens.css'])).toBe(true);
     expect(ctRequired(['src/lib/example.ts', 'scripts/verify-changed.mjs'])).toBe(false);
     expect(ctRequired([])).toBe(false);
+  });
+
+  it('does not require CT for a Vitest suite under playwright/ unless the CT graph loads it', () => {
+    const unitTest = 'playwright/root-harness-import-guard.test.ts';
+    expect(ctRequired([unitTest])).toBe(false);
+    expect(ctRequired(['playwright/ct-port.test.ts', 'src/foo.test.ts'])).toBe(false);
+    expect(ctRequired([unitTest], new Set(['playwright/index.ts']))).toBe(false);
+    expect(ctRequired([unitTest], new Set([unitTest]))).toBe(true);
+    expect(ctRequired(['playwright/index.ts'])).toBe(true);
+    expect(ctRequired(['playwright/ct-port.ts'])).toBe(true);
+    expect(ctRequired(['playwright/app-stubs/navigation.ts'])).toBe(true);
   });
 
   it('requires CT when any changed file is a discovered CT spec', () => {
@@ -279,6 +315,31 @@ describe('--diff against a git repository', () => {
     expect(runCli(root, '--diff', 'main', 'svelte-only').stdout).toBe('ct_required=false\n');
     branch(root, 'spec-outside-src', 'test/added.ct.spec.ts');
     expect(runCli(root, '--diff', 'main', 'spec-outside-src').stdout).toBe('ct_required=false\n');
+  });
+
+  it('skips CT for a playwright/ unit test edit, but not when the harness imports it', () => {
+    const root = gitRepository();
+    commitFile(root, CT_HARNESS_ENTRY, "import './ct-port';");
+    commitFile(root, 'playwright/ct-port.ts', 'export const CT_PORT = 3100;');
+    commitFile(root, 'playwright/ct-port.test.ts', "import './ct-port';");
+    branch(root, 'unit-test-only', 'playwright/ct-port.test.ts');
+    expect(runCli(root, '--diff', 'main', 'unit-test-only')).toEqual({
+      status: 0,
+      stdout: 'ct_required=false\n',
+      stderr: '',
+    });
+    branch(root, 'harness-module', 'playwright/ct-port.ts');
+    expect(runCli(root, '--diff', 'main', 'harness-module').stdout).toBe('ct_required=true\n');
+
+    git(root, 'checkout', '-q', 'main');
+    commitFile(root, 'playwright/shared.test.ts', 'export const shared = 1;');
+    commitFile(root, CT_HARNESS_ENTRY, "import './ct-port';\nimport './shared.test';");
+    branch(root, 'mounted-unit-test', 'playwright/shared.test.ts');
+    expect(runCli(root, '--diff', 'main', 'mounted-unit-test')).toEqual({
+      status: 0,
+      stdout: 'ct_required=true\n',
+      stderr: '',
+    });
   });
 
   it('keeps non-ASCII paths verbatim instead of the quoted form git prints by default', () => {
@@ -975,6 +1036,29 @@ describe('this repository', () => {
     expect(sourceReferences(harness, CT_HARNESS_ENTRY).globs).toContainEqual([
       CT_PREVIEW_REGISTRY_GLOB,
     ]);
+  });
+
+  // cloudlands-fe#4060: a comment-only edit to this suite ran the whole CT
+  // suite locally (1.4 h) and in the merge queue (about 1.5 h).
+  it('does not require CT for any Vitest suite under playwright/', () => {
+    const unitTests = execFileSync('git', ['ls-files', '-z', 'playwright'], { encoding: 'utf8' })
+      .split('\0')
+      .filter((file) => isPlaywrightUnitTest(file));
+    expect(unitTests).toContain('playwright/root-harness-import-guard.test.ts');
+    // One graph walk for every file: per-file `main` calls each rebuild it.
+    const dependencies = ctSpecDependencies('HEAD', 'HEAD');
+    for (const file of unitTests) {
+      expect(
+        ctRequired([file], dependencies),
+        `${file} is now loaded by the CT graph, so CI requires CT for it but verify:changed ` +
+          'selects no CT lane. Move the shared code into a non-.test module, or, if the import ' +
+          'is intentional, drop the file from this check.',
+      ).toBe(false);
+    }
+  });
+
+  it('still requires CT for the mount harness', () => {
+    expect(decide([CT_HARNESS_ENTRY])).toEqual({ logs: ['ct_required=true'], warnings: [] });
   });
 
   it('does not require CT for main-process code no CT run mounts', () => {

@@ -1491,10 +1491,14 @@ describe('verification planning', () => {
       'src/lib/component-catalog/catalog.ts': '',
       'src/foo.test.ts': '',
       'src/lib/example.ts': '',
+      'playwright/ct-port.ts': '',
+      'playwright/ct-port.test.ts': '',
+      'playwright/root-harness-import-guard.test.ts': '',
     });
     const ids = (files: string[]) =>
       createVerificationPlan(files, { root, ctTests: [] }).checks.map((check) => check.id);
     for (const file of [
+      'playwright/ct-port.ts',
       'src/lib/styles/tokens.css',
       'src/lib/styles/removed.css',
       'src/app.css',
@@ -1515,10 +1519,14 @@ describe('verification planning', () => {
       'src/lib/component-catalog/catalog.ts',
       'src/lib/component-catalog/geometry-probe.ts',
       'scripts/verify-changed.mjs',
+      // cloudlands-fe#4060: Vitest suites under playwright/ are not harness inputs.
+      'playwright/ct-port.test.ts',
+      'playwright/root-harness-import-guard.test.ts',
     ]) {
       expect(ids([file]), file).not.toContain('ct-full');
       expect(ids([file]), file).not.toContain('ct-related');
     }
+    expect(ids(['playwright/ct-port.test.ts'])).toContain('vitest-direct');
   });
 
   it('keeps CT specs and their imported previews on the related lane, not the full suite', () => {
