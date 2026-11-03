@@ -119,6 +119,17 @@ export const selectScriptRetainedOutput = store.createSelector(
   },
 );
 
+/**
+ * Workspaces with at least one mounted script output viewer, sorted. The live
+ * `script:output` stream is subscribed only for these workspaces.
+ */
+export const selectScriptOutputViewerWorkspaceIds = store.createSelector((state): string[] =>
+  Object.entries(state.scripts?.byWorkspaceId ?? {})
+    .filter(([, ws]) => Object.keys(ws.retainedOutputs ?? {}).length > 0)
+    .map(([wsId]) => wsId)
+    .sort(),
+);
+
 /** Scripts data for a specific workspace (parameterized). */
 export const selectWorkspaceScriptsInitialized = store.createSelector(
   (state, wsId: string): boolean => getWs(state, wsId).initialized,

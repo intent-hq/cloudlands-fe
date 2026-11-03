@@ -274,6 +274,15 @@ export const scriptOutputSnapshotReceived = createAction<
 export const appendScriptOutput =
   createAction<[wsId: string, scriptId: string, chunk: ScriptOutputChunk]>('scripts/appendOutput');
 
+/**
+ * The workspace's live `script:output` stream stopped (its scoped
+ * subscription closed). Buffered chunks would join later output across a gap,
+ * so they are discarded while `dropped` keeps stream positions monotonic.
+ */
+export const scriptOutputStreamInterrupted = createAction<[wsId: string]>(
+  'scripts/outputStreamInterrupted',
+);
+
 // ============================================================================
 // Reducer
 // ============================================================================
@@ -652,6 +661,12 @@ scriptsReducer.with(
     });
   },
 );
+function discardBufferedChunks(buffer: ScriptOutputBuffer): ScriptOutputBuffer {
+  return buffer.chunks.length === 0
+    ? buffer
+    : { chunks: [], dropped: buffer.dropped + buffer.chunks.length };
+}
+
 scriptsReducer.with(appendScriptOutput, (state, { payload: [wsId, scriptId, chunk] }) => {
   const ws = getWorkspaceState(state, wsId);
   const current = ws.outputBuffers[scriptId] ?? emptyOutputBuffer;
@@ -664,6 +679,15 @@ scriptsReducer.with(appendScriptOutput, (state, { payload: [wsId, scriptId, chun
     ...ws,
     outputBuffers: { ...ws.outputBuffers, [scriptId]: combined },
   });
+});
+
+scriptsReducer.with(scriptOutputStreamInterrupted, (state, { payload: [wsId] }) => {
+  const ws = state.byWorkspaceId[wsId];
+  if (!ws) return state;
+  const outputBuffers = Object.fromEntries(
+    Object.entries(ws.outputBuffers).map(([id, buffer]) => [id, discardBufferedChunks(buffer)]),
+  );
+  return setWorkspaceState(state, wsId, { ...ws, outputBuffers });
 });
 
 scriptsReducer.with(

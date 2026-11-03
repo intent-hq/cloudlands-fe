@@ -16,6 +16,8 @@ import {
   removeScript,
   MAX_OUTPUT_CHARS,
   appendScriptOutput,
+  scriptOutputRequested,
+  scriptOutputStreamInterrupted,
   clearScriptOperations,
   detectScriptDefinitionsRequested,
   emptyWorkspaceState,
@@ -283,6 +285,29 @@ describe('scriptsReducer', () => {
     expect(buffer.chunks.map((c) => c.text)).toEqual(['partial line, no newl', 'ine\r\nnext\r']);
     expect(buffer.dropped).toBe(0);
     expect(buffer.chunks.map((c) => c.text).join('')).toBe('partial line, no newline\r\nnext\r');
+  });
+
+  it('discards buffered chunks across a stream gap while keeping stream positions monotonic', () => {
+    let state = scriptsReducer(undefined, upsertScript(WS, makeScript({ id: 'script-1' })));
+    state = scriptsReducer(state, upsertScript(WS, makeScript({ id: 'script-2' })));
+    state = scriptsReducer(state, appendScriptOutput(WS, 'script-1', makeChunk(1, 'a')));
+    state = scriptsReducer(state, appendScriptOutput(WS, 'script-1', makeChunk(2, 'b')));
+    state = scriptsReducer(state, appendScriptOutput('other-ws', 's', makeChunk(3, 'kept')));
+    state = scriptsReducer(state, scriptOutputRequested(WS, 'script-1', 'viewer-1'));
+
+    state = scriptsReducer(state, scriptOutputStreamInterrupted(WS));
+
+    const ws = state.byWorkspaceId[WS];
+    expect(ws.outputBuffers['script-1']).toEqual({ chunks: [], dropped: 2 });
+    expect(ws.retainedOutputs?.['viewer-1']).toEqual({ scriptId: 'script-1', status: 'loading' });
+    expect(state.byWorkspaceId['other-ws'].outputBuffers.s.chunks).toHaveLength(1);
+    // A viewer that already wrote 2 chunks resumes at the next chunk.
+    state = scriptsReducer(state, appendScriptOutput(WS, 'script-1', makeChunk(4, 'c')));
+    expect(state.byWorkspaceId[WS].outputBuffers['script-1']).toMatchObject({ dropped: 2 });
+    expect(state.byWorkspaceId[WS].outputBuffers['script-1'].chunks.map((c) => c.text)).toEqual([
+      'c',
+    ]);
+    expect(scriptsReducer(state, scriptOutputStreamInterrupted('missing'))).toBe(state);
   });
 
   it('evicts oldest chunks past the char cap but always keeps the newest chunk', () => {

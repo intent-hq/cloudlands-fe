@@ -6,7 +6,18 @@ import {
   type Channel,
   type EventChannel,
 } from 'redux-saga';
-import { actionChannel, call, cancel, flush, fork, join, put, race, take } from 'typed-redux-saga';
+import {
+  actionChannel,
+  call,
+  cancel,
+  delay,
+  flush,
+  fork,
+  join,
+  put,
+  race,
+  take,
+} from 'typed-redux-saga';
 
 import type { AppliedSettingChange } from '$lib/client/app-client';
 import type { BackendNotification } from '$lib/client/live/backend-transport';
@@ -20,6 +31,7 @@ import {
   DAEMON_EVENTS_SUBSCRIBE_TYPES,
   disposeDaemonEventsRoutingState,
   refreshDaemonEventsAfterReconnect,
+  resetScriptOutputDecoders,
   routeDaemonEventsNotification,
 } from '$features/events/daemon-events-bridge.client';
 import { notifyInterruptedAgentsSubscriptionReady } from '$features/agent/interrupted-agents-service';
@@ -28,6 +40,17 @@ import { settingsChangesReceived } from '$store/renderer/slices/settings-events/
 import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
 import { CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS } from '../../tab-state/tab-state-slice';
 import { daemonEventsSubscribed, daemonEventsSubscribing } from '../workspace-events-slice';
+import { selectScriptOutputViewerWorkspaceIds } from '../../scripts/scripts-selectors';
+import {
+  removeScript,
+  scriptOutputReleased,
+  scriptOutputRequested,
+  scriptOutputStreamInterrupted,
+} from '../../scripts/scripts-slice';
+import {
+  workspaceDeleted,
+  workspaceUnmounted,
+} from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { selectDaemonEventsSubscriptionAttempt } from '../workspace-events-selectors';
 
 const logger = createLogger('DaemonEventsSaga');
@@ -46,6 +69,19 @@ export const FILE_EVENTS_REPLACE_GROUP = 'file-events';
  */
 export const FILE_EVENTS_SUBSCRIBE_TYPES = ['file:*'] as const;
 
+/** Event types of the per-workspace live script output leases. */
+export const SCRIPT_OUTPUT_SUBSCRIBE_TYPES = ['script:output'] as const;
+
+/** §6.1 replaceGroup per workspace, so a replayed subscribe never doubles a lease. */
+export const scriptOutputReplaceGroup = (workspaceId: string) => `script-output:${workspaceId}`;
+
+/**
+ * How long a workspace's output lease outlives its last viewer. Viewers
+ * release and re-request on every runtime transition and tab switches remount
+ * them, so closing immediately would churn the subscription.
+ */
+export const SCRIPT_OUTPUT_LEASE_GRACE_MS = 2_000;
+
 type DaemonChannelMessage =
   { kind: 'notification'; notification: BackendNotification } | { kind: 'reconnected' };
 
@@ -57,13 +93,24 @@ interface SubscriptionLease {
 }
 
 /**
- * The saga's two subscriptions on the socket: the global firehose and the
- * active-workspace-scoped `file:*` lease. Held in a shared mutable holder so
- * the notification loop and the active-workspace watcher see lease swaps.
+ * The saga's subscriptions on the socket: the global firehose, the
+ * active-workspace-scoped `file:*` lease, and one `script:output` lease per
+ * workspace with a mounted output viewer. Held in a shared mutable holder so
+ * the notification loop and the lease managers see lease swaps.
  */
 interface DaemonEventLeases {
   firehose: SubscriptionLease;
   scopedFile: SubscriptionLease;
+  /** Live `script:output` leases, keyed by workspace with a mounted viewer. */
+  scriptOutput: Map<string, SubscriptionLease>;
+}
+
+function ownedSubscriptionIds(leases: DaemonEventLeases): string[] {
+  return [
+    leases.firehose.subscriptionId,
+    leases.scopedFile.subscriptionId,
+    ...[...leases.scriptOutput.values()].map((lease) => lease.subscriptionId),
+  ].filter((id): id is string => typeof id === 'string');
 }
 
 function createDaemonEventsChannel(): EventChannel<DaemonChannelMessage> {
@@ -143,14 +190,119 @@ async function unsubscribeLease(lease: SubscriptionLease): Promise<void> {
 }
 
 /**
- * Retire both leases in ONE blocking effect — a cancelled saga's finally block
+ * Retire every lease in ONE blocking effect — a cancelled saga's finally block
  * only reliably runs a single blocking `call`, so the teardown must not chain
- * two sequential unsubscribe effects.
+ * sequential unsubscribe effects.
  */
 function unsubscribeAllLeases(leases: DaemonEventLeases): Promise<void> {
-  return Promise.all([unsubscribeLease(leases.firehose), unsubscribeLease(leases.scopedFile)]).then(
-    () => undefined,
-  );
+  const scriptOutput = [...leases.scriptOutput.values()];
+  leases.scriptOutput.clear();
+  return Promise.all([
+    unsubscribeLease(leases.firehose),
+    unsubscribeLease(leases.scopedFile),
+    ...scriptOutput.map(unsubscribeLease),
+  ]).then(() => undefined);
+}
+
+function subscribeScriptOutputLease(lease: SubscriptionLease, workspaceId: string): Promise<void> {
+  return subscribeLease(lease, {
+    eventTypes: [...SCRIPT_OUTPUT_SUBSCRIBE_TYPES],
+    workspaceId,
+    replaceGroup: scriptOutputReplaceGroup(workspaceId),
+  });
+}
+
+/** Open a lease for every viewed workspace that lacks one. */
+function* openScriptOutputLeases(leases: DaemonEventLeases, desired: readonly string[]) {
+  for (const workspaceId of desired) {
+    if (leases.scriptOutput.has(workspaceId)) continue;
+    const lease: SubscriptionLease = { cancelled: false };
+    leases.scriptOutput.set(workspaceId, lease);
+    yield* call(subscribeScriptOutputLease, lease, workspaceId);
+  }
+}
+
+/** Close one lease whose workspace no longer has a viewer; its buffers now have a gap. */
+function* closeScriptOutputLease(leases: DaemonEventLeases, workspaceId: string) {
+  const lease = leases.scriptOutput.get(workspaceId);
+  if (!lease) return;
+  leases.scriptOutput.delete(workspaceId);
+  yield* call(unsubscribeLease, lease);
+  yield* call(interruptScriptOutputStream, workspaceId);
+}
+
+/** The workspace's live stream has a gap: drop buffered chunks and partial decodes. */
+function* interruptScriptOutputStream(workspaceId: string) {
+  resetScriptOutputDecoders(workspaceId);
+  yield* put(scriptOutputStreamInterrupted(workspaceId));
+}
+
+const SCRIPT_OUTPUT_VIEWER_ACTIONS = [
+  scriptOutputRequested,
+  scriptOutputReleased,
+  removeScript,
+  workspaceUnmounted,
+  workspaceDeleted,
+];
+
+/**
+ * Single writer for `leases.scriptOutput`: keeps one `script:output` lease per
+ * workspace with a mounted output viewer. Opens are immediate; a lease whose
+ * last viewer left closes only after {@link SCRIPT_OUTPUT_LEASE_GRACE_MS}
+ * without the workspace being viewed again. A reconnect drops every lease
+ * (the daemon already forgot them) and replays the viewed set.
+ */
+function* manageScriptOutputLeases(
+  leases: DaemonEventLeases,
+  reconnectSignals: Channel<true>,
+  start: Channel<true>,
+) {
+  const viewerChanges = yield* actionChannel(SCRIPT_OUTPUT_VIEWER_ACTIONS, buffers.expanding());
+  // When each still-leased workspace lost its last viewer.
+  const idleSince = new Map<string, number>();
+  try {
+    yield* take(start);
+    while (true) {
+      yield* flush(viewerChanges);
+      const desired = yield* selectScriptOutputViewerWorkspaceIds.effect();
+      yield* call(openScriptOutputLeases, leases, desired);
+      const now = Date.now();
+      let nextDeadline = Number.POSITIVE_INFINITY;
+      for (const workspaceId of [...leases.scriptOutput.keys()]) {
+        if (desired.includes(workspaceId)) {
+          idleSince.delete(workspaceId);
+          continue;
+        }
+        const since = idleSince.get(workspaceId) ?? now;
+        idleSince.set(workspaceId, since);
+        if (now - since >= SCRIPT_OUTPUT_LEASE_GRACE_MS) {
+          idleSince.delete(workspaceId);
+          yield* call(closeScriptOutputLease, leases, workspaceId);
+        } else {
+          nextDeadline = Math.min(nextDeadline, since + SCRIPT_OUTPUT_LEASE_GRACE_MS);
+        }
+      }
+      const { reconnect } = yield* race({
+        change: take(viewerChanges),
+        reconnect: take(reconnectSignals),
+        ...(Number.isFinite(nextDeadline)
+          ? { grace: delay(Math.max(0, nextDeadline - Date.now())) }
+          : {}),
+      });
+      if (reconnect) {
+        // Output emitted while disconnected is lost, so every leased buffer
+        // now has a gap; the next pass re-subscribes the viewed workspaces.
+        const stale = [...leases.scriptOutput];
+        leases.scriptOutput.clear();
+        idleSince.clear();
+        yield* call(() => Promise.all(stale.map(([, lease]) => unsubscribeLease(lease))));
+        for (const [workspaceId] of stale) yield* call(interruptScriptOutputStream, workspaceId);
+      }
+    }
+  } finally {
+    viewerChanges.close();
+    start.close();
+  }
 }
 
 /** Reconnect signal to the scoped-lease manager; `ack` carries the converged workspace. */
@@ -247,20 +399,31 @@ export function* daemonEventsSaga() {
   const leases: DaemonEventLeases = {
     firehose: { cancelled: false },
     scopedFile: { cancelled: false },
+    scriptOutput: new Map(),
   };
   const reconnectSignals = sagaChannel<ScopedLeaseReconnectSignal>();
   const startScopedLease = sagaChannel<true>();
+  const scriptOutputReconnects = sagaChannel<true>();
+  const startScriptOutputLeases = sagaChannel<true>();
   let managerTask;
+  let scriptOutputTask;
   try {
     // The scoped-lease manager forks BEFORE the awaited firehose subscribe:
     // its transition channel observes reducer-owned selection actions from
     // fork time, closing the startup window where a selection dispatched
     // during the initial subscribe round-trip was lost.
     managerTask = yield* fork(manageScopedFileLease, leases, reconnectSignals, startScopedLease);
+    scriptOutputTask = yield* fork(
+      manageScriptOutputLeases,
+      leases,
+      scriptOutputReconnects,
+      startScriptOutputLeases,
+    );
     // Start the firehose request before releasing the scoped manager so wire
     // ordering stays deterministic while both leases may resolve concurrently.
     const firehoseTask = yield* fork(subscribeFirehose, leases.firehose);
     yield* put(startScopedLease, true);
+    yield* put(startScriptOutputLeases, true);
     // Listener-first closes the subscribe/fetch race; the expanding channel
     // retains every notification until the server-assigned id is available.
     yield* join(firehoseTask);
@@ -270,10 +433,7 @@ export function* daemonEventsSaga() {
       if (message === (END as unknown as DaemonChannelMessage)) break;
       if (message.kind === 'notification') {
         const { method, params } = message.notification;
-        const expectedSubscriptionIds = [
-          leases.firehose.subscriptionId,
-          leases.scopedFile.subscriptionId,
-        ].filter((id): id is string => typeof id === 'string');
+        const expectedSubscriptionIds = ownedSubscriptionIds(leases);
         let settingsChanges: AppliedSettingChange[] | undefined;
         let settingsRevision: number | undefined;
         yield* call(routeDaemonEventsNotification, method, params, expectedSubscriptionIds, {
@@ -295,6 +455,7 @@ export function* daemonEventsSaga() {
       leases.firehose = { cancelled: false };
       const ack = sagaChannel<ScopedLeaseReconnectResult>();
       yield* put(reconnectSignals, { ack });
+      yield* put(scriptOutputReconnects, true);
       yield* call(subscribeFirehose, leases.firehose);
       yield* announceFirehoseSubscribed(leases.firehose);
       const { workspaceId } = yield* take(ack);
@@ -307,7 +468,9 @@ export function* daemonEventsSaga() {
     // the saga runtime. `cancel` is non-blocking, so the single reliably-run
     // blocking effect of a cancelled finally stays `unsubscribeAllLeases`.
     if (managerTask) yield* cancel(managerTask);
+    if (scriptOutputTask) yield* cancel(scriptOutputTask);
     reconnectSignals.close();
+    scriptOutputReconnects.close();
     disposeDaemonEventsRoutingState();
     yield* call(unsubscribeAllLeases, leases);
   }
