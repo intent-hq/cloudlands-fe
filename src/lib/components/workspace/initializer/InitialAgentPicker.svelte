@@ -975,6 +975,7 @@
       rowLabel={m.workspace_initialAgentPicker_model_label()}
       showRowLabel={presentation !== 'footer'}
       showTriggerIcons={false}
+      showProfileName={false}
       menuSide={presentation === 'footer' || isMobile.current ? 'bottom' : 'left'}
       menuSideOffset={24}
       menuMaxHeight={440}

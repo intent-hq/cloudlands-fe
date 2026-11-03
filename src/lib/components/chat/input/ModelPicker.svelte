@@ -339,6 +339,11 @@
     showRowLabel?: boolean;
     /** Show decorative provider and reasoning icons inside the trigger. */
     showTriggerIcons?: boolean;
+    /**
+     * Show the selected profile name beside the model. When false, the name
+     * moves to the trigger's hover tooltip so a narrow trigger keeps the model.
+     */
+    showProfileName?: boolean;
     /** Preferred side for the open menu; `left` falls back to vertical without room. */
     menuSide?: 'bottom' | 'left';
     /** Gap between the trigger and a `left`-side menu. */
@@ -406,6 +411,7 @@
     rowLabel,
     showRowLabel = true,
     showTriggerIcons = true,
+    showProfileName = true,
     menuSide = 'bottom',
     menuSideOffset,
     menuMaxHeight = 360,
@@ -2797,7 +2803,7 @@
               <Fa icon={faDesktop} class="size-3!" />
               <span class="truncate">{remoteLocation.name}</span>
             </span>
-          {:else if triggerProfileName}
+          {:else if triggerProfileName && showProfileName}
             <span
               class="min-w-0 max-w-24 shrink truncate text-subtle"
               aria-hidden="true"
