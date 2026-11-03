@@ -103,10 +103,11 @@ function setupState(enabling: boolean) {
     session: share.session,
     authority: selectPrincipalActionContext.select(mocks.state as unknown as StoreState),
   };
-  mocks.state.workspaceShare = workspaceShareReducer(
-    share,
-    sharePrerequisitesStarted({ target, enabling }),
-  );
+  mocks.state.workspaceShare = {
+    ...workspaceShareReducer(share, sharePrerequisitesStarted({ target, enabling })),
+    // Sharing setup follows the connect box: the owner has a forge here.
+    integrationAuth: { github: true, gitlab: false },
+  };
   return target;
 }
 

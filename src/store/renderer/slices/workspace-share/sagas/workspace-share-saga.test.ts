@@ -975,7 +975,9 @@ describe('workspaceShareSaga', () => {
     expect(
       h.dispatched
         .slice(before)
-        .filter((action) => (action as { type: string }).type === shareIntegrationAuthRequested.type),
+        .filter(
+          (action) => (action as { type: string }).type === shareIntegrationAuthRequested.type,
+        ),
     ).toHaveLength(1);
     h.task.cancel();
 

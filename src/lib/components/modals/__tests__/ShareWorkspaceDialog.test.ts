@@ -305,6 +305,16 @@ describe('ShareWorkspaceDialog — forge gate', () => {
     expect(onCreateInvite).not.toHaveBeenCalled();
   });
 
+  it('keeps Revoke but withholds Copy on open invites while no forge is connected', async () => {
+    const onRevokeInvite = vi.fn();
+    renderDialog({ githubConnected: false, onRevokeInvite });
+    expect(screen.getAllByTestId('share-invite-row')).toHaveLength(1);
+    expect(screen.queryByTestId('share-invite-copy')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: /^Revoke/ }));
+    expect(onRevokeInvite).toHaveBeenCalledExactlyOnceWith(openInvite.id);
+    expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
+  });
+
   it('gates an owner with no forge on a host-membership daemon too', () => {
     renderDialog({
       githubConnected: false,
