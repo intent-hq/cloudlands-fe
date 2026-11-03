@@ -486,6 +486,10 @@ describe('workspace catalog host probes through live clients', () => {
       expect(selectContextQuotaRetryProviderIds.select(store.state, 'codex', WS)).toEqual(
         authenticated === false ? [] : ['claude-code'],
       );
+      // A named profile ran out: its Default is a separate account, still offered.
+      expect(
+        selectContextQuotaRetryProviderIds.select(store.state, 'claude-code@work', WS),
+      ).toEqual(authenticated === false ? [] : ['claude-code']);
     },
   );
 

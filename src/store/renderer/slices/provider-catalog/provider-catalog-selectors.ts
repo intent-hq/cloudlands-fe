@@ -206,6 +206,26 @@ export const selectProviderDisplayName = store.createSelector(
 );
 
 /**
+ * Label that tells a provider's configurations apart (§5.54): the bare name
+ * while the base has no profiles, then `<Provider> · Default` (or its renamed
+ * Default) for the base id and `<Provider> · <Profile>` for a profile ref.
+ * Unlike `selectProviderDisplayName`, the base id is qualified too, so a
+ * recovery action never reads the same as the configuration that failed.
+ */
+export const selectProviderConfigurationLabel = store.createSelector(
+  (state, providerRef: string, workspaceId?: string): string => {
+    const baseId = providerRefBaseId(providerRef);
+    return formatProviderRefLabel(
+      providerRef,
+      selectProviderDisplayName.select(state, baseId, workspaceId),
+      selectProviderCatalogProfiles.select(state, workspaceId),
+      baseId,
+      selectProviderCatalogDefaultNames.select(state, workspaceId),
+    );
+  },
+);
+
+/**
  * Whether a (legacy compound or bare) model id belongs to
  * `targetProviderId`; bare ids attribute to the effective default provider.
  */

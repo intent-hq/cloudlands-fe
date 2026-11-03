@@ -1998,17 +1998,15 @@ describe('ChatPanel mounted lifecycle', () => {
       enabledProviders: Record<string, boolean>,
       defaultProviderId: string,
       providerStatusMap: Record<string, ProviderStatus>,
+      catalog = MOCK_PROVIDER_CATALOG,
     ) {
       mocks.storeState = {
         providerCatalog: providerCatalogReducer(
-          providerCatalogReducer(
-            providerCatalogInitialState,
-            providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
-          ),
+          providerCatalogReducer(providerCatalogInitialState, providerCatalogLoaded(catalog)),
           workspaceCatalogReceived(
             'workspace-a',
             {
-              catalog: MOCK_PROVIDER_CATALOG,
+              catalog,
               settings: [
                 { path: 'model.defaultProvider', value: defaultProviderId },
                 { path: 'providers.enabled', value: enabledProviders },
@@ -2071,7 +2069,7 @@ describe('ChatPanel mounted lifecycle', () => {
       await tick();
     }
 
-    async function renderQuotaFailure() {
+    async function renderQuotaFailure(exhaustedProviderId = 'claude-code') {
       mocks.draftGet.mockResolvedValue(null);
       mocks.agentMessages.set([
         {
@@ -2087,7 +2085,7 @@ describe('ChatPanel mounted lifecycle', () => {
       await tick();
       await tick();
       mocks.chatError.set('usage limit reached');
-      mocks.chatQuotaExceeded.set({ providerId: 'claude-code' });
+      mocks.chatQuotaExceeded.set({ providerId: exhaustedProviderId });
       await tick();
       await tick();
       return view;
@@ -2182,8 +2180,9 @@ describe('ChatPanel mounted lifecycle', () => {
 
       await setProviderEnabled('codex', false);
       expect(screen.queryAllByTestId('retry-with-provider')).toEqual([]);
-      expect(view.container.querySelector('[data-testid="error-quota-exceeded"]')).toBeNull();
-      expect(view.container.querySelector('[data-stream-terminal-error="true"]')).not.toBeNull();
+      const banner = view.container.querySelector('[data-testid="error-quota-exceeded"]');
+      expect(banner).not.toBeNull();
+      expect(banner!.textContent).not.toMatch(/switch provider/i);
 
       await setProviderEnabled('codex', true);
       expect(
@@ -2191,17 +2190,57 @@ describe('ChatPanel mounted lifecycle', () => {
       ).toEqual([expect.stringContaining('OpenAI Codex')]);
     });
 
-    it('falls back to the plain failure banner when no alternative is eligible', async () => {
+    it('keeps the quota card with only a plain Retry when no alternative is eligible', async () => {
       seedProviderState({ 'claude-code': true, codex: false }, 'claude-code', {
         'claude-code': { available: true, authenticated: true },
         codex: { available: true, authenticated: true },
       });
       const view = await renderQuotaFailure();
 
-      expect(view.container.querySelector('[data-testid="error-quota-exceeded"]')).toBeNull();
+      const banner = view.container.querySelector('[data-testid="error-quota-exceeded"]');
+      expect(banner).not.toBeNull();
+      expect(banner!.textContent).toMatch(/retry once it resets\./i);
+      expect(banner!.textContent).not.toMatch(/switch provider/i);
       expect(screen.queryAllByTestId('retry-with-provider')).toEqual([]);
-      expect(view.container.querySelector('[data-stream-terminal-error="true"]')).not.toBeNull();
-      expect(view.container.querySelector('[data-testid="error-title"]')).not.toBeNull();
+      expect(screen.getByTestId('quota-retry-same-provider')).toBeTruthy();
+      expect(view.container.querySelector('[data-testid="error-title"]')).toBeNull();
+    });
+
+    it("labels the provider's Default apart from the named profile that ran out", async () => {
+      seedProviderState(
+        { 'claude-code': true },
+        'claude-code',
+        { 'claude-code': { available: true, authenticated: true } },
+        {
+          ...MOCK_PROVIDER_CATALOG,
+          profiles: [
+            {
+              id: 'work',
+              providerRef: 'claude-code@work',
+              baseProviderId: 'claude-code',
+              name: 'me@example.com',
+            },
+          ],
+        },
+      );
+      const view = await renderQuotaFailure('claude-code@work');
+
+      expect(
+        view.container.querySelector('[data-testid="quota-provider-label"]')?.textContent,
+      ).toBe('Anthropic Claude Code · me@example.com');
+      const offers = screen.getAllByTestId('retry-with-provider');
+      expect(offers.map((button) => button.textContent?.trim())).toEqual([
+        'Retry on Anthropic Claude Code · Default',
+      ]);
+
+      mocks.dispatch.mockClear();
+      await fireEvent.click(offers[0]);
+      expect(mocks.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'agentSessions/retryWithProviderRequested',
+          payload: ['agent-a', 'workspace-a', 'claude-code'],
+        }),
+      );
     });
   });
 
