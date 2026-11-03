@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.276.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.276.0...v2.276.1) (2026-11-03)
+
+
+### 🐛 Bug Fixes
+
+* **build:** raise the local renderer build heap default to 8 GB and gate it in CI ([#4081](https://github.com/intent-hq/cloudlands-fe/issues/4081)) ([cb5e9c7](https://github.com/intent-hq/cloudlands-fe/commit/cb5e9c76cd83fed8473f7f33a974cb916d67e3a9))
+* bump intentd sidecar to v0.11.113 ([#4089](https://github.com/intent-hq/cloudlands-fe/issues/4089)) ([cfc8826](https://github.com/intent-hq/cloudlands-fe/commit/cfc8826b7ffa4f32a84073dd4c41d4876cfba8dd))
+* **ci:** skip the full CT suite for Vitest suites under playwright/ ([#4074](https://github.com/intent-hq/cloudlands-fe/issues/4074)) ([c1d4277](https://github.com/intent-hq/cloudlands-fe/commit/c1d42773b591759dd9d749fb5d227c63186017ac))
+* **remote-machines:** remove the machine pill from the chat panel header ([#4075](https://github.com/intent-hq/cloudlands-fe/issues/4075)) ([9bf9ef2](https://github.com/intent-hq/cloudlands-fe/commit/9bf9ef27defeafb741d5177c684b112ba37e77e3))
+* show the model profile only on hover in the new workspace modal ([#4077](https://github.com/intent-hq/cloudlands-fe/issues/4077)) ([2e1787a](https://github.com/intent-hq/cloudlands-fe/commit/2e1787a5fb0c7363fe9d866a6de64b3eea087408))
+* **verify:** run tests related to changed test helpers and lint rules ([#4076](https://github.com/intent-hq/cloudlands-fe/issues/4076)) ([a348791](https://github.com/intent-hq/cloudlands-fe/commit/a3487919e53a21983d5f26ca45c2239eacaf525e))
+
 ## [2.276.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.275.1...v2.276.0) (2026-11-03)
 
 
