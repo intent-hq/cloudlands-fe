@@ -22,6 +22,13 @@
     pendingSubmissionMessage,
     processingSubmissionMessage,
   } from './pending-submission-message';
+  import {
+    advanceQueueDrainPrediction,
+    initialQueueDrainPredictorState,
+    QUEUE_DRAIN_PREDICTION_TIMEOUT_MS,
+    type QueueDrainPredictorState,
+  } from './queue-drain-prediction';
+  import { getQueuedMessageId } from '$lib/utils/queue-info';
   import { provideOperationalPanel } from './operational-panel.svelte';
   import { COMPOSER_INSET_CLASS } from './composer-inset';
   /* eslint-disable max-lines */
@@ -159,6 +166,8 @@
   import {
     selectAwaitingSwitchBackSnapshot,
     selectChatError,
+    selectChatIsInterrupting,
+    selectChatLastTurnInterrupted,
     selectChatAgentState,
     selectInitialChatHistory,
     selectInitialChatHistoryPending,
@@ -569,10 +578,37 @@
   const agentSessionIsStreaming$ = selectAgentSessionIsStreaming(agentIdStore);
   const agentMessages$ = selectAgentMessages(agentIdStore);
   const submissionDisplay$ = selectAgentSubmissionDisplay(agentIdStore, workspaceIdStore);
+  const queuedMessages$ = selectAgentQueueMessages(agentIdStore);
+  // Bridges the gap between a turn ending and the daemon starting the queued
+  // turn: queued rows the daemon is about to drain render as sent right away,
+  // like an idle send, instead of sitting in the queue card while the agent
+  // looks idle. Display only; the daemon's processing evidence replaces them.
+  let queueDrainPredictor = $state<{ key: string; state: QueueDrainPredictorState }>({
+    key: '',
+    state: initialQueueDrainPredictorState,
+  });
+  let queueDrainClock = $state(0);
+  const predictedDrainIds = $derived(new Set(queueDrainPredictor.state.prediction?.ids ?? []));
+  const predictedDrainRows = $derived(
+    predictedDrainIds.size === 0
+      ? []
+      : $queuedMessages$.filter(
+          (message) =>
+            predictedDrainIds.has(message.id) &&
+            isUserQueuedMessage(message) &&
+            // Authoritative processing rows win, even before the predictor catches up.
+            !$submissionDisplay$.processing.some(
+              (row) =>
+                row.id === message.id ||
+                (!!row.appMessageId && row.appMessageId === message.appMessageId),
+            ),
+        ),
+  );
   const pendingConversationMessages = $derived(
     [
       ...$submissionDisplay$.conversation.map(pendingSubmissionMessage),
       ...$submissionDisplay$.processing.map(processingSubmissionMessage),
+      ...predictedDrainRows.map(processingSubmissionMessage),
     ].filter(
       (pending) =>
         !$agentMessages$.some(
@@ -601,9 +637,10 @@
   const agentTasks$ = selectTasksForAgent(workspaceIdStore, agentIdStore);
   const workspaceTasks$ = selectWorkspaceTasks(workspaceIdStore);
   const workspaceTasksInitialized$ = selectWorkspaceTasksInitialized(workspaceIdStore);
-  const queuedMessages$ = selectAgentQueueMessages(agentIdStore);
   const chatStreamingContent$ = selectAgentSessionStreamingContent(agentIdStore);
   const chatError$ = selectChatError(agentIdStore);
+  const chatIsInterrupting$ = selectChatIsInterrupting(agentIdStore);
+  const chatLastTurnInterrupted$ = selectChatLastTurnInterrupted(agentIdStore);
   const chatFailureCorrelation$ = selectChatFailureCorrelation(agentIdStore);
   const chatStreamingStartTime$ = selectChatStreamingStartTime(agentIdStore);
   const chatLastChunkTime$ = selectChatLastChunkTime(agentIdStore);
@@ -614,8 +651,10 @@
     pendingConversationMessages.find(
       (message) => message.id === $chatLastAttemptedMessage$?.submission?.reference.id,
     )?.id ??
-      pendingConversationMessages.findLast((message) =>
-        $submissionDisplay$.processing.some((row) => row.id === message.id),
+      pendingConversationMessages.findLast(
+        (message) =>
+          $submissionDisplay$.processing.some((row) => row.id === message.id) ||
+          predictedDrainIds.has(message.id),
       )?.id,
   );
   const chatModelUnavailable$ = selectChatModelUnavailable(agentIdStore);
@@ -638,6 +677,8 @@
   const chatStatusEvents$ = selectChatStatusEvents(agentIdStore);
   const chatReceivedFirstChunk$ = selectChatReceivedFirstChunk(agentIdStore);
   const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
+  // A predicted drain owns the Thinking status before the daemon opens the turn.
+  const pendingRowsProcessing = $derived($agentIsResponding$ || predictedDrainRows.length > 0);
   // Canonical "agent is running" gate for idle-only affordances (next-steps links).
   const agentIsRunning$ = selectAgentIsRunning(agentIdStore);
   const initialHistory$ = selectInitialChatHistory(agentIdStore);
@@ -788,6 +829,66 @@
     agentId ? $allPermissionRequests.filter((r) => r.sessionId === agentId) : [],
   );
   let hasPendingPermission = $derived(agentPermissionRequests.length > 0);
+
+  $effect(() => {
+    void queueDrainClock;
+    const key = `${workspace?.id ?? ''}::${agentId ?? ''}`;
+    const busy = $agentIsResponding$ || $agentSessionIsStreaming$;
+    const queue = $queuedMessages$;
+    const current = untrack(() =>
+      queueDrainPredictor.key === key ? queueDrainPredictor.state : initialQueueDrainPredictorState,
+    );
+    const delivered = new Set<string>();
+    // Evidence is only consulted while a prediction can exist.
+    if (current.prediction || (current.wasBusy && !busy)) {
+      for (const row of $submissionDisplay$.processing) delivered.add(row.id);
+      const drained = new Set<string>();
+      const appMessageIds = new Set<string>();
+      for (const message of $agentMessages$) {
+        const queuedId = getQueuedMessageId(message.metadata);
+        if (queuedId) drained.add(queuedId);
+        if (message.appMessageId) appMessageIds.add(message.appMessageId);
+      }
+      for (const message of queue)
+        if (
+          drained.has(message.id) ||
+          (message.appMessageId && appMessageIds.has(message.appMessageId))
+        )
+          delivered.add(message.id);
+    }
+    const next = advanceQueueDrainPrediction(current, {
+      busy,
+      blocked:
+        isRetiredSession || !!effectiveError || !!$chatModelUnavailable$ || hasPendingPermission,
+      interrupted:
+        $chatIsInterrupting$ ||
+        $chatLastTurnInterrupted$ ||
+        latestAssistantForTelemetry?.metadata?.stopReason === 'interrupted',
+      queue,
+      delivered,
+      now: Date.now(),
+    });
+    untrack(() => {
+      if (queueDrainPredictor.key !== key || queueDrainPredictor.state !== next)
+        queueDrainPredictor = { key, state: next };
+    });
+  });
+
+  // Re-evaluate at the prediction deadline so an undelivered row returns to the queue.
+  // Reading the clock re-arms the timer if it fires before Date.now() reaches
+  // the deadline (timers run on a monotonic clock).
+  $effect(() => {
+    void queueDrainClock;
+    const prediction = queueDrainPredictor.state.prediction;
+    if (!prediction) return;
+    const timer = setTimeout(
+      () => {
+        queueDrainClock += 1;
+      },
+      Math.max(0, prediction.startedAt + QUEUE_DRAIN_PREDICTION_TIMEOUT_MS - Date.now()),
+    );
+    return () => clearTimeout(timer);
+  });
 
   // Track previous workspace to detect changes — extracted into a helper so
   // the race-prevention logic can be unit-tested against production code.
@@ -1280,9 +1381,10 @@
     secretRequestsSupported ? deriveSecretRequestTranscript($agentMessages$) : null,
   );
   const visibleQueuedMessages = $derived(
-    $admittedPrincipal$?.capabilities.submissionCorrelation === 1
+    ($admittedPrincipal$?.capabilities.submissionCorrelation === 1
       ? $queuedMessages$.filter(isUserQueuedMessage)
-      : omitDrainedQueuedMessages($queuedMessages$.filter(isUserQueuedMessage), $agentMessages$),
+      : omitDrainedQueuedMessages($queuedMessages$.filter(isUserQueuedMessage), $agentMessages$)
+    ).filter((message) => !predictedDrainIds.has(message.id)),
   );
 
   const visibleQueueRows = $derived(
@@ -7629,7 +7731,7 @@
                 message.id === pendingStatusMessageId &&
                 shouldShowPendingAssistantStatus({
                   isStreaming: $agentSessionIsStreaming$,
-                  isProcessing: $agentIsResponding$,
+                  isProcessing: pendingRowsProcessing,
                   error: effectiveError,
                   modelUnavailable: $chatModelUnavailable$,
                 })}
@@ -7695,7 +7797,7 @@
                   <div class={isCompactMode ? 'mb-2' : 'mb-8'}>
                     <StreamingStatus
                       isStreaming={$agentSessionIsStreaming$}
-                      isProcessing={$agentIsResponding$}
+                      isProcessing={pendingRowsProcessing}
                       processQueueHint={$agentSession$?.processQueueHint}
                       lastChunkTime={$chatLastChunkTime$}
                       receivedFirstChunk={$chatReceivedFirstChunk$}

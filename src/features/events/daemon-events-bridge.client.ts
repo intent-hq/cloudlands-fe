@@ -232,6 +232,7 @@ import {
   chatModelUnavailableCleared,
   chatQueueProcessingReceived,
   chatSendFailed,
+  chatTurnEnded,
   chatSendStarted,
   streamActivityReceived,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
@@ -1136,6 +1137,10 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
   // terminal `agent:stream:end` with `stopReason: "interrupted"` (+ the turn's
   // `messageId`); absence means a normal turn end.
   const stopReason = typeof data?.stopReason === 'string' ? data.stopReason : undefined;
+  // Record the turn's interruption before any busy flag clears, and whether
+  // or not a row was persisted: the queue-drain prediction must not treat a
+  // stopped turn (which leaves the queue untouched) as a drain.
+  appStore.dispatch(chatTurnEnded(agentId, stopReason === 'interrupted'));
   // Optional abnormal finish reason (PROTOCOL §7.3): the turn-worker terminal
   // emit carries `finishReason` when the turn completed with a non-`end_turn`
   // ACP stop reason (`refusal` | `max_tokens` | `max_turn_requests`, or
