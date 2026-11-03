@@ -73,6 +73,7 @@ import {
   buildMainClientHelloParams,
   getOrCreateClientId,
   persistClientId,
+  getLocalMachineName,
   setLocalHostIdentity,
 } from './client-identity';
 import {
@@ -2847,9 +2848,12 @@ async function captureLocalDeviceKindOriginal(owner?: PoolOwner): Promise<void> 
     );
     if (backendClients.get(LOCAL_CONNECTION_ID) !== client) return;
     const identityChanged = setLocalHostIdentity(result);
-    if (
-      await connectionsStore.setDetectedDeviceKind(LOCAL_CONNECTION_ID, extractDeviceKind(result))
-    ) {
+    const kindChanged = await connectionsStore.setDetectedDeviceKind(
+      LOCAL_CONNECTION_ID,
+      extractDeviceKind(result),
+    );
+    // A new `prettyHostname` renames the local Machines row (`machineName`).
+    if (kindChanged || identityChanged) {
       await broadcastConnectionsChangedOwned(owner);
     }
     if (identityChanged && backendClients.get(LOCAL_CONNECTION_ID) === client) {
@@ -3285,6 +3289,7 @@ async function listConnectionsOriginal(
   const localVersionInfo = getConnectionMode() === 'external' ? getDaemonVersionInfo() : null;
   const localUpdateSupported =
     getConnectionMode() === 'external' ? getLocalUpdateSupported() : null;
+  const localMachineName = getLocalMachineName();
   return {
     connections: connections
       .filter((c) => !isSelfConnectionRecord(c, selfKeys))
@@ -3308,6 +3313,7 @@ async function listConnectionsOriginal(
                   ? { daemonVersion: localVersionInfo.daemonVersion }
                   : {}),
                 ...(localUpdateSupported !== null ? { updateSupported: localUpdateSupported } : {}),
+                ...(localMachineName ? { machineName: localMachineName } : {}),
               }
             : {}),
           status,

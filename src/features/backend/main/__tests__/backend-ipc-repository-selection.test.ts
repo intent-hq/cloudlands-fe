@@ -11,6 +11,7 @@ vi.mock('../../../../main/window', async () => import('../../../../main/window-b
 vi.mock('../client-identity', () => ({
   buildMainClientHelloParams: async () => ({ clientId: 'fixture-desktop' }),
   getOrCreateClientId: async () => 'fixture-desktop',
+  getLocalMachineName: () => undefined,
   persistClientId: async () => {},
   setLocalHostIdentity: () => false,
 }));

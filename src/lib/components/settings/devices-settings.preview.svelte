@@ -45,6 +45,7 @@
             fingerprint: '',
             accent: null,
             isLocal: true,
+            machineName: 'Clément’s Mac Studio',
             status: 'connected',
             intentdVersion: '6.8.0',
           },

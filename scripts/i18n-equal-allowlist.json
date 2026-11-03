@@ -236,6 +236,7 @@
   "settings_connections_identity_github_label": "*",
   "settings_connections_identity_gitlab_label": "*",
   "settings_connections_sentry_orgSlug_placeholder": ["zh-CN", "zh-TW", "ja", "ko"],
+  "settings_devices_localMachine_label": ["es"],
   "settings_devices_mobile_title": "*",
   "settings_fontStyle_mono": ["de", "fr", "es"],
   "settings_fontStyle_sans": ["fr"],
