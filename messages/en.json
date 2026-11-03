@@ -5823,6 +5823,7 @@
   "starterPrompts_sudoku_label": "Create a Sudoku app",
   "starterPrompts_ticTacToe_label": "Create a Tic Tac Toe game",
   "stats_card_builtWith_label": "Build with Intent",
+  "stats_card_legendCache_label": "cache",
   "stats_card_legendInput_label": "input",
   "stats_card_legendOutput_label": "output",
   "stats_card_legendThoughts_label": "thoughts",

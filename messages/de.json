@@ -5823,6 +5823,7 @@
   "starterPrompts_sudoku_label": "Eine Sudoku-App erstellen",
   "starterPrompts_ticTacToe_label": "Ein Tic-Tac-Toe-Spiel erstellen",
   "stats_card_builtWith_label": "Erstellt mit Intent",
+  "stats_card_legendCache_label": "Cache",
   "stats_card_legendInput_label": "Eingabe",
   "stats_card_legendOutput_label": "Ausgabe",
   "stats_card_legendThoughts_label": "Denken",

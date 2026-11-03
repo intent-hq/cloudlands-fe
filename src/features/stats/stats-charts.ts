@@ -3,14 +3,16 @@
  *
  * Ports the design's `grids()` gridline helper (Agent Stats Share design)
  * and derives the histogram bar geometry + hero stats from real
- * `stats.getUsage` cells. Cache counters fold into the "input" bar segment;
- * reasoning `thoughtTokens` (a disjoint counter, omitted when zero, §5.23 /
- * §5.36) get a dedicated segment stacked above output, mirroring the HUD's
- * in/out/thoughts order (§5.39); the separate counters live on the passport
- * card. Bar totals and segment shares use the five-counter sum
+ * `stats.getUsage` cells. Bars stack, bottom to top: cache (read + write,
+ * the implicit base segment that fills whatever the others leave), fresh
+ * input, output, then reasoning `thoughtTokens` (a disjoint counter, omitted
+ * when zero, §5.23 / §5.36), mirroring the HUD's in/out/thoughts order
+ * (§5.39). Cache reads usually dwarf every other counter, so a non-zero share
+ * never rounds to 0 (`segmentPct`) and the cards give such segments a minimum
+ * visible height. Bar totals and segment shares use the five-counter sum
  * (`totalTokens`). Token formatting comes from `stats-format.ts`.
  */
-import type { UsageHourStats, UsageMonthStats } from '$lib/client/app-client';
+import type { UsageHourStats, UsageMonthStats, UsageTokenTotals } from '$lib/client/app-client';
 import { formatDatePattern } from '$lib/i18n/format';
 import { m } from '$shared/paraglide/messages.js';
 import { formatTokens, totalTokens } from './stats-format';
@@ -19,6 +21,17 @@ import { formatTokens, totalTokens } from './stats-format';
 function monthName(index: number): string {
   return formatDatePattern(new Date(2026, index, 1), 'MMM');
 }
+
+/**
+ * `part`'s share of `total` as a 1-decimal percentage. A non-zero part never
+ * rounds to 0, so the card can still draw (and size) its segment.
+ */
+function segmentPct(part: number, total: number): number {
+  if (!(total > 0) || !(part > 0)) return 0;
+  return Math.max(0.1, +((part / total) * 100).toFixed(1));
+}
+
+const cacheTokens = (c: UsageTokenTotals) => c.cacheReadTokens + c.cacheCreationTokens;
 
 export interface GridLine {
   label: string;
@@ -58,6 +71,14 @@ export const pad2 = (n: number) => String(n).padStart(2, '0');
 
 interface HourBar {
   heightPct: number;
+  /**
+   * Cache (read + write) share of the bar. The card draws cache as the base
+   * segment filling whatever the others leave; when it is 0 the input segment
+   * becomes the base instead, so the peak/best highlight still has a home.
+   */
+  cachePct: number;
+  /** Fresh (uncached) input's share of the bar. */
+  inPct: number;
   outPct: number;
   /** Reasoning tokens' share of the bar; 0 when the cell reported none. */
   thoughtPct: number;
@@ -99,6 +120,8 @@ export interface HourCardModel {
   overnight: string;
   /** Any cell reported reasoning tokens — gates the THOUGHTS legend entry. */
   hasThoughts: boolean;
+  /** Any cell reported cache tokens — gates the CACHE legend entry. */
+  hasCache: boolean;
 }
 
 /**
@@ -133,8 +156,10 @@ export function hourCardModel(
 
   const bars: HourBar[] = cells.map((c, i) => ({
     heightPct: max > 0 ? +((totals[i] / max) * 100).toFixed(1) : 0,
-    outPct: totals[i] > 0 ? +((c.outputTokens / totals[i]) * 100).toFixed(1) : 0,
-    thoughtPct: totals[i] > 0 ? +(((c.thoughtTokens ?? 0) / totals[i]) * 100).toFixed(1) : 0,
+    cachePct: segmentPct(cacheTokens(c), totals[i]),
+    inPct: segmentPct(c.inputTokens, totals[i]),
+    outPct: segmentPct(c.outputTokens, totals[i]),
+    thoughtPct: segmentPct(c.thoughtTokens ?? 0, totals[i]),
     peak: i === peakIdx,
   }));
 
@@ -162,11 +187,20 @@ export function hourCardModel(
     workingHoursPct,
     overnight: `${pct(inRange(0, 6))}%`,
     hasThoughts: cells.some((c) => (c.thoughtTokens ?? 0) > 0),
+    hasCache: cells.some((c) => cacheTokens(c) > 0),
   };
 }
 
 interface MonthBar {
   heightPct: number;
+  /**
+   * Cache (read + write) share of the bar. The card draws cache as the base
+   * segment filling whatever the others leave; when it is 0 the input segment
+   * becomes the base instead, so the peak/best highlight still has a home.
+   */
+  cachePct: number;
+  /** Fresh (uncached) input's share of the bar. */
+  inPct: number;
   outPct: number;
   /** Reasoning tokens' share of the bar; 0 when the cell reported none. */
   thoughtPct: number;
@@ -187,6 +221,8 @@ export interface MonthCardModel {
   deltaValue: string;
   /** Any cell reported reasoning tokens — gates the THOUGHTS legend entry. */
   hasThoughts: boolean;
+  /** Any elapsed month reported cache tokens — gates the CACHE legend entry. */
+  hasCache: boolean;
 }
 
 /**
@@ -218,11 +254,13 @@ export function monthCardModel(byMonth: UsageMonthStats[], monthsElapsed: number
 
   const bars: MonthBar[] = cells.map((c, i) => {
     const active = i < elapsed;
+    const total = active ? totals[i] : 0;
     return {
       heightPct: active ? (max > 0 ? +((totals[i] / max) * 100).toFixed(1) : 0) : 2,
-      outPct: active && totals[i] > 0 ? +((c.outputTokens / totals[i]) * 100).toFixed(1) : 0,
-      thoughtPct:
-        active && totals[i] > 0 ? +(((c.thoughtTokens ?? 0) / totals[i]) * 100).toFixed(1) : 0,
+      cachePct: segmentPct(cacheTokens(c), total),
+      inPct: segmentPct(c.inputTokens, total),
+      outPct: segmentPct(c.outputTokens, total),
+      thoughtPct: segmentPct(c.thoughtTokens ?? 0, total),
       letter: monthName(i)[0],
       active,
       best: i === bestIdx,
@@ -251,5 +289,6 @@ export function monthCardModel(byMonth: UsageMonthStats[], monthsElapsed: number
       : m.stats_monthCard_trend_label(),
     deltaValue: hasDelta ? `+${Math.round(((max - prev) / prev) * 100)}%` : '—',
     hasThoughts: cells.some((c, i) => i < elapsed && (c.thoughtTokens ?? 0) > 0),
+    hasCache: cells.some((c, i) => i < elapsed && cacheTokens(c) > 0),
   };
 }

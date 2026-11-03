@@ -46,6 +46,11 @@
 
   <div class="chart-block">
     <div class="legend">
+      {#if model.hasCache}
+        <span class="legend-item"
+          ><span class="swatch swatch-cache"></span>{m.stats_card_legendCache_label()}</span
+        >
+      {/if}
       <span class="legend-item"
         ><span class="swatch swatch-in"></span>{m.stats_card_legendInput_label()}</span
       >
@@ -69,10 +74,30 @@
       <div class="bars">
         {#each model.bars as bar, i (i)}
           <span class="bar" style:height="{bar.heightPct}%">
-            <span class="bar-thought" class:seg-stub={!bar.active} style:height="{bar.thoughtPct}%"
+            <span
+              class="bar-thought"
+              class:seg-min={bar.thoughtPct > 0}
+              style:height="{bar.thoughtPct}%"
             ></span>
-            <span class="bar-out" class:seg-stub={!bar.active} style:height="{bar.outPct}%"></span>
-            <span class="bar-in" class:bar-in-best={bar.best} class:seg-stub={!bar.active}></span>
+            <span class="bar-out" class:seg-min={bar.outPct > 0} style:height="{bar.outPct}%"
+            ></span>
+            <!-- The base segment fills the bar and carries the best-month
+                 highlight: cache when the bar has any, else fresh input. -->
+            {#if bar.cachePct > 0}
+              <span class="bar-in" class:seg-min={bar.inPct > 0} style:height="{bar.inPct}%"></span>
+              <span
+                class="bar-cache bar-base"
+                class:bar-base-best={bar.best}
+                class:seg-min={bar.cachePct > 0}
+              ></span>
+            {:else}
+              <span
+                class="bar-in bar-base"
+                class:bar-base-best={bar.best}
+                class:seg-min={bar.inPct > 0}
+                class:seg-stub={!bar.active}
+              ></span>
+            {/if}
           </span>
         {/each}
       </div>
@@ -199,8 +224,12 @@
     border-radius: 2px;
   }
 
-  .swatch-in {
+  .swatch-cache {
     background: hsl(var(--muted-foreground));
+  }
+
+  .swatch-in {
+    background: hsl(var(--primary-ink));
   }
 
   .swatch-out {
@@ -257,12 +286,26 @@
   }
 
   .bar-in {
-    flex: 1;
+    background: hsl(var(--primary-ink));
+  }
+
+  .bar-cache {
     background: hsl(var(--muted-foreground));
   }
 
-  .bar-in-best {
+  .bar-base {
+    flex: 1;
+  }
+
+  .bar-base-best {
     background: hsl(var(--foreground));
+  }
+
+  /* Keep every non-zero segment visible, including the base that fills the
+     bar (cache, or input when there is none), whichever counter dominates;
+     the floors (max 25% each) never swallow a short bar. */
+  .seg-min {
+    min-height: min(2px, 25%);
   }
 
   .seg-stub {

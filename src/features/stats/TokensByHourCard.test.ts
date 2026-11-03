@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import type { UsageStatsResult } from '$lib/client/app-client';
+import { m } from '$shared/paraglide/messages.js';
 import TokensByHourCard from './TokensByHourCard.svelte';
 
 const data: UsageStatsResult = {
@@ -67,5 +68,41 @@ describe('working-hours stepper', () => {
     const second = render(TokensByHourCard, { data, mode: 'month', label: 'SEP 2026' });
     expect(second.container.querySelector('.wh-bound')?.textContent).toContain('09');
     expect(second.container.querySelector('.stat-value')?.textContent).toContain('50%');
+  });
+});
+
+describe('token mix legend', () => {
+  // Real-world mix: cache reads are ~98% of the bar (regression — the cache
+  // hid inside the "input" segment; segment visibility is covered by the CT spec).
+  const cacheHeavy: UsageStatsResult = {
+    ...data,
+    byHourOfDay: [
+      {
+        hour: 7,
+        inputTokens: 13_000_000,
+        outputTokens: 15_000_000,
+        cacheReadTokens: 6_750_000_000,
+        cacheCreationTokens: 111_000_000,
+        thoughtTokens: 60_000,
+      },
+    ],
+  };
+
+  it('adds a cache legend entry when cache tokens were reported (regression)', () => {
+    const { container } = render(TokensByHourCard, {
+      data: cacheHeavy,
+      mode: 'month',
+      label: 'NOV 2026',
+    });
+    expect(container.querySelector('.legend')?.textContent).toContain(
+      m.stats_card_legendCache_label(),
+    );
+  });
+
+  it('omits the cache legend entry when no hour reported cache tokens', () => {
+    const { container } = render(TokensByHourCard, { data, mode: 'month', label: 'SEP 2026' });
+    expect(container.querySelector('.legend')?.textContent).not.toContain(
+      m.stats_card_legendCache_label(),
+    );
   });
 });

@@ -5823,6 +5823,7 @@
   "starterPrompts_sudoku_label": "建立一個數獨應用程式",
   "starterPrompts_ticTacToe_label": "建立一個井字棋遊戲",
   "stats_card_builtWith_label": "由雲嶺意先打造",
+  "stats_card_legendCache_label": "快取",
   "stats_card_legendInput_label": "輸入",
   "stats_card_legendOutput_label": "輸出",
   "stats_card_legendThoughts_label": "思考",
