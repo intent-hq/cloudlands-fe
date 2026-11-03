@@ -65,6 +65,7 @@ vi.mock('../keychain-sync-lifecycle', () => ({
 
 vi.mock('../client-identity', () => ({
   getOrCreateClientId: vi.fn(async () => 'cli-test'),
+  getLocalMachineName: () => undefined,
   persistClientId: vi.fn(async () => {}),
 }));
 

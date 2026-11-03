@@ -131,6 +131,36 @@ describe('vite-build child termination', () => {
     },
   );
 
+  // A V8 heap-limit abort ends the child with SIGABRT. Piped through `tail` the
+  // build can look green, so the wrapper must say what happened and what to do.
+  it.skipIf(process.platform === 'win32').each([
+    ['the default cap', undefined, /default --max-old-space-size=8192/],
+    ['an exported cap', '--max-old-space-size=64', /--max-old-space-size=64 from NODE_OPTIONS/],
+  ])('explains a real heap-limit abort under %s', (_label, nodeOptions, capNote) => {
+    // The default (8 GB) is far too large to exhaust in a test, so the default
+    // case caps only the child, from inside it, by re-spawning with a tiny heap.
+    const { wrapper } = fixture(`
+      import { spawnSync } from 'node:child_process';
+      if (!process.env.FIXTURE_ALLOCATE) {
+        const grandchild = spawnSync(process.execPath, ['--max-old-space-size=64', process.argv[1]], {
+          env: { ...process.env, FIXTURE_ALLOCATE: '1' }, stdio: 'inherit',
+        });
+        process.kill(process.pid, grandchild.signal ?? 'SIGTERM');
+      } else {
+        const hoard = [];
+        for (;;) hoard.push(new Array(100_000).fill({ hoard }));
+      }
+    `);
+    const result = run(wrapper, [], nodeOptions === undefined ? undefined : nodeOptions);
+    expect(result.status).toBe(1);
+    expect(result.signal).toBeNull();
+    expect(result.stderr).toMatch(/heap out of memory/i);
+    expect(result.stderr).toContain('vite build terminated by SIGABRT');
+    expect(result.stderr).toMatch(capNote);
+    expect(result.stderr).toContain('NODE_OPTIONS=--max-old-space-size=');
+    expect(result.stderr).not.toContain('private-test-value');
+  });
+
   it.each([0, 1, 7])(
     'preserves exit %i and inherited input/output without a signal warning',
     (code) => {
@@ -149,9 +179,9 @@ describe('vite-build child termination', () => {
   );
 
   it.each([
-    [undefined, '--max-old-space-size=4608'],
-    ['', '--max-old-space-size=4608'],
-    ['--no-warnings', '--no-warnings --max-old-space-size=4608'],
+    [undefined, '--max-old-space-size=8192'],
+    ['', '--max-old-space-size=8192'],
+    ['--no-warnings', '--no-warnings --max-old-space-size=8192'],
     ['--no-warnings --max-old-space-size=512', '--no-warnings --max-old-space-size=512'],
     ['--max_old_space_size=512 --no-warnings', '--max_old_space_size=512 --no-warnings'],
   ])('preserves arguments and heap policy for NODE_OPTIONS=%s', (inherited, expected) => {

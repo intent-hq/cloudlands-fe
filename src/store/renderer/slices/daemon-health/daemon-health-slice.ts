@@ -417,6 +417,7 @@ daemonHealthReducer.with(
       childMemoryPeakBytes: wirePayload.childMemoryPeakBytes,
       agentMemoryBytes: wirePayload.agentMemoryBytes,
       agentProcessCount: wirePayload.agentProcessCount,
+      remoteLinks: wirePayload.remoteLinks,
       os: wirePayload.host.os,
       arch: wirePayload.host.arch,
       transport: state.stats?.transport ?? state.transport ?? undefined,

@@ -45,6 +45,7 @@
   import { Switch } from '$lib/components/ui/switch';
   import * as ToggleGroup from '$lib/components/ui/toggle-group';
   import { selectDaemonTransport } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
+  import { selectHostManagesConnections } from '$store/renderer/slices/connections/connections-selectors';
   import { selectIsCollaboratorOnlyClient } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     selectPrincipalActionContext,
@@ -113,6 +114,9 @@
   const collaborationContext$ = selectPrincipalActionContext();
   const hostAdministrationDenied$ = selectHostAdministrationDenied();
   const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
+  // intent-web serves this page and owns the machines list: there is no
+  // keychain sync and no mobile pairing on that host.
+  const hostManagesConnections$ = selectHostManagesConnections();
 
   // UDS socket path of the connected intentd; null hides the Connection section
   // (external-ws, unknown transport, or missing target).
@@ -268,12 +272,13 @@
   const hiddenTabs = $derived.by(() => {
     const tabs: SettingsTab[] = $isCollaboratorOnlyClient$ ? ['providers', 'connections'] : [];
     if (!$labsMultiplayerEnabled$) tabs.push('collaboration');
+    if ($hostManagesConnections$) tabs.push('mobile');
     return tabs;
   });
   $effect(() => {
     if (
       hiddenTabs.includes(activeTab) &&
-      (activeTab === 'collaboration' || $hostAdministrationDenied$)
+      (activeTab === 'collaboration' || activeTab === 'mobile' || $hostAdministrationDenied$)
     ) {
       setActiveTab('display');
     }
@@ -600,10 +605,12 @@
             <DevicesSettings />
           </div>
 
-          <DevicesConnectionSections />
+          {#if !$hostManagesConnections$}
+            <DevicesConnectionSections />
+          {/if}
         {/if}
 
-        {#if activeTab === 'mobile'}
+        {#if activeTab === 'mobile' && !hiddenTabs.includes('mobile')}
           <div id="mobile" data-highlight-id="mobile" use:highlightTarget class="scroll-mt-20">
             <div id="websocket-api" data-highlight-id="websocket-api" use:highlightTarget>
               <MobileSettings />

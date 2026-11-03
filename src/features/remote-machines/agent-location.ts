@@ -79,6 +79,29 @@ export function agentMachineLocation(
   };
 }
 
+/**
+ * Where an agent that is not created yet will run: the machine chosen for it
+ * (New Workspace → Start On), from its `remoteMachines.list` row. Null for none.
+ */
+export function machineLocation(
+  nodeId: string,
+  machine?: RemoteMachine | null,
+): AgentMachineLocation | null {
+  if (!nodeId) return null;
+  const listed = machine && machine.id === nodeId ? machine : null;
+  return {
+    nodeId,
+    name: listed?.name || m.remoteAgent_location_unknownMachine(),
+    platform: machinePlatformLabel(listed?.platform?.os, listed?.platform?.arch),
+    state:
+      listed?.state === 'revoked'
+        ? 'revoked'
+        : listed?.state === 'unreachable'
+          ? 'unreachable'
+          : 'ready',
+  };
+}
+
 /** "Runs on Mac mini · macOS arm64", plus the machine state when it has one. */
 export function agentMachineTooltip(location: AgentMachineLocation): string {
   const where = location.platform

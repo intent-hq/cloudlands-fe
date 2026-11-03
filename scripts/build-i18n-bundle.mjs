@@ -10,7 +10,7 @@ const outputRoot = path.join(repositoryRoot, 'static/generated');
 const temporaryRoot = path.join(repositoryRoot, '.svelte-kit/i18n-bundle');
 const catalog = JSON.parse(readFileSync(path.join(repositoryRoot, 'messages/en.json'), 'utf8'));
 
-const usedMessageKeys = collectUsedMessageKeys(
+const usedMessageKeys = await collectUsedMessageKeys(
   path.join(repositoryRoot, 'src'),
   new Set(Object.keys(catalog)),
 );

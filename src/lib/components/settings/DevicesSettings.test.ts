@@ -1096,7 +1096,7 @@ describe('DevicesSettings', () => {
   it('edits the host machine icon from a remote window without opening host settings', async () => {
     mocks.currentConnectionId = 'remote-1';
     render(DevicesSettings);
-    const name = m.settings_devices_hostMachine_label();
+    const name = m.layout_daemonStatus_localConnection_label();
     expect(screen.queryByTestId('device-icon-picker-trigger')).toBeNull();
     await openAction('Edit', name);
     expect(screen.getByTestId('device-icon-picker-trigger')).toBeTruthy();
@@ -1106,6 +1106,18 @@ describe('DevicesSettings', () => {
     await openAction('Edit', name);
     expect(screen.queryByTestId('device-icon-picker-trigger')).toBeNull();
   });
+
+  it.each(['local', 'remote-1'])(
+    'names the local row after this machine when %s is the current backend',
+    (currentConnectionId) => {
+      mocks.currentConnectionId = currentConnectionId;
+      mocks.connections = [{ ...local, machineName: 'Clément’s Mac Studio' }, remote];
+      render(DevicesSettings);
+      expect(screen.getByText('Clément’s Mac Studio (local)')).toBeTruthy();
+      expect(screen.queryByText(m.layout_daemonStatus_localConnection_label())).toBeNull();
+      expect(screen.getByText('Studio Mac')).toBeTruthy();
+    },
+  );
 
   it.each(['local', 'remote'])('toggles the %s editor with the Edit action', async (kind) => {
     render(DevicesSettings);

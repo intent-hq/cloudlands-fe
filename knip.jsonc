@@ -27,6 +27,8 @@
     "src/preload/desktop-overlay.ts",
     // MCP server bundled separately by scripts/build-cdp-mcp.js
     "cdp-mcp-server/server.ts",
+    // @intent-hq/web CLI entry, bundled by scripts/build-intent-web-package.mjs
+    "src/features/intent-web/main/intent-web-bin.ts",
     // Custom ESLint rules imported from eslint.config.js
     "eslint-rules/*.js",
     // Scripts are invoked via package.json scripts, CI workflows (.github/workflows),

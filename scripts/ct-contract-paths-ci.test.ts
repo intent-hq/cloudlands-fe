@@ -1285,6 +1285,10 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
     CT_AFFECTED_SPECS: '[]',
     RESULT_test_playwright: ct,
     RESULT_monorepo_consumer_checks: 'success',
+    // The @intent-hq/web package job ran and passed; its skip rules are
+    // covered in scripts/test-ci-event-policy.py.
+    RESULT_intent_web_package: 'success',
+    INTENT_WEB_PACKAGE_REQUIRED: 'true',
   });
 
   // What a route failure (or fork-PR skip) leaves behind: every job that

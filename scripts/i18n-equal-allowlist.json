@@ -236,6 +236,7 @@
   "settings_connections_identity_github_label": "*",
   "settings_connections_identity_gitlab_label": "*",
   "settings_connections_sentry_orgSlug_placeholder": ["zh-CN", "zh-TW", "ja", "ko"],
+  "settings_devices_localMachine_label": ["es"],
   "settings_devices_mobile_title": "*",
   "settings_fontStyle_mono": ["de", "fr", "es"],
   "settings_fontStyle_sans": ["fr"],
@@ -375,5 +376,11 @@
   "settings_section_labs": "*",
   "dock_statusGroup_label": ["de", "es", "ko"],
   "chat_screenEvidence_image_label": ["fr"],
-  "remoteAgent_location_tooltipWithState": "*"
+  "remoteAgent_location_tooltipWithState": "*",
+  "layout_agentMemoryBreakdown_unnamedAgent_label": ["de", "fr"],
+  "layout_daemonStatus_connectedBackends_one": ["es", "fr"],
+  "layout_daemonStatus_connectedBackends_many": ["es", "fr"],
+  "layout_daemonStatus_connectedMachines_one": ["fr"],
+  "layout_daemonStatus_connectedMachines_many": ["fr"],
+  "layout_daemonStatus_connectedDaemons_value": "*"
 }

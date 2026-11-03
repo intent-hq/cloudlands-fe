@@ -21,6 +21,7 @@
     faCheck,
     faFileLines,
     faGlobe,
+    faRightFromBracket,
     faRightLeft,
     faUserPlus,
   } from '@fortawesome/free-solid-svg-icons';
@@ -95,6 +96,16 @@
   } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
   import { setWorkspaceBrowserClientRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
   import SetPrimaryClientConfirmDialog from '$lib/components/workspace/SetPrimaryClientConfirmDialog.svelte';
+  import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
+  import {
+    selectCanLeaveWorkspace,
+    selectIsLeavingWorkspace,
+  } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
+  import {
+    captureLeaveWorkspaceTarget,
+    confirmLeaveWorkspace,
+    type LeaveWorkspaceTarget,
+  } from '$features/workspace-sharing/leave-workspace';
   import { selectCanSetWorkspacePrimaryClient } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     selectHostRole,
@@ -439,13 +450,37 @@
       : null,
   );
 
+  // Guest-only counterpart of Share (see `leave-workspace.ts`).
+  const canLeave$ = selectCanLeaveWorkspace(workspaceIdStore);
+  const leaving$ = selectIsLeavingWorkspace(workspaceIdStore);
+  let leaveDialogOpen = $state(false);
+  let leaveTarget = $state<LeaveWorkspaceTarget | null>(null);
+  const leaveAction: MenuAction | null = $derived(
+    $canLeave$
+      ? {
+          id: 'leave-workspace',
+          label: $leaving$
+            ? m.settings_guestSessions_leaving_label()
+            : m.workspace_leave_menu_label(),
+          icon: faRightFromBracket,
+          dividerBefore: true,
+          variant: 'destructive',
+          disabled: $leaving$,
+          onClick: () => {
+            leaveTarget = captureLeaveWorkspaceTarget($workspace);
+            leaveDialogOpen = leaveTarget !== null;
+          },
+        }
+      : null,
+  );
+
   const transferAction: MenuAction | null = $derived(
     $workspace && !plainFolder && !$hidesOwnerActions$
       ? {
           id: 'transfer-workspace',
           label: m.workspace_card_transfer_label(),
           icon: faRightLeft,
-          dividerBefore: !shareAction,
+          dividerBefore: !shareAction && !leaveAction,
           onClick: () => {
             if (!$workspace) return;
             appStore.dispatch(
@@ -584,6 +619,7 @@
     sidebarSideAction,
     primaryClientAction,
     ...(shareAction ? [shareAction] : []),
+    ...(leaveAction ? [leaveAction] : []),
     ...(transferAction ? [transferAction] : []),
   ]);
 
@@ -1102,6 +1138,21 @@
     {/if}
   </div>
 </div>
+
+<BulkActionConfirmDialog
+  bind:open={leaveDialogOpen}
+  title={m.settings_guestSessions_leaveWorkspaceConfirm_title()}
+  description={m.settings_guestSessions_leaveWorkspaceConfirm_description({
+    workspace: leaveTarget?.workspaceTitle ?? '',
+    name: leaveTarget?.sessionLabel ?? '',
+  })}
+  confirmText={m.settings_guestSessions_leaveWorkspace_label()}
+  variant="destructive"
+  onConfirm={() => {
+    leaveDialogOpen = false;
+    void confirmLeaveWorkspace(leaveTarget);
+  }}
+/>
 
 {#if pendingPrimaryClient}
   <SetPrimaryClientConfirmDialog

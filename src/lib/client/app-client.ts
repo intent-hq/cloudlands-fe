@@ -415,6 +415,19 @@ export interface WorkspaceCreateResult extends MutationResult {
    * the bridge-mapped values.
    */
   errorCode?: string;
+  /** Set with `errorCode: "launch-failed"`: the workspace was created anyway. */
+  launchFailure?: WorkspaceCreateLaunchFailure;
+}
+
+/**
+ * A `workspace.create` whose remote initial agent failed to start after the
+ * workspace committed (PROTOCOL nodes.md "Placement subset", `launch-failed`):
+ * `data.workspaceId`, `data.launch.agentId` and `data.cause.message`.
+ */
+export interface WorkspaceCreateLaunchFailure {
+  workspaceId: string;
+  agentId?: string;
+  cause?: string;
 }
 
 /**

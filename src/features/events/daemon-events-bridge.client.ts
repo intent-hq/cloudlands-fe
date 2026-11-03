@@ -264,7 +264,11 @@ import {
   pruneRecentlyClosed,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { selectHiddenTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-import { selectWindowGuestSession } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
+import {
+  selectIsSelfLeftWorkspace,
+  selectWindowGuestSession,
+} from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
+import { guestWorkspaceLeaveAnnounced } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import { applyTaskStatusChanged } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import { applyTaskStatusChanged as applyNoteTaskStatusChanged } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import { changesEventReceived } from '$store/renderer/slices/changes/changes-slice';
@@ -2994,6 +2998,10 @@ function handleWorkspaceMembershipRemoved(
   };
   // Resolved BEFORE the purge drops the entity.
   const title = state.workspace?.workspaces.map[workspaceId]?.title;
+  // A leave started in this window reads as "you left", not a removal. A leave
+  // started from another window (e.g. Settings in the main window) is not tracked here.
+  const selfInitiated = selectIsSelfLeftWorkspace.select(appStore.state, workspaceId);
+  if (selfInitiated) appStore.dispatch(guestWorkspaceLeaveAnnounced(session.id, workspaceId));
   const agentIds = state.agentSessions?.agentIdsByWorkspace[workspaceId] ?? [];
   const ownerAgentIds = collectOwnedTabAgentIds(workspaceId);
   appStore.dispatch(destroyOwnedTabsForWorkspace(workspaceId));
@@ -3014,6 +3022,7 @@ function handleWorkspaceMembershipRemoved(
     workspaceId,
     title,
     hostLabel: formatGuestSessionLabel(session),
+    selfInitiated,
   });
   return true;
 }

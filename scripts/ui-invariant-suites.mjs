@@ -9,7 +9,6 @@ import {
   readHeaderLines,
   readLeadingComments,
   stripBom,
-  TEST_SCAN_ROOTS,
 } from './vitest-suite-files.mjs';
 
 export { collectTestFiles, readLeadingComments };
@@ -22,7 +21,6 @@ export { collectTestFiles, readLeadingComments };
 // as a hand-listed package.json script and missed qualifying suites until review.
 export const UI_INVARIANT_MARKER = '@ui-invariant';
 export const UI_INVARIANT_EXEMPT_MARKER = '@ui-invariant-exempt:';
-export const UI_INVARIANT_SCAN_ROOTS = TEST_SCAN_ROOTS;
 
 const GATE_MARKER = new RegExp(`${UI_INVARIANT_MARKER}(?![\\w-])`);
 const INVENTORY_BUILDER = 'buildUiComponentInventory';

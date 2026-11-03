@@ -5,10 +5,11 @@
  * (between the failed attempt and its retry); it must render as the inline
  * failover notice, never as a message bubble.
  */
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, waitFor } from '@testing-library/svelte';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { AgentMessage } from '$shared/types';
+import { withWorkspaceViewer } from '../../../../test/fixtures/principal-state';
 
 let mockStoreState: Record<string, unknown> = {};
 
@@ -116,7 +117,7 @@ describe('ChatMessage — provider_failover row', () => {
     // The global catalog no longer has the backup profile; the workspace's own
     // catalog (what the agent actually runs against) still does.
     beforeEach(() => {
-      mockStoreState = workspaceCatalogState();
+      mockStoreState = withWorkspaceViewer(workspaceCatalogState(), 'ws-1', 'owner');
     });
 
     const row = () =>
@@ -144,11 +145,36 @@ describe('ChatMessage — provider_failover row', () => {
       expect(text).toContain('continuing on Work (backup)');
       expect(text).not.toContain('Removed profile');
     });
+
+    it('names the profile once an owner identity settles after first render', async () => {
+      // Before the window's identity settles the gate fails closed.
+      mockStoreState = workspaceCatalogState();
+      render(AgentMessageList, {
+        props: { messages: [row()], workspaceId: 'ws-1', enableTransitions: false },
+      });
+      const status = screen.getByRole('status');
+      expect(status.textContent).toContain('continuing on Claude Code (backup)');
+
+      mockStoreState = withWorkspaceViewer(workspaceCatalogState(), 'ws-1', 'owner');
+      const { store } = await import('$store/renderer/store');
+      (store as unknown as { emitState(): void }).emitState();
+      await waitFor(() => expect(status.textContent).toContain('continuing on Work (backup)'));
+    });
+
+    it("a guest sees the bare provider, never the host's profile name", () => {
+      mockStoreState = withWorkspaceViewer(workspaceCatalogState(), 'ws-1', 'guest');
+      render(AgentMessageList, {
+        props: { messages: [row()], workspaceId: 'ws-1', enableTransitions: false },
+      });
+      expect(screen.getByRole('status').textContent?.trim()).toBe(
+        'Claude Code ran out of quota — continuing on Claude Code (backup)',
+      );
+    });
   });
 
   describe('provider_returned row', () => {
     beforeEach(() => {
-      mockStoreState = workspaceCatalogState();
+      mockStoreState = withWorkspaceViewer(workspaceCatalogState(), 'ws-1', 'owner');
     });
 
     const returnedRow = (): AgentMessage =>

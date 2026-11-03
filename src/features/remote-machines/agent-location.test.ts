@@ -7,6 +7,7 @@ import {
   agentMachineLocation,
   agentMachineTooltip,
   agentPlacementNoticeKind,
+  machineLocation,
   machinePlatformLabel,
 } from './agent-location';
 
@@ -174,5 +175,29 @@ describe('agent row status label', () => {
         }),
       ),
     ).toBe('Provisioning');
+  });
+});
+
+describe('machineLocation (an agent not created yet)', () => {
+  it('describes the chosen machine from its list row', () => {
+    expect(machineLocation('node-mac', machine())).toEqual({
+      nodeId: 'node-mac',
+      name: 'Mac mini (list)',
+      platform: 'macOS arm64',
+      state: 'ready',
+    });
+    expect(machineLocation('node-mac', machine({ state: 'unreachable' }))?.state).toBe(
+      'unreachable',
+    );
+    expect(machineLocation('node-mac', machine({ state: 'revoked' }))?.state).toBe('revoked');
+  });
+  it('names an unlisted machine generically and is null without a machine', () => {
+    expect(machineLocation('node-gone', machine())).toEqual({
+      nodeId: 'node-gone',
+      name: 'Another machine',
+      platform: null,
+      state: 'ready',
+    });
+    expect(machineLocation('', machine())).toBeNull();
   });
 });

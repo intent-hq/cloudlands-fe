@@ -604,6 +604,13 @@ describe('ModelPicker guest / collaborator lock', () => {
 
   const hostCatalog = [{ value: 'auggie:sonnet4.6', label: 'Sonnet 4.6', description: 'Smart' }];
 
+  const HOST_PROFILE = {
+    id: 'phost0000001',
+    providerRef: 'codex@phost0000001',
+    baseProviderId: 'codex',
+    name: 'Host work',
+  };
+
   const asGuestWindow = () => {
     mockRoleState.current.connections = { windowBackendId: 'host-1', hasReceivedList: true };
     mockRoleState.current.guestSessions.sessions = {
@@ -697,6 +704,43 @@ describe('ModelPicker guest / collaborator lock', () => {
     expect(vi.mocked(notify.error)).not.toHaveBeenCalled();
     expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
     expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+  });
+
+  // The host's profiles (§5.54) are its administrator's private configuration:
+  // whether or not the guest's catalog can resolve the agent's profile, the
+  // locked chip names only the model, never the profile or "Removed profile".
+  it.each([
+    ['unknown to the guest', []],
+    ['listed in the catalog', [{ ...HOST_PROFILE }]],
+  ])("guest window: never shows the host's profile name when it is %s", async (_, profiles) => {
+    asGuestWindow();
+    availableProviderOverride$.set([]);
+    mockCatalogProfiles.current = profiles;
+    mockAgentSession$.set({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: HOST_PROFILE.providerRef,
+    });
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) =>
+      providerId.startsWith('codex')
+        ? { models: [{ value: 'gpt-5', label: 'GPT-5', description: '' }] }
+        : { models: [] },
+    );
+
+    renderAgentPicker('gpt-5');
+
+    const button = screen.getByRole('button');
+    expect(button.hasAttribute('disabled')).toBe(true);
+    await waitFor(() => expect(button.textContent).toContain('GPT-5'));
+    const labels = [
+      button.textContent ?? '',
+      button.getAttribute('title') ?? '',
+      ...[...button.querySelectorAll('[aria-label], [title]')].flatMap((el) => [
+        el.getAttribute('aria-label') ?? '',
+        el.getAttribute('title') ?? '',
+      ]),
+    ].join(' | ');
+    expect(labels).not.toMatch(/Removed profile|Host work|Default/);
   });
 
   it('guest window: a model missing from the host catalog shows its bare id without auto-fallback', async () => {
@@ -6428,6 +6472,25 @@ describe('ModelPicker named provider profiles (§5.54)', () => {
     expect(vi.mocked(getModelsForProviderForLoadingState)).not.toHaveBeenCalledWith(
       expect.stringMatching(/Client A/),
     );
+  });
+
+  it('moves the profile name into the hover tooltip when the trigger hides it', async () => {
+    mockCatalogProfiles.current = [WORK];
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'gpt-5-work',
+        providerId: WORK.providerRef,
+        portal: false,
+        showProfileName: false,
+      },
+    });
+    const trigger = screen.getByRole('button');
+    await waitFor(() => {
+      const value = trigger.querySelector('[aria-label]');
+      expect(value?.getAttribute('aria-label') ?? '').toMatch(/GPT-5 Work row.*Codex.*Work/);
+      expect(value?.getAttribute('title') ?? '').toMatch(/GPT-5 Work row.*Codex.*Work/);
+    });
+    expect(screen.queryByTestId('model-picker-profile')).toBeNull();
   });
 
   it('labels the original configuration Default once its provider has profiles', async () => {

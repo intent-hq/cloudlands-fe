@@ -184,6 +184,10 @@ export const selectShareIntegrationAuth = store.createSelector(
   (state) => state.workspaceShare.integrationAuth,
 );
 
+export const selectShareOwnerForgeMissing = store.createSelector(
+  (state) => state.workspaceShare.ownerForgeMissing,
+);
+
 /** Never present another host/identity's prerequisite result, even before its next read. */
 const selectSharePrerequisitesCurrent = store.createSelector(
   (state) =>
@@ -204,6 +208,30 @@ export const selectShareSharingEnabling = store.createSelector(
 export const selectShareSharingError = store.createSelector((state) =>
   selectSharePrerequisitesCurrent.select(state) ? state.workspaceShare.sharingError : null,
 );
+
+/**
+ * The Share dialog's first answers are still outstanding for an owner: the
+ * forge connections, this host's sharing prerequisites (admins only; others
+ * never read them) or the first roster read. The dialog shows one loading
+ * placeholder until they settle instead of flashing the connect card, setup
+ * card and empty sections in turn. Later re-reads keep the settled content.
+ */
+export const selectShareDialogResolving = store.createSelector((state) => {
+  if (!selectShareCanManage.select(state)) return false;
+  const share = state.workspaceShare;
+  if (!share.integrationAuthLoaded) return true;
+  if (
+    selectCanAdministerHost.select(state) &&
+    selectShareSharingEnabled.select(state) === null &&
+    selectShareSharingError.select(state) === null &&
+    !selectShareSharingEnabling.select(state)
+  )
+    return true;
+  return (
+    getItems(share.members).length === 0 &&
+    (share.loadStatus === 'idle' || share.loadStatus === 'loading')
+  );
+});
 
 export const selectShareCanSetMemberRole = store.createSelector(
   (state) =>

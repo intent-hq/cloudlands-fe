@@ -9,21 +9,30 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import ts from 'typescript';
 import {
   MIN_FILES,
+  NON_TS_SIZE_LIMIT_BYTES,
   RSS_FILE_ENV,
   createOutputCollector,
   evaluateRun,
   formatDiagnostic,
+  formatNonTsInput,
   formatPeakRss,
+  groupInputBySource,
   heapCapMB,
+  isTsInput,
+  listTrackedFiles,
+  measureNonTsInput,
   parseMachineLine,
   readRssMiB,
+  sizeLimitFailure,
   syncEnv,
   runSvelteCheck,
 } from './run-svelte-check.mjs';
@@ -255,6 +264,151 @@ describe('evaluateRun', () => {
     const failures = evaluateRun({ exitCode: 0, completed: { ...completed, errors: 2 } });
     expect(failures).toHaveLength(1);
     expect(failures[0]).toContain('2 errors');
+  });
+});
+
+describe('non-TS size limit', () => {
+  const withProject = <T>(files: Record<string, string>, body: (dir: string) => T): T => {
+    const dir = realpathSync(mkdtempSync(path.join(tmpdir(), 'svelte-size-')));
+    try {
+      for (const [file, content] of Object.entries(files)) {
+        mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+        writeFileSync(path.join(dir, file), content);
+      }
+      return body(dir);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+  const tsconfig = (extra: Record<string, unknown> = {}) =>
+    JSON.stringify({
+      compilerOptions: { allowJs: true },
+      include: ['src/**/*.ts', 'src/**/*.js', 'src/**/*.svelte'],
+      ...extra,
+    });
+
+  it("matches svelte-language-server's maxProgramSizeForNonTsFiles", () => {
+    expect(NON_TS_SIZE_LIMIT_BYTES).toBe(20 * 1024 * 1024);
+    const server = readFileSync(
+      path.join(
+        path.dirname(path.resolve('node_modules/svelte-check/package.json')),
+        'dist/src/index.js',
+      ),
+      'utf8',
+    );
+    expect(server).toContain('const maxProgramSizeForNonTsFiles = 20 * 1024 * 1024;');
+  });
+
+  it('counts only what svelte-language-server treats as non-TS', () => {
+    expect(['a.ts', 'a.d.ts', 'a.tsx'].map(isTsInput)).toEqual([true, true, true]);
+    expect(['a.js', 'a.svelte', 'a.mts', 'a.cjs'].map(isTsInput)).toEqual([
+      false,
+      false,
+      false,
+      false,
+    ]);
+  });
+
+  it('measures the tsconfig inputs like svelte-check parses them', () => {
+    withProject(
+      {
+        'tsconfig.json': tsconfig(),
+        'src/a.ts': 'x'.repeat(100),
+        'src/b.d.ts': 'x'.repeat(100),
+        'src/lib/C.svelte': 'x'.repeat(200),
+        'src/lib/d.js': 'x'.repeat(300),
+        'outside/e.js': 'x'.repeat(5000),
+      },
+      (dir) => {
+        const measured = measureNonTsInput({ ts, tsconfigPath: path.join(dir, 'tsconfig.json') });
+        expect(measured?.disabled).toBe(false);
+        expect(measured?.totalBytes).toBe(500);
+        expect(measured?.files.map(({ file }) => file).sort()).toEqual([
+          path.join('src', 'lib', 'C.svelte'),
+          path.join('src', 'lib', 'd.js'),
+        ]);
+      },
+    );
+  });
+
+  it('reports a disabled limit and leaves a missing tsconfig to svelte-check', () => {
+    withProject(
+      { 'tsconfig.json': tsconfig({ compilerOptions: { disableSizeLimit: true } }) },
+      (dir) => {
+        const measured = measureNonTsInput({ ts, tsconfigPath: path.join(dir, 'tsconfig.json') });
+        expect(measured?.disabled).toBe(true);
+        expect(formatNonTsInput(measured)).toContain('size limit disabled');
+        expect(measureNonTsInput({ ts, tsconfigPath: path.join(dir, 'missing.json') })).toBeNull();
+      },
+    );
+  });
+
+  it("keeps the repo tsconfig's inputs clear of a stray Paraglide compile", () => {
+    withProject(
+      {
+        'tsconfig.json': readFileSync(path.resolve('tsconfig.json'), 'utf8'),
+        'src/lib/A.svelte': '<p></p>',
+        'src/paraglide/messages/_index.js': 'export {};',
+        'src/shared/paraglide/runtime.js': 'export {};',
+      },
+      (dir) => {
+        const measured = measureNonTsInput({ ts, tsconfigPath: path.join(dir, 'tsconfig.json') });
+        expect(measured?.files.map(({ file }) => file)).toEqual([
+          path.join('src', 'lib', 'A.svelte'),
+        ]);
+      },
+    );
+  });
+
+  it('groups by source directory and flags files git does not track', () => {
+    withProject(
+      {
+        'src/lib/A.svelte': '<p></p>',
+        'src/paraglide/.gitignore': '*\n',
+        'src/paraglide/m.js': 'export {};',
+      },
+      (dir) => {
+        expect(spawnSync('git', ['init', '-q'], { cwd: dir }).status).toBe(0);
+        expect(spawnSync('git', ['add', 'src/lib/A.svelte'], { cwd: dir }).status).toBe(0);
+        const tracked = listTrackedFiles(dir);
+        expect(tracked).toEqual(new Set(['src/lib/A.svelte']));
+        const groups = groupInputBySource(
+          [
+            { file: path.join('src', 'lib', 'A.svelte'), size: 10 },
+            { file: path.join('src', 'paraglide', 'm.js'), size: 30 },
+            { file: path.join('src', 'paraglide', 'n', 'o.js'), size: 5 },
+          ],
+          tracked,
+        );
+        expect(groups).toEqual([
+          { source: 'src/paraglide', bytes: 35, untrackedBytes: 35 },
+          { source: 'src/lib', bytes: 10, untrackedBytes: 0 },
+        ]);
+      },
+    );
+    expect(listTrackedFiles(path.join(tmpdir(), 'does-not-exist-svelte-size'))).toBeNull();
+  });
+
+  it('passes input at the limit and names untracked sources above it', () => {
+    const groups = [
+      { source: 'src/paraglide', bytes: 28 * 1024 * 1024, untrackedBytes: 28 * 1024 * 1024 },
+      { source: 'src/lib', bytes: 6 * 1024 * 1024, untrackedBytes: 0 },
+    ];
+    expect(sizeLimitFailure({ totalBytes: NON_TS_SIZE_LIMIT_BYTES, groups })).toBeNull();
+    const failure = sizeLimitFailure({ totalBytes: 34 * 1024 * 1024, groups });
+    expect(failure).toContain("totals 34.0 MB, over svelte-check's 20.0 MB limit");
+    expect(failure).toContain('src/paraglide  28.0 MB (28.0 MB not tracked by git)');
+    expect(failure).toMatch(/src\/lib {8}6\.0 MB\n/);
+    expect(failure).toContain('Delete the stray untracked output (src/paraglide)');
+  });
+
+  it('points tracked-only overflow at disableSizeLimit', () => {
+    const failure = sizeLimitFailure({
+      totalBytes: NON_TS_SIZE_LIMIT_BYTES + 1,
+      groups: [{ source: 'src/lib', bytes: NON_TS_SIZE_LIMIT_BYTES + 1, untrackedBytes: 0 }],
+    });
+    expect(failure).toContain('"disableSizeLimit": true');
+    expect(failure).not.toContain('not tracked by git');
   });
 });
 
@@ -640,6 +794,65 @@ describe('local checker heap with real children', () => {
   );
 });
 
+/**
+ * A throwaway project the real wrapper runs in: fake svelte-kit and
+ * svelte-check bins, the real TypeScript for the size preflight, and a
+ * tsconfig covering src/.
+ */
+function createWrapperFixture() {
+  const dir = realpathSync(mkdtempSync(path.join(tmpdir(), 'svelte-wrapper-child-')));
+  const runner = path.join(dir, 'runner.mjs');
+  writeFileSync(runner, readFileSync(path.resolve('scripts/run-svelte-check.mjs')));
+  const writePackage = (name: string, binName: string, code: string) => {
+    const packageDir = path.join(dir, 'node_modules', name);
+    mkdirSync(packageDir, { recursive: true });
+    writeFileSync(
+      path.join(packageDir, 'package.json'),
+      JSON.stringify({
+        name,
+        type: 'module',
+        bin: { [binName]: './cli.mjs' },
+      }),
+    );
+    writeFileSync(path.join(packageDir, 'cli.mjs'), code);
+  };
+  writePackage(
+    '@sveltejs/kit',
+    'svelte-kit',
+    [
+      "import { writeFileSync } from 'node:fs';",
+      "writeFileSync(new URL('./sync-env.json', import.meta.url), JSON.stringify(process.env));",
+    ].join('\n'),
+  );
+  symlinkSync(
+    path.dirname(path.resolve('node_modules/typescript/package.json')),
+    path.join(dir, 'node_modules/typescript'),
+    'junction',
+  );
+  writeFileSync(
+    path.join(dir, 'tsconfig.json'),
+    JSON.stringify({
+      compilerOptions: { allowJs: true },
+      include: ['src/**/*.ts', 'src/**/*.js', 'src/**/*.svelte'],
+    }),
+  );
+  mkdirSync(path.join(dir, 'src'));
+  writeFileSync(path.join(dir, 'src/App.svelte'), '<p>fixture</p>\n');
+  const run = () =>
+    spawnSync(process.execPath, [runner], {
+      cwd: dir,
+      env: {
+        PATH: process.env.PATH,
+        HOME: dir,
+        TMPDIR: dir,
+        DD_INSTRUMENT_SERVICE_WITH_APM: 'false',
+      },
+      encoding: 'utf8',
+      timeout: 15_000,
+    });
+  return { dir, writePackage, run };
+}
+
 describe('checker wrapper diagnostics with real children', () => {
   it.each([
     { childExit: 0, errors: 0, completed: true, expectedExit: 0 },
@@ -647,31 +860,8 @@ describe('checker wrapper diagnostics with real children', () => {
     { childExit: 0, errors: 1, completed: true, expectedExit: 1 },
     { childExit: 0, errors: 0, completed: false, expectedExit: 1 },
   ])('preserves diagnostics and guards for %j', (control) => {
-    const dir = realpathSync(mkdtempSync(path.join(tmpdir(), 'svelte-wrapper-child-')));
+    const { dir, writePackage, run } = createWrapperFixture();
     try {
-      const runner = path.join(dir, 'runner.mjs');
-      writeFileSync(runner, readFileSync(path.resolve('scripts/run-svelte-check.mjs')));
-      const writePackage = (name: string, binName: string, code: string) => {
-        const packageDir = path.join(dir, 'node_modules', name);
-        mkdirSync(packageDir, { recursive: true });
-        writeFileSync(
-          path.join(packageDir, 'package.json'),
-          JSON.stringify({
-            name,
-            type: 'module',
-            bin: { [binName]: './cli.mjs' },
-          }),
-        );
-        writeFileSync(path.join(packageDir, 'cli.mjs'), code);
-      };
-      writePackage(
-        '@sveltejs/kit',
-        'svelte-kit',
-        [
-          "import { writeFileSync } from 'node:fs';",
-          "writeFileSync(new URL('./sync-env.json', import.meta.url), JSON.stringify(process.env));",
-        ].join('\n'),
-      );
       const diagnostic = {
         type: 'ERROR',
         filename: 'src/Bad.svelte',
@@ -695,20 +885,13 @@ describe('checker wrapper diagnostics with real children', () => {
           `process.exit(${control.childExit});`,
         ].join('\n'),
       );
-      const result = spawnSync(process.execPath, [runner], {
-        cwd: dir,
-        env: {
-          PATH: process.env.PATH,
-          HOME: dir,
-          TMPDIR: dir,
-          DD_INSTRUMENT_SERVICE_WITH_APM: 'false',
-        },
-        encoding: 'utf8',
-        timeout: 15_000,
-      });
+      const result = run();
       expect(result.error).toBeUndefined();
       expect(result.signal).toBeNull();
       expect(result.status).toBe(control.expectedExit);
+      expect(result.stdout).toMatch(
+        /svelte-check \.js\/\.svelte input: 0\.0 MB of the 20\.0 MB limit/,
+      );
       expect(result.stdout).toMatch(/svelte-check peak RSS: \d+ MiB \(--max-old-space-size=8192\)/);
       if (control.completed)
         expect(result.stdout).toContain(
@@ -723,6 +906,45 @@ describe('checker wrapper diagnostics with real children', () => {
       );
       expect(sync.NODE_ENV).toBe('development');
       expect(sync.NODE_OPTIONS).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('stops before the checker when stray output exceeds the size limit', () => {
+    // Regression: a git-ignored Paraglide compile under src/ pushed the
+    // .js/.svelte input past svelte-check's 20 MB limit, so it checked 262
+    // files and exited 0 while CI checked 9321 (cloudlands-fe#4037).
+    const { dir, writePackage, run } = createWrapperFixture();
+    try {
+      writePackage(
+        'svelte-check',
+        'svelte-check',
+        [
+          "import { writeFileSync } from 'node:fs';",
+          "writeFileSync(new URL('./spawned', import.meta.url), '');",
+          'console.log("1 COMPLETED 262 FILES 0 ERRORS 0 WARNINGS 0 FILES_WITH_PROBLEMS");',
+        ].join('\n'),
+      );
+      mkdirSync(path.join(dir, 'src/stray'));
+      writeFileSync(path.join(dir, 'src/stray/.gitignore'), '*\n');
+      writeFileSync(
+        path.join(dir, 'src/stray/messages.js'),
+        Buffer.alloc(20 * 1024 * 1024 + 1, 0x20),
+      );
+      spawnSync('git', ['init', '-q'], { cwd: dir });
+      spawnSync('git', ['add', 'src/App.svelte'], { cwd: dir });
+
+      const result = run();
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain(
+        'svelte-check .js/.svelte input: 20.0 MB of the 20.0 MB limit',
+      );
+      expect(result.stderr).toContain('PLAUSIBILITY GUARD:');
+      expect(result.stderr).toMatch(/src\/stray\s+20\.0 MB \(20\.0 MB not tracked by git\)/);
+      expect(result.stderr).toContain('Delete the stray untracked output (src/stray)');
+      expect(existsSync(path.join(dir, 'node_modules/svelte-check/spawned'))).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

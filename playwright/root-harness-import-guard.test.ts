@@ -1,4 +1,5 @@
 // @vitest-environment node
+// @verify-changed-triggers: test/*.spec.ts
 
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';

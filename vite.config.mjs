@@ -2,7 +2,7 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import { compile } from '@inlang/paraglide-js';
 import { defineConfig, loadEnv } from 'vite';
 import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { dirname, join, relative } from 'path';
 import { readFileSync } from 'fs';
 import { execSync } from 'child_process';
 import { intentdBridgePlugin } from './scripts/vite-plugin-intentd-bridge.mjs';
@@ -14,6 +14,7 @@ import {
   compileWithInputsHash,
   ensureRepoParaglide,
 } from './scripts/paraglide-inputs-hash.mjs';
+import { formatProblems, messageReferencesInProgram } from './scripts/i18n-used-message-keys.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -319,6 +320,12 @@ export default defineConfig(({ command, mode, isPreview }, testOverrides = {}) =
   const useBundledMessages = mode === 'production';
   const i18nVirtualMessages = '\0intent-paraglide-messages';
   const i18nVirtualRuntime = '\0intent-paraglide-runtime';
+  const messageReferences = new Map();
+  let bundledMessageKeys = null;
+  const readBundledMessageKeys = () =>
+    (bundledMessageKeys ??= JSON.parse(
+      readFileSync(join(__dirname, '.svelte-kit/i18n-bundle/used-message-keys.json'), 'utf8'),
+    ));
   const env = loadEnv(mode, __dirname, '');
 
   const webDefines = {};
@@ -343,6 +350,10 @@ export default defineConfig(({ command, mode, isPreview }, testOverrides = {}) =
       {
         name: 'use-production-paraglide-bundle',
         enforce: 'pre',
+        buildStart() {
+          bundledMessageKeys = null;
+          messageReferences.clear();
+        },
         resolveId(source) {
           if (useBundledMessages && source.endsWith('/paraglide/messages.js')) {
             return i18nVirtualMessages;
@@ -356,12 +367,7 @@ export default defineConfig(({ command, mode, isPreview }, testOverrides = {}) =
           if (id === i18nVirtualMessages) {
             // Paraglide exposes both `import { m }` and per-message exports for
             // `import * as m`. Keep both backed by the same prebuilt functions.
-            const messageKeys = JSON.parse(
-              readFileSync(
-                join(__dirname, '.svelte-kit/i18n-bundle/used-message-keys.json'),
-                'utf8',
-              ),
-            );
+            const messageKeys = readBundledMessageKeys();
             return (
               'const i18n = globalThis.__INTENT_PARAGLIDE_I18N__;\n' +
               'if (!i18n) throw new Error("Paraglide production bundle was not loaded");\n' +
@@ -384,6 +390,43 @@ export default defineConfig(({ command, mode, isPreview }, testOverrides = {}) =
             `;
           }
           return null;
+        },
+        // Fail the release build when the module graph reads a message the
+        // prebuilt bundle lacks; that gap is an "is not a function" crash at
+        // runtime (cloudlands-fe#2865, #4034). Analyses the compiled code
+        // Rollup actually bundles, not the source text.
+        moduleParsed(info) {
+          if (!useBundledMessages || !info.code?.includes('paraglide/messages.js')) return;
+          // Re-parse instead of annotating Rollup's retained AST, and keep only
+          // the findings: holding every module's AST or code here exhausts the
+          // build heap.
+          const { keys, problems } = messageReferencesInProgram(this.parse(info.code));
+          if (keys.length > 0 || problems.length > 0) {
+            const file = relative(__dirname, info.id);
+            messageReferences.set(file, {
+              keys,
+              problems: formatProblems(file, info.code, problems),
+            });
+          }
+        },
+        buildEnd(error) {
+          if (!useBundledMessages || error || messageReferences.size === 0) return;
+          const bundled = new Set(readBundledMessageKeys());
+          const gaps = [];
+          for (const [file, { keys, problems }] of messageReferences) {
+            gaps.push(...problems);
+            const missing = keys.filter((key) => !bundled.has(key));
+            if (missing.length > 0) gaps.push(`${file}: not in the bundle — ${missing.join(', ')}`);
+          }
+          if (gaps.length > 0) {
+            this.error(
+              `The production i18n bundle (static/generated/paraglide.js) lacks messages ` +
+                `this build uses, which would crash with "is not a function" at runtime. ` +
+                `Rerun \`pnpm run build:i18n-bundle\`; if the gap remains, read messages ` +
+                `as m.<key> or destructure literal keys so they can be found statically:\n  ` +
+                gaps.join('\n  '),
+            );
+          }
         },
       },
       reuseGeneratedParaglide({ ensure: testOverrides.ensureRepoParaglide }),

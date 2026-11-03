@@ -1,7 +1,12 @@
 <script lang="ts">
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { Badge } from '$lib/components/ui/badge';
-  import type { DiscussionAgentMention } from '../discussion-agent-mentions';
+  import {
+    discussionAgentMentionLabel,
+    discussionBodyWithAgentNames,
+    type DiscussionAgentMention,
+    type DiscussionAgentNames,
+  } from '../discussion-agent-mentions';
   import { discussionReplyFirstLine } from '../discussion-message-content';
   import { openDiscussionReference } from '../discussion-reference-navigation';
   import DiscussionCollapsibleBody from './DiscussionCollapsibleBody.svelte';
@@ -30,6 +35,8 @@
     onReplyNavigate,
     agentMentions = [],
     mentionNames = [],
+    agentNames = {},
+    replyAgentMentions = [],
     status,
     error,
     reactions = [],
@@ -49,6 +56,10 @@
     onReplyNavigate?: (messageId: string) => void;
     agentMentions?: readonly DiscussionAgentMention[];
     mentionNames?: readonly string[];
+    /** Current names by agent ID; agent authors and mentions follow renames. */
+    agentNames?: DiscussionAgentNames;
+    /** Saved mentions of the replied-to message, when it is loaded. */
+    replyAgentMentions?: readonly DiscussionAgentMention[];
     status?: 'sending' | 'failed';
     error?: string;
     reactions?: readonly DiscussionReactionDisplay[];
@@ -60,11 +71,14 @@
     onCopy?: () => void;
     disabled?: boolean;
   } = $props();
-  const name = $derived(
-    message.author.displayName ||
-      message.author.login ||
-      m.workspace_discussion_unknownAuthor_label(),
-  );
+  function authorName(author: DiscussionMessage['author']) {
+    const saved = author.displayName || author.login || '';
+    const current = author.agentId
+      ? discussionAgentMentionLabel({ agentId: author.agentId, name: saved }, agentNames)
+      : saved;
+    return current || m.workspace_discussion_unknownAuthor_label();
+  }
+  const name = $derived(authorName(message.author));
   const reply = $derived('replyTo' in message ? message.replyTo : undefined);
   const isAgent = $derived(!!message.author.agentId);
   function openAuthor(event: MouseEvent) {
@@ -84,10 +98,13 @@
   let reactionMenuOpen = $state(false);
   let moreMenuOpen = $state(false);
   let chipPickerOpen = $state(false);
-  const replyName = $derived(
-    reply?.author.displayName ||
-      reply?.author.login ||
-      m.workspace_discussion_unknownAuthor_label(),
+  const replyName = $derived(reply ? authorName(reply.author) : '');
+  const replyLine = $derived(
+    reply
+      ? discussionReplyFirstLine(
+          discussionBodyWithAgentNames(reply.body, replyAgentMentions, agentNames),
+        )
+      : '',
   );
   const reactionActions = $derived(
     defineActions(['👍', '🙂'].map((emoji) => ({ id: emoji, label: emoji }))),
@@ -143,7 +160,7 @@
             size={13}
           />{/if}
         <span class="max-w-[40%] shrink-0 truncate font-medium">{replyName}</span>
-        <span class="min-w-0 truncate">{discussionReplyFirstLine(reply.body)}</span>
+        <span class="min-w-0 truncate">{replyLine}</span>
       </Button>
     </div>
   {/if}
@@ -242,6 +259,7 @@
                     {sourcePanelId}
                     {agentMentions}
                     {mentionNames}
+                    {agentNames}
                     mode="markdown"
                   />
                 </div>
@@ -258,6 +276,7 @@
                 {sourcePanelId}
                 {agentMentions}
                 {mentionNames}
+                {agentNames}
                 mode="text"
               />
             </p>

@@ -38,6 +38,8 @@ export function describeInviteFailureReason(
       return m.deeplink_inviteError_proofExpired();
     case 'host-github-unreachable':
       return m.deeplink_inviteError_hostGithubUnreachable();
+    case 'host-forge-required':
+      return m.deeplink_inviteError_hostForgeRequired();
     case 'identity-unverifiable':
       return m.deeplink_inviteError_identityUnverifiable({
         host: labels.identityHost ?? m.deeplink_inviteError_identityUnverifiable_unknownHost(),
