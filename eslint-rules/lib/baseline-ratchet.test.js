@@ -1,5 +1,6 @@
 // @vitest-environment node
-// @verify-changed-triggers: eslint-rules/baselines/**, eslint.config.js
+// @verify-changed-triggers: eslint-rules/baselines/**, eslint.config.js,
+//   src/features/onboarding/messages/DirectoryPickerModal.svelte
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
