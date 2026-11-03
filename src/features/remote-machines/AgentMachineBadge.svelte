@@ -40,7 +40,7 @@
   >
     <Badge
       size="compact"
-      class="h-5 min-w-0 max-w-32 gap-1 bg-muted! font-normal text-muted-foreground"
+      class="h-5 min-w-0 max-w-32 shrink gap-1 [&>span:last-child]:min-w-0 [&>span:last-child]:truncate bg-muted! font-normal text-muted-foreground"
     >
       {#snippet leadingIcon()}
         <span class="relative inline-flex">
