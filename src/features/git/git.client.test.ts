@@ -168,6 +168,7 @@ describe('GitClient daemon-backed wire contract (fake transport)', () => {
       workspaceId: wsId,
       filePath: 'src/a.ts',
       ref: ':0',
+      maxBytes: 480_000,
     });
     expect(result).toEqual({ ok: true, data: 'file body at ref' });
   });

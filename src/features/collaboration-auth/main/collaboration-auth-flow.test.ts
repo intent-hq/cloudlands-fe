@@ -103,7 +103,7 @@ function harness(request: CollaborationRequest = { scope: 'workspace', pinIdenti
     setDefault: (value: unknown) => (defaultIdentity = value),
   };
 }
-const enabled = { type: 'policy' as const, policy: { multiplayer: true, gitlab: true } };
+const enabled = { type: 'policy' as const, policy: { multiplayer: true } };
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
@@ -152,96 +152,78 @@ describe('local collaboration sign-in', () => {
   ])('unpinned provider recovery for %j', (request) => {
     it.each([
       {
-        reason: 'GitLab disabled',
-        gitlabEnabled: false,
-        gitlabSupported: true,
-        error: 'gitlab-disabled',
-      },
-      {
         reason: 'GitLab unsupported',
-        gitlabEnabled: true,
         gitlabSupported: false,
         error: 'upgrade-required',
       },
-    ])(
-      'can choose GitHub when saved identity has $reason',
-      async ({ gitlabEnabled, gitlabSupported, error }) => {
-        const h = harness(request);
-        h.setDefault(gitlab);
-        h.local.gitlabSupported = gitlabSupported;
-        h.setConfigured(true);
-        await h.flow.action({
-          type: 'policy',
-          policy: { multiplayer: true, gitlab: gitlabEnabled },
-        });
-        expect(h.flow.snapshot()).toMatchObject({
-          target: { provider: 'gitlab', host: gitlab.host },
-          error,
-        });
-        expect(h.ledger.mock.calls).toEqual([['principal.me', {}]]);
+    ])('can choose GitHub when saved identity has $reason', async ({ gitlabSupported, error }) => {
+      const h = harness(request);
+      h.setDefault(gitlab);
+      h.local.gitlabSupported = gitlabSupported;
+      h.setConfigured(true);
+      await h.flow.action(enabled);
+      expect(h.flow.snapshot()).toMatchObject({
+        target: { provider: 'gitlab', host: gitlab.host },
+        error,
+      });
+      expect(h.ledger.mock.calls).toEqual([['principal.me', {}]]);
 
-        await h.flow.action({ type: 'choose', target: { provider: 'github', host: 'github.com' } });
-        expect(h.flow.snapshot()).toMatchObject({
-          phase: 'account',
-          target: { provider: 'github', host: 'github.com' },
-          user: { id: '17', login: 'person' },
-          requestedScopes: ['gist'],
-          request,
-        });
-        expect(h.flow.snapshot().error).toBeUndefined();
-        expect(h.ledger.mock.calls).toEqual([
-          ['principal.me', {}],
-          ['identity.authStatus', { provider: 'github' }],
-          ['identity.getUser', { provider: 'github' }],
-        ]);
-        expect(h.finish).not.toHaveBeenCalled();
-        await h.flow.action({ type: 'confirm' });
-        expect(h.ledger).toHaveBeenLastCalledWith('identity.select', {
-          provider: 'github',
-          externalUserId: '17',
-        });
-        expect(h.finish).toHaveBeenCalledExactlyOnceWith({
-          kind: 'ready',
-          prepared: {
-            attempt: h.attempt,
-            identity: github,
-            login: 'person',
-            invitation: request,
-            local: h.local,
-            allowed: expect.any(Function),
-          },
-        });
-      },
-    );
+      await h.flow.action({ type: 'choose', target: { provider: 'github', host: 'github.com' } });
+      expect(h.flow.snapshot()).toMatchObject({
+        phase: 'account',
+        target: { provider: 'github', host: 'github.com' },
+        user: { id: '17', login: 'person' },
+        requestedScopes: ['gist'],
+        request,
+      });
+      expect(h.flow.snapshot().error).toBeUndefined();
+      expect(h.ledger.mock.calls).toEqual([
+        ['principal.me', {}],
+        ['identity.authStatus', { provider: 'github' }],
+        ['identity.getUser', { provider: 'github' }],
+      ]);
+      expect(h.finish).not.toHaveBeenCalled();
+      await h.flow.action({ type: 'confirm' });
+      expect(h.ledger).toHaveBeenLastCalledWith('identity.select', {
+        provider: 'github',
+        externalUserId: '17',
+      });
+      expect(h.finish).toHaveBeenCalledExactlyOnceWith({
+        kind: 'ready',
+        prepared: {
+          attempt: h.attempt,
+          identity: github,
+          login: 'person',
+          invitation: request,
+          local: h.local,
+          allowed: expect.any(Function),
+        },
+      });
+    });
   });
-  it.each([
-    { gitlabEnabled: false, gitlabSupported: true },
-    { gitlabEnabled: true, gitlabSupported: false },
-  ])(
+  it.each([{ gitlabSupported: true }, { gitlabSupported: false }])(
     'cannot switch a pinned GitLab invitation to GitHub with %j',
-    async ({ gitlabEnabled, gitlabSupported }) => {
+    async ({ gitlabSupported }) => {
       const h = harness({ scope: 'host', pinIdentity: gitlab });
       h.local.gitlabSupported = gitlabSupported;
-      await h.flow.action({ type: 'policy', policy: { multiplayer: true, gitlab: gitlabEnabled } });
+      await h.flow.action(enabled);
+      const calls = h.ledger.mock.calls.length;
       await h.flow.action({ type: 'choose', target: { provider: 'github', host: 'github.com' } });
       expect(h.flow.snapshot()).toMatchObject({
         target: gitlab,
         request: { pinIdentity: gitlab },
         error: 'identity-mismatch',
       });
-      expect(h.ledger).not.toHaveBeenCalled();
+      expect(h.ledger).toHaveBeenCalledTimes(calls);
       expect(h.finish).not.toHaveBeenCalled();
     },
   );
-  it.each([
-    { gitlabEnabled: false, gitlabSupported: true, error: 'gitlab-disabled' },
-    { gitlabEnabled: true, gitlabSupported: false, error: 'upgrade-required' },
-  ])(
+  it.each([{ gitlabSupported: false, error: 'upgrade-required' }])(
     'checks the requested GitLab target before adopting it with %j',
-    async ({ gitlabEnabled, gitlabSupported, error }) => {
+    async ({ gitlabSupported, error }) => {
       const h = harness({ scope: 'settings' });
       h.local.gitlabSupported = gitlabSupported;
-      await h.flow.action({ type: 'policy', policy: { multiplayer: true, gitlab: gitlabEnabled } });
+      await h.flow.action(enabled);
       const calls = h.ledger.mock.calls.length;
       await h.flow.action({ type: 'choose', target: { provider: 'gitlab', host: gitlab.host } });
       expect(h.flow.snapshot()).toMatchObject({
@@ -257,10 +239,11 @@ describe('local collaboration sign-in', () => {
     async (boundary) => {
       const h = harness({ scope: 'settings' });
       h.setDefault(gitlab);
-      await h.flow.action({ type: 'policy', policy: { multiplayer: true, gitlab: false } });
+      h.local.gitlabSupported = false;
+      await h.flow.action(enabled);
       const calls = h.ledger.mock.calls.length;
       if (boundary === 'multiplayer')
-        await h.flow.action({ type: 'policy', policy: { multiplayer: false, gitlab: false } });
+        await h.flow.action({ type: 'policy', policy: { multiplayer: false } });
       if (boundary === 'capability') h.local.supported = false;
       if (boundary === 'local connection') h.setCurrent(false);
       if (boundary === 'invitation') h.setAttemptCurrent(false);
@@ -385,27 +368,19 @@ describe('local collaboration sign-in', () => {
     expect(h.ledger).not.toHaveBeenCalledWith('identity.select', expect.anything());
     expect(JSON.stringify(h.views)).not.toContain('sensitive-launch-token');
   });
-  it.each([
-    [false, false],
-    [false, true],
-    [true, false],
-    [true, true],
-  ])('combines Multiplayer=%s and GitLab=%s', async (multiplayer, gitlabEnabled) => {
+  it.each([false, true])('a GitLab pin follows Multiplayer=%s alone', async (multiplayer) => {
     const h = harness({ scope: 'host', pinIdentity: gitlab });
-    await h.flow.action({ type: 'policy', policy: { multiplayer, gitlab: gitlabEnabled } });
-    expect(h.ledger.mock.calls.length > 0).toBe(multiplayer && gitlabEnabled);
+    await h.flow.action({ type: 'policy', policy: { multiplayer } });
+    expect(h.ledger.mock.calls.length > 0).toBe(multiplayer);
     expect(h.flow.snapshot().request.pinIdentity).toEqual(gitlab);
   });
-  it.each(['multiplayer', 'gitlab'] as const)(
+  it.each(['multiplayer'] as const)(
     'disabling %s cancels only the local collaboration flow',
-    async (flag) => {
+    async () => {
       const h = harness({ scope: 'host', pinIdentity: gitlab });
       await h.flow.action(enabled);
       await h.flow.action({ type: 'connect' });
-      await h.flow.action({
-        type: 'policy',
-        policy: { multiplayer: true, gitlab: true, [flag]: false },
-      });
+      await h.flow.action({ type: 'policy', policy: { multiplayer: false } });
       await vi.advanceTimersByTimeAsync(10000);
       expect(h.ledger).toHaveBeenLastCalledWith('identity.cancelAuth', {
         provider: 'gitlab',

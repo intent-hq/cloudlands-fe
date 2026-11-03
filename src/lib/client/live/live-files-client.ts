@@ -21,6 +21,7 @@ import type {
 } from '$store/renderer/slices/files/files-types';
 import type { FilesClient, MutationResult } from '../app-client';
 import { backendRequest } from './backend-transport';
+import { InvalidUtf8Error, readFileText } from './bounded-object-read';
 import { BackendError } from './backend-transport-types';
 import { mutationErrorMessage, newIdempotencyKey, runMutation } from './live-support';
 
@@ -110,17 +111,11 @@ export class LiveFilesClient implements FilesClient {
     options?: { gitRootId: string },
   ): Promise<FileContentEntry | null> {
     try {
-      const result = await backendRequest<unknown>('file.read', {
+      const content = await readFileText({
         workspaceId,
         path,
         ...(options?.gitRootId ? { gitRootId: options.gitRootId } : {}),
       });
-      const content =
-        typeof result === 'string'
-          ? result
-          : typeof (result as { content?: unknown })?.content === 'string'
-            ? (result as { content: string }).content
-            : null;
       if (content === null) return null;
       // Binary controls survive UTF-8 decoding, including in mostly printable
       // payloads or past the shared detector's sample. Keep its other heuristics.
@@ -135,6 +130,9 @@ export class LiveFilesClient implements FilesClient {
       // file.read uses Rust read_to_string. Its decoding failure proves that
       // the file exists but cannot be read as text. Cache only a binary marker;
       // downloads must fetch the original bytes through the workspace route.
+      if (error instanceof InvalidUtf8Error) {
+        return toFileContentEntry(path, { kind: 'preview-only', isBinary: true });
+      }
       if (error instanceof BackendError && error.rpcCode === -32603) {
         const message = mutationErrorMessage(error);
         if (message.endsWith('stream did not contain valid UTF-8')) {

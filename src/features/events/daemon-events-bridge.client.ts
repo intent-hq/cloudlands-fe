@@ -4813,7 +4813,11 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // workspace (`workspaceId` + `replaceGroup`, §6.1 — monorepo#1853).
   'note:*',
   'comment:*',
-  'script:*',
+  // `script:output` is deliberately ABSENT: one event per PTY read from every
+  // running script would reach every window. The daemon-events-saga carries it
+  // on per-workspace leases opened only while an output viewer is mounted.
+  'script:changed',
+  'script:state',
   // Narrowed to `terminal:exit` only (not the full `terminal:*` firehose):
   // `terminal:data` fires on every byte of terminal output and would flood
   // the 100-entry activity-timeline buffer (workspace-events-slice.ts),
@@ -5044,6 +5048,18 @@ async function reconcileAgentFailureRegistry(): Promise<void> {
 const seenNoteTaskEventIds = new Set<string>();
 const seenScriptEventIds = new Set<string>();
 const seenChangesEventIds = new Set<string>();
+
+/**
+ * Forget the streaming UTF-8 decoders of one workspace's scripts after its
+ * live `script:output` stream stopped, so a later chunk never joins a
+ * partial character from before the gap.
+ */
+export function resetScriptOutputDecoders(workspaceId: string): void {
+  const prefix = `${workspaceId}:`;
+  for (const key of [...scriptOutputDecoders.keys()]) {
+    if (key.startsWith(prefix)) scriptOutputDecoders.delete(key);
+  }
+}
 
 export function disposeDaemonEventsRoutingState(): void {
   seenNoteTaskEventIds.clear();

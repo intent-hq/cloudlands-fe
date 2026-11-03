@@ -9,7 +9,6 @@
     loadWorkspaceNotesSucceeded,
   } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { clearWorkspace, setChangesData } from '$store/renderer/slices/changes/changes-slice';
-  import { setLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
     removeWorkspaceEntity,
     setWorkspaceEntity,
@@ -130,18 +129,6 @@
     };
   }
 
-  function setupGitLab(enabled: boolean) {
-    return () => {
-      const before = appStore.state.userPreferences.labsGitLabEnabled;
-      const stopSearch = setupPaletteNoteSearch();
-      appStore.dispatch(setLabsGitLabEnabled(enabled));
-      return () => {
-        stopSearch();
-        appStore.dispatch(setLabsGitLabEnabled(before));
-      };
-    };
-  }
-
   export const preview = definePreview<{ initialQuery: string; withoutWorkspace?: boolean }>({
     id: 'command-palette',
     title: 'Command palette',
@@ -162,14 +149,6 @@
         setup: setupPaletteNoteSearch,
       },
       multiplayer: { props: { initialQuery: 'multiplayer' }, setup },
-      'gitlab-off': {
-        props: { initialQuery: 'GitLab', withoutWorkspace: true },
-        setup: setupGitLab(false),
-      },
-      'gitlab-on': {
-        props: { initialQuery: 'GitLab', withoutWorkspace: true },
-        setup: setupGitLab(true),
-      },
       'provider-profiles': {
         props: { initialQuery: 'provider profiles', withoutWorkspace: true },
         setup: setupPaletteNoteSearch,

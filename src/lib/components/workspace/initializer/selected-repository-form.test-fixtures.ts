@@ -4,7 +4,6 @@ import { setupRecentRepositoriesPreview } from './recent-repositories.preview-fi
 import { hydrateWorkspaceInitializer } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 import { workspaceInitializerGitSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initializer-git-saga';
 import { repositoryCheckoutSaga } from '$store/renderer/slices/repository-checkout/sagas/repository-checkout-saga';
-import { setLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { setGitLabAuthStatus } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
 import { setGitHubAuthState } from '$store/renderer/slices/github-auth/github-auth-slice';
 import type { RepositoryCheckoutSession } from '$shared/types/repository-checkout';
@@ -89,7 +88,6 @@ export function setupSelectedRepositoryForm(provider: 'github' | 'gitlab', confi
     exists: true,
   });
   appClient.integrations.githubBranchesCached = async () => ({ cached: false, branches: [] });
-  appStore.dispatch(setLabsGitLabEnabled(true));
   appStore.dispatch(
     setGitLabAuthStatus({
       host: 'git.example.test',

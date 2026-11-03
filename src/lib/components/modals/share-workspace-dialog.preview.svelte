@@ -16,7 +16,6 @@
   interface ShareDialogPreviewProps {
     githubConnected: boolean;
     gitlabConnected: boolean;
-    gitlabEnabled: boolean;
     identitySeamSupported: boolean;
     identityProvider: IdentityProvider | null;
     members: WorkspaceMember[];
@@ -119,7 +118,6 @@
   const bothConnected: ShareDialogPreviewProps = {
     githubConnected: true,
     gitlabConnected: true,
-    gitlabEnabled: true,
     identitySeamSupported: true,
     identityProvider: 'gitlab',
     members: [owner, gitlabGuest, githubGuest, legacyGuest],
@@ -139,7 +137,6 @@
   const sharingSetup: ShareDialogPreviewProps = {
     ...bothConnected,
     gitlabConnected: false,
-    gitlabEnabled: false,
     identityProvider: 'github',
     members: [{ ...owner, displayName: 'Sam Breed', login: 'wookiehangover' }],
     invites: [],
@@ -197,7 +194,6 @@
       },
       'sharing-admin-required': { props: { ...sharingSetup, canAdministerHost: false } },
       'both-connected': { props: bothConnected },
-      'gitlab-lab-off': { props: { ...bothConnected, gitlabEnabled: false } },
       'gitlab-only': {
         props: { ...bothConnected, githubConnected: false, invites: [gitlabPinnedInvite] },
       },
@@ -211,7 +207,6 @@
         },
       },
       'no-forge': { props: noForge },
-      'no-forge-github-only': { props: { ...noForge, gitlabEnabled: false } },
       'no-forge-existing-guests': {
         props: { ...noForge, members: [owner, githubGuest], invites: [openInvite] },
       },

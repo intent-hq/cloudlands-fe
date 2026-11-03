@@ -4,10 +4,18 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/sv
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceInitializationOutcome } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
 import { createWorkspaceInitializationDispatchAdapter } from './workspace-initialization-dispatch.test-helper';
+import { initialState as gitlabAuthInitialState } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
+import { hostExecutionReducer } from '$store/renderer/slices/host-execution/host-execution-slice';
+import { repositoryCheckoutReducer } from '$store/renderer/slices/repository-checkout/repository-checkout-slice';
 
 const admittedFixture = vi.hoisted(() => ({ state: {} as Record<string, unknown> }));
 beforeEach(() => {
-  admittedFixture.state = withLegacyPrincipal({});
+  // GitLab is always offered, so the form reads the GitLab sign-in and checkout state on every render.
+  admittedFixture.state = withLegacyPrincipal({
+    gitlabAuth: gitlabAuthInitialState,
+    hostExecution: hostExecutionReducer(undefined, { type: '@@INIT' }),
+    repositoryCheckout: repositoryCheckoutReducer(undefined, { type: '@@INIT' }),
+  });
 });
 
 const mocks = vi.hoisted(() => {

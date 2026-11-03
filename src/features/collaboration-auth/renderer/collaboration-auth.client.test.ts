@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-const labs = vi.hoisted(() => ({ multiplayer: false, gitlab: false, dispatch: vi.fn() }));
+const labs = vi.hoisted(() => ({ multiplayer: false, dispatch: vi.fn() }));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => ({
-      userPreferences: { labsMultiplayerEnabled: labs.multiplayer, labsGitLabEnabled: labs.gitlab },
+      userPreferences: { labsMultiplayerEnabled: labs.multiplayer },
     }),
     dispatch: labs.dispatch,
   });
@@ -26,28 +26,22 @@ function emit(channel: string, payload: unknown) {
 }
 beforeEach(() => {
   labs.multiplayer = false;
-  labs.gitlab = false;
   vi.clearAllMocks();
   dispose = installCollaborationAuth({ show, dismiss });
 });
 afterEach(() => dispose());
 describe('collaboration entry and policy bridge', () => {
-  it.each([
-    [false, false],
-    [false, true],
-    [true, false],
-    [true, true],
-  ])(
-    'Multiplayer=%s and GitLab=%s cannot expose sign-in through the wrong flag',
-    (multiplayer, gitlab) => {
-      Object.assign(labs, { multiplayer, gitlab });
+  it.each([false, true])(
+    'Multiplayer=%s alone decides whether sign-in is exposed',
+    (multiplayer) => {
+      labs.multiplayer = multiplayer;
       openCollaborationSignIn();
       expect(
         api().invoke.mock.calls.some(([channel]: string[]) => channel === COLLABORATION_AUTH.OPEN),
       ).toBe(multiplayer);
       emit(COLLABORATION_AUTH.SHOW, { requestId: 'one', target: { provider: 'github' } });
       expect(show.mock.calls.length > 0).toBe(multiplayer);
-      expect(api().invoke).toHaveBeenCalledWith(COLLABORATION_AUTH.POLICY, { multiplayer, gitlab });
+      expect(api().invoke).toHaveBeenCalledWith(COLLABORATION_AUTH.POLICY, { multiplayer });
       if (!multiplayer)
         expect(labs.dispatch).toHaveBeenCalledWith(
           expect.objectContaining({ payload: ['Multiplayer'] }),
@@ -62,8 +56,6 @@ describe('collaboration entry and policy bridge', () => {
     syncCollaborationPolicy();
     await collaborationAction({ type: 'connect', token: 'private-pat' });
     expect(dismiss).toHaveBeenCalled();
-    expect(api().invoke.mock.calls).toEqual([
-      [COLLABORATION_AUTH.POLICY, { multiplayer: false, gitlab: false }],
-    ]);
+    expect(api().invoke.mock.calls).toEqual([[COLLABORATION_AUTH.POLICY, { multiplayer: false }]]);
   });
 });

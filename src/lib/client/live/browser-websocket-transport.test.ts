@@ -949,6 +949,8 @@ describe('observational node capabilities', () => {
             rawScreenshotRetention: 1,
             noteTruncatedRead: 1,
             remoteMachines: 1,
+            remoteInitialAgent: 1,
+            remoteLinkTraffic: 1,
           },
         },
       },
@@ -964,6 +966,8 @@ describe('observational node capabilities', () => {
           chiefAttachments: 0,
           noteTruncatedRead: 1,
           remoteMachines: 1,
+          remoteInitialAgent: 1,
+          remoteLinkTraffic: 1,
         },
       },
     });
@@ -997,6 +1001,8 @@ describe('observational node capabilities', () => {
             chiefAttachments: '1',
             noteTruncatedRead: '1',
             remoteMachines: '1',
+            remoteInitialAgent: '1',
+            remoteLinkTraffic: '1',
           },
         },
       },
@@ -1012,6 +1018,8 @@ describe('observational node capabilities', () => {
           chiefAttachments: 0,
           noteTruncatedRead: 0,
           remoteMachines: 0,
+          remoteInitialAgent: 0,
+          remoteLinkTraffic: 0,
         },
       },
     });
@@ -1059,6 +1067,8 @@ describe('observational node capabilities', () => {
           chiefAttachments: 0,
           noteTruncatedRead: 0,
           remoteMachines: 0,
+          remoteInitialAgent: 0,
+          remoteLinkTraffic: 0,
         },
       },
     });
@@ -1286,6 +1296,8 @@ describe('monitor replacement hello admission', () => {
                 chiefAttachments: 0,
                 noteTruncatedRead: 0,
                 remoteMachines: 0,
+                remoteInitialAgent: 0,
+                remoteLinkTraffic: 0,
               },
             },
           });

@@ -4771,8 +4771,7 @@ function registerConnectionsHandlers(): void {
           });
           const role = invitedRole(remote);
           if (role) {
-            if (!allowed(remote.principal.identity?.provider))
-              throw new Error('Multiplayer is unavailable');
+            if (!allowed()) throw new Error('Multiplayer is unavailable');
             const invited = await guestSessionsStore.add({
               ...params,
               principalId: remote.principal.id,

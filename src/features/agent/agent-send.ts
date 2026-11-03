@@ -34,6 +34,7 @@ import { AgentStatus } from '$shared/types';
 import { createAppMessageId } from '$shared/utils/app-message-id';
 import { AgentActivationState } from '$shared/types/agent-session';
 import { performanceOptimizer } from '$features/agent/services/performance-optimizer';
+import { PICKED_MENTIONS_METADATA_KEY } from '$lib/services/mentions/registry';
 import { errorBoundary } from './browser';
 import {
   activateAgentRequested,
@@ -310,9 +311,16 @@ export async function sendMessage(
         const userAppMessageId = options.userAppMessageId ?? createAppMessageId();
         // Kept separate from the wire tag below so a failed send can roll the
         // optimistic row back to exactly this metadata.
-        const baseUserMetadata = options.contextReferences?.length
-          ? { contextReferences: options.contextReferences }
-          : {};
+        // The picked-mention record only drives chip display, so it stays.
+        const pickedMentions = options.messageMetadata?.[PICKED_MENTIONS_METADATA_KEY];
+        const baseUserMetadata = {
+          ...(options.contextReferences?.length
+            ? { contextReferences: options.contextReferences }
+            : {}),
+          ...(pickedMentions !== undefined
+            ? { [PICKED_MENTIONS_METADATA_KEY]: pickedMentions }
+            : {}),
+        };
         const userMessage: AgentMessage = {
           id: createMessageId(uuidv4()),
           appMessageId: userAppMessageId,

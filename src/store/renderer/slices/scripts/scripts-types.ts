@@ -139,6 +139,12 @@ export type ScriptsWorkspaceState = {
   /** Raw-chunk output ring buffers keyed by script ID */
   outputBuffers: Record<string, ScriptOutputBuffer>;
   retainedOutputs?: Record<string, ScriptRetainedOutput>;
+  /**
+   * Whether this workspace's live `script:output` lease is subscribed and
+   * routable. Viewer snapshots wait for it so no output falls between the
+   * snapshot and the live stream.
+   */
+  outputStreamReady?: boolean;
   /** Transient Shell controls state keyed by script ID. */
   operations: Record<string, ScriptOperationState>;
   /** Detection owns every definition, including rows not yet loaded into the cache. */
