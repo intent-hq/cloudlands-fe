@@ -3,6 +3,7 @@
   import { Button } from '$lib/components/ui/button';
   import * as Menu from '$lib/components/ui/menu';
   import DockComposerIcon from './DockComposerIcon.svelte';
+  import { DOCK_CAPTURE_MODES } from '$shared/dock-evidence';
   import type {
     DockComposerCaptureMode,
     DockComposerMediaLabels,
@@ -25,7 +26,6 @@
     onAlert?: () => void;
   } = $props();
 
-  const modes: DockComposerCaptureMode[] = ['fullscreen', 'window', 'region'];
   const glyphs = { fullscreen: 'viewfinder', window: 'window', region: 'region' } as const;
 
   // A remount with an existing image is not a new successful capture.
@@ -176,7 +176,7 @@
       onCloseAutoFocus={(event) => event.preventDefault()}
     >
       <Menu.RadioGroup value={mode}>
-        {#each modes as option (option)}
+        {#each DOCK_CAPTURE_MODES as option (option)}
           <Menu.RadioItem
             value={option}
             closeOnSelect
