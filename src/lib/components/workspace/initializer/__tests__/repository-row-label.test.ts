@@ -109,7 +109,6 @@ describe('resolveForgeConnectionState', () => {
   ])('is unknown when %s', (_name, patch) => {
     expect(resolveForgeConnectionState({ ...settledNone, ...patch })).toBe('unknown');
   });
-
 });
 
 describe('selectForgeConnectionState', () => {
