@@ -15,7 +15,7 @@
  */
 
 import { execFileSync, spawn } from 'node:child_process';
-import { closeSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs';
+import { closeSync, mkdtempSync, openSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -105,13 +105,135 @@ export function evaluateRun({ exitCode, completed, minFiles = MIN_FILES }) {
   if (completed.files < minFiles) {
     failures.push(
       `svelte-check reported only ${completed.files} checked files (plausibility floor: ${minFiles}). ` +
-        'The run likely checked nothing — see intent-hq/monorepo#2240.',
+        'The run likely checked nothing — see intent-hq/monorepo#2240. Known causes: tsconfig.json ' +
+        '`include` no longer matching src/, or .js/.svelte input over the 20 MB size limit ' +
+        '(see the size line above), which makes svelte-check drop every project file.',
     );
   }
   if (completed.errors > 0) {
     failures.push(`svelte-check exited 0 despite reporting ${completed.errors} errors.`);
   }
   return failures;
+}
+
+/**
+ * svelte-language-server's `maxProgramSizeForNonTsFiles`. When the project's
+ * non-TypeScript inputs (.js and .svelte) exceed it, svelte-check switches its
+ * language service to "reduced mode": the project file list becomes empty and
+ * only ambient/library declarations remain (262 files on this repo), with no
+ * warning and exit 0. The usual trigger is stray generated JavaScript under
+ * src/ that git ignores — e.g. a Paraglide compile without `--outdir`, which
+ * writes ~28 MB to src/paraglide and hides it with its own `*` .gitignore.
+ */
+export const NON_TS_SIZE_LIMIT_BYTES = 20 * 1024 * 1024;
+
+/** Mirrors svelte-language-server's `hasTsExtensions`: everything else counts toward the limit. */
+export function isTsInput(fileName) {
+  return fileName.endsWith('.d.ts') || fileName.endsWith('.tsx') || fileName.endsWith('.ts');
+}
+
+/**
+ * Measure the tsconfig's non-TS inputs the way svelte-check does (same parse,
+ * same `.svelte` extension handling). Returns null when the tsconfig is
+ * missing, leaving that error to svelte-check.
+ */
+export function measureNonTsInput({ ts, tsconfigPath, statSize = (file) => statSync(file).size }) {
+  const configPath = path.resolve(tsconfigPath);
+  const text = ts.sys.readFile(configPath);
+  if (text === undefined) return null;
+  const parsed = ts.parseJsonSourceFileConfigFileContent(
+    ts.parseJsonText(configPath, text),
+    ts.sys,
+    path.dirname(configPath),
+    undefined,
+    configPath,
+    undefined,
+    [
+      {
+        extension: 'svelte',
+        isMixedContent: true,
+        scriptKind: ts.ScriptKind.Deferred ?? ts.ScriptKind.TS,
+      },
+    ],
+  );
+  const rootDir = path.dirname(configPath);
+  if (parsed.options.disableSizeLimit) return { rootDir, disabled: true, totalBytes: 0, files: [] };
+  const files = parsed.fileNames
+    .filter((file) => !isTsInput(file))
+    .map((file) => ({ file: path.relative(rootDir, file), size: statSize(file) }));
+  const totalBytes = files.reduce((sum, { size }) => sum + size, 0);
+  return { rootDir, disabled: false, totalBytes, files };
+}
+
+/** Files git tracks under `rootDir` (relative, `/`-separated), or null outside a repo. */
+export function listTrackedFiles(rootDir) {
+  try {
+    const out = execFileSync('git', ['ls-files', '-z'], {
+      cwd: rootDir,
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return new Set(out.split('\0').filter(Boolean));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Sum file sizes per two-segment directory (`src/paraglide`, `src/lib`), noting
+ * how much of each is not tracked by git. Sorted largest first.
+ */
+export function groupInputBySource(files, tracked) {
+  const groups = new Map();
+  for (const { file, size } of files) {
+    const rel = file.split(path.sep).join('/');
+    const key = rel.split('/').slice(0, 2).join('/');
+    const group = groups.get(key) ?? { source: key, bytes: 0, untrackedBytes: 0 };
+    group.bytes += size;
+    if (tracked && !tracked.has(rel)) group.untrackedBytes += size;
+    groups.set(key, group);
+  }
+  return [...groups.values()].sort((a, b) => b.bytes - a.bytes);
+}
+
+const mb = (bytes) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+
+/** One-line headroom report, printed every run like the peak RSS line. */
+export function formatNonTsInput(measured, limit = NON_TS_SIZE_LIMIT_BYTES) {
+  if (!measured) return null;
+  if (measured.disabled) return 'svelte-check .js/.svelte input: size limit disabled in tsconfig';
+  return `svelte-check .js/.svelte input: ${mb(measured.totalBytes)} of the ${mb(limit)} limit`;
+}
+
+/**
+ * Guard message when svelte-check would silently drop every project file, or
+ * null when the input fits. Names the largest sources and flags untracked ones.
+ */
+export function sizeLimitFailure({ totalBytes, groups, limit = NON_TS_SIZE_LIMIT_BYTES, top = 5 }) {
+  if (totalBytes <= limit) return null;
+  const width = Math.max(...groups.slice(0, top).map(({ source }) => source.length));
+  const lines = groups.slice(0, top).map(({ source, bytes, untrackedBytes }) => {
+    const note = untrackedBytes > 0 ? ` (${mb(untrackedBytes)} not tracked by git)` : '';
+    return `  ${source.padEnd(width)}  ${mb(bytes)}${note}`;
+  });
+  const untracked = groups.filter(({ untrackedBytes }) => untrackedBytes > 0);
+  const advice = untracked.length
+    ? `Delete the stray untracked output (${untracked
+        .slice(0, 3)
+        .map(({ source }) => source)
+        .join(', ')}) or exclude it in tsconfig.json. Generated i18n belongs in ` +
+      'src/shared/paraglide (`pnpm run generate:i18n`); a bare Paraglide compile writes src/paraglide.'
+    : 'Tracked sources alone exceed the limit: set "disableSizeLimit": true in tsconfig.json ' +
+      'compilerOptions and check the heap headroom.';
+  return [
+    `tsconfig.json's .js/.svelte input totals ${mb(totalBytes)}, over svelte-check's ` +
+      `${mb(limit)} limit. svelte-check would silently drop every project file and check only ` +
+      'library declarations (about 262 files) while exiting 0.',
+    'Largest sources:',
+    ...lines,
+    advice,
+  ].join('\n');
 }
 
 function resolveBin(packageName, binName) {
@@ -371,11 +493,34 @@ export function runSvelteCheck({
   });
 }
 
+const TSCONFIG = './tsconfig.json';
+
+/**
+ * Fail before the checker runs when its input would trip the size limit, so
+ * the message names the files responsible instead of an unexplained low count.
+ */
+function checkNonTsInput() {
+  const require = createRequire(import.meta.url);
+  const measured = measureNonTsInput({ ts: require('typescript'), tsconfigPath: TSCONFIG });
+  const report = formatNonTsInput(measured);
+  if (report) console.log(report);
+  if (!measured || measured.disabled) return;
+  const failure = sizeLimitFailure({
+    totalBytes: measured.totalBytes,
+    groups: groupInputBySource(measured.files, listTrackedFiles(measured.rootDir)),
+  });
+  if (failure) {
+    console.error(`\nPLAUSIBILITY GUARD: ${failure}`);
+    process.exit(1);
+  }
+}
+
 async function main() {
   await syncSvelteKitTypes();
+  checkNonTsInput();
   const args = [
     '--tsconfig',
-    './tsconfig.json',
+    TSCONFIG,
     '--output',
     'machine-verbose',
     '--threshold',
