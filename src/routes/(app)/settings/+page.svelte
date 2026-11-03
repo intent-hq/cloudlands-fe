@@ -12,6 +12,7 @@
     setShareUpdateStatistics,
     simulateSetState,
   } from '$store/renderer/slices/auto-update/auto-update-slice';
+  import { showReleaseNotes } from '$store/renderer/slices/release-notes/release-notes-slice';
   import AdministratorSettings from '$lib/components/settings/AdministratorSettings.svelte';
   import AIBehaviorEditor from '$lib/components/settings/AIBehaviorEditor.svelte';
   import AIBehaviorSidebar, {
@@ -546,11 +547,15 @@
     class="shrink-0 border-t border-border dark:border-border px-5 py-4 type-caption text-subtle"
   >
     <div class="flex w-full items-baseline justify-between gap-2">
-      <div class="flex items-baseline gap-1.5">
-        <!-- i18n-ignore (brand name) -->
-        <strong class="text-foreground">Intent</strong>
+      <Button
+        variant="plain"
+        class="h-auto items-baseline gap-1.5 hover:text-foreground"
+        tooltip={m.releaseNotes_modal_title_generic()}
+        onclick={() => appStore.dispatch(showReleaseNotes())}
+      >
+        <strong class="text-foreground">Intent</strong><!-- i18n-ignore (brand name) -->
         <span>v{appVersion || '...'}</span>
-      </div>
+      </Button>
       {#if $isReadyToInstall$}
         <Button
           variant="plain"
