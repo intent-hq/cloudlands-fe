@@ -42,7 +42,7 @@ export async function prepare() {
         name: 'isolate-companion-external-backend',
         enforce: 'pre',
         resolveId(id) {
-          if (id.endsWith('/connections-store')) return '\0placement-backend';
+          if (/\/(desktop-)?connections-store$/.test(id)) return '\0placement-backend';
           if (id.endsWith('/backend.ipc')) return '\0placement-daemon';
         },
         load(id) {
