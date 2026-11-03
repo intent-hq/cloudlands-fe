@@ -238,6 +238,9 @@ describe('ui invariant suite discovery and CLI', () => {
     for (const root of roots) rmSync(root, { recursive: true, force: true });
   });
 
+  // Without a vitest.config.ts, discovery falls back to Vitest's own defaults:
+  // every directory except node_modules and .git (vitest-suite-files.test.ts
+  // covers config exclusions).
   it('discovers every vitest test filename form and skips Playwright suites', () => {
     const root = makeRoot();
     writeFixture(root, {
@@ -255,7 +258,9 @@ describe('ui invariant suite discovery and CLI', () => {
       'other/l.test.ts': '',
     });
     expect(collectTestFiles(root).map((file) => file.path)).toEqual([
+      'other/l.test.ts',
       'scripts/f.test.js',
+      'src/.hidden/k.test.ts',
       'src/a.test.ts',
       'src/b.spec.ts',
       'src/c.test.tsx',

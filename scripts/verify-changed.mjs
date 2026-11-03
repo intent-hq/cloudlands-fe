@@ -4,7 +4,6 @@ import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'n
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { escape as escapeGlob, globSync } from 'glob';
-import ts from 'typescript';
 import { CT_TEST_DIR, hasCtSpecSuffix, isCtSpec } from '../playwright/ct-spec-pattern.mjs';
 import { isIgnoredRootSpec, isRootSpec, ROOT_TEST_DIR } from '../playwright/root-spec-pattern.mjs';
 import { checkDepsFresh, checkNodeSupport, ensureI18nFresh } from './check-deps-fresh.mjs';
@@ -29,6 +28,7 @@ import {
   selectDeclaredSuites,
   TRIGGER_MARKER,
 } from './verify-changed-triggers.mjs';
+import { VITEST_INCLUDE_GLOB, vitestExclusions } from './vitest-suite-files.mjs';
 import {
   buildCoverage,
   laneConfig,
@@ -351,145 +351,6 @@ export function testRunner(file) {
   if (hasCtSpecSuffix(file)) return 'manual';
   if (VISUAL_TEST_RE.test(file) || VITEST_EXCLUDED_RE.test(file)) return 'manual';
   return 'vitest';
-}
-
-// Vitest's default `test.include`; vitest.config.ts does not override it.
-const VITEST_INCLUDE_GLOB = '**/*.{test,spec}.?(c|m)[jt]s?(x)';
-
-// Bounded static interpretation only: never evaluate a project's config while
-// planning. Unknown expressions must not establish equivalent inventory coverage.
-function literalProperty(object, name) {
-  if (
-    !object ||
-    !ts.isObjectLiteralExpression(object) ||
-    object.properties.some(
-      (property) => ts.isSpreadAssignment(property) || ts.isComputedPropertyName(property.name),
-    )
-  )
-    return null;
-  const matches = object.properties.filter((property) => property.name.text === name);
-  if (matches.length > 1 || (matches.length && !ts.isPropertyAssignment(matches[0]))) return null;
-  return matches[0]?.initializer;
-}
-
-function vitestExclusions(root, configFile = 'vitest.config.ts') {
-  const unknown = { patterns: [], exclusionsKnown: false, complete: false };
-  const configPath = resolve(root, configFile);
-  if (!existsSync(configPath)) return unknown;
-  const source = ts.createSourceFile(
-    configPath,
-    readFileSync(configPath, 'utf8'),
-    ts.ScriptTarget.Latest,
-    false,
-  );
-  if (source.parseDiagnostics.length) return unknown;
-  const imports = new Map();
-  for (const statement of source.statements.filter(ts.isImportDeclaration)) {
-    const clause = statement.importClause;
-    if (clause?.name) imports.set(clause.name.text, [statement.moduleSpecifier.text, 'default']);
-    if (clause?.namedBindings && ts.isNamedImports(clause.namedBindings)) {
-      for (const binding of clause.namedBindings.elements)
-        imports.set(binding.name.text, [
-          statement.moduleSpecifier.text,
-          (binding.propertyName ?? binding.name).text,
-        ]);
-    }
-  }
-  const imported = (node, module, name) =>
-    node && ts.isIdentifier(node) && imports.get(node.text)?.join(':') === `${module}:${name}`;
-  const shadowed = new Set();
-  const forgetBindings = (node) => {
-    if (ts.isIdentifier(node)) {
-      imports.delete(node.text);
-      shadowed.add(node.text);
-    } else if (ts.isBindingElement(node)) forgetBindings(node.name);
-    else ts.forEachChild(node, forgetBindings);
-  };
-  for (const statement of source.statements.filter(ts.isVariableStatement))
-    for (const declaration of statement.declarationList.declarations)
-      forgetBindings(declaration.name);
-  const exports = source.statements.filter(ts.isExportAssignment);
-  if (exports.length !== 1 || exports[0].isExportEquals) return unknown;
-  let config = exports[0].expression;
-  if (
-    ts.isCallExpression(config) &&
-    imported(config.expression, 'vitest/config', 'defineConfig') &&
-    config.arguments.length === 1
-  ) {
-    config = config.arguments[0];
-    if (ts.isArrowFunction(config) && config.parameters.length === 0 && ts.isBlock(config.body)) {
-      const statements = config.body.statements;
-      const returned = statements.at(-1);
-      if (
-        !returned ||
-        !ts.isReturnStatement(returned) ||
-        !statements.slice(0, -1).every(ts.isVariableStatement)
-      )
-        return unknown;
-      // A callback-local binding must not masquerade as one of the known imports.
-      for (const statement of statements.slice(0, -1))
-        for (const declaration of statement.declarationList.declarations)
-          forgetBindings(declaration.name);
-      config = returned.expression;
-    }
-  }
-  const test = literalProperty(config, 'test');
-  const exclude = literalProperty(test, 'exclude');
-  if (exclude === null || (exclude && !ts.isArrayLiteralExpression(exclude))) return unknown;
-  // Discovery and execution filters need a real config evaluator; keep the scan then.
-  const complete =
-    literalProperty(config, 'root') === undefined &&
-    [
-      'include',
-      'dir',
-      'root',
-      'projects',
-      'workspace',
-      'testNamePattern',
-      'typecheck',
-      'related',
-      'changed',
-      'shard',
-      'tagsFilter',
-      'cliExclude',
-      'listTags',
-      'clearCache',
-      'mergeReports',
-    ].every((name) => literalProperty(test, name) === undefined);
-  const patterns = [];
-  let exclusionsKnown = true;
-  for (const element of exclude?.elements ?? []) {
-    if (ts.isStringLiteral(element)) {
-      patterns.push(element.text);
-      continue;
-    }
-    // The repo's one computed exclusion source has an existing pure helper.
-    // Accept only its imported call with the exact root .gitignore argument.
-    const call = ts.isSpreadElement(element) ? element.expression : null;
-    const argument =
-      call && ts.isCallExpression(call) && call.arguments.length === 1 ? call.arguments[0] : null;
-    const callee = argument && ts.isCallExpression(argument) ? argument.expression : null;
-    if (
-      call &&
-      ts.isCallExpression(call) &&
-      imported(call.expression, './scripts/gitignore-dir-excludes.mjs', 'gitignoreDirExcludes') &&
-      callee &&
-      ts.isPropertyAccessExpression(callee) &&
-      callee.name.text === 'join' &&
-      (imported(callee.expression, 'path', 'default') ||
-        imported(callee.expression, 'node:path', 'default')) &&
-      argument.arguments.length === 2 &&
-      ts.isIdentifier(argument.arguments[0]) &&
-      argument.arguments[0].text === '__dirname' &&
-      !shadowed.has('__dirname') &&
-      ts.isStringLiteral(argument.arguments[1]) &&
-      argument.arguments[1].text === '.gitignore' &&
-      existsSync(resolve(root, '.gitignore'))
-    ) {
-      patterns.push(...gitignoreDirExcludes(resolve(root, '.gitignore')));
-    } else exclusionsKnown = false;
-  }
-  return { patterns, exclusionsKnown, complete: complete && exclusionsKnown };
 }
 
 export function vitestExcludePatterns(root = REPO_ROOT) {

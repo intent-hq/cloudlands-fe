@@ -1,4 +1,7 @@
 // @vitest-environment node
+// The ratchet lints every file in the rule's eslint.config.js scope.
+// @verify-changed-triggers: **/*.test.{js,mjs,cjs,ts}, eslint.config.js,
+//   eslint-rules/baselines/no-fixed-wait-timeout-in-tests/**
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
