@@ -1,11 +1,15 @@
-// @verify-changed-triggers: .github/workflows/publish-intent-web.yml, .github/workflows/intent-web-package.yml, .github/workflows/release-alpha.yml, scripts/fetch-tailcat.cjs, src/features/intent-web/main/intent-web-bin.ts
+// @verify-changed-triggers: src/main/isolated-test-profile.ts, src/features/backend/main/backend-connection.ts, .github/workflows/publish-intent-web.yml, .github/workflows/intent-web-package.yml, .github/workflows/release-alpha.yml, scripts/fetch-tailcat.cjs, src/features/intent-web/main/intent-web-bin.ts
 // @vitest-environment node
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   BIN_NAME,
   PACKAGE_NAME,
+  bundle,
+  generatedInputs,
   packageManifest,
   readPinnedTailcatVersion,
 } from './build-intent-web-package.mjs';
@@ -69,6 +73,39 @@ describe('@intent-hq/web manifest', () => {
     const source = readFileSync('scripts/fetch-tailcat.cjs', 'utf8');
     expect(source).toContain(`const TAILCAT_VERSION = '${readPinnedTailcatVersion()}';`);
   });
+});
+
+describe('@intent-hq/web bundle on a clean checkout', () => {
+  const root = resolve('.');
+
+  it('flags git-ignored generated inputs except the Paraglide output build:web makes', () => {
+    const files = [
+      'src/main/build-config.generated.ts',
+      'src/shared/paraglide/messages.js',
+      'src/features/intent-web/main/intent-web-cli.ts',
+    ].map((file) => join(root, file));
+    expect(
+      generatedInputs(root, [...files, join(root, 'node_modules/ws/index.js'), '\0virtual']),
+    ).toEqual(['src/main/build-config.generated.ts']);
+  });
+
+  // CI failed when the bundle reached src/main/build-config.generated.ts, which
+  // exists only after a desktop build step, through backend-connection.ts.
+  it('bundles without reading generated desktop build config', async () => {
+    const out = mkdtempSync(join(tmpdir(), 'intent-web-bundle-'));
+    try {
+      const { inputs } = await bundle({
+        root,
+        outFile: join(out, 'intent-web.mjs'),
+        tailcatVersion: '0.0.0-test',
+      });
+      expect(inputs.some((id: string) => id.includes('isolated-test-profile'))).toBe(true);
+      expect(inputs.filter((id: string) => id.includes('build-config.generated'))).toEqual([]);
+      expect(generatedInputs(root, inputs)).toEqual([]);
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  }, 60_000);
 });
 
 describe('@intent-hq/web tarball check', () => {

@@ -7,6 +7,7 @@
 // version, so every release publishes the matching @intent-hq/web.
 // Verified by scripts/smoke-intent-web-package.mjs and published by
 // .github/workflows/publish-intent-web.yml.
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -57,9 +58,63 @@ export function packageManifest(app) {
   };
 }
 
-async function bundle({ root, outFile, tailcatVersion }) {
+// Generated (git-ignored) modules the bundle may read. Paraglide's output is
+// produced by `pnpm run build:web`, which always runs first.
+const ALLOWED_GENERATED = ['src/shared/paraglide/'];
+// The desktop build config (src/main/build-config.generated.ts, written by
+// scripts/generate-build-config.cjs) is reached through
+// backend-connection.ts → src/main/isolated-test-profile.ts. The package is
+// never an isolated test build, so it gets fixed values instead of whatever a
+// local .env or environment would bake in.
+const BUILD_CONFIG_ID = '\0intent-web:build-config';
+const buildConfigStub = {
+  name: 'intent-web-build-config',
+  enforce: 'pre',
+  resolveId(source) {
+    return /(^|\/)build-config\.generated(\.js|\.ts)?$/.test(source) ? BUILD_CONFIG_ID : null;
+  },
+  load(id) {
+    if (id !== BUILD_CONFIG_ID) return null;
+    return `export const BUILD_CONFIG = ${JSON.stringify({
+      GIT_COMMIT_HASH: '',
+      ISOLATED_TEST_BUILD_ID: '',
+      ISOLATED_TEST_BACKEND_SHA: '',
+    })};`;
+  },
+};
+
+// Bundled source files that git ignores, other than ALLOWED_GENERATED: such a
+// file exists only where some other build step happened to run, so the
+// package would build locally but not on a clean checkout.
+export function generatedInputs(root, files) {
+  const relative = files
+    .filter((file) => path.isAbsolute(file) && !file.includes('/node_modules/'))
+    .map((file) => path.relative(root, file))
+    .filter((file) => !file.startsWith('..'));
+  if (relative.length === 0) return [];
+  const result = spawnSync('git', ['check-ignore', '--stdin'], {
+    cwd: root,
+    input: relative.join('\n'),
+    encoding: 'utf8',
+  });
+  if (result.status !== 0 && result.status !== 1)
+    throw new Error(`git check-ignore failed: ${result.stderr}`);
+  return result.stdout
+    .split('\n')
+    .filter(Boolean)
+    .filter((file) => !ALLOWED_GENERATED.some((prefix) => file.startsWith(prefix)));
+}
+
+export async function bundle({ root, outFile, tailcatVersion }) {
   const { build } = await import('vite');
   const external = new RegExp(`^(node:|(${RUNTIME_DEPENDENCIES.join('|')})(/|$))`);
+  const inputs = [];
+  const collectInputs = {
+    name: 'intent-web-collect-inputs',
+    buildEnd() {
+      inputs.push(...this.getModuleIds());
+    },
+  };
   await build({
     configFile: false,
     root,
@@ -79,6 +134,7 @@ async function bundle({ root, outFile, tailcatVersion }) {
       __INTENT_WEB_TAILCAT_VERSION__: JSON.stringify(tailcatVersion),
       'process.env.NODE_ENV': JSON.stringify('production'),
     },
+    plugins: [buildConfigStub, collectInputs],
     ssr: { noExternal: true, external: RUNTIME_DEPENDENCIES, target: 'node' },
     build: {
       ssr: path.join(root, ENTRY),
@@ -100,6 +156,12 @@ async function bundle({ root, outFile, tailcatVersion }) {
     },
   });
   fs.chmodSync(outFile, 0o755);
+  const generated = generatedInputs(root, inputs);
+  if (generated.length)
+    throw new Error(
+      `The intent-web bundle reads generated files a clean checkout lacks:\n  ${generated.join('\n  ')}`,
+    );
+  return { inputs };
 }
 
 export async function buildIntentWebPackage({
