@@ -70,7 +70,6 @@
     selectGitLabAuthHost,
     selectGitLabAuthIsConfigured,
   } from '$store/renderer/slices/gitlab-auth/gitlab-auth-selectors';
-  import { selectLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { selectEffectiveIdentityProvider } from '$store/renderer/slices/identity/identity-selectors';
   import { selectDaemonSupportsIdentitySeam } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
@@ -96,7 +95,6 @@
   const workspaceId$ = selectShareWorkspaceId();
   const workspaceTitle$ = selectShareWorkspaceTitle();
   const githubConnected$ = selectGitHubAuthIsAuthenticated();
-  const gitlabEnabled$ = selectLabsGitLabEnabled();
   const gitlabConnected$ = selectGitLabAuthIsConfigured();
   const gitlabHost$ = selectGitLabAuthHost();
   const identitySeamSupported$ = selectDaemonSupportsIdentitySeam();
@@ -181,7 +179,6 @@
     gitlabConnected={$integrationAuth$.gitlab}
     forgeStatusKnown={$integrationAuth$.known !== false}
     ownerForgeMissing={$ownerForgeMissing$}
-    gitlabEnabled={$gitlabEnabled$}
     gitlabHost={$gitlabHost$}
     gitlabStatusReady={$gitlabStatusReady$}
     canAdministerHost={$canAdministerHost$}

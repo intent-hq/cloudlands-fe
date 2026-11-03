@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, expect, it, vi } from 'vitest';
 import HostInvitationDialog from './HostInvitationDialog.svelte';
 
@@ -9,7 +9,7 @@ const props = () => ({ onCreate: vi.fn(), onCopy: vi.fn(), onClose: vi.fn() });
 it('requires deliberate host-wide consent and renews it when the account changes', async () => {
   const callbacks = props();
   render(HostInvitationDialog, callbacks);
-  expect(screen.queryByRole('combobox')).toBeNull();
+  expect(screen.getByRole('combobox')).toBeTruthy();
   const create = screen.getByRole('button', { name: 'Create invite link' });
   expect(create.hasAttribute('disabled')).toBe(true);
   const account = screen.getByLabelText('Account username');
@@ -59,9 +59,9 @@ it('offers copy and close after creation without another create action', async (
   expect(callbacks.onCopy).toHaveBeenCalledOnce();
 });
 
-it('validates a custom GitLab host and clears its draft when the experiment is disabled', async () => {
+it('always offers GitLab and validates a custom GitLab host', async () => {
   const callbacks = props();
-  const component = render(HostInvitationDialog, { ...callbacks, gitlabEnabled: true });
+  render(HostInvitationDialog, { ...callbacks });
   await fireEvent.click(screen.getByRole('combobox'));
   await fireEvent.pointerUp(await screen.findByRole('option', { name: /GitLab/ }), {
     pointerType: 'mouse',
@@ -79,10 +79,4 @@ it('validates a custom GitLab host and clears its draft when the experiment is d
     pinProvider: 'gitlab',
     pinHost: 'forge.example:8443',
   });
-  await component.rerender({ ...callbacks, gitlabEnabled: false });
-  await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull());
-  expect((screen.getByLabelText('Account username') as HTMLInputElement).value).toBe('');
-  expect(screen.getByRole('button', { name: 'Create invite link' }).hasAttribute('disabled')).toBe(
-    true,
-  );
 });

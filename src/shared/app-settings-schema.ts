@@ -232,17 +232,6 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     apply: { kind: 'redux-action', action: 'userPreferences/setPauseAnimationsWhenUnfocused' },
   },
   {
-    path: 'labs.gitlab',
-    label: 'GitLab (Labs)',
-    description: 'Whether the experimental GitLab lab is enabled.',
-    category: 'labs',
-    type: 'boolean',
-    source: 'local-storage',
-    storageKey: 'labs:gitlabEnabled',
-    defaultValue: false,
-    apply: { kind: 'redux-action', action: 'userPreferences/setLabsGitLabEnabled' },
-  },
-  {
     path: 'labs.remoteAgents',
     label: 'Remote agents (Labs)',
     description:

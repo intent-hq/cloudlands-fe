@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { onboardingForgeCopy } from './onboarding-forge-copy';
 
 describe('onboardingForgeCopy', () => {
-  it('titles the GitHub-only step as optional', () => {
-    const copy = onboardingForgeCopy(false);
-    expect(copy.title).toBe('Connect GitHub (optional)');
+  it('names GitHub and GitLab when GitLab can be set up', () => {
+    const copy = onboardingForgeCopy(true);
+    expect(copy.title).toBe('Connect GitHub or GitLab (optional)');
     expect(copy.after).toContain('Skip this');
   });
 
-  it('titles the GitHub or GitLab step as optional', () => {
-    expect(onboardingForgeCopy(true).title).toBe('Connect GitHub or GitLab (optional)');
+  it('names only GitHub on a daemon that cannot set up GitLab', () => {
+    expect(onboardingForgeCopy(false).title).toBe('Connect GitHub (optional)');
   });
 });

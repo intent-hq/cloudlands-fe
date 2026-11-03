@@ -25,7 +25,6 @@ import {
   selectGithubLinkDefaultAction,
   selectHasCompletedProviderSetup,
   selectLabsSettingsVisible,
-  selectLabsGitLabEnabled,
   selectLabsRemoteAgentsEnabled,
   selectLabsPlainFolderWorkspacesEnabled,
   selectLabsBrowserAccessEnabled,
@@ -58,7 +57,6 @@ import {
   setHasCompletedProviderSetup,
   providerSetupHydrated,
   setLabsSettingsVisible,
-  setLabsGitLabEnabled,
   setLabsRemoteAgentsEnabled,
   setLabsPlainFolderWorkspacesEnabled,
   setLabsBrowserAccessEnabled,
@@ -77,7 +75,6 @@ import {
   toggleChatAurora,
   toggleCollapseToolRuns,
   toggleLabsSettingsVisibility,
-  toggleLabsGitLab,
   toggleLabsRemoteAgents,
   toggleLabsPlainFolderWorkspaces,
   toggleLabsBrowserAccess,
@@ -103,7 +100,6 @@ const SHELL_TRANSPARENCY_STORAGE_KEY = 'appearance:shellTransparencyEnabled';
 const REDUCE_MOTION_ON_BATTERY_STORAGE_KEY = 'appearance:reduceMotionOnBattery';
 const PAUSE_ANIMATIONS_WHEN_UNFOCUSED_STORAGE_KEY = 'appearance:pauseAnimationsWhenUnfocused';
 const LABS_SETTINGS_VISIBLE_STORAGE_KEY = 'labs:settingsVisible';
-const LABS_GITLAB_STORAGE_KEY = 'labs:gitlabEnabled';
 const LABS_REMOTE_AGENTS_STORAGE_KEY = 'labs:remoteAgentsEnabled';
 const LABS_PLAIN_FOLDER_WORKSPACES_STORAGE_KEY = 'labs:plainFolderWorkspacesEnabled';
 const LABS_BROWSER_ACCESS_STORAGE_KEY = 'labs:browserAccessEnabled';
@@ -238,11 +234,7 @@ export function* hydrateUserPreferencesWorker() {
 
   // Multiplayer is always on: a saved `labs:multiplayerEnabled` is neither read nor written.
   // It is left in place so an older build sharing this storage keeps its own choice.
-
-  const labsGitLabEnabled = yield* getLocalStorageJSON<boolean>(LABS_GITLAB_STORAGE_KEY);
-  if (typeof labsGitLabEnabled === 'boolean') {
-    yield* put(setLabsGitLabEnabled(labsGitLabEnabled));
-  }
+  // GitLab is always on too: a saved `labs:gitlabEnabled` is likewise ignored and left in place.
 
   const labsRemoteAgentsEnabled = yield* getLocalStorageJSON<boolean>(
     LABS_REMOTE_AGENTS_STORAGE_KEY,
@@ -396,10 +388,6 @@ function* persistLabsSettingsVisibilityWorker() {
   );
 }
 
-function* persistLabsGitLabWorker() {
-  yield* setLocalStorageJSON(LABS_GITLAB_STORAGE_KEY, yield* selectLabsGitLabEnabled.effect());
-}
-
 function* persistLabsRemoteAgentsWorker() {
   yield* setLocalStorageJSON(
     LABS_REMOTE_AGENTS_STORAGE_KEY,
@@ -526,7 +514,6 @@ function* watchUserPreferenceWrites() {
     [setLabsSettingsVisible, toggleLabsSettingsVisibility],
     persistLabsSettingsVisibilityWorker,
   );
-  yield* takeEvery([setLabsGitLabEnabled, toggleLabsGitLab], persistLabsGitLabWorker);
   yield* takeEvery(
     [setLabsRemoteAgentsEnabled, toggleLabsRemoteAgents],
     persistLabsRemoteAgentsWorker,

@@ -4,12 +4,12 @@
  * The renderer publishes its collaboration policy to main only once saved preferences are
  * hydrated. Main counts every later change as a policy revision, and a revision cancels a
  * cold-start invitation, so the default policy must never be published ahead of the hydrated
- * GitLab choice. Repeating an unchanged policy is harmless: main ignores it.
+ * choice. Repeating an unchanged policy is harmless: main ignores it.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { store } from '$store/renderer/store';
 import {
-  setLabsGitLabEnabled,
+  setLabsMultiplayerEnabled,
   userPreferencesHydrated,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { collaborationAuthSaga } from './collaboration-auth-saga';
@@ -43,25 +43,18 @@ describe('collaborationAuthSaga', () => {
     stop = store.runSaga(collaborationAuthSaga);
     await Promise.resolve();
     expect(policyPublishes()).toEqual([]);
-
-    store.dispatch(setLabsGitLabEnabled(true));
     store.dispatch(userPreferencesHydrated());
     await vi.waitFor(() => expect(policyPublishes().length).toBeGreaterThan(0));
-    expect(policyRevisions()).toEqual([{ multiplayer: true, gitlab: true }]);
+    expect(policyRevisions()).toEqual([{ multiplayer: true }]);
   });
 
   it('publishes immediately when preferences were already hydrated, and again on a later change', async () => {
     store.dispatch(userPreferencesHydrated());
     stop = store.runSaga(collaborationAuthSaga);
+    await vi.waitFor(() => expect(policyRevisions()).toEqual([{ multiplayer: true }]));
+    store.dispatch(setLabsMultiplayerEnabled(false));
     await vi.waitFor(() =>
-      expect(policyRevisions()).toEqual([{ multiplayer: true, gitlab: false }]),
-    );
-    store.dispatch(setLabsGitLabEnabled(true));
-    await vi.waitFor(() =>
-      expect(policyRevisions()).toEqual([
-        { multiplayer: true, gitlab: false },
-        { multiplayer: true, gitlab: true },
-      ]),
+      expect(policyRevisions()).toEqual([{ multiplayer: true }, { multiplayer: false }]),
     );
   });
 });

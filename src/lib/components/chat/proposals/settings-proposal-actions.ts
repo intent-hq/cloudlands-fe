@@ -42,7 +42,6 @@ import {
   selectGroupByRepo,
   selectGithubLinkDefaultAction,
   selectHasCompletedProviderSetup,
-  selectLabsGitLabEnabled,
   selectLabsRemoteAgentsEnabled,
   selectLabsPlainFolderWorkspacesEnabled,
   selectLanguagePreference,
@@ -100,7 +99,6 @@ import {
   setGroupByRepo,
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
-  setLabsGitLabEnabled,
   setLabsRemoteAgentsEnabled,
   setLabsPlainFolderWorkspacesEnabled,
   setLanguagePreference,
@@ -323,8 +321,6 @@ async function readCurrentSettingValue(
       return selectShellTransparencyEnabled.select(state);
     case 'appearance.pauseAnimationsWhenUnfocused':
       return selectPauseAnimationsWhenUnfocused.select(state);
-    case 'labs.gitlab':
-      return selectLabsGitLabEnabled.select(state);
     case 'labs.remoteAgents':
       return selectLabsRemoteAgentsEnabled.select(state);
     case 'labs.plainFolderWorkspaces':
@@ -441,9 +437,6 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
     case 'appearance.pauseAnimationsWhenUnfocused':
       if (typeof value !== 'boolean') return false;
       appStore.dispatch(setPauseAnimationsWhenUnfocused(value));
-      return true;
-    case 'labs.gitlab':
-      appStore.dispatch(setLabsGitLabEnabled(Boolean(value)));
       return true;
     case 'labs.remoteAgents':
       if (typeof value !== 'boolean') return false;
