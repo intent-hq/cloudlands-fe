@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import {
   desktopCapturer,
+  nativeImage,
   screen,
   systemPreferences,
   type BrowserWindow,
@@ -15,7 +20,12 @@ import {
   getStrictBackendBindingForWebContents,
   onStrictBackendBindingRetired,
 } from '../../../main/window-backend';
-import type { DockCapturedPixels, DockNativeResult } from '../../../shared/dock-evidence';
+import type {
+  DockCapturedPixels,
+  DockCaptureMode,
+  DockNativeResult,
+} from '../../../shared/dock-evidence';
+import { DOCK_RECORDING_MAX_EDGE } from '../../../shared/dock-recording';
 import { cgWindowIdFromMediaSourceId, createDockScreenRecorder } from './dock-screen-recorder';
 import type {
   DockEvidenceBeginRequest,
@@ -46,6 +56,7 @@ interface CapturedImage {
   width: number;
   height: number;
 }
+type SelectedImage = CapturedImage & { displayScale: number };
 
 /** Injection is confined to native boundaries; tests exercise the real lifecycle. */
 export interface DockEvidenceDependencies {
@@ -64,6 +75,10 @@ export interface DockEvidenceDependencies {
     excluded: BrowserWindow[],
     windowIds: number[],
   ): Promise<DockNativeResult<DockCapturedPixels>>;
+  /** The OS selection UI for a window or region; dismissing it fails with `detail: 'cancelled'`. */
+  captureSelection?(
+    mode: Exclude<DockCaptureMode, 'fullscreen'>,
+  ): Promise<DockNativeResult<SelectedImage>>;
   id(): string;
   now(): number;
 }
@@ -281,6 +296,18 @@ export class DockEvidenceSessions {
             row.bounds.height === display.bounds.height,
         );
     try {
+      if (request.mode && request.mode !== 'fullscreen') {
+        if (!this.deps.captureSelection) return unavailable();
+        // The dock is the capture tool, never part of the selection.
+        hidden = true;
+        this.deps.hidden(window, true, false);
+        await this.deps.settle();
+        if (!this.current(session)) return unavailable();
+        const selected = await this.deps.captureSelection(request.mode);
+        if (!this.current(session)) return unavailable();
+        if (!selected.ok) return selected;
+        return this.pixels(session, request, selected.value, selected.value.displayScale);
+      }
       let nativePixels: DockCapturedPixels | undefined;
       const excluded = this.exclusions().filter((surface) => !surface.isDestroyed());
       const excludedIds = [...this.exclusionIds()];
@@ -321,50 +348,113 @@ export class DockEvidenceSessions {
         captured = await this.deps.capture(display);
         if (!eligible() || window.isVisible()) return unavailable();
       }
-      if (
-        !captured.png.length ||
-        !Number.isInteger(captured.width) ||
-        !Number.isInteger(captured.height) ||
-        captured.width <= 0 ||
-        captured.height <= 0
-      )
-        return { ok: false, error: 'failed' };
-      if (captured.png.length > MAX_PNG_BYTES) return { ok: false, error: 'limit' };
-      const id = this.deps.id();
-      const capturedAt = nativePixels?.capturedAt ?? new Date(this.deps.now()).toISOString();
-      const pixels = {
-        base64: captured.png.toString('base64'),
-        mimeType: 'image/png' as const,
-        width: captured.width,
-        height: captured.height,
-        displayScale: nativePixels?.displayScale ?? display.scaleFactor,
-        capturedAt,
-        ...(nativePixels?.hash ? { hash: nativePixels.hash } : {}),
-      };
-      return {
-        ok: true,
-        value: {
-          ...session.scope,
-          requestId: request.requestId,
-          image: {
-            id,
-            contextItemId: `dock-evidence:${id}`,
-            width: pixels.width,
-            height: pixels.height,
-            displayScale: pixels.displayScale,
-            capturedAt,
-            source: request.source ?? 'capture',
-            ...(pixels.hash ? { hash: pixels.hash } : {}),
-          },
-          pixels,
-        },
-      };
+      return this.pixels(
+        session,
+        request,
+        captured,
+        nativePixels?.displayScale ?? display.scaleFactor,
+        nativePixels,
+      );
     } catch {
       return { ok: false, error: this.deps.permissionDenied() ? 'permission' : 'failed' };
     } finally {
       this.capturing = null;
       release();
     }
+  }
+
+  private pixels(
+    session: Session,
+    request: DockEvidenceCaptureRequest,
+    captured: CapturedImage,
+    displayScale: number,
+    nativePixels?: DockCapturedPixels,
+  ): DockEvidencePixelsResult {
+    if (
+      !captured.png.length ||
+      !Number.isInteger(captured.width) ||
+      !Number.isInteger(captured.height) ||
+      captured.width <= 0 ||
+      captured.height <= 0 ||
+      !Number.isFinite(displayScale) ||
+      displayScale <= 0
+    )
+      return { ok: false, error: 'failed' };
+    if (captured.png.length > MAX_PNG_BYTES) return { ok: false, error: 'limit' };
+    const id = this.deps.id();
+    const capturedAt = nativePixels?.capturedAt ?? new Date(this.deps.now()).toISOString();
+    const pixels = {
+      base64: captured.png.toString('base64'),
+      mimeType: 'image/png' as const,
+      width: captured.width,
+      height: captured.height,
+      displayScale,
+      capturedAt,
+      ...(nativePixels?.hash ? { hash: nativePixels.hash } : {}),
+    };
+    return {
+      ok: true,
+      value: {
+        ...session.scope,
+        requestId: request.requestId,
+        image: {
+          id,
+          contextItemId: `dock-evidence:${id}`,
+          width: pixels.width,
+          height: pixels.height,
+          displayScale: pixels.displayScale,
+          capturedAt,
+          source: request.source ?? 'capture',
+          ...(pixels.hash ? { hash: pixels.hash } : {}),
+        },
+        pixels,
+      },
+    };
+  }
+}
+
+/** Long enough to choose calmly; a forgotten selection must not hold the capture lease. */
+const SELECTION_TIMEOUT_MS = 5 * 60_000;
+
+/**
+ * macOS `screencapture` owns the selection UI: `-i` interactive, `-w` window only or
+ * `-s` region only, `-o` no window shadow, `-x` silent. Escape writes no file.
+ */
+async function captureSelection(
+  mode: Exclude<DockCaptureMode, 'fullscreen'>,
+): Promise<DockNativeResult<SelectedImage>> {
+  if (process.platform !== 'darwin') return { ok: false, error: 'unavailable', detail: 'platform' };
+  const file = path.join(tmpdir(), `intent-dock-${randomUUID()}.png`);
+  try {
+    await new Promise<void>((resolve) => {
+      execFile(
+        '/usr/sbin/screencapture',
+        ['-i', mode === 'window' ? '-w' : '-s', '-o', '-x', '-t', 'png', file],
+        { timeout: SELECTION_TIMEOUT_MS },
+        () => resolve(),
+      );
+    });
+    const image = nativeImage.createFromPath(file);
+    if (image.isEmpty()) return { ok: false, error: 'unavailable', detail: 'cancelled' };
+    // The selection ends under the pointer, on the display it was taken from.
+    const scale = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).scaleFactor;
+    const { width, height } = image.getSize();
+    const ratio = Math.min(1, DOCK_RECORDING_MAX_EDGE / Math.max(width, height));
+    const fitted =
+      ratio < 1
+        ? image.resize(
+            width >= height
+              ? { width: DOCK_RECORDING_MAX_EDGE }
+              : { height: DOCK_RECORDING_MAX_EDGE },
+          )
+        : image;
+    const size = fitted.getSize();
+    return {
+      ok: true,
+      value: { png: fitted.toPNG(), ...size, displayScale: scale * (size.width / width) },
+    };
+  } finally {
+    await rm(file, { force: true });
   }
 }
 
@@ -400,6 +490,7 @@ export const dockEvidenceSessions = new DockEvidenceSessions({
     return { png: source.thumbnail.toPNG(), width, height };
   },
   id: randomUUID,
+  captureSelection,
   captureVisible: async (window, display, excluded, windowIds) => {
     if (process.platform !== 'darwin')
       return { ok: false, error: 'unavailable', detail: 'os-version' };

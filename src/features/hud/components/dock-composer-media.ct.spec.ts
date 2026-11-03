@@ -147,6 +147,72 @@ test('hover tool selection preserves the editing caret and does not toggle twice
   expect(await actions(component)).toEqual(['tool:arrow', 'annotation-toggle']);
 });
 
+test('screenshot modes open on hover, capture once with the chosen mode and keep the draft focused', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(ComposerMediaPreview);
+  const editor = component.getByRole('textbox');
+  await editor.fill('A draft with a caret');
+  await component.getByRole('button', { name: 'Capture the screen', exact: true }).hover();
+  const menu = page.getByRole('menu', { name: 'Screenshot options' });
+  await expect(menu.getByRole('menuitemradio', { name: 'Full screen' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  await menu.getByRole('menuitemradio', { name: 'Region' }).click();
+  await expect(menu).toBeHidden();
+  await expect(editor).toBeFocused();
+  await expect(editor).toHaveValue('A draft with a caret');
+  expect(await actions(component)).toEqual(['capture:region']);
+  // The bar keeps the chosen mode: a click captures it again without the menu.
+  const region = component.getByRole('button', { name: 'Capture a region', exact: true });
+  await expect(region.locator('[data-dock-glyph="region"]')).toBeVisible();
+  await region.click();
+  expect(await actions(component)).toEqual(['capture:region', 'capture']);
+});
+
+test('screenshot modes support keyboard choice and return focus to the capture button', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(ComposerMediaPreview);
+  const trigger = component.getByRole('button', { name: 'Capture the screen', exact: true });
+  await trigger.focus();
+  await trigger.press('Space');
+  const menu = page.getByRole('menu', { name: 'Screenshot options' });
+  await expect(menu.getByRole('menuitemradio', { name: 'Full screen' })).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(menu.getByRole('menuitemradio', { name: 'Window' })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(menu).toBeHidden();
+  expect(await actions(component)).toEqual(['capture:window']);
+  const updated = component.getByRole('button', { name: 'Capture a window', exact: true });
+  await expect(updated).toBeFocused();
+  await updated.press('ArrowUp');
+  await expect(menu.getByRole('menuitemradio', { name: 'Window' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+  await expect(updated).toBeFocused();
+  expect(await actions(component)).toEqual(['capture:window']);
+});
+
+test('without window and region capture the screenshot button stays a plain full-screen button', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(ComposerMediaPreview, {
+    props: { state: { captureModesAvailable: false } },
+  });
+  const trigger = component.getByRole('button', { name: 'Capture the screen', exact: true });
+  await expect(trigger).not.toHaveAttribute('aria-haspopup');
+  await trigger.hover();
+  await trigger.press('ArrowUp');
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await trigger.click();
+  expect(await actions(component)).toEqual(['capture']);
+});
+
 test('mic press and hold has one start and one release without a trailing toggle', async ({
   mount,
   page,

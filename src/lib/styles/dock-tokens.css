@@ -111,3 +111,22 @@
   --color-hover: var(--hover);
   --color-active: var(--active);
 }
+
+/* Dock media popups (annotate tools, screenshot modes). Portals may sit under a
+   light app body, so they keep the dock's dark palette: the spec's #2A2A2A card
+   is the dark surface-4 step, including the caret; the 1px edge is the dark
+   border (#3D3D3C). */
+.dock-media-tool-popover[data-dock-palette='notch'] {
+  --popover: var(--theme-dark-surface-4);
+  --color-popover: hsl(var(--theme-dark-surface-4));
+  --popover-foreground: var(--theme-dark-foreground);
+  --color-popover-foreground: hsl(var(--theme-dark-foreground));
+  --foreground: var(--theme-dark-foreground);
+  --color-foreground: hsl(var(--theme-dark-foreground));
+  --muted-foreground: var(--theme-dark-muted-foreground);
+  --color-muted-foreground: hsl(var(--theme-dark-muted-foreground));
+  --hover: var(--theme-dark-hover);
+  --active: var(--theme-dark-active);
+  --border: var(--theme-dark-border);
+  --color-border: hsl(var(--theme-dark-border));
+}

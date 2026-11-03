@@ -234,6 +234,8 @@ export function buildDockComposerMedia(input: {
       capturePending: view.capturePending,
       captureDisabled: !caps.capture || view.captureDisabled,
       ...(view.captureDisabled ? { captureTooltip: labels.captureLimit } : {}),
+      captureMode: view.captureMode,
+      captureModesAvailable: !!caps.captureModes,
       annotationActive: view.annotating,
       tool: view.tool,
       toolUsed: view.toolUsed,

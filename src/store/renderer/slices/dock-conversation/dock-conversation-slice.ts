@@ -41,6 +41,7 @@ import {
   type DockEvidenceInsertion,
   type DockMark,
   type DockMarkTool,
+  type DockCaptureMode,
 } from '$shared/dock-evidence';
 import type { DockSpeechCapability } from '$shared/dock-speech';
 import type { DockEvidencePrivacyPane } from '$shared/dock-evidence-ipc';
@@ -145,6 +146,13 @@ export const dockEvidenceCaptureStarted = createAction<Pair>(
 export const dockEvidenceCaptureFailed = createAction<
   [workspaceId: string, agentId: string, error: DockEvidenceErrorCode]
 >('dockConversation/evidenceCaptureFailed');
+/** The person dismissed the window/region selection: no image and no error. */
+export const dockEvidenceCaptureCancelled = createAction<Pair>(
+  'dockConversation/evidenceCaptureCancelled',
+);
+export const dockEvidenceCaptureModeSet = createAction<[mode: DockCaptureMode]>(
+  'dockConversation/evidenceCaptureModeSet',
+);
 export const dockEvidenceImageCaptured = createAction<
   [workspaceId: string, agentId: string, image: DockEvidenceImage]
 >('dockConversation/evidenceImageCaptured');
@@ -325,6 +333,7 @@ export const dockConversationReducer = createReducer<DockConversationState>({
   evidence: createCollection('id'),
   toolByWorkspace: {},
   rememberedToolByWorkspace: {},
+  captureMode: 'fullscreen',
   nativeCapabilities: null,
   serverCapabilities: null,
   nativeSpeech: emptyNativeSpeech,
@@ -646,6 +655,14 @@ dockConversationReducer.with(dockEvidenceCaptureFailed, (state, { payload: [ws, 
   withEvidence(state, ws, agent, (e) =>
     patchDockEvidence(e, { capture: { ...e.capture, pending: false, error } }),
   ),
+);
+dockConversationReducer.with(dockEvidenceCaptureCancelled, (state, { payload: [ws, agent] }) =>
+  withEvidence(state, ws, agent, (e) =>
+    patchDockEvidence(e, { capture: { ...e.capture, pending: false, error: null } }),
+  ),
+);
+dockConversationReducer.with(dockEvidenceCaptureModeSet, (state, { payload: [mode] }) =>
+  state.captureMode === mode ? state : { ...state, captureMode: mode },
 );
 dockConversationReducer.with(dockEvidenceImageCaptured, (state, { payload: [ws, agent, image] }) =>
   withEvidence(state, ws, agent, (e) => {

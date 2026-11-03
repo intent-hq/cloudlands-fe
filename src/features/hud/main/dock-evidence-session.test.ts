@@ -363,3 +363,64 @@ describe('dock evidence capture ownership', () => {
     }
   });
 });
+
+describe('dock evidence window and region capture', () => {
+  it('hides the dock while the person selects, then restores it and keeps the selection pixels', async () => {
+    const f = fixture();
+    f.settle.resolve();
+    const selected = { png: Buffer.from('window PNG'), width: 1200, height: 800, displayScale: 2 };
+    let visibleDuringSelection: boolean | undefined;
+    f.deps.captureSelection = vi.fn(async () => {
+      visibleDuringSelection = f.window.isVisible();
+      return { ok: true as const, value: selected };
+    });
+    f.deps.captureVisible = vi.fn();
+    const result = await f.manager.capture(f.owner, {
+      ...f.scope,
+      requestId: 'window',
+      mode: 'window',
+    });
+    expect(f.deps.captureSelection).toHaveBeenCalledExactlyOnceWith('window');
+    expect(visibleDuringSelection).toBe(false);
+    expect(f.window.isVisible()).toBe(true);
+    expect(f.deps.captureVisible).not.toHaveBeenCalled();
+    expect(f.capture).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        requestId: 'window',
+        image: { width: 1200, height: 800, displayScale: 2, source: 'capture' },
+        pixels: { base64: selected.png.toString('base64'), width: 1200, height: 800 },
+      },
+    });
+  });
+
+  it('reports a dismissed selection as cancelled without a full-screen fallback', async () => {
+    const f = fixture();
+    f.settle.resolve();
+    f.deps.captureSelection = vi.fn(async () => ({
+      ok: false as const,
+      error: 'unavailable' as const,
+      detail: 'cancelled',
+    }));
+    const result = await f.manager.capture(f.owner, {
+      ...f.scope,
+      requestId: 'region',
+      mode: 'region',
+    });
+    expect(result).toEqual({ ok: false, error: 'unavailable', detail: 'cancelled' });
+    expect(f.capture).not.toHaveBeenCalled();
+    expect(f.window.isVisible()).toBe(true);
+  });
+
+  it('refuses window and region capture where no selection UI exists', async () => {
+    const f = fixture();
+    const result = await f.manager.capture(f.owner, {
+      ...f.scope,
+      requestId: 'region',
+      mode: 'region',
+    });
+    expect(result).toEqual({ ok: false, error: 'unavailable' });
+    expect(f.visibility).not.toHaveBeenCalled();
+  });
+});

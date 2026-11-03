@@ -88,6 +88,7 @@ import {
   openDockConversationRequested,
   dockEvidenceAnnotationToggleRequested,
   dockEvidenceCaptureFailed,
+  dockEvidenceCaptureCancelled,
   dockEvidenceCaptureRequested,
   dockEvidenceCaptureStarted,
   dockEvidenceSessionRetired,
@@ -310,14 +311,20 @@ function* capture({
     yield* put(dockEvidenceCaptureFailed(workspaceId, agentId, 'unavailable'));
     return;
   }
+  // A live annotate session photographs its marks on the whole screen.
+  const mode = evidence?.annotation ? 'fullscreen' : appStore.state.dockConversation.captureMode;
   yield* put(dockEvidenceCaptureStarted(workspaceId, agentId));
   let result: DockNativeResult<DockCapturedPixels>;
   try {
-    result = yield* call([service, service.captureDisplay]);
+    result = yield* call([service, service.captureDisplay], mode);
   } catch {
     result = { ok: false, error: 'failed' };
   }
   if (nativeService !== service || !activePair(workspaceId, agentId)) return;
+  if (!result.ok && result.detail === 'cancelled') {
+    yield* put(dockEvidenceCaptureCancelled(workspaceId, agentId));
+    return;
+  }
   if (!result.ok) {
     yield* put(dockEvidenceCaptureFailed(workspaceId, agentId, result.error));
     if (result.error === 'permission')

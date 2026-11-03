@@ -46,6 +46,7 @@ const SessionSchema = BeginSchema.extend({ sessionId: z.string().uuid() });
 const CaptureSchema = SessionSchema.extend({
   requestId: z.string().uuid(),
   source: z.enum(['capture', 'annotate', 'dictation']).optional(),
+  mode: z.enum(['fullscreen', 'window', 'region']).optional(),
 });
 
 const point = z
@@ -442,6 +443,7 @@ function createMediaBinder() {
           ok: true,
           value: {
             capture: true,
+            captureModes: process.platform === 'darwin',
             annotate: recording.supported && recording.stillSupported,
             record: recording.supported,
             speech,

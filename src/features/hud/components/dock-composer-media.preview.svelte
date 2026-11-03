@@ -27,6 +27,11 @@
       idle: { props: { mode: 'idle' } },
       captured: { props: { mode: 'captured' } },
       'annotate-hovered': { props: { mode: 'annotate-hovered' } },
+      'capture-window': { props: { mode: 'idle', state: { captureMode: 'window' } } },
+      'capture-region': { props: { mode: 'idle', state: { captureMode: 'region' } } },
+      'capture-fullscreen-only': {
+        props: { mode: 'idle', state: { captureModesAvailable: false } },
+      },
       annotating: { props: { mode: 'annotating' } },
       dictating: { props: { mode: 'dictating' } },
       recording: { props: { mode: 'recording' } },
@@ -49,6 +54,9 @@
   // i18n-ignore (isolated component preview copy; production passes localized labels)
   export const labels: DockComposerMediaLabels = {
     capture: 'Capture the screen',
+    captureMode: { window: 'Capture a window', region: 'Capture a region' },
+    captureModes: { fullscreen: 'Full screen', window: 'Window', region: 'Region' },
+    captureOptions: 'Screenshot options',
     captureLimit: 'Up to 4 screenshots',
     clipLimit: 'Up to 5 recordings',
     record: 'Record the screen',
@@ -120,6 +128,8 @@
     const marked = ['annotating', 'dictating', 'recording'].includes(mode);
     mediaState = {
       captureRevision: 0,
+      captureMode: 'fullscreen',
+      captureModesAvailable: true,
       annotationActive: mode === 'annotating',
       tool: marked ? 'box' : 'pick',
       toolUsed: marked,
@@ -224,6 +234,10 @@
           record('capture');
           if (simulateConfirm)
             mediaState = { ...mediaState, captureRevision: mediaState.captureRevision + 1 };
+        }}
+        onCaptureModeSelect={(captureMode) => {
+          record(`capture:${captureMode}`);
+          mediaState = { ...mediaState, captureMode };
         }}
         onRecordToggle={() => {
           record('record');
