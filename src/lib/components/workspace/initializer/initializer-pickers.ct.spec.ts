@@ -294,7 +294,7 @@ for (const { name, width, height, position } of [
     );
     await expect(menu).toHaveCount(0);
     await branchTrigger.click();
-    const isolation = menu.getByRole('switch', { name: /Isolated/ });
+    const isolation = menu.getByRole('switch', { name: /use an isolated/i });
     await isolation.scrollIntoViewIfNeeded();
     const isolationBounds = (await isolation.boundingBox())!;
     expect(isolationBounds.y).toBeGreaterThanOrEqual(0);
@@ -322,7 +322,7 @@ for (const presentation of ['default', 'form'] as const) {
     const trigger = fixture.locator('button[aria-haspopup="dialog"]').nth(1);
     const selection = page.getByTestId('initializer-selection');
     const menu = page.getByRole('dialog');
-    const isolation = menu.getByRole('switch', { name: /Isolated/ });
+    const isolation = menu.getByRole('switch', { name: /use an isolated/i });
     const otherBranch = menu.getByRole('option', { name: 'feature/task-3', exact: true });
 
     await trigger.click();
@@ -345,7 +345,7 @@ for (const presentation of ['default', 'form'] as const) {
     await expect(otherBranch).toBeVisible();
     await expect(isolation).toBeFocused();
 
-    await menu.locator('label', { hasText: 'Isolated worktree' }).click();
+    await menu.locator('label', { hasText: 'Use an isolated worktree' }).click();
     await expect(selection).toContainText('"skipIsolation":true');
     await page.keyboard.press('Escape');
     await expect(menu).toHaveCount(0);
@@ -369,7 +369,7 @@ for (const { position, contract } of [
     const menu = page.getByRole('dialog');
     await expect(menu.getByRole('combobox')).toHaveAttribute('aria-busy', 'false');
     await expect(menu.getByRole('option', { name: 'feature/task-29', exact: true })).toBeAttached();
-    const isolation = menu.getByRole('switch', { name: /Isolated/ });
+    const isolation = menu.getByRole('switch', { name: /use an isolated/i });
     await isolation.hover();
     const origin = (await menu.boundingBox())!;
     const control = (await isolation.boundingBox())!;
@@ -431,7 +431,7 @@ for (const initialMode of ['direct', 'reopened-direct'] as const) {
       .locator('button[aria-haspopup="dialog"]')
       .nth(1);
     const menu = page.getByRole('dialog');
-    const isolation = menu.getByRole('switch', { name: /Isolated/ });
+    const isolation = menu.getByRole('switch', { name: /use an isolated/i });
     if (initialMode === 'reopened-direct') {
       await trigger.click();
       await expect(menu.getByRole('combobox')).toHaveAttribute('aria-busy', 'false');
@@ -464,6 +464,8 @@ for (const initialMode of ['direct', 'reopened-direct'] as const) {
         await expect
           .poll(() => results.evaluate((e) => e.scrollHeight > e.clientHeight))
           .toBe(true);
+        // Turning isolation on from folder mode leaves room for several branch rows.
+        expect(await results.evaluate((e) => e.clientHeight)).toBeGreaterThanOrEqual(120);
         await wheelUntilScrolled(results, { deltaY: 300 });
       }
     }

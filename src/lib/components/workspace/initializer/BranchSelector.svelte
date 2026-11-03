@@ -178,12 +178,24 @@
   let directCheckoutFooterEl: HTMLDivElement | undefined = $state();
   let isolationControlEl: HTMLDivElement | undefined = $state();
   let isolationSwitchEl = $state<HTMLButtonElement | null>(null);
+  // While a mode change holds the popup in place, the area above the bottom
+  // isolation footer keeps its height so the switch stays under the pointer.
+  let modeBodyEl: HTMLDivElement | undefined = $state();
+  let modeBodyHeight = $state<number | undefined>();
+  // Room for search and results from the first open, so turning isolation on
+  // from folder mode never squeezes the list into the frozen folder-mode area.
+  const hasIsolationControl = $derived(
+    repoType === 'local' && typeof onSkipIsolationChange === 'function' && !!currentBranch,
+  );
   let modeAnchor = $state<
     { contextElement: HTMLElement; getBoundingClientRect: () => DOMRect } | undefined
   >();
 
   $effect(() => {
-    if (!isOpen) modeAnchor = undefined;
+    if (!isOpen) {
+      modeAnchor = undefined;
+      modeBodyHeight = undefined;
+    }
   });
 
   $effect(() => {
@@ -1125,6 +1137,7 @@
   function handleIsolationChange(isolated: boolean) {
     const content = isolationSwitchEl?.closest<HTMLElement>('[role="dialog"]');
     if (!modeAnchor && content && triggerEl) {
+      modeBodyHeight = modeBodyEl?.getBoundingClientRect().height || undefined;
       const trigger = triggerEl;
       const origin = trigger.getBoundingClientRect();
       const popup = content.getBoundingClientRect();
@@ -1788,192 +1801,200 @@
           </div>
         {/if}
 
-        {#if directMode && currentBranch}
-          <div class="shrink-0 px-2 pb-2">
-            <p class="type-caption px-3 pt-1 pb-1.5 font-medium text-subtle">
-              {m.workspace_branchSelector_folderBranch_label()}
-            </p>
-            <div
-              class={rowLabel
-                ? workspacePickerStyles.row + ' flex min-w-0'
-                : 'type-caption flex min-w-0 items-center gap-2 px-2 py-1'}
-            >
-              {@render branchOptionIcon()}
-              <span class="min-w-0 flex-1 truncate">{currentBranch}</span>
-              <span class="shrink-0 text-subtle"
-                >{m.workspace_branchSelector_currentBranch_label()}</span
+        <div
+          bind:this={modeBodyEl}
+          class="flex flex-col {modeBodyHeight ? 'shrink-0' : 'flex-1'} {hasIsolationControl
+            ? 'min-h-52'
+            : 'min-h-0'}"
+          style:height={modeBodyHeight ? `${modeBodyHeight}px` : undefined}
+        >
+          {#if directMode && currentBranch}
+            <div class="shrink-0 px-2 pb-2">
+              <p class="type-caption px-3 pt-1 pb-1.5 font-medium text-subtle">
+                {m.workspace_branchSelector_folderBranch_label()}
+              </p>
+              <div
+                class={rowLabel
+                  ? workspacePickerStyles.row + ' flex min-w-0'
+                  : 'type-caption flex min-w-0 items-center gap-2 px-2 py-1'}
               >
+                {@render branchOptionIcon()}
+                <span class="min-w-0 flex-1 truncate">{currentBranch}</span>
+                <span class="shrink-0 text-subtle"
+                  >{m.workspace_branchSelector_currentBranch_label()}</span
+                >
+              </div>
             </div>
-          </div>
-        {:else}
-          <!-- Suggested PR branch -->
-          {#if suggestedBranch && suggestedBranch !== internalSelectedBranch}
-            <Button
-              variant="ghost"
-              type="button"
-              class="mx-2 mb-2 px-3 py-2 flex items-center gap-2 text-sm text-left rounded-md transition-colors cursor-pointer {rowLabel
-                ? 'bg-sidebar hover:bg-hover'
-                : 'bg-primary/10 hover:bg-primary/15 border border-primary/20'}"
-              onclick={() => selectBranch(suggestedBranch)}
-            >
-              <GitBranchIcon size={14} class="text-primary-ink shrink-0" />
-              <span class="flex-1 min-w-0">
-                <span class="text-subtle">{m.workspace_branchSelector_usePrBranch_label()}</span>
-                <strong class="text-foreground ml-1 truncate">{suggestedBranch}</strong>
-              </span>
-            </Button>
-          {/if}
-
-          <div class="min-h-16 overflow-hidden flex flex-1 flex-col" data-testid="branch-results">
-            {#if !$hostMember$ && githubAuthNeeded === 'not-authenticated' && !isConnectingGitHub}
-              <!-- Connect with GitHub prompt for private repos -->
+          {:else}
+            <!-- Suggested PR branch -->
+            {#if suggestedBranch && suggestedBranch !== internalSelectedBranch}
               <Button
                 variant="ghost"
                 type="button"
-                class="px-3 py-3 flex items-start gap-3 hover:bg-muted/50 transition-colors cursor-pointer text-left {rowLabel
-                  ? 'mx-2 rounded-(--radius-medium) bg-sidebar'
-                  : 'w-full border-l-2 border-primary bg-primary/5'}"
-                onclick={handleConnectGitHub}
+                class="mx-2 mb-2 px-3 py-2 flex items-center gap-2 text-sm text-left rounded-md transition-colors cursor-pointer {rowLabel
+                  ? 'bg-sidebar hover:bg-hover'
+                  : 'bg-primary/10 hover:bg-primary/15 border border-primary/20'}"
+                onclick={() => selectBranch(suggestedBranch)}
               >
-                <span class="first-line-icon text-sm">
-                  <svg class="w-5 h-5 text-ghost" viewBox="0 0 24 24" fill="currentColor">
-                    <path
-                      d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"
-                    />
-                  </svg>
+                <GitBranchIcon size={14} class="text-primary-ink shrink-0" />
+                <span class="flex-1 min-w-0">
+                  <span class="text-subtle">{m.workspace_branchSelector_usePrBranch_label()}</span>
+                  <strong class="text-foreground ml-1 truncate">{suggestedBranch}</strong>
                 </span>
-                <div class="flex-1 min-w-0">
-                  <p class="text-sm font-medium text-foreground">
-                    {m.workspace_branchSelector_connectWithGithub_label()}
-                  </p>
-                  <p class="text-sm text-subtle">
-                    {m.workspace_branchSelector_connectWithGithub_description()}
-                  </p>
-                </div>
               </Button>
-            {:else if isConnectingGitHub}
-              <!-- Connecting to GitHub -->
-              <div
-                class="px-3 py-3 flex items-start gap-3 {rowLabel
-                  ? 'mx-2 rounded-(--radius-medium) bg-sidebar'
-                  : 'border-l-2 border-primary bg-primary/5'}"
-              >
-                <span class="first-line-icon text-sm"
-                  ><IntentMarkLoader size={20} class="text-ghost" /></span
-                >
-                <div class="flex-1 min-w-0">
-                  <p class="text-sm font-medium text-foreground">
-                    {m.workspace_branchSelector_connectingGithub_label()}
-                  </p>
-                  <p class="text-sm text-subtle">
-                    {m.workspace_branchSelector_completeAuth_description()}
-                  </p>
-                </div>
-              </div>
-            {:else if githubAuthNeeded === 'no-access'}
-              <!-- User is authenticated but doesn't have access -->
-              <div
-                class="py-2 bg-danger-background/10 {rowLabel
-                  ? 'mx-2 rounded-(--radius-medium) px-3'
-                  : 'border-l-2 border-danger px-2'}"
-              >
-                <div class="text-sm text-danger">
-                  {m.workspace_branchSelector_noAccess_error()}
-                </div>
-                <div class="text-sm text-subtle mt-1">
-                  {m.workspace_branchSelector_noAccess_description()}
-                </div>
-              </div>
-            {:else if error}
-              <div
-                role="alert"
-                class="py-2 bg-danger-background/10 {rowLabel
-                  ? 'mx-2 rounded-(--radius-medium) px-3'
-                  : 'border-l-2 border-danger px-2'}"
-              >
-                <div class="text-sm text-danger">{error}</div>
-                {#if repoType === 'github'}
-                  <div class="text-sm text-subtle mt-1">
-                    {m.workspace_branchSelector_typeManually_description()}
-                  </div>
-                {/if}
-              </div>
             {/if}
 
-            <Combobox
-              open={isOpen}
-              value={internalSelectedBranch}
-              groups={branchGroups}
-              groupHeader={groupHeading}
-              optionIcon={branchOptionIcon}
-              rowClass={rowLabel ? workspacePickerStyles.row : undefined}
-              bind:inputRef={searchInputElement}
-              ariaLabel={m.workspace_branchSelector_selectBranch_label()}
-              placeholder={m.workspace_branchSelector_search_placeholder()}
-              searchPlaceholder={m.workspace_branchSelector_search_placeholder()}
-              emptyText={m.workspace_branchSelector_noBranchesFound_label()}
-              loading={isLoading && branches.length === 0}
-              staticPosition
-              allowCustom
-              onquerychange={handleManualInput}
-              oncommit={(branch) => {
-                if (typeof branch === 'string') selectBranch(branch);
-              }}
-              oninteractoutside={(event) => {
-                if (
-                  event.target instanceof Node &&
-                  (directCheckoutFooterEl?.contains(event.target) ||
-                    isolationControlEl?.contains(event.target))
-                ) {
-                  event.preventDefault();
-                }
-              }}
-              class={rowLabel
-                ? 'flex min-h-0 flex-1 flex-col gap-1 px-2'
-                : 'flex min-h-0 flex-1 flex-col px-2 pb-1'}
-              inputVariant={rowLabel ? 'search' : undefined}
-              inputAction={rowLabel ? refreshAction : undefined}
-              inputClass="shrink-0"
-              viewportClass={rowLabel
-                ? 'min-h-0 max-h-none flex-1 p-0 pb-2'
-                : 'min-h-0 max-h-none flex-1'}
-              size="compact"
-              contentClass={rowLabel
-                ? 'flex min-h-0 max-h-none flex-col rounded-none border-0 shadow-none'
-                : 'flex min-h-0 max-h-none flex-col border-0 shadow-none'}
-            />
-          </div>
-
-          {#if !rowLabel}<div
-              bind:this={directCheckoutFooterEl}
-              class="flex shrink-0 flex-wrap items-center gap-1 border-t border-border bg-popover px-2 py-1.5"
-            >
-              {#each branchGroups.filter((group) => (group.key === 'workspace' && group.options.length > 0) || group.key === 'remote') as group (group.key)}
-                <Toggle
-                  size="sm"
-                  pressed={groupExpanded(group)}
-                  ariaLabel={group.label}
-                  onChange={() => toggleGroup(group)}
-                  class="gap-1.5 border-transparent bg-transparent px-2.5 text-subtle data-[state=on]:border-border data-[state=on]:bg-hover data-[state=on]:font-medium data-[state=on]:shadow-none data-[state=on]:hover:bg-muted"
+            <div class="min-h-16 overflow-hidden flex flex-1 flex-col" data-testid="branch-results">
+              {#if !$hostMember$ && githubAuthNeeded === 'not-authenticated' && !isConnectingGitHub}
+                <!-- Connect with GitHub prompt for private repos -->
+                <Button
+                  variant="ghost"
+                  type="button"
+                  class="px-3 py-3 flex items-start gap-3 hover:bg-muted/50 transition-colors cursor-pointer text-left {rowLabel
+                    ? 'mx-2 rounded-(--radius-medium) bg-sidebar'
+                    : 'w-full border-l-2 border-primary bg-primary/5'}"
+                  onclick={handleConnectGitHub}
                 >
-                  {#if groupExpanded(group)}
-                    <Fa icon={faCheck} class="size-3! text-primary-ink" />
+                  <span class="first-line-icon text-sm">
+                    <svg class="w-5 h-5 text-ghost" viewBox="0 0 24 24" fill="currentColor">
+                      <path
+                        d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"
+                      />
+                    </svg>
+                  </span>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-foreground">
+                      {m.workspace_branchSelector_connectWithGithub_label()}
+                    </p>
+                    <p class="text-sm text-subtle">
+                      {m.workspace_branchSelector_connectWithGithub_description()}
+                    </p>
+                  </div>
+                </Button>
+              {:else if isConnectingGitHub}
+                <!-- Connecting to GitHub -->
+                <div
+                  class="px-3 py-3 flex items-start gap-3 {rowLabel
+                    ? 'mx-2 rounded-(--radius-medium) bg-sidebar'
+                    : 'border-l-2 border-primary bg-primary/5'}"
+                >
+                  <span class="first-line-icon text-sm"
+                    ><IntentMarkLoader size={20} class="text-ghost" /></span
+                  >
+                  <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-foreground">
+                      {m.workspace_branchSelector_connectingGithub_label()}
+                    </p>
+                    <p class="text-sm text-subtle">
+                      {m.workspace_branchSelector_completeAuth_description()}
+                    </p>
+                  </div>
+                </div>
+              {:else if githubAuthNeeded === 'no-access'}
+                <!-- User is authenticated but doesn't have access -->
+                <div
+                  class="py-2 bg-danger-background/10 {rowLabel
+                    ? 'mx-2 rounded-(--radius-medium) px-3'
+                    : 'border-l-2 border-danger px-2'}"
+                >
+                  <div class="text-sm text-danger">
+                    {m.workspace_branchSelector_noAccess_error()}
+                  </div>
+                  <div class="text-sm text-subtle mt-1">
+                    {m.workspace_branchSelector_noAccess_description()}
+                  </div>
+                </div>
+              {:else if error}
+                <div
+                  role="alert"
+                  class="py-2 bg-danger-background/10 {rowLabel
+                    ? 'mx-2 rounded-(--radius-medium) px-3'
+                    : 'border-l-2 border-danger px-2'}"
+                >
+                  <div class="text-sm text-danger">{error}</div>
+                  {#if repoType === 'github'}
+                    <div class="text-sm text-subtle mt-1">
+                      {m.workspace_branchSelector_typeManually_description()}
+                    </div>
                   {/if}
-                  {group.label}
-                </Toggle>
-              {/each}
-              <Button
-                onclick={handleRefresh}
-                variant="ghost"
-                size="icon-sm"
-                class="ml-auto shrink-0"
-                disabled={isLoading}
-                aria-label={m.workspace_branchSelector_refreshBranches_ariaLabel()}
+                </div>
+              {/if}
+
+              <Combobox
+                open={isOpen}
+                value={internalSelectedBranch}
+                groups={branchGroups}
+                groupHeader={groupHeading}
+                optionIcon={branchOptionIcon}
+                rowClass={rowLabel ? workspacePickerStyles.row : undefined}
+                bind:inputRef={searchInputElement}
+                ariaLabel={m.workspace_branchSelector_selectBranch_label()}
+                placeholder={m.workspace_branchSelector_search_placeholder()}
+                searchPlaceholder={m.workspace_branchSelector_search_placeholder()}
+                emptyText={m.workspace_branchSelector_noBranchesFound_label()}
+                loading={isLoading && branches.length === 0}
+                staticPosition
+                allowCustom
+                onquerychange={handleManualInput}
+                oncommit={(branch) => {
+                  if (typeof branch === 'string') selectBranch(branch);
+                }}
+                oninteractoutside={(event) => {
+                  if (
+                    event.target instanceof Node &&
+                    (directCheckoutFooterEl?.contains(event.target) ||
+                      isolationControlEl?.contains(event.target))
+                  ) {
+                    event.preventDefault();
+                  }
+                }}
+                class={rowLabel
+                  ? 'flex min-h-0 flex-1 flex-col gap-1 px-2'
+                  : 'flex min-h-0 flex-1 flex-col px-2 pb-1'}
+                inputVariant={rowLabel ? 'search' : undefined}
+                inputAction={rowLabel ? refreshAction : undefined}
+                inputClass="shrink-0"
+                viewportClass={rowLabel
+                  ? 'min-h-0 max-h-none flex-1 p-0 pb-2'
+                  : 'min-h-0 max-h-none flex-1'}
+                size="compact"
+                contentClass={rowLabel
+                  ? 'flex min-h-0 max-h-none flex-col rounded-none border-0 shadow-none'
+                  : 'flex min-h-0 max-h-none flex-col border-0 shadow-none'}
+              />
+            </div>
+
+            {#if !rowLabel}<div
+                bind:this={directCheckoutFooterEl}
+                class="flex shrink-0 flex-wrap items-center gap-1 border-t border-border bg-popover px-2 py-1.5"
               >
-                <Fa icon={faRotate} class="size-3.5!" />
-              </Button>
-            </div>{/if}
-        {/if}
+                {#each branchGroups.filter((group) => (group.key === 'workspace' && group.options.length > 0) || group.key === 'remote') as group (group.key)}
+                  <Toggle
+                    size="sm"
+                    pressed={groupExpanded(group)}
+                    ariaLabel={group.label}
+                    onChange={() => toggleGroup(group)}
+                    class="gap-1.5 border-transparent bg-transparent px-2.5 text-subtle data-[state=on]:border-border data-[state=on]:bg-hover data-[state=on]:font-medium data-[state=on]:shadow-none data-[state=on]:hover:bg-muted"
+                  >
+                    {#if groupExpanded(group)}
+                      <Fa icon={faCheck} class="size-3! text-primary-ink" />
+                    {/if}
+                    {group.label}
+                  </Toggle>
+                {/each}
+                <Button
+                  onclick={handleRefresh}
+                  variant="ghost"
+                  size="icon-sm"
+                  class="ml-auto shrink-0"
+                  disabled={isLoading}
+                  aria-label={m.workspace_branchSelector_refreshBranches_ariaLabel()}
+                >
+                  <Fa icon={faRotate} class="size-3.5!" />
+                </Button>
+              </div>{/if}
+          {/if}
+        </div>
         {#if repoType === 'local' && typeof onSkipIsolationChange === 'function' && currentBranch}
           <div class="shrink-0 border-t border-border p-2">
             <div bind:this={isolationControlEl} class="px-3 py-2.5">
@@ -1985,7 +2006,7 @@
                 description={directMode
                   ? m.workspace_branchSelector_isolationOff_description()
                   : m.workspace_branchSelector_isolationOn_description()}
-                class="branch-isolation-row grid-cols-[minmax(0,1fr)_auto] items-center gap-2.5 py-0 first:pt-0 last:pb-0 md:grid-cols-[minmax(0,1fr)_auto] md:items-center md:gap-2.5 [&_[data-field-label]]:py-0 [&_[data-field-label]]:font-normal [&_[data-field-leading]]:mt-0 [&_[data-field-control]]:min-h-0 [&_[data-field-control]]:w-auto [&_.space-y-1]:space-y-0"
+                class="branch-isolation-row grid-cols-[minmax(0,1fr)_auto] items-start gap-2.5 py-0 first:pt-0 last:pb-0 md:grid-cols-[minmax(0,1fr)_auto] md:items-start md:gap-2.5 [&_[data-field-label]]:py-0 [&_[data-field-label]]:font-normal [&_[data-field-leading]]:mt-0 [&_[data-field-control]]:min-h-0 [&_[data-field-control]]:w-auto [&_.space-y-1]:space-y-0"
               >
                 {#snippet leading()}
                   <Fa icon={directMode ? faFolder : faCodeFork} class="size-4! text-subtle" />

@@ -28,7 +28,15 @@ export function setupWorkspaceFormPreview(
 ) {
   const restores: Array<() => void> = [];
   restores.push(
-    overrideMockIpcHandler('shell:openExternal', (params: { url: string }) => {
+    overrideMockIpcHandler('shell:openExternal', (params) => {
+      if (
+        typeof params !== 'object' ||
+        params === null ||
+        !('url' in params) ||
+        typeof params.url !== 'string'
+      ) {
+        throw new TypeError('Expected an external URL in the workspace form preview');
+      }
       onOpenExternal?.(params.url);
       return { success: true };
     }),

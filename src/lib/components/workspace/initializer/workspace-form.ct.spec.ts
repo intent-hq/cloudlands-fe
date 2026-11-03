@@ -266,7 +266,8 @@ test('setup search applies choices and edit or create keeps drafts staged until 
   const editor = popup.getByRole('textbox', { name: 'Editor content', exact: true });
   const code = popup.locator('.monaco-editor .view-lines');
   async function enterCommands(value: string) {
-    await expect(editor).toBeVisible();
+    // The dialog opens before its lazy editor and Monaco finish initializing.
+    await expect(editor).toBeVisible({ timeout: 15_000 });
     await editor.focus();
     await expect(editor).toBeFocused();
     await page.keyboard.press('ControlOrMeta+A');
