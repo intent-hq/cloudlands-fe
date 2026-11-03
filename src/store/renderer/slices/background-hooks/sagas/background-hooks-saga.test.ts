@@ -131,7 +131,7 @@ describe('backgroundHooksSaga', () => {
       eventTypes: ['hook:*'],
       workspaceId: 'ws-1',
     });
-    expect(mocks.request).toHaveBeenCalledWith('hook.list', { workspaceId: 'ws-1' });
+    expect(mocks.request).toHaveBeenCalledWith('hook.list', { workspaceId: 'ws-1', limit: 200 });
     expect(getState().byWorkspaceId['ws-1'].hooks.map['hook-1']).toEqual(makeHook());
 
     dispatch(backgroundHooksUnsubscribeRequested('ws-1'));
@@ -185,7 +185,10 @@ describe('backgroundHooksSaga', () => {
     await vi.waitFor(() =>
       expect(getState().byWorkspaceId['ws-1'].hooks.map['hook-9']).toEqual(unseen),
     );
-    expect(mocks.request).toHaveBeenNthCalledWith(3, 'hook.list', { workspaceId: 'ws-1' });
+    expect(mocks.request).toHaveBeenNthCalledWith(3, 'hook.list', {
+      workspaceId: 'ws-1',
+      limit: 200,
+    });
 
     emitNotification({
       subscriptionId: 'sub-1',
@@ -268,8 +271,8 @@ describe('backgroundHooksSaga', () => {
     await vi.waitFor(() =>
       expect(getState().byWorkspaceId['ws-1'].hooks.map['hook-ws-1']?.lastLogs).toBe('fresh-ws-1'),
     );
-    expect(mocks.request).toHaveBeenCalledWith('hook.list', { workspaceId: 'ws-1' });
-    expect(mocks.request).toHaveBeenCalledWith('hook.list', { workspaceId: 'ws-2' });
+    expect(mocks.request).toHaveBeenCalledWith('hook.list', { workspaceId: 'ws-1', limit: 200 });
+    expect(mocks.request).toHaveBeenCalledWith('hook.list', { workspaceId: 'ws-2', limit: 200 });
     await stop(task);
   });
 
@@ -426,7 +429,7 @@ describe('backgroundHooksSaga', () => {
       dispatch(backgroundHooksSubscribeRequested('ws-1'));
 
       // Both RPCs are in flight before either settles (~1 RTT, not 2 serial).
-      expect(mocks.request).toHaveBeenCalledWith('hook.list', { workspaceId: 'ws-1' });
+      expect(mocks.request).toHaveBeenCalledWith('hook.list', { workspaceId: 'ws-1', limit: 200 });
       expect(mocks.subscribe).toHaveBeenCalledWith({
         eventTypes: ['hook:*'],
         workspaceId: 'ws-1',
@@ -461,7 +464,10 @@ describe('backgroundHooksSaga', () => {
       // The ack triggers exactly one gap-closing re-list.
       ack.resolve({ subscriptionId: 'sub-1' });
       await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledTimes(2));
-      expect(mocks.request).toHaveBeenNthCalledWith(2, 'hook.list', { workspaceId: 'ws-1' });
+      expect(mocks.request).toHaveBeenNthCalledWith(2, 'hook.list', {
+        workspaceId: 'ws-1',
+        limit: 200,
+      });
       await vi.waitFor(() =>
         expect(getState().byWorkspaceId['ws-1'].hooks.map['hook-1']?.lastLogs).toBe('fresh'),
       );
@@ -484,7 +490,10 @@ describe('backgroundHooksSaga', () => {
       // coalesced into the in-flight seed's single trailing run.
       seed.resolve({ hooks: [makeHook()] });
       await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledTimes(2));
-      expect(mocks.request).toHaveBeenNthCalledWith(2, 'hook.list', { workspaceId: 'ws-1' });
+      expect(mocks.request).toHaveBeenNthCalledWith(2, 'hook.list', {
+        workspaceId: 'ws-1',
+        limit: 200,
+      });
       await vi.waitFor(() =>
         expect(getState().byWorkspaceId['ws-1'].hooks.map['hook-1']).toEqual(fresh),
       );
@@ -513,7 +522,10 @@ describe('backgroundHooksSaga', () => {
       // re-list (coalesced as the trailing run) converges to the fresh list.
       seed.resolve({ hooks: [makeHook()] });
       await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledTimes(2));
-      expect(mocks.request).toHaveBeenNthCalledWith(2, 'hook.list', { workspaceId: 'ws-1' });
+      expect(mocks.request).toHaveBeenNthCalledWith(2, 'hook.list', {
+        workspaceId: 'ws-1',
+        limit: 200,
+      });
       await vi.waitFor(() =>
         expect(getState().byWorkspaceId['ws-1'].hooks.map['hook-1']).toBeUndefined(),
       );
