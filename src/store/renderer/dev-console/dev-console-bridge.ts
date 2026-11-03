@@ -1,5 +1,6 @@
 import { devConsoleInvoke } from '$features/dev-console/dev-console-client';
 import type { DevConsoleCaptureSelection, DevConsoleUpdate } from '$shared/types/dev-console';
+import type { DaemonLinksApi } from '$features/dev-console/daemon-links-feed';
 
 /** One in-flight read, invalidations coalesced, all subscriptions owned by the mounted route. */
 export function connectDevConsole(
@@ -39,6 +40,14 @@ export function connectDevConsole(
   const listener = window.electronAPI?.on('dev-console:changed', (event: { sessionId: string }) => {
     if (event.sessionId === sessionId) void read();
   });
+  const linkListeners = new Set<() => void>();
+  const linksListener = window.electronAPI?.on(
+    'dev-console:links-changed',
+    (event: { sessionId: string }) => {
+      if (!stopped && event.sessionId === sessionId)
+        for (const listener of linkListeners) listener();
+    },
+  );
   const reloadListener = window.electronAPI?.on('app:reload-request', () =>
     window.location.reload(),
   );
@@ -51,7 +60,33 @@ export function connectDevConsole(
     .catch((error) => {
       if (!stopped) onError(String(error));
     });
+  const session = () => {
+    if (stopped) throw new Error('Dev Console session ended'); // i18n-ignore (IPC error)
+    if (!sessionId) throw new Error('Dev Console session is not connected'); // i18n-ignore (IPC error)
+    return { sessionId };
+  };
+  /** Daemon-link capture on this console's daemon; every call is scoped to the native session. */
+  const links: DaemonLinksApi = {
+    status: async () =>
+      stopped || !sessionId
+        ? { supported: false }
+        : devConsoleInvoke('dev-console:links-status', session()),
+    start: async () => devConsoleInvoke('dev-console:links-start', session()),
+    stop: async () => devConsoleInvoke('dev-console:links-stop', session()),
+    read: async (afterSeq) =>
+      devConsoleInvoke('dev-console:links-read', { ...session(), afterSeq }),
+    record: async (seq) => {
+      if (stopped) return null;
+      const record = await devConsoleInvoke('dev-console:links-record', { ...session(), seq });
+      return stopped ? null : record;
+    },
+    onChanged(listener) {
+      linkListeners.add(listener);
+      return () => linkListeners.delete(listener);
+    },
+  };
   return {
+    links,
     /** Fetch just the selected retained record; null means evicted/cleared. Do not cache after dispose. */
     record: async (recordId: string) => {
       if (stopped) return null;
@@ -72,6 +107,8 @@ export function connectDevConsole(
     dispose() {
       stopped = true;
       if (listener) window.electronAPI.offById('dev-console:changed', listener);
+      if (linksListener) window.electronAPI.offById('dev-console:links-changed', linksListener);
+      linkListeners.clear();
       if (reloadListener) window.electronAPI.offById('app:reload-request', reloadListener);
     },
   };

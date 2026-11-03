@@ -710,6 +710,8 @@ export class JsonRpcClient extends EventEmitter {
       noteTruncatedRead: capabilities?.noteTruncatedRead === 1 ? 1 : 0,
       // Daemon-to-daemon remote machines: gates "Make available to <backend>".
       remoteMachines: capabilities?.remoteMachines === 1 ? 1 : 0,
+      // Owner-only daemon-link traffic capture: gates the Dev Console "Daemon links" view.
+      remoteLinkTraffic: capabilities?.remoteLinkTraffic === 1 ? 1 : 0,
     });
     this.acknowledgedHelloIdentity = Object.freeze({
       clientId: result.clientId,

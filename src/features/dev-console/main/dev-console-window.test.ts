@@ -266,3 +266,81 @@ describe('Dev Console native lifecycle', () => {
     expect(client.observers.size).toBe(0);
   });
 });
+
+describe('Daemon links IPC', () => {
+  it('routes link capture to the window backend and rejects other senders', async () => {
+    stop();
+    const links = {
+      status: vi.fn((backendId: string) => ({ supported: backendId === 'one' })),
+      start: vi.fn(async () => ({ active: true })),
+      stop: vi.fn(async () => ({ active: false })),
+      read: vi.fn(async () => ({ capture: { active: true }, records: [] })),
+      record: vi.fn(async () => null),
+      watch: vi.fn(() => () => {}),
+    };
+    stop = registerDevConsoleIPC(manager, capture, links as never);
+    const window = manager.open('one');
+    const { sessionId } = call('connect', window);
+    expect(call('links-status', window, { sessionId })).toEqual({ supported: true });
+    await call('links-start', window, { sessionId });
+    await call('links-read', window, { sessionId, afterSeq: 7 });
+    await call('links-record', window, { sessionId, seq: 8 });
+    await call('links-stop', window, { sessionId });
+    expect(links.start).toHaveBeenCalledWith('one');
+    expect(links.read).toHaveBeenCalledWith('one', 7);
+    expect(links.record).toHaveBeenCalledWith('one', 8);
+    expect(links.stop).toHaveBeenCalledWith('one');
+    expect(() => call('links-start', window, { sessionId: 'stale' })).toThrow(/Unauthorized/);
+    expect(() =>
+      call('links-read', window, { sessionId, afterSeq: 1, backendId: 'two' }),
+    ).toThrow();
+    const appWindow = new BrowserWindow();
+    stampWindowWithBackend(appWindow, 'one');
+    await appWindow.loadURL('app://workspaces/workspace/new');
+    expect(() => call('links-status', appWindow, { sessionId })).toThrow(/Unauthorized/);
+  });
+
+  it('reports no support and refuses capture when no link service is wired', () => {
+    const window = manager.open('one');
+    const { sessionId } = call('connect', window);
+    expect(call('links-status', window, { sessionId })).toEqual({ supported: false });
+    expect(() => call('links-start', window, { sessionId })).toThrow(/unavailable/);
+  });
+
+  it('pushes link-traffic changes to the console session and releases the watch on reload or close', async () => {
+    stop();
+    const stops: ReturnType<typeof vi.fn>[] = [];
+    const signals: (() => void)[] = [];
+    const links = {
+      status: () => ({ supported: true }),
+      watch: vi.fn((_backendId: string, onChange: () => void) => {
+        signals.push(onChange);
+        const release = vi.fn();
+        stops.push(release);
+        return release;
+      }),
+    };
+    stop = registerDevConsoleIPC(manager, capture, links as never);
+    const window = manager.open('one');
+    await window.loadURL(url);
+    const first = call('connect', window).sessionId;
+    call('links-status', window, { sessionId: first });
+    call('links-status', window, { sessionId: first });
+    expect(links.watch).toHaveBeenCalledTimes(1);
+    expect(links.watch).toHaveBeenCalledWith('one', expect.any(Function));
+    signals[0]();
+    expect(window.webContents.send).toHaveBeenCalledWith('dev-console:links-changed', {
+      sessionId: first,
+    });
+    // A reload starts a new session: the old watch is released and its signals dropped.
+    await window.loadURL(url);
+    const second = call('connect', window).sessionId;
+    call('links-status', window, { sessionId: second });
+    expect(stops[0]).toHaveBeenCalledOnce();
+    vi.mocked(window.webContents.send).mockClear();
+    signals[0]();
+    expect(window.webContents.send).not.toHaveBeenCalled();
+    window.destroy();
+    expect(stops[1]).toHaveBeenCalledOnce();
+  });
+});
