@@ -114,7 +114,9 @@ for (const scenario of [
         .toBe(true);
     if (scenario === 'late' || scenario === 'reconnect') {
       if (scenario === 'late')
-        await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+        await page.evaluate(() =>
+          (window as unknown as { __dockComposerE2E: { close(): void } }).__dockComposerE2E.close(),
+        );
       else
         await page.evaluate(() =>
           (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.disconnect(),
@@ -136,9 +138,7 @@ for (const scenario of [
         )
         .toBe(true);
     if (scenario === 'live') {
-      await expect(
-        page.getByText('Recording destination: Connected companion fixture'),
-      ).toBeVisible();
+      await expect(page.getByTestId('dock-conversation-surface')).toBeVisible();
       await expect
         .poll(() =>
           page.evaluate(
@@ -149,7 +149,8 @@ for (const scenario of [
         )
         .toBe(1);
     } else if (scenario !== 'late' && scenario !== 'reconnect') {
-      await expect(page.getByText('Record in which workspace?')).toBeVisible();
+      await page.getByTestId('dock-drag-handle').hover();
+      await expect(page.getByTestId('dock-overview')).toBeVisible();
     }
     const evidence = await page.evaluate(() => {
       const h = (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E;

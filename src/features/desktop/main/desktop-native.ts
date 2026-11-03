@@ -219,6 +219,17 @@ export class DesktopNativeAdapter implements DesktopNative {
       }),
     );
   }
+  /** App identity only: no AX, screen permission or control lease. */
+  async foregroundApp(): Promise<{ pid?: number; appId?: string; appName?: string }> {
+    return z
+      .object({
+        pid: z.number().optional(),
+        appId: z.string().optional(),
+        appName: z.string().optional(),
+      })
+      .strict()
+      .parse(await this.request('foregroundApp'));
+  }
   /** Read-only context: never acquires control or requests OS permissions. */
   async foregroundContext(): Promise<{
     pid?: number;
@@ -226,6 +237,7 @@ export class DesktopNativeAdapter implements DesktopNative {
     appName?: string;
     title?: string;
     url?: string;
+    urlStatus?: 'available' | 'unavailable' | 'permission-required';
   }> {
     return z
       .object({
@@ -234,6 +246,7 @@ export class DesktopNativeAdapter implements DesktopNative {
         appName: z.string().optional(),
         title: z.string().optional(),
         url: z.string().optional(),
+        urlStatus: z.enum(['available', 'unavailable', 'permission-required']).optional(),
       })
       .strict()
       .parse(await this.request('foregroundContext'));

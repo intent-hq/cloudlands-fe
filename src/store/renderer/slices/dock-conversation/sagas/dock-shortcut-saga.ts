@@ -1,3 +1,7 @@
+import { hudDeactivated, dockPlacementCommandRequested } from '../../hud/hud-slice';
+import { selectPrincipalActionContext } from '../../principal/principal-selectors';
+import { takeLatestFromSelector } from '@themislib/themis/saga';
+import { takeEvery } from 'typed-redux-saga';
 import { recordingDockClip } from '$shared/dock-evidence';
 import { evidenceOf } from './dock-evidence-saga';
 import { findDockService, isDockServiceCurrent } from './dock-service-routing';
@@ -16,6 +20,7 @@ import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
 import { getLocalStorageJSON, setLocalStorageJSON } from '../../../utils/safe-local-storage-saga';
 import {
   dockShortcutChanged,
+  dockShortcutSelectionChanged,
   dockShortcutChosen,
   openDockConversationRequested,
   dockConversationLoaded,
@@ -82,23 +87,38 @@ function* receive(context?: DockShortcutContext): SagaGenerator<void> {
   const stored = yield* call(getLocalStorageJSON<Record<string, string>>, key(context.backendId));
   const links = stored && typeof stored === 'object' ? stored : {};
   const ids = selectDockShortcutWorkspaces.select(appStore.state).map((row) => String(row.id));
-  const destination = resolveDockDestination(context, ids, links);
+  const selection = appStore.state.dockConversation.shortcutSelection;
+  const selectionValid =
+    !!selection &&
+    selection.backendId === context.backendId &&
+    selection.authority === authority &&
+    (selection.workspaceId === CHIEF_WORKSPACE_ID || ids.includes(selection.workspaceId));
+  if (selection && !selectionValid) yield* put(dockShortcutSelectionChanged(null));
+  const sameContext =
+    selectionValid &&
+    selection &&
+    !(context.appId && selection.appId && context.appId !== selection.appId) &&
+    !(context.url && selection.url && context.url !== selection.url);
+  const retained = sameContext ? (selection?.workspaceId ?? null) : null;
+  const resolved = resolveDockDestination(context, ids, links);
+  const owned =
+    context.workspaceId && ids.includes(context.workspaceId) ? context.workspaceId : null;
+  const destination = owned ?? (context.url && retained ? null : (retained ?? resolved));
   yield* put(
     dockShortcutChanged({
       context,
       destination: null,
       error: null,
-      authority: getPrincipalActionContext(appStore.state),
+      authority,
+      resolving: !!retained && !!context.url && !destination,
     }),
   );
   if (destination) {
     yield* put(dockShortcutChosen(destination));
     return;
   }
-  if (!appStore.state.dockConversation.workspaceId)
-    yield* put(openDockConversationRequested(CHIEF_WORKSPACE_ID));
   if (!context.url) return;
-  const { service } = yield* race({
+  const result = yield* race({
     service: call(findDockService, context, ids),
     manual: take(dockShortcutChosen),
     changed: take(dockShortcutChanged),
@@ -106,7 +126,6 @@ function* receive(context?: DockShortcutContext): SagaGenerator<void> {
   });
   const current = appStore.state.dockConversation.shortcut;
   if (
-    !service ||
     !current ||
     current.destination !== null ||
     current.context.id !== context.id ||
@@ -114,28 +133,39 @@ function* receive(context?: DockShortcutContext): SagaGenerator<void> {
     current.authority !== getPrincipalActionContext(appStore.state)
   )
     return;
-  yield* put(dockShortcutChanged({ ...current, service }));
-  yield* put(dockShortcutChosen(service.workspaceId));
+  if (result.service) {
+    yield* put(dockShortcutChanged({ ...current, service: result.service, resolving: false }));
+    yield* put(dockShortcutChosen(result.service.workspaceId));
+  } else if (!result.manual && !result.changed && (retained || resolved)) {
+    yield* put(dockShortcutChosen((retained || resolved)!));
+  } else if (!result.manual && !result.changed)
+    yield* put(dockShortcutChanged({ ...current, resolving: false }));
 }
+
 function* choose({
   payload: [workspaceId, scope],
 }: ReturnType<typeof dockShortcutChosen>): SagaGenerator<void> {
   const shortcut = appStore.state.dockConversation.shortcut;
   if (
     !shortcut ||
+    shortcut.destination !== null ||
+    !shortcut.authority ||
     !valid(shortcut.context) ||
     shortcut.authority !== getPrincipalActionContext(appStore.state)
   )
     return;
+  const ids = selectDockShortcutWorkspaces.select(appStore.state).map((row) => String(row.id));
+  if (workspaceId !== CHIEF_WORKSPACE_ID && !ids.includes(workspaceId)) return;
   const context = shortcut.context;
+  yield* put(
+    dockShortcutChanged({ ...shortcut, destination: workspaceId, error: null, resolving: false }),
+  );
   const service = shortcut.service?.workspaceId === workspaceId ? shortcut.service : undefined;
   if (service && !(yield* call(isDockServiceCurrent, service))) {
     if (appStore.state.dockConversation.shortcut?.context.id === context.id)
       yield* put(dockShortcutChanged({ ...shortcut, service: undefined, destination: null }));
     return;
   }
-  const ids = selectDockShortcutWorkspaces.select(appStore.state).map((row) => String(row.id));
-  if (workspaceId !== CHIEF_WORKSPACE_ID && !ids.includes(workspaceId)) return;
   if (scope) {
     const link = dockLinkKey(context, scope);
     if (link) {
@@ -146,7 +176,9 @@ function* choose({
   }
   if (!valid(context) || appStore.state.dockConversation.shortcut?.context.id !== context.id)
     return;
-  yield* put(dockShortcutChanged({ ...shortcut, destination: workspaceId, error: null }));
+  yield* put(
+    dockShortcutChanged({ ...shortcut, destination: workspaceId, error: null, resolving: false }),
+  );
   const current = appStore.state.dockConversation;
   let ready = current.workspaceId === workspaceId && !current.loading && !!current.agentId;
   if (!ready) {
@@ -222,4 +254,18 @@ function* choose({
 export function* dockShortcutSaga(): SagaGenerator<void> {
   yield* takeEveryFromElectronChannel<DockShortcutContext>(WINDOW_CHANNELS.FOCUS_DOCK, receive);
   yield* takeLatest(dockShortcutChosen, choose);
+  yield* takeEvery([closeDockConversationRequested, hudDeactivated], function* () {
+    yield* put(dockShortcutChanged(null));
+  });
+  yield* takeEvery(dockPlacementCommandRequested, function* ({ payload: [command] }) {
+    if (command.action === 'dismiss') yield* put(dockShortcutChanged(null));
+  });
+  yield* takeLatestFromSelector(selectPrincipalActionContext, function* () {
+    const shortcut = appStore.state.dockConversation.shortcut;
+    const authority = getPrincipalActionContext(appStore.state);
+    if (shortcut && shortcut.authority !== authority) yield* put(dockShortcutChanged(null));
+    const selection = appStore.state.dockConversation.shortcutSelection;
+    if (selection && selection.authority !== authority)
+      yield* put(dockShortcutSelectionChanged(null));
+  });
 }

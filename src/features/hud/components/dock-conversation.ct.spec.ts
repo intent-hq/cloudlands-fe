@@ -1232,7 +1232,7 @@ test('conversation horizontal collapse preserves drafts and restores origin in n
     await expect(row).toBeFocused();
     if (shape === 'notch') {
       // Animated expand from compact into the pinned conversation: content must not shift
-      // sideways once it settles, and only a user gesture hands the composer focus.
+      // sideways once it settles; notch hover then hands the visible composer focus.
       await page.emulateMedia({ reducedMotion: 'no-preference' });
       const shell = component.getByTestId('dock-shell');
       const editor = panel.getByRole('textbox', { name: 'Message', exact: true });
@@ -1245,10 +1245,10 @@ test('conversation horizontal collapse preserves drafts and restores origin in n
       await expect(panel).toHaveAttribute('data-workspace-id', '__chief__');
       await expect(editor).toBeFocused();
       await collapse();
-      // Hover is passive disclosure: it reveals the conversation without taking focus.
+      // Settled notch hover focuses the already visible composer once.
       await component.getByTestId('dock-drag-handle').hover();
       await expect(shell).toHaveAttribute('data-reveal', '1');
-      await expect(editor).not.toBeFocused();
+      await expect(editor).toBeFocused();
       await collapse();
       await page.evaluate(() => {
         type Inset = { left: number; right: number };

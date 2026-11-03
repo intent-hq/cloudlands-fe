@@ -22,7 +22,15 @@ export interface DockShortcutContext {
   /** Ephemeral main-verified local/tunnel address on this backend. Never persisted. */
   serviceAddress?: string;
 }
+export interface DockShortcutSelection {
+  workspaceId: string;
+  backendId: string;
+  authority: string;
+  appId?: string;
+  url?: string;
+}
 export interface DockShortcutState {
+  resolving?: boolean;
   context: DockShortcutContext;
   destination: string | null;
   error: string | null;

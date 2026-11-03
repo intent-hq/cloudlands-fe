@@ -1,5 +1,8 @@
 <script lang="ts">
-  import DockShortcutChooser from './DockShortcutChooser.svelte';
+  import { choosePendingDockShortcut } from '$features/hud/dock-navigation';
+  import { dockShortcutChanged } from '$store/renderer/slices/dock-conversation/dock-conversation-slice';
+  import { selectDockConversationWorkspaceId } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
+  import { dockRailPreview } from './dock-rail.preview-fixtures';
   import { selectDockShortcut } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
   import { selectDockShortcutWorkspaces } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
   import { WorkspaceStatus } from '$shared/types';
@@ -39,7 +42,18 @@
     shell?: DockRailPreviewProps;
   } = $props();
   const shortcut$ = selectDockShortcut();
+  const workspaces$ = selectDockShortcutWorkspaces();
+  const workspaceId$ = selectDockConversationWorkspaceId();
+  const home = $derived(!!$shortcut$ && $shortcut$.destination === null && !$shortcut$.resolving);
+  // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous intent selection and store dispatch only
+  function openHome(id: string) {
+    if (!choosePendingDockShortcut(id)) store.dispatch(openDockConversationRequested(id));
+  }
+  function dismissHome() {
+    if (home) store.dispatch(dockShortcutChanged(null));
+  }
   let ready = $state(false);
+  let request = $state(0);
   let caption = $state('');
 
   onMount(() => {
@@ -109,6 +123,7 @@
       },
       disconnect: () => store.dispatch(connectionStatusChanged('disconnected')),
       shortcut(context: import('$shared/dock-shortcuts').DockShortcutContext) {
+        request++;
         fixture.emit('window:focus-dock', context);
       },
       seedWorkspace(workspace: import('$shared/types').Workspace) {
@@ -138,8 +153,21 @@
 </script>
 
 <div class="stage">
-  {#if shell && ready}
-    <DockRailPreview {...shell} conversationFixture conversationContent={conversation} />
+  {#if (shell || home) && ready}
+    {@const props = shell ?? dockRailPreview.states.notch.props}
+    <DockRailPreview
+      {...props}
+      focusRequest={request}
+      workspaces={$workspaces$.map((workspace) => ({ ...props.workspaces[0], workspace }))}
+      conversationFixture
+      conversationContent={conversation}
+      conversationController={{
+        workspaceId: home ? null : $workspaceId$,
+        open: openHome,
+        close: () => store.dispatch(closeDockConversationRequested()),
+        dismiss: dismissHome,
+      }}
+    />
   {:else}
     <div
       data-testid="composer-e2e"
@@ -150,10 +178,7 @@
     >
       {#if ready}
         <DockConversationSurface workspaceId={conversationWireWorkspace} resizable={false}>
-          <DockShortcutChooser />
-          {#if !$shortcut$ || $shortcut$.destination}<DockConversation
-              onOpenWorkspace={() => {}}
-            />{/if}
+          <DockConversation onOpenWorkspace={() => {}} />
         </DockConversationSurface>
       {/if}
     </div>
@@ -163,8 +188,7 @@
 </div>
 
 {#snippet conversation()}
-  <DockShortcutChooser />
-  {#if !$shortcut$ || $shortcut$.destination}<DockConversation onOpenWorkspace={() => {}} />{/if}
+  <DockConversation onOpenWorkspace={() => {}} />
 {/snippet}
 
 <style>

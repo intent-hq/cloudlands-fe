@@ -10,10 +10,9 @@
   import { Screen } from '$lib/components/patterns/screen';
   import '$store/renderer/seeders';
   import DockRail from '$features/hud/components/DockRail.svelte';
-  import DockShortcutChooser from '$features/hud/components/DockShortcutChooser.svelte';
   import { selectDockShortcut } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
   import DockConversation from '$features/hud/components/DockConversation.svelte';
-  import { openDockConversation } from '$features/hud/dock-navigation';
+  import { openDockConversation, choosePendingDockShortcut } from '$features/hud/dock-navigation';
   import { showDockContextMenu } from '$features/hud/dock-context-menu';
   import { wantsDockContextMenu } from '$features/hud/dock-context-target';
   import { initDockIntro } from '$features/hud/intro/dock-intro.svelte';
@@ -21,6 +20,7 @@
   import {
     openDockConversationRequested,
     closeDockConversationRequested,
+    dockShortcutChanged,
   } from '$store/renderer/slices/dock-conversation/dock-conversation-slice';
   import { startAppStoreLifecycle } from '$store/renderer/app-store-lifecycle';
   import {
@@ -66,6 +66,17 @@
   const resizeStartResult$ = selectDockResizeStartResult();
   const shortcut$ = selectDockShortcut();
   const conversationWorkspaceId$ = selectDockConversationWorkspaceId();
+  const choosingWorkspace = $derived(
+    !!$shortcut$ && !$shortcut$.destination && !$shortcut$.resolving,
+  );
+  function cancelPendingShortcut() {
+    if ($shortcut$?.destination === null) appStore.dispatch(dockShortcutChanged(null));
+  }
+  // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous intent selection and store dispatch only
+  function openHomeConversation(workspaceId: string) {
+    if (!choosePendingDockShortcut(workspaceId))
+      appStore.dispatch(openDockConversationRequested(workspaceId));
+  }
 
   onMount(() => {
     // First run: the notch opens with its "Meet the notch" card until dismissed.
@@ -90,15 +101,13 @@
 </script>
 
 {#snippet conversation()}
-  <DockShortcutChooser />
-  {#if !$shortcut$ || $shortcut$.destination}
-    <DockConversation onOpenWorkspace={openDockConversation} />
-  {/if}
+  <DockConversation onOpenWorkspace={openDockConversation} />
 {/snippet}
 
 <!-- Right-click anywhere on the dock opens its native menu (move, hide); text fields
      and the open conversation keep their normal edit menu. -->
 <svelte:window
+  onblur={cancelPendingShortcut}
   oncontextmenu={(event) => {
     if (!$placement$ || !wantsDockContextMenu(event.target)) return;
     event.preventDefault();
@@ -121,10 +130,10 @@
       placementError={$placementError$}
       dragStartResult={$dragStartResult$}
       resizeStartResult={$resizeStartResult$}
-      conversationWorkspaceId={$conversationWorkspaceId$}
+      conversationWorkspaceId={choosingWorkspace ? null : $conversationWorkspaceId$}
       {conversation}
-      onOpenConversation={(workspaceId) =>
-        appStore.dispatch(openDockConversationRequested(workspaceId))}
+      onOpenConversation={openHomeConversation}
+      onHomeDismiss={cancelPendingShortcut}
       onCloseConversation={() => appStore.dispatch(closeDockConversationRequested())}
       onPlacementCommand={(command) => appStore.dispatch(dockPlacementCommandRequested(command))}
     />

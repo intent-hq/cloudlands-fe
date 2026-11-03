@@ -57,6 +57,7 @@
     conversationWorkspaceId?: string | null;
     onOpenConversation?: (workspaceId: string) => void;
     onCloseConversation?: () => void;
+    onHomeDismiss?: () => void;
     workspaces: DockWorkspaceView[];
     machines?: DockMachineOption[];
     machineId?: string;
@@ -101,6 +102,7 @@
     conversationWorkspaceId,
     onOpenConversation,
     onCloseConversation,
+    onHomeDismiss,
   }: Props = $props();
 
   // The controller owns native window state for this component instance and must not change mid-mount.
@@ -608,6 +610,7 @@
     {conversationWorkspaceId}
     {onOpenConversation}
     {onCloseConversation}
+    {onHomeDismiss}
     {workspaces}
     {staticData}
     {placement}

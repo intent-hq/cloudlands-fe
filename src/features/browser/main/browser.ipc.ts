@@ -7,7 +7,7 @@ import { isDockLoopbackHostname } from '../../../shared/dock-shortcuts';
  * of known browser actions.
  */
 
-import { app, ipcMain } from 'electron';
+import { app, ipcMain, webContents } from 'electron';
 import { z } from 'zod';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { BROWSER_PROTOCOLS } from '../../../shared/constants';
@@ -222,6 +222,7 @@ function openBrowserTab(
 const RegisterTabSchema = z.object({
   tabId: z.string(),
   webContentsId: z.number(),
+  workspaceId: z.string().min(1).optional(),
 });
 
 const UnregisterTabSchema = z.object({
@@ -643,8 +644,21 @@ export function registerBrowserHandlers(): void {
     IPC_CHANNELS.BROWSER.REGISTER_TAB,
     createSafeValidatedHandler(
       RegisterTabSchema,
-      async (_event, validated) => {
-        embeddedBrowserCdp.registerTab(validated.tabId, validated.webContentsId);
+      async (event, validated) => {
+        const guest = webContents.fromId(validated.webContentsId);
+        if (
+          !guest ||
+          guest.isDestroyed() ||
+          guest.hostWebContents !== event.sender ||
+          event.senderFrame !== event.sender.mainFrame
+        ) {
+          throw new Error('Browser registration requires its live host main frame');
+        }
+        embeddedBrowserCdp.registerTab(
+          validated.tabId,
+          validated.webContentsId,
+          validated.workspaceId,
+        );
         return { success: true };
       },
       IPC_CHANNELS.BROWSER.REGISTER_TAB,

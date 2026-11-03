@@ -1,8 +1,48 @@
+import { store as appStore } from '$store/renderer/store';
+import { getPrincipalActionContext } from '$store/renderer/slices/principal/principal-context';
+import { selectDockShortcutWorkspaces } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
+import {
+  dockShortcutChosen,
+  dockShortcutSelectionChanged,
+} from '$store/renderer/slices/dock-conversation/dock-conversation-slice';
+
 import { invoke } from '$lib/electron-bridge';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import type { WorkspaceWindowTarget } from '$shared/workspace-window-target';
 import { m } from '$shared/paraglide/messages.js';
+
+/** Only an explicit home-row selection may consume an unresolved global action. */
+export function choosePendingDockShortcut(workspaceId: string): boolean {
+  const authority = getPrincipalActionContext(appStore.state);
+  const ids = selectDockShortcutWorkspaces.select(appStore.state).map((row) => String(row.id));
+  if (!authority || (workspaceId !== CHIEF_WORKSPACE_ID && !ids.includes(workspaceId)))
+    return false;
+  const shortcut = appStore.state.dockConversation.shortcut;
+  const context =
+    shortcut?.context.backendId === appStore.state.connections.windowBackendId
+      ? shortcut.context
+      : undefined;
+  appStore.dispatch(
+    dockShortcutSelectionChanged({
+      workspaceId,
+      authority,
+      backendId: appStore.state.connections.windowBackendId,
+      appId: context?.appId,
+      url: context?.url,
+    }),
+  );
+  if (
+    !shortcut ||
+    shortcut.destination !== null ||
+    !shortcut.authority ||
+    shortcut.authority !== authority ||
+    shortcut.context.backendId !== appStore.state.connections.windowBackendId
+  )
+    return false;
+  appStore.dispatch(dockShortcutChosen(workspaceId));
+  return true;
+}
 
 interface DockWorkspaceOpenResult {
   success?: boolean;

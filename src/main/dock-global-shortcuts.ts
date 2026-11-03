@@ -1,3 +1,4 @@
+import { sampleDockForeground } from './dock-shortcut-foreground';
 import { createDockShortcutRegistration } from './dock-shortcut-registration';
 import { app, globalShortcut, webContents } from 'electron';
 import { randomUUID } from 'node:crypto';
@@ -25,12 +26,15 @@ export async function requestDockShortcut(action: DockShortcutContext['action'])
   if (!binding) return;
   const request = ++generation;
   const focused = webContents.getFocusedWebContents();
-  const sample = await Promise.race([
-    getDesktopNativeAdapter()
-      .foregroundContext()
-      .catch(() => ({})),
-    new Promise<Record<string, never>>((resolve) => setTimeout(() => resolve({}), 300)),
-  ]);
+  const focusedOwner =
+    focused && !focused.isDestroyed() ? embeddedBrowserCdp.focusedTabOwner(focused.id) : null;
+  const reading = await sampleDockForeground(getDesktopNativeAdapter());
+  const sample = reading.snapshot;
+  logger.debug('Foreground shortcut context read', {
+    identityOutcome: reading.identityOutcome,
+    urlOutcome: reading.urlOutcome,
+    elapsedMs: reading.elapsedMs,
+  });
   if (
     !enabled ||
     generation !== request ||
@@ -47,7 +51,11 @@ export async function requestDockShortcut(action: DockShortcutContext['action'])
   // Only a genuinely focused, live embedded tab can contribute preview ownership.
   if ('pid' in sample && sample.pid === process.pid && focused && !focused.isDestroyed()) {
     const owner = embeddedBrowserCdp.focusedTabOwner(focused.id);
-    if (owner?.backendId === binding.backendId) {
+    if (
+      owner?.backendId === binding.backendId &&
+      owner.workspaceId === focusedOwner?.workspaceId &&
+      owner.url === focusedOwner.url
+    ) {
       context.url = owner.url;
       context.workspaceId = owner.workspaceId;
     }

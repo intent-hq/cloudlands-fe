@@ -462,7 +462,11 @@
               lastRegisteredWebContentsId = webContentsId;
               logger.info('Registering browser tab for CDP', { tabId, webContentsId });
               window.electronAPI
-                ?.invoke('browser:register-tab', { tabId, webContentsId })
+                ?.invoke('browser:register-tab', {
+                  tabId,
+                  webContentsId,
+                  workspaceId: _workspaceId,
+                })
                 .catch((err) => {
                   logger.error('Failed to register browser tab for CDP', {
                     tabId,
