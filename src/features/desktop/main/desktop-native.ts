@@ -219,6 +219,25 @@ export class DesktopNativeAdapter implements DesktopNative {
       }),
     );
   }
+  /** Read-only context: never acquires control or requests OS permissions. */
+  async foregroundContext(): Promise<{
+    pid?: number;
+    appId?: string;
+    appName?: string;
+    title?: string;
+    url?: string;
+  }> {
+    return z
+      .object({
+        pid: z.number().optional(),
+        appId: z.string().optional(),
+        appName: z.string().optional(),
+        title: z.string().optional(),
+        url: z.string().optional(),
+      })
+      .strict()
+      .parse(await this.request('foregroundContext'));
+  }
   /** Frontmost app pid. Lock-free, so it also works after the session ended. */
   async frontmostPid(): Promise<number | undefined> {
     return z

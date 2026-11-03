@@ -421,7 +421,6 @@ export function createDockComposerController(
     const fieldFocused = isTextEntryTarget(document.activeElement) || isTextEntryTarget(target);
     const mac = deps.mac();
     const view = evidence();
-    const caps = view.capabilities;
     const act = (run: () => void) => {
       handledKeys.add(event);
       event.preventDefault();
@@ -429,16 +428,6 @@ export function createDockComposerController(
       run();
       return true;
     };
-    if (matchesShortcut(event, 'mod+shift+s', mac))
-      return caps.capture && !view.captureDisabled && !view.capturePending
-        ? act(actions.onCapture)
-        : false;
-    if (matchesShortcut(event, 'mod+shift+r', mac))
-      return caps.record || view.recording ? act(actions.onRecordToggle) : false;
-    if (matchesShortcut(event, 'mod+shift+a', mac))
-      return caps.annotate || view.annotating ? act(actions.onAnnotationToggle) : false;
-    if (matchesShortcut(event, 'mod+shift+m', mac))
-      return view.speech.available || view.speech.active ? act(actions.onDictationToggle) : false;
     // Tool keys belong to the annotate session only while not typing; M or 0 is mouse mode.
     if (view.annotating && !fieldFocused) {
       const plain = !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;

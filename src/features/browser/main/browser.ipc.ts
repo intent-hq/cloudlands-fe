@@ -1,3 +1,4 @@
+import { isDockLoopbackHostname } from '../../../shared/dock-shortcuts';
 /**
  * Browser IPC Handlers
  *
@@ -35,6 +36,7 @@ import {
 import {
   BACKEND_CLIENT_DISCONNECTED_EVENT,
   getBackendClientForId,
+  getBackendClientForConnection,
   getBackendIdForIpcSender,
   getConnectedDaemonProtocolVersion,
 } from '../../backend/main/backend.ipc';
@@ -312,6 +314,38 @@ function getDaemonLoopbackContext(
  */
 const tunnelManagers = new Map<BrowserExecutionBackendContext['client'], TunnelManager>();
 let directRelay: DirectRelay | null = null;
+
+/** Read only: translate a current listener on this backend, never create a forward. */
+export function dockServiceAddress(url: string, backendId: string): string | undefined {
+  try {
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return;
+    if (!isDockLoopbackHostname(parsed.hostname)) return parsed.href;
+    const client = getBackendClientForConnection(backendId);
+    if (!client) return;
+    const config = client.getConfig();
+    const remote = loopbackContextFromTransport(
+      backendId === LOCAL_CONNECTION_ID && config.transport === 'uds',
+      config,
+      backendId !== LOCAL_CONNECTION_ID,
+    ).daemonIsRemote;
+    const provider = tunnelManagers.get(client) ?? (!remote ? directRelay : null);
+    const forward = provider
+      ?.activeForwards()
+      .find(
+        (row) => row.localPort === Number(parsed.port || (parsed.protocol === 'https:' ? 443 : 80)),
+      );
+    if (forward) {
+      parsed.hostname = '127.0.0.1';
+      parsed.port = String(forward.remotePort);
+      return parsed.href;
+    }
+    if (remote || parsed.hostname === 'daemon.localhost') return;
+    return parsed.href;
+  } catch {
+    return;
+  }
+}
 
 function getBrowserTunnelProvider(
   backendContext: BrowserExecutionBackendContext,

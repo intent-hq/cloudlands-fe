@@ -1,3 +1,4 @@
+import { dockCandidateScore } from '$shared/dock-shortcuts';
 import {
   deriveWizardPendingQuestions,
   deriveMarkedQuestionRecoveryState,
@@ -46,7 +47,7 @@ import {
   numberDockMarks,
   readyDockInsertions,
 } from '$shared/dock-evidence';
-import type { QueuedMessage } from '$shared/types';
+import { WorkspaceStatus, type QueuedMessage } from '$shared/types';
 import type { PendingQueueDisplayRow } from '../pending-submissions/pending-submissions-projection';
 import { selectAgentQueueMessages } from '../agent-queue/agent-queue-selectors';
 import {
@@ -440,3 +441,23 @@ export const selectCurrentDockComposerEvidence = store.createSelector((state) =>
     ? { workspaceId, agentId, view: selectDockComposerEvidence.select(state, workspaceId, agentId) }
     : null;
 });
+
+export const selectDockShortcut = store.createSelector(
+  (state) => state.dockConversation.shortcut ?? null,
+);
+
+export const selectDockShortcutWorkspaces = store.createSelector((state) =>
+  getItems(state.workspace.workspaces)
+    .filter(
+      (row) =>
+        row.id !== CHIEF_WORKSPACE_ID &&
+        ![WorkspaceStatus.Archived, WorkspaceStatus.Retired, WorkspaceStatus.Deleted].includes(
+          row.status,
+        ),
+    )
+    .sort(
+      (a, b) =>
+        dockCandidateScore(state.dockConversation.shortcut?.context, b) -
+        dockCandidateScore(state.dockConversation.shortcut?.context, a),
+    ),
+);

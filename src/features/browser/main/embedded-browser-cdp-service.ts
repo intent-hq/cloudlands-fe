@@ -1,3 +1,4 @@
+import { isDockLoopbackHostname } from '../../../shared/dock-shortcuts';
 /**
  * Embedded Browser CDP Service
  *
@@ -9,6 +10,7 @@
  */
 
 import { webContents, ipcMain, type WebContents } from 'electron';
+import { getBackendIdForWebContents } from '../../../main/window-backend';
 import { Logger } from '../../../shared/logger';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import {
@@ -19,7 +21,8 @@ import {
 // Browser commands reach windows with ANY_HOST: this service has no host for
 // a tab's workspace yet (tabs are keyed by workspace id alone). Threading the
 // owning backend id through would let these sends target one host.
-import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
+import { BrowserWindow } from 'electron';
+import { getWindowIdsForWorkspace, sendToWorkspaceWindows } from '../../system/main/system.ipc';
 import { ANY_HOST } from '../../system/main/window-workspace-tracking';
 
 const logger = new Logger('EmbeddedBrowserCdp');
@@ -734,6 +737,44 @@ class EmbeddedBrowserCdpService {
    * which is more robust than relying on registration since tabs may be
    * unmounted/remounted by the panel caching system.
    */
+  liveUrlOwners(url: string, backendId: string): string[] {
+    // A listening process may have changed while an old preview is still open.
+    // Only direct focused-tab ownership is authoritative for dev-server URLs.
+    try {
+      const parsed = new URL(url);
+      if (parsed.port || isDockLoopbackHostname(parsed.hostname)) return [];
+    } catch {
+      return [];
+    }
+    const owners = new Set<string>();
+    for (const tab of this.listTabs()) {
+      // Match the live effective URL only. A stale requested URL is not evidence.
+      if (tab.url !== url) continue;
+      const owner = this.focusedTabOwner(tab.webContentsId);
+      if (owner?.backendId === backendId) owners.add(owner.workspaceId);
+    }
+    return [...owners];
+  }
+
+  focusedTabOwner(
+    webContentsId: number,
+  ): { workspaceId: string; backendId: string; url: string } | null {
+    const tab = this.listTabs().find((row) => row.webContentsId === webContentsId);
+    const contents = webContents.fromId(webContentsId);
+    if (!tab || !contents || contents.isDestroyed()) return null;
+    const owners = [...this.panelBrowserTabsCache].filter(([, tabs]) =>
+      tabs.some((row) => row.tabId === tab.tabId),
+    );
+    if (owners.length !== 1 || !owners[0][0]) return null;
+    const host = contents.hostWebContents;
+    if (!host) return null;
+    const hostWindow = BrowserWindow.fromWebContents(host);
+    const backendId = getBackendIdForWebContents(host);
+    if (!hostWindow || !getWindowIdsForWorkspace(owners[0][0], backendId).includes(hostWindow.id))
+      return null;
+    return { workspaceId: owners[0][0], backendId, url: contents.getURL() };
+  }
+
   listTabs(): TabInfo[] {
     const tabs: TabInfo[] = [];
     const allWebContents = webContents.getAllWebContents();

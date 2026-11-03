@@ -1,3 +1,4 @@
+import { dockShortcutSaga } from './dock-shortcut-saga';
 import { readDockLastTool } from '../dock-composer-last-tool';
 import {
   extractAttachmentBlocks,
@@ -736,6 +737,7 @@ async function burnEvidence(
   );
 }
 export function* dockConversationSaga(): SagaGenerator<void> {
+  yield* fork(dockShortcutSaga);
   yield* fork(dockEvidenceSaga);
   yield* fork(dockNativeSessionSaga);
   yield* takeEvery(

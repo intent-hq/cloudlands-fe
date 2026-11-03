@@ -78,6 +78,7 @@ export interface DockConversationDraft {
   };
 }
 export interface DockConversationState {
+  shortcut?: import('$shared/dock-shortcuts').DockShortcutState | null;
   workspaceId: string | null;
   workspaceTitle: string;
   agentId: string | null;
