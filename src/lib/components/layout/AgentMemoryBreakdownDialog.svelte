@@ -16,6 +16,7 @@
   import Fa from 'svelte-fa';
   import { faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
   import { Tooltip } from '$lib/components/ui/tooltip';
+  import { Badge } from '$lib/components/ui/badge';
   import {
     Accordion,
     AccordionContent,
@@ -29,6 +30,11 @@
     selectAgentMemoryUsage,
     selectAgentMemoryUsageError,
   } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
+  import { selectProviderCatalogEntries } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import type {
+    AgentMemoryRemoteOwner,
+    AgentMemoryUsageAgentWirePayload,
+  } from '$store/renderer/slices/daemon-health/daemon-health-types';
   import { formatMemory } from './DaemonStatusIndicator.svelte';
 
   interface Props {
@@ -40,6 +46,7 @@
 
   const agentMemoryUsage$ = selectAgentMemoryUsage();
   const agentMemoryUsageError$ = selectAgentMemoryUsageError();
+  const providerEntries$ = selectProviderCatalogEntries();
 
   let open = $state(true);
   // Agent ids whose process list is expanded.
@@ -49,6 +56,45 @@
     return count === 1
       ? m.layout_agentMemoryBreakdown_processes_one({ count: formatNumber(count) })
       : m.layout_agentMemoryBreakdown_processes_many({ count: formatNumber(count) });
+  }
+
+  // The owning backend's name, falling back to a short backend id.
+  function ownerName(owner: AgentMemoryRemoteOwner): string {
+    return owner.backendName.trim() || owner.backendId.slice(0, 8);
+  }
+
+  // Provider display names from the daemon catalog; unknown ids pass through.
+  function providerName(providerId: string): string {
+    return $providerEntries$.find((entry) => entry.id === providerId)?.shortName ?? providerId;
+  }
+
+  // An agent run for another backend has no name on this machine (the launch
+  // does not carry one), and its workspace id is the backend's, so it cannot
+  // be resolved here: name it by provider and model instead, falling back to
+  // a short agent id.
+  function agentLabel(agent: AgentMemoryUsageAgentWirePayload): string {
+    const name = agent.agentName?.trim();
+    if (name) return name;
+    if (agent.remoteOwner && agent.provider) {
+      const provider = providerName(agent.provider);
+      // i18n-ignore (separator between provider and model names)
+      return agent.model ? `${provider} · ${agent.model}` : provider;
+    }
+    return m.layout_agentMemoryBreakdown_unnamedAgent_label({ id: agent.agentId.slice(0, 8) });
+  }
+
+  // Workspace and provider/model for local rows; a remote row's label
+  // already names its provider and model.
+  function agentDetail(agent: AgentMemoryUsageAgentWirePayload): string {
+    if (agent.remoteOwner) return '';
+    const parts: string[] = [];
+    if (agent.workspaceId) {
+      parts.push(m.layout_agentMemoryBreakdown_workspace_label({ workspace: agent.workspaceId }));
+    }
+    if (agent.provider) {
+      parts.push(agent.model ? `${agent.provider}/${agent.model}` : agent.provider);
+    }
+    return parts.join(' · '); // i18n-ignore (separator between already-localized parts)
   }
 </script>
 
@@ -102,13 +148,21 @@
               <AccordionTrigger>
                 <span class="flex items-center justify-between gap-3 min-w-0">
                   <span class="flex min-w-0 flex-col">
-                    <span class="truncate text-foreground">{agent.agentName}</span>
-                    <span class="truncate">
-                      {m.layout_agentMemoryBreakdown_workspace_label({
-                        workspace: agent.workspaceId,
-                      })}
-                      · {agent.provider}{agent.model ? `/${agent.model}` : ''}
+                    <span class="flex min-w-0 items-center gap-1.5">
+                      <span class="truncate text-foreground">{agentLabel(agent)}</span>
+                      {#if agent.remoteOwner}
+                        <Badge variant="dot" size="compact" class="min-w-0 shrink">
+                          <span class="min-w-0 truncate"
+                            >{m.layout_agentMemoryBreakdown_remoteOwner_label({
+                              backend: ownerName(agent.remoteOwner),
+                            })}</span
+                          >
+                        </Badge>
+                      {/if}
                     </span>
+                    {#if agentDetail(agent)}
+                      <span class="truncate">{agentDetail(agent)}</span>
+                    {/if}
                   </span>
                   <span class="flex shrink-0 flex-col items-end tabular-nums">
                     <span class="text-foreground">{formatMemory(agent.memoryBytes)}</span>
@@ -124,7 +178,7 @@
                 getText={(proc) => proc.name}
                 virtualize={false}
                 ariaLabel={m.layout_agentMemoryBreakdown_processList_ariaLabel({
-                  agent: agent.agentName,
+                  agent: agentLabel(agent),
                 })}
               >
                 {#snippet row({ item: proc })}

@@ -8246,5 +8246,13 @@
   "intentWeb_sessionEnded_error": "Ihre Intent-Web-Sitzung ist beendet. Melden Sie sich erneut an, um weiterzuarbeiten.",
   "intentWeb_updatesStopped_error": "Live-Updates vom Intent-Web-Server wurden unterbrochen. Laden Sie die Seite neu, um die Verbindung wiederherzustellen.",
   "intentWeb_signIn_action": "Anmelden",
-  "intentWeb_reload_action": "Neu laden"
+  "intentWeb_reload_action": "Neu laden",
+  "layout_agentMemoryBreakdown_remoteOwner_label": "für {backend}",
+  "layout_agentMemoryBreakdown_unnamedAgent_label": "Agent {id}",
+  "layout_daemonStatus_connectedDaemons_label": "Verbundene Daemons",
+  "layout_daemonStatus_connectedDaemons_value": "{backends} · {machines}",
+  "layout_daemonStatus_connectedBackends_one": "{count} Backend",
+  "layout_daemonStatus_connectedBackends_many": "{count} Backends",
+  "layout_daemonStatus_connectedMachines_one": "{count} Rechner",
+  "layout_daemonStatus_connectedMachines_many": "{count} Rechner"
 }

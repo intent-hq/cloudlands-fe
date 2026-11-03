@@ -86,6 +86,12 @@ export interface SystemStatusWirePayload {
   agentMemoryBytes?: number | null;
   /** Spawned agents with a live root pid; null until the first sample. May be missing on older daemons. */
   agentProcessCount?: number | null;
+  /**
+   * Live daemon-to-daemon links (§5.7 remote machines): `backends` this
+   * machine runs agents for, `machines` this daemon is linked to as backend.
+   * Omitted by older daemons.
+   */
+  remoteLinks?: DaemonRemoteLinks;
   fingerprint?: string | null;
   /** Local OS hostname (additive routing field, §5.7). May be missing on older daemons. */
   hostname?: string;
@@ -112,13 +118,26 @@ interface AgentMemoryProcessWirePayload {
   memoryBytes: number;
 }
 
-/** One spawned agent adapter and its process tree (`agent.memoryUsage`). */
-interface AgentMemoryUsageAgentWirePayload {
+/** Owning backend of an agent this machine runs for another daemon (`agent.memoryUsage`). */
+export interface AgentMemoryRemoteOwner {
+  backendId: string;
+  /** Display name; the UI falls back to a short `backendId` when it is blank. */
+  backendName: string;
+}
+
+/**
+ * One spawned agent adapter and its process tree (`agent.memoryUsage`).
+ * Rows tagged `remoteOwner` are agents run for another backend: they carry
+ * the launch's values and may omit `agentName`, `workspaceId` and `provider`.
+ */
+export interface AgentMemoryUsageAgentWirePayload {
   agentId: string;
-  agentName: string;
-  workspaceId: string;
-  provider: string;
+  agentName?: string;
+  workspaceId?: string;
+  provider?: string;
   model?: string;
+  /** Present only on agents run for another backend; absent on local rows and older daemons. */
+  remoteOwner?: AgentMemoryRemoteOwner;
   rootPid: number;
   processCount: number;
   /** Resident memory summed across the agent's process tree, in bytes. */
@@ -138,6 +157,14 @@ export interface AgentMemoryUsageWirePayload {
   /** Sum of every agent's `memoryBytes`, or null before the first sample. */
   totalBytes: number | null;
   agents: AgentMemoryUsageAgentWirePayload[];
+}
+
+/** `system.status.remoteLinks` live counts. */
+export interface DaemonRemoteLinks {
+  /** Backends with an open inbound link to this machine. */
+  backends: number;
+  /** Exposed machines this daemon holds a live outbound link to. */
+  machines: number;
 }
 
 /**
@@ -257,6 +284,8 @@ export interface DaemonHealthStats {
   agentMemoryBytes?: number | null;
   /** Spawned agents with a live root pid; null until the first sample. Optional for older daemons. */
   agentProcessCount?: number | null;
+  /** Live daemon-to-daemon link counts. Absent on older daemons. */
+  remoteLinks?: DaemonRemoteLinks;
   os: string;
   arch: string;
   /** FE connection mode (sidecar UDS vs external WebSocket). Optional for backward compatibility. */
