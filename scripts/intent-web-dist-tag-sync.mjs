@@ -62,7 +62,7 @@ const DIST_TAG_PERMISSION_CHANGELOG =
 export function distTagFailure(version, distTag) {
   return [
     `npm rejected moving the ${distTag} dist-tag to ${PACKAGE_NAME}@${version}.`,
-    `Enable the trusted publisher's dist-tag permission (announced as "Allow npm dist-tag": ${DIST_TAG_PERMISSION_CHANGELOG}) on npmjs.com → ${PACKAGE_NAME} → Settings → Trusted Publisher, then rerun this workflow,`,
+    `Check "Allow npm dist-tag" under Allowed actions on npmjs.com → ${PACKAGE_NAME} → Settings → Trusted Publisher (${DIST_TAG_PERMISSION_CHANGELOG}), then rerun this workflow,`,
     `or move it by hand as an @intent-hq owner: npm dist-tag add ${PACKAGE_NAME}@${version} ${distTag}`,
     '(docs/intent-web-package.md).',
   ].join(' ');

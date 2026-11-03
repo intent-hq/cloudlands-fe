@@ -1,8 +1,9 @@
 # Run Intent Web on a cloud machine
 
-> **Experimental.** `@intent-hq/web` is unreleased until its first npm publish
-> (see [Publishing @intent-hq/web](./intent-web-package.md)). Commands and
-> options may still change.
+> **New.** `@intent-hq/web` is published on npm with each Intent release
+> (`npx @intent-hq/web@alpha` for the newest alpha; see
+> [Publishing @intent-hq/web](./intent-web-package.md)). Commands and options
+> may still change.
 
 `@intent-hq/web` (command `intent-web`) is a small Node server that serves the
 Intent web app without the desktop app. Run it on a VPS or dev box, put an
