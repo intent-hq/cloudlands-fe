@@ -73,7 +73,12 @@
   import { classifyPlainFolderTarget, newProjectDefaultParent } from './plain-folder-create';
   import InitializeGitToggle from './InitializeGitToggle.svelte';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
-  import { selectCloneSourceVisible } from '$store/renderer/slices/workspace-initializer/plain-folder-selectors';
+  import {
+    selectCloneSourceVisible,
+    selectForgeConnectionState,
+    selectPlainFolderCreationAvailable,
+  } from '$store/renderer/slices/workspace-initializer/plain-folder-selectors';
+  import { resolveRepositoryRowLabelKind } from './repository-row-label';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import {
     loadGithubRepos,
@@ -196,6 +201,7 @@
     value?: string;
     onchange?: (event: CustomEvent<RepoChangeDetail>) => void;
     triggerClass?: string;
+    /** Form picker label; becomes "Project" or "Codebase/Project" when plain folders (Labs) apply. */
     rowLabel?: string;
     displayValue?: string;
     /** Dimmed suffix rendered after the repo name, e.g. "owner/repo" */
@@ -219,6 +225,8 @@
      * pick as git.
      */
     plainFolderMode?: boolean;
+    /** The current selection is a plain folder (Labs); drives the form row label. */
+    plainFolderSelected?: boolean;
     /**
      * The git choice (Labs), rendered inside the "Existing folder" and "New"
      * tabs and never on Clone. `onCheckedChange` names the tab it was flipped in.
@@ -247,6 +255,7 @@
     gitlab,
     gitlabSelected = false,
     plainFolderMode = false,
+    plainFolderSelected = false,
     gitChoice,
   }: Props = $props();
 
@@ -688,9 +697,33 @@
             name: github.repo,
             owner: github.owner,
           }
-        : { path: selectedValue, type: 'local', name: getRepoFolderName(selectedValue) };
+        : {
+            path: selectedValue,
+            type: 'local',
+            name: getRepoFolderName(selectedValue),
+            ...(plainFolderSelected ? { plainFolder: true } : {}),
+          };
     }
     return current ? [current, ...recentRepos] : recentRepos;
+  });
+  // The form row label follows what the list holds (plain folders, Labs):
+  // "Project" without a forge, "Codebase/Project" with a plain folder listed.
+  const plainFolderCreationAvailable$ = selectPlainFolderCreationAvailable();
+  const forgeConnectionState$ = selectForgeConnectionState();
+  const formRowLabel = $derived.by(() => {
+    if (!rowLabel) return undefined;
+    const kind = resolveRepositoryRowLabelKind({
+      plainFoldersOffered: $plainFolderCreationAvailable$,
+      forgeState:
+        authenticatedForges.length > 0 || $hostMember$ ? 'connected' : $forgeConnectionState$,
+      hasPlainFolderEntry: formRepositoryChoices.some(
+        (repo) => repo.type === 'local' && repo.plainFolder === true,
+      ),
+    });
+    if (kind === 'project') return m.workspace_compactInitializer_project_label();
+    if (kind === 'codebaseOrProject')
+      return m.workspace_compactInitializer_codebaseOrProject_label();
+    return rowLabel;
   });
   const formRepos = $derived(
     formQuery.trim() === ''
@@ -1988,7 +2021,7 @@
           <div class={`flex w-full min-w-0 items-center truncate ${triggerContentClass}`}>
             {#if rowLabel}
               <span class={workspacePickerStyles.fieldLabel} id={`${pickerId}-field-label`}
-                >{rowLabel}</span
+                >{formRowLabel}</span
               >
             {/if}
             <!-- {#if isNewRepo}
@@ -2048,7 +2081,7 @@
     </Popover.Trigger>
     <Popover.Content
       role="dialog"
-      aria-label={rowLabel ?? m.workspace_repoSelector_whichRepo_label()}
+      aria-label={formRowLabel ?? m.workspace_repoSelector_whichRepo_label()}
       class={rowLabel
         ? `w-[360px] max-w-[calc(100vw-1rem)] min-w-0 max-h-[min(440px,var(--bits-popover-content-available-height,calc(100dvh-1rem)))] flex flex-col ${formStep === 'browse' ? 'overflow-hidden' : 'overflow-y-auto'}`
         : 'w-[400px] max-w-[calc(100vw-16px)] min-w-0 max-h-[min(600px,var(--bits-popover-content-available-height,100dvh))] overflow-y-auto flex flex-col'}

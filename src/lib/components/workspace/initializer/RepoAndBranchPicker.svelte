@@ -294,6 +294,7 @@
       bind:this={repoSelector}
       variant="ghost"
       gitlabSelected={repoType === 'gitlab'}
+      plainFolderSelected={!!plainFolder && repoType === 'local'}
       value={repoOnlyValue}
       onchange={handleRepoChange}
       rowLabel={m.workspace_compactInitializer_repository_label()}

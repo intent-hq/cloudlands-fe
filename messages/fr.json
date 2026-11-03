@@ -6770,6 +6770,8 @@
   "workspace_compactInitializer_progressWorktree_label": "Création de l'arbre de travail…",
   "workspace_compactInitializer_promptEnhanced_toast": "Prompt amélioré",
   "workspace_compactInitializer_repository_label": "Base de code",
+  "workspace_compactInitializer_codebaseOrProject_label": "Base de code/Projet",
+  "workspace_compactInitializer_project_label": "Projet",
   "workspace_compactInitializer_branch_label": "Branche",
   "workspace_compactInitializer_setup_label": "Script de configuration",
   "workspace_compactInitializer_setup_description": "Choisissez les commandes à exécuter après la création de l’espace de travail, comme l’installation des dépendances.",
