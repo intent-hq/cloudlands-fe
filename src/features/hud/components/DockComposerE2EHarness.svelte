@@ -15,13 +15,23 @@
     type ConversationWireCall,
   } from './dock-conversation-wire.preview-fixtures';
   import { installSyntheticNative } from './dock-composer-e2e.preview-fixtures';
+  import DockRailPreview from './dock-rail.preview.svelte';
+  import type { DockRailPreviewProps } from './dock-rail.preview-fixtures';
 
   /**
    * Walkthrough harness: production dock conversation, controller, sagas, editor
    * and send path. Only the daemon wire and the native helper are synthetic, and
    * tests drive them through `window.__dockComposerE2E`.
    */
-  let { width = 420, height = 600 }: { width?: number; height?: number } = $props();
+  let {
+    width = 420,
+    height = 600,
+    shell,
+  }: {
+    width?: number;
+    height?: number;
+    shell?: DockRailPreviewProps;
+  } = $props();
   let ready = $state(false);
   let caption = $state('');
 
@@ -93,22 +103,30 @@
 </script>
 
 <div class="stage">
-  <div
-    data-testid="composer-e2e"
-    style:width={`${width}px`}
-    style:height={`${height}px`}
-    data-dock-surface="notch"
-    data-expanded
-  >
-    {#if ready}
-      <DockConversationSurface workspaceId={conversationWireWorkspace} resizable={false}>
-        <DockConversation onOpenWorkspace={() => {}} />
-      </DockConversationSurface>
-    {/if}
-  </div>
+  {#if shell && ready}
+    <DockRailPreview {...shell} conversationFixture conversationContent={conversation} />
+  {:else}
+    <div
+      data-testid="composer-e2e"
+      style:width={`${width}px`}
+      style:height={`${height}px`}
+      data-dock-surface="notch"
+      data-expanded
+    >
+      {#if ready}
+        <DockConversationSurface workspaceId={conversationWireWorkspace} resizable={false}>
+          <DockConversation onOpenWorkspace={() => {}} />
+        </DockConversationSurface>
+      {/if}
+    </div>
+  {/if}
   <!-- i18n-ignore (synthetic walkthrough caption) -->
   <p class="caption" data-testid="composer-e2e-caption" aria-live="off">{caption}</p>
 </div>
+
+{#snippet conversation()}
+  <DockConversation onOpenWorkspace={() => {}} />
+{/snippet}
 
 <style>
   .stage {
