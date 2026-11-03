@@ -8242,5 +8242,9 @@
   "intentWeb_noBackend_title": "新增你的第一台機器",
   "intentWeb_noBackend_description": "此伺服器尚未連線任何 Intent 機器。新增一台機器並填寫主機、連接埠和權杖即可開始工作。",
   "intentWeb_noBackend_addMachine_label": "新增機器",
-  "settings_devices_tailcatUnavailable_note": "通道路由需要 tailcat：請設定 TAILCAT_BIN，或將 tailcat 放到 PATH 中。"
+  "settings_devices_tailcatUnavailable_note": "通道路由需要 tailcat：請設定 TAILCAT_BIN，或將 tailcat 放到 PATH 中。",
+  "intentWeb_sessionEnded_error": "你的 Intent Web 工作階段已結束。請重新登入以繼續工作。",
+  "intentWeb_updatesStopped_error": "來自 Intent Web 伺服器的即時更新已停止。請重新載入頁面以重新連線。",
+  "intentWeb_signIn_action": "登入",
+  "intentWeb_reload_action": "重新載入"
 }

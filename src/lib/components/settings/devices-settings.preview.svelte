@@ -166,7 +166,6 @@
         manageConnections: true,
         backendBound: true,
         tailcatAvailable: false,
-        localAvailable: false,
       }),
     );
     appStore.dispatch(

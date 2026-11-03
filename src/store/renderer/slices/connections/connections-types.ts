@@ -118,8 +118,6 @@ export interface ConnectionsBrowserHost {
   backendBound: boolean;
   /** The host can dial tailcat tunnel routes. */
   tailcatAvailable: boolean;
-  /** The host serves a local intentd ("This machine"). */
-  localAvailable: boolean;
 }
 
 /**

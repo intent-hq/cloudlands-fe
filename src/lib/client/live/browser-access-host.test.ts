@@ -16,7 +16,6 @@ const DESKTOP_HOST: BrowserAccessHost = {
   eventsUrl: null,
   canManageConnections: false,
   tailcatAvailable: false,
-  localAvailable: false,
 };
 const WEB_HOST: BrowserAccessHost = {
   backendId: null,
@@ -24,7 +23,6 @@ const WEB_HOST: BrowserAccessHost = {
   eventsUrl: '/__intent-web/events',
   canManageConnections: true,
   tailcatAvailable: true,
-  localAvailable: false,
 };
 
 type ConfigGlobal = typeof globalThis & { __INTENT_RUNTIME_CONFIG__?: unknown };

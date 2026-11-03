@@ -33,6 +33,7 @@
   import StatsOverlay from '$features/stats/StatsOverlay.svelte';
   import DaemonStoppedOverlay from '$features/daemon-status/DaemonStoppedOverlay.svelte';
   import NoBackendScreen from '$features/intent-web/components/NoBackendScreen.svelte';
+  import { showsNoBackendScreen } from '$features/intent-web/utils/no-backend-gate';
   import { selectNoBackendBound } from '$store/renderer/slices/connections/connections-selectors';
   import DaemonUpdatingOverlay from '$features/daemon-status/DaemonUpdatingOverlay.svelte';
   import { registerWorkspaceTabShortcuts } from '$features/workspace/utils/workspace-tab-navigation';
@@ -1011,7 +1012,7 @@
           >
             <div class="flex-1 min-h-0 overflow-hidden">
               <!-- intent-web with no machine yet: Settings stays reachable to add one. -->
-              {#if $noBackendBound$ && !$page.url.pathname.startsWith('/settings')}
+              {#if showsNoBackendScreen($noBackendBound$, $page.url.pathname)}
                 <NoBackendScreen />
               {:else}
                 {@render children?.()}

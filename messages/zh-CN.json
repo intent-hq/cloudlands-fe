@@ -8242,5 +8242,9 @@
   "intentWeb_noBackend_title": "添加你的第一台机器",
   "intentWeb_noBackend_description": "此服务器尚未连接任何 Intent 机器。添加一台机器并填写主机、端口和令牌即可开始工作。",
   "intentWeb_noBackend_addMachine_label": "添加机器",
-  "settings_devices_tailcatUnavailable_note": "隧道路由需要 tailcat：请设置 TAILCAT_BIN，或将 tailcat 放到 PATH 中。"
+  "settings_devices_tailcatUnavailable_note": "隧道路由需要 tailcat：请设置 TAILCAT_BIN，或将 tailcat 放到 PATH 中。",
+  "intentWeb_sessionEnded_error": "你的 Intent Web 会话已结束。请重新登录以继续工作。",
+  "intentWeb_updatesStopped_error": "来自 Intent Web 服务器的实时更新已停止。请重新加载页面以重新连接。",
+  "intentWeb_signIn_action": "登录",
+  "intentWeb_reload_action": "重新加载"
 }

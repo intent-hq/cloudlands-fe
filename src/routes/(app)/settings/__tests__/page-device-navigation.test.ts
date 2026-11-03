@@ -90,7 +90,6 @@ it('drops Mobile and Backend Sync when intent-web manages the machines', async (
       manageConnections: true,
       backendBound: true,
       tailcatAvailable: true,
-      localAvailable: false,
     }),
   );
   appStore.dispatch(

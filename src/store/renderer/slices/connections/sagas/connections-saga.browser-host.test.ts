@@ -5,6 +5,15 @@
  * and host SSE pushes refresh the list for this tab.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const notify = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+  warning: vi.fn(),
+  dismiss: vi.fn(),
+}));
+vi.mock('$lib/components/patterns/notify', () => ({ notify }));
+import { m } from '$shared/paraglide/messages.js';
 import type { ConnectionRecord } from '$shared/types/connections';
 import { createConnectionsHarness } from '../test-harness';
 import {
@@ -52,7 +61,9 @@ let respond: (call: Call) => unknown;
 let sources: FakeEventSource[];
 
 class FakeEventSource {
+  static readonly CLOSED = 2;
   readonly listeners = new Map<string, (event: MessageEvent<string>) => void>();
+  readyState = 0;
   closed = false;
   constructor(
     readonly url: string,
@@ -68,6 +79,11 @@ class FakeEventSource {
   }
   push(name: string, data: unknown) {
     this.listeners.get(name)?.({ data: JSON.stringify(data) } as MessageEvent<string>);
+  }
+  /** Fire a lifecycle event (`open`, `error`) with the given readyState. */
+  fire(name: 'open' | 'error', readyState: number) {
+    this.readyState = readyState;
+    this.listeners.get(name)?.({} as MessageEvent<string>);
   }
 }
 
@@ -98,6 +114,7 @@ async function startHarness() {
 }
 
 beforeEach(() => {
+  notify.error.mockClear();
   calls = [];
   sources = [];
   respond = () => ({ connections: [REMOTE], activeId: null, windowBackendId: null });
@@ -113,7 +130,8 @@ beforeEach(() => {
         contentType: new Headers(init.headers).get('content-type'),
       };
       calls.push(call);
-      return new Response(JSON.stringify(respond(call)), { status: 200 });
+      const body = respond(call) as { httpStatus?: number };
+      return new Response(JSON.stringify(body), { status: body?.httpStatus ?? 200 });
     }),
   );
 });
@@ -132,7 +150,6 @@ describe('connections saga on an intent-web host', () => {
         manageConnections: true,
         backendBound: false,
         tailcatAvailable: false,
-        localAvailable: false,
       }),
     );
     expect(calls[0]).toMatchObject({ url: '/__intent-web/connections', method: 'GET' });
@@ -374,6 +391,66 @@ describe('connections saga on an intent-web host', () => {
     expect(sources[0].closed).toBe(true);
   });
 
+  it('lists again after the event stream reconnects', async () => {
+    setHost('remote-1');
+    respond = () => ({ connections: [REMOTE], activeId: 'remote-1' });
+    const { store, stop } = await startHarness();
+    sources[0].fire('open', 1);
+    calls = [];
+    const other = { ...REMOTE, id: 'remote-2', host: '192.0.2.9' };
+    // A machine added while the stream was down: its push was lost.
+    respond = () => ({ connections: [REMOTE, other], activeId: 'remote-2' });
+    sources[0].fire('error', 0);
+    sources[0].fire('open', 1);
+    await vi.waitFor(() =>
+      expect(selectConnections.select(store.state).map((c) => c.id)).toEqual([
+        'remote-1',
+        'remote-2',
+      ]),
+    );
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+      'GET /__intent-web/connections?backend=remote-1',
+    ]);
+    expect(selectCurrentConnectionId.select(store.state)).toBe('remote-1');
+    expect(notify.error).not.toHaveBeenCalled();
+    await stop();
+  });
+
+  it('asks the user to sign in again when the stream closes on an ended session', async () => {
+    setHost('remote-1');
+    respond = () => ({ connections: [REMOTE], activeId: 'remote-1' });
+    const { stop } = await startHarness();
+    respond = () => ({ httpStatus: 401 });
+    sources[0].fire('error', FakeEventSource.CLOSED);
+    await vi.waitFor(() =>
+      expect(notify.error).toHaveBeenCalledWith(
+        m.intentWeb_sessionEnded_error(),
+        expect.objectContaining({
+          action: expect.objectContaining({ label: m.intentWeb_signIn_action() }),
+        }),
+      ),
+    );
+    await stop();
+  });
+
+  it('refreshes the list and reports stopped updates when the stream closes', async () => {
+    setHost('remote-1');
+    respond = () => ({ connections: [REMOTE], activeId: 'remote-1' });
+    const { store, stop } = await startHarness();
+    respond = () => ({ connections: [], activeId: 'remote-1' });
+    sources[0].fire('error', FakeEventSource.CLOSED);
+    await vi.waitFor(() =>
+      expect(notify.error).toHaveBeenCalledWith(
+        m.intentWeb_updatesStopped_error(),
+        expect.objectContaining({
+          action: expect.objectContaining({ label: m.intentWeb_reload_action() }),
+        }),
+      ),
+    );
+    expect(selectConnections.select(store.state)).toEqual([]);
+    await stop();
+  });
+
   it('keeps writes on Electron IPC when the host does not manage connections', async () => {
     setHost('remote-1', { hostCapabilities: [] });
     respond = () => ({ connections: [REMOTE], activeId: 'remote-1' });
@@ -383,7 +460,6 @@ describe('connections saga on an intent-web host', () => {
         manageConnections: false,
         backendBound: true,
         tailcatAvailable: false,
-        localAvailable: false,
       }),
     );
     expect(sources).toEqual([]);

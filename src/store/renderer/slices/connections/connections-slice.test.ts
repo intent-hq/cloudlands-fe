@@ -725,7 +725,6 @@ describe('browserHostDetected', () => {
       manageConnections: true,
       backendBound: false,
       tailcatAvailable: false,
-      localAvailable: true,
     };
     const next = connectionsReducer(initialState, browserHostDetected(host));
     expect(next.browserHost).toEqual(host);

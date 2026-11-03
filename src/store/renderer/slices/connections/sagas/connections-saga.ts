@@ -42,6 +42,7 @@ import {
   rotateHostConnectionSecret,
   testHostConnection,
   updateHostConnection,
+  HostRequestError,
   type BrowserAccessHost,
 } from '$lib/client/live/browser-access-host';
 import { expectsElectronPreloadBridge, isElectronPlatform } from '$lib/utils/platform-capabilities';
@@ -137,7 +138,10 @@ type ConnectionsEvent =
   | { kind: 'cert-warnings'; payload: ConnectionCertWarningsEvent }
   | { kind: 'protocol-mismatch'; payload: ConnectionProtocolMismatchEvent }
   | { kind: 'auth-rejected'; payload: ConnectionAuthRejectedEvent }
-  | { kind: 'sync-status'; payload: KeychainSyncUiStatus };
+  | { kind: 'sync-status'; payload: KeychainSyncUiStatus }
+  // intent-web's event stream closed for good: the session ended, or the host
+  // stopped answering. Live updates stop until the page reloads.
+  | { kind: 'host-stream-closed'; signedOut: boolean };
 
 function getApi(): Window['electronAPI'] | undefined {
   return typeof window !== 'undefined' ? window.electronAPI : undefined;
@@ -150,6 +154,9 @@ function toError(error: unknown): Error {
 /**
  * A managing host pushes the same `connections:*` events over SSE. List
  * pushes carry the host's default backend, so each is rebound to this tab.
+ * EventSource reconnects on its own after a drop, but pushes sent during the
+ * gap are lost, so every reconnect lists again. A stream that closes for good
+ * (the host refused the reconnect, e.g. an expired session) is reported.
  */
 function subscribeHostEvents(
   host: BrowserAccessHost,
@@ -157,6 +164,30 @@ function subscribeHostEvents(
 ): () => void {
   if (!host.eventsUrl || typeof EventSource === 'undefined') return () => {};
   const source = new EventSource(host.eventsUrl, { withCredentials: true });
+  let disposed = false;
+  let opened = false;
+  const relist = async () => {
+    const list = await fetchBrowserAccessConnections(host);
+    if (!disposed) emit({ kind: 'changed', payload: list });
+  };
+  source.addEventListener('open', () => {
+    if (opened) void relist().catch(() => {});
+    opened = true;
+  });
+  source.addEventListener('error', () => {
+    if (source.readyState !== EventSource.CLOSED) return;
+    // Re-list once: it refreshes what the gap missed and tells an ended
+    // session (401) apart from a host that stopped answering.
+    void relist().then(
+      () => !disposed && emit({ kind: 'host-stream-closed', signedOut: false }),
+      (error: unknown) =>
+        !disposed &&
+        emit({
+          kind: 'host-stream-closed',
+          signedOut: error instanceof HostRequestError && error.status === 401,
+        }),
+    );
+  });
   const on = (name: string, handler: (payload: never) => void) =>
     source.addEventListener(name, (event) => {
       try {
@@ -174,7 +205,10 @@ function subscribeHostEvents(
   on(CONNECTION_AUTH_REJECTED_EVENT, (payload: ConnectionAuthRejectedEvent) =>
     emit({ kind: 'auth-rejected', payload }),
   );
-  return () => source.close();
+  return () => {
+    disposed = true;
+    source.close();
+  };
 }
 
 function createConnectionsEventChannel(): EventChannel<ConnectionsEvent> {
@@ -507,6 +541,25 @@ function* announceDaemonsBehindPin(
   tracker.toastedIds = toasted;
 }
 
+/**
+ * intent-web stopped sending live updates. Reloading the page reconnects, or
+ * shows the sign-in page when the session ended.
+ */
+async function showHostStreamClosedToast(signedOut: boolean): Promise<void> {
+  const [{ notify }, { m }] = await Promise.all([
+    import('$lib/components/patterns/notify'),
+    import('$shared/paraglide/messages.js'),
+  ]);
+  notify.error(signedOut ? m.intentWeb_sessionEnded_error() : m.intentWeb_updatesStopped_error(), {
+    id: 'intent-web-events-closed',
+    duration: Number.POSITIVE_INFINITY,
+    action: {
+      label: signedOut ? m.intentWeb_signIn_action() : m.intentWeb_reload_action(),
+      onClick: () => globalThis.location?.reload(),
+    },
+  });
+}
+
 async function invokeSyncGetState(): Promise<KeychainSyncStateResult> {
   const api = getApi();
   if (!api) throw new Error('electronAPI is not available');
@@ -776,6 +829,8 @@ function* consumeConnectionsEvents(
       else if (event.kind === 'cert-warnings') yield* put(certWarningsReceived(event.payload));
       else if (event.kind === 'auth-rejected') yield* put(authRejectedReceived(event.payload));
       else if (event.kind === 'sync-status') yield* put(keychainSyncStatusReceived(event.payload));
+      else if (event.kind === 'host-stream-closed')
+        yield* call(showHostStreamClosedToast, event.signedOut);
       else yield* put(protocolMismatchReceived(event.payload));
     }
   } finally {
@@ -1181,7 +1236,6 @@ export function* connectionsSaga(): SagaGenerator<void> {
         manageConnections: pageHost.canManageConnections,
         backendBound: pageHost.backendId !== null,
         tailcatAvailable: pageHost.tailcatAvailable,
-        localAvailable: pageHost.localAvailable,
       }),
     );
   }

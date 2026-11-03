@@ -8242,5 +8242,9 @@
   "intentWeb_noBackend_title": "Añade tu primera máquina",
   "intentWeb_noBackend_description": "Todavía no hay ninguna máquina de Intent conectada a este servidor. Añade una con su host, puerto y token para empezar.",
   "intentWeb_noBackend_addMachine_label": "Añadir máquina",
-  "settings_devices_tailcatUnavailable_note": "Las rutas de túnel necesitan tailcat: define TAILCAT_BIN o pon tailcat en el PATH."
+  "settings_devices_tailcatUnavailable_note": "Las rutas de túnel necesitan tailcat: define TAILCAT_BIN o pon tailcat en el PATH.",
+  "intentWeb_sessionEnded_error": "Tu sesión de Intent Web ha terminado. Vuelve a iniciar sesión para seguir trabajando.",
+  "intentWeb_updatesStopped_error": "Se detuvieron las actualizaciones en vivo del servidor de Intent Web. Recarga la página para volver a conectar.",
+  "intentWeb_signIn_action": "Iniciar sesión",
+  "intentWeb_reload_action": "Recargar"
 }

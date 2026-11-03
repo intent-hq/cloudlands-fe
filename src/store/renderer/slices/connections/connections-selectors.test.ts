@@ -314,7 +314,6 @@ describe('page host selectors', () => {
     manageConnections: true,
     backendBound: true,
     tailcatAvailable: true,
-    localAvailable: false,
   };
   it('report nothing outside a page host (desktop app, plain web)', () => {
     const state = stateWith({});

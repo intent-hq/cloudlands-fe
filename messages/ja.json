@@ -8242,5 +8242,9 @@
   "intentWeb_noBackend_title": "最初のマシンを追加",
   "intentWeb_noBackend_description": "このサーバーにはまだ Intent マシンが接続されていません。ホスト、ポート、トークンを指定して追加すると作業を始められます。",
   "intentWeb_noBackend_addMachine_label": "マシンを追加",
-  "settings_devices_tailcatUnavailable_note": "トンネル経路には tailcat が必要です。TAILCAT_BIN を設定するか、tailcat を PATH に置いてください。"
+  "settings_devices_tailcatUnavailable_note": "トンネル経路には tailcat が必要です。TAILCAT_BIN を設定するか、tailcat を PATH に置いてください。",
+  "intentWeb_sessionEnded_error": "Intent Web のセッションが終了しました。作業を続けるには再度サインインしてください。",
+  "intentWeb_updatesStopped_error": "Intent Web サーバーからのライブ更新が停止しました。再接続するにはページを再読み込みしてください。",
+  "intentWeb_signIn_action": "サインイン",
+  "intentWeb_reload_action": "再読み込み"
 }

@@ -52,8 +52,17 @@ export interface BrowserAccessHost {
   readonly canManageConnections: boolean;
   /** The host can dial tailcat tunnel routes. */
   readonly tailcatAvailable: boolean;
-  /** The host serves a local intentd ("This machine"). */
-  readonly localAvailable: boolean;
+}
+
+/** A host HTTP request that did not succeed; `status` 401 means the session ended. */
+export class HostRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = 'HostRequestError';
+  }
 }
 
 function isSameOriginPath(value: unknown): value is string {
@@ -70,7 +79,6 @@ export function getBrowserAccessHost(): BrowserAccessHost | null {
         readonly eventsUrl?: unknown;
         readonly hostCapabilities?: unknown;
         readonly tailcatAvailable?: unknown;
-        readonly localAvailable?: unknown;
       };
     }
   ).__INTENT_RUNTIME_CONFIG__;
@@ -89,7 +97,6 @@ export function getBrowserAccessHost(): BrowserAccessHost | null {
     eventsUrl: isSameOriginPath(eventsUrl) ? eventsUrl : null,
     canManageConnections,
     tailcatAvailable: config.tailcatAvailable === true,
-    localAvailable: config.localAvailable === true,
   };
 }
 
@@ -136,7 +143,9 @@ export async function fetchBrowserAccessConnections(
       ? host.connectionsUrl
       : `${host.connectionsUrl}?backend=${encodeURIComponent(host.backendId)}`;
   const response = await fetchImpl(url, { credentials: 'same-origin', cache: 'no-store' });
-  if (!response.ok) throw new Error(`connections list failed: HTTP ${response.status}`);
+  if (!response.ok) {
+    throw new HostRequestError(`connections list failed: HTTP ${response.status}`, response.status);
+  }
   return bindBrowserAccessList(host, (await response.json()) as ConnectionsListResult);
 }
 
@@ -177,7 +186,12 @@ async function requestHost<T>(
       ? {}
       : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
   });
-  if (!response.ok) throw new Error(`connections request failed: HTTP ${response.status}`);
+  if (!response.ok) {
+    throw new HostRequestError(
+      `connections request failed: HTTP ${response.status}`,
+      response.status,
+    );
+  }
   return (await response.json()) as T;
 }
 
