@@ -57,6 +57,10 @@ function fixture() {
     if (value) visible = false;
     else if (restore) visible = true;
   });
+  const selectionVisibility = vi.fn((_window: BrowserWindow, value: boolean, restore: boolean) => {
+    if (value) visible = false;
+    else if (restore) visible = true;
+  });
   const deps: DockEvidenceDependencies = {
     dock: () => dock,
     binding: () => currentBinding,
@@ -71,6 +75,7 @@ function fixture() {
     displays: () => [display],
     permissionDenied: () => false,
     hidden: visibility,
+    hiddenForSelection: selectionVisibility,
     settle: () => settle.promise,
     capture,
     id: vi.fn().mockReturnValueOnce('session').mockReturnValue('image'),
@@ -91,6 +96,7 @@ function fixture() {
     pixels,
     capture,
     visibility,
+    selectionVisibility,
     settle,
     window,
     display,
@@ -383,6 +389,9 @@ describe('dock evidence window and region capture', () => {
     expect(f.deps.captureSelection).toHaveBeenCalledExactlyOnceWith('window');
     expect(visibleDuringSelection).toBe(false);
     expect(f.window.isVisible()).toBe(true);
+    // A selection never uses the capture hide, which unmounts the dock's draft and chips.
+    expect(f.visibility).not.toHaveBeenCalled();
+    expect(f.selectionVisibility.mock.calls.map(([, hidden]) => hidden)).toEqual([true, false]);
     expect(f.deps.captureVisible).not.toHaveBeenCalled();
     expect(f.capture).not.toHaveBeenCalled();
     expect(result).toMatchObject({
@@ -441,7 +450,7 @@ describe('dock evidence window and region capture', () => {
     });
     expect(result).toEqual({ ok: false, error: 'unavailable' });
     expect(f.deps.captureSelection).not.toHaveBeenCalled();
-    expect(f.visibility).not.toHaveBeenCalled();
+    expect(f.selectionVisibility).not.toHaveBeenCalled();
   });
 
   it('selects once the overlay is hidden, even while a recording reservation still lists it', async () => {
@@ -473,6 +482,6 @@ describe('dock evidence window and region capture', () => {
       mode: 'region',
     });
     expect(result).toEqual({ ok: false, error: 'unavailable' });
-    expect(f.visibility).not.toHaveBeenCalled();
+    expect(f.selectionVisibility).not.toHaveBeenCalled();
   });
 });

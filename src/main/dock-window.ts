@@ -797,6 +797,29 @@ export function setDockHiddenForCapture(
   }
 }
 
+/**
+ * Hides the dock while the person selects a window or region with the system UI.
+ * Like a capture it is never revealed, focused or dragged meanwhile, but its
+ * document is not told: a selection can take seconds, and the surface (draft,
+ * editor and its mark chips) must stay mounted rather than be torn down.
+ */
+export function setDockHiddenForSelection(
+  hidden: boolean,
+  owner: { window: BrowserWindow; restore?: boolean },
+): void {
+  const window = getDockWindow();
+  if (!window || owner.window !== window) return;
+  if (hidden) {
+    if (pendingBackendSwitch?.window === window) pendingBackendSwitch.cancelled = true;
+    captureHiddenWindows.add(window);
+    placementController?.cancelInteraction();
+    window.hide();
+    return;
+  }
+  captureHiddenWindows.delete(window);
+  if (owner.restore !== false && canRevealDock(window)) window.showInactive();
+}
+
 export function focusDockWindow(): void {
   const window = getDockWindow();
   if (!window || captureHiddenWindows.has(window) || sessionPaused) return;

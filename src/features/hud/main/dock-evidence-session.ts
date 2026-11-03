@@ -15,6 +15,7 @@ import {
   getDockPlacementSnapshot,
   getDockWindow,
   setDockHiddenForCapture,
+  setDockHiddenForSelection,
 } from '../../../main/dock-window';
 import {
   getStrictBackendBindingForWebContents,
@@ -67,6 +68,11 @@ export interface DockEvidenceDependencies {
   displays(): Display[];
   permissionDenied(): boolean;
   hidden(window: BrowserWindow, hidden: boolean, restore: boolean): void;
+  /**
+   * Hides the dock window for a window/region selection, which can take seconds.
+   * Unlike `hidden`, the dock document keeps its surface (draft, editor, mark chips).
+   */
+  hiddenForSelection(window: BrowserWindow, hidden: boolean, restore: boolean): void;
   settle(): Promise<void>;
   capture(display: Display): Promise<CapturedImage>;
   captureVisible?(
@@ -277,6 +283,8 @@ export class DockEvidenceSessions {
       return unavailable();
     if (this.deps.permissionDenied()) return { ok: false, error: 'permission' };
     this.capturing = session;
+    const selection = request.mode && request.mode !== 'fullscreen' ? request.mode : null;
+    const setHidden = selection ? this.deps.hiddenForSelection : this.deps.hidden;
     let hidden = false;
     const release = () => {
       session.releaseCapture = undefined;
@@ -284,7 +292,7 @@ export class DockEvidenceSessions {
       hidden = false;
       if (this.deps.dock() !== window || window.isDestroyed()) return;
       try {
-        this.deps.hidden(window, false, this.ownerCurrent(session.owner, session.binding));
+        setHidden(window, false, this.ownerCurrent(session.owner, session.binding));
       } catch {
         // A closing native window cannot be restored. Never substitute a new window.
       }
@@ -305,7 +313,7 @@ export class DockEvidenceSessions {
             row.bounds.height === display.bounds.height,
         );
     try {
-      if (request.mode && request.mode !== 'fullscreen') {
+      if (selection) {
         if (!this.deps.captureSelection) return unavailable();
         // The dock and an annotate overlay are capture tools, never part of the selection.
         // An overlay that could not be hidden would be selected or photographed. The
@@ -314,10 +322,10 @@ export class DockEvidenceSessions {
         if (!reveal) return unavailable();
         try {
           hidden = true;
-          this.deps.hidden(window, true, false);
+          setHidden(window, true, false);
           await this.deps.settle();
           if (!this.current(session)) return unavailable();
-          const selected = await this.deps.captureSelection(request.mode);
+          const selected = await this.deps.captureSelection(selection);
           if (!this.current(session)) return unavailable();
           if (!selected.ok) return selected;
           return this.pixels(session, request, selected.value, selected.value.displayScale);
@@ -490,6 +498,10 @@ export const dockEvidenceSessions = new DockEvidenceSessions({
     if (getDockWindow() !== window) return;
     // The capture lease must be released without displaying a replaced document.
     setDockHiddenForCapture(hidden, { window, restore });
+  },
+  hiddenForSelection: (window, hidden, restore) => {
+    if (getDockWindow() !== window) return;
+    setDockHiddenForSelection(hidden, { window, restore });
   },
   settle: () => new Promise((resolve) => setTimeout(resolve, 50)),
   capture: async (display) => {
