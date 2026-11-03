@@ -424,7 +424,8 @@ describe('publish-intent-web.yml', () => {
     // A trusted publisher without "Allow npm publish" rejects the publish;
     // the error names that checkbox instead of a bare npm auth failure.
     expect(release?.run).toContain('if ! npm publish "$TARBALL"');
-    expect(release?.run).toContain('Check \\"Allow npm publish\\" under Allowed actions');
+    expect(release?.run).toContain("see npm's output above");
+    expect(release?.run).toContain('check \\"Allow npm publish\\" under Allowed actions');
     expect(plan).toBeDefined();
     expect(release?.if).toBe("${{ steps.plan.outputs.publish == 'true' }}");
     expect(release?.run).toContain('npm publish "$TARBALL" --access public --tag "$DIST_TAG"');

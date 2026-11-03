@@ -187,7 +187,7 @@ jobs:
             exit 1
           fi
           if ! npm publish "$TARBALL" --access public --tag "$DIST_TAG"; then
-            echo "::error::npm rejected publishing @intent-hq/web@${VERSION}. Check \"Allow npm publish\" under Allowed actions on npmjs.com → @intent-hq/web → Settings → Trusted Publisher (docs/intent-web-package.md), then rerun this workflow."
+            echo "::error::npm publish of @intent-hq/web@${VERSION} failed; see npm's output above. If npm answered 401/403 (not authorized), check \"Allow npm publish\" under Allowed actions on npmjs.com → @intent-hq/web → Settings → Trusted Publisher (docs/intent-web-package.md), then rerun this workflow."
             exit 1
           fi
           echo "::notice::Published @intent-hq/web@${VERSION} (dist-tag ${DIST_TAG})."
