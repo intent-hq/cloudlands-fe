@@ -268,7 +268,13 @@ async function readWholeScript(workspaceId: string, scriptId: string): Promise<S
         scriptId,
         commandOffset: next,
       });
-      if (part?.commandBytes !== size || part.commandOffset !== next) {
+      // Every replacement stamps a new updatedAt, so a same-size edit between
+      // parts is caught here rather than spliced into a command that never existed.
+      if (
+        part?.commandBytes !== size ||
+        part.commandOffset !== next ||
+        part.updatedAt !== first.updatedAt
+      ) {
         changed = true;
         break;
       }

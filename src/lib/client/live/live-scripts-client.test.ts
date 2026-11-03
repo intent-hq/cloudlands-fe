@@ -215,6 +215,29 @@ describe('LiveScriptsClient (fake transport)', () => {
     expect(script.command).toBe(edited);
   });
 
+  it('get restarts when a same-size replacement lands between parts', async () => {
+    // Same UTF-8 length and offsets: only the replacement's updatedAt differs.
+    const edited = `E${BIG_COMMAND.slice(1)}`;
+    const stale = commandParts(BIG_COMMAND, BIG_CUTS).map((p) => ({
+      ...p,
+      updatedAt: '2026-11-03T01:00:00Z',
+    }));
+    const fresh = commandParts(edited, BIG_CUTS).map((p) => ({
+      ...p,
+      updatedAt: '2026-11-03T01:00:01Z',
+    }));
+    expect(fresh[0].commandBytes).toBe(stale[0].commandBytes);
+    mockedRequest
+      .mockResolvedValueOnce(ACTIVE_HELLO)
+      .mockResolvedValueOnce(stale[0])
+      .mockResolvedValueOnce(fresh[1]);
+    for (const part of fresh) mockedRequest.mockResolvedValueOnce(part);
+    const script = await new LiveScriptsClient().get('ws-1', 's-1');
+
+    expect(script.command).toBe(edited);
+    expect(script.updatedAt).toBe('2026-11-03T01:00:01Z');
+  });
+
   it('get refuses a command whose parts do not add up to its size', async () => {
     const parts = commandParts(BIG_COMMAND, BIG_CUTS);
     parts[1] = { ...parts[1], command: parts[1].command.slice(1) };
