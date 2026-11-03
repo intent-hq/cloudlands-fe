@@ -19,8 +19,8 @@
 # OIDC token only from GitHub-hosted runners and only for this workflow file,
 # so the package is built and smoke-tested by intent-web-package.yml and the
 # tarball is published from a separate ubuntu-24.04 job. `--provenance`
-# attaches a signed build attestation (it is not added automatically: 2.277.0
-# shipped without one). One-time setup (first manual publish, then the
+# asks npm for a signed build attestation explicitly, so a publish without one
+# fails instead of shipping silently unattested. One-time setup (first manual publish, then the
 # Trusted Publisher entry for this filename) is in
 # docs/intent-web-package.md.
 #
