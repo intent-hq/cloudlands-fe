@@ -1568,6 +1568,19 @@ function projectAgentMetadata(
     };
     consumed.add('proposalResolutions');
   }
+  const createdWorkspaces = data.proposalCreatedWorkspaces;
+  if (
+    createdWorkspaces &&
+    typeof createdWorkspaces === 'object' &&
+    !Array.isArray(createdWorkspaces) &&
+    Object.values(createdWorkspaces).every((value) => typeof value === 'string')
+  ) {
+    metadataPatch.proposalCreatedWorkspaces = {
+      op: 'set',
+      value: createdWorkspaces as Record<string, string>,
+    };
+    consumed.add('proposalCreatedWorkspaces');
+  }
   if (data.completionReportCleared === true) {
     metadataPatch.completionReport = { op: 'clear' };
     metadataPatch.completionReportTimestamp = { op: 'clear' };

@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { openAndShowWorkspace } from '$lib/utils/show-workspace';
   import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
   import type { Proposal } from '$shared/types/proposal';
@@ -24,6 +23,7 @@
     type ProposalCardDraft,
   } from './proposal-draft-storage';
   import { getCardProposalId } from './proposal-id';
+  import { openCreatedWorkspace } from './open-created-workspace';
   import { OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS } from '../operational-disclosure-row';
 
   interface Props {
@@ -68,7 +68,17 @@
     lifecycleEntry?.status === 'applied' &&
       (proposal.kind === 'settings-change' || proposal.kind === 'specialist-edit'),
   );
-  const createdWorkspaceId = $derived(lifecycleEntry?.result?.workspaceId);
+  // The local apply result, else the daemon-recorded link — covers cards
+  // applied by the agent (`ws.workspace.applyProposal`), another client, or
+  // before a restart, sibling follow-up cards included.
+  const daemonCreatedWorkspaceId = $derived(
+    proposal.kind === 'workspace-create'
+      ? $agentSession$?.metadata?.proposalCreatedWorkspaces?.[proposalId]
+      : undefined,
+  );
+  const createdWorkspaceId = $derived(
+    isApplied ? (lifecycleEntry?.result?.workspaceId ?? daemonCreatedWorkspaceId) : undefined,
+  );
 
   function flushDraft(): void {
     if (draftSaveTimer !== null) clearTimeout(draftSaveTimer);
@@ -104,7 +114,7 @@
   async function handleOpenWorkspace(event: MouseEvent): Promise<void> {
     if (!createdWorkspaceId) return;
     event.preventDefault();
-    await openAndShowWorkspace(createdWorkspaceId);
+    await openCreatedWorkspace(createdWorkspaceId);
   }
 
   $effect(() => {
@@ -142,6 +152,7 @@
         <ProposalCard
           {proposal}
           lifecycleId={localProposalId}
+          resolvedCreatedWorkspaceId={daemonCreatedWorkspaceId}
           suppressLocalDiscard
           {initialDraft}
           onDraftChange={handleDraftChange}

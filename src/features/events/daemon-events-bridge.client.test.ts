@@ -12480,11 +12480,13 @@ describe('daemonEventsBridge (persisted message pushes)', () => {
         agentId: AGENT,
         pendingProposals: [],
         proposalResolutions: { p1: 'applied' },
+        proposalCreatedWorkspaces: { p1: 'ws-created' },
       }),
     );
     expect(appStore.state.agentSessions.byAgentId[AGENT]?.metadata).toMatchObject({
       pendingProposals: [],
       proposalResolutions: { p1: 'applied' },
+      proposalCreatedWorkspaces: { p1: 'ws-created' },
     });
     expect(refreshAgentSessionAfterEventSpy).not.toHaveBeenCalled();
     handler(notification('agent:updated', { agentId: AGENT, modelId: 'new-provider-model' }));

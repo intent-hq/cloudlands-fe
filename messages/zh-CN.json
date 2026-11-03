@@ -886,6 +886,7 @@
   "chat_proposalCard_chooseDifferentBranch_label": "。请在上方选择其他基础分支后重试。",
   "chat_proposalCard_createNewWorkspace_title": "创建新工作区？",
   "chat_proposalCard_createWorkspace_label": "创建工作区",
+  "chat_proposalCard_createdWorkspaceMissing_error": "该工作区已不存在或无法打开。",
   "chat_proposalCard_creatingWorkspace_label": "正在创建工作区…",
   "chat_proposalCard_detectingBranch_label": "正在检测分支…",
   "chat_proposalCard_detectingPrBranch_label": "正在检测 PR 分支…",

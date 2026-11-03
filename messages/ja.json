@@ -886,6 +886,7 @@
   "chat_proposalCard_chooseDifferentBranch_label": "。上で別のベースブランチを選択してから再試行してください。",
   "chat_proposalCard_createNewWorkspace_title": "新しいワークスペースを作成しますか？",
   "chat_proposalCard_createWorkspace_label": "ワークスペースを作成",
+  "chat_proposalCard_createdWorkspaceMissing_error": "このワークスペースは存在しないか、開けませんでした。",
   "chat_proposalCard_creatingWorkspace_label": "ワークスペースを作成中…",
   "chat_proposalCard_detectingBranch_label": "ブランチを検出中…",
   "chat_proposalCard_detectingPrBranch_label": "PR ブランチを検出中…",
