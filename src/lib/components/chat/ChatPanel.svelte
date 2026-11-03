@@ -5787,11 +5787,14 @@
   // references by the send saga before the wire call.
 
   // Handle sending messages
-  function handleSend(text: string) {
+  function handleSend(text: string, { fromComposer = false }: { fromComposer?: boolean } = {}) {
     // Gather DOM state only. Validation, queue decisions, serialization,
     // shared/domain cleanup, and send side effects live in sagas.
     const inlineImageItems = inputComponent?.getInlineImageContextItems?.() ?? [];
     const mentionContextItems = inputComponent?.getMentionContextItems?.() ?? [];
+    // Only the composer's own text has picked chips; a suggested prompt's
+    // text carries no record, so its paths keep the guessed chips.
+    const pickedMentions = fromComposer ? inputComponent?.getPickedMentionsMetadata?.() : undefined;
     if (!workspace || !isActive) {
       logger.warn('[ChatPanel] Dropping send: panel has no workspace or is inactive', {
         agentId,
@@ -5825,6 +5828,7 @@
         noteIds,
         ...(imageBlocks.length > 0 ? { imageBlocks } : {}),
         ...(fileBlocks.length > 0 ? { fileBlocks } : {}),
+        ...(pickedMentions ? { messageMetadata: pickedMentions } : {}),
         agentName,
         agentModel,
         isInitialWorkspaceAgent,
@@ -6043,6 +6047,7 @@
     // Gather DOM state only; validation and stop/send orchestration live in sagas.
     const inlineImageItems = inputComponent?.getInlineImageContextItems?.() ?? [];
     const mentionContextItems = inputComponent?.getMentionContextItems?.() ?? [];
+    const pickedMentions = inputComponent?.getPickedMentionsMetadata?.();
     if (!workspace || !isActive) return;
     flushPendingDraftWrite();
 
@@ -6069,6 +6074,7 @@
         noteIds,
         ...(imageBlocks.length > 0 ? { imageBlocks } : {}),
         ...(fileBlocks.length > 0 ? { fileBlocks } : {}),
+        ...(pickedMentions ? { messageMetadata: pickedMentions } : {}),
         forceSubmit: true,
         agentName,
         agentModel,
@@ -7920,7 +7926,7 @@
                       scheduleDraftWrite(value);
                       reportTypingActivity(value);
                     }}
-                    onsubmit={(text: string) => handleSend(text)}
+                    onsubmit={(text: string) => handleSend(text, { fromComposer: true })}
                     onforcesubmit={(text: string) => handleForceSubmit(text)}
                     onstop={handleStop}
                     onHistoryPrev={handleHistoryPrev}

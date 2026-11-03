@@ -876,6 +876,31 @@ describe('agent-send wire contract (pending agent, first message)', () => {
     const session = appStore.state.agentSessions?.byAgentId[AGENT];
     expect(session?.isStreaming).toBe(false);
   }, 30000);
+
+  it('sends the picked-mention record and keeps it on a failed optimistic row', async () => {
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === 'agent.get') return { agent: daemonPendingAgent };
+      if (method === 'agent.sendMessage') throw new Error('connection lost');
+      return {};
+    });
+    const messageMetadata = {
+      type: 'question_answers',
+      answeredQuestionsMessageId: 'question-one',
+      mentionTokens: ['@src/a.ts'],
+    };
+
+    await expect(
+      sendMessage(AGENT, 'see @src/a.ts', workspace(), { messageMetadata }),
+    ).rejects.toThrow();
+
+    const wire = backendRequestMock.mock.calls.find(([m]) => m === 'agent.sendMessage');
+    expect(wire?.[1]).toMatchObject({ messageMetadata });
+    const optimistic = appStore.state.agentSessions.byAgentId[AGENT].messages.find(
+      (message) => message.role === 'user',
+    );
+    // The answer tag is rolled back; the chip record only drives display.
+    expect(optimistic?.metadata).toEqual({ mentionTokens: ['@src/a.ts'] });
+  }, 30000);
   function stage(content = 'staged before restore') {
     const admission = admitAgentSubmission(appStore, AGENT, WS, 1, {
       content,

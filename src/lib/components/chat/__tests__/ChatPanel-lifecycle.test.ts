@@ -4547,6 +4547,48 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(sends()[0][0].payload.payload).toMatchObject({ text: 'Run the tests' });
   });
 
+  it('records picked chips for composer sends but not for suggested prompts', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentSession.set({ id: 'agent-a', messages: [] });
+    mocks.agentMessages.set([
+      {
+        id: 'assistant-with-prompts',
+        role: 'assistant',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        contentBlocks: [
+          { type: 'text', text: 'Done.\n\n<!-- suggested-prompts\nReview @src/a.ts\n-->' },
+        ],
+      },
+    ]);
+    render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+    const sends = () =>
+      mocks.dispatch.mock.calls
+        .map(([action]) => action)
+        .filter((action) => action?.type === 'chatState/sendMessage');
+
+    // A suggested prompt's text was never in the composer: no record, so the
+    // bubble keeps guessing its paths.
+    await fireEvent.click(screen.getByRole('button', { name: 'Review @src/a.ts' }));
+    await tick();
+    expect(sends()).toHaveLength(1);
+    expect(sends()[0].payload.payload).toMatchObject({ text: 'Review @src/a.ts' });
+    expect(sends()[0].payload.payload.messageMetadata).toBeUndefined();
+
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'see @src/picked.ts' },
+    });
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    await tick();
+    expect(sends()).toHaveLength(2);
+    expect(sends()[1].payload.payload).toMatchObject({
+      text: 'see @src/picked.ts',
+      messageMetadata: { mentionTokens: ['@src/picked.ts'] },
+    });
+  });
+
   it('reports true-bottom state to the stable header control', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.agentMessages.set([
