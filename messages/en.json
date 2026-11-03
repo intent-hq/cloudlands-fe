@@ -8238,5 +8238,13 @@
   "remoteMachines_unexpose_unrevoked_warning": "{machine} was removed, but its access could not be revoked because that machine is not connected. Revoke it on {machine} under Settings → Machines → Backends with access.",
   "remoteMachines_failure_unconfirmedStops_error_one": "{machine} didn't confirm that {count} agent stopped, so nothing was removed and it's still available to {backend}. Try again, or revoke access on {machine}.",
   "remoteMachines_failure_unconfirmedStops_error_many": "{machine} didn't confirm that {count} agents stopped, so nothing was removed and it's still available to {backend}. Try again, or revoke access on {machine}.",
-  "remoteMachines_failure_retryStopAgents_label": "Try again"
+  "remoteMachines_failure_retryStopAgents_label": "Try again",
+  "intentWeb_noBackend_title": "Add your first machine",
+  "intentWeb_noBackend_description": "No Intent machine is connected to this server yet. Add one with its host, port and token to start working.",
+  "intentWeb_noBackend_addMachine_label": "Add machine",
+  "settings_devices_tailcatUnavailable_note": "Tunnel routes need tailcat: set TAILCAT_BIN or put tailcat on PATH.",
+  "intentWeb_sessionEnded_error": "Your Intent Web session has ended. Sign in again to keep working.",
+  "intentWeb_updatesStopped_error": "Live updates from the Intent Web server stopped. Reload the page to reconnect.",
+  "intentWeb_signIn_action": "Sign in",
+  "intentWeb_reload_action": "Reload"
 }

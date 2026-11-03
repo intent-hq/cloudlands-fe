@@ -108,6 +108,19 @@ export type SelfPublicationOperation =
   'load' | 'publish' | 'autoPublish' | 'autoUnpublish' | 'refresh';
 
 /**
+ * What a Browser access host (the page server) offers this tab, from its
+ * runtime config. Null in the desktop app and in plain web builds.
+ */
+export interface ConnectionsBrowserHost {
+  /** The host edits connections over HTTP (`connections.manage`). */
+  manageConnections: boolean;
+  /** The host bound this tab to a backend. False only on a host that manages connections. */
+  backendBound: boolean;
+  /** The host can dial tailcat tunnel routes. */
+  tailcatAvailable: boolean;
+}
+
+/**
  * Connections slice state.
  */
 export interface ConnectionsState {
@@ -204,4 +217,6 @@ export interface ConnectionsState {
   workflows: Collection<ConnectionWorkflow, 'id'>;
   selfPublication: SelfPublishedStateResult | null;
   selfPublicationBusy: boolean;
+  /** The Browser access host serving this tab, or null outside one. */
+  browserHost: ConnectionsBrowserHost | null;
 }
