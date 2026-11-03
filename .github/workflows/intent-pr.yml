@@ -702,7 +702,7 @@ jobs:
             exit 0
           fi
           match_status=0
-          grep -z -E '^(src/(features/[^/]+/(main|utils)/|features/intent-web/package/|main/|shared/)|scripts/(build-intent-web-package|smoke-intent-web-package|intent-web-publish-plan)\.mjs$|scripts/fetch-tailcat\.cjs$|vite\.config\.mjs$|svelte\.config\.js$|LICENSE$|NOTICE$|package\.json$|pnpm-lock\.yaml$|\.github/workflows/(intent-pr|intent-web-package|publish-intent-web)\.yml$)' "$changed_paths" >/dev/null || match_status=$?
+          grep -z -E '^(src/(features/[^/]+/(main|utils)/|features/intent-web/package/|main/|shared/)|scripts/(build-intent-web-package|smoke-intent-web-package|intent-web-publish-plan|intent-web-dist-tag-sync)\.mjs$|scripts/fetch-tailcat\.cjs$|vite\.config\.mjs$|svelte\.config\.js$|LICENSE$|NOTICE$|package\.json$|pnpm-lock\.yaml$|\.github/workflows/(intent-pr|intent-web-package|publish-intent-web)\.yml$)' "$changed_paths" >/dev/null || match_status=$?
           case "$match_status" in
             0) echo "intent_web_package_required=true" | tee -a "$GITHUB_OUTPUT" ;;
             1) echo "intent_web_package_required=false" | tee -a "$GITHUB_OUTPUT" ;;
@@ -1266,12 +1266,11 @@ jobs:
   # dock-composer-spec.ct.spec.ts ejected #4002 and failed 12 of 40 runs
   # under load). The full suite stays queue-only (#3930: cost); this job runs
   # only when a spec changed. scripts/ct-changed-specs.mjs lists the specs and
-  # sets the repetition count (20, scaled down for PRs touching many specs).
+  # sizes repetitions from full discovery before dividing work across four shards.
   test-ct-changed:
     name: Changed Component Tests (repeated, shard ${{ matrix.shard }}/4)
     needs: [route, release-fast-path]
     if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' && needs.release-fast-path.outputs.ct_changed_specs != '[]' }}
-    # Shard the full global repeat workload across independent jobs.
     # The same 8-core burst runner as the queue's CT shards, without a slot:
     # the bundle build below needs their 12 GiB heap.
     runs-on: ${{ fromJSON(needs.route.outputs.cloud || '{}')['gh-linux-8x'] || fromJSON('["warp-ubuntu-2404-x64-8x"]') }}
@@ -1294,7 +1293,6 @@ jobs:
           set -euo pipefail
           node scripts/ct-changed-specs.mjs --filters "$CT_CHANGED_SPECS" > /dev/null
           echo "Changed component test specs: $CT_CHANGED_SPECS"
-          echo "Repetitions per test: $(node scripts/ct-changed-specs.mjs --repeat-each "$CT_CHANGED_SPECS")"
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -1344,6 +1342,9 @@ jobs:
         # --fail-on-flaky-tests as a backstop. Two workers, like a queue
         # shard. Quarantined tests are excluded as in the required lane; a
         # spec whose tests are all quarantined fails with "No tests found".
+        # The repetitions are sized by the tests Playwright discovers in the
+        # changed specs (--list: no browser, no bundle build), so a few large
+        # specs cannot overrun the job; a discovery error or zero tests fails.
         env:
           NODE_OPTIONS: '--max-old-space-size=4096'
           PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-report/results.json
@@ -1352,7 +1353,9 @@ jobs:
           # A file, not process substitution, so a failing helper stops the step.
           node scripts/ct-changed-specs.mjs --filters "$CT_CHANGED_SPECS" > "$RUNNER_TEMP/ct-filters"
           mapfile -d '' filters < "$RUNNER_TEMP/ct-filters"
-          repeat=$(node scripts/ct-changed-specs.mjs --repeat-each "$CT_CHANGED_SPECS")
+          PLAYWRIGHT_JSON_OUTPUT_FILE="$RUNNER_TEMP/ct-changed-list.json" node scripts/run-ct-tests.mjs \
+            "${filters[@]}" --list --grep-invert '@quarantine\b' --reporter=json > /dev/null
+          repeat=$(node scripts/ct-changed-specs.mjs --repeat-each-listed "$RUNNER_TEMP/ct-changed-list.json")
           node scripts/run-ct-tests.mjs "${filters[@]}" --repeat-each="$repeat" --shard=${{ matrix.shard }}/4 --retries=0 \
             --fail-on-flaky-tests --workers=2 --grep-invert '@quarantine\b' --reporter=list,html,json
       - name: Upload playwright report
