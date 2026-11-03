@@ -347,6 +347,14 @@ describe('provider-settings selectors', () => {
       expect(selectQuotaRetryProviderIds.select(state, 'claude-code')).toEqual([]);
     });
 
+    it('excludes the base provider when a named profile of it ran out', () => {
+      const state = mockState({ auggie: true, 'claude-code': true }, 'claude-code', {
+        auggie: { available: true, authenticated: true },
+        'claude-code': { available: true, authenticated: true },
+      });
+      expect(selectQuotaRetryProviderIds.select(state, 'claude-code@work')).toEqual(['auggie']);
+    });
+
     it('returns an empty list when the exhausted provider was the only option', () => {
       const state = mockState({ 'claude-code': true }, 'claude-code', {
         'claude-code': { available: true, authenticated: true },

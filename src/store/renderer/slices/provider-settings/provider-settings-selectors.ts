@@ -144,7 +144,8 @@ export const selectAvailableEnabledProviderIds = store.createSelector((state): s
 /**
  * Providers a quota-exceeded turn can be retried on (#4455): the
  * available+enabled set narrowed to providers whose sign-in is ready, minus
- * the exhausted provider. `selectAvailableEnabledProviderIds` is a model-picker
+ * the exhausted provider (by base id, so a profile's own base provider is
+ * excluded too). `selectAvailableEnabledProviderIds` is a model-picker
  * gate that only applies the auth rule to Antigravity, so a signed-out Codex /
  * Droid / Auggie with `{ available: true, authenticated: false }` would
  * otherwise be offered as a dead-end retry target. Unknown auth (no
@@ -156,12 +157,17 @@ export const selectAvailableEnabledProviderIds = store.createSelector((state): s
 export const selectQuotaRetryProviderIds = store.createSelector(
   (state, exhaustedProviderId: string): string[] => {
     const statusMap = selectProviderStatusMap.select(state);
-    const exhausted = selectNormalizedProviderId.select(state, exhaustedProviderId);
+    // A named profile (`claude-code@work`) runs out on its base provider's
+    // CLI, so offering that base back as an "alternative" is a duplicate Retry.
+    const exhausted = selectNormalizedProviderId.select(
+      state,
+      providerRefBaseId(exhaustedProviderId),
+    );
     return selectAvailableEnabledProviderIds
       .select(state)
       .filter(
         (id) =>
-          selectNormalizedProviderId.select(state, id) !== exhausted &&
+          selectNormalizedProviderId.select(state, providerRefBaseId(id)) !== exhausted &&
           selectIsProviderEnabled.select(state, id) &&
           isProviderAuthenticationReady(id, statusMap[id]?.authenticated),
       );

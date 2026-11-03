@@ -332,7 +332,8 @@ describe('StreamingStatus rendered UI', () => {
       render(StreamingStatus, { props: { ...quotaProps, onRetry, onRetryWithProvider } });
 
       const banner = screen.getByTestId('error-quota-exceeded');
-      expect(banner.textContent).toContain('Anthropic Claude Code');
+      expect(banner.textContent).toContain('Usage limit reached');
+      expect(screen.getByTestId('quota-provider-label').textContent).toBe('Anthropic Claude Code');
       expect(banner.textContent).toMatch(/retry once it resets, or switch provider/i);
       expect(screen.queryByTestId('error-title')).toBeNull();
 
@@ -349,6 +350,33 @@ describe('StreamingStatus rendered UI', () => {
 
       await fireEvent.click(switchButton);
       expect(onRetryWithProvider).toHaveBeenCalledWith('codex');
+    });
+
+    it('keeps the quota card with only a plain Retry when no other provider is usable', async () => {
+      const onRetry = vi.fn();
+      render(StreamingStatus, {
+        props: {
+          ...quotaProps,
+          quotaExceeded: {
+            providerId: 'claude-code@work',
+            displayName: 'Anthropic Claude Code · me@example.com',
+          },
+          quotaRetryProviders: [],
+          onRetry,
+          onRetryWithProvider: vi.fn(),
+        },
+      });
+
+      const banner = screen.getByTestId('error-quota-exceeded');
+      expect(banner.textContent).toContain('Anthropic Claude Code · me@example.com');
+      expect(banner.textContent).toMatch(/retry once it resets\./i);
+      expect(banner.textContent).not.toMatch(/switch provider/i);
+      expect(screen.queryByTestId('error-title')).toBeNull();
+      expect(screen.queryByTestId('retry-with-provider')).toBeNull();
+      expect(screen.getAllByRole('button', { name: /retry/i })).toHaveLength(1);
+
+      await fireEvent.click(screen.getByTestId('quota-retry-same-provider'));
+      expect(onRetry).toHaveBeenCalledOnce();
     });
 
     it('withholds the same-provider Retry when no retry callback is given (retired session)', () => {

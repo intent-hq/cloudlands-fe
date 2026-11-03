@@ -2071,7 +2071,7 @@ describe('ChatPanel mounted lifecycle', () => {
       await tick();
     }
 
-    async function renderQuotaFailure() {
+    async function renderQuotaFailure(exhaustedProviderId = 'claude-code') {
       mocks.draftGet.mockResolvedValue(null);
       mocks.agentMessages.set([
         {
@@ -2087,7 +2087,7 @@ describe('ChatPanel mounted lifecycle', () => {
       await tick();
       await tick();
       mocks.chatError.set('usage limit reached');
-      mocks.chatQuotaExceeded.set({ providerId: 'claude-code' });
+      mocks.chatQuotaExceeded.set({ providerId: exhaustedProviderId });
       await tick();
       await tick();
       return view;
@@ -2182,8 +2182,9 @@ describe('ChatPanel mounted lifecycle', () => {
 
       await setProviderEnabled('codex', false);
       expect(screen.queryAllByTestId('retry-with-provider')).toEqual([]);
-      expect(view.container.querySelector('[data-testid="error-quota-exceeded"]')).toBeNull();
-      expect(view.container.querySelector('[data-stream-terminal-error="true"]')).not.toBeNull();
+      const banner = view.container.querySelector('[data-testid="error-quota-exceeded"]');
+      expect(banner).not.toBeNull();
+      expect(banner!.textContent).not.toMatch(/switch provider/i);
 
       await setProviderEnabled('codex', true);
       expect(
@@ -2191,17 +2192,30 @@ describe('ChatPanel mounted lifecycle', () => {
       ).toEqual([expect.stringContaining('OpenAI Codex')]);
     });
 
-    it('falls back to the plain failure banner when no alternative is eligible', async () => {
+    it('keeps the quota card with only a plain Retry when no alternative is eligible', async () => {
       seedProviderState({ 'claude-code': true, codex: false }, 'claude-code', {
         'claude-code': { available: true, authenticated: true },
         codex: { available: true, authenticated: true },
       });
       const view = await renderQuotaFailure();
 
-      expect(view.container.querySelector('[data-testid="error-quota-exceeded"]')).toBeNull();
+      const banner = view.container.querySelector('[data-testid="error-quota-exceeded"]');
+      expect(banner).not.toBeNull();
+      expect(banner!.textContent).toMatch(/retry once it resets\./i);
+      expect(banner!.textContent).not.toMatch(/switch provider/i);
       expect(screen.queryAllByTestId('retry-with-provider')).toEqual([]);
-      expect(view.container.querySelector('[data-stream-terminal-error="true"]')).not.toBeNull();
-      expect(view.container.querySelector('[data-testid="error-title"]')).not.toBeNull();
+      expect(screen.getByTestId('quota-retry-same-provider')).toBeTruthy();
+      expect(view.container.querySelector('[data-testid="error-title"]')).toBeNull();
+    });
+
+    it('never offers the base provider back when a named profile of it ran out', async () => {
+      seedProviderState({ 'claude-code': true }, 'claude-code', {
+        'claude-code': { available: true, authenticated: true },
+      });
+      await renderQuotaFailure('claude-code@work');
+
+      expect(screen.queryAllByTestId('retry-with-provider')).toEqual([]);
+      expect(screen.getAllByRole('button', { name: /retry/i })).toHaveLength(1);
     });
   });
 

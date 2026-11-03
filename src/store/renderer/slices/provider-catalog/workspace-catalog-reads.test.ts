@@ -486,6 +486,9 @@ describe('workspace catalog host probes through live clients', () => {
       expect(selectContextQuotaRetryProviderIds.select(store.state, 'codex', WS)).toEqual(
         authenticated === false ? [] : ['claude-code'],
       );
+      expect(
+        selectContextQuotaRetryProviderIds.select(store.state, 'claude-code@work', WS),
+      ).toEqual([]);
     },
   );
 

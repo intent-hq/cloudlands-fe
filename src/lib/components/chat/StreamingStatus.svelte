@@ -74,9 +74,8 @@
     quotaExceeded?: { providerId: string; displayName?: string } | null;
     /**
      * Alternative providers offerable for a quota retry — enabled, installed
-     * and authenticated, minus the exhausted one. Empty means no alternative
-     * is usable, so the banner falls back to the plain error surface rather
-     * than dangling an action that cannot work.
+     * and authenticated, minus the exhausted one (and its other profiles).
+     * Empty means no alternative is usable, so the card offers only Retry.
      */
     quotaRetryProviders?: Array<{ id: string; displayName: string }>;
     /** Transient lifecycle status events from the backend */
@@ -151,10 +150,9 @@
   let status: Status = $derived.by(() => {
     if (attempting) return 'normal';
     if (modelUnavailable) return 'model-unavailable';
-    // Only claim the quota surface when there is somewhere to go: with no
-    // usable alternative provider the offer would be a dead end, so fall
-    // through to the ordinary error banner and its "Try again".
-    if (quotaExceeded && quotaRetryProviders.length > 0) return 'quota-exceeded';
+    // The quota card keeps its plain Retry (limits reset) even when no other
+    // provider is usable; it only drops the "switch provider" hint then.
+    if (quotaExceeded) return 'quota-exceeded';
     if (error) return 'error';
     return 'normal';
   });
@@ -351,7 +349,7 @@
       class={cn(
         'type-caption flex min-w-0 flex-col gap-2 rounded-md border border-border bg-card p-3',
         status === 'error' && 'mt-2',
-        (status === 'model-unavailable' || status === 'quota-exceeded') &&
+        status === 'model-unavailable' &&
           'rounded-md border border-warning/20 bg-warning/5 pl-2 pr-3',
         className,
       )}
@@ -370,12 +368,24 @@
               {m.chat_streamingStatus_modelUnavailable_after()}
             </span>
           {:else if status === 'quota-exceeded' && quotaExceeded}
-            <Fa icon={faExclamationTriangle} class="shrink-0 text-warning/70" />
-            <span class="text-warning" data-testid="error-quota-exceeded">
-              {m.chat_streamingStatus_quotaExceeded_before()}
-              <code class="px-1 py-0.5 bg-muted rounded text-ui">{quotaProviderLabel}</code>
-              {m.chat_streamingStatus_quotaExceeded_after()}
-            </span>
+            <Fa icon={faExclamationTriangle} class="mt-0.5 size-3 shrink-0 text-warning-ink" />
+            <div class="flex min-w-0 flex-1 flex-col gap-0.5" data-testid="error-quota-exceeded">
+              <span class="font-medium text-warning-ink"
+                >{m.chat_streamingStatus_quotaExceeded_title()}{#if failedAt}
+                  <span class="type-caption ml-1.5 leading-4 font-normal text-muted-foreground">
+                    <RelativeTime date={failedAt} />
+                  </span>
+                {/if}</span
+              >
+              <span class="min-w-0 break-words text-foreground" data-testid="quota-provider-label"
+                >{quotaProviderLabel}</span
+              >
+              <span class="text-muted-foreground"
+                >{quotaRetryProviders.length > 0
+                  ? m.chat_streamingStatus_quotaExceeded_hint()
+                  : m.chat_streamingStatus_quotaExceeded_hintResetOnly()}</span
+              >
+            </div>
           {:else if status === 'error' && errorDisplay}
             <div class="flex min-w-0 flex-1 flex-col gap-0.5">
               <span class="font-medium text-danger" data-testid="error-title"

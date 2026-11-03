@@ -5919,10 +5919,10 @@
   /**
    * Providers we can offer as a quota retry target: the
    * "enabled ∧ visible ∧ probe-available ∧ signed-in" set minus the provider
-   * that just ran out (`selectQuotaRetryProviderIds`). The exhausted one is
+   * that just ran out, compared by base provider so a profile never offers its
+   * own base back (`selectQuotaRetryProviderIds`). The exhausted one is
    * covered by the banner's plain Retry (limits reset), a signed-out one would
-   * be a dead end, and an empty list makes StreamingStatus fall back to the
-   * plain error banner rather than dangling a dead action.
+   * be a dead end, and an empty list leaves only that plain Retry.
    */
   const quotaRetryProviders = $derived.by(() => {
     const quota = $chatQuotaExceeded$;
