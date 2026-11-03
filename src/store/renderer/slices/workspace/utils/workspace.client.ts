@@ -25,7 +25,6 @@ import { Logger } from '$shared/logger';
 import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 import { invoke as invokeIpc } from '$shared/generated/ipc-client';
 import { appClient } from '$lib/client';
-import { captureWorkspaceReadContext } from '$lib/client/live/workspace-read-context';
 import { m } from '$shared/paraglide/messages.js';
 
 import { store } from '../../../store';
@@ -34,6 +33,7 @@ import {
   selectWorkspaceCreationVisible,
 } from '../../principal/principal-selectors';
 import { selectWorkspaceActionContext, selectWorkspaceUpdateContext } from '../workspace-selectors';
+import { captureWorkspaceReadContext } from '$lib/client/live/workspace-read-context';
 
 function captureMutation(workspaceId?: string, fields?: string[]) {
   const context = () =>
