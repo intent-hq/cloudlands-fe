@@ -17,6 +17,14 @@ import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
 import { scriptOutputReplyLines, scriptOutputToLines } from '$lib/utils/script-output-text';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { scriptsOutputSaga } from './scripts-output-saga';
+import { machineRunLocation, scriptMachineRuns } from '$features/scripts/utils/script-location';
+import { remoteMachineFailureMessage } from '$features/remote-machines/remote-machines-messages';
+import {
+  selectCurrentBackendLabel,
+  selectRemoteMachine,
+} from '$features/remote-machines/remote-machines-selectors';
+import type { RemoteMachineFailure } from '$shared/types/remote-machines';
+import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 import { takeLeadingInContext } from '../../../utils/context-saga-effects';
 import {
   selectWorkspaceActionContext,
@@ -299,8 +307,9 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
 
 /**
  * Stop or restart a remote agent's machine run. Its state arrives as
- * `script:changed`, so nothing is applied locally; a refusal (for example
- * `machine-update-required`) is shown as the backend reported it.
+ * `script:changed`, so nothing is applied locally. A machine refusal
+ * (`machine-update-required`, `machine-unreachable`) is shown in the app's
+ * wording, naming the machine; any other refusal as the backend reported it.
  */
 function* runMachineRunOperation(
   action: ReturnType<typeof machineRunOperationRequested>,
@@ -316,12 +325,40 @@ function* runMachineRunOperation(
         ? scriptDefinitionTransport.stop(workspaceId, scriptId, run)
         : scriptDefinitionTransport.restart(workspaceId, scriptId, run),
     );
-    if (!result?.success) message = result?.error || failureMessage;
+    if (result?.machineFailure)
+      message = yield* call(
+        machineFailureMessage,
+        workspaceId,
+        scriptId,
+        remoteAgentId,
+        result.machineFailure,
+      );
+    else if (!result?.success) message = result?.error || failureMessage;
   } catch (error) {
     message = errorMessage(error) || failureMessage;
   }
   if (authority !== (yield* selectWorkspaceSavedScriptContext.effect(workspaceId))) return;
   if (message) yield* call([notify, notify.error], message);
+}
+
+/** `remoteMachineFailureMessage` with the run's machine name and this backend's label. */
+function* machineFailureMessage(
+  workspaceId: string,
+  scriptId: string,
+  remoteAgentId: string,
+  failure: RemoteMachineFailure,
+): SagaGenerator<string> {
+  const script = yield* selectScriptById.effect(workspaceId, scriptId);
+  const run = script
+    ? scriptMachineRuns(script).find((entry) => entry.remoteAgentId === remoteAgentId)
+    : undefined;
+  const agent = yield* selectAgentSession.effect(remoteAgentId);
+  const machine = yield* selectRemoteMachine.effect(run?.nodeId);
+  const backend = yield* selectCurrentBackendLabel.effect();
+  const name = run
+    ? machineRunLocation(run, agent, machine).name
+    : m.remoteAgent_location_unknownMachine();
+  return remoteMachineFailureMessage(failure, { machine: name, backend });
 }
 
 function* readDefinition(workspaceId: string, scriptId: string): SagaGenerator<ScriptWithState> {

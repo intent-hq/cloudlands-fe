@@ -11,7 +11,11 @@
  */
 import { m } from '$shared/paraglide/messages.js';
 import type { AgentSession } from '$shared/types';
-import type { RemoteMachine } from '$shared/types/remote-machines';
+import type {
+  RemoteMachine,
+  RemoteMachineFailure,
+  RemoteMachineRouteAttempt,
+} from '$shared/types/remote-machines';
 import {
   machineLocation,
   machinePlatformLabel,
@@ -131,4 +135,42 @@ export function machineRunStatus(runtime: ScriptRuntimeState): {
     default:
       return { kind, label: m.terminal_quakeOverlay_status_exited() };
   }
+}
+
+const text = (value: unknown): value is string => typeof value === 'string' && value.length > 0;
+
+/**
+ * The machine refusal behind a failed machine-run restart (`-32602`
+ * `machine-update-required`, `-32603` `machine-unreachable`, PROTOCOL
+ * `methods/nodes.md` "Remote machine errors"), so the panel can show it with
+ * the app's own wording. Null for any other error.
+ */
+export function machineRunFailure(error: unknown): RemoteMachineFailure | null {
+  if (!error || typeof error !== 'object') return null;
+  const data = (error as { data?: unknown }).data;
+  if (!data || typeof data !== 'object') return null;
+  const fields = data as Record<string, unknown>;
+  const message = error instanceof Error && error.message ? { message: error.message } : {};
+  if (fields.code === 'machine-update-required') {
+    return {
+      success: false,
+      code: 'machine-update-required',
+      update: fields.update === 'backend' ? 'backend' : 'machine',
+      ...(text(fields.machineVersion) ? { machineVersion: fields.machineVersion } : {}),
+      ...(text(fields.backendVersion) ? { backendVersion: fields.backendVersion } : {}),
+      ...message,
+    };
+  }
+  if (fields.code === 'machine-unreachable') {
+    const attempts = Array.isArray(fields.attempts)
+      ? fields.attempts.flatMap((attempt): RemoteMachineRouteAttempt[] => {
+          const entry = (attempt ?? {}) as Record<string, unknown>;
+          return text(entry.route) && text(entry.error)
+            ? [{ route: entry.route, error: entry.error }]
+            : [];
+        })
+      : [];
+    return { success: false, code: 'machine-unreachable', attempts, ...message };
+  }
+  return null;
 }

@@ -32,9 +32,9 @@ export const selectUsesGuestScriptScope = store.createSelector((state, workspace
 });
 
 /**
- * The backend runs remote agents' saved scripts on their machine and tags
- * them with `runsOn` (`client.hello` capability `remoteScripts: 1`). Without
- * it the panel shows every script as before.
+ * The backend lists remote agents' runs of a saved script on their machines
+ * in `machineRuns` (`client.hello` capability `remoteScripts: 1`). Without it
+ * the panel shows every script as before.
  */
 export const selectRemoteScriptsSupported = store.createSelector(
   (state): boolean => state.principal?.snapshot?.capabilities.remoteScripts === 1,

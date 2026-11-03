@@ -3,6 +3,7 @@ import type { AgentSession } from '$shared/types';
 import type { RemoteMachine } from '$shared/types/remote-machines';
 import {
   isLostRun,
+  machineRunFailure,
   machineRunStatus,
   machineRunLocation,
   scriptLostReason,
@@ -155,5 +156,48 @@ describe('machineRunStatus', () => {
       kind: 'failed',
       label: 'Error (2)',
     });
+  });
+});
+
+describe('machineRunFailure', () => {
+  const rpcError = (code: string, data: Record<string, unknown>) =>
+    Object.assign(new Error(`${code}: refused`), { rpcCode: -32602, data: { code, ...data } });
+
+  it('reads a machine-update-required refusal with its versions', () => {
+    expect(
+      machineRunFailure(
+        rpcError('machine-update-required', {
+          update: 'machine',
+          machineVersion: '0.9.0',
+          backendVersion: '1.2.0',
+        }),
+      ),
+    ).toEqual({
+      success: false,
+      code: 'machine-update-required',
+      update: 'machine',
+      machineVersion: '0.9.0',
+      backendVersion: '1.2.0',
+      message: 'machine-update-required: refused',
+    });
+  });
+
+  it('reads machine-unreachable with its well-formed attempts', () => {
+    expect(
+      machineRunFailure(
+        rpcError('machine-unreachable', {
+          attempts: [{ route: 'lan', error: 'node-link-unauthorized' }, { route: 1 }],
+        }),
+      ),
+    ).toMatchObject({
+      code: 'machine-unreachable',
+      attempts: [{ route: 'lan', error: 'node-link-unauthorized' }],
+    });
+  });
+
+  it('leaves other errors to the plain message', () => {
+    expect(machineRunFailure(rpcError('remote-script-not-owned', {}))).toBeNull();
+    expect(machineRunFailure(new Error('boom'))).toBeNull();
+    expect(machineRunFailure(null)).toBeNull();
   });
 });

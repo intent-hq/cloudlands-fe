@@ -33,7 +33,7 @@ interface HostCapabilities {
   workspaceAutoArchiveOptOut?: 1;
   /** Capped `agent.getMessageBlock` pages + editAndRegenerate image block references (PROTOCOL §5.5). */
   messageBlockPages?: 1;
-  /** Saved scripts of remote agents run on their machine and carry `runsOn` (PROTOCOL `methods/scripts.md`). */
+  /** A saved script lists remote agents' runs on their machines in `machineRuns` (PROTOCOL `methods/scripts.md`). */
   remoteScripts?: 1;
   invitationAccountSearch?: boolean;
   workspaceGuestRoles?: boolean;

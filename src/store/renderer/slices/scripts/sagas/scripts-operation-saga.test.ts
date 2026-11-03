@@ -47,6 +47,9 @@ import { scriptsOperationSaga } from './scripts-operation-saga';
 import { selectScriptWorkflowOutcome } from '../scripts-selectors';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { createAgentFromConfigRequested } from '../../workspace-agents/workspace-agents-slice';
+import { remoteMachineFailureMessage } from '$features/remote-machines/remote-machines-messages';
+import { m } from '$shared/paraglide/messages.js';
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 
 const WS = 'ws-1';
 const definition = {
@@ -130,6 +133,55 @@ describe('scriptsOperationSaga machine runs', () => {
     await vi.waitFor(() =>
       expect(notify.error).toHaveBeenCalledWith('machine-update-required: update the machine'),
     );
+    await stop(run.task);
+  });
+
+  it('shows a machine refusal of a restart in the app wording, naming the machine', async () => {
+    const failure = {
+      success: false as const,
+      code: 'machine-update-required' as const,
+      update: 'machine' as const,
+      message: 'machine-update-required: the machine links with nodeProtocol 7',
+    };
+    transport.restart.mockResolvedValueOnce({
+      success: false,
+      error: failure.message,
+      machineFailure: failure,
+    });
+    const run = start();
+    Object.assign(run.state, {
+      remoteMachines: { machines: { 'node-mac': { id: 'node-mac', name: 'Mac Studio' } } },
+      connections: {
+        ...(run.state as { connections?: object }).connections,
+        windowBackendId: LOCAL_CONNECTION_ID,
+        connections: createCollection('id', []),
+      },
+    });
+    run.dispatch(
+      setScriptsData(WS, [
+        {
+          ...definition,
+          machineRuns: [
+            {
+              remoteAgentId: 'agent-remote',
+              nodeId: 'node-mac',
+              runtime: { status: 'exited', exitCode: 1, restartCount: 0 },
+            },
+          ],
+        },
+      ]),
+    );
+    run.channel.put(
+      machineRunOperationRequested(WS, definition.id, 'agent-remote', 'restart', 'Failed'),
+    );
+
+    const expected = remoteMachineFailureMessage(failure, {
+      machine: 'Mac Studio',
+      backend: m.layout_daemonStatus_localConnection_label(),
+    });
+    await vi.waitFor(() => expect(notify.error).toHaveBeenCalledWith(expected));
+    expect(expected).toContain('Mac Studio');
+    expect(expected).not.toContain('nodeProtocol');
     await stop(run.task);
   });
 
