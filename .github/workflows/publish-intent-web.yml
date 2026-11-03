@@ -1,9 +1,19 @@
-# Publishes @intent-hq/web to npm at the cloudlands-fe version, once per release.
+# Publishes @intent-hq/web to npm at the cloudlands-fe version, once per
+# release, and keeps its dist-tags on the release channels: `alpha` (each
+# publish), `beta` (Promote Beta) and `latest` (Release Stable).
 #
-# Trigger: every successful tag-push run of Release Alpha (release-alpha.yml),
-# i.e. each alpha cut from a release-please v*.*.* tag. workflow_dispatch
-# (re)publishes an existing tag, e.g. after a failed run or for a Release Alpha
-# rebuild started by hand (those runs carry no tag, so they are skipped here).
+# Publish: every successful tag-push run of Release Alpha (release-alpha.yml),
+# i.e. each alpha cut from a release-please v*.*.* tag. workflow_dispatch with
+# `tag` (re)publishes an existing tag, e.g. after a failed run or for a Release
+# Alpha rebuild started by hand (those runs carry no tag, so they are skipped
+# here).
+#
+# Channel sync: every successful Promote Beta (promote-beta.yml) or Release
+# Stable (release-stable.yml) run moves `beta` or `latest` to the version that
+# channel's feed on intent-hq/cloudlands-releases now serves
+# (scripts/intent-web-dist-tag-sync.mjs). The feed, not the run, names the
+# version, so a sync is idempotent and repairs a missed one. workflow_dispatch
+# with `channel` syncs one by hand.
 #
 # npm trusted publishing (GitHub Actions OIDC): no NPM_TOKEN. npm accepts the
 # OIDC token only from GitHub-hosted runners and only for this workflow file,
@@ -14,20 +24,27 @@
 # docs/intent-web-package.md.
 #
 # Safe to rerun: an already-published version is skipped
-# (scripts/intent-web-publish-plan.mjs), and an older tag publishes under the
-# `backfill` dist-tag so `latest` never moves backwards.
+# (scripts/intent-web-publish-plan.mjs), an older tag publishes under the
+# `backfill` dist-tag so `alpha` never moves backwards, and a channel sync
+# never moves `beta` or `latest` backwards.
 name: Publish Intent Web
 
 on:
   workflow_run:
-    workflows: ['Release Alpha']
+    workflows: ['Release Alpha', 'Promote Beta', 'Release Stable']
     types: [completed]
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing release tag to publish (e.g., v2.276.0)'
-        required: true
+        description: 'Existing release tag to publish (e.g., v2.276.0); leave empty to only sync a channel'
+        required: false
         type: string
+      channel:
+        description: 'Move this channel dist-tag (beta, or stable = latest) to the version the channel serves'
+        required: false
+        type: choice
+        options: ['none', 'beta', 'stable']
+        default: 'none'
 
 permissions:
   contents: read
@@ -44,8 +61,9 @@ jobs:
     # Only successful tag-push alphas; a hand-started Release Alpha rebuild
     # runs on a branch and names its tag only in inputs this event cannot read.
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+      (github.event_name == 'workflow_dispatch' && inputs.tag != '') ||
+      (github.event.workflow_run.name == 'Release Alpha' &&
+      github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
@@ -137,10 +155,11 @@ jobs:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
-      # Trusted publishing needs npm >= 11.5.1.
+      # Trusted publishing needs npm >= 11.5.1; the same floor as the sync
+      # job keeps the two jobs on one CLI.
       - name: Install npm with trusted publishing
         run: |
-          npm install --global npm@^11.5.1
+          npm install --global npm@^11.21.0
           npm --version
 
       - name: Download package tarball
@@ -169,3 +188,75 @@ jobs:
           fi
           npm publish "$TARBALL" --access public --tag "$DIST_TAG"
           echo "::notice::Published @intent-hq/web@${VERSION} (dist-tag ${DIST_TAG})."
+
+  sync-channel:
+    # Promote Beta and Release Stable only rewrite the feeds of an existing
+    # release, so the version is read from the feed and nothing is built.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.channel != 'none') ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      (github.event.workflow_run.name == 'Promote Beta' || github.event.workflow_run.name == 'Release Stable'))
+    # GitHub-hosted for npm trusted publishing, as in the publish job.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Resolve channel
+        id: channel
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_NAME: ${{ github.event.workflow_run.name }}
+          INPUT_CHANNEL: ${{ inputs.channel }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then CHANNEL="$INPUT_CHANNEL"
+          elif [ "$RUN_NAME" = "Promote Beta" ]; then CHANNEL=beta
+          elif [ "$RUN_NAME" = "Release Stable" ]; then CHANNEL=stable
+          else CHANNEL=""; fi
+          if [ "$CHANNEL" != "beta" ] && [ "$CHANNEL" != "stable" ]; then
+            echo "::error::No channel to sync for event '${EVENT_NAME}' (run '${RUN_NAME}')."
+            exit 1
+          fi
+          echo "channel=${CHANNEL}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout publication tools
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/intent-web-publish-plan.mjs
+            scripts/intent-web-dist-tag-sync.mjs
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      # `npm dist-tag` does the OIDC exchange only from npm 11.21.0 (not in
+      # 12.0 or 12.1); the printed version shows which CLI a failed sync ran.
+      - name: Install npm with trusted publishing
+        run: |
+          npm install --global npm@^11.21.0
+          npm --version
+
+      - name: Plan dist-tag sync
+        id: sync
+        env:
+          CHANNEL: ${{ steps.channel.outputs.channel }}
+        run: node scripts/intent-web-dist-tag-sync.mjs "$CHANNEL"
+
+      - name: Move dist-tag
+        if: ${{ steps.sync.outputs.sync == 'true' }}
+        env:
+          VERSION: ${{ steps.sync.outputs.version }}
+          DIST_TAG: ${{ steps.sync.outputs.dist_tag }}
+        run: |
+          if ! npm dist-tag add "@intent-hq/web@${VERSION}" "$DIST_TAG"; then
+            node scripts/intent-web-dist-tag-sync.mjs --failure "$VERSION" "$DIST_TAG"
+            exit 1
+          fi
+          echo "::notice::Moved dist-tag ${DIST_TAG} to @intent-hq/web@${VERSION}."
