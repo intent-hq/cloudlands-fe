@@ -13,7 +13,15 @@ const { dispatchMock, hooks } = vi.hoisted(() => ({
       lastLogs: 'all green',
       state: 'scheduled',
     },
-  ],
+    {
+      hookId: 'hook-big',
+      workspaceId: 'ws-1',
+      name: 'big',
+      codeOmitted: true,
+      codeBytes: 600000,
+      state: 'scheduled',
+    },
+  ] as Array<Record<string, unknown>>,
 }));
 
 vi.mock('$store/renderer/store', async () => {
@@ -58,5 +66,12 @@ describe('HookScriptContent', () => {
 
     view.unmount();
     expect(dispatchMock).toHaveBeenCalledWith(backgroundHooksUnsubscribeRequested('ws-1'));
+  });
+
+  it('says when a hook script was too large for hook.list instead of showing it empty', () => {
+    render(HookScriptContent, { props: { workspaceId: 'ws-1', hookId: 'hook-big' } });
+    const notice = screen.getByTestId('hook-script-content-too-large');
+    expect(notice.textContent).toContain('too large to display');
+    expect(notice.textContent).toContain((600000).toLocaleString());
   });
 });

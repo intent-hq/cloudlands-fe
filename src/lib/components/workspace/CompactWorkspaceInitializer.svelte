@@ -170,10 +170,10 @@
     selectCheckoutSelection,
     selectCheckoutCanCreate,
   } from '$store/renderer/slices/repository-checkout/repository-checkout-selectors';
-  import { selectLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
     selectGitLabAuthInstanceBaseUrl,
     selectGitLabAuthIsConfigured,
+    selectGitLabInstanceSetupSupported,
     selectGitLabStatusReady,
   } from '$store/renderer/slices/gitlab-auth/gitlab-auth-selectors';
   import SetupScriptModal from '../modals/SetupScriptModal.svelte';
@@ -565,10 +565,11 @@
   );
   const plainFolderWorkspaces$ = selectPlainFolderWorkspaceItems();
   const checkoutFormId = uuidv4();
-  const labsGitLab$ = selectLabsGitLabEnabled();
   const gitlabInstance$ = selectGitLabAuthInstanceBaseUrl();
   const gitlabConfigured$ = selectGitLabAuthIsConfigured();
   const gitlabStatusReady$ = selectGitLabStatusReady();
+  // GitLab projects need the host's checkout contract; main refuses capture without it.
+  const gitlabCheckoutSupported$ = selectGitLabInstanceSetupSupported();
   const checkoutForm$ = selectCheckoutForm(checkoutFormId);
   const checkoutSelection$ = selectCheckoutSelection(checkoutFormId);
   const checkoutProjects$ = selectCheckoutProjects(checkoutFormId);
@@ -620,13 +621,7 @@
     appStore.dispatch(projectSelected(checkoutFormId, scopeKey, path));
   }
   function pickRecentCheckoutProject(projectPath: string, instanceBaseUrl: string) {
-    if (
-      !$labsGitLab$ ||
-      !$gitlabStatusReady$ ||
-      !$gitlabConfigured$ ||
-      instanceBaseUrl !== $gitlabInstance$
-    )
-      return;
+    if (!$gitlabStatusReady$ || !$gitlabConfigured$ || instanceBaseUrl !== $gitlabInstance$) return;
     const form = selectCheckoutForm.select(appStore.state, checkoutFormId);
     if (form?.status === 'unavailable') return;
     if (form?.scopeKey) {
@@ -3584,7 +3579,7 @@
               ? ($checkoutForm$?.project?.projectPath ?? '')
               : repoPath}
             branch={repoType === 'gitlab' ? ($checkoutForm$?.branch?.name ?? '') : branch}
-            gitlab={$labsGitLab$ || repoType === 'gitlab' ? gitlabPicker : undefined}
+            gitlab={$gitlabCheckoutSupported$ || repoType === 'gitlab' ? gitlabPicker : undefined}
             gitlabBranch={gitlabBranchPicker}
             {repoType}
             {githubUrl}

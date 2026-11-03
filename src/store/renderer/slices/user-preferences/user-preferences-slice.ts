@@ -69,8 +69,6 @@ export type UserPreferencesState = {
    * actions remain only as an internal seam until the disabled-mode branches are removed.
    */
   labsMultiplayerEnabled: boolean;
-  /** Whether new GitLab setup is offered in Labs. Existing connections are preserved. */
-  labsGitLabEnabled: boolean;
   /** Offers new remote setup/placement only; never restricts existing sessions or local execution. */
   labsRemoteAgentsEnabled: boolean;
   /** Offers plain-folder (git-optional) creation only; existing plain-folder workspaces keep working when off. */
@@ -157,7 +155,6 @@ export const initialState: UserPreferencesStoreState = {
   pauseAnimationsWhenUnfocused: false,
   labsSettingsVisible: false,
   labsMultiplayerEnabled: true,
-  labsGitLabEnabled: false,
   labsRemoteAgentsEnabled: false,
   labsPlainFolderWorkspacesEnabled: false,
   labsBrowserAccessEnabled: false,
@@ -428,17 +425,6 @@ export const setLabsMultiplayerEnabled = labsMultiplayerPreference.setAction;
 
 export const toggleLabsMultiplayer = labsMultiplayerPreference.toggleAction;
 
-const labsGitLabPreference = createBooleanPreference<UserPreferencesStoreState>({
-  sliceName: 'userPreferences',
-  field: 'labsGitLabEnabled',
-  setActionName: 'setLabsGitLabEnabled',
-  toggleActionName: 'toggleLabsGitLab',
-});
-
-export const setLabsGitLabEnabled = labsGitLabPreference.setAction;
-
-export const toggleLabsGitLab = labsGitLabPreference.toggleAction;
-
 const labsRemoteAgentsPreference = createBooleanPreference<UserPreferencesStoreState>({
   sliceName: 'userPreferences',
   field: 'labsRemoteAgentsEnabled',
@@ -598,7 +584,6 @@ reduceMotionOnBatteryPreference.register(userPreferencesReducer);
 pauseAnimationsWhenUnfocusedPreference.register(userPreferencesReducer);
 labsSettingsVisibilityPreference.register(userPreferencesReducer);
 labsMultiplayerPreference.register(userPreferencesReducer);
-labsGitLabPreference.register(userPreferencesReducer);
 labsRemoteAgentsPreference.register(userPreferencesReducer);
 labsPlainFolderWorkspacesPreference.register(userPreferencesReducer);
 labsBrowserAccessPreference.register(userPreferencesReducer);

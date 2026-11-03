@@ -8,15 +8,8 @@ import { THEME_PRESET_IDS, THEME_PRESET_MANIFEST } from '../theme-presets-manife
 import { UPDATE_CHANNELS } from '../../features/auto-update/types';
 
 describe('app settings schema', () => {
-  it('exposes GitLab as a local, default-off Labs preference', () => {
-    expect(findAppSettingDefinition('labs.gitlab')).toMatchObject({
-      category: 'labs',
-      type: 'boolean',
-      source: 'local-storage',
-      storageKey: 'labs:gitlabEnabled',
-      defaultValue: false,
-      apply: { kind: 'redux-action', action: 'userPreferences/setLabsGitLabEnabled' },
-    });
+  it('has no GitLab Labs preference: GitLab is always on', () => {
+    expect(findAppSettingDefinition('labs.gitlab')).toBeUndefined();
   });
 
   it('has no provider profiles Labs preference: profiles are always on', () => {

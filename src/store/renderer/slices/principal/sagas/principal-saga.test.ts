@@ -535,10 +535,7 @@ describe('connected principal hydration', () => {
     expect(selectCanAdministerHost.select(withoutPreferences)).toBe(true);
   });
 
-  it.each([false, true])('keeps rollout separate with GitLab flag %s', async (gitlab) => {
-    // Main has no GitLab lab yet; an additive preference cannot bypass Multiplayer.
-    dispose();
-    dispose = store.init({ userPreferences: { labsGitLabEnabled: gitlab } } as never);
+  it('keeps collaboration gated on Multiplayer alone', async () => {
     store.dispatch(setLabsMultiplayerEnabled(false));
     const pending = defer();
     start();

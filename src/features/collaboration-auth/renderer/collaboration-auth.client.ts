@@ -1,9 +1,6 @@
 import { electronAPI } from '$lib/client/live/backend-transport';
 import { store as appStore } from '$store/renderer/store';
-import {
-  selectLabsGitLabEnabled,
-  selectLabsMultiplayerEnabled,
-} from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+import { selectLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import { COLLABORATION_AUTH, type CollaborationAction, type CollaborationView } from '../types';
 import { openPalette } from '$store/renderer/slices/palette/palette-slice';
 
@@ -12,7 +9,6 @@ let hide: (() => void) | undefined;
 function collaborationPolicy() {
   return {
     multiplayer: selectLabsMultiplayerEnabled.select(appStore.state),
-    gitlab: selectLabsGitLabEnabled.select(appStore.state),
   };
 }
 /** Direct ephemeral IPC: no PAT in Redux, logger arguments, mock-router traces, or host RPC. */

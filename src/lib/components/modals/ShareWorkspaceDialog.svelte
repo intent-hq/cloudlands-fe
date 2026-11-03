@@ -57,8 +57,6 @@
     githubConnected?: boolean;
     /** `sourceControl.authStatus { provider: "gitlab" }.isConfigured` as mirrored by the gitlab-auth slice. */
     gitlabConnected?: boolean;
-    /** Labs gates new provider choices, never an existing identity or pin. */
-    gitlabEnabled?: boolean;
     /** The GitLab instance the host's connection targets (`pinHost` for a GitLab pin). */
     gitlabHost?: string;
     gitlabStatusReady?: boolean;
@@ -158,7 +156,6 @@
     workspaceTitle = '',
     githubConnected = false,
     gitlabConnected = false,
-    gitlabEnabled = false,
     gitlabHost = '',
     gitlabStatusReady = true,
     canAdministerHost = true,
@@ -240,11 +237,7 @@
     if (pinProviderDraft) return pinProviderDraft;
     if (!forgeConnected) return null;
     if (pinProviderChoosable) {
-      if (
-        identityProvider &&
-        (!hostMembershipSupported || identityProvider !== 'gitlab' || gitlabEnabled)
-      )
-        return identityProvider;
+      if (identityProvider) return identityProvider;
       return 'github';
     }
     return githubConnected ? 'github' : 'gitlab';
@@ -260,9 +253,7 @@
     ...((forgeConnected || restricted) && (pinProviderChoosable || pinProvider === 'github')
       ? [{ value: 'github', label: m.workspace_share_audienceGithub_label(), icon: faGithub }]
       : []),
-    ...((forgeConnected || restricted) &&
-    (pinProviderChoosable || pinProvider === 'gitlab') &&
-    (gitlabEnabled || pinProvider === 'gitlab')
+    ...((forgeConnected || restricted) && (pinProviderChoosable || pinProvider === 'gitlab')
       ? [{ value: 'gitlab', label: m.workspace_share_audienceGitlab_label(), icon: faGitlab }]
       : []),
   ]);
@@ -302,9 +293,7 @@
           (pinProvider === 'github' ? githubConnected : gitlabIdentityConnected)) &&
         (!pinTypeahead || !!selectedUser) &&
         (pinProvider !== 'gitlab' ||
-          (hostMembershipSupported
-            ? !!selectedPinHost && gitlabEnabled
-            : gitlabStatusReady && !!gitlabHost))),
+          (hostMembershipSupported ? !!selectedPinHost : gitlabStatusReady && !!gitlabHost))),
   );
   /** Escape closes the list until the next keystroke. */
   let suggestionsDismissed = $state(false);
@@ -389,7 +378,6 @@
   }
 
   function handlePinProviderChange(value: string) {
-    if (value === 'gitlab' && !gitlabEnabled) return;
     restricted = value !== 'anyone';
     pinLogin = '';
     pendingCopy = null;
@@ -641,9 +629,7 @@
         {:else}
           {#if !forgeConnected && !canAdministerHost}
             <p class="text-sm text-subtle" role="status" data-testid="share-forge-owner-required">
-              {gitlabEnabled
-                ? m.workspace_share_forgeOwnerRequired_notice()
-                : m.workspace_share_githubOwnerRequired_notice()}
+              {m.workspace_share_forgeOwnerRequired_notice()}
             </p>
           {:else if !forgeConnected}
             <div
@@ -652,15 +638,11 @@
             >
               <div class="flex items-center gap-2 text-sm font-medium">
                 <Fa icon={faGithub} />
-                {#if gitlabEnabled}<Fa icon={faGitlab} />{/if}
-                {gitlabEnabled
-                  ? m.workspace_share_forgeRequired_title()
-                  : m.workspace_share_githubRequired_title()}
+                <Fa icon={faGitlab} />
+                {m.workspace_share_forgeRequired_title()}
               </div>
               <p class="text-sm text-subtle">
-                {gitlabEnabled
-                  ? m.workspace_share_forgeRequired_description()
-                  : m.workspace_share_githubRequired_description()}
+                {m.workspace_share_forgeRequired_description()}
               </p>
               <div class="flex items-center gap-2">
                 <Button
@@ -671,11 +653,9 @@
                 >
                   {m.workspace_share_connectGithub_label()}
                 </Button>
-                {#if gitlabEnabled}
-                  <Button variant="ghost-light" size="sm" onclick={() => onOpenConnections?.()}>
-                    {m.workspace_share_openConnections_label()}
-                  </Button>
-                {/if}
+                <Button variant="ghost-light" size="sm" onclick={() => onOpenConnections?.()}>
+                  {m.workspace_share_openConnections_label()}
+                </Button>
               </div>
             </div>
           {/if}
@@ -799,11 +779,7 @@
                       </Select.Trigger>
                       <Select.Content class="z-(--layer-modal)">
                         {#each audienceItems as item (item.value)}
-                          <Select.Item
-                            value={item.value}
-                            label={item.label}
-                            disabled={item.value === 'gitlab' && !gitlabEnabled}
-                          >
+                          <Select.Item value={item.value} label={item.label}>
                             <span class="flex min-w-0 items-center gap-2">
                               <Fa icon={item.icon} />
                               <span class="truncate">{item.label}</span>

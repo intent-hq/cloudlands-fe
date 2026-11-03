@@ -8,10 +8,7 @@
     principalContextChanged,
     principalReceived,
   } from '$store/renderer/slices/principal/principal-slice';
-  import {
-    setLabsMultiplayerEnabled,
-    setLabsGitLabEnabled,
-  } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { invitationAccountSearchSaga } from '$store/renderer/slices/invitation-account-search/sagas/invitation-account-search-saga';
   import { hostUserPresenceSaga } from '$store/renderer/slices/host-membership/sagas/host-user-presence-saga';
   import { hostMembershipSaga } from '$store/renderer/slices/host-membership/sagas/host-membership-saga';
@@ -23,9 +20,7 @@
   }: { confirmationRevalidation?: boolean; autocomplete?: boolean } = $props();
   const previous = store.state.principal;
   const previousMultiplayer = store.state.userPreferences.labsMultiplayerEnabled;
-  const previousGitLab = store.state.userPreferences.labsGitLabEnabled;
   store.dispatch(setLabsMultiplayerEnabled(true));
-  store.dispatch(setLabsGitLabEnabled(true));
   admitLegacyPrincipal();
   function admit(role: 'owner' | 'member') {
     const { principal } = withHostPrincipal(store.state, role);
@@ -76,7 +71,6 @@
     stopSearch();
     stopPresence();
     store.dispatch(setLabsMultiplayerEnabled(previousMultiplayer));
-    store.dispatch(setLabsGitLabEnabled(previousGitLab));
     store.dispatch(principalContextChanged(previous.context));
     if (previous.context && previous.snapshot)
       store.dispatch(

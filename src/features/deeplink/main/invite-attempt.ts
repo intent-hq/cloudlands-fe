@@ -14,7 +14,7 @@ import type {
 export interface InviteAttempt extends CollaborationAttempt {
   local: LocalIdentityLease;
   parent: BrowserWindow | null;
-  allowed(provider?: 'github' | 'gitlab'): boolean;
+  allowed(): boolean;
   /** Original window/attempt still exists, even before its policy is admitted. */
   alive(): boolean;
   /** Acknowledged renderer readiness may admit an initially blocked attempt once, in its original window. */
@@ -72,7 +72,7 @@ export function captureInviteAttempt(): InviteAttempt {
       }
       return current();
     },
-    allowed: (provider) => current() && policy(provider),
+    allowed: () => current() && policy(),
     current,
     release,
     cancelled,

@@ -18,8 +18,9 @@
 # npm trusted publishing (GitHub Actions OIDC): no NPM_TOKEN. npm accepts the
 # OIDC token only from GitHub-hosted runners and only for this workflow file,
 # so the package is built and smoke-tested by intent-web-package.yml and the
-# tarball is published from a separate ubuntu-24.04 job. Provenance is
-# attached automatically. One-time setup (first manual publish, then the
+# tarball is published from a separate ubuntu-24.04 job. `--provenance`
+# asks npm for a signed build attestation explicitly, so a publish without one
+# fails instead of shipping silently unattested. One-time setup (first manual publish, then the
 # Trusted Publisher entry for this filename) is in
 # docs/intent-web-package.md.
 #
@@ -186,7 +187,10 @@ jobs:
             ls -la "$RUNNER_TEMP/intent-web-package"
             exit 1
           fi
-          npm publish "$TARBALL" --access public --tag "$DIST_TAG"
+          if ! npm publish "$TARBALL" --access public --tag "$DIST_TAG" --provenance; then
+            echo "::error::npm publish of @intent-hq/web@${VERSION} failed; see npm's output above. If npm answered 401/403 (not authorized), check \"Allow npm publish\" under Allowed actions on npmjs.com → @intent-hq/web → Settings → Trusted Publisher (docs/intent-web-package.md), then rerun this workflow."
+            exit 1
+          fi
           echo "::notice::Published @intent-hq/web@${VERSION} (dist-tag ${DIST_TAG})."
 
   sync-channel:

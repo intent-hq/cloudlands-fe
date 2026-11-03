@@ -6,17 +6,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { warmImport } from '../../../../test/warm-import';
 import type { InviteConsentShowPayload } from '$shared/ipc/invite-consent';
 
-const labs = vi.hoisted(() => ({ enabled: false, dispatch: vi.fn() }));
+const labs = vi.hoisted(() => ({ dispatch: vi.fn() }));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
-    state: () => ({ userPreferences: { labsGitLabEnabled: labs.enabled } }),
+    state: () => ({ userPreferences: {} }),
     dispatch: labs.dispatch,
   });
 });
 beforeEach(() => {
-  labs.enabled = false;
   vi.clearAllMocks();
 });
 
@@ -87,30 +86,19 @@ async function loadModal() {
 }
 
 describe('InviteConsentModal', () => {
-  it('opens command search if GitLab is disabled before its already-visible setup link is activated', async () => {
-    labs.enabled = true;
-    const onRespond = vi.fn();
-    const Modal = await loadModal();
-    render(Modal, { props: { open: true, payload: CONNECT_FORGE_PAYLOAD, onRespond } });
-    const link = screen.getByTestId('invite-consent-open-connections');
-    labs.enabled = false;
-    await fireEvent.click(link);
-    expect(onRespond).toHaveBeenCalledExactlyOnceWith('cancel');
-    expect(navigateToSettings).not.toHaveBeenCalled();
-    expect(labs.dispatch).toHaveBeenCalledExactlyOnceWith({
-      type: 'palette/open',
-      payload: ['GitLab'],
-    });
-  });
-
   it.each([PAYLOAD, CONNECT_FORGE_PAYLOAD])(
-    'keeps GitHub usable without offering hidden GitLab setup in $mode',
+    'offers GitLab setup next to a usable GitHub path in $mode',
     async (payload) => {
       const onRespond = vi.fn();
       const Modal = await loadModal();
       render(Modal, { props: { open: true, payload, onRespond } });
-      expect(screen.queryByTestId('invite-consent-open-connections')).toBeNull();
-      expect(screen.queryByTestId('invite-consent-connect-gitlab')).toBeNull();
+      expect(
+        screen.getByTestId(
+          payload.mode === 'connect-forge'
+            ? 'invite-consent-open-connections'
+            : 'invite-consent-connect-gitlab',
+        ),
+      ).toBeTruthy();
       await fireEvent.click(
         screen.getByRole('button', {
           name: payload.mode === 'connect-forge' ? 'Sign in to GitHub' : 'Open GitHub',
@@ -324,7 +312,6 @@ describe('InviteConsentModal', () => {
   });
 
   it('sign-in-required (not connected): the GitLab alternative cancels the join and opens Connections', async () => {
-    labs.enabled = true;
     const onRespond = vi.fn();
     const InviteConsentModal = await loadModal();
 
@@ -347,7 +334,6 @@ describe('InviteConsentModal', () => {
   });
 
   it('connect-forge: offers Connections (cancels the join) and Sign in to GitHub (open) with no device code asked for', async () => {
-    labs.enabled = true;
     const onRespond = vi.fn();
     const InviteConsentModal = await loadModal();
 

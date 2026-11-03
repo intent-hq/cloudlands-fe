@@ -109,7 +109,9 @@ describe('getActiveHookNames', () => {
     const names = await getActiveHookNames(WS);
 
     expect(names).toEqual(['ci watch']);
-    expect(hookListRequests()).toEqual([{ method: 'hook.list', params: { workspaceId: WS } }]);
+    expect(hookListRequests()).toEqual([
+      { method: 'hook.list', params: { workspaceId: WS, limit: 200 } },
+    ]);
   });
 
   it('falls back to hook.list when the entry is retained but stale (no live subscription)', async () => {
@@ -122,7 +124,9 @@ describe('getActiveHookNames', () => {
     const names = await getActiveHookNames(WS);
 
     expect(names).toEqual(['fresh name']);
-    expect(hookListRequests()).toEqual([{ method: 'hook.list', params: { workspaceId: WS } }]);
+    expect(hookListRequests()).toEqual([
+      { method: 'hook.list', params: { workspaceId: WS, limit: 200 } },
+    ]);
   });
 
   it('counts only scheduled/running states as active', async () => {
@@ -162,7 +166,9 @@ describe('getActiveHookNames', () => {
     const names = await getActiveHookNames(WS);
 
     expect(names).toEqual([]);
-    expect(hookListRequests()).toEqual([{ method: 'hook.list', params: { workspaceId: WS } }]);
+    expect(hookListRequests()).toEqual([
+      { method: 'hook.list', params: { workspaceId: WS, limit: 200 } },
+    ]);
   });
 });
 

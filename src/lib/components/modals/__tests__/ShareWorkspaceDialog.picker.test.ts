@@ -173,7 +173,6 @@ it('does not reinterpret a selected GitHub recipient when GitHub disconnects', a
   const both = {
     ...props,
     gitlabConnected: true,
-    gitlabEnabled: true,
     gitlabHost: 'gitlab.com',
     identitySeamSupported: true,
     onCreateInvite,

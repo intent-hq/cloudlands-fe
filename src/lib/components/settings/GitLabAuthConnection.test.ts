@@ -10,11 +10,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor } from '@testing-library/svelte';
 
-import {
-  initialState as preferenceDefaults,
-  setLabsGitLabEnabled,
-  userPreferencesReducer,
-} from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { initialState as preferenceDefaults } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import type { GitLabAuthState } from '$store/renderer/slices/gitlab-auth/gitlab-auth-types';
 import { initialState as gitlabDefaults } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
 import { CURRENT_PROTOCOL_VERSION } from '../../../test/current-protocol-version';
@@ -77,11 +73,7 @@ const tooOld = (root: HTMLElement) =>
 const connectForm = (root: HTMLElement) =>
   root.querySelector('[data-testid="gitlab-connect-form"]');
 
-const setPreference = async (enabled: boolean) => {
-  mocks.userPreferences.value = userPreferencesReducer(
-    preferenceDefaults,
-    setLabsGitLabEnabled(enabled),
-  );
+const emitState = async () => {
   const { appStore } = (await import('$store/renderer/store')) as unknown as {
     appStore: { emitState: () => void };
   };
@@ -97,7 +89,6 @@ beforeEach(() => {
 
 describe('GitLabAuthConnection daemon capability gate', () => {
   it('shows the full connected instance and restores it for reconnecting', async () => {
-    await setPreference(true);
     const instanceBaseUrl = 'https://git.example.test:8443/Parent/Forge';
     mocks.gitlabAuth.value = {
       ...idleGitLab(),
@@ -114,31 +105,18 @@ describe('GitLabAuthConnection daemon capability gate', () => {
       host: 'git.example.test:8443',
       instanceBaseUrl,
     };
-    await setPreference(true);
+    await emitState();
     await fireEvent.click(getByRole('button', { name: 'Connect', exact: true }));
     expect((getByLabelText('GitLab instance URL') as HTMLInputElement).value).toBe(instanceBaseUrl);
   });
 
-  it('hides new GitLab setup for a fresh profile', () => {
+  it('offers new GitLab setup on a fresh profile without any opt-in', () => {
     const { container } = render(GitLabAuthConnection);
-    expect(findButton(container, 'Connect')).toBeUndefined();
+    expect(findButton(container, 'Connect')).toBeTruthy();
     expect(connectForm(container)).toBeNull();
   });
 
-  it('closes an open form on disable and requires a fresh choice after re-enabling', async () => {
-    await setPreference(true);
-    const { container } = render(GitLabAuthConnection);
-    await fireEvent.click(findButton(container, 'Connect')!);
-    expect(connectForm(container)).toBeTruthy();
-    await setPreference(false);
-    await waitFor(() => expect(connectForm(container)).toBeNull());
-    expect(findButton(container, 'Connect')).toBeUndefined();
-    await setPreference(true);
-    await waitFor(() => expect(findButton(container, 'Connect')).toBeTruthy());
-    expect(connectForm(container)).toBeNull();
-  });
-
-  it('keeps the saved account visible with Labs off, without reconnecting or logging out', async () => {
+  it('keeps the saved account visible without reconnecting or logging out', async () => {
     const saved = {
       ...idleGitLab(),
       isConfigured: true,
@@ -155,7 +133,7 @@ describe('GitLabAuthConnection daemon capability gate', () => {
   });
 
   it('supporting daemon: offers Connect and opens the connect form', async () => {
-    mocks.userPreferences.value = { ...preferenceDefaults, labsGitLabEnabled: true };
+    mocks.userPreferences.value = { ...preferenceDefaults };
     const { container } = render(GitLabAuthConnection);
 
     expect(tooOld(container)).toBeNull();
@@ -168,7 +146,7 @@ describe('GitLabAuthConnection daemon capability gate', () => {
   });
 
   it('daemon protocol predating sourceControl.* auth: shows the too-old state, no Connect', () => {
-    mocks.userPreferences.value = { ...preferenceDefaults, labsGitLabEnabled: true };
+    mocks.userPreferences.value = { ...preferenceDefaults };
     mocks.daemonHealthStats.value = { ...supportingDaemonStats(), protocolVersion: '10.4' }; // fixture-protocol-version: too old for sourceControl auth
     const { container } = render(GitLabAuthConnection);
 
@@ -178,7 +156,7 @@ describe('GitLabAuthConnection daemon capability gate', () => {
   });
 
   it('unknown protocol version (no system.status poll yet): treated as too old', () => {
-    mocks.userPreferences.value = { ...preferenceDefaults, labsGitLabEnabled: true };
+    mocks.userPreferences.value = { ...preferenceDefaults };
     mocks.daemonHealthStats.value = null;
     const { container } = render(GitLabAuthConnection);
 
@@ -187,7 +165,7 @@ describe('GitLabAuthConnection daemon capability gate', () => {
   });
 
   it('too-old daemon keeps the connect form closed even while a connect is flagged in flight', () => {
-    mocks.userPreferences.value = { ...preferenceDefaults, labsGitLabEnabled: true };
+    mocks.userPreferences.value = { ...preferenceDefaults };
     mocks.daemonHealthStats.value = { ...supportingDaemonStats(), protocolVersion: '10.4' }; // fixture-protocol-version: too old for sourceControl auth
     mocks.gitlabAuth.value = { ...idleGitLab(), isAuthenticating: true };
     const { container } = render(GitLabAuthConnection);
@@ -197,7 +175,7 @@ describe('GitLabAuthConnection daemon capability gate', () => {
   });
 
   it('re-enables Connect once a later poll reports a supporting protocol', async () => {
-    mocks.userPreferences.value = { ...preferenceDefaults, labsGitLabEnabled: true };
+    mocks.userPreferences.value = { ...preferenceDefaults };
     mocks.daemonHealthStats.value = null;
     const { container } = render(GitLabAuthConnection);
     expect(tooOld(container)).toBeTruthy();

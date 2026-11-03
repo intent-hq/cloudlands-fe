@@ -291,8 +291,8 @@ describe('@intent-hq/web channel dist-tag sync', () => {
 
   it('names the trusted publisher setting and the manual fallback when npm rejects the tag', () => {
     const message = distTagFailure('2.276.0', 'beta');
-    expect(message).toContain("trusted publisher's dist-tag permission");
-    expect(message).toContain('"Allow npm dist-tag"');
+    expect(message).toContain('Check "Allow npm dist-tag" under Allowed actions');
+    expect(message).toContain('Settings → Trusted Publisher');
     expect(message).toContain(
       'https://github.blog/changelog/2026-09-30-opt-in-dist-tag-permissions-for-npm-trusted-publishing/',
     );
@@ -421,9 +421,18 @@ describe('publish-intent-web.yml', () => {
   it('plans before publishing, publicly, under the planned dist-tag', () => {
     const plan = steps.find((s) => s.run?.includes('scripts/intent-web-publish-plan.mjs'));
     const release = steps.find((s) => s.run?.includes('npm publish'));
+    // A trusted publisher without "Allow npm publish" rejects the publish;
+    // the error names that checkbox instead of a bare npm auth failure.
+    expect(release?.run).toContain('if ! npm publish "$TARBALL"');
+    expect(release?.run).toContain("see npm's output above");
+    expect(release?.run).toContain('check \\"Allow npm publish\\" under Allowed actions');
     expect(plan).toBeDefined();
     expect(release?.if).toBe("${{ steps.plan.outputs.publish == 'true' }}");
-    expect(release?.run).toContain('npm publish "$TARBALL" --access public --tag "$DIST_TAG"');
+    // The publish asks for provenance explicitly rather than relying on
+    // trusted publishing to add it, so every release carries an attestation.
+    expect(release?.run).toContain(
+      'npm publish "$TARBALL" --access public --tag "$DIST_TAG" --provenance',
+    );
     expect(steps.indexOf(plan!)).toBeLessThan(steps.indexOf(release!));
   });
 });

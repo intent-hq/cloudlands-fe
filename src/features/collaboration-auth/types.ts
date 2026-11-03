@@ -12,7 +12,6 @@ export interface CollaborationRequest {
 }
 export interface CollaborationPolicy {
   multiplayer: boolean;
-  gitlab: boolean;
 }
 export interface IdentityTarget {
   provider: ForgeProvider;
@@ -25,7 +24,6 @@ export interface CollaborationAuthStatus extends ForgeAuthStatus {
 }
 export type CollaborationError =
   | 'multiplayer-disabled'
-  | 'gitlab-disabled'
   | 'upgrade-required'
   | 'request-changed'
   | 'local-connection-changed'

@@ -5,11 +5,12 @@ import {
   type LinkTrafficRecord,
   type LinkTrafficRow,
 } from '../../../shared/types/daemon-links';
+import type { NodeCapabilitySnapshot } from '../../../shared/node-capabilities';
 
 /** The slice of the pooled JSON-RPC client the Daemon links view needs. */
 export interface DaemonLinksClient {
   request<T = unknown>(method: string, params?: unknown): Promise<T>;
-  getNodeCapabilities(): Readonly<Record<string, number>> | null;
+  getNodeCapabilities(): Partial<NodeCapabilitySnapshot> | null;
   on(
     event: 'notification',
     listener: (notification: { method: string; params?: unknown }) => void,

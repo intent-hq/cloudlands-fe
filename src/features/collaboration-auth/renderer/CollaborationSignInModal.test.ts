@@ -1,15 +1,13 @@
 import { fireEvent, render, screen, cleanup } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { tick } from 'svelte';
-import { store as appStore } from '$store/renderer/store';
 import type { CollaborationView } from '../types';
-const labs = vi.hoisted(() => ({ multiplayer: true, gitlab: true, dispatch: vi.fn() }));
+const labs = vi.hoisted(() => ({ multiplayer: true, dispatch: vi.fn() }));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => ({
-      userPreferences: { labsMultiplayerEnabled: labs.multiplayer, labsGitLabEnabled: labs.gitlab },
+      userPreferences: { labsMultiplayerEnabled: labs.multiplayer },
     }),
     dispatch: labs.dispatch,
   });
@@ -27,7 +25,6 @@ const base: CollaborationView = {
 };
 beforeEach(() => {
   labs.multiplayer = true;
-  labs.gitlab = true;
   labs.dispatch.mockClear();
 });
 afterEach(cleanup);
@@ -81,28 +78,6 @@ describe('collaboration account consent controls', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Sign in with token' }));
     expect(onAction).toHaveBeenCalledExactlyOnceWith({ type: 'connect', token: 'secret-pat' });
     expect((input as HTMLInputElement).value).toBe('');
-    expect(labs.dispatch).not.toHaveBeenCalled();
-  });
-  it('a disabled pinned GitLab identity stays blocked without an experiment shortcut or identity switch', async () => {
-    labs.gitlab = false;
-    const onAction = vi.fn();
-    const target = { provider: 'gitlab' as const, host: 'gitlab.company' };
-    render(CollaborationSignInModal, {
-      view: {
-        ...base,
-        target,
-        request: { scope: 'host', pinIdentity: { ...target, externalUserId: '21' } },
-        phase: 'error',
-        error: 'gitlab-disabled',
-      },
-      onAction,
-    });
-    expect(screen.queryByRole('button', { name: 'Review GitLab experiment' })).toBeNull();
-    expect(screen.queryByRole('button', { name: /^GitHub$/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: /Continue as/ })).toBeNull();
-    expect(onAction).not.toHaveBeenCalled();
-    await fireEvent.click(screen.getAllByRole('button', { name: 'Cancel', exact: true }).at(-1)!);
-    expect(onAction).toHaveBeenCalledExactlyOnceWith({ type: 'cancel' });
     expect(labs.dispatch).not.toHaveBeenCalled();
   });
 });
@@ -224,67 +199,14 @@ describe('progressive collaboration sign-in', () => {
 });
 
 describe('enabled collaboration forge choices', () => {
-  it('offers GitHub sign-in without a chooser or Review button when GitLab is off', async () => {
-    labs.gitlab = false;
+  it('always offers both GitHub and GitLab for an unpinned request', async () => {
     const onAction = vi.fn();
     render(CollaborationSignInModal, { view: { ...base, user: null }, onAction });
-    expect(screen.queryByRole('button', { name: /^GitHub$/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: /^GitLab$/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Review GitLab experiment' })).toBeNull();
-    await fireEvent.click(screen.getByRole('button', { name: 'Sign in with GitHub' }));
-    expect(onAction).toHaveBeenCalledExactlyOnceWith({ type: 'connect' });
-  });
-
-  it('falls back through the existing choice action on live disable without confirming an account', async () => {
-    const onAction = vi.fn();
-    const view: CollaborationView = {
-      ...base,
-      target: { provider: 'gitlab', host: 'gitlab.company' },
-    };
-    const mounted = render(CollaborationSignInModal, { view, onAction });
     expect(screen.getByRole('button', { name: /^GitHub$/ })).not.toBeNull();
-    expect(screen.getByRole('button', { name: /^GitLab$/ })).not.toBeNull();
-    labs.gitlab = false;
-    (appStore as unknown as { emitState(): void }).emitState();
-    await tick();
+    await fireEvent.click(screen.getByRole('button', { name: /^GitLab$/ }));
     expect(onAction).toHaveBeenCalledExactlyOnceWith({
       type: 'choose',
-      target: { provider: 'github', host: 'github.com' },
+      target: { provider: 'gitlab', host: 'gitlab.com' },
     });
-    expect(screen.queryByRole('button', { name: /Continue as/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: /^GitHub$/ })).toBeNull();
-    await mounted.rerender({ view: { ...base, user: null }, onAction });
-    expect(screen.getByRole('button', { name: 'Sign in with GitHub' })).not.toBeNull();
-    expect(labs.dispatch).not.toHaveBeenCalled();
-  });
-
-  it('recovers an unpinned stale disabled selection but never changes an in-flight selection', async () => {
-    labs.gitlab = false;
-    const onAction = vi.fn();
-    const view: CollaborationView = {
-      ...base,
-      target: { provider: 'gitlab', host: 'gitlab.company' },
-      phase: 'error',
-      error: 'gitlab-disabled',
-    };
-    const mounted = render(CollaborationSignInModal, { view, onAction });
-    await tick();
-    expect(onAction).toHaveBeenCalledExactlyOnceWith({
-      type: 'choose',
-      target: { provider: 'github', host: 'github.com' },
-    });
-    onAction.mockClear();
-    await mounted.rerender({ view: { ...view, phase: 'loading', error: undefined }, onAction });
-    expect(onAction).not.toHaveBeenCalled();
-    await mounted.rerender({
-      view: {
-        ...view,
-        phase: 'device',
-        error: undefined,
-        device: { userCode: 'ABCD-EFGH', verificationUri: 'https://gitlab.company/oauth/device' },
-      },
-      onAction,
-    });
-    expect(onAction).not.toHaveBeenCalled();
   });
 });

@@ -56,8 +56,7 @@ const gitlabIdentity = {
   externalUserId: '7',
 };
 
-async function enableGitLab(enabled: boolean) {
-  mocks.state.userPreferences = { ...preferenceDefaults, labsGitLabEnabled: enabled };
+async function emitState() {
   const { appStore } = (await import('$store/renderer/store')) as unknown as {
     appStore: { emitState: () => void };
   };
@@ -94,7 +93,6 @@ describe('legacy repository identity choice', () => {
       mocks.state.githubAuth = { isAuthenticated: false, user: null };
       mocks.state.gitlabAuth = gitlabDefaults;
       mocks.state.identity = identityDefaults;
-      await enableGitLab(true);
       render(ForgeIdentityChoice);
 
       for (const action of [initializeGitHubAuth(), initializeGitLabAuth(), initializeIdentity()]) {
@@ -106,7 +104,7 @@ describe('legacy repository identity choice', () => {
       mocks.state.githubAuth = connected.githubAuth;
       mocks.state.gitlabAuth = connected.gitlabAuth;
       mocks.state.identity = connected.identity;
-      await enableGitLab(true);
+      await emitState();
 
       mocks.confirm.mockResolvedValueOnce(confirmed);
       await fireEvent.click(await screen.findByTestId('forge-identity-option-gitlab'));
@@ -131,11 +129,9 @@ describe('legacy repository identity choice', () => {
   });
 });
 
-describe('GitLab Labs identity choices', () => {
-  it('offers a new GitLab identity only after opting in and confirming', async () => {
+describe('GitLab identity choices', () => {
+  it('offers a connected GitLab identity without any opt-in, after confirming', async () => {
     render(ForgeIdentityChoice);
-    expect(screen.queryByTestId('forge-identity-option-gitlab')).toBeNull();
-    await enableGitLab(true);
     await fireEvent.click(await screen.findByTestId('forge-identity-option-gitlab'));
     await waitFor(() =>
       expect(mocks.dispatch).toHaveBeenCalledWith(setIdentityProviderRequested('gitlab')),
@@ -143,7 +139,7 @@ describe('GitLab Labs identity choices', () => {
     expect(mocks.confirm).toHaveBeenCalledOnce();
   });
 
-  it('does not change a saved GitLab identity or credentials when the lab is disabled', async () => {
+  it('keeps a saved GitLab identity selectable without changing it on render', async () => {
     mocks.state.identity = {
       ...identityDefaults,
       provider: 'gitlab',
@@ -155,29 +151,12 @@ describe('GitLab Labs identity choices', () => {
     expect(screen.getByTestId('forge-identity-current').getAttribute('data-provider')).toBe(
       'gitlab',
     );
-    expect(screen.getByTestId('forge-identity-option-gitlab').hasAttribute('disabled')).toBe(true);
+    expect(screen.getByTestId('forge-identity-option-gitlab').hasAttribute('disabled')).toBe(false);
     expect(mocks.state).toEqual(saved);
     expect(mocks.dispatch).not.toHaveBeenCalledWith(setIdentityProviderRequested('github'));
     await fireEvent.click(screen.getByTestId('forge-identity-option-github'));
     await waitFor(() =>
       expect(mocks.dispatch).toHaveBeenCalledWith(setIdentityProviderRequested('github')),
     );
-  });
-
-  it('does not submit a GitLab switch if the lab is turned off during confirmation', async () => {
-    let finish!: (value: boolean) => void;
-    mocks.confirm.mockImplementation(
-      () =>
-        new Promise<boolean>((resolve) => {
-          finish = resolve;
-        }),
-    );
-    await enableGitLab(true);
-    render(ForgeIdentityChoice);
-    await fireEvent.click(screen.getByTestId('forge-identity-option-gitlab'));
-    await enableGitLab(false);
-    finish(true);
-    await Promise.resolve();
-    expect(mocks.dispatch).not.toHaveBeenCalledWith(setIdentityProviderRequested('gitlab'));
   });
 });
