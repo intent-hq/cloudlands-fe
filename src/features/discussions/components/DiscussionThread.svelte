@@ -28,7 +28,11 @@
     type DiscussionMentionOption,
     type DiscussionMentionAgent,
   } from './discussion-mention-query';
-  import type { DiscussionAgentMention } from '../discussion-agent-mentions';
+  import {
+    discussionAgentMentionLabel,
+    type DiscussionAgentMention,
+    type DiscussionAgentNames,
+  } from '../discussion-agent-mentions';
   import { discussionMessageParts } from '../discussion-message-content';
   import DiscussionReferencePicker from './DiscussionReferencePicker.svelte';
   import type { DiscussionPendingDisplay, DiscussionReactionDisplay } from './discussion-display';
@@ -51,6 +55,8 @@
     onMentionLoadMore?: () => void;
     agents?: readonly DiscussionMentionAgent[];
     agentMentions?: readonly DiscussionAgentMention[];
+    /** Current names by agent ID, including retired agents, for rename-safe display. */
+    agentNames?: DiscussionAgentNames;
     agentsSupported?: boolean;
     agentsUnsupported?: boolean;
     agentActivitySupported?: boolean;
@@ -127,6 +133,7 @@
     onMentionLoadMore,
     agents = [],
     agentMentions = [],
+    agentNames = {},
     agentsSupported = false,
     agentsUnsupported = false,
     agentActivitySupported = false,
@@ -212,6 +219,9 @@
       [author.displayName, author.login].filter((name): name is string => !!name),
     ),
   ]);
+  const mentionsByMessage = $derived(
+    Object.fromEntries(messages.map((message) => [message.id, message.agentMentions ?? []])),
+  );
   const composerParts = $derived(
     discussionMessageParts(composerValue, '', agentMentions, mentionNames),
   );
@@ -745,6 +755,10 @@
               continuation={isContinuation(index)}
               agentMentions={message.agentMentions}
               {mentionNames}
+              {agentNames}
+              replyAgentMentions={'replyTo' in message && message.replyTo
+                ? mentionsByMessage[message.replyTo.id]
+                : undefined}
               replySelected={replyTo?.id === message.id}
               onReplyNavigate={jumpToReply}
               {expandedReactions}
@@ -769,10 +783,17 @@
               <DiscussionAgentActivity
                 messageId={message.id}
                 {activity}
-                name={message.agentMentions?.find((mention) => mention.agentId === activity.agentId)
-                  ?.name ??
-                  agents.find((agent) => agent.id === activity.agentId)?.name ??
-                  m.workspace_tokenUsage_agentUnnamed_label()}
+                name={discussionAgentMentionLabel(
+                  {
+                    agentId: activity.agentId,
+                    name:
+                      message.agentMentions?.find((mention) => mention.agentId === activity.agentId)
+                        ?.name ??
+                      agents.find((agent) => agent.id === activity.agentId)?.name ??
+                      '',
+                  },
+                  agentNames,
+                ) || m.workspace_tokenUsage_agentUnnamed_label()}
                 disabled={!canSend || !agentActivitySupported}
                 pending={agentControlPending.includes(
                   discussionAgentControlKey(message.id, activity.agentId),
