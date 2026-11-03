@@ -13,7 +13,8 @@
     "resolveJsonModule": true,
     "moduleResolution": "bundler",
     "incremental": true,
-    "tsBuildInfoFile": "./dist/tsconfig.main.tsbuildinfo",
+    // A fresh cache repairs output overwritten by the former shared preload outDir.
+    "tsBuildInfoFile": "./dist/tsconfig.main-esm.tsbuildinfo",
     "sourceMap": true,
     "declaration": true,
     "declarationMap": true,

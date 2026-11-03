@@ -56,7 +56,7 @@ test('native console isolation, duplicate focus, reload, crash, load failure and
         },
       },
     });
-    const preload = resolve('dist/preload/index.js');
+    const preload = resolve('dist/preload-build/preload/index.js');
     await writeFile(
       join(root, 'main.cjs'),
       `

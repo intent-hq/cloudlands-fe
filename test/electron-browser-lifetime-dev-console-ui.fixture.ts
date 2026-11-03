@@ -80,7 +80,7 @@ test('Dev Console native renderer inspects traffic through authorized preload an
         },
       },
     });
-    const preload = resolve('dist/preload/index.js');
+    const preload = resolve('dist/preload-build/preload/index.js');
     await writeFile(
       join(root, 'main.cjs'),
       `
