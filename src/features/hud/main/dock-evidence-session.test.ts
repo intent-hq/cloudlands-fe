@@ -413,6 +413,40 @@ describe('dock evidence window and region capture', () => {
     expect(f.window.isVisible()).toBe(true);
   });
 
+  it('hides an annotate overlay during the selection and shows it again', async () => {
+    const f = fixture();
+    f.settle.resolve();
+    const events: string[] = [];
+    f.manager.setSelectionConcealer(() => {
+      events.push('conceal');
+      return () => events.push('reveal');
+    });
+    f.deps.captureSelection = vi.fn(async () => {
+      events.push('select');
+      return { ok: false as const, error: 'unavailable' as const, detail: 'cancelled' };
+    });
+    await f.manager.capture(f.owner, { ...f.scope, requestId: 'region', mode: 'region' });
+    expect(events).toEqual(['conceal', 'select', 'reveal']);
+  });
+
+  it('refuses a selection while an overlay it could not hide is still on screen', async () => {
+    const f = fixture();
+    f.settle.resolve();
+    const reveal = vi.fn();
+    f.manager.setSelectionConcealer(() => reveal);
+    f.manager.setCaptureExclusionIds(() => [99]);
+    f.deps.captureSelection = vi.fn();
+    const result = await f.manager.capture(f.owner, {
+      ...f.scope,
+      requestId: 'window',
+      mode: 'window',
+    });
+    expect(result).toEqual({ ok: false, error: 'unavailable' });
+    expect(f.deps.captureSelection).not.toHaveBeenCalled();
+    expect(reveal).toHaveBeenCalledOnce();
+    expect(f.window.isVisible()).toBe(true);
+  });
+
   it('refuses window and region capture where no selection UI exists', async () => {
     const f = fixture();
     const result = await f.manager.capture(f.owner, {

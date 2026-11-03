@@ -1282,7 +1282,13 @@ export type DockEvidenceNativeEvent =
   /** Clear on the tool bar: the current marks (and a live session's image) are dropped. */
   | { type: 'annotation-clear'; sessionId: string }
   /** Screenshot or Record on the tool bar: the dock runs the composer's own action. */
-  | { type: 'annotation-media'; sessionId: string; action: 'capture' | 'record' }
+  | {
+      type: 'annotation-media';
+      sessionId: string;
+      action: 'capture' | 'record';
+      /** Screenshot mode chosen on the bar; absent keeps the composer's mode. */
+      mode?: DockCaptureMode;
+    }
   /**
    * A genuine failure in a live session (no capture taken, no mark made): `pick`
    * means accessibility metadata is unreadable, `target`/`capture` that the screen

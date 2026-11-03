@@ -103,6 +103,7 @@ export class DockEvidenceSessions {
   private capturing: Session | null = null;
   private exclusions: () => BrowserWindow[] = () => [];
   private exclusionIds: () => number[] = () => [];
+  private conceal: () => () => void = () => () => {};
 
   constructor(private readonly deps: DockEvidenceDependencies) {}
 
@@ -113,6 +114,11 @@ export class DockEvidenceSessions {
 
   setCaptureExclusionIds(provider: () => number[]): void {
     this.exclusionIds = provider;
+  }
+
+  /** Hides main-owned overlays for a window/region selection; returns their restore. */
+  setSelectionConcealer(provider: () => () => void): void {
+    this.conceal = provider;
   }
 
   private ownerCurrent(owner: DockEvidenceOwner, binding: Binding): boolean {
@@ -298,15 +304,21 @@ export class DockEvidenceSessions {
     try {
       if (request.mode && request.mode !== 'fullscreen') {
         if (!this.deps.captureSelection) return unavailable();
-        // The dock is the capture tool, never part of the selection.
-        hidden = true;
-        this.deps.hidden(window, true, false);
-        await this.deps.settle();
-        if (!this.current(session)) return unavailable();
-        const selected = await this.deps.captureSelection(request.mode);
-        if (!this.current(session)) return unavailable();
-        if (!selected.ok) return selected;
-        return this.pixels(session, request, selected.value, selected.value.displayScale);
+        // The dock and an annotate overlay are capture tools, never part of the selection.
+        const reveal = this.conceal();
+        try {
+          hidden = true;
+          this.deps.hidden(window, true, false);
+          await this.deps.settle();
+          // An overlay that could not be hidden would be selected or photographed.
+          if (!this.current(session) || this.exclusionIds().length) return unavailable();
+          const selected = await this.deps.captureSelection(request.mode);
+          if (!this.current(session)) return unavailable();
+          if (!selected.ok) return selected;
+          return this.pixels(session, request, selected.value, selected.value.displayScale);
+        } finally {
+          reveal();
+        }
       }
       let nativePixels: DockCapturedPixels | undefined;
       const excluded = this.exclusions().filter((surface) => !surface.isDestroyed());

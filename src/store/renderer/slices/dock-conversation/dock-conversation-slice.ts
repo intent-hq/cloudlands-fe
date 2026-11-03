@@ -110,9 +110,10 @@ export const dockConversationSendState = createAction<
 // Screen evidence. Requests are saga-owned (native boundary, context items);
 // the remaining actions are pure, pair-scoped evidence transitions.
 type Pair = [workspaceId: string, agentId: string];
-export const dockEvidenceCaptureRequested = createAction<Pair>(
-  'dockConversation/evidenceCaptureRequested',
-);
+/** Captures in the chosen screenshot mode unless `mode` overrides it for this capture. */
+export const dockEvidenceCaptureRequested = createAction<
+  [workspaceId: string, agentId: string, mode?: DockCaptureMode]
+>('dockConversation/evidenceCaptureRequested');
 export const dockEvidenceAnnotationToggleRequested = createAction<
   [workspaceId: string, agentId: string, stillImageId?: string]
 >('dockConversation/evidenceAnnotationToggleRequested');

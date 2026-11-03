@@ -126,7 +126,10 @@
   --muted-foreground: var(--theme-dark-muted-foreground);
   --color-muted-foreground: hsl(var(--theme-dark-muted-foreground));
   --hover: var(--theme-dark-hover);
+  --color-hover: var(--theme-dark-hover);
   --active: var(--theme-dark-active);
+  --selected: var(--theme-dark-selected);
+  --color-selected: hsl(var(--theme-dark-selected));
   --border: var(--theme-dark-border);
   --color-border: hsl(var(--theme-dark-border));
 }

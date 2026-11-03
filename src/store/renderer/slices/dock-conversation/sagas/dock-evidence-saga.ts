@@ -56,6 +56,7 @@ import {
   type DockEvidenceNativeEvent,
   type DockEvidenceNativeService,
   type DockMarkTool,
+  type DockCaptureMode,
   type DockNativeResult,
   reusableDockImage,
   undoableDockMark,
@@ -89,6 +90,7 @@ import {
   dockEvidenceAnnotationToggleRequested,
   dockEvidenceCaptureFailed,
   dockEvidenceCaptureCancelled,
+  dockEvidenceCaptureModeSet,
   dockEvidenceCaptureRequested,
   dockEvidenceCaptureStarted,
   dockEvidenceSessionRetired,
@@ -298,7 +300,7 @@ function* addCapturedImage(
 }
 
 function* capture({
-  payload: [workspaceId, agentId],
+  payload: [workspaceId, agentId, requestedMode],
 }: ReturnType<typeof dockEvidenceCaptureRequested>): SagaGenerator<void> {
   if (!activePair(workspaceId, agentId)) return;
   const evidence = evidenceOf(workspaceId, agentId);
@@ -311,8 +313,7 @@ function* capture({
     yield* put(dockEvidenceCaptureFailed(workspaceId, agentId, 'unavailable'));
     return;
   }
-  // A live annotate session photographs its marks on the whole screen.
-  const mode = evidence?.annotation ? 'fullscreen' : appStore.state.dockConversation.captureMode;
+  const mode = requestedMode ?? appStore.state.dockConversation.captureMode;
   yield* put(dockEvidenceCaptureStarted(workspaceId, agentId));
   let result: DockNativeResult<DockCapturedPixels>;
   try {
@@ -488,7 +489,8 @@ function* commitAnnotation(workspaceId: string, agentId: string): SagaGenerator<
     yield* syncMarks(workspaceId, agentId);
     return;
   }
-  yield* put(dockEvidenceCaptureRequested(workspaceId, agentId));
+  // The screen as annotated: never a window or region selection.
+  yield* put(dockEvidenceCaptureRequested(workspaceId, agentId, 'fullscreen'));
 }
 
 /**
@@ -1200,6 +1202,7 @@ function* barMediaAction(
   workspaceId: string,
   agentId: string,
   action: 'capture' | 'record',
+  mode?: DockCaptureMode,
 ): SagaGenerator<void> {
   const view = selectDockComposerEvidence.select(appStore.state, workspaceId, agentId);
   if (action === 'record' && view.recording) {
@@ -1211,8 +1214,11 @@ function* barMediaAction(
     return;
   }
   if (action === 'capture') {
-    if (view.capabilities.capture && !view.captureDisabled && !view.capturePending)
-      yield* put(dockEvidenceCaptureRequested(workspaceId, agentId));
+    if (!view.capabilities.capture || view.captureDisabled || view.capturePending) return;
+    // A mode chosen on the bar is the composer's mode from now on, as in its own menu.
+    if (mode && (mode === 'fullscreen' || view.capabilities.captureModes))
+      yield* put(dockEvidenceCaptureModeSet(mode));
+    yield* put(dockEvidenceCaptureRequested(workspaceId, agentId));
     return;
   }
   if (view.capabilities.record && view.clips.length < DOCK_EVIDENCE_LIMITS.clips)
@@ -1265,7 +1271,7 @@ function* watchNative(): SagaGenerator<void> {
         if (owner && (event.action === 'capture' || event.action === 'record')) {
           const [workspaceId, agentId] = JSON.parse(owner.id) as [string, string];
           if (activePair(workspaceId, agentId))
-            yield* fork(barMediaAction, workspaceId, agentId, event.action);
+            yield* fork(barMediaAction, workspaceId, agentId, event.action, event.mode);
         }
       } else if (event.type === 'annotation-tool') {
         // Switched on the on-screen tool bar: native already uses it.

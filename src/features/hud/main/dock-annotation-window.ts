@@ -50,6 +50,7 @@ import {
   gestureOverlayGeometry,
   overlayGeometryToImage,
   pointInRects,
+  isDockCaptureMode,
   sanitizeDockAnnotationMedia,
   shapeMostlyInside,
   toDockMarkElement,
@@ -587,6 +588,32 @@ export class DockAnnotationController implements AnnotationService {
     return id === null ? [] : [id];
   }
 
+  /**
+   * Hide the visible overlay while the person selects a window or region, so the
+   * system picker never selects it and its marks stay out of the image. The session,
+   * its marks and exclusions stay; the returned function shows it again.
+   */
+  conceal(): () => void {
+    const session = this.session;
+    const window = this.window;
+    if (!session || !this.current(session) || !usable(window) || !window.isVisible())
+      return () => {};
+    try {
+      window.hide();
+    } catch (error) {
+      logger.warn('Failed to hide the dock annotation overlay for a selection', { error });
+      return () => {};
+    }
+    return () => {
+      if (!this.current(session) || this.window !== window || !usable(window)) return;
+      try {
+        window.showInactive();
+      } catch (error) {
+        logger.warn('Failed to show the dock annotation overlay after a selection', { error });
+      }
+    };
+  }
+
   onOverlayWindowsChanged(listener: (ids: number[]) => void): () => void {
     this.windowListeners.add(listener);
     return () => this.windowListeners.delete(listener);
@@ -723,7 +750,14 @@ export class DockAnnotationController implements AnnotationService {
     if (request.action === 'capture' || request.action === 'record') {
       // The dock runs the composer's own action (and its permission and limit
       // rules); the session, its tool and mouse mode stay as they are.
-      this.emit({ type: 'annotation-media', sessionId: session.id, action: request.action });
+      const mode = request.action === 'capture' ? request.mode : undefined;
+      if (mode !== undefined && !isDockCaptureMode(mode)) return false;
+      this.emit({
+        type: 'annotation-media',
+        sessionId: session.id,
+        action: request.action,
+        ...(mode ? { mode } : {}),
+      });
       return true;
     }
     if (request.action === 'rect') {

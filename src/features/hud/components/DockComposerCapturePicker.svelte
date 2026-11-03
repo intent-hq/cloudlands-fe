@@ -1,9 +1,8 @@
 <script lang="ts">
   import { onDestroy, tick } from 'svelte';
   import { Button } from '$lib/components/ui/button';
-  import * as Menu from '$lib/components/ui/menu';
   import DockComposerIcon from './DockComposerIcon.svelte';
-  import { DOCK_CAPTURE_MODES } from '$shared/dock-evidence';
+  import DockCaptureModeMenu, { DOCK_CAPTURE_GLYPHS } from './DockCaptureModeMenu.svelte';
   import type {
     DockComposerCaptureMode,
     DockComposerMediaLabels,
@@ -26,8 +25,6 @@
     onAlert?: () => void;
   } = $props();
 
-  const glyphs = { fullscreen: 'viewfinder', window: 'window', region: 'region' } as const;
-
   // A remount with an existing image is not a new successful capture.
   // svelte-ignore state_referenced_locally -- retain the initial acknowledgement revision.
   const initialCaptureRevision = media.captureRevision;
@@ -48,7 +45,6 @@
 
   let open = $state(false);
   let trigger = $state<HTMLButtonElement | null>(null);
-  let content = $state<HTMLElement | null>(null);
   let keyboardOpen = false;
   // Hovering moves focus into the menu; closing returns it to where the person was typing.
   // The button itself is named, not kept: its element is re-created while the menu is open.
@@ -149,47 +145,20 @@
         aria-hidden="true"
       ></span>{/if}
   {/key}
-  <DockComposerIcon glyph={glyphs[mode]} />
+  <DockComposerIcon glyph={DOCK_CAPTURE_GLYPHS[mode]} />
 </Button>
 {#if menuLabels && media.captureModesAvailable}
-  <Menu.Root bind:open>
-    <Menu.Content
-      bind:ref={content}
-      customAnchor={trigger}
-      side="top"
-      align="center"
-      sideOffset={6}
-      class="dock-media-tool-popover min-w-0 rounded-[10px] p-[3px] shadow-none"
-      data-dock-palette="notch"
-      aria-label={labels.captureOptions}
-      onpointerenter={() => clearTimeout(closeTimer)}
-      onpointerleave={leave}
-      onOpenAutoFocus={(event) => {
-        event.preventDefault();
-        if (keyboardOpen)
-          void tick().then(() =>
-            content
-              ?.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]')
-              ?.focus(),
-          );
-      }}
-      onCloseAutoFocus={(event) => event.preventDefault()}
-    >
-      <Menu.RadioGroup value={mode}>
-        {#each DOCK_CAPTURE_MODES as option (option)}
-          <Menu.RadioItem
-            value={option}
-            closeOnSelect
-            data-capture-mode={option}
-            onSelect={() => choose(option)}
-          >
-            {#snippet leading()}<DockComposerIcon glyph={glyphs[option]} />{/snippet}
-            {menuLabels[option]}
-          </Menu.RadioItem>
-        {/each}
-      </Menu.RadioGroup>
-    </Menu.Content>
-  </Menu.Root>
+  <DockCaptureModeMenu
+    bind:open
+    anchor={trigger}
+    {mode}
+    labels={menuLabels}
+    label={labels.captureOptions}
+    focusChecked={keyboardOpen}
+    onSelect={choose}
+    onpointerenter={() => clearTimeout(closeTimer)}
+    onpointerleave={leave}
+  />
 {/if}
 
 <style>
