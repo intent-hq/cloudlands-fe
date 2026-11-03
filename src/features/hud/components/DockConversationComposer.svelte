@@ -332,7 +332,6 @@
   /** Copy, or cut: a cut removes the unsent tile only after the clipboard write succeeded. */
   async function copyMediaAttachment(id: string, cut: boolean): Promise<void> {
     if (!media?.onCopy || disposed) return;
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- writes the system clipboard; nothing is loaded
     const copied = await media.onCopy(id);
     if (!copied) {
       if (!disposed) notify.error(m.dock_mediaClipboard_copyFailed_error());
