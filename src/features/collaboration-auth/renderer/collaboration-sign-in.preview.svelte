@@ -1,19 +1,14 @@
 <script module lang="ts">
   import { definePreview } from '$lib/component-catalog/preview-definition';
   import { store as appStore } from '$store/renderer/store';
-  import {
-    setLabsGitLabEnabled,
-    setLabsMultiplayerEnabled,
-  } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import type { CollaborationView } from '../types';
 
-  function setup(gitlabEnabled = true) {
+  function setup() {
     const before = appStore.state.userPreferences;
     appStore.dispatch(setLabsMultiplayerEnabled(true));
-    appStore.dispatch(setLabsGitLabEnabled(gitlabEnabled));
     return () => {
       appStore.dispatch(setLabsMultiplayerEnabled(before.labsMultiplayerEnabled));
-      appStore.dispatch(setLabsGitLabEnabled(before.labsGitLabEnabled));
     };
   }
   const github = { provider: 'github' as const, host: 'github.com', externalUserId: '42' };
@@ -38,10 +33,6 @@
     defaultState: 'github-consent',
     states: {
       'github-consent': { setup, props: { view: base, static: true } },
-      'github-only': {
-        setup: () => setup(false),
-        props: { static: true, view: { ...base, request: { scope: 'settings' }, user: null } },
-      },
       'github-choice': {
         setup,
         props: { static: true, view: { ...base, request: { scope: 'settings' }, user: null } },

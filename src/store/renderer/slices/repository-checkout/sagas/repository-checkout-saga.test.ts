@@ -7,10 +7,7 @@ import {
   withHostPrincipal,
 } from '../../../../../test/fixtures/principal-state';
 import { principalContextChanged, principalReceived } from '../../principal/principal-slice';
-import {
-  setLabsGitLabEnabled,
-  setLabsMultiplayerEnabled,
-} from '../../user-preferences/user-preferences-slice';
+import { setLabsMultiplayerEnabled } from '../../user-preferences/user-preferences-slice';
 import { gitlabAuthChanged } from '../../gitlab-auth/gitlab-auth-slice';
 import {
   opened,
@@ -122,7 +119,6 @@ beforeAll(() => {
 afterAll(() => dispose());
 beforeEach(() => {
   vi.useFakeTimers();
-  store.dispatch(setLabsGitLabEnabled(true));
   store.dispatch(setLabsMultiplayerEnabled(true));
   admit();
   captureSpy = vi
@@ -390,13 +386,8 @@ describe('qualified project and branch selection in the real renderer store', ()
       expect(form().status).toBe('ready');
     },
   );
-  it('makes no capture for a guest or disabled Labs feature', async () => {
+  it('makes no capture for a guest', async () => {
     admit('guest');
-    store.dispatch(opened('form'));
-    await advance();
-    expect(captureSpy).not.toHaveBeenCalled();
-    admit();
-    store.dispatch(setLabsGitLabEnabled(false));
     store.dispatch(opened('form'));
     await advance();
     expect(captureSpy).not.toHaveBeenCalled();

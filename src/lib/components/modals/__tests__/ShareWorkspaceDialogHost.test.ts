@@ -59,7 +59,7 @@ beforeEach(() => {
       integrationAuthLoaded: true,
       loadStatus: 'loaded',
     },
-    userPreferences: { ...preferenceDefaults, labsGitLabEnabled: true },
+    userPreferences: { ...preferenceDefaults },
     identity: identityDefaults,
     githubAuth: { isAuthenticated: false },
     gitlabAuth: gitlabDefaults,
@@ -93,22 +93,18 @@ function settledState(enabled: boolean, forge = true) {
   return target;
 }
 
-it.each([true, false])(
-  'keeps generic account setup on Connections when GitLab is enabled=%s at activation',
-  async (enabled) => {
-    settledState(false, false);
-    render(ShareWorkspaceDialogHost);
-    const link = screen.getByRole('button', { name: 'Open Connections' });
-    mocks.state.userPreferences = { ...preferenceDefaults, labsGitLabEnabled: enabled };
-    mocks.dispatch.mockClear();
-    await fireEvent.click(link);
-    expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith({
-      tab: 'connections',
-      hash: 'integrations',
-    });
-    expect(mocks.dispatch).toHaveBeenCalledExactlyOnceWith(closeShareDialog());
-  },
-);
+it('keeps generic account setup on Connections', async () => {
+  settledState(false, false);
+  render(ShareWorkspaceDialogHost);
+  const link = screen.getByRole('button', { name: 'Open Connections' });
+  mocks.dispatch.mockClear();
+  await fireEvent.click(link);
+  expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith({
+    tab: 'connections',
+    hash: 'integrations',
+  });
+  expect(mocks.dispatch).toHaveBeenCalledExactlyOnceWith(closeShareDialog());
+});
 
 it.each(['guest', 'unresolved'] as const)(
   'withholds a stale Connections action after authority becomes %s',

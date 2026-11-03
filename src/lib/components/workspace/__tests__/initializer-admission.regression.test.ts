@@ -256,10 +256,7 @@ import {
 } from '$store/renderer/slices/principal/principal-slice';
 import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { hostExecutionConnectionChanged } from '$store/renderer/slices/host-execution/host-execution-slice';
-import {
-  setLabsGitLabEnabled,
-  setLabsMultiplayerEnabled,
-} from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { repositoryCheckoutSaga } from '$store/renderer/slices/repository-checkout/sagas/repository-checkout-saga';
 import type {
   RepositoryCheckoutSession,
@@ -592,7 +589,6 @@ describe('actual initializer qualified GitLab workspace creation', () => {
   let session: RepositoryCheckoutSession;
   beforeEach(() => {
     mocks.compactFormState$.set(null);
-    store.dispatch(setLabsGitLabEnabled(true));
     const listeners = new Set<() => void>();
     session = {
       capture: {

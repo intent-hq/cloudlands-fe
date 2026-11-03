@@ -47,11 +47,7 @@
   import { cancelGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
   import { selectGitHubAuthIsAuthenticating } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import { cancelGitLabAuth } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
-  import {
-    selectGitLabAuthIsAuthenticating,
-    selectGitLabAuthIsConfigured,
-  } from '$store/renderer/slices/gitlab-auth/gitlab-auth-selectors';
-  import { selectLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { selectGitLabAuthIsAuthenticating } from '$store/renderer/slices/gitlab-auth/gitlab-auth-selectors';
 
   import ProjectPickerMessage from '$features/onboarding/messages/ProjectPickerMessage.svelte';
   import type { IssueSelectionData } from '$lib/components/workspace/initializer/IssueSuggestions.svelte';
@@ -872,9 +868,7 @@
   const isRequirementsStep = $derived($onboardingStep$ === 'requirements');
   const isWelcomeStep = $derived($onboardingStep$ === 'welcome');
   const isForgeStep = $derived($onboardingStep$ === 'forge');
-  const gitlabEnabled$ = selectLabsGitLabEnabled();
-  const gitlabConfigured$ = selectGitLabAuthIsConfigured();
-  const forgeCopy = $derived(onboardingForgeCopy($gitlabEnabled$ || $gitlabConfigured$));
+  const forgeCopy = onboardingForgeCopy();
   // Git may be skipped at the requirements gate (Labs, no forge); a git
   // project then prompts to install it instead of advancing.
   const projectNeedsGit = $derived(needsGitInstallForProject(projectSelection, $gitRequirement$));

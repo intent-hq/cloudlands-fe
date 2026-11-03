@@ -24,7 +24,6 @@ const {
   paletteNoteSearch,
   collaboratorState,
   multiplayerState,
-  gitlabState,
   remoteAgentsState,
   plainFolderState,
   storeEvents,
@@ -149,7 +148,6 @@ const {
       subscribers: new Set<(value: boolean) => void>(),
     },
     multiplayerState: { enabled: false },
-    gitlabState: { enabled: undefined as boolean | undefined },
     remoteAgentsState: { enabled: undefined as boolean | undefined },
     plainFolderState: { enabled: undefined as boolean | undefined },
     storeEvents: { emit: () => {} },
@@ -269,7 +267,6 @@ vi.mock('$store/renderer/store', async () => {
       workspaceAgents: { byWorkspaceId: {} },
       userPreferences: {
         labsMultiplayerEnabled: multiplayerState.enabled,
-        labsGitLabEnabled: gitlabState.enabled,
         labsRemoteAgentsEnabled: remoteAgentsState.enabled,
         labsPlainFolderWorkspacesEnabled: plainFolderState.enabled,
       },
@@ -414,7 +411,6 @@ describe('CommandPalette new actions', () => {
     collaboratorState.workspace = false;
     collaboratorState.client = false;
     multiplayerState.enabled = false;
-    gitlabState.enabled = undefined;
     remoteAgentsState.enabled = undefined;
     plainFolderState.enabled = undefined;
   });
@@ -540,48 +536,10 @@ describe('CommandPalette new actions', () => {
     expect(navigateToSettingsMock).toHaveBeenCalledExactlyOnceWith({ tab: 'collaboration' });
   });
 
-  it.each([undefined, false, true])(
-    'changes experimental GitLab from saved=%s without a workspace or an implicit preference change',
-    async (enabled) => {
-      gitlabState.enabled = enabled;
-      const onClose = vi.fn();
-      render(CommandPalette, { props: { isOpen: true, initialQuery: 'GitLab', onClose } });
-      const command = await screen.findByRole('button', {
-        name: enabled ? /Disable experimental GitLab/i : /Enable experimental GitLab/i,
-      });
-      expect(
-        screen.queryByRole('button', {
-          name: enabled ? /Enable experimental GitLab/i : /Disable experimental GitLab/i,
-        }),
-      ).toBeNull();
-      expect(
-        reduxDispatchMock.mock.calls.filter(([action]) =>
-          action.type.startsWith('userPreferences/'),
-        ),
-      ).toEqual([]);
-
-      reduxDispatchMock.mockClear();
-      if (enabled) await fireEvent.click(command);
-      else await fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
-
-      expect(reduxDispatchMock).toHaveBeenCalledExactlyOnceWith({
-        type: 'userPreferences/setLabsGitLabEnabled',
-        payload: [!enabled],
-      });
-      expect(onClose).toHaveBeenCalledOnce();
-    },
-  );
-
-  it('updates the GitLab command after delayed hydration without changing the saved choice', async () => {
+  it('offers no experimental GitLab toggle: GitLab is always on', async () => {
     render(CommandPalette, { props: { isOpen: true, initialQuery: 'GitLab', onClose: vi.fn() } });
-    await screen.findByRole('button', { name: /Enable experimental GitLab/i });
-    gitlabState.enabled = true;
-    storeEvents.emit();
-    await screen.findByRole('button', { name: /Disable experimental GitLab/i });
-    expect(screen.queryByRole('button', { name: /Enable experimental GitLab/i })).toBeNull();
-    expect(
-      reduxDispatchMock.mock.calls.filter(([action]) => action.type.startsWith('userPreferences/')),
-    ).toEqual([]);
+    await screen.findByRole('textbox');
+    expect(screen.queryByRole('button', { name: /experimental GitLab/i })).toBeNull();
   });
 
   it.each([undefined, false, true])(
@@ -710,7 +668,7 @@ describe('CommandPalette new actions', () => {
     const input = screen.getByRole('textbox') as HTMLInputElement;
     await fireEvent.input(input, { target: { value: 'my search' } });
 
-    gitlabState.enabled = true;
+    remoteAgentsState.enabled = true;
     storeEvents.emit();
     await view.rerender({ workspaceId: 'ws-1' });
     expect(input.value).toBe('my search');

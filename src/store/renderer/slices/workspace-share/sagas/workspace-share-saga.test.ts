@@ -313,7 +313,7 @@ describe('workspaceShareSaga', () => {
     replyByMethod({ 'workspace.invite.create': createReply() });
     const h = harness(opened(), { 'ws-1': 'collaborator' }, (root) => {
       const state = withHostPrincipal(root, 'member');
-      state.userPreferences = { ...state.userPreferences, labsGitLabEnabled: true };
+      state.userPreferences = { ...state.userPreferences };
       state.workspace = {
         ...state.workspace,
         hasLoaded: true,

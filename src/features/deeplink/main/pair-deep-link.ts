@@ -85,11 +85,11 @@ export async function handlePairDeepLink(url: string): Promise<void> {
     });
     const role = invitedRole(remote);
     if (role) {
-      if (!attempt.current() || !attempt.allowed(remote.principal.identity?.provider)) return;
+      if (!attempt.current() || !attempt.allowed()) return;
       const people = await guestSessionsStore.findAllMatching(fingerprint);
       const known = people.find((row) => row.principalId === remote.principal.id);
       if (!known && !(await confirmNewBackend(host, port, fingerprint))) return;
-      if (!attempt.current() || !attempt.allowed(remote.principal.identity?.provider)) return;
+      if (!attempt.current() || !attempt.allowed()) return;
       const record = await guestSessionsStore.add({
         label: host,
         host,
@@ -105,7 +105,7 @@ export async function handlePairDeepLink(url: string): Promise<void> {
       });
       if (attempt.current())
         await openBackendWindow(record.id, {
-          mayOpen: () => attempt.current() && attempt.allowed(remote.principal.identity?.provider),
+          mayOpen: () => attempt.current() && attempt.allowed(),
         });
       return;
     }

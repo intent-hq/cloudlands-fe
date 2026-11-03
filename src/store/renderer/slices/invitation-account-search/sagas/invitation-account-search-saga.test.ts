@@ -13,10 +13,7 @@ import {
   hostMembershipChanged,
 } from '../../principal/principal-slice';
 import { selectHostMembershipContext } from '../../host-membership/host-membership-selectors';
-import {
-  setLabsGitLabEnabled,
-  setLabsMultiplayerEnabled,
-} from '../../user-preferences/user-preferences-slice';
+import { setLabsMultiplayerEnabled } from '../../user-preferences/user-preferences-slice';
 import {
   accountSearchConfigured,
   accountSearchRequested,
@@ -65,7 +62,6 @@ beforeEach(() => {
   wire.mockReset();
   wire.mockResolvedValue({ users: [] });
   store.dispatch(setLabsMultiplayerEnabled(true));
-  store.dispatch(setLabsGitLabEnabled(true));
   admit();
 });
 afterEach(() => {
@@ -162,7 +158,7 @@ it('does not require repository credentials and preserves manual fallback for me
   expect(store.state.invitationAccountSearch.status).toBe('error');
   expect(store.state.invitationAccountSearch.error).toContain('username');
 });
-it('rejects malformed queries, foreign-host results and disabled GitLab without showing an empty success', async () => {
+it('rejects malformed queries and foreign-host results without showing an empty success, and searches GitLab', async () => {
   store.dispatch(accountSearchRequested('dialog', { ...query, query: 'sa/path' }));
   await vi.advanceTimersByTimeAsync(300);
   expect(wire).not.toHaveBeenCalled();
@@ -174,10 +170,10 @@ it('rejects malformed queries, foreign-host results and disabled GitLab without 
   expect(getItems(store.state.invitationAccountSearch.results)).toEqual([]);
   expect(store.state.invitationAccountSearch.status).toBe('error');
   wire.mockClear();
-  store.dispatch(setLabsGitLabEnabled(false));
+  wire.mockResolvedValueOnce({ users: [] });
   store.dispatch(
     accountSearchRequested('dialog', { ...query, provider: 'gitlab', host: 'gitlab.com' }),
   );
   await vi.advanceTimersByTimeAsync(300);
-  expect(wire).not.toHaveBeenCalled();
+  expect(wire).toHaveBeenCalledOnce();
 });

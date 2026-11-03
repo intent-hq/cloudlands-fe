@@ -163,7 +163,7 @@ export interface CollaborationFlowDeps {
 
 export class CollaborationAuthFlow {
   private readonly client: CollaborationIdentityClient;
-  private policy: CollaborationPolicy = { multiplayer: false, gitlab: false };
+  private policy: CollaborationPolicy = { multiplayer: false };
   private initialized = false;
   private ended = false;
   private revision = 0;
@@ -206,8 +206,6 @@ export class CollaborationAuthFlow {
   private guardProvider(target: IdentityTarget) {
     if (target.provider === 'gitlab' && !this.deps.local.gitlabSupported)
       throw new CollaborationAuthFailure('upgrade-required');
-    if (target.provider === 'gitlab' && !this.policy.gitlab)
-      throw new CollaborationAuthFailure('gitlab-disabled');
   }
   private guard() {
     this.guardAttempt();
@@ -273,10 +271,7 @@ export class CollaborationAuthFlow {
     }
     if (action.type === 'policy') {
       this.policy = action.policy;
-      if (
-        !this.policy.multiplayer ||
-        (this.initialized && this.view.target.provider === 'gitlab' && !this.policy.gitlab)
-      ) {
+      if (!this.policy.multiplayer) {
         this.cancel();
         return;
       }
@@ -425,11 +420,7 @@ export class CollaborationAuthFlow {
             local: this.deps.local,
             allowed: () => {
               const policy = this.deps.policy?.() ?? this.policy;
-              return (
-                this.deps.attempt.current() &&
-                policy.multiplayer &&
-                (identity.provider !== 'gitlab' || policy.gitlab)
-              );
+              return this.deps.attempt.current() && policy.multiplayer;
             },
           },
         });

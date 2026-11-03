@@ -5,8 +5,6 @@ export function collaborationErrorMessage(code: CollaborationError): string {
   switch (code) {
     case 'upgrade-required':
       return m.collaborationAuth_upgrade_error();
-    case 'gitlab-disabled':
-      return m.collaborationAuth_gitlabDisabled_error();
     case 'request-changed':
       return m.collaborationAuth_requestChanged_error();
     case 'local-connection-changed':
