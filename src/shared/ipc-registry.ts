@@ -410,6 +410,8 @@ export const IPC_CHANNELS = {
     FOCUS_DOCK: 'window:focus-dock',
     GET_DOCK_PLACEMENT: 'window:get-dock-placement',
     UPDATE_DOCK_PLACEMENT: 'window:update-dock-placement',
+    // Dock right-click: main pops a native menu (move, hide) over the dock window.
+    SHOW_DOCK_MENU: 'window:show-dock-menu',
     SWITCH_DOCK_BACKEND: 'window:switch-dock-backend',
     DOCK_BACKEND_SWITCH_FAILED: 'window:dock-backend-switch-failed',
     DOCK_PLACEMENT_CHANGED: 'window:dock-placement-changed',

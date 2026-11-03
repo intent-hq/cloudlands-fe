@@ -14,6 +14,7 @@ import {
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { WorkspaceStatus, type Workspace } from '$shared/types';
 import type { DockWorkspaceView } from '$store/renderer/slices/hud/hud-selectors';
+import type { Snippet } from 'svelte';
 
 export interface DockRailPreviewProps {
   workspaces: DockWorkspaceView[];
@@ -28,6 +29,8 @@ export interface DockRailPreviewProps {
   controlledPlacement?: boolean;
   manualResizeAcknowledgements?: boolean;
   conversationFixture?: boolean;
+  /** Test harnesses only: conversation content in place of the static panel. */
+  conversationContent?: Snippet;
   machineFixture?: boolean;
   failMachineOnce?: boolean;
   resizeAcknowledgement?: 'accept' | 'reject' | 'defer';

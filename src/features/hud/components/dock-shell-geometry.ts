@@ -3,6 +3,7 @@ import {
   DOCK_CONVERSATION_DEFAULT_SIZE,
   DOCK_FLOATING_COMPACT_SIZE,
   getDockCompactNotchSize,
+  type DockPlacementCommand,
   type DockPlacementSnapshot,
 } from '$shared/dock-placement';
 
@@ -17,6 +18,16 @@ interface DockShellLayoutInput {
   workspaceCount: number;
   compactWingWidth: number;
   hasFeedback: boolean;
+  /** The "Meet the notch" card sits above the rows (DockIntroCard). */
+  intro?: boolean;
+}
+
+/** DockIntroCard's fixed height plus its gap below; keep in step with its styles. */
+export const DOCK_INTRO_HEIGHT = 130;
+
+/** Width of the compact notch wing that shows one dot per status group. */
+export function dockCompactWingWidth(statusGroups: number): number {
+  return 12 + statusGroups * 12 + 6 * Math.max(0, statusGroups - 1) + 4;
 }
 
 interface DockShellLayout {
@@ -45,6 +56,7 @@ export function getDockShellLayout(
     workspaceCount,
     compactWingWidth,
     hasFeedback,
+    intro = false,
   }: DockShellLayoutInput,
 ): DockShellLayout {
   const dragging = placement.phase === 'dragging';
@@ -61,7 +73,8 @@ export function getDockShellLayout(
   // Cap the viewport, not the rendered list: every workspace remains scrollable.
   // Workspace rows (52), the divider (1 + 2 + 4), the Assistant row (40) and the
   // frame's 8 + 8 padding. Keep in step with DockOverview / DockCompanionContent.
-  const overviewHeight = Math.min(workspaceCount, rowLimit) * 52 + 7 + 40 + 16;
+  const overviewHeight =
+    Math.min(workspaceCount, rowLimit) * 52 + 7 + 40 + 16 + (intro ? DOCK_INTRO_HEIGHT : 0);
   const railHeight = 48 + (Math.min(workspaceCount, rowLimit) + 1) * 32;
   const full = placement.surface;
   const desiredWidth = dragging
@@ -220,6 +233,22 @@ export interface DockDragGesture {
 
 export type DockDragFinish =
   { action: 'end-drag'; releasePoint: { x: number; y: number } } | { action: 'cancel-drag' };
+
+/** The placement command that ends (or cancels) a native drag. */
+export function dockDragEndCommand(
+  token: string,
+  finish: DockDragFinish,
+  sequence: number,
+): DockPlacementCommand {
+  return {
+    action: finish.action,
+    token,
+    sequence,
+    ...(finish.action === 'end-drag'
+      ? { releasePoint: { x: finish.releasePoint.x, y: finish.releasePoint.y } }
+      : {}),
+  };
+}
 
 export function dockDragGripCenter(
   grip: DockPointerRect | undefined,

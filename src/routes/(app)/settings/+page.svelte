@@ -196,7 +196,7 @@
     'workspace-api': 'advanced',
     'agent-features': 'agent-behavior',
     'agent-backend': 'advanced',
-    labs: 'advanced',
+    'notch-dock': 'display',
     'utility-default-model': 'providers',
     hardware: 'advanced',
     connection: 'advanced',
@@ -775,6 +775,7 @@
               >
                 <PauseAnimationsWhenUnfocusedSettings />
               </section>
+              <DockLabSettings />
             </div>
           </div>
 
@@ -1185,12 +1186,6 @@
                   </div>
                 </section>
               </div>
-            </div>
-          {/if}
-
-          {#if isElectronPlatform()}
-            <div id="labs" data-highlight-id="labs" use:highlightTarget>
-              <DockLabSettings />
             </div>
           {/if}
         {/if}

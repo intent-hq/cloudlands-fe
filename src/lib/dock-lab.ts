@@ -53,14 +53,26 @@ export const dockLabEnabled = readable(false, (set) => {
   };
 });
 
-/** Asks main to change the setting; the change push updates every window. */
-export async function setDockLabEnabled(enabled: boolean): Promise<void> {
+/**
+ * Asks main to change the setting; the change push updates every window.
+ * Resolves `true` only when main confirms the requested state. A rejected or
+ * mismatched save shows an error and resolves `false`; without a bridge
+ * nothing changes and it resolves `false`.
+ */
+export async function requestDockLabEnabled(enabled: boolean): Promise<boolean> {
   const bridge = getBridge();
-  if (!bridge) return;
+  if (!bridge) return false;
   try {
     const response = await bridge.invoke(WINDOW_CHANNELS.SET_DOCK_LAB, { enabled });
-    if (parseEnabled(response) !== enabled) notify.error(m.settings_gitWorkspace_saveError());
+    if (parseEnabled(response) === enabled) return true;
   } catch {
-    notify.error(m.settings_gitWorkspace_saveError());
+    // Fall through to the shared save error.
   }
+  notify.error(m.settings_gitWorkspace_saveError());
+  return false;
+}
+
+/** Fire-and-forget form for switches and commands; failures show the save error. */
+export async function setDockLabEnabled(enabled: boolean): Promise<void> {
+  await requestDockLabEnabled(enabled);
 }
