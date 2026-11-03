@@ -114,7 +114,10 @@
 
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import { modelIdForDisplay, resolveModelDisplayName } from '$shared/utils/model-display-name';
-  import { selectHidesAgentCreationActions } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+    selectHidesAgentCreationActions,
+    selectHidesProviderProfileNames,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
   import { getAgentProvider } from '$shared/types/agent-session';
   import { formatProviderLoadError, type ProviderLoadError } from './model-picker-provider-errors';
   import {
@@ -556,6 +559,9 @@
     workspaceIdStore.set(workspaceId ?? '');
   });
   const isGuestLocked = $derived(!!agentId && !!workspaceId && $isWorkspaceCollaborator$);
+  // Profile names are the host administrator's private configuration: a guest
+  // sees the bare provider, never a profile (or "Removed profile") label.
+  const hidesProfileNames$ = selectHidesProviderProfileNames(workspaceIdStore);
   // A remote agent runs on another machine, so the backend's own models say
   // nothing about it. Backends that support it switch the model on that
   // machine (PROTOCOL nodes.md "Switching a remote agent's model"): the picker
@@ -1934,7 +1940,7 @@
   // once its base provider has profiles (`Default` for the original one).
   const triggerProfileName = $derived.by(() => {
     const ref = triggerProviderId;
-    if (!ref) return undefined;
+    if (!ref || $hidesProfileNames$) return undefined;
     const baseId = normalizeProviderId(providerRefBaseId(ref));
     const isProfile = isProviderProfileRef(ref);
     return providerRefProfileName(

@@ -375,5 +375,11 @@
   "settings_section_labs": "*",
   "dock_statusGroup_label": ["de", "es", "ko"],
   "chat_screenEvidence_image_label": ["fr"],
-  "remoteAgent_location_tooltipWithState": "*"
+  "remoteAgent_location_tooltipWithState": "*",
+  "layout_agentMemoryBreakdown_unnamedAgent_label": ["de", "fr"],
+  "layout_daemonStatus_connectedBackends_one": ["es", "fr"],
+  "layout_daemonStatus_connectedBackends_many": ["es", "fr"],
+  "layout_daemonStatus_connectedMachines_one": ["fr"],
+  "layout_daemonStatus_connectedMachines_many": ["fr"],
+  "layout_daemonStatus_connectedDaemons_value": "*"
 }

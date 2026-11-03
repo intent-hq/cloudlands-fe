@@ -58,6 +58,7 @@ export type InviteFailureReason =
   | 'proof-invalid'
   | 'proof-expired'
   | 'host-github-unreachable'
+  | 'host-forge-required'
   | 'identity-unverifiable'
   | 'workspace-full'
   | 'owner-self-join'

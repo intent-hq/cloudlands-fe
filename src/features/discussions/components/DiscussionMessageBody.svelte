@@ -1,6 +1,6 @@
 <script lang="ts">
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
-  import type { DiscussionAgentMention } from '../discussion-agent-mentions';
+  import type { DiscussionAgentMention, DiscussionAgentNames } from '../discussion-agent-mentions';
   import { discussionMessageParts, discussionMessageMarkdown } from '../discussion-message-content';
   import Fa from 'svelte-fa';
   import { faRobot, faFileLines, faCodePullRequest } from '@fortawesome/free-solid-svg-icons';
@@ -14,15 +14,35 @@
     mode = 'inline',
     agentMentions = [],
     mentionNames = [],
+    agentNames = {},
   }: {
     body: string;
     workspaceId: string;
     agentMentions?: readonly DiscussionAgentMention[];
     mentionNames?: readonly string[];
+    /** Current names by agent ID, so a renamed agent's mentions show its new name. */
+    agentNames?: DiscussionAgentNames;
     sourcePanelId?: string;
     mode?: 'inline' | 'text' | 'references' | 'markdown';
   } = $props();
-  const parts = $derived(discussionMessageParts(body, workspaceId, agentMentions, mentionNames));
+  const parts = $derived(
+    discussionMessageParts(body, workspaceId, agentMentions, mentionNames, agentNames),
+  );
+  const mentionClass =
+    'inline-block max-w-full rounded bg-primary px-1 align-bottom font-medium text-primary-foreground';
+  function openAgentMention(event: MouseEvent, agentId: string, name: string) {
+    void openDiscussionReference(
+      {
+        kind: 'agent',
+        label: name,
+        url: `intent://local/${workspaceId}/agent/${agentId}`,
+        agentId,
+      },
+      workspaceId,
+      sourcePanelId,
+      event,
+    );
+  }
   const references = $derived(
     parts.filter(
       (part): part is DiscussionReference => typeof part !== 'string' && part.kind !== 'mention',
@@ -111,8 +131,16 @@
 {:else}
   <span class="whitespace-pre-wrap wrap-break-word"
     >{#each parts as part}
-      {#if typeof part === 'string'}{part}{:else if part.kind === 'mention'}<span
-          class="inline-block max-w-full rounded bg-primary px-1 align-bottom font-medium text-primary-foreground"
+      {#if typeof part === 'string'}{part}{:else if part.kind === 'mention' && part.agentId && workspaceId}<Button
+          variant="plain"
+          wrapContent={false}
+          class="{mentionClass} h-auto align-bottom leading-[inherit] hover:underline"
+          data-discussion-mention
+          data-discussion-agent-mention={part.agentId}
+          onclick={(event: MouseEvent) => openAgentMention(event, part.agentId!, part.name)}
+          >@{part.name}</Button
+        >{:else if part.kind === 'mention'}<span
+          class={mentionClass}
           data-discussion-mention
           data-discussion-agent-mention={part.agentId}>@{part.name}</span
         >{:else if mode === 'inline'}{@render chip(part)}{/if}

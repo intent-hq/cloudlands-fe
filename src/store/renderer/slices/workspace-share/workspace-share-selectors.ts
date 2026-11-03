@@ -184,6 +184,10 @@ export const selectShareIntegrationAuth = store.createSelector(
   (state) => state.workspaceShare.integrationAuth,
 );
 
+export const selectShareOwnerForgeMissing = store.createSelector(
+  (state) => state.workspaceShare.ownerForgeMissing,
+);
+
 /** Never present another host/identity's prerequisite result, even before its next read. */
 const selectSharePrerequisitesCurrent = store.createSelector(
   (state) =>

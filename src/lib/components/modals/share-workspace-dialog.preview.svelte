@@ -27,6 +27,9 @@
     sharingEnabling?: boolean;
     sharingError?: string | null;
     canAdministerHost?: boolean;
+    hostMembershipSupported?: boolean;
+    forgeStatusKnown?: boolean;
+    ownerForgeMissing?: boolean;
     workspaceTitle?: string;
     guestLimit?: number;
     inviteDelayMs?: number;
@@ -122,6 +125,16 @@
     invites: [gitlabPinnedInvite, githubPinnedInvite, openInvite],
     principals: [knownGuest],
   };
+  /** The daemon refuses every invite until the owner connects a forge. */
+  const noForge: ShareDialogPreviewProps = {
+    ...bothConnected,
+    githubConnected: false,
+    gitlabConnected: false,
+    identityProvider: null,
+    members: [owner],
+    invites: [],
+    principals: [],
+  };
   const sharingSetup: ShareDialogPreviewProps = {
     ...bothConnected,
     gitlabConnected: false,
@@ -193,15 +206,22 @@
           invites: [{ ...githubPinnedInvite, pinIdentity: undefined }, openInvite],
         },
       },
-      'no-forge': {
+      'no-forge': { props: noForge },
+      'no-forge-github-only': { props: { ...noForge, gitlabEnabled: false } },
+      'no-forge-existing-guests': {
+        props: { ...noForge, members: [owner, githubGuest], invites: [openInvite] },
+      },
+      'no-forge-member': { props: { ...noForge, canAdministerHost: false } },
+      'no-forge-host-member': {
+        props: { ...noForge, canAdministerHost: false, hostMembershipSupported: true },
+      },
+      'no-forge-host-member-refused': {
         props: {
-          ...bothConnected,
-          githubConnected: false,
-          gitlabConnected: false,
-          identityProvider: null,
-          members: [owner],
-          invites: [],
-          principals: [],
+          ...noForge,
+          canAdministerHost: false,
+          hostMembershipSupported: true,
+          forgeStatusKnown: false,
+          ownerForgeMissing: true,
         },
       },
     },

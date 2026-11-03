@@ -27,6 +27,8 @@ import {
   shareInviteCreated,
   shareInviteCreateFailed,
   shareInviteCreateRequested,
+  shareIntegrationAuthLoaded,
+  shareOwnerForgeMissing,
   shareInviteRevokeRequested,
   shareMemberAddRequested,
   shareMemberRemoveRequested,
@@ -376,6 +378,59 @@ describe('workspaceShareReducer', () => {
       }),
     );
     expect(current).toMatchObject({ creating: false, createdLink: link });
+  });
+
+  // A no-forge refusal leaves an inline error; once the forge status reads as
+  // disconnected the form is hidden, and reconnecting must not bring it back
+  // with that stale error.
+  it('drops a create error when the forge status loads disconnected, so a reconnect starts clean', () => {
+    const creating = reduce(opened(), shareInviteCreateRequested({ pinLogin: '' }));
+    const refused = reduce(
+      creating,
+      shareInviteCreateFailed({ target: target(creating), request: 1, error: 'no forge' }),
+    );
+    const connected = reduce(
+      refused,
+      shareIntegrationAuthLoaded(target(refused), { github: true, gitlab: false }),
+    );
+    expect(connected.createError).toBe('no forge');
+    const disconnected = reduce(
+      connected,
+      shareIntegrationAuthLoaded(target(connected), { github: false, gitlab: false }),
+    );
+    expect(disconnected.createError).toBeNull();
+    const reconnected = reduce(
+      disconnected,
+      shareIntegrationAuthLoaded(target(disconnected), { github: true, gitlab: false }),
+    );
+    expect(reconnected).toMatchObject({ createError: null, creating: false });
+  });
+
+  it('clears the owner-has-no-forge latch and its error once a forge status loads connected', () => {
+    const creating = reduce(opened(), shareInviteCreateRequested({ pinLogin: '' }));
+    const latched = reduce(
+      creating,
+      shareOwnerForgeMissing(target(creating)),
+      shareInviteCreateFailed({ target: target(creating), request: 1, error: 'no forge' }),
+    );
+    expect(latched).toMatchObject({ ownerForgeMissing: true, createError: 'no forge' });
+    const unknown = reduce(
+      latched,
+      shareIntegrationAuthLoaded(target(latched), { github: false, gitlab: false, known: false }),
+    );
+    expect(unknown.ownerForgeMissing).toBe(true);
+    const connected = reduce(
+      unknown,
+      shareIntegrationAuthLoaded(target(unknown), { github: true, gitlab: false }),
+    );
+    expect(connected).toMatchObject({ ownerForgeMissing: false, createError: null });
+    expect(
+      reduce(
+        connected,
+        closeShareDialog(),
+        openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'W' }),
+      ).ownerForgeMissing,
+    ).toBe(false);
   });
 
   it('tracks invite creation: requested → created clears the error and stores the link handle', () => {
