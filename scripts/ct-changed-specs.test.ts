@@ -13,7 +13,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { load } from 'js-yaml';
 import {
   CT_AFFECTED_BUDGET,
@@ -30,6 +30,9 @@ import {
   playwrightFilter,
 } from './ct-changed-specs.mjs';
 import { ctImportGraph } from './ct-contract-paths.mjs';
+
+beforeEach(() => vi.stubEnv('CT_SHARD', '1'));
+afterEach(() => vi.unstubAllEnvs());
 
 const SCRIPT = resolve('scripts/ct-changed-specs.mjs');
 const temps: string[] = [];
@@ -590,6 +593,102 @@ describe('test-ct-changed workflow job', () => {
       ?.slice(`    ${key}:`.length)
       .trim() ?? '';
 
+  it('runs four independent jobs with distinct reports and the existing per-job budget', () => {
+    const workflow = load(workflowLines.join('\n')) as {
+      jobs: Record<
+        string,
+        {
+          name: string;
+          strategy: { 'fail-fast': boolean; matrix: { shard: number[] } };
+          'timeout-minutes': number;
+          steps: { uses?: string; with?: { name?: string } }[];
+        }
+      >;
+    };
+    const repeated = workflow.jobs['test-ct-changed'];
+    expect(repeated.strategy).toEqual({ 'fail-fast': false, matrix: { shard: [1, 2, 3, 4] } });
+    expect(repeated['timeout-minutes']).toBe(45);
+    const artifact = repeated.steps.find((step) =>
+      step.uses?.startsWith('actions/upload-artifact@'),
+    );
+    const expand = (template: string) =>
+      repeated.strategy.matrix.shard.map((shard) =>
+        template.replaceAll('${{ matrix.shard }}', String(shard)),
+      );
+    for (const template of [repeated.name, artifact?.with?.name ?? '']) {
+      const names = expand(template);
+      expect(new Set(names).size).toBe(4);
+      expect(names.every(Boolean)).toBe(true);
+    }
+  });
+
+  it.each([1, 2, 3, 4])(
+    'passes the full spec list and repeat budget to shard %i of four',
+    (shard) => {
+      vi.stubEnv('CT_SHARD', String(shard));
+      const specs = ['src/a/one.ct.spec.ts', 'src/routes/[id]/two.ct.spec.ts'];
+      const { status, argv, stderr } = runTestStep(JSON.stringify(specs));
+      expect(status, stderr).toBe(0);
+      expect(argv.slice(0, 2)).toEqual(specs.map(playwrightFilter));
+      expect(argv).toContain(`--shard=${shard}/4`);
+      expect(argv).toContain('--repeat-each=20');
+      expect(argv).toContain('--retries=0');
+      expect(argv).toContain('--workers=2');
+      expect(argv).toContain('--fail-on-flaky-tests');
+      expect(argv).toContain('--grep-invert');
+      expect(argv).toContain('@quarantine\\b');
+      expect(argv).not.toContain('--pass-with-no-tests');
+    },
+  );
+
+  it.each(['success', 'failure', 'cancelled', 'skipped', ''])(
+    'requires a successful matrix aggregate: %s',
+    (result) => {
+      const script = stepRun(jobLines('gate'), 'Check results')
+        .replaceAll('${{ github.event_name }}', 'pull_request')
+        .replaceAll('${{ needs.test-ct-changed.result }}', result)
+        .replace(/\$\{\{ needs\.[\w-]+\.result \}\}/g, 'success');
+      const gate = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', script], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          FAST_PATH: 'false',
+          CT_CHANGED_SPECS: '["src/a.ct.spec.ts"]',
+          CT_AFFECTED_SPECS: '[]',
+          INTENT_WEB_PACKAGE_REQUIRED: 'true',
+        },
+      });
+      expect(gate.status, gate.stdout + gate.stderr).toBe(result === 'success' ? 0 : 1);
+    },
+  );
+
+  it.each([1, 2, 3, 4])(
+    'lists the full unsharded tests before globally sizing shard %i',
+    (shard) => {
+      vi.stubEnv('CT_SHARD', String(shard));
+      const specs = Object.keys(DOCK_4047).map((file) => `src/features/hud/components/${file}`);
+      const { status, argv, listArgv, stderr } = runTestStep(
+        JSON.stringify(specs),
+        listReport(DOCK_4047),
+        0,
+      );
+      expect(status, stderr).toBe(0);
+      expect(listArgv).toEqual([
+        ...specs.map(playwrightFilter),
+        '--list',
+        '--grep-invert',
+        '@quarantine\\b',
+        '--reporter=json',
+      ]);
+      expect(argv.slice(0, specs.length)).toEqual(specs.map(playwrightFilter));
+      expect(argv).toContain('--repeat-each=9');
+      expect(argv).toContain(`--shard=${shard}/4`);
+      expect(argv).toContain('--retries=0');
+      expect(argv).toContain('--grep-invert');
+      expect(stderr).toContain('Discovered 86 tests in 10 spec files; repeating each 9 times');
+    },
+  );
+
   it('runs on pull requests only when the spec list is not empty', () => {
     expect(field('if')).toContain("github.event_name == 'pull_request'");
     expect(field('if')).toContain("needs.release-fast-path.outputs.ct_changed_specs != '[]'");
@@ -659,7 +758,6 @@ describe('test-ct-changed workflow job', () => {
     specs: string,
     list: unknown = listReport({ 'a.ct.spec.ts': 2 }),
     listExit = 0,
-    shard = 1,
   ) {
     const dir = tempDir();
     const bin = join(dir, 'bin');
@@ -691,16 +789,7 @@ describe('test-ct-changed workflow job', () => {
     chmodSync(join(bin, 'node'), 0o755);
     const result = spawnSync(
       'bash',
-      [
-        '-e',
-        '-o',
-        'pipefail',
-        '-c',
-        stepRun(job, 'Repeat changed component tests').replaceAll(
-          '${{ matrix.shard }}',
-          String(shard),
-        ),
-      ],
+      ['-e', '-o', 'pipefail', '-c', stepRun(job, 'Repeat changed component tests')],
       {
         cwd: process.cwd(),
         encoding: 'utf8',
@@ -727,74 +816,6 @@ describe('test-ct-changed workflow job', () => {
     };
   }
 
-  it('runs four independent jobs with distinct reports and the existing per-job budget', () => {
-    const workflow = load(workflowLines.join('\n')) as {
-      jobs: Record<
-        string,
-        {
-          name: string;
-          strategy: { 'fail-fast': boolean; matrix: { shard: number[] } };
-          'timeout-minutes': number;
-          steps: { uses?: string; with?: { name?: string } }[];
-        }
-      >;
-    };
-    const repeated = workflow.jobs['test-ct-changed'];
-    expect(repeated.strategy).toEqual({ 'fail-fast': false, matrix: { shard: [1, 2, 3, 4] } });
-    expect(repeated['timeout-minutes']).toBe(45);
-    const artifact = repeated.steps.find((step) =>
-      step.uses?.startsWith('actions/upload-artifact@'),
-    );
-    const expand = (template: string) =>
-      repeated.strategy.matrix.shard.map((shard) =>
-        template.replaceAll('${{ matrix.shard }}', String(shard)),
-      );
-    for (const template of [repeated.name, artifact?.with?.name ?? '']) {
-      const names = expand(template);
-      expect(new Set(names).size).toBe(4);
-      expect(names.every(Boolean)).toBe(true);
-    }
-  });
-
-  it.each([1, 2, 3, 4])(
-    'passes the full spec list and repeat budget to shard %i of four',
-    (shard) => {
-      const specs = ['src/a/one.ct.spec.ts', 'src/routes/[id]/two.ct.spec.ts'];
-      const { status, argv, stderr } = runTestStep(JSON.stringify(specs), undefined, 0, shard);
-      expect(status, stderr).toBe(0);
-      expect(argv.slice(0, 2)).toEqual(specs.map(playwrightFilter));
-      expect(argv).toContain(`--shard=${shard}/4`);
-      expect(argv).toContain('--repeat-each=20');
-      expect(argv).toContain('--retries=0');
-      expect(argv).toContain('--workers=2');
-      expect(argv).toContain('--fail-on-flaky-tests');
-      expect(argv).toContain('--grep-invert');
-      expect(argv).toContain('@quarantine\\b');
-      expect(argv).not.toContain('--pass-with-no-tests');
-    },
-  );
-
-  it.each(['success', 'failure', 'cancelled', 'skipped', ''])(
-    'requires a successful matrix aggregate: %s',
-    (result) => {
-      const script = stepRun(jobLines('gate'), 'Check results')
-        .replaceAll('${{ github.event_name }}', 'pull_request')
-        .replaceAll('${{ needs.test-ct-changed.result }}', result)
-        .replace(/\$\{\{ needs\.[\w-]+\.result \}\}/g, 'success');
-      const gate = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', script], {
-        encoding: 'utf8',
-        env: {
-          ...process.env,
-          FAST_PATH: 'false',
-          CT_CHANGED_SPECS: '["src/a.ct.spec.ts"]',
-          CT_AFFECTED_SPECS: '[]',
-          INTENT_WEB_PACKAGE_REQUIRED: 'true',
-        },
-      });
-      expect(gate.status, gate.stdout + gate.stderr).toBe(result === 'success' ? 0 : 1);
-    },
-  );
-
   it('passes every changed spec, 20 repetitions and no retries to the CT launcher', () => {
     const specs = ['src/a/one.ct.spec.ts', 'src/routes/[id]/two.ct.spec.ts'];
     const { status, argv, stderr } = runTestStep(JSON.stringify(specs));
@@ -806,32 +827,26 @@ describe('test-ct-changed workflow job', () => {
     expect(argv).not.toContain('--pass-with-no-tests');
   });
 
-  it.each([1, 2, 3, 4])(
-    'lists the full unsharded tests before globally sizing shard %i',
-    (shard) => {
-      const specs = Object.keys(DOCK_4047).map((file) => `src/features/hud/components/${file}`);
-      const { status, argv, listArgv, stderr } = runTestStep(
-        JSON.stringify(specs),
-        listReport(DOCK_4047),
-        0,
-        shard,
-      );
-      expect(status, stderr).toBe(0);
-      expect(listArgv).toEqual([
-        ...specs.map(playwrightFilter),
-        '--list',
-        '--grep-invert',
-        '@quarantine\\b',
-        '--reporter=json',
-      ]);
-      expect(argv.slice(0, specs.length)).toEqual(specs.map(playwrightFilter));
-      expect(argv).toContain('--repeat-each=9');
-      expect(argv).toContain(`--shard=${shard}/4`);
-      expect(argv).toContain('--retries=0');
-      expect(argv).toContain('--grep-invert');
-      expect(stderr).toContain('Discovered 86 tests in 10 spec files; repeating each 9 times');
-    },
-  );
+  it('lists the same filtered, unquarantined tests first and repeats by their count', () => {
+    const specs = Object.keys(DOCK_4047).map((file) => `src/features/hud/components/${file}`);
+    const { status, argv, listArgv, stderr } = runTestStep(
+      JSON.stringify(specs),
+      listReport(DOCK_4047),
+    );
+    expect(status, stderr).toBe(0);
+    expect(listArgv).toEqual([
+      ...specs.map(playwrightFilter),
+      '--list',
+      '--grep-invert',
+      '@quarantine\\b',
+      '--reporter=json',
+    ]);
+    expect(argv.slice(0, specs.length)).toEqual(specs.map(playwrightFilter));
+    expect(argv).toContain('--repeat-each=9');
+    expect(argv).toContain('--retries=0');
+    expect(argv).toContain('--grep-invert');
+    expect(stderr).toContain('Discovered 86 tests in 10 spec files; repeating each 9 times');
+  });
 
   it('fails without launching tests when discovery errors, finds nothing or exits non-zero', () => {
     const spec = '["src/a/one.ct.spec.ts"]';

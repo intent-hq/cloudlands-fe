@@ -1284,6 +1284,7 @@ jobs:
     env:
       GIT_TERMINAL_PROMPT: '0'
       CT_CHANGED_SPECS: ${{ needs.release-fast-path.outputs.ct_changed_specs }}
+      CT_SHARD: ${{ matrix.shard }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -1356,8 +1357,8 @@ jobs:
           PLAYWRIGHT_JSON_OUTPUT_FILE="$RUNNER_TEMP/ct-changed-list.json" node scripts/run-ct-tests.mjs \
             "${filters[@]}" --list --grep-invert '@quarantine\b' --reporter=json > /dev/null
           repeat=$(node scripts/ct-changed-specs.mjs --repeat-each-listed "$RUNNER_TEMP/ct-changed-list.json")
-          node scripts/run-ct-tests.mjs "${filters[@]}" --repeat-each="$repeat" --shard=${{ matrix.shard }}/4 --retries=0 \
-            --fail-on-flaky-tests --workers=2 --grep-invert '@quarantine\b' --reporter=list,html,json
+          node scripts/run-ct-tests.mjs "${filters[@]}" --repeat-each="$repeat" --retries=0 \
+            --shard="$CT_SHARD"/4 --fail-on-flaky-tests --workers=2 --grep-invert '@quarantine\b' --reporter=list,html,json
       - name: Upload playwright report
         if: always()
         uses: actions/upload-artifact@v7
