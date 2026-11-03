@@ -373,6 +373,29 @@ describe('retained script output hydration', () => {
       }
     });
 
+    it('refreshes when the lease becomes routable while the fallback read is in flight', async () => {
+      vi.useFakeTimers();
+      try {
+        const fallback = deferred<string>();
+        transport.request.mockReturnValueOnce(fallback.promise);
+        const run = start(true, false, false);
+        run.dispatch(request());
+        await vi.advanceTimersByTimeAsync(SCRIPT_OUTPUT_STREAM_WAIT_MS);
+        expect(outputReads()).toHaveLength(1);
+
+        transport.request.mockResolvedValueOnce('before timeout\nduring the gap');
+        run.dispatch(scriptOutputStreamReady(WS));
+        await vi.advanceTimersByTimeAsync(0);
+        fallback.resolve('before timeout');
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(outputReads()).toHaveLength(2);
+        expect(run.retained()?.text).toBe('before timeout\nduring the gap');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('does not refresh a timed-out fallback after its viewer is released', async () => {
       vi.useFakeTimers();
       try {

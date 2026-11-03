@@ -113,11 +113,14 @@ function* readOutput(action: ReturnType<typeof scriptOutputRequested>): SagaGene
     // wait is open-ended, so close this read's change journal first.
     const fallback = context;
     yield* put(scriptReadFinished(workspaceId, fallback.requestId));
-    const { ready } = yield* race({
-      ready: call(takeOutputStreamReady, workspaceId),
-      replaced: call(takeViewerRequest),
-    });
-    if (!ready) return;
+    // Readiness may already have arrived while the fallback read was in flight.
+    if (!(yield* selectScriptOutputStreamReady.effect(workspaceId))) {
+      const { ready } = yield* race({
+        ready: call(takeOutputStreamReady, workspaceId),
+        replaced: call(takeViewerRequest),
+      });
+      if (!ready) return;
+    }
     context = yield* beginScriptRead(workspaceId);
     if (
       context.authority !== fallback.authority ||
