@@ -4206,6 +4206,7 @@
   "onboarding_page_connectForge_after": "Überspringen Sie diesen Schritt, wenn Sie sie nicht nutzen – Sie können sie später in den Einstellungen verbinden.",
   "onboarding_page_connectForge_before": "Änderungen pushen und Pull- oder Merge-Requests direkt aus Arbeitsbereichen erstellen.",
   "onboarding_page_connectForge_title": "GitHub oder GitLab verbinden (optional)",
+  "onboarding_page_connectGithub_title": "GitHub verbinden (optional)",
   "onboarding_page_gitRequiredForProject_title": "Installieren Sie Git, um dieses Projekt zu erstellen",
   "onboarding_page_gitRequiredForProject_description": "Git-Arbeitsbereiche benötigen Git, das auf Ihrem Rechner nicht gefunden wurde. Installieren Sie es und prüfen Sie dann erneut.",
   "onboarding_page_createFailed_error": "Arbeitsbereich konnte nicht erstellt werden",

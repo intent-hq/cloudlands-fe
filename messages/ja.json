@@ -4206,6 +4206,7 @@
   "onboarding_page_connectForge_after": "使用しない場合はスキップしてください。後から設定で接続できます。",
   "onboarding_page_connectForge_before": "ワークスペースから直接、変更のプッシュやプル/マージリクエストの作成ができます。",
   "onboarding_page_connectForge_title": "GitHub または GitLab に接続（任意）",
+  "onboarding_page_connectGithub_title": "GitHub に接続（任意）",
   "onboarding_page_gitRequiredForProject_title": "このプロジェクトを作成するには Git をインストールしてください",
   "onboarding_page_gitRequiredForProject_description": "git ワークスペースには Git が必要ですが、このマシンで見つかりませんでした。インストールしてから再確認してください。",
   "onboarding_page_createFailed_error": "ワークスペースを作成できませんでした",

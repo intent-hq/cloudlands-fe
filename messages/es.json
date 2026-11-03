@@ -4206,6 +4206,7 @@
   "onboarding_page_connectForge_after": "Omita este paso si no los usa; puede conectarlos más tarde desde Configuración.",
   "onboarding_page_connectForge_before": "Envíe cambios y abra pull requests o merge requests directamente desde los espacios de trabajo.",
   "onboarding_page_connectForge_title": "Conectar GitHub o GitLab (opcional)",
+  "onboarding_page_connectGithub_title": "Conectar GitHub (opcional)",
   "onboarding_page_gitRequiredForProject_title": "Instale Git para crear este proyecto",
   "onboarding_page_gitRequiredForProject_description": "Los espacios de trabajo con git necesitan Git, que no se encontró en su equipo. Instálelo y vuelva a comprobarlo.",
   "onboarding_page_createFailed_error": "No se pudo crear el espacio de trabajo",

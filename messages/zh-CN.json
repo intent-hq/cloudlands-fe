@@ -4206,6 +4206,7 @@
   "onboarding_page_connectForge_after": "如果你不使用它们，可以跳过此步骤，之后也可以在设置中连接。",
   "onboarding_page_connectForge_before": "直接从工作区推送更改并创建拉取请求或合并请求。",
   "onboarding_page_connectForge_title": "连接 GitHub 或 GitLab（可选）",
+  "onboarding_page_connectGithub_title": "连接 GitHub（可选）",
   "onboarding_page_gitRequiredForProject_title": "安装 Git 以创建此项目",
   "onboarding_page_gitRequiredForProject_description": "git 工作区需要 Git，但在你的电脑上未找到。请安装后重新检查。",
   "onboarding_page_createFailed_error": "创建工作区失败",

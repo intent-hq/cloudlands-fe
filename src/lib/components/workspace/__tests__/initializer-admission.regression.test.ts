@@ -588,6 +588,7 @@ describe('actual initializer qualified GitLab workspace creation', () => {
   const contextUrl = `${instanceBaseUrl}/${projectPath}/-/merge_requests/17/diffs?view=parallel#note_42`;
   let session: RepositoryCheckoutSession;
   beforeEach(() => {
+    admitLegacyPrincipal('owner', { gitlabCheckout: true });
     mocks.compactFormState$.set(null);
     const listeners = new Set<() => void>();
     session = {
@@ -669,6 +670,23 @@ describe('actual initializer qualified GitLab workspace creation', () => {
     expect(form.capture?.instanceBaseUrl).toBe(instanceBaseUrl);
     expect(form.project?.projectPath).toBe(projectPath);
     expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it('offers no GitLab projects when the host lacks GitLab checkout support', async () => {
+    admitLegacyPrincipal('owner', { gitlabCheckout: false });
+    store.dispatch(
+      setGitLabAuthStatus({
+        host: 'forge.example:8443',
+        instanceBaseUrl,
+        isConfigured: true,
+        deviceGrantSupported: false,
+        user: null,
+        method: 'pat',
+      }),
+    );
+    render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+    expect(screen.queryByTestId('select-gitlab-recent')).toBeNull();
+    expect(mocks.captureCheckout).not.toHaveBeenCalled();
   });
 
   it('does not use a recent to bypass revoked GitLab admission', async () => {

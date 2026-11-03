@@ -4206,6 +4206,7 @@
   "onboarding_page_connectForge_after": "사용하지 않는다면 건너뛰세요. 나중에 설정에서 연결할 수 있습니다.",
   "onboarding_page_connectForge_before": "작업 공간에서 직접 변경 사항을 푸시하고 풀/머지 리퀘스트를 만드세요.",
   "onboarding_page_connectForge_title": "GitHub 또는 GitLab 연결 (선택 사항)",
+  "onboarding_page_connectGithub_title": "GitHub 연결 (선택 사항)",
   "onboarding_page_gitRequiredForProject_title": "이 프로젝트를 만들려면 Git을 설치하세요",
   "onboarding_page_gitRequiredForProject_description": "git 작업 공간에는 Git이 필요하지만 이 컴퓨터에서 찾을 수 없습니다. 설치한 후 다시 확인하세요.",
   "onboarding_page_createFailed_error": "작업 공간을 만들지 못했습니다",

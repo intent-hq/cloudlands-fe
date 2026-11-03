@@ -173,6 +173,7 @@
   import {
     selectGitLabAuthInstanceBaseUrl,
     selectGitLabAuthIsConfigured,
+    selectGitLabInstanceSetupSupported,
     selectGitLabStatusReady,
   } from '$store/renderer/slices/gitlab-auth/gitlab-auth-selectors';
   import SetupScriptModal from '../modals/SetupScriptModal.svelte';
@@ -567,6 +568,8 @@
   const gitlabInstance$ = selectGitLabAuthInstanceBaseUrl();
   const gitlabConfigured$ = selectGitLabAuthIsConfigured();
   const gitlabStatusReady$ = selectGitLabStatusReady();
+  // GitLab projects need the host's checkout contract; main refuses capture without it.
+  const gitlabCheckoutSupported$ = selectGitLabInstanceSetupSupported();
   const checkoutForm$ = selectCheckoutForm(checkoutFormId);
   const checkoutSelection$ = selectCheckoutSelection(checkoutFormId);
   const checkoutProjects$ = selectCheckoutProjects(checkoutFormId);
@@ -3576,7 +3579,7 @@
               ? ($checkoutForm$?.project?.projectPath ?? '')
               : repoPath}
             branch={repoType === 'gitlab' ? ($checkoutForm$?.branch?.name ?? '') : branch}
-            gitlab={gitlabPicker}
+            gitlab={$gitlabCheckoutSupported$ || repoType === 'gitlab' ? gitlabPicker : undefined}
             gitlabBranch={gitlabBranchPicker}
             {repoType}
             {githubUrl}
