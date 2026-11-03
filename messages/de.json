@@ -7510,6 +7510,8 @@
   "workspace_share_forgeRequired_error": "Intent hat keine funktionierende GitHub- oder GitLab-Verbindung gefunden. Verbinde eine unter Einstellungen → Verbindungen (neu), um Einladungslinks zu erstellen. Bereits beigetretene Personen behalten ihren Zugriff.",
   "workspace_share_githubOwnerRequired_notice": "Der Host-Besitzer muss GitHub verbinden, bevor Einladungslinks erstellt werden können.",
   "workspace_share_githubRequired_error": "Intent hat keine funktionierende GitHub-Verbindung gefunden. Verbinde GitHub unter Einstellungen → Verbindungen (neu), um Einladungslinks zu erstellen. Bereits beigetretene Personen behalten ihren Zugriff.",
+  "workspace_share_forgeUnreachable_error": "Der Host konnte GitHub oder GitLab nicht erreichen, um sein Konto zu prüfen. Versuche es gleich noch einmal.",
+  "workspace_share_githubUnreachable_error": "Der Host konnte GitHub nicht erreichen, um sein Konto zu prüfen. Versuche es gleich noch einmal.",
   "workspace_share_guestLimitReached_notice": "Dieser Workspace hat sein Gästelimit erreicht. Entferne ein Mitglied, um jemand anderen einzuladen.",
   "workspace_share_guestLimit_error": "Dieser Workspace hat sein Gästelimit erreicht",
   "workspace_share_guests_label": "Gäste {count} / {limit}",

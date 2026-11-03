@@ -988,6 +988,41 @@ describe('workspaceShareSaga', () => {
     generic.task.cancel();
   });
 
+  // A forge outage is retryable (intentd answers `github-unreachable` when no
+  // forge could be confirmed only because one was unreachable): say so, and
+  // don't send the owner to reconnect an account that is connected.
+  it('maps github-unreachable onto a retry message, distinct from the no-forge one, without re-checking auth', async () => {
+    const outage = Object.assign(new Error(LEAK_MARKER), {
+      rpcCode: -32603,
+      data: { code: 'github-unreachable' },
+    });
+    replyByMethod({ 'workspace.invite.create': outage });
+    const h = harness(opened());
+    const before = h.dispatched.length;
+    h.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
+    await settle();
+    const outageError = h.state().createError;
+    expect(outageError).toEqual(expect.any(String));
+    expect(outageError).not.toContain(LEAK_MARKER);
+    const types = h.dispatched.slice(before).map((action) => (action as { type: string }).type);
+    expect(types).not.toContain(checkGitHubAuthStatus.type);
+    h.task.cancel();
+
+    const others: (string | null | undefined)[] = [];
+    for (const reply of [
+      Object.assign(new Error('x'), { data: { code: 'github-identity-required' } }),
+      new Error('boom'),
+    ]) {
+      replyByMethod({ 'workspace.invite.create': reply });
+      const other = harness(opened());
+      other.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
+      await settle();
+      others.push(other.state().createError);
+      other.task.cancel();
+    }
+    expect(others).not.toContain(outageError);
+  });
+
   it.each(['listener-down', 'tunnel-down'])(
     'refreshes sharing prerequisites after %s without settings navigation guidance',
     async (code) => {

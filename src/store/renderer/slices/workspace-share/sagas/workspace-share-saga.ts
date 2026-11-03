@@ -389,8 +389,16 @@ function* sharingPrerequisites(
 }
 
 /** Inline error for an invite failure unrelated to host setup. */
-function createInviteErrorMessage(code: ShareFailure['code'], requestedPin: string): string {
+function createInviteErrorMessage(
+  code: ShareFailure['code'],
+  requestedPin: string,
+  gitlab: boolean,
+): string {
   switch (code) {
+    case 'github-unreachable':
+      return gitlab
+        ? m.workspace_share_forgeUnreachable_error()
+        : m.workspace_share_githubUnreachable_error();
     case 'invite-pin-unknown':
       return m.workspace_share_pinUnknown_error({ login: `@${requestedPin}` });
     case 'identity-unverifiable':
@@ -505,7 +513,11 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
       shareInviteCreateFailed({
         target,
         request,
-        error: createInviteErrorMessage(outcome.code, requestedPin),
+        error: createInviteErrorMessage(
+          outcome.code,
+          requestedPin,
+          yield* selectLabsGitLabEnabled.effect(),
+        ),
       }),
     );
     return;

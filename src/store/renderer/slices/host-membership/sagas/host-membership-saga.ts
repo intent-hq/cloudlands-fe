@@ -218,15 +218,19 @@ function* execute(action: ReturnType<typeof hostMembershipRequested>): SagaGener
           ? describeInviteFailureReason('identity-unverifiable', {
               identityHost: command.kind === 'create' ? command.input.pinHost : undefined,
             })
-          : code === 'github-identity-required'
+          : code === 'github-unreachable'
             ? labsGitLab
-              ? m.workspace_share_forgeRequired_error()
-              : m.workspace_share_githubRequired_error()
-            : code === 'listener-down'
-              ? m.workspace_share_listenerDown_error()
-              : code === 'tunnel-down'
-                ? m.workspace_share_tunnelDown_error()
-                : m.collaboration_host_request_error();
+              ? m.workspace_share_forgeUnreachable_error()
+              : m.workspace_share_githubUnreachable_error()
+            : code === 'github-identity-required'
+              ? labsGitLab
+                ? m.workspace_share_forgeRequired_error()
+                : m.workspace_share_githubRequired_error()
+              : code === 'listener-down'
+                ? m.workspace_share_listenerDown_error()
+                : code === 'tunnel-down'
+                  ? m.workspace_share_tunnelDown_error()
+                  : m.collaboration_host_request_error();
     if (isForbiddenErrorResponse(error)) {
       clearHostInviteLinks(target.session);
       yield* put(hostMembershipDenied(target, message));

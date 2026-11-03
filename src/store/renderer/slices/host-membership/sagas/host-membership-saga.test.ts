@@ -646,6 +646,34 @@ describe('owner host membership wire and authority', () => {
       h.task.cancel();
     }
   });
+  it('explains a github-unreachable refusal of a host invitation as retryable', async () => {
+    const h = harness();
+    try {
+      h.dispatch(hostMembershipOpened(h.target));
+      await settle();
+      const errors: unknown[] = [];
+      for (const code of ['github-unreachable', 'github-identity-required', null]) {
+        mocks.request.mockRejectedValueOnce(
+          code ? { message: secret, data: { code } } : { message: secret },
+        );
+        h.dispatch(
+          hostMembershipRequested(h.target, {
+            kind: 'create',
+            input: { pinLogin: 'sam', pinProvider: 'github' },
+          }),
+        );
+        await settle();
+        errors.push(h.state().hostMembership.error);
+      }
+      expect(errors[0]).toBeTruthy();
+      expect(errors[0]).not.toContain(secret);
+      expect(errors[0]).not.toBe(errors[1]);
+      expect(errors[0]).not.toBe(errors[2]);
+    } finally {
+      h.dispatch(hostMembershipClosed(h.target));
+      h.task.cancel();
+    }
+  });
   it('withholds forbidden host administration and never exposes the server error text', async () => {
     const h = harness();
     try {

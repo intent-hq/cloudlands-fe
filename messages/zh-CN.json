@@ -7510,6 +7510,8 @@
   "workspace_share_forgeRequired_error": "Intent 未找到可用的 GitHub 或 GitLab 连接。请在“设置 → 连接”中连接或重新连接其一，以创建邀请链接。已加入的人员仍保留访问权限。",
   "workspace_share_githubOwnerRequired_notice": "主机所有者需要先连接 GitHub，才能创建邀请链接。",
   "workspace_share_githubRequired_error": "Intent 未找到可用的 GitHub 连接。请在“设置 → 连接”中连接或重新连接 GitHub，以创建邀请链接。已加入的人员仍保留访问权限。",
+  "workspace_share_forgeUnreachable_error": "主机无法连接 GitHub 或 GitLab 来验证其账户。请稍后重试。",
+  "workspace_share_githubUnreachable_error": "主机无法连接 GitHub 来验证其账户。请稍后重试。",
   "workspace_share_guestLimitReached_notice": "此工作区已达到访客上限。请移除一名成员后再邀请其他人。",
   "workspace_share_guestLimit_error": "此工作区已达到访客上限",
   "workspace_share_guests_label": "访客 {count} / {limit}",
