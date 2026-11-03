@@ -1541,9 +1541,6 @@
                 >
                   {getTabTitle(activeTab)}
                 </span>
-                {#if activeTab.type === 'agent' && activeTab.agentId}
-                  <AgentLocationBadge agentId={activeTab.agentId} variant="pill" />
-                {/if}
               {/if}
               <svg
                 viewBox="0 0 8 14"
@@ -1870,6 +1867,11 @@
         />
       {:else}
         {@render paneStackSelector()}
+        {#if activeTab.type === 'agent' && activeTab.agentId}
+          <span class="panel-machine-location ml-2 flex min-w-0 max-w-32 shrink items-center">
+            <AgentLocationBadge agentId={activeTab.agentId} variant="pill" />
+          </span>
+        {/if}
       {/if}
       <div class="min-w-0 flex-1" aria-hidden="true"></div>
 
@@ -1991,11 +1993,14 @@
   .pane-stack-selector {
     width: 194px;
   }
-  /* A remote agent's machine pill widens the chip so the title keeps its room. */
-  .pane-stack-selector:has(:global([data-agent-machine-badge])) {
-    width: auto;
-    min-width: 194px;
-    max-width: 340px;
+  .panel-machine-location {
+    flex-shrink: 100;
+  }
+  .panel-machine-location:has(:global([data-agent-machine-badge])) {
+    min-width: 28px;
+  }
+  .panel-machine-location:empty {
+    display: none;
   }
   :global(.panel-selector-button) {
     height: 36px;
