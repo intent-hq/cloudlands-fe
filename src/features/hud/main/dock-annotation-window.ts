@@ -335,8 +335,12 @@ export class DockAnnotationController implements AnnotationService {
   private media: DockAnnotationMediaState | null = null;
   /** Window/region selections in progress: the overlay stays hidden, even one still starting. */
   private concealLeases = 0;
-  /** The overlay was hidden (or held back) by a selection and is shown when the last one ends. */
-  private concealedWindow: BrowserWindow | null = null;
+  /**
+   * The session whose overlay a selection hid (or held back once it passed its startup
+   * barriers). Only that session, still current, is shown when the last selection ends;
+   * a replacement still starting is left to its own start.
+   */
+  private concealedSession: Session | null = null;
   private window: BrowserWindow | null = null;
   private windowBackendId: string | null = null;
   /**
@@ -474,7 +478,7 @@ export class DockAnnotationController implements AnnotationService {
       window.setIgnoreMouseEvents(true, { forward: true });
       session.interactive = false;
       // A window/region selection is in progress: the overlay appears when it ends.
-      if (this.concealLeases > 0) this.concealedWindow = window;
+      if (this.concealLeases > 0) this.concealedSession = session;
       else window.showInactive();
       session.revealed = true;
       if (this.revealing === session) this.revealing = null;
@@ -484,7 +488,7 @@ export class DockAnnotationController implements AnnotationService {
       return { ok: false, error: 'failed' };
     }
     // Held back: its recording exclusion stays reserved until the selection shows it.
-    if (this.concealedWindow !== window) this.announceWindows();
+    if (this.concealedSession !== session) this.announceWindows();
     this.startRouting();
     this.route();
     return { ok: true, value: undefined };
@@ -611,7 +615,7 @@ export class DockAnnotationController implements AnnotationService {
         logger.warn('Failed to hide the dock annotation overlay for a selection', { error });
         return null;
       }
-      this.concealedWindow = window;
+      this.concealedSession = session;
     }
     // Held until released, so an overlay still starting is not shown meanwhile.
     this.concealLeases += 1;
@@ -621,12 +625,12 @@ export class DockAnnotationController implements AnnotationService {
       released = true;
       this.concealLeases -= 1;
       if (this.concealLeases > 0) return;
-      const concealed = this.concealedWindow;
-      this.concealedWindow = null;
-      const current = this.session;
-      if (!concealed || !current || !this.current(current) || current.window !== concealed) return;
+      const concealed = this.concealedSession;
+      this.concealedSession = null;
+      if (!concealed || this.session !== concealed || !this.current(concealed)) return;
+      if (!concealed.revealed) return;
       try {
-        concealed.showInactive();
+        concealed.window.showInactive();
       } catch (error) {
         logger.warn('Failed to show the dock annotation overlay after a selection', { error });
         return;

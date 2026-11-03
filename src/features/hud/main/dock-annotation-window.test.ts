@@ -355,6 +355,30 @@ describe('DockAnnotationController', () => {
     expect(window.shown).toBe(1);
   });
 
+  it('ending a selection never shows a replacement session before its startup barriers', async () => {
+    const t = setup();
+    await t.start('live', 'box', 'A');
+    const window = t.windows[0]!;
+    const release = t.controller.conceal();
+    expect(window.visible).toBe(false);
+    // B replaces A on the same (reused) window and waits on its recording-exclusion barrier.
+    let ack: (ok: boolean) => void = () => {};
+    let asked = false;
+    t.host.beforeOverlayShow = () => {
+      asked = true;
+      return new Promise<boolean>((resolve) => (ack = resolve));
+    };
+    const second = t.start('live', 'box', 'B');
+    await vi.waitFor(() => expect(asked).toBe(true));
+    const shown = window.shown;
+    release!();
+    expect([window.shown, window.visible]).toEqual([shown, false]);
+    // B's own start shows it once its barrier passes.
+    ack(true);
+    await expect(second).resolves.toEqual({ ok: true, value: undefined });
+    expect([window.shown, window.visible]).toEqual([shown + 1, true]);
+  });
+
   it('a selection hides a visible overlay and shows it again once', async () => {
     const t = setup();
     await t.start();
