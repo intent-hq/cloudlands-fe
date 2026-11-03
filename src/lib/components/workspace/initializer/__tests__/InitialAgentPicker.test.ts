@@ -806,7 +806,10 @@ describe('InitialAgentPicker stale model override clearing', () => {
       },
     });
     await waitFor(() =>
-      expect(mocks.backendRequest).toHaveBeenCalledWith('specialist.list', { provider: 'codex' }),
+      expect(mocks.backendRequest).toHaveBeenCalledWith('specialist.list', {
+        provider: 'codex',
+        limit: 500,
+      }),
     );
     await flush();
     expect(screen.getAllByTestId('picker-reasoning')[SINGLE_PICKER].textContent).toBe(
@@ -880,7 +883,10 @@ describe('InitialAgentPicker stale model override clearing', () => {
       props: { selectedSpecialist: 'custom', selectedProvider: 'codex' },
     });
     await waitFor(() =>
-      expect(mocks.backendRequest).toHaveBeenCalledWith('specialist.list', { provider: 'codex' }),
+      expect(mocks.backendRequest).toHaveBeenCalledWith('specialist.list', {
+        provider: 'codex',
+        limit: 500,
+      }),
     );
     await flush();
     expect(screen.getAllByTestId('picker-reasoning')[SINGLE_PICKER].textContent).toBe(
@@ -1114,8 +1120,8 @@ describe('InitialAgentPicker stale model override clearing', () => {
     await rerender({ selectedProvider: 'auggie' });
     await waitFor(() => expect(displayedEffort()).toBe('high'));
     expect(mocks.backendRequest.mock.calls).toEqual([
-      ['specialist.list', { provider: 'auggie' }],
-      ['specialist.list', { provider: 'codex' }],
+      ['specialist.list', { provider: 'auggie', limit: 500 }],
+      ['specialist.list', { provider: 'codex', limit: 500 }],
     ]);
 
     // A specialist refresh invalidates every provider's preview. Returning
@@ -1125,7 +1131,10 @@ describe('InitialAgentPicker stale model override clearing', () => {
     await waitFor(() => expect(mocks.backendRequest).toHaveBeenCalledTimes(3));
     await rerender({ selectedProvider: 'codex' });
     await waitFor(() => expect(displayedEffort()).toBe('medium'));
-    expect(mocks.backendRequest).toHaveBeenLastCalledWith('specialist.list', { provider: 'codex' });
+    expect(mocks.backendRequest).toHaveBeenLastCalledWith('specialist.list', {
+      provider: 'codex',
+      limit: 500,
+    });
     expect(onReasoningEffortChange).not.toHaveBeenCalled();
   });
 

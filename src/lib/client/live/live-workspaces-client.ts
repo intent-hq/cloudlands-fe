@@ -57,6 +57,7 @@ import type {
   WorkspaceUpdateResult,
 } from '../app-client';
 import { BackendError } from './backend-transport-types';
+import { collectListPages } from '$shared/paged-list';
 import { backendRequest } from './backend-transport';
 import { createDeltaSubscription } from './delta-subscription';
 import {
@@ -272,9 +273,18 @@ export class LiveWorkspacesClient implements WorkspacesClient {
       ...(includeArchived ? { includeArchived: true } : {}),
       ...(includeRetired ? { includeRetired: true } : {}),
     };
-    const request = backendRequest<{ workspaces?: unknown[] }>(
-      'workspace.list',
-      Object.keys(params).length > 0 ? params : undefined,
+    // Every page belongs to the caller and reminder generation that started the list.
+    const request = collectListPages<{ workspaces?: unknown[] }>(
+      async (pageParams) => {
+        read.assertCurrent();
+        try {
+          return await backendRequest<{ workspaces?: unknown[] }>('workspace.list', pageParams);
+        } finally {
+          read.assertCurrent();
+        }
+      },
+      params,
+      'workspaces',
     ).then(
       (result) => {
         if (!read.isCurrent() && read.isAdmitted()) return this.list(options);
@@ -636,6 +646,16 @@ export class LiveWorkspacesClient implements WorkspacesClient {
       channel: {
         subscribeMethod: 'workspace.subscribe',
         unsubscribeMethod: 'workspace.unsubscribe',
+        // Paged snapshot (§6.9): the rest comes from `workspace.list` with
+        // the snapshot's archived/retired inclusion.
+        continuation: {
+          method: 'workspace.list',
+          key: 'workspaces',
+          params: (scope) => ({
+            includeArchived: true,
+            ...(scope.includeRetired === true ? { includeRetired: true } : {}),
+          }),
+        },
       },
       getId: (raw) => String(raw.id ?? raw.workspaceId ?? ''),
       normalize: (raw) => normalizeWorkspace(raw),

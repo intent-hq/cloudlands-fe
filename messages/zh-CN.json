@@ -5791,6 +5791,7 @@
   "specialists_loader_fileNotFound_error": "未找到专家文件",
   "specialists_loader_unknown_error": "未知错误",
   "specialists_mutation_deleteFailed_error": "删除专家失败",
+  "specialists_mutation_promptUnavailable_error": "此专家的提示词过大，无法加载，因此无法在此保存。请直接编辑其文件。",
   "specialists_mutation_refreshFailed_error": "写入后刷新专家列表失败",
   "specialists_mutation_saveFailed_error": "保存专家失败",
   "starterPrompts_connectFour_label": "创建一个四子棋游戏",
