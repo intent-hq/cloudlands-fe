@@ -43,7 +43,20 @@ export function scriptOutputToLines(buffer: ScriptOutputBuffer): string[] {
   return lines;
 }
 
-/** Last `maxLines` readable lines of a script's output, joined with `\n`. */
-export function scriptOutputTailText(buffer: ScriptOutputBuffer, maxLines: number): string {
-  return scriptOutputToLines(buffer).slice(-maxLines).join('\n');
+/** `script.output` reply when the daemon has nothing stored for the run. */
+const NO_OUTPUT_SENTINEL = 'No output yet.'; // i18n-ignore (daemon wire sentinel)
+
+/** `[N lines]` / `[showing last N of M lines]` header the daemon prepends. */
+const OUTPUT_REPLY_HEADER = /^\[(?:showing last \d+ of )?\d+ lines\]$/;
+
+/**
+ * Readable lines of a daemon `script.output` reply (the formatted tail text,
+ * not the raw PTY stream): drops the line-count header, the no-output
+ * sentinel and a trailing newline.
+ */
+export function scriptOutputReplyLines(text: string | null | undefined): string[] {
+  if (!text || text.trim() === NO_OUTPUT_SENTINEL) return [];
+  const lines = text.replace(/\r?\n$/, '').split(/\r?\n/);
+  if (OUTPUT_REPLY_HEADER.test(lines[0] ?? '')) lines.shift();
+  return lines.length === 1 && lines[0] === '' ? [] : lines;
 }

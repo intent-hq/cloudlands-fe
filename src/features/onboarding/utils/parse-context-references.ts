@@ -153,13 +153,14 @@ export async function parseRuntimeMentions(
 
     if (mention.type === 'script') {
       try {
-        const { selectScriptOutput, selectScriptById, selectScriptRuntime } =
+        const { selectScriptById, selectScriptRuntime } =
           await import('$store/renderer/slices/scripts/scripts-selectors');
-        const { scriptOutputToLines } = await import('$lib/utils/script-output-text');
+        const { readScriptContextOutputLines } =
+          await import('$features/scripts/utils/script-context-output');
         const wsId = (mention.meta?.workspaceId as string) || '';
         const scriptId = mention.id ?? '';
         const state = appStore.state;
-        const outputLines = scriptOutputToLines(selectScriptOutput.select(state, wsId, scriptId));
+        const outputLines = await readScriptContextOutputLines(state, wsId, scriptId);
         const script = selectScriptById.select(state, wsId, scriptId);
         const runtime = selectScriptRuntime.select(state, wsId, scriptId);
 

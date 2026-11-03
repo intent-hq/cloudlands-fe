@@ -2346,17 +2346,21 @@
 
             if (mention.type === 'script') {
               try {
-                const { selectScriptOutput, selectScriptById, selectScriptRuntime } =
+                const { selectScriptById, selectScriptRuntime } =
                   await import('$store/renderer/slices/scripts/scripts-selectors');
                 if (!preparationCurrent()) return null;
-                const { scriptOutputToLines } = await import('$lib/utils/script-output-text');
+                const { readScriptContextOutputLines } =
+                  await import('$features/scripts/utils/script-context-output');
                 if (!current()) return null;
                 const scriptId = mention.id;
                 const wsId = (mention.meta?.workspaceId as string) || null;
-                const state = appStore.state;
-                const outputLines = scriptOutputToLines(
-                  selectScriptOutput.select(state, wsId, scriptId),
+                const outputLines = await readScriptContextOutputLines(
+                  appStore.state,
+                  wsId,
+                  scriptId,
                 );
+                if (!preparationCurrent()) return null;
+                const state = appStore.state;
                 const script = selectScriptById.select(state, wsId, scriptId);
                 const runtime = selectScriptRuntime.select(state, wsId, scriptId);
 
