@@ -567,7 +567,34 @@ describe('workspaceInitializerSaga (registered production owner, reducer-backed 
       );
     });
 
-    it('reports a start failure on the machine after the workspace was created', async () => {
+    it('opens the created workspace and warns when its first agent could not start on the machine', async () => {
+      create.mockResolvedValue({
+        ok: false,
+        error: 'initial agent launch failed',
+        errorCode: 'launch-failed',
+        launchFailure: { workspaceId: 'ws-1', agentId: 'agent-9', cause: 'provider exited' },
+      } as never);
+      const get = vi.spyOn(appClient.workspaces, 'get').mockResolvedValue(workspace);
+      const action = workspaceInitializationSubmitted(
+        compactSubmission({ agent: remoteAgent() }),
+        consumer,
+      );
+      appStore.dispatch(action);
+      await expect(action.promise).resolves.toMatchObject({
+        workspaceId: 'ws-1',
+        agentId: 'agent-9',
+      });
+      expect(get).toHaveBeenCalledWith('ws-1');
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(recorded).toContainEqual(setWorkspaceEntity(workspace));
+      expect(recorded).toContainEqual(openWorkspaceTab(workspace.id));
+      expect(recorded).toContainEqual(setInitialAgentId(workspace.id, 'agent-9'));
+      expect(notify.warning).toHaveBeenCalledWith(
+        m.workspace_startOn_launchFailed_error({ machine: 'Mac mini', cause: 'provider exited' }),
+      );
+    });
+
+    it('reports a start failure on the machine when the reply names no workspace', async () => {
       create.mockResolvedValue({
         ok: false,
         error: 'provider exited',

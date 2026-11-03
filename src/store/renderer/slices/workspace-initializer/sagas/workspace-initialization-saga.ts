@@ -348,29 +348,39 @@ function* initialize(action: InitializationRun): SagaGenerator<void> {
       });
       if (!current(action, dispatch)) throw new Error('initialization-cancelled');
       const startOnNodeId = startOnPlacementNodeId(request.createRequest);
+      let workspace: Workspace;
       if (!result.ok) {
         // A remote start failure after the workspace committed (PROTOCOL
-        // nodes.md "Placement subset"): the workspace exists, the agent didn't start.
-        const message =
-          startOnNodeId && result.errorCode === 'launch-failed'
-            ? m.workspace_startOn_launchFailed_error({
-                machine: startOnMachineName(startOnNodeId),
-                cause: result.error,
-              })
-            : result.error;
-        const failure = Object.assign(new Error(message), { errorCode: result.errorCode });
-        throw failure;
+        // nodes.md "Placement subset"): the workspace and its agent exist, so
+        // open it and warn rather than offer a Create that would duplicate it.
+        const launchNodeId = result.errorCode === 'launch-failed' ? startOnNodeId : undefined;
+        const message = launchNodeId
+          ? m.workspace_startOn_launchFailed_error({
+              machine: startOnMachineName(launchNodeId),
+              cause: result.launchFailure?.cause ?? result.error,
+            })
+          : result.error;
+        const launch = launchNodeId ? result.launchFailure : undefined;
+        const kept = launch ? yield* call(fetchCreatedWorkspace, launch.workspaceId) : null;
+        if (!current(action, dispatch)) throw new Error('initialization-cancelled');
+        if (!launch || !kept) {
+          throw Object.assign(new Error(message), { errorCode: result.errorCode });
+        }
+        yield* call(notify.warning, message);
+        workspace = kept;
+        agentId = launch.agentId;
+      } else {
+        if (startOnNodeId && !isOnMachine(result.data.initialAgent, startOnNodeId))
+          yield* call(
+            notify.warning,
+            m.workspace_startOn_notOnMachine_warning({
+              machine: startOnMachineName(startOnNodeId),
+            }),
+          );
+        workspace = result.data.workspace;
+        agentId = result.data.initialAgent?.id;
       }
-      if (startOnNodeId && !isOnMachine(result.data.initialAgent, startOnNodeId))
-        yield* call(
-          notify.warning,
-          m.workspace_startOn_notOnMachine_warning({
-            machine: startOnMachineName(startOnNodeId),
-          }),
-        );
-      const workspace = result.data.workspace;
       workspaceId = workspace.id;
-      agentId = result.data.initialAgent?.id;
       workspacePath = workspace.worktreePath || workspace.repositoryPath || workspace.path;
       stage = 'post-create';
       yield* call(installWorkspace, action, workspace, dispatch, agentId);
@@ -590,6 +600,19 @@ function* resume(action: ResumeAction): SagaGenerator<void> {
     success: (result: WorkspaceInitializationResult) => action.success(result),
     failure: (error: Error) => action.failure(error),
   });
+}
+
+/** The workspace a `launch-failed` create committed, or null if it can't be read. */
+async function fetchCreatedWorkspace(workspaceId: string): Promise<Workspace | null> {
+  try {
+    return await appClient.workspaces.get(workspaceId);
+  } catch (error) {
+    logger.warn('Could not read the workspace kept by a failed remote start', {
+      workspaceId,
+      error,
+    });
+    return null;
+  }
 }
 
 /** Start On: the machine `initialAgent.placement` names, if any. */
