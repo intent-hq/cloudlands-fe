@@ -34,7 +34,6 @@ import {
   initialState,
   logoutGitLab,
   startGitLabDeviceAuth,
-  takeGitLabPatToken,
 } from '../gitlab-auth-slice';
 import { gitlabAuthSaga } from './gitlab-auth-saga';
 
