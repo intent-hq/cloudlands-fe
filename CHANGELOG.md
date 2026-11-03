@@ -4,6 +4,20 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.279.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.278.1...v2.279.0) (2026-11-03)
+
+
+### 🚀 Features
+
+* **dock:** turn the notch on by default with an in-notch intro and right-click menu ([#4047](https://github.com/intent-hq/cloudlands-fe/issues/4047)) ([d80383f](https://github.com/intent-hq/cloudlands-fe/commit/d80383f23effc4464f33098fd8aab8f84de696cb))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.118 ([#4122](https://github.com/intent-hq/cloudlands-fe/issues/4122)) ([6a17238](https://github.com/intent-hq/cloudlands-fe/commit/6a17238bbd5a0691f6c49828d69b5127243835f5))
+* **chat:** show drained queued messages as sent while the turn starts ([#4114](https://github.com/intent-hq/cloudlands-fe/issues/4114)) ([6c2e38f](https://github.com/intent-hq/cloudlands-fe/commit/6c2e38feacea7ae01b7c5129bfb79872bb77ff0c))
+* **workspace:** name the New Workspace picker Project or Codebase/Project for plain folders ([#4111](https://github.com/intent-hq/cloudlands-fe/issues/4111)) ([377192a](https://github.com/intent-hq/cloudlands-fe/commit/377192a196b8a67dc102d906805c009ba0eaa0e5))
+
 ## [2.278.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.278.0...v2.278.1) (2026-11-03)
 
 
