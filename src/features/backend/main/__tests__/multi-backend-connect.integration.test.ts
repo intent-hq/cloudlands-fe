@@ -173,6 +173,7 @@ vi.mock('../json-rpc-client', () => {
 
 vi.mock('../client-identity', () => ({
   getOrCreateClientId: vi.fn(async () => 'cli-test'),
+  getLocalMachineName: vi.fn((): string | undefined => undefined),
   persistClientId: vi.fn(async () => {}),
 }));
 
@@ -395,6 +396,26 @@ describe('multi-backend connect — end-to-end journey', () => {
     await expect(
       invoke('connections:list', undefined, remoteWindow.webContents),
     ).resolves.toMatchObject({ activeId: 'local', windowBackendId: remoteId });
+  });
+
+  it('names only the local entry with this machine’s name on connections:list', async () => {
+    const { mod } = await loadModule();
+    const identity = await import('../client-identity');
+    vi.mocked(identity.getLocalMachineName).mockReturnValue('Clément’s Mac Studio');
+    mod.registerBackendHandlers();
+    await invoke('connections:add', { ...REMOTE_INPUT, fingerprint: FINGERPRINT });
+
+    const result = await invoke<{ connections: { isLocal: boolean; machineName?: string }[] }>(
+      'connections:list',
+    );
+    const [local, remote] = result.connections;
+    expect(local).toMatchObject({ isLocal: true, machineName: 'Clément’s Mac Studio' });
+    expect(remote).toMatchObject({ isLocal: false });
+    expect(remote).not.toHaveProperty('machineName');
+
+    vi.mocked(identity.getLocalMachineName).mockReturnValue(undefined);
+    const unnamed = await invoke<{ connections: { isLocal: boolean }[] }>('connections:list');
+    expect(unnamed.connections.find((c) => c.isLocal)).not.toHaveProperty('machineName');
   });
 
   it('adds a remote, confirms its fingerprint, and opens it with the decrypted stored token', async () => {

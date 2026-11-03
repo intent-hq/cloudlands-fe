@@ -24,7 +24,7 @@
     CONNECTION_ACCENT_COLORS,
     connectionAccentOptions,
   } from '$lib/utils/connection-accents';
-  import { formatConnectionLabel } from '$lib/utils/connection-label';
+  import { formatConnectionLabel, formatLocalMachineLabel } from '$lib/utils/connection-label';
   import { canRequestDeviceUpdate, isDaemonBehindPin } from '$lib/utils/device-update-eligibility';
   import { m } from '$shared/paraglide/messages.js';
   import {
@@ -214,11 +214,7 @@
   const savedDeviceIcon = $derived(device.deviceIcon ?? 'auto');
   const accentOptions = $derived(connectionAccentOptions(savedAccent));
   const displayName = $derived(
-    device.isLocal
-      ? $currentConnectionId$ === device.id
-        ? m.layout_daemonStatus_localConnection_label()
-        : m.settings_devices_hostMachine_label()
-      : formatConnectionLabel(device),
+    device.isLocal ? formatLocalMachineLabel(device) : formatConnectionLabel(device),
   );
   const openStatus = $derived(device.status ?? 'not-open');
   const trimmedName = $derived(name.trim());
