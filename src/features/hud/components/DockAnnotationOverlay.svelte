@@ -16,7 +16,7 @@
   import type { DockImagePoint, DockMarkGeometry, DockMarkTool } from '$shared/dock-evidence';
   import DockAnnotationToolbar from './DockAnnotationToolbar.svelte';
   import DockRecordingToolbar from './DockRecordingToolbar.svelte';
-  import type { DockAnnotationSignal } from '$shared/dock-annotation';
+  import type { DockAnnotationSignal, DockBarAnchor } from '$shared/dock-annotation';
 
   let {
     overlay,
@@ -56,6 +56,8 @@
   let gesture = $state.raw<Gesture | null>(null);
   let pending = $state.raw<Pending[]>([]);
   let root = $state<HTMLDivElement | null>(null);
+  /** Where the person dragged the tool bar; both bars use it, so a swap never moves it. */
+  let toolbarAnchor = $state<DockBarAnchor | null>(null);
 
   const imageSize = $derived(overlay?.still ?? overlay?.image ?? null);
   const view = $derived(
@@ -443,11 +445,13 @@
         <DockRecordingToolbar
           {overlay}
           {signal}
+          bind:anchor={toolbarAnchor}
           send={(request) => void transport.toolbar?.(request).catch(() => false)}
         />
       {:else}
         <DockAnnotationToolbar
           {overlay}
+          bind:anchor={toolbarAnchor}
           send={(request) => void transport.toolbar?.(request).catch(() => false)}
         />
       {/if}

@@ -204,6 +204,42 @@ export function dockToolbarPosition(
 }
 
 /**
+ * Where the person dragged the on-screen tool bar: its bottom centre (overlay DIP).
+ * The annotate and recording bars share it, so swapping between them (a recording
+ * starting or ending) never moves the bar.
+ */
+export interface DockBarAnchor {
+  cx: number;
+  bottom: number;
+}
+
+/** A bar's top-left: at its anchor when dragged, else the default spot; always inside the area. */
+export function dockToolbarPlace(
+  size: { width: number; height: number },
+  area: DockAnnotationRect,
+  anchor: DockBarAnchor | null,
+  defaultSize: { width: number; height: number } = size,
+): { x: number; y: number } {
+  const start = anchor
+    ? { x: anchor.cx - size.width / 2, y: anchor.bottom - size.height }
+    : dockToolbarPosition(defaultSize, area);
+  return {
+    x: Math.max(area.x, Math.min(start.x, area.x + area.width - size.width)),
+    y: Math.max(area.y, Math.min(start.y, area.y + area.height - size.height)),
+  };
+}
+
+/** The anchor of a bar dragged to `raw`, as it actually sits (kept inside the area). */
+export function dockToolbarAnchorAt(
+  size: { width: number; height: number },
+  area: DockAnnotationRect,
+  raw: DockBarAnchor,
+): DockBarAnchor {
+  const { x, y } = dockToolbarPlace(size, area, raw);
+  return { cx: x + size.width / 2, bottom: y + size.height };
+}
+
+/**
  * The overlay's on-screen tool bar. `rect` reports where it sits (overlay DIP; null
  * when hidden) so main keeps it clickable and never lets a gesture start on it.
  */

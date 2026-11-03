@@ -1,10 +1,13 @@
 <script lang="ts">
+  import DotsSixVerticalIcon from 'phosphor-svelte/lib/DotsSixVerticalIcon';
   import { onDestroy, untrack } from 'svelte';
   import { fade, slide } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
   import {
     dockRecordingElapsedMs,
-    dockToolbarPosition,
+    dockToolbarAnchorAt,
+    dockToolbarPlace,
+    type DockBarAnchor,
     type DockAnnotationOverlayState,
     type DockAnnotationRect,
     type DockAnnotationSignal,
@@ -35,9 +38,12 @@
     overlay,
     send,
     signal = null,
+    anchor = $bindable(null),
   }: {
     overlay: DockAnnotationOverlayState;
     send: (request: DockAnnotationToolbarRequest) => void;
+    /** Where the person dragged the bar; shared with the annotate bar. */
+    anchor?: DockBarAnchor | null;
     /** The recording's live microphone; null until the first report. */
     signal?: DockAnnotationSignal | null;
   } = $props();
@@ -52,7 +58,6 @@
   // pointer; it always stays fully inside the work area.
   let width = $state(0);
   let height = $state(0);
-  let centre = $state<{ x: number; y: number } | null>(null);
   let drag: { pointerId: number; dx: number; dy: number } | null = null;
   // Narrow work areas: every control stays; the bar scales down instead.
   const scale = $derived(
@@ -60,14 +65,9 @@
   );
   /** The bar as seen (scaled), kept fully inside the work area. */
   const visual = $derived.by(() => {
-    const area = overlay.workArea;
     const w = width * scale;
     const h = height * scale;
-    const start = centre
-      ? { x: centre.x - w / 2, y: centre.y }
-      : dockToolbarPosition({ width: w, height: h }, area);
-    const x = Math.max(area.x, Math.min(start.x, area.x + area.width - w));
-    const y = Math.max(area.y, Math.min(start.y, area.y + area.height - h));
+    const { x, y } = dockToolbarPlace({ width: w, height: h }, overlay.workArea, anchor);
     return { x, y, width: w, height: h };
   });
   // The layout box, scaled about its bottom centre onto `visual`.
@@ -95,7 +95,10 @@
   function onPointerMove(event: PointerEvent) {
     if (!drag || event.pointerId !== drag.pointerId) return;
     if (event.buttons === 0) return (drag = null);
-    centre = { x: event.clientX - drag.dx, y: event.clientY - drag.dy };
+    anchor = dockToolbarAnchorAt({ width: visual.width, height: visual.height }, overlay.workArea, {
+      cx: event.clientX - drag.dx,
+      bottom: event.clientY - drag.dy + visual.height,
+    });
   }
   const endDrag = () => (drag = null);
 
@@ -239,6 +242,10 @@
   onkeydown={onBarKeyDown}
   transition:fade={{ tier: 'fast' }}
 >
+  <!-- Grip: the visible handle for dragging the bar (its whole surface drags too). -->
+  <span class="grip" title={m.dock_annotationToolbar_drag_label()} aria-hidden="true">
+    <DotsSixVerticalIcon size={16} weight="bold" aria-hidden="true" focusable="false" />
+  </span>
   {#if discarding}
     <div class="discarded" role="status" data-testid="recording-discarded">
       <span>{m.dock_recordingToolbar_discarded_label()}</span>
@@ -347,24 +354,25 @@
 {/snippet}
 
 <style>
-  /* Intent design system tokens; light and dark follow the system appearance. */
+  /* Always dark, like the annotate bar it replaces (same card, tiles, edge and the
+     app accent tint for the current tool), whatever the system appearance. */
   .recording-toolbar {
-    --rt-surface: hsl(var(--theme-light-surface-3));
-    --rt-well: hsl(var(--theme-light-muted) / 0.55);
-    --rt-hover: var(--theme-light-active);
-    --rt-ink: hsl(var(--theme-light-foreground));
-    --rt-muted: hsl(var(--theme-light-muted-foreground));
-    --rt-edge: hsl(var(--theme-light-border));
-    --rt-accent: hsl(var(--theme-light-primary));
-    --rt-accent-ink: hsl(var(--theme-light-primary-foreground));
-    --rt-rec: hsl(var(--theme-light-danger));
-    --rt-rec-fill: hsl(var(--theme-light-danger-background));
-    --rt-rec-hover: hsl(var(--theme-light-danger) / 0.14);
-    --rt-paused-fill: hsl(var(--theme-light-muted) / 0.55);
-    --rt-done: hsl(var(--theme-light-foreground));
-    --rt-done-ink: hsl(var(--theme-light-surface-3));
-    --rt-focus: hsl(var(--theme-light-foreground));
-    --rt-shadow: var(--theme-light-shadow-surface-5);
+    --rt-surface: hsl(var(--theme-dark-surface-3));
+    --rt-well: hsl(var(--theme-dark-surface-5));
+    --rt-hover: var(--theme-dark-active);
+    --rt-ink: hsl(var(--theme-dark-foreground));
+    --rt-muted: hsl(var(--theme-dark-muted-foreground));
+    --rt-edge: hsl(var(--theme-dark-border));
+    --rt-accent: hsl(var(--primary) / 0.2);
+    --rt-accent-ink: hsl(var(--primary));
+    --rt-rec: hsl(var(--theme-dark-danger));
+    --rt-rec-fill: hsl(var(--theme-dark-danger-background));
+    --rt-rec-hover: hsl(var(--theme-dark-danger) / 0.22);
+    --rt-paused-fill: hsl(var(--theme-dark-surface-5));
+    --rt-done: hsl(var(--theme-dark-foreground));
+    --rt-done-ink: hsl(var(--theme-dark-surface-1));
+    --rt-focus: hsl(var(--primary));
+    --rt-shadow: 0 8px 24px var(--theme-dark-shadow-drop);
     position: absolute;
     top: 0;
     left: 0;
@@ -377,6 +385,7 @@
     border-radius: 20px;
     background: var(--rt-surface);
     color: var(--rt-ink);
+    border: 1px solid var(--rt-edge);
     box-shadow: var(--rt-shadow);
     font-size: 14px;
     cursor: grab;
@@ -385,25 +394,11 @@
     user-select: none;
     -webkit-user-select: none;
   }
-  @media (prefers-color-scheme: dark) {
-    .recording-toolbar {
-      --rt-surface: hsl(var(--theme-dark-surface-3));
-      --rt-well: hsl(var(--theme-dark-surface-1));
-      --rt-hover: var(--theme-dark-active);
-      --rt-ink: hsl(var(--theme-dark-foreground));
-      --rt-muted: hsl(var(--theme-dark-muted-foreground));
-      --rt-edge: hsl(var(--theme-dark-border));
-      --rt-accent: hsl(var(--theme-dark-primary));
-      --rt-accent-ink: hsl(var(--theme-dark-primary-foreground));
-      --rt-rec: hsl(var(--theme-dark-danger));
-      --rt-rec-fill: hsl(var(--theme-dark-danger-background));
-      --rt-rec-hover: hsl(var(--theme-dark-danger) / 0.22);
-      --rt-paused-fill: hsl(var(--theme-dark-surface-5));
-      --rt-done: hsl(var(--theme-dark-foreground));
-      --rt-done-ink: hsl(var(--theme-dark-surface-1));
-      --rt-focus: hsl(var(--theme-dark-primary));
-      --rt-shadow: var(--theme-dark-shadow-surface-5);
-    }
+  .grip {
+    display: flex;
+    align-items: center;
+    padding: 0 2px 0 4px;
+    color: var(--rt-muted);
   }
   .recording-toolbar:active:not(:has(button:active)) {
     cursor: grabbing;
