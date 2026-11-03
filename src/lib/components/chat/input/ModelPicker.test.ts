@@ -6430,6 +6430,25 @@ describe('ModelPicker named provider profiles (§5.54)', () => {
     );
   });
 
+  it('moves the profile name into the hover tooltip when the trigger hides it', async () => {
+    mockCatalogProfiles.current = [WORK];
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'gpt-5-work',
+        providerId: WORK.providerRef,
+        portal: false,
+        showProfileName: false,
+      },
+    });
+    const trigger = screen.getByRole('button');
+    await waitFor(() => {
+      const value = trigger.querySelector('[aria-label]');
+      expect(value?.getAttribute('aria-label') ?? '').toMatch(/GPT-5 Work row.*Codex.*Work/);
+      expect(value?.getAttribute('title') ?? '').toMatch(/GPT-5 Work row.*Codex.*Work/);
+    });
+    expect(screen.queryByTestId('model-picker-profile')).toBeNull();
+  });
+
   it('labels the original configuration Default once its provider has profiles', async () => {
     mockCatalogProfiles.current = [WORK];
     render(ModelPicker, { props: { selectedModel: 'gpt-5', providerId: 'codex', portal: false } });
