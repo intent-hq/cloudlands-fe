@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.275.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.274.0...v2.275.0) (2026-11-03)
+
+
+### 🚀 Features
+
+* **intent-web:** standalone browser server for cloud machines ([#4062](https://github.com/intent-hq/cloudlands-fe/issues/4062)) ([a9c0dd1](https://github.com/intent-hq/cloudlands-fe/commit/a9c0dd1c4b4ecb164d451427d783768f92226ac5))
+
+
+### 🐛 Bug Fixes
+
+* **scripts:** discover verify:changed suites the way Vitest does ([#4060](https://github.com/intent-hq/cloudlands-fe/issues/4060)) ([09d827f](https://github.com/intent-hq/cloudlands-fe/commit/09d827f02dfde95579dc3c2c2d3b57d9559f3a10))
+
 ## [2.274.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.273.0...v2.274.0) (2026-11-03)
 
 
