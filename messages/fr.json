@@ -5823,6 +5823,7 @@
   "starterPrompts_sudoku_label": "Créer une application de Sudoku",
   "starterPrompts_ticTacToe_label": "Créer un jeu de morpion",
   "stats_card_builtWith_label": "Créé avec Intent",
+  "stats_card_legendCache_label": "cache",
   "stats_card_legendInput_label": "entrée",
   "stats_card_legendOutput_label": "sortie",
   "stats_card_legendThoughts_label": "raisonnement",

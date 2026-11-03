@@ -28,12 +28,18 @@ function hourCell(
   };
 }
 
-function monthCell(month: number, input = 0, output = 0, thoughts = 0): UsageMonthStats {
+function monthCell(
+  month: number,
+  input = 0,
+  output = 0,
+  thoughts = 0,
+  cacheRead = 0,
+): UsageMonthStats {
   return {
     month,
     inputTokens: input,
     outputTokens: output,
-    cacheReadTokens: 0,
+    cacheReadTokens: cacheRead,
     cacheCreationTokens: 0,
     ...(thoughts > 0 ? { thoughtTokens: thoughts } : {}),
   };
@@ -87,10 +93,24 @@ describe('hourCardModel (hour-of-day)', () => {
     const m = hourCardModel(byHour, 'hour-of-day');
     expect(m.peakLabel).toBe('14:00');
     expect(m.peakSub).toBe('1K tokens in the 2pm hour');
-    expect(m.bars[14]).toEqual({ heightPct: 100, outPct: 20, thoughtPct: 0, peak: true });
-    expect(m.bars[10]).toEqual({ heightPct: 50, outPct: 20, thoughtPct: 0, peak: false });
-    expect(m.bars[0]).toEqual({ heightPct: 0, outPct: 0, thoughtPct: 0, peak: false });
+    // 600 fresh input of 1000; the 200 cache tokens are the implicit base segment.
+    expect(m.bars[14]).toEqual({
+      heightPct: 100,
+      inPct: 60,
+      outPct: 20,
+      thoughtPct: 0,
+      peak: true,
+    });
+    expect(m.bars[10]).toEqual({
+      heightPct: 50,
+      inPct: 60,
+      outPct: 20,
+      thoughtPct: 0,
+      peak: false,
+    });
+    expect(m.bars[0]).toEqual({ heightPct: 0, inPct: 0, outPct: 0, thoughtPct: 0, peak: false });
     expect(m.hasThoughts).toBe(false);
+    expect(m.hasCache).toBe(true);
     // total 1750; hours 09–18 hold 1500 (86%), hours 00–06 hold 250 (14%).
     expect(m.workingHours).toBe('09–18 · 86%');
     expect(m.workingHoursPct).toBe(86);
@@ -107,8 +127,50 @@ describe('hourCardModel (hour-of-day)', () => {
     });
     const m = hourCardModel(withThoughts, 'hour-of-day');
     expect(m.hasThoughts).toBe(true);
-    expect(m.bars[14]).toEqual({ heightPct: 100, outPct: 20, thoughtPct: 10, peak: true });
-    expect(m.bars[10]).toEqual({ heightPct: 50, outPct: 20, thoughtPct: 0, peak: false });
+    expect(m.bars[14]).toEqual({
+      heightPct: 100,
+      inPct: 60,
+      outPct: 20,
+      thoughtPct: 10,
+      peak: true,
+    });
+    expect(m.bars[10]).toEqual({
+      heightPct: 50,
+      inPct: 60,
+      outPct: 20,
+      thoughtPct: 0,
+      peak: false,
+    });
+  });
+
+  it('splits fresh input from cache and keeps tiny non-zero shares visible (regression)', () => {
+    // Real-world Claude Code mix: cache reads dwarf every other counter, so
+    // output (~0.2%) and thoughts (~0.001%) used to vanish into the bar.
+    const cacheHeavy = Array.from({ length: 24 }, (_, h) =>
+      h === 7
+        ? hourCell(7, 13_000_000, 15_000_000, 6_750_000_000, 111_000_000, 60_000)
+        : hourCell(h),
+    );
+    const m = hourCardModel(cacheHeavy, 'hour-of-day');
+    expect(m.hasCache).toBe(true);
+    expect(m.hasThoughts).toBe(true);
+    expect(m.bars[7]).toEqual({
+      heightPct: 100,
+      inPct: 0.2,
+      outPct: 0.2,
+      // 0.0009% would round to 0; any reported thoughts keep a non-zero share.
+      thoughtPct: 0.1,
+      peak: true,
+    });
+  });
+
+  it('reports no cache segment when no cell has cache tokens', () => {
+    const noCache = Array.from({ length: 24 }, (_, h) =>
+      hourCell(h, h === 3 ? 75 : 0, h === 3 ? 25 : 0),
+    );
+    const m = hourCardModel(noCache, 'hour-of-day');
+    expect(m.hasCache).toBe(false);
+    expect(m.bars[3]).toEqual({ heightPct: 100, inPct: 75, outPct: 25, thoughtPct: 0, peak: true });
   });
 
   it('defaults the working-hours window to 09–18 (regression)', () => {
@@ -133,8 +195,9 @@ describe('hourCardModel (hour-of-day)', () => {
     expect(m.grid).toEqual([]);
     expect(m.bars).toHaveLength(24);
     for (const b of m.bars)
-      expect(b).toEqual({ heightPct: 0, outPct: 0, thoughtPct: 0, peak: false });
+      expect(b).toEqual({ heightPct: 0, inPct: 0, outPct: 0, thoughtPct: 0, peak: false });
     expect(m.hasThoughts).toBe(false);
+    expect(m.hasCache).toBe(false);
     expect(m.workingHours).toBe('09–18 · 0%');
     expect(m.workingHoursPct).toBe(0);
     expect(m.overnight).toBe('0%');
@@ -219,6 +282,7 @@ describe('monthCardModel', () => {
     expect(m.hasThoughts).toBe(false);
     expect(m.bars[2]).toEqual({
       heightPct: 100,
+      inPct: 80,
       outPct: 20,
       thoughtPct: 0,
       letter: 'M',
@@ -227,6 +291,7 @@ describe('monthCardModel', () => {
     });
     expect(m.bars[3]).toEqual({
       heightPct: 75,
+      inPct: 80,
       outPct: 20,
       thoughtPct: 0,
       letter: 'A',
@@ -235,6 +300,7 @@ describe('monthCardModel', () => {
     });
     expect(m.bars[11]).toEqual({
       heightPct: 2,
+      inPct: 0,
       outPct: 0,
       thoughtPct: 0,
       letter: 'D',
@@ -257,6 +323,7 @@ describe('monthCardModel', () => {
     expect(m.hasThoughts).toBe(true);
     expect(m.bars[0]).toEqual({
       heightPct: 100,
+      inPct: 60,
       outPct: 20,
       thoughtPct: 20,
       letter: 'J',
@@ -264,5 +331,29 @@ describe('monthCardModel', () => {
       best: true,
     });
     expect(m.bars[1].thoughtPct).toBe(0);
+  });
+
+  it('splits fresh input from cache and keeps tiny non-zero shares visible (regression)', () => {
+    const cacheHeavy = [
+      monthCell(1, 100),
+      monthCell(2, 13_000_000, 15_000_000, 60_000, 6_861_000_000),
+    ];
+    const m = monthCardModel(cacheHeavy, 2);
+    expect(m.hasCache).toBe(true);
+    expect(m.bars[1]).toEqual({
+      heightPct: 100,
+      inPct: 0.2,
+      outPct: 0.2,
+      thoughtPct: 0.1,
+      letter: 'F',
+      active: true,
+      best: true,
+    });
+  });
+
+  it('ignores cache in future-month stubs when gating the legend', () => {
+    const stubOnly = [monthCell(1, 300, 100), monthCell(2, 0, 0, 0, 500)];
+    expect(monthCardModel(stubOnly, 1).hasCache).toBe(false);
+    expect(monthCardModel(stubOnly, 2).hasCache).toBe(true);
   });
 });

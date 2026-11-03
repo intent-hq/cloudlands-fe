@@ -5823,6 +5823,7 @@
   "starterPrompts_sudoku_label": "스도쿠 앱 만들기",
   "starterPrompts_ticTacToe_label": "틱택토 게임 만들기",
   "stats_card_builtWith_label": "Intent로 제작",
+  "stats_card_legendCache_label": "캐시",
   "stats_card_legendInput_label": "입력",
   "stats_card_legendOutput_label": "출력",
   "stats_card_legendThoughts_label": "사고",

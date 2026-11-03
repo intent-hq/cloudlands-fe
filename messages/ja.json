@@ -5823,6 +5823,7 @@
   "starterPrompts_sudoku_label": "数独アプリを作成",
   "starterPrompts_ticTacToe_label": "三目並べゲームを作成",
   "stats_card_builtWith_label": "Intent で構築",
+  "stats_card_legendCache_label": "キャッシュ",
   "stats_card_legendInput_label": "入力",
   "stats_card_legendOutput_label": "出力",
   "stats_card_legendThoughts_label": "思考",

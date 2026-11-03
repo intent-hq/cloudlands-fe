@@ -5823,6 +5823,7 @@
   "starterPrompts_sudoku_label": "Crear una aplicación de Sudoku",
   "starterPrompts_ticTacToe_label": "Crear un juego de tres en raya",
   "stats_card_builtWith_label": "Creado con Intent",
+  "stats_card_legendCache_label": "caché",
   "stats_card_legendInput_label": "entrada",
   "stats_card_legendOutput_label": "salida",
   "stats_card_legendThoughts_label": "razonamiento",
