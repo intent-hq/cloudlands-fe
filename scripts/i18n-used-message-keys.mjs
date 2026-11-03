@@ -90,6 +90,11 @@ export function messageReferencesInProgram(program) {
     if (!variable) return unsupported(identifier, 'messages binding has no resolvable scope');
     if (followedVariables.has(variable)) return;
     followedVariables.add(variable);
+    // Importers read an exported alias without importing messages themselves,
+    // so neither this scan nor the build check would see their keys.
+    if (variable.defs.some((def) => parents.get(def.parent)?.type === 'ExportNamedDeclaration')) {
+      return unsupported(identifier, 'exported messages alias hides which keys are used');
+    }
     for (const reference of variable.references) {
       if (reference.isRead()) followValue(reference.identifier);
     }

@@ -127,6 +127,23 @@ describe('messageReferencesInProgram', () => {
       'messages object escapes as a value',
       'messages object escapes as a value',
     ]);
+    // Another module reads keys from an exported alias without importing
+    // messages itself, so neither the prebuild scan nor the build check sees them.
+    expect(
+      analyze(`import { m } from '${MESSAGES}';
+        import * as messages from '${MESSAGES}';
+        export const t = m;
+        export let { m: nested } = messages;`).problems,
+    ).toEqual([
+      'exported messages alias hides which keys are used',
+      'exported messages alias hides which keys are used',
+    ]);
+    expect(
+      analyze(`import { m } from '${MESSAGES}';\nexport const { greeting_label } = m;`),
+    ).toEqual({
+      keys: ['greeting_label'],
+      problems: [],
+    });
     expect(analyze(`export * from '${MESSAGES}';`).problems).toEqual([
       're-exporting messages hides which keys are used',
     ]);
