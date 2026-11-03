@@ -1,5 +1,5 @@
 import type { DockShortcutAction } from '../shared/dock-shortcuts';
-export const DOCK_GLOBAL_BINDINGS = [
+const DOCK_GLOBAL_BINDINGS = [
   ['CommandOrControl+Shift+D', 'focus'],
   ['CommandOrControl+Shift+S', 'capture'],
   ['CommandOrControl+Shift+R', 'record'],
