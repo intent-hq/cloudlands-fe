@@ -8,7 +8,7 @@ import {
 import type { StoreState } from '$store/renderer/types';
 
 /** `script.output` reply when the daemon has nothing buffered for the script. */
-const NO_OUTPUT_SENTINEL = 'No output yet.';
+const NO_OUTPUT_SENTINEL = 'No output yet.'; // i18n-ignore (daemon wire sentinel)
 
 /**
  * The last `maxLines` output lines of a script, for agent context.
