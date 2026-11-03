@@ -115,6 +115,8 @@ export interface BrowserAccessServerDeps {
     response: http.ServerResponse,
   ) => Promise<boolean>;
   readonly runtimeConfig?: () => string | Promise<string>;
+  /** Called after a browser bridge opens or closes (see `bridgedBackendIds`). */
+  readonly onBridgesChanged?: () => void;
 }
 
 export interface BrowserAccessServer {
@@ -123,6 +125,8 @@ export interface BrowserAccessServer {
   /** Drop every bridged browser (used when the access key is reset). */
   disconnectAll(): void;
   disconnectBackend?(connectionId: string): void;
+  /** Backends with at least one live browser bridge. */
+  bridgedBackendIds?(): Set<string>;
   listenSocket?(socketPath: string): Promise<void>;
   close(): Promise<void>;
 }
@@ -552,7 +556,11 @@ export function createBrowserAccessServer(deps: BrowserAccessServerDeps): Browse
       log.info(`[BrowserAccess] bridging a browser to backend ${connectionId}`);
       const revoke = bridgeWebSocket(ws, deps.openUpstream(connectionId));
       bridges.set(revoke, connectionId);
-      ws.once('close', () => bridges.delete(revoke));
+      deps.onBridgesChanged?.();
+      ws.once('close', () => {
+        bridges.delete(revoke);
+        deps.onBridgesChanged?.();
+      });
     });
   });
 
@@ -589,6 +597,9 @@ export function createBrowserAccessServer(deps: BrowserAccessServerDeps): Browse
           process.umask(mask);
         }
       });
+    },
+    bridgedBackendIds(): Set<string> {
+      return new Set(bridges.values());
     },
     disconnectBackend(connectionId: string): void {
       for (const [revoke, id] of bridges) {

@@ -6,11 +6,18 @@
 //   - `intent-web key` creates the data dir and prints the access key
 //   - `intent-web serve --no-local` starts with no daemon; the sign-in page,
 //     key login, the web UI, runtime config and the connections API answer.
+//   - Against a fake TLS daemon: capture its fingerprint, add it, test it and
+//     relay JSON-RPC through the /intentd/ws bridge; then `intent-web key
+//     --reset` from a second process revokes the session and closes the bridge.
 // Usage: node scripts/smoke-intent-web-package.mjs [--package-dir <dir>] [--pack-destination <dir>]
 // With --pack-destination the checked tarball is kept there (the publish
 // workflow publishes exactly that file).
 import { spawn, spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
+import { once } from 'node:events';
 import fs from 'node:fs';
+import https from 'node:https';
+import { createRequire } from 'node:module';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -18,6 +25,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const SESSION_COOKIE = 'intent_browser_access';
+const FAKE_DAEMON_TOKEN = 'smoke-daemon-token';
 
 // The packed web UI is about 20 MB; this cap catches an accidental inclusion
 // of sourcemaps, node_modules or a second build.
@@ -134,6 +143,7 @@ async function serveSmoke({ bin, dataDir, accessKey }) {
         listed.activeId === null,
       `a fresh server lists no machines, got ${JSON.stringify(listed)}`,
     );
+    await bridgeSmoke({ base, cookie, bin, dataDir });
   } catch (error) {
     await stop();
     throw error;
@@ -141,6 +151,127 @@ async function serveSmoke({ bin, dataDir, accessKey }) {
   const { code, signal } = await stop();
   if (signal === 'SIGKILL') throw new Error(`serve did not stop on SIGTERM:\n${output}`);
   assert(code === 0 || signal === 'SIGTERM', `serve exit code ${code}, signal ${signal}`);
+}
+
+// A minimal intentd stand-in: TLS with a fixed test identity, bearer-token
+// upgrade check, and a JSON-RPC echo naming itself.
+async function startFakeDaemon() {
+  const { tlsIdentities } =
+    await import('../src/features/intent-web/main/intent-web-tls.fixture.ts');
+  const { WebSocketServer } = createRequire(import.meta.url)('ws');
+  const { cert, key } = tlsIdentities[0];
+  const server = https.createServer({ cert, key });
+  const sockets = new Set();
+  server.on('connection', (socket) => {
+    sockets.add(socket);
+    socket.once('close', () => sockets.delete(socket));
+  });
+  const wss = new WebSocketServer({ noServer: true });
+  server.on('upgrade', (request, socket, head) => {
+    if (request.headers.authorization !== `Bearer ${FAKE_DAEMON_TOKEN}`) {
+      socket.end('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      return;
+    }
+    wss.handleUpgrade(request, socket, head, (ws) =>
+      ws.on('message', (raw) => {
+        const message = JSON.parse(String(raw));
+        ws.send(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: 'fake-daemon' }));
+      }),
+    );
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return {
+    port: server.address().port,
+    fingerprint: new crypto.X509Certificate(cert).fingerprint256,
+    async close() {
+      for (const ws of wss.clients) ws.terminate();
+      wss.close();
+      for (const socket of sockets) socket.destroy();
+      await new Promise((resolve) => server.close(() => resolve()));
+    },
+  };
+}
+
+// Add → test → bridge against a fake daemon, then a key reset from a second
+// CLI process must revoke the browser session and close its live bridge.
+async function bridgeSmoke({ base, cookie, bin, dataDir }) {
+  const { WebSocket } = createRequire(import.meta.url)('ws');
+  const daemon = await startFakeDaemon();
+  let socket;
+  try {
+    const headers = { cookie, origin: base, 'content-type': 'application/json' };
+    const post = async (pathname, body) => {
+      const response = await fetch(`${base}/__intent-web/connections${pathname}`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      });
+      assert(response.status === 200, `POST ${pathname || '/'} status ${response.status}`);
+      return response.json();
+    };
+    const target = { host: '127.0.0.1', port: daemon.port };
+    const captured = await post('/capture-fingerprint', {
+      ...target,
+      token: FAKE_DAEMON_TOKEN,
+    });
+    assert(
+      captured.ok && captured.fingerprint === daemon.fingerprint && captured.tokenValid,
+      `capture-fingerprint pins the daemon cert, got ${JSON.stringify(captured)}`,
+    );
+    const { connection } = await post('', {
+      label: 'Smoke daemon',
+      ...target,
+      fingerprint: captured.fingerprint,
+      token: FAKE_DAEMON_TOKEN,
+    });
+    assert(connection?.id, 'add returns the saved machine');
+    assert(!JSON.stringify(connection).includes(FAKE_DAEMON_TOKEN), 'add response has no token');
+    const tested = await post(`/${connection.id}/test`, target);
+    assert(tested.status === 'success', `test connection, got ${JSON.stringify(tested)}`);
+    const stored = fs.readFileSync(path.join(dataDir, 'connections.json'), 'utf8');
+    assert(
+      stored.includes('"encrypted": false') || stored.includes('"encrypted":false'),
+      'token stored as plaintext marker',
+    );
+    if (process.platform !== 'win32')
+      assert(
+        (fs.statSync(path.join(dataDir, 'connections.json')).mode & 0o777) === 0o600,
+        'connections.json is 0600',
+      );
+
+    socket = new WebSocket(`${base.replace('http', 'ws')}/intentd/ws/${connection.id}`, {
+      headers: { cookie, origin: base },
+    });
+    await once(socket, 'open', { signal: AbortSignal.timeout(10_000) });
+    const reply = once(socket, 'message', { signal: AbortSignal.timeout(10_000) });
+    socket.send(JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'system.status', params: {} }));
+    const echoed = JSON.parse(String((await reply)[0]));
+    assert(
+      echoed.id === 7 && echoed.result === 'fake-daemon',
+      `bridge relays JSON-RPC, got ${JSON.stringify(echoed)}`,
+    );
+
+    const closed = once(socket, 'close', { signal: AbortSignal.timeout(10_000) });
+    const newKey = run(process.execPath, [bin, 'key', '--reset', '--data-dir', dataDir]).trim();
+    assert(/^[A-Za-z0-9_-]{43}$/.test(newKey), 'key --reset prints a new access key');
+    await closed;
+    const revoked = await fetch(`${base}/runtime-config.js`, { headers: { cookie } });
+    assert(revoked.status === 401, `old session after key reset, status ${revoked.status}`);
+    const signIn = await fetch(`${base}/?key=${newKey}`, { redirect: 'manual' });
+    const fresh = signIn.headers.get('set-cookie')?.split(';')[0];
+    assert(signIn.status === 303 && fresh?.startsWith(`${SESSION_COOKIE}=`), 'new key signs in');
+    const listed = await (
+      await fetch(`${base}/__intent-web/connections`, { headers: { cookie: fresh } })
+    ).json();
+    assert(
+      listed.connections.some((c) => c.id === connection.id) &&
+        !JSON.stringify(listed).includes(FAKE_DAEMON_TOKEN),
+      'saved machine survives the key reset, without its token',
+    );
+  } finally {
+    socket?.terminate();
+    await daemon.close();
+  }
 }
 
 export async function smokeIntentWebPackage({

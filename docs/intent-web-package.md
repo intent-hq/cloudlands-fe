@@ -1,6 +1,7 @@
 # Publishing @intent-hq/web
 
-`@intent-hq/web` is the standalone browser server (`npx @intent-hq/web`). It
+`@intent-hq/web` is the standalone browser server (`npx @intent-hq/web`); the
+user guide is [Run Intent Web on a cloud machine](./intent-web.md). It
 contains the web UI build (`web/`), the server and CLI bundled into
 `bin/intent-web.mjs`, and one runtime dependency, `ws`. Its version is always
 the cloudlands-fe version.

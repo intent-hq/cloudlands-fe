@@ -60,6 +60,7 @@
     selectActiveAuthRejected,
     selectCurrentConnectionCertWarnings,
     selectConnectionWorkflow,
+    selectHostManagesConnections,
   } from '$store/renderer/slices/connections/connections-selectors';
   import {
     connectionWorkflowRequested,
@@ -200,8 +201,12 @@
   // window). Once a spawn is in flight (or failed), the section stays visible
   // even if a status broadcast flips the transport to sidecar-uds mid-spawn —
   // hiding it would drop the pending indicator / error and any way to retry.
+  // An intent-web tab can neither spawn intentd nor open desktop windows; it
+  // opens the local machine in a new tab from the list below instead.
+  const hostManagesConnections$ = selectHostManagesConnections();
   const showSpawnButton = $derived(
-    isExternalMode || $sidecarGaveUp$ || $spawnPending$ || $spawnError$ !== null,
+    !$hostManagesConnections$ &&
+      (isExternalMode || $sidecarGaveUp$ || $spawnPending$ || $spawnError$ !== null),
   );
   // Remote window: this window's backend is a stored remote connection, so
   // local recovery opens the local backend's windows instead of spawning into
@@ -210,9 +215,12 @@
 
   // Other saved backends the user can open windows for without leaving this
   // one (T20, Open-only). Excludes the local entry — "Switch to Local" / "Start
-  // local intentd" is its dedicated action — and this window's own backend.
+  // local intentd" is its dedicated action, except on intent-web, which has
+  // none — and this window's own backend.
   const otherConnections = $derived(
-    $connections$.filter((c) => !c.isLocal && c.id !== $activeConnectionId$),
+    $connections$.filter(
+      (c) => (!c.isLocal || $hostManagesConnections$) && c.id !== $activeConnectionId$,
+    ),
   );
 
   // Actionable token-rejected posture: this window's remote backend rejected the
