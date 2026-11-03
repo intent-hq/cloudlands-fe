@@ -41,6 +41,7 @@ import noOneShotAnimationCountRule from './eslint-rules/no-one-shot-animation-co
 import noUnarmedOutsideClickInCtRule from './eslint-rules/no-unarmed-outside-click-in-ct.js';
 import noRawMouseWheelInCtRule from './eslint-rules/no-raw-mouse-wheel-in-ct.js';
 import noWaitForTimeoutInCtRule from './eslint-rules/no-wait-for-timeout-in-ct.js';
+import noHoverThenClickInCtRule from './eslint-rules/no-hover-then-click-in-ct.js';
 import noHandWrittenTypingCheckRule from './eslint-rules/no-hand-written-typing-check.js';
 import noScrollIntoViewPrototypeStubRule from './eslint-rules/no-scroll-into-view-prototype-stub.js';
 import noFixedWaitTimeoutInTestsRule from './eslint-rules/no-fixed-wait-timeout-in-tests.js';
@@ -59,12 +60,14 @@ const classNameAssertionsBaseline =
 const fixedWaitTimeoutBaseline =
   baselineCounts(lintBaseline['no-fixed-wait-timeout-in-tests']) ?? {};
 const waitForTimeoutInCtBaseline = baselineCounts(lintBaseline['no-wait-for-timeout-in-ct']) ?? {};
+const hoverThenClickInCtBaseline = baselineCounts(lintBaseline['no-hover-then-click-in-ct']) ?? {};
 // The component-test rules whose sanctioned escape hatch is a reasoned single-line disable.
 const componentTestReasonedDisableRules = [
   'intent/no-one-shot-animation-count',
   'intent/no-unarmed-outside-click-in-ct',
   'intent/no-raw-mouse-wheel-in-ct',
   'intent/no-wait-for-timeout-in-ct',
+  'intent/no-hover-then-click-in-ct',
 ];
 
 const intentPlugin = {
@@ -84,6 +87,7 @@ const intentPlugin = {
     'no-unarmed-outside-click-in-ct': noUnarmedOutsideClickInCtRule,
     'no-raw-mouse-wheel-in-ct': noRawMouseWheelInCtRule,
     'no-wait-for-timeout-in-ct': noWaitForTimeoutInCtRule,
+    'no-hover-then-click-in-ct': noHoverThenClickInCtRule,
     'no-direct-reduced-motion-query': noDirectReducedMotionQueryRule,
     'no-raw-workspace-navigation': noRawWorkspaceNavigationRule,
     'no-hand-written-typing-check': noHandWrittenTypingCheckRule,
@@ -729,6 +733,13 @@ export default [
   // clickAndSettle / expectMotionToSettle from src/test/ct-test.ts. The baseline maps
   // today's specs to their sleep counts and may only shrink.
   //
+  // A hover-only action takes pointer events only while its row is hovered, and Playwright
+  // checks a click's hit target before it moves the pointer: if the row moves after
+  // row.hover(), every retry hits the row text until the test times out (cloudlands-fe#4112;
+  // the hang ejected cloudlands-fe#4078 from the merge queue). Use activateHoverAction from
+  // src/test/ct-test.ts. The baseline maps today's specs to their hover-then-click counts
+  // and may only shrink.
+  //
   // Each of these rules accepts a single-line eslint-disable with a reason as its escape
   // hatch; intent/require-disable-reason checks that the directive gives one.
   {
@@ -741,6 +752,7 @@ export default [
       'intent/no-unarmed-outside-click-in-ct': 'error',
       'intent/no-raw-mouse-wheel-in-ct': 'error',
       'intent/no-wait-for-timeout-in-ct': ['error', { baseline: waitForTimeoutInCtBaseline }],
+      'intent/no-hover-then-click-in-ct': ['error', { baseline: hoverThenClickInCtBaseline }],
       'intent/require-disable-reason': ['error', { rules: componentTestReasonedDisableRules }],
     },
   },
