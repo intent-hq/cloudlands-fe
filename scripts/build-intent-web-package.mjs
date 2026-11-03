@@ -20,8 +20,8 @@ export const ENTRY = 'src/features/intent-web/main/intent-web-bin.ts';
 // Runtime dependencies left outside the bundle. Everything else is inlined.
 export const RUNTIME_DEPENDENCIES = ['ws'];
 
-export function readPinnedTailcatVersion(root = ROOT) {
-  const source = fs.readFileSync(path.join(root, 'scripts/fetch-tailcat.cjs'), 'utf8');
+export function readPinnedTailcatVersion(root = ROOT, resolve = (file) => path.join(root, file)) {
+  const source = fs.readFileSync(resolve('scripts/fetch-tailcat.cjs'), 'utf8');
   const version = source.match(/const TAILCAT_VERSION = '([^']+)'/)?.[1];
   if (!version)
     throw new Error('Cannot read pinned tailcat version from scripts/fetch-tailcat.cjs');
@@ -171,14 +171,22 @@ export async function buildIntentWebPackage({
 } = {}) {
   if (!fs.existsSync(path.join(webDir, 'index.html')))
     throw new Error(`${webDir}/index.html is missing; run pnpm run build:web first.`);
-  const app = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  // Every repository file the build reads or copies goes through `source`,
+  // and is returned as `sourceFiles`: the CI Gate's relevance pattern must
+  // cover each one (scripts/intent-web-package.test.ts).
+  const sourceFiles = [];
+  const source = (file) => {
+    sourceFiles.push(file);
+    return path.join(root, file);
+  };
+  const app = JSON.parse(fs.readFileSync(source('package.json'), 'utf8'));
   const manifest = packageManifest(app);
   fs.rmSync(outDir, { recursive: true, force: true });
   fs.mkdirSync(outDir, { recursive: true });
-  await bundle({
+  const { inputs } = await bundle({
     root,
     outFile: path.join(outDir, 'bin/intent-web.mjs'),
-    tailcatVersion: readPinnedTailcatVersion(root),
+    tailcatVersion: readPinnedTailcatVersion(root, source),
   });
   // Sourcemaps are not shipped: they double the size and the web build is
   // already built without them for production.
@@ -187,13 +195,12 @@ export async function buildIntentWebPackage({
     filter: (source) => !source.endsWith('.map'),
   });
   fs.copyFileSync(
-    path.join(root, 'src/features/intent-web/package/README.md'),
+    source('src/features/intent-web/package/README.md'),
     path.join(outDir, 'README.md'),
   );
-  for (const file of ['LICENSE', 'NOTICE'])
-    fs.copyFileSync(path.join(root, file), path.join(outDir, file));
+  for (const file of ['LICENSE', 'NOTICE']) fs.copyFileSync(source(file), path.join(outDir, file));
   fs.writeFileSync(path.join(outDir, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
-  return { outDir, manifest };
+  return { outDir, manifest, sourceFiles, bundleInputs: inputs };
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {

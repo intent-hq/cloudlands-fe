@@ -690,9 +690,10 @@ jobs:
         run: |
           set -euo pipefail
           # Everything the package build reads: the bundled server's source
-          # dirs (scripts/intent-web-package.test.ts checks this list covers
-          # every bundled file), the packaging scripts, the web build config,
-          # the shipped legal files, dependencies and the workflows that run
+          # dirs, the npm README (scripts/intent-web-package.test.ts checks
+          # this covers every bundled and copied file), the packaging
+          # scripts, the web build config, the shipped legal files,
+          # dependencies and the workflows that run
           # it. Fail-safe like the suites above: an error requires the job.
           changed_paths=$(mktemp)
           trap 'rm -f "$changed_paths"' EXIT
@@ -701,7 +702,7 @@ jobs:
             exit 0
           fi
           match_status=0
-          grep -z -E '^(src/(features/[^/]+/(main|utils)/|main/|shared/)|scripts/(build-intent-web-package|smoke-intent-web-package|intent-web-publish-plan)\.mjs$|scripts/fetch-tailcat\.cjs$|vite\.config\.mjs$|svelte\.config\.js$|LICENSE$|NOTICE$|package\.json$|pnpm-lock\.yaml$|\.github/workflows/(intent-pr|intent-web-package|publish-intent-web)\.yml$)' "$changed_paths" >/dev/null || match_status=$?
+          grep -z -E '^(src/(features/[^/]+/(main|utils)/|features/intent-web/package/|main/|shared/)|scripts/(build-intent-web-package|smoke-intent-web-package|intent-web-publish-plan)\.mjs$|scripts/fetch-tailcat\.cjs$|vite\.config\.mjs$|svelte\.config\.js$|LICENSE$|NOTICE$|package\.json$|pnpm-lock\.yaml$|\.github/workflows/(intent-pr|intent-web-package|publish-intent-web)\.yml$)' "$changed_paths" >/dev/null || match_status=$?
           case "$match_status" in
             0) echo "intent_web_package_required=true" | tee -a "$GITHUB_OUTPUT" ;;
             1) echo "intent_web_package_required=false" | tee -a "$GITHUB_OUTPUT" ;;

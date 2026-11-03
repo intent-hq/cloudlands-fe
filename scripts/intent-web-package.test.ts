@@ -1,6 +1,6 @@
 // @verify-changed-triggers: .github/workflows/intent-pr.yml, src/main/isolated-test-profile.ts, src/features/backend/main/backend-connection.ts, .github/workflows/publish-intent-web.yml, .github/workflows/intent-web-package.yml, .github/workflows/release-alpha.yml, scripts/fetch-tailcat.cjs, src/features/intent-web/main/intent-web-bin.ts
 // @vitest-environment node
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BIN_NAME,
   PACKAGE_NAME,
-  bundle,
+  buildIntentWebPackage,
   generatedInputs,
   packageManifest,
   readPinnedTailcatVersion,
@@ -99,25 +99,34 @@ describe('@intent-hq/web bundle on a clean checkout', () => {
 
   // CI failed when the bundle reached src/main/build-config.generated.ts, which
   // exists only after a desktop build step, through backend-connection.ts.
-  it('bundles without reading generated desktop build config', async () => {
-    const out = mkdtempSync(join(tmpdir(), 'intent-web-bundle-'));
+  it('builds without generated desktop config, and the CI Gate covers every input', async () => {
+    const work = mkdtempSync(join(tmpdir(), 'intent-web-build-'));
     try {
-      const { inputs } = await bundle({
+      const webDir = join(work, 'web');
+      mkdirSync(webDir);
+      writeFileSync(join(webDir, 'index.html'), '<!doctype html><html></html>');
+      const { sourceFiles, bundleInputs } = await buildIntentWebPackage({
         root,
-        outFile: join(out, 'intent-web.mjs'),
-        tailcatVersion: '0.0.0-test',
+        outDir: join(work, 'package'),
+        webDir,
       });
-      expect(inputs.some((id: string) => id.includes('isolated-test-profile'))).toBe(true);
-      expect(inputs.filter((id: string) => id.includes('build-config.generated'))).toEqual([]);
-      expect(generatedInputs(root, inputs)).toEqual([]);
-      // Every bundled source file must make the CI Gate run the package job.
-      const sources = inputs
+      expect(bundleInputs.some((id: string) => id.includes('isolated-test-profile'))).toBe(true);
+      expect(bundleInputs.filter((id: string) => id.includes('build-config.generated'))).toEqual(
+        [],
+      );
+      expect(generatedInputs(root, bundleInputs)).toEqual([]);
+      // Every file the package is built from, bundled or copied, must make
+      // the CI Gate run the package job when it changes.
+      const bundled = bundleInputs
         .filter((id: string) => id.startsWith(`${root}/`) && !id.includes('/node_modules/'))
         .map((id: string) => id.slice(root.length + 1));
-      expect(sources.length).toBeGreaterThan(0);
-      expect(sources.filter((file: string) => !relevance.test(file))).toEqual([]);
+      expect(bundled.length).toBeGreaterThan(0);
+      expect(sourceFiles).toEqual(
+        expect.arrayContaining(['src/features/intent-web/package/README.md', 'LICENSE']),
+      );
+      expect([...bundled, ...sourceFiles].filter((file) => !relevance.test(file))).toEqual([]);
     } finally {
-      rmSync(out, { recursive: true, force: true });
+      rmSync(work, { recursive: true, force: true });
     }
   }, 60_000);
 });
