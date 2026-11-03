@@ -1981,20 +1981,25 @@ describe('dock annotate start feedback, refusals and dictation', () => {
       },
     ];
     appStore.dispatch(
-      dockEvidenceMediaPasted(workspaceA, mainA, {
-        kind: 'image',
-        name: 'screenshot.png',
-        size: 8,
-        pixels: {
-          base64: 'iVBORw0KGgo=',
-          mimeType: 'image/png',
-          width: 800,
-          height: 600,
-          displayScale: 2,
-          capturedAt: '2026-11-03T12:00:00.000Z',
+      dockEvidenceMediaPasted(
+        workspaceA,
+        mainA,
+        {
+          kind: 'image',
+          name: 'screenshot.png',
+          size: 8,
+          pixels: {
+            base64: 'iVBORw0KGgo=',
+            mimeType: 'image/png',
+            width: 800,
+            height: 600,
+            displayScale: 2,
+            capturedAt: '2026-11-03T12:00:00.000Z',
+          },
+          marks,
         },
-        marks,
-      }, captureDockPasteOrigin(workspaceA, mainA)),
+        captureDockPasteOrigin(workspaceA, mainA),
+      ),
     );
     await vi.waitFor(() => expect(evidenceView().tiles).toHaveLength(1));
     const tile = evidenceView().tiles[0]!;
@@ -2027,15 +2032,20 @@ describe('dock annotate start feedback, refusals and dictation', () => {
     await open();
     await vi.waitFor(() => expect(evidenceView().capabilities.record).toBe(true));
     appStore.dispatch(
-      dockEvidenceMediaPasted(workspaceA, mainA, {
-        kind: 'clip',
-        name: 'clip-1234abcd.mp4',
-        mimeType: 'video/mp4',
-        sourcePath: '/userData/dock-clipboard/entry/clip-1234abcd.mp4',
-        size: 4096,
-        durationMs: 42_000,
-        hasMicAudio: true,
-      }, captureDockPasteOrigin(workspaceA, mainA)),
+      dockEvidenceMediaPasted(
+        workspaceA,
+        mainA,
+        {
+          kind: 'clip',
+          name: 'clip-1234abcd.mp4',
+          mimeType: 'video/mp4',
+          sourcePath: '/userData/dock-clipboard/entry/clip-1234abcd.mp4',
+          size: 4096,
+          durationMs: 42_000,
+          hasMicAudio: true,
+        },
+        captureDockPasteOrigin(workspaceA, mainA),
+      ),
     );
     await vi.waitFor(() => expect(evidenceView().clips[0]?.status).toBe('ready'));
     const clip = evidenceView().clips[0]!;
