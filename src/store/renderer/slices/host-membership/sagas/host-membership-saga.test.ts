@@ -612,7 +612,7 @@ describe('owner host membership wire and authority', () => {
       }
     },
   );
-  it('explains a forge-required refusal of a host invitation without the server text', async () => {
+  it('explains a no-forge (github-identity-required) refusal of a host invitation without the server text', async () => {
     const h = harness();
     try {
       h.dispatch(hostMembershipOpened(h.target));
@@ -623,7 +623,10 @@ describe('owner host membership wire and authority', () => {
           input: { pinLogin: 'sam', pinProvider: 'github' },
         }),
       );
-      mocks.request.mockRejectedValueOnce({ message: secret, data: { code: 'forge-required' } });
+      mocks.request.mockRejectedValueOnce({
+        message: secret,
+        data: { code: 'github-identity-required' },
+      });
       await settle();
       const forgeError = h.state().hostMembership.error;
       expect(forgeError).toBeTruthy();

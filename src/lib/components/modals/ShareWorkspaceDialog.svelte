@@ -203,7 +203,7 @@
   /** GitLab counts as an identity forge only once the daemon serves the seam. */
   const gitlabIdentityConnected = $derived(identitySeamSupported && gitlabConnected);
   /**
-   * The daemon refuses every invite (`forge-required`) until the host owner
+   * The daemon refuses every invite (`github-identity-required`) until the host owner
    * connects a forge. The owner's own status is canonical; a member of a
    * host-membership host cannot read the owner's GitLab status, so the
    * daemon's refusal is its answer.

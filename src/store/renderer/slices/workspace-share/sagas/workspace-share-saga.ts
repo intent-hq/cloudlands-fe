@@ -474,7 +474,7 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
       return;
     }
     logFailure('Creating an invite', target.workspaceId, outcome);
-    if (outcome.code === 'forge-required') {
+    if (outcome.code === 'github-identity-required') {
       // The forge status the dialog showed was stale: say why and re-read it,
       // so an owner's dialog swaps to its connect box.
       const administrator = yield* selectCanAdministerHost.effect();

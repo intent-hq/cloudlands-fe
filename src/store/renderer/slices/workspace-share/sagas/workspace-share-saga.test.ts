@@ -951,14 +951,14 @@ describe('workspaceShareSaga', () => {
     generic.task.cancel();
   });
 
-  // The host has no connected owner forge (intentd refuses invite creation
-  // with `forge-required`): the inline error names the missing connection,
+  // The host has no connected owner forge: intentd refuses invite creation
+  // with `github-identity-required` (provider-neutral despite its name): the inline error names the missing connection,
   // never the daemon text, and the forge status is re-read so the dialog
   // swaps to its connect box.
-  it('maps the forge-required daemon code onto its own error and re-reads the forge status', async () => {
+  it('maps the github-identity-required (no forge) daemon code onto its own error and re-reads the forge status', async () => {
     const noForge = Object.assign(new Error(LEAK_MARKER), {
       rpcCode: -32602,
-      data: { code: 'forge-required' },
+      data: { code: 'github-identity-required' },
     });
     replyByMethod({ 'workspace.invite.create': noForge });
     const h = harness(opened());
