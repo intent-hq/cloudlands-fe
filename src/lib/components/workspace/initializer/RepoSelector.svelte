@@ -201,7 +201,7 @@
     value?: string;
     onchange?: (event: CustomEvent<RepoChangeDetail>) => void;
     triggerClass?: string;
-    /** Form picker label; becomes "Project" or "Codebase/Project" when plain folders (Labs) apply. */
+    /** Form picker label; becomes "Project" when plain folders (Labs) apply and no git repository is listed. */
     rowLabel?: string;
     displayValue?: string;
     /** Dimmed suffix rendered after the repo name, e.g. "owner/repo" */
@@ -707,23 +707,22 @@
     return current ? [current, ...recentRepos] : recentRepos;
   });
   // The form row label follows what the list holds (plain folders, Labs):
-  // "Project" without a forge, "Codebase/Project" with a plain folder listed.
+  // "Codebase" with any git repository listed, otherwise "Project" without a
+  // forge or with a plain folder listed.
   const plainFolderCreationAvailable$ = selectPlainFolderCreationAvailable();
   const forgeConnectionState$ = selectForgeConnectionState();
+  const isPlainFolderEntry = (repo: WorkspaceInitializerRecentRepo) =>
+    repo.type === 'local' && repo.plainFolder === true;
   const formRowLabel = $derived.by(() => {
     if (!rowLabel) return undefined;
     const kind = resolveRepositoryRowLabelKind({
       plainFoldersOffered: $plainFolderCreationAvailable$,
       forgeState:
         authenticatedForges.length > 0 || $hostMember$ ? 'connected' : $forgeConnectionState$,
-      hasPlainFolderEntry: formRepositoryChoices.some(
-        (repo) => repo.type === 'local' && repo.plainFolder === true,
-      ),
+      hasGitRepositoryEntry: formRepositoryChoices.some((repo) => !isPlainFolderEntry(repo)),
+      hasPlainFolderEntry: formRepositoryChoices.some(isPlainFolderEntry),
     });
-    if (kind === 'project') return m.workspace_compactInitializer_project_label();
-    if (kind === 'codebaseOrProject')
-      return m.workspace_compactInitializer_codebaseOrProject_label();
-    return rowLabel;
+    return kind === 'project' ? m.workspace_compactInitializer_project_label() : rowLabel;
   });
   const formRepos = $derived(
     formQuery.trim() === ''
