@@ -11,7 +11,6 @@
   import { systemStatusSuccess } from '$store/renderer/slices/daemon-health/daemon-health-slice';
   import { setGitHubAuthState } from '$store/renderer/slices/github-auth/github-auth-slice';
   import { setGitLabAuthStatus } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
-  import { setLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { identityLoaded, principalLoaded } from '$store/renderer/slices/identity/identity-slice';
   import type { IdentityProvider, PrincipalIdentity } from '$features/workspace-sharing/types';
 
@@ -19,7 +18,6 @@
 
   interface IdentityScenario {
     github: boolean;
-    gitlabEnabled?: boolean;
     gitlab: boolean;
     /** The `identity.provider` setting; `null` when unset. */
     setting: IdentityProvider | null;
@@ -30,7 +28,6 @@
 
   function setup(scenario: IdentityScenario) {
     const before = appStore.state;
-    appStore.dispatch(setLabsGitLabEnabled(scenario.gitlabEnabled === true));
     const githubBefore = before.githubAuth;
     const gitlabBefore = before.gitlabAuth;
     const identityBefore = before.identity;
@@ -69,7 +66,6 @@
     appStore.dispatch(identityLoaded(scenario.setting));
     appStore.dispatch(principalLoaded(scenario.current, scenario.login));
     return () => {
-      appStore.dispatch(setLabsGitLabEnabled(before.userPreferences.labsGitLabEnabled));
       appStore.dispatch(
         setGitHubAuthState({
           isAuthenticated: githubBefore.isAuthenticated,
@@ -112,18 +108,6 @@
     defaultState: 'both-connected-gitlab',
     states: {
       'both-connected-gitlab': {
-        props: {},
-        setup: () =>
-          setup({
-            github: true,
-            gitlab: true,
-            gitlabEnabled: true,
-            setting: 'gitlab',
-            current: gitlabIdentity,
-            login: 'mara.dev',
-          }),
-      },
-      'gitlab-lab-off': {
         props: {},
         setup: () =>
           setup({

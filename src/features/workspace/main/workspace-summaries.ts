@@ -9,8 +9,9 @@
 
 import { m } from '$shared/paraglide/messages.js';
 import type { Note, WorkspaceId, WorkspaceTask } from '../../../shared/types';
-import { SPEC_NOTE_ID } from '../../../shared/constants/notes';
+import { NOTE_LIST_PAGE_LIMIT, SPEC_NOTE_ID } from '../../../shared/constants/notes';
 import { isProjectionRejected } from '../../../shared/utils/note-content';
+import { requestAllPages, requestWholeNote } from '../../../shared/utils/paged-list';
 import { getSpecTaskNotes } from '../../../shared/utils/task-stats';
 import { getBackendClient } from '../../backend/main/backend.ipc';
 
@@ -28,15 +29,20 @@ export async function getWorkspaceTasks(workspaceId: WorkspaceId): Promise<Works
   // slim row). Falls back to a plain full list on daemons that reject the
   // unknown param (-32602).
   let result: { notes?: Note[] } | undefined;
+  // §5.2 bounded reads: page with `limit` + `nextToken`.
+  const page = (params: Record<string, unknown>) => getBackendClient().request('note.list', params);
   try {
-    const [listResult, specResult] = await Promise.all([
-      getBackendClient().request('note.list', { workspaceId, projection: 'slim' }) as Promise<
-        { notes?: Note[] } | undefined
-      >,
+    const [listRows, specResult] = await Promise.all([
+      requestAllPages(
+        page,
+        { workspaceId, projection: 'slim', limit: NOTE_LIST_PAGE_LIMIT },
+        'notes',
+      ) as Promise<Note[]>,
       (
-        getBackendClient().request('note.get', { workspaceId, noteId: SPEC_NOTE_ID }) as Promise<
-          { note?: Note } | Note | undefined
-        >
+        requestWholeNote((params) => getBackendClient().request('note.get', params), {
+          workspaceId,
+          noteId: SPEC_NOTE_ID,
+        }) as Promise<{ note?: Note } | Note | undefined>
       ).catch(() => undefined),
     ]);
     const spec =
@@ -44,15 +50,17 @@ export async function getWorkspaceTasks(workspaceId: WorkspaceId): Promise<Works
         ? specResult.note
         : (specResult as Note | undefined);
     result = {
-      notes: (listResult?.notes ?? []).map((n) =>
-        spec && String(n.id) === SPEC_NOTE_ID ? spec : n,
-      ),
+      notes: listRows.map((n) => (spec && String(n.id) === SPEC_NOTE_ID ? spec : n)),
     };
   } catch (error) {
     if (!isProjectionRejected(error)) throw error;
-    result = (await getBackendClient().request('note.list', {
-      workspaceId,
-    })) as { notes?: Note[] } | undefined;
+    result = {
+      notes: (await requestAllPages(
+        page,
+        { workspaceId, limit: NOTE_LIST_PAGE_LIMIT },
+        'notes',
+      )) as Note[],
+    };
   }
   const notes = Array.isArray(result?.notes) ? result.notes : [];
 

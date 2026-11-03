@@ -311,8 +311,11 @@ describe('StreamingStatus rendered UI', () => {
     });
 
     expect(screen.queryByTestId('error-title')).toBeNull();
-    expect(container.textContent).toContain('gpt5.5');
-    expect(container.textContent).toContain('is not available');
+    expect(screen.getByRole('alert').getAttribute('aria-live')).toBe('assertive');
+    const card = screen.getByTestId('error-model-unavailable');
+    expect(card.textContent).toContain('Model unavailable');
+    expect(screen.getByTestId('model-unavailable-label').textContent).toBe('gpt5.5');
+    expect(card.textContent).toContain('Retry with an available model.');
     expect(container.firstElementChild?.className).not.toContain('mt-2');
 
     await fireEvent.click(screen.getByRole('button', { name: /retry with gpt5\.5-fast/i }));
@@ -332,7 +335,8 @@ describe('StreamingStatus rendered UI', () => {
       render(StreamingStatus, { props: { ...quotaProps, onRetry, onRetryWithProvider } });
 
       const banner = screen.getByTestId('error-quota-exceeded');
-      expect(banner.textContent).toContain('Anthropic Claude Code');
+      expect(banner.textContent).toContain('Usage limit reached');
+      expect(screen.getByTestId('quota-provider-label').textContent).toBe('Anthropic Claude Code');
       expect(banner.textContent).toMatch(/retry once it resets, or switch provider/i);
       expect(screen.queryByTestId('error-title')).toBeNull();
 
@@ -349,6 +353,35 @@ describe('StreamingStatus rendered UI', () => {
 
       await fireEvent.click(switchButton);
       expect(onRetryWithProvider).toHaveBeenCalledWith('codex');
+    });
+
+    it('keeps the quota card with only a plain Retry when no other provider is usable', async () => {
+      const onRetry = vi.fn();
+      render(StreamingStatus, {
+        props: {
+          ...quotaProps,
+          quotaExceeded: {
+            providerId: 'claude-code@work',
+            displayName: 'Anthropic Claude Code · me@example.com',
+          },
+          quotaRetryProviders: [],
+          onRetry,
+          onRetryWithProvider: vi.fn(),
+        },
+      });
+
+      const banner = screen.getByTestId('error-quota-exceeded');
+      expect(banner.textContent).toContain('Anthropic Claude Code · me@example.com');
+      expect(banner.textContent).toMatch(/retry once it resets\./i);
+      expect(banner.textContent).not.toMatch(/switch provider/i);
+      expect(screen.queryByTestId('error-title')).toBeNull();
+      expect(screen.queryByTestId('retry-with-provider')).toBeNull();
+      expect(screen.getAllByRole('button', { name: /retry/i })).toHaveLength(1);
+      // Losing the generic error fallback must not silence the announcement.
+      expect(screen.getByRole('alert').getAttribute('aria-live')).toBe('assertive');
+
+      await fireEvent.click(screen.getByTestId('quota-retry-same-provider'));
+      expect(onRetry).toHaveBeenCalledOnce();
     });
 
     it('withholds the same-provider Retry when no retry callback is given (retired session)', () => {

@@ -346,7 +346,7 @@ describe('scriptsOperationSaga definition ownership', () => {
     await stop(run.task);
   });
 
-  it('prepares a fix agent from the full definition and live output tail', async () => {
+  it('prepares a fix agent from the retained daemon output when the live tail is short', async () => {
     store.init();
     transport.get.mockResolvedValueOnce({
       ...definition,
@@ -360,7 +360,9 @@ describe('scriptsOperationSaga definition ownership', () => {
         timestamp: '2026-10-15T00:00:00Z',
       }),
     );
-    run.channel.put(createScriptFixAgentRequested(WS, definition.id, 'retained failure'));
+    run.channel.put(
+      createScriptFixAgentRequested(WS, definition.id, '[2 lines]\nearlier\nretained failure\n'),
+    );
 
     await vi.waitFor(() =>
       expect(
@@ -380,8 +382,40 @@ describe('scriptsOperationSaga definition ownership', () => {
       { openAgent: true },
     ]);
     expect(create?.payload[1].initialMessage).toContain('failed with exit code 2');
-    expect(create?.payload[1].initialMessage).toContain('live failure');
-    expect(create?.payload[1].initialMessage).not.toContain('retained failure');
+    // Live output streams only while a viewer is open, so one live line is
+    // just the tail since it opened; the daemon snapshot is complete.
+    expect(create?.payload[1].initialMessage).toContain('earlier\nretained failure\n```');
+    expect(create?.payload[1].initialMessage).not.toContain('[2 lines]');
+    expect(create?.payload[1].initialMessage).not.toContain('live failure');
+    await stop(run.task);
+  });
+
+  it('prepares a fix agent from the live tail once it fills the 100-line window', async () => {
+    store.init();
+    transport.get.mockResolvedValueOnce({
+      ...definition,
+      runtime: { status: 'exited', exitCode: 1, restartCount: 0 },
+    });
+    const run = start();
+    const live = Array.from({ length: 120 }, (_, i) => `live ${i}`).join('\n') + '\n';
+    run.dispatch(
+      appendScriptOutput(WS, definition.id, { text: live, timestamp: '2026-10-15T00:00:00Z' }),
+    );
+    run.channel.put(createScriptFixAgentRequested(WS, definition.id, '[1 lines]\nstale\n'));
+
+    await vi.waitFor(() =>
+      expect(
+        run.actions.some((action) => action.type === createAgentFromConfigRequested.type),
+      ).toBe(true),
+    );
+    const create = run.actions.find(
+      (action) => action.type === createAgentFromConfigRequested.type,
+    ) as ReturnType<typeof createAgentFromConfigRequested> | undefined;
+    const message = create?.payload[1].initialMessage ?? '';
+    expect(message).toContain('live 20\n');
+    expect(message).toContain('live 119');
+    expect(message).not.toContain('live 19\n');
+    expect(message).not.toContain('stale');
     await stop(run.task);
   });
 

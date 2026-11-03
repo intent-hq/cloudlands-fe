@@ -22,7 +22,6 @@
     busy = false,
     creating = busy,
     error = null,
-    gitlabEnabled = false,
     createdLink = null,
     searchSupported = false,
     search,
@@ -35,7 +34,6 @@
     busy?: boolean;
     creating?: boolean;
     error?: string | null;
-    gitlabEnabled?: boolean;
     createdLink?: string | null;
     searchSupported?: boolean;
     search?: InvitationAccountSuggestions;
@@ -144,16 +142,7 @@
     { value: 'github', label: m.workspace_share_pinProvider_github_label() },
     { value: 'gitlab', label: m.workspace_share_pinProvider_gitlab_label({ host }) },
   ]);
-  const invalid = $derived(
-    !account.trim() || !pinHost || (provider === 'gitlab' && !gitlabEnabled),
-  );
-  $effect(() => {
-    if (!gitlabEnabled && provider === 'gitlab') {
-      provider = 'github';
-      account = '';
-      changed();
-    }
-  });
+  const invalid = $derived(!account.trim() || !pinHost);
   function create() {
     if (busy || invalid || !consent || createdLink) return;
     onCreate({ pinLogin: account.trim(), pinProvider, pinHost: pinHost! });
@@ -180,28 +169,26 @@
         >
       </div>
     {:else}
-      {#if gitlabEnabled}
-        <div class="space-y-2">
-          <Label for={`${id}-provider`}>{m.collaboration_pin_provider_label()}</Label>
-          <Select.Root
-            bind:value={provider}
-            items={providers}
-            disabled={busy}
-            onchange={(value) => {
-              provider = value;
-              account = '';
-              changed();
-            }}
-          >
-            <Select.Trigger id={`${id}-provider`}><Select.Value /></Select.Trigger>
-            <Select.Content>
-              {#each providers as item}
-                <Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
-              {/each}
-            </Select.Content>
-          </Select.Root>
-        </div>
-      {/if}
+      <div class="space-y-2">
+        <Label for={`${id}-provider`}>{m.collaboration_pin_provider_label()}</Label>
+        <Select.Root
+          bind:value={provider}
+          items={providers}
+          disabled={busy}
+          onchange={(value) => {
+            provider = value;
+            account = '';
+            changed();
+          }}
+        >
+          <Select.Trigger id={`${id}-provider`}><Select.Value /></Select.Trigger>
+          <Select.Content>
+            {#each providers as item}
+              <Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
+            {/each}
+          </Select.Content>
+        </Select.Root>
+      </div>
       {#if provider === 'gitlab'}
         <div class="space-y-2">
           <Label for={`${id}-host`}>{m.collaboration_pin_instance_label()}</Label>

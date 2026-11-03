@@ -81,7 +81,7 @@ describe('command palette preview note search', () => {
     }
   });
 
-  it.each(['no-workspace', 'gitlab-off', 'gitlab-on'])(
+  it.each(['no-workspace'])(
     'completes empty indexed searches in %s and restores the bridge',
     async (state) => {
       const previousBridge = window.electronAPI;

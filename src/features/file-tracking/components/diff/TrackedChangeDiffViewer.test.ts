@@ -334,6 +334,7 @@ describe('TrackedChangeDiffViewer content loading regressions', () => {
       workspaceId: 'ws-1',
       path: 'tracked.txt',
       gitRootId: 'external-root',
+      maxBytes: 480_000,
     });
     expect(testState.invokeMock).not.toHaveBeenCalled();
     expect(testState.dispatchMock).toHaveBeenCalledWith(

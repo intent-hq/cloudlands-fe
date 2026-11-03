@@ -559,6 +559,7 @@ describe('FileTabType Redux integration', () => {
         workspaceId: 'ws-1',
         path: 'report.xlsx',
         gitRootId: 'root-external',
+        maxBytes: 480_000,
       });
     } finally {
       await stop();
@@ -647,6 +648,7 @@ describe('FileTabType Redux integration', () => {
           workspaceId: 'ws-1',
           path: 'new.md',
           gitRootId: 'root-a',
+          maxBytes: 480_000,
         });
         expect(dispatchMock).toHaveBeenCalledWith(
           loadFileContentSucceeded(
@@ -670,6 +672,7 @@ describe('FileTabType Redux integration', () => {
           workspaceId: 'ws-1',
           path: 'new.md',
           gitRootId: 'root-b',
+          maxBytes: 480_000,
         });
         expect(
           mockReduxState.files[fileContentKey(`${parentPath}/a/new.md`, 'root-a')].localContent,

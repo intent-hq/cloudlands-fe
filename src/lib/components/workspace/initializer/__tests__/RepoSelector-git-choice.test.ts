@@ -39,7 +39,6 @@ const mocks = vi.hoisted(() => {
     authenticated: false,
     cloneVisible: true,
     hostMember: false,
-    labsGitLab: false,
     navigateToSettings: vi.fn(async () => {}),
     selector,
     state,
@@ -177,7 +176,6 @@ vi.mock('$store/renderer/slices/workspace-initializer/plain-folder-selectors', a
 }));
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', async (orig) => ({
   ...(await orig<object>()),
-  selectLabsGitLabEnabled: mocks.selector(() => mocks.labsGitLab),
 }));
 vi.mock('$store/renderer/slices/host-execution/host-execution-selectors', async (orig) => ({
   ...(await orig<object>()),
@@ -199,7 +197,6 @@ beforeEach(() => {
   mocks.authenticated = false;
   mocks.cloneVisible = true;
   mocks.hostMember = false;
-  mocks.labsGitLab = false;
 });
 
 warmImport(() => import('../../../ui/__tests__/mocks/Fa.svelte'));

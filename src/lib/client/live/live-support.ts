@@ -11,7 +11,10 @@
  *    workspace without an extra parameter; when the cache misses they fall back
  *    to scanning the workspace list.
  */
+import { collectListPages } from '$shared/paged-list';
 import { isProjectionRejected } from '$shared/utils/note-content';
+import { requestAllPages } from '$shared/utils/paged-list';
+import { NOTE_LIST_PAGE_LIMIT } from '$shared/constants/notes';
 import type { MutationResult, Unsubscribe } from '../app-client';
 import { backendRequest, onBackendNotification, onBackendReconnected } from './backend-transport';
 
@@ -234,7 +237,11 @@ function logWorkspaceListRpc(tag: string, detail?: string): void {
 function fetchWorkspaceIdsRpc(tag: string, detail?: string): Promise<string[]> {
   if (workspaceListRpcInFlight) return workspaceListRpcInFlight;
   logWorkspaceListRpc(tag, detail);
-  const fetch = backendRequest<{ workspaces?: unknown[] }>('workspace.list').then((result) => {
+  const fetch = collectListPages<{ workspaces?: unknown[] }>(
+    (params) => backendRequest<{ workspaces?: unknown[] }>('workspace.list', params),
+    undefined,
+    'workspaces',
+  ).then((result) => {
     const workspaces = Array.isArray(result?.workspaces) ? result.workspaces : [];
     const ids = workspaces
       .map((w) =>
@@ -652,17 +659,20 @@ async function scanForNoteWorkspace(noteId: string): Promise<string | null> {
     try {
       // Only ids are needed — request the slim projection (§5.2), falling back
       // to a plain full list on daemons that reject the unknown param (-32602).
-      let result: { notes?: unknown[] };
+      // §5.2 bounded reads: page with `limit` + `nextToken`.
+      const page = (params: Record<string, unknown>) =>
+        backendRequest<{ notes?: unknown[] }>('note.list', params);
+      let notes: unknown[];
       try {
-        result = await backendRequest<{ notes?: unknown[] }>('note.list', {
-          workspaceId,
-          projection: 'slim',
-        });
+        notes = await requestAllPages(
+          page,
+          { workspaceId, projection: 'slim', limit: NOTE_LIST_PAGE_LIMIT },
+          'notes',
+        );
       } catch (error) {
         if (!isProjectionRejected(error)) throw error;
-        result = await backendRequest<{ notes?: unknown[] }>('note.list', { workspaceId });
+        notes = await requestAllPages(page, { workspaceId, limit: NOTE_LIST_PAGE_LIMIT }, 'notes');
       }
-      const notes = Array.isArray(result?.notes) ? result.notes : [];
       let found = false;
       for (const note of notes) {
         const id = String((note as { id?: unknown }).id ?? '');

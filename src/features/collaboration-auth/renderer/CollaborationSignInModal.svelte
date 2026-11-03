@@ -10,10 +10,7 @@
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
-  import {
-    selectLabsMultiplayerEnabled,
-    selectLabsGitLabEnabled,
-  } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { selectLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import type { CollaborationAction, CollaborationView } from '../types';
   import { collaborationErrorMessage } from './messages';
 
@@ -27,7 +24,6 @@
     onAction: (action: CollaborationAction) => void;
   } = $props();
   const multiplayer$ = selectLabsMultiplayerEnabled();
-  const gitlab$ = selectLabsGitLabEnabled();
   const uid = $props.id();
   let host = $state('gitlab.com');
   let token = $state('');
@@ -41,11 +37,9 @@
   const busy = $derived(view.phase === 'loading');
   const pinned = $derived(view.request.pinIdentity != null);
   const blocked = $derived(
-    (gitlab && !$gitlab$) ||
-      view.error === 'upgrade-required' ||
+    view.error === 'upgrade-required' ||
       view.error === 'local-connection-changed' ||
-      view.error === 'request-changed' ||
-      view.error === 'gitlab-disabled',
+      view.error === 'request-changed',
   );
   const showToken = $derived(
     gitlab &&
@@ -87,18 +81,6 @@
     preferToken = false;
     onAction({ type: 'connect', token: value });
   }
-  $effect(() => {
-    // Only an idle, unpinned chooser can fall back. Main still owns account
-    // confirmation, pinned identity and cancellation of an in-flight flow.
-    if (
-      $multiplayer$ &&
-      !$gitlab$ &&
-      gitlab &&
-      !pinned &&
-      (view.phase === 'account' || view.error === 'gitlab-disabled')
-    )
-      choose('github');
-  });
 </script>
 
 {#if $multiplayer$}
@@ -116,7 +98,7 @@
           {m.collaborationAuth_destination_description({ host: view.request.hostLabel })}
         </p>
       {/if}
-      {#if $gitlab$ && !pinned && view.phase !== 'device' && view.error !== 'gitlab-disabled'}
+      {#if !pinned && view.phase !== 'device'}
         <div class="grid grid-cols-2 gap-2">
           <!-- i18n-ignore (provider brand names) -->
           <Button
@@ -127,17 +109,15 @@
           >
             <Fa icon={faGithub} />GitHub{#if !gitlab}<Fa icon={faCheck} size="xs" />{/if}
           </Button>
-          {#if $gitlab$}
-            <!-- i18n-ignore (provider brand name) -->
-            <Button
-              variant="outline"
-              disabled={busy}
-              aria-pressed={gitlab}
-              onclick={() => choose('gitlab', gitlab ? view.target.host : 'gitlab.com')}
-            >
-              <Fa icon={faGitlab} />GitLab{#if gitlab}<Fa icon={faCheck} size="xs" />{/if}
-            </Button>
-          {/if}
+          <!-- i18n-ignore (provider brand name) -->
+          <Button
+            variant="outline"
+            disabled={busy}
+            aria-pressed={gitlab}
+            onclick={() => choose('gitlab', gitlab ? view.target.host : 'gitlab.com')}
+          >
+            <Fa icon={faGitlab} />GitLab{#if gitlab}<Fa icon={faCheck} size="xs" />{/if}
+          </Button>
         </div>
       {/if}
       <div class="space-y-1">

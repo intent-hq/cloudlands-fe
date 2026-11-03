@@ -49,7 +49,7 @@ function harness(role: 'owner' | 'member' | 'guest' = 'owner', legacy = false) {
   let state = (legacy ? withLegacyPrincipal : withHostPrincipal)(
     {
       hostMembership: initialState,
-      userPreferences: { labsMultiplayerEnabled: true, labsGitLabEnabled: true },
+      userPreferences: { labsMultiplayerEnabled: true },
     },
     role === 'member' && legacy ? 'guest' : (role as 'owner' | 'guest'),
   );
@@ -693,36 +693,28 @@ describe('owner host membership wire and authority', () => {
       h.task.cancel();
     }
   });
-  it.each(['gitlab-disabled', 'invalid-host'] as const)(
-    'rejects %s without issuing an invitation',
-    async (reason) => {
-      const h = harness();
-      try {
-        h.dispatch(hostMembershipOpened(h.target));
-        await settle();
-        if (reason === 'gitlab-disabled')
-          h.change({
-            ...h.state(),
-            userPreferences: { ...h.state().userPreferences, labsGitLabEnabled: false },
-          });
-        mocks.request.mockClear();
-        h.dispatch(
-          hostMembershipRequested(h.target, {
-            kind: 'create',
-            input: {
-              pinLogin: 'sam',
-              pinProvider: 'gitlab',
-              pinHost: reason === 'invalid-host' ? 'https://forge.example/path' : 'forge.example',
-            },
-          }),
-        );
-        await settle();
-        expect(mocks.request).not.toHaveBeenCalled();
-        expect(h.state().hostMembership.error).toBeTruthy();
-      } finally {
-        h.dispatch(hostMembershipClosed(h.target));
-        h.task.cancel();
-      }
-    },
-  );
+  it.each(['invalid-host'] as const)('rejects %s without issuing an invitation', async (reason) => {
+    const h = harness();
+    try {
+      h.dispatch(hostMembershipOpened(h.target));
+      await settle();
+      mocks.request.mockClear();
+      h.dispatch(
+        hostMembershipRequested(h.target, {
+          kind: 'create',
+          input: {
+            pinLogin: 'sam',
+            pinProvider: 'gitlab',
+            pinHost: reason === 'invalid-host' ? 'https://forge.example/path' : 'forge.example',
+          },
+        }),
+      );
+      await settle();
+      expect(mocks.request).not.toHaveBeenCalled();
+      expect(h.state().hostMembership.error).toBeTruthy();
+    } finally {
+      h.dispatch(hostMembershipClosed(h.target));
+      h.task.cancel();
+    }
+  });
 });

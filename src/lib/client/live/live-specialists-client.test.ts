@@ -70,7 +70,116 @@ describe('LiveSpecialistsClient (fake transport)', () => {
 
     const defs = await client.list();
 
-    expect(mockedRequest).toHaveBeenCalledWith('specialist.list');
+    expect(mockedRequest).toHaveBeenCalledWith('specialist.list', { limit: 500 });
+    expect(defs).toEqual([COORDINATOR_DEF, USER_DEF]);
+  });
+
+  it('listCatalog follows nextToken and keeps the first page diagnostics', async () => {
+    const diagnostics = [
+      {
+        path: '/home/u/.claude/agents/bad.md',
+        source: 'user' as const,
+        code: 'invalid' as const,
+        message: 'bad',
+      },
+    ];
+    mockedRequest
+      .mockResolvedValueOnce({
+        specialists: [COORDINATOR_DEF],
+        importDiagnostics: diagnostics,
+        nextToken: 'page-2',
+      })
+      .mockResolvedValueOnce({ specialists: [USER_DEF], nextToken: null });
+    const client = new LiveSpecialistsClient();
+
+    const catalog = await client.listCatalog('codex');
+
+    expect(mockedRequest.mock.calls).toEqual([
+      ['specialist.list', { provider: 'codex', limit: 500 }],
+      ['specialist.list', { provider: 'codex', limit: 500, nextToken: 'page-2' }],
+    ]);
+    expect(catalog).toEqual({
+      specialists: [COORDINATOR_DEF, USER_DEF],
+      importDiagnostics: diagnostics,
+    });
+  });
+
+  it('listCatalog keeps the first copy of a row repeated across pages', async () => {
+    mockedRequest
+      .mockResolvedValueOnce({ specialists: [COORDINATOR_DEF, USER_DEF], nextToken: 'page-2' })
+      .mockResolvedValueOnce({
+        specialists: [{ ...USER_DEF, description: 'repeated' }],
+        nextToken: null,
+      });
+    const client = new LiveSpecialistsClient();
+
+    const defs = await client.list();
+
+    expect(defs).toEqual([COORDINATOR_DEF, USER_DEF]);
+  });
+
+  it('listCatalog re-reads an omitted prompt with specialist.get', async () => {
+    const omitted: SpecialistDef = {
+      ...USER_DEF,
+      prompt: undefined,
+      behaviorPrompt: undefined,
+      behaviorPromptOmitted: true,
+      behaviorPromptBytes: 600_000,
+    };
+    mockedRequest
+      .mockResolvedValueOnce({ specialists: [COORDINATOR_DEF, omitted], nextToken: null })
+      .mockResolvedValueOnce({ specialist: USER_DEF });
+    const client = new LiveSpecialistsClient();
+
+    const defs = await client.list('codex');
+
+    expect(mockedRequest.mock.calls[1]).toEqual([
+      'specialist.get',
+      { id: USER_DEF.id, provider: 'codex' },
+    ]);
+    expect(defs[1].behaviorPrompt).toBe(USER_DEF.behaviorPrompt);
+    expect(defs[1].behaviorPromptOmitted).toBeUndefined();
+  });
+
+  it.each([
+    ['the read fails', () => Promise.reject(new Error('down'))],
+    [
+      'the read is cut too',
+      () => Promise.resolve({ specialist: { ...USER_DEF, behaviorPromptOmitted: true } }),
+    ],
+    [
+      'another tier answers',
+      () => Promise.resolve({ specialist: { ...USER_DEF, source: 'bundled' } }),
+    ],
+  ])('listCatalog keeps the omitted marker when %s', async (_label, getReply) => {
+    const omitted: SpecialistDef = {
+      ...USER_DEF,
+      prompt: undefined,
+      behaviorPrompt: undefined,
+      behaviorPromptOmitted: true,
+    };
+    mockedRequest
+      .mockResolvedValueOnce({ specialists: [omitted], nextToken: null })
+      .mockImplementationOnce(getReply as never);
+    const client = new LiveSpecialistsClient();
+
+    const defs = await client.list();
+
+    expect(defs).toEqual([omitted]);
+  });
+
+  it('listCatalog pages an unscoped catalog with only limit and the token', async () => {
+    mockedRequest
+      .mockResolvedValueOnce({ specialists: [COORDINATOR_DEF], nextToken: 'page-2' })
+      .mockResolvedValueOnce({ specialists: [USER_DEF] });
+    const client = new LiveSpecialistsClient();
+
+    const defs = await client.list();
+
+    expect(mockedRequest.mock.calls).toEqual([
+      ['specialist.list', { limit: 500 }],
+      ['specialist.list', { limit: 500, nextToken: 'page-2' }],
+    ]);
     expect(defs).toEqual([COORDINATOR_DEF, USER_DEF]);
   });
 
@@ -81,7 +190,7 @@ describe('LiveSpecialistsClient (fake transport)', () => {
       mockedRequest.mockResolvedValueOnce({ specialists: [definition] });
 
       expect(await new LiveSpecialistsClient().list()).toEqual([definition]);
-      expect(mockedRequest).toHaveBeenCalledWith('specialist.list');
+      expect(mockedRequest).toHaveBeenCalledWith('specialist.list', { limit: 500 });
     },
   );
 
@@ -99,7 +208,9 @@ describe('LiveSpecialistsClient (fake transport)', () => {
 
       expect(await client.list(provider)).toEqual([def]);
       expect(mockedRequest.mock.calls).toEqual([
-        provider === undefined ? ['specialist.list'] : ['specialist.list', { provider }],
+        provider === undefined
+          ? ['specialist.list', { limit: 500 }]
+          : ['specialist.list', { provider, limit: 500 }],
       ]);
     },
   );
@@ -119,8 +230,8 @@ describe('LiveSpecialistsClient (fake transport)', () => {
     const unsubscribe = client.subscribe(handler);
     await vi.waitFor(() => expect(handler).toHaveBeenCalledExactlyOnceWith([COORDINATOR_DEF]));
     expect(mockedRequest.mock.calls).toEqual([
-      ['specialist.list', { provider: 'codex' }],
-      ['specialist.list'],
+      ['specialist.list', { provider: 'codex', limit: 500 }],
+      ['specialist.list', { limit: 500 }],
     ]);
     unsubscribe();
   });
@@ -179,7 +290,7 @@ describe('LiveSpecialistsClient (fake transport)', () => {
       await vi.advanceTimersByTimeAsync(100);
 
       // Refetch is the global specialist.list (no workspaceId).
-      expect(mockedRequest).toHaveBeenLastCalledWith('specialist.list');
+      expect(mockedRequest).toHaveBeenLastCalledWith('specialist.list', { limit: 500 });
       expect(handler).toHaveBeenCalledWith([COORDINATOR_DEF, USER_DEF]);
       unsubscribe();
     });
@@ -359,7 +470,7 @@ describe('LiveSpecialistsClient (fake transport)', () => {
         });
         await vi.waitFor(() => expect(handler).toHaveBeenCalledWith([COORDINATOR_DEF, USER_DEF]));
         expect(mockedRequest).toHaveBeenCalledTimes(1);
-        expect(mockedRequest).toHaveBeenCalledWith('specialist.list');
+        expect(mockedRequest).toHaveBeenCalledWith('specialist.list', { limit: 500 });
 
         // The refreshed id is released on dispose.
         unsubscribe();
@@ -661,6 +772,7 @@ it('routes list and project mutations without changing user-library writes', asy
   expect(mockedRequest).toHaveBeenLastCalledWith('specialist.list', {
     provider: 'codex',
     workspaceId: 'workspace-A',
+    limit: 500,
   });
   await client.delete('custom', 'project', '/repo', 'workspace-A');
   expect(mockedRequest).toHaveBeenLastCalledWith('specialist.delete', {

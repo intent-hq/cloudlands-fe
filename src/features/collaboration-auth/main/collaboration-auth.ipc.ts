@@ -20,7 +20,7 @@ const actionSchema = z.discriminatedUnion('type', [
   z
     .object({
       type: z.literal('policy'),
-      policy: z.object({ multiplayer: z.boolean(), gitlab: z.boolean() }).strict(),
+      policy: z.object({ multiplayer: z.boolean() }).strict(),
     })
     .strict(),
   z
@@ -97,14 +97,11 @@ export function onCollaborationPolicyPublished(
 }
 
 /** A joined-host action is bound to the requesting renderer's original feature-policy lifetime. */
-export function captureCollaborationPolicy(
-  contentsId: number | null,
-): (provider?: 'github' | 'gitlab') => boolean {
+export function captureCollaborationPolicy(contentsId: number | null): () => boolean {
   const revision = contentsId === null ? undefined : policyRevisions.get(contentsId);
-  return (provider) => {
+  return () => {
     if (contentsId === null || revision !== policyRevisions.get(contentsId)) return false;
-    const policy = policies.get(contentsId);
-    return policy?.multiplayer === true && (provider !== 'gitlab' || policy.gitlab === true);
+    return policies.get(contentsId)?.multiplayer === true;
   };
 }
 
@@ -167,7 +164,7 @@ export function prepareCollaborationIdentity(
     const flow = new CollaborationAuthFlow(requestId, request, {
       local: captureLocalIdentityConnection(),
       attempt,
-      policy: () => policies.get(contents.id) ?? { multiplayer: false, gitlab: false },
+      policy: () => policies.get(contents.id) ?? { multiplayer: false },
       isLatest: () => generation === sequence,
       openBrowser: (url) => shell.openExternal(url),
       show: (view) => {
@@ -193,17 +190,11 @@ export function registerCollaborationAuthHandlers(): void {
   if (registered) return;
   registered = true;
   ipcMain.handle(COLLABORATION_AUTH.POLICY, async (event, input: unknown) => {
-    const parsed = z
-      .object({ multiplayer: z.boolean(), gitlab: z.boolean() })
-      .strict()
-      .safeParse(input);
+    const parsed = z.object({ multiplayer: z.boolean() }).strict().safeParse(input);
     if (!parsed.success) return { ok: false };
     observePolicyWindow(event.sender);
     const previous = policies.get(event.sender.id);
-    const changed =
-      !previous ||
-      previous.multiplayer !== parsed.data.multiplayer ||
-      previous.gitlab !== parsed.data.gitlab;
+    const changed = !previous || previous.multiplayer !== parsed.data.multiplayer;
     if (changed)
       policyRevisions.set(event.sender.id, (policyRevisions.get(event.sender.id) ?? 0) + 1);
     policies.set(event.sender.id, parsed.data);

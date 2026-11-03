@@ -3,10 +3,14 @@
   import { untrack } from 'svelte';
   import DevConsoleShell from './DevConsoleShell.svelte';
   import { createTrafficFixture, type PayloadScenario } from './traffic-fixture';
+  import type { LinksScenario } from './daemon-links-fixture';
   import * as m from '$shared/paraglide/messages.js';
-  let { count = 240, scenario = 'traffic' }: { count?: number; scenario?: PayloadScenario } =
-    $props();
-  const fixture = untrack(() => createTrafficFixture(count, scenario));
+  let {
+    count = 240,
+    scenario = 'traffic',
+    links = 'unsupported',
+  }: { count?: number; scenario?: PayloadScenario; links?: LinksScenario } = $props();
+  const fixture = untrack(() => createTrafficFixture(count, scenario, links));
 </script>
 
 <div class="fixture">
@@ -18,6 +22,15 @@
     onclick={() => (scenario === 'streams' ? fixture.stream() : fixture.append(300))}
     >{m.devConsole_append_label()}</Button
   >
+  {#if links === 'backend' || links === 'machine'}
+    <!-- i18n-ignore (Synthetic browser-test fixture control.) -->
+    <Button
+      size="compact"
+      variant="ghost"
+      class="fixture-control"
+      onclick={() => fixture.appendLinks(40)}>Append link frames</Button
+    >
+  {/if}
   {#if scenario === 'nested'}
     <!-- i18n-ignore (Synthetic browser-test fixture control.) -->
     <Button size="compact" variant="ghost" onclick={() => fixture.reply()}
@@ -31,8 +44,8 @@
   .fixture {
     position: fixed;
     top: 4px;
-    right: 12px;
-    max-width: calc(100vw - 150px);
+    left: 130px;
+    max-width: calc(100vw - 360px);
     z-index: 10;
     display: flex;
     align-items: center;

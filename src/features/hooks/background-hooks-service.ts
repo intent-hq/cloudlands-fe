@@ -20,6 +20,10 @@ export interface BackgroundHook {
   agentId: string;
   name: string;
   code?: string;
+  /** `hook.list` dropped `code` because the row alone exceeded the read
+   * budget (`codeBytes` is its full UTF-8 size); there is no wire read for it. */
+  codeOmitted?: boolean;
+  codeBytes?: number;
   /** Fixed cadence in ms. `0` (or absent) for cron/runAt schedule kinds. */
   delayMs?: number;
   /** 5-field UTC cron expression — present only on cron-scheduled hooks. */
@@ -123,10 +127,36 @@ export function foldHookEvent(
   }
 }
 
-/** `hook.list` (§5.40) — every hook in the workspace, all states. */
+/** Rows per `hook.list` page on a paging host (the host also caps page bytes). */
+const HOOK_LIST_PAGE_LIMIT = 200;
+
+/**
+ * `hook.list` (§5.40) — every active hook in the workspace, read in explicit
+ * pages: a paging host (`boundedReads: 1`) returns `nextCursor` while more
+ * rows follow. Older hosts ignore `limit`/`cursor` and return the whole list.
+ */
 export async function listHooks(workspaceId: string): Promise<BackgroundHook[]> {
-  const result = await backendRequest<{ hooks?: BackgroundHook[] }>('hook.list', { workspaceId });
-  return Array.isArray(result?.hooks) ? result.hooks : [];
+  const hooks: BackgroundHook[] = [];
+  const seen = new Set<string>();
+  let cursor: string | undefined;
+  do {
+    const result = await backendRequest<{ hooks?: BackgroundHook[]; nextCursor?: string }>(
+      'hook.list',
+      { workspaceId, limit: HOOK_LIST_PAGE_LIMIT, ...(cursor ? { cursor } : {}) },
+    );
+    if (Array.isArray(result?.hooks)) hooks.push(...result.hooks);
+    const next = result?.nextCursor;
+    if (typeof next === 'string' && next && !seen.has(next)) {
+      seen.add(next);
+      cursor = next;
+    } else if (next !== undefined && next !== null) {
+      // i18n-ignore (diagnostic for a misbehaving host, logged by the saga)
+      throw new Error('hook.list returned a repeated or malformed cursor');
+    } else {
+      cursor = undefined;
+    }
+  } while (cursor);
+  return hooks;
 }
 
 /** `hook.runNow` (§5.40) — ack only; the run's outcome arrives as `hook:*` events. */

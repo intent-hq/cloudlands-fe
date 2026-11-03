@@ -67,6 +67,7 @@ describe('ProtocolAdapter wire contracts (PROTOCOL.md §5.2/§5.3/§5.4)', () =>
       expect(mockRequest).toHaveBeenCalledWith('note.list', {
         workspaceId: 'ws-1',
         projection: 'slim',
+        limit: 500,
       });
       expect(out).toEqual([{ id: 'a' }, { id: 'b' }]);
     });
@@ -80,8 +81,12 @@ describe('ProtocolAdapter wire contracts (PROTOCOL.md §5.2/§5.3/§5.4)', () =>
       expect(mockRequest).toHaveBeenNthCalledWith(1, 'note.list', {
         workspaceId: 'ws-1',
         projection: 'slim',
+        limit: 500,
       });
-      expect(mockRequest).toHaveBeenNthCalledWith(2, 'note.list', { workspaceId: 'ws-1' });
+      expect(mockRequest).toHaveBeenNthCalledWith(2, 'note.list', {
+        workspaceId: 'ws-1',
+        limit: 500,
+      });
       expect(out).toEqual([{ id: 'a' }]);
     });
 
@@ -156,6 +161,7 @@ describe('ProtocolAdapter wire contracts (PROTOCOL.md §5.2/§5.3/§5.4)', () =>
         workspaceId: 'ws-1',
         noteId: 'n1',
         includeComments: true,
+        limit: 500,
       });
       expect(out).toEqual({ ok: true, data: [{ id: 'c1' }, { id: 'c2' }] });
     });

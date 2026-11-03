@@ -5,6 +5,7 @@
   /* eslint-disable max-lines */
   import { onDestroy, onMount, tick, type Snippet } from 'svelte';
   import { composerMinHeight } from '../composer-height';
+  import { pickedMentionsMetadata } from '$lib/services/mentions/registry';
   import { writable } from 'svelte/store';
   import { notify } from '$lib/components/patterns/notify';
   import { withToastCountdown } from '$lib/components/patterns/notify';
@@ -631,6 +632,15 @@
             m.label,
         }),
       );
+  }
+
+  /**
+   * The message metadata recording which file and folder chips are in the
+   * editor, so the sent bubble chips only those and leaves typed or pasted
+   * `@text` (`@scope/pkg@1.2.3`) as text.
+   */
+  export function getPickedMentionsMetadata(): Record<string, unknown> {
+    return pickedMentionsMetadata(tiptap?.getMentions?.() ?? []);
   }
 
   let fileInput = $state<HTMLInputElement | null>(null);
