@@ -17,7 +17,7 @@ import {
 
 const { dispatchMock, hooksState, snapshotState, openHookTabMock, authority } = vi.hoisted(() => ({
   dispatchMock: vi.fn(),
-  authority: { hidesManagerActions: false },
+  authority: { managementDenied: false },
   hooksState: { hooks: [] as unknown[] },
   snapshotState: { status: 'ready' as 'loading' | 'ready' | 'failed' },
   openHookTabMock: vi.fn(),
@@ -60,9 +60,9 @@ vi.mock('$store/renderer/slices/background-hooks/background-hooks-selectors', ()
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectHidesOwnerWorkspaceActions: () => ({
+  selectWorkspaceManagementDenied: () => ({
     subscribe: (run: (value: boolean) => void) => {
-      run(authority.hidesManagerActions);
+      run(authority.managementDenied);
       return () => {};
     },
   }),
@@ -94,7 +94,7 @@ describe('BackgroundHooksRow', () => {
     vi.setSystemTime(new Date('2026-07-31T10:03:00Z'));
     snapshotState.status = 'ready';
     hooksState.hooks = [];
-    authority.hidesManagerActions = false;
+    authority.managementDenied = false;
   });
 
   afterEach(() => {
@@ -289,7 +289,7 @@ describe('BackgroundHooksRow', () => {
   });
 
   it('withholds the manager-only Run now and Cancel actions from a guest', async () => {
-    authority.hidesManagerActions = true;
+    authority.managementDenied = true;
     hooksState.hooks = [makeHook()];
     render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 

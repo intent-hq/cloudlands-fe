@@ -36,7 +36,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { safeDisclosureTransition } from './disclosure-motion';
   import { writable } from 'svelte/store';
-  import { selectHidesOwnerWorkspaceActions } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectWorkspaceManagementDenied } from '$store/renderer/slices/workspace/workspace-selectors';
   import { formatMergeQueueSummary } from '$lib/utils/merge-queue';
   import * as Menu from '$lib/components/ui/menu';
   import { Button } from '$lib/components/ui/button';
@@ -137,7 +137,8 @@
   const snapshotStatus$ = selectPrMonitorsSnapshotStatus(workspaceIdStore);
   const workspace$ = selectWorkspaceById(workspaceIdStore);
   // `prMonitor.flush` and `prMonitor.cancel` are manager-only; a guest keeps the open links.
-  const hidesManagerActions$ = selectHidesOwnerWorkspaceActions(workspaceIdStore);
+  // Hidden only on confirmed denial, so owners keep them while authority loads.
+  const managementDenied$ = selectWorkspaceManagementDenied(workspaceIdStore);
 
   // Only ACTIVE monitors get chips; completed rows live on the PR-list
   // surface, cancelled rows are excluded server-side.
@@ -543,7 +544,7 @@
                   data-testid="monitored-pr-menu"
                   data-viewport-padding="12"
                 >
-                  {#if !$hidesManagerActions$}
+                  {#if !$managementDenied$}
                     <Menu.Item
                       class="type-caption h-auto w-full min-w-0 items-start whitespace-normal py-1.5 text-left"
                       data-testid="monitored-pr-check-flush-item"
@@ -578,7 +579,7 @@
                       {m.chat_monitoredPrs_openInExternalBrowser_label()}
                     </span>
                   </Menu.Item>
-                  {#if !$hidesManagerActions$}
+                  {#if !$managementDenied$}
                     <Menu.Separator />
                     <Menu.Item
                       class="type-caption h-auto w-full min-w-0 items-start whitespace-normal py-1.5 text-left"

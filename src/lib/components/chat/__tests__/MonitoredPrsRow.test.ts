@@ -45,7 +45,7 @@ const {
     listeners: new Set<(value: 'loading' | 'stale' | 'ready' | 'failed') => void>(),
   },
   workspaceState: {
-    hidesManagerActions: false,
+    managementDenied: false,
     workspace: {
       id: 'ws-1',
       repositoryOwner: 'acme',
@@ -109,9 +109,9 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
       return () => {};
     },
   }),
-  selectHidesOwnerWorkspaceActions: () => ({
+  selectWorkspaceManagementDenied: () => ({
     subscribe: (run: (value: boolean) => void) => {
-      run(workspaceState.hidesManagerActions);
+      run(workspaceState.managementDenied);
       return () => {};
     },
   }),
@@ -1111,7 +1111,7 @@ describe('MonitoredPrsRow', () => {
   });
 
   it('withholds the manager-only Check and Flush and Cancel items from a guest', async () => {
-    workspaceState.hidesManagerActions = true;
+    workspaceState.managementDenied = true;
     try {
       monitorsState.monitors = [makeMonitor()];
       render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
@@ -1128,7 +1128,7 @@ describe('MonitoredPrsRow', () => {
       expect(openLinkInAppMock).toHaveBeenCalledOnce();
       expect(dispatchMock).not.toHaveBeenCalled();
     } finally {
-      workspaceState.hidesManagerActions = false;
+      workspaceState.managementDenied = false;
     }
   });
 

@@ -20,7 +20,7 @@
     scriptMonitorsLoadMoreRequested,
     scriptMonitorsRetryRequested,
   } from '$store/renderer/slices/script-monitor/script-monitor-slice';
-  import { selectHidesOwnerWorkspaceActions } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectWorkspaceManagementDenied } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     safeSubscriptionSlide,
     SUBSCRIPTION_ROW_GEOMETRY_CLASS,
@@ -50,9 +50,10 @@
   const monitors$ = selectAgentScriptMonitors(workspaceIdStore, agentIdStore);
   const activeMonitors = $derived($monitors$.filter((row) => row.state === 'active'));
   // Stopping a monitor or its run is manager-only (`script.stop`), so a guest never
-  // sees those items. A guest reads only saved scripts, so its navigation items wait
+  // sees those items once denial is confirmed (owners keep them while authority loads).
+  // A guest reads only saved scripts, so its navigation items wait
   // for the definition (read on expand) instead of opening an unreadable terminal.
-  const hidesManagerActions$ = selectHidesOwnerWorkspaceActions(workspaceIdStore);
+  const managementDenied$ = selectWorkspaceManagementDenied(workspaceIdStore);
   let expanded = $state<string | null>(null);
   function toggleDetails(monitorId: string) {
     expanded = expanded === monitorId ? null : monitorId;
@@ -104,7 +105,7 @@
   {@const operation = $snapshot$.operations[monitor.monitorId]}
   {@const disabled = operation?.pending || $snapshot$.status !== 'ready'}
   {@const detailsId = `script-monitor-details-${monitor.monitorId}`}
-  {@const canStop = !$hidesManagerActions$}
+  {@const canStop = !$managementDenied$}
   {@const canOpen = canStop || !!script}
   <div
     class="min-w-0 overflow-hidden {SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS}"
@@ -149,16 +150,14 @@
             {/snippet}
           </Menu.Trigger>
           <Menu.Content align="end" side="top" aria-label={monitor.scriptName}>
-            {#if canOpen}
-              <Menu.Item onSelect={() => act(monitor.monitorId, 'pane')}
-                >{m.workspace_shell_showInPanel_tooltip()}</Menu.Item
-              >
-              <Menu.Item onSelect={() => act(monitor.monitorId, 'bottom')}
-                >{m.workspace_shell_showInBottomBar_tooltip()}</Menu.Item
-              >
-            {/if}
-            {#if canOpen && canStop}<Menu.Separator />{/if}
+            <Menu.Item onSelect={() => act(monitor.monitorId, 'pane')}
+              >{m.workspace_shell_showInPanel_tooltip()}</Menu.Item
+            >
+            <Menu.Item onSelect={() => act(monitor.monitorId, 'bottom')}
+              >{m.workspace_shell_showInBottomBar_tooltip()}</Menu.Item
+            >
             {#if canStop}
+              <Menu.Separator />
               <Menu.Item onSelect={() => act(monitor.monitorId, 'cancel')}
                 >{m.chat_scriptMonitor_unmonitor_label()}</Menu.Item
               >

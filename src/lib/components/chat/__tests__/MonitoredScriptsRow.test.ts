@@ -24,6 +24,7 @@ import {
   setWorkspaceEntity,
 } from '$store/renderer/slices/workspace/workspace-slice';
 import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+import { principalContextChanged } from '$store/renderer/slices/principal/principal-slice';
 import { selectWorkspaceTerminalState } from '$store/renderer/slices/terminals/terminals-selectors';
 import { closeWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
@@ -447,6 +448,14 @@ describe('script monitor controls', () => {
       expect(backendRequest).toHaveBeenCalledWith('script.get', expect.anything()),
     );
     expect(screen.queryByRole('button', { name: /Actions for/ })).toBeNull();
+  });
+  it('keeps the owner stop actions while authority is still loading', async () => {
+    // A fresh principal context has no snapshot yet: unknown authority is not a denial.
+    store.dispatch(principalContextChanged('reloading'));
+    await mount();
+    await menu();
+    expect(screen.getByRole('menuitem', { name: 'Stop monitoring' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: /Cancel run/ })).toBeTruthy();
   });
   it('shows pending cancellation, sends only the monitor identity, and retires after daemon settlement', async () => {
     await mount();
