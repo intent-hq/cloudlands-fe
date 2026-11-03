@@ -284,11 +284,12 @@ describe('Daemon links IPC', () => {
     expect(call('links-status', window, { sessionId })).toEqual({ supported: true });
     await call('links-start', window, { sessionId });
     await call('links-read', window, { sessionId, afterSeq: 7 });
-    await call('links-record', window, { sessionId, seq: 8 });
+    await call('links-record', window, { sessionId, seq: 8, startedAt: 'capture-a' });
     await call('links-stop', window, { sessionId });
     expect(links.start).toHaveBeenCalledWith('one');
     expect(links.read).toHaveBeenCalledWith('one', 7);
-    expect(links.record).toHaveBeenCalledWith('one', 8);
+    expect(links.record).toHaveBeenCalledWith('one', 8, 'capture-a');
+    expect(() => call('links-record', window, { sessionId, seq: 8 })).toThrow();
     expect(links.stop).toHaveBeenCalledWith('one');
     expect(() => call('links-start', window, { sessionId: 'stale' })).toThrow(/Unauthorized/);
     expect(() =>

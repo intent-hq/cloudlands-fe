@@ -75,9 +75,13 @@ export function connectDevConsole(
     stop: async () => devConsoleInvoke('dev-console:links-stop', session()),
     read: async (afterSeq) =>
       devConsoleInvoke('dev-console:links-read', { ...session(), afterSeq }),
-    record: async (seq) => {
+    record: async (seq, startedAt) => {
       if (stopped) return null;
-      const record = await devConsoleInvoke('dev-console:links-record', { ...session(), seq });
+      const record = await devConsoleInvoke('dev-console:links-record', {
+        ...session(),
+        seq,
+        startedAt,
+      });
       return stopped ? null : record;
     },
     onChanged(listener) {

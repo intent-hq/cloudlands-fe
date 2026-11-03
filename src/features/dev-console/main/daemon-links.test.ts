@@ -60,7 +60,7 @@ describe('daemon links (main)', () => {
     const links = createDaemonLinks(() => client({ remoteMachines: 1 }, request));
     await expect(links.start('old')).rejects.toThrow(/not supported/);
     await expect(links.read('old', -1)).rejects.toThrow(/not supported/);
-    await expect(links.record('old', 1)).rejects.toThrow(/not supported/);
+    await expect(links.record('old', 1, capture.startedAt)).rejects.toThrow(/not supported/);
     expect(request).not.toHaveBeenCalled();
   });
 
@@ -137,7 +137,7 @@ describe('daemon links (main)', () => {
         records: [record(1, { payload: undefined, truncated: true })],
       });
     const links = createDaemonLinks(() => client({ remoteLinkTraffic: 1 }, request));
-    expect(await links.record('b', 3)).toMatchObject({
+    expect(await links.record('b', 3, capture.startedAt)).toMatchObject({
       seq: 3,
       payload: { env: { API_KEY: '***' } },
     });
@@ -145,14 +145,33 @@ describe('daemon links (main)', () => {
       afterSeq: 2,
       limit: 1,
     });
-    expect(await links.record('b', 4)).toBeNull();
-    const oversized = await links.record('b', 1);
+    expect(await links.record('b', 4, capture.startedAt)).toBeNull();
+    const oversized = await links.record('b', 1, capture.startedAt);
     expect(oversized).toMatchObject({ seq: 1, truncated: true });
     expect(oversized).not.toHaveProperty('payload');
     expect(request).toHaveBeenLastCalledWith('remoteLinkTraffic.snapshot', {
       afterSeq: 0,
       limit: 1,
     });
+  });
+
+  it('returns no record when the daemon now holds a different capture than the selected row', async () => {
+    const restarted = { ...capture, startedAt: '2026-11-03T09:00:00.000Z' };
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce({ capture: restarted, records: [record(1)] })
+      .mockResolvedValueOnce({ capture: parseCaptureStatus(undefined), records: [] });
+    const links = createDaemonLinks(() => client({ remoteLinkTraffic: 1 }, request));
+    // Same seq, newer capture: its payload must never stand in for the old row.
+    expect(await links.record('b', 1, capture.startedAt)).toBeNull();
+    expect(await links.record('b', 1, capture.startedAt)).toBeNull();
+  });
+
+  it('tags live rows with the capture they belong to', async () => {
+    const request = vi.fn(async () => ({ capture, records: [record(2)] }));
+    const links = createDaemonLinks(() => client({ remoteLinkTraffic: 1 }, request));
+    const { records } = await links.read('b', -1);
+    expect(records[0].captureStartedAt).toBe(capture.startedAt);
   });
 
   it('keeps a nameless peer and an unknown frame type as sent', async () => {

@@ -16,9 +16,10 @@ function fakeDaemon({ supported = true, forbidden = false } = {}) {
   let active = false;
   let records: any[] = [];
   let nextSeq = 1;
+  let starts = 0;
   const capture = () => ({
     active,
-    ...(active ? { startedAt: '2026-11-03T08:00:00.000Z' } : {}),
+    ...(active ? { startedAt: `2026-11-03T08:00:0${starts}.000Z` } : {}),
     payloads: true,
     maxRecords: 2000,
     maxPayloadBytes: 65536,
@@ -53,6 +54,7 @@ function fakeDaemon({ supported = true, forbidden = false } = {}) {
         active = true;
         records = [];
         nextSeq = 1;
+        starts++;
       }
       if (method === 'remoteLinkTraffic.stop') {
         active = false;
@@ -97,6 +99,8 @@ function mount(options: Parameters<typeof fakeDaemon>[0] = {}) {
   const { sessionId } = capture.openSession('one');
   let changed: ((event: { sessionId: string }) => void) | undefined;
   let watching = false;
+  let heldReads: Promise<void> | undefined;
+  let releaseReads = () => {};
   const invoke = vi.fn(async (channel: string, data: any) => {
     if (channel === 'dev-console:connect') return { backendId: 'one', sessionId };
     if (channel === 'dev-console:read')
@@ -112,8 +116,12 @@ function mount(options: Parameters<typeof fakeDaemon>[0] = {}) {
     }
     if (channel === 'dev-console:links-start') return daemon.links.start('one');
     if (channel === 'dev-console:links-stop') return daemon.links.stop('one');
-    if (channel === 'dev-console:links-read') return daemon.links.read('one', data.afterSeq);
-    if (channel === 'dev-console:links-record') return daemon.links.record('one', data.seq);
+    if (channel === 'dev-console:links-read') {
+      await heldReads;
+      return daemon.links.read('one', data.afterSeq);
+    }
+    if (channel === 'dev-console:links-record')
+      return daemon.links.record('one', data.seq, data.startedAt);
     throw new Error(channel);
   });
   window.electronAPI = {
@@ -125,7 +133,15 @@ function mount(options: Parameters<typeof fakeDaemon>[0] = {}) {
     offById: vi.fn(),
   } as any;
   const view = render(Shell);
-  return { view, invoke };
+  /** Delay every list refresh until the returned release is called. */
+  const holdReads = () => {
+    heldReads = new Promise((resolve) => (releaseReads = resolve));
+    return () => {
+      heldReads = undefined;
+      releaseReads();
+    };
+  };
+  return { view, invoke, holdReads };
 }
 const original = window.electronAPI;
 beforeEach(() => {
@@ -274,6 +290,25 @@ describe('Daemon links view', () => {
     await fireEvent.keyDown(tab, { key: 'Home' });
     expect(app.getAttribute('aria-selected')).toBe('true');
     expect(screen.getByRole('tablist', { name: 'Dev Console' })).toBeTruthy();
+  });
+
+  it("never shows a newer capture's payload under a row from the capture before it", async () => {
+    const { holdReads } = mount();
+    await fireEvent.click(await linksTab());
+    await fireEvent.click(await screen.findByRole('button', { name: 'Start capture' }));
+    daemon.frame(mac, { frameType: 'launch', payload: { capture: 'first' } });
+    await waitFor(() => expect(tableRows()).toHaveLength(1));
+    // Another owner restarts capture; the list refresh is still pending, so the
+    // first capture's row 1 is on screen while the daemon now holds a new row 1.
+    const release = holdReads();
+    await daemon.elsewhere('remoteLinkTraffic.stop');
+    await daemon.elsewhere('remoteLinkTraffic.start');
+    daemon.frame(box, { frameType: 'launch', payload: { capture: 'second' } });
+    await fireEvent.click(tableRows()[0]);
+    const details = await screen.findByRole('region', { name: 'launch' });
+    await waitFor(() => expect(details.textContent).toMatch(/no longer|evicted|retain/i));
+    expect(details.textContent).not.toContain('second');
+    release();
   });
 
   it('follows another client starting and stopping capture through the records event', async () => {

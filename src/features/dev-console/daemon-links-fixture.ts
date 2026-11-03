@@ -99,6 +99,7 @@ export function createLinksFixture(scenario: LinksScenario, initial = 120) {
       id: `link-${record.seq}`,
       timestamp: Date.parse(record.at),
       hasPayload: payload !== undefined,
+      captureStartedAt: startedAt,
     };
   };
   const api: DaemonLinksApi = {
@@ -123,7 +124,10 @@ export function createLinksFixture(scenario: LinksScenario, initial = 120) {
       capture: status(),
       records: records.filter((r) => r.seq > afterSeq).map(row),
     }),
-    record: async (seq) => records.find((r) => r.seq === seq) ?? null,
+    record: async (seq, captureStartedAt) =>
+      active && captureStartedAt === startedAt
+        ? (records.find((r) => r.seq === seq) ?? null)
+        : null,
   };
   return { api, append };
 }

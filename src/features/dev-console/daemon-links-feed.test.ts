@@ -19,6 +19,7 @@ function row(seq: number): LinkTrafficRow {
     bytes: 10,
     summary: 'launch',
     hasPayload: true,
+    captureStartedAt: '2026-11-03T08:00:00.000Z',
   };
 }
 /** A fake daemon buffer with the documented accounting. */

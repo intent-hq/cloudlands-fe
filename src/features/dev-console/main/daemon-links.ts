@@ -92,7 +92,7 @@ function parseRecord(value: unknown): LinkTrafficRecord | null {
 }
 
 /** Strip the payload so live rows stay small; the selection fetches it separately. */
-export function toLinkRow(record: LinkTrafficRecord): LinkTrafficRow {
+export function toLinkRow(record: LinkTrafficRecord, captureStartedAt = ''): LinkTrafficRow {
   const { payload, ...rest } = record;
   const timestamp = Date.parse(record.at);
   return {
@@ -100,6 +100,7 @@ export function toLinkRow(record: LinkTrafficRecord): LinkTrafficRow {
     id: `link-${record.seq}`,
     timestamp: Number.isFinite(timestamp) ? timestamp : 0,
     hasPayload: payload !== undefined,
+    captureStartedAt,
   };
 }
 
@@ -205,16 +206,28 @@ export function createDaemonLinks(getClient: (backendId: string) => DaemonLinksC
           limit: LINK_SNAPSHOT_LIMIT,
         }),
       );
-      return { capture: result.capture, records: result.records.map(toLinkRow) };
+      const startedAt = result.capture.startedAt ?? '';
+      return {
+        capture: result.capture,
+        records: result.records.map((record) => toLinkRow(record, startedAt)),
+      };
     },
-    /** One retained record with its masked payload; null once evicted or cleared. */
-    async record(backendId: string, seq: number): Promise<LinkTrafficRecord | null> {
+    /**
+     * One retained record with its masked payload; null once evicted or cleared,
+     * or when the daemon now holds another capture (seq restarts with each one).
+     */
+    async record(
+      backendId: string,
+      seq: number,
+      captureStartedAt: string,
+    ): Promise<LinkTrafficRecord | null> {
       const result = parseSnapshot(
         await call(backendId, LINK_TRAFFIC_METHODS.snapshot, {
           afterSeq: seq - 1,
           limit: 1,
         }),
       );
+      if (!result.capture.active || result.capture.startedAt !== captureStartedAt) return null;
       return result.records.find((r) => r.seq === seq) ?? null;
     },
   };

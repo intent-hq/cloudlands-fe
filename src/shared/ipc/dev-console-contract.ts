@@ -27,6 +27,8 @@ export const devConsoleRequests = {
   }),
   'dev-console:links-record': session.extend({
     seq: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+    /** The selected row's `captureStartedAt`. */
+    startedAt: z.string().max(64),
   }),
 };
 export interface DevConsoleResponses {

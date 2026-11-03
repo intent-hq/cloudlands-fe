@@ -17,6 +17,7 @@ function row(seq: number, extra: Partial<LinkTrafficRow> = {}): LinkTrafficRow {
     bytes: seq * 10,
     summary: `frame ${seq}`,
     hasPayload: true,
+    captureStartedAt: '2026-11-03T08:00:00.000Z',
     ...extra,
   };
 }

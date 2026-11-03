@@ -11,7 +11,8 @@ export interface DaemonLinksApi {
   start(): Promise<LinkCaptureStatus>;
   stop(): Promise<LinkCaptureStatus>;
   read(afterSeq: number): Promise<LinkTrafficRead>;
-  record(seq: number): Promise<LinkTrafficRecord | null>;
+  /** `startedAt` is the row's `captureStartedAt`; a different current capture answers null. */
+  record(seq: number, startedAt: string): Promise<LinkTrafficRecord | null>;
   /** `remoteLinkTraffic:records` arrived (start, stop or new records); returns a disposer. */
   onChanged?(listener: () => void): () => void;
 }
@@ -190,7 +191,7 @@ export function createDaemonLinksFeed(
     },
     start: () => command(api.start),
     stop: () => command(api.stop),
-    record: (seq: number) => api.record(seq),
+    record: (seq: number, startedAt: string) => api.record(seq, startedAt),
     dispose() {
       disposed = true;
       stopListening?.();

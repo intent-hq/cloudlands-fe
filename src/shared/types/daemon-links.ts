@@ -57,6 +57,8 @@ export type LinkTrafficRow = Omit<LinkTrafficRecord, 'payload'> & {
   /** Parsed `at`, epoch milliseconds (sortable). */
   timestamp: number;
   hasPayload: boolean;
+  /** `capture.startedAt` of the capture this row came from; seq restarts with each capture. */
+  captureStartedAt: string;
 };
 
 export interface LinkTrafficRead {

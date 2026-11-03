@@ -254,7 +254,7 @@ export function registerDevConsoleIPC(
   ipcMain.handle('dev-console:links-record', (event, data) => {
     const request = devConsoleRequests['dev-console:links-record'].parse(data);
     const { backendId } = windows.authorize(event, request.sessionId);
-    return linksOrThrow().record(backendId, request.seq);
+    return linksOrThrow().record(backendId, request.seq, request.startedAt);
   });
   const dispose = () => {
     for (const backendId of [...watches.keys()]) unwatch(backendId);

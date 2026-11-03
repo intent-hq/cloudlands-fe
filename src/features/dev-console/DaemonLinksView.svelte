@@ -72,7 +72,7 @@
     const token = ++selection;
     record = undefined;
     if (!row) return;
-    feed.record(row.seq).then(
+    feed.record(row.seq, row.captureStartedAt).then(
       (result) => {
         if (token === selection) record = result;
       },
