@@ -958,6 +958,45 @@ describe('cut snapshot rows (config.complete)', () => {
     off();
   });
 
+  it('completes a cut row that arrives on a continuation page', async () => {
+    listPages.set('n1', { rows: [{ id: 'b', v: 1, cut: true }], nextToken: 'n2' });
+    listPages.set('n2', { rows: [{ id: 'c', v: 1 }], nextToken: null });
+    const handler = vi.fn();
+    const complete = vi.fn((raw: Record<string, unknown>) =>
+      raw.cut ? Promise.resolve({ id: raw.id, v: 9 }) : null,
+    );
+    const off = createDeltaSubscription<Row>({
+      channel: {
+        ...channel,
+        continuation: {
+          method: 'ws.list',
+          key: 'rows',
+          params: (scope: Record<string, unknown>) => ({ ...scope }),
+        },
+      },
+      getId,
+      normalize,
+      handler,
+      complete,
+    });
+    await flush();
+    push('subscription.push', {
+      subscriptionId: 'chan-1',
+      kind: 'snapshot',
+      seq: 0,
+      snapshot: [{ id: 'a', v: 1 }],
+      nextToken: 'n1',
+    });
+    for (let i = 0; i < 4; i++) await flush();
+    expect(complete.mock.calls.map(([raw]) => raw.id)).toEqual(['a', 'b', 'c']);
+    expect(sorted(handler.mock.calls.at(-1)?.[0] as Row[])).toEqual([
+      { id: 'a', v: 1 },
+      { id: 'b', v: 9 },
+      { id: 'c', v: 1 },
+    ]);
+    off();
+  });
+
   it('keeps a delta over a completion that lands later', async () => {
     let resolveWhole!: (row: Record<string, unknown>) => void;
     const whole = new Promise<Record<string, unknown>>((r) => (resolveWhole = r));
