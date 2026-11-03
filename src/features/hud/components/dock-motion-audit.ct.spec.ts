@@ -701,10 +701,16 @@ test('motion audit: banner, question overlay and aurora', async ({ mount, page }
     if (stats.endGapMs <= 20) expect(stats.endStepPx, `${stats.name} end`).toBeLessThanOrEqual(2);
     expectNoRailReflow(stats);
   }
-  // Fades never pop: each motion runs an opacity animation, and no 60 Hz frame of its
-  // curve changes opacity by more than half (judged from the animation, not mid-flight).
+  // Fades never pop: each motion runs a real fade (it takes time and spans most of the
+  // opacity range, from start to end state), and no 60 Hz frame of any captured curve
+  // changes opacity by more than half (judged from the animation, not mid-flight). A
+  // zero-length animation does not count: Svelte starts every intro with one that holds
+  // the first keyframe, so its presence proves nothing about a fade.
   for (const stats of [auroraIn, auroraOut, banner, question]) {
-    expect(stats.fades.length, `${stats.name} fades`).toBeGreaterThan(0);
+    const realFades = stats.fades.filter(
+      (fade) => fade.durationMs > 0 && Math.abs(fade.to - fade.from) >= 0.9,
+    );
+    expect(realFades.length, `${stats.name} fades`).toBeGreaterThan(0);
     for (const fade of stats.fades)
       expect(fade.maxFrameStep, `${stats.name} ${fade.type}`).toBeLessThanOrEqual(0.5);
   }
