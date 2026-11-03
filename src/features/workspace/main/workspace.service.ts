@@ -5,6 +5,7 @@
  * Uses repository pattern for data access and event bus for notifications.
  */
 
+import { collectListPages } from '$shared/paged-list';
 import { BrowserWindow } from 'electron';
 import { promises as fs } from 'fs';
 
@@ -155,9 +156,13 @@ export class WorkspaceService {
     const entry: { expiresAt: number | null; promise: Promise<Workspace[]> } = {
       expiresAt: null,
       promise: (async () => {
-        const response = (await getBackendClient().request('workspace.list', {
-          includeArchived,
-        })) as { workspaces?: unknown[] };
+        const client = getBackendClient();
+        const response = (await collectListPages(
+          (params) =>
+            client.request('workspace.list', params) as Promise<{ workspaces?: unknown[] }>,
+          { includeArchived },
+          'workspaces',
+        )) as { workspaces?: unknown[] };
         const rows = Array.isArray(response?.workspaces) ? response.workspaces : [];
         return rows.map((raw) => this.normalizeDaemonWorkspace(raw as Record<string, unknown>));
       })(),
