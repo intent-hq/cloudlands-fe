@@ -154,6 +154,7 @@ export function chatStateSelectors() {
     selectAwaitingSwitchBackSnapshot: false,
     selectChatError: null,
     selectChatFailureCorrelation: undefined,
+    selectChatIsInterrupting: false,
     selectChatLastChunkTime: null,
     selectChatLastAttemptedMessage: null,
     selectChatLiveStreamPhase: null,
