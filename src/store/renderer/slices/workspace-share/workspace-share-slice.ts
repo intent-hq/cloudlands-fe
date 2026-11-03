@@ -93,8 +93,24 @@ export const initialRosterState: WorkspaceRosterState = {
   inviteReceivedAt: 0,
 };
 
+/**
+ * The host owner's forge connections as Share can see them. `known: false`
+ * marks a manager without the execution projection (PROTOCOL §5.49), whose
+ * owner status is unknown until the daemon answers an invite.
+ */
+export interface ShareIntegrationAuth {
+  github: boolean;
+  gitlab: boolean;
+  known?: false;
+}
+
 export interface WorkspaceShareState {
-  integrationAuth: { github: boolean; gitlab: boolean };
+  integrationAuth: ShareIntegrationAuth;
+  /**
+   * The daemon refused an invite with `github-identity-required` this
+   * session: the owner has no forge, whatever the cached status says.
+   */
+  ownerForgeMissing: boolean;
   /** Prerequisites belong to one admitted host identity and dialog session. */
   sharingContext: string | null;
   sharingEnabled: boolean | null;
@@ -162,6 +178,7 @@ export interface WorkspaceShareState {
 
 export const initialState: WorkspaceShareState = {
   integrationAuth: { github: false, gitlab: false },
+  ownerForgeMissing: false,
   sharingContext: null,
   sharingEnabled: null,
   sharingChecking: false,
@@ -649,21 +666,31 @@ export const shareIntegrationAuthRequested = createAction<
   [workspaceId: string, gitlabHost?: string]
 >('workspaceShare/integrationAuthRequested');
 export const shareIntegrationAuthLoaded = createAction<
-  [target: WorkspaceShareTarget, auth: { github: boolean; gitlab: boolean }]
+  [target: WorkspaceShareTarget, auth: ShareIntegrationAuth]
 >('workspaceShare/integrationAuthLoaded');
+/** The daemon refused an invite because the host owner has no forge connected. */
+export const shareOwnerForgeMissing = createAction<[target: WorkspaceShareTarget]>(
+  'workspaceShare/ownerForgeMissing',
+);
+workspaceShareReducer.with(shareOwnerForgeMissing, (state, { payload: [target] }) =>
+  targets(state, target) ? { ...state, ownerForgeMissing: true } : state,
+);
 workspaceShareReducer.with(shareIntegrationAuthRequested, (state) => ({
   ...state,
   integrationAuth: { github: false, gitlab: false },
 }));
 workspaceShareReducer.with(shareIntegrationAuthLoaded, (state, { payload: [target, auth] }) => {
   if (!targets(state, target)) return state;
-  // No forge hides the link form; a create error from before must not
-  // reappear once a forge connects.
+  if (auth.known === false) return { ...state, integrationAuth: auth };
+  // No forge hides the link form, and a connected one clears a latched
+  // refusal: either way a create error from before must not reappear.
   const forgeless = !auth.github && !auth.gitlab;
+  const clear = forgeless || state.ownerForgeMissing;
   return {
     ...state,
     integrationAuth: auth,
-    ...(forgeless ? { createError: null } : {}),
+    ownerForgeMissing: forgeless && state.ownerForgeMissing,
+    ...(clear ? { createError: null } : {}),
   };
 });
 

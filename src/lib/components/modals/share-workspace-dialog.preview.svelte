@@ -27,6 +27,9 @@
     sharingEnabling?: boolean;
     sharingError?: string | null;
     canAdministerHost?: boolean;
+    hostMembershipSupported?: boolean;
+    forgeStatusKnown?: boolean;
+    ownerForgeMissing?: boolean;
     workspaceTitle?: string;
     guestLimit?: number;
     inviteDelayMs?: number;
@@ -209,6 +212,18 @@
         props: { ...noForge, members: [owner, githubGuest], invites: [openInvite] },
       },
       'no-forge-member': { props: { ...noForge, canAdministerHost: false } },
+      'no-forge-host-member': {
+        props: { ...noForge, canAdministerHost: false, hostMembershipSupported: true },
+      },
+      'no-forge-host-member-refused': {
+        props: {
+          ...noForge,
+          canAdministerHost: false,
+          hostMembershipSupported: true,
+          forgeStatusKnown: false,
+          ownerForgeMissing: true,
+        },
+      },
     },
   });
 </script>

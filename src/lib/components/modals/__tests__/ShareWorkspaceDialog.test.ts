@@ -141,7 +141,7 @@ it('lets a capable workspace manager pin a different canonical GitLab instance (
   const onCreateInvite = vi.fn();
   renderDialog({
     githubConnected: false,
-    gitlabConnected: false,
+    gitlabConnected: true,
     gitlabEnabled: true,
     gitlabHost: 'repository.example',
     gitlabStatusReady: false,
@@ -313,6 +313,55 @@ describe('ShareWorkspaceDialog — forge gate', () => {
     await fireEvent.click(screen.getByRole('button', { name: /^Revoke/ }));
     expect(onRevokeInvite).toHaveBeenCalledExactlyOnceWith(openInvite.id);
     expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
+  });
+
+  // hostMembership:1 manager (not the host admin): the owner's forge status
+  // comes from the execution projection, or from a latched daemon refusal
+  // when the projection is unavailable.
+  it.each([
+    ['the projection reports no owner forge', { forgeStatusKnown: true }],
+    [
+      'a refusal latched "owner has no forge"',
+      { forgeStatusKnown: false, ownerForgeMissing: true },
+    ],
+  ])('hides every link action from a host-membership manager when %s', async (_case, status) => {
+    const onCreateInvite = vi.fn();
+    renderDialog({
+      githubConnected: false,
+      gitlabConnected: false,
+      identitySeamSupported: true,
+      hostMembershipSupported: true,
+      canAdministerHost: false,
+      inviteLinks,
+      onCreateInvite,
+      ...status,
+    });
+    expect(screen.getByTestId('share-forge-owner-required')).toBeTruthy();
+    expect(screen.queryByTestId('share-link-submit')).toBeNull();
+    expect(screen.queryByTestId('share-audience-trigger')).toBeNull();
+    expect(screen.queryByTestId('share-invite-copy')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Connect GitHub' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open Connections' })).toBeNull();
+    expect(onCreateInvite).not.toHaveBeenCalled();
+  });
+
+  it('keeps the link form for a host-membership manager while the owner forge status is unknown', () => {
+    renderDialog({
+      githubConnected: false,
+      gitlabConnected: false,
+      identitySeamSupported: true,
+      hostMembershipSupported: true,
+      canAdministerHost: false,
+      forgeStatusKnown: false,
+    });
+    expect(screen.queryByTestId('share-forge-owner-required')).toBeNull();
+    expect(screen.getByTestId('share-link-submit')).toBeTruthy();
+  });
+
+  it('a latched refusal also hides links from the host owner, leaving the connect box', () => {
+    renderDialog({ githubConnected: true, ownerForgeMissing: true });
+    expect(screen.getByTestId('share-github-required')).toBeTruthy();
+    expect(screen.queryByTestId('share-link-submit')).toBeNull();
   });
 
   it('gates an owner with no forge on a host-membership daemon too', () => {

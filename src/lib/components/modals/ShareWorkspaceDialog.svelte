@@ -76,6 +76,13 @@
     identitySeamSupported?: boolean;
     hostMembershipSupported?: boolean;
     /**
+     * False for a manager without the host execution projection: the
+     * owner's forge status is unknown until the daemon answers an invite.
+     */
+    forgeStatusKnown?: boolean;
+    /** The daemon refused an invite with `github-identity-required` this session. */
+    ownerForgeMissing?: boolean;
+    /**
      * The forge that is the host's identity (its `principal.me` triple, else
      * the daemon's implied default), `null` while unlinked. Seeds the pin's
      * provider choice, as the daemon defaults `pinProvider` to it.
@@ -156,6 +163,8 @@
     onEnableSharing,
     identitySeamSupported = false,
     hostMembershipSupported = false,
+    forgeStatusKnown = true,
+    ownerForgeMissing = false,
     identityProvider = null,
     canManage = false,
     canSetMemberRole = false,
@@ -204,12 +213,15 @@
   const gitlabIdentityConnected = $derived(identitySeamSupported && gitlabConnected);
   /**
    * The daemon refuses every invite (`github-identity-required`) until the host owner
-   * connects a forge. The owner's own status is canonical; a member of a
-   * host-membership host cannot read the owner's GitLab status, so the
-   * daemon's refusal is its answer.
+   * connects a forge. The owner's own status is canonical, a manager reads it
+   * from the host execution projection, and without that projection the
+   * daemon's refusal (`ownerForgeMissing`) is the answer.
    */
   const forgeConnected = $derived(
-    githubConnected || gitlabIdentityConnected || (hostMembershipSupported && !canAdministerHost),
+    !ownerForgeMissing &&
+      (githubConnected ||
+        gitlabIdentityConnected ||
+        (hostMembershipSupported && !canAdministerHost && !forgeStatusKnown)),
   );
   /** Both forges connected on a seam-capable daemon: the pin's forge is the owner's pick. */
   const pinProviderChoosable = $derived(

@@ -114,6 +114,8 @@ import {
   sharePrerequisitesStarted,
   sharePrerequisitesSettled,
   shareIntegrationAuthRequested,
+  shareOwnerForgeMissing,
+  type ShareIntegrationAuth,
   shareIntegrationAuthLoaded,
   closeShareDialog,
   openShareDialog,
@@ -485,6 +487,7 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
     }
     logFailure('Creating an invite', target.workspaceId, outcome);
     if (outcome.code === 'github-identity-required') {
+      yield* put(shareOwnerForgeMissing(target));
       const administrator = yield* selectCanAdministerHost.effect();
       const gitlab = yield* selectLabsGitLabEnabled.effect();
       yield* put(
@@ -748,16 +751,21 @@ function* loadIntegrationAuth(
   // canonical status; members use only the existing allowlisted execution projection.
   const owner = yield* selectCanAdministerHost.effect();
   const execution = yield* selectHostExecutionContext.effect();
-  const github = owner
-    ? yield* selectGitHubAuthIsAuthenticated.effect()
-    : execution?.repositoryConnections.some((r) => r.provider === 'github' && r.configured) ===
-      true;
-  const gitlab =
-    owner &&
-    (yield* selectGitLabStatusReady.effect()) &&
-    (yield* selectGitLabAuthIsConfigured.effect());
-  if (yield* stillTargets(target))
-    yield* put(shareIntegrationAuthLoaded(target, { github, gitlab }));
+  const configured = (provider: 'github' | 'gitlab') =>
+    execution?.repositoryConnections.some((r) => r.provider === provider && r.configured) === true;
+  const auth: ShareIntegrationAuth = owner
+    ? {
+        github: yield* selectGitHubAuthIsAuthenticated.effect(),
+        gitlab:
+          (yield* selectGitLabStatusReady.effect()) &&
+          (yield* selectGitLabAuthIsConfigured.effect()),
+      }
+    : execution
+      ? { github: configured('github'), gitlab: configured('gitlab') }
+      : // Without the projection the owner's status is unknown; the daemon's
+        // refusal latches `ownerForgeMissing` instead.
+        { github: false, gitlab: false, known: false };
+  if (yield* stillTargets(target)) yield* put(shareIntegrationAuthLoaded(target, auth));
 }
 
 export function* refreshIntegrationAuthAfterReconnect(): SagaGenerator<void> {

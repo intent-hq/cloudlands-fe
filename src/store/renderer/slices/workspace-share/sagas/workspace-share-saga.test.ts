@@ -1,4 +1,9 @@
-import { selectPrincipalActionContext } from '../../principal/principal-selectors';
+import {
+  selectPrincipalActionContext,
+  selectPrincipalConnectionContext,
+} from '../../principal/principal-selectors';
+import type { HostExecutionContext } from '$shared/types/host-execution';
+import { HOST_EXECUTION_FIXTURE } from '../../../../../test/fixtures/host-execution-state';
 import {
   withHostPrincipal,
   withLegacyPrincipal,
@@ -341,6 +346,77 @@ describe('workspaceShareSaga', () => {
       h.task.cancel();
       await h.task.toPromise();
     }
+  });
+
+  /** A workspace manager on someone else's host, with or without the §5.49 projection. */
+  function managerProject(role: 'member' | 'guest', execution: HostExecutionContext | null) {
+    return (root: StoreState) => {
+      const state = withHostPrincipal(root, role);
+      state.workspace = {
+        ...state.workspace,
+        hasLoaded: true,
+        loadedBackendId: state.connections.windowBackendId,
+        workspaces: createCollection(
+          'id',
+          getItems(state.workspace.workspaces).map((ws) => ({ ...ws, canManage: true })),
+        ),
+        capabilityContext: selectPrincipalActionContext.select(state),
+      };
+      const connection = selectPrincipalConnectionContext.select(state);
+      return {
+        ...state,
+        hostExecution: { ...(state.hostExecution ?? {}), connection, context: execution },
+      } as StoreState;
+    };
+  }
+
+  // A member reads the owner's repository connections from the host
+  // execution projection (PROTOCOL §5.49), GitLab included.
+  it.each([
+    [[], { github: false, gitlab: false }],
+    [
+      [{ provider: 'gitlab' as const, host: 'gitlab.com', configured: true }],
+      { github: false, gitlab: true },
+    ],
+    [
+      [{ provider: 'github' as const, host: 'github.com', configured: true }],
+      { github: true, gitlab: false },
+    ],
+  ])(
+    "reads a member's owner forge status from the execution projection (%j)",
+    async (connections, auth) => {
+      const h = harness(
+        opened(),
+        { 'ws-1': 'collaborator' },
+        managerProject('member', { ...HOST_EXECUTION_FIXTURE, repositoryConnections: connections }),
+      );
+      h.dispatch(shareIntegrationAuthRequested('ws-1'));
+      await settle();
+      expect(h.state().integrationAuth).toEqual(auth);
+      h.task.cancel();
+    },
+  );
+
+  it('marks the owner forge status unknown for a manager without the execution projection', async () => {
+    const h = harness(opened(), { 'ws-1': 'collaborator' }, managerProject('guest', null));
+    h.dispatch(shareIntegrationAuthRequested('ws-1'));
+    await settle();
+    expect(h.state().integrationAuth).toMatchObject({ known: false });
+    h.task.cancel();
+  });
+
+  it('latches "owner has no forge" when an invite is refused with github-identity-required', async () => {
+    replyByMethod({
+      'workspace.invite.create': Object.assign(new Error('x'), {
+        data: { code: 'github-identity-required' },
+      }),
+    });
+    const h = harness(opened(), { 'ws-1': 'collaborator' }, managerProject('guest', null));
+    expect(h.state().ownerForgeMissing).toBe(false);
+    h.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
+    await settle();
+    expect(h.state().ownerForgeMissing).toBe(true);
+    h.task.cancel();
   });
 
   it('uses admission-owned status without warming either provider from Share', async () => {
