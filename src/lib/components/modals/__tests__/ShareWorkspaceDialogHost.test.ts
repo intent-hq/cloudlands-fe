@@ -155,8 +155,9 @@ it('shows a loading placeholder, not the forge or setup cards, until the first a
   settledState(false);
   mocks.emitState();
   await tick();
+  // The owner has a forge here, so the settled dialog goes straight to setup.
   expect(screen.queryByRole('status', { name: 'Loading…' })).toBeNull();
-  expect(screen.getByRole('button', { name: 'Open Connections' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Open Connections' })).toBeNull();
   expect(screen.getByRole('switch', { name: 'Enable sharing' })).toBeTruthy();
 });
 

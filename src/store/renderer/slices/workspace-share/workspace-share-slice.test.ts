@@ -1167,4 +1167,16 @@ describe('integration auth', () => {
       reduce(stale, shareIntegrationAuthLoaded(target(state), { github: true, gitlab: true })),
     ).toBe(stale);
   });
+
+  // A manager without the owner's execution projection gets `known: false`:
+  // that is still the answer, so the loading placeholder must end.
+  it('counts an unknown owner status as read', () => {
+    const state = opened();
+    const unknown = reduce(
+      state,
+      shareIntegrationAuthLoaded(target(state), { github: false, gitlab: false, known: false }),
+    );
+    expect(unknown.integrationAuthLoaded).toBe(true);
+    expect(unknown.integrationAuth.known).toBe(false);
+  });
 });
