@@ -273,6 +273,29 @@ describe('RepoSelector form row label', () => {
     expect(rowLabel(container)).toBe('Codebase/Project');
   });
 
+  it('reads Codebase/Project when the selected plain folder is not in recents yet', () => {
+    mocks.forgeState = 'connected';
+    mocks.state.recentRepos = [gitRepo];
+    const { container } = render(RepoSelector, {
+      props: {
+        rowLabel: 'Codebase',
+        emptyLabel: 'Add repository',
+        value: '/notes/fresh',
+        plainFolderSelected: true,
+      },
+    });
+    expect(rowLabel(container)).toBe('Codebase/Project');
+  });
+
+  it('keeps Codebase for a selected git folder not in recents yet', () => {
+    mocks.forgeState = 'connected';
+    mocks.state.recentRepos = [gitRepo];
+    const { container } = render(RepoSelector, {
+      props: { rowLabel: 'Codebase', emptyLabel: 'Add repository', value: '/repos/fresh' },
+    });
+    expect(rowLabel(container)).toBe('Codebase');
+  });
+
   it('keeps Codebase with plain folders not offered (Labs off)', () => {
     mocks.plainFoldersOffered = false;
     mocks.forgeState = 'none';

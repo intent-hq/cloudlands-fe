@@ -226,6 +226,8 @@
      * pick as git.
      */
     plainFolderMode?: boolean;
+    /** The current selection is a plain folder (Labs); drives the form row label. */
+    plainFolderSelected?: boolean;
     /**
      * The git choice (Labs), rendered inside the "Existing folder" and "New"
      * tabs and never on Clone. `onCheckedChange` names the tab it was flipped in.
@@ -254,6 +256,7 @@
     gitlab,
     gitlabSelected = false,
     plainFolderMode = false,
+    plainFolderSelected = false,
     gitChoice,
   }: Props = $props();
 
@@ -701,7 +704,12 @@
             name: github.repo,
             owner: github.owner,
           }
-        : { path: selectedValue, type: 'local', name: getRepoFolderName(selectedValue) };
+        : {
+            path: selectedValue,
+            type: 'local',
+            name: getRepoFolderName(selectedValue),
+            ...(plainFolderSelected ? { plainFolder: true } : {}),
+          };
     }
     return current ? [current, ...recentRepos] : recentRepos;
   });
