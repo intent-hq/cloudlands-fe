@@ -27,6 +27,34 @@ it('prints help without creating configuration', async () => {
   expect(log.mock.calls.flat().join(' ')).toContain('--data-dir');
 });
 it.skipIf(process.platform === 'win32')(
+  'names an explicit tailcat path that is not executable',
+  async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'web-tailcat-'));
+    dirs.push(dir);
+    const webRoot = path.join(dir, 'web');
+    fs.mkdirSync(webRoot);
+    fs.writeFileSync(path.join(webRoot, 'index.html'), 'app');
+    const missing = path.join(dir, 'no-tailcat');
+    const log = vi.fn();
+    const running = await runIntentWeb(
+      [
+        '--data-dir',
+        path.join(dir, 'state'),
+        '--socket',
+        path.join(dir, 'web.sock'),
+        '--no-local',
+        '--tailcat',
+        missing,
+      ],
+      { log, webRoot },
+    );
+    await running!.close();
+    expect(log.mock.calls.flat().join('\n')).toContain(
+      `tailcat not found or not executable at ${missing}`,
+    );
+  },
+);
+it.skipIf(process.platform === 'win32')(
   'revokes an existing HTTP session when another CLI invocation resets the key',
   async () => {
     const { default: http } = await import('node:http');

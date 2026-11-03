@@ -32,6 +32,8 @@ export async function runIntentWeb(
     throw new Error('Web build missing; run pnpm build:web first.');
   const binary = findWebTailcat(options.tailcat);
   if (binary) await checkTailcatVersion(binary, dependencies.pinnedTailcatVersion ?? '0.4.0', log);
+  else if (options.tailcat)
+    log(`tailcat not found or not executable at ${options.tailcat}; tunnel routes are off.`);
   else log('Tunnel routes need tailcat: set TAILCAT_BIN or put tailcat on PATH.');
   const candidate = options.localSocket ?? defaultSocketPath();
   const localSocket =

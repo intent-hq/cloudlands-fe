@@ -10,7 +10,7 @@ const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
   while (cleanups.length) await cleanups.pop()?.();
 });
-async function start() {
+async function start(localSocket: string | null = null) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'intent-web-api-'));
   cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
   const key = 'test-key';
@@ -24,7 +24,7 @@ async function start() {
     dataDir: dir,
     webRoot: dir,
     getAccessKey: () => key,
-    localSocket: null,
+    localSocket,
     tailcatAvailable: false,
     capture: probe,
   });
@@ -98,6 +98,20 @@ it('publishes standalone capabilities and no local backend when none is availabl
   expect(source).toContain('connections.manage');
   expect(source).toContain('localAvailable');
   expect((await (await call('/__intent-web/connections')).json()).windowBackendId).toBeNull();
+});
+it('lists a present local daemon first, defaults to it and refuses to forget it', async () => {
+  const { call } = await start('/tmp/intentd-test.sock');
+  const list = await (await call('/__intent-web/connections')).json();
+  expect(list.connections.map((c: { id: string }) => c.id)).toEqual(['local']);
+  expect(list.windowBackendId).toBe('local');
+  expect(await (await call('/runtime-config.js')).text()).toContain('localAvailable:true');
+  expect((await call('/__intent-web/connections/local', 'DELETE', {})).status).toBe(404);
+  const { connection } = await (await call('/__intent-web/connections', 'POST', machine)).json();
+  expect((await (await call('/__intent-web/connections')).json()).windowBackendId).toBe('local');
+  expect(
+    (await (await call(`/__intent-web/connections?backend=${connection.id}`)).json())
+      .windowBackendId,
+  ).toBe(connection.id);
 });
 it('validates updates and secret rotations before persistence', async () => {
   const { call, probe } = await start();
