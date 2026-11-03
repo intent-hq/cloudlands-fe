@@ -461,27 +461,24 @@ function* startFeedback({
 }
 
 /**
- * Done on the tool bar. The marked session image already sits in the composer with its
+ * Attach on the tool bar. The marked session image already sits in the composer with its
  * marks drawn in; it is kept as is and the next mark starts a new image (native has
- * cleared the screen). With nothing marked yet, Done takes one plain capture instead.
+ * cleared the screen). Empty attachment requests do not take an implicit screenshot.
  * A Mark-up session on a still image simply ends (its tile already holds the marks).
  */
 function* commitAnnotation(workspaceId: string, agentId: string): SagaGenerator<void> {
   const evidence = evidenceOf(workspaceId, agentId);
   const session = evidence?.annotation;
   if (!evidence || !session) return;
+  const marked =
+    !!session.imageId && evidence.marks.some((mark) => mark.imageId === session.imageId);
+  if (!marked) return;
   if (session.mode === 'still') {
     yield* endSession(workspaceId, agentId);
     return;
   }
-  const marked =
-    !!session.imageId && evidence.marks.some((mark) => mark.imageId === session.imageId);
-  if (marked) {
-    yield* put(dockEvidenceAnnotationChanged(workspaceId, agentId, { ...session, imageId: null }));
-    yield* syncMarks(workspaceId, agentId);
-    return;
-  }
-  yield* put(dockEvidenceCaptureRequested(workspaceId, agentId));
+  yield* put(dockEvidenceAnnotationChanged(workspaceId, agentId, { ...session, imageId: null }));
+  yield* syncMarks(workspaceId, agentId);
 }
 
 /**

@@ -8153,6 +8153,8 @@
   "dock_composer_recordingEnd_chip": "Aufnahme {n} endet",
   "dock_composer_markUp_label": "Markieren",
   "dock_composer_play_label": "Abspielen",
+  "dock_composer_capturePending_label": "Bildschirmfoto wird aufgenommen…",
+  "dock_composer_captureComplete_label": "Bildschirmfoto aufgenommen",
   "dock_composer_done_label": "Fertig",
   "dock_annotationToolbar_save_label": "Anhängen",
   "dock_annotationToolbar_clear_label": "Anmerkungen löschen",

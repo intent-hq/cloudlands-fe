@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
     endAnnotation: vi.fn(),
     retireResources: vi.fn(),
     refreshPicker: vi.fn(),
+    setAnnotationMedia: vi.fn(),
   },
   speech: vi.fn(),
   openExternal: vi.fn(),
@@ -114,6 +115,42 @@ describe('dock evidence IPC', () => {
       },
     };
   }
+
+  it('forwards accepted screenshot revisions through the qualified media channel', async () => {
+    const f = mediaContext();
+    const button = {
+      label: 'Capture',
+      tooltip: 'Capture',
+      disabled: false,
+      pending: false,
+      alert: false,
+    };
+    const media = {
+      capture: { ...button, revision: 7, pending: true },
+      record: { ...button, recording: false, startedAt: null },
+    };
+    expect(await f.invoke({ action: 'annotation-media', media })).toEqual({
+      ok: true,
+      value: undefined,
+    });
+    expect(mocks.annotation.setAnnotationMedia).toHaveBeenLastCalledWith(media);
+    expect(
+      await f.invoke({
+        action: 'annotation-media',
+        media: {
+          ...media,
+          capture: { ...media.capture, revision: -1 },
+        },
+      }),
+    ).toEqual({ ok: false, error: 'unavailable' });
+    expect(mocks.annotation.setAnnotationMedia).toHaveBeenCalledTimes(1);
+    f.retire();
+    expect(await f.invoke({ action: 'annotation-media', media })).toEqual({
+      ok: false,
+      error: 'unavailable',
+    });
+    expect(mocks.annotation.setAnnotationMedia).toHaveBeenCalledTimes(1);
+  });
 
   async function speakingAnnotation() {
     const f = mediaContext();

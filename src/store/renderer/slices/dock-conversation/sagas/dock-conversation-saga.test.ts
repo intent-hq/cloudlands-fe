@@ -1852,7 +1852,7 @@ describe('dock annotate start feedback, refusals and dictation', () => {
     await vi.waitFor(() => expect(evidenceView().capabilities.record).toBe(true));
     const button = { label: 'L', tooltip: 'T', disabled: false, pending: false, alert: false };
     const media = {
-      capture: button,
+      capture: { ...button, revision: 0 },
       record: { ...button, recording: false, startedAt: null },
     };
     // The composer's state reaches the bar, and again before a session starts.
@@ -1988,15 +1988,58 @@ describe('dock annotate Done on the on-screen bar', () => {
     expect(evidenceView().tiles).toHaveLength(1);
   });
 
-  it('with nothing marked yet, Done attaches one plain capture and the session stays', async () => {
+  it('an empty attachment request captures nothing; Done ends feedback', async () => {
     const native = scriptedNative();
     configureDockEvidenceNative(native.service);
     await open();
     appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
     await vi.waitFor(() => expect(evidenceView().annotating).toBe(true));
-    native.emit({ type: 'annotation-commit', sessionId: native.calls.started[0].id });
+    const capture = vi.spyOn(native.service, 'captureDisplay');
+    const sessionId = native.calls.started[0].id;
+    native.emit({ type: 'annotation-commit', sessionId });
+    native.emit({ type: 'annotation-ended', sessionId });
+    await vi.waitFor(() => expect(evidenceView().annotating).toBe(false));
+    expect(capture).not.toHaveBeenCalled();
+    expect(evidenceView().tiles).toEqual([]);
+  });
+
+  it('Done preserves an in-flight screenshot, recording and queued editor evidence', async () => {
+    const native = scriptedNative({ record: true });
+    let finishCapture: (result: DockNativeResult<DockCapturedPixels>) => void = () => {
+      throw new Error('Capture is not waiting');
+    };
+    const heldCapture = new Promise<DockNativeResult<DockCapturedPixels>>((resolve) => {
+      finishCapture = resolve;
+    });
+    vi.spyOn(native.service, 'captureDisplay').mockReturnValue(heldCapture);
+    configureDockEvidenceNative(native.service);
+    await open();
+    appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
+    await vi.waitFor(() => expect(evidenceView().annotating).toBe(true));
+    const sessionId = native.calls.started[0].id;
+    native.emit({ type: 'annotation-media', sessionId, action: 'capture' });
+    await vi.waitFor(() => expect(evidenceView().capturePending).toBe(true));
+    native.emit({ type: 'annotation-media', sessionId, action: 'record' });
+    await vi.waitFor(() => expect(evidenceView().recording).toBe(true));
+    appStore.dispatch(
+      dockEvidenceInsertionQueued(workspaceA, mainA, {
+        id: 'queued-before-done',
+        parts: [{ kind: 'text', text: 'Keep this narration' }],
+      }),
+    );
+    const queued = structuredClone(evidenceView().evidence?.insertions);
+    const clips = structuredClone(evidenceView().evidence?.clips);
+    native.emit({ type: 'annotation-ended', sessionId });
+    await vi.waitFor(() => expect(evidenceView().annotating).toBe(false));
+    expect(evidenceView().recording).toBe(true);
+    expect(evidenceView().capturePending).toBe(true);
+    expect(evidenceView().evidence?.insertions).toEqual(queued);
+    expect(evidenceView().evidence?.clips).toEqual(clips);
+    finishCapture({ ok: true, value: shot(9) });
     await vi.waitFor(() => expect(evidenceView().tiles).toHaveLength(1));
-    expect(evidenceView().tiles[0].marks).toEqual([]);
-    expect(evidenceView().annotating).toBe(true);
+    expect(evidenceView().capturePending).toBe(false);
+    expect(evidenceView().captureAccepted).toBe(1);
+    expect(evidenceView().evidence?.insertions).toEqual(queued);
+    expect(evidenceView().evidence?.clips).toEqual(clips);
   });
 });

@@ -29,6 +29,7 @@ export function dockAnnotationBarMedia(
   const captureDisabled = disabled || !!state.captureDisabled;
   return {
     capture: {
+      revision: state.captureRevision,
       label: labels.capture,
       tooltip:
         alerts.capture ??

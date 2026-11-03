@@ -690,6 +690,7 @@ export class DockAnnotationController implements AnnotationService {
       return true;
     }
     if (request.action === 'commit') {
+      if (session.marks.length === 0) return false;
       // The marked image is the dock's now; the screen starts clean, and the next
       // mark captures a new image. The session (and mouse mode, if on) stays.
       if (session.mode !== 'still') {
@@ -705,7 +706,7 @@ export class DockAnnotationController implements AnnotationService {
       return true;
     }
     if (request.action === 'clear') {
-      // Like Done, the screen starts clean and the next mark captures a new image,
+      // Like Attach, the screen starts clean and the next mark captures a new image,
       // but nothing is attached (the dock drops the image) and the tool stays.
       if (session.mode !== 'still') {
         session.image = null;

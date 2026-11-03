@@ -8153,6 +8153,8 @@
   "dock_composer_recordingEnd_chip": "녹화 {n} 종료",
   "dock_composer_markUp_label": "주석 달기",
   "dock_composer_play_label": "재생",
+  "dock_composer_capturePending_label": "스크린샷 촬영 중…",
+  "dock_composer_captureComplete_label": "스크린샷이 촬영되었습니다",
   "dock_composer_done_label": "완료",
   "dock_annotationToolbar_save_label": "첨부",
   "dock_annotationToolbar_clear_label": "주석 지우기",
