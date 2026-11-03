@@ -186,7 +186,10 @@ jobs:
             ls -la "$RUNNER_TEMP/intent-web-package"
             exit 1
           fi
-          npm publish "$TARBALL" --access public --tag "$DIST_TAG"
+          if ! npm publish "$TARBALL" --access public --tag "$DIST_TAG"; then
+            echo "::error::npm rejected publishing @intent-hq/web@${VERSION}. Check \"Allow npm publish\" under Allowed actions on npmjs.com → @intent-hq/web → Settings → Trusted Publisher (docs/intent-web-package.md), then rerun this workflow."
+            exit 1
+          fi
           echo "::notice::Published @intent-hq/web@${VERSION} (dist-tag ${DIST_TAG})."
 
   sync-channel:
