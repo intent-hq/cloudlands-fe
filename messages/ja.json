@@ -6774,6 +6774,8 @@
   "workspace_compactInitializer_progressWorktree_label": "ワークツリーを作成しています…",
   "workspace_compactInitializer_promptEnhanced_toast": "プロンプトを強化しました",
   "workspace_compactInitializer_repository_label": "コードベース",
+  "workspace_compactInitializer_codebaseOrProject_label": "コードベース/プロジェクト",
+  "workspace_compactInitializer_project_label": "プロジェクト",
   "workspace_compactInitializer_branch_label": "ブランチ",
   "workspace_compactInitializer_setup_label": "セットアップスクリプト",
   "workspace_compactInitializer_setup_description": "依存関係のインストールなど、ワークスペース作成後に実行する処理を選びます。",

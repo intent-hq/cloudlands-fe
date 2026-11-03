@@ -6774,6 +6774,8 @@
   "workspace_compactInitializer_progressWorktree_label": "正在創建工作樹…",
   "workspace_compactInitializer_promptEnhanced_toast": "提示詞已增強",
   "workspace_compactInitializer_repository_label": "程式碼庫",
+  "workspace_compactInitializer_codebaseOrProject_label": "程式碼庫/專案",
+  "workspace_compactInitializer_project_label": "專案",
   "workspace_compactInitializer_branch_label": "分支",
   "workspace_compactInitializer_setup_label": "安裝指令碼",
   "workspace_compactInitializer_setup_description": "選擇建立工作區後要執行的操作，例如安裝相依套件。",
