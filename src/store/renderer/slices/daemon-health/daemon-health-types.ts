@@ -160,7 +160,7 @@ export interface AgentMemoryUsageWirePayload {
 }
 
 /** `system.status.remoteLinks` live counts. */
-export interface DaemonRemoteLinks {
+interface DaemonRemoteLinks {
   /** Backends with an open inbound link to this machine. */
   backends: number;
   /** Exposed machines this daemon holds a live outbound link to. */
