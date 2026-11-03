@@ -4,8 +4,10 @@
 //   - skip when that version is already on npm (reruns are safe)
 //   - fail when the package does not exist yet: trusted publishing needs the
 //     one-time manual bootstrap publish (docs/intent-web-package.md)
-//   - `latest` for the newest version; `backfill` for an older tag rebuilt by
-//     hand, so a rerun never moves `latest` backwards
+//   - `alpha` for the newest version; `backfill` for an older tag rebuilt by
+//     hand, so a rerun never moves `alpha` backwards; `next` for prereleases
+//   - never `beta` or `latest`: those follow the Promote Beta and Release
+//     Stable channels (scripts/intent-web-dist-tag-sync.mjs)
 // Writes `publish=true|false` and `dist_tag=<tag>` to $GITHUB_OUTPUT when set.
 // Usage: node scripts/intent-web-publish-plan.mjs <version>
 import { spawnSync } from 'node:child_process';
@@ -45,7 +47,7 @@ export function compareVersions(a, b) {
   return 0;
 }
 
-// `registry` is null when the package is not on npm, else { versions, latest }.
+// `registry` is null when the package is not on npm, else { versions, distTags }.
 export function publishPlan(version, registry) {
   parse(version);
   if (!registry)
@@ -55,9 +57,9 @@ export function publishPlan(version, registry) {
   if (registry.versions.includes(version))
     return { publish: false, reason: `${PACKAGE_NAME}@${version} is already published` };
   if (parse(version).pre !== null) return { publish: true, distTag: 'next' };
-  if (registry.latest && compareVersions(version, registry.latest) < 0)
-    return { publish: true, distTag: 'backfill' };
-  return { publish: true, distTag: 'latest' };
+  const alpha = registry.distTags.alpha;
+  if (alpha && compareVersions(version, alpha) < 0) return { publish: true, distTag: 'backfill' };
+  return { publish: true, distTag: 'alpha' };
 }
 
 function npmView(field) {
@@ -73,9 +75,10 @@ function npmView(field) {
 export function readRegistry() {
   const versions = npmView('versions');
   if (versions.missing) return null;
-  const latest = npmView('dist-tags.latest');
+  const tags = npmView('dist-tags');
   const list = versions.body === null ? [] : [versions.body].flat();
-  return { versions: list, latest: typeof latest.body === 'string' ? latest.body : null };
+  const distTags = tags.body && typeof tags.body === 'object' ? tags.body : {};
+  return { versions: list, distTags };
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
