@@ -1,10 +1,17 @@
 import type { Snippet } from 'svelte';
+import type { DockCaptureMode } from '$shared/dock-evidence';
 
 /** Display-only contract. The session owner retains bytes, revisions and transport state. */
-export type DockComposerTool = 'pick' | 'box' | 'pen' | 'arrow';
+type DockComposerTool = 'pick' | 'box' | 'pen' | 'arrow';
+export type DockComposerCaptureMode = DockCaptureMode;
 
 export interface DockComposerMediaLabels {
   capture: string;
+  /** Capture button tooltip per mode (full screen uses `capture`). */
+  captureMode?: Record<Exclude<DockComposerCaptureMode, 'fullscreen'>, string>;
+  /** Menu row labels. */
+  captureModes?: Record<DockComposerCaptureMode, string>;
+  captureOptions?: string;
   captureLimit: string;
   /** Record is disabled once the message holds the most recordings it can carry. */
   clipLimit: string;
@@ -43,6 +50,10 @@ export interface DockComposerMediaState {
   capturePending?: boolean;
   captureDisabled?: boolean;
   captureTooltip?: string;
+  /** Absent means full screen. */
+  captureMode?: DockComposerCaptureMode;
+  /** Window and region are available: the capture button opens its mode menu on hover. */
+  captureModesAvailable?: boolean;
   annotationActive: boolean;
   tool: DockComposerTool;
   toolUsed: boolean;
@@ -70,6 +81,8 @@ export interface DockComposerMediaState {
 
 interface DockComposerMediaActions {
   onCapture: () => void;
+  /** Choose a mode and capture with it at once. */
+  onCaptureModeSelect?: (mode: DockComposerCaptureMode) => void;
   onRecordToggle: () => void;
   onAnnotationToggle: () => void;
   onToolSelect: (tool: DockComposerTool) => void;

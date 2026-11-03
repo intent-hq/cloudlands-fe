@@ -5,6 +5,8 @@ export interface WorkspaceProposalApplyPayload {
   proposal: WorkspaceCreateProposal | BulkOperationProposal;
   editedFields?: Record<string, unknown>;
   selectedBulkItemIds?: string[];
+  /** Card-scoped lifecycle key (`getCardProposalId`); defaults to `getProposalId`. */
+  lifecycleId?: string;
   /** Sent as `workspace.create` `origin` so the daemon resolves the card. */
   origin?: WorkspaceCreateOrigin;
 }

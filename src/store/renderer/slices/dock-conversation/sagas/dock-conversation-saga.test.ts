@@ -79,6 +79,7 @@ import type { SystemStatusWirePayload } from '../../daemon-health/daemon-health-
 import {
   dockEvidenceAnnotationToggleRequested,
   dockEvidenceCaptureRequested,
+  dockEvidenceCaptureModeSet,
   dockEvidenceImageRemoveRequested,
   dockEvidenceInsertionCommitted,
   dockEvidenceInsertionQueued,
@@ -1445,6 +1446,32 @@ describe('dock screen evidence through the canonical send', () => {
     expect(evidenceView().capabilities).toEqual({ capture: false, annotate: false, record: false });
   });
 
+  it('captures with the chosen mode and treats a dismissed selection as no capture', async () => {
+    const native = scriptedNative();
+    const modes: (string | undefined)[] = [];
+    let dismiss = true;
+    const captureDisplay = native.service.captureDisplay;
+    native.service.captureDisplay = async (mode) => {
+      modes.push(mode);
+      return dismiss
+        ? { ok: false, error: 'unavailable', detail: 'cancelled' }
+        : captureDisplay(mode);
+    };
+    configureDockEvidenceNative(native.service);
+    await open();
+    appStore.dispatch(dockEvidenceCaptureModeSet('region'));
+    appStore.dispatch(dockEvidenceCaptureRequested(workspaceA, mainA));
+    await vi.waitFor(() => expect(modes).toEqual(['region']));
+    await vi.waitFor(() => expect(evidenceView().capturePending).toBe(false));
+    expect(evidenceView().captureError).toBeNull();
+    expect(evidenceView().tiles).toHaveLength(0);
+    dismiss = false;
+    appStore.dispatch(dockEvidenceCaptureRequested(workspaceA, mainA));
+    await vi.waitFor(() => expect(evidenceView().tiles).toHaveLength(1));
+    expect(modes).toEqual(['region', 'region']);
+    appStore.dispatch(dockEvidenceCaptureModeSet('fullscreen'));
+  });
+
   it('holds a send while a native insertion is unconsumed, then sends the committed editor text once', async () => {
     await open();
     appStore.dispatch(dockConversationDraftChanged(workspaceA, mainA, 'typed'));
@@ -2059,6 +2086,28 @@ describe('dock annotate start feedback, refusals and dictation', () => {
     });
     // Nothing was recorded natively: the clip came from the clipboard's own file.
     expect(native.calls.clips).toEqual([]);
+  });
+
+  it('an annotate session captures the whole screen whatever the composer mode is', async () => {
+    const native = scriptedNative();
+    Object.assign(native.service.capabilities!, { captureModes: true });
+    const modes: (string | undefined)[] = [];
+    const captureDisplay = native.service.captureDisplay;
+    native.service.captureDisplay = async (mode) => {
+      modes.push(mode);
+      return captureDisplay(mode);
+    };
+    configureDockEvidenceNative(native.service);
+    await open();
+    appStore.dispatch(dockEvidenceCaptureModeSet('window'));
+    appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
+    await vi.waitFor(() => expect(native.calls.started).toHaveLength(1));
+    const sessionId = native.calls.started[0].id;
+    native.emit({ type: 'annotation-media', sessionId, action: 'capture' });
+    await vi.waitFor(() => expect(evidenceView().tiles).toHaveLength(1));
+    expect(modes).toEqual(['fullscreen']);
+    expect(evidenceView().captureMode).toBe('window');
+    appStore.dispatch(dockEvidenceCaptureModeSet('fullscreen'));
   });
 
   it('dictating leaves the screen usable: annotate is explicit and ending it opens nothing', async () => {

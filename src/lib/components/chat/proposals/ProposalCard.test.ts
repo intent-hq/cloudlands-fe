@@ -21,6 +21,7 @@ const historySelectorState = vi.hoisted(() => ({
 const navigationMocks = vi.hoisted(() => ({
   goto: vi.fn(),
   showWorkspace: vi.fn(async () => true),
+  openCreated: vi.fn(async () => true),
 }));
 
 // The New Workspace modal's effective specialist (null = General), as the
@@ -169,6 +170,9 @@ vi.mock('$app/navigation', () => ({
 }));
 vi.mock('$lib/utils/show-workspace', () => ({
   openAndShowWorkspace: navigationMocks.showWorkspace,
+}));
+vi.mock('./open-created-workspace', () => ({
+  openCreatedWorkspace: navigationMocks.openCreated,
 }));
 vi.mock('$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-selectors', () => ({
   selectPrBranchLookupEntries: prBranchLookupState.selectPrBranchLookupEntries,
@@ -1547,7 +1551,20 @@ describe('ProposalCard', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Open workspace' }));
     // A proposal-created workspace may have no tab yet; the helper opens it.
-    expect(navigationMocks.showWorkspace).toHaveBeenCalledWith('ws-new');
+    expect(navigationMocks.openCreated).toHaveBeenCalledWith('ws-new');
+  });
+
+  it('opens the daemon-recorded workspace when the local apply result has none', async () => {
+    lifecycleSelectorState.status = 'applied';
+    lifecycleSelectorState.result = null;
+    render(ProposalCard, {
+      props: { proposal: makeWorkspaceProposal(), resolvedCreatedWorkspaceId: 'ws-daemon' },
+    });
+
+    const link = screen.getByTestId('proposal-open-created-workspace');
+    expect(link.getAttribute('href')).toBe('/workspace/ws-daemon');
+    await fireEvent.click(screen.getByRole('button', { name: 'Open workspace' }));
+    expect(navigationMocks.openCreated).toHaveBeenCalledWith('ws-daemon');
   });
 
   it('renders the created workspace summary as non-editable (no form controls, no Discard button)', () => {

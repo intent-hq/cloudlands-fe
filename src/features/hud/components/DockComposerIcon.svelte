@@ -1,6 +1,8 @@
 <script lang="ts" module>
   export type DockComposerGlyph =
     | 'viewfinder'
+    | 'window'
+    | 'region'
     | 'video'
     | 'pencil'
     | 'target'
@@ -45,6 +47,13 @@
     <path d="M2 5.5V3.5a1.5 1.5 0 0 1 1.5-1.5h2M10.5 2h2A1.5 1.5 0 0 1 14 3.5v2" />
     <path d="M14 10.5v2a1.5 1.5 0 0 1-1.5 1.5h-2M5.5 14h-2A1.5 1.5 0 0 1 2 12.5v-2" />
     <circle cx="8" cy="8" r="1.25" fill="currentColor" stroke="none" />
+  {:else if glyph === 'window'}
+    <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.75" />
+    <path d="M1.75 6h12.5" />
+  {:else if glyph === 'region'}
+    <path
+      d="M2 4.5V3a1 1 0 0 1 1-1h1.5M7 2h2M11.5 2H13a1 1 0 0 1 1 1v1.5M14 7v2M14 11.5V13a1 1 0 0 1-1 1h-1.5M9 14H7M4.5 14H3a1 1 0 0 1-1-1v-1.5M2 9V7"
+    />
   {:else if glyph === 'video'}
     <rect x="1.75" y="4" width="8.75" height="8" rx="1.75" />
     <path d="M10.5 7l3.75-2.25v6.5L10.5 9" />
