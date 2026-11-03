@@ -81,6 +81,8 @@ import {
 import { __resetSettingsReadCacheForTests } from '$lib/client/live/live-settings-client';
 import { initializeIdentity } from '../../identity/identity-slice';
 import { workspaceShareSaga } from './workspace-share-saga';
+import { checkGitHubAuthStatus } from '../../github-auth/github-auth-slice';
+import { checkGitLabAuthStatus } from '../../gitlab-auth/gitlab-auth-slice';
 
 /** Rides inside every mocked invite url (the capability); must never reach a sink. */
 const SECRET_MARKER = 'tok-SECRET-MARKER-9f3a';
@@ -972,13 +974,10 @@ describe('workspaceShareSaga', () => {
     expect(forgeError).toEqual(expect.any(String));
     expect(forgeError).not.toContain(LEAK_MARKER);
     expect(h.state().createdLink).toBeNull();
-    expect(
-      h.dispatched
-        .slice(before)
-        .filter(
-          (action) => (action as { type: string }).type === shareIntegrationAuthRequested.type,
-        ),
-    ).toHaveLength(1);
+    // The daemon disagrees with the cached status: ask it again for both forges.
+    const types = h.dispatched.slice(before).map((action) => (action as { type: string }).type);
+    expect(types).toContain(checkGitHubAuthStatus.type);
+    expect(types).toContain(checkGitLabAuthStatus.type);
     h.task.cancel();
 
     replyByMethod({ 'workspace.invite.create': new Error('boom') });

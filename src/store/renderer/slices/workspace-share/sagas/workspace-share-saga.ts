@@ -42,6 +42,8 @@ import { canonicalInviteHost } from '$features/workspace-sharing/utils/invite-pi
 import { selectLabsGitLabEnabled } from '../../user-preferences/user-preferences-selectors';
 import { clearGithubUserSearch } from '../../github-user-search/github-user-search-slice';
 import { selectGitLabAuthHost } from '../../gitlab-auth/gitlab-auth-selectors';
+import { checkGitHubAuthStatus } from '../../github-auth/github-auth-slice';
+import { checkGitLabAuthStatus } from '../../gitlab-auth/gitlab-auth-slice';
 import { selectGitHubAuthIsAuthenticated } from '../../github-auth/github-auth-selectors';
 import {
   selectGitLabAuthIsConfigured,
@@ -475,8 +477,6 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
     }
     logFailure('Creating an invite', target.workspaceId, outcome);
     if (outcome.code === 'github-identity-required') {
-      // The forge status the dialog showed was stale: say why and re-read it,
-      // so an owner's dialog swaps to its connect box.
       const administrator = yield* selectCanAdministerHost.effect();
       const gitlab = yield* selectLabsGitLabEnabled.effect();
       yield* put(
@@ -492,8 +492,13 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
               : m.workspace_share_githubOwnerRequired_notice(),
         }),
       );
-      const host = yield* selectGitLabAuthHost.effect();
-      yield* put(shareIntegrationAuthRequested(target.workspaceId, host || undefined));
+      // The cached status said connected but the daemon has no live forge:
+      // check both again. A change re-reads the dialog's forge status, which
+      // swaps an owner's dialog to its connect box.
+      if (administrator) {
+        yield* put(checkGitHubAuthStatus());
+        yield* put(checkGitLabAuthStatus());
+      }
       return;
     }
     yield* put(

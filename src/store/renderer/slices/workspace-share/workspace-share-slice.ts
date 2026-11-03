@@ -655,9 +655,17 @@ workspaceShareReducer.with(shareIntegrationAuthRequested, (state) => ({
   ...state,
   integrationAuth: { github: false, gitlab: false },
 }));
-workspaceShareReducer.with(shareIntegrationAuthLoaded, (state, { payload: [target, auth] }) =>
-  targets(state, target) ? { ...state, integrationAuth: auth } : state,
-);
+workspaceShareReducer.with(shareIntegrationAuthLoaded, (state, { payload: [target, auth] }) => {
+  if (!targets(state, target)) return state;
+  // No forge hides the link form; a create error from before must not
+  // reappear once a forge connects.
+  const forgeless = !auth.github && !auth.gitlab;
+  return {
+    ...state,
+    integrationAuth: auth,
+    ...(forgeless ? { createError: null } : {}),
+  };
+});
 
 export const shareMemberRoleRequested = createAction<
   [payload: { principalId: string; role: WorkspaceGuestRole }]

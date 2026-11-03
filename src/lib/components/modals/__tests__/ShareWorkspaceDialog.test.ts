@@ -1085,6 +1085,18 @@ describe('ShareWorkspaceDialog — invite an existing user', () => {
     expect(onAddMember).toHaveBeenCalledTimes(1);
   });
 
+  // Adding someone already on the host is not an invite: intentd only refuses
+  // invite creation and redemption without a forge, so this stays usable.
+  it('keeps adding an existing host user available while no forge is connected', async () => {
+    const onAddMember = vi.fn();
+    renderDialog({ githubConnected: false, principals: [erin, frank], onAddMember });
+    expect(screen.queryByTestId('share-link-submit')).toBeNull();
+    const trigger = await pick('@erin');
+    await waitFor(() => expect(trigger.textContent).toContain('@erin'));
+    await fireEvent.click(screen.getByTestId('share-existing-guest-invite'));
+    expect(onAddMember).toHaveBeenCalledExactlyOnceWith('p-erin');
+  });
+
   it('keeps the invitation target through an in-flight refresh and gates submission until settled', async () => {
     const onAddMember = vi.fn();
     const { rerender } = renderDialog({ principals: [erin, frank], onAddMember });
