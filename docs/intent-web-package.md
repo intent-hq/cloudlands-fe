@@ -52,9 +52,9 @@ sync is safe to rerun and also repairs a missed one. To sync a channel by hand:
 - No dist-tag ever moves backwards; a sync that would is skipped with a notice.
 - A channel version that is not on npm (older than the first publish) is
   skipped with a notice.
-- If npm rejects the change, the job fails naming the Trusted Publisher
-  setting below. Until it is enabled, an `@intent-hq` owner can move the tag by
-  hand: `npm dist-tag add @intent-hq/web@<version> <beta|latest>`.
+- If npm rejects the change, the job fails naming the trusted publisher's
+  dist-tag permission (below). Until it is enabled, an `@intent-hq` owner can
+  move the tag by hand: `npm dist-tag add @intent-hq/web@<version> <beta|latest>`.
 
 ## One-time bootstrap
 
@@ -84,9 +84,11 @@ by hand. Until then the workflow fails with "@intent-hq/web is not on npm yet".
    - Repository: `cloudlands-fe`
    - Workflow filename: `publish-intent-web.yml`
    - Environment: leave empty
-   - Turn on **Allow npm dist-tag**, so the workflow can move `beta` and
-     `latest`. Without it the channel sync fails and the tags must be moved by
-     hand (see above).
+   - Turn on the trusted publisher's dist-tag permission (announced as
+     "Allow npm dist-tag" in the
+     [GitHub changelog of 2026-09-30](https://github.blog/changelog/2026-09-30-opt-in-dist-tag-permissions-for-npm-trusted-publishing/)),
+     so the workflow can move `beta` and `latest`. Without it the channel
+     sync fails and the tags must be moved by hand (see above).
 4. Recommended: in the same settings, under **Publishing access**, choose
    "Require two-factor authentication and disallow tokens". Trusted publishing
    keeps working.

@@ -291,7 +291,11 @@ describe('@intent-hq/web channel dist-tag sync', () => {
 
   it('names the trusted publisher setting and the manual fallback when npm rejects the tag', () => {
     const message = distTagFailure('2.276.0', 'beta');
-    expect(message).toContain('Allow npm dist-tag');
+    expect(message).toContain("trusted publisher's dist-tag permission");
+    expect(message).toContain('"Allow npm dist-tag"');
+    expect(message).toContain(
+      'https://github.blog/changelog/2026-09-30-opt-in-dist-tag-permissions-for-npm-trusted-publishing/',
+    );
     expect(message).toContain('npm dist-tag add @intent-hq/web@2.276.0 beta');
     expect(message).toContain('docs/intent-web-package.md');
   });
@@ -363,16 +367,23 @@ describe('publish-intent-web.yml', () => {
     it('plans from the channel feed, then moves the dist-tag with trusted publishing', () => {
       expect(sync.permissions).toEqual({ contents: 'read', 'id-token': 'write' });
       expect(sync['runs-on']).toBe('ubuntu-24.04');
-      const plan = syncSteps.find((s) => s.run?.includes('scripts/intent-web-dist-tag-sync.mjs'));
+      const plan = syncSteps.find((s) =>
+        s.run?.includes('scripts/intent-web-dist-tag-sync.mjs "$CHANNEL"'),
+      );
       const move = syncSteps.find((s) => s.run?.includes('npm dist-tag add'));
       expect(plan).toBeDefined();
       expect(move?.if).toBe("${{ steps.sync.outputs.sync == 'true' }}");
       expect(move?.run).toContain('npm dist-tag add "@intent-hq/web@${VERSION}" "$DIST_TAG"');
-      expect(move?.run).toContain('Allow npm dist-tag');
-      expect(syncSteps.indexOf(plan!)).toBeLessThan(syncSteps.indexOf(move!));
-      expect(syncSteps.map((s) => s.run ?? '').join('\n')).toContain(
-        'npm install --global npm@^11.5.1',
+      // The failure message has one source: the script's distTagFailure.
+      expect(move?.run).toContain(
+        'node scripts/intent-web-dist-tag-sync.mjs --failure "$VERSION" "$DIST_TAG"',
       );
+      expect(move?.run).not.toContain('Allow npm dist-tag');
+      expect(syncSteps.indexOf(plan!)).toBeLessThan(syncSteps.indexOf(move!));
+      // npm runs the OIDC exchange for `npm dist-tag` only from 11.21.0.
+      const runs = syncSteps.map((s) => s.run ?? '').join('\n');
+      expect(runs).toContain('npm install --global npm@^11.21.0');
+      expect(runs).toContain('npm --version');
     });
   });
 
@@ -402,7 +413,7 @@ describe('publish-intent-web.yml', () => {
         expect(job.permissions?.['id-token'], id).toBeUndefined();
     const node = steps.find((s) => s.uses?.startsWith('actions/setup-node@'));
     expect(node?.with?.['registry-url']).toBe('https://registry.npmjs.org');
-    expect(steps.map((s) => s.run ?? '').join('\n')).toContain('npm install --global npm@^11.5.1');
+    expect(steps.map((s) => s.run ?? '').join('\n')).toContain('npm install --global npm@^11.21.0');
     const code = text.replace(/^\s*#.*$/gm, '');
     expect(code).not.toMatch(/NPM_TOKEN|NODE_AUTH_TOKEN|secrets\.NPM/);
   });

@@ -10,6 +10,8 @@
 // Writes `sync=true|false`, `version=<v>` and `dist_tag=<tag>` to
 // $GITHUB_OUTPUT when set.
 // Usage: node scripts/intent-web-dist-tag-sync.mjs <beta|stable>
+//        node scripts/intent-web-dist-tag-sync.mjs --failure <version> <dist-tag>
+//          prints the error for a rejected `npm dist-tag add` and exits 1
 import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { PACKAGE_NAME, compareVersions, readRegistry } from './intent-web-publish-plan.mjs';
@@ -54,10 +56,13 @@ export function syncPlan(channel, version, registry) {
   return { sync: true, distTag, version };
 }
 
+const DIST_TAG_PERMISSION_CHANGELOG =
+  'https://github.blog/changelog/2026-09-30-opt-in-dist-tag-permissions-for-npm-trusted-publishing/';
+
 export function distTagFailure(version, distTag) {
   return [
     `npm rejected moving the ${distTag} dist-tag to ${PACKAGE_NAME}@${version}.`,
-    `Enable "Allow npm dist-tag" on the package's Trusted Publisher (npmjs.com → ${PACKAGE_NAME} → Settings), then rerun this workflow,`,
+    `Enable the trusted publisher's dist-tag permission (announced as "Allow npm dist-tag": ${DIST_TAG_PERMISSION_CHANGELOG}) on npmjs.com → ${PACKAGE_NAME} → Settings → Trusted Publisher, then rerun this workflow,`,
     `or move it by hand as an @intent-hq owner: npm dist-tag add ${PACKAGE_NAME}@${version} ${distTag}`,
     '(docs/intent-web-package.md).',
   ].join(' ');
@@ -70,7 +75,16 @@ async function fetchChannelVersion(channel) {
   return feedVersion(await response.text());
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+if (
+  import.meta.url === pathToFileURL(process.argv[1] ?? '').href &&
+  process.argv[2] === '--failure'
+) {
+  const [version, distTag] = process.argv.slice(3);
+  if (!version || !distTag)
+    throw new Error('Usage: intent-web-dist-tag-sync.mjs --failure <version> <dist-tag>');
+  console.log(`::error::${distTagFailure(version, distTag)}`);
+  process.exit(1);
+} else if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const channel = process.argv[2];
   if (!channel) throw new Error('Usage: intent-web-dist-tag-sync.mjs <beta|stable>');
   const version = await fetchChannelVersion(channel);

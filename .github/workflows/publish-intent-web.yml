@@ -155,10 +155,11 @@ jobs:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
-      # Trusted publishing needs npm >= 11.5.1.
+      # Trusted publishing needs npm >= 11.5.1; the same floor as the sync
+      # job keeps the two jobs on one CLI.
       - name: Install npm with trusted publishing
         run: |
-          npm install --global npm@^11.5.1
+          npm install --global npm@^11.21.0
           npm --version
 
       - name: Download package tarball
@@ -235,9 +236,11 @@ jobs:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
+      # `npm dist-tag` does the OIDC exchange only from npm 11.21.0 (not in
+      # 12.0 or 12.1); the printed version shows which CLI a failed sync ran.
       - name: Install npm with trusted publishing
         run: |
-          npm install --global npm@^11.5.1
+          npm install --global npm@^11.21.0
           npm --version
 
       - name: Plan dist-tag sync
@@ -253,7 +256,7 @@ jobs:
           DIST_TAG: ${{ steps.sync.outputs.dist_tag }}
         run: |
           if ! npm dist-tag add "@intent-hq/web@${VERSION}" "$DIST_TAG"; then
-            echo "::error::npm rejected moving the ${DIST_TAG} dist-tag to @intent-hq/web@${VERSION}. Enable \"Allow npm dist-tag\" on the package's Trusted Publisher (npmjs.com → @intent-hq/web → Settings) and rerun, or as an @intent-hq owner run: npm dist-tag add @intent-hq/web@${VERSION} ${DIST_TAG} (docs/intent-web-package.md)."
+            node scripts/intent-web-dist-tag-sync.mjs --failure "$VERSION" "$DIST_TAG"
             exit 1
           fi
           echo "::notice::Moved dist-tag ${DIST_TAG} to @intent-hq/web@${VERSION}."
