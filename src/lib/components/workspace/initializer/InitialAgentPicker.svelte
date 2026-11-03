@@ -231,7 +231,8 @@
   }
 
   // A model the chosen machine can't run (missing there, or an account-folder
-  // configuration) falls back to one it can, as the daemon would refuse it.
+  // configuration), whether picked or inherited, falls back to one it can, as
+  // the daemon would refuse it.
   $effect(() => {
     const machine = startOnMachine;
     if (!effectiveStartOn || !machine || $remoteSwitchSupport$ !== 'supported') return;
@@ -251,7 +252,9 @@
     const fallback = machineModelFallback({
       groups,
       providerRef: selectedProvider,
-      model: modelWasOverridden ? selectedModel : undefined,
+      // The daemon resolves an inherited specialist/Settings model before
+      // remote admission, so check it as well as an explicit override.
+      model: modelWasOverridden ? selectedModel : activeDefaultModel,
     });
     if (fallback) untrack(() => applyMachineFallback(fallback));
   });

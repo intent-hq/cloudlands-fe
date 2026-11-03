@@ -540,6 +540,41 @@ describe('New Workspace → Start On', () => {
     });
   });
 
+  it('falls back when the inherited model is one the chosen machine can’t run', async () => {
+    // No override: the specialist's model (fable-5) is inherited, and the
+    // daemon resolves it before remote admission, so it must be checked too.
+    mocks.remote.machines = {
+      [MACHINE.id]: {
+        ...MACHINE,
+        capabilities: { providers: [{ id: 'auggie', status: 'ready', models: ['opus4.6'] }] },
+      },
+    };
+    const view = await createWith({
+      startOnMachineId: MACHINE.id,
+      selectedModel: undefined,
+      modelWasOverridden: false,
+    });
+    await waitFor(() => expect(screen.getByTestId('picker-machine').textContent).toBe('node-mac'));
+    expect(screen.getByTestId('picker-default').textContent).toBe('fable-5');
+    expect(await submit(view)).toMatchObject({
+      placement: { target: 'remote', checkout: 'isolated', nodeId: 'node-mac' },
+      model: 'opus4.6',
+      provider: 'auggie',
+    });
+  });
+
+  it('keeps an inherited model the chosen machine can run', async () => {
+    const view = await createWith({
+      startOnMachineId: MACHINE.id,
+      selectedModel: undefined,
+      modelWasOverridden: false,
+    });
+    await waitFor(() => expect(screen.getByTestId('picker-machine').textContent).toBe('node-mac'));
+    const agent = await submit(view);
+    expect(agent).toMatchObject({ placement: { nodeId: 'node-mac' } });
+    expect(agent.model).toBeUndefined();
+  });
+
   it('keeps a new repository on the backend: a remote agent needs a commit', async () => {
     mocks.agentByRepo['local:/tmp/new-repo'] = { ...AGENT, startOnMachineId: MACHINE.id };
     mocks.compactFormState$.set({
