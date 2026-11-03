@@ -114,10 +114,22 @@ export async function createIntentWebServer(options: WebServerOptions) {
       ? 'local'
       : (list.find((r) => r.id === active)?.id ?? list[0]?.id ?? null);
   };
+  // Filled in once the server exists; a machine with a live browser bridge
+  // reads as connected in every tab's Machines list.
+  let bridged = (): Set<string> => new Set();
   const listConnections = async (requested: string | null) => {
-    const connections = await records();
+    const live = bridged();
+    const connections = (await records()).map((r) => ({
+      ...r,
+      status: live.has(r.id) ? ('connected' as const) : ('not-open' as const),
+    }));
     const id = connections.some((r) => r.id === requested) ? requested : await defaultBackend();
     return { connections, activeId: id, windowBackendId: id };
+  };
+  const publishList = () => {
+    void listConnections(null)
+      .then((value) => publish('connections:changed', value))
+      .catch(() => {});
   };
   const config = async (id: string) => {
     const record = (await records()).find((r) => r.id === id);
@@ -230,6 +242,7 @@ export async function createIntentWebServer(options: WebServerOptions) {
     res.end(JSON.stringify(value));
   };
   const server = createBrowserAccessServer({
+    onBridgesChanged: publishList,
     webRoot: options.webRoot,
     getAccessKey: options.getAccessKey,
     listConnections,
@@ -399,11 +412,8 @@ globalThis.__INTENT_RUNTIME_CONFIG__=Object.freeze({backendId:backend,intentdWsU
       return true;
     },
   });
-  const unsubscribe = store.onConnectionsMutated(() => {
-    void listConnections(null)
-      .then((value) => publish('connections:changed', value))
-      .catch(() => {});
-  });
+  bridged = () => server.bridgedBackendIds?.() ?? new Set();
+  const unsubscribe = store.onConnectionsMutated(publishList);
   return {
     ...server,
     disconnectAll: () => {
