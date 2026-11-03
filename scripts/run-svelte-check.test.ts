@@ -827,7 +827,7 @@ function createWrapperFixture() {
   symlinkSync(
     path.dirname(path.resolve('node_modules/typescript/package.json')),
     path.join(dir, 'node_modules/typescript'),
-    'dir',
+    'junction',
   );
   writeFileSync(
     path.join(dir, 'tsconfig.json'),

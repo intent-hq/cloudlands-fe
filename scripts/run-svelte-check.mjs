@@ -15,7 +15,7 @@
  */
 
 import { execFileSync, spawn } from 'node:child_process';
-import { closeSync, mkdtempSync, openSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { closeSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -137,7 +137,12 @@ export function isTsInput(fileName) {
  * same `.svelte` extension handling). Returns null when the tsconfig is
  * missing, leaving that error to svelte-check.
  */
-export function measureNonTsInput({ ts, tsconfigPath, statSize = (file) => statSync(file).size }) {
+export function measureNonTsInput({
+  ts,
+  tsconfigPath,
+  // svelte-check's own lookup: 0 (not a throw) for a file gone since the parse.
+  statSize = (file) => ts.sys.getFileSize?.(file) ?? 0,
+}) {
   const configPath = path.resolve(tsconfigPath);
   const text = ts.sys.readFile(configPath);
   if (text === undefined) return null;
