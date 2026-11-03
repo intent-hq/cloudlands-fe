@@ -43,14 +43,16 @@ export const SCRIPT_OUTPUT_STREAM_WAIT_MS = 5_000;
 function* waitForLiveOutputStream(workspaceId: string): SagaGenerator<void> {
   if (yield* selectScriptOutputStreamReady.effect(workspaceId)) return;
   yield* race({
-    ready: take(
-      (action: { type: string; payload?: unknown }) =>
-        action.type === scriptOutputStreamReady.type &&
-        Array.isArray(action.payload) &&
-        action.payload[0] === workspaceId,
-    ),
+    ready: call(takeOutputStreamReady, workspaceId),
     timeout: delay(SCRIPT_OUTPUT_STREAM_WAIT_MS),
   });
+}
+
+function* takeOutputStreamReady(workspaceId: string): SagaGenerator<void> {
+  while (true) {
+    const { payload } = yield* take(scriptOutputStreamReady);
+    if (payload[0] === workspaceId) return;
+  }
 }
 
 function* readOutput(action: ReturnType<typeof scriptOutputRequested>): SagaGenerator<void> {
