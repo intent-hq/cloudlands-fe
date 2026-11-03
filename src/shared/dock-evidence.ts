@@ -1245,7 +1245,13 @@ export interface DockEvidenceCapabilities {
   capture: boolean;
   annotate: boolean;
   record: boolean;
+  /** Window and region capture (the OS selection UI); full screen is always available. */
+  captureModes?: boolean;
 }
+
+/** What a screenshot covers. Window and region let the person select it first. */
+export type DockCaptureMode = 'fullscreen' | 'window' | 'region';
+export const DOCK_CAPTURE_MODES: readonly DockCaptureMode[] = ['fullscreen', 'window', 'region'];
 
 /** A finished clip written by native to a host path, ready for attachment placement. */
 export interface DockClipFile {
@@ -1303,7 +1309,8 @@ export type DockEvidenceNativeEvent =
 export interface DockEvidenceNativeService {
   /** Absent means only `captureDisplay` is implemented (annotate and record stay disabled). */
   readonly capabilities?: DockEvidenceCapabilities;
-  captureDisplay(): Promise<DockNativeResult<DockCapturedPixels>>;
+  /** A dismissed window/region selection fails with `detail: 'cancelled'`. */
+  captureDisplay(mode?: DockCaptureMode): Promise<DockNativeResult<DockCapturedPixels>>;
   /** `still` annotates an existing image instead of the live screen. */
   startAnnotation(session: {
     id: string;

@@ -1272,6 +1272,12 @@ export interface AgentMetadata {
   // rendering so state agrees across reloads and clients. Absent on legacy
   // daemons and while nothing has been resolved.
   proposalResolutions?: Record<string, 'applied' | 'dismissed'>;
+  // Workspaces created by applied workspace-create proposals (PROTOCOL §5.5):
+  // proposalId → workspaceId, recorded by the daemon when it resolves a card
+  // for a create it ran (card Apply with `origin`, `ws.workspace.applyProposal`).
+  // Lets an applied card open its workspace whoever applied it. Detail-only;
+  // absent on older daemons.
+  proposalCreatedWorkspaces?: Record<string, string>;
   // Per-conversation seen marker (PROTOCOL §5.5, `agent.markSeen`): id of the
   // newest message the user had seen. Persisted by the daemon in session
   // metadata, served on AgentLite / agent.getSession, converged via
@@ -1305,7 +1311,8 @@ export interface AgentMetadata {
     | undefined
     | any[]
     | ContextReference[]
-    | Record<string, 'applied' | 'dismissed'>;
+    | Record<string, 'applied' | 'dismissed'>
+    | Record<string, string>;
 }
 
 /**

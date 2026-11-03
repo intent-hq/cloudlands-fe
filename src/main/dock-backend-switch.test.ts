@@ -228,6 +228,20 @@ describe('owned dock capture visibility release', () => {
     expect(window.focus).not.toHaveBeenCalled();
   });
 
+  it('hides for a window or region selection without telling the dock document', () => {
+    fixture.captureHidden.mockClear();
+    vi.mocked(window.showInactive).mockClear();
+    dock.setDockHiddenForSelection(true, { window });
+    expect(window.isVisible()).toBe(false);
+    // While selecting, nothing reveals or focuses the dock.
+    dock.focusDockWindow();
+    expect(window.focus).not.toHaveBeenCalled();
+    dock.setDockHiddenForSelection(false, { window });
+    expect(window.showInactive).toHaveBeenCalledTimes(1);
+    // The surface (draft, editor, mark chips) stays mounted: no capture-hidden placement.
+    expect(fixture.captureHidden).not.toHaveBeenCalled();
+  });
+
   it('does not revive a dock while the desktop session is paused', async () => {
     const { powerMonitor } = await import('electron');
     dock.setDockHiddenForCapture(true, { window });

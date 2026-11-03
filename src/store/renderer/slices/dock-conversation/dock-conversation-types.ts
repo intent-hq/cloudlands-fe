@@ -2,6 +2,7 @@ import type { AgentMessage } from '$shared/types';
 import type { ContextItem } from '$lib/components/chat/input/context-api';
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 import type {
+  DockCaptureMode,
   DockComposerEvidence,
   DockEvidenceCapabilities,
   DockMarkTool,
@@ -95,6 +96,8 @@ export interface DockConversationState {
    * annotate button keeps its pencil until a tool is used this session).
    */
   rememberedToolByWorkspace: Record<string, DockMarkTool>;
+  /** What the screenshot button captures; full screen until another mode is chosen. */
+  captureMode: DockCaptureMode;
   /** Installed native capabilities; null when no native boundary is installed. */
   nativeCapabilities: DockEvidenceCapabilities | null;
   /** Last observed server capabilities and the connection they belong to. */

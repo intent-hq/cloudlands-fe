@@ -33,10 +33,10 @@
   import BulkProposalItems from './BulkProposalItems.svelte';
   import SettingsChangeCard from './SettingsChangeCard.svelte';
   import SpecialistChangeCard from './SpecialistChangeCard.svelte';
+  import { openCreatedWorkspace } from './open-created-workspace';
   import ProposalCardHeader from './ProposalCardHeader.svelte';
   import { getProposalId } from './proposal-id';
   import type { ProposalCardDraft } from './proposal-draft-storage';
-  import { openAndShowWorkspace } from '$lib/utils/show-workspace';
   import {
     selectProposalError,
     selectProposalErrorCode,
@@ -94,6 +94,15 @@
      * host can route discard through its own confirm dialog + resolve flow.
      */
     suppressLocalDiscard?: boolean;
+    /** Host-provided card-scoped lifecycle key (`getCardProposalId`). */
+    lifecycleId?: string;
+    /**
+     * Daemon-recorded workspace this card created
+     * (`metadata.proposalCreatedWorkspaces`), used when the local apply
+     * result has none (applied by the agent, another client, or before a
+     * restart).
+     */
+    resolvedCreatedWorkspaceId?: string;
   }
 
   type EditorHandle = {
@@ -114,6 +123,8 @@
     initialDraft = null,
     onDraftChange,
     suppressLocalDiscard = false,
+    lifecycleId,
+    resolvedCreatedWorkspaceId,
   }: Props = $props();
 
   // Captured once at init (tray remounts per proposal via {#key}), so a
@@ -203,7 +214,7 @@
   const fields = $derived(proposal.preview.fields ?? []);
   const bulkItems = $derived(proposal.preview.bulkItems ?? []);
   const diff = $derived(proposal.preview.diff);
-  const proposalId = $derived(getProposalId(proposal));
+  const proposalId = $derived(lifecycleId ?? getProposalId(proposal));
   const lifecycleStatus = selectProposalStatus(untrack(() => proposalId));
   const lifecycleError = selectProposalError(untrack(() => proposalId));
   const lifecycleErrorCode = selectProposalErrorCode(untrack(() => proposalId));
@@ -222,7 +233,7 @@
   const isFailed = $derived($lifecycleStatus === 'failed');
   const isApplied = $derived($lifecycleStatus === 'applied');
   const showDismissed = $derived(isDismissed);
-  const createdWorkspaceId = $derived($lifecycleResult?.workspaceId);
+  const createdWorkspaceId = $derived($lifecycleResult?.workspaceId ?? resolvedCreatedWorkspaceId);
   const isWorkspaceCreated = $derived(isWorkspaceCreate && isApplied);
   const workspaceHeading = $derived(
     isSiblingWorkspaceCreate ? workspaceTitle : proposal.preview.title,
@@ -880,6 +891,7 @@
       proposal,
       editedFields: isWorkspaceCreate ? buildWorkspaceEditedFields() : fieldValues,
       selectedBulkItemIds,
+      ...(lifecycleId ? { lifecycleId } : {}),
     };
   }
 
@@ -928,7 +940,7 @@
   async function handleOpenCreatedWorkspace(event: MouseEvent) {
     if (!createdWorkspaceId) return;
     event.preventDefault();
-    await openAndShowWorkspace(createdWorkspaceId);
+    await openCreatedWorkspace(createdWorkspaceId);
   }
 </script>
 

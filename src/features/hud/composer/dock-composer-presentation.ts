@@ -245,6 +245,9 @@ export function buildDockComposerMedia(input: {
       capturePending: view.capturePending,
       captureDisabled: !caps.capture || view.captureDisabled,
       ...(view.captureDisabled ? { captureTooltip: labels.captureLimit } : {}),
+      // An annotate session captures the whole screen its marks belong to: no other mode.
+      captureMode: view.evidence?.annotation ? 'fullscreen' : view.captureMode,
+      captureModesAvailable: !!caps.captureModes && !view.evidence?.annotation,
       annotationActive: view.annotating,
       tool: view.tool,
       toolUsed: view.toolUsed,

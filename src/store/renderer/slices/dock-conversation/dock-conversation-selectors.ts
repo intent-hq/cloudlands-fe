@@ -362,6 +362,7 @@ export const selectDockComposerEvidence = store.createSelector(
         dock.rememberedToolByWorkspace[workspaceId] ??
         ('pick' as const),
       toolUsed: workspaceId in dock.toolByWorkspace,
+      captureMode: dock.captureMode,
       annotating: !!evidence?.annotation && evidence.annotation.mode !== 'dictation',
       dictation: evidence?.dictation ?? null,
       recording: !!recordingDockClip(evidence),
