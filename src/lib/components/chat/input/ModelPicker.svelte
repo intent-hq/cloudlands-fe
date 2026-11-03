@@ -340,8 +340,9 @@
     /** Show decorative provider and reasoning icons inside the trigger. */
     showTriggerIcons?: boolean;
     /**
-     * Show the selected profile name beside the model. When false, the name
-     * moves to the trigger's hover tooltip so a narrow trigger keeps the model.
+     * Show the selected profile name beside the model. When false, a narrow
+     * trigger keeps the model; the accessible label still names the profile, and
+     * so does the hover tooltip unless a model warning replaces it.
      */
     showProfileName?: boolean;
     /** Preferred side for the open menu; `left` falls back to vertical without room. */
