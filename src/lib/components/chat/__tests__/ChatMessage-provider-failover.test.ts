@@ -9,6 +9,7 @@ import { render, screen } from '@testing-library/svelte';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { AgentMessage } from '$shared/types';
+import { withWorkspaceViewer } from '../../../../test/fixtures/principal-state';
 
 let mockStoreState: Record<string, unknown> = {};
 
@@ -116,7 +117,7 @@ describe('ChatMessage — provider_failover row', () => {
     // The global catalog no longer has the backup profile; the workspace's own
     // catalog (what the agent actually runs against) still does.
     beforeEach(() => {
-      mockStoreState = workspaceCatalogState();
+      mockStoreState = withWorkspaceViewer(workspaceCatalogState(), 'ws-1', 'owner');
     });
 
     const row = () =>
@@ -144,11 +145,21 @@ describe('ChatMessage — provider_failover row', () => {
       expect(text).toContain('continuing on Work (backup)');
       expect(text).not.toContain('Removed profile');
     });
+
+    it("a guest sees the bare provider, never the host's profile name", () => {
+      mockStoreState = withWorkspaceViewer(workspaceCatalogState(), 'ws-1', 'guest');
+      render(AgentMessageList, {
+        props: { messages: [row()], workspaceId: 'ws-1', enableTransitions: false },
+      });
+      expect(screen.getByRole('status').textContent?.trim()).toBe(
+        'Claude Code ran out of quota — continuing on Claude Code (backup)',
+      );
+    });
   });
 
   describe('provider_returned row', () => {
     beforeEach(() => {
-      mockStoreState = workspaceCatalogState();
+      mockStoreState = withWorkspaceViewer(workspaceCatalogState(), 'ws-1', 'owner');
     });
 
     const returnedRow = (): AgentMessage =>
