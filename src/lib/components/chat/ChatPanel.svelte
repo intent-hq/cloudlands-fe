@@ -166,6 +166,7 @@
   import {
     selectAwaitingSwitchBackSnapshot,
     selectChatError,
+    selectChatIsInterrupting,
     selectChatAgentState,
     selectInitialChatHistory,
     selectInitialChatHistoryPending,
@@ -637,6 +638,7 @@
   const workspaceTasksInitialized$ = selectWorkspaceTasksInitialized(workspaceIdStore);
   const chatStreamingContent$ = selectAgentSessionStreamingContent(agentIdStore);
   const chatError$ = selectChatError(agentIdStore);
+  const chatIsInterrupting$ = selectChatIsInterrupting(agentIdStore);
   const chatFailureCorrelation$ = selectChatFailureCorrelation(agentIdStore);
   const chatStreamingStartTime$ = selectChatStreamingStartTime(agentIdStore);
   const chatLastChunkTime$ = selectChatLastChunkTime(agentIdStore);
@@ -856,6 +858,8 @@
       busy,
       blocked:
         isRetiredSession || !!effectiveError || !!$chatModelUnavailable$ || hasPendingPermission,
+      interrupted:
+        $chatIsInterrupting$ || latestAssistantForTelemetry?.metadata?.stopReason === 'interrupted',
       queue,
       delivered,
       now: Date.now(),
@@ -867,9 +871,12 @@
   });
 
   // Re-evaluate at the prediction deadline so an undelivered row returns to the queue.
+  // Reading the clock re-arms the timer if it fires before Date.now() reaches
+  // the deadline (timers run on a monotonic clock).
   $effect(() => {
+    void queueDrainClock;
     const prediction = queueDrainPredictor.state.prediction;
-    if (!prediction || $agentIsResponding$ || $agentSessionIsStreaming$) return;
+    if (!prediction) return;
     const timer = setTimeout(
       () => {
         queueDrainClock += 1;

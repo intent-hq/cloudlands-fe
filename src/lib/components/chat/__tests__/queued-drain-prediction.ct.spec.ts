@@ -77,3 +77,41 @@ test('hands the row to the daemon once the queued entry is delivered', async ({ 
   await expect(row).toHaveCount(0);
   await expect(component.getByTestId('queued-messages-container')).toHaveCount(0);
 });
+
+test('keeps queued messages in the queue when the user stops the turn', async ({ mount, page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  // The daemon stamps the stopped turn's final assistant row (PROTOCOL §7.2);
+  // agent.stop leaves the queue untouched, so nothing is about to be sent.
+  const stopped = {
+    queued: true,
+    width: 620,
+    height: 700,
+    messages: [
+      {
+        id: 'stopped-user',
+        role: 'user' as const,
+        timestamp: '2026-11-03T12:00:00.000Z',
+        contentBlocks: [{ type: 'text' as const, text: 'Start the long task.' }],
+      },
+      {
+        id: 'stopped-assistant',
+        role: 'assistant' as const,
+        timestamp: '2026-11-03T12:00:05.000Z',
+        contentBlocks: [{ type: 'text' as const, text: 'Working on it' }],
+        metadata: { stopReason: 'interrupted', interruptReason: 'user_stop' as const },
+      },
+    ],
+  };
+  const component = await mount(ChatPanelComposerGeometryHost, {
+    props: { ...stopped, streaming: true },
+  });
+  const queue = component.getByTestId('queued-messages-container');
+  await expect(queue).toContainText(QUEUED_TEXT);
+
+  await component.update({ props: { ...stopped, streaming: false } });
+
+  await expect(queue).toContainText(QUEUED_TEXT);
+  await expect(
+    component.locator('[data-message-role="user"]').filter({ hasText: QUEUED_TEXT }),
+  ).toHaveCount(0);
+});

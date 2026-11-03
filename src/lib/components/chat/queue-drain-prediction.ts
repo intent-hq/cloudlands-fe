@@ -2,10 +2,11 @@ import type { QueuedMessage } from '$shared/types';
 import { isQueuedMessageReadyForBatch } from '$lib/utils/queued-message-permissions';
 
 /**
- * How long a predicted drain may show queued rows as sent while the agent is
- * still idle. The daemon normally starts the drained turn well within this; a
- * prediction that outlives it (a gate the client cannot see, such as a
- * quarantined runtime) hands the rows back to the queue card.
+ * How long a predicted drain may show queued rows as sent. The daemon normally
+ * starts the drained turn and replaces them with its own rows well within
+ * this; a prediction that outlives it (a gate the client cannot see, such as a
+ * quarantined runtime, or a turn that was not the drain) hands the rows back
+ * to the queue card.
  */
 export const QUEUE_DRAIN_PREDICTION_TIMEOUT_MS = 10_000;
 
@@ -25,6 +26,13 @@ export interface QueueDrainPredictorInput {
   busy: boolean;
   /** A visible condition stops the daemon from draining (error, permission, retired). */
   blocked: boolean;
+  /**
+   * The turn was stopped or preempted (a local Stop in flight, or the final
+   * assistant row marked `stopReason: "interrupted"`). Only a turn that ends
+   * on its own drains the queue: Stop leaves it untouched and a preempting
+   * message starts its own turn.
+   */
+  interrupted: boolean;
   /** The full confirmed queue in daemon order, every origin included. */
   queue: readonly QueuedMessage[];
   /** Entries already shown by authoritative evidence (processing rows or transcript). */
@@ -63,24 +71,26 @@ function isPredictable(message: QueuedMessage, now: number): boolean {
 /**
  * Bridge the gap between a turn ending and the daemon starting the queued turn.
  *
- * Only the busy→idle edge starts a prediction: that is the moment the daemon
- * drains. An idle agent that merely has queued work (a reload, a held entry)
- * is never shown as sending. Predicted rows stay sent until authoritative
- * evidence replaces them or they leave the queue. Without a turn starting, a
- * prediction ends at the timeout or when a visible blocker appears.
+ * Only the busy→idle edge of a turn that ended on its own starts a
+ * prediction: that is the moment the daemon drains. An idle agent that merely
+ * has queued work (a reload, a held entry) or whose turn was stopped is never
+ * shown as sending. Predicted rows stay sent until authoritative evidence
+ * replaces them or they leave the queue, and never past the timeout; while the
+ * agent is idle a visible blocker or interruption also ends the prediction.
  */
 export function advanceQueueDrainPrediction(
   state: QueueDrainPredictorState,
   input: QueueDrainPredictorInput,
 ): QueueDrainPredictorState {
-  const { busy, blocked, queue, delivered, now } = input;
+  const { busy, queue, delivered, now } = input;
+  const blocked = input.blocked || input.interrupted;
   const timeoutMs = input.timeoutMs ?? QUEUE_DRAIN_PREDICTION_TIMEOUT_MS;
   let prediction = state.prediction;
 
   if (prediction) {
     const queued = new Set(queue.map((message) => message.id));
     const ids = prediction.ids.filter((id) => queued.has(id) && !delivered.has(id));
-    const expired = !busy && now - prediction.startedAt >= timeoutMs;
+    const expired = now - prediction.startedAt >= timeoutMs;
     // A new idle edge re-predicts from the current queue below.
     const turnEnded = state.wasBusy && !busy;
     if (!ids.length || expired || (blocked && !busy) || turnEnded) prediction = null;

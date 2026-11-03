@@ -43,6 +43,11 @@ export const selectChatError = store.createSelector(
   (state, agentId: string): string | null => getAgentChatState(state, agentId).error,
 );
 
+/** A local Stop is in flight (set on click, cleared once the stop settles). */
+export const selectChatIsInterrupting = store.createSelector(
+  (state, agentId: string): boolean => getAgentChatState(state, agentId).isInterrupting,
+);
+
 export const selectChatFailureCorrelation = store.createSelector(
   (state, agentId: string): StreamFailureCorrelation | undefined =>
     getAgentChatState(state, agentId).failureCorrelation,

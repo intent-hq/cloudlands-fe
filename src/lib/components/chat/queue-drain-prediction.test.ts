@@ -22,6 +22,7 @@ function step(
   return advanceQueueDrainPrediction(state, {
     busy: false,
     blocked: false,
+    interrupted: false,
     delivered: none,
     now: 1_000,
     ...input,
@@ -86,13 +87,30 @@ describe('advanceQueueDrainPrediction', () => {
     let state = step(busyWith([queued('a')]), { queue: [queued('a')] });
     state = step(state, { queue: [queued('a')], busy: true, now: 2_000 });
     expect(state.prediction?.ids).toEqual(['a']);
+    state = step(state, { queue: [], busy: true, now: 3_000 });
+    expect(state.prediction).toBeNull();
+  });
+
+  it('hands the rows back at the timeout even when a turn that is not the drain is running', () => {
+    let state = step(busyWith([queued('a')]), { queue: [queued('a')] });
+    state = step(state, { queue: [queued('a')], busy: true, now: 2_000 });
     state = step(state, {
       queue: [queued('a')],
       busy: true,
-      now: 1_000 + QUEUE_DRAIN_PREDICTION_TIMEOUT_MS * 2,
+      now: 1_000 + QUEUE_DRAIN_PREDICTION_TIMEOUT_MS,
     });
+    expect(state.prediction).toBeNull();
+  });
+
+  it('does not predict when the turn was stopped or preempted', () => {
+    const state = step(busyWith([queued('a')]), { queue: [queued('a')], interrupted: true });
+    expect(state.prediction).toBeNull();
+  });
+
+  it('ends an idle prediction when the interruption is reported after the turn ends', () => {
+    let state = step(busyWith([queued('a')]), { queue: [queued('a')] });
     expect(state.prediction?.ids).toEqual(['a']);
-    state = step(state, { queue: [], busy: true, now: 30_000 });
+    state = step(state, { queue: [queued('a')], interrupted: true, now: 1_050 });
     expect(state.prediction).toBeNull();
   });
 
