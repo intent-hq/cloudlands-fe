@@ -88,6 +88,7 @@ export function withHostPrincipal(
 /**
  * A settled window viewing workspace `wsId`: its owner on their own host, or
  * a guest it was shared with (a `collaborator` row on a guest principal).
+ * The workspace list holds only `wsId`; any rows in `input` are replaced.
  */
 export function withWorkspaceViewer(
   input: object,
