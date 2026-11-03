@@ -392,6 +392,9 @@ function divergedRepo() {
   write(repo, 'src/main/edited-on-main.ct.spec.ts', 'v2');
   write(repo, 'src/main/Widget.svelte', '<p>v2</p>\n');
   const mainTip = commitAll(repo, 'main moves ahead');
+  // Lets clones fetch a commit that is no longer a branch tip by its SHA under
+  // any protocol version, as GitHub serves the event SHAs.
+  git(repo, 'config', 'uploadpack.allowAnySHA1InWant', 'true');
   return { repo, branched, prHead, mainTip };
 }
 
@@ -668,11 +671,21 @@ describe('release-fast-path diff base', () => {
     return readFileSync(githubEnv, 'utf8');
   }
 
+  // CI's shape: refs/pull/N/merge checked out at depth 2, plus the event base
+  // fetched at depth 1 (as the job did before it resolved the base itself).
   function prMergeCheckout() {
     const { repo, branched, prHead, mainTip } = divergedRepo();
     git(repo, 'checkout', '-q', '--detach', mainTip);
     git(repo, 'merge', '-q', '--no-ff', '-m', `Merge ${prHead} into ${mainTip}`, prHead);
-    return { repo, branched, prHead, mainTip };
+    git(repo, 'update-ref', 'refs/pull/1/merge', 'HEAD');
+    const checkout = tempDir();
+    git(checkout, 'init', '-q');
+    git(checkout, 'remote', 'add', 'origin', `file://${repo}`);
+    git(checkout, 'fetch', '-q', '--depth=2', 'origin', 'refs/pull/1/merge');
+    git(checkout, 'checkout', '-q', 'FETCH_HEAD');
+    git(checkout, 'fetch', '-q', '--depth=1', 'origin', branched);
+    expect(git(checkout, 'rev-parse', '--is-shallow-repository')).toBe('true');
+    return { checkout, branched, prHead, mainTip };
   }
 
   it('checks out the merge commit and its parents', () => {
@@ -685,34 +698,41 @@ describe('release-fast-path diff base', () => {
   });
 
   it('uses the merge commit’s first parent, not a lagging pull_request.base.sha', () => {
-    const { repo, branched, prHead, mainTip } = prMergeCheckout();
-    expect(resolveBase(repo, { EVENT_BASE_SHA: branched, PR_HEAD_SHA: prHead })).toBe(
+    const { checkout, branched, prHead, mainTip } = prMergeCheckout();
+    expect(resolveBase(checkout, { EVENT_BASE_SHA: branched, PR_HEAD_SHA: prHead })).toBe(
       `BASE_SHA=${mainTip}\n`,
     );
     // The lagging base reproduces the incident; the resolved one does not.
-    expect(cli(repo, '--diff', branched, 'HEAD').at(-1)).toBe(
+    expect(cli(checkout, '--diff', branched, 'HEAD').at(-1)).toBe(
       'ct_changed_specs=["src/main/edited-on-main.ct.spec.ts","src/pr/own.ct.spec.ts"]',
     );
-    expect(cli(repo, '--diff', mainTip, 'HEAD').at(-1)).toBe(
+    expect(cli(checkout, '--diff', mainTip, 'HEAD').at(-1)).toBe(
       'ct_changed_specs=["src/pr/own.ct.spec.ts"]',
     );
+    expect(cli(checkout, '--affected', mainTip, 'HEAD').slice(-2)).toEqual([
+      'ct_affected_specs=[]',
+      'ct_affected_over_budget=[]',
+    ]);
   });
 
   it('keeps the event base, fetched, when HEAD is not a merge of the PR head', () => {
     const { repo, branched, prHead } = divergedRepo();
-    git(repo, 'config', 'uploadpack.allowAnySHA1InWant', 'true');
-    const checkout = tempDir();
-    git(checkout, 'init', '-q');
-    git(checkout, 'remote', 'add', 'origin', `file://${repo}`);
-    git(checkout, 'fetch', '-q', '--depth=2', 'origin', prHead);
-    git(checkout, 'checkout', '-q', prHead);
     // Queue entries have no PR head; a PR checked out at its head keeps it too.
     for (const env of [
       { EVENT_BASE_SHA: branched },
       { EVENT_BASE_SHA: branched, PR_HEAD_SHA: prHead },
-    ])
+    ]) {
+      const checkout = tempDir();
+      git(checkout, 'init', '-q');
+      git(checkout, 'remote', 'add', 'origin', `file://${repo}`);
+      git(checkout, 'fetch', '-q', '--depth=1', 'origin', prHead);
+      git(checkout, 'checkout', '-q', prHead);
+      const present = () =>
+        spawnSync('git', ['cat-file', '-e', `${branched}^{commit}`], { cwd: checkout }).status;
+      expect(present()).not.toBe(0);
       expect(resolveBase(checkout, env)).toBe(`BASE_SHA=${branched}\n`);
-    expect(git(checkout, 'cat-file', '-t', branched)).toBe('commit');
+      expect(present()).toBe(0);
+    }
   });
 });
 
