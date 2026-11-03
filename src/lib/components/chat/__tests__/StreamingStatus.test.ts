@@ -311,6 +311,7 @@ describe('StreamingStatus rendered UI', () => {
     });
 
     expect(screen.queryByTestId('error-title')).toBeNull();
+    expect(screen.getByRole('alert').getAttribute('aria-live')).toBe('assertive');
     const card = screen.getByTestId('error-model-unavailable');
     expect(card.textContent).toContain('Model unavailable');
     expect(screen.getByTestId('model-unavailable-label').textContent).toBe('gpt5.5');
@@ -376,6 +377,8 @@ describe('StreamingStatus rendered UI', () => {
       expect(screen.queryByTestId('error-title')).toBeNull();
       expect(screen.queryByTestId('retry-with-provider')).toBeNull();
       expect(screen.getAllByRole('button', { name: /retry/i })).toHaveLength(1);
+      // Losing the generic error fallback must not silence the announcement.
+      expect(screen.getByRole('alert').getAttribute('aria-live')).toBe('assertive');
 
       await fireEvent.click(screen.getByTestId('quota-retry-same-provider'));
       expect(onRetry).toHaveBeenCalledOnce();

@@ -424,7 +424,7 @@
   import {
     selectProviderAuthFailureGuidance,
     selectProviderCatalogLoaded,
-    selectProviderDisplayName,
+    selectProviderConfigurationLabel,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -5902,7 +5902,7 @@
   const gatedStalledRetry = $derived(isRetiredSession ? undefined : handleStalledRetry);
 
   /**
-   * The exhausted provider, carrying its catalog display name — StreamingStatus
+   * The exhausted provider, carrying its configuration label — StreamingStatus
    * cannot resolve that name itself because the offer list below deliberately
    * excludes the exhausted provider.
    */
@@ -5910,19 +5910,26 @@
     const quota = $chatQuotaExceeded$;
     if (!quota) return null;
     void $providerCatalogEntries$;
+    void $workspaceCatalogEpoch$;
     return {
       ...quota,
-      displayName: selectProviderDisplayName.select(appStore.state, quota.providerId),
+      displayName: selectProviderConfigurationLabel.select(
+        appStore.state,
+        quota.providerId,
+        workspace?.id,
+      ),
     };
   });
 
   /**
    * Providers we can offer as a quota retry target: the
    * "enabled ∧ visible ∧ probe-available ∧ signed-in" set minus the provider
-   * that just ran out, compared by base provider so a profile never offers its
-   * own base back (`selectQuotaRetryProviderIds`). The exhausted one is
+   * that just ran out (`selectQuotaRetryProviderIds`). The exhausted one is
    * covered by the banner's plain Retry (limits reset), a signed-out one would
-   * be a dead end, and an empty list leaves only that plain Retry.
+   * be a dead end, and an empty list leaves only that plain Retry. Each offer
+   * is labelled by configuration: when a named profile runs out, its provider's
+   * Default (a separate account and quota) reads `<Provider> · Default`, not a
+   * bare name that looks like the same provider again.
    */
   const quotaRetryProviders = $derived.by(() => {
     const quota = $chatQuotaExceeded$;
@@ -5936,7 +5943,7 @@
       .select(appStore.state, quota.providerId, workspace?.id)
       .map((id) => ({
         id,
-        displayName: $providerCatalogEntries$.find((p) => p.id === id)?.displayName ?? id,
+        displayName: selectProviderConfigurationLabel.select(appStore.state, id, workspace?.id),
       }));
   });
 

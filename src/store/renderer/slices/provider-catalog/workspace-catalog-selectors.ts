@@ -1,5 +1,4 @@
 import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
-import { providerRefBaseId } from '$shared/provider-profiles';
 import { isProviderListed } from '$shared/provider-visibility';
 import type { ModelWarningKind } from '$shared/models/wire-model-info';
 import {
@@ -168,12 +167,11 @@ export const selectContextQuotaRetryProviderIds = store.createSelector(
     if (!workspaceId) return selectQuotaRetryProviderIds.select(state, exhaustedProviderId);
     const enabled = selectContextEnabledProviders.select(state, workspaceId);
     const snapshot = selectWorkspaceCatalog.select(state, workspaceId);
-    const exhaustedBaseId = providerRefBaseId(exhaustedProviderId);
     return selectContextModelProviderIds
       .select(state, workspaceId)
       .filter(
         (id) =>
-          providerRefBaseId(id) !== exhaustedBaseId &&
+          id !== exhaustedProviderId &&
           (enabled[id] ||
             snapshot?.catalog.providers.find((p) => p.id === id)?.canBeDisabled === false) &&
           isProviderAuthenticationReady(id, snapshot?.readiness[id]?.authenticated),

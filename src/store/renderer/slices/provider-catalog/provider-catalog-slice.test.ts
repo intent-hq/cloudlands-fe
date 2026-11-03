@@ -16,6 +16,7 @@ import {
   selectAllCatalogProviderIds,
   selectNormalizedProviderId,
   selectProviderDisplayName,
+  selectProviderConfigurationLabel,
   selectEffectiveDefaultProviderId,
   selectProviderAuthFailureGuidance,
   selectProviderCatalogEntries,
@@ -298,6 +299,45 @@ describe('authoritative provider alias identity', () => {
       }
     },
   );
+});
+
+describe('selectProviderConfigurationLabel', () => {
+  const withProfiles = (defaultNames?: Record<string, string>) =>
+    storeWith(
+      providerCatalogReducer(
+        initialState,
+        providerCatalogLoaded({
+          ...CATALOG,
+          profiles: [
+            { id: 'work', providerRef: 'auggie@work', baseProviderId: 'auggie', name: 'Work' },
+          ],
+          ...(defaultNames ? { defaultNames } : {}),
+        }),
+      ),
+    );
+
+  it('reads the bare provider name while the provider has no profiles', () => {
+    const state = storeWith(providerCatalogReducer(initialState, providerCatalogLoaded(CATALOG)));
+    expect(selectProviderConfigurationLabel.select(state, 'auggie')).toBe('Augment Auggie');
+  });
+
+  it('qualifies the Default as well as named profiles once profiles exist', () => {
+    const state = withProfiles();
+    expect(selectProviderConfigurationLabel.select(state, 'auggie')).toBe(
+      'Augment Auggie · Default',
+    );
+    expect(selectProviderConfigurationLabel.select(state, 'auggie@work')).toBe(
+      'Augment Auggie · Work',
+    );
+    // The plain display name stays bare for every other caller.
+    expect(selectProviderDisplayName.select(state, 'auggie')).toBe('Augment Auggie');
+  });
+
+  it('uses a renamed Default', () => {
+    expect(
+      selectProviderConfigurationLabel.select(withProfiles({ auggie: 'Personal' }), 'auggie'),
+    ).toBe('Augment Auggie · Personal');
+  });
 });
 
 it('retains workspace snapshots during refresh and clears them across connection and workspace lifetimes', async () => {

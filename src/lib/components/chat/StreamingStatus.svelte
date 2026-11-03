@@ -74,8 +74,8 @@
     quotaExceeded?: { providerId: string; displayName?: string } | null;
     /**
      * Alternative providers offerable for a quota retry — enabled, installed
-     * and authenticated, minus the exhausted one (and its other profiles).
-     * Empty means no alternative is usable, so the card offers only Retry.
+     * and authenticated, minus the exhausted one. Empty means no alternative
+     * is usable, so the card offers only Retry.
      */
     quotaRetryProviders?: Array<{ id: string; displayName: string }>;
     /** Transient lifecycle status events from the backend */
@@ -363,8 +363,8 @@
 {#if visible}
   {#if status !== 'normal'}
     <div
-      role={status === 'error' ? 'alert' : undefined}
-      aria-live={status === 'error' ? 'assertive' : undefined}
+      role="alert"
+      aria-live="assertive"
       data-stream-terminal-error="true"
       data-testid="failure-recovery-card"
       class={cn(
