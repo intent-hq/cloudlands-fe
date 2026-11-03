@@ -48,7 +48,6 @@ const make = (platform: NodeJS.Platform = 'darwin') =>
     root: () => root,
     osascript,
     writeImage: vi.fn(async () => undefined),
-    writeText: vi.fn(async () => undefined),
   });
 const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
 const mark = {
@@ -103,6 +102,8 @@ describe('dock media clipboard', () => {
     expect(await fs.readFile(write.at(-1)!)).toEqual(Buffer.from(png));
     expect(await service.read()).toEqual({
       kind: 'image',
+      name: 'screenshot-20261103.png',
+      size: png.byteLength,
       pixels: { ...screenshot.intent.pixels, base64: Buffer.from([9, 9, 9]).toString('base64') },
       marks: [mark],
     });
@@ -170,9 +171,11 @@ describe('dock media clipboard', () => {
     expect(await service.read()).toMatchObject({ kind: 'clip' });
   });
 
-  it('elsewhere writes the image itself, and never recognises a paste', async () => {
+  it('elsewhere writes the image itself, refuses a recording, and never recognises a paste', async () => {
     const service = make('linux');
     expect(await service.write(screenshot)).toEqual({ ok: true });
+    // Only a path could reach the clipboard: refused, so Cut keeps the recording.
+    expect(await service.write(clip)).toEqual({ ok: false, error: 'unsupported' });
     expect(osascript).not.toHaveBeenCalled();
     expect(await service.read()).toBeNull();
   });

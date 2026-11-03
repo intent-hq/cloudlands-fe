@@ -99,7 +99,8 @@ describe('dockMediaCopyRequest', () => {
   });
 
   it('copies a finished recording from its playback file', async () => {
-    const fetchBytes = vi.fn(async () => new Uint8Array([1]));
+    const movie = new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112, 105, 115, 111, 109]);
+    const fetchBytes = vi.fn(async () => movie);
     const request = await dockMediaCopyRequest('clip-1', source({ fetchBytes }));
     expect(request).toMatchObject({
       kind: 'clip',

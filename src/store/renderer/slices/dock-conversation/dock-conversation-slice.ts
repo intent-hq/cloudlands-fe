@@ -1,4 +1,4 @@
-import type { DockMediaClipboardContent } from '$shared/dock-media-clipboard';
+import type { DockMediaClipboardContent, DockPasteOrigin } from '$shared/dock-media-clipboard';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
@@ -132,7 +132,13 @@ export const dockEvidenceBarMediaChanged = createAction<
 >('dockConversation/evidenceBarMediaChanged');
 /** Intent media pasted into this draft: an editable screenshot or a recording, with fresh ids. */
 export const dockEvidenceMediaPasted = createAction<
-  [workspaceId: string, agentId: string, content: DockMediaClipboardContent]
+  [
+    workspaceId: string,
+    agentId: string,
+    content: DockMediaClipboardContent,
+    /** Captured at the paste gesture; a stale origin places nothing. */
+    origin: DockPasteOrigin,
+  ]
 >('dockConversation/evidenceMediaPasted');
 export const dockEvidenceImageRemoveRequested = createAction<
   [workspaceId: string, agentId: string, imageId: string]

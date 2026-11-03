@@ -70,7 +70,10 @@ import {
 } from '../dock-conversation-selectors';
 import { dockConversationSaga } from './dock-conversation-saga';
 import { configureDockEvidenceNative, setDockDictationMarkSink } from './dock-evidence-saga';
-import { __resetDockRetentionProbesForTests } from '$features/hud/composer/dock-evidence-placement';
+import {
+  __resetDockRetentionProbesForTests,
+  captureDockPasteOrigin,
+} from '$features/hud/composer/dock-evidence-placement';
 import { systemStatusSuccess } from '../../daemon-health/daemon-health-slice';
 import type { SystemStatusWirePayload } from '../../daemon-health/daemon-health-types';
 import {
@@ -1980,6 +1983,8 @@ describe('dock annotate start feedback, refusals and dictation', () => {
     appStore.dispatch(
       dockEvidenceMediaPasted(workspaceA, mainA, {
         kind: 'image',
+        name: 'screenshot.png',
+        size: 8,
         pixels: {
           base64: 'iVBORw0KGgo=',
           mimeType: 'image/png',
@@ -1989,7 +1994,7 @@ describe('dock annotate start feedback, refusals and dictation', () => {
           capturedAt: '2026-11-03T12:00:00.000Z',
         },
         marks,
-      }),
+      }, captureDockPasteOrigin(workspaceA, mainA)),
     );
     await vi.waitFor(() => expect(evidenceView().tiles).toHaveLength(1));
     const tile = evidenceView().tiles[0]!;
@@ -2030,7 +2035,7 @@ describe('dock annotate start feedback, refusals and dictation', () => {
         size: 4096,
         durationMs: 42_000,
         hasMicAudio: true,
-      }),
+      }, captureDockPasteOrigin(workspaceA, mainA)),
     );
     await vi.waitFor(() => expect(evidenceView().clips[0]?.status).toBe('ready'));
     const clip = evidenceView().clips[0]!;
