@@ -10,9 +10,22 @@ const panel = "import ChatPanel from '../ChatPanel.svelte';";
 const selectors = '$store/renderer/slices/chat-state/chat-state-selectors';
 const scaffold = './mocks/chat-panel-render-scaffold';
 const incomplete = `vi.mock('${selectors}', () => ({ selectChatError: vi.fn() }));`;
-const shared = `(await import('${scaffold}')).chatStateSelectors()`;
+const shared = `(await (await import('${scaffold}')).chatStateSelectors(importOriginal))`;
 const error = { messageId: 'sharedDefaults' };
 const realError = { messageId: 'realDefaults' };
+const handListed = (name) => ({ messageId: 'handListedFactory', data: { name } });
+const scaffoldFilename = path.resolve(
+  'src/lib/components/chat/__tests__/mocks/chat-panel-render-scaffold.ts',
+);
+// The scaffold's own helpers, as they resolve the real module.
+const scaffoldHelpers = `
+  export function stub(values) { return values; }
+  export async function withRealSelectors(importOriginal, selectors) {
+    return { ...((await importOriginal()) as Record<string, unknown>), ...selectors };
+  }
+  export async function withReal(importOriginal, values = {}) {
+    return withRealSelectors(importOriginal, stub(values));
+  }`;
 const preferences = '$store/renderer/slices/user-preferences/user-preferences-selectors';
 // The cloudlands-fe#3525 shape: every selector ChatPanel read, listed by hand.
 const copiedPreferences = `vi.mock('${preferences}', () => ({
@@ -35,7 +48,7 @@ tester.run('no-copied-chat-panel-selector-mocks', rule, {
     },
     {
       filename,
-      code: `${panel} vi.mock('${selectors}', async () => ({
+      code: `${panel} vi.mock('${selectors}', async (importOriginal) => ({
         ...${shared}, selectChatError: liveSelector,
       } satisfies Record<string, unknown>));`,
     },
@@ -67,12 +80,14 @@ tester.run('no-copied-chat-panel-selector-mocks', rule, {
     {
       filename,
       code: `${panel} import { chatStateSelectors as defaults } from '${scaffold}';
-        vi.mock('${selectors}', () => ({ ...defaults(), selectChatError: liveSelector }));`,
+        vi.mock('${selectors}', async (importOriginal) => ({
+          ...(await defaults(importOriginal)), selectChatError: liveSelector,
+        }));`,
     },
     {
       filename,
       code: `${panel} import * as mocks from '${scaffold}';
-        vi.mock('${selectors}', () => mocks.chatStateSelectors());`,
+        vi.mock('${selectors}', (importOriginal) => mocks.chatStateSelectors(importOriginal));`,
     },
     { filename, code: incomplete },
     { filename, code: `// import ChatPanel from '../ChatPanel.svelte';\n${incomplete}` },
@@ -123,24 +138,24 @@ tester.run('no-copied-chat-panel-selector-mocks', rule, {
       code: `${panel} vi.mock('${selectors}', async (importOriginal) => ${withReal()});`,
     },
     { filename, code: `${panel} vi.mock('../ChatPanel.svelte', () => ({})); ${copiedPreferences}` },
-    { filename, code: `${panel} vi.mock('${selectors}', async () => ${shared});` },
+    { filename, code: `${panel} vi.mock('${selectors}', async (importOriginal) => ${shared});` },
     {
       filename,
-      code: `${panel} vi.mock('${selectors}', async () => ({ ...${shared}, selectChatError: liveSelector }));`,
+      code: `${panel} vi.mock('${selectors}', async (importOriginal) => ({ ...${shared}, selectChatError: liveSelector }));`,
     },
     {
       filename,
-      code: `${panel} vi.mock('${selectors}', async () => {
+      code: `${panel} vi.mock('${selectors}', async (importOriginal) => {
         const { chatStateSelectors: defaults } = await import('${scaffold}');
-        return { ...defaults(), selectChatError: liveSelector };
+        return { ...(await defaults(importOriginal)), selectChatError: liveSelector };
       });`,
     },
     {
       filename,
-      code: `${panel} vi.mock('${selectors}', async () => {
+      code: `${panel} vi.mock('${selectors}', async (importOriginal) => {
         const mocks = await import('${scaffold}');
-        const defaults = mocks.chatStateSelectors();
-        return { ...defaults, selectChatError: liveSelector };
+        const defaults = mocks.chatStateSelectors(importOriginal);
+        return { ...(await defaults), selectChatError: liveSelector };
       });`,
     },
     {
@@ -155,9 +170,106 @@ tester.run('no-copied-chat-panel-selector-mocks', rule, {
         ...await vi.importActual('${selectors}'), selectChatError: liveSelector,
       }));`,
     },
-    { filename, code: `${panel} vi.doMock(import('${selectors}'), async () => ${shared});` },
+    {
+      filename,
+      code: `${panel} vi.doMock(import('${selectors}'), async (importOriginal) => ${shared});`,
+    },
+    // The scaffold's selector factories start from the real module.
+    {
+      filename: scaffoldFilename,
+      code: `${scaffoldHelpers}
+        export function chatStateSelectors(importOriginal) {
+          return withReal(importOriginal, { selectTranscriptHydratedOnce: true });
+        }
+        export function agentSessionSelectors(importOriginal: () => Promise<unknown>) {
+          return withRealSelectors(importOriginal, { selectAgentSession: liveSelector });
+        }
+        export const transientUiSelectors = (importOriginal) => withReal(importOriginal);
+        export async function providerCatalogSelectors(importOriginal) {
+          return { ...(await importOriginal()), selectProviderDisplayName: liveSelector };
+        }
+        export function appClient() { return { appClient: {} }; }`,
+    },
+    // Outside the scaffold, a local *Selectors helper is not a factory.
+    { filename, code: `export function chatStateSelectors() { return stub({}); }` },
   ],
   invalid: [
+    // The cloudlands-fe#4114 shape: a scaffold factory listed by hand misses the
+    // next selector ChatPanel reads and crashes every suite that uses it.
+    {
+      filename: scaffoldFilename,
+      code: `${scaffoldHelpers}
+        export function chatStateSelectors() {
+          return stub({ selectChatError: null, selectChatIsInterrupting: false });
+        }`,
+      errors: [handListed('chatStateSelectors')],
+    },
+    {
+      filename: scaffoldFilename,
+      code: `${scaffoldHelpers}
+        export function agentSessionSelectors() {
+          return { ...stub({ selectAgentIsResponding: false }), selectAgentSession: liveSelector };
+        }`,
+      errors: [handListed('agentSessionSelectors')],
+    },
+    {
+      filename: scaffoldFilename,
+      code: `${scaffoldHelpers}
+        export const unreadTrackingSelectors = () => ({ selectDividerSession: liveSelector });`,
+      errors: [handListed('unreadTrackingSelectors')],
+    },
+    {
+      filename: scaffoldFilename,
+      code: `${scaffoldHelpers}
+        export function presenceSelectors(importOriginal) {
+          return withReal(async () => ({}), {});
+        }`,
+      errors: [handListed('presenceSelectors')],
+    },
+    {
+      filename: scaffoldFilename,
+      code: `${scaffoldHelpers}
+        export function chatStateSelectors(importOriginal) {
+          if (condition) return stub({});
+          return withReal(importOriginal);
+        }`,
+      errors: [handListed('chatStateSelectors')],
+    },
+    {
+      filename: scaffoldFilename,
+      code: `export function stub(values) { return values; }
+        export async function withRealSelectors(importOriginal, selectors) {
+          return { ...selectors };
+        }
+        export async function withReal(importOriginal, values = {}) {
+          return stub(values);
+        }`,
+      errors: [handListed('withRealSelectors'), handListed('withReal')],
+    },
+    {
+      filename: scaffoldFilename,
+      code: `${scaffoldHelpers}
+        function withRealCopy(importOriginal, values) { return values; }
+        export function chatStateSelectors(importOriginal) {
+          return withRealCopy(importOriginal, {});
+        }`,
+      errors: [handListed('chatStateSelectors')],
+    },
+    // A scaffold factory called without the mock's importOriginal is hand-listed.
+    {
+      filename,
+      code: `${panel} vi.mock('${selectors}', async () =>
+        (await import('${scaffold}')).chatStateSelectors(),
+      );`,
+      errors: [error],
+    },
+    {
+      filename,
+      code: `${panel} vi.mock('${selectors}', async (importOriginal) =>
+        (await import('${scaffold}')).chatStateSelectors(async () => ({})),
+      );`,
+      errors: [error],
+    },
     {
       filename,
       code: `${panel} vi.mock('../ChatPanel.svelte', { spy: true }); ${incomplete}`,
@@ -390,7 +502,25 @@ it('enables the guard in the repository config and accepts shared overrides', as
   ).toEqual([]);
   expect(
     await lint(
-      `${panel} vi.mock('${selectors}', async () => ({ ...${shared}, selectChatError: liveSelector }));`,
+      `${panel} vi.mock('${selectors}', async (importOriginal) => ({ ...${shared}, selectChatError: liveSelector }));`,
+    ),
+  ).toEqual([]);
+});
+
+it('enables the guard on the shared render scaffold', async () => {
+  const eslint = new ESLint();
+  const lint = async (code) =>
+    (await eslint.lintText(code, { filePath: scaffoldFilename }))[0].messages.filter(
+      (message) => message.ruleId === 'intent/no-copied-chat-panel-selector-mocks',
+    );
+  expect(
+    await lint(`${scaffoldHelpers}
+      export function chatStateSelectors() { return stub({ selectChatError: null }); }`),
+  ).toHaveLength(1);
+  const [result] = await eslint.lintFiles([scaffoldFilename]);
+  expect(
+    result.messages.filter(
+      (message) => message.ruleId === 'intent/no-copied-chat-panel-selector-mocks',
     ),
   ).toEqual([]);
 });

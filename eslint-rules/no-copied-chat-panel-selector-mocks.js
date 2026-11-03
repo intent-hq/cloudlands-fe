@@ -6,6 +6,11 @@ import path from 'node:path';
 // the next selector ChatPanel reads and crashes the whole suite
 // (cloudlands-fe#3525). Tests that mock ChatPanel itself, and modules outside
 // the store slices, keep their own contracts.
+//
+// The scaffold's own `*Selectors` factories and real helpers are held to the
+// same contract: each must return its `importOriginal` parameter's real module,
+// so a hand-listed factory cannot crash every suite that shares it
+// (cloudlands-fe#4114).
 const factories = new Map(
   [
     ['agent-session', 'agentSessionSelectors'],
@@ -69,7 +74,9 @@ export default {
     schema: [],
     messages: {
       sharedDefaults:
-        'Copied selector mocks miss new ChatPanel imports. Return {{factory}}() from ./mocks/chat-panel-render-scaffold, spread it before stateful overrides, or spread importOriginal() to retain the real exports.',
+        'Copied selector mocks miss new ChatPanel imports. Return {{factory}}(importOriginal) from ./mocks/chat-panel-render-scaffold, spread await {{factory}}(importOriginal) before stateful overrides, or spread await importOriginal() to retain the real exports.',
+      handListedFactory:
+        'Hand-listed scaffold factory {{name}} misses new ChatPanel imports. Take the vi.mock importOriginal as the first parameter and return withReal(importOriginal, values) or withRealSelectors(importOriginal, selectors) so unlisted selectors keep their real exports.',
       realDefaults:
         'Copied selector mocks miss new ChatPanel imports. Return withReal(importOriginal, values) or withRealSelectors(importOriginal, selectors) from ./mocks/chat-panel-render-scaffold, or spread await importOriginal() before the overrides, to retain the real exports.',
     },
@@ -81,6 +88,8 @@ export default {
     const returns = [];
     const filename = context.filename.replaceAll('\\', '/');
     const sourceRoot = filename.slice(0, filename.lastIndexOf('/src/') + 1);
+    const isScaffold =
+      path.posix.relative(sourceRoot, filename).replace(/\.[cm]?[jt]s$/, '') === scaffoldPath;
 
     function modulePath(node) {
       node = unwrap(node);
@@ -142,6 +151,15 @@ export default {
             ? 'scaffold'
             : `factory:${definition.node.imported.name}`;
         }
+        // Inside the scaffold, its own top-level real helpers resolve by name;
+        // the scaffold check verifies each of them separately.
+        if (
+          isScaffold &&
+          definition?.type === 'FunctionName' &&
+          isTopLevel(definition.node) &&
+          realHelpers.has(`factory:${definition.name.name}`)
+        )
+          return `factory:${definition.name.name}`;
         if (definition?.type !== 'Variable' || definition.parent.kind !== 'const') return null;
         const initial = origin(definition.node.init, factory, module, seen);
         if (definition.node.id.type === 'Identifier') return initial;
@@ -160,8 +178,13 @@ export default {
         return `factory:${key(node)}`;
       if (node.type === 'CallExpression') {
         const callee = origin(node.callee, factory, module, seen);
-        if (factories.get(module) && callee === `factory:${factories.get(module)}`)
-          return 'defaults';
+        // A scaffold factory resolves the real module it is given.
+        if (
+          factories.get(module) &&
+          callee === `factory:${factories.get(module)}` &&
+          isImportOriginal(node.arguments[0], factory)
+        )
+          return 'promise:defaults';
         // withReal(importOriginal, overrides) resolves to the real exports.
         if (realHelpers.has(callee) && isImportOriginal(node.arguments[0], factory))
           return 'promise:defaults';
@@ -181,6 +204,15 @@ export default {
       return null;
     }
 
+    function isTopLevel(node) {
+      const parent = node.parent?.type === 'VariableDeclarator' ? node.parent.parent : node;
+      return (
+        parent.parent?.type === 'Program' ||
+        (parent.parent?.type === 'ExportNamedDeclaration' &&
+          parent.parent.parent?.type === 'Program')
+      );
+    }
+
     function preservesExports(mock, module) {
       const factory = unwrap(mock.arguments[1]);
       if (factory?.type === 'ObjectExpression') {
@@ -191,6 +223,11 @@ export default {
             literal(prop.value) === true,
         );
       }
+      return returnsRealExports(factory, module);
+    }
+
+    // Every value `factory` returns resolves to the real module.
+    function returnsRealExports(factory, module) {
       if (!functions.has(factory?.type)) return false;
       const values =
         factory.body.type !== 'BlockStatement'
@@ -210,6 +247,27 @@ export default {
       );
     }
 
+    // Exported `*Selectors` factories and the real helpers they build on.
+    function checkScaffold(program) {
+      for (const statement of program.body) {
+        if (statement.type !== 'ExportNamedDeclaration' || !statement.declaration) continue;
+        const { declaration } = statement;
+        const exported =
+          declaration.type === 'FunctionDeclaration'
+            ? [[declaration.id, declaration]]
+            : declaration.type === 'VariableDeclaration'
+              ? declaration.declarations.map((item) => [item.id, unwrap(item.init)])
+              : [];
+        for (const [id, fn] of exported) {
+          const name = id?.type === 'Identifier' ? id.name : null;
+          if (!name || !(name.endsWith('Selectors') || realHelpers.has(`factory:${name}`)))
+            continue;
+          if (returnsRealExports(fn, null)) continue;
+          context.report({ node: id, messageId: 'handListedFactory', data: { name } });
+        }
+      }
+    }
+
     return {
       ImportDeclaration(node) {
         if (node.importKind !== 'type') imports.add(modulePath(node.source));
@@ -223,7 +281,8 @@ export default {
       ReturnStatement(node) {
         returns.push(node);
       },
-      'Program:exit'() {
+      'Program:exit'(program) {
+        if (isScaffold) checkScaffold(program);
         if (
           !imports.has(panelPath) ||
           mocks.some(
