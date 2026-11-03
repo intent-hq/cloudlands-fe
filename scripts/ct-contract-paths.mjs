@@ -39,13 +39,9 @@ export const CT_CONTRACT_FILES = Object.freeze([
   'package.json',
   'pnpm-lock.yaml',
 ]);
+// Directory prefixes; `isCtContractPath` subtracts the Vitest suites under
+// `playwright/` (see isPlaywrightUnitTest).
 export const CT_CONTRACT_DIRECTORIES = Object.freeze(['src/lib/styles/', 'playwright/']);
-// Glob form of the list above. `isCtContractPath` additionally subtracts the
-// Vitest suites under `playwright/` (see isPlaywrightUnitTest).
-export const CT_CONTRACT_PATHS = Object.freeze([
-  ...CT_CONTRACT_FILES,
-  ...CT_CONTRACT_DIRECTORIES.map((directory) => `${directory}**`),
-]);
 
 const OUTPUT_KEY = 'ct_required';
 
@@ -56,8 +52,12 @@ const OUTPUT_KEY = 'ct_required';
 // 1.4-hour local component run plus about 1.5 hours of test-ct shards in the
 // merge queue. A suite the CT graph does reach (an import from
 // `playwright/index.ts`, a spec or a preview) still requires CT in CI through
-// `ctRequired`'s dependency set. Matching is case-sensitive like Vitest's
-// include glob, and `.spec.*`/snapshot files stay contract paths.
+// `ctRequired`'s dependency set. That guarantee is CI-only: `verify:changed`
+// has no import graph, and a harness-imported suite would select no CT lane
+// locally (as for `src/**/*.test.ts`). The "this repository" test in
+// ct-contract-paths.test.ts fails if any tracked suite becomes reachable.
+// Matching is case-sensitive like Vitest's include glob, and `.spec.*` and
+// snapshot files stay contract paths.
 const PLAYWRIGHT_UNIT_TEST = /^playwright\/.*\.test\.[cm]?[jt]sx?$/;
 
 export function isPlaywrightUnitTest(file) {

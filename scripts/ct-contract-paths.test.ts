@@ -6,11 +6,13 @@ import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  CT_CONTRACT_PATHS,
+  CT_CONTRACT_DIRECTORIES,
+  CT_CONTRACT_FILES,
   CT_HARNESS_ENTRY,
   CT_PREVIEW_REGISTRY_GLOB,
   changedFiles,
   ctRequired,
+  ctSpecDependencies,
   isCtContractPath,
   isPlaywrightUnitTest,
   main,
@@ -160,11 +162,11 @@ describe('isCtContractPath', () => {
   });
 
   it('exports the CT harness dependency paths', () => {
-    expect([...CT_CONTRACT_PATHS].sort()).toEqual([
+    expect([...CT_CONTRACT_DIRECTORIES].sort()).toEqual(['playwright/', 'src/lib/styles/']);
+    expect([...CT_CONTRACT_FILES].sort()).toEqual([
       'package.json',
       'patches/playwright-core@1.58.2.patch',
       'playwright-ct.config.ts',
-      'playwright/**',
       'pnpm-lock.yaml',
       'scripts/ct-browser.mjs',
       'scripts/playwright-os-deps-lib.mjs',
@@ -172,7 +174,6 @@ describe('isCtContractPath', () => {
       'src/app.css',
       'src/lib/component-catalog/capture-stability.ts',
       'src/lib/component-catalog/preview-definition.ts',
-      'src/lib/styles/**',
       'src/test/ct-test.ts',
     ]);
   });
@@ -1044,8 +1045,15 @@ describe('this repository', () => {
       .split('\0')
       .filter((file) => isPlaywrightUnitTest(file));
     expect(unitTests).toContain('playwright/root-harness-import-guard.test.ts');
+    // One graph walk for every file: per-file `main` calls each rebuild it.
+    const dependencies = ctSpecDependencies('HEAD', 'HEAD');
     for (const file of unitTests) {
-      expect(decide([file]), file).toEqual({ logs: ['ct_required=false'], warnings: [] });
+      expect(
+        ctRequired([file], dependencies),
+        `${file} is now loaded by the CT graph, so CI requires CT for it but verify:changed ` +
+          'selects no CT lane. Move the shared code into a non-.test module, or, if the import ' +
+          'is intentional, drop the file from this check.',
+      ).toBe(false);
     }
   });
 
