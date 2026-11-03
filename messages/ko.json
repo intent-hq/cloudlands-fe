@@ -4672,6 +4672,8 @@
   "scripts_list_unsupported_error": "스크립트 목록을 사용하려면 데몬을 업데이트하고 다시 연결하세요.",
   "scripts_pendingChange_error": "스크립트 변경이 진행 중입니다. 완료될 때까지 기다린 후 다시 시도하세요.",
   "scripts_remote_dismissRun_label": "실행 제거",
+  "scripts_remote_lostDisconnected_label": "머신 연결이 끊어졌습니다",
+  "scripts_remote_lostRemoved_label": "머신이 제거되었습니다",
   "scripts_remote_lostReason_fallback": "머신과의 연결이 끊어졌습니다",
   "scripts_remote_lost_tooltip": "연결 끊김: {reason}",
   "scripts_remote_noOutput_label": "아직 출력이 없습니다",

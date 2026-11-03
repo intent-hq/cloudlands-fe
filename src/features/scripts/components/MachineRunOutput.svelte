@@ -28,6 +28,8 @@
 
   /** Re-read cadence while the run is live. */
   const POLL_MS = 2_000;
+  /** A read still loading after this long was discarded by the saga. */
+  const STALE_READ_MS = 10_000;
 
   let { workspaceId, scriptId, run, class: className = '' }: Props = $props();
 
@@ -53,22 +55,34 @@
     } else if (output?.status === 'unavailable') shown = '';
   });
 
-  function read() {
-    if ($retained$?.status === 'loading') return;
+  /** A new request supersedes any read still in flight for this viewer. */
+  function request() {
     appStore.dispatch(scriptOutputRequested(workspaceId, scriptId, viewerId, run.remoteAgentId));
   }
 
-  // A new run state (start, exit, restart, lost) re-reads at once.
+  // A new run state (start, exit, restart, lost) re-reads at once, even mid-read:
+  // the saga discards a read whose run changed underneath it.
   const runKey = $derived(JSON.stringify(run.runtime));
   $effect(() => {
     void runKey;
-    untrack(read);
+    untrack(request);
   });
 
+  // Polls while live, skipping a tick while a read is in flight.
   $effect(() => {
     if (!isLiveScriptStatus(run.runtime.status)) return;
-    const timer = setInterval(() => untrack(read), POLL_MS);
+    const timer = setInterval(
+      () => untrack(() => $retained$?.status !== 'loading' && request()),
+      POLL_MS,
+    );
     return () => clearInterval(timer);
+  });
+
+  // A discarded read publishes nothing; retry rather than stay on loading.
+  $effect(() => {
+    if ($retained$?.status !== 'loading') return;
+    const timer = setTimeout(() => untrack(request), STALE_READ_MS);
+    return () => clearTimeout(timer);
   });
 
   onDestroy(() => {

@@ -4672,6 +4672,8 @@
   "scripts_list_unsupported_error": "Aktualisieren Sie den Daemon und verbinden Sie sich erneut, um Skriptlisten zu verwenden.",
   "scripts_pendingChange_error": "Für das Skript steht eine Änderung aus. Warte, bis sie abgeschlossen ist, und versuche es erneut.",
   "scripts_remote_dismissRun_label": "Lauf entfernen",
+  "scripts_remote_lostDisconnected_label": "Die Verbindung zum Rechner wurde getrennt",
+  "scripts_remote_lostRemoved_label": "Der Rechner wurde entfernt",
   "scripts_remote_lostReason_fallback": "Verbindung zum Rechner verloren",
   "scripts_remote_lost_tooltip": "Verloren: {reason}",
   "scripts_remote_noOutput_label": "Noch keine Ausgabe",

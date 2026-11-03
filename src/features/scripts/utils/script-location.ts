@@ -78,12 +78,20 @@ export function isLostRun(runtime: Pick<ScriptRuntimeState, 'status' | 'exitCode
   return runtime.status === 'exited' && runtime.exitCode === LOST_EXIT_CODE;
 }
 
-/** Why a lost run stopped, as the backend reported it (without the code prefix). */
+/**
+ * Why a lost run stopped: the two documented reasons in the app language,
+ * any other reported reason as sent (without the code prefix).
+ */
 export function scriptLostReason(runtime: Pick<ScriptRuntimeState, 'error'>): string {
-  return (
-    runtime.error?.trim().replace(LOST_REASON_PREFIX, '').trim() ||
-    m.scripts_remote_lostReason_fallback()
-  );
+  const reason = runtime.error?.trim().replace(LOST_REASON_PREFIX, '').trim();
+  switch (reason) {
+    case 'the machine disconnected': // i18n-ignore (wire reason, PROTOCOL methods/scripts.md)
+      return m.scripts_remote_lostDisconnected_label();
+    case 'the machine was removed': // i18n-ignore (wire reason, PROTOCOL methods/scripts.md)
+      return m.scripts_remote_lostRemoved_label();
+    default:
+      return reason || m.scripts_remote_lostReason_fallback();
+  }
 }
 
 export type MachineRunStatusKind = ScriptStatusKind | 'lost';

@@ -115,4 +115,28 @@ describe('MachineRunOutput', () => {
     await vi.advanceTimersByTimeAsync(6_000);
     expect(requests(spy)).toHaveLength(1);
   });
+
+  it('re-reads when the run changes even while an earlier read is still pending', async () => {
+    const spy = vi.spyOn(store, 'dispatch');
+    const starting = { ...running, runtime: { status: 'starting' as const, restartCount: 0 } };
+    const view = render(MachineRunOutput, { workspaceId: WS, scriptId: ID, run: starting });
+    expect(requests(spy)).toHaveLength(1);
+    await view.rerender({ run: running });
+    expect(requests(spy)).toHaveLength(2);
+  });
+
+  it('retries a read the saga discarded instead of staying on loading', async () => {
+    vi.useFakeTimers();
+    const spy = vi.spyOn(store, 'dispatch');
+    const stopped = {
+      ...running,
+      runtime: { status: 'exited' as const, exitCode: 0, restartCount: 0 },
+    };
+    render(MachineRunOutput, { workspaceId: WS, scriptId: ID, run: stopped });
+    expect(requests(spy)).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(9_000);
+    expect(requests(spy)).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(16_000);
+    expect(requests(spy).length).toBeGreaterThanOrEqual(2);
+  });
 });

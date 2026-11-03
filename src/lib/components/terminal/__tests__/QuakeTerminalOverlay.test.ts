@@ -805,6 +805,30 @@ describe('QuakeTerminalOverlay machine runs', () => {
     );
   });
 
+  it("swaps the output viewer when switching to another agent's run of the same script", async () => {
+    scriptEntries.value = [
+      {
+        ...script(machineRunning),
+        machineRuns: [machineRunning, { ...machineRunning, remoteAgentId: 'agent-other' }],
+      },
+    ];
+    const { container } = render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } });
+    await fireEvent.click(screen.getByText('Select machine run'));
+    mockDispatch.mockClear();
+    await fireEvent.click(screen.getByText('Select other machine run'));
+
+    expect(container.querySelector('[data-machine-run-output="agent-other"]')).not.toBeNull();
+    expect(mockDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'scripts/outputReleased' }),
+    );
+    expect(mockDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'scripts/outputRequested',
+        payload: expect.arrayContaining(['remote-dev', 'agent-other']),
+      }),
+    );
+  });
+
   it('shows the lost reason for a lost machine run', async () => {
     scriptEntries.value = [
       script({
@@ -820,7 +844,7 @@ describe('QuakeTerminalOverlay machine runs', () => {
     const { container } = render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } });
     await fireEvent.click(screen.getByText('Select machine run'));
     expect(container.querySelector('[data-machine-run-header-status]')?.textContent?.trim()).toBe(
-      'Lost: the machine disconnected',
+      'Lost: The machine disconnected',
     );
     expect(screen.queryByLabelText('Stop script')).toBeNull();
     expect(screen.getByLabelText('Restart script')).toBeTruthy();

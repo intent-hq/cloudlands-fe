@@ -255,7 +255,7 @@ describe('TerminalSidebar remote scripts', () => {
     expect(running.getAttribute('data-machine-run-status')).toBe('running');
     const lost = machineRun(container, 'agent-lost')!;
     expect(lost.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe(
-      'Lost: the machine disconnected',
+      'Lost: The machine disconnected',
     );
   });
 

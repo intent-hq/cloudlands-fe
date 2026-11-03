@@ -1582,7 +1582,7 @@
             {/if}
 
             {#if selectedScriptId}
-              {#key `${workspaceId}:${selectedScriptId}`}
+              {#key `${workspaceId}:${selectedScriptId}:${selectedMachineRun?.remoteAgentId ?? ''}`}
                 {#if selectedMachineRun}
                   <MachineRunOutput
                     {workspaceId}

@@ -17,3 +17,6 @@
 <button type="button" onclick={() => onSelectMachineRun?.('remote-dev', 'agent-remote')}>
   Select machine run
 </button>
+<button type="button" onclick={() => onSelectMachineRun?.('remote-dev', 'agent-other')}>
+  Select other machine run
+</button>

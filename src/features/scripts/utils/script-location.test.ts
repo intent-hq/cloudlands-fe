@@ -111,12 +111,18 @@ describe('scriptLostReason', () => {
     expect(scriptLostReason({ error: ' gone ' })).toBe('gone');
   });
 
-  it('drops the machine-readable remote-script-lost prefix', () => {
+  it('names the two documented lost reasons in the app language', () => {
     expect(scriptLostReason({ error: 'remote-script-lost: the machine disconnected' })).toBe(
-      'the machine disconnected',
+      'The machine disconnected',
     );
     expect(scriptLostReason({ error: 'remote-script-lost: the machine was removed' })).toBe(
-      'the machine was removed',
+      'The machine was removed',
+    );
+  });
+
+  it('shows any other reported reason without the code prefix', () => {
+    expect(scriptLostReason({ error: 'remote-script-lost: link reset by peer' })).toBe(
+      'link reset by peer',
     );
     expect(scriptLostReason({ error: 'remote-script-lost:' })).toBe(
       'Lost contact with the machine',
@@ -137,7 +143,7 @@ describe('machineRunStatus', () => {
         restartCount: 0,
         error: 'remote-script-lost: the machine was removed',
       }),
-    ).toEqual({ kind: 'lost', label: 'Lost: the machine was removed' });
+    ).toEqual({ kind: 'lost', label: 'Lost: The machine was removed' });
   });
 
   it('uses the regular script statuses otherwise', () => {
