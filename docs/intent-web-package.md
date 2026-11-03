@@ -53,7 +53,7 @@ sync is safe to rerun and also repairs a missed one. To sync a channel by hand:
 - A channel version that is not on npm (older than the first publish) is
   skipped with a notice.
 - If npm rejects the change, the job fails naming the trusted publisher's
-  dist-tag permission (below). Until it is enabled, an `@intent-hq` owner can
+  **Allow `npm dist-tag`** setting (below). Until it is enabled, an `@intent-hq` owner can
   move the tag by hand: `npm dist-tag add @intent-hq/web@<version> <beta|latest>`.
 
 ## One-time bootstrap
@@ -75,22 +75,39 @@ by hand. Until then the workflow fails with "@intent-hq/web is not on npm yet".
 2. Sign in as an owner of the `@intent-hq` npm org with 2FA enabled
    (`npm login`), then publish:
    `npm publish /tmp/intent-web/intent-hq-web-<version>.tgz --access public --tag alpha`.
-   npm asks for a one-time password. The first version of a package also gets
-   `latest`, so `latest` stays on that alpha until a stable sync moves it to a
-   newer stable version (tags never move backwards).
+   npm asks for a one-time password. npm may stage the first publish instead
+   of releasing it: the package page then shows only a `0.0.0-stage`
+   placeholder. Approve the staged version (npm 11.15.0 or later; asks for a
+   one-time password): `npm stage list @intent-hq/web`, then
+   `npm stage approve <stage-id>`, or approve it on npmjs.com.
+   Check the result with `npm view @intent-hq/web dist-tags`: it must list the
+   version under `alpha`. If `latest` still points at `0.0.0-stage`, move it so
+   a plain `npx @intent-hq/web` does not install the placeholder:
+   `npm dist-tag add @intent-hq/web@<version> latest`. `latest` then stays on
+   that alpha until a stable sync moves it to a newer stable version (tags
+   never move backwards).
 3. On npmjs.com, open the package → **Settings** → **Trusted Publisher** and
    add a GitHub Actions publisher:
    - Organization or user: `intent-hq`
    - Repository: `cloudlands-fe`
    - Workflow filename: `publish-intent-web.yml`
    - Environment: leave empty
-   - Turn on the trusted publisher's dist-tag permission (announced as
-     "Allow npm dist-tag" in the
-     [GitHub changelog of 2026-09-30](https://github.blog/changelog/2026-09-30-opt-in-dist-tag-permissions-for-npm-trusted-publishing/)),
-     so the workflow can move `beta` and `latest`. Without it the channel
-     sync fails and the tags must be moved by hand (see above).
+   - Under **Allowed actions**, check both boxes (only `npm stage publish`
+     is allowed by default):
+     - **Allow `npm publish`**, so each alpha publishes. Without it the
+       publish job fails and names this setting.
+     - **Allow `npm dist-tag`**, so the channel sync can move `beta` and
+       `latest`
+       ([GitHub changelog of 2026-09-30](https://github.blog/changelog/2026-09-30-opt-in-dist-tag-permissions-for-npm-trusted-publishing/)).
+       Without it the sync fails and the tags must be moved by hand (see above).
+
+   These fields cannot be edited once the connection exists; to change one,
+   delete the connection and create it again.
+
 4. Recommended: in the same settings, under **Publishing access**, choose
    "Require two-factor authentication and disallow tokens". Trusted publishing
    keeps working.
-5. Run `publish-intent-web.yml` by hand with the latest release tag to check the
-   setup. It publishes that version, or skips it if step 2 already did.
+5. npm marks a new trusted publisher "Pending validation" until it publishes
+   once (within about two days). The next Release Alpha publishes through it
+   and validates it. Running `publish-intent-web.yml` by hand for the version
+   step 2 published only skips, so it does not validate the publisher.

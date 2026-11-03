@@ -236,6 +236,8 @@
     completeWorkflow(createConsumerId, outcome);
     if (outcome.status !== 'success' || !outcome.result || Array.isArray(outcome.result)) {
       logger.error('Script creation failed', outcome.error);
+      // Keep the form open so the user can fix the field the daemon named.
+      notify.error(outcome.error ?? m.terminal_sidebar_createScriptFailed_error());
       return;
     }
     const script = outcome.result as { id: string };
@@ -288,7 +290,10 @@
       return;
     pendingUpdate = null;
     completeWorkflow(updateConsumerId, outcome);
-    if (outcome.status !== 'success') logger.error('Script update failed', outcome.error);
+    if (outcome.status !== 'success') {
+      logger.error('Script update failed', outcome.error);
+      notify.error(outcome.error ?? m.terminal_quakeOverlay_renameScriptFailed_error());
+    }
   });
 
   // ---- Sort function ----
