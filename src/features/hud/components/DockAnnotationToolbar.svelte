@@ -12,8 +12,6 @@
   import { Button } from '$lib/components/ui/button';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import DockComposerIcon from './DockComposerIcon.svelte';
-  import DockCaptureModeMenu, { DOCK_CAPTURE_GLYPHS } from './DockCaptureModeMenu.svelte';
-  import type { DockCaptureMode } from '$shared/dock-evidence';
   import { formatDockElapsed } from '$features/hud/composer/dock-annotation-bar-media';
   import { formatInteger } from '$lib/i18n/format';
 
@@ -63,22 +61,9 @@
     const x = Math.max(area.x, Math.min(placed.x, area.x + area.width - width));
     return { x: Math.round(x), y: placed.y };
   });
-  const barRect = $derived<DockAnnotationRect | null>(
+  const rect = $derived<DockAnnotationRect | null>(
     width && height ? { x: position.x, y: position.y, width, height } : null,
   );
-  // An open screenshot-mode menu is part of the bar: clickable, never a gesture origin.
-  let menuRect = $state<DockAnnotationRect | null>(null);
-  const rect = $derived.by<DockAnnotationRect | null>(() => {
-    if (!barRect || !menuRect) return barRect;
-    const x = Math.min(barRect.x, menuRect.x);
-    const y = Math.min(barRect.y, menuRect.y);
-    return {
-      x,
-      y,
-      width: Math.max(barRect.x + barRect.width, menuRect.x + menuRect.width) - x,
-      height: Math.max(barRect.y + barRect.height, menuRect.y + menuRect.height) - y,
-    };
-  });
   // Following the dock animates; the first placement does not slide in from 0,0.
   let placed = $state(false);
   $effect(() => {
@@ -142,11 +127,6 @@
     captureComplete = false;
   }
   onDestroy(clearCaptureFeedback);
-  function requestCapture(mode?: DockCaptureMode) {
-    clearCaptureFeedback();
-    captureRequested = true;
-    send({ sessionId: overlay.sessionId, action: 'capture', ...(mode ? { mode } : {}) });
-  }
   $effect(() => {
     const capture = media?.capture;
     if (overlay.sessionId !== feedbackSession) {
@@ -195,68 +175,6 @@
   /** Disabled or busy: no click (aria-disabled keeps the tooltip reachable). */
   const inert = (button: { disabled: boolean; pending: boolean }) =>
     button.disabled || button.pending;
-  // Screenshot modes: hovering Screenshot opens them (this window never takes focus).
-  const captureMode = $derived<DockCaptureMode>(media?.capture.mode ?? 'fullscreen');
-  const modeLabels: Record<DockCaptureMode, string> = {
-    fullscreen: m.dock_composer_captureFullscreen_label(),
-    window: m.dock_composer_captureWindow_label(),
-    region: m.dock_composer_captureRegion_label(),
-  };
-  const pickable = $derived(
-    !!media?.capture.modes && !media.capture.alert && !inert(media.capture),
-  );
-  /** Past the bar's padding and edge (the menu anchors to the button inside it), then 6px. */
-  const MENU_OFFSET = 13;
-  let modesOpen = $state(false);
-  let captureButton = $state<HTMLButtonElement | null>(null);
-  let modeMenu = $state<HTMLElement | null>(null);
-  let hoverTimer: ReturnType<typeof setTimeout> | undefined;
-  let closeTimer: ReturnType<typeof setTimeout> | undefined;
-  $effect(() => () => {
-    clearTimeout(hoverTimer);
-    clearTimeout(closeTimer);
-  });
-  $effect(() => {
-    if (!pickable) modesOpen = false;
-  });
-  function enterCapture() {
-    clearTimeout(closeTimer);
-    if (!pickable || modesOpen) return;
-    clearTimeout(hoverTimer);
-    hoverTimer = setTimeout(() => (modesOpen = true), 150);
-  }
-  function leaveCapture() {
-    clearTimeout(hoverTimer);
-    clearTimeout(closeTimer);
-    closeTimer = setTimeout(() => (modesOpen = false), 250);
-  }
-  // Report the open menu's box (overlay coordinates) once it is placed.
-  $effect(() => {
-    const menu = modesOpen ? modeMenu : null;
-    if (!menu) {
-      menuRect = null;
-      return;
-    }
-    const measure = () => {
-      const box = menu.getBoundingClientRect();
-      menuRect = box.width
-        ? {
-            x: Math.floor(box.x),
-            y: Math.floor(box.y),
-            width: Math.ceil(box.width) + 1,
-            height: Math.ceil(box.height) + 1,
-          }
-        : null;
-    };
-    const observer = new ResizeObserver(measure);
-    observer.observe(menu);
-    const frame = requestAnimationFrame(measure);
-    return () => {
-      observer.disconnect();
-      cancelAnimationFrame(frame);
-    };
-  });
-
   const mouseLabel = m.dock_composer_mouse_label();
   const attachLabel = m.dock_annotationToolbar_save_label();
   // What Attach will put in the composer: the marks on screen now.
@@ -323,35 +241,27 @@
     <span class="divider" aria-hidden="true"></span>
     <!-- Screenshot: the composer's capture (the overlay and this bar are never in it). -->
     <Button
-      bind:ref={captureButton}
       variant={captureComplete ? 'default' : 'ghost-light'}
       size="icon-sm"
       class="dock-annotation-tool tile"
       data-media="capture"
-      data-capture-mode={captureMode}
       data-capture-state={media.capture.pending ? 'pending' : captureComplete ? 'complete' : 'idle'}
-      data-menu-open={modesOpen || undefined}
       data-alert={media.capture.alert ? '' : undefined}
       aria-label={media.capture.label}
       aria-disabled={inert(media.capture) || undefined}
       aria-busy={media.capture.pending || undefined}
-      aria-haspopup={pickable ? 'menu' : undefined}
-      aria-expanded={pickable ? modesOpen : undefined}
-      onpointerenter={enterCapture}
-      onpointerleave={leaveCapture}
       onclick={() => {
-        clearTimeout(hoverTimer);
-        modesOpen = false;
-        if (!inert(media.capture)) requestCapture();
+        if (!inert(media.capture)) {
+          clearCaptureFeedback();
+          captureRequested = true;
+          send({ sessionId: overlay.sessionId, action: 'capture' });
+        }
       }}
     >
       {#if media.capture.pending}
         <IntentMarkLoader size={18} />
       {:else}
-        <DockComposerIcon
-          glyph={captureComplete ? 'check' : DOCK_CAPTURE_GLYPHS[captureMode]}
-          size={18}
-        />
+        <DockComposerIcon glyph={captureComplete ? 'check' : 'viewfinder'} size={18} />
       {/if}
       {#if media.capture.alert}<span class="alert-dot" aria-hidden="true"></span>{/if}
       <span
@@ -362,26 +272,6 @@
       >
       <span class="sr-only" role="status" aria-live="polite">{captureFeedback ?? ''}</span>
     </Button>
-    {#if media.capture.modes}
-      <DockCaptureModeMenu
-        bind:open={modesOpen}
-        bind:ref={modeMenu}
-        anchor={captureButton}
-        mode={captureMode}
-        labels={modeLabels}
-        label={m.dock_composer_captureModes_ariaLabel()}
-        side={tipsBelow ? 'bottom' : 'top'}
-        sideOffset={MENU_OFFSET}
-        portal={false}
-        onSelect={(mode) => {
-          clearTimeout(closeTimer);
-          modesOpen = false;
-          if (!inert(media.capture)) requestCapture(mode);
-        }}
-        onpointerenter={() => clearTimeout(closeTimer)}
-        onpointerleave={leaveCapture}
-      />
-    {/if}
     <!-- Record: starts another recording, or stops the live one (the composer's look). -->
     <Button
       variant="ghost-light"
@@ -667,7 +557,7 @@
     opacity: 0;
     transition: opacity 120ms ease-out;
   }
-  .dock-annotation-toolbar :global(.dock-annotation-tool:hover:not([data-menu-open]) .tip) {
+  .dock-annotation-toolbar :global(.dock-annotation-tool:hover .tip) {
     opacity: 1;
     transition-delay: 300ms;
   }

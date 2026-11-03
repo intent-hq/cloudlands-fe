@@ -20,32 +20,24 @@ export function formatDockElapsed(ms: number): string {
 
 export function dockAnnotationBarMedia(
   state: DockComposerMediaState,
-  labels: Pick<
-    DockComposerMediaLabels,
-    'capture' | 'captureMode' | 'captureLimit' | 'record' | 'stopRecording'
-  >,
+  labels: Pick<DockComposerMediaLabels, 'capture' | 'captureLimit' | 'record' | 'stopRecording'>,
   /** Epoch ms the live recording started, if one is live. */
   recordingStartedAt: number | null,
   disabled = false,
 ): DockAnnotationMediaState {
   const alerts = state.alerts ?? {};
   const captureDisabled = disabled || !!state.captureDisabled;
-  const mode = state.captureMode ?? 'fullscreen';
-  const captureLabel =
-    mode === 'fullscreen' ? labels.capture : (labels.captureMode?.[mode] ?? labels.capture);
   return {
     capture: {
       revision: state.captureRevision,
-      label: captureLabel,
+      label: labels.capture,
       tooltip:
         alerts.capture ??
         state.captureTooltip ??
-        (state.captureDisabled ? labels.captureLimit : captureLabel),
+        (state.captureDisabled ? labels.captureLimit : labels.capture),
       disabled: captureDisabled,
       pending: !!state.capturePending,
       alert: !!alerts.capture,
-      ...(mode !== 'fullscreen' ? { mode } : {}),
-      ...(state.captureModesAvailable ? { modes: true } : {}),
     },
     record: {
       label: state.recording ? labels.stopRecording : labels.record,

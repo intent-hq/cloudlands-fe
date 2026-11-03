@@ -422,42 +422,9 @@ describe('dock evidence window and region capture', () => {
     expect(f.window.isVisible()).toBe(true);
   });
 
-  it('hides an annotate overlay during the selection and shows it again', async () => {
+  it('a recording exclusion does not block a selection (the system picker takes the screen)', async () => {
     const f = fixture();
     f.settle.resolve();
-    const events: string[] = [];
-    f.manager.setSelectionConcealer(() => {
-      events.push('conceal');
-      return () => events.push('reveal');
-    });
-    f.deps.captureSelection = vi.fn(async () => {
-      events.push('select');
-      return { ok: false as const, error: 'unavailable' as const, detail: 'cancelled' };
-    });
-    await f.manager.capture(f.owner, { ...f.scope, requestId: 'region', mode: 'region' });
-    expect(events).toEqual(['conceal', 'select', 'reveal']);
-  });
-
-  it('refuses a selection when a visible overlay could not be hidden', async () => {
-    const f = fixture();
-    f.settle.resolve();
-    f.manager.setSelectionConcealer(() => null);
-    f.deps.captureSelection = vi.fn();
-    const result = await f.manager.capture(f.owner, {
-      ...f.scope,
-      requestId: 'window',
-      mode: 'window',
-    });
-    expect(result).toEqual({ ok: false, error: 'unavailable' });
-    expect(f.deps.captureSelection).not.toHaveBeenCalled();
-    expect(f.selectionVisibility).not.toHaveBeenCalled();
-  });
-
-  it('selects once the overlay is hidden, even while a recording reservation still lists it', async () => {
-    const f = fixture();
-    f.settle.resolve();
-    const reveal = vi.fn();
-    f.manager.setSelectionConcealer(() => reveal);
     f.manager.setCaptureExclusionIds(() => [99]);
     f.deps.captureSelection = vi.fn(async () => ({
       ok: true as const,
@@ -470,7 +437,6 @@ describe('dock evidence window and region capture', () => {
     });
     expect(f.deps.captureSelection).toHaveBeenCalledExactlyOnceWith('region');
     expect(result).toMatchObject({ ok: true, value: { image: { width: 400, height: 300 } } });
-    expect(reveal).toHaveBeenCalledOnce();
     expect(f.window.isVisible()).toBe(true);
   });
 

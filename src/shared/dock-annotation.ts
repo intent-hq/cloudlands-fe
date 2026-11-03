@@ -10,14 +10,12 @@
  *   dock's display (`overlay = global - display.bounds.origin`).
  * - "image" — pixels of the session image the mark belongs to.
  */
-import {
-  DOCK_CAPTURE_MODES,
-  type DockCaptureMode,
-  type DockImagePoint,
-  type DockImageRect,
-  type DockMarkElement,
-  type DockMarkGeometry,
-  type DockMarkTool,
+import type {
+  DockImagePoint,
+  DockImageRect,
+  DockMarkElement,
+  DockMarkGeometry,
+  DockMarkTool,
 } from './dock-evidence';
 
 /** Mirrored into the central registry (`DOCK_ANNOTATION` group) by the IPC owner. */
@@ -103,10 +101,6 @@ export interface DockAnnotationMediaState {
   capture: DockAnnotationMediaButton & {
     /** Advances only when the composer accepts a successfully captured image. */
     revision: number;
-    /** The composer's screenshot mode; absent means full screen. */
-    mode?: DockCaptureMode;
-    /** Window and region are available: the bar offers the mode menu. */
-    modes?: boolean;
   };
   record: DockAnnotationMediaButton & {
     recording: boolean;
@@ -129,9 +123,6 @@ const mediaButton = (value: unknown): value is DockAnnotationMediaButton => {
   );
 };
 
-export const isDockCaptureMode = (value: unknown): value is DockCaptureMode =>
-  (DOCK_CAPTURE_MODES as readonly unknown[]).includes(value);
-
 /** A copy of a well-formed media state, or null (refused, never published). */
 export function sanitizeDockAnnotationMedia(value: unknown): DockAnnotationMediaState | null {
   if (!value || typeof value !== 'object') return null;
@@ -153,16 +144,8 @@ export function sanitizeDockAnnotationMedia(value: unknown): DockAnnotationMedia
     pending: row.pending,
     alert: row.alert,
   });
-  const { mode, modes } = capture as unknown as Record<string, unknown>;
-  if (mode !== undefined && !isDockCaptureMode(mode)) return null;
-  if (modes !== undefined && typeof modes !== 'boolean') return null;
   return {
-    capture: {
-      ...button(capture),
-      revision: revision as number,
-      ...(mode ? { mode } : {}),
-      ...(modes ? { modes } : {}),
-    },
+    capture: { ...button(capture), revision: revision as number },
     record: {
       ...button(record),
       recording,
@@ -228,7 +211,7 @@ export type DockAnnotationToolbarRequest = { sessionId: string } & (
   | { action: 'clear' }
   | { action: 'end' }
   /** Screenshot / Record (start or stop): the composer's own action, in the dock. */
-  | { action: 'capture'; mode?: DockCaptureMode }
+  | { action: 'capture' }
   | { action: 'record' }
   | { action: 'rect'; rect: DockAnnotationRect | null }
 );

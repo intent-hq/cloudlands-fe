@@ -133,8 +133,6 @@ const controlSchema = z.discriminatedUnion('action', [
               .object({
                 ...button,
                 revision: z.number().int().nonnegative().safe(),
-                mode: z.enum(['fullscreen', 'window', 'region']).optional(),
-                modes: z.boolean().optional(),
               })
               .strict(),
             record: z
@@ -305,7 +303,6 @@ function createMediaBinder() {
         ]
       : [];
   };
-  dockEvidenceSessions.setSelectionConcealer(() => dockAnnotationController.conceal());
   dockEvidenceSessions.setCaptureExclusionIds(() => [
     ...new Set([...dockAnnotationController.overlayWindowIds(), ...preparingOverlayIds.keys()]),
   ]);

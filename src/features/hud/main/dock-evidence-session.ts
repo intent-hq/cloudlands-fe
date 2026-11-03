@@ -105,7 +105,7 @@ interface Session {
 
 const logger = new Logger('DockEvidenceSession');
 const unavailable = (): DockEvidencePixelsResult => ({ ok: false, error: 'unavailable' });
-/** The window picker lists windows as it starts: the hidden overlay must be gone by then. */
+/** The window picker lists windows as it starts: the hidden dock must be gone by then. */
 const SELECTION_SETTLE_MS = 250;
 const MAX_PNG_BYTES = 30 * 1024 * 1024;
 
@@ -115,7 +115,6 @@ export class DockEvidenceSessions {
   private capturing: Session | null = null;
   private exclusions: () => BrowserWindow[] = () => [];
   private exclusionIds: () => number[] = () => [];
-  private conceal: () => (() => void) | null = () => () => {};
 
   constructor(private readonly deps: DockEvidenceDependencies) {}
 
@@ -126,14 +125,6 @@ export class DockEvidenceSessions {
 
   setCaptureExclusionIds(provider: () => number[]): void {
     this.exclusionIds = provider;
-  }
-
-  /**
-   * Hides main-owned overlays for a window/region selection; returns their restore,
-   * or null when a visible overlay could not be hidden.
-   */
-  setSelectionConcealer(provider: () => (() => void) | null): void {
-    this.conceal = provider;
   }
 
   private ownerCurrent(owner: DockEvidenceOwner, binding: Binding): boolean {
@@ -321,26 +312,18 @@ export class DockEvidenceSessions {
     try {
       if (selection) {
         if (!this.deps.captureSelection) return unavailable();
-        // The dock and an annotate overlay are capture tools, never part of the selection.
-        // An overlay that could not be hidden would be selected or photographed. The
-        // exclusion ids are not a visibility signal: a recording reservation can outlive it.
-        const reveal = this.conceal();
-        if (!reveal) return unavailable();
-        try {
-          hidden = true;
-          setHidden(window, true, false);
-          await this.deps.settle(SELECTION_SETTLE_MS);
-          if (!this.current(session)) return unavailable();
-          const selected = await this.deps.captureSelection(selection);
-          if (!this.current(session)) return unavailable();
-          // Screen Recording can be turned off during a selection: the image would hold
-          // only the desktop, and a dismissal must not hide the missing permission.
-          if (this.deps.permissionDenied()) return { ok: false, error: 'permission' };
-          if (!selected.ok) return selected;
-          return this.pixels(session, request, selected.value, selected.value.displayScale);
-        } finally {
-          reveal();
-        }
+        // The dock is the capture tool, never part of the selection.
+        hidden = true;
+        setHidden(window, true, false);
+        await this.deps.settle(SELECTION_SETTLE_MS);
+        if (!this.current(session)) return unavailable();
+        const selected = await this.deps.captureSelection(selection);
+        if (!this.current(session)) return unavailable();
+        // Screen Recording can be turned off during a selection: the image would hold
+        // only the desktop, and a dismissal must not hide the missing permission.
+        if (this.deps.permissionDenied()) return { ok: false, error: 'permission' };
+        if (!selected.ok) return selected;
+        return this.pixels(session, request, selected.value, selected.value.displayScale);
       }
       let nativePixels: DockCapturedPixels | undefined;
       const excluded = this.exclusions().filter((surface) => !surface.isDestroyed());

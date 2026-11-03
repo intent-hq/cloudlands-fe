@@ -1918,7 +1918,7 @@ describe('dock annotate start feedback, refusals and dictation', () => {
     expect(evidenceView().annotating).toBe(true);
   });
 
-  it('a screenshot mode chosen on the bar becomes the composer mode and captures with it', async () => {
+  it('an annotate session captures the whole screen whatever the composer mode is', async () => {
     const native = scriptedNative();
     Object.assign(native.service.capabilities!, { captureModes: true });
     const modes: (string | undefined)[] = [];
@@ -1929,14 +1929,14 @@ describe('dock annotate start feedback, refusals and dictation', () => {
     };
     configureDockEvidenceNative(native.service);
     await open();
+    appStore.dispatch(dockEvidenceCaptureModeSet('window'));
     appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
     await vi.waitFor(() => expect(native.calls.started).toHaveLength(1));
     const sessionId = native.calls.started[0].id;
-    native.emit({ type: 'annotation-media', sessionId, action: 'capture', mode: 'window' });
+    native.emit({ type: 'annotation-media', sessionId, action: 'capture' });
     await vi.waitFor(() => expect(evidenceView().tiles).toHaveLength(1));
-    expect(modes).toEqual(['window']);
+    expect(modes).toEqual(['fullscreen']);
     expect(evidenceView().captureMode).toBe('window');
-    expect(evidenceView().annotating).toBe(true);
     appStore.dispatch(dockEvidenceCaptureModeSet('fullscreen'));
   });
 

@@ -50,7 +50,6 @@ import {
   gestureOverlayGeometry,
   overlayGeometryToImage,
   pointInRects,
-  isDockCaptureMode,
   sanitizeDockAnnotationMedia,
   shapeMostlyInside,
   toDockMarkElement,
@@ -333,14 +332,6 @@ export class DockAnnotationController implements AnnotationService {
   private session: Session | null = null;
   /** The dock composer's Screenshot/Record state (see `setAnnotationMedia`). */
   private media: DockAnnotationMediaState | null = null;
-  /** Window/region selections in progress: the overlay stays hidden, even one still starting. */
-  private concealLeases = 0;
-  /**
-   * The session whose overlay a selection hid (or held back once it passed its startup
-   * barriers). Only that session, still current, is shown when the last selection ends;
-   * a replacement still starting is left to its own start.
-   */
-  private concealedSession: Session | null = null;
   private window: BrowserWindow | null = null;
   private windowBackendId: string | null = null;
   /**
@@ -477,9 +468,7 @@ export class DockAnnotationController implements AnnotationService {
     try {
       window.setIgnoreMouseEvents(true, { forward: true });
       session.interactive = false;
-      // A window/region selection is in progress: the overlay appears when it ends.
-      if (this.concealLeases > 0) this.concealedSession = session;
-      else window.showInactive();
+      window.showInactive();
       session.revealed = true;
       if (this.revealing === session) this.revealing = null;
     } catch (error) {
@@ -487,8 +476,7 @@ export class DockAnnotationController implements AnnotationService {
       this.finish(session, false);
       return { ok: false, error: 'failed' };
     }
-    // Held back: its recording exclusion stays reserved until the selection shows it.
-    if (this.concealedSession !== session) this.announceWindows();
+    this.announceWindows();
     this.startRouting();
     this.route();
     return { ok: true, value: undefined };
@@ -597,46 +585,6 @@ export class DockAnnotationController implements AnnotationService {
     if (!usable(window) || !(window.isVisible() || reserved)) return [];
     const id = windowIdOf(window);
     return id === null ? [] : [id];
-  }
-
-  /**
-   * Hide the overlay while the person selects a window or region, so the system
-   * picker never selects it and its marks stay out of the image. An overlay still
-   * starting is held back too. The session, its marks and exclusions stay; the
-   * returned release shows it again. Null when a visible overlay could not be hidden.
-   */
-  conceal(): (() => void) | null {
-    const window = this.window;
-    const session = this.session;
-    if (session && this.current(session) && usable(window) && window.isVisible()) {
-      try {
-        window.hide();
-      } catch (error) {
-        logger.warn('Failed to hide the dock annotation overlay for a selection', { error });
-        return null;
-      }
-      this.concealedSession = session;
-    }
-    // Held until released, so an overlay still starting is not shown meanwhile.
-    this.concealLeases += 1;
-    let released = false;
-    return () => {
-      if (released) return;
-      released = true;
-      this.concealLeases -= 1;
-      if (this.concealLeases > 0) return;
-      const concealed = this.concealedSession;
-      this.concealedSession = null;
-      if (!concealed || this.session !== concealed || !this.current(concealed)) return;
-      if (!concealed.revealed) return;
-      try {
-        concealed.window.showInactive();
-      } catch (error) {
-        logger.warn('Failed to show the dock annotation overlay after a selection', { error });
-        return;
-      }
-      this.announceWindows();
-    };
   }
 
   onOverlayWindowsChanged(listener: (ids: number[]) => void): () => void {
@@ -776,29 +724,7 @@ export class DockAnnotationController implements AnnotationService {
     if (request.action === 'capture' || request.action === 'record') {
       // The dock runs the composer's own action (and its permission and limit
       // rules); the session, its tool and mouse mode stay as they are.
-      const mode = request.action === 'capture' ? request.mode : undefined;
-      if (mode !== undefined && !isDockCaptureMode(mode)) return false;
-      // A window or region shot is a new, clean image: the marks on screen are
-      // attached first, exactly as Attach does, and the next mark starts a new image.
-      const shot = mode ?? this.media?.capture.mode ?? 'fullscreen';
-      if (
-        request.action === 'capture' &&
-        shot !== 'fullscreen' &&
-        session.mode !== 'still' &&
-        session.marks.length > 0
-      ) {
-        session.image = null;
-        session.marks = [];
-        session.marksRevision += 1;
-        this.publish(session);
-        this.emit({ type: 'annotation-commit', sessionId: session.id });
-      }
-      this.emit({
-        type: 'annotation-media',
-        sessionId: session.id,
-        action: request.action,
-        ...(mode ? { mode } : {}),
-      });
+      this.emit({ type: 'annotation-media', sessionId: session.id, action: request.action });
       return true;
     }
     if (request.action === 'rect') {

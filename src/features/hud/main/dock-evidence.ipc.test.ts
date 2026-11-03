@@ -7,7 +7,6 @@ const mocks = vi.hoisted(() => ({
   cancel: vi.fn(),
   context: vi.fn(),
   setCaptureExclusionIds: vi.fn(),
-  setSelectionConcealer: vi.fn(),
   recorder: {
     onEnded: vi.fn(),
     start: vi.fn(),

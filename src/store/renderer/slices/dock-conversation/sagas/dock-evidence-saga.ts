@@ -56,7 +56,6 @@ import {
   type DockEvidenceNativeEvent,
   type DockEvidenceNativeService,
   type DockMarkTool,
-  type DockCaptureMode,
   type DockNativeResult,
   reusableDockImage,
   undoableDockMark,
@@ -90,7 +89,6 @@ import {
   dockEvidenceAnnotationToggleRequested,
   dockEvidenceCaptureFailed,
   dockEvidenceCaptureCancelled,
-  dockEvidenceCaptureModeSet,
   dockEvidenceCaptureRequested,
   dockEvidenceCaptureStarted,
   dockEvidenceSessionRetired,
@@ -313,7 +311,8 @@ function* capture({
     yield* put(dockEvidenceCaptureFailed(workspaceId, agentId, 'unavailable'));
     return;
   }
-  const mode = appStore.state.dockConversation.captureMode;
+  // Annotation marks belong to the whole screen: an annotate session captures full screen.
+  const mode = evidence?.annotation ? 'fullscreen' : appStore.state.dockConversation.captureMode;
   yield* put(dockEvidenceCaptureStarted(workspaceId, agentId));
   let result: DockNativeResult<DockCapturedPixels>;
   try {
@@ -1198,7 +1197,6 @@ function* barMediaAction(
   workspaceId: string,
   agentId: string,
   action: 'capture' | 'record',
-  mode?: DockCaptureMode,
 ): SagaGenerator<void> {
   const view = selectDockComposerEvidence.select(appStore.state, workspaceId, agentId);
   if (action === 'record' && view.recording) {
@@ -1210,11 +1208,8 @@ function* barMediaAction(
     return;
   }
   if (action === 'capture') {
-    if (!view.capabilities.capture || view.captureDisabled || view.capturePending) return;
-    // A mode chosen on the bar is the composer's mode from now on, as in its own menu.
-    if (mode && (mode === 'fullscreen' || view.capabilities.captureModes))
-      yield* put(dockEvidenceCaptureModeSet(mode));
-    yield* put(dockEvidenceCaptureRequested(workspaceId, agentId));
+    if (view.capabilities.capture && !view.captureDisabled && !view.capturePending)
+      yield* put(dockEvidenceCaptureRequested(workspaceId, agentId));
     return;
   }
   if (view.capabilities.record && view.clips.length < DOCK_EVIDENCE_LIMITS.clips)
@@ -1267,7 +1262,7 @@ function* watchNative(): SagaGenerator<void> {
         if (owner && (event.action === 'capture' || event.action === 'record')) {
           const [workspaceId, agentId] = JSON.parse(owner.id) as [string, string];
           if (activePair(workspaceId, agentId))
-            yield* fork(barMediaAction, workspaceId, agentId, event.action, event.mode);
+            yield* fork(barMediaAction, workspaceId, agentId, event.action);
         }
       } else if (event.type === 'annotation-tool') {
         // Switched on the on-screen tool bar: native already uses it.
