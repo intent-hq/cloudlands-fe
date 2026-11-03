@@ -56,6 +56,7 @@ import {
   scriptOutputReleased,
   scriptOutputRequested,
   scriptOutputStreamInterrupted,
+  scriptOutputStreamReady,
   scriptsReducer,
 } from '$store/renderer/slices/scripts/scripts-slice';
 import { DAEMON_EVENTS_SUBSCRIBE_TYPES } from '$features/events/daemon-events-bridge.client';
@@ -1027,6 +1028,43 @@ describe('daemonEventsSaga', () => {
       await tick();
 
       expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-out-late', 'ws-1');
+    });
+
+    it('marks each workspace ready only once its own lease is routable', async () => {
+      const dispatch = vi.fn();
+      const pending: Array<(value: { subscriptionId: string }) => void> = [];
+      const { task, dispatchAction } = startSaga(null, dispatch);
+      await tick();
+      mocks.subscribe.mockImplementation(() => new Promise((resolve) => pending.push(resolve)));
+      dispatchAction(scriptOutputRequested('ws-A', 'script-a', 'viewer-1') as never);
+      await tick();
+      dispatchAction(scriptOutputRequested('ws-B', 'script-b', 'viewer-2') as never);
+      await tick();
+      expect(dispatch).not.toHaveBeenCalledWith(scriptOutputStreamReady('ws-A'));
+      expect(dispatch).not.toHaveBeenCalledWith(scriptOutputStreamReady('ws-B'));
+
+      pending.shift()!({ subscriptionId: 'sub-out-A' });
+      await tick();
+      expect(dispatch).toHaveBeenCalledWith(scriptOutputStreamReady('ws-A'));
+      expect(dispatch).not.toHaveBeenCalledWith(scriptOutputStreamReady('ws-B'));
+
+      pending.shift()!({ subscriptionId: 'sub-out-B' });
+      await tick();
+      expect(dispatch).toHaveBeenCalledWith(scriptOutputStreamReady('ws-B'));
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('does not mark a workspace ready when its subscribe fails', async () => {
+      const dispatch = vi.fn();
+      const { task, dispatchAction } = startSaga(null, dispatch);
+      await tick();
+      mocks.subscribe.mockResolvedValueOnce({});
+      dispatchAction(scriptOutputRequested('ws-1', 'script-a', 'viewer-1') as never);
+      await tick();
+      expect(dispatch).not.toHaveBeenCalledWith(scriptOutputStreamReady('ws-1'));
+      task.cancel();
+      await task.toPromise();
     });
   });
 });

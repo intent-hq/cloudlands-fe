@@ -46,6 +46,7 @@ import {
   scriptOutputReleased,
   scriptOutputRequested,
   scriptOutputStreamInterrupted,
+  scriptOutputStreamReady,
 } from '../../scripts/scripts-slice';
 import {
   workspaceDeleted,
@@ -220,9 +221,10 @@ function subscribeScriptOutputLease(lease: SubscriptionLease, workspaceId: strin
  * fails or returns no id leaves no entry, so a later pass retries it; returns
  * whether any did.
  *
- * Like the scoped file lease, the routing gate learns the id only once the
- * subscribe reply lands, so a chunk the daemon emits before that reply is
- * dropped. A viewer's retained `script.output` snapshot covers that window.
+ * The routing gate learns the id only once the subscribe reply lands, so a
+ * chunk the daemon emits before that reply is dropped. Viewer snapshots wait
+ * for {@link scriptOutputStreamReady}, so they are read after this point and
+ * cover that window.
  */
 function* openScriptOutputLeases(leases: DaemonEventLeases, desired: readonly string[]) {
   let failed = false;
@@ -231,7 +233,11 @@ function* openScriptOutputLeases(leases: DaemonEventLeases, desired: readonly st
     const lease: SubscriptionLease = { cancelled: false };
     leases.scriptOutput.set(workspaceId, lease);
     yield* call(subscribeScriptOutputLease, lease, workspaceId);
-    if (!lease.subscriptionId && leases.scriptOutput.get(workspaceId) === lease) {
+    if (leases.scriptOutput.get(workspaceId) !== lease) continue;
+    if (lease.subscriptionId) {
+      // Routable from here on: viewer snapshots waiting on it may now read.
+      yield* put(scriptOutputStreamReady(workspaceId));
+    } else {
       leases.scriptOutput.delete(workspaceId);
       failed = true;
     }

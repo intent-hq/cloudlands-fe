@@ -20,7 +20,10 @@ import {
   removeScript,
   updateRuntimeState,
   scriptOutputSnapshotReceived,
+  scriptOutputStreamInterrupted,
+  scriptOutputStreamReady,
 } from '../scripts-slice';
+import { SCRIPT_OUTPUT_STREAM_WAIT_MS } from './scripts-output-saga';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { createDefaultRuntimeState } from '$features/scripts/types';
 const WS = 'history-ws';
@@ -42,7 +45,7 @@ function deferred<T>() {
   const promise = new Promise<T>((r) => (resolve = r));
   return { promise, resolve };
 }
-function start(seedDefinition = true, includeLifecycle = false) {
+function start(seedDefinition = true, includeLifecycle = false, streamReady = true) {
   const channel = stdChannel();
   const state = withLegacyPrincipal({
     tabState: { currentTabId: WS },
@@ -66,6 +69,9 @@ function start(seedDefinition = true, includeLifecycle = false) {
     ]),
   );
   if (!seedDefinition) state.scripts = scriptsReducer(undefined, { type: '@@init' });
+  // The daemon-events saga marks a workspace ready once its live output lease
+  // is routable; most cases start from that steady state.
+  if (streamReady) state.scripts = scriptsReducer(state.scripts, scriptOutputStreamReady(WS));
   const actions: any[] = [];
   const dispatch = (a: any) => {
     state.scripts = scriptsReducer(state.scripts, a);
@@ -280,5 +286,69 @@ describe('retained script output hydration', () => {
     run.dispatch(request());
     await settle();
     expect(transport.request).not.toHaveBeenCalled();
+  });
+
+  describe('live output stream readiness', () => {
+    const outputReads = () =>
+      transport.request.mock.calls.filter(([method]) => method === 'script.output');
+
+    it('reads the snapshot only after the workspace output lease is routable', async () => {
+      transport.request.mockResolvedValue('retained output');
+      const run = start(true, false, false);
+      run.dispatch(request());
+      await settle();
+      expect(outputReads()).toEqual([]);
+      expect(run.retained()?.status).toBe('loading');
+
+      run.dispatch(scriptOutputStreamReady('another-workspace'));
+      await settle();
+      expect(outputReads()).toEqual([]);
+
+      run.dispatch(scriptOutputStreamReady(WS));
+      await settle();
+      expect(outputReads()).toHaveLength(1);
+      expect(run.retained()?.text).toBe('retained output');
+    });
+
+    it('waits again for a new viewer after the stream was interrupted by a reconnect', async () => {
+      transport.request.mockResolvedValue('retained output');
+      const run = start();
+      run.dispatch(scriptOutputStreamInterrupted(WS));
+      run.dispatch(request('viewer-2'));
+      await settle();
+      expect(outputReads()).toEqual([]);
+
+      run.dispatch(scriptOutputStreamReady(WS));
+      await settle();
+      expect(outputReads()).toHaveLength(1);
+      expect(run.retained('viewer-2')?.text).toBe('retained output');
+    });
+
+    it('still reads the snapshot when the lease never becomes ready', async () => {
+      vi.useFakeTimers();
+      try {
+        transport.request.mockResolvedValue('retained output');
+        const run = start(true, false, false);
+        run.dispatch(request());
+        await vi.advanceTimersByTimeAsync(SCRIPT_OUTPUT_STREAM_WAIT_MS - 1);
+        expect(outputReads()).toEqual([]);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(outputReads()).toHaveLength(1);
+        expect(run.retained()?.text).toBe('retained output');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('drops a waiting read when its viewer is released', async () => {
+      transport.request.mockResolvedValue('retained output');
+      const run = start(true, false, false);
+      run.dispatch(request());
+      await settle();
+      run.dispatch(release());
+      run.dispatch(scriptOutputStreamReady(WS));
+      await settle();
+      expect(outputReads()).toEqual([]);
+    });
   });
 });

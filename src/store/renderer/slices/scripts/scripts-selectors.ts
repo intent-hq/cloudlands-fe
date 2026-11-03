@@ -130,6 +130,11 @@ export const selectScriptOutputViewerWorkspaceIds = store.createSelector((state)
     .sort(),
 );
 
+/** Whether the workspace's live `script:output` lease is subscribed and routable. */
+export const selectScriptOutputStreamReady = store.createSelector(
+  (state, wsId: string): boolean => !!state.scripts?.byWorkspaceId[wsId]?.outputStreamReady,
+);
+
 /** Scripts data for a specific workspace (parameterized). */
 export const selectWorkspaceScriptsInitialized = store.createSelector(
   (state, wsId: string): boolean => getWs(state, wsId).initialized,

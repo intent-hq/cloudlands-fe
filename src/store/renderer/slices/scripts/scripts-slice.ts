@@ -283,6 +283,9 @@ export const scriptOutputStreamInterrupted = createAction<[wsId: string]>(
   'scripts/outputStreamInterrupted',
 );
 
+/** The workspace's live `script:output` lease is subscribed and routable. */
+export const scriptOutputStreamReady = createAction<[wsId: string]>('scripts/outputStreamReady');
+
 // ============================================================================
 // Reducer
 // ============================================================================
@@ -687,7 +690,14 @@ scriptsReducer.with(scriptOutputStreamInterrupted, (state, { payload: [wsId] }) 
   const outputBuffers = Object.fromEntries(
     Object.entries(ws.outputBuffers).map(([id, buffer]) => [id, discardBufferedChunks(buffer)]),
   );
-  return setWorkspaceState(state, wsId, { ...ws, outputBuffers });
+  return setWorkspaceState(state, wsId, { ...ws, outputBuffers, outputStreamReady: false });
+});
+
+scriptsReducer.with(scriptOutputStreamReady, (state, { payload: [wsId] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  return ws.outputStreamReady
+    ? state
+    : setWorkspaceState(state, wsId, { ...ws, outputStreamReady: true });
 });
 
 scriptsReducer.with(

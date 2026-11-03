@@ -1,6 +1,7 @@
 import {
   actionChannel,
   call,
+  delay,
   put,
   race,
   take,
@@ -16,6 +17,7 @@ import {
 import {
   selectCanReadScriptDefinition,
   selectScriptById,
+  selectScriptOutputStreamReady,
   selectScriptRetainedOutput,
 } from '../scripts-selectors';
 import {
@@ -23,8 +25,33 @@ import {
   scriptOutputRequested,
   scriptOutputReleased,
   scriptOutputSnapshotReceived,
+  scriptOutputStreamReady,
   scriptReadFinished,
 } from '../scripts-slice';
+
+/**
+ * Longest a viewer snapshot waits for its workspace's live output lease. A
+ * subscribe that keeps failing must not withhold the retained output.
+ */
+export const SCRIPT_OUTPUT_STREAM_WAIT_MS = 5_000;
+
+/**
+ * Wait until the workspace's live `script:output` lease is routable, so the
+ * snapshot read below starts after the stream: output between them lands in
+ * the live buffer instead of falling into neither.
+ */
+function* waitForLiveOutputStream(workspaceId: string): SagaGenerator<void> {
+  if (yield* selectScriptOutputStreamReady.effect(workspaceId)) return;
+  yield* race({
+    ready: take(
+      (action: { type: string; payload?: unknown }) =>
+        action.type === scriptOutputStreamReady.type &&
+        Array.isArray(action.payload) &&
+        action.payload[0] === workspaceId,
+    ),
+    timeout: delay(SCRIPT_OUTPUT_STREAM_WAIT_MS),
+  });
+}
 
 function* readOutput(action: ReturnType<typeof scriptOutputRequested>): SagaGenerator<void> {
   const [workspaceId, scriptId, viewerId] = action.payload;
@@ -58,6 +85,8 @@ function* readOutput(action: ReturnType<typeof scriptOutputRequested>): SagaGene
     );
   }
   function* hydrate(): SagaGenerator<void> {
+    if (!(yield* isCurrent())) return;
+    yield* call(waitForLiveOutputStream, workspaceId);
     if (!(yield* isCurrent())) return;
     // Known IDs remain readable after archive retirement and partial-page refresh.
     const output = yield* call(
