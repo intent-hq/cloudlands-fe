@@ -340,6 +340,78 @@ describe('retained script output hydration', () => {
       }
     });
 
+    it('refreshes a timed-out fallback snapshot once the lease becomes routable', async () => {
+      vi.useFakeTimers();
+      try {
+        transport.request.mockResolvedValueOnce('before timeout');
+        const run = start(true, false, false);
+        run.dispatch(request());
+        await vi.advanceTimersByTimeAsync(SCRIPT_OUTPUT_STREAM_WAIT_MS);
+        expect(outputReads()).toHaveLength(1);
+        expect(run.retained()?.text).toBe('before timeout');
+        // The open-ended wait must not keep journaling script changes.
+        expect(run.state.scripts.byWorkspaceId[WS]?.pendingReads).toEqual({});
+
+        // Output produced now reaches neither the fallback snapshot nor the
+        // (not yet subscribed) live buffer.
+        transport.request.mockResolvedValueOnce('before timeout\nduring the gap');
+        run.dispatch(scriptOutputStreamReady('another-workspace'));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(outputReads()).toHaveLength(1);
+
+        run.dispatch(scriptOutputStreamReady(WS));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(outputReads()).toHaveLength(2);
+        expect(run.retained()?.text).toBe('before timeout\nduring the gap');
+
+        run.dispatch(scriptOutputStreamInterrupted(WS));
+        run.dispatch(scriptOutputStreamReady(WS));
+        await vi.advanceTimersByTimeAsync(SCRIPT_OUTPUT_STREAM_WAIT_MS);
+        expect(outputReads()).toHaveLength(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not refresh a timed-out fallback after its viewer is released', async () => {
+      vi.useFakeTimers();
+      try {
+        transport.request.mockResolvedValue('before timeout');
+        const run = start(true, false, false);
+        run.dispatch(request());
+        await vi.advanceTimersByTimeAsync(SCRIPT_OUTPUT_STREAM_WAIT_MS);
+        expect(outputReads()).toHaveLength(1);
+
+        run.dispatch(release());
+        run.dispatch(scriptOutputStreamReady(WS));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(outputReads()).toHaveLength(1);
+        expect(run.retained()).toBeUndefined();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('lets a re-requested viewer replace a pending fallback refresh', async () => {
+      vi.useFakeTimers();
+      try {
+        transport.request.mockResolvedValue('before timeout');
+        const run = start(true, false, false);
+        run.dispatch(request());
+        await vi.advanceTimersByTimeAsync(SCRIPT_OUTPUT_STREAM_WAIT_MS);
+        run.dispatch(request());
+        await vi.advanceTimersByTimeAsync(0);
+
+        transport.request.mockResolvedValue('after ready');
+        run.dispatch(scriptOutputStreamReady(WS));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(outputReads()).toHaveLength(2);
+        expect(run.retained()?.text).toBe('after ready');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('drops a waiting read when its viewer is released', async () => {
       transport.request.mockResolvedValue('retained output');
       const run = start(true, false, false);

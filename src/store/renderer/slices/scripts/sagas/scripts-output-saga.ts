@@ -38,28 +38,30 @@ export const SCRIPT_OUTPUT_STREAM_WAIT_MS = 5_000;
 /**
  * Wait until the workspace's live `script:output` lease is routable, so the
  * snapshot read below starts after the stream: output between them lands in
- * the live buffer instead of falling into neither.
+ * the live buffer instead of falling into neither. Resolves `false` when the
+ * wait timed out and the snapshot is only a fallback.
  */
-function* waitForLiveOutputStream(workspaceId: string): SagaGenerator<void> {
-  if (yield* selectScriptOutputStreamReady.effect(workspaceId)) return;
-  yield* race({
+function* waitForLiveOutputStream(workspaceId: string): SagaGenerator<boolean> {
+  if (yield* selectScriptOutputStreamReady.effect(workspaceId)) return true;
+  const { ready } = yield* race({
     ready: call(takeOutputStreamReady, workspaceId),
     timeout: delay(SCRIPT_OUTPUT_STREAM_WAIT_MS),
   });
+  return ready !== undefined;
 }
 
-function* takeOutputStreamReady(workspaceId: string): SagaGenerator<void> {
+function* takeOutputStreamReady(workspaceId: string): SagaGenerator<true> {
   while (true) {
     const { payload } = yield* take(scriptOutputStreamReady);
-    if (payload[0] === workspaceId) return;
+    if (payload[0] === workspaceId) return true;
   }
 }
 
 function* readOutput(action: ReturnType<typeof scriptOutputRequested>): SagaGenerator<void> {
   const [workspaceId, scriptId, viewerId] = action.payload;
-  const context = yield* beginScriptRead(workspaceId);
+  let context = yield* beginScriptRead(workspaceId);
   const script = yield* selectScriptById.effect(workspaceId, scriptId);
-  const viewer = yield* selectScriptRetainedOutput.effect(workspaceId, scriptId, viewerId);
+  let viewer = yield* selectScriptRetainedOutput.effect(workspaceId, scriptId, viewerId);
   if (!context.authority || !(yield* selectCanReadScriptDefinition.effect(workspaceId, script))) {
     yield* put(scriptReadFinished(workspaceId, context.requestId));
     return;
@@ -86,10 +88,7 @@ function* readOutput(action: ReturnType<typeof scriptOutputRequested>): SagaGene
       (!script || !currentScript || run === runtimeKey(currentScript))
     );
   }
-  function* hydrate(): SagaGenerator<void> {
-    if (!(yield* isCurrent())) return;
-    yield* call(waitForLiveOutputStream, workspaceId);
-    if (!(yield* isCurrent())) return;
+  function* readSnapshot(): SagaGenerator<void> {
     // Known IDs remain readable after archive retirement and partial-page refresh.
     const output = yield* call(
       [appClient.scripts, appClient.scripts.output],
@@ -99,6 +98,42 @@ function* readOutput(action: ReturnType<typeof scriptOutputRequested>): SagaGene
     );
     if (!(yield* isCurrent())) return;
     yield* put(scriptOutputSnapshotReceived(workspaceId, scriptId, viewerId, output));
+    // Our own publication replaces the viewer entry; a later re-request or
+    // release replaces it again and retires this read.
+    viewer = yield* selectScriptRetainedOutput.effect(workspaceId, scriptId, viewerId);
+  }
+  function* hydrate(): SagaGenerator<void> {
+    if (!(yield* isCurrent())) return;
+    const streamed = yield* call(waitForLiveOutputStream, workspaceId);
+    if (!(yield* isCurrent())) return;
+    yield* call(readSnapshot);
+    if (streamed) return;
+    // The fallback snapshot predates the lease, so output produced before it
+    // becomes routable reached neither. Refresh once the lease is ready. The
+    // wait is open-ended, so close this read's change journal first.
+    const fallback = context;
+    yield* put(scriptReadFinished(workspaceId, fallback.requestId));
+    const { ready } = yield* race({
+      ready: call(takeOutputStreamReady, workspaceId),
+      replaced: call(takeViewerRequest),
+    });
+    if (!ready) return;
+    context = yield* beginScriptRead(workspaceId);
+    if (
+      context.authority !== fallback.authority ||
+      context.connection !== fallback.connection ||
+      context.backendId !== fallback.backendId ||
+      !(yield* isCurrent())
+    ) {
+      return;
+    }
+    yield* call(readSnapshot);
+  }
+  function* takeViewerRequest(): SagaGenerator<void> {
+    while (true) {
+      const { payload } = yield* take(scriptOutputRequested);
+      if (payload[0] === workspaceId && payload[1] === scriptId && payload[2] === viewerId) return;
+    }
   }
   const releases = yield* actionChannel([
     scriptOutputReleased,
