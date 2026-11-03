@@ -162,6 +162,6 @@
     </div>
   </section>
   <section class="relative min-w-0 flex-1">
-    <QuakeTerminalOverlay {workspaceId} />
+    <QuakeTerminalOverlay workspaceId={WorkspaceId(workspaceId)} />
   </section>
 </div>
