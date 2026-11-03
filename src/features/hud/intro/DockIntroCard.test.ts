@@ -18,6 +18,7 @@ vi.mock('$lib/utils/safe-storage', () => ({
   safeLocalStorage: {
     getItem: (key: string) => mocks.storage.get(key) ?? null,
     setItem: (key: string, value: string) => mocks.storage.set(key, value),
+    removeItem: (key: string) => mocks.storage.delete(key),
   },
 }));
 vi.mock('$lib/dock-lab', () => ({ requestDockLabEnabled: mocks.request }));
@@ -56,11 +57,18 @@ describe('DockIntroCard', () => {
 
   it('retires the intro on "Turn off" once main confirms the dock is off', async () => {
     initDockIntro();
-    mocks.request.mockResolvedValue(true);
+    // Main closes the dock as soon as it confirms, so the card is already marked
+    // seen when the request goes out.
+    let seenAtRequest: string | undefined;
+    mocks.request.mockImplementation(async () => {
+      seenAtRequest = mocks.storage.get('intent:dock-intro-seen:v1');
+      return true;
+    });
     render(DockIntroCard);
     await fireEvent.click(screen.getByRole('button', { name: m.dock_intro_turnOff_label() }));
     expect(mocks.request).toHaveBeenCalledWith(false);
     await waitFor(() => expect(dockIntro.open).toBe(false));
+    expect(seenAtRequest).toBe('1');
     initDockIntro();
     expect(dockIntro.open).toBe(false);
   });

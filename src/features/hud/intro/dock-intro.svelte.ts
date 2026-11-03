@@ -28,3 +28,13 @@ export function dismissDockIntro(): void {
   dockIntro.hold = false;
   safeLocalStorage.setItem(STORAGE_KEY, '1');
 }
+
+/**
+ * "Turn off" from the dock: main closes the dock as soon as it confirms the save, so
+ * the seen mark is written before asking (nothing races the teardown) and taken back
+ * when the save fails, keeping the card for a retry.
+ */
+export function markDockIntroSeen(seen: boolean): void {
+  if (seen) safeLocalStorage.setItem(STORAGE_KEY, '1');
+  else safeLocalStorage.removeItem(STORAGE_KEY);
+}

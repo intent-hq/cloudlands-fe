@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain } from 'electron';
+import { BrowserWindow, ipcMain, type WebContents } from 'electron';
 import { WINDOW_CHANNELS } from '../shared/ipc/channels';
 import { EmptySchema, WindowSetDockLabSchema } from './ipc-schemas';
 import { createSafeValidatedHandler } from './ipc-validation-middleware';
@@ -29,6 +29,8 @@ export type DockLabEffects = {
   hide(): void;
   /** Either direction: rebuild the menu. */
   onChange(): void;
+  /** Whether a request came from the dock itself (its intro's "Turn off"). */
+  isDock(sender: WebContents): boolean;
 };
 
 function broadcast(): void {
@@ -39,15 +41,23 @@ function broadcast(): void {
 }
 
 /** Persists, applies, and announces a change. Changes run one at a time. */
-function setDockLabEnabled(next: boolean, effects: DockLabEffects): Promise<boolean> {
+function setDockLabEnabled(
+  next: boolean,
+  effects: DockLabEffects,
+  fromDock = false,
+): Promise<boolean> {
   const change = changeChain.then(async () => {
     if (next === enabled) return;
-    // Stop capture immediately on a requested disable, even if saving fails.
-    // The cached preference stays truthful and the same request remains retryable.
-    if (!next) effects.hide();
+    // From elsewhere (Settings), stop capture immediately on a requested disable,
+    // even if saving fails. The cached preference stays truthful and the same
+    // request remains retryable.
+    if (!next && !fromDock) effects.hide();
     await setDockLabEnabledLocalPref(next);
     enabled = next;
     if (next) await effects.show();
+    // The dock asking to turn itself off is the caller: close it only once the save
+    // is confirmed, so a failed save leaves it (and its intro) open to retry.
+    if (!next && fromDock) effects.hide();
     effects.onChange();
     broadcast();
   });
@@ -68,7 +78,9 @@ export function registerDockLabHandlers(effects: DockLabEffects): void {
     WINDOW_CHANNELS.SET_DOCK_LAB,
     createSafeValidatedHandler(
       WindowSetDockLabSchema,
-      async (_event, request) => ({ enabled: await setDockLabEnabled(request.enabled, effects) }),
+      async (event, request) => ({
+        enabled: await setDockLabEnabled(request.enabled, effects, effects.isDock(event.sender)),
+      }),
       WINDOW_CHANNELS.SET_DOCK_LAB,
     ),
   );

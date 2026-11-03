@@ -53,6 +53,25 @@ async function readDocumentOnDisk(): Promise<unknown> {
 }
 
 describe('local-prefs', () => {
+  it('reads the dock setting as on only when the file is missing, never when unreadable', async () => {
+    const { getDockLabEnabledLocalPref, setDockLabEnabledLocalPref } =
+      await import('../local-prefs');
+    const file = path.join(tmpDir, 'local-prefs.json');
+    // Missing file: the profile never chose, so the default-on policy applies.
+    expect(await getDockLabEnabledLocalPref()).toBe(true);
+    await setDockLabEnabledLocalPref(false);
+    expect(await getDockLabEnabledLocalPref()).toBe(false);
+    // Corrupt or non-object contents must not read as "unset" over a saved opt-out.
+    for (const contents of ['{"dockLabEnabled": fal', '[]', 'null', '']) {
+      await fs.writeFile(file, contents);
+      await expect(getDockLabEnabledLocalPref(), contents).rejects.toThrow();
+    }
+    // An unreadable path (a directory) is an error too, not "unset".
+    await fs.rm(file);
+    await fs.mkdir(file);
+    await expect(getDockLabEnabledLocalPref()).rejects.toThrow();
+  });
+
   it('rejects a failed Labs write and permits retry without losing the persisted setting', async () => {
     let fail = false;
     await mockFsRename(async (rename, ...args) => {

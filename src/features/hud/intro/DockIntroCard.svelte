@@ -2,22 +2,26 @@
   import { Button } from '$lib/components/ui/button';
   import { requestDockLabEnabled } from '$lib/dock-lab';
   import { m } from '$shared/paraglide/messages.js';
-  import { dismissDockIntro } from './dock-intro.svelte';
+  import { dismissDockIntro, markDockIntroSeen } from './dock-intro.svelte';
 
   /**
    * "Meet the notch": the dock's own first-run card, above the workspace rows.
    * Its height is fixed (DOCK_INTRO_HEIGHT in dock-shell-geometry.ts) so the shell
    * can size the open notch before it renders. "Got it" retires it; "Turn off"
-   * retires it only once main confirms the dock is off (main then closes the dock).
+   * retires it only once main confirms the dock is off. Main closes the dock right
+   * after that confirmation, so the card is marked seen before asking and unmarked
+   * if the save fails.
    */
   let turningOff = $state(false);
   async function turnOff(): Promise<void> {
     if (turningOff) return;
     turningOff = true;
+    markDockIntroSeen(true);
     // eslint-disable-next-line intent/no-component-async-data-fetch -- writes the main-owned dock setting (as Settings › Appearance does); nothing is loaded
     const disabled = await requestDockLabEnabled(false);
     turningOff = false;
     if (disabled) dismissDockIntro();
+    else markDockIntroSeen(false);
   }
 </script>
 
