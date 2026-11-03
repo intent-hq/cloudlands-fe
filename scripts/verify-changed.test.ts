@@ -2206,6 +2206,32 @@ describe('verification planning', () => {
     expect(related?.args).toContain('playwright/ct-spec-pattern.mjs');
   });
 
+  it.each([
+    ['a shared test helper', 'tests/helpers/contrast.ts'],
+    ['a nested test helper', 'tests/member-controls/harness.ts'],
+    ['a lint rule', 'eslint-rules/no-example.js'],
+    ['a lint rule library', 'eslint-rules/lib/scope.js'],
+  ])('feeds %s to vitest related so the suites importing it run', (_name, file) => {
+    const root = fixtureRoot({ [file]: 'export const value = 1;' });
+    const plan = createVerificationPlan([file], { root, ctTests: [], declaredSuites: [] });
+    const related = plan.checks.find((check) => check.id === 'vitest-related');
+    expect(related?.args.slice(-1)).toEqual([file]);
+    expect(plan.checks.map((check) => check.id)).not.toContain('vitest-full');
+    expect(plan.fallbackReasons).toEqual([]);
+  });
+
+  it('keeps tests, integration helpers and data files out of the related lane', () => {
+    const files = [
+      'tests/unit/example.test.ts',
+      'eslint-rules/no-example.test.js',
+      'tests/integration/helpers/server.ts',
+      'eslint-rules/baselines/no-example.json',
+    ];
+    const root = fixtureRoot(Object.fromEntries(files.map((file) => [file, ''])));
+    const plan = createVerificationPlan(files, { root, ctTests: [], declaredSuites: [] });
+    expect(plan.checks.map((check) => check.id)).not.toContain('vitest-related');
+  });
+
   it('runs the whole Playwright browser suite when its config changes', () => {
     const root = fixtureRoot({ 'playwright.config.ts': '', 'test/a.spec.ts': '' });
     const plan = createVerificationPlan(['playwright.config.ts', 'test/a.spec.ts'], {
