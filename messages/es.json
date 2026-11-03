@@ -8253,5 +8253,13 @@
   "intentWeb_sessionEnded_error": "Tu sesión de Intent Web ha terminado. Vuelve a iniciar sesión para seguir trabajando.",
   "intentWeb_updatesStopped_error": "Se detuvieron las actualizaciones en vivo del servidor de Intent Web. Recarga la página para volver a conectar.",
   "intentWeb_signIn_action": "Iniciar sesión",
-  "intentWeb_reload_action": "Recargar"
+  "intentWeb_reload_action": "Recargar",
+  "layout_agentMemoryBreakdown_remoteOwner_label": "para {backend}",
+  "layout_agentMemoryBreakdown_unnamedAgent_label": "Agente {id}",
+  "layout_daemonStatus_connectedDaemons_label": "Daemons conectados",
+  "layout_daemonStatus_connectedDaemons_value": "{backends} · {machines}",
+  "layout_daemonStatus_connectedBackends_one": "{count} backend",
+  "layout_daemonStatus_connectedBackends_many": "{count} backends",
+  "layout_daemonStatus_connectedMachines_one": "{count} máquina",
+  "layout_daemonStatus_connectedMachines_many": "{count} máquinas"
 }

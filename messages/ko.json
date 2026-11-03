@@ -8253,5 +8253,13 @@
   "intentWeb_sessionEnded_error": "Intent Web 세션이 종료되었습니다. 계속 작업하려면 다시 로그인하세요.",
   "intentWeb_updatesStopped_error": "Intent Web 서버의 실시간 업데이트가 중단되었습니다. 다시 연결하려면 페이지를 새로 고치세요.",
   "intentWeb_signIn_action": "로그인",
-  "intentWeb_reload_action": "새로 고침"
+  "intentWeb_reload_action": "새로 고침",
+  "layout_agentMemoryBreakdown_remoteOwner_label": "{backend}용",
+  "layout_agentMemoryBreakdown_unnamedAgent_label": "에이전트 {id}",
+  "layout_daemonStatus_connectedDaemons_label": "연결된 데몬",
+  "layout_daemonStatus_connectedDaemons_value": "{backends} · {machines}",
+  "layout_daemonStatus_connectedBackends_one": "백엔드 {count}개",
+  "layout_daemonStatus_connectedBackends_many": "백엔드 {count}개",
+  "layout_daemonStatus_connectedMachines_one": "머신 {count}대",
+  "layout_daemonStatus_connectedMachines_many": "머신 {count}대"
 }

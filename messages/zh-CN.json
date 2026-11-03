@@ -8253,5 +8253,13 @@
   "intentWeb_sessionEnded_error": "你的 Intent Web 会话已结束。请重新登录以继续工作。",
   "intentWeb_updatesStopped_error": "来自 Intent Web 服务器的实时更新已停止。请重新加载页面以重新连接。",
   "intentWeb_signIn_action": "登录",
-  "intentWeb_reload_action": "重新加载"
+  "intentWeb_reload_action": "重新加载",
+  "layout_agentMemoryBreakdown_remoteOwner_label": "用于 {backend}",
+  "layout_agentMemoryBreakdown_unnamedAgent_label": "智能体 {id}",
+  "layout_daemonStatus_connectedDaemons_label": "已连接的守护进程",
+  "layout_daemonStatus_connectedDaemons_value": "{backends} · {machines}",
+  "layout_daemonStatus_connectedBackends_one": "{count} 个后端",
+  "layout_daemonStatus_connectedBackends_many": "{count} 个后端",
+  "layout_daemonStatus_connectedMachines_one": "{count} 台机器",
+  "layout_daemonStatus_connectedMachines_many": "{count} 台机器"
 }

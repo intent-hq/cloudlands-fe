@@ -420,6 +420,24 @@
   // its first process-tree sample.
   const agentMemoryBytes = $derived($stats$?.agentMemoryBytes ?? null);
 
+  // --- Connected daemons ---------------------------------------------------
+
+  // Live daemon-to-daemon links. Older daemons omit them; a daemon with no
+  // links reports zeros. Either hides the row.
+  const connectedDaemons = $derived.by(() => {
+    const links = $stats$?.remoteLinks;
+    if (!links || (links.backends === 0 && links.machines === 0)) return null;
+    const backends =
+      links.backends === 1
+        ? m.layout_daemonStatus_connectedBackends_one({ count: formatNumber(links.backends) })
+        : m.layout_daemonStatus_connectedBackends_many({ count: formatNumber(links.backends) });
+    const machines =
+      links.machines === 1
+        ? m.layout_daemonStatus_connectedMachines_one({ count: formatNumber(links.machines) })
+        : m.layout_daemonStatus_connectedMachines_many({ count: formatNumber(links.machines) });
+    return m.layout_daemonStatus_connectedDaemons_value({ backends, machines });
+  });
+
   function openAgentMemoryBreakdown() {
     dropdownOpen = false;
     agentMemoryDialogOpen = true;
@@ -623,6 +641,16 @@
                     <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                       <span class="text-subtle">{m.layout_daemonStatus_wssClients_label()}</span>
                       <span class="tabular-nums">{$stats$.clients}</span>
+                    </div>
+                  {/if}
+
+                  <!-- Connected daemons (remote-machine links; absent on older daemons) -->
+                  {#if connectedDaemons}
+                    <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
+                      <span class="text-subtle shrink-0"
+                        >{m.layout_daemonStatus_connectedDaemons_label()}</span
+                      >
+                      <span class="tabular-nums min-w-0 truncate">{connectedDaemons}</span>
                     </div>
                   {/if}
 

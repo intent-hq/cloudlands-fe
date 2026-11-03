@@ -8253,5 +8253,13 @@
   "intentWeb_sessionEnded_error": "Intent Web のセッションが終了しました。作業を続けるには再度サインインしてください。",
   "intentWeb_updatesStopped_error": "Intent Web サーバーからのライブ更新が停止しました。再接続するにはページを再読み込みしてください。",
   "intentWeb_signIn_action": "サインイン",
-  "intentWeb_reload_action": "再読み込み"
+  "intentWeb_reload_action": "再読み込み",
+  "layout_agentMemoryBreakdown_remoteOwner_label": "{backend} 用",
+  "layout_agentMemoryBreakdown_unnamedAgent_label": "エージェント {id}",
+  "layout_daemonStatus_connectedDaemons_label": "接続中のデーモン",
+  "layout_daemonStatus_connectedDaemons_value": "{backends} · {machines}",
+  "layout_daemonStatus_connectedBackends_one": "{count} 個のバックエンド",
+  "layout_daemonStatus_connectedBackends_many": "{count} 個のバックエンド",
+  "layout_daemonStatus_connectedMachines_one": "{count} 台のマシン",
+  "layout_daemonStatus_connectedMachines_many": "{count} 台のマシン"
 }
