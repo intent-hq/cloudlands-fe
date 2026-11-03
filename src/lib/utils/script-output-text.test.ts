@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { scriptOutputTailText, scriptOutputToLines } from './script-output-text';
+import { scriptOutputReplyLines, scriptOutputToLines } from './script-output-text';
 import type { ScriptOutputBuffer } from '$store/renderer/slices/scripts/scripts-types';
 
 function buffer(...texts: string[]): ScriptOutputBuffer {
@@ -51,8 +51,17 @@ describe('scriptOutputToLines', () => {
   });
 });
 
-describe('scriptOutputTailText', () => {
-  it('returns the last N lines joined with \\n', () => {
-    expect(scriptOutputTailText(buffer('a\nb\nc\nd\n'), 2)).toBe('c\nd');
+describe('scriptOutputReplyLines', () => {
+  it.each([
+    ['[3 lines]\na\nb\nc\n', ['a', 'b', 'c']],
+    ['[showing last 2 of 40 lines]\ny\nz', ['y', 'z']],
+    ['plain\ntext', ['plain', 'text']],
+    ['[not a header]\nx', ['[not a header]', 'x']],
+  ])('drops the daemon line-count header from %j', (text, lines) => {
+    expect(scriptOutputReplyLines(text)).toEqual(lines);
+  });
+
+  it.each(['No output yet.', '', null, undefined])('returns no lines for %j', (text) => {
+    expect(scriptOutputReplyLines(text)).toEqual([]);
   });
 });

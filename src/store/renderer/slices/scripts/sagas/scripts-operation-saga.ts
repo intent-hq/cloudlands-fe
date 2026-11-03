@@ -14,7 +14,7 @@ import { notify } from '$lib/components/patterns/notify';
 import { scriptDefinitionTransport } from '$features/scripts/script-definition-transport';
 import { scriptRuntimeSnapshot } from '$features/scripts/utils/script-change';
 import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
-import { scriptOutputTailText } from '$lib/utils/script-output-text';
+import { scriptOutputReplyLines, scriptOutputToLines } from '$lib/utils/script-output-text';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { scriptsOutputSaga } from './scripts-output-saga';
 import { takeLeadingInContext } from '../../../utils/context-saga-effects';
@@ -606,10 +606,15 @@ function* createScriptFixAgent(
     if (!script) return;
     yield* requireAuthority(workspaceId, authority);
     const buffer = yield* selectScriptOutput.effect(workspaceId, scriptId);
-    const lastLines =
-      buffer.chunks.length > 0
-        ? scriptOutputTailText(buffer, 100)
-        : (retainedOutput ?? '').split('\n').slice(-100).join('\n');
+    // Live chunks stream only while a viewer is open, so a short live buffer
+    // may be just the tail since it opened. The viewer's retained daemon
+    // snapshot (re-read on every runtime transition) is preferred unless the
+    // live buffer alone fills the window.
+    const liveLines = scriptOutputToLines(buffer).slice(-100);
+    const retainedLines = scriptOutputReplyLines(retainedOutput).slice(-100);
+    const lastLines = (
+      liveLines.length >= 100 || retainedLines.length === 0 ? liveLines : retainedLines
+    ).join('\n');
     const exitCode = script.runtime?.exitCode;
     const failedText =
       exitCode !== null && exitCode !== undefined && exitCode !== 0

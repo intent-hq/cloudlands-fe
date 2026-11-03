@@ -48,6 +48,7 @@ import {
   FILE_EVENTS_REPLACE_GROUP,
   FILE_EVENTS_SUBSCRIBE_TYPES,
   SCRIPT_OUTPUT_LEASE_GRACE_MS,
+  SCRIPT_OUTPUT_LEASE_RETRY_MS,
   SCRIPT_OUTPUT_SUBSCRIBE_TYPES,
   scriptOutputReplaceGroup,
 } from './daemon-events-saga';
@@ -956,14 +957,16 @@ describe('daemonEventsSaga', () => {
       dispatchAction(scriptOutputRequested('ws-1', 'script-a', 'viewer-1') as never);
       await tick();
 
-      mocks.subscribe
-        .mockResolvedValueOnce({ subscriptionId: 'sub-fire-new' })
-        .mockResolvedValueOnce({ subscriptionId: 'sub-out-new' });
+      mocks.subscribe.mockImplementation(async (params: { eventTypes: string[] }) => ({
+        subscriptionId: params.eventTypes[0] === 'script:output' ? 'sub-out-new' : 'sub-fire-new',
+      }));
       mocks.reconnectHandler!();
       await tick();
       await tick();
 
-      expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-out-old', 'ws-1');
+      // The daemon dropped it with the connection; a restarted daemon reuses
+      // ids, so unsubscribing the stale one could retire a new subscription.
+      expect(mocks.unsubscribe).not.toHaveBeenCalledWith('sub-out-old', expect.anything());
       expect(dispatch).toHaveBeenCalledWith(scriptOutputStreamInterrupted('ws-1'));
       expect(outputSubscribes()).toEqual([
         [scriptOutputParams('ws-1')],
@@ -972,6 +975,58 @@ describe('daemonEventsSaga', () => {
       task.cancel();
       await task.toPromise();
       expect(mocks.unsubscribe).toHaveBeenLastCalledWith('sub-out-new', 'ws-1');
+    });
+
+    it.each([
+      ['rejects', () => mocks.subscribe.mockRejectedValueOnce(new Error('timeout'))],
+      ['returns no id', () => mocks.subscribe.mockResolvedValueOnce({})],
+    ])('retries a viewed workspace whose output subscribe %s', async (_name, fail) => {
+      const { task, dispatchAction } = startSaga();
+      await tick();
+      fail();
+      mocks.subscribe.mockResolvedValueOnce({ subscriptionId: 'sub-out-retry' });
+      dispatchAction(scriptOutputRequested('ws-1', 'script-a', 'viewer-1') as never);
+      await tick();
+      expect(outputSubscribes()).toHaveLength(1);
+
+      await vi.advanceTimersByTimeAsync(SCRIPT_OUTPUT_LEASE_RETRY_MS);
+
+      expect(outputSubscribes()).toEqual([
+        [scriptOutputParams('ws-1')],
+        [scriptOutputParams('ws-1')],
+      ]);
+      mocks.notificationHandler!({ method: 'events.event', params: { sequence: 1 } });
+      await tick();
+      expect(mocks.route).toHaveBeenLastCalledWith(
+        'events.event',
+        { sequence: 1 },
+        ['sub-1', 'sub-out-retry'],
+        expect.anything(),
+      );
+      await vi.advanceTimersByTimeAsync(SCRIPT_OUTPUT_LEASE_RETRY_MS * 2);
+      expect(outputSubscribes()).toHaveLength(2);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('unsubscribes a lease whose subscribe resolves after cancellation', async () => {
+      let resolveSubscribe!: (value: { subscriptionId: string }) => void;
+      const { task, dispatchAction } = startSaga();
+      await tick();
+      mocks.subscribe.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveSubscribe = resolve;
+        }),
+      );
+      dispatchAction(scriptOutputRequested('ws-1', 'script-a', 'viewer-1') as never);
+      await tick();
+
+      task.cancel();
+      await tick();
+      resolveSubscribe({ subscriptionId: 'sub-out-late' });
+      await tick();
+
+      expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-out-late', 'ws-1');
     });
   });
 });

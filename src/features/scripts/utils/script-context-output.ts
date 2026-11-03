@@ -1,5 +1,5 @@
 import { appClient } from '$lib/client';
-import { scriptOutputToLines } from '$lib/utils/script-output-text';
+import { scriptOutputReplyLines, scriptOutputToLines } from '$lib/utils/script-output-text';
 import {
   selectCanReadScriptDefinition,
   selectScriptById,
@@ -7,15 +7,14 @@ import {
 } from '$store/renderer/slices/scripts/scripts-selectors';
 import type { StoreState } from '$store/renderer/types';
 
-/** `script.output` reply when the daemon has nothing buffered for the script. */
-const NO_OUTPUT_SENTINEL = 'No output yet.'; // i18n-ignore (daemon wire sentinel)
-
 /**
  * The last `maxLines` output lines of a script, for agent context.
  *
- * The renderer buffers live chunks only while an output viewer is mounted
- * (the `script:output` stream is not subscribed otherwise), so an empty live
- * buffer falls back to the daemon's retained output via `script.output`.
+ * The daemon's stored output is authoritative: the renderer buffers live
+ * chunks only while an output viewer is open in the workspace (the
+ * `script:output` stream is not subscribed otherwise), so the live buffer may
+ * hold just the tail since that viewer opened. It is the fallback when the
+ * daemon read fails or has nothing.
  */
 export async function readScriptContextOutputLines(
   state: StoreState,
@@ -23,15 +22,18 @@ export async function readScriptContextOutputLines(
   scriptId: string,
   maxLines = 100,
 ): Promise<string[]> {
-  const live = scriptOutputToLines(selectScriptOutput.select(state, workspaceId, scriptId));
-  if (live.length > 0 || !workspaceId || !scriptId) return live.slice(-maxLines);
+  const live = scriptOutputToLines(selectScriptOutput.select(state, workspaceId, scriptId)).slice(
+    -maxLines,
+  );
+  if (!workspaceId || !scriptId) return live;
   const script = selectScriptById.select(state, workspaceId, scriptId);
   if (!selectCanReadScriptDefinition.select(state, workspaceId, script)) return [];
   try {
-    const text = await appClient.scripts.output(workspaceId, scriptId, maxLines);
-    if (!text || text.trim() === NO_OUTPUT_SENTINEL) return [];
-    return text.replace(/\n$/, '').split('\n').slice(-maxLines);
+    const stored = scriptOutputReplyLines(
+      await appClient.scripts.output(workspaceId, scriptId, maxLines),
+    );
+    return stored.length > 0 ? stored.slice(-maxLines) : live;
   } catch {
-    return [];
+    return live;
   }
 }

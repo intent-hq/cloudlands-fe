@@ -50,20 +50,29 @@ describe('readScriptContextOutputLines', () => {
     mocks.output.mockReset();
   });
 
-  it('prefers the live buffer when a viewer streamed output', async () => {
-    const lines = await readScriptContextOutputLines(stateWith(['one\ntwo\n', 'three\n']), WS, ID);
+  it('prefers the daemon output, without its header, over a partial live tail', async () => {
+    mocks.output.mockResolvedValue('[showing last 2 of 9 lines]\nb\nc\n');
 
-    expect(lines).toEqual(['one', 'two', 'three']);
-    expect(mocks.output).not.toHaveBeenCalled();
-  });
-
-  it('falls back to the daemon output when nothing streamed live', async () => {
-    mocks.output.mockResolvedValue('a\nb\nc\n');
-
-    const lines = await readScriptContextOutputLines(stateWith(), WS, ID, 2);
+    const lines = await readScriptContextOutputLines(stateWith(['c\n']), WS, ID, 2);
 
     expect(mocks.output).toHaveBeenCalledWith(WS, ID, 2);
     expect(lines).toEqual(['b', 'c']);
+  });
+
+  it('falls back to the live buffer when the daemon read fails', async () => {
+    mocks.output.mockRejectedValue(new Error('gone'));
+
+    const lines = await readScriptContextOutputLines(stateWith(['one\ntwo\n', 'three\n']), WS, ID);
+
+    expect(lines).toEqual(['one', 'two', 'three']);
+  });
+
+  it('falls back to the live buffer when the daemon has no output', async () => {
+    mocks.output.mockResolvedValue('No output yet.');
+
+    await expect(readScriptContextOutputLines(stateWith(['live\n']), WS, ID)).resolves.toEqual([
+      'live',
+    ]);
   });
 
   it.each([

@@ -82,6 +82,9 @@ export const scriptOutputReplaceGroup = (workspaceId: string) => `script-output:
  */
 export const SCRIPT_OUTPUT_LEASE_GRACE_MS = 2_000;
 
+/** Delay before retrying a viewed workspace whose output subscribe failed. */
+export const SCRIPT_OUTPUT_LEASE_RETRY_MS = 5_000;
+
 type DaemonChannelMessage =
   { kind: 'notification'; notification: BackendNotification } | { kind: 'reconnected' };
 
@@ -212,14 +215,28 @@ function subscribeScriptOutputLease(lease: SubscriptionLease, workspaceId: strin
   });
 }
 
-/** Open a lease for every viewed workspace that lacks one. */
+/**
+ * Open a lease for every viewed workspace that lacks one. A subscribe that
+ * fails or returns no id leaves no entry, so a later pass retries it; returns
+ * whether any did.
+ *
+ * Like the scoped file lease, the routing gate learns the id only once the
+ * subscribe reply lands, so a chunk the daemon emits before that reply is
+ * dropped. A viewer's retained `script.output` snapshot covers that window.
+ */
 function* openScriptOutputLeases(leases: DaemonEventLeases, desired: readonly string[]) {
+  let failed = false;
   for (const workspaceId of desired) {
     if (leases.scriptOutput.has(workspaceId)) continue;
     const lease: SubscriptionLease = { cancelled: false };
     leases.scriptOutput.set(workspaceId, lease);
     yield* call(subscribeScriptOutputLease, lease, workspaceId);
+    if (!lease.subscriptionId && leases.scriptOutput.get(workspaceId) === lease) {
+      leases.scriptOutput.delete(workspaceId);
+      failed = true;
+    }
   }
+  return failed;
 }
 
 /** Close one lease whose workspace no longer has a viewer; its buffers now have a gap. */
@@ -249,7 +266,8 @@ const SCRIPT_OUTPUT_VIEWER_ACTIONS = [
  * Single writer for `leases.scriptOutput`: keeps one `script:output` lease per
  * workspace with a mounted output viewer. Opens are immediate; a lease whose
  * last viewer left closes only after {@link SCRIPT_OUTPUT_LEASE_GRACE_MS}
- * without the workspace being viewed again. A reconnect drops every lease
+ * without the workspace being viewed again. A failed subscribe is retried
+ * after {@link SCRIPT_OUTPUT_LEASE_RETRY_MS}. A reconnect drops every lease
  * (the daemon already forgot them) and replays the viewed set.
  */
 function* manageScriptOutputLeases(
@@ -265,9 +283,9 @@ function* manageScriptOutputLeases(
     while (true) {
       yield* flush(viewerChanges);
       const desired = yield* selectScriptOutputViewerWorkspaceIds.effect();
-      yield* call(openScriptOutputLeases, leases, desired);
+      const failed = yield* call(openScriptOutputLeases, leases, desired);
       const now = Date.now();
-      let nextDeadline = Number.POSITIVE_INFINITY;
+      let nextDeadline = failed ? now + SCRIPT_OUTPUT_LEASE_RETRY_MS : Number.POSITIVE_INFINITY;
       for (const workspaceId of [...leases.scriptOutput.keys()]) {
         if (desired.includes(workspaceId)) {
           idleSince.delete(workspaceId);
@@ -290,13 +308,19 @@ function* manageScriptOutputLeases(
           : {}),
       });
       if (reconnect) {
+        // The daemon dropped these with the old connection. Do not send
+        // `events.unsubscribe` for them: a restarted daemon reuses
+        // `ws-sub-<n>` ids, so a stale id could retire a new subscription.
         // Output emitted while disconnected is lost, so every leased buffer
         // now has a gap; the next pass re-subscribes the viewed workspaces.
         const stale = [...leases.scriptOutput];
         leases.scriptOutput.clear();
         idleSince.clear();
-        yield* call(() => Promise.all(stale.map(([, lease]) => unsubscribeLease(lease))));
-        for (const [workspaceId] of stale) yield* call(interruptScriptOutputStream, workspaceId);
+        for (const [workspaceId, lease] of stale) {
+          lease.cancelled = true;
+          lease.subscriptionId = undefined;
+          yield* call(interruptScriptOutputStream, workspaceId);
+        }
       }
     }
   } finally {
