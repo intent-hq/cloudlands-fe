@@ -21,7 +21,12 @@ describe('pickedMentionsMetadata', () => {
         { type: 'rule', id: 'r', label: 'r.md', meta: { path: '.intent/rules/r.md' } },
       ]),
     ).toEqual({
-      [PICKED_MENTIONS_METADATA_KEY]: ['@src/a.ts', '@src/lib/', '@src/b.ts:L3-7', '@.intent/rules/r.md'],
+      [PICKED_MENTIONS_METADATA_KEY]: [
+        '@src/a.ts',
+        '@src/lib/',
+        '@src/b.ts:L3-7',
+        '@.intent/rules/r.md',
+      ],
     });
   });
 
@@ -121,9 +126,7 @@ describe('scanChatMentions with a record', () => {
   });
 
   it('prefers the longest recorded path at a position', () => {
-    expect(texts('see @src/lib/a.ts', ['@src/lib/', '@src/lib/a.ts'])).toEqual([
-      '@src/lib/a.ts',
-    ]);
+    expect(texts('see @src/lib/a.ts', ['@src/lib/', '@src/lib/a.ts'])).toEqual(['@src/lib/a.ts']);
   });
 
   it('parses recorded files and folders', () => {
