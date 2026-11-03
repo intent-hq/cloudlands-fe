@@ -118,18 +118,37 @@ export async function createIntentWebServer(options: WebServerOptions) {
   // reads as connected in every tab's Machines list.
   let bridged = (): Set<string> => new Set();
   const listConnections = async (requested: string | null) => {
+    const list = await records();
+    const id = list.some((r) => r.id === requested) ? requested : await defaultBackend();
+    // Read live bridges after the awaits so the status is current when sent.
     const live = bridged();
-    const connections = (await records()).map((r) => ({
+    const connections = list.map((r) => ({
       ...r,
       status: live.has(r.id) ? ('connected' as const) : ('not-open' as const),
     }));
-    const id = connections.some((r) => r.id === requested) ? requested : await defaultBackend();
     return { connections, activeId: id, windowBackendId: id };
   };
+  // One push in flight at a time, plus one trailing re-run for changes made
+  // meanwhile: pushes cannot land out of order, and bursts collapse.
+  let publishing = false;
+  let publishAgain = false;
   const publishList = () => {
-    void listConnections(null)
-      .then((value) => publish('connections:changed', value))
-      .catch(() => {});
+    if (publishing) {
+      publishAgain = true;
+      return;
+    }
+    publishing = true;
+    void (async () => {
+      do {
+        publishAgain = false;
+        try {
+          publish('connections:changed', await listConnections(null));
+        } catch {
+          // The next change publishes again.
+        }
+      } while (publishAgain);
+      publishing = false;
+    })();
   };
   const config = async (id: string) => {
     const record = (await records()).find((r) => r.id === id);
