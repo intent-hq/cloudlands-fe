@@ -339,6 +339,27 @@
   </div>
 {/if}
 
+{#snippet warningSummary(
+  title: string,
+  subject: string,
+  hint: string,
+  testId: string,
+  subjectTestId: string,
+)}
+  <Fa icon={faExclamationTriangle} class="mt-0.5 size-3 shrink-0 text-warning-ink" />
+  <div class="flex min-w-0 flex-1 flex-col gap-0.5" data-testid={testId}>
+    <span class="font-medium text-warning-ink"
+      >{title}{#if failedAt}
+        <span class="type-caption ml-1.5 leading-4 font-normal text-muted-foreground">
+          <RelativeTime date={failedAt} />
+        </span>
+      {/if}</span
+    >
+    <span class="min-w-0 break-words text-foreground" data-testid={subjectTestId}>{subject}</span>
+    <span class="text-muted-foreground">{hint}</span>
+  </div>
+{/snippet}
+
 {#if visible}
   {#if status !== 'normal'}
     <div
@@ -349,8 +370,6 @@
       class={cn(
         'type-caption flex min-w-0 flex-col gap-2 rounded-md border border-border bg-card p-3',
         status === 'error' && 'mt-2',
-        status === 'model-unavailable' &&
-          'rounded-md border border-warning/20 bg-warning/5 pl-2 pr-3',
         className,
       )}
       in:fade={{ tier: 'moderate' }}
@@ -359,33 +378,23 @@
       <div class="flex min-w-0 flex-col gap-2">
         <div class="flex min-w-0 flex-1 items-start gap-2">
           {#if status === 'model-unavailable' && modelUnavailable}
-            <Fa icon={faExclamationTriangle} class="shrink-0 text-warning-ink" />
-            <span class="text-warning-ink">
-              {m.chat_streamingStatus_modelUnavailable_before()}
-              <code class="px-1 py-0.5 bg-muted rounded text-ui"
-                >{modelUnavailable.failedModel}</code
-              >
-              {m.chat_streamingStatus_modelUnavailable_after()}
-            </span>
+            {@render warningSummary(
+              m.chat_streamingStatus_modelUnavailable_title(),
+              modelUnavailable.failedModel,
+              m.chat_streamingStatus_modelUnavailable_hint(),
+              'error-model-unavailable',
+              'model-unavailable-label',
+            )}
           {:else if status === 'quota-exceeded' && quotaExceeded}
-            <Fa icon={faExclamationTriangle} class="mt-0.5 size-3 shrink-0 text-warning-ink" />
-            <div class="flex min-w-0 flex-1 flex-col gap-0.5" data-testid="error-quota-exceeded">
-              <span class="font-medium text-warning-ink"
-                >{m.chat_streamingStatus_quotaExceeded_title()}{#if failedAt}
-                  <span class="type-caption ml-1.5 leading-4 font-normal text-muted-foreground">
-                    <RelativeTime date={failedAt} />
-                  </span>
-                {/if}</span
-              >
-              <span class="min-w-0 break-words text-foreground" data-testid="quota-provider-label"
-                >{quotaProviderLabel}</span
-              >
-              <span class="text-muted-foreground"
-                >{quotaRetryProviders.length > 0
-                  ? m.chat_streamingStatus_quotaExceeded_hint()
-                  : m.chat_streamingStatus_quotaExceeded_hintResetOnly()}</span
-              >
-            </div>
+            {@render warningSummary(
+              m.chat_streamingStatus_quotaExceeded_title(),
+              quotaProviderLabel,
+              quotaRetryProviders.length > 0
+                ? m.chat_streamingStatus_quotaExceeded_hint()
+                : m.chat_streamingStatus_quotaExceeded_hintResetOnly(),
+              'error-quota-exceeded',
+              'quota-provider-label',
+            )}
           {:else if status === 'error' && errorDisplay}
             <div class="flex min-w-0 flex-1 flex-col gap-0.5">
               <span class="font-medium text-danger" data-testid="error-title"

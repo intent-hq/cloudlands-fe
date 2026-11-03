@@ -2,7 +2,7 @@ import { expect, test } from '../../../../test/ct-test';
 import QuotaRecoveryHost from './QuotaRecoveryHost.svelte';
 
 for (const theme of ['light', 'dark'] as const) {
-  test(`quota card reads as title, provider and hint with one Retry per target (${theme})`, async ({
+  test(`warning cards read as title, subject and hint with one Retry per target (${theme})`, async ({
     mount,
   }) => {
     const component = await mount(QuotaRecoveryHost, { props: { theme } });
@@ -21,10 +21,18 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(resetOnly.getByText('Retry once it resets.', { exact: true })).toBeVisible();
     await expect(resetOnly.getByRole('button', { name: /retry/i })).toHaveText(['Retry']);
 
-    for (const card of [withAlternative, resetOnly]) {
-      // The provider label is plain text, not a code chip, and wraps inside the card.
-      const label = card.getByTestId('quota-provider-label');
-      await expect(label.locator('code')).toHaveCount(0);
+    const modelUnavailable = component.getByTestId('model-unavailable');
+    await expect(modelUnavailable.getByText('Model unavailable')).toBeVisible();
+    await expect(modelUnavailable.getByTestId('model-unavailable-label')).toHaveText(
+      'claude-opus-5-5',
+    );
+    await expect(modelUnavailable.getByRole('button', { name: /retry/i })).toHaveText([
+      'Retry with claude-sonnet-5',
+    ]);
+
+    for (const card of [withAlternative, resetOnly, modelUnavailable]) {
+      // The subject is plain text, not a code chip, and wraps inside the card.
+      await expect(card.locator('code')).toHaveCount(0);
       const fits = await card.getByTestId('failure-recovery-card').evaluate((el) => {
         const box = el.getBoundingClientRect();
         return [...el.querySelectorAll('*')].every(

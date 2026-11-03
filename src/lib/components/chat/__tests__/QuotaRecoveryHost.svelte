@@ -45,4 +45,11 @@
       onRetryWithProvider={noop}
     />
   </div>
+  <div data-testid="model-unavailable">
+    <StreamingStatus
+      error="Model failed to start"
+      modelUnavailable={{ failedModel: 'claude-opus-5-5', nextAvailableModel: 'claude-sonnet-5' }}
+      onRetryWithModel={noop}
+    />
+  </div>
 </section>

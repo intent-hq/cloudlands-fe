@@ -311,8 +311,10 @@ describe('StreamingStatus rendered UI', () => {
     });
 
     expect(screen.queryByTestId('error-title')).toBeNull();
-    expect(container.textContent).toContain('gpt5.5');
-    expect(container.textContent).toContain('is not available');
+    const card = screen.getByTestId('error-model-unavailable');
+    expect(card.textContent).toContain('Model unavailable');
+    expect(screen.getByTestId('model-unavailable-label').textContent).toBe('gpt5.5');
+    expect(card.textContent).toContain('Retry with an available model.');
     expect(container.firstElementChild?.className).not.toContain('mt-2');
 
     await fireEvent.click(screen.getByRole('button', { name: /retry with gpt5\.5-fast/i }));
