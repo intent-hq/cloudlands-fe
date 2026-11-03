@@ -1240,6 +1240,60 @@ describe('workspaceOperationsSaga', () => {
     await run.task.toPromise();
   });
 
+  it('creates for a second id-less card whose payload matches an applied one', async () => {
+    mocks.create
+      .mockResolvedValueOnce({ ok: true, data: { workspace: workspace('ws-first') } })
+      .mockResolvedValueOnce({ ok: true, data: { workspace: workspace('ws-second') } });
+    const { applyToolCallId: _drop, ...idless } = createProposal('unused');
+    const run = harness([]);
+    run.send(applyWorkspaceProposal({ proposal: idless, lifecycleId: 'card-a' }));
+    await settle();
+    run.send(applyWorkspaceProposal({ proposal: { ...idless }, lifecycleId: 'card-b' }));
+    await settle();
+    expect(mocks.create).toHaveBeenCalledTimes(2);
+    expect(run.state().proposalLifecycle['card-a']).toMatchObject({
+      status: 'applied',
+      result: { workspaceId: 'ws-first' },
+    });
+    expect(run.state().proposalLifecycle['card-b']).toMatchObject({
+      status: 'applied',
+      result: { workspaceId: 'ws-second' },
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('keeps a failed create retryable and applies it when the retry succeeds', async () => {
+    mocks.create
+      .mockResolvedValueOnce({ ok: false, error: 'repository not found' })
+      .mockRejectedValueOnce(new Error('daemon unavailable'))
+      .mockResolvedValueOnce({ ok: true, data: { workspace: workspace('ws-retried') } });
+    const proposal = createProposal('create-retry');
+    const run = harness([]);
+    run.send(applyWorkspaceProposal({ proposal }));
+    await settle();
+    expect(run.state().proposalLifecycle['create-retry']).toMatchObject({
+      status: 'failed',
+      error: 'repository not found',
+    });
+    run.send(applyWorkspaceProposal({ proposal }));
+    await settle();
+    expect(run.state().proposalLifecycle['create-retry']).toMatchObject({
+      status: 'failed',
+      error: 'daemon unavailable',
+    });
+    run.send(applyWorkspaceProposal({ proposal }));
+    await settle();
+    expect(mocks.create).toHaveBeenCalledTimes(3);
+    expect(run.state().proposalLifecycle['create-retry']).toMatchObject({
+      status: 'applied',
+      error: undefined,
+      result: { workspaceId: 'ws-retried' },
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('forwards the card origin on workspace.create (intent-hq/intent#8086)', async () => {
     mocks.create.mockResolvedValueOnce({
       ok: true,

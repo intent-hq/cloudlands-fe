@@ -1,5 +1,5 @@
 import type { PendingProposalRef } from '$shared/types';
-import type { Proposal, ProposalActionDetail } from '$shared/types/proposal';
+import type { ProposalActionDetail } from '$shared/types/proposal';
 import { agentProposalResolveRequested } from '$store/renderer/slices/agent-session/agent-session-slice';
 import type {
   ProposalLifecycleEntry,
@@ -32,18 +32,17 @@ function entryTimestamp(entry: ProposalLifecycleEntry): number {
 export function rememberProposalIdentity(
   agentId: string,
   proposalId: string,
-  proposal: Proposal,
+  localId: string,
 ): void {
-  localProposalIds.set(proposalKey(agentId, proposalId), getProposalId(proposal));
+  localProposalIds.set(proposalKey(agentId, proposalId), localId);
 }
 
 export function getProposalLifecycleEntry(
   lifecycle: ProposalLifecycleState,
   agentId: string,
   proposalId: string,
-  proposal: Proposal,
+  localId: string,
 ): ProposalLifecycleEntry | undefined {
-  const localId = localProposalIds.get(proposalKey(agentId, proposalId)) ?? getProposalId(proposal);
   const local = lifecycle[localId];
   const scoped = lifecycle[agentScopedProposalKey(agentId, proposalId)];
   if (!local) return scoped;
@@ -62,7 +61,7 @@ function isSendableOriginId(id: string): boolean {
 export function applyProposal(agentId: string, detail: ProposalActionDetail): void {
   const { proposal } = detail;
   const proposalId = pendingProposalKeyOf(proposal);
-  rememberProposalIdentity(agentId, proposalId, proposal);
+  rememberProposalIdentity(agentId, proposalId, detail.lifecycleId ?? getProposalId(proposal));
   if (proposal.kind === 'workspace-transfer') {
     appStore.dispatch(
       applyProposalRequested({ proposalId: getProposalId(proposal), kind: proposal.kind, detail }),
@@ -75,6 +74,7 @@ export function applyProposal(agentId: string, detail: ProposalActionDetail): vo
         proposal,
         editedFields: detail.editedFields,
         selectedBulkItemIds: detail.selectedBulkItemIds,
+        ...(detail.lifecycleId ? { lifecycleId: detail.lifecycleId } : {}),
         // The daemon resolves the card as part of the create (intent-hq/intent#8086),
         // so the proposing agent hears about it even when this chat is closed.
         ...(proposal.kind === 'workspace-create' && agentId && isSendableOriginId(proposalId)

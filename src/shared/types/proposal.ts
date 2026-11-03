@@ -141,6 +141,8 @@ export interface ProposalActionDetail {
   proposal: Proposal;
   editedFields: Record<string, unknown>;
   selectedBulkItemIds: string[];
+  /** Card-scoped lifecycle key from the rendering host, when it has one. */
+  lifecycleId?: string;
 }
 
 export function isProposalKind(kind: unknown): kind is ProposalKind {

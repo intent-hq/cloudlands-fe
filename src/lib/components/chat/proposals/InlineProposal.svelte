@@ -23,7 +23,7 @@
     saveProposalDraft,
     type ProposalCardDraft,
   } from './proposal-draft-storage';
-  import { getProposalId } from './proposal-id';
+  import { getCardProposalId } from './proposal-id';
   import { OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS } from '../operational-disclosure-row';
 
   interface Props {
@@ -35,7 +35,7 @@
 
   let { agentId, workspaceId, messageId, proposal }: Props = $props();
   const proposalId = $derived(pendingProposalKeyOf(proposal));
-  const localProposalId = $derived(getProposalId(proposal));
+  const localProposalId = $derived(getCardProposalId(proposal, agentId, messageId));
   const agentSession$ = $derived(selectAgentSession(agentId));
   const lifecycleMap$ = selectProposalLifecycleMap();
   let initialDraft = $state<ProposalCardDraft | null>(null);
@@ -51,7 +51,7 @@
     pendingRefs.find((ref) => ref.proposalId === proposalId && ref.messageId === messageId),
   );
   const lifecycleEntry = $derived(
-    getProposalLifecycleEntry($lifecycleMap$, agentId, proposalId, proposal),
+    getProposalLifecycleEntry($lifecycleMap$, agentId, proposalId, localProposalId),
   );
   const localOutcome = $derived(
     lifecycleEntry?.status === 'applied' || lifecycleEntry?.status === 'dismissed'
@@ -108,7 +108,7 @@
   }
 
   $effect(() => {
-    rememberProposalIdentity(agentId, proposalId, proposal);
+    rememberProposalIdentity(agentId, proposalId, localProposalId);
     void $lifecycleMap$;
     if (!matchingRef) return;
     reconcileAppliedProposals({
@@ -141,6 +141,7 @@
       {#if initialDraftLoaded}
         <ProposalCard
           {proposal}
+          lifecycleId={localProposalId}
           suppressLocalDiscard
           {initialDraft}
           onDraftChange={handleDraftChange}

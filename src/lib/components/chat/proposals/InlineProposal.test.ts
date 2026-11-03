@@ -211,7 +211,7 @@ vi.mock(
 );
 
 import InlineProposal from './InlineProposal.svelte';
-import { getProposalId } from './proposal-id';
+import { getCardProposalId, getProposalId } from './proposal-id';
 
 const AGENT_ID = 'agent-inline';
 const WORKSPACE_ID = 'workspace-inline';
@@ -421,7 +421,12 @@ describe('InlineProposal', () => {
     expect(actionMocks.applyWorkspace).toHaveBeenCalledWith(expect.objectContaining({ proposal }));
 
     view.unmount();
-    state.lifecycle = { [getProposalId(proposal)]: { status: 'applied', completedAt: 20 } };
+    state.lifecycle = {
+      [getCardProposalId(proposal, AGENT_ID, 'message-inline')]: {
+        status: 'applied',
+        completedAt: 20,
+      },
+    };
     renderProposal(proposal);
     await vi.waitFor(() => {
       expect(actionMocks.resolve).toHaveBeenCalledWith(AGENT_ID, WORKSPACE_ID, {
@@ -429,6 +434,36 @@ describe('InlineProposal', () => {
         outcome: 'applied',
       });
     });
+  });
+
+  it('does not inherit an earlier identical id-less card applied outcome', async () => {
+    const title = 'Create workspace: Same content';
+    const proposal: Proposal = {
+      kind: 'workspace-create',
+      payload: { operation: 'workspace.create', params: { title: 'Same content' } },
+      preview: { title },
+    };
+    state.pendingProposals = [{ proposalId: title, messageId: 'message-first' }];
+    const first = renderProposal(proposal, 'message-first');
+    await fireEvent.click(screen.getByRole('button', { name: /^Create workspace/ }));
+    const firstApply = actionMocks.applyWorkspace.mock.calls[0]?.[0];
+    const firstKey = firstApply.lifecycleId ?? getProposalId(firstApply.proposal);
+    first.unmount();
+
+    state.lifecycle = {
+      [firstKey]: { status: 'applied', completedAt: 10, result: { workspaceId: 'ws-first' } },
+    };
+    state.pendingProposals = [{ proposalId: title, messageId: 'message-second' }];
+    actionMocks.resolve.mockClear();
+    actionMocks.applyWorkspace.mockClear();
+    renderProposal({ ...proposal }, 'message-second');
+    await tick();
+
+    expect(screen.queryByText('Workspace created.')).toBeNull();
+    expect(actionMocks.resolve).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByRole('button', { name: /^Create workspace/ }));
+    const secondApply = actionMocks.applyWorkspace.mock.calls[0]?.[0];
+    expect(secondApply.lifecycleId ?? getProposalId(secondApply.proposal)).not.toBe(firstKey);
   });
 
   it('keeps a daemon-declined card pending and interactive (intent-hq/intent#8086)', async () => {

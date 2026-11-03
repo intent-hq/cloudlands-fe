@@ -94,6 +94,8 @@
      * host can route discard through its own confirm dialog + resolve flow.
      */
     suppressLocalDiscard?: boolean;
+    /** Host-provided card-scoped lifecycle key (`getCardProposalId`). */
+    lifecycleId?: string;
   }
 
   type EditorHandle = {
@@ -114,6 +116,7 @@
     initialDraft = null,
     onDraftChange,
     suppressLocalDiscard = false,
+    lifecycleId,
   }: Props = $props();
 
   // Captured once at init (tray remounts per proposal via {#key}), so a
@@ -203,7 +206,7 @@
   const fields = $derived(proposal.preview.fields ?? []);
   const bulkItems = $derived(proposal.preview.bulkItems ?? []);
   const diff = $derived(proposal.preview.diff);
-  const proposalId = $derived(getProposalId(proposal));
+  const proposalId = $derived(lifecycleId ?? getProposalId(proposal));
   const lifecycleStatus = selectProposalStatus(untrack(() => proposalId));
   const lifecycleError = selectProposalError(untrack(() => proposalId));
   const lifecycleErrorCode = selectProposalErrorCode(untrack(() => proposalId));
@@ -880,6 +883,7 @@
       proposal,
       editedFields: isWorkspaceCreate ? buildWorkspaceEditedFields() : fieldValues,
       selectedBulkItemIds,
+      ...(lifecycleId ? { lifecycleId } : {}),
     };
   }
 
