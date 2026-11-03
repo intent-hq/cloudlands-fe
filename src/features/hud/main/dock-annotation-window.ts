@@ -754,6 +754,21 @@ export class DockAnnotationController implements AnnotationService {
       // rules); the session, its tool and mouse mode stay as they are.
       const mode = request.action === 'capture' ? request.mode : undefined;
       if (mode !== undefined && !isDockCaptureMode(mode)) return false;
+      // A window or region shot is a new, clean image: the marks on screen are
+      // attached first, exactly as Attach does, and the next mark starts a new image.
+      const shot = mode ?? this.media?.capture.mode ?? 'fullscreen';
+      if (
+        request.action === 'capture' &&
+        shot !== 'fullscreen' &&
+        session.mode !== 'still' &&
+        session.marks.length > 0
+      ) {
+        session.image = null;
+        session.marks = [];
+        session.marksRevision += 1;
+        this.publish(session);
+        this.emit({ type: 'annotation-commit', sessionId: session.id });
+      }
       this.emit({
         type: 'annotation-media',
         sessionId: session.id,

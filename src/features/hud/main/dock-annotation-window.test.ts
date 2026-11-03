@@ -1169,6 +1169,75 @@ describe('DockAnnotationController on-screen tool bar and start refusals', () =>
     expect(marks(t.events).at(-1)?.capture).toBeDefined();
   });
 
+  it('a window or region shot attaches the marks first; a full-screen shot keeps them', async () => {
+    const t = setup();
+    await t.start('live', 'box');
+    expect(
+      await t.gesture(
+        [
+          { x: 100, y: 100 },
+          { x: 200, y: 180 },
+        ],
+        'box',
+      ),
+    ).toEqual({ ok: true });
+    const marked = [
+      { n: 1, tool: 'box' as const, geometry: { kind: 'rect' as const, x: 1, y: 1, w: 10, h: 10 } },
+    ];
+    await t.controller.syncMarks('s1', marked);
+    const state = () => t.windows[0]!.webContents.sent.at(-1) as { marks: unknown[] };
+    // Full screen: a separate clean image; the marks on screen stay.
+    expect(
+      t.controller.handleToolbar({ sessionId: 's1', action: 'capture', mode: 'fullscreen' }),
+    ).toBe(true);
+    expect(t.events.at(-1)).toEqual({
+      type: 'annotation-media',
+      sessionId: 's1',
+      action: 'capture',
+      mode: 'fullscreen',
+    });
+    expect(state().marks).toHaveLength(1);
+    // Region: Attach, then the capture.
+    expect(t.controller.handleToolbar({ sessionId: 's1', action: 'capture', mode: 'region' })).toBe(
+      true,
+    );
+    expect(t.events.slice(-2)).toEqual([
+      { type: 'annotation-commit', sessionId: 's1' },
+      { type: 'annotation-media', sessionId: 's1', action: 'capture', mode: 'region' },
+    ]);
+    expect(state().marks).toEqual([]);
+    // A plain click follows the composer's mode; with nothing on screen there is nothing to attach.
+    await t.controller.syncMarks('s1', marked);
+    t.controller.setAnnotationMedia({
+      capture: {
+        label: 'Capture a window',
+        tooltip: 'Capture a window',
+        disabled: false,
+        pending: false,
+        alert: false,
+        revision: 0,
+        mode: 'window',
+        modes: true,
+      },
+      record: {
+        label: 'Record',
+        tooltip: 'Record',
+        disabled: false,
+        pending: false,
+        alert: false,
+        recording: false,
+        startedAt: null,
+      },
+    });
+    expect(t.controller.handleToolbar({ sessionId: 's1', action: 'capture' })).toBe(true);
+    expect(t.events.slice(-2)).toEqual([
+      { type: 'annotation-commit', sessionId: 's1' },
+      { type: 'annotation-media', sessionId: 's1', action: 'capture' },
+    ]);
+    expect(t.controller.handleToolbar({ sessionId: 's1', action: 'capture' })).toBe(true);
+    expect(t.events.at(-2)).not.toEqual({ type: 'annotation-commit', sessionId: 's1' });
+  });
+
   it('refuses an empty attachment without emitting a commit or closing feedback', async () => {
     const t = setup();
     await t.start('live', 'box');

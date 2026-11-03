@@ -73,7 +73,8 @@ export interface DockEvidenceDependencies {
    * Unlike `hidden`, the dock document keeps its surface (draft, editor, mark chips).
    */
   hiddenForSelection(window: BrowserWindow, hidden: boolean, restore: boolean): void;
-  settle(): Promise<void>;
+  /** Lets the window server apply a hide; a selection waits longer (the picker snapshots windows). */
+  settle(ms?: number): Promise<void>;
   capture(display: Display): Promise<CapturedImage>;
   captureVisible?(
     window: BrowserWindow,
@@ -101,6 +102,8 @@ interface Session {
 }
 
 const unavailable = (): DockEvidencePixelsResult => ({ ok: false, error: 'unavailable' });
+/** The window picker lists windows as it starts: the hidden overlay must be gone by then. */
+const SELECTION_SETTLE_MS = 250;
 const MAX_PNG_BYTES = 30 * 1024 * 1024;
 
 /** A single capture lease; cancellation never lets a second capture race its restoration. */
@@ -323,7 +326,7 @@ export class DockEvidenceSessions {
         try {
           hidden = true;
           setHidden(window, true, false);
-          await this.deps.settle();
+          await this.deps.settle(SELECTION_SETTLE_MS);
           if (!this.current(session)) return unavailable();
           const selected = await this.deps.captureSelection(selection);
           if (!this.current(session)) return unavailable();
@@ -503,7 +506,7 @@ export const dockEvidenceSessions = new DockEvidenceSessions({
     if (getDockWindow() !== window) return;
     setDockHiddenForSelection(hidden, { window, restore });
   },
-  settle: () => new Promise((resolve) => setTimeout(resolve, 50)),
+  settle: (ms = 50) => new Promise((resolve) => setTimeout(resolve, ms)),
   capture: async (display) => {
     const sources = await desktopCapturer.getSources({
       types: ['screen'],
