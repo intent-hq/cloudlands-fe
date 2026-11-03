@@ -8,6 +8,7 @@ import {
 import type { PreloadedStoreState, ReduxStoreContext } from './types';
 import { safeLocalStorage } from '$lib/utils/safe-storage';
 import { clearRendererStoreBridge, initRendererStoreBridge } from './renderer-store-bridge';
+import { withPageBrowserHost } from './slices/connections/connections-browser-host';
 
 export { store } from './configured-store';
 
@@ -129,7 +130,7 @@ export const initAppStore = (
   store: Store<any, any>,
   loadedState?: PreloadedStoreState,
 ): ReduxStoreContext => {
-  const disposeConfiguredStore = store.init(loadedState);
+  const disposeConfiguredStore = store.init(withPageBrowserHost(loadedState));
 
   const storeContext: ReduxStoreContext = {
     store,
