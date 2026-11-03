@@ -153,6 +153,7 @@ describe('scanChatMentions without a record (older messages)', () => {
 
   it('still chips paths with an @ that is not a version', () => {
     expect(parsed('see @assets/icon@2x.png')).toEqual([['@assets/icon@2x.png', true]]);
+    expect(parsed('see @assets/icon@1.5x.png')).toEqual([['@assets/icon@1.5x.png', true]]);
     expect(parsed('check @src/foo.rs now')).toEqual([['@src/foo.rs', true]]);
   });
 });

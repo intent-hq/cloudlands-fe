@@ -274,13 +274,13 @@ function pathMention(
 }
 
 /**
- * `name@1.2.3`, `name@^1.2`, `name@latest`: a package spec, not a file. Used
- * where `@`-paths are guessed from text alone, so a pasted
- * `npm i @scope/pkg@1.2.3` stays text; an `@` inside a real file name
- * (`icon@2x.png`) does not match.
+ * `name@1.2.3`, `name@^1.2`, `name@latest` in the last path segment: a
+ * package spec, not a file. Used where `@`-paths are guessed from text alone,
+ * so a pasted `npm i @scope/pkg@1.2.3` stays text. An `@` inside a real file
+ * name (`icon@2x.png`, `icon@1.5x.png`) or a folder (`.pnpm/vite@5.0.0/...`) does not match.
  */
 const PACKAGE_SPEC_RE =
-  /[^\s/@]@(?:[\^~]?v?\d+\.\d+|(?:latest|next|canary|beta|alpha|rc|stable)(?![\w.-]))/i;
+  /[^\s/@]@(?:[\^~]?v?\d+\.\d+(?!\d*x)|(?:latest|next|canary|beta|alpha|rc|stable)(?![\w.-]))[^/]*$/i;
 
 /** A guessed path mention, or null for a package spec. */
 function guessedPathMention(

@@ -45,6 +45,11 @@ describe('injectMentionSpans without a DOM', () => {
     }
   });
 
+  it('still chips a path with a version in a folder name', () => {
+    const html = injectMentionSpans('<p>see @node_modules/.pnpm/vite@5.0.0/dist/index.js</p>');
+    expect(html).toContain('data-id="node_modules/.pnpm/vite@5.0.0/dist/index.js"');
+  });
+
   it('keeps malformed tokens and non-note links as text', () => {
     const html = '<p>@member[bm90LWpzb24=] intent://local/workspace/w1</p>';
     expect(injectMentionSpans(html)).toBe(html);
