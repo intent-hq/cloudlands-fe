@@ -14,6 +14,7 @@ import { store as appStore } from '$store/renderer/store';
 import {
   screenReferences,
   type DockMarkTool,
+  type DockCaptureMode,
   type DockReferenceEdit,
   undoableDockMark,
   redoableDockMark,
@@ -28,6 +29,7 @@ import {
   dockEvidenceAnnotationEndRequested,
   dockEvidenceAnnotationToggleRequested,
   dockEvidenceCaptureRequested,
+  dockEvidenceCaptureModeSet,
   dockEvidenceClipRemoveRequested,
   dockEvidenceImageRemoveRequested,
   dockEvidenceInsertionCommitted,
@@ -317,6 +319,10 @@ export function createDockComposerController(
 
   const actions = {
     onCapture: () => dispatch(dockEvidenceCaptureRequested(workspaceId, agentId)),
+    onCaptureModeSelect: (mode: DockCaptureMode) => {
+      dispatch(dockEvidenceCaptureModeSet(mode));
+      dispatch(dockEvidenceCaptureRequested(workspaceId, agentId));
+    },
     // Stops the live recording, or starts another one beside the finished clips.
     onRecordToggle: () => dispatch(dockEvidenceRecordToggleRequested(workspaceId, agentId)),
     onAnnotationToggle: () => dispatch(dockEvidenceAnnotationToggleRequested(workspaceId, agentId)),

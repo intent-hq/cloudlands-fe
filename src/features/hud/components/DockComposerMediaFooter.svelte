@@ -4,6 +4,7 @@
   import { fade } from '$lib/motion';
   import DockComposerIcon from './DockComposerIcon.svelte';
   import DockComposerToolPicker from './DockComposerToolPicker.svelte';
+  import DockComposerCapturePicker from './DockComposerCapturePicker.svelte';
   import type { DockComposerMediaFooterProps } from './dock-composer-media-presentation';
 
   let {
@@ -14,6 +15,7 @@
     model,
     send,
     onCapture,
+    onCaptureModeSelect,
     onRecordToggle,
     onAnnotationToggle,
     onToolSelect,
@@ -25,9 +27,6 @@
 
   const alerts = $derived(state.alerts ?? {});
 
-  // A remount with an existing image is not a new successful capture.
-  // svelte-ignore state_referenced_locally -- retain the initial acknowledgement revision.
-  const initialCaptureRevision = state.captureRevision;
   const samples = $derived(
     state.inputLevels
       .slice(-28)
@@ -87,31 +86,14 @@
     {/if}
   </div>
   <div class="controls">
-    <Button
-      variant="ghost-light"
-      size="icon-sm"
-      class="media-button capture-button"
-      disabled={disabled || state.captureDisabled || state.capturePending}
-      aria-label={labels.capture}
-      aria-busy={state.capturePending || undefined}
-      data-alert={alerts.capture ? '' : undefined}
-      tooltip={alerts.capture ??
-        state.captureTooltip ??
-        (state.captureDisabled ? labels.captureLimit : labels.capture)}
-      onpointerdown={(event) => {
-        if (event.pointerType === 'mouse') event.preventDefault();
-      }}
-      onclick={() => (alerts.capture ? onAlert?.('capture') : onCapture())}
-    >
-      {#if alerts.capture}<span class="alert-dot" aria-hidden="true"></span>{/if}
-      {#key state.captureRevision}
-        {#if state.captureRevision > initialCaptureRevision}<span
-            class="capture-flash"
-            aria-hidden="true"
-          ></span>{/if}
-      {/key}
-      <DockComposerIcon glyph="viewfinder" />
-    </Button>
+    <DockComposerCapturePicker
+      {state}
+      {labels}
+      {disabled}
+      {onCapture}
+      onSelect={onCaptureModeSelect}
+      onAlert={() => onAlert?.('capture')}
+    />
     <Button
       variant="ghost-light"
       size="icon-sm"
@@ -313,25 +295,5 @@
     border-radius: 50%;
     background: hsl(var(--capture-active));
     pointer-events: none;
-  }
-  .capture-flash {
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    pointer-events: none;
-    animation: capture-confirm 150ms ease-out both;
-  }
-  @keyframes capture-confirm {
-    from {
-      background: hsl(var(--primary));
-    }
-    to {
-      background: transparent;
-    }
-  }
-  @container style(--motion-reduced: 1) {
-    .capture-flash {
-      animation: none;
-    }
   }
 </style>
