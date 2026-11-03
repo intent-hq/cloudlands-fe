@@ -21,6 +21,7 @@ type Write = { kind: string; name: string; bytes: number; marks: number };
 type Clipboard = {
   writes(): Write[];
   reads(): number;
+  answered(): number;
   lastBytes(): string | null;
   foreign(): void;
   replace(): void;
@@ -68,14 +69,15 @@ async function paste(
     text,
     file = true,
     extra = false,
-  }: { own?: boolean; text?: string; file?: boolean; extra?: boolean } = {},
+    name = 'pasted.png',
+  }: { own?: boolean; text?: string; file?: boolean; extra?: boolean; name?: string } = {},
 ) {
   const base64 = !file ? null : own ? await clipboard(page, 'lastBytes') : FOREIGN_PNG;
   await editor(page).evaluate(
-    (element, { base64, text, extra, foreign }) => {
+    (element, { base64, text, extra, foreign, name }) => {
       const transfer = new DataTransfer();
       const png = (data: string) => Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
-      if (base64) transfer.items.add(new File([png(base64)], 'pasted.png', { type: 'image/png' }));
+      if (base64) transfer.items.add(new File([png(base64)], name, { type: 'image/png' }));
       // A second file in the same paste (another app's image alongside).
       if (extra) transfer.items.add(new File([png(foreign)], 'other.png', { type: 'image/png' }));
       if (text) transfer.setData('text/plain', text);
@@ -83,7 +85,7 @@ async function paste(
         new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true }),
       );
     },
-    { base64, text, extra, foreign: FOREIGN_PNG },
+    { base64, text, extra, foreign: FOREIGN_PNG, name },
   );
 }
 
@@ -215,18 +217,38 @@ test('a slow paste lands only in its own draft and connection, and only for its 
   await composer(page, 'reopen');
   await expect(editor(page)).toHaveAttribute('contenteditable', 'true');
   await clipboard(page, 'holdReads', false);
-  await expect(screenshots(page)).toHaveCount(1);
-  await expect(files(page)).toHaveCount(0);
+  await expect.poll(() => clipboard(page, 'answered')).toBe(1);
+  await settled(page, 'control-1.png');
 
   // The connection changes while the read is pending: nothing lands.
   await clipboard(page, 'holdReads', true);
   await paste(page, { own: true });
-  await expect.poll(() => reads(page)).toBe(2);
+  await expect.poll(() => reads(page)).toBe(3);
   await clipboard(page, 'reconnect');
+  const attachments = page.locator('[role="group"][aria-label="Attachments"] img');
+  const before = await attachments.count();
   await clipboard(page, 'holdReads', false);
-  await expect(screenshots(page)).toHaveCount(1);
-  await expect(files(page)).toHaveCount(0);
+  // The conversation now asks to reconnect (no composer to paste a control into):
+  // wait until main has answered, drain the page's pending tasks, then check.
+  await expect.poll(() => clipboard(page, 'answered')).toBe(3);
+  await page.evaluate(async () => {
+    for (let turn = 0; turn < 5; turn += 1) await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  await expect(page.getByRole('img', { name: 'pasted.png', exact: true })).toHaveCount(0);
+  await expect(attachments).toHaveCount(before);
 });
+
+/**
+ * After a stale paste is released: a later ordinary paste (another app's image)
+ * must arrive, proving the pipeline ran, while the stale paste left nothing, neither
+ * a recreated screenshot nor its own file through the editor's paste.
+ */
+async function settled(page: Page, control: string) {
+  await paste(page, { name: control });
+  await expect(page.getByRole('img', { name: control, exact: true })).toBeVisible();
+  await expect(page.getByRole('img', { name: 'pasted.png', exact: true })).toHaveCount(0);
+  await expect(screenshots(page)).toHaveCount(1);
+}
 
 test('a paste is Intent media only for its own single file: a same-name, same-size copy or extra files are not', async ({
   mount,

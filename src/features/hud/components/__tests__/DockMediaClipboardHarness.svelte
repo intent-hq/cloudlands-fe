@@ -31,6 +31,7 @@
   type Write = { kind: string; name: string; bytes: number; marks: number };
   const writes: Write[] = [];
   let reads = 0;
+  let answered = 0;
   let failWrites = false;
   let menu: 'copy' | 'cut' | null = 'copy';
   let content: DockMediaClipboardContent | null = null;
@@ -99,6 +100,7 @@
     overrideMockIpcHandler(DOCK_MEDIA_CHANNELS.CLIPBOARD_READ, async () => {
       reads += 1;
       if (holdReads) await new Promise<void>((resolve) => heldReads.push(resolve));
+      answered += 1;
       return content;
     }),
     // eslint-disable-next-line intent/no-component-async-data-fetch -- test harness standing in for main at the IPC boundary
@@ -108,6 +110,8 @@
   (window as unknown as Record<string, unknown>).__dockMediaClipboard = {
     writes: () => writes,
     reads: () => reads,
+    /** Reads main has answered (a held read counts once released). */
+    answered: () => answered,
     /** The bytes other apps were given by the last copy (what a paste carries back). */
     lastBytes: () => (lastBytes ? toBase64(lastBytes) : null),
     foreign: () => {
