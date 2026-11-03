@@ -237,10 +237,31 @@ export function setupConversationWire(
     for (const { channel, handler } of listeners.values())
       if (channel === IPC_CHANNELS.BACKEND.NOTIFICATION) handler(notification);
   }
+  let serviceRows: import('$features/scripts/types').ScriptListEntry[] = [];
+  let statusOverride: import('$features/scripts/types').ScriptRuntimeState | null = null;
+  let holdServiceList = false;
+  const serviceListWaiters: (() => void)[] = [];
   async function request(method: string, params: Record<string, unknown>) {
     record({ method, params: structuredClone(params) });
     const agentId = String(params.agentId ?? 'wire-main');
     switch (method) {
+      case 'client.hello':
+        return { server: { capabilities: { scriptActiveLists: 1, boundedReads: 1 } } };
+      case 'script.list': {
+        const scripts = structuredClone(
+          serviceRows.filter((row) => row.workspaceId === params.workspaceId),
+        );
+        if (holdServiceList) await new Promise<void>((resolve) => serviceListWaiters.push(resolve));
+        return { view: 'summary', scripts };
+      }
+      case 'script.status':
+        return structuredClone(
+          statusOverride ??
+            serviceRows.find(
+              (row) => row.workspaceId === params.workspaceId && row.id === params.scriptId,
+            )?.runtime ??
+            null,
+        );
       case 'providers.catalog':
         return {
           providers: providerEntries,
@@ -448,6 +469,17 @@ export function setupConversationWire(
     ...(options.dockAppearance ? [themeSaga] : []),
   ].map((saga) => store.runSaga(saga));
   return {
+    setServices(
+      rows: import('$features/scripts/types').ScriptListEntry[],
+      override: import('$features/scripts/types').ScriptRuntimeState | null = null,
+    ) {
+      serviceRows = rows;
+      statusOverride = override;
+    },
+    holdServiceList(value: boolean) {
+      holdServiceList = value;
+      if (!value) for (const resolve of serviceListWaiters.splice(0)) resolve();
+    },
     emit(channel: string, payload: unknown) {
       for (const entry of listeners.values()) if (entry.channel === channel) entry.handler(payload);
     },

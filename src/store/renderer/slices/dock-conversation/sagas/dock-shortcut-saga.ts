@@ -1,3 +1,4 @@
+import { findDockService, isDockServiceCurrent } from './dock-service-routing';
 import { m } from '$shared/paraglide/messages.js';
 import { call, put, race, take, takeLatest, delay, type SagaGenerator } from 'typed-redux-saga';
 import { WINDOW_CHANNELS } from '$shared/ipc/channels';
@@ -54,9 +55,31 @@ function* receive(context?: DockShortcutContext): SagaGenerator<void> {
       authority: getPrincipalActionContext(appStore.state),
     }),
   );
-  if (destination) yield* put(dockShortcutChosen(destination));
-  else if (!appStore.state.dockConversation.workspaceId)
+  if (destination) {
+    yield* put(dockShortcutChosen(destination));
+    return;
+  }
+  if (!appStore.state.dockConversation.workspaceId)
     yield* put(openDockConversationRequested(CHIEF_WORKSPACE_ID));
+  if (!context.url) return;
+  const { service } = yield* race({
+    service: call(findDockService, context, ids),
+    manual: take(dockShortcutChosen),
+    changed: take(dockShortcutChanged),
+    timeout: delay(2_000),
+  });
+  const current = appStore.state.dockConversation.shortcut;
+  if (
+    !service ||
+    !current ||
+    current.destination !== null ||
+    current.context.id !== context.id ||
+    !valid(context) ||
+    current.authority !== getPrincipalActionContext(appStore.state)
+  )
+    return;
+  yield* put(dockShortcutChanged({ ...current, service }));
+  yield* put(dockShortcutChosen(service.workspaceId));
 }
 function* choose({
   payload: [workspaceId, scope],
@@ -69,6 +92,12 @@ function* choose({
   )
     return;
   const context = shortcut.context;
+  const service = shortcut.service?.workspaceId === workspaceId ? shortcut.service : undefined;
+  if (service && !(yield* call(isDockServiceCurrent, service))) {
+    if (appStore.state.dockConversation.shortcut?.context.id === context.id)
+      yield* put(dockShortcutChanged({ ...shortcut, service: undefined, destination: null }));
+    return;
+  }
   const ids = selectDockShortcutWorkspaces.select(appStore.state).map((row) => String(row.id));
   if (workspaceId !== CHIEF_WORKSPACE_ID && !ids.includes(workspaceId)) return;
   if (scope) {
@@ -128,6 +157,20 @@ function* choose({
       latest.agentId !== dock.agentId ||
       latest.nativeSpeech.pairId !== pairId ||
       latest.authority !== getPrincipalActionContext(appStore.state) ||
+      shortcut.authority !== getPrincipalActionContext(appStore.state)
+    )
+      return;
+    if (service && !(yield* call(isDockServiceCurrent, service))) {
+      if (appStore.state.dockConversation.shortcut?.context.id === context.id)
+        yield* put(dockShortcutChanged({ ...shortcut, service: undefined, destination: null }));
+      return;
+    }
+    const target = appStore.state.dockConversation;
+    if (
+      !valid(context) ||
+      target.shortcut?.context.id !== context.id ||
+      target.workspaceId !== workspaceId ||
+      target.agentId !== dock.agentId ||
       shortcut.authority !== getPrincipalActionContext(appStore.state)
     )
       return;

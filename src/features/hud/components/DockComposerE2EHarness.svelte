@@ -2,6 +2,7 @@
   import DockShortcutChooser from './DockShortcutChooser.svelte';
   import { selectDockShortcut } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+  import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
   import { onMount } from 'svelte';
   import '$lib/styles/dock-tokens.css';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
@@ -83,6 +84,7 @@
     }) as typeof api.invoke;
     (window as unknown as Record<string, unknown>).__dockComposerE2E = {
       native,
+      disconnect: () => store.dispatch(connectionStatusChanged('disconnected')),
       shortcut(context: import('$shared/dock-shortcuts').DockShortcutContext) {
         fixture.emit('window:focus-dock', context);
       },

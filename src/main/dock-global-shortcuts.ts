@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { getDockWindow, focusDockWindow } from './dock-window';
 import { getStrictBackendBindingForWebContents } from './window-backend';
 import { getDesktopNativeAdapter } from '../features/desktop/main/desktop-native';
+import { dockServiceAddress } from '../features/browser/main/browser.ipc';
 import { embeddedBrowserCdp } from '../features/browser/main/embedded-browser-cdp-service';
 import { Logger } from '../shared/logger';
 import type { DockShortcutContext } from '../shared/dock-shortcuts';
@@ -54,6 +55,7 @@ export async function requestDockShortcut(action: DockShortcutContext['action'])
     const owners = embeddedBrowserCdp.liveUrlOwners(context.url, binding.backendId);
     if (owners.length === 1) context.workspaceId = owners[0];
   }
+  if (context.url) context.serviceAddress = dockServiceAddress(context.url, binding.backendId);
   focusDockWindow(context);
 }
 

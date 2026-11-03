@@ -8,12 +8,15 @@ export interface DockShortcutContext {
   title?: string;
   url?: string;
   workspaceId?: string;
+  /** Ephemeral main-verified local/tunnel address on this backend. Never persisted. */
+  serviceAddress?: string;
 }
 export interface DockShortcutState {
   context: DockShortcutContext;
   destination: string | null;
   error: string | null;
   authority?: string | null;
+  service?: DockServiceOwner;
 }
 export type DockLinkScope = 'url' | 'project' | 'app';
 export function dockLinkKey(context: DockShortcutContext, scope: DockLinkScope): string | null {
@@ -104,4 +107,37 @@ export function dockCandidateScore(
     /* No inferred identity from an unparseable address. */
   }
   return 0;
+}
+
+export interface DockServiceOwner {
+  workspaceId: string;
+  scriptId: string;
+  backendId: string;
+  connection: string;
+  runId: string;
+  pid: number;
+  startedAt: string;
+  restartCount: number;
+  detectedUrl: string;
+}
+/** Exact scheme/host/port and segment-bounded path; query/hash do not own a server. */
+export function dockServiceUrlMatches(source: string, detected: string): boolean {
+  try {
+    const a = new URL(source),
+      b = new URL(detected);
+    const host = (url: URL) =>
+      ['localhost', '127.0.0.1', '[::1]', '0.0.0.0', '[::]'].includes(url.hostname)
+        ? 'loopback'
+        : url.hostname;
+    const root = b.pathname.replace(/\/$/, '');
+    return (
+      ['http:', 'https:'].includes(a.protocol) &&
+      a.protocol === b.protocol &&
+      host(a) === host(b) &&
+      a.port === b.port &&
+      (a.pathname === root || a.pathname.startsWith(`${root}/`))
+    );
+  } catch {
+    return false;
+  }
 }

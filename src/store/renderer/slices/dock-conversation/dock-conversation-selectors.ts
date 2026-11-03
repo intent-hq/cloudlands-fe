@@ -447,7 +447,10 @@ export const selectDockShortcut = store.createSelector(
 
 export const selectDockShortcutWorkspaces = store.createSelector((state) =>
   getItems(state.workspace.workspaces)
-    .filter((row) => !['archived', 'retired', 'deleted'].includes(row.status))
+    .filter(
+      (row) =>
+        row.id !== CHIEF_WORKSPACE_ID && !['archived', 'retired', 'deleted'].includes(row.status),
+    )
     .sort(
       (a, b) =>
         dockCandidateScore(state.dockConversation.shortcut?.context, b) -
