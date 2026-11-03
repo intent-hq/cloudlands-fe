@@ -61,6 +61,26 @@ describe('LiveSkillsClient', () => {
       expect(backendRequestSpy).toHaveBeenCalledTimes(2);
     });
 
+    it('keeps the first copy of a skill repeated across pages', async () => {
+      const skill = (name: string, description = `${name} description`) => ({
+        name,
+        description,
+        location: `/ws/.agents/skills/${name}/SKILL.md`,
+        scope: 'project' as const,
+      });
+      vi.spyOn(backendTransport, 'backendRequest')
+        .mockResolvedValueOnce({ skills: [skill('a'), skill('b')], nextToken: 't1' })
+        .mockResolvedValueOnce({ skills: [skill('b', 'repeated'), skill('c')], nextToken: null });
+
+      const result = await client.list('ws-dup');
+
+      expect(result.map((s) => [s.name, s.description])).toEqual([
+        ['a', 'a description'],
+        ['b', 'b description'],
+        ['c', 'c description'],
+      ]);
+    });
+
     it('maps wire shape to SkillInfo (strips allowedTools/compatibility)', async () => {
       // PROTOCOL §5.34: bare array of skill objects (no envelope).
       vi.spyOn(backendTransport, 'backendRequest').mockResolvedValue([

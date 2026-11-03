@@ -187,6 +187,7 @@ function toFileSpecialist(def: SpecialistDef): FileSpecialist {
     codingAgent: def.codingAgent,
     model: def.model ?? '',
     behaviorPrompt: def.behaviorPrompt ?? def.prompt ?? '',
+    ...(def.behaviorPromptOmitted ? { behaviorPromptOmitted: true } : {}),
     roleReminder: def.roleReminder,
     filePath: def.path ?? '',
     source: def.source as SpecialistFileScope,
@@ -339,6 +340,11 @@ function* handleSave(
     const existing = yield* selectGetFileSpecialist.effect(payload.id, payload.workspaceId);
     if (existing?.importedFrom) {
       throw new Error(m.settings_aiBehavior_importedClaude_readOnly());
+    }
+    // The prompt was never loaded (too large for a list page and not
+    // re-readable); any write would replace it with an empty body.
+    if (existing?.behaviorPromptOmitted) {
+      throw new Error(m.specialists_mutation_promptUnavailable_error());
     }
     const bundledSpecialists = yield* selectBundledSpecialists.effect();
     const bundled = (bundledSpecialists.length ? bundledSpecialists : SPECIALISTS).find(

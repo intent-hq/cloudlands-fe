@@ -5787,6 +5787,7 @@
   "specialists_loader_fileNotFound_error": "Spezialisten-Datei nicht gefunden",
   "specialists_loader_unknown_error": "Unbekannter Fehler",
   "specialists_mutation_deleteFailed_error": "Spezialist konnte nicht gelöscht werden",
+  "specialists_mutation_promptUnavailable_error": "Der Prompt dieses Spezialisten ist zu groß zum Laden und kann hier nicht gespeichert werden. Bearbeite die Datei direkt.",
   "specialists_mutation_refreshFailed_error": "Spezialisten-Liste konnte nach dem Schreiben nicht aktualisiert werden",
   "specialists_mutation_saveFailed_error": "Spezialist konnte nicht gespeichert werden",
   "starterPrompts_connectFour_label": "Ein Vier-gewinnt-Spiel erstellen",

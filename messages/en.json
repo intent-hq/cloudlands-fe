@@ -5787,6 +5787,7 @@
   "specialists_loader_fileNotFound_error": "Specialist file not found",
   "specialists_loader_unknown_error": "Unknown error",
   "specialists_mutation_deleteFailed_error": "Failed to delete specialist",
+  "specialists_mutation_promptUnavailable_error": "This specialist's prompt is too large to load, so it can't be saved here. Edit its file directly.",
   "specialists_mutation_refreshFailed_error": "Failed to refresh specialists list after write",
   "specialists_mutation_saveFailed_error": "Failed to save specialist",
   "starterPrompts_connectFour_label": "Create a Connect Four game",

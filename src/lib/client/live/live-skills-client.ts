@@ -64,6 +64,7 @@ export class LiveSkillsClient implements SkillsClient {
     // `{ skills, nextToken }` reply that carries the continuation token. Older
     // daemons ignore `limit` and answer the whole name-sorted bare array.
     const skills: SkillInfo[] = [];
+    const seen = new Set<string>();
     let nextToken: string | undefined;
     for (let page = 0; page < MAX_SKILL_PAGES; page++) {
       const result = await backendRequest<WireSkill[] | WireSkillPage>('skill.list', {
@@ -72,7 +73,13 @@ export class LiveSkillsClient implements SkillsClient {
         ...(nextToken ? { nextToken } : {}),
       });
       if (Array.isArray(result)) return result.map(normalizeSkill);
-      if (Array.isArray(result?.skills)) skills.push(...result.skills.map(normalizeSkill));
+      // Offset tokens can repeat a row when the catalog changes mid-drain;
+      // keep the first copy so keyed lists never see duplicate names.
+      for (const wire of Array.isArray(result?.skills) ? result.skills : []) {
+        if (seen.has(wire.name)) continue;
+        seen.add(wire.name);
+        skills.push(normalizeSkill(wire));
+      }
       nextToken = typeof result?.nextToken === 'string' ? result.nextToken : undefined;
       if (!nextToken) return skills;
     }

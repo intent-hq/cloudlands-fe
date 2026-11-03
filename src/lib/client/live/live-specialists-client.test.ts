@@ -104,6 +104,70 @@ describe('LiveSpecialistsClient (fake transport)', () => {
     });
   });
 
+  it('listCatalog keeps the first copy of a row repeated across pages', async () => {
+    mockedRequest
+      .mockResolvedValueOnce({ specialists: [COORDINATOR_DEF, USER_DEF], nextToken: 'page-2' })
+      .mockResolvedValueOnce({
+        specialists: [{ ...USER_DEF, description: 'repeated' }],
+        nextToken: null,
+      });
+    const client = new LiveSpecialistsClient();
+
+    const defs = await client.list();
+
+    expect(defs).toEqual([COORDINATOR_DEF, USER_DEF]);
+  });
+
+  it('listCatalog re-reads an omitted prompt with specialist.get', async () => {
+    const omitted: SpecialistDef = {
+      ...USER_DEF,
+      prompt: undefined,
+      behaviorPrompt: undefined,
+      behaviorPromptOmitted: true,
+      behaviorPromptBytes: 600_000,
+    };
+    mockedRequest
+      .mockResolvedValueOnce({ specialists: [COORDINATOR_DEF, omitted], nextToken: null })
+      .mockResolvedValueOnce({ specialist: USER_DEF });
+    const client = new LiveSpecialistsClient();
+
+    const defs = await client.list('codex');
+
+    expect(mockedRequest.mock.calls[1]).toEqual([
+      'specialist.get',
+      { id: USER_DEF.id, provider: 'codex' },
+    ]);
+    expect(defs[1].behaviorPrompt).toBe(USER_DEF.behaviorPrompt);
+    expect(defs[1].behaviorPromptOmitted).toBeUndefined();
+  });
+
+  it.each([
+    ['the read fails', () => Promise.reject(new Error('down'))],
+    [
+      'the read is cut too',
+      () => Promise.resolve({ specialist: { ...USER_DEF, behaviorPromptOmitted: true } }),
+    ],
+    [
+      'another tier answers',
+      () => Promise.resolve({ specialist: { ...USER_DEF, source: 'bundled' } }),
+    ],
+  ])('listCatalog keeps the omitted marker when %s', async (_label, getReply) => {
+    const omitted: SpecialistDef = {
+      ...USER_DEF,
+      prompt: undefined,
+      behaviorPrompt: undefined,
+      behaviorPromptOmitted: true,
+    };
+    mockedRequest
+      .mockResolvedValueOnce({ specialists: [omitted], nextToken: null })
+      .mockImplementationOnce(getReply as never);
+    const client = new LiveSpecialistsClient();
+
+    const defs = await client.list();
+
+    expect(defs).toEqual([omitted]);
+  });
+
   it('listCatalog pages an unscoped catalog with only limit and the token', async () => {
     mockedRequest
       .mockResolvedValueOnce({ specialists: [COORDINATOR_DEF], nextToken: 'page-2' })
