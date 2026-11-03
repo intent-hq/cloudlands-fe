@@ -1,5 +1,5 @@
 import type { Locator } from '@playwright/test';
-import { expect, test } from '../../../test/ct-test';
+import { activateHoverAction, expect, test } from '../../../test/ct-test';
 import ComposerMediaPreview from './dock-composer-media.preview.svelte';
 import { readDictationIndicators } from './dock-composer-ct-helpers';
 import { expectDismissibleLayerArmed } from '../../../test/dismissible-layer';
@@ -298,8 +298,14 @@ test('several recordings are separate ordered tiles; removing one keeps the othe
       .evaluateAll((tiles) => tiles.map((tile) => tile.getAttribute('data-attachment-id'))),
   ).toEqual(['image', 'clip-1', 'clip-2', 'file']);
   const first = component.locator('[data-attachment-id="clip-1"]');
-  await first.hover();
-  await first.getByRole('button', { name: 'Remove', exact: true }).click();
+  // The strip can still be sliding tiles into their sorted places, so activate the
+  // hover-only action without a pointer the tile could move out from under. Watch the
+  // strip, which outlives the removed tile.
+  await activateHoverAction(
+    first.getByRole('button', { name: 'Remove', exact: true }),
+    component.locator('[data-dock-media-attachments]'),
+    { requireChange: false },
+  );
   expect(await actions(component)).toEqual(['remove:clip-1']);
   await expect(component.locator('[data-attachment-id="clip-2"]')).toBeVisible();
   await expect(component.locator('[data-attachment-id="image"]')).toBeVisible();
@@ -348,8 +354,9 @@ test('pending image previews retain removal and retry before restoring open and 
   });
   const tile = component.locator('[data-attachment-id="pending-image"]');
   await expect(tile.getByRole('alert')).toBeVisible();
-  await tile.hover();
-  await tile.getByRole('button', { name: 'Retry', exact: true }).click();
+  await activateHoverAction(tile.getByRole('button', { name: 'Retry', exact: true }), tile, {
+    requireChange: false,
+  });
   expect(await actions(component)).toEqual(['remove:no-preview', 'retry:pending-image']);
   await expect(tile.getByRole('alert')).toBeVisible();
   await expect(tile.locator('img')).toHaveCount(0);
@@ -403,8 +410,9 @@ test('failed attachment keeps its error and requests retry without removing the 
   });
   const tile = component.locator('[data-attachment-id="failed-file"]');
   await expect(tile.getByRole('alert')).toHaveText('Upload interrupted');
-  await tile.hover();
-  await tile.getByRole('button', { name: 'Retry', exact: true }).click();
+  await activateHoverAction(tile.getByRole('button', { name: 'Retry', exact: true }), tile, {
+    requireChange: false,
+  });
   expect(await actions(component)).toEqual(['retry:failed-file']);
   await expect(tile).toBeVisible();
   await expect(tile.getByRole('alert')).toHaveText('Upload interrupted');

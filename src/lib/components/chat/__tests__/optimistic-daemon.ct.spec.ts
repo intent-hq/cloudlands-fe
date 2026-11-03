@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { expect, test, wheelUntilScrolled } from '../../../../test/ct-test';
+import { activateHoverAction, expect, test, wheelUntilScrolled } from '../../../../test/ct-test';
 import OptimisticDaemonHost from './OptimisticDaemonHost.svelte';
 import { connect, createRelay, rpcClient, type DaemonFixture } from './optimistic-daemon-relay';
 
@@ -151,8 +151,11 @@ test('optimistic real-daemon active edit retains appended suffix and queue contr
     });
     const rows = component.getByTestId('queued-message-row');
     await expect(component.getByTestId('queued-message-text')).toHaveText(['Original edit']);
-    await rows.first().hover();
-    await rows.getByRole('button', { name: 'Edit', exact: true }).click();
+    // The busy turn keeps streaming, which can move the row after a hover; activate the
+    // hover-only action without the pointer.
+    await activateHoverAction(rows.getByRole('button', { name: 'Edit', exact: true }), rows, {
+      requireChange: false,
+    });
     const edit = rows.locator('textarea');
     await edit.fill('Edited prefix');
     await expect
@@ -181,8 +184,11 @@ test('optimistic real-daemon active edit retains appended suffix and queue contr
       'Edited prefix\n\nConcurrent suffix',
     );
     await page.screenshot({ path: info.outputPath('optimistic-daemon-edited-suffix.png') });
-    await rows.first().hover();
-    await rows.getByRole('button', { name: 'Remove', exact: true }).click();
+    await activateHoverAction(
+      rows.getByRole('button', { name: 'Remove', exact: true }),
+      component,
+      { requireChange: false },
+    );
     await expect.poll(async () => (await owner('agent.getQueue', params)).queue.length).toBe(0);
     expect(
       relay.calls.some(
