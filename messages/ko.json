@@ -886,6 +886,7 @@
   "chat_proposalCard_chooseDifferentBranch_label": ". 위에서 다른 기준 브랜치를 선택한 다음 다시 시도하세요.",
   "chat_proposalCard_createNewWorkspace_title": "새 작업 공간을 만들까요?",
   "chat_proposalCard_createWorkspace_label": "작업 공간 만들기",
+  "chat_proposalCard_createdWorkspaceMissing_error": "해당 작업 공간이 더 이상 존재하지 않거나 열 수 없습니다.",
   "chat_proposalCard_creatingWorkspace_label": "작업 공간 만드는 중…",
   "chat_proposalCard_detectingBranch_label": "브랜치 감지 중…",
   "chat_proposalCard_detectingPrBranch_label": "PR 브랜치 감지 중…",

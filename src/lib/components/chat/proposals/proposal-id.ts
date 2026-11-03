@@ -23,3 +23,17 @@ export function getProposalId(proposal: Proposal): string {
   const changes = proposal.kind === 'settings-change' ? proposal.payload.changes : proposal.payload;
   return `settings-${hashString(stableStringify(changes))}`;
 }
+
+/**
+ * Local lifecycle key for one rendered card. A workspace-create proposal with
+ * no `applyToolCallId` (older daemons) has only a content hash from
+ * `getProposalId`, and that persisted, global key let a new card with the same
+ * content inherit an earlier card's `applied` state — showing "Workspace
+ * created" and skipping `workspace.create`. Scope such cards to the carrying
+ * agent message so each card gets its own apply state.
+ */
+export function getCardProposalId(proposal: Proposal, agentId: string, messageId: string): string {
+  const id = getProposalId(proposal);
+  if (proposal.applyToolCallId || proposal.kind !== 'workspace-create') return id;
+  return `${id}@${agentId}/${messageId}`;
+}

@@ -886,6 +886,7 @@
   "chat_proposalCard_chooseDifferentBranch_label": ". Wählen Sie oben einen anderen Basis-Branch und versuchen Sie es erneut.",
   "chat_proposalCard_createNewWorkspace_title": "Neuen Arbeitsbereich erstellen?",
   "chat_proposalCard_createWorkspace_label": "Arbeitsbereich erstellen",
+  "chat_proposalCard_createdWorkspaceMissing_error": "Dieser Arbeitsbereich existiert nicht mehr oder konnte nicht geöffnet werden.",
   "chat_proposalCard_creatingWorkspace_label": "Arbeitsbereich wird erstellt…",
   "chat_proposalCard_detectingBranch_label": "Branch wird erkannt…",
   "chat_proposalCard_detectingPrBranch_label": "PR-Branch wird erkannt…",

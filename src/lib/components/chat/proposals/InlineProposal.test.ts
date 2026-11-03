@@ -9,6 +9,7 @@ import type { Proposal } from '$shared/types/proposal';
 const state = vi.hoisted(() => ({
   pendingProposals: [] as Array<{ proposalId: string; messageId: string }>,
   proposalResolutions: {} as Record<string, 'applied' | 'dismissed'>,
+  proposalCreatedWorkspaces: {} as Record<string, string>,
   lifecycle: {} as Record<
     string,
     {
@@ -35,6 +36,7 @@ const actionMocks = vi.hoisted(() => ({
   undoSettings: vi.fn(() => true),
   goto: vi.fn(),
   showWorkspace: vi.fn(async () => true),
+  openCreated: vi.fn(async () => true),
   loadDraft: vi.fn(() => null),
   saveDraft: vi.fn(),
   clearDraft: vi.fn(),
@@ -64,6 +66,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
       metadata: {
         pendingProposals: state.pendingProposals,
         proposalResolutions: state.proposalResolutions,
+        proposalCreatedWorkspaces: state.proposalCreatedWorkspaces,
       },
     })),
   ),
@@ -132,6 +135,9 @@ vi.mock('$store/renderer/store', () => ({
 vi.mock('$app/navigation', () => ({ goto: actionMocks.goto }));
 vi.mock('$lib/utils/show-workspace', () => ({
   openAndShowWorkspace: actionMocks.showWorkspace,
+}));
+vi.mock('./open-created-workspace', () => ({
+  openCreatedWorkspace: actionMocks.openCreated,
 }));
 vi.mock('$lib/components/workspace/initializer/RepoAndBranchPicker.svelte', async () => ({
   default: (await import('../../workspace/sidebar/__tests__/mocks/MockRepoAndBranchPicker.svelte'))
@@ -211,7 +217,7 @@ vi.mock(
 );
 
 import InlineProposal from './InlineProposal.svelte';
-import { getProposalId } from './proposal-id';
+import { getCardProposalId, getProposalId } from './proposal-id';
 
 const AGENT_ID = 'agent-inline';
 const WORKSPACE_ID = 'workspace-inline';
@@ -243,6 +249,7 @@ function renderProposal(proposal: Proposal, messageId = 'message-inline') {
 beforeEach(() => {
   state.pendingProposals = [];
   state.proposalResolutions = {};
+  state.proposalCreatedWorkspaces = {};
   state.lifecycle = {};
   state.cardStatus = 'idle';
   state.cardError = null;
@@ -315,12 +322,49 @@ describe('InlineProposal', () => {
     expect(link.getAttribute('href')).toBe('/workspace/workspace-created');
     await fireEvent.click(link);
     // A proposal-created workspace may have no tab yet; the helper opens it.
-    expect(actionMocks.showWorkspace).toHaveBeenCalledWith('workspace-created');
+    expect(actionMocks.openCreated).toHaveBeenCalledWith('workspace-created');
     expect(actionMocks.resolve).toHaveBeenCalledWith(AGENT_ID, WORKSPACE_ID, {
       proposalId: 'tool-applied',
       outcome: 'applied',
       detail: 'Created workspace workspace-created.',
     });
+  });
+
+  it('opens the workspace of a follow-up card the agent applied (no local apply)', async () => {
+    // A `ws.workspace.proposeSibling` card applied by the agent's own
+    // `ws.workspace.applyProposal`: only the daemon metadata knows the outcome
+    // and the created workspace.
+    const proposal: Proposal = {
+      ...makeWorkspaceProposal('workspace-create-sibling'),
+      payload: {
+        operation: 'workspace.create',
+        params: { title: 'Follow up', idempotencyKey: 'sibling-workspace-key' },
+      },
+      preview: {
+        title: 'Create workspace: Follow up',
+        workspaceCreate: { mode: 'sibling', title: 'Follow up' },
+      } as Proposal['preview'],
+    };
+    state.proposalResolutions = { 'workspace-create-sibling': 'applied' };
+    state.proposalCreatedWorkspaces = { 'workspace-create-sibling': 'workspace-from-agent' };
+    renderProposal(proposal);
+
+    expect(screen.getByText('Workspace created.')).toBeTruthy();
+    const link = screen.getByRole('link', { name: 'Open workspace' });
+    expect(link.getAttribute('href')).toBe('/workspace/workspace-from-agent');
+    await fireEvent.click(link);
+    expect(actionMocks.openCreated).toHaveBeenCalledWith('workspace-from-agent');
+    expect(actionMocks.applyWorkspace).not.toHaveBeenCalled();
+  });
+
+  it('never links a created workspace for a card that is not applied', () => {
+    const proposal = makeWorkspaceProposal('workspace-create-dismissed');
+    state.proposalResolutions = { 'workspace-create-dismissed': 'dismissed' };
+    state.proposalCreatedWorkspaces = { 'workspace-create-dismissed': 'workspace-stale' };
+    renderProposal(proposal);
+
+    expect(screen.getByText('Dismissed.')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Open workspace' })).toBeNull();
   });
 
   it('renders a daemon-reconciled dismissed outcome without actions', () => {
@@ -421,7 +465,12 @@ describe('InlineProposal', () => {
     expect(actionMocks.applyWorkspace).toHaveBeenCalledWith(expect.objectContaining({ proposal }));
 
     view.unmount();
-    state.lifecycle = { [getProposalId(proposal)]: { status: 'applied', completedAt: 20 } };
+    state.lifecycle = {
+      [getCardProposalId(proposal, AGENT_ID, 'message-inline')]: {
+        status: 'applied',
+        completedAt: 20,
+      },
+    };
     renderProposal(proposal);
     await vi.waitFor(() => {
       expect(actionMocks.resolve).toHaveBeenCalledWith(AGENT_ID, WORKSPACE_ID, {
@@ -429,6 +478,36 @@ describe('InlineProposal', () => {
         outcome: 'applied',
       });
     });
+  });
+
+  it('does not inherit an earlier identical id-less card applied outcome', async () => {
+    const title = 'Create workspace: Same content';
+    const proposal: Proposal = {
+      kind: 'workspace-create',
+      payload: { operation: 'workspace.create', params: { title: 'Same content' } },
+      preview: { title },
+    };
+    state.pendingProposals = [{ proposalId: title, messageId: 'message-first' }];
+    const first = renderProposal(proposal, 'message-first');
+    await fireEvent.click(screen.getByRole('button', { name: /^Create workspace/ }));
+    const firstApply = actionMocks.applyWorkspace.mock.calls[0]?.[0];
+    const firstKey = firstApply.lifecycleId ?? getProposalId(firstApply.proposal);
+    first.unmount();
+
+    state.lifecycle = {
+      [firstKey]: { status: 'applied', completedAt: 10, result: { workspaceId: 'ws-first' } },
+    };
+    state.pendingProposals = [{ proposalId: title, messageId: 'message-second' }];
+    actionMocks.resolve.mockClear();
+    actionMocks.applyWorkspace.mockClear();
+    renderProposal({ ...proposal }, 'message-second');
+    await tick();
+
+    expect(screen.queryByText('Workspace created.')).toBeNull();
+    expect(actionMocks.resolve).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByRole('button', { name: /^Create workspace/ }));
+    const secondApply = actionMocks.applyWorkspace.mock.calls[0]?.[0];
+    expect(secondApply.lifecycleId ?? getProposalId(secondApply.proposal)).not.toBe(firstKey);
   });
 
   it('keeps a daemon-declined card pending and interactive (intent-hq/intent#8086)', async () => {

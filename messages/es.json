@@ -886,6 +886,7 @@
   "chat_proposalCard_chooseDifferentBranch_label": ". Elija otra rama base arriba y reintente.",
   "chat_proposalCard_createNewWorkspace_title": "¿Crear un nuevo espacio de trabajo?",
   "chat_proposalCard_createWorkspace_label": "Crear espacio de trabajo",
+  "chat_proposalCard_createdWorkspaceMissing_error": "Ese espacio de trabajo ya no existe o no se pudo abrir.",
   "chat_proposalCard_creatingWorkspace_label": "Creando espacio de trabajo…",
   "chat_proposalCard_detectingBranch_label": "Detectando rama…",
   "chat_proposalCard_detectingPrBranch_label": "Detectando rama de la PR…",
