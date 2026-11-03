@@ -1277,10 +1277,12 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
     PORTABLE_FIXTURES_REQUIRED: 'false',
     RESULT_test_integration: event === 'merge_group' ? 'success' : 'skipped',
     RESULT_test_ct: ct,
-    // No changed CT spec: the PR-only repetition job skips (its own gate
-    // cases live in scripts/test-ci-event-policy.py).
+    // No changed or affected CT spec: the PR-only spec-list jobs skip (their
+    // own gate cases live in scripts/test-ci-event-policy.py).
     RESULT_test_ct_changed: 'skipped',
     CT_CHANGED_SPECS: '[]',
+    RESULT_test_ct_affected: 'skipped',
+    CT_AFFECTED_SPECS: '[]',
     RESULT_test_playwright: ct,
     RESULT_monorepo_consumer_checks: 'success',
   });
