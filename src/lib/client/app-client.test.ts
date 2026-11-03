@@ -46,7 +46,7 @@ describe('appClient seam (all domains live)', () => {
 
     expect(mockInvoke).toHaveBeenCalledWith(IPC_CHANNELS.BACKEND.REQUEST, {
       method: 'skill.list',
-      params: { workspaceId: 'ws-123' },
+      params: { workspaceId: 'ws-123', limit: 500 },
     });
     expect(skills).toHaveLength(1);
     expect(skills[0]).toMatchObject({ name: 'test-skill', description: 'Test' });

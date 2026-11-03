@@ -5789,6 +5789,7 @@
   "specialists_loader_fileNotFound_error": "Archivo de especialista no encontrado",
   "specialists_loader_unknown_error": "Error desconocido",
   "specialists_mutation_deleteFailed_error": "Error al eliminar el especialista",
+  "specialists_mutation_promptUnavailable_error": "La instrucción de este especialista es demasiado grande para cargarla, así que no se puede guardar aquí. Edita su archivo directamente.",
   "specialists_mutation_refreshFailed_error": "Error al actualizar la lista de especialistas tras la escritura",
   "specialists_mutation_saveFailed_error": "Error al guardar el especialista",
   "starterPrompts_connectFour_label": "Crear un juego de Conecta 4",

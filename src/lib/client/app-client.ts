@@ -2190,6 +2190,14 @@ export interface SpecialistDef {
   icon?: string;
   prompt?: string;
   behaviorPrompt?: string;
+  /**
+   * Set by a paged `specialist.list` when this row's prompt alone exceeds the
+   * page budget: `behaviorPrompt`/`prompt` are absent and `behaviorPromptBytes`
+   * is their size (PROTOCOL §5.11 "Catalog list pages"). The client re-reads
+   * the row with `specialist.get`; a row that still carries it must not be saved.
+   */
+  behaviorPromptOmitted?: boolean;
+  behaviorPromptBytes?: number;
   source: 'project' | 'user' | 'bundled';
   isCustomized?: boolean;
   path?: string;

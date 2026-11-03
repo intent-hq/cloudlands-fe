@@ -49,6 +49,11 @@ export interface FileSpecialist {
   codingAgent?: string;
   model: string;
   behaviorPrompt: string;
+  /**
+   * The daemon omitted this specialist's prompt (too large for a list page)
+   * and `specialist.get` could not supply it; saving would erase the prompt.
+   */
+  behaviorPromptOmitted?: boolean;
   roleReminder?: string;
   filePath: string;
   source: SpecialistFileScope;

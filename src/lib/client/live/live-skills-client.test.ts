@@ -28,7 +28,57 @@ describe('LiveSkillsClient', () => {
 
       await client.list('ws-123');
 
-      expect(backendRequestSpy).toHaveBeenCalledWith('skill.list', { workspaceId: 'ws-123' });
+      expect(backendRequestSpy).toHaveBeenCalledWith('skill.list', {
+        workspaceId: 'ws-123',
+        limit: 500,
+      });
+    });
+
+    it('follows nextToken across paged replies (PROTOCOL catalog list pages)', async () => {
+      const skill = (name: string) => ({
+        name,
+        description: `${name} description`,
+        location: `/ws/.agents/skills/${name}/SKILL.md`,
+        scope: 'project' as const,
+      });
+      const backendRequestSpy = vi
+        .spyOn(backendTransport, 'backendRequest')
+        .mockResolvedValueOnce({ skills: [skill('a'), skill('b')], nextToken: 't1' })
+        .mockResolvedValueOnce({ skills: [skill('c')], nextToken: null });
+
+      const result = await client.list('ws-paged');
+
+      expect(result.map((s) => s.name)).toEqual(['a', 'b', 'c']);
+      expect(backendRequestSpy).toHaveBeenNthCalledWith(1, 'skill.list', {
+        workspaceId: 'ws-paged',
+        limit: 500,
+      });
+      expect(backendRequestSpy).toHaveBeenNthCalledWith(2, 'skill.list', {
+        workspaceId: 'ws-paged',
+        limit: 500,
+        nextToken: 't1',
+      });
+      expect(backendRequestSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps the first copy of a skill repeated across pages', async () => {
+      const skill = (name: string, description = `${name} description`) => ({
+        name,
+        description,
+        location: `/ws/.agents/skills/${name}/SKILL.md`,
+        scope: 'project' as const,
+      });
+      vi.spyOn(backendTransport, 'backendRequest')
+        .mockResolvedValueOnce({ skills: [skill('a'), skill('b')], nextToken: 't1' })
+        .mockResolvedValueOnce({ skills: [skill('b', 'repeated'), skill('c')], nextToken: null });
+
+      const result = await client.list('ws-dup');
+
+      expect(result.map((s) => [s.name, s.description])).toEqual([
+        ['a', 'a description'],
+        ['b', 'b description'],
+        ['c', 'c description'],
+      ]);
     });
 
     it('maps wire shape to SkillInfo (strips allowedTools/compatibility)', async () => {
@@ -141,7 +191,10 @@ describe('LiveSkillsClient', () => {
 
       // Wait for the async refetch + handler call.
       await vi.waitFor(() => {
-        expect(backendRequestSpy).toHaveBeenCalledWith('skill.list', { workspaceId: 'ws-test' });
+        expect(backendRequestSpy).toHaveBeenCalledWith('skill.list', {
+          workspaceId: 'ws-test',
+          limit: 500,
+        });
         expect(handler).toHaveBeenCalledWith(refreshedSkills);
       });
 
@@ -258,7 +311,10 @@ describe('LiveSkillsClient', () => {
         expect(backendSubscribeSpy).toHaveBeenLastCalledWith({ eventTypes: ['skills:changed'] });
         await vi.waitFor(() => expect(handler).toHaveBeenCalledWith(skills));
         expect(backendRequestSpy).toHaveBeenCalledTimes(1);
-        expect(backendRequestSpy).toHaveBeenCalledWith('skill.list', { workspaceId: 'ws-test' });
+        expect(backendRequestSpy).toHaveBeenCalledWith('skill.list', {
+          workspaceId: 'ws-test',
+          limit: 500,
+        });
 
         // The refreshed id is released on dispose.
         unsubscribe();

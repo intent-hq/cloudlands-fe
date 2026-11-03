@@ -204,7 +204,7 @@ describe('workspace catalog host probes through live clients', () => {
     backend.pushEvent(event);
     await settle();
     expect(backend.requests).toEqual([
-      { method: 'specialist.list', params: { workspaceId: WS, includeProject: true } },
+      { method: 'specialist.list', params: { workspaceId: WS, includeProject: true, limit: 500 } },
     ]);
     expect(store.state.providerCatalog.byWorkspaceId?.[WS].specialists[0].id).toBe('new-role');
     expect(store.state.providerCatalog.byWorkspaceId?.other.specialists).toEqual([]);

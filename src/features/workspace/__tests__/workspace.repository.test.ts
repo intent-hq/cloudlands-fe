@@ -228,7 +228,7 @@ describe('DaemonWorkspaceRepository', () => {
 
       const result = await repository.findAll();
 
-      expect(mockBackendClient.request).toHaveBeenCalledWith('workspace.list');
+      expect(mockBackendClient.request).toHaveBeenCalledWith('workspace.list', undefined);
       expect(result).toEqual(testWorkspaces);
     });
 

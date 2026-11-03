@@ -5789,6 +5789,7 @@
   "specialists_loader_fileNotFound_error": "スペシャリストファイルが見つかりません",
   "specialists_loader_unknown_error": "不明なエラー",
   "specialists_mutation_deleteFailed_error": "スペシャリストを削除できませんでした",
+  "specialists_mutation_promptUnavailable_error": "このスペシャリストのプロンプトは大きすぎて読み込めないため、ここでは保存できません。ファイルを直接編集してください。",
   "specialists_mutation_refreshFailed_error": "書き込み後にスペシャリスト一覧を更新できませんでした",
   "specialists_mutation_saveFailed_error": "スペシャリストを保存できませんでした",
   "starterPrompts_connectFour_label": "四目並べゲームを作成",
