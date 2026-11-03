@@ -22,6 +22,15 @@ import type { DockComposerController, DockComposerLocalState } from './dock-comp
 type EvidenceView = ReturnType<typeof selectDockComposerEvidence.select>;
 
 /** Native privacy panes the user may open from a permission-blocked control. */
+
+/** A live clip's recorded time: paused spans are cut, as the recorder cuts them. */
+function recordedMs(
+  clip: { startedAt: number; pausedAt?: number | null; pausedMs?: number },
+  now: number,
+): number {
+  return Math.max(0, (clip.pausedAt ?? now) - clip.startedAt - (clip.pausedMs ?? 0));
+}
+
 export type DockSettingsPane = DockEvidencePrivacyPane;
 
 /** Workspace-file playback URL from a daemon placement path (video only). */
@@ -165,7 +174,9 @@ export function buildDockComposerMedia(input: {
       kind: 'clip' as const,
       // The context item exists once native returns the file; a live recording has only its id.
       id: clip.contextItemId ?? clip.id,
-      duration: elapsed(clip.status === 'recording' ? local.now - clip.startedAt : clip.durationMs),
+      duration: elapsed(
+        clip.status === 'recording' ? recordedMs(clip, local.now) : clip.durationMs,
+      ),
       recording: clip.status === 'recording',
       ...(clip.status === 'ready' && dockClipPlaybackUrl(input.workspaceId, clip.path)
         ? { url: dockClipPlaybackUrl(input.workspaceId, clip.path) }
@@ -242,7 +253,7 @@ export function buildDockComposerMedia(input: {
       // A finished clip uploads in the background; a new recording can start meanwhile.
       recordingDisabled: !view.recording && (!caps.record || clipsFull),
       ...(clipsFull && !view.recording ? { recordingTooltip: labels.clipLimit } : {}),
-      recordingTime: recordingClip ? elapsed(local.now - recordingClip.startedAt) : elapsed(0),
+      recordingTime: recordingClip ? elapsed(recordedMs(recordingClip, local.now)) : elapsed(0),
       dictating: !!view.dictation,
       dictationPending: view.speech.pending || view.dictation?.status === 'transcribing',
       // A permission-blocked mic stays clickable: its click opens the pane.

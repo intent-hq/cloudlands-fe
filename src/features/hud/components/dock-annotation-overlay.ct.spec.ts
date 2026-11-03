@@ -399,32 +399,24 @@ test('Screenshot and Record on the tool bar run the composer actions with its lo
   await expect(bar.getByRole('button', { name: 'Box' })).toHaveAttribute('aria-pressed', 'true');
   await expect(bar.getByRole('button', { name: 'Mouse' })).toHaveAttribute('aria-pressed', 'false');
 
-  // Record: the composer's red pill with the stop square and a running timer.
+  // Record: while the recording is live, the recording tool bar replaces this one
+  // (its own spec: dock-recording-toolbar.ct.spec.ts), with the composer's timer.
   const idleWidth = await reportedWidth();
-  const idleX = (await bar.boundingBox())!.x;
   await bar.getByRole('button', { name: 'Record the screen · ⌘⇧R' }).click();
-  // No jump: while the pill widens the bar keeps its left edge and grows to the right.
-  for (let frame = 0; frame < 12; frame++) {
-    expect(Math.round((await bar.boundingBox())!.x)).toBe(Math.round(idleX));
-    await page.waitForTimeout(25);
-  }
-  const stop = bar.getByRole('button', { name: 'Stop recording' });
-  await expect(stop).toHaveAttribute('data-recording');
-  await expect(stop).toHaveAttribute('aria-pressed', 'true');
-  await expect(stop.locator('[data-record-time]')).toHaveText(/^1:0[5-9]$/);
-  // The wider bar re-reports its rect, so main keeps all of it clickable.
-  await expect.poll(reportedWidth).toBeGreaterThan(idleWidth);
-  // A fixed pill: timer ticks never change its width (or the bar's).
-  await expectAnimationsToSettle(bar);
-  const settled = (await bar.boundingBox())!;
-  await page.waitForTimeout(1_100);
-  const ticked = (await bar.boundingBox())!;
-  expect([ticked.x, ticked.width]).toEqual([settled.x, settled.width]);
-  expect(Math.round(settled.x)).toBe(Math.round(idleX));
+  const recordingBar = page.getByRole('toolbar', { name: 'Recording tools' });
+  await expect(recordingBar).toBeVisible();
+  await expect(bar).toHaveCount(0);
+  await expect(
+    recordingBar.getByTestId('recording-chip').locator('[data-recording-time]'),
+  ).toHaveText(/^1:0[5-9]$/);
+  // The recording bar reports its own rect, so main keeps it clickable.
+  await expect.poll(reportedWidth).not.toBe(idleWidth);
+  const recordingBox = (await recordingBar.boundingBox())!;
   const recordingShot = await page.screenshot({
-    clip: await toolbarClip(),
+    clip: { x: 290, y: Math.max(0, recordingBox.y - 48), width: 700, height: 150 },
   });
-  await stop.click();
+  // Done stops the recording; the annotate bar comes back.
+  await recordingBar.locator('[data-done]').click();
   await expect(bar.getByRole('button', { name: 'Record the screen · ⌘⇧R' })).toHaveAttribute(
     'aria-pressed',
     'false',
@@ -490,7 +482,7 @@ test('Screenshot and Record on the tool bar run the composer actions with its lo
   expect((await toolbar()).map((row) => row.action)).toEqual([
     'capture',
     'record',
-    'record',
+    'done',
     'capture',
     'clear',
     'end',

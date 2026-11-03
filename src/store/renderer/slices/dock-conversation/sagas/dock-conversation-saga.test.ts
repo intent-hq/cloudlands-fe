@@ -967,6 +967,8 @@ function scriptedNative(
     synced: [] as { n: number }[][],
     acks: [] as [annotationId: string, markId: string, accepted: boolean][],
     media: [] as unknown[],
+    pauses: [] as [clipId: string, paused: boolean][],
+    stopped: [] as string[],
   };
   let nextCapture: (() => DockCapturedPixels) | null = null;
   const service: DockEvidenceNativeService = {
@@ -1001,10 +1003,15 @@ function scriptedNative(
             calls.released.push(clipId);
             return { ok: true as const, value: undefined };
           },
+          pauseClip: async (clipId: string, paused: boolean) => {
+            calls.pauses.push([clipId, paused]);
+            return { ok: true as const, value: { paused } };
+          },
         }
       : {}),
-    stopClip: async () =>
-      options.record
+    stopClip: async (clipId) => {
+      calls.stopped.push(clipId);
+      return options.record
         ? {
             ok: true,
             value: {
@@ -1015,7 +1022,8 @@ function scriptedNative(
               hasMicAudio: false,
             },
           }
-        : { ok: false, error: 'unavailable' },
+        : { ok: false, error: 'unavailable' };
+    },
     subscribe: (next) => {
       listener = next;
       return () => {
@@ -1853,7 +1861,7 @@ describe('dock annotate start feedback, refusals and dictation', () => {
     const button = { label: 'L', tooltip: 'T', disabled: false, pending: false, alert: false };
     const media = {
       capture: { ...button, revision: 0 },
-      record: { ...button, recording: false, startedAt: null },
+      record: { ...button, recording: false, startedAt: null, pausedAt: null, pausedMs: 0 },
     };
     // The composer's state reaches the bar, and again before a session starts.
     appStore.dispatch(dockEvidenceBarMediaChanged(workspaceA, mainA, media));
@@ -1889,6 +1897,65 @@ describe('dock annotate start feedback, refusals and dictation', () => {
     expect(evidenceView().tiles).toHaveLength(1);
     expect(native.calls.clips).toHaveLength(1);
     expect(evidenceView().annotating).toBe(true);
+  });
+
+  it('the recording bar pauses and resumes the clip, and Done stops, attaches and ends the session', async () => {
+    const native = scriptedNative({ record: true });
+    configureDockEvidenceNative(native.service);
+    await open();
+    await vi.waitFor(() => expect(evidenceView().capabilities.record).toBe(true));
+    appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
+    await vi.waitFor(() => expect(native.calls.started).toHaveLength(1));
+    const sessionId = native.calls.started[0].id;
+    native.emit({ type: 'annotation-media', sessionId, action: 'record' });
+    await vi.waitFor(() => expect(evidenceView().recording).toBe(true));
+    const clipId = native.calls.clips[0];
+    const live = () => evidenceView().clips.find((clip) => clip.id === clipId);
+
+    native.emit({ type: 'annotation-media', sessionId, action: 'pause' });
+    await vi.waitFor(() => expect(live()?.pausedAt).toEqual(expect.any(Number)));
+    expect(native.calls.pauses).toEqual([[clipId, true]]);
+    native.emit({ type: 'annotation-media', sessionId, action: 'resume' });
+    await vi.waitFor(() => expect(live()?.pausedAt).toBeNull());
+    expect(native.calls.pauses).toEqual([
+      [clipId, true],
+      [clipId, false],
+    ]);
+    expect(live()?.pausedMs).toBeGreaterThanOrEqual(0);
+
+    native.emit({ type: 'annotation-media', sessionId, action: 'done' });
+    await vi.waitFor(() => expect(evidenceView().recording).toBe(false));
+    await vi.waitFor(() => expect(evidenceView().annotating).toBe(false));
+    expect(native.calls.stopped).toEqual([clipId]);
+    expect(native.calls.ended).toContain(sessionId);
+    // The stopped clip is kept: it becomes the composer's attachment.
+    await vi.waitFor(() => expect(evidenceView().clips.map((clip) => clip.id)).toEqual([clipId]));
+  });
+
+  it('discard pauses at once; undo keeps the clip, and confirm deletes it and ends the session', async () => {
+    const native = scriptedNative({ record: true });
+    configureDockEvidenceNative(native.service);
+    await open();
+    await vi.waitFor(() => expect(evidenceView().capabilities.record).toBe(true));
+    appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
+    await vi.waitFor(() => expect(native.calls.started).toHaveLength(1));
+    const sessionId = native.calls.started[0].id;
+    native.emit({ type: 'annotation-media', sessionId, action: 'record' });
+    await vi.waitFor(() => expect(evidenceView().recording).toBe(true));
+    const clipId = native.calls.clips[0];
+
+    native.emit({ type: 'annotation-media', sessionId, action: 'discard' });
+    await vi.waitFor(() => expect(native.calls.pauses).toEqual([[clipId, true]]));
+    native.emit({ type: 'annotation-media', sessionId, action: 'discard-undo' });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(evidenceView().recording).toBe(true);
+    expect(evidenceView().annotating).toBe(true);
+    expect(native.calls.stopped).toEqual([]);
+
+    native.emit({ type: 'annotation-media', sessionId, action: 'discard-confirm' });
+    await vi.waitFor(() => expect(evidenceView().annotating).toBe(false));
+    await vi.waitFor(() => expect(evidenceView().clips).toEqual([]));
+    expect(native.calls.stopped).toEqual([clipId]);
   });
 
   it('dictating leaves the screen usable: annotate is explicit and ending it opens nothing', async () => {

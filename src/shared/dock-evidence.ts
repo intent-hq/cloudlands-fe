@@ -89,12 +89,27 @@ export interface DockEvidenceImage {
 export type DockEvidenceErrorCode =
   'unavailable' | 'permission' | 'failed' | 'limit' | 'unsupported-workspace' | 'transport';
 
+/** A tool bar media action the dock runs with the composer's own rules. */
+export type DockAnnotationMediaAction =
+  | 'capture'
+  | 'record'
+  | 'pause'
+  | 'resume'
+  | 'done'
+  | 'discard'
+  | 'discard-undo'
+  | 'discard-confirm';
+
 export interface DockEvidenceClip {
   id: string;
   status: 'recording' | 'placing' | 'ready' | 'failed';
   startedAt: number;
   durationMs: number;
   hasMicAudio: boolean;
+  /** Recording only: epoch ms it was paused (absent/null while it records). */
+  pausedAt?: number | null;
+  /** Recording only: earlier pauses' total, cut from its elapsed time. */
+  pausedMs?: number;
   /** Composer file context item carrying the placed clip attachment. */
   contextItemId?: string;
   /**
@@ -1276,7 +1291,7 @@ export type DockEvidenceNativeEvent =
   /** Clear on the tool bar: the current marks (and a live session's image) are dropped. */
   | { type: 'annotation-clear'; sessionId: string }
   /** Screenshot or Record on the tool bar: the dock runs the composer's own action. */
-  | { type: 'annotation-media'; sessionId: string; action: 'capture' | 'record' }
+  | { type: 'annotation-media'; sessionId: string; action: DockAnnotationMediaAction }
   /**
    * A genuine failure in a live session (no capture taken, no mark made): `pick`
    * means accessibility metadata is unreadable, `target`/`capture` that the screen
@@ -1312,6 +1327,8 @@ export interface DockEvidenceNativeService {
     options: { includeMic: boolean; maxMs: number },
   ): Promise<DockNativeResult<void>>;
   stopClip(clipId: string): Promise<DockNativeResult<DockClipFile>>;
+  /** Pause or resume the live clip; paused time is cut from it. */
+  pauseClip?(clipId: string, paused: boolean): Promise<DockNativeResult<{ paused: boolean }>>;
   /** Best-effort: delete native's finished source file once the daemon holds the attachment. */
   releaseClip?(clipId: string): Promise<DockNativeResult<void>>;
   /**

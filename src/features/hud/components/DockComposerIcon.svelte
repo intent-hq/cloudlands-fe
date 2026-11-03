@@ -15,7 +15,9 @@
     | 'check'
     | 'paperclip'
     | 'eraser'
-    | 'trash';
+    | 'trash'
+    | 'click'
+    | 'pause';
 </script>
 
 <script lang="ts">
@@ -69,6 +71,11 @@
     <path d="M4 4l8 8M12 4l-8 8" />
   {:else if glyph === 'cursor'}
     <path d="M3.5 2.5l9 4.25-3.9 1.35L7.25 12z" />
+  {:else if glyph === 'click'}
+    <path d="M7 6.5l6.25 2.75-2.6.95-1 2.55z" />
+    <path d="M4.5 1.75v1.5M1.75 4.5h1.5M2.6 2.6l1.05 1.05M6.4 2.6L5.35 3.65M2.6 6.4l1.05-1.05" />
+  {:else if glyph === 'pause'}
+    <path d="M5.25 3v10M10.75 3v10" />
   {:else if glyph === 'check'}
     <path d="M3 8.5l3.25 3.25L13 5" />
   {:else if glyph === 'eraser'}

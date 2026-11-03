@@ -23,8 +23,15 @@
 // produced. Source pixel dimensions are kept up to 4096 on the long edge
 // (H.264 High level limit), scaled proportionally beyond.
 //     stdin  (JSON lines): {"cmd":"mic","on":bool} | {"cmd":"marks","marks":[…]}
+//                          | {"cmd":"pause"} | {"cmd":"resume"}
 //                          | {"cmd":"exclude","windowIds":[…]} | {"cmd":"stop"} | {"cmd":"cancel"}
-//     stdout (JSON lines): started · mic · exclude · finished · cancelled · error
+//     stdout (JSON lines): started · mic · exclude · paused · level · finished · cancelled · error
+//
+// Pause stops writing (video and microphone) and stops the clock: the time spent paused
+// is cut from the clip, so the file plays straight through and the size/duration limits
+// count recorded time only. `paused` answers every pause/resume with the current state.
+// While the microphone is open and the clip is not paused, `level` reports its input
+// level (0…1, RMS on a -50 dB…0 dB scale) about 15 times a second.
 //
 // System audio is never captured. The microphone device is opened only between
 // {"cmd":"mic","on":true} and {"cmd":"mic","on":false} (or `--mic` at start), and
@@ -264,6 +271,11 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
   var frameSize = CGSize.zero
   var pointScale: CGFloat = 1
   var startTime: CMTime?
+  /// Pause: nothing is written, and the paused span is cut from every later timestamp.
+  var paused = false
+  var pauseStarted: CMTime?
+  var pausedTotal = CMTime.zero
+  var lastLevelEmit: CFAbsoluteTime = 0
   var lastTime: CMTime?
   var overlay: CIImage?
   var pendingMarks: [Any] = []
@@ -427,7 +439,7 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
       SCFrameStatus(rawValue: rawStatus) == .complete,
       let writer, let videoInput, let adaptor
     else { return }
-    let time = CMSampleBufferGetPresentationTimeStamp(sample)
+    var time = CMSampleBufferGetPresentationTimeStamp(sample)
     if state == .starting {
       guard writer.startWriting() else {
         return fail("failed", "writer: \(writer.error?.localizedDescription ?? "unknown")")
@@ -442,7 +454,9 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
       if micAtStart { setMic(true) }
       if !pendingMarks.isEmpty { setMarks(pendingMarks) }
     }
-    guard let startTime, time >= startTime else { return }
+    guard let startTime, !paused else { return }
+    time = time - pausedTotal
+    guard time >= startTime else { return }
     if CMTimeGetSeconds(time - startTime) * 1000 >= Double(options.maxMs) {
       return finish("limit")
     }
@@ -478,13 +492,13 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
     }
   }
 
-  func scheduleLimit() {
+  func scheduleLimit(remainingMs: Int? = nil) {
     let timer = DispatchSource.makeTimerSource(queue: queue)
-    timer.schedule(deadline: .now() + .milliseconds(options.maxMs))
+    timer.schedule(deadline: .now() + .milliseconds(max(0, remainingMs ?? options.maxMs)))
     timer.setEventHandler { [weak self] in self?.finish("limit") }
     timer.resume()
     limitTimer = timer
-    guard options.maxBytes > 0 else { return }
+    guard remainingMs == nil, options.maxBytes > 0 else { return }
     // Stop early, truthfully, rather than produce a clip placement must reject.
     let sizer = DispatchSource.makeTimerSource(queue: queue)
     sizer.schedule(deadline: .now() + 1, repeating: 1)
@@ -612,8 +626,67 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
         time = host
       }
     }
+    guard !paused else { return }
+    emitLevel(buffer)
+    if pausedTotal != .zero {
+      var timing = CMSampleTimingInfo(
+        duration: CMSampleBufferGetDuration(buffer), presentationTimeStamp: time - pausedTotal,
+        decodeTimeStamp: .invalid)
+      var shifted: CMSampleBuffer?
+      CMSampleBufferCreateCopyWithNewTiming(
+        allocator: nil, sampleBuffer: buffer, sampleTimingEntryCount: 1,
+        sampleTimingArray: &timing, sampleBufferOut: &shifted)
+      guard let shifted else { return }
+      buffer = shifted
+      time = time - pausedTotal
+    }
     guard time >= startTime else { return }
     if audioInput.append(buffer) { hasMicAudio = true }
+  }
+
+  /// RMS of 32-bit float PCM on a -50 dB…0 dB scale, at most every 66 ms.
+  func emitLevel(_ sample: CMSampleBuffer) {
+    let now = CFAbsoluteTimeGetCurrent()
+    guard now - lastLevelEmit >= 0.066, let block = CMSampleBufferGetDataBuffer(sample) else {
+      return
+    }
+    var length = 0
+    var pointer: UnsafeMutablePointer<CChar>?
+    guard CMBlockBufferGetDataPointer(
+      block, atOffset: 0, lengthAtOffsetOut: nil, totalLengthOut: &length,
+      dataPointerOut: &pointer) == kCMBlockBufferNoErr, let pointer, length >= 4
+    else { return }
+    let count = length / 4
+    var sum: Float = 0
+    pointer.withMemoryRebound(to: Float.self, capacity: count) { floats in
+      for index in 0..<count { sum += floats[index] * floats[index] }
+    }
+    let rms = (sum / Float(count)).squareRoot()
+    let db = 20 * log10(max(rms, 1e-7))
+    lastLevelEmit = now
+    emit(["event": "level", "level": Double(min(1, max(0, (db + 50) / 50)))])
+  }
+
+  // MARK: Pause
+
+  func setPaused(_ on: Bool) {
+    guard state == .recording, let startTime else {
+      return emit(["event": "paused", "paused": paused, "reason": "not-recording"])
+    }
+    if on && !paused {
+      paused = true
+      pauseStarted = hostNow()
+      limitTimer?.cancel()
+      limitTimer = nil
+    } else if !on && paused, let pauseStarted {
+      pausedTotal = pausedTotal + (hostNow() - pauseStarted)
+      self.pauseStarted = nil
+      paused = false
+      let recorded = CMTimeGetSeconds(hostNow() - pausedTotal - startTime) * 1000
+      limitTimer?.cancel()
+      scheduleLimit(remainingMs: options.maxMs - Int(recorded.rounded()))
+    }
+    emit(["event": "paused", "paused": paused])
   }
 
   // MARK: Lifecycle
@@ -636,7 +709,7 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
       return
     }
     state = .finishing
-    let now = hostNow()
+    let now = (paused ? pauseStarted ?? hostNow() : hostNow()) - pausedTotal
     let maxEnd = startTime + CMTime(value: CMTimeValue(options.maxMs), timescale: 1000)
     let end = max(lastTime ?? startTime, min(now, maxEnd))
     teardown()
@@ -683,6 +756,8 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
     case "stop": state == .starting ? cancel() : finish("stopped")
     case "cancel": cancel()
     case "mic": setMic(command["on"] as? Bool == true)
+    case "pause": setPaused(true)
+    case "resume": setPaused(false)
     case "marks": setMarks((command["marks"] as? [Any]) ?? [])
     case "exclude":
       setExcluded(((command["windowIds"] as? [Any]) ?? []).prefix(64).compactMap {

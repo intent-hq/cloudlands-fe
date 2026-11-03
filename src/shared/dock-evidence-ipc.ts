@@ -64,6 +64,7 @@ export type DockEvidenceControl =
   | { action: 'annotation-mark-result'; annotationId: string; markId: string; accepted: boolean }
   | { action: 'clip-start'; clipId: string; maxMs: number }
   | { action: 'clip-stop'; clipId: string }
+  | { action: 'clip-pause'; clipId: string; paused: boolean }
   | { action: 'clip-release'; clipId: string }
   | { action: 'speech-start'; speechId: string; locale?: string }
   | { action: 'speech-stop'; speechId: string }

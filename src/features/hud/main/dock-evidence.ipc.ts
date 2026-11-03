@@ -136,6 +136,8 @@ const controlSchema = z.discriminatedUnion('action', [
                 ...button,
                 recording: z.boolean(),
                 startedAt: z.number().finite().positive().nullable(),
+                pausedAt: z.number().finite().positive().nullable(),
+                pausedMs: z.number().finite().nonnegative(),
               })
               .strict(),
           })
@@ -159,6 +161,9 @@ const controlSchema = z.discriminatedUnion('action', [
     })
     .strict(),
   z.object({ action: z.literal('clip-stop'), clipId: z.string().uuid() }).strict(),
+  z
+    .object({ action: z.literal('clip-pause'), clipId: z.string().uuid(), paused: z.boolean() })
+    .strict(),
   z.object({ action: z.literal('clip-release'), clipId: z.string().uuid() }).strict(),
   z
     .object({
@@ -312,7 +317,14 @@ function createMediaBinder() {
     exclusionUpdates = result.catch(() => undefined);
     return result;
   };
+  // The live microphone level goes straight to the annotate tool bar's time chip.
+  dockEvidenceRecorder.onSignal((clipId, signal) => {
+    for (const state of sessions.values())
+      if (state.clipId === clipId && !state.clipEnded && state.context.isCurrent())
+        dockAnnotationController.setRecordingSignal(signal);
+  });
   dockEvidenceRecorder.onEnded((clipId, result) => {
+    dockAnnotationController.setRecordingSignal(null);
     for (const state of sessions.values())
       if (state.clipId === clipId) {
         state.clipEnded = true;
@@ -644,7 +656,9 @@ function createMediaBinder() {
             clipId: control.clipId,
             displayId,
             excludeWindowIds: ids,
-            includeMic: state.speechReady,
+            // The microphone is on for the whole recording (it opens only when access
+            // is already granted; the toolbar shows "No mic input" otherwise).
+            includeMic: true,
             maxMs: control.maxMs,
             outputDir: path.join(app.getPath('userData'), 'dock-clips', scope.sessionId),
           });
@@ -660,6 +674,10 @@ function createMediaBinder() {
         if (!result.ok) state.clipEnded = true;
         break;
       }
+      case 'clip-pause':
+        if (state.clipId !== control.clipId || state.clipEnded) return unavailable();
+        result = await dockEvidenceRecorder.setPaused(control.clipId, control.paused);
+        break;
       case 'clip-stop':
         if (state.clipId !== control.clipId) return unavailable();
         result = await dockEvidenceRecorder.stop(control.clipId);
@@ -708,14 +726,10 @@ function createMediaBinder() {
               resolve(failure);
             }
             if (event.type === 'state' && event.state === 'finalizing') state.speechReady = false;
-            if (
-              (event.type === 'ready' ||
-                event.type === 'ended' ||
-                (event.type === 'state' && event.state === 'finalizing')) &&
-              state.clipId &&
-              !state.clipEnded
-            )
-              void dockEvidenceRecorder.setMicrophone(state.clipId, state.speechReady);
+            // The recording keeps its microphone after dictation ends; dictation
+            // becoming ready only (re)opens it.
+            if (event.type === 'ready' && state.clipId && !state.clipEnded)
+              void dockEvidenceRecorder.setMicrophone(state.clipId, true);
             if (event.type === 'mark' || event.type === 'transcript' || event.type === 'ended') {
               if (event.type === 'mark') {
                 const gesture = state.speechGestures.get(event.markId);

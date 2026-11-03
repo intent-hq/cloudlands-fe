@@ -10,11 +10,22 @@ import {
   type DockAnnotationAck,
   type DockAnnotationOverlayState,
   type DockAnnotationOverlayTransport,
+  type DockAnnotationSignal,
 } from '$shared/dock-annotation';
 
 export interface DockAnnotationOverlayView {
   overlay: DockAnnotationOverlayState | null;
   stillUrl: string | null;
+}
+
+/** The recording's live microphone, separate from the state so the chip alone updates. */
+export function connectDockAnnotationSignal(
+  onSignal: (signal: DockAnnotationSignal | null) => void,
+): () => void {
+  if (!isElectron()) return () => {};
+  const listener = (value: DockAnnotationSignal | null) => onSignal(value ?? null);
+  electronAPI().on(DOCK_ANNOTATION_CHANNELS.SIGNAL, listener);
+  return () => electronAPI().off(DOCK_ANNOTATION_CHANNELS.SIGNAL, listener);
 }
 
 const STALE: DockAnnotationAck = { ok: false, reason: 'stale' };

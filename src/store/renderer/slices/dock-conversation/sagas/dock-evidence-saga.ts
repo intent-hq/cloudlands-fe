@@ -73,7 +73,7 @@ import {
   showDockEvidenceNotice,
   type DockEvidenceNotice,
 } from '$features/hud/composer/dock-evidence-notice';
-import { DOCK_MARK_TOOLS } from '$shared/dock-evidence';
+import { DOCK_MARK_TOOLS, type DockAnnotationMediaAction } from '$shared/dock-evidence';
 import { setComposerContextItems } from '../../transient-ui/transient-ui-slice';
 import { selectComposerContextItems } from '../../transient-ui/transient-ui-selectors';
 import { getPrincipalActionContext } from '../../principal/principal-context';
@@ -1189,8 +1189,12 @@ function* sendBarMedia(workspaceId: string, agentId: string): SagaGenerator<void
 function* barMediaAction(
   workspaceId: string,
   agentId: string,
-  action: 'capture' | 'record',
+  action: DockAnnotationMediaAction,
 ): SagaGenerator<void> {
+  if (action !== 'capture' && action !== 'record') {
+    yield* recordingToolbarAction(workspaceId, agentId, action);
+    return;
+  }
   const view = selectDockComposerEvidence.select(appStore.state, workspaceId, agentId);
   if (action === 'record' && view.recording) {
     yield* put(dockEvidenceRecordToggleRequested(workspaceId, agentId));
@@ -1207,6 +1211,85 @@ function* barMediaAction(
   }
   if (view.capabilities.record && view.clips.length < DOCK_EVIDENCE_LIMITS.clips)
     yield* put(dockEvidenceRecordToggleRequested(workspaceId, agentId));
+}
+
+const DOCK_ANNOTATION_MEDIA_ACTIONS: readonly DockAnnotationMediaAction[] = [
+  'capture',
+  'record',
+  'pause',
+  'resume',
+  'done',
+  'discard',
+  'discard-undo',
+  'discard-confirm',
+];
+
+/** Pause or resume the live clip; its paused time is cut from the clip and its timer. */
+function* setRecordingPaused(
+  workspaceId: string,
+  agentId: string,
+  paused: boolean,
+): SagaGenerator<boolean> {
+  const clip = recordingDockClip(evidenceOf(workspaceId, agentId));
+  const service = nativeService;
+  if (!clip || !service?.pauseClip) return false;
+  if (!!clip.pausedAt === paused) return true;
+  let result: DockNativeResult<{ paused: boolean }>;
+  try {
+    result = yield* call([service, service.pauseClip], clip.id, paused);
+  } catch {
+    result = { ok: false, error: 'failed' };
+  }
+  const current = clipOf(workspaceId, agentId, clip.id);
+  if (!result.ok || !current || current.status !== 'recording') return false;
+  const now = Date.now();
+  yield* put(
+    dockEvidenceClipChanged(
+      workspaceId,
+      agentId,
+      clip.id,
+      paused
+        ? { ...current, pausedAt: now }
+        : {
+            ...current,
+            pausedAt: null,
+            pausedMs: (current.pausedMs ?? 0) + Math.max(0, now - (current.pausedAt ?? now)),
+          },
+    ),
+  );
+  return true;
+}
+
+/**
+ * The recording tool bar. Done: the screen's marks go (they are in the clip already),
+ * the clip stops and attaches, and the session ends. Discard pauses capture and clears
+ * the screen while the bar offers Undo; Undo leaves the clip paused, and confirm (the
+ * undo window ran out) deletes it and ends the session.
+ */
+function* recordingToolbarAction(
+  workspaceId: string,
+  agentId: string,
+  action: Exclude<DockAnnotationMediaAction, 'capture' | 'record'>,
+): SagaGenerator<void> {
+  if (action === 'pause' || action === 'resume') {
+    yield* setRecordingPaused(workspaceId, agentId, action === 'pause');
+    return;
+  }
+  if (action === 'discard-undo') return;
+  const clip = recordingDockClip(evidenceOf(workspaceId, agentId));
+  if (action === 'discard') {
+    if (clip) yield* setRecordingPaused(workspaceId, agentId, true);
+    yield* clearAnnotation(workspaceId, agentId);
+    return;
+  }
+  yield* clearAnnotation(workspaceId, agentId);
+  if (clip)
+    yield* put(
+      action === 'done'
+        ? dockEvidenceRecordToggleRequested(workspaceId, agentId)
+        : dockEvidenceClipRemoveRequested(workspaceId, agentId, clip.id),
+    );
+  yield* endSession(workspaceId, agentId);
 }
 
 function* watchNative(): SagaGenerator<void> {
@@ -1252,7 +1335,7 @@ function* watchNative(): SagaGenerator<void> {
         const owner = getItems(appStore.state.dockConversation.evidence).find(
           (row) => row.annotation?.id === event.sessionId,
         );
-        if (owner && (event.action === 'capture' || event.action === 'record')) {
+        if (owner && DOCK_ANNOTATION_MEDIA_ACTIONS.includes(event.action)) {
           const [workspaceId, agentId] = JSON.parse(owner.id) as [string, string];
           if (activePair(workspaceId, agentId))
             yield* fork(barMediaAction, workspaceId, agentId, event.action);
