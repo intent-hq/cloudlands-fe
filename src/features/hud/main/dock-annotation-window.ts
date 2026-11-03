@@ -333,6 +333,10 @@ export class DockAnnotationController implements AnnotationService {
   private session: Session | null = null;
   /** The dock composer's Screenshot/Record state (see `setAnnotationMedia`). */
   private media: DockAnnotationMediaState | null = null;
+  /** Window/region selections in progress: the overlay stays hidden, even one still starting. */
+  private concealLeases = 0;
+  /** The overlay was hidden (or held back) by a selection and is shown when the last one ends. */
+  private concealedWindow: BrowserWindow | null = null;
   private window: BrowserWindow | null = null;
   private windowBackendId: string | null = null;
   /**
@@ -469,7 +473,9 @@ export class DockAnnotationController implements AnnotationService {
     try {
       window.setIgnoreMouseEvents(true, { forward: true });
       session.interactive = false;
-      window.showInactive();
+      // A window/region selection is in progress: the overlay appears when it ends.
+      if (this.concealLeases > 0) this.concealedWindow = window;
+      else window.showInactive();
       session.revealed = true;
       if (this.revealing === session) this.revealing = null;
     } catch (error) {
@@ -477,7 +483,8 @@ export class DockAnnotationController implements AnnotationService {
       this.finish(session, false);
       return { ok: false, error: 'failed' };
     }
-    this.announceWindows();
+    // Held back: its recording exclusion stays reserved until the selection shows it.
+    if (this.concealedWindow !== window) this.announceWindows();
     this.startRouting();
     this.route();
     return { ok: true, value: undefined };
@@ -589,29 +596,42 @@ export class DockAnnotationController implements AnnotationService {
   }
 
   /**
-   * Hide the visible overlay while the person selects a window or region, so the
-   * system picker never selects it and its marks stay out of the image. The session,
-   * its marks and exclusions stay; the returned function shows it again. Null when a
-   * visible overlay could not be hidden.
+   * Hide the overlay while the person selects a window or region, so the system
+   * picker never selects it and its marks stay out of the image. An overlay still
+   * starting is held back too. The session, its marks and exclusions stay; the
+   * returned release shows it again. Null when a visible overlay could not be hidden.
    */
   conceal(): (() => void) | null {
-    const session = this.session;
     const window = this.window;
-    if (!session || !this.current(session) || !usable(window) || !window.isVisible())
-      return () => {};
-    try {
-      window.hide();
-    } catch (error) {
-      logger.warn('Failed to hide the dock annotation overlay for a selection', { error });
-      return null;
-    }
-    return () => {
-      if (!this.current(session) || this.window !== window || !usable(window)) return;
+    const session = this.session;
+    if (session && this.current(session) && usable(window) && window.isVisible()) {
       try {
-        window.showInactive();
+        window.hide();
+      } catch (error) {
+        logger.warn('Failed to hide the dock annotation overlay for a selection', { error });
+        return null;
+      }
+      this.concealedWindow = window;
+    }
+    // Held until released, so an overlay still starting is not shown meanwhile.
+    this.concealLeases += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.concealLeases -= 1;
+      if (this.concealLeases > 0) return;
+      const concealed = this.concealedWindow;
+      this.concealedWindow = null;
+      const current = this.session;
+      if (!concealed || !current || !this.current(current) || current.window !== concealed) return;
+      try {
+        concealed.showInactive();
       } catch (error) {
         logger.warn('Failed to show the dock annotation overlay after a selection', { error });
+        return;
       }
+      this.announceWindows();
     };
   }
 

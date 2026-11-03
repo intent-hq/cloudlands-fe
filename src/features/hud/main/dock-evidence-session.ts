@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { execFile } from 'node:child_process';
+import { execFile, type ExecFileException } from 'node:child_process';
 import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -28,6 +28,8 @@ import type {
 } from '../../../shared/dock-evidence';
 import { DOCK_RECORDING_MAX_EDGE } from '../../../shared/dock-recording';
 import { cgWindowIdFromMediaSourceId, createDockScreenRecorder } from './dock-screen-recorder';
+import { dockSelectionOutcome } from './dock-selection-outcome';
+import { Logger } from '../../../shared/logger';
 import type {
   DockEvidenceBeginRequest,
   DockEvidenceBeginResult,
@@ -101,6 +103,7 @@ interface Session {
   requests: Map<string, { source: string; promise: Promise<DockEvidencePixelsResult> | null }>;
 }
 
+const logger = new Logger('DockEvidenceSession');
 const unavailable = (): DockEvidencePixelsResult => ({ ok: false, error: 'unavailable' });
 /** The window picker lists windows as it starts: the hidden overlay must be gone by then. */
 const SELECTION_SETTLE_MS = 250;
@@ -330,6 +333,9 @@ export class DockEvidenceSessions {
           if (!this.current(session)) return unavailable();
           const selected = await this.deps.captureSelection(selection);
           if (!this.current(session)) return unavailable();
+          // Screen Recording can be turned off during a selection: the image would hold
+          // only the desktop, and a dismissal must not hide the missing permission.
+          if (this.deps.permissionDenied()) return { ok: false, error: 'permission' };
           if (!selected.ok) return selected;
           return this.pixels(session, request, selected.value, selected.value.displayScale);
         } finally {
@@ -454,16 +460,25 @@ async function captureSelection(
   if (process.platform !== 'darwin') return { ok: false, error: 'unavailable', detail: 'platform' };
   const file = path.join(tmpdir(), `intent-dock-${randomUUID()}.png`);
   try {
-    await new Promise<void>((resolve) => {
+    const error = await new Promise<ExecFileException | null>((resolve) => {
       execFile(
         '/usr/sbin/screencapture',
         ['-i', mode === 'window' ? '-w' : '-s', '-o', '-x', '-t', 'png', file],
         { timeout: SELECTION_TIMEOUT_MS },
-        () => resolve(),
+        (failure) => resolve(failure),
       );
     });
     const image = nativeImage.createFromPath(file);
-    if (image.isEmpty()) return { ok: false, error: 'unavailable', detail: 'cancelled' };
+    const outcome = dockSelectionOutcome({ error, wroteImage: !image.isEmpty() });
+    if (outcome === 'cancelled') return { ok: false, error: 'unavailable', detail: 'cancelled' };
+    if (outcome !== 'image') {
+      logger.warn('Window or region selection failed', { outcome, code: error?.code });
+      return {
+        ok: false,
+        error: 'failed',
+        detail: outcome === 'timeout' ? 'timeout' : 'selection',
+      };
+    }
     // The selection ends under the pointer, on the display it was taken from.
     const scale = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).scaleFactor;
     const { width, height } = image.getSize();

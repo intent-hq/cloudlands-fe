@@ -330,6 +330,42 @@ describe('DockAnnotationController', () => {
     expect(t.controller.overlayWindowIds()).toEqual([]);
   });
 
+  it('a window or region selection holds back an overlay that finishes starting meanwhile', async () => {
+    const t = setup();
+    let ack: (ok: boolean) => void = () => {};
+    t.host.beforeOverlayShow = () => new Promise<boolean>((resolve) => (ack = resolve));
+    const started = t.start();
+    await vi.waitFor(() => expect(t.controller.overlayWindowIds()).toEqual([4242]));
+    const window = t.windows[0]!;
+    // Nothing visible yet: the selection still holds the overlay back.
+    const release = t.controller.conceal();
+    expect(release).not.toBeNull();
+    ack(true);
+    await expect(started).resolves.toEqual({ ok: true, value: undefined });
+    expect([window.shown, window.visible]).toEqual([0, false]);
+    // Its recording exclusion stays reserved while it is held back.
+    const announced: number[][] = [];
+    t.controller.onOverlayWindowsChanged((ids) => announced.push(ids));
+    release!();
+    expect([window.shown, window.visible]).toEqual([1, true]);
+    expect(t.controller.overlayWindowIds()).toEqual([4242]);
+    expect(announced).toEqual([]);
+    // A second release does nothing.
+    release!();
+    expect(window.shown).toBe(1);
+  });
+
+  it('a selection hides a visible overlay and shows it again once', async () => {
+    const t = setup();
+    await t.start();
+    const window = t.windows[0]!;
+    const shown = window.shown;
+    const release = t.controller.conceal();
+    expect(window.visible).toBe(false);
+    release!();
+    expect([window.shown, window.visible]).toEqual([shown + 1, true]);
+  });
+
   it('a replaced start resolving late never releases its successor exclusion reservation', async () => {
     const t = setup();
     const acks: Record<number, (ok: boolean) => void> = {};

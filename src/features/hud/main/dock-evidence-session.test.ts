@@ -474,6 +474,24 @@ describe('dock evidence window and region capture', () => {
     expect(f.window.isVisible()).toBe(true);
   });
 
+  it('reports Screen Recording turned off during the selection as a permission failure', async () => {
+    const f = fixture();
+    f.settle.resolve();
+    let denied = false;
+    f.deps.permissionDenied = () => denied;
+    f.deps.captureSelection = vi.fn(async () => {
+      denied = true;
+      return { ok: false as const, error: 'unavailable' as const, detail: 'cancelled' };
+    });
+    const result = await f.manager.capture(f.owner, {
+      ...f.scope,
+      requestId: 'region',
+      mode: 'region',
+    });
+    expect(result).toEqual({ ok: false, error: 'permission' });
+    expect(f.window.isVisible()).toBe(true);
+  });
+
   it('refuses window and region capture where no selection UI exists', async () => {
     const f = fixture();
     const result = await f.manager.capture(f.owner, {
