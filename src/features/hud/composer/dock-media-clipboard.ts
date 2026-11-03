@@ -83,11 +83,13 @@ export async function dockMediaCopyRequest(
     const url = clip.status === 'ready' ? dockClipPlaybackUrl(source.workspaceId, clip.path) : null;
     if (!url) return null;
     const item = items.find((row) => row.id === clip.contextItemId);
+    const bytes = await source.fetchBytes(url);
+    if (!isMovieFile(bytes)) throw new Error('Not a recording file');
     return {
       kind: 'clip',
       name: item?.label || `recording-${clip.id.slice(0, 8)}.mp4`,
       mimeType: item?.attachmentMimeType || 'video/mp4',
-      bytes: await source.fetchBytes(url),
+      bytes,
       durationMs: clip.durationMs,
       hasMicAudio: clip.hasMicAudio,
     };
@@ -103,6 +105,26 @@ export async function dockMediaCopyRequest(
       bytes: decodeBase64(item.imageData),
     };
   return null;
+}
+
+/**
+ * The complete bytes behind a media URL, or a rejection: a failed response (a
+ * missing file answers 404 with a body), an empty body, or fewer bytes than the
+ * response declared never become something a copy, or a cut, reports as done.
+ */
+export async function fetchDockMediaBytes(url: string): Promise<Uint8Array> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Media request failed (${response.status})`);
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  const declared = Number(response.headers.get('content-length') ?? Number.NaN);
+  if (bytes.byteLength === 0 || (Number.isFinite(declared) && declared !== bytes.byteLength))
+    throw new Error('Media response was incomplete');
+  return bytes;
+}
+
+/** An MP4/QuickTime file starts with its `ftyp` box; anything else is not the recording. */
+function isMovieFile(bytes: Uint8Array): boolean {
+  return bytes.byteLength > 8 && String.fromCharCode(...bytes.subarray(4, 8)) === 'ftyp';
 }
 
 export async function writeDockMediaClipboard(request: DockMediaClipboardWrite): Promise<boolean> {
@@ -136,16 +158,26 @@ export async function showDockMediaMenu(canCut: boolean): Promise<'copy' | 'cut'
 
 const replayed = new WeakSet<Event>();
 
+export interface DockMediaPasteHandlers {
+  /** Places Intent media in the draft the paste was made in. */
+  onIntentMedia: (content: DockMediaClipboardContent) => void;
+  /** Whether that draft (conversation, draft lifecycle, machine) is still the open one. */
+  isCurrent: () => boolean;
+  read?: () => Promise<DockMediaClipboardContent | null>;
+}
+
 /**
  * Capture-phase paste on the composer. Text-only pastes are never touched. With
  * files on the clipboard the event is held while main says whether they are Intent
- * media: if so `onIntentMedia` places them; if not, the same clipboard (files and
- * any text) is replayed to the original target for the editor's own paste path.
+ * media. The answer is used only if it is about this event's own file (same byte
+ * size: the clipboard may have changed during the read) and the draft it was
+ * pasted in is still the open one; otherwise this event's own files and text are
+ * replayed to the original target for the editor's own paste path, provided that
+ * target is still in the same, current draft. A stale paste does nothing.
  */
 export function interceptDockMediaPaste(
   event: ClipboardEvent,
-  onIntentMedia: (content: DockMediaClipboardContent) => void,
-  read: () => Promise<DockMediaClipboardContent | null> = readDockMediaClipboard,
+  { onIntentMedia, isCurrent, read = readDockMediaClipboard }: DockMediaPasteHandlers,
 ): boolean {
   const data = event.clipboardData;
   if (replayed.has(event) || !data || data.files.length === 0) return false;
@@ -156,18 +188,23 @@ export function interceptDockMediaPaste(
     .map((type) => [type, data.getData(type)] as const);
   event.preventDefault();
   event.stopImmediatePropagation();
-  void read().then((content) => {
-    if (content) return onIntentMedia(content);
-    const transfer = new DataTransfer();
-    for (const file of files) transfer.items.add(file);
-    for (const [type, value] of strings) transfer.setData(type, value);
-    const replay = new ClipboardEvent('paste', {
-      clipboardData: transfer,
-      bubbles: true,
-      cancelable: true,
+  void read()
+    .catch(() => null)
+    .then((content) => {
+      if (!isCurrent()) return;
+      if (content && files.some((file) => file.size === content.size))
+        return onIntentMedia(content);
+      if (!(target instanceof Node) || !target.isConnected) return;
+      const transfer = new DataTransfer();
+      for (const file of files) transfer.items.add(file);
+      for (const [type, value] of strings) transfer.setData(type, value);
+      const replay = new ClipboardEvent('paste', {
+        clipboardData: transfer,
+        bubbles: true,
+        cancelable: true,
+      });
+      replayed.add(replay);
+      target.dispatchEvent(replay);
     });
-    replayed.add(replay);
-    target?.dispatchEvent(replay);
-  });
   return true;
 }

@@ -52,6 +52,9 @@ export type DockMediaClipboardResult =
 export type DockMediaClipboardContent =
   | {
       kind: 'image';
+      /** The file other apps were given; `size` lets a paste match it to its event. */
+      name: string;
+      size: number;
       pixels: DockCapturedPixels;
       marks: DockMediaClipboardMark[];
     }
@@ -61,7 +64,22 @@ export type DockMediaClipboardContent =
       mimeType: string;
       /** Main-readable file the destination draft places from. */
       sourcePath: string;
+      /** Its byte size; a paste also uses it to match the entry to its event. */
       size: number;
       durationMs: number;
       hasMicAudio: boolean;
     };
+
+/**
+ * Where a paste gesture happened: the open conversation (its generation and
+ * authority; reopening or switching agents moves the generation), the draft's
+ * lifecycle (its clear counter moves on every admitted send) and the backend (window backend, connection generation,
+ * transport). A paste completing later lands only if all still hold, so it never
+ * reaches a reopened, sent or other-machine draft.
+ */
+export interface DockPasteOrigin {
+  generation: number;
+  authority: unknown;
+  clearRevision: number;
+  binding: { backendId: string | null; generation: number; transport: unknown };
+}

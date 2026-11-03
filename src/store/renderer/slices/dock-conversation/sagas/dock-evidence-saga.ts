@@ -23,6 +23,7 @@ import {
   captureDockPlacementBinding,
   isDockBindingCurrent,
   isDockCapabilitiesObserved,
+  isDockPasteOriginCurrent,
   probeDockAttachmentCapabilities,
 } from '$features/hud/composer/dock-evidence-placement';
 import {
@@ -1221,9 +1222,11 @@ function* barMediaAction(
  * clipboard's own file copy. Everything gets fresh ids; the source is never touched.
  */
 function* pasteMedia({
-  payload: [workspaceId, agentId, content],
+  payload: [workspaceId, agentId, content, origin],
 }: ReturnType<typeof dockEvidenceMediaPasted>): SagaGenerator<void> {
-  if (!activePair(workspaceId, agentId)) return;
+  // Bound to the draft and backend of the paste gesture, not of this moment.
+  if (!activePair(workspaceId, agentId) || !isDockPasteOriginCurrent(workspaceId, agentId, origin))
+    return;
   if (content.kind === 'image') {
     const image = yield* addCapturedImage(workspaceId, agentId, content.pixels, 'capture');
     if (!image) return;

@@ -39,9 +39,8 @@ export interface DockMediaClipboardDeps {
   root: () => string;
   /** Runs `osascript` with arguments; resolves its stdout, rejects on a non-zero exit. */
   osascript: (args: string[]) => Promise<string>;
-  /** Other platforms: the image itself, or the file's path as text. */
+  /** Other platforms: the image itself (a recording copy is refused there). */
   writeImage: (bytes: Buffer, mimeType: string) => Promise<void>;
-  writeText: (text: string) => Promise<void>;
 }
 
 const defaults: DockMediaClipboardDeps = {
@@ -57,7 +56,6 @@ const defaults: DockMediaClipboardDeps = {
     clipboard.write([
       new ClipboardItem({ [mimeType]: new Blob([new Uint8Array(bytes)], { type: mimeType }) }),
     ]),
-  writeText: (text) => clipboard.writeText(text),
 };
 
 // AppleScript: the path arrives as an argument, never inside the script text.
@@ -145,6 +143,10 @@ export function createDockMediaClipboard(overrides: Partial<DockMediaClipboardDe
   }
 
   async function write(request: DockMediaClipboardWrite): Promise<DockMediaClipboardResult> {
+    // Off macOS a video file cannot be put on the clipboard (only its path as text),
+    // so a recording copy is refused rather than reported done: Cut keeps the tile.
+    if (request.kind === 'clip' && deps.platform !== 'darwin')
+      return { ok: false, error: 'unsupported' };
     const dir = path.join(deps.root(), randomUUID());
     try {
       await fs.mkdir(dir, { recursive: true });
@@ -193,8 +195,7 @@ export function createDockMediaClipboard(overrides: Partial<DockMediaClipboardDe
             hasMicAudio: request.hasMicAudio,
           }),
         );
-        if (deps.platform === 'darwin') await deps.osascript([...SET_FILE, file]);
-        else await deps.writeText(file);
+        await deps.osascript([...SET_FILE, file]);
       }
       await prune();
       return { ok: true };
@@ -244,9 +245,13 @@ export function createDockMediaClipboard(overrides: Partial<DockMediaClipboardDe
           hasMicAudio: meta.hasMicAudio,
         };
       }
+      const stat = await fs.stat(file);
+      if (!stat.isFile() || stat.size <= 0) return null;
       const raw = await fs.readFile(path.join(dir, path.basename(meta.raw)));
       return {
         kind: 'image',
+        name: meta.file,
+        size: stat.size,
         pixels: { ...meta.pixels, base64: raw.toString('base64') },
         marks: meta.marks as unknown as DockMediaClipboardMark[],
       };

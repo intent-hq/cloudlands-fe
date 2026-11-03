@@ -50,9 +50,11 @@ import type { DockSettingsPane } from './dock-composer-presentation';
 import { createDockEvidencePreviewUrl } from './dock-evidence-render';
 import {
   dockMediaCopyRequest,
+  fetchDockMediaBytes,
   interceptDockMediaPaste,
   writeDockMediaClipboard,
 } from './dock-media-clipboard';
+import { captureDockPasteOrigin, isDockPasteOriginCurrent } from './dock-evidence-placement';
 import { selectComposerContextItems } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
 import { isMacPlatform } from '$lib/utils/shortcuts';
 import { matchesShortcut } from '$lib/utils/shortcut-bindings';
@@ -108,7 +110,7 @@ const defaultDeps: DockComposerControllerDeps = {
   stopTimeoutMs: 20_000,
   sendStopMs: 2_500,
   mac: isMacPlatform,
-  fetchBytes: async (url) => new Uint8Array(await (await fetch(url)).arrayBuffer()),
+  fetchBytes: fetchDockMediaBytes,
   writeClipboard: writeDockMediaClipboard,
 };
 
@@ -370,12 +372,19 @@ export function createDockComposerController(
         return false;
       }
     },
-    /** Capture-phase paste: Intent media goes to the saga; anything else is untouched. */
-    onPaste: (event: ClipboardEvent): boolean =>
-      current() &&
-      interceptDockMediaPaste(event, (content) =>
-        dispatch(dockEvidenceMediaPasted(workspaceId, agentId, content)),
-      ),
+    /**
+     * Capture-phase paste: Intent media goes to the saga, bound to the draft and
+     * backend the paste was made in; anything else is untouched.
+     */
+    onPaste: (event: ClipboardEvent): boolean => {
+      if (!current()) return false;
+      const origin = captureDockPasteOrigin(workspaceId, agentId);
+      return interceptDockMediaPaste(event, {
+        isCurrent: () => current() && isDockPasteOriginCurrent(workspaceId, agentId, origin),
+        onIntentMedia: (content) =>
+          dispatch(dockEvidenceMediaPasted(workspaceId, agentId, content, origin)),
+      });
+    },
   };
 
   function imageFor(id: string) {
