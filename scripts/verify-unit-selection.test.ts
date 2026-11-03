@@ -232,6 +232,50 @@ describe('resolved unit selections with installed Vitest', () => {
       expect(lines).toContain(`  - ${file}`);
     expect(lines).toContain('  vitest-related: 1 file(s)');
   });
+  it('resolves changed test helpers and lint rules to their importers, and an unimported one to an empty passing lane', async () => {
+    const { root, write } = fixture();
+    write('tests/helpers/shared.ts', 'export const value = 1;');
+    write('tests/helpers/orphan.ts', 'export const unused = 1;');
+    write('eslint-rules/rule.js', 'export default { meta: {} };');
+    write(
+      'helper.test.ts',
+      `import { it, expect } from 'vitest';
+import { value } from './tests/helpers/shared';
+import rule from './eslint-rules/rule.js';
+it('uses both', () => expect([value, typeof rule.meta]).toEqual([1, 'object']));`,
+    );
+    // The planner's own command, without the generated-config prerequisite the
+    // fixture has no generator for.
+    const relatedLane = (file: string) => {
+      const planned = createVerificationPlan([file], { root, ctTests: [], declaredSuites: [] });
+      const lane = planned.checks.find((entry) => entry.id === 'vitest-related');
+      expect(lane?.args.slice(-1)).toEqual([file]);
+      return plan({ ...lane!, dependsOn: undefined } as ReturnType<typeof check>);
+    };
+    const resolved = async (file: string) => {
+      const lines: string[] = [];
+      await runVerificationPlan(relatedLane(file), root, {
+        resolvedPlan: true,
+        log: (line: string) => lines.push(line),
+      });
+      return lines;
+    };
+
+    for (const file of ['tests/helpers/shared.ts', 'eslint-rules/rule.js']) {
+      const lines = await resolved(file);
+      expect(lines).toContain('  vitest-related: 1 file(s)');
+      expect(lines).toContain('    - helper.test.ts');
+    }
+    expect(await resolved('tests/helpers/orphan.ts')).toEqual(
+      expect.arrayContaining([
+        'verify:changed: resolved unit files: 0 unique',
+        '  vitest-related: 0 file(s)',
+      ]),
+    );
+    await expect(
+      runVerificationPlan(relatedLane('tests/helpers/orphan.ts'), root, { log() {} }),
+    ).resolves.toBeUndefined();
+  });
   it('rejects an exceeded union budget before even an earlier check can run', async () => {
     const { root, bodies } = fixture();
     const p = selection();
