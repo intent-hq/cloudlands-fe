@@ -124,6 +124,9 @@
 </script>
 
 <Popover.Root bind:open>
+  <!-- Disable, never drop, the tooltip while open: dropping it re-creates the button,
+       so a press that spans the hover opening would release on a new element and
+       lose its click. -->
   <Button
     bind:ref={trigger}
     variant="ghost-light"
@@ -137,7 +140,8 @@
     aria-haspopup="dialog"
     aria-expanded={open}
     aria-controls={open ? popupId : undefined}
-    tooltip={open ? undefined : (alert ?? notice ?? labels.annotate)}
+    tooltip={alert ?? notice ?? labels.annotate}
+    tooltipDisabled={open}
     onpointerenter={enter}
     onpointerleave={leave}
     onpointerdown={(event) => {
