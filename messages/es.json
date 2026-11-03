@@ -372,6 +372,7 @@
   "chat_backgroundHooks_details_runs_label": "Ejecuciones",
   "chat_backgroundHooks_details_schedule_label": "Programación",
   "chat_backgroundHooks_loadFailed_error": "No se pudieron cargar los hooks en segundo plano.",
+  "chat_backgroundHooks_modal_codeTooLarge_description": "El script de este hook es demasiado grande para mostrarlo ({size} bytes).",
   "chat_backgroundHooks_modal_lastError_label": "Último error",
   "chat_backgroundHooks_modal_logsTab_label": "Registros de la última ejecución",
   "chat_backgroundHooks_modal_noLogs_description": "Aún no hay registros — este hook todavía no ha completado una ejecución.",

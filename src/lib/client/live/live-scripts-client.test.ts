@@ -20,7 +20,7 @@ vi.mock('./backend-transport', () => ({
 }));
 
 import { backendRequest } from './backend-transport';
-import { LiveScriptsClient } from './live-scripts-client';
+import { LiveScriptsClient, SCRIPT_GET_MAX_PARTS } from './live-scripts-client';
 import type { ScriptWithState } from '$store/renderer/slices/scripts/scripts-types';
 
 const mockedRequest = vi.mocked(backendRequest);
@@ -236,6 +236,41 @@ describe('LiveScriptsClient (fake transport)', () => {
 
     expect(script.command).toBe(edited);
     expect(script.updatedAt).toBe('2026-11-03T01:00:01Z');
+  });
+
+  it('get refuses a part that does not move forward', async () => {
+    const [first, second] = commandParts(BIG_COMMAND, BIG_CUTS);
+    mockedRequest
+      .mockResolvedValueOnce(ACTIVE_HELLO)
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce({ ...second, nextCommandOffset: second.commandOffset });
+
+    await expect(new LiveScriptsClient().get('ws-1', 's-1')).rejects.toThrow();
+    expect(mockedRequest).toHaveBeenCalledTimes(3);
+  });
+
+  it('get stops after SCRIPT_GET_MAX_PARTS parts and treats the read as incomplete', async () => {
+    const size = SCRIPT_GET_MAX_PARTS * 2;
+    const part = (offset: number) => ({
+      ...DEV_SCRIPT,
+      command: 'a',
+      commandTruncated: true,
+      commandBytes: size,
+      commandOffset: offset,
+      nextCommandOffset: offset + 1 < size ? offset + 1 : null,
+    });
+    mockedRequest.mockResolvedValueOnce(ACTIVE_HELLO);
+    mockedRequest.mockImplementation(async (_method: string, params: any) =>
+      part(params?.commandOffset ?? 0),
+    );
+
+    try {
+      await expect(new LiveScriptsClient().get('ws-1', 's-1')).rejects.toThrow();
+      // hello + first part + at most SCRIPT_GET_MAX_PARTS - 1 follow-ups.
+      expect(mockedRequest).toHaveBeenCalledTimes(SCRIPT_GET_MAX_PARTS + 1);
+    } finally {
+      mockedRequest.mockReset();
+    }
   });
 
   it('get refuses a command whose parts do not add up to its size', async () => {

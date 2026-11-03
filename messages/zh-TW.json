@@ -372,6 +372,7 @@
   "chat_backgroundHooks_details_runs_label": "執行次數",
   "chat_backgroundHooks_details_schedule_label": "排程",
   "chat_backgroundHooks_loadFailed_error": "無法載入背景鉤子。",
+  "chat_backgroundHooks_modal_codeTooLarge_description": "此鉤子的指令碼太大，無法顯示（{size} 位元組）。",
   "chat_backgroundHooks_modal_lastError_label": "上次錯誤",
   "chat_backgroundHooks_modal_logsTab_label": "上次執行日誌",
   "chat_backgroundHooks_modal_noLogs_description": "尚無日誌——此鉤子尚未完成執行。",

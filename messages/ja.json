@@ -372,6 +372,7 @@
   "chat_backgroundHooks_details_runs_label": "実行回数",
   "chat_backgroundHooks_details_schedule_label": "スケジュール",
   "chat_backgroundHooks_loadFailed_error": "バックグラウンドフックを読み込めませんでした。",
+  "chat_backgroundHooks_modal_codeTooLarge_description": "このフックのスクリプトは大きすぎて表示できません（{size} バイト）。",
   "chat_backgroundHooks_modal_lastError_label": "前回のエラー",
   "chat_backgroundHooks_modal_logsTab_label": "前回実行のログ",
   "chat_backgroundHooks_modal_noLogs_description": "ログはまだありません — このフックはまだ実行を完了していません。",

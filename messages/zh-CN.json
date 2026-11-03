@@ -372,6 +372,7 @@
   "chat_backgroundHooks_details_runs_label": "运行次数",
   "chat_backgroundHooks_details_schedule_label": "计划",
   "chat_backgroundHooks_loadFailed_error": "无法加载后台钩子。",
+  "chat_backgroundHooks_modal_codeTooLarge_description": "此钩子的脚本太大，无法显示（{size} 字节）。",
   "chat_backgroundHooks_modal_lastError_label": "上次错误",
   "chat_backgroundHooks_modal_logsTab_label": "上次运行日志",
   "chat_backgroundHooks_modal_noLogs_description": "暂无日志——此钩子尚未完成运行。",

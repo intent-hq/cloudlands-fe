@@ -254,6 +254,9 @@ const SCRIPT_GET_ATTEMPTS = 3;
  * when the command changes between parts, and refuse a result whose byte
  * size does not match `commandBytes`.
  */
+/** Most `script.get` parts one command may take before the read is incomplete. */
+export const SCRIPT_GET_MAX_PARTS = 4096;
+
 async function readWholeScript(workspaceId: string, scriptId: string): Promise<ScriptWithState> {
   for (let attempt = 0; attempt < SCRIPT_GET_ATTEMPTS; attempt++) {
     const first = await backendRequest<ScriptGetPart>('script.get', { workspaceId, scriptId });
@@ -262,7 +265,12 @@ async function readWholeScript(workspaceId: string, scriptId: string): Promise<S
     let command = first.command;
     let next = first.nextCommandOffset;
     let changed = false;
+    // Parts carry at least 64 KiB of JSON, so this covers any command the
+    // daemon accepts; more parts, or one that does not move forward, means
+    // the read can never complete.
+    let parts = 1;
     while (typeof next === 'number') {
+      if (++parts > SCRIPT_GET_MAX_PARTS) throw new Error(m.scripts_list_load_error());
       const part = await backendRequest<ScriptGetPart>('script.get', {
         workspaceId,
         scriptId,
@@ -279,7 +287,9 @@ async function readWholeScript(workspaceId: string, scriptId: string): Promise<S
         break;
       }
       command += part.command;
-      next = part.nextCommandOffset;
+      const after = part.nextCommandOffset;
+      if (typeof after === 'number' && after <= next) throw new Error(m.scripts_list_load_error());
+      next = after;
     }
     if (changed) continue;
     if (new TextEncoder().encode(command).length !== size)

@@ -20,6 +20,10 @@ export interface BackgroundHook {
   agentId: string;
   name: string;
   code?: string;
+  /** `hook.list` dropped `code` because the row alone exceeded the read
+   * budget (`codeBytes` is its full UTF-8 size); there is no wire read for it. */
+  codeOmitted?: boolean;
+  codeBytes?: number;
   /** Fixed cadence in ms. `0` (or absent) for cron/runAt schedule kinds. */
   delayMs?: number;
   /** 5-field UTC cron expression — present only on cron-scheduled hooks. */
