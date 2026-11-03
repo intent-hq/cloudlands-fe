@@ -35,6 +35,10 @@ on:
         description: 'Git ref to build (a release tag when publishing)'
         type: string
         required: true
+    secrets:
+      # Optional: runner-route.yml reads the CI queue with it, else github.token.
+      CI_QUEUE_READ_TOKEN:
+        required: false
 
 permissions:
   contents: read

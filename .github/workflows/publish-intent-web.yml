@@ -32,9 +32,12 @@ on:
 permissions:
   contents: read
 
+# Queue every run: a newer pending release must never replace an older one
+# that has not published yet (same pattern as release-alpha.yml).
 concurrency:
   group: publish-intent-web
   cancel-in-progress: false
+  queue: max
 
 jobs:
   resolve:
@@ -103,7 +106,8 @@ jobs:
     permissions:
       contents: read
       actions: read
-    secrets: inherit
+    secrets:
+      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
     with:
       ref: refs/tags/${{ needs.resolve.outputs.tag }}
 

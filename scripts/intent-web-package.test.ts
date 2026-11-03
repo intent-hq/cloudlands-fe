@@ -149,6 +149,14 @@ describe('publish-intent-web.yml', () => {
   const publish = jobs.publish;
   const steps = publish.steps ?? [];
 
+  it('queues runs so a newer release never drops an older pending publish', () => {
+    expect(workflow.concurrency).toEqual({
+      group: 'publish-intent-web',
+      'cancel-in-progress': false,
+      queue: 'max',
+    });
+  });
+
   it('runs after each Release Alpha and on manual dispatch with a tag', () => {
     expect(workflow.on.workflow_run).toEqual({
       workflows: [readYaml('.github/workflows/release-alpha.yml').name],
@@ -162,6 +170,13 @@ describe('publish-intent-web.yml', () => {
   it('publishes the tarball built and smoke-tested from the release tag', () => {
     expect(jobs.package.uses).toBe('./.github/workflows/intent-web-package.yml');
     expect(jobs.package.with).toEqual({ ref: 'refs/tags/${{ needs.resolve.outputs.tag }}' });
+    // Only the routing token reaches the build, never every repository secret.
+    expect((jobs.package as { secrets?: unknown }).secrets).toEqual({
+      CI_QUEUE_READ_TOKEN: '${{ secrets.CI_QUEUE_READ_TOKEN }}',
+    });
+    expect(readYaml('.github/workflows/intent-web-package.yml').on.workflow_call.secrets).toEqual({
+      CI_QUEUE_READ_TOKEN: { required: false },
+    });
     expect(publish.needs).toEqual(['resolve', 'package']);
     const download = steps.find((s) => s.uses?.startsWith('actions/download-artifact@'));
     expect(download?.with?.name).toBe('intent-web-package');
