@@ -775,17 +775,7 @@
               >
                 <PauseAnimationsWhenUnfocusedSettings />
               </section>
-              {#if isElectronPlatform()}
-                <section
-                  id="notch-dock"
-                  data-highlight-id="notch-dock"
-                  use:highlightTarget
-                  data-slot="settings-section-body"
-                  class="px-6 py-4"
-                >
-                  <DockLabSettings />
-                </section>
-              {/if}
+              <DockLabSettings />
             </div>
           </div>
 
