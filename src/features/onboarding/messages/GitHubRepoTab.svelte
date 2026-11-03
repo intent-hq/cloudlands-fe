@@ -346,7 +346,9 @@
               aria-selected={isCommitted}
               class={cn(
                 menuItem(),
-                'group/row gap-3 px-3 py-2.5 cursor-pointer',
+                // h-auto: the Button's fixed control height is shorter than the
+                // avatar + padding, which pushed the content below the highlight.
+                'group/row h-auto items-center gap-3 px-3 py-2.5 cursor-pointer',
                 isCommitted && 'surface-inverse pl-2.5',
                 isFocused && !isCommitted && 'bg-muted/40',
                 !isFocused && !isCommitted && 'hover:bg-muted/30',
