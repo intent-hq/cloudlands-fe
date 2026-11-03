@@ -1,4 +1,5 @@
-<script lang="ts">
+<script lang="ts" generics="Row extends { id: string }, Column extends string">
+  import type { Snippet } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { formatInteger, formatNumber, formatDatePattern } from '$lib/i18n/format';
@@ -16,26 +17,41 @@
     column,
     descending,
     onsort,
+    columns: customColumns,
+    cells,
+    streamOf,
+    label,
+    empty,
   }: {
-    rows: DevConsoleRow[];
+    rows: Row[];
     combined?: boolean;
     selected: string | null;
     onselect: (id: string) => void;
-    column: TrafficColumn;
+    column: Column;
     descending: boolean;
-    onsort: (column: TrafficColumn, descending: boolean) => void;
+    onsort: (column: Column, descending: boolean) => void;
+    /** Custom columns (id, header). Requires `cells`; replaces the RPC columns. */
+    columns?: [Column, string][];
+    /** Renders one row's `role="cell"` elements in `columns` order. */
+    cells?: Snippet<[Row]>;
+    /** Row tint stream for custom rows (`outbound`, `inbound` or `events`). */
+    streamOf?: (row: Row) => string | null;
+    label?: string;
+    empty?: string;
   } = $props();
+  const rpc = (row: Row) => row as unknown as DevConsoleRow;
+  const custom = $derived(!!customColumns && !!cells);
   const rowHeight = 25;
   let viewport: HTMLDivElement;
   let height = $state(400),
     top = $state(0),
     following = $state(true);
-  let previous: DevConsoleRow[] = [];
+  let previous: Row[] = [];
   let previousSort = '';
   const start = $derived(Math.max(0, Math.floor(Math.max(0, top - 27) / rowHeight) - 8));
   const end = $derived(Math.min(rows.length, start + Math.ceil(height / rowHeight) + 18));
   const visibleSelection = $derived(rows.slice(start, end).some((row) => row.id === selected));
-  const columns = $derived([
+  const rpcColumns = $derived([
     ['timestamp', m.devConsole_time_label()],
     ['method', m.devConsole_method_label()],
     ['kind', m.devConsole_kind_label()],
@@ -45,6 +61,7 @@
     ['bytes', m.devConsole_bytes_label()],
     ['backendId', m.devConsole_backend_label()],
   ] as [TrafficColumn, string][]);
+  const columns = $derived(custom ? customColumns! : (rpcColumns as unknown as [Column, string][]));
   $effect(() => {
     const next = rows,
       sort = `${column}:${descending}`;
@@ -83,7 +100,7 @@
       column === 'timestamp' && !descending && viewport.scrollHeight - height - top < rowHeight;
   }
   async function live() {
-    onsort('timestamp', false);
+    onsort('timestamp' as Column, false);
     await tick();
     following = true;
     viewport.scrollTop = viewport.scrollHeight;
@@ -127,7 +144,7 @@
   }
 </script>
 
-<div class="traffic-table" class:combined>
+<div class="traffic-table" class:combined={combined && !custom} class:custom>
   <div class="follow">
     <span>{following ? m.devConsole_following_label() : m.devConsole_paused_label()}</span><Button
       size="compact"
@@ -138,7 +155,11 @@
     >
   </div>
   <div class="viewport" bind:this={viewport} bind:clientHeight={height} onscroll={scroll}>
-    <div role="table" aria-label={m.devConsole_title_label()} aria-rowcount={rows.length + 1}>
+    <div
+      role="table"
+      aria-label={label ?? m.devConsole_title_label()}
+      aria-rowcount={rows.length + 1}
+    >
       <div role="row" class="columns header">
         {#each columns as [id, label]}<div
             role="columnheader"
@@ -153,7 +174,10 @@
               >{label}{column === id ? (descending ? ' ↓' : ' ↑') : ''}</Button
             >
           </div>
-          {#if combined && id === 'timestamp'}<div role="columnheader" class="stream-heading">
+          {#if combined && !custom && id === 'timestamp'}<div
+              role="columnheader"
+              class="stream-heading"
+            >
               {m.devConsole_stream_label()}
             </div>{/if}
         {/each}
@@ -164,7 +188,11 @@
           role="row"
           class="columns record"
           class:selected={selected === row.id}
-          data-stream={combined ? trafficStream(row) : undefined}
+          data-stream={custom
+            ? (streamOf?.(row) ?? undefined)
+            : combined
+              ? trafficStream(rpc(row))
+              : undefined}
           data-index={start + i}
           aria-rowindex={start + i + 2}
           aria-selected={selected === row.id}
@@ -172,39 +200,42 @@
           onclick={() => onselect(row.id)}
           onkeydown={(event) => key(event, start + i)}
         >
-          <span role="cell">{formatDatePattern(row.timestamp, 'HH:mm:ss.SSS')}</span>
-          {#if combined}
-            {@const stream = trafficStream(row)}
-            <span role="cell" use:truncatedTitle={stream ? trafficTabLabel(stream) : ''}
-              >{stream ? trafficTabLabel(stream) : '—'}</span
+          {#if custom}{@render cells!(row)}{:else}
+            {@const r = rpc(row)}
+            <span role="cell">{formatDatePattern(r.timestamp, 'HH:mm:ss.SSS')}</span>
+            {#if combined}
+              {@const stream = trafficStream(r)}
+              <span role="cell" use:truncatedTitle={stream ? trafficTabLabel(stream) : ''}
+                >{stream ? trafficTabLabel(stream) : '—'}</span
+              >
+            {/if}
+            <span role="cell" class="method" use:truncatedTitle={r.method}>{r.method}</span>
+            <span role="cell"
+              >{r.kind === 'request'
+                ? m.devConsole_request_label()
+                : m.devConsole_event_label()}</span
             >
+            <span role="cell" use:truncatedTitle={String(r.requestId ?? '')}
+              >{r.requestId ?? '—'}</span
+            >
+            <span
+              role="cell"
+              class:error={['error', 'timeout', 'disconnected', 'send-error'].includes(r.status)}
+              >{statusLabel(r.status)}</span
+            >
+            <span role="cell"
+              >{r.durationMs === undefined
+                ? '—'
+                : `${formatNumber(r.durationMs, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ms`}</span
+            >
+            <span role="cell" title={`${r.payload.state} / ${r.response?.state ?? ''}`}
+              >{formatInteger(trafficBytes(r))}{r.payload.state === 'truncated' ||
+              r.response?.state === 'truncated'
+                ? ' *'
+                : ''}</span
+            >
+            <span role="cell" title={`${r.backendId} / ${r.connectionId}`}>{r.backendId}</span>
           {/if}
-          <span role="cell" class="method" use:truncatedTitle={row.method}>{row.method}</span>
-          <span role="cell"
-            >{row.kind === 'request'
-              ? m.devConsole_request_label()
-              : m.devConsole_event_label()}</span
-          >
-          <span role="cell" use:truncatedTitle={String(row.requestId ?? '')}
-            >{row.requestId ?? '—'}</span
-          >
-          <span
-            role="cell"
-            class:error={['error', 'timeout', 'disconnected', 'send-error'].includes(row.status)}
-            >{statusLabel(row.status)}</span
-          >
-          <span role="cell"
-            >{row.durationMs === undefined
-              ? '—'
-              : `${formatNumber(row.durationMs, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ms`}</span
-          >
-          <span role="cell" title={`${row.payload.state} / ${row.response?.state ?? ''}`}
-            >{formatInteger(trafficBytes(row))}{row.payload.state === 'truncated' ||
-            row.response?.state === 'truncated'
-              ? ' *'
-              : ''}</span
-          >
-          <span role="cell" title={`${row.backendId} / ${row.connectionId}`}>{row.backendId}</span>
         </div>
       {/each}
       <div
@@ -212,7 +243,7 @@
         aria-hidden="true"
       ></div>
     </div>
-    {#if rows.length === 0}<p class="empty">{m.devConsole_empty_label()}</p>{/if}
+    {#if rows.length === 0}<p class="empty">{empty ?? m.devConsole_empty_label()}</p>{/if}
   </div>
 </div>
 
@@ -259,6 +290,10 @@
     grid-template-columns: 116px minmax(240px, 1fr) 78px 94px 104px 86px 80px 120px;
     min-width: 940px;
     align-items: center;
+  }
+  .custom .columns {
+    grid-template-columns: var(--traffic-columns);
+    min-width: var(--traffic-min-width, 940px);
   }
   .combined .columns {
     grid-template-columns: 116px 150px minmax(240px, 1fr) 78px 94px 104px 86px 80px 120px;
@@ -308,6 +343,7 @@
     background: hsl(var(--accent));
     box-shadow: inset 3px 0 hsl(var(--ring));
   }
+  .record :global(span[role='cell']),
   .record span {
     overflow: hidden;
     white-space: nowrap;

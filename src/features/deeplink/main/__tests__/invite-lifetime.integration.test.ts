@@ -100,7 +100,7 @@ async function invoke(channel: string, input: unknown, sender = state.parent.web
   return state.handlers.get(channel)?.({ sender }, input);
 }
 async function policy(multiplayer: boolean, sender = state.parent.webContents) {
-  return invoke(COLLABORATION_AUTH.POLICY, { multiplayer, gitlab: false }, sender);
+  return invoke(COLLABORATION_AUTH.POLICY, { multiplayer }, sender);
 }
 function connection() {
   return {

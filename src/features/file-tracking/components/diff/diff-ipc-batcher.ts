@@ -24,6 +24,7 @@
  */
 import { invoke } from '$lib/electron-bridge';
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { readFileText, showFileText } from '$lib/client/live/bounded-object-read';
 import { createLogger } from '$lib/utils/client-logger';
 import { store as appStore } from '$store/renderer/store';
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
@@ -236,18 +237,12 @@ async function readWorkingTreeContent(
   gitRootId?: string,
 ): Promise<ShowFileResponse> {
   try {
-    const result = await backendRequest<unknown>('file.read', {
+    const content = await readFileText({
       workspaceId,
       path: filePath,
       ...(gitRootId ? { gitRootId } : {}),
     });
-    const content =
-      typeof result === 'string'
-        ? result
-        : typeof (result as { content?: unknown } | null)?.content === 'string'
-          ? (result as { content: string }).content
-          : '';
-    return { success: true, data: content };
+    return { success: true, data: content ?? '' };
   } catch (error) {
     if (gitRootId && !isMissingWorkingTreeFile(error)) throw error;
     logger.debug('file.read failed for working-tree diff side (file deleted?)', {
@@ -678,16 +673,13 @@ export function dedupedShowFile(
   const existing = pendingShows.get(key);
   if (existing) return existing.promise;
 
-  const promise = backendRequest<{ content?: unknown }>('git.showFile', {
+  const promise = showFileText({
     workspaceId,
     filePath,
     ref,
     ...(opts?.gitRootId ? { gitRootId: opts.gitRootId } : {}),
   })
-    .then((result): ShowFileResponse => ({
-      success: true,
-      data: typeof result?.content === 'string' ? result.content : '',
-    }))
+    .then((content): ShowFileResponse => ({ success: true, data: content }))
     .catch((error): ShowFileResponse => ({
       success: false,
       error: error instanceof Error ? error.message : String(error),

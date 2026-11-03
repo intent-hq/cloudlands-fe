@@ -1998,17 +1998,15 @@ describe('ChatPanel mounted lifecycle', () => {
       enabledProviders: Record<string, boolean>,
       defaultProviderId: string,
       providerStatusMap: Record<string, ProviderStatus>,
+      catalog = MOCK_PROVIDER_CATALOG,
     ) {
       mocks.storeState = {
         providerCatalog: providerCatalogReducer(
-          providerCatalogReducer(
-            providerCatalogInitialState,
-            providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
-          ),
+          providerCatalogReducer(providerCatalogInitialState, providerCatalogLoaded(catalog)),
           workspaceCatalogReceived(
             'workspace-a',
             {
-              catalog: MOCK_PROVIDER_CATALOG,
+              catalog,
               settings: [
                 { path: 'model.defaultProvider', value: defaultProviderId },
                 { path: 'providers.enabled', value: enabledProviders },
@@ -2071,7 +2069,7 @@ describe('ChatPanel mounted lifecycle', () => {
       await tick();
     }
 
-    async function renderQuotaFailure() {
+    async function renderQuotaFailure(exhaustedProviderId = 'claude-code') {
       mocks.draftGet.mockResolvedValue(null);
       mocks.agentMessages.set([
         {
@@ -2087,7 +2085,7 @@ describe('ChatPanel mounted lifecycle', () => {
       await tick();
       await tick();
       mocks.chatError.set('usage limit reached');
-      mocks.chatQuotaExceeded.set({ providerId: 'claude-code' });
+      mocks.chatQuotaExceeded.set({ providerId: exhaustedProviderId });
       await tick();
       await tick();
       return view;
@@ -2182,8 +2180,9 @@ describe('ChatPanel mounted lifecycle', () => {
 
       await setProviderEnabled('codex', false);
       expect(screen.queryAllByTestId('retry-with-provider')).toEqual([]);
-      expect(view.container.querySelector('[data-testid="error-quota-exceeded"]')).toBeNull();
-      expect(view.container.querySelector('[data-stream-terminal-error="true"]')).not.toBeNull();
+      const banner = view.container.querySelector('[data-testid="error-quota-exceeded"]');
+      expect(banner).not.toBeNull();
+      expect(banner!.textContent).not.toMatch(/switch provider/i);
 
       await setProviderEnabled('codex', true);
       expect(
@@ -2191,17 +2190,57 @@ describe('ChatPanel mounted lifecycle', () => {
       ).toEqual([expect.stringContaining('OpenAI Codex')]);
     });
 
-    it('falls back to the plain failure banner when no alternative is eligible', async () => {
+    it('keeps the quota card with only a plain Retry when no alternative is eligible', async () => {
       seedProviderState({ 'claude-code': true, codex: false }, 'claude-code', {
         'claude-code': { available: true, authenticated: true },
         codex: { available: true, authenticated: true },
       });
       const view = await renderQuotaFailure();
 
-      expect(view.container.querySelector('[data-testid="error-quota-exceeded"]')).toBeNull();
+      const banner = view.container.querySelector('[data-testid="error-quota-exceeded"]');
+      expect(banner).not.toBeNull();
+      expect(banner!.textContent).toMatch(/retry once it resets\./i);
+      expect(banner!.textContent).not.toMatch(/switch provider/i);
       expect(screen.queryAllByTestId('retry-with-provider')).toEqual([]);
-      expect(view.container.querySelector('[data-stream-terminal-error="true"]')).not.toBeNull();
-      expect(view.container.querySelector('[data-testid="error-title"]')).not.toBeNull();
+      expect(screen.getByTestId('quota-retry-same-provider')).toBeTruthy();
+      expect(view.container.querySelector('[data-testid="error-title"]')).toBeNull();
+    });
+
+    it("labels the provider's Default apart from the named profile that ran out", async () => {
+      seedProviderState(
+        { 'claude-code': true },
+        'claude-code',
+        { 'claude-code': { available: true, authenticated: true } },
+        {
+          ...MOCK_PROVIDER_CATALOG,
+          profiles: [
+            {
+              id: 'work',
+              providerRef: 'claude-code@work',
+              baseProviderId: 'claude-code',
+              name: 'me@example.com',
+            },
+          ],
+        },
+      );
+      const view = await renderQuotaFailure('claude-code@work');
+
+      expect(
+        view.container.querySelector('[data-testid="quota-provider-label"]')?.textContent,
+      ).toBe('Anthropic Claude Code · me@example.com');
+      const offers = screen.getAllByTestId('retry-with-provider');
+      expect(offers.map((button) => button.textContent?.trim())).toEqual([
+        'Retry on Anthropic Claude Code · Default',
+      ]);
+
+      mocks.dispatch.mockClear();
+      await fireEvent.click(offers[0]);
+      expect(mocks.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'agentSessions/retryWithProviderRequested',
+          payload: ['agent-a', 'workspace-a', 'claude-code'],
+        }),
+      );
     });
   });
 
@@ -4506,6 +4545,48 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(screen.queryByTestId('retired-send-confirm')).toBeNull();
     expect(sends()).toHaveLength(1);
     expect(sends()[0][0].payload.payload).toMatchObject({ text: 'Run the tests' });
+  });
+
+  it('records picked chips for composer sends but not for suggested prompts', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentSession.set({ id: 'agent-a', messages: [] });
+    mocks.agentMessages.set([
+      {
+        id: 'assistant-with-prompts',
+        role: 'assistant',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        contentBlocks: [
+          { type: 'text', text: 'Done.\n\n<!-- suggested-prompts\nReview @src/a.ts\n-->' },
+        ],
+      },
+    ]);
+    render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+    const sends = () =>
+      mocks.dispatch.mock.calls
+        .map(([action]) => action)
+        .filter((action) => action?.type === 'chatState/sendMessage');
+
+    // A suggested prompt's text was never in the composer: no record, so the
+    // bubble keeps guessing its paths.
+    await fireEvent.click(screen.getByRole('button', { name: 'Review @src/a.ts' }));
+    await tick();
+    expect(sends()).toHaveLength(1);
+    expect(sends()[0].payload.payload).toMatchObject({ text: 'Review @src/a.ts' });
+    expect(sends()[0].payload.payload.messageMetadata).toBeUndefined();
+
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'see @src/picked.ts' },
+    });
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    await tick();
+    expect(sends()).toHaveLength(2);
+    expect(sends()[1].payload.payload).toMatchObject({
+      text: 'see @src/picked.ts',
+      messageMetadata: { mentionTokens: ['@src/picked.ts'] },
+    });
   });
 
   it('reports true-bottom state to the stable header control', async () => {

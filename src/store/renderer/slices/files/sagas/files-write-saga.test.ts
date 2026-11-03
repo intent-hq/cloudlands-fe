@@ -644,7 +644,7 @@ describe('filesWriteSaga', () => {
             idempotencyKey: expect.any(String),
           },
         ],
-        ['file.read', { workspaceId: 'ws-1', path: 'a.ts' }],
+        ['file.read', { workspaceId: 'ws-1', path: 'a.ts', maxBytes: 480_000 }],
         ['file.delete', { workspaceId: 'ws-1', path: 'a.ts' }],
         [
           'file.write',
@@ -824,7 +824,7 @@ describe('filesWriteSaga', () => {
         localContent: 'disk',
       });
       expect(vi.mocked(backendRequest).mock.calls).toEqual([
-        ['file.read', { workspaceId: 'ws-1', path: 'a.ts' }],
+        ['file.read', { workspaceId: 'ws-1', path: 'a.ts', maxBytes: 480_000 }],
         ['file.delete', { workspaceId: 'ws-1', path: 'a.ts' }],
         [
           'file.write',

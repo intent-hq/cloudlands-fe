@@ -1,6 +1,9 @@
 import { m } from '$shared/paraglide/messages.js';
 
-/** Forge step heading and copy; the step is optional for everyone. */
+/**
+ * Forge step heading and copy; the step is optional for everyone. GitLab is named
+ * whenever the daemon can set it up or an account is already connected.
+ */
 export function onboardingForgeCopy(showGitLab: boolean): {
   title: string;
   before: string;

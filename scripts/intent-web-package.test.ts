@@ -15,6 +15,13 @@ import {
 } from './build-intent-web-package.mjs';
 import { MAX_PACKED_BYTES, REQUIRED_FILES, tarballProblems } from './smoke-intent-web-package.mjs';
 import { compareVersions, publishPlan } from './intent-web-publish-plan.mjs';
+import {
+  CHANNEL_DIST_TAGS,
+  channelFeedUrl,
+  distTagFailure,
+  feedVersion,
+  syncPlan,
+} from './intent-web-dist-tag-sync.mjs';
 
 const updaterRequire = createRequire(createRequire(import.meta.url).resolve('electron-updater'));
 const { load } = updaterRequire('js-yaml');
@@ -178,26 +185,119 @@ describe('@intent-hq/web publish plan', () => {
   });
 
   it('skips a version that is already published, so reruns are safe', () => {
-    expect(publishPlan('2.276.0', { versions: ['2.275.1', '2.276.0'], latest: '2.276.0' })).toEqual(
-      { publish: false, reason: '@intent-hq/web@2.276.0 is already published' },
-    );
+    const registry = { versions: ['2.275.1', '2.276.0'], distTags: { alpha: '2.276.0' } };
+    expect(publishPlan('2.276.0', registry)).toEqual({
+      publish: false,
+      reason: '@intent-hq/web@2.276.0 is already published',
+    });
   });
 
-  it('publishes the newest version as latest and never moves latest backwards', () => {
-    const registry = { versions: ['2.275.1', '2.277.0'], latest: '2.277.0' };
-    expect(publishPlan('2.278.0', registry)).toEqual({ publish: true, distTag: 'latest' });
+  it('publishes the newest version as alpha and never moves alpha backwards', () => {
+    const registry = {
+      versions: ['2.275.1', '2.277.0'],
+      distTags: { alpha: '2.277.0', latest: '2.270.0' },
+    };
+    expect(publishPlan('2.278.0', registry)).toEqual({ publish: true, distTag: 'alpha' });
     expect(publishPlan('2.276.0', registry)).toEqual({ publish: true, distTag: 'backfill' });
-    expect(publishPlan('2.276.0', { versions: [], latest: null })).toEqual({
+    expect(publishPlan('2.276.0', { versions: ['2.275.0'], distTags: {} })).toEqual({
       publish: true,
-      distTag: 'latest',
+      distTag: 'alpha',
     });
   });
 
-  it('keeps prereleases off latest', () => {
-    expect(publishPlan('3.0.0-beta.1', { versions: ['2.276.0'], latest: '2.276.0' })).toEqual({
-      publish: true,
-      distTag: 'next',
+  it('never sets the channel dist-tags latest or beta, even ahead of them', () => {
+    // A bootstrap publish leaves latest on an alpha; the next alpha must not follow it.
+    const registry = { versions: ['2.276.0'], distTags: { latest: '2.276.0', beta: '2.276.0' } };
+    expect(publishPlan('2.277.0', registry)).toEqual({ publish: true, distTag: 'alpha' });
+    expect(publishPlan('2.275.0', registry)).toEqual({ publish: true, distTag: 'alpha' });
+  });
+
+  it('keeps prereleases on next', () => {
+    expect(
+      publishPlan('3.0.0-beta.1', { versions: ['2.276.0'], distTags: { alpha: '2.276.0' } }),
+    ).toEqual({ publish: true, distTag: 'next' });
+  });
+});
+
+describe('@intent-hq/web channel dist-tag sync', () => {
+  it('maps beta to the beta dist-tag and stable to latest, read from the releases feed', () => {
+    expect(CHANNEL_DIST_TAGS).toEqual({ beta: 'beta', stable: 'latest' });
+    expect(channelFeedUrl('beta')).toBe(
+      'https://github.com/intent-hq/cloudlands-releases/releases/download/beta/latest-mac.yml',
+    );
+    expect(channelFeedUrl('stable')).toBe(
+      'https://github.com/intent-hq/cloudlands-releases/releases/download/stable/latest-mac.yml',
+    );
+    expect(() => channelFeedUrl('alpha')).toThrow(/Unknown channel/);
+  });
+
+  it('reads the version a channel feed serves', () => {
+    const feed =
+      'files:\r\n  - url: Intent.dmg\r\n    sha512: abc\r\nversion: 2.276.0\r\npath: x\r\n';
+    expect(feedVersion(feed)).toBe('2.276.0');
+    expect(feedVersion("version: '2.276.1'\n")).toBe('2.276.1');
+    expect(() => feedVersion('files: []\n')).toThrow(/no version/);
+    expect(() => feedVersion('version: latest\n')).toThrow(/semver/);
+  });
+
+  const registry = {
+    versions: ['2.274.0', '2.275.0', '2.276.0'],
+    distTags: { alpha: '2.276.0', beta: '2.275.0', latest: '2.274.0' },
+  };
+
+  it('moves the channel dist-tag forward to the version the channel serves', () => {
+    expect(syncPlan('beta', '2.276.0', registry)).toEqual({
+      sync: true,
+      distTag: 'beta',
+      version: '2.276.0',
     });
+    expect(syncPlan('stable', '2.275.0', registry)).toEqual({
+      sync: true,
+      distTag: 'latest',
+      version: '2.275.0',
+    });
+    expect(
+      syncPlan('beta', '2.276.0', { versions: ['2.276.0'], distTags: { alpha: '2.276.0' } }),
+    ).toEqual({ sync: true, distTag: 'beta', version: '2.276.0' });
+  });
+
+  it('is a no-op when the dist-tag already points at the channel version', () => {
+    expect(syncPlan('beta', '2.275.0', registry)).toEqual({
+      sync: false,
+      reason: 'beta already points at @intent-hq/web@2.275.0',
+    });
+  });
+
+  it('never moves a dist-tag backwards', () => {
+    expect(
+      syncPlan('stable', '2.273.0', { ...registry, versions: ['2.273.0', ...registry.versions] }),
+    ).toEqual({
+      sync: false,
+      reason:
+        'latest points at @intent-hq/web@2.274.0, newer than the stable channel version 2.273.0; dist-tags never move backwards',
+    });
+  });
+
+  it('skips a channel version that is not on npm, e.g. older than the first publish', () => {
+    expect(syncPlan('stable', '2.200.0', registry)).toEqual({
+      sync: false,
+      reason: '@intent-hq/web@2.200.0 (stable) is not on npm',
+    });
+    expect(syncPlan('beta', '2.276.0', null)).toEqual({
+      sync: false,
+      reason: '@intent-hq/web is not on npm yet',
+    });
+  });
+
+  it('names the trusted publisher setting and the manual fallback when npm rejects the tag', () => {
+    const message = distTagFailure('2.276.0', 'beta');
+    expect(message).toContain('Check "Allow npm dist-tag" under Allowed actions');
+    expect(message).toContain('Settings → Trusted Publisher');
+    expect(message).toContain(
+      'https://github.blog/changelog/2026-09-30-opt-in-dist-tag-permissions-for-npm-trusted-publishing/',
+    );
+    expect(message).toContain('npm dist-tag add @intent-hq/web@2.276.0 beta');
+    expect(message).toContain('docs/intent-web-package.md');
   });
 });
 
@@ -217,14 +317,74 @@ describe('publish-intent-web.yml', () => {
     });
   });
 
-  it('runs after each Release Alpha and on manual dispatch with a tag', () => {
+  const workflowName = (name: string) => readYaml(`.github/workflows/${name}.yml`).name;
+
+  it('runs after each Release Alpha, Promote Beta and Release Stable, and on manual dispatch', () => {
     expect(workflow.on.workflow_run).toEqual({
-      workflows: [readYaml('.github/workflows/release-alpha.yml').name],
+      workflows: [
+        workflowName('release-alpha'),
+        workflowName('promote-beta'),
+        workflowName('release-stable'),
+      ],
       types: ['completed'],
     });
-    expect(workflow.on.workflow_dispatch.inputs.tag.required).toBe(true);
+    const inputs = workflow.on.workflow_dispatch.inputs;
+    expect(inputs.tag.required).toBe(false);
+    expect(inputs.channel).toMatchObject({ type: 'choice', options: ['none', 'beta', 'stable'] });
+    expect(inputs.channel.default).toBe('none');
+  });
+
+  it('publishes only for successful tag-push Release Alpha runs or a dispatched tag', () => {
+    expect(jobs.resolve.if).toContain("github.event.workflow_run.name == 'Release Alpha'");
     expect(jobs.resolve.if).toContain("github.event.workflow_run.conclusion == 'success'");
     expect(jobs.resolve.if).toContain("github.event.workflow_run.event == 'push'");
+    expect(jobs.resolve.if).toContain("inputs.tag != ''");
+  });
+
+  describe('channel sync job', () => {
+    const sync = jobs['sync-channel'];
+    const syncSteps = sync?.steps ?? [];
+
+    it('runs after a successful Promote Beta or Release Stable, or a dispatched channel', () => {
+      expect(sync).toBeDefined();
+      expect(sync.needs).toBeUndefined();
+      expect(sync.if).toContain("github.event.workflow_run.conclusion == 'success'");
+      expect(sync.if).toContain("github.event.workflow_run.name == 'Promote Beta'");
+      expect(sync.if).toContain("github.event.workflow_run.name == 'Release Stable'");
+      expect(sync.if).toContain("inputs.channel != 'none'");
+      const channel = syncSteps.find((s) => s.run?.includes('CHANNEL='));
+      expect(channel?.run).toContain('beta');
+      expect(channel?.run).toContain('stable');
+    });
+
+    it('checks out only the publication tools from the workflow commit', () => {
+      const checkout = syncSteps.find((s) => s.uses?.startsWith('actions/checkout@'));
+      expect(checkout?.with?.ref).toBe('${{ github.workflow_sha }}');
+      expect(String(checkout?.with?.['persist-credentials'])).toBe('false');
+      expect(checkout?.with?.['sparse-checkout']).toContain('scripts/intent-web-dist-tag-sync.mjs');
+    });
+
+    it('plans from the channel feed, then moves the dist-tag with trusted publishing', () => {
+      expect(sync.permissions).toEqual({ contents: 'read', 'id-token': 'write' });
+      expect(sync['runs-on']).toBe('ubuntu-24.04');
+      const plan = syncSteps.find((s) =>
+        s.run?.includes('scripts/intent-web-dist-tag-sync.mjs "$CHANNEL"'),
+      );
+      const move = syncSteps.find((s) => s.run?.includes('npm dist-tag add'));
+      expect(plan).toBeDefined();
+      expect(move?.if).toBe("${{ steps.sync.outputs.sync == 'true' }}");
+      expect(move?.run).toContain('npm dist-tag add "@intent-hq/web@${VERSION}" "$DIST_TAG"');
+      // The failure message has one source: the script's distTagFailure.
+      expect(move?.run).toContain(
+        'node scripts/intent-web-dist-tag-sync.mjs --failure "$VERSION" "$DIST_TAG"',
+      );
+      expect(move?.run).not.toContain('Allow npm dist-tag');
+      expect(syncSteps.indexOf(plan!)).toBeLessThan(syncSteps.indexOf(move!));
+      // npm runs the OIDC exchange for `npm dist-tag` only from 11.21.0.
+      const runs = syncSteps.map((s) => s.run ?? '').join('\n');
+      expect(runs).toContain('npm install --global npm@^11.21.0');
+      expect(runs).toContain('npm --version');
+    });
   });
 
   it('publishes the tarball built and smoke-tested from the release tag', () => {
@@ -246,12 +406,14 @@ describe('publish-intent-web.yml', () => {
     expect(workflow.permissions).toEqual({ contents: 'read' });
     expect(publish.permissions).toEqual({ contents: 'read', 'id-token': 'write' });
     expect(publish['runs-on']).toBe('ubuntu-24.04');
-    // Only the publish job may mint an OIDC token.
+    // Only the jobs that talk to npm may mint an OIDC token; neither runs code
+    // built from the release tag.
     for (const [id, job] of Object.entries(jobs))
-      if (id !== 'publish') expect(job.permissions?.['id-token'], id).toBeUndefined();
+      if (id !== 'publish' && id !== 'sync-channel')
+        expect(job.permissions?.['id-token'], id).toBeUndefined();
     const node = steps.find((s) => s.uses?.startsWith('actions/setup-node@'));
     expect(node?.with?.['registry-url']).toBe('https://registry.npmjs.org');
-    expect(steps.map((s) => s.run ?? '').join('\n')).toContain('npm install --global npm@^11.5.1');
+    expect(steps.map((s) => s.run ?? '').join('\n')).toContain('npm install --global npm@^11.21.0');
     const code = text.replace(/^\s*#.*$/gm, '');
     expect(code).not.toMatch(/NPM_TOKEN|NODE_AUTH_TOKEN|secrets\.NPM/);
   });
@@ -259,9 +421,18 @@ describe('publish-intent-web.yml', () => {
   it('plans before publishing, publicly, under the planned dist-tag', () => {
     const plan = steps.find((s) => s.run?.includes('scripts/intent-web-publish-plan.mjs'));
     const release = steps.find((s) => s.run?.includes('npm publish'));
+    // A trusted publisher without "Allow npm publish" rejects the publish;
+    // the error names that checkbox instead of a bare npm auth failure.
+    expect(release?.run).toContain('if ! npm publish "$TARBALL"');
+    expect(release?.run).toContain("see npm's output above");
+    expect(release?.run).toContain('check \\"Allow npm publish\\" under Allowed actions');
     expect(plan).toBeDefined();
     expect(release?.if).toBe("${{ steps.plan.outputs.publish == 'true' }}");
-    expect(release?.run).toContain('npm publish "$TARBALL" --access public --tag "$DIST_TAG"');
+    // The publish asks for provenance explicitly rather than relying on
+    // trusted publishing to add it, so every release carries an attestation.
+    expect(release?.run).toContain(
+      'npm publish "$TARBALL" --access public --tag "$DIST_TAG" --provenance',
+    );
     expect(steps.indexOf(plan!)).toBeLessThan(steps.indexOf(release!));
   });
 });
@@ -284,6 +455,7 @@ describe('intent-web-package.yml', () => {
       'scripts/build-intent-web-package.mjs',
       'scripts/smoke-intent-web-package.mjs',
       'scripts/intent-web-publish-plan.mjs',
+      'scripts/intent-web-dist-tag-sync.mjs',
       'scripts/fetch-tailcat.cjs',
       'package.json',
       'pnpm-lock.yaml',

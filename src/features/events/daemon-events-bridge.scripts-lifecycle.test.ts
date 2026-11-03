@@ -32,6 +32,7 @@ import {
   restartScriptRequested,
   scriptOutputRequested,
   scriptOutputReleased,
+  scriptOutputStreamReady,
 } from '$store/renderer/slices/scripts/scripts-slice';
 import {
   selectScriptEntries,
@@ -91,6 +92,8 @@ function start() {
     workspaceTasks: workspaceTasksReducer(undefined, { type: '@@init' }),
     workspace: { workspaces: createCollection('id', [{ id: WS, myRole: 'owner' }]) },
   });
+  // The daemon-events saga (not run here) marks the live output lease ready.
+  state.scripts = scriptsReducer(state.scripts, scriptOutputStreamReady(WS));
   const dispatch = (a: any) => {
     state.scripts = scriptsReducer(state.scripts, a);
     state.workspaceTasks = workspaceTasksReducer(state.workspaceTasks, a);

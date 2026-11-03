@@ -140,6 +140,7 @@ describe('filesReadSaga', () => {
         workspaceId: 'ws-1',
         path: 'new.md',
         gitRootId: 'root-a',
+        maxBytes: 480_000,
       });
       expect(backendRequest).not.toHaveBeenCalledWith('search.fileNames', expect.anything());
       expect(h.actions.some((action) => action.type === updateFileTabPath.type)).toBe(false);

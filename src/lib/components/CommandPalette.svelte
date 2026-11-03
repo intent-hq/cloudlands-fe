@@ -37,16 +37,12 @@
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
   import { selectBrowserRecentUrls } from '$store/renderer/slices/browser/browser-selectors';
   import {
-    selectLabsGitLabEnabled,
     selectLabsRemoteAgentsEnabled,
     selectLabsPlainFolderWorkspacesEnabled,
     selectLabsBrowserAccessEnabled,
     selectLabsMultiplayerEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-  import {
-    setLabsGitLabEnabled,
-    setLabsRemoteAgentsEnabled,
-  } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { initBrowserWorkspace } from '$store/renderer/slices/browser/browser-slice';
   import {
     selectHidesAgentCreationActions,
@@ -146,7 +142,6 @@
   let searchQuery = $state('');
   const workspaceItems = selectWorkspaceItems();
   const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
-  const labsGitLabEnabled$ = selectLabsGitLabEnabled();
   const labsRemoteAgentsEnabled$ = selectLabsRemoteAgentsEnabled();
   const labsPlainFolders$ = selectLabsPlainFolderWorkspacesEnabled();
   const labsBrowserAccess$ = selectLabsBrowserAccessEnabled();
@@ -173,8 +168,6 @@
         !($isCollaborator$ && WORKSPACE_OWNER_ONLY_COMMAND_IDS.has(command.id)) &&
         !($hidesAgentLifecycleActions$ && command.id === 'new-agent') &&
         !(!$canCreate$ && command.id === 'new-workspace') &&
-        !($labsGitLabEnabled$ && command.id === 'enable-experimental-gitlab') &&
-        !(!$labsGitLabEnabled$ && command.id === 'disable-experimental-gitlab') &&
         !($labsRemoteAgentsEnabled$ && command.id === 'enable-experimental-remote-agents') &&
         !(!$labsRemoteAgentsEnabled$ && command.id === 'disable-experimental-remote-agents') &&
         !isLabCommandHidden(command.id, $dockLabEnabled, $labsPlainFolders$, $labsBrowserAccess$),
@@ -867,12 +860,6 @@
       case 'settings':
         appStore.dispatch(setShowCreateModal(false));
         navigateToSettings();
-        return true;
-      case 'enable-experimental-gitlab':
-        appStore.dispatch(setLabsGitLabEnabled(true));
-        return true;
-      case 'disable-experimental-gitlab':
-        appStore.dispatch(setLabsGitLabEnabled(false));
         return true;
       case 'enable-experimental-remote-agents':
         appStore.dispatch(setLabsRemoteAgentsEnabled(true));

@@ -424,7 +424,7 @@
   import {
     selectProviderAuthFailureGuidance,
     selectProviderCatalogLoaded,
-    selectProviderDisplayName,
+    selectProviderConfigurationLabel,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -5787,11 +5787,14 @@
   // references by the send saga before the wire call.
 
   // Handle sending messages
-  function handleSend(text: string) {
+  function handleSend(text: string, { fromComposer = false }: { fromComposer?: boolean } = {}) {
     // Gather DOM state only. Validation, queue decisions, serialization,
     // shared/domain cleanup, and send side effects live in sagas.
     const inlineImageItems = inputComponent?.getInlineImageContextItems?.() ?? [];
     const mentionContextItems = inputComponent?.getMentionContextItems?.() ?? [];
+    // Only the composer's own text has picked chips; a suggested prompt's
+    // text carries no record, so its paths keep the guessed chips.
+    const pickedMentions = fromComposer ? inputComponent?.getPickedMentionsMetadata?.() : undefined;
     if (!workspace || !isActive) {
       logger.warn('[ChatPanel] Dropping send: panel has no workspace or is inactive', {
         agentId,
@@ -5825,6 +5828,7 @@
         noteIds,
         ...(imageBlocks.length > 0 ? { imageBlocks } : {}),
         ...(fileBlocks.length > 0 ? { fileBlocks } : {}),
+        ...(pickedMentions ? { messageMetadata: pickedMentions } : {}),
         agentName,
         agentModel,
         isInitialWorkspaceAgent,
@@ -5902,7 +5906,7 @@
   const gatedStalledRetry = $derived(isRetiredSession ? undefined : handleStalledRetry);
 
   /**
-   * The exhausted provider, carrying its catalog display name — StreamingStatus
+   * The exhausted provider, carrying its configuration label — StreamingStatus
    * cannot resolve that name itself because the offer list below deliberately
    * excludes the exhausted provider.
    */
@@ -5910,9 +5914,14 @@
     const quota = $chatQuotaExceeded$;
     if (!quota) return null;
     void $providerCatalogEntries$;
+    void $workspaceCatalogEpoch$;
     return {
       ...quota,
-      displayName: selectProviderDisplayName.select(appStore.state, quota.providerId),
+      displayName: selectProviderConfigurationLabel.select(
+        appStore.state,
+        quota.providerId,
+        workspace?.id,
+      ),
     };
   });
 
@@ -5921,8 +5930,10 @@
    * "enabled ∧ visible ∧ probe-available ∧ signed-in" set minus the provider
    * that just ran out (`selectQuotaRetryProviderIds`). The exhausted one is
    * covered by the banner's plain Retry (limits reset), a signed-out one would
-   * be a dead end, and an empty list makes StreamingStatus fall back to the
-   * plain error banner rather than dangling a dead action.
+   * be a dead end, and an empty list leaves only that plain Retry. Each offer
+   * is labelled by configuration: when a named profile runs out, its provider's
+   * Default (a separate account and quota) reads `<Provider> · Default`, not a
+   * bare name that looks like the same provider again.
    */
   const quotaRetryProviders = $derived.by(() => {
     const quota = $chatQuotaExceeded$;
@@ -5936,7 +5947,7 @@
       .select(appStore.state, quota.providerId, workspace?.id)
       .map((id) => ({
         id,
-        displayName: $providerCatalogEntries$.find((p) => p.id === id)?.displayName ?? id,
+        displayName: selectProviderConfigurationLabel.select(appStore.state, id, workspace?.id),
       }));
   });
 
@@ -6036,6 +6047,7 @@
     // Gather DOM state only; validation and stop/send orchestration live in sagas.
     const inlineImageItems = inputComponent?.getInlineImageContextItems?.() ?? [];
     const mentionContextItems = inputComponent?.getMentionContextItems?.() ?? [];
+    const pickedMentions = inputComponent?.getPickedMentionsMetadata?.();
     if (!workspace || !isActive) return;
     flushPendingDraftWrite();
 
@@ -6062,6 +6074,7 @@
         noteIds,
         ...(imageBlocks.length > 0 ? { imageBlocks } : {}),
         ...(fileBlocks.length > 0 ? { fileBlocks } : {}),
+        ...(pickedMentions ? { messageMetadata: pickedMentions } : {}),
         forceSubmit: true,
         agentName,
         agentModel,
@@ -7913,7 +7926,7 @@
                       scheduleDraftWrite(value);
                       reportTypingActivity(value);
                     }}
-                    onsubmit={(text: string) => handleSend(text)}
+                    onsubmit={(text: string) => handleSend(text, { fromComposer: true })}
                     onforcesubmit={(text: string) => handleForceSubmit(text)}
                     onstop={handleStop}
                     onHistoryPrev={handleHistoryPrev}

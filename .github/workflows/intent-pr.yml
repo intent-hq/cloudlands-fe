@@ -702,7 +702,7 @@ jobs:
             exit 0
           fi
           match_status=0
-          grep -z -E '^(src/(features/[^/]+/(main|utils)/|features/intent-web/package/|main/|shared/)|scripts/(build-intent-web-package|smoke-intent-web-package|intent-web-publish-plan)\.mjs$|scripts/fetch-tailcat\.cjs$|vite\.config\.mjs$|svelte\.config\.js$|LICENSE$|NOTICE$|package\.json$|pnpm-lock\.yaml$|\.github/workflows/(intent-pr|intent-web-package|publish-intent-web)\.yml$)' "$changed_paths" >/dev/null || match_status=$?
+          grep -z -E '^(src/(features/[^/]+/(main|utils)/|features/intent-web/package/|main/|shared/)|scripts/(build-intent-web-package|smoke-intent-web-package|intent-web-publish-plan|intent-web-dist-tag-sync)\.mjs$|scripts/fetch-tailcat\.cjs$|vite\.config\.mjs$|svelte\.config\.js$|LICENSE$|NOTICE$|package\.json$|pnpm-lock\.yaml$|\.github/workflows/(intent-pr|intent-web-package|publish-intent-web)\.yml$)' "$changed_paths" >/dev/null || match_status=$?
           case "$match_status" in
             0) echo "intent_web_package_required=true" | tee -a "$GITHUB_OUTPUT" ;;
             1) echo "intent_web_package_required=false" | tee -a "$GITHUB_OUTPUT" ;;

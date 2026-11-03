@@ -10,6 +10,11 @@
  * - @{path} — file mentions (paths with / or file extensions)
  * - @{path}/ — folder mentions (a trailing slash marks the folder)
  *
+ * A message sent with a record of its picked chips (`readPickedMentionTokens`
+ * on its metadata) chips only the recorded files and folders; typed or pasted
+ * `@text` such as `@scope/pkg@1.2.3` stays text. Without a record, file and
+ * folder chips are guessed from the patterns above.
+ *
  * The `@` must not be preceded by an email-local-part character (letters,
  * digits, `._%+-`), so email addresses like clement@shv.com and URL userinfo
  * like https://user@host/path stay plain text instead of rendering `@shv.com`
@@ -22,6 +27,7 @@
  */
 
 import {
+  scanChatMentions,
   scanMentions,
   type ContextMention,
   type ParsedMention,
@@ -43,9 +49,15 @@ export interface InlineMentionMatch {
 /** What the registry parsed each found match as (null when malformed). */
 const parsedMatches = new WeakMap<InlineMentionMatch, ParsedMention | null>();
 
-/** Find all inline @mentions in `text`, in order of appearance. */
-export function findInlineMentions(text: string): InlineMentionMatch[] {
-  return scanMentions(text, 'chat').map((match) => {
+/**
+ * Find all inline @mentions in `text`, in order of appearance. `picked` is
+ * the message's recorded file and folder tokens; null (no record) guesses them.
+ */
+export function findInlineMentions(
+  text: string,
+  picked: readonly string[] | null = null,
+): InlineMentionMatch[] {
+  return scanChatMentions(text, picked).map((match) => {
     const inline = { index: match.index, fullMatch: match.text, captured: match.text.slice(1) };
     parsedMatches.set(inline, match.parsed);
     return inline;

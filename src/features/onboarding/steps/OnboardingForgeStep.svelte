@@ -36,7 +36,6 @@
     selectGitLabAuthIsConfigured,
     selectGitLabAuthUser,
   } from '$store/renderer/slices/gitlab-auth/gitlab-auth-selectors';
-  import { selectLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { selectDaemonSupportsSourceControlAuth } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import GitHubDeviceCodeCard from '$lib/components/GitHubDeviceCodeCard.svelte';
   import GitLabConnectForm from '$lib/components/GitLabConnectForm.svelte';
@@ -68,8 +67,7 @@
   const gitlabUser$ = selectGitLabAuthUser();
   const gitlabInstance$ = selectGitLabAuthInstanceBaseUrl();
   const gitlabSupported$ = selectDaemonSupportsSourceControlAuth();
-  const gitlabEnabled$ = selectLabsGitLabEnabled();
-  const gitlabSetupAvailable = $derived($gitlabEnabled$ && $gitlabSupported$);
+  const gitlabSetupAvailable = $derived($gitlabSupported$);
 
   const anyConnected = $derived($githubIsAuthenticated$ || $gitlabIsConfigured$);
   // A flow in progress opens its panel even before the user re-picks it (e.g.
@@ -103,7 +101,6 @@
   }
 
   function handleChooseGitLab() {
-    if (!selectLabsGitLabEnabled.select(appStore.state)) return;
     choice = 'gitlab';
   }
 

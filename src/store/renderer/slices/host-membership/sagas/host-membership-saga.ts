@@ -17,7 +17,6 @@ import {
   selectPrincipalConnectionContext,
 } from '../../principal/principal-selectors';
 import type { PrincipalState } from '../../principal/principal-types';
-import { selectLabsGitLabEnabled } from '../../user-preferences/user-preferences-selectors';
 import {
   selectHostMembershipContext,
   selectHostMembershipState,
@@ -126,11 +125,7 @@ function* execute(action: ReturnType<typeof hostMembershipRequested>): SagaGener
     }
     if (command.kind === 'create') {
       const host = canonicalInviteHost(command.input.pinProvider, command.input.pinHost ?? '');
-      if (
-        !command.input.pinLogin.trim() ||
-        !host ||
-        (command.input.pinProvider === 'gitlab' && !(yield* selectLabsGitLabEnabled.effect()))
-      ) {
+      if (!command.input.pinLogin.trim() || !host) {
         yield* put(hostMembershipFailed(target, m.collaboration_pin_invalid_error()));
         return;
       }
@@ -207,7 +202,6 @@ function* execute(action: ReturnType<typeof hostMembershipRequested>): SagaGener
       'code' in error.data
         ? error.data.code
         : null;
-    const labsGitLab = yield* selectLabsGitLabEnabled.effect();
     const message = isForbiddenErrorResponse(error)
       ? m.collaboration_host_forbidden_error()
       : code === 'invite-pin-unknown'
@@ -219,13 +213,9 @@ function* execute(action: ReturnType<typeof hostMembershipRequested>): SagaGener
               identityHost: command.kind === 'create' ? command.input.pinHost : undefined,
             })
           : code === 'github-unreachable'
-            ? labsGitLab
-              ? m.workspace_share_forgeUnreachable_error()
-              : m.workspace_share_githubUnreachable_error()
+            ? m.workspace_share_forgeUnreachable_error()
             : code === 'github-identity-required'
-              ? labsGitLab
-                ? m.workspace_share_forgeRequired_error()
-                : m.workspace_share_githubRequired_error()
+              ? m.workspace_share_forgeRequired_error()
               : code === 'listener-down'
                 ? m.workspace_share_listenerDown_error()
                 : code === 'tunnel-down'

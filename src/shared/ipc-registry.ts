@@ -16,6 +16,11 @@ export const IPC_CHANNELS = {
     RECORD: 'dev-console:record',
     CLEAR: 'dev-console:clear',
     SELECT: 'dev-console:select',
+    LINKS_STATUS: 'dev-console:links-status',
+    LINKS_START: 'dev-console:links-start',
+    LINKS_STOP: 'dev-console:links-stop',
+    LINKS_READ: 'dev-console:links-read',
+    LINKS_RECORD: 'dev-console:links-record',
   },
   // Workspace Management
   WORKSPACE: {
@@ -1362,6 +1367,8 @@ export const EVENT_CHANNELS = [
   // Live backend transport (main → renderer): daemon JSON-RPC notifications
   // and connection-status changes pushed from the main-process client.
   'dev-console:changed',
+  // Daemon-link capture changed (start, stop or new records) for one console session.
+  'dev-console:links-changed',
   'backend:notification',
   'backend:status',
   // Hardware console shutdown handshake (main → renderer)

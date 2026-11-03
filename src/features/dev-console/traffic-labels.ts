@@ -1,4 +1,9 @@
 import * as m from '$shared/paraglide/messages.js';
+import {
+  LINK_TRAFFIC_FORBIDDEN,
+  type LinkPeerKind,
+  type LinkTrafficRow,
+} from '$shared/types/daemon-links';
 import type { DevConsoleRow } from '$shared/types/dev-console';
 export function statusLabel(status: DevConsoleRow['status']) {
   return {
@@ -19,4 +24,19 @@ export function trafficTabLabel(tab: import('./traffic-view').TrafficTab) {
     inbound: m.devConsole_inbound_label,
     events: m.devConsole_events_label,
   }[tab]();
+}
+
+export function linkDirectionLabel(direction: LinkTrafficRow['direction']) {
+  return direction === 'out'
+    ? m.devConsole_links_sent_label()
+    : m.devConsole_links_received_label();
+}
+
+export function linkPeerKindLabel(kind: LinkPeerKind) {
+  return kind === 'machine' ? m.devConsole_links_machine_label() : m.devConsole_backend_label();
+}
+
+/** Daemon-link errors cross IPC as messages; the owner-only refusal carries a fixed marker. */
+export function linkErrorLabel(error: string) {
+  return error.includes(LINK_TRAFFIC_FORBIDDEN) ? m.devConsole_links_ownerOnly_error() : error;
 }
