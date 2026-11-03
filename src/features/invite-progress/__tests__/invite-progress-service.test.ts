@@ -17,7 +17,7 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => ({
-      userPreferences: { labsMultiplayerEnabled: preference.enabled, labsGitLabEnabled: false },
+      userPreferences: { labsMultiplayerEnabled: preference.enabled },
     }),
     dispatch: preference.dispatch,
   });

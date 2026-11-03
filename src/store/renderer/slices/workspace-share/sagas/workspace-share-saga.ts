@@ -39,7 +39,6 @@ import {
 } from '$lib/client/live/live-settings-client';
 import { isWorkspaceGuest } from '$features/workspace-sharing/utils/workspace-guest';
 import { canonicalInviteHost } from '$features/workspace-sharing/utils/invite-pin';
-import { selectLabsGitLabEnabled } from '../../user-preferences/user-preferences-selectors';
 import { clearGithubUserSearch } from '../../github-user-search/github-user-search-slice';
 import { selectGitLabAuthHost } from '../../gitlab-auth/gitlab-auth-selectors';
 import { checkGitHubAuthStatus } from '../../github-auth/github-auth-slice';
@@ -399,16 +398,10 @@ function* sharingPrerequisites(
 }
 
 /** Inline error for an invite failure unrelated to host setup. */
-function createInviteErrorMessage(
-  code: ShareFailure['code'],
-  requestedPin: string,
-  gitlab: boolean,
-): string {
+function createInviteErrorMessage(code: ShareFailure['code'], requestedPin: string): string {
   switch (code) {
     case 'github-unreachable':
-      return gitlab
-        ? m.workspace_share_forgeUnreachable_error()
-        : m.workspace_share_githubUnreachable_error();
+      return m.workspace_share_forgeUnreachable_error();
     case 'invite-pin-unknown':
       return m.workspace_share_pinUnknown_error({ login: `@${requestedPin}` });
     case 'identity-unverifiable':
@@ -455,11 +448,10 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
   if (
     requestedPin &&
     pin?.provider === 'gitlab' &&
-    (independentPins
-      ? !(yield* selectLabsGitLabEnabled.effect())
-      : !(yield* selectCanAdministerHost.effect()) ||
-        !(yield* selectGitLabStatusReady.effect()) ||
-        pin.host !== (yield* selectGitLabAuthHost.effect()))
+    !independentPins &&
+    (!(yield* selectCanAdministerHost.effect()) ||
+      !(yield* selectGitLabStatusReady.effect()) ||
+      pin.host !== (yield* selectGitLabAuthHost.effect()))
   ) {
     yield* put(
       shareInviteCreateFailed({ target, request, error: m.workspace_share_createFailed_error() }),
@@ -497,18 +489,13 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
     if (outcome.code === 'github-identity-required') {
       yield* put(shareOwnerForgeMissing(target));
       const administrator = yield* selectCanAdministerHost.effect();
-      const gitlab = yield* selectLabsGitLabEnabled.effect();
       yield* put(
         shareInviteCreateFailed({
           target,
           request,
           error: administrator
-            ? gitlab
-              ? m.workspace_share_forgeRequired_error()
-              : m.workspace_share_githubRequired_error()
-            : gitlab
-              ? m.workspace_share_forgeOwnerRequired_notice()
-              : m.workspace_share_githubOwnerRequired_notice(),
+            ? m.workspace_share_forgeRequired_error()
+            : m.workspace_share_forgeOwnerRequired_notice(),
         }),
       );
       // The cached status said connected but the daemon has no live forge:
@@ -524,11 +511,7 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
       shareInviteCreateFailed({
         target,
         request,
-        error: createInviteErrorMessage(
-          outcome.code,
-          requestedPin,
-          yield* selectLabsGitLabEnabled.effect(),
-        ),
+        error: createInviteErrorMessage(outcome.code, requestedPin),
       }),
     );
     return;

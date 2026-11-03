@@ -20,7 +20,9 @@ the cloudlands-fe version.
 Alpha and publishes the matching npm version. It builds and smoke-tests the
 tarball on the release tag (`intent-web-package.yml`), then publishes that
 tarball from a GitHub-hosted runner with npm trusted publishing: OIDC, no
-`NPM_TOKEN`, provenance attached.
+`NPM_TOKEN`, with a provenance attestation (`--provenance`; check it with
+`npm view @intent-hq/web@<version> dist.attestations`). The hand-published
+bootstrap version has no attestation.
 
 - A version that is already on npm is skipped, so reruns are safe.
 - To publish a tag again (a failed run, or a Release Alpha rebuilt by hand),

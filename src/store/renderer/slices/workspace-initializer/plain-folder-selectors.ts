@@ -74,8 +74,8 @@ export const selectCloneSourceVisible = store.createSelector((state) => {
 });
 
 /**
- * Forge connection for the New Workspace picker label. GitLab counts only with
- * GitLab (Labs) on; a pending or failed status read is `'unknown'`.
+ * Forge connection for the New Workspace picker label (GitHub or GitLab); a
+ * pending or failed status read is `'unknown'`.
  */
 export const selectForgeConnectionState = store.createSelector((state) => {
   const gitlabFailed = state.gitlabAuth?.statusFailed === true;
@@ -83,7 +83,6 @@ export const selectForgeConnectionState = store.createSelector((state) => {
     githubConnected: state.githubAuth?.isAuthenticated === true,
     githubSettled: state.githubAuth?.statusSettled === true,
     githubFailed: state.githubAuth?.statusFailed === true,
-    gitlabAvailable: state.userPreferences?.labsGitLabEnabled === true,
     gitlabConnected: state.gitlabAuth?.isConfigured === true,
     gitlabSettled: state.gitlabAuth?.statusReady === true || gitlabFailed,
     gitlabFailed,

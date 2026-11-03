@@ -79,7 +79,6 @@
     selectPlainFolderCreationAvailable,
   } from '$store/renderer/slices/workspace-initializer/plain-folder-selectors';
   import { resolveRepositoryRowLabelKind } from './repository-row-label';
-  import { selectLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import {
     loadGithubRepos,
@@ -415,12 +414,6 @@
   function visibleTab(tab: TabId): TabId {
     return !cloneTabVisible && (tab === 'github' || tab === 'gitlab') ? 'local' : tab;
   }
-  const labsGitLabEnabled$ = selectLabsGitLabEnabled();
-  const connectToCloneLabel = $derived(
-    $labsGitLabEnabled$
-      ? m.workspace_repoSelector_connectForgeToClone_label()
-      : m.workspace_repoSelector_connectGithubToClone_label(),
-  );
   function handleConnectToClone() {
     isOpen = false;
     void navigateToSettings({ tab: 'connections', hash: 'integrations' }).catch((error: unknown) =>
@@ -2235,7 +2228,7 @@
               class="mx-3 -mt-1 mb-2 h-auto self-start p-0 text-xs"
               onclick={handleConnectToClone}
             >
-              {connectToCloneLabel}
+              {m.workspace_repoSelector_connectForgeToClone_label()}
             </Button>
           {/if}
           <Tabs.Content

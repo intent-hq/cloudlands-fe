@@ -14,7 +14,6 @@
     step?: OnboardingStep;
     compact?: boolean;
     forge?: ForgeScenario;
-    gitlabEnabled?: boolean;
     gitlabSetupSupported?: boolean;
     gitlabInstanceBaseUrl?: string;
     settings?: boolean;
@@ -33,29 +32,27 @@
       welcome: { props: { step: 'welcome' } },
       'welcome-all-providers': { props: { step: 'welcome', allProviders: true } },
       forge: { props: { step: 'forge' } },
-      'forge-gitlab-enabled': { props: { step: 'forge', gitlabEnabled: true } },
       'forge-gitlab-update-required': {
-        props: { step: 'forge', gitlabEnabled: true, gitlabSetupSupported: false },
+        props: { step: 'forge', gitlabSetupSupported: false },
       },
       'forge-github-device': { props: { step: 'forge', forge: 'github-device' } },
       'forge-gitlab-device': {
-        props: { step: 'forge', forge: 'gitlab-device', gitlabEnabled: true },
+        props: { step: 'forge', forge: 'gitlab-device' },
       },
       'settings-gitlab-device': {
-        props: { step: 'forge', forge: 'gitlab-device', gitlabEnabled: true, settings: true },
+        props: { step: 'forge', forge: 'gitlab-device', settings: true },
       },
       'settings-gitlab-device-long': {
         props: {
           step: 'forge',
           forge: 'gitlab-device',
-          gitlabEnabled: true,
           settings: true,
           verificationUri:
             'https://engineeringgitlabinstancewithaverylongunbrokensubdomain.internal.example.test:8443/company/platform/identity/authorization/device',
         },
       },
       'forge-gitlab-connecting': {
-        props: { step: 'forge', forge: 'gitlab-connecting', gitlabEnabled: true },
+        props: { step: 'forge', forge: 'gitlab-connecting' },
       },
       'forge-connected-github': { props: { step: 'forge', forge: 'connected-github' } },
       'forge-connected-gitlab': { props: { step: 'forge', forge: 'connected-gitlab' } },
@@ -79,10 +76,7 @@
   import { previewProviders } from '$lib/components/settings/provider-selector.preview';
   import { store as appStore } from '$store/renderer/store';
   import { systemStatusSuccess } from '$store/renderer/slices/daemon-health/daemon-health-slice';
-  import {
-    setLabsGitLabEnabled,
-    setLabsPlainFolderWorkspacesEnabled,
-  } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import { setLabsPlainFolderWorkspacesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { safeLocalStorage } from '$lib/utils/safe-storage';
   import { INITIALIZE_GIT_CHOICE_STORAGE_KEY } from '$lib/components/workspace/initializer/plain-folder-create';
   import { goToStep } from '$store/renderer/slices/onboarding/onboarding-slice';
@@ -123,7 +117,6 @@
     step = 'configuring',
     compact = false,
     forge = 'idle',
-    gitlabEnabled = false,
     gitlabSetupSupported = true,
     gitlabInstanceBaseUrl = 'https://gitlab.example.com',
     settings = false,
@@ -136,7 +129,6 @@
     // eslint-disable-next-line intent/no-component-async-data-fetch -- Fixture-only navigation interception; restores the original mock handler on teardown and never fetches domain data.
     onOpenExternal ? overrideMockIpcHandler('shell:openExternal', onOpenExternal) : undefined,
   );
-  const previousGitLabEnabled = appStore.state.userPreferences.labsGitLabEnabled;
   const previousStep = selectOnboardingStep.select(appStore.state);
   const previousProviders = selectProviderCatalogEntries.select(appStore.state);
   const previousStatuses = selectProviderStatusMap.select(appStore.state);
@@ -272,7 +264,6 @@
         },
       ),
     );
-    appStore.dispatch(setLabsGitLabEnabled(untrack(() => gitlabEnabled)));
     seedForge(untrack(() => forge));
   }
   const seededPlainFolder = untrack(() => plainFolder);
@@ -334,7 +325,6 @@
     if (seededForge) {
       applyGitHub(previousGitHub);
       applyGitLab(previousGitLab);
-      appStore.dispatch(setLabsGitLabEnabled(previousGitLabEnabled));
       appStore.dispatch(principalContextChanged(previousPrincipal.context));
       if (previousPrincipal.context && previousPrincipal.snapshot) {
         appStore.dispatch(

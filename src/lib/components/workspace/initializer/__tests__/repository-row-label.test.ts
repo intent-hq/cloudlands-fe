@@ -1,7 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { store as appStore } from '$store/renderer/store';
 import { githubAuthStatusUnavailable } from '$store/renderer/slices/github-auth/github-auth-slice';
-import { setLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { selectForgeConnectionState } from '$store/renderer/slices/workspace-initializer/plain-folder-selectors';
 import {
   resolveForgeConnectionState,
@@ -85,7 +84,6 @@ const settledNone: ForgeConnectionInput = {
   githubConnected: false,
   githubSettled: true,
   githubFailed: false,
-  gitlabAvailable: true,
   gitlabConnected: false,
   gitlabSettled: true,
   gitlabFailed: false,
@@ -112,19 +110,12 @@ describe('resolveForgeConnectionState', () => {
     expect(resolveForgeConnectionState({ ...settledNone, ...patch })).toBe('unknown');
   });
 
-  it('ignores GitLab where GitLab is not available', () => {
-    const unavailable = { ...settledNone, gitlabAvailable: false };
-    expect(resolveForgeConnectionState({ ...unavailable, gitlabConnected: true })).toBe('none');
-    expect(resolveForgeConnectionState({ ...unavailable, gitlabSettled: false })).toBe('none');
-    expect(resolveForgeConnectionState({ ...unavailable, gitlabFailed: true })).toBe('none');
-  });
 });
 
 describe('selectForgeConnectionState', () => {
   beforeAll(() => appStore.init());
   afterEach(() => {
     resetPlainFolderState();
-    appStore.dispatch(setLabsGitLabEnabled(false));
   });
 
   // Runs first: GitHub's settled marker is not reset by later tests' cleanup.
@@ -142,10 +133,8 @@ describe('selectForgeConnectionState', () => {
     expect(selectForgeConnectionState.select(appStore.state)).toBe('connected');
   });
 
-  it('counts GitLab only with GitLab (Labs) on', () => {
+  it('is connected with GitLab connected (no Labs gate)', () => {
     settleForgeAuth({ gitlab: true });
-    expect(selectForgeConnectionState.select(appStore.state)).toBe('none');
-    appStore.dispatch(setLabsGitLabEnabled(true));
     expect(selectForgeConnectionState.select(appStore.state)).toBe('connected');
   });
 

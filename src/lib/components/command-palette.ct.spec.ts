@@ -8,12 +8,12 @@ test('ordinary open clears the visible recovery filter without disrupting typing
   await page.setViewportSize({ width: 360, height: 600 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(CommandPalettePreview, {
-    props: { initialQuery: 'GitLab', withoutWorkspace: true },
-    hooksConfig: { previewScene: { scene: 'command-palette', state: 'gitlab-off' } },
+    props: { initialQuery: 'provider profiles', withoutWorkspace: true },
+    hooksConfig: { previewScene: { scene: 'command-palette', state: 'provider-profiles' } },
   });
   const dialog = page.getByRole('dialog');
   const input = dialog.getByRole('textbox');
-  await expect(input).toHaveValue('GitLab');
+  await expect(input).toHaveValue('provider profiles');
   await component.update({ props: { initialQuery: '', withoutWorkspace: true } });
   await expect(input).toHaveValue('');
   await expect(input).toBeFocused();
@@ -26,34 +26,6 @@ test('ordinary open clears the visible recovery filter without disrupting typing
   await input.fill(':42');
   await input.press('Enter');
   await expect(dialog).toHaveCount(0);
-});
-
-test('GitLab command supports keyboard activation and reopening at compact width', async ({
-  mount,
-  page,
-}) => {
-  await page.setViewportSize({ width: 360, height: 600 });
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await mount(CommandPalettePreview, {
-    props: { initialQuery: 'GitLab', withoutWorkspace: true },
-    hooksConfig: { previewScene: { scene: 'command-palette', state: 'gitlab-off' } },
-  });
-  const dialog = page.getByRole('dialog');
-  const input = dialog.getByRole('textbox');
-  await expect(input).toBeFocused();
-  const enable = dialog.getByRole('button', { name: /Enable experimental GitLab/i });
-  await expect(enable).toBeVisible();
-  const box = (await enable.boundingBox())!;
-  expect(box.x).toBeGreaterThanOrEqual(0);
-  expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width);
-  await input.press('Enter');
-  await expect(dialog).toHaveCount(0);
-  await page.getByRole('button', { name: 'Open palette' }).click();
-  await expect(input).toBeFocused();
-  await dialog.getByRole('button', { name: /Disable experimental GitLab/i }).click();
-  await expect(dialog).toHaveCount(0);
-  await page.getByRole('button', { name: 'Open palette' }).click();
-  await expect(enable).toBeVisible();
 });
 
 for (const width of [1280, 360]) {

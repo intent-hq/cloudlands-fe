@@ -11,9 +11,6 @@
   import { ContentDialog } from '$lib/components/patterns/confirm';
   import type { InviteNoticeShowPayload } from '$shared/ipc/invite-notice';
   import { describeInviteFailureReason } from '$shared/utils/invite-failure-text';
-  import { selectLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-  import { openPalette } from '$store/renderer/slices/palette/palette-slice';
-  import { store as appStore } from '$store/renderer/store';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -29,20 +26,12 @@
   const dialogTitleId = 'invite-notice-dialog-title';
   const dialogDescriptionId = 'invite-notice-dialog-description';
 
-  const gitlabEnabled$ = selectLabsGitLabEnabled();
   const needsAccountSetup = $derived(
     payload?.kind === 'failed' &&
       (payload.reason === 'proof-gitlab-not-connected' ||
         payload.reason === 'proof-gitlab-scope-missing' ||
         payload.reason === 'pin-mismatch' ||
         payload.reason === 'identity-unavailable'),
-  );
-  const needsGitLabEnable = $derived(
-    needsAccountSetup &&
-      !$gitlabEnabled$ &&
-      (payload?.accountProvider === 'gitlab' ||
-        payload?.reason === 'proof-gitlab-not-connected' ||
-        payload?.reason === 'proof-gitlab-scope-missing'),
   );
   const failed = $derived(payload?.kind === 'failed');
   const title = $derived(
@@ -66,12 +55,7 @@
 
   function openAccountSetup() {
     if (!open) return;
-    const showGitLab = needsGitLabEnable;
     acknowledge();
-    if (showGitLab) {
-      appStore.dispatch(openPalette('GitLab')); // i18n-ignore (brand search matches every locale)
-      return;
-    }
     void navigateToSettings({ tab: 'connections', hash: 'integrations' }).catch(() => {});
   }
 
@@ -97,9 +81,7 @@
     {#snippet footer()}
       {#if needsAccountSetup}
         <Button variant="secondary" onclick={openAccountSetup}>
-          {needsGitLabEnable
-            ? m.inviteNotice_modal_findGitlabCommand_label()
-            : m.workspace_share_openConnections_label()}
+          {m.workspace_share_openConnections_label()}
         </Button>
       {/if}
       <Button onclick={acknowledge}>{m.deeplink_inviteFailed_ok_button()}</Button>

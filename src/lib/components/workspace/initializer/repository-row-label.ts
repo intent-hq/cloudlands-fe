@@ -29,16 +29,14 @@ export interface ForgeConnectionInput {
   githubConnected: boolean;
   githubSettled: boolean;
   githubFailed: boolean;
-  /** GitLab counts only where it is available (GitLab Labs on). */
-  gitlabAvailable: boolean;
   gitlabConnected: boolean;
   gitlabSettled: boolean;
   gitlabFailed: boolean;
 }
 
 export function resolveForgeConnectionState(input: ForgeConnectionInput): ForgeConnectionState {
-  if (input.githubConnected || (input.gitlabAvailable && input.gitlabConnected)) return 'connected';
+  if (input.githubConnected || input.gitlabConnected) return 'connected';
   if (input.githubFailed || !input.githubSettled) return 'unknown';
-  if (input.gitlabAvailable && (input.gitlabFailed || !input.gitlabSettled)) return 'unknown';
+  if (input.gitlabFailed || !input.gitlabSettled) return 'unknown';
   return 'none';
 }
