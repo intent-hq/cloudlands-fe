@@ -114,6 +114,10 @@ const FULL_RISK_FILES = new Set([
   'vitest.config.ts',
   'scripts/vitest-native-deps.mjs',
 ]);
+// svelte-check's own inputs: its tsconfig decides which files it checks (an
+// over-wide include can silently drop the whole project past the size limit),
+// and the wrapper decides how the run is guarded.
+const SVELTE_CHECK_INPUT_FILES = new Set(['tsconfig.json', 'scripts/run-svelte-check.mjs']);
 // Files that decide which root specs playwright.config.ts runs: the config and the
 // modules it reads its testDir/testMatch/testIgnore from (root-spec-pattern.mjs
 // builds on ct-spec-pattern.mjs's matchers). The pull_request workflow's root
@@ -688,7 +692,7 @@ export function createVerificationPlan(files, options = {}) {
     // A resolved snapshot selects its runner above; it did not change source or types.
     if (snapshots.get(file)) continue;
     addBoundary(boundaries, file);
-    if (file.endsWith('.svelte')) svelteCheck = true;
+    if (file.endsWith('.svelte') || SVELTE_CHECK_INPUT_FILES.has(file)) svelteCheck = true;
     if (file === 'tsconfig.json') boundaries.add('renderer');
     else if (file === 'tsconfig.main.json') boundaries.add('main');
     else if (file === 'tsconfig.preload.json') boundaries.add('preload');
