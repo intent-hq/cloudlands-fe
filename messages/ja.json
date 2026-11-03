@@ -5970,6 +5970,7 @@
   "terminal_sidebar_cancel_label": "キャンセル",
   "terminal_sidebar_closeTerminal_label": "ターミナルを閉じる",
   "terminal_sidebar_command_placeholder": "コマンド（例: npm run dev）",
+  "terminal_sidebar_createScriptFailed_error": "スクリプトを追加できませんでした",
   "terminal_sidebar_deleteMany_label": "{count} 個のスクリプトを削除",
   "terminal_sidebar_delete_label": "削除",
   "terminal_sidebar_detectAdded_part": "+{count} 追加",

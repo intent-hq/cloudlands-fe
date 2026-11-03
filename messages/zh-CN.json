@@ -5970,6 +5970,7 @@
   "terminal_sidebar_cancel_label": "取消",
   "terminal_sidebar_closeTerminal_label": "关闭终端",
   "terminal_sidebar_command_placeholder": "命令，例如 npm run dev",
+  "terminal_sidebar_createScriptFailed_error": "添加脚本失败",
   "terminal_sidebar_deleteMany_label": "删除 {count} 个脚本",
   "terminal_sidebar_delete_label": "删除",
   "terminal_sidebar_detectAdded_part": "+{count} 个新增",

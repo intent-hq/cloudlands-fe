@@ -5970,6 +5970,7 @@
   "terminal_sidebar_cancel_label": "취소",
   "terminal_sidebar_closeTerminal_label": "터미널 닫기",
   "terminal_sidebar_command_placeholder": "명령(예: npm run dev)",
+  "terminal_sidebar_createScriptFailed_error": "스크립트를 추가하지 못했습니다",
   "terminal_sidebar_deleteMany_label": "스크립트 {count}개 삭제",
   "terminal_sidebar_delete_label": "삭제",
   "terminal_sidebar_detectAdded_part": "+{count} 추가됨",

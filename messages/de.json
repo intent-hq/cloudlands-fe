@@ -5970,6 +5970,7 @@
   "terminal_sidebar_cancel_label": "Abbrechen",
   "terminal_sidebar_closeTerminal_label": "Terminal schließen",
   "terminal_sidebar_command_placeholder": "Befehl, z. B. npm run dev",
+  "terminal_sidebar_createScriptFailed_error": "Skript konnte nicht hinzugefügt werden",
   "terminal_sidebar_deleteMany_label": "{count} Skripte löschen",
   "terminal_sidebar_delete_label": "Löschen",
   "terminal_sidebar_detectAdded_part": "+{count} hinzugefügt",

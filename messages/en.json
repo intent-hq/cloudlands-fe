@@ -5970,6 +5970,7 @@
   "terminal_sidebar_cancel_label": "Cancel",
   "terminal_sidebar_closeTerminal_label": "Close Terminal",
   "terminal_sidebar_command_placeholder": "Command, e.g. npm run dev",
+  "terminal_sidebar_createScriptFailed_error": "Failed to add script",
   "terminal_sidebar_deleteMany_label": "Delete {count} scripts",
   "terminal_sidebar_delete_label": "Delete",
   "terminal_sidebar_detectAdded_part": "+{count} added",
