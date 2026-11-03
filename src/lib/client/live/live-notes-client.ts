@@ -14,6 +14,8 @@ import { m } from '$shared/paraglide/messages.js';
 import { AuthorType, ContentType, NoteVisibility } from '$shared/types';
 import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
 import { isProjectionRejected } from '$shared/utils/note-content';
+import { requestAllPages, requestWholeNote } from '$shared/utils/paged-list';
+import { NOTE_LIST_PAGE_LIMIT } from '$shared/constants/notes';
 import type { Author, CreateNoteRequest, Note, NoteVersion } from '$shared/types';
 import type {
   MutationResult,
@@ -157,21 +159,25 @@ export class LiveNotesClient implements NotesClient {
     // daemons see an unchanged request. If a daemon rejects the unknown param
     // (-32602 Invalid params), fall back once to the plain full list; other
     // failures (transport, workspace not found) propagate unchanged.
-    let result: { notes?: unknown[] } | null;
+    // §5.2 bounded reads: every request pages with `limit` + `nextToken`;
+    // daemons without paging ignore both and answer the whole list.
+    const page = (params: Record<string, unknown>) =>
+      backendRequest<{ notes?: unknown[] }>('note.list', params);
+    let notes: unknown[];
     if (options?.projection === 'slim') {
       try {
-        result = await backendRequest<{ notes?: unknown[] }>('note.list', {
-          workspaceId,
-          projection: 'slim',
-        });
+        notes = await requestAllPages(
+          page,
+          { workspaceId, projection: 'slim', limit: NOTE_LIST_PAGE_LIMIT },
+          'notes',
+        );
       } catch (error) {
         if (!isProjectionRejected(error)) throw error;
-        result = await backendRequest<{ notes?: unknown[] }>('note.list', { workspaceId });
+        notes = await requestAllPages(page, { workspaceId, limit: NOTE_LIST_PAGE_LIMIT }, 'notes');
       }
     } else {
-      result = await backendRequest<{ notes?: unknown[] }>('note.list', { workspaceId });
+      notes = await requestAllPages(page, { workspaceId, limit: NOTE_LIST_PAGE_LIMIT }, 'notes');
     }
-    const notes = Array.isArray(result?.notes) ? result.notes : [];
     return notes.map((n) => {
       const note = normalizeNote(n as Record<string, unknown>, workspaceId);
       rememberNoteWorkspace(String(note.id), workspaceId);
@@ -217,13 +223,19 @@ export class LiveNotesClient implements NotesClient {
     const workspaceId = explicitWorkspaceId ?? (await resolveNoteWorkspaceId(noteId));
     if (!workspaceId) return null;
     try {
-      const result = await backendRequest<{ note?: unknown } | unknown>('note.get', {
-        workspaceId,
-        noteId,
-        ...(options?.maxContentBytes !== undefined
-          ? { maxContentBytes: options.maxContentBytes }
-          : {}),
-      });
+      // A bounded view read (`maxContentBytes`) wants the render-only prefix;
+      // every other read loads the whole note through the content cursor.
+      const result =
+        options?.maxContentBytes !== undefined
+          ? await backendRequest<{ note?: unknown } | unknown>('note.get', {
+              workspaceId,
+              noteId,
+              maxContentBytes: options.maxContentBytes,
+            })
+          : await requestWholeNote((params) => backendRequest('note.get', params), {
+              workspaceId,
+              noteId,
+            });
       const raw =
         result && typeof result === 'object' && 'note' in result
           ? (result as { note?: unknown }).note
@@ -460,7 +472,13 @@ export class LiveNotesClient implements NotesClient {
         unsubscribeMethod: 'note.unsubscribe',
         dynamic: {
           subscribeIds: subscribeWorkspaceIds,
-          paramsForId: (id) => ({ workspaceId: id }),
+          paramsForId: (id) => ({ workspaceId: id, limit: NOTE_LIST_PAGE_LIMIT }),
+        },
+        // §6.9 paged snapshots: the rest of a large workspace's notes.
+        continuation: {
+          method: 'note.list',
+          key: 'notes',
+          params: (scope) => ({ workspaceId: scope.workspaceId, limit: NOTE_LIST_PAGE_LIMIT }),
         },
       },
       getId: (raw) => String(raw.id ?? ''),

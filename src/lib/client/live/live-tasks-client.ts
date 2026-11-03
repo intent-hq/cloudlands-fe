@@ -36,6 +36,7 @@ import {
   subscribeWorkspaceIds,
 } from './live-support';
 import { createLogger } from '$lib/utils/client-logger';
+import { requestWholeNote } from '$shared/utils/paged-list';
 
 const logger = createLogger('LiveTasksClient');
 
@@ -225,7 +226,7 @@ export class LiveTasksClient implements TasksClient {
     const workspaceId = await resolveNoteWorkspaceId(taskId);
     if (!workspaceId) return null;
     try {
-      const result = await backendRequest<{ note?: unknown } | unknown>('note.get', {
+      const result = await requestWholeNote((params) => backendRequest('note.get', params), {
         workspaceId,
         noteId: taskId,
       });
