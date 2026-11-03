@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.276.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.275.1...v2.276.0) (2026-11-03)
+
+
+### 🚀 Features
+
+* **intent-web:** manage machines from the browser and add a no-machine screen ([#4065](https://github.com/intent-hq/cloudlands-fe/issues/4065)) ([a59b82f](https://github.com/intent-hq/cloudlands-fe/commit/a59b82fae64b5833aa3577c8d3ba3725bb93b2a0))
+
+
+### 🐛 Bug Fixes
+
+* **check:** stop svelte-check silently skipping the project over its size limit ([#4063](https://github.com/intent-hq/cloudlands-fe/issues/4063)) ([ea9f8b0](https://github.com/intent-hq/cloudlands-fe/commit/ea9f8b0501c741bea0f85b05c548e7ea02118fb8))
+
 ## [2.275.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.275.0...v2.275.1) (2026-11-03)
 
 
