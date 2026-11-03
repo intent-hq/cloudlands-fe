@@ -516,6 +516,8 @@ jobs:
       electron_required: ${{ steps.electron.outputs.electron_required }}
       portable_fixtures_required: ${{ steps.portable-fixtures.outputs.portable_fixtures_required }}
       ct_changed_specs: ${{ steps.ct-changed.outputs.ct_changed_specs }}
+      ct_affected_specs: ${{ steps.ct-affected.outputs.ct_affected_specs }}
+      ct_affected_over_budget: ${{ steps.ct-affected.outputs.ct_affected_over_budget }}
     steps:
       - uses: actions/checkout@v7
       - name: Fetch diff base commit
@@ -568,6 +570,22 @@ jobs:
           printf '%s\n' "$out"
           line=$(printf '%s\n' "$out" | grep -E '^ct_changed_specs=' | tail -n1 || true)
           echo "${line:-ct_changed_specs=error}" >> "$GITHUB_OUTPUT"
+      - name: List affected component test specs
+        # JSON arrays of the existing specs that load a file this diff changes
+        # (nearest first, capped at CT_AFFECTED_BUDGET) and of those over the
+        # cap, for test-ct-affected. Fail-closed like the changed list: any
+        # error writes `error`, which that job and the CI Gate reject.
+        id: ct-affected
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        run: |
+          set -euo pipefail
+          out=$(node scripts/ct-changed-specs.mjs --affected "$BASE_SHA" HEAD) || out="ct_affected_specs=error"
+          printf '%s\n' "$out"
+          line=$(printf '%s\n' "$out" | grep -E '^ct_affected_specs=' | tail -n1 || true)
+          echo "${line:-ct_affected_specs=error}" >> "$GITHUB_OUTPUT"
+          line=$(printf '%s\n' "$out" | grep -E '^ct_affected_over_budget=' | tail -n1 || true)
+          echo "${line:-ct_affected_over_budget=[]}" >> "$GITHUB_OUTPUT"
       - name: Evaluate root Playwright relevance
         id: root-playwright
         env:
@@ -1299,6 +1317,104 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  # Runs, once each, the existing component test specs that load a file the
+  # PR changes, so a shared-component edit that breaks a spec the PR never
+  # touched fails here instead of in the merge queue: cloudlands-fe#4029 edited
+  # ChatPanel.svelte with green PR checks and was ejected by
+  # chat-panel-composer-geometry.ct.spec.ts. scripts/ct-changed-specs.mjs
+  # --affected walks the import graph that ct-contract-paths.mjs builds for
+  # the queue, ranks the specs nearest first and caps them at
+  # CT_AFFECTED_BUDGET; the specs over the cap are listed in this job's log
+  # and step summary. Changed specs are left to test-ct-changed. The full
+  # suite stays queue-only.
+  test-ct-affected:
+    name: Affected Component Tests
+    needs: [route, release-fast-path]
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' && needs.release-fast-path.outputs.ct_affected_specs != '[]' }}
+    # Same runner and bundle split as test-ct-changed.
+    runs-on: ${{ fromJSON(needs.route.outputs.cloud || '{}')['gh-linux-8x'] || fromJSON('["warp-ubuntu-2404-x64-8x"]') }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+      CT_AFFECTED_SPECS: ${{ needs.release-fast-path.outputs.ct_affected_specs }}
+      CT_AFFECTED_OVER_BUDGET: ${{ needs.release-fast-path.outputs.ct_affected_over_budget }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Validate affected spec list
+        # Rejects a missing or `error` list before any setup is paid for, and
+        # names every affected spec over the budget instead of skipping it
+        # silently.
+        run: |
+          set -euo pipefail
+          node scripts/ct-changed-specs.mjs --filters "$CT_AFFECTED_SPECS" > /dev/null
+          node scripts/ct-changed-specs.mjs --over-budget "$CT_AFFECTED_SPECS" "${CT_AFFECTED_OVER_BUDGET:-[]}" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+          run_install: false
+          dest: ~/setup-pnpm-${{ runner.name }}
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Cache pnpm store
+        uses: ./.github/actions/pnpm-store-cache
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Generate i18n messages
+        run: pnpm run generate:i18n
+      - name: Resolve CT browser cache
+        id: ct-browser
+        run: |
+          node scripts/run-ct-tests.mjs --print-browser-plan > "$RUNNER_TEMP/ct-browser-plan.json"
+          # shellcheck disable=SC2016
+          node --input-type=module -e '
+          import { readFileSync } from "node:fs";
+          const plan = JSON.parse(readFileSync(process.argv[1], "utf8"));
+          console.log(`cache-key=${plan.cacheKey}`);
+          console.log(`cache-dir=${plan.cacheDir}`);
+          ' "$RUNNER_TEMP/ct-browser-plan.json" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.ct-browser.outputs.cache-dir }}
+          key: playwright-browsers-${{ runner.os }}-${{ runner.arch }}-${{ steps.ct-browser.outputs.cache-key }}
+      - name: Install Playwright browsers
+        timeout-minutes: 8
+        run: node scripts/run-ct-tests.mjs --install-browsers chromium
+      - name: Build CT bundle
+        env:
+          NODE_OPTIONS: '--max-old-space-size=12288'
+        run: node scripts/run-ct-tests.mjs --only-changed=HEAD --pass-with-no-tests --reporter=list
+      - name: Run affected component tests once
+        # One run per test with the queue shard's settings (retries on, two
+        # workers, --fail-on-flaky-tests), so a test that would eject the
+        # PR from the queue fails here. Quarantined tests are excluded as in
+        # the required lane.
+        env:
+          NODE_OPTIONS: '--max-old-space-size=4096'
+          PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-report/results.json
+        run: |
+          set -euo pipefail
+          node scripts/ct-changed-specs.mjs --filters "$CT_AFFECTED_SPECS" > "$RUNNER_TEMP/ct-filters"
+          mapfile -d '' filters < "$RUNNER_TEMP/ct-filters"
+          node scripts/run-ct-tests.mjs "${filters[@]}" --fail-on-flaky-tests --workers=2 \
+            --grep-invert '@quarantine\b' --reporter=list,html,json
+      - name: Upload playwright report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-ct-affected-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
   test-playwright:
     needs: [route, release-fast-path]
     if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.release-fast-path.outputs.root_playwright_required == 'true' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
@@ -1388,6 +1504,7 @@ jobs:
         test-portable-fixtures,
         test-ct,
         test-ct-changed,
+        test-ct-affected,
         test-playwright,
         test-electron,
         monorepo-consumer-checks,
@@ -1401,6 +1518,7 @@ jobs:
           ROOT_PLAYWRIGHT_REQUIRED: ${{ needs.release-fast-path.outputs.root_playwright_required }}
           ELECTRON_REQUIRED: ${{ needs.release-fast-path.outputs.electron_required }}
           CT_CHANGED_SPECS: ${{ needs.release-fast-path.outputs.ct_changed_specs }}
+          CT_AFFECTED_SPECS: ${{ needs.release-fast-path.outputs.ct_affected_specs }}
         run: |
           # route must have succeeded on every run (see the gate comment): a
           # route failure skips the heavy jobs, and a fast-path skip
@@ -1470,6 +1588,14 @@ jobs:
                 exit 1
               fi
             fi
+            # Affected CT specs: the same rule against the affected list.
+            ct_affected_result="${{ needs.test-ct-affected.result }}"
+            if [ "$ct_affected_result" != "success" ]; then
+              if [ "$ct_affected_result" != "skipped" ] || { [ "$CT_AFFECTED_SPECS" != "[]" ] && [ "$FAST_PATH" != "true" ]; }; then
+                echo "test-ct-affected result '$ct_affected_result' not acceptable (ct_affected_specs='$CT_AFFECTED_SPECS', fast_path='$FAST_PATH')"
+                exit 1
+              fi
+            fi
             case "${{ needs.test-playwright.result }}" in success|skipped) ;; *) exit 1 ;; esac
             case "${{ needs.test-electron.result }}" in success|skipped) ;; *) exit 1 ;; esac
             case "${{ needs.test-integration.result }}" in success|skipped) ;; *) exit 1 ;; esac
@@ -1478,6 +1604,7 @@ jobs:
           case "${{ needs.pr-static.result }}" in success|skipped) ;; *) exit 1 ;; esac
           # PR-only: the queue runs the full CT suite instead.
           case "${{ needs.test-ct-changed.result }}" in success|skipped) ;; *) exit 1 ;; esac
+          case "${{ needs.test-ct-affected.result }}" in success|skipped) ;; *) exit 1 ;; esac
           # Queued heavy jobs (checks / build-web / test): success, or
           # skipped ONLY via the release-PR fast path (check_heavy above).
           check_heavy "checks" "${{ needs.checks.result }}"
