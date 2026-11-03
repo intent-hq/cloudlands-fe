@@ -913,6 +913,45 @@ function clipCancelled(result: DockNativeResult<unknown>): boolean {
   return !result.ok && result.error === 'failed' && result.detail === 'cancelled';
 }
 
+/** Annotate sessions a recording opened for its tool bar; they close with that recording. */
+const recordingBarSessions = new Set<string>();
+
+/**
+ * A recording always runs with its on-screen tool bar. Started from the composer
+ * (or a shortcut) with no annotate session open, open one in mouse mode first: the
+ * screen stays usable, and the bar's tools are there when wanted. If the session
+ * cannot open (a permission), the recording still starts without the bar.
+ */
+function* openRecordingBar(workspaceId: string, agentId: string): SagaGenerator<void> {
+  const session = evidenceOf(workspaceId, agentId)?.annotation;
+  if (session && session.mode !== 'dictation') return;
+  if (
+    !selectDockComposerEvidence.select(appStore.state, workspaceId, agentId).capabilities.annotate
+  )
+    return;
+  if (session) yield* endSession(workspaceId, agentId);
+  yield* startSession(workspaceId, agentId, toolFor(workspaceId), 'live');
+  const opened = evidenceOf(workspaceId, agentId)?.annotation;
+  const service = nativeService;
+  if (!opened || opened.mode !== 'live' || !service) return;
+  // One annotate session exists at a time: only the latest can still be open.
+  recordingBarSessions.clear();
+  recordingBarSessions.add(opened.id);
+  if (!service.setAnnotationMouse) return;
+  try {
+    yield* call([service, service.setAnnotationMouse], opened.id);
+  } catch {
+    // The session already ended natively; the recording goes ahead without it.
+  }
+}
+
+/** Stopping a recording closes the tool bar session it opened (not one the person opened). */
+function* closeRecordingBar(workspaceId: string, agentId: string): SagaGenerator<void> {
+  const session = evidenceOf(workspaceId, agentId)?.annotation;
+  if (!session || !recordingBarSessions.delete(session.id)) return;
+  yield* endSession(workspaceId, agentId);
+}
+
 function* toggleRecording({
   payload: [workspaceId, agentId],
 }: ReturnType<typeof dockEvidenceRecordToggleRequested>): SagaGenerator<void> {
@@ -930,6 +969,7 @@ function* toggleRecording({
       result = { ok: false, error: 'failed' };
     }
     if (nativeService === service) yield* finishClip(workspaceId, agentId, clip.id, result);
+    if (activePair(workspaceId, agentId)) yield* closeRecordingBar(workspaceId, agentId);
     return;
   }
   // Each finished recording is its own attachment; a new one starts beside them.
@@ -943,6 +983,8 @@ function* toggleRecording({
     yield* put(dockEvidenceCaptureFailed(workspaceId, agentId, 'unavailable'));
     return;
   }
+  if (nativeService !== service || !activePair(workspaceId, agentId)) return;
+  yield* openRecordingBar(workspaceId, agentId);
   if (nativeService !== service || !activePair(workspaceId, agentId)) return;
   const id = crypto.randomUUID();
   const hasMicAudio = evidence?.dictation?.status === 'listening';
@@ -971,6 +1013,7 @@ function* toggleRecording({
   )
     return;
   if (started.ok) stampRecordingInSpeech(workspaceId, agentId, id, false);
+  else yield* closeRecordingBar(workspaceId, agentId);
   if (!started.ok && started.error === 'permission' && activePair(workspaceId, agentId)) {
     yield* put(dockEvidenceCaptureFailed(workspaceId, agentId, 'permission'));
     yield* notice(workspaceId, agentId, screenPermissionNotice('record'));

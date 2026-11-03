@@ -6,8 +6,7 @@
     DockComposerMediaState,
   } from './dock-composer-media-presentation';
 
-  type PreviewMode =
-    'idle' | 'captured' | 'annotate-hovered' | 'annotating' | 'dictating' | 'recording';
+  type PreviewMode = 'idle' | 'captured' | 'annotating' | 'dictating' | 'recording';
   interface PreviewProps {
     mode?: PreviewMode;
     width?: number;
@@ -26,7 +25,6 @@
     states: {
       idle: { props: { mode: 'idle' } },
       captured: { props: { mode: 'captured' } },
-      'annotate-hovered': { props: { mode: 'annotate-hovered' } },
       'capture-window': { props: { mode: 'idle', state: { captureMode: 'window' } } },
       'capture-region': { props: { mode: 'idle', state: { captureMode: 'region' } } },
       'capture-fullscreen-only': {
@@ -144,7 +142,7 @@
     };
     items =
       suppliedItems ??
-      (mode === 'idle' || mode === 'annotate-hovered'
+      (mode === 'idle'
         ? []
         : [
             {

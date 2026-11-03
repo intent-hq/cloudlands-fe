@@ -3,7 +3,6 @@
   import { Button } from '$lib/components/ui/button';
   import { fade } from '$lib/motion';
   import DockComposerIcon from './DockComposerIcon.svelte';
-  import DockComposerToolPicker from './DockComposerToolPicker.svelte';
   import DockComposerCapturePicker from './DockComposerCapturePicker.svelte';
   import type { DockComposerMediaFooterProps } from './dock-composer-media-presentation';
 
@@ -11,14 +10,11 @@
     state,
     labels,
     disabled = false,
-    annotationNotice,
     model,
     send,
     onCapture,
     onCaptureModeSelect,
     onRecordToggle,
-    onAnnotationToggle,
-    onToolSelect,
     onDictationToggle,
     onDictationHoldStart,
     onDictationHoldEnd,
@@ -124,19 +120,6 @@
         </span>
       {/key}
     </Button>
-    <DockComposerToolPicker
-      tool={state.tool}
-      active={state.annotationActive}
-      used={state.toolUsed}
-      disabled={disabled || state.annotationDisabled}
-      notice={annotationNotice}
-      alert={alerts.annotate}
-      pickAlert={alerts.pick}
-      {labels}
-      onToggle={onAnnotationToggle}
-      onSelect={onToolSelect}
-      onAlert={(target) => onAlert?.(target)}
-    />
     <Button
       variant="ghost-light"
       size="icon-sm"

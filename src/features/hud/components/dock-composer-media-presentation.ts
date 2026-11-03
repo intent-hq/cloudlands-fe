@@ -2,7 +2,7 @@ import type { Snippet } from 'svelte';
 import type { DockCaptureMode } from '$shared/dock-evidence';
 
 /** Display-only contract. The session owner retains bytes, revisions and transport state. */
-export type DockComposerTool = 'pick' | 'box' | 'pen' | 'arrow';
+type DockComposerTool = 'pick' | 'box' | 'pen' | 'arrow';
 export type DockComposerCaptureMode = DockCaptureMode;
 
 export interface DockComposerMediaLabels {

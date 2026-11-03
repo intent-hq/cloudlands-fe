@@ -620,16 +620,6 @@ test('motion audit: tool popover, tile removal and waveform', async ({ mount, pa
   await page.setViewportSize({ width: 720, height: 520 });
   await page.mouse.move(700, 500);
   const component = await mount(ComposerMediaPreview, { props: { mode: 'captured' } });
-  const annotate = component.getByRole('button', { name: /^Annotate the screen\. Current tool:/ });
-  const POPOVER = '.dock-media-tool-popover';
-  const popoverOpen = await audit(page, 'popover-open', POPOVER, async () => {
-    await annotate.hover();
-    await expect(page.locator(POPOVER)).toBeVisible();
-  });
-  const popoverClose = await audit(page, 'popover-close', POPOVER, async () => {
-    await page.mouse.move(700, 500);
-    await expect(page.locator(POPOVER)).toHaveCount(0);
-  });
   const tileRemove = await audit(
     page,
     'tile-remove',
@@ -641,8 +631,7 @@ test('motion audit: tool popover, tile removal and waveform', async ({ mount, pa
     },
   );
   // Popover positioning (floating-ui) measures in frames by design; only report it here.
-  for (const stats of [popoverOpen, popoverClose, tileRemove])
-    expect(stats.frames).toBeGreaterThan(0);
+  for (const stats of [tileRemove]) expect(stats.frames).toBeGreaterThan(0);
   await component.unmount();
   const dictating = await mount(ComposerMediaPreview, { props: { mode: 'dictating' } });
   const waveform = await audit(page, 'waveform', '[data-dock-dictation-waveform]', async () => {

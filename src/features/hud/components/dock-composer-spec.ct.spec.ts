@@ -108,22 +108,6 @@ for (const screen of [1, 2, 3, 4, 5, 6] as const) {
       await component.locator('[data-dock-media-attachments] .tile').first().hover();
       await expect(component.getByRole('button', { name: 'Mark up' })).toBeVisible();
     }
-    if (screen === 3) {
-      const annotate = component.getByRole('button', {
-        name: /^Annotate the screen\. Current tool:/,
-      });
-      await annotate.hover();
-      await expect(page.getByRole('toolbar', { name: 'Annotation tools' })).toBeVisible();
-      // The caret is visible in the gap and points at the button that owns the popover.
-      const caret = page.locator('.tool-caret span');
-      await expect(caret).toBeVisible();
-      const [tip, button] = await Promise.all([caret.boundingBox(), annotate.boundingBox()]);
-      expect(tip && button).toBeTruthy();
-      expect(
-        Math.abs(tip!.x + tip!.width / 2 - (button!.x + button!.width / 2)),
-      ).toBeLessThanOrEqual(1);
-      expect(tip!.y + tip!.height).toBeLessThanOrEqual(button!.y);
-    }
     if (screen === 5) await expect(component.locator('[data-dock-dictation-time]')).toBeVisible();
     if (screen === 6)
       await expect(component.getByRole('button', { name: 'Stop recording' })).toBeVisible();

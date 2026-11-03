@@ -26,6 +26,8 @@ interface SyntheticNativeLog {
   captures: number;
   annotations: { id: string; tool: DockMarkTool; mode: string; still: boolean }[];
   tools: { id: string; tool: DockMarkTool }[];
+  /** Sessions switched to mouse mode (the screen stays usable). */
+  mouse: string[];
   synced: { id: string; marks: number[] }[];
   ended: string[];
   clips: { started: string[]; stopped: string[]; released: string[] };
@@ -93,6 +95,7 @@ function createSyntheticNative() {
     captures: 0,
     annotations: [],
     tools: [],
+    mouse: [],
     synced: [],
     ended: [],
     clips: { started: [], stopped: [], released: [] },
@@ -162,6 +165,10 @@ function createSyntheticNative() {
       // Production's command() rejects a session native no longer has.
       if (session?.id !== id) throw new Error('unavailable');
       log.tools.push({ id, tool });
+    },
+    setAnnotationMouse: async (id) => {
+      if (session?.id !== id) throw new Error('unavailable');
+      log.mouse.push(id);
     },
     syncMarks: async (id, marks) => {
       log.synced.push({ id, marks: marks.map((mark) => mark.n) });
