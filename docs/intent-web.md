@@ -182,10 +182,13 @@ It prints the host, port, bearer token and TLS certificate fingerprint. (Pass
 the machine's tailnet name.) Then, in the browser:
 
 1. **Settings → Machines → Add machine**.
-2. Enter the host, port and token.
-3. **Capture fingerprint**, and check it matches the fingerprint `intentd
-pair` printed.
-4. **Test connection**, then save.
+2. Enter a name, the host, port and token.
+3. Choose **Continue**. The dialog shows the daemon's certificate
+   fingerprint; check it matches the one `intentd pair` printed.
+4. Choose **Confirm & connect** to save the machine.
+
+To check a saved machine later, open its row in **Settings → Machines** and
+choose **Test connection**.
 
 The machine appears in the Machines list and in the machine switcher. Opening
 it opens a new tab bound to it, so you can keep several machines open side by
@@ -222,8 +225,11 @@ direct host and port routes keep working.
   private network. Run it where that is acceptable.
 - **Tokens at rest.** Machine tokens are stored in plain text in
   `connections.json` (`0600`, in a `0700` directory). Protect the data
-  directory and its backups; rotate a machine's token from **Settings →
-  Machines** if the directory leaks.
+  directory and its backups. If the directory leaks, the leaked tokens keep
+  working until each daemon replaces them: on every affected machine run
+  `intentd pair --rotate` to mint a new token (the old one stops working),
+  then enter the new token in that machine's **Edit** form in **Settings →
+  Machines**.
 - **Browser protections.** Sign-in is rate-limited; the server rejects
   requests whose `Host` is neither loopback nor the front-end's forwarded host,
   WebSocket and mutating requests from other origins, and non-JSON mutating
