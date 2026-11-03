@@ -4,6 +4,26 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.278.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.277.0...v2.278.0) (2026-11-03)
+
+
+### 🚀 Features
+
+* **dev-console:** add a Daemon links view for daemon-link traffic ([#4094](https://github.com/intent-hq/cloudlands-fe/issues/4094)) ([00dd86e](https://github.com/intent-hq/cloudlands-fe/commit/00dd86ed85548304957c392d24a47c1ad4534d06))
+* graduate GitLab from Labs to supported ([#4104](https://github.com/intent-hq/cloudlands-fe/issues/4104)) ([22c32bc](https://github.com/intent-hq/cloudlands-fe/commit/22c32bc384d6cf1b811e330526e568be13738866))
+* **intent-web:** npm dist-tags follow the release channels ([#4101](https://github.com/intent-hq/cloudlands-fe/issues/4101)) ([7173561](https://github.com/intent-hq/cloudlands-fe/commit/717356112ba5ece400fdc892cb4a7653babd4690))
+
+
+### 🐛 Bug Fixes
+
+* **backend:** pass remoteInitialAgent through the node capability list ([#4107](https://github.com/intent-hq/cloudlands-fe/issues/4107)) ([8967977](https://github.com/intent-hq/cloudlands-fe/commit/89679772f43d584b65831ac8c67ab05737bfb678))
+* bump intentd sidecar to v0.11.115 ([#4116](https://github.com/intent-hq/cloudlands-fe/issues/4116)) ([a862991](https://github.com/intent-hq/cloudlands-fe/commit/a862991db35acc68405f3dc0fbb1d442ad06882e))
+* **chat:** chip only the file and folder mentions picked from the @ menu ([#4110](https://github.com/intent-hq/cloudlands-fe/issues/4110)) ([cc65181](https://github.com/intent-hq/cloudlands-fe/commit/cc65181494ba452420b3b07fda912346d64dbceb))
+* **chat:** tidy the usage-limit card and label its Default retry offer ([#4096](https://github.com/intent-hq/cloudlands-fe/issues/4096)) ([153b5d1](https://github.com/intent-hq/cloudlands-fe/commit/153b5d1428c49a67134e4596eb99534227fcea3d))
+* **intent-web:** attach provenance to @intent-hq/web publishes ([#4108](https://github.com/intent-hq/cloudlands-fe/issues/4108)) ([c249b5f](https://github.com/intent-hq/cloudlands-fe/commit/c249b5fb7f189a0f309fe24d0dd5e312279d28a9))
+* **intent-web:** name both trusted publisher checkboxes npm requires ([#4105](https://github.com/intent-hq/cloudlands-fe/issues/4105)) ([b37a56d](https://github.com/intent-hq/cloudlands-fe/commit/b37a56dd06d742c5672decbd3ca7c86908243639))
+* **scripts:** page script and hook reads and show save refusals ([#4072](https://github.com/intent-hq/cloudlands-fe/issues/4072)) ([3e2b068](https://github.com/intent-hq/cloudlands-fe/commit/3e2b068261ca1863bedc30233ba9b80d930af6ba))
+
 ## [2.277.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.276.1...v2.277.0) (2026-11-03)
 
 
