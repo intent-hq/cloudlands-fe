@@ -39,7 +39,7 @@ function unusableReason(state: RemoteMachineState): string | undefined {
   }
 }
 
-export function isStartOnMachineUsable(machine: RemoteMachine): boolean {
+function isStartOnMachineUsable(machine: RemoteMachine): boolean {
   return USABLE_STATES.has(machine.state);
 }
 
