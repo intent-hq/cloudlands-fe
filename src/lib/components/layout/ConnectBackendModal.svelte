@@ -28,6 +28,7 @@
   import { onDestroy, untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import DeviceIconPicker from '$lib/components/DeviceIconPicker.svelte';
+  import TailcatUnavailableNote from '$features/devices/TailcatUnavailableNote.svelte';
   import { Input } from '$lib/components/ui/input';
   import {
     SettingsFieldRow,
@@ -453,6 +454,7 @@
             onpaste={handleHostPaste}
             oninput={handleHostInput}
           />
+          <TailcatUnavailableNote relevant={tcAddress !== null} />
         </div>
 
         <div class="space-y-1">

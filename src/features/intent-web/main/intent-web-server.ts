@@ -248,7 +248,7 @@ const ids=${JSON.stringify((await records()).map((r) => r.id))};
 let backend=new URLSearchParams(location.search).get('backend');
 try { if(ids.includes(backend)) sessionStorage.setItem('intent.browserAccess.backend',backend); else backend=sessionStorage.getItem('intent.browserAccess.backend'); } catch {}
 if(!ids.includes(backend)) backend=${JSON.stringify(await defaultBackend())};
-globalThis.__INTENT_RUNTIME_CONFIG__=Object.freeze({backendId:backend,intentdWsUrl:backend?'/intentd/ws/'+encodeURIComponent(backend):null,connectionsUrl:${JSON.stringify(PREFIX)},hostCapabilities:['connections.manage'],tailcatAvailable:${options.tailcatAvailable},localAvailable:${!!options.localSocket}});
+globalThis.__INTENT_RUNTIME_CONFIG__=Object.freeze({backendId:backend,intentdWsUrl:backend?'/intentd/ws/'+encodeURIComponent(backend):null,connectionsUrl:${JSON.stringify(PREFIX)},eventsUrl:'/__intent-web/events',hostCapabilities:['connections.manage'],tailcatAvailable:${options.tailcatAvailable},localAvailable:${!!options.localSocket}});
 })();`,
     handleAuthenticatedRequest: async (req, res) => {
       const url = new URL(req.url ?? '/', 'http://localhost');

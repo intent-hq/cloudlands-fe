@@ -8238,5 +8238,9 @@
   "remoteMachines_unexpose_unrevoked_warning": "{machine} a été retirée, mais son accès n'a pas pu être révoqué car cette machine n'est pas connectée. Révoquez-le sur {machine} dans Réglages → Machines → Backends ayant accès.",
   "remoteMachines_failure_unconfirmedStops_error_one": "{machine} n'a pas confirmé l'arrêt de {count} agent : rien n'a été retiré et la machine reste disponible pour {backend}. Réessayez, ou révoquez l'accès sur {machine}.",
   "remoteMachines_failure_unconfirmedStops_error_many": "{machine} n'a pas confirmé l'arrêt de {count} agents : rien n'a été retiré et la machine reste disponible pour {backend}. Réessayez, ou révoquez l'accès sur {machine}.",
-  "remoteMachines_failure_retryStopAgents_label": "Réessayer"
+  "remoteMachines_failure_retryStopAgents_label": "Réessayer",
+  "intentWeb_noBackend_title": "Ajoutez votre première machine",
+  "intentWeb_noBackend_description": "Aucune machine Intent n’est encore connectée à ce serveur. Ajoutez-en une avec son hôte, son port et son jeton pour commencer.",
+  "intentWeb_noBackend_addMachine_label": "Ajouter une machine",
+  "settings_devices_tailcatUnavailable_note": "Les routes par tunnel nécessitent tailcat : définissez TAILCAT_BIN ou placez tailcat dans le PATH."
 }

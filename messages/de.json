@@ -8238,5 +8238,9 @@
   "remoteMachines_unexpose_unrevoked_warning": "{machine} wurde entfernt, aber der Zugriff konnte nicht widerrufen werden, weil der Rechner nicht verbunden ist. Widerrufen Sie ihn auf {machine} unter Einstellungen → Rechner → Backends mit Zugriff.",
   "remoteMachines_failure_unconfirmedStops_error_one": "{machine} hat nicht bestätigt, dass {count} Agent gestoppt wurde. Es wurde nichts entfernt, und {machine} ist weiterhin für {backend} verfügbar. Versuche es erneut oder widerrufe den Zugriff auf {machine}.",
   "remoteMachines_failure_unconfirmedStops_error_many": "{machine} hat nicht bestätigt, dass {count} Agenten gestoppt wurden. Es wurde nichts entfernt, und {machine} ist weiterhin für {backend} verfügbar. Versuche es erneut oder widerrufe den Zugriff auf {machine}.",
-  "remoteMachines_failure_retryStopAgents_label": "Erneut versuchen"
+  "remoteMachines_failure_retryStopAgents_label": "Erneut versuchen",
+  "intentWeb_noBackend_title": "Fügen Sie Ihre erste Maschine hinzu",
+  "intentWeb_noBackend_description": "Mit diesem Server ist noch keine Intent-Maschine verbunden. Fügen Sie eine mit Host, Port und Token hinzu, um loszulegen.",
+  "intentWeb_noBackend_addMachine_label": "Maschine hinzufügen",
+  "settings_devices_tailcatUnavailable_note": "Tunnel-Routen benötigen tailcat: Setzen Sie TAILCAT_BIN oder legen Sie tailcat in den PATH."
 }

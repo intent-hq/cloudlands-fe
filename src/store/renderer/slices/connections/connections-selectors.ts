@@ -174,3 +174,22 @@ export const selectProtocolMismatchModal = store.createSelector((state) => {
 export const selectKeychainSyncState = store.createSelector(
   (state) => state.connections.keychainSync,
 );
+
+/** The Browser access host serving this tab, or null in the desktop app / a plain web build. */
+export const selectBrowserHost = store.createSelector((state) => state.connections.browserHost);
+
+/** True when the page host edits connections itself (intent-web): Machines works without Electron. */
+export const selectHostManagesConnections = store.createSelector(
+  (state) => state.connections.browserHost?.manageConnections === true,
+);
+
+/** True when the page host has no backend bound to this tab yet ("Add your first machine"). */
+export const selectNoBackendBound = store.createSelector(
+  (state) => state.connections.browserHost?.backendBound === false,
+);
+
+/** True when the page host manages connections but cannot dial tailcat tunnel routes. */
+export const selectHostTailcatUnavailable = store.createSelector((state) => {
+  const host = state.connections.browserHost;
+  return host?.manageConnections === true && !host.tailcatAvailable;
+});

@@ -8238,5 +8238,9 @@
   "remoteMachines_unexpose_unrevoked_warning": "已移除 {machine}，但由于该机器未连接，无法撤销其访问权限。请在 {machine} 的“设置 → 机器 → 有访问权限的后端”中撤销。",
   "remoteMachines_failure_unconfirmedStops_error_one": "{machine} 未确认 {count} 个代理已停止，因此未移除任何内容，它仍可供 {backend} 使用。请重试，或在 {machine} 上撤销访问权限。",
   "remoteMachines_failure_unconfirmedStops_error_many": "{machine} 未确认 {count} 个代理已停止，因此未移除任何内容，它仍可供 {backend} 使用。请重试，或在 {machine} 上撤销访问权限。",
-  "remoteMachines_failure_retryStopAgents_label": "重试"
+  "remoteMachines_failure_retryStopAgents_label": "重试",
+  "intentWeb_noBackend_title": "添加你的第一台机器",
+  "intentWeb_noBackend_description": "此服务器尚未连接任何 Intent 机器。添加一台机器并填写主机、端口和令牌即可开始工作。",
+  "intentWeb_noBackend_addMachine_label": "添加机器",
+  "settings_devices_tailcatUnavailable_note": "隧道路由需要 tailcat：请设置 TAILCAT_BIN，或将 tailcat 放到 PATH 中。"
 }

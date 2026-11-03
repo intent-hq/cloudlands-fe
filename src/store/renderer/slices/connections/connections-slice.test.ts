@@ -33,6 +33,7 @@ import {
   loadKeychainSyncStateRequested,
   selfPublicationReceived,
   selfPublicationBusyChanged,
+  browserHostDetected,
 } from './connections-slice';
 import type {
   ConnectionRecord,
@@ -714,5 +715,25 @@ describe('connectionsReducer', () => {
       );
       expect(next.keychainSync).toBeNull();
     });
+  });
+});
+
+describe('browserHostDetected', () => {
+  it('starts with no page host and records the one the saga detects', () => {
+    expect(initialState.browserHost).toBeNull();
+    const host = {
+      manageConnections: true,
+      backendBound: false,
+      tailcatAvailable: false,
+      localAvailable: true,
+    };
+    const next = connectionsReducer(initialState, browserHostDetected(host));
+    expect(next.browserHost).toEqual(host);
+    // A later list keeps the host (it comes from the page, not the list).
+    const listed = connectionsReducer(
+      next,
+      connectionsListReceived({ connections: [], activeId: '', windowBackendId: '' }),
+    );
+    expect(listed.browserHost).toEqual(host);
   });
 });

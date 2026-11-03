@@ -8238,5 +8238,9 @@
   "remoteMachines_unexpose_unrevoked_warning": "已移除 {machine}，但由於該機器未連線，無法撤銷其存取權限。請在 {machine} 的「設定 → 機器 → 有存取權限的後端」中撤銷。",
   "remoteMachines_failure_unconfirmedStops_error_one": "{machine} 未確認 {count} 個代理程式已停止，因此未移除任何內容，它仍可供 {backend} 使用。請重試，或在 {machine} 上撤銷存取權限。",
   "remoteMachines_failure_unconfirmedStops_error_many": "{machine} 未確認 {count} 個代理程式已停止，因此未移除任何內容，它仍可供 {backend} 使用。請重試，或在 {machine} 上撤銷存取權限。",
-  "remoteMachines_failure_retryStopAgents_label": "重試"
+  "remoteMachines_failure_retryStopAgents_label": "重試",
+  "intentWeb_noBackend_title": "新增你的第一台機器",
+  "intentWeb_noBackend_description": "此伺服器尚未連線任何 Intent 機器。新增一台機器並填寫主機、連接埠和權杖即可開始工作。",
+  "intentWeb_noBackend_addMachine_label": "新增機器",
+  "settings_devices_tailcatUnavailable_note": "通道路由需要 tailcat：請設定 TAILCAT_BIN，或將 tailcat 放到 PATH 中。"
 }

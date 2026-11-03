@@ -8238,5 +8238,9 @@
   "remoteMachines_unexpose_unrevoked_warning": "{machine} を削除しましたが、そのマシンが接続されていないためアクセス権を取り消せませんでした。{machine} の「設定 → マシン → アクセスできるバックエンド」で取り消してください。",
   "remoteMachines_failure_unconfirmedStops_error_one": "{machine} で {count} 件のエージェントの停止が確認できなかったため、何も削除されず、引き続き {backend} で利用できます。もう一度お試しいただくか、{machine} でアクセスを取り消してください。",
   "remoteMachines_failure_unconfirmedStops_error_many": "{machine} で {count} 件のエージェントの停止が確認できなかったため、何も削除されず、引き続き {backend} で利用できます。もう一度お試しいただくか、{machine} でアクセスを取り消してください。",
-  "remoteMachines_failure_retryStopAgents_label": "再試行"
+  "remoteMachines_failure_retryStopAgents_label": "再試行",
+  "intentWeb_noBackend_title": "最初のマシンを追加",
+  "intentWeb_noBackend_description": "このサーバーにはまだ Intent マシンが接続されていません。ホスト、ポート、トークンを指定して追加すると作業を始められます。",
+  "intentWeb_noBackend_addMachine_label": "マシンを追加",
+  "settings_devices_tailcatUnavailable_note": "トンネル経路には tailcat が必要です。TAILCAT_BIN を設定するか、tailcat を PATH に置いてください。"
 }

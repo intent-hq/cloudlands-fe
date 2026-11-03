@@ -32,6 +32,8 @@
   import ActionKeyHud from '$features/hardware-console/actions/ActionKeyHud.svelte';
   import StatsOverlay from '$features/stats/StatsOverlay.svelte';
   import DaemonStoppedOverlay from '$features/daemon-status/DaemonStoppedOverlay.svelte';
+  import NoBackendScreen from '$features/intent-web/components/NoBackendScreen.svelte';
+  import { selectNoBackendBound } from '$store/renderer/slices/connections/connections-selectors';
   import DaemonUpdatingOverlay from '$features/daemon-status/DaemonUpdatingOverlay.svelte';
   import { registerWorkspaceTabShortcuts } from '$features/workspace/utils/workspace-tab-navigation';
   import { registerWorkspaceSpacesShortcut } from '$features/workspace/utils/workspace-spaces-shortcut';
@@ -182,6 +184,7 @@
   const workspaceHasLoaded = selectWorkspaceHasLoaded();
   // Workspace creation (repo picker) is administrator-only (multiplayer w3).
   const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
+  const noBackendBound$ = selectNoBackendBound();
   const canCreateWorkspace$ = selectWorkspaceCreationVisible();
   const backendSetupGate = selectBackendSetupGate();
   const bootGateResolved = selectBootRouteGateResolved();
@@ -1007,7 +1010,12 @@
             aria-label={m.layout_appShell_mainContent_ariaLabel()}
           >
             <div class="flex-1 min-h-0 overflow-hidden">
-              {@render children?.()}
+              <!-- intent-web with no machine yet: Settings stays reachable to add one. -->
+              {#if $noBackendBound$ && !$page.url.pathname.startsWith('/settings')}
+                <NoBackendScreen />
+              {:else}
+                {@render children?.()}
+              {/if}
             </div>
 
             <!-- Root Quake Terminal Overlay (self-gates on __root__ terminal state) -->

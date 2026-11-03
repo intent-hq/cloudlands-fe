@@ -3,7 +3,10 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, expect, it, vi } from 'vitest';
 import { SvelteURL } from 'svelte/reactivity';
 import { initAppStore, store as appStore } from '$store/renderer/store';
-import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
+import {
+  browserHostDetected,
+  connectionsListReceived,
+} from '$store/renderer/slices/connections/connections-slice';
 import { m } from '$shared/paraglide/messages.js';
 import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 
@@ -78,4 +81,28 @@ it('reopens Mobile from an older remote-access hash after visiting Machines', as
   expect(document.getElementById('websocket-api')).not.toBeNull();
   expect(document.getElementById('devices')).toBeNull();
   expect(advanced().getAttribute('aria-expanded')).toBe('false');
+});
+
+it('drops Mobile and Backend Sync when intent-web manages the machines', async () => {
+  storeContext = initAppStore(appStore);
+  appStore.dispatch(
+    browserHostDetected({
+      manageConnections: true,
+      backendBound: true,
+      tailcatAvailable: true,
+      localAvailable: false,
+    }),
+  );
+  appStore.dispatch(
+    connectionsListReceived({ connections: [], activeId: 'remote-1', windowBackendId: 'remote-1' }),
+  );
+  admitLegacyPrincipal();
+  // An old Mobile deep link lands somewhere that exists on this host.
+  renderSettings('/settings?tab=mobile');
+  const navigation = screen.getByRole('navigation', { name: 'Settings' });
+  expect(within(navigation).queryByRole('button', { name: 'Mobile', exact: true })).toBeNull();
+  await waitFor(() => expect(document.getElementById('websocket-api')).toBeNull());
+  await fireEvent.click(within(navigation).getByRole('button', { name: 'Machines', exact: true }));
+  await waitFor(() => expect(document.getElementById('devices')).not.toBeNull());
+  expect(document.getElementById('backend-sync')).toBeNull();
 });

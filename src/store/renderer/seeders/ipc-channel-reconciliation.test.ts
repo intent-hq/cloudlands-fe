@@ -1001,3 +1001,29 @@ describe('Retired file-tracking / line-attribution / file-attribution channels s
     ).toEqual([]);
   });
 });
+
+/**
+ * Host HTTP: the connection API of a page host that advertises
+ * `connections.manage` (intent-web, src/features/intent-web/main/intent-web-server.ts).
+ * On such a page the connections saga sends connection writes, tunnel reads
+ * and pushed `connections:*` events through these modules as same-origin
+ * fetch / EventSource requests. That is not Electron IPC, so they stay out of
+ * the ledgers above: no seeder, allowlist, transport exemption or audit entry.
+ * A module listed here that starts calling IPC must move those channels into
+ * the ledgers instead.
+ */
+const HOST_HTTP_MODULES: ReadonlyMap<string, string> = new Map([
+  [
+    path.join('lib', 'client', 'live', 'browser-access-host.ts'),
+    'intent-web /__intent-web/connections API and the Browser access connections list',
+  ],
+]);
+
+describe('Host HTTP connection paths stay outside the IPC ledgers', () => {
+  it.each([...HOST_HTTP_MODULES.keys()])('%s talks HTTP, not IPC', (relative) => {
+    const source = fs.readFileSync(path.join(SRC_ROOT, relative), 'utf8');
+    expect(source).toMatch(/\bfetchImpl\(/);
+    expect([...source.matchAll(buildCallHeadRegex(source))].map((match) => match[0])).toEqual([]);
+    expect(source).not.toMatch(/\$lib\/electron-bridge|ipc-mock-router|electronAPI/);
+  });
+});

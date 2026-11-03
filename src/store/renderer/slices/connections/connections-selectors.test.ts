@@ -38,6 +38,9 @@ import {
   selectActiveAuthRejected,
   selectActiveProtocolMismatch,
   selectProtocolMismatchModal,
+  selectHostManagesConnections,
+  selectHostTailcatUnavailable,
+  selectNoBackendBound,
 } from './connections-selectors';
 
 const LOCAL: ConnectionRecord = {
@@ -303,5 +306,35 @@ describe('connection accent presentation', () => {
     expect(connectionShellTint(undefined, false)).toContain('var(--color-blue-500)');
     expect(connectionShellTint('rose', false)).toContain('var(--color-rose-500)');
     expect(connectionShellTint('orange', false)).toContain('var(--color-orange-500)');
+  });
+});
+
+describe('page host selectors', () => {
+  const host = {
+    manageConnections: true,
+    backendBound: true,
+    tailcatAvailable: true,
+    localAvailable: false,
+  };
+  it('report nothing outside a page host (desktop app, plain web)', () => {
+    const state = stateWith({});
+    expect(selectHostManagesConnections.select(state)).toBe(false);
+    expect(selectNoBackendBound.select(state)).toBe(false);
+    expect(selectHostTailcatUnavailable.select(state)).toBe(false);
+  });
+  it('flag an unbound intent-web tab and a host without tailcat', () => {
+    const state = stateWith({
+      browserHost: { ...host, backendBound: false, tailcatAvailable: false },
+    });
+    expect(selectHostManagesConnections.select(state)).toBe(true);
+    expect(selectNoBackendBound.select(state)).toBe(true);
+    expect(selectHostTailcatUnavailable.select(state)).toBe(true);
+  });
+  it('do not flag tailcat on a host that does not manage connections', () => {
+    const state = stateWith({
+      browserHost: { ...host, manageConnections: false, tailcatAvailable: false },
+    });
+    expect(selectHostTailcatUnavailable.select(state)).toBe(false);
+    expect(selectHostManagesConnections.select(state)).toBe(false);
   });
 });
