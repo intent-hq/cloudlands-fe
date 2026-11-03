@@ -70,7 +70,6 @@
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { writable } from 'svelte/store';
-  import AgentLocationBadge from '$features/remote-machines/AgentLocationBadge.svelte';
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
   import { stripWorkspacePrefix } from '$lib/utils/file-utils';
   import { toNativePath } from '$lib/utils/path-utils';
@@ -1867,11 +1866,6 @@
         />
       {:else}
         {@render paneStackSelector()}
-        {#if activeTab.type === 'agent' && activeTab.agentId}
-          <span class="panel-machine-location ml-2 flex min-w-0 max-w-32 shrink items-center">
-            <AgentLocationBadge agentId={activeTab.agentId} variant="pill" />
-          </span>
-        {/if}
       {/if}
       <div class="min-w-0 flex-1" aria-hidden="true"></div>
 
@@ -1992,15 +1986,6 @@
   }
   .pane-stack-selector {
     width: 194px;
-  }
-  .panel-machine-location {
-    flex-shrink: 100;
-  }
-  .panel-machine-location:has(:global([data-agent-machine-badge])) {
-    min-width: 28px;
-  }
-  .panel-machine-location:empty {
-    display: none;
   }
   :global(.panel-selector-button) {
     height: 36px;

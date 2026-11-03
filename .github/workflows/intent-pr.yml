@@ -94,7 +94,7 @@ jobs:
           SLOT_JOBS: >-
             [
             {"key":"test","label":"gh-linux-8x","minutes":13,"shards":4},
-            {"key":"build-web","label":"gh-linux-8x","minutes":4,"events":["merge_group"]},
+            {"key":"build-web","label":"gh-linux-8x","minutes":8,"events":["merge_group"]},
             {"key":"ct","label":"gh-linux-8x","minutes":36,"shards":4,"events":["merge_group"]}
             ]
         run: |
@@ -908,6 +908,20 @@ jobs:
             exit 1
           }
           echo "✓ dist/web/index.html present."
+      - name: Build desktop renderer at the local heap default
+        # Local `pnpm run build:renderer` gets scripts/vite-build.mjs's
+        # DEFAULT_HEAP_FLAG, while every other CI and release build exports
+        # a 12-16 GB cap, so the bundle outgrew the local default unnoticed
+        # (it OOMed at 4608 MB while CI stayed green). An empty NODE_OPTIONS
+        # overrides the job's 16384 and makes the wrapper apply its default,
+        # exactly as on a developer machine: outgrowing it fails here. Fix by
+        # raising DEFAULT_HEAP_FLAG with headroom, never by exporting a cap.
+        # build:web above already generated the i18n messages this needs.
+        # ~3-4 min on an idle 32-core host; 15 leaves room for a loaded one.
+        timeout-minutes: 15
+        env:
+          NODE_OPTIONS: ''
+        run: pnpm run build:renderer
 
   test:
     # Four-way Vitest shard matrix (two-way since intent-hq/monorepo#4260;
