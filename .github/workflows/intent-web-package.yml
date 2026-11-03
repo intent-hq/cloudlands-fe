@@ -1,8 +1,9 @@
 # Intent Web package — builds @intent-hq/web (web UI + bundled server/CLI) and
 # runs the `npm pack` smoke test (scripts/smoke-intent-web-package.mjs):
 # tarball contents and size, `npx <tarball> --help`, `intent-web key`, and a
-# short `intent-web serve --no-local` with sign-in, UI, runtime config and the
-# connections API.
+# short `intent-web serve --no-local` with sign-in, UI, runtime config, the
+# connections API, add/test/relay against a fake TLS daemon, and a key reset
+# that revokes the session.
 #
 # Called (workflow_call) by intent-pr.yml's intent-web-package job, which the
 # CI Gate requires on PRs and queue entries whose diff the package reads, so
