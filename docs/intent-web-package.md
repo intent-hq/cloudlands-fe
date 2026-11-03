@@ -5,13 +5,13 @@ contains the web UI build (`web/`), the server and CLI bundled into
 `bin/intent-web.mjs`, and one runtime dependency, `ws`. Its version is always
 the cloudlands-fe version.
 
-| Piece           | Where                                                                                                                          |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Package build   | `pnpm run build:web && pnpm run build:intent-web-package` → `dist/intent-web-package` (`scripts/build-intent-web-package.mjs`) |
-| Pack smoke test | `pnpm run smoke:intent-web-package` (`scripts/smoke-intent-web-package.mjs`)                                                   |
-| PR check        | `.github/workflows/intent-web-package.yml` (runs when the server, packaging or lockfile change)                                |
-| Publish         | `.github/workflows/publish-intent-web.yml`                                                                                     |
-| npm README      | `src/features/intent-web/package/README.md`                                                                                    |
+| Piece           | Where                                                                                                                                                  |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Package build   | `pnpm run build:web && pnpm run build:intent-web-package` → `dist/intent-web-package` (`scripts/build-intent-web-package.mjs`)                         |
+| Pack smoke test | `pnpm run smoke:intent-web-package` (`scripts/smoke-intent-web-package.mjs`)                                                                           |
+| PR check        | `intent-pr.yml` job `intent-web-package` (calls `.github/workflows/intent-web-package.yml`), required by the CI Gate when the diff reaches the package |
+| Publish         | `.github/workflows/publish-intent-web.yml`                                                                                                             |
+| npm README      | `src/features/intent-web/package/README.md`                                                                                                            |
 
 ## How releases publish
 

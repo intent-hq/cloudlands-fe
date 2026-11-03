@@ -1,4 +1,4 @@
-// @verify-changed-triggers: src/main/isolated-test-profile.ts, src/features/backend/main/backend-connection.ts, .github/workflows/publish-intent-web.yml, .github/workflows/intent-web-package.yml, .github/workflows/release-alpha.yml, scripts/fetch-tailcat.cjs, src/features/intent-web/main/intent-web-bin.ts
+// @verify-changed-triggers: .github/workflows/intent-pr.yml, src/main/isolated-test-profile.ts, src/features/backend/main/backend-connection.ts, .github/workflows/publish-intent-web.yml, .github/workflows/intent-web-package.yml, .github/workflows/release-alpha.yml, scripts/fetch-tailcat.cjs, src/features/intent-web/main/intent-web-bin.ts
 // @vitest-environment node
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -75,6 +75,14 @@ describe('@intent-hq/web manifest', () => {
   });
 });
 
+// The release-fast-path step that decides whether intent-pr.yml must run the
+// package job: the `grep -z -E '<pattern>'` it matches changed paths against.
+const intentPr = readYaml('.github/workflows/intent-pr.yml');
+const relevanceRun: string = intentPr.jobs['release-fast-path'].steps.find(
+  (s: { id?: string }) => s.id === 'intent-web-package',
+).run;
+const relevance = new RegExp(/grep -z -E '([^']+)'/.exec(relevanceRun)![1]);
+
 describe('@intent-hq/web bundle on a clean checkout', () => {
   const root = resolve('.');
 
@@ -102,6 +110,12 @@ describe('@intent-hq/web bundle on a clean checkout', () => {
       expect(inputs.some((id: string) => id.includes('isolated-test-profile'))).toBe(true);
       expect(inputs.filter((id: string) => id.includes('build-config.generated'))).toEqual([]);
       expect(generatedInputs(root, inputs)).toEqual([]);
+      // Every bundled source file must make the CI Gate run the package job.
+      const sources = inputs
+        .filter((id: string) => id.startsWith(`${root}/`) && !id.includes('/node_modules/'))
+        .map((id: string) => id.slice(root.length + 1));
+      expect(sources.length).toBeGreaterThan(0);
+      expect(sources.filter((file: string) => !relevance.test(file))).toEqual([]);
     } finally {
       rmSync(out, { recursive: true, force: true });
     }
@@ -246,17 +260,32 @@ describe('publish-intent-web.yml', () => {
 describe('intent-web-package.yml', () => {
   const workflow = readYaml('.github/workflows/intent-web-package.yml');
 
-  it('runs on pull requests touching the packaging, and as the publish build', () => {
-    expect(workflow.on.pull_request.paths).toEqual(
-      expect.arrayContaining([
-        'src/features/intent-web/**',
-        'scripts/build-intent-web-package.mjs',
-        'scripts/smoke-intent-web-package.mjs',
-        'package.json',
-        'pnpm-lock.yaml',
-      ]),
-    );
+  it('is a reusable build: only the CI Gate job and the publish workflow start it', () => {
+    expect(Object.keys(workflow.on).sort()).toEqual(['workflow_call', 'workflow_dispatch']);
     expect(workflow.on.workflow_call.inputs.ref.required).toBe(true);
+  });
+
+  it('is required by the CI Gate on PRs and queue entries that reach the package', () => {
+    const job = intentPr.jobs['intent-web-package'] as Job & { secrets?: unknown };
+    expect(job.uses).toBe('./.github/workflows/intent-web-package.yml');
+    expect(job.with).toEqual({ ref: '${{ github.event.pull_request.head.sha || github.sha }}' });
+    expect(job.secrets).toEqual({ CI_QUEUE_READ_TOKEN: '${{ secrets.CI_QUEUE_READ_TOKEN }}' });
+    expect(intentPr.jobs.gate.needs).toContain('intent-web-package');
+    for (const file of [
+      'scripts/build-intent-web-package.mjs',
+      'scripts/smoke-intent-web-package.mjs',
+      'scripts/intent-web-publish-plan.mjs',
+      'scripts/fetch-tailcat.cjs',
+      'package.json',
+      'pnpm-lock.yaml',
+      'vite.config.mjs',
+      'LICENSE',
+      '.github/workflows/intent-web-package.yml',
+      '.github/workflows/publish-intent-web.yml',
+    ])
+      expect(relevance.test(file), file).toBe(true);
+    for (const file of ['src/lib/components/ui/button/button.svelte', 'docs/DESIGN_SYSTEM.md'])
+      expect(relevance.test(file), file).toBe(false);
   });
 
   it('builds the web UI and package, then runs the pack smoke test and keeps the tarball', () => {

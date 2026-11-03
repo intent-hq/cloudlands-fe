@@ -4,30 +4,14 @@
 # short `intent-web serve --no-local` with sign-in, UI, runtime config and the
 # connections API.
 #
-# Runs on pull requests that touch the server, the packaging or the lockfile,
-# so packaging breakage shows up before a release. publish-intent-web.yml
-# calls it (workflow_call) to build the exact tarball it publishes; the
-# tarball is uploaded as the `intent-web-package` artifact.
+# Called (workflow_call) by intent-pr.yml's intent-web-package job, which the
+# CI Gate requires on PRs and queue entries whose diff the package reads, so
+# packaging breakage cannot merge; and by publish-intent-web.yml to build the
+# exact tarball it publishes. The tarball is uploaded as the
+# `intent-web-package` artifact. workflow_dispatch builds any ref by hand.
 name: Intent Web package
 
 on:
-  pull_request:
-    paths:
-      - 'src/features/intent-web/**'
-      - 'src/features/*/main/**'
-      - 'src/shared/**'
-      - 'scripts/build-intent-web-package.mjs'
-      - 'scripts/smoke-intent-web-package.mjs'
-      - 'scripts/intent-web-publish-plan.mjs'
-      - 'scripts/fetch-tailcat.cjs'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'vite.config.mjs'
-      - 'svelte.config.js'
-      - 'LICENSE'
-      - 'NOTICE'
-      - '.github/workflows/intent-web-package.yml'
-      - '.github/workflows/publish-intent-web.yml'
   workflow_dispatch:
   workflow_call:
     inputs:
@@ -42,10 +26,6 @@ on:
 
 permissions:
   contents: read
-
-concurrency:
-  group: intent-web-package-${{ inputs.ref || github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # The web UI build needs an 8-core / 32 GB runner (it OOMs 16 GB ones,
