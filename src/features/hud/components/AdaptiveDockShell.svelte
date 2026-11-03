@@ -372,7 +372,10 @@
   $effect(() => {
     placement.surface.height;
     untrack(() => {
-      if (growGate.pending) growGate.release(placement.surface.height);
+      // A partial native grant must not become the final morph target: native can
+      // grow further before it finishes, leaving a stale clip over the composer.
+      // Layout already clamps the requested target to available native bounds.
+      if (growGate.pending) growGate.release();
       else if (!heightLoop.active && heldHeight === null && openHeight !== null) openHeight = null;
     });
   });
