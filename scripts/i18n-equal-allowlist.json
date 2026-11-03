@@ -313,6 +313,7 @@
   "ui_updateToast_speedKbps_label": ["zh-CN", "zh-TW", "ko", "de", "es"],
   "ui_updateToast_speedMbps_label": ["zh-CN", "zh-TW", "ko", "de", "es"],
   "ui_videoActionsMenu_dimensions_label": "*",
+  "workspace_compactInitializer_branch_label": ["de"],
   "workspace_addContext_note_label": ["fr"],
   "workspace_addRemoteSetupModal_host_label": ["de", "es"],
   "workspace_addRemoteSetupModal_port_label": ["de", "fr"],

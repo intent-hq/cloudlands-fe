@@ -1015,7 +1015,7 @@ async function run() {
     : undefined;
   let poolRetirement: ReturnType<typeof finalClientPoolJoin> | undefined;
   let finalRootsJoined = false;
-  const connections = await import('../../../src/features/backend/main/connections-store');
+  const connections = await import('../../../src/features/backend/main/desktop-connections-store');
   backend.registerBackendHandlers();
   const clients = new Map<string, ReturnType<typeof backend.getLocalBackendClient>>();
   const backendIds = new Map<string, string>();

@@ -23,6 +23,8 @@
     onSelect,
     selectedKey,
     activeIndex = $bindable(-1),
+    scrollable = true,
+    formStyle = false,
   }: {
     id?: string;
     items: readonly T[];
@@ -42,6 +44,9 @@
     onSelect: (item: T) => void;
     selectedKey?: string;
     activeIndex?: number;
+    scrollable?: boolean;
+    /** New Workspace form menus: shared body rows with a selected check. */
+    formStyle?: boolean;
   } = $props();
 
   let list: HTMLDivElement | undefined = $state();
@@ -112,7 +117,9 @@
   <div
     role="status"
     aria-label={loadingLabel}
-    class="mt-2 flex items-center gap-2 px-1 text-sm text-subtle"
+    class="mt-2 flex items-center gap-2 {formStyle
+      ? 'type-body px-3 py-2 text-muted-foreground'
+      : 'px-1 text-sm text-subtle'}"
   >
     <IntentMarkLoader size={12} /><span>{loadingLabel}</span>
   </div>
@@ -122,7 +129,7 @@
     {id}
     role="listbox"
     aria-label={label}
-    class="mt-2 max-h-56 overflow-y-auto"
+    class={scrollable ? 'mt-2 max-h-56 overflow-y-auto' : 'mt-2'}
   >
     {#each items as item, index (getKey(item))}
       <RepositoryPickerRow
@@ -132,6 +139,8 @@
         tabindex={index === Math.max(0, activeIndex) ? 0 : -1}
         aria-selected={selectedKey ? getKey(item) === selectedKey : index === activeIndex}
         selected={index === activeIndex || getKey(item) === selectedKey}
+        checked={getKey(item) === selectedKey}
+        {formStyle}
         owner={getOwner(item)}
         name={getName(item)}
         avatarUrl={getAvatarUrl?.(item)}
@@ -144,5 +153,11 @@
     {/each}
   </div>
 {:else}
-  <p class="mt-2 px-1 text-sm text-subtle">{emptyLabel}</p>
+  <p
+    class="mt-2 {formStyle
+      ? 'type-body px-3 py-2 text-muted-foreground'
+      : 'px-1 text-sm text-subtle'}"
+  >
+    {emptyLabel}
+  </p>
 {/if}

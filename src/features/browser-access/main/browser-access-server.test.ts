@@ -486,3 +486,53 @@ describe('Browser access server: WebSocket bridge', () => {
     expect(await closed).toBe(4401);
   });
 });
+
+describe('standalone host extension', () => {
+  it('requires a session before dispatching management requests', async () => {
+    const handler = vi.fn(async (_request: http.IncomingMessage, response: http.ServerResponse) => {
+      response.end('managed');
+      return true;
+    });
+    const { port } = await start({ handleAuthenticatedRequest: handler });
+    expect(
+      (await request(port, { method: 'POST', path: '/__intent-web/connections' })).status,
+    ).toBe(401);
+    expect(handler).not.toHaveBeenCalled();
+    expect(
+      (
+        await request(port, {
+          method: 'POST',
+          path: '/__intent-web/connections',
+          headers: { Cookie: COOKIE },
+        })
+      ).body.toString(),
+    ).toBe('managed');
+    expect(handler).toHaveBeenCalledOnce();
+  });
+
+  it('supports runtime configuration supplied by the standalone host', async () => {
+    const { port } = await start({ runtimeConfig: () => 'globalThis.standalone = true;' });
+    expect(
+      (
+        await request(port, { path: '/runtime-config.js', headers: { Cookie: COOKIE } })
+      ).body.toString(),
+    ).toBe('globalThis.standalone = true;');
+  });
+
+  it('binds a private unix socket without replacing an existing path', async () => {
+    const { server, dir } = await start();
+    await server.close();
+    const socket = path.join(dir, 'web.sock');
+    await server.listenSocket!(socket);
+    expect(fs.statSync(socket).mode & 0o777).toBe(0o600);
+    const response = await new Promise<number>((resolve, reject) => {
+      http
+        .get({ socketPath: socket, path: '/', headers: { Host: 'localhost' } }, (res) => {
+          res.resume();
+          resolve(res.statusCode!);
+        })
+        .on('error', reject);
+    });
+    expect(response).toBe(401);
+  });
+});

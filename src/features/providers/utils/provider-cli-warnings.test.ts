@@ -23,14 +23,16 @@ describe('providerCliWarnings update command', () => {
     ]);
   });
 
-  it.each(['claude-code', 'pi', 'constructor', 'toString'])(
-    'omits the update command for %s',
-    (id) => {
-      const [warning] = providerCliWarnings([outdated(id)]);
-      expect(warning).toBeDefined();
-      expect(warning).not.toHaveProperty('updateCommand');
-    },
-  );
+  it('offers `claude update` for an outdated Claude Code CLI', () => {
+    const [warning] = providerCliWarnings([outdated('claude-code')]);
+    expect(warning?.updateCommand).toBe('claude update');
+  });
+
+  it.each(['pi', 'constructor', 'toString'])('omits the update command for %s', (id) => {
+    const [warning] = providerCliWarnings([outdated(id)]);
+    expect(warning).toBeDefined();
+    expect(warning).not.toHaveProperty('updateCommand');
+  });
 });
 
 describe('providerCliWarnings bundled CLI', () => {

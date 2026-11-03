@@ -132,6 +132,7 @@ const controlSchema = z.discriminatedUnion('action', [
             capture: z
               .object({
                 ...button,
+                revision: z.number().int().nonnegative().safe(),
                 mode: z.enum(['fullscreen', 'window', 'region']).optional(),
                 modes: z.boolean().optional(),
               })

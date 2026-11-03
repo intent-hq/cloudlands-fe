@@ -37,6 +37,7 @@ export const dockAnnotationLiveEmpty: DockAnnotationOverlayState = {
 /** The composer's Screenshot/Record as the dock sends them: idle, nothing blocked. */
 export const dockAnnotationMediaIdle: DockAnnotationMediaState = {
   capture: {
+    revision: 0,
     label: 'Capture the screen · ⌘⇧S',
     tooltip: 'Capture the screen · ⌘⇧S',
     disabled: false,

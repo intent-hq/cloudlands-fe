@@ -35,6 +35,7 @@ export function dockAnnotationBarMedia(
     mode === 'fullscreen' ? labels.capture : (labels.captureMode?.[mode] ?? labels.capture);
   return {
     capture: {
+      revision: state.captureRevision,
       label: captureLabel,
       tooltip:
         alerts.capture ??

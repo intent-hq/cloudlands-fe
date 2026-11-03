@@ -18,27 +18,32 @@ function harness() {
 }
 
 describe('provider CLI update launch', () => {
-  it('runs `codex update` interactively in a root terminal and opens the drawer', async () => {
-    mocks.invoke.mockReset().mockResolvedValue({ ok: true, terminalId: 'codex-update' });
-    const { channel, task, opened } = harness();
-    try {
-      const request = providerCliUpdateRequested('codex');
-      channel.put(request);
-      await request.promise;
-      expect(mocks.invoke.mock.calls).toEqual([
-        [
-          'terminal:createWithCommand',
-          { workspaceId: '__root__', command: 'codex update', interactive: true },
-        ],
-      ]);
-      expect(opened()).toEqual([{ type: 'terminals/open', payload: ['__root__', 'codex-update'] }]);
-    } finally {
-      task.cancel();
-      await task.toPromise();
-    }
-  });
+  it.each([
+    ['codex', 'codex update'],
+    ['claude-code', 'claude update'],
+  ])(
+    'runs the %s update interactively in a root terminal and opens the drawer',
+    async (providerId, command) => {
+      mocks.invoke.mockReset().mockResolvedValue({ ok: true, terminalId: `${providerId}-update` });
+      const { channel, task, opened } = harness();
+      try {
+        const request = providerCliUpdateRequested(providerId);
+        channel.put(request);
+        await request.promise;
+        expect(mocks.invoke.mock.calls).toEqual([
+          ['terminal:createWithCommand', { workspaceId: '__root__', command, interactive: true }],
+        ]);
+        expect(opened()).toEqual([
+          { type: 'terminals/open', payload: ['__root__', `${providerId}-update`] },
+        ]);
+      } finally {
+        task.cancel();
+        await task.toPromise();
+      }
+    },
+  );
 
-  it.each(['claude-code', 'pi', 'constructor', '__proto__'])(
+  it.each(['pi', 'constructor', '__proto__'])(
     'never executes a command for a provider without an allowlisted update (%s)',
     async (providerId) => {
       mocks.invoke.mockReset().mockResolvedValue({ ok: true, terminalId: 'unexpected' });

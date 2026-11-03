@@ -197,7 +197,7 @@ const store = vi.hoisted(() => ({
   setHosts: vi.fn(),
   getDetectHosts: vi.fn(),
 }));
-vi.mock('../connections-store', () => ({
+vi.mock('../desktop-connections-store', () => ({
   LOCAL_CONNECTION_ID: 'local',
   list: store.list,
   getActiveId: store.getActiveId,

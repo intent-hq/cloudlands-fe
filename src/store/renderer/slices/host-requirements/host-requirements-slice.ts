@@ -121,8 +121,8 @@ hostRequirementsReducer.with(
 );
 
 /**
- * Run a provider's self-update command (e.g. `codex update`) in a new root
- * terminal on the daemon host. Resolves once the terminal is open.
+ * Run a provider's self-update command (e.g. `codex update` or `claude update`)
+ * in a new root terminal on the daemon host. Resolves once the terminal is open.
  */
 export const providerCliUpdateRequested = createAsyncAction<[providerId: string], void>(
   'hostRequirements/providerCliUpdate',

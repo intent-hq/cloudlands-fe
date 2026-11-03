@@ -14,6 +14,7 @@
 -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
+  import { cn } from '$lib/utils';
   import { m } from '$shared/paraglide/messages.js';
   import { selectWorkspaceCreateProgress } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-selectors';
   import { createProgressLabel, formatCreateProgressPercent } from './create-progress-label';
@@ -22,10 +23,12 @@
     progressId,
     fallbackLabel,
     children,
+    class: className,
   }: {
     progressId: string;
     fallbackLabel: string;
     children: Snippet<[label: Snippet]>;
+    class?: string;
   } = $props();
 
   // Selector readables bind at component init only (STATE_MANAGEMENT.md);
@@ -64,7 +67,7 @@
      unwrapped one, so the button's footprint does not change while creating.
      The outer box never clips, so the Button's elevation shadow stays visible;
      the inner overlay layer clips the bar to the button radius. -->
-<div class="relative inline-flex">
+<div class={cn('relative inline-flex', className)}>
   {@render children(label)}
   {#if live && $entry$}
     <div class="pointer-events-none absolute inset-0 overflow-hidden rounded-(--radius-medium)">

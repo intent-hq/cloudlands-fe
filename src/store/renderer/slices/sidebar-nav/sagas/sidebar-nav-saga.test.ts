@@ -25,6 +25,7 @@ import {
   setWorkspaceNoteOrder,
   toggleWorkspaceCollapsedNote,
   WORKSPACE_COLLAPSED_NOTES_PREFIX,
+  WORKSPACE_EXPANDED_NOTES_PREFIX,
   WORKSPACE_NOTE_ORDER_PREFIX,
 } from '../sidebar-nav-slice';
 import { initialState } from '../sidebar-nav-slice';
@@ -164,6 +165,7 @@ describe('sidebarNavSaga', () => {
     const SELECTED_TABS_KEY = `${MULTISELECT_SIDEBAR_SELECTED_TABS_PREFIX}ws-1`;
     const NOTE_ORDER_KEY = `${WORKSPACE_NOTE_ORDER_PREFIX}ws-1`;
     const COLLAPSED_NOTES_KEY = `${WORKSPACE_COLLAPSED_NOTES_PREFIX}ws-1`;
+    const EXPANDED_NOTES_KEY = `${WORKSPACE_EXPANDED_NOTES_PREFIX}ws-1`;
 
     it('hydrates stored selected tabs, note order, and collapsed notes on workspaceMounted', async () => {
       storage.getJSON.mockImplementation((key: string) => {
@@ -233,6 +235,7 @@ describe('sidebarNavSaga', () => {
         [SELECTED_TABS_KEY, ['context', 'overview']],
         [NOTE_ORDER_KEY, ['note-2', 'note-1']],
         [COLLAPSED_NOTES_KEY, ['note-1']],
+        [EXPANDED_NOTES_KEY, []],
       ]);
       expect(dispatch).toHaveBeenCalledWith(cancelSidebarSectionNavigation('ws-1'));
       task.cancel();

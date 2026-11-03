@@ -1,3 +1,4 @@
+import { buildConfigForRecord, ConnectionSecretUnavailableError } from './connection-config';
 import { collaborationMachineName } from '../../../shared/collaboration-machine-name';
 import { assertNormalAppOperation, isIsolatedTestBuild } from '../../../main/isolated-test-profile';
 import { createNativeReviewFeed } from './native-review-feed';
@@ -32,6 +33,7 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import { Logger } from '$shared/logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { isLoopbackHost } from '$shared/loopback-host';
+import { extractLocalIps, extractTcAddress } from './daemon-route-info';
 import { classifyStartupReply } from '$shared/daemon-startup';
 import { cancelInflightHostExecStreamsForBackendSwitch } from '$shared/main/host-exec-stream';
 import {
@@ -105,7 +107,7 @@ import { computeDaemonVersionRefresh } from './daemon-version-refresh';
 import { daemonHelloBuildKey, extractDaemonHelloBuildInfo } from './daemon-hello-build-info';
 import { detectOrphanedSidecar } from './intentd-orphan';
 import { defaultKill, restartOrphanedSidecar } from './orphan-recovery';
-import * as connectionsStore from './connections-store';
+import * as connectionsStore from './desktop-connections-store';
 import * as guestSessionsStore from './guest-sessions-store';
 import {
   authenticateInvitedCredential,
@@ -2877,37 +2879,6 @@ function extractUpdateSupported(result: unknown): boolean | null {
 }
 
 /**
- * Pull the daemon's tailcat tunnel endpoint (`tcAddress`, PROTOCOL §12.3) out
- * of a `system.status` or `server.pairingInfo` result (both carry the same
- * field with the same semantics). Returns `null` when the field is absent,
- * empty, or malformed — a conclusive "no tunnel" for a successful response.
- *
- * Known trade-off: the wire shape cannot distinguish "tunnel disabled" from
- * "tunnel sidecar momentarily down" — `system.status` omits the field in both
- * cases (including the daemon's restart-backoff window after an unexpected
- * sidecar exit). A reconnect landing in that window therefore clears a stored
- * address that would have come back on its own; it is re-learned from the
- * next post-connect status once the sidecar recovers. Now that the address is
- * keychain-synced, the blast radius is fleet-wide: the clear bumps the LWW
- * clock and propagates, so a device that can ONLY dial through the tunnel
- * loses its route until any directly-connected device reconnects after the
- * sidecar recovers and re-captures the address (the tunnel-only device cannot
- * rediscover it on its own). Deliberately accepted
- * over retaining stale values: a kept address whose tunnel was genuinely
- * disabled would add a perpetually-failing race candidate to every connect,
- * and the field's contract ("never advertises a route nothing is serving")
- * argues for mirroring it faithfully. Distinguishing the two states needs a
- * protocol change (tracked upstream), not FE-side guessing.
- */
-function extractTcAddress(result: unknown): string | null {
-  if (result && typeof result === 'object') {
-    const value = (result as { tcAddress?: unknown }).tcAddress;
-    if (typeof value === 'string' && value.trim().length > 0) return value.trim();
-  }
-  return null;
-}
-
-/**
  * Capture whether a freshly-connected remote's daemon supports self-update
  * (`exactUpdateSupported` from `system.status`) and persist it on the connection
  * record, following the `captureRemoteHostname` capture pattern. Runs on
@@ -3094,24 +3065,6 @@ async function captureLocalUpdateSupportedOriginal(owner?: PoolOwner): Promise<v
  */
 export function refreshLocalUpdateSupported(): Promise<void> {
   return captureLocalUpdateSupported();
-}
-
-/**
- * Pull the local-IP list out of a `server.pairingInfo` result (PROTOCOL §2 —
- * returns `{ token, certFingerprint, port, path, localIps, hostname }`) or a
- * `system.status` result (same `localIps` field name; note that surface may
- * include loopback entries — callers filter). Returns the non-empty string
- * entries, else `null` when the shape is absent or malformed.
- */
-function extractLocalIps(result: unknown): string[] | null {
-  if (result && typeof result === 'object') {
-    const value = (result as { localIps?: unknown }).localIps;
-    if (Array.isArray(value)) {
-      const ips = value.filter((ip): ip is string => typeof ip === 'string' && ip.trim() !== '');
-      if (ips.length > 0) return ips;
-    }
-  }
-  return null;
 }
 
 /**
@@ -3764,25 +3717,6 @@ function refreshGuestSessionsForPoolChange(id: string, parent?: PoolOwner): void
 }
 
 /**
- * Resolve the transport config + cert-mismatch identity for a connection id.
- * `local` maps to the env/UDS default (no pinned cert); a remote id builds the
- * pinned `wss` config from its stored host/port/fingerprint + decrypted token.
- * Throws for an unknown/incomplete connection or a missing token — the caller
- * runs this BEFORE any teardown so a bad target never disrupts the live backend.
- *
- * Exported for the workspace-transfer relay, which builds a second,
- * short-lived JsonRpcClient to the chosen target while the active client
- * stays pinned to the source.
- */
-class ConnectionSecretUnavailableError extends Error {
-  constructor() {
-    // i18n-ignore (internal error)
-    super('Connection secret unavailable');
-    this.name = 'ConnectionSecretUnavailableError';
-  }
-}
-
-/**
  * The dial envelope of a remote backend id, whichever registry holds it: a
  * paired (owner) backend from the connections store or a guest session from
  * the guest-sessions store. Both share one id space (random UUIDs), so the
@@ -3832,6 +3766,17 @@ export async function resolveBackendRecord(id: string): Promise<{
   };
 }
 
+/**
+ * Resolve the transport config + cert-mismatch identity for a connection id.
+ * `local` maps to the env/UDS default (no pinned cert); a remote id builds the
+ * pinned `wss` config from its stored host/port/fingerprint + decrypted token.
+ * Throws for an unknown/incomplete connection or a missing token — the caller
+ * runs this BEFORE any teardown so a bad target never disrupts the live backend.
+ *
+ * Exported for the workspace-transfer relay, which builds a second,
+ * short-lived JsonRpcClient to the chosen target while the active client
+ * stays pinned to the source.
+ */
 export async function buildConfigForConnection(
   id: string,
   tokenOverride?: string,
@@ -3847,35 +3792,7 @@ export async function buildConfigForConnection(
   if (!record) {
     throw new Error(`Unknown or incomplete connection: ${id}`);
   }
-  let token: string | null | undefined = tokenOverride;
-  if (token === undefined) {
-    try {
-      token = await record.getToken();
-    } catch {
-      throw new ConnectionSecretUnavailableError();
-    }
-  }
-  if (!token) {
-    throw new Error(`No stored token for connection: ${id}`);
-  }
-  // The store's list() already sanitizes `hosts` (a legacy loopback primary
-  // is excluded whenever a routable candidate exists), so the race dials
-  // hosts[0] first — not the raw stored primary, which can be loopback on
-  // records synced from before self-publish filtered it out.
-  const dialHosts = record.hosts;
-  return {
-    config: {
-      transport: 'wss',
-      host: dialHosts[0],
-      hosts: dialHosts,
-      port: record.port,
-      token,
-      fingerprint: record.fingerprint,
-      tcAddress: record.tcAddress ?? undefined,
-    },
-    ...(record.invitedIdentity ? { invitedCredential: { ...record.invitedIdentity, token } } : {}),
-    meta: { id, host: record.host, port: record.port },
-  };
+  return buildConfigForRecord(record, tokenOverride);
 }
 
 /**

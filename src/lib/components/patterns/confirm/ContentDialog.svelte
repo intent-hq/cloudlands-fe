@@ -28,6 +28,8 @@
     onkeydowncapture?: (event: KeyboardEvent) => void;
     onCloseAutoFocus?: ComponentProps<typeof Dialog.Content>['onCloseAutoFocus'];
     onClose?: () => void;
+    onBack?: () => void;
+    backLabel?: string;
   }
 
   let {
@@ -54,6 +56,8 @@
     onkeydowncapture,
     onCloseAutoFocus,
     onClose,
+    onBack,
+    backLabel,
   }: Props = $props();
   let closed = $state(false);
   $effect(() => {
@@ -103,6 +107,8 @@
       {children}
       {footer}
       {headerActions}
+      {onBack}
+      {backLabel}
     />
   </Dialog.Content>
 </Dialog.Root>

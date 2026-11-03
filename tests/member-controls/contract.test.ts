@@ -1,4 +1,5 @@
 /** @vitest-environment node */
+// @verify-changed-triggers: ./plan.json, .github/workflows/member-controls-disposable.yml
 // Pure checks only: no daemon, TLS, browser, subprocess, download or namespace.
 import { describe, expect, it, vi } from 'vitest';
 // vitest's app config aliases ws to a browser stub. Load the installed Node

@@ -42,7 +42,7 @@ test('captures failures from the first document script, retrieves artifacts and 
           enforce: 'pre',
           resolveId(id) {
             if (id === './embedded-browser-cdp-service') return '\0capture-cdp';
-            if (id === '../../backend/main/connections-store') return '\0capture-backend';
+            if (id === '../../backend/main/desktop-connections-store') return '\0capture-backend';
             if (id === '../../../shared/logger') return '\0capture-logger';
           },
           load(id) {

@@ -21,7 +21,7 @@ import { safeResolvePath } from '../../../main/utils/safe-resolve-path';
 import { validateWorkspaceId } from '../../../main/utils/workspace-validation';
 import { WorkspaceConfigConstants } from '../../../shared/config-constants';
 import { workspaceStateDir } from '../../../shared/main/workspace-state-paths';
-import { getActiveId } from '../../backend/main/connections-store';
+import { getActiveId } from '../../backend/main/desktop-connections-store';
 import { embeddedBrowserCdp } from './embedded-browser-cdp-service';
 import type {
   SnapshotOptions,

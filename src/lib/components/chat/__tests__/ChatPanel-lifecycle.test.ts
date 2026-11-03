@@ -2121,6 +2121,36 @@ describe('ChatPanel mounted lifecycle', () => {
       );
     });
 
+    it('still offers a plain retry on the exhausted provider, since its quota may have reset', async () => {
+      seedProviderState({ auggie: true, 'claude-code': true }, 'claude-code', {
+        auggie: { available: true, authenticated: true },
+        'claude-code': { available: true, authenticated: true },
+      });
+      const view = await renderQuotaFailure();
+
+      const banner = view.container.querySelector('[data-testid="error-quota-exceeded"]');
+      expect(banner).not.toBeNull();
+      expect(banner!.textContent).toMatch(/retry once it resets, or switch provider/i);
+      expect(banner!.textContent).not.toMatch(/will not succeed/i);
+
+      const retry = screen.getByTestId('quota-retry-same-provider');
+      expect(retry.textContent?.trim()).toBe('Retry');
+
+      mocks.dispatch.mockClear();
+      await fireEvent.click(retry);
+      await vi.waitFor(() =>
+        expect(mocks.dispatch).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: 'agentSessions/retryLastMessageRequested',
+            payload: ['agent-a', 'workspace-a'],
+          }),
+        ),
+      );
+      expect(mocks.dispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'agentSessions/retryWithProviderRequested' }),
+      );
+    });
+
     it('does not offer a disabled default provider the model picker still admits', async () => {
       seedProviderState({ auggie: true, 'claude-code': true, codex: false }, 'codex', {
         auggie: { available: true, authenticated: true },

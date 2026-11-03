@@ -101,6 +101,8 @@ interface DockAnnotationMediaButton {
 /** The composer's Screenshot and Record state, mirrored on the annotate tool bar. */
 export interface DockAnnotationMediaState {
   capture: DockAnnotationMediaButton & {
+    /** Advances only when the composer accepts a successfully captured image. */
+    revision: number;
     /** The composer's screenshot mode; absent means full screen. */
     mode?: DockCaptureMode;
     /** Window and region are available: the bar offers the mode menu. */
@@ -135,6 +137,8 @@ export function sanitizeDockAnnotationMedia(value: unknown): DockAnnotationMedia
   if (!value || typeof value !== 'object') return null;
   const { capture, record } = value as Record<string, unknown>;
   if (!mediaButton(capture) || !mediaButton(record)) return null;
+  const revision = (capture as unknown as Record<string, unknown>).revision;
+  if (!Number.isSafeInteger(revision) || (revision as number) < 0) return null;
   const { recording, startedAt } = record as unknown as Record<string, unknown>;
   if (typeof recording !== 'boolean') return null;
   if (
@@ -155,6 +159,7 @@ export function sanitizeDockAnnotationMedia(value: unknown): DockAnnotationMedia
   return {
     capture: {
       ...button(capture),
+      revision: revision as number,
       ...(mode ? { mode } : {}),
       ...(modes ? { modes } : {}),
     },
@@ -178,8 +183,8 @@ export interface DockToolbarAnchor {
 const DOCK_TOOLBAR_GAP = 8;
 
 /**
- * Tool bar position next to the dock: below a notch or top pill (centred on it);
- * beside an edge rail on the screen-inner side (vertically centred); below a
+ * Keep notch feedback at the bottom of the work area, away from hover expansion.
+ * Other toolbars sit beside an edge rail on the screen-inner side or below a
  * floating dock when it fits, else above. Always inside the work area. With no
  * dock bounds, bottom centre of the work area.
  */
@@ -195,7 +200,7 @@ export function dockToolbarPosition(
     x: clamp(x, area.x, area.x + area.width - size.width),
     y: clamp(y, area.y, area.y + area.height - size.height),
   });
-  if (!dock)
+  if (!dock || dock.shape === 'notch' || dock.shape === 'top-pill')
     return place(area.x + (area.width - size.width) / 2, area.y + area.height - size.height - 16);
   const { rect } = dock;
   const centreX = rect.x + (rect.width - size.width) / 2;
@@ -217,7 +222,7 @@ export function dockToolbarPosition(
 export type DockAnnotationToolbarRequest = { sessionId: string } & (
   | { action: 'tool'; tool: DockMarkTool }
   | { action: 'mouse' }
-  /** Done: keep what is marked as one image in the composer, clear the screen, carry on. */
+  /** Attach: keep the marks as one image in the composer, clear the screen, carry on. */
   | { action: 'commit' }
   /** Clear: remove the current marks without attaching anything; the tool stays. */
   | { action: 'clear' }

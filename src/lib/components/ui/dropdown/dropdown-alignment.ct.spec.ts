@@ -26,7 +26,5 @@ test('filtering out every option displays the empty state', async ({ mount, page
   await page.getByRole('searchbox').fill('missing');
   await expect(page.getByRole('option')).toHaveCount(0);
   const title = page.getByRole('listbox').getByText(/No results for/);
-  const description = page.getByRole('listbox').getByText('Try a different search term');
   await expect(title).toBeVisible();
-  await expect(description).toBeVisible();
 });

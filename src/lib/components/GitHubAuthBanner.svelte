@@ -28,6 +28,7 @@
   interface Props {
     /** Message shown before auth starts */
     message?: string;
+    compact?: boolean;
     /** Called when auth succeeds */
     onSuccess?: () => void;
     /** Additional classes */
@@ -38,6 +39,7 @@
 
   let {
     message = m.lib_githubAuth_connect_label(),
+    compact = false,
     onSuccess,
     class: className = '',
     autoStart = false,
@@ -159,7 +161,7 @@
   const hasError = $derived(authStartedHere && $error$);
 </script>
 
-<div class="rounded-sm bg-sidebar overflow-hidden {className}">
+<div class="min-w-0 rounded-sm {compact ? '' : 'bg-sidebar'} {className}">
   {#if showSuccess}
     <!-- Success state - shows briefly after auth completes -->
     <div
@@ -240,15 +242,23 @@
       <Button
         type="button"
         variant="plain"
-        class="h-auto! w-full px-2! py-2! flex items-start gap-2 hover:bg-muted/50 transition-colors cursor-pointer text-left"
+        class="w-full min-w-0 justify-start gap-2 px-2 type-caption font-normal text-left text-muted-foreground hover:bg-muted {compact
+          ? 'h-8'
+          : 'h-auto items-start py-2'}"
         onclick={handleConnect}
       >
-        <div class="first-line-icon text-xs">
+        <div class="first-line-icon type-caption">
           <GitHubIcon size={16} class="text-ghost" />
         </div>
         <div class="flex-1 min-w-0">
-          <p class="text-xs font-medium text-subtle">{message}</p>
-          <p class="text-xs text-subtle">{m.lib_githubAuth_enables_description()}</p>
+          <p class="type-caption font-normal {compact ? 'truncate' : 'whitespace-normal'}">
+            {message}
+          </p>
+          {#if !compact}
+            <p class="type-caption whitespace-normal text-muted-foreground">
+              {m.lib_githubAuth_enables_description()}
+            </p>
+          {/if}
         </div>
       </Button>
     </div>

@@ -1,6 +1,6 @@
 {
   "name": "intent",
-  "version": "2.272.2",
+  "version": "2.275.0",
   "description": "Intent",
   "type": "module",
   "main": "dist/main/index.js",
@@ -200,7 +200,8 @@
     "remote-env:start": "./tests/remote-env/start-remote-env.sh",
     "remote-env:start:devpod": "./tests/remote-env/start-remote-env.sh --profile devpod",
     "remote-env:start:all": "./tests/remote-env/start-remote-env.sh --all",
-    "remote-env:stop": "./tests/remote-env/stop-remote-env.sh"
+    "remote-env:stop": "./tests/remote-env/stop-remote-env.sh",
+    "intent-web": "tsx --tsconfig tsconfig.main.json scripts/intent-web.mjs"
   },
   "keywords": [
     "electron",

@@ -300,7 +300,7 @@ function* addCapturedImage(
 }
 
 function* capture({
-  payload: [workspaceId, agentId, requestedMode],
+  payload: [workspaceId, agentId],
 }: ReturnType<typeof dockEvidenceCaptureRequested>): SagaGenerator<void> {
   if (!activePair(workspaceId, agentId)) return;
   const evidence = evidenceOf(workspaceId, agentId);
@@ -313,7 +313,7 @@ function* capture({
     yield* put(dockEvidenceCaptureFailed(workspaceId, agentId, 'unavailable'));
     return;
   }
-  const mode = requestedMode ?? appStore.state.dockConversation.captureMode;
+  const mode = appStore.state.dockConversation.captureMode;
   yield* put(dockEvidenceCaptureStarted(workspaceId, agentId));
   let result: DockNativeResult<DockCapturedPixels>;
   try {
@@ -469,28 +469,24 @@ function* startFeedback({
 }
 
 /**
- * Done on the tool bar. The marked session image already sits in the composer with its
+ * Attach on the tool bar. The marked session image already sits in the composer with its
  * marks drawn in; it is kept as is and the next mark starts a new image (native has
- * cleared the screen). With nothing marked yet, Done takes one plain capture instead.
+ * cleared the screen). Empty attachment requests do not take an implicit screenshot.
  * A Mark-up session on a still image simply ends (its tile already holds the marks).
  */
 function* commitAnnotation(workspaceId: string, agentId: string): SagaGenerator<void> {
   const evidence = evidenceOf(workspaceId, agentId);
   const session = evidence?.annotation;
   if (!evidence || !session) return;
+  const marked =
+    !!session.imageId && evidence.marks.some((mark) => mark.imageId === session.imageId);
+  if (!marked) return;
   if (session.mode === 'still') {
     yield* endSession(workspaceId, agentId);
     return;
   }
-  const marked =
-    !!session.imageId && evidence.marks.some((mark) => mark.imageId === session.imageId);
-  if (marked) {
-    yield* put(dockEvidenceAnnotationChanged(workspaceId, agentId, { ...session, imageId: null }));
-    yield* syncMarks(workspaceId, agentId);
-    return;
-  }
-  // The screen as annotated: never a window or region selection.
-  yield* put(dockEvidenceCaptureRequested(workspaceId, agentId, 'fullscreen'));
+  yield* put(dockEvidenceAnnotationChanged(workspaceId, agentId, { ...session, imageId: null }));
+  yield* syncMarks(workspaceId, agentId);
 }
 
 /**

@@ -1082,6 +1082,7 @@ describe('DockAnnotationController on-screen tool bar and start refusals', () =>
     const media = {
       capture: {
         label: 'Capture',
+        revision: 0,
         tooltip: 'Capture',
         disabled: false,
         pending: false,
@@ -1108,6 +1109,8 @@ describe('DockAnnotationController on-screen tool bar and start refusals', () =>
       { capture: media.capture },
       { ...media, record: { ...media.record, startedAt: Number.NaN } },
       { ...media, capture: { ...media.capture, tooltip: 'x'.repeat(201) } },
+      { ...media, capture: { ...media.capture, revision: -1 } },
+      { ...media, capture: { ...media.capture, revision: Number.NaN } },
       { ...media, record: { ...media.record, recording: 'yes' } },
     ]) {
       t.controller.setAnnotationMedia(bad);
@@ -1166,7 +1169,16 @@ describe('DockAnnotationController on-screen tool bar and start refusals', () =>
     expect(marks(t.events).at(-1)?.capture).toBeDefined();
   });
 
-  it('Done clears the screen and starts a new image while the session stays open', async () => {
+  it('refuses an empty attachment without emitting a commit or closing feedback', async () => {
+    const t = setup();
+    await t.start('live', 'box');
+    const priorEvents = [...t.events];
+    expect(t.controller.handleToolbar({ sessionId: 's1', action: 'commit' })).toBe(false);
+    expect(t.events).toEqual(priorEvents);
+    expect(t.controller.isActive()).toBe(true);
+  });
+
+  it('Attach clears the screen and starts a new image while the session stays open', async () => {
     const t = setup();
     await t.start('live', 'box');
     expect(
