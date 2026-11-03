@@ -142,7 +142,7 @@ export function buildWorkspaceInitializationResume(
   outcome: Pick<
     WorkspaceInitializationOutcome,
     'workspaceId' | 'agentId' | 'workspacePath' | 'stagedItems' | 'retryImageBlocks'
-  > & { workspaceId: string },
+  > & { workspaceId: string; install?: boolean },
 ): WorkspaceInitializationResume {
   return {
     id,
@@ -155,6 +155,7 @@ export function buildWorkspaceInitializationResume(
         workspaceId: outcome.workspaceId,
         agentId: outcome.agentId,
         workspacePath: outcome.workspacePath,
+        ...(outcome.install ? { install: true } : {}),
       },
       stagedItems: outcome.stagedItems ?? request.stagedItems,
       heldMessage: request.heldMessage

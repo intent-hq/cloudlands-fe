@@ -317,6 +317,8 @@ function* initialize(action: InitializationRun): SagaGenerator<void> {
   let agentId = request.resume?.agentId;
   let workspacePath = request.resume?.workspacePath;
   let pullCompleted = false;
+  // Set while a created workspace still has to be read and installed.
+  let installPending = request.resume?.install === true;
   const dispatch = appStore.dispatch;
   if (!current(action, dispatch)) {
     const failure = new Error('initialization-cancelled');
@@ -361,14 +363,20 @@ function* initialize(action: InitializationRun): SagaGenerator<void> {
             })
           : result.error;
         const launch = launchNodeId ? result.launchFailure : undefined;
-        const kept = launch ? yield* call(fetchCreatedWorkspace, launch.workspaceId) : null;
+        if (!launch) throw Object.assign(new Error(message), { errorCode: result.errorCode });
+        // Keep its identity first: if the read below fails, the failure is
+        // resumable and a retry installs this workspace instead of creating.
+        workspaceId = launch.workspaceId;
+        agentId = launch.agentId;
+        installPending = true;
+        stage = 'post-create';
+        const kept = yield* call(fetchCreatedWorkspace, launch.workspaceId);
         if (!current(action, dispatch)) throw new Error('initialization-cancelled');
-        if (!launch || !kept) {
+        if (!kept.workspace) {
           throw Object.assign(new Error(message), { errorCode: result.errorCode });
         }
         yield* call(notify.warning, message);
-        workspace = kept;
-        agentId = launch.agentId;
+        workspace = kept.workspace;
       } else {
         if (startOnNodeId && !isOnMachine(result.data.initialAgent, startOnNodeId))
           yield* call(
@@ -385,6 +393,19 @@ function* initialize(action: InitializationRun): SagaGenerator<void> {
       stage = 'post-create';
       yield* call(installWorkspace, action, workspace, dispatch, agentId);
       if (!current(action, dispatch)) throw new Error('initialization-cancelled');
+      installPending = false;
+    } else if (installPending && workspaceId) {
+      stage = 'post-create';
+      const kept = yield* call(fetchCreatedWorkspace, workspaceId);
+      if (!current(action, dispatch)) throw new Error('initialization-cancelled');
+      if (!kept.workspace) {
+        throw new Error(m.workspace_loader_openFailed_error({ error: kept.error }));
+      }
+      workspacePath =
+        kept.workspace.worktreePath || kept.workspace.repositoryPath || kept.workspace.path;
+      yield* call(installWorkspace, action, kept.workspace, dispatch, agentId);
+      if (!current(action, dispatch)) throw new Error('initialization-cancelled');
+      installPending = false;
     }
     if (!workspaceId) throw new Error('missing-workspace-id');
     stage = request.heldMessage ? 'attachments' : 'post-create';
@@ -459,6 +480,7 @@ function* initialize(action: InitializationRun): SagaGenerator<void> {
             workspaceId,
             agentId,
             workspacePath,
+            ...(installPending ? { install: true } : {}),
           }),
         ),
       );
@@ -602,16 +624,19 @@ function* resume(action: ResumeAction): SagaGenerator<void> {
   });
 }
 
-/** The workspace a `launch-failed` create committed, or null if it can't be read. */
-async function fetchCreatedWorkspace(workspaceId: string): Promise<Workspace | null> {
+/** Read the workspace a `launch-failed` create committed; `error` says why it can't be read. */
+async function fetchCreatedWorkspace(
+  workspaceId: string,
+): Promise<{ workspace: Workspace; error?: undefined } | { workspace: null; error: string }> {
   try {
-    return await appClient.workspaces.get(workspaceId);
+    const workspace = await appClient.workspaces.get(workspaceId);
+    return workspace ? { workspace } : { workspace: null, error: workspaceId };
   } catch (error) {
     logger.warn('Could not read the workspace kept by a failed remote start', {
       workspaceId,
       error,
     });
-    return null;
+    return { workspace: null, error: errorMessage(error) };
   }
 }
 

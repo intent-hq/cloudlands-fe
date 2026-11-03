@@ -261,7 +261,16 @@ export interface WorkspaceInitializationRequest {
   entrypoint: 'compact' | 'onboarding';
   admission: string;
   createRequest?: CreateWorkspaceRequest;
-  resume?: { workspaceId: string; agentId?: string; workspacePath?: string };
+  resume?: {
+    workspaceId: string;
+    agentId?: string;
+    workspacePath?: string;
+    /**
+     * The workspace was created but never installed (its follow-up read failed
+     * after a remote `launch-failed`): read and install it before continuing.
+     */
+    install?: boolean;
+  };
   pull?: { repositoryPath: string; branch: string };
   agentTitle: string;
   coordinator: boolean;

@@ -594,6 +594,63 @@ describe('workspaceInitializerSaga (registered production owner, reducer-backed 
       );
     });
 
+    it.each([
+      [
+        'rejects',
+        (get: ReturnType<typeof vi.spyOn>) => get.mockRejectedValueOnce(new Error('busy')),
+      ],
+      ['returns null', (get: ReturnType<typeof vi.spyOn>) => get.mockResolvedValueOnce(null)],
+    ])(
+      'keeps the created workspace when reading it %s, and a retry opens it without creating again',
+      async (_case, failRead) => {
+        create.mockResolvedValue({
+          ok: false,
+          error: 'initial agent launch failed',
+          errorCode: 'launch-failed',
+          launchFailure: { workspaceId: 'ws-1', agentId: 'agent-9', cause: 'provider exited' },
+        } as never);
+        const get = vi.spyOn(appClient.workspaces, 'get');
+        failRead(get);
+        get.mockResolvedValue(workspace);
+        const action = workspaceInitializationSubmitted(
+          compactSubmission({ agent: remoteAgent() }),
+          consumer,
+        );
+        appStore.dispatch(action);
+        await expect(action.promise).rejects.toThrow(
+          m.workspace_startOn_launchFailed_error({ machine: 'Mac mini', cause: 'provider exited' }),
+        );
+        expect(outcome()).toMatchObject({
+          status: 'failure',
+          workspaceId: 'ws-1',
+          agentId: 'agent-9',
+          resumable: true,
+        });
+        expect(recorded).not.toContainEqual(setWorkspaceEntity(workspace));
+
+        const resume = workspaceInitializationResumeRequested(
+          {
+            entrypoint: 'compact',
+            admission: selectPrincipalActionContext.select(appStore.state) as string,
+            stagedItems: [],
+          },
+          consumer,
+        );
+        appStore.dispatch(resume);
+        await expect(resume.promise).resolves.toMatchObject({
+          workspaceId: 'ws-1',
+          agentId: 'agent-9',
+        });
+        expect(create).toHaveBeenCalledTimes(1);
+        expect(get).toHaveBeenCalledTimes(2);
+        expect(get).toHaveBeenLastCalledWith('ws-1');
+        expect(recorded).toContainEqual(setWorkspaceEntity(workspace));
+        expect(recorded).toContainEqual(setInitialAgentId(workspace.id, 'agent-9'));
+        expect(recorded).toContainEqual(openWorkspaceTab(workspace.id));
+        expect(outcome()).toMatchObject({ seq: resume.seq, status: 'success' });
+      },
+    );
+
     it('reports a start failure on the machine when the reply names no workspace', async () => {
       create.mockResolvedValue({
         ok: false,
