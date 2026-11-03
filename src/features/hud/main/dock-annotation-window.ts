@@ -591,9 +591,10 @@ export class DockAnnotationController implements AnnotationService {
   /**
    * Hide the visible overlay while the person selects a window or region, so the
    * system picker never selects it and its marks stay out of the image. The session,
-   * its marks and exclusions stay; the returned function shows it again.
+   * its marks and exclusions stay; the returned function shows it again. Null when a
+   * visible overlay could not be hidden.
    */
-  conceal(): () => void {
+  conceal(): (() => void) | null {
     const session = this.session;
     const window = this.window;
     if (!session || !this.current(session) || !usable(window) || !window.isVisible())
@@ -602,7 +603,7 @@ export class DockAnnotationController implements AnnotationService {
       window.hide();
     } catch (error) {
       logger.warn('Failed to hide the dock annotation overlay for a selection', { error });
-      return () => {};
+      return null;
     }
     return () => {
       if (!this.current(session) || this.window !== window || !usable(window)) return;

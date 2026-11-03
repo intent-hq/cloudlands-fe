@@ -429,12 +429,10 @@ describe('dock evidence window and region capture', () => {
     expect(events).toEqual(['conceal', 'select', 'reveal']);
   });
 
-  it('refuses a selection while an overlay it could not hide is still on screen', async () => {
+  it('refuses a selection when a visible overlay could not be hidden', async () => {
     const f = fixture();
     f.settle.resolve();
-    const reveal = vi.fn();
-    f.manager.setSelectionConcealer(() => reveal);
-    f.manager.setCaptureExclusionIds(() => [99]);
+    f.manager.setSelectionConcealer(() => null);
     f.deps.captureSelection = vi.fn();
     const result = await f.manager.capture(f.owner, {
       ...f.scope,
@@ -443,6 +441,26 @@ describe('dock evidence window and region capture', () => {
     });
     expect(result).toEqual({ ok: false, error: 'unavailable' });
     expect(f.deps.captureSelection).not.toHaveBeenCalled();
+    expect(f.visibility).not.toHaveBeenCalled();
+  });
+
+  it('selects once the overlay is hidden, even while a recording reservation still lists it', async () => {
+    const f = fixture();
+    f.settle.resolve();
+    const reveal = vi.fn();
+    f.manager.setSelectionConcealer(() => reveal);
+    f.manager.setCaptureExclusionIds(() => [99]);
+    f.deps.captureSelection = vi.fn(async () => ({
+      ok: true as const,
+      value: { png: Buffer.from('region PNG'), width: 400, height: 300, displayScale: 2 },
+    }));
+    const result = await f.manager.capture(f.owner, {
+      ...f.scope,
+      requestId: 'region',
+      mode: 'region',
+    });
+    expect(f.deps.captureSelection).toHaveBeenCalledExactlyOnceWith('region');
+    expect(result).toMatchObject({ ok: true, value: { image: { width: 400, height: 300 } } });
     expect(reveal).toHaveBeenCalledOnce();
     expect(f.window.isVisible()).toBe(true);
   });

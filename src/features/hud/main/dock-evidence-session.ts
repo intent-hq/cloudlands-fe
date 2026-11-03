@@ -103,7 +103,7 @@ export class DockEvidenceSessions {
   private capturing: Session | null = null;
   private exclusions: () => BrowserWindow[] = () => [];
   private exclusionIds: () => number[] = () => [];
-  private conceal: () => () => void = () => () => {};
+  private conceal: () => (() => void) | null = () => () => {};
 
   constructor(private readonly deps: DockEvidenceDependencies) {}
 
@@ -116,8 +116,11 @@ export class DockEvidenceSessions {
     this.exclusionIds = provider;
   }
 
-  /** Hides main-owned overlays for a window/region selection; returns their restore. */
-  setSelectionConcealer(provider: () => () => void): void {
+  /**
+   * Hides main-owned overlays for a window/region selection; returns their restore,
+   * or null when a visible overlay could not be hidden.
+   */
+  setSelectionConcealer(provider: () => (() => void) | null): void {
     this.conceal = provider;
   }
 
@@ -305,13 +308,15 @@ export class DockEvidenceSessions {
       if (request.mode && request.mode !== 'fullscreen') {
         if (!this.deps.captureSelection) return unavailable();
         // The dock and an annotate overlay are capture tools, never part of the selection.
+        // An overlay that could not be hidden would be selected or photographed. The
+        // exclusion ids are not a visibility signal: a recording reservation can outlive it.
         const reveal = this.conceal();
+        if (!reveal) return unavailable();
         try {
           hidden = true;
           this.deps.hidden(window, true, false);
           await this.deps.settle();
-          // An overlay that could not be hidden would be selected or photographed.
-          if (!this.current(session) || this.exclusionIds().length) return unavailable();
+          if (!this.current(session)) return unavailable();
           const selected = await this.deps.captureSelection(request.mode);
           if (!this.current(session)) return unavailable();
           if (!selected.ok) return selected;
