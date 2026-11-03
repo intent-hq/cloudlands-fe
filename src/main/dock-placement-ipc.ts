@@ -101,3 +101,25 @@ export function registerDockPlacementHandlers(): void {
     ),
   );
 }
+
+/**
+ * Dock header double-click: bring Intent forward as it was. `activate` is the app's
+ * own activation (the app-icon click), run on behalf of the dock's top-level
+ * document only.
+ */
+export function registerDockActivateAppHandler(activate: () => Promise<unknown>): void {
+  ipcMain.handle(
+    WINDOW_CHANNELS.ACTIVATE_APP,
+    createSafeValidatedHandler(
+      EmptySchema,
+      async (event) => {
+        const window = BrowserWindow.fromWebContents(event.sender);
+        if (!window || window !== getDockWindow() || event.senderFrame !== event.sender.mainFrame)
+          return { activated: false };
+        await activate();
+        return { activated: true };
+      },
+      WINDOW_CHANNELS.ACTIVATE_APP,
+    ),
+  );
+}

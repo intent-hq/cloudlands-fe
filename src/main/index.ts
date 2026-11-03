@@ -329,6 +329,7 @@ import {
   isDockWindow,
 } from './dock-window';
 import { createDockMenuController } from './dock-menu-controller';
+import { registerDockActivateAppHandler } from './dock-placement-ipc';
 import { getDockEnabledLocalPref, setDockEnabledLocalPref } from './local-prefs';
 import { isDockLabEnabled, loadDockLabEnabled, registerDockLabHandlers } from './dock-lab';
 import {
@@ -2210,15 +2211,20 @@ if (!gotTheLock) {
   });
 }
 
-app.on('activate', async () => {
-  if (isSecondInstance) return;
-
-  // Waits for the boot flow's window creation first, so a first-launch
-  // activate becomes a focus of the boot window rather than a duplicate; the
-  // IPC-readiness wait lives inside the creators (see ./app-activate.ts).
-  await handleActivate<BrowserWindowType>({
+/**
+ * Bring Intent forward as it was: focus the last window, or restore the saved
+ * session when none is open. Waits for the boot flow's window creation first, so
+ * a first-launch activate becomes a focus of the boot window rather than a
+ * duplicate; the IPC-readiness wait lives inside the creators (see
+ * ./app-activate.ts). An OS activation is ignored while the dock or capture has
+ * focus (focusing them can activate the process); the dock's own request
+ * (`fromDock`, a header double-click) is a deliberate ask to show Intent.
+ */
+function activateIntent(fromDock: boolean) {
+  return handleActivate<BrowserWindowType>({
     whenBootWindowsReady: () => bootWindowsGate.ready,
     shouldIgnoreActivation: () => {
+      if (fromDock) return false;
       const focused = BrowserWindow.getFocusedWindow();
       return !!focused && (isDockWindow(focused) || isDockAnnotationWindow(focused));
     },
@@ -2238,4 +2244,10 @@ app.on('activate', async () => {
       restoreAllBackendWindowSessions(backendId, connectBackendClient),
     createWindow,
   });
+}
+
+app.on('activate', async () => {
+  if (isSecondInstance) return;
+  await activateIntent(false);
 });
+registerDockActivateAppHandler(() => activateIntent(true));
