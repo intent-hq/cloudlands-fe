@@ -1,4 +1,7 @@
 // @vitest-environment node
+// The ratchet lints every file in the rule's eslint.config.js scope.
+// @verify-changed-triggers: **/*.{test,spec}.{js,ts}, eslint.config.js,
+//   eslint-rules/baselines/no-source-literal-assertions-in-tests/**
 import fs from 'node:fs';
 import path from 'node:path';
 import { RuleTester } from 'eslint';
