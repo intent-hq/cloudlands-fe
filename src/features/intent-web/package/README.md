@@ -23,6 +23,10 @@ Requires Node.js `^22.22.2 || ^24.15.0 || >=26`.
    optional tunnel address). If this machine runs `intentd`, it appears as
    **This machine (local)**.
 
+The [full guide](https://github.com/intent-hq/cloudlands-fe/blob/main/docs/intent-web.md)
+covers `tailscale serve`, running it as a service, local daemon mode and
+troubleshooting.
+
 ## Commands and options
 
 | Command / flag                         | Purpose                                                                                                                                          |
