@@ -1328,7 +1328,8 @@
                 <span
                   class="{selectedMachineRunStatus.kind === 'lost'
                     ? 'text-warning-ink'
-                    : 'text-muted-foreground'} flex items-center gap-1 text-xs whitespace-nowrap flex-shrink-0"
+                    : STATUS_CONFIG[selectedMachineRunStatus.kind]
+                        .textClass} flex items-center gap-1 text-xs whitespace-nowrap flex-shrink-0"
                   data-machine-run-header-status={selectedMachineRunStatus.kind}
                 >
                   <Fa icon={faCircle} size="0.45em" />
@@ -1338,6 +1339,7 @@
               {:else}
                 <span
                   class="{selectedScriptStatusInfo.textClass} flex items-center gap-1 text-xs whitespace-nowrap flex-shrink-0"
+                  data-script-header-status
                 >
                   <Fa icon={faCircle} size="0.45em" />
                   {selectedScriptStatusInfo.label}

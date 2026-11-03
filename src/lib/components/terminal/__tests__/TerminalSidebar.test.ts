@@ -251,12 +251,52 @@ describe('TerminalSidebar remote scripts', () => {
     scriptEntries.value = [withMachineRuns];
     const { container } = render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
     const running = machineRun(container, 'agent-remote')!;
-    expect(running.textContent).toContain('On Mac Studio');
+    expect(running.textContent).toContain('Mac Studio');
+    expect(running.textContent).not.toContain('On Mac Studio');
     expect(running.getAttribute('data-machine-run-status')).toBe('running');
     const lost = machineRun(container, 'agent-lost')!;
     expect(lost.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe(
       'Lost: The machine disconnected',
     );
+  });
+
+  it('colours each machine run dot like a script row in the same state; lost is amber', () => {
+    remoteScripts.supported = true;
+    const runtimes = {
+      running: { status: 'running', restartCount: 0 },
+      succeeded: { status: 'exited', exitCode: 0, restartCount: 0 },
+      failed: { status: 'exited', exitCode: 2, restartCount: 0 },
+      stopped: { status: 'exited', exitCode: 143, restartCount: 0 },
+    };
+    scriptEntries.value = [
+      ...Object.entries(runtimes).map(([kind, runtime]) => ({
+        ...withMachineRuns,
+        id: `home-${kind}`,
+        name: `home-${kind}`,
+        runtime,
+        machineRuns: undefined,
+      })),
+      {
+        ...withMachineRuns,
+        machineRuns: [
+          ...Object.entries(runtimes).map(([kind, runtime]) => ({
+            remoteAgentId: `agent-${kind}`,
+            nodeId: 'node-mac',
+            runtime,
+          })),
+          withMachineRuns.machineRuns[1],
+        ],
+      },
+    ];
+    const { container } = render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+    const dotClass = (row: Element | null) =>
+      row?.querySelector('[role="img"]')?.getAttribute('class') ?? '';
+    for (const kind of Object.keys(runtimes)) {
+      const home = container.querySelector(`[data-script-id="home-${kind}"]`);
+      expect(dotClass(home), kind).not.toBe('');
+      expect(dotClass(machineRun(container, `agent-${kind}`)), kind).toBe(dotClass(home));
+    }
+    expect(dotClass(machineRun(container, 'agent-lost'))).toContain('bg-warning');
   });
 
   it('stops and restarts a machine run by its remote agent', async () => {

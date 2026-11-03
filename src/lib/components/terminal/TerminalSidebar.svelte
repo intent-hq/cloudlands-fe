@@ -12,7 +12,7 @@
   import { prefersReducedMotion, spring } from '$lib/motion';
   import type { ScriptMode, ScriptListEntry } from '$features/scripts/types';
   import { getScriptStatusKind, isLiveScriptStatus } from '$features/scripts/utils/script-status';
-  import { scriptMachineRuns } from '$features/scripts/utils/script-location';
+  import { isLostRun, scriptMachineRuns } from '$features/scripts/utils/script-location';
   import MachineRunRow from '$features/scripts/components/MachineRunRow.svelte';
 
   import { selectScriptEntries } from '$store/renderer/slices/scripts/scripts-selectors';
@@ -328,7 +328,7 @@
   }
 
   // ---- Status dot helpers ----
-  function getStatusColor(script: ScriptListEntry): string {
+  function getStatusColor(script: Pick<ScriptListEntry, 'runtime'>): string {
     const kind = getScriptStatusKind(script.runtime);
     if (kind === 'running' || kind === 'succeeded') return 'bg-green-500';
     if (kind === 'restarting') return 'bg-warning';
@@ -866,6 +866,7 @@
                       {workspaceId}
                       scriptId={script.id}
                       {run}
+                      dotClass={isLostRun(run.runtime) ? 'bg-warning' : getStatusColor(run)}
                       active={selectedScriptId === script.id &&
                         selectedRemoteAgentId === run.remoteAgentId}
                       onSelect={() => onSelectMachineRun?.(script.id, run.remoteAgentId)}

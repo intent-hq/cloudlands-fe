@@ -793,6 +793,20 @@ describe('QuakeTerminalOverlay machine runs', () => {
     );
   });
 
+  it('colours the machine run header status like the backend run in the same state', async () => {
+    scriptEntries.value = [script(machineRunning)];
+    const { container } = render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } });
+    const home = container.querySelector('[data-script-header-status]');
+    expect(home?.textContent?.trim()).toBe('Running');
+    const homeStyle = home?.getAttribute('class');
+    await fireEvent.click(screen.getByText('Select machine run'));
+    const status = container.querySelector('[data-machine-run-header-status]');
+    expect(status?.textContent?.trim()).toBe('Running');
+    // Parity contract: a machine run's status is styled exactly like the backend run's.
+    // eslint-disable-next-line intent/no-class-name-assertions-in-tests -- parity with the home run, not a spelling
+    expect(status?.getAttribute('class')).toBe(homeStyle);
+  });
+
   it("reads the machine run's output with its remote agent", async () => {
     scriptEntries.value = [script(machineRunning)];
     render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } });

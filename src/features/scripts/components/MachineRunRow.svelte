@@ -1,7 +1,8 @@
 <!--
   One remote agent's run of a saved script on its machine, listed under the
-  script in the bottom-pane script list (`remoteScripts: 1`): the machine, the
-  run's status ("Lost: <reason>" when its machine disconnected) and Stop /
+  script in the bottom-pane script list (`remoteScripts: 1`): the machine name
+  (capped, so the status keeps the width; the row's tooltip shows both in full),
+  the run's status ("Lost: <reason>" when its machine disconnected) and Stop /
   Restart. A stopped run can be removed (`script.stop` dismisses it). The
   app never starts a machine run; only its remote agent can.
 -->
@@ -26,11 +27,13 @@
     workspaceId: string;
     scriptId: string;
     run: ScriptMachineRun;
+    /** Status dot colour, the same as the script rows' for the run's state. */
+    dotClass: string;
     active?: boolean;
     onSelect?: () => void;
   }
 
-  let { workspaceId, scriptId, run, active = false, onSelect }: Props = $props();
+  let { workspaceId, scriptId, run, dotClass, active = false, onSelect }: Props = $props();
 
   const agentIdStore = writable<string | undefined>(untrack(() => run.remoteAgentId));
   const machineIdStore = writable<string | undefined>(untrack(() => run.nodeId));
@@ -42,16 +45,6 @@
   const machine$ = selectRemoteMachine(machineIdStore);
   const location = $derived(machineRunLocation(run, $agent$, $machine$));
   const status = $derived(machineRunStatus(run.runtime));
-  const dotClass = $derived(
-    status.kind === 'running' || status.kind === 'succeeded'
-      ? 'bg-success'
-      : status.kind === 'restarting' || status.kind === 'lost'
-        ? 'bg-warning'
-        : status.kind === 'failed'
-          ? 'bg-danger'
-          : 'bg-muted-foreground/40',
-  );
-
   function request(operation: 'stop' | 'restart') {
     appStore.dispatch(
       machineRunOperationRequested(
@@ -101,7 +94,8 @@
     size="sm"
     indent={1}
     class="pr-1.5! pl-1.5!"
-    title={m.scripts_remote_runsOn_label({ machine: location.name })}
+    title={location.name}
+    titleClass="max-w-[45%]"
     subtitle={status.label}
     subtitleClass={status.kind === 'lost' ? 'text-warning-ink' : undefined}
     aria-label={m.remoteAgent_location_tooltipWithState({
