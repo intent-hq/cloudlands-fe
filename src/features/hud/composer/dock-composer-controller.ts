@@ -415,7 +415,6 @@ export function createDockComposerController(
     const fieldFocused = isTextEntryTarget(document.activeElement) || isTextEntryTarget(target);
     const mac = deps.mac();
     const view = evidence();
-    const caps = view.capabilities;
     const act = (run: () => void) => {
       handledKeys.add(event);
       event.preventDefault();

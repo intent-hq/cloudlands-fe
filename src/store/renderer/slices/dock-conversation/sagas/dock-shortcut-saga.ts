@@ -1,3 +1,5 @@
+import { recordingDockClip } from '$shared/dock-evidence';
+import { evidenceOf } from './dock-evidence-saga';
 import { findDockService, isDockServiceCurrent } from './dock-service-routing';
 import { m } from '$shared/paraglide/messages.js';
 import { call, put, race, take, takeLatest, delay, type SagaGenerator } from 'typed-redux-saga';
@@ -45,6 +47,38 @@ function* receive(context?: DockShortcutContext): SagaGenerator<void> {
     !valid(context)
   )
     return;
+  // Stop the already-active native owner before consulting a new foreground destination.
+  // Retained evidence alone is insufficient: the same pair and admitted authority must still own native.
+  const dock = appStore.state.dockConversation;
+  const authority = getPrincipalActionContext(appStore.state);
+  if (
+    authority &&
+    dock.authority === authority &&
+    dock.workspaceId &&
+    dock.agentId &&
+    dock.nativeSpeech.pairId === JSON.stringify([dock.workspaceId, dock.agentId])
+  ) {
+    const evidence = evidenceOf(dock.workspaceId, dock.agentId);
+    const stop =
+      context.action === 'record'
+        ? !!recordingDockClip(evidence)
+        : context.action === 'annotate'
+          ? !!evidence?.annotation && evidence.annotation.mode !== 'dictation'
+          : context.action === 'dictate'
+            ? !!dock.nativeSpeech.activeId
+            : false;
+    if (stop) {
+      yield* put(
+        dockShortcutChanged({ context, destination: dock.workspaceId, error: null, authority }),
+      );
+      if (context.action === 'record')
+        yield* put(dockEvidenceRecordToggleRequested(dock.workspaceId, dock.agentId));
+      else if (context.action === 'annotate')
+        yield* put(dockEvidenceAnnotationToggleRequested(dock.workspaceId, dock.agentId));
+      else yield* put(dockSpeechToggleRequested(dock.workspaceId, dock.agentId));
+      return;
+    }
+  }
   const stored = yield* call(getLocalStorageJSON<Record<string, string>>, key(context.backendId));
   const links = stored && typeof stored === 'object' ? stored : {};
   const ids = selectDockShortcutWorkspaces.select(appStore.state).map((row) => String(row.id));
