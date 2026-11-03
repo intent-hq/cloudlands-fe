@@ -14,6 +14,7 @@ import {
   shareInvitesExpired,
   sharePrerequisitesStarted,
   sharePrerequisitesSettled,
+  sharePrerequisitesAbandoned,
   closeShareDialog,
   getRosterState,
   initialRosterState,
@@ -926,6 +927,32 @@ describe('sharing prerequisite settlements', () => {
     expect(otherHost.sharingEnabled).toBeNull();
     const enabling = reduce(settled, sharePrerequisitesStarted({ target: scoped, enabling: true }));
     expect(enabling.sharingEnabled).toBeNull();
+  });
+
+  it('keeps a settled error on screen through a passive recheck of the same host', () => {
+    const scoped = { ...target(opened()), authority: 'host-a' };
+    const failed = reduce(
+      opened(),
+      sharePrerequisitesStarted({ target: scoped, enabling: false }),
+      sharePrerequisitesSettled({ target: scoped, enabled: null, error: 'read failed' }),
+    );
+    const recheck = reduce(failed, sharePrerequisitesStarted({ target: scoped, enabling: false }));
+    expect(recheck.sharingError).toBe('read failed');
+    const enabling = reduce(failed, sharePrerequisitesStarted({ target: scoped, enabling: true }));
+    expect(enabling.sharingError).toBeNull();
+  });
+
+  it('clears in-flight flags when a started check is abandoned, for its own target only', () => {
+    const scoped = { ...target(opened()), authority: 'host-a' };
+    const checking = reduce(
+      opened(),
+      sharePrerequisitesStarted({ target: scoped, enabling: false }),
+    );
+    const abandoned = reduce(checking, sharePrerequisitesAbandoned({ target: scoped }));
+    expect(abandoned.sharingChecking).toBe(false);
+    expect(abandoned.sharingEnabling).toBe(false);
+    const otherHost = sharePrerequisitesAbandoned({ target: { ...scoped, authority: 'host-b' } });
+    expect(reduce(checking, otherHost)).toBe(checking);
   });
 
   it('rejects replies from an old authority, closed dialog, and previous session', () => {

@@ -353,6 +353,8 @@ describe('selectShareDialogResolving', () => {
     expect(selectShareDialogResolving.select(root)).toBe(true);
     apply(shareDataFailed({ target, error: 'read failed' }));
     expect(selectShareDialogResolving.select(root)).toBe(false);
+    apply(sharePrerequisitesStarted({ target, enabling: false }));
+    expect(selectShareDialogResolving.select(root)).toBe(false);
   });
 
   it('does not wait on prerequisites a non-admin never reads', () => {

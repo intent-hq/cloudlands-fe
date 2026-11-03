@@ -231,6 +231,10 @@ export const sharePrerequisitesStarted = createAction<
 export const sharePrerequisitesSettled = createAction<
   [payload: { target: WorkspaceShareTarget; enabled: boolean | null; error: string | null }]
 >('workspaceShare/prerequisitesSettled');
+/** A started check stopped without an answer (target or authority moved mid-read). */
+export const sharePrerequisitesAbandoned = createAction<
+  [payload: { target: WorkspaceShareTarget }]
+>('workspaceShare/prerequisitesAbandoned');
 
 /** Close the dialog, retaining workspace invite metadata for People. */
 export const closeShareDialog = createAction('workspaceShare/closeDialog');
@@ -426,18 +430,18 @@ workspaceShareReducer.with(
   sharePrerequisitesStarted,
   (state, { payload: [{ target, enabling }] }) => {
     if (!targets(state, target) || state.withheld || !target.authority) return state;
-    // A passive recheck for the same host keeps the settled answer on screen
-    // (no setup card flashing over ready controls); a new host starts unknown.
-    const known =
-      !enabling && state.sharingContext === target.authority ? state.sharingEnabled : null;
+    // A passive recheck for the same host keeps the settled answer (or error)
+    // on screen, so ready controls or the error do not flash back to the
+    // loading placeholder; a new host or an explicit enable starts unknown.
+    const recheck = !enabling && state.sharingContext === target.authority;
     return {
       ...state,
       sharingContext: target.authority,
       createError: enabling ? null : state.createError,
-      sharingEnabled: known,
+      sharingEnabled: recheck ? state.sharingEnabled : null,
       sharingChecking: !enabling,
       sharingEnabling: enabling,
-      sharingError: null,
+      sharingError: recheck ? state.sharingError : null,
     };
   },
 );
@@ -456,6 +460,10 @@ workspaceShareReducer.with(
     };
   },
 );
+workspaceShareReducer.with(sharePrerequisitesAbandoned, (state, { payload: [{ target }] }) => {
+  if (!targets(state, target) || state.sharingContext !== target.authority) return state;
+  return { ...state, sharingChecking: false, sharingEnabling: false };
+});
 workspaceShareReducer.with(shareRosterRequested, (state, { payload: [{ workspaceId }] }) => {
   const roster = getRosterState(state, workspaceId);
   if (roster.withheld) return state;
