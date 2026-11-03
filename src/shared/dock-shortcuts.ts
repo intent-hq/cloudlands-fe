@@ -1,8 +1,19 @@
+export type DockShortcutAction = 'focus' | 'capture' | 'record' | 'annotate' | 'dictate';
+/** Includes OS-local wildcard/loopback aliases; normalize WHATWG URL hostname first. */
+export function isDockLoopbackHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/\.$/, '');
+  return (
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    /^127\.\d+\.\d+\.\d+$/.test(host) ||
+    ['0.0.0.0', '[::]', '[::1]'].includes(host)
+  );
+}
 /** A single foreground sample, captured before Intent changes focus. */
 export interface DockShortcutContext {
   id: string;
   backendId: string;
-  action: 'focus' | 'record';
+  action: DockShortcutAction;
   appId?: string;
   appName?: string;
   title?: string;
@@ -25,8 +36,7 @@ export function dockLinkKey(context: DockShortcutContext, scope: DockLinkScope):
   try {
     const url = new URL(context.url);
     // Never persist a dev server/forward address: process and tunnel reuse changes ownership.
-    if (['localhost', '127.0.0.1', '[::1]', 'daemon.localhost'].includes(url.hostname) || url.port)
-      return null;
+    if (isDockLoopbackHostname(url.hostname) || url.port) return null;
     if (scope === 'project') {
       const parts = url.pathname.split('/').filter(Boolean);
       if (url.hostname === 'github.com')
@@ -125,10 +135,7 @@ export function dockServiceUrlMatches(source: string, detected: string): boolean
   try {
     const a = new URL(source),
       b = new URL(detected);
-    const host = (url: URL) =>
-      ['localhost', '127.0.0.1', '[::1]', '0.0.0.0', '[::]'].includes(url.hostname)
-        ? 'loopback'
-        : url.hostname;
+    const host = (url: URL) => (isDockLoopbackHostname(url.hostname) ? 'loopback' : url.hostname);
     const root = b.pathname.replace(/\/$/, '');
     return (
       ['http:', 'https:'].includes(a.protocol) &&

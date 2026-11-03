@@ -1,3 +1,4 @@
+import { createDockShortcutRegistration } from './dock-shortcut-registration';
 import { app, globalShortcut, webContents } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { getDockWindow, focusDockWindow } from './dock-window';
@@ -9,13 +10,13 @@ import { Logger } from '../shared/logger';
 import type { DockShortcutContext } from '../shared/dock-shortcuts';
 
 const logger = new Logger('DockGlobalShortcuts');
-const bindings = [
-  ['CommandOrControl+Shift+D', 'focus'],
-  ['CommandOrControl+Shift+R', 'record'],
-] as const;
 let generation = 0;
 let enabled = false;
-const registered = new Set<string>();
+const registration = createDockShortcutRegistration(
+  globalShortcut,
+  (action) => void requestDockShortcut(action),
+  (key) => logger.warn('Global shortcut unavailable', { key }),
+);
 
 export async function requestDockShortcut(action: DockShortcutContext['action']): Promise<void> {
   const window = getDockWindow();
@@ -64,20 +65,9 @@ export function syncDockGlobalShortcuts(next: boolean): void {
   if (enabled === next) return;
   enabled = next;
   generation++;
-  for (const key of registered) globalShortcut.unregister(key);
-  registered.clear();
-  if (!enabled) return;
-  for (const [key, action] of bindings) {
-    try {
-      if (globalShortcut.register(key, () => void requestDockShortcut(action))) registered.add(key);
-      else logger.warn('Global shortcut unavailable', { key });
-    } catch {
-      logger.warn('Global shortcut unavailable', { key });
-    }
-  }
+  registration.sync(enabled);
 }
 export function dockShortcutAvailable(action: DockShortcutContext['action']): boolean {
-  const binding = bindings.find((row) => row[1] === action);
-  return !!binding && registered.has(binding[0]);
+  return registration.available(action);
 }
 app.on('will-quit', () => syncDockGlobalShortcuts(false));

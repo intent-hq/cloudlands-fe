@@ -8339,5 +8339,8 @@
   "dock_shortcut_destination_aria": "Workspace destination",
   "dock_shortcut_unavailable": "Shortcut unavailable",
   "dock_shortcut_record_menu": "Record in workspace…",
-  "dock_shortcut_open_error": "Workspace could not open. Choose again."
+  "dock_shortcut_open_error": "Workspace could not open. Choose again.",
+  "dock_shortcut_action_title": "{action}: choose a workspace",
+  "dock_shortcut_action_destination": "{action} destination: {workspace}",
+  "dock_shortcut_dictate_label": "Dictate"
 }

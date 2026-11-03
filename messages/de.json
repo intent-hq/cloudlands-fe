@@ -8339,5 +8339,8 @@
   "dock_shortcut_destination_aria": "Zielarbeitsbereich",
   "dock_shortcut_unavailable": "Tastenkürzel nicht verfügbar",
   "dock_shortcut_record_menu": "In Arbeitsbereich aufnehmen…",
-  "dock_shortcut_open_error": "Arbeitsbereich konnte nicht geöffnet werden. Erneut wählen."
+  "dock_shortcut_open_error": "Arbeitsbereich konnte nicht geöffnet werden. Erneut wählen.",
+  "dock_shortcut_action_title": "{action}: Arbeitsbereich wählen",
+  "dock_shortcut_action_destination": "Ziel für {action}: {workspace}",
+  "dock_shortcut_dictate_label": "Diktieren"
 }

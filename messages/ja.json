@@ -8339,5 +8339,8 @@
   "dock_shortcut_destination_aria": "保存先ワークスペース",
   "dock_shortcut_unavailable": "ショートカットを利用できません",
   "dock_shortcut_record_menu": "ワークスペースで録画…",
-  "dock_shortcut_open_error": "ワークスペースを開けませんでした。もう一度選んでください。"
+  "dock_shortcut_open_error": "ワークスペースを開けませんでした。もう一度選んでください。",
+  "dock_shortcut_action_title": "{action}: ワークスペースを選択",
+  "dock_shortcut_action_destination": "{action}の保存先: {workspace}",
+  "dock_shortcut_dictate_label": "音声入力"
 }

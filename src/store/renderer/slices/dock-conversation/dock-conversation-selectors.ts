@@ -47,7 +47,7 @@ import {
   numberDockMarks,
   readyDockInsertions,
 } from '$shared/dock-evidence';
-import type { QueuedMessage } from '$shared/types';
+import { WorkspaceStatus, type QueuedMessage } from '$shared/types';
 import type { PendingQueueDisplayRow } from '../pending-submissions/pending-submissions-projection';
 import { selectAgentQueueMessages } from '../agent-queue/agent-queue-selectors';
 import {
@@ -449,7 +449,10 @@ export const selectDockShortcutWorkspaces = store.createSelector((state) =>
   getItems(state.workspace.workspaces)
     .filter(
       (row) =>
-        row.id !== CHIEF_WORKSPACE_ID && !['archived', 'retired', 'deleted'].includes(row.status),
+        row.id !== CHIEF_WORKSPACE_ID &&
+        ![WorkspaceStatus.Archived, WorkspaceStatus.Retired, WorkspaceStatus.Deleted].includes(
+          row.status,
+        ),
     )
     .sort(
       (a, b) =>

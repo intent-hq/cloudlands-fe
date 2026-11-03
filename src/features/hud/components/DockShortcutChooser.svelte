@@ -13,6 +13,21 @@
   const shortcut$ = selectDockShortcut();
   const workspaces$ = selectDockShortcutWorkspaces();
   let scope = $state<DockLinkScope | undefined>();
+  let scopeContextId: string | undefined;
+  $effect(() => {
+    const id = $shortcut$?.context.id;
+    if (scopeContextId !== id) {
+      scopeContextId = id;
+      scope = undefined;
+    }
+  });
+  function actionLabel(action: string) {
+    return action === 'capture'
+      ? m.browser_overflow_screenshot_label()
+      : action === 'annotate'
+        ? m.dock_annotate_label()
+        : m.dock_shortcut_dictate_label();
+  }
   const scopes: DockLinkScope[] = ['url', 'project', 'app'];
 </script>
 
@@ -20,13 +35,22 @@
   {@const shortcut = $shortcut$}
   {@const destination =
     $workspaces$.find((row) => row.id === shortcut.destination)?.title ?? m.dock_assistant_label()}
-  <div class="flex min-h-0 flex-col gap-2 p-3 text-sm" data-testid="dock-shortcut-routing">
+  <div
+    class="flex min-h-0 flex-col gap-2 overflow-hidden p-3 text-sm"
+    class:flex-1={!shortcut.destination}
+    data-testid="dock-shortcut-routing"
+  >
     {#if shortcut.destination}
       <div class="flex items-center justify-between gap-2">
         <span
           >{shortcut.context.action === 'record'
             ? m.dock_shortcut_record_destination({ workspace: destination })
-            : m.dock_shortcut_focus_destination({ workspace: destination })}</span
+            : shortcut.context.action === 'focus'
+              ? m.dock_shortcut_focus_destination({ workspace: destination })
+              : m.dock_shortcut_action_destination({
+                  action: actionLabel(shortcut.context.action),
+                  workspace: destination,
+                })}</span
         >
         <Button
           variant="ghost"
@@ -39,20 +63,26 @@
       <strong
         >{shortcut.context.action === 'record'
           ? m.dock_shortcut_record_title()
-          : m.dock_shortcut_focus_title()}</strong
+          : shortcut.context.action === 'focus'
+            ? m.dock_shortcut_focus_title()
+            : m.dock_shortcut_action_title({
+                action: actionLabel(shortcut.context.action),
+              })}</strong
       >
-      <span class="text-muted-foreground"
+      <span class="truncate text-muted-foreground" title={shortcut.context.title}
         >{shortcut.context.appName ?? m.dock_shortcut_app_unknown()}{shortcut.context.title
           ? ` · ${shortcut.context.title}`
           : ''}</span
       >
-      {#if shortcut.context.url}<span class="break-all text-muted-foreground"
-          >{shortcut.context.url}</span
+      {#if shortcut.context.url}<span
+          class="truncate text-muted-foreground"
+          title={shortcut.context.url}>{shortcut.context.url}</span
         >{/if}
       {#if shortcut.error}<span role="alert">{shortcut.error}</span>{/if}
       <div class="flex flex-wrap gap-1" aria-label={m.dock_shortcut_remember_aria()}>
         <Button
           variant={scope === undefined ? 'secondary' : 'ghost'}
+          aria-pressed={scope === undefined}
           size="sm"
           onclick={() => (scope = undefined)}>{m.dock_shortcut_once()}</Button
         >
@@ -74,7 +104,8 @@
         {/each}
       </div>
       <div
-        class="flex max-h-56 flex-col gap-1 overflow-y-auto"
+        class="grid min-h-0 flex-1 content-start gap-1 overflow-y-auto"
+        data-testid="dock-shortcut-list"
         aria-label={m.dock_shortcut_destination_aria()}
       >
         {#each $workspaces$ as workspace (workspace.id)}

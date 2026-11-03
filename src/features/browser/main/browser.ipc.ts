@@ -1,3 +1,4 @@
+import { isDockLoopbackHostname } from '../../../shared/dock-shortcuts';
 /**
  * Browser IPC Handlers
  *
@@ -319,8 +320,7 @@ export function dockServiceAddress(url: string, backendId: string): string | und
   try {
     const parsed = new URL(url);
     if (!['http:', 'https:'].includes(parsed.protocol)) return;
-    if (!['localhost', '127.0.0.1', '[::1]', 'daemon.localhost'].includes(parsed.hostname))
-      return parsed.href;
+    if (!isDockLoopbackHostname(parsed.hostname)) return parsed.href;
     const client = getBackendClientForConnection(backendId);
     if (!client) return;
     const config = client.getConfig();

@@ -1,8 +1,3 @@
-import {
-  syncDockGlobalShortcuts,
-  requestDockShortcut,
-  dockShortcutAvailable,
-} from './dock-global-shortcuts';
 /**
  * Main Process Entry Point
  *
@@ -11,6 +6,11 @@ import {
 
 // The isolated package establishes private paths before any application dependency.
 import './isolated-test-bootstrap.js';
+import {
+  syncDockGlobalShortcuts,
+  requestDockShortcut,
+  dockShortcutAvailable,
+} from './dock-global-shortcuts';
 import { getIsolatedTestProfile, isIsolatedTestBuild } from './isolated-test-profile.js';
 
 // CRITICAL: Import build-time config before application initialization
@@ -1075,6 +1075,20 @@ const bootFlow = app.whenReady().then(async () => {
               enabled: dockMenuController.isEnabled(),
               click: () => void requestDockShortcut('record'),
             },
+            ...(
+              [
+                ['capture', m.browser_overflow_screenshot_label(), 'S'],
+                ['annotate', m.dock_annotate_label(), 'A'],
+                ['dictate', m.dock_shortcut_dictate_label(), 'M'],
+              ] as const
+            ).map(([action, label, key]) => ({
+              label,
+              sublabel: dockShortcutAvailable(action)
+                ? `Cmd/Ctrl+Shift+${key}`
+                : m.dock_shortcut_unavailable(),
+              enabled: dockMenuController.isEnabled(),
+              click: () => void requestDockShortcut(action),
+            })),
             { type: 'separator' },
           ] satisfies Electron.MenuItemConstructorOptions[])
         : []),

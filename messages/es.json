@@ -8339,5 +8339,8 @@
   "dock_shortcut_destination_aria": "Espacio de destino",
   "dock_shortcut_unavailable": "Atajo no disponible",
   "dock_shortcut_record_menu": "Grabar en un espacio…",
-  "dock_shortcut_open_error": "No se pudo abrir el espacio. Elige de nuevo."
+  "dock_shortcut_open_error": "No se pudo abrir el espacio. Elige de nuevo.",
+  "dock_shortcut_action_title": "{action}: elige un espacio",
+  "dock_shortcut_action_destination": "Destino de {action}: {workspace}",
+  "dock_shortcut_dictate_label": "Dictar"
 }

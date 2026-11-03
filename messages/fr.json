@@ -8339,5 +8339,8 @@
   "dock_shortcut_destination_aria": "Espace de destination",
   "dock_shortcut_unavailable": "Raccourci indisponible",
   "dock_shortcut_record_menu": "Enregistrer dans un espace…",
-  "dock_shortcut_open_error": "Impossible d’ouvrir l’espace. Choisissez à nouveau."
+  "dock_shortcut_open_error": "Impossible d’ouvrir l’espace. Choisissez à nouveau.",
+  "dock_shortcut_action_title": "{action} : choisir un espace",
+  "dock_shortcut_action_destination": "Destination pour {action} : {workspace}",
+  "dock_shortcut_dictate_label": "Dicter"
 }

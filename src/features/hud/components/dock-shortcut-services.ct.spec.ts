@@ -47,6 +47,8 @@ for (const scenario of [
   'reconnect',
   'path',
   'unmapped',
+  'wildcard',
+  'ipv6wildcard',
 ] as const) {
   test(`service routing respects ${scenario} runtime ownership`, async ({ mount, page }, info) => {
     await mount(Harness, { props: { height: 700 } });
@@ -85,18 +87,22 @@ for (const scenario of [
           backendId: h.store.state.connections.windowBackendId,
           action: 'record',
           appName: 'Synthetic browser',
-          url: 'http://127.0.0.1:61999/project/page',
-          serviceAddress:
-            scenario === 'unmapped'
-              ? undefined
-              : scenario === 'path'
-                ? 'http://127.0.0.1:5173/project-other/page'
-                : 'http://127.0.0.1:5173/project/page',
+          url:
+            scenario === 'wildcard'
+              ? 'http://0.0.0.0:5173/project/page'
+              : scenario === 'ipv6wildcard'
+                ? 'http://[::]:5173/project/page'
+                : 'http://127.0.0.1:61999/project/page',
+          serviceAddress: ['unmapped', 'wildcard', 'ipv6wildcard'].includes(scenario)
+            ? undefined
+            : scenario === 'path'
+              ? 'http://127.0.0.1:5173/project-other/page'
+              : 'http://127.0.0.1:5173/project/page',
         });
       },
       { service, scenario },
     );
-    if (scenario !== 'unmapped')
+    if (!['unmapped', 'wildcard', 'ipv6wildcard'].includes(scenario))
       await expect
         .poll(() =>
           page.evaluate(() =>
@@ -152,7 +158,7 @@ for (const scenario of [
         native: h.native.log,
       };
     });
-    if (scenario !== 'unmapped')
+    if (!['unmapped', 'wildcard', 'ipv6wildcard'].includes(scenario))
       expect(evidence.calls).toContainEqual({
         method: 'script.list',
         params: {

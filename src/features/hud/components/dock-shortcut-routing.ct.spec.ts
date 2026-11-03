@@ -94,7 +94,7 @@ for (const action of ['focus', 'record'] as const) {
         (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.native.log.clips,
     );
     expect(repeated.started).toHaveLength(action === 'record' ? 1 : 0);
-    expect(repeated.stopped).toHaveLength(0);
+    expect(repeated.stopped).toHaveLength(action === 'record' ? 1 : 0);
     // A page URL takes precedence over the remembered broad app association.
     await invoke(page, 'focus', { url: 'https://example.test/unknown-page' });
     await expect(page.getByText('Open which workspace?')).toBeVisible();

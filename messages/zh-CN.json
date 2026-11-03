@@ -8339,5 +8339,8 @@
   "dock_shortcut_destination_aria": "目标工作区",
   "dock_shortcut_unavailable": "快捷键不可用",
   "dock_shortcut_record_menu": "录制到工作区…",
-  "dock_shortcut_open_error": "无法打开工作区。请重新选择。"
+  "dock_shortcut_open_error": "无法打开工作区。请重新选择。",
+  "dock_shortcut_action_title": "{action}：选择工作区",
+  "dock_shortcut_action_destination": "{action}目标：{workspace}",
+  "dock_shortcut_dictate_label": "听写"
 }

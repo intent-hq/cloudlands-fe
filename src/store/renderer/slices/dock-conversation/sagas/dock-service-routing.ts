@@ -1,3 +1,4 @@
+import { isDockLoopbackHostname } from '$shared/dock-shortcuts';
 import { all, call, put, type SagaGenerator } from 'typed-redux-saga';
 import { appClient } from '$lib/client';
 import {
@@ -21,9 +22,7 @@ import { scriptReadFinished } from '../../scripts/scripts-slice';
 import { getPrincipalConnectionContext } from '../../principal/principal-context';
 import { store as appStore } from '../../../store';
 
-function live(
-  runtime: ScriptRuntimeState,
-): runtime is ScriptRuntimeState & {
+function live(runtime: ScriptRuntimeState): runtime is ScriptRuntimeState & {
   runId: string;
   pid: number;
   startedAt: string;
@@ -44,7 +43,7 @@ function address(context: DockShortcutContext): string | undefined {
   try {
     const url = new URL(context.url ?? '');
     // A native browser's loopback is the client, not an arbitrary remote daemon.
-    if (['localhost', '127.0.0.1', '[::1]', 'daemon.localhost'].includes(url.hostname)) return;
+    if (isDockLoopbackHostname(url.hostname)) return;
     return url.href;
   } catch {
     return;

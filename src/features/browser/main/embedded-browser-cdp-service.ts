@@ -1,3 +1,4 @@
+import { isDockLoopbackHostname } from '../../../shared/dock-shortcuts';
 /**
  * Embedded Browser CDP Service
  *
@@ -741,11 +742,7 @@ class EmbeddedBrowserCdpService {
     // Only direct focused-tab ownership is authoritative for dev-server URLs.
     try {
       const parsed = new URL(url);
-      if (
-        parsed.port ||
-        ['localhost', '127.0.0.1', '[::1]', 'daemon.localhost'].includes(parsed.hostname)
-      )
-        return [];
+      if (parsed.port || isDockLoopbackHostname(parsed.hostname)) return [];
     } catch {
       return [];
     }

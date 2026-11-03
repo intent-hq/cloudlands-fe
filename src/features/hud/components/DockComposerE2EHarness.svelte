@@ -1,6 +1,8 @@
 <script lang="ts">
   import DockShortcutChooser from './DockShortcutChooser.svelte';
   import { selectDockShortcut } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
+  import { selectDockShortcutWorkspaces } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
+  import { WorkspaceStatus } from '$shared/types';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
   import { onMount } from 'svelte';
@@ -84,6 +86,27 @@
     }) as typeof api.invoke;
     (window as unknown as Record<string, unknown>).__dockComposerE2E = {
       native,
+      archiveWorkspace(id: string) {
+        const workspace = selectDockShortcutWorkspaces
+          .select(store.state)
+          .find((row) => row.id === id);
+        if (workspace)
+          store.dispatch(setWorkspaceEntity({ ...workspace, status: WorkspaceStatus.Archived }));
+      },
+      seedChoices(count: number) {
+        const base = selectDockShortcutWorkspaces.select(store.state)[0];
+        if (!base) return;
+        for (let index = 0; index < count; index++)
+          store.dispatch(
+            setWorkspaceEntity({
+              ...base,
+              id: `choice-${index}` as typeof base.id,
+              title: `Synthetic workspace ${index} with a long project title`,
+              branch: `branch-${index}`,
+              status: WorkspaceStatus.Active,
+            }),
+          );
+      },
       disconnect: () => store.dispatch(connectionStatusChanged('disconnected')),
       shortcut(context: import('$shared/dock-shortcuts').DockShortcutContext) {
         fixture.emit('window:focus-dock', context);
@@ -140,7 +163,8 @@
 </div>
 
 {#snippet conversation()}
-  <DockConversation onOpenWorkspace={() => {}} />
+  <DockShortcutChooser />
+  {#if !$shortcut$ || $shortcut$.destination}<DockConversation onOpenWorkspace={() => {}} />{/if}
 {/snippet}
 
 <style>

@@ -19,10 +19,12 @@ import {
   dockConversationLoaded,
   dockNativeSpeechSessionChanged,
   dockEvidenceRecordToggleRequested,
+  dockEvidenceCaptureRequested,
+  dockEvidenceAnnotationToggleRequested,
+  dockSpeechToggleRequested,
   closeDockConversationRequested,
 } from '../dock-conversation-slice';
 import { getPrincipalActionContext } from '../../principal/principal-context';
-import { evidenceOf } from './dock-evidence-saga';
 
 function key(backend: string) {
   return `dock-context-links:${backend}`;
@@ -39,7 +41,7 @@ function* receive(context?: DockShortcutContext): SagaGenerator<void> {
   if (
     !context ||
     typeof context.id !== 'string' ||
-    !['focus', 'record'].includes(context.action) ||
+    !['focus', 'capture', 'record', 'annotate', 'dictate'].includes(context.action) ||
     !valid(context)
   )
     return;
@@ -140,7 +142,7 @@ function* choose({
     );
     return;
   }
-  if (context.action === 'record') {
+  if (context.action !== 'focus') {
     const pairId = JSON.stringify([workspaceId, dock.agentId]);
     if (dock.nativeSpeech.pairId !== pairId) {
       yield* race({
@@ -174,10 +176,13 @@ function* choose({
       shortcut.authority !== getPrincipalActionContext(appStore.state)
     )
       return;
-    // Start once; a repeated global action must never toggle an existing clip off.
-    const evidence = evidenceOf(workspaceId, dock.agentId);
-    if (!evidence?.clips.some((clip) => clip.status === 'recording'))
+    if (context.action === 'capture')
+      yield* put(dockEvidenceCaptureRequested(workspaceId, dock.agentId));
+    else if (context.action === 'record')
       yield* put(dockEvidenceRecordToggleRequested(workspaceId, dock.agentId));
+    else if (context.action === 'annotate')
+      yield* put(dockEvidenceAnnotationToggleRequested(workspaceId, dock.agentId));
+    else yield* put(dockSpeechToggleRequested(workspaceId, dock.agentId));
   }
 }
 export function* dockShortcutSaga(): SagaGenerator<void> {
