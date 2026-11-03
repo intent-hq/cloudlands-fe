@@ -167,6 +167,7 @@
     selectAwaitingSwitchBackSnapshot,
     selectChatError,
     selectChatIsInterrupting,
+    selectChatLastTurnInterrupted,
     selectChatAgentState,
     selectInitialChatHistory,
     selectInitialChatHistoryPending,
@@ -639,6 +640,7 @@
   const chatStreamingContent$ = selectAgentSessionStreamingContent(agentIdStore);
   const chatError$ = selectChatError(agentIdStore);
   const chatIsInterrupting$ = selectChatIsInterrupting(agentIdStore);
+  const chatLastTurnInterrupted$ = selectChatLastTurnInterrupted(agentIdStore);
   const chatFailureCorrelation$ = selectChatFailureCorrelation(agentIdStore);
   const chatStreamingStartTime$ = selectChatStreamingStartTime(agentIdStore);
   const chatLastChunkTime$ = selectChatLastChunkTime(agentIdStore);
@@ -859,7 +861,9 @@
       blocked:
         isRetiredSession || !!effectiveError || !!$chatModelUnavailable$ || hasPendingPermission,
       interrupted:
-        $chatIsInterrupting$ || latestAssistantForTelemetry?.metadata?.stopReason === 'interrupted',
+        $chatIsInterrupting$ ||
+        $chatLastTurnInterrupted$ ||
+        latestAssistantForTelemetry?.metadata?.stopReason === 'interrupted',
       queue,
       delivered,
       now: Date.now(),

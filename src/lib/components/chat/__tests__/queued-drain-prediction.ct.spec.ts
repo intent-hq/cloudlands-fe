@@ -115,3 +115,25 @@ test('keeps queued messages in the queue when the user stops the turn', async ({
     component.locator('[data-message-role="user"]').filter({ hasText: QUEUED_TEXT }),
   ).toHaveCount(0);
 });
+
+test('keeps queued messages in the queue when another client stops the turn during startup', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  // A startup-window Stop from another client: this view never clicked Stop,
+  // and the interrupt terminal names no row (PROTOCOL §7.2), so no assistant
+  // row is marked interrupted. agent.stop leaves the queue untouched.
+  const component = await mount(ChatPanelComposerGeometryHost, {
+    props: { ...props, streaming: true, interruptedTurnEnd: true },
+  });
+  const queue = component.getByTestId('queued-messages-container');
+  await expect(queue).toContainText(QUEUED_TEXT);
+
+  await component.update({ props: { ...props, streaming: false, interruptedTurnEnd: true } });
+
+  await expect(queue).toContainText(QUEUED_TEXT);
+  await expect(
+    component.locator('[data-message-role="user"]').filter({ hasText: QUEUED_TEXT }),
+  ).toHaveCount(0);
+});

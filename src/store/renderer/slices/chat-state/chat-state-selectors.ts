@@ -48,6 +48,12 @@ export const selectChatIsInterrupting = store.createSelector(
   (state, agentId: string): boolean => getAgentChatState(state, agentId).isInterrupting,
 );
 
+/** The last terminal stream end was an interrupt (see `chatTurnEnded`). */
+export const selectChatLastTurnInterrupted = store.createSelector(
+  (state, agentId: string): boolean =>
+    getAgentChatState(state, agentId).lastTurnInterrupted === true,
+);
+
 export const selectChatFailureCorrelation = store.createSelector(
   (state, agentId: string): StreamFailureCorrelation | undefined =>
     getAgentChatState(state, agentId).failureCorrelation,
