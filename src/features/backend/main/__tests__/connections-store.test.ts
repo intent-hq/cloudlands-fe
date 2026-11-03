@@ -48,7 +48,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  const mod = await import('../connections-store');
+  const mod = await import('../desktop-connections-store');
   await mod.__drainWriteChainForTesting();
   await fs.rm(tmpDir, { recursive: true, force: true });
   vi.doUnmock('electron');
@@ -64,7 +64,7 @@ const sampleConn = {
 
 describe('connections-store', () => {
   it('list() synthesizes the local entry first even with an empty store', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const list = await store.list();
     expect(list).toHaveLength(1);
     expect(list[0]).toMatchObject({
@@ -78,12 +78,12 @@ describe('connections-store', () => {
   });
 
   it('local entry defaults to the active id', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     expect(await store.getActiveId()).toBe(store.LOCAL_CONNECTION_ID);
   });
 
   it('add → list round-trips through disk, local stays first, no token leaked', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     expect(rec.id).not.toBe(store.LOCAL_CONNECTION_ID);
     expect(rec).not.toHaveProperty('encToken');
@@ -106,7 +106,7 @@ describe('connections-store', () => {
   });
 
   it('preserves explicit blank accents and defaults only records written before accents existed', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add({ ...sampleConn, accent: null });
     expect(rec.accent).toBeNull();
     await store.__drainWriteChainForTesting();
@@ -117,7 +117,7 @@ describe('connections-store', () => {
 
     vi.resetModules();
     mockElectron();
-    const blankReloaded = await import('../connections-store');
+    const blankReloaded = await import('../desktop-connections-store');
     expect(
       (await blankReloaded.list()).find((connection) => connection.id === rec.id)?.accent,
     ).toBeNull();
@@ -127,14 +127,14 @@ describe('connections-store', () => {
 
     vi.resetModules();
     mockElectron();
-    const reloaded = await import('../connections-store');
+    const reloaded = await import('../desktop-connections-store');
     expect((await reloaded.list()).find((connection) => connection.id === rec.id)?.accent).toBe(
       'blue',
     );
   });
 
   it('round-trips an explicit blank through update, sync, and tombstones', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     expect(
       await store.updateMetadata(rec.id, { label: sampleConn.label, accent: null }),
@@ -192,7 +192,7 @@ describe('connections-store', () => {
   });
 
   it('updateMetadata changes name and accent without rewriting the bearer token', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     await store.__drainWriteChainForTesting();
     const file = path.join(tmpDir, 'backend-connections.json');
@@ -215,7 +215,7 @@ describe('connections-store', () => {
   });
 
   it('persists device icon choices for remote and local records without syncing the local override', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const remote = await store.add({ ...sampleConn, deviceIcon: 'rocket' });
     expect(remote).toMatchObject({ detectedDeviceKind: null, deviceIcon: 'rocket' });
 
@@ -231,12 +231,12 @@ describe('connections-store', () => {
     await store.__drainWriteChainForTesting();
     vi.resetModules();
     mockElectron();
-    const reloaded = await import('../connections-store');
+    const reloaded = await import('../desktop-connections-store');
     expect((await reloaded.list())[0].deviceIcon).toBe('cat');
   });
 
   it('rejects override-only kinds as detected metadata while keeping them valid as icons', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const { ConnectionsAddSchema } = await import('../../../../main/ipc-schemas');
     const rec = await store.add({ ...sampleConn, deviceIcon: 'robot' });
     expect(rec.deviceIcon).toBe('robot');
@@ -260,7 +260,7 @@ describe('connections-store', () => {
   });
 
   it('drops override-only detected kinds when hydrating remote and local records', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     await store.add({ ...sampleConn, detectedDeviceKind: 'macStudio' });
     await store.__drainWriteChainForTesting();
     const file = path.join(tmpDir, 'backend-connections.json');
@@ -271,7 +271,7 @@ describe('connections-store', () => {
 
     vi.resetModules();
     mockElectron();
-    const reloaded = await import('../connections-store');
+    const reloaded = await import('../desktop-connections-store');
     expect(await reloaded.list()).toEqual([
       expect.objectContaining({ id: reloaded.LOCAL_CONNECTION_ID, detectedDeviceKind: null }),
       expect.objectContaining({ detectedDeviceKind: null }),
@@ -279,7 +279,7 @@ describe('connections-store', () => {
   });
 
   it('updateMetadata rejects local, unknown, blank-name, and invalid-accent updates', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
 
     await expect(
@@ -297,7 +297,7 @@ describe('connections-store', () => {
   });
 
   it('forget removes a remote but rejects forgetting local', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     await expect(store.forget(store.LOCAL_CONNECTION_ID)).rejects.toThrow();
     // Local still present after the rejected forget.
@@ -310,7 +310,7 @@ describe('connections-store', () => {
   });
 
   it('setActiveId persists and forgetting the active one falls back to local', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     await store.setActiveId(rec.id);
     expect(await store.getActiveId()).toBe(rec.id);
@@ -320,27 +320,27 @@ describe('connections-store', () => {
   });
 
   it('setActiveId rejects an unknown id but accepts local', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     await expect(store.setActiveId('does-not-exist')).rejects.toThrow();
     await store.setActiveId(store.LOCAL_CONNECTION_ID);
     expect(await store.getActiveId()).toBe(store.LOCAL_CONNECTION_ID);
   });
 
   it('active id persists across a fresh module load (through disk)', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     await store.setActiveId(rec.id);
     await store.__drainWriteChainForTesting();
 
     vi.resetModules();
     mockElectron();
-    const reloaded = await import('../connections-store');
+    const reloaded = await import('../desktop-connections-store');
     expect(await reloaded.getActiveId()).toBe(rec.id);
     expect((await reloaded.list()).map((c) => c.id)).toContain(rec.id);
   });
 
   it('getDecryptedToken returns the original token; local has none', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     expect(await store.getDecryptedToken(rec.id)).toBe('secret-token');
     expect(await store.getDecryptedToken(store.LOCAL_CONNECTION_ID)).toBeNull();
@@ -348,7 +348,7 @@ describe('connections-store', () => {
   });
 
   it('updates remote address metadata while preserving the secret and syncing the old identity tombstone', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const original = await store.add(sampleConn);
 
     const updated = await store.updateMetadata(original.id, {
@@ -378,7 +378,7 @@ describe('connections-store', () => {
   });
 
   it('keeps a supplied detected kind across an address edit and clears it when omitted', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const original = await store.add({ ...sampleConn, detectedDeviceKind: 'server' });
 
     const kept = await store.updateMetadata(original.id, {
@@ -400,7 +400,7 @@ describe('connections-store', () => {
   });
 
   it('deduplicates an updated live identity and preserves the edited record as active', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const edited = await store.add(sampleConn);
     const duplicate = await store.add({
       ...sampleConn,
@@ -427,7 +427,7 @@ describe('connections-store', () => {
   });
 
   it('clears a matching tombstone when an update adopts that identity', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const edited = await store.add(sampleConn);
     const removed = await store.add({
       ...sampleConn,
@@ -455,7 +455,7 @@ describe('connections-store', () => {
   });
 
   it('replaces only the encrypted secret and validated fingerprint for one remote', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const original = await store.add(sampleConn);
     const updated = await store.replaceSecret(original.id, 'rotated-token', 'DD:EE:FF');
 
@@ -466,7 +466,7 @@ describe('connections-store', () => {
   });
 
   it('token is encrypted at rest when safeStorage is available', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     await store.add(sampleConn);
     await store.__drainWriteChainForTesting();
 
@@ -481,7 +481,7 @@ describe('connections-store', () => {
 
   it('falls back to marked plaintext when safeStorage is unavailable', async () => {
     encryptionAvailable = false;
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     await store.__drainWriteChainForTesting();
 
@@ -495,7 +495,7 @@ describe('connections-store', () => {
   });
 
   it('serializes concurrent adds without losing writes', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     // Distinct backends (distinct fingerprints AND targets) — same-backend
     // adds intentionally upsert.
     await Promise.all([
@@ -511,7 +511,7 @@ describe('connections-store', () => {
   });
 
   it('re-adding an existing host:port upserts in place (same id, fresh token/fingerprint/label)', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const original = await store.add(sampleConn);
     await store.setHostname(original.id, 'studio.local');
 
@@ -545,7 +545,7 @@ describe('connections-store', () => {
   });
 
   it('re-pair keeps a supplied detected kind and clears it only when omitted', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const original = await store.add({ ...sampleConn, detectedDeviceKind: 'server' });
 
     const detected = await store.add({
@@ -596,7 +596,7 @@ describe('connections-store', () => {
       }),
       'utf8',
     );
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
 
     const updated = await store.add(sampleConn);
 
@@ -637,7 +637,7 @@ describe('connections-store', () => {
       }),
       'utf8',
     );
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
 
     const updated = await store.add(sampleConn);
 
@@ -653,7 +653,7 @@ describe('connections-store', () => {
   });
 
   it('adding a different backend (host:port and fingerprint) still appends a new record', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const first = await store.add(sampleConn);
     const samePortOtherHost = await store.add({
       ...sampleConn,
@@ -672,7 +672,7 @@ describe('connections-store', () => {
   });
 
   it('re-adding the same fingerprint under a NEW host:port upserts in place (no duplicate)', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const original = await store.add(sampleConn);
     await store.setHostname(original.id, 'studio.local');
     await store.setHosts(original.id, ['10.0.0.5']);
@@ -728,7 +728,7 @@ describe('connections-store', () => {
       }),
       'utf8',
     );
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
 
     // A fingerprint-less add at legacy-1's target upserts it; legacy-2 stays.
     const updated = await store.add({
@@ -743,7 +743,7 @@ describe('connections-store', () => {
   });
 
   it('different fingerprints at the SAME host:port are different machines (no upsert, no tombstone match)', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     // A machine at this address was forgotten with an OLD certificate…
     const old = await store.add(sampleConn); // fingerprint AA:BB:CC
     await store.forget(old.id);
@@ -781,7 +781,7 @@ describe('connections-store', () => {
   });
 
   it('add stamps past a fingerprint-matching tombstone from a skewed (future) clock', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     await store.forget(rec.id);
     await store.__drainWriteChainForTesting();
@@ -798,7 +798,7 @@ describe('connections-store', () => {
 
     // An explicit re-publish must outrank the tombstone it supersedes, or the
     // keychain copy of the tombstone re-deletes the record on next reconcile.
-    const store2 = await import('../connections-store');
+    const store2 = await import('../desktop-connections-store');
     await store2.add({ ...sampleConn, token: 'tok-new' });
     await store2.__drainWriteChainForTesting();
     const after = JSON.parse(await fs.readFile(file, 'utf8'));
@@ -808,21 +808,21 @@ describe('connections-store', () => {
   });
 
   it('records default to a null hostname until one is captured', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     expect(rec.hostname).toBeNull();
     expect((await store.list())[1].hostname).toBeNull();
   });
 
   it('setHostname persists the captured hostname and it round-trips through disk', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     await store.setHostname(rec.id, 'studio.local');
     await store.__drainWriteChainForTesting();
 
     vi.resetModules();
     mockElectron();
-    const reloaded = await import('../connections-store');
+    const reloaded = await import('../desktop-connections-store');
     const remote = (await reloaded.list()).find((c) => c.id === rec.id);
     expect(remote?.hostname).toBe('studio.local');
   });
@@ -831,7 +831,7 @@ describe('connections-store', () => {
     vi.useFakeTimers();
     try {
       vi.setSystemTime(1_700_000_000_000);
-      const store = await import('../connections-store');
+      const store = await import('../desktop-connections-store');
       const rec = await store.add({ ...sampleConn, deviceIcon: 'dog' });
       const before = (await store.listSyncRecords())[0].updatedAt;
 
@@ -849,7 +849,7 @@ describe('connections-store', () => {
   });
 
   it('persists the local detected kind without putting the local record in keychain sync', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     expect(await store.setDetectedDeviceKind(store.LOCAL_CONNECTION_ID, 'laptop')).toBe(true);
     expect((await store.list())[0]).toMatchObject({
       detectedDeviceKind: 'laptop',
@@ -859,7 +859,7 @@ describe('connections-store', () => {
   });
 
   it('setHostname trims whitespace and ignores an empty hostname (keeps host:port fallback)', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
 
     await store.setHostname(rec.id, '  my-mac.local  ');
@@ -871,14 +871,14 @@ describe('connections-store', () => {
   });
 
   it('setHostname is a no-op for an unknown id (fail-soft)', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     await store.add(sampleConn);
     await expect(store.setHostname('does-not-exist', 'ghost.local')).resolves.toBeUndefined();
     expect((await store.list()).some((c) => c.hostname === 'ghost.local')).toBe(false);
   });
 
   it('setHostname migrates an address-default label to the captured pretty name', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     // The add form auto-fills the label with the address; trimmed comparison.
     const rec = await store.add({ ...sampleConn, label: ' 192.168.1.10:8443 ' });
     await store.setHostname(rec.id, "Clement's Mac mini");
@@ -889,7 +889,7 @@ describe('connections-store', () => {
   });
 
   it('setHostname counts a whitespace-only label as uncustomized (add schema only enforces min(1))', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add({ ...sampleConn, label: '   ' });
     await store.setHostname(rec.id, 'studio.local');
 
@@ -898,7 +898,7 @@ describe('connections-store', () => {
   });
 
   it('setHostname migrates the label even when the hostname itself is unchanged (pre-feature records)', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add({ ...sampleConn, label: '192.168.1.10:8443' });
     await store.__drainWriteChainForTesting();
 
@@ -915,7 +915,7 @@ describe('connections-store', () => {
   });
 
   it('an uncustomized label follows a backend rename on re-capture', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add({ ...sampleConn, label: '192.168.1.10:8443' });
     await store.setHostname(rec.id, 'studio.local');
     expect((await store.list())[1].label).toBe('studio.local');
@@ -929,7 +929,7 @@ describe('connections-store', () => {
   });
 
   it('a user-edited label is never overwritten by hostname captures', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn); // label 'Studio Mac' (customized)
     await store.setHostname(rec.id, 'studio.local');
     expect((await store.list())[1].label).toBe('Studio Mac');
@@ -942,7 +942,7 @@ describe('connections-store', () => {
   });
 
   it('editing the label back to the address makes it uncustomized again (follows the next capture)', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add({ ...sampleConn, label: 'My Custom Name' });
     await store.setHostname(rec.id, 'studio.local');
     expect((await store.list())[1].label).toBe('My Custom Name');
@@ -954,7 +954,7 @@ describe('connections-store', () => {
   });
 
   it('an address edit re-defaults an unmigrated address label to the new address (no stale freeze)', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     // Pre-migration record: label still the address, hostname already captured
     // (labels did not follow captures yet when this record was written).
     const rec = await store.add({ ...sampleConn, label: '192.168.1.10:8443' });
@@ -982,7 +982,7 @@ describe('connections-store', () => {
   });
 
   it('an endpoint edit resets an auto-captured label to the new address default (rename still followed)', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add({ ...sampleConn, label: '192.168.1.10:8443' });
     await store.setHostname(rec.id, 'studio.local');
     expect((await store.list())[1].label).toBe('studio.local');
@@ -1007,7 +1007,7 @@ describe('connections-store', () => {
   });
 
   it('an endpoint edit with a user-given label keeps it verbatim', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn); // label 'Studio Mac' (customized)
     await store.setHostname(rec.id, 'studio.local');
 
@@ -1023,7 +1023,7 @@ describe('connections-store', () => {
   });
 
   it('a certificate rotation via replaceSecret resets an auto-captured label to the address default', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add({ ...sampleConn, label: '192.168.1.10:8443' });
     await store.setHostname(rec.id, 'studio.local');
     expect((await store.list())[1].label).toBe('studio.local');
@@ -1048,27 +1048,27 @@ describe('connections-store', () => {
   });
 
   it('records default to a null daemonVersion until one is captured', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     expect(rec.daemonVersion).toBeNull();
     expect((await store.list())[1].daemonVersion).toBeNull();
   });
 
   it('setDaemonVersion persists the captured version and it round-trips through disk', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     await expect(store.setDaemonVersion(rec.id, '0.8.10')).resolves.toBe(true);
     await store.__drainWriteChainForTesting();
 
     vi.resetModules();
     mockElectron();
-    const reloaded = await import('../connections-store');
+    const reloaded = await import('../desktop-connections-store');
     const remote = (await reloaded.list()).find((c) => c.id === rec.id);
     expect(remote?.daemonVersion).toBe('0.8.10');
   });
 
   it('setDaemonVersion refreshes a changed version and reports unchanged writes as false', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
 
     await expect(store.setDaemonVersion(rec.id, ' 0.8.10 ')).resolves.toBe(true);
@@ -1087,7 +1087,7 @@ describe('connections-store', () => {
   });
 
   it('setDaemonVersion is a no-op for an unknown id (fail-soft)', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     await store.add(sampleConn);
     await expect(store.setDaemonVersion('does-not-exist', '1.0.0')).resolves.toBe(false);
     expect((await store.list()).some((c) => c.daemonVersion === '1.0.0')).toBe(false);
@@ -1097,7 +1097,7 @@ describe('connections-store', () => {
     vi.useFakeTimers();
     try {
       vi.setSystemTime(1_700_000_000_000);
-      const store = await import('../connections-store');
+      const store = await import('../desktop-connections-store');
       const rec = await store.add(sampleConn);
       await store.__drainWriteChainForTesting();
 
@@ -1124,27 +1124,27 @@ describe('connections-store', () => {
   });
 
   it('records default to a null updateSupported until one is captured', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     expect(rec.updateSupported).toBeNull();
     expect((await store.list())[1].updateSupported).toBeNull();
   });
 
   it('setUpdateSupported persists the captured flag and it round-trips through disk', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     await expect(store.setUpdateSupported(rec.id, true)).resolves.toBe(true);
     await store.__drainWriteChainForTesting();
 
     vi.resetModules();
     mockElectron();
-    const reloaded = await import('../connections-store');
+    const reloaded = await import('../desktop-connections-store');
     const remote = (await reloaded.list()).find((c) => c.id === rec.id);
     expect(remote?.updateSupported).toBe(true);
   });
 
   it('setUpdateSupported refreshes a changed flag and reports unchanged writes as false', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
 
     await expect(store.setUpdateSupported(rec.id, true)).resolves.toBe(true);
@@ -1159,7 +1159,7 @@ describe('connections-store', () => {
   });
 
   it('setUpdateSupported(null) clears a previously-stored flag back to unknown', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
 
     // A daemon replaced by one too old to report the field must not keep
@@ -1173,7 +1173,7 @@ describe('connections-store', () => {
   });
 
   it('setUpdateSupported is a no-op for an unknown id (fail-soft)', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     await store.add(sampleConn);
     await expect(store.setUpdateSupported('does-not-exist', true)).resolves.toBe(false);
     expect((await store.list()).some((c) => c.updateSupported === true)).toBe(false);
@@ -1183,7 +1183,7 @@ describe('connections-store', () => {
     vi.useFakeTimers();
     try {
       vi.setSystemTime(1_700_000_000_000);
-      const store = await import('../connections-store');
+      const store = await import('../desktop-connections-store');
       const rec = await store.add(sampleConn);
       await store.__drainWriteChainForTesting();
 
@@ -1210,14 +1210,14 @@ describe('connections-store', () => {
   });
 
   it('add captures the pairing tcAddress and it round-trips through disk', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add({ ...sampleConn, host: TC_ADDRESS, tcAddress: TC_ADDRESS });
     expect(rec.tcAddress).toBe(TC_ADDRESS);
     await store.__drainWriteChainForTesting();
 
     vi.resetModules();
     mockElectron();
-    const reloaded = await import('../connections-store');
+    const reloaded = await import('../desktop-connections-store');
     const remote = (await reloaded.list()).find((c) => c.id === rec.id);
     expect(remote?.tcAddress).toBe(TC_ADDRESS);
     expect(remote?.host).toBe(TC_ADDRESS);
@@ -1227,14 +1227,14 @@ describe('connections-store', () => {
   });
 
   it('records default to a null tcAddress until one is captured', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     expect(rec.tcAddress).toBeNull();
     expect((await store.list())[1].tcAddress).toBeNull();
   });
 
   it('re-pair keeps the known tcAddress when the new pairing URI omits tc=', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add({ ...sampleConn, tcAddress: TC_ADDRESS });
 
     // Same host:port → same identity; an older QR without tc= must not clear it.
@@ -1248,7 +1248,7 @@ describe('connections-store', () => {
   });
 
   it('setTcAddress refreshes/clears the stored address and reports no-ops as false', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
 
     await expect(store.setTcAddress(rec.id, TC_ADDRESS)).resolves.toBe(true);
@@ -1270,7 +1270,7 @@ describe('connections-store', () => {
     vi.useFakeTimers();
     try {
       vi.setSystemTime(1_700_000_000_000);
-      const store = await import('../connections-store');
+      const store = await import('../desktop-connections-store');
       const rec = await store.add(sampleConn);
       await store.__drainWriteChainForTesting();
 
@@ -1309,7 +1309,7 @@ describe('connections-store', () => {
     vi.useFakeTimers();
     try {
       vi.setSystemTime(1_700_000_000_000);
-      const store = await import('../connections-store');
+      const store = await import('../desktop-connections-store');
       const rec = await store.add(sampleConn);
       // Same-millisecond capture (the routine post-connect case): the stamp
       // is forced strictly past the record's clock, or reconcile would treat
@@ -1326,7 +1326,7 @@ describe('connections-store', () => {
   });
 
   it('sync records carry tcAddress and applyRemoteSyncRecord round-trips it', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add({ ...sampleConn, tcAddress: TC_ADDRESS });
 
     const records = await store.listSyncRecords();
@@ -1343,7 +1343,7 @@ describe('connections-store', () => {
   });
 
   it('applyRemoteSyncRecord inserts a new record with the synced tcAddress', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     await store.applyRemoteSyncRecord({
       label: 'Studio',
       host: '10.0.0.9',
@@ -1361,7 +1361,7 @@ describe('connections-store', () => {
   });
 
   it('an identity change via updateMetadata clears the captured tcAddress', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add({ ...sampleConn, tcAddress: TC_ADDRESS });
 
     // A metadata-only edit keeps the address…
@@ -1380,7 +1380,7 @@ describe('connections-store', () => {
   });
 
   it('a fingerprint change via updateMetadata or replaceSecret clears the captured tcAddress', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add({ ...sampleConn, tcAddress: TC_ADDRESS });
     await store.updateMetadata(rec.id, {
       label: sampleConn.label,
@@ -1400,7 +1400,7 @@ describe('connections-store', () => {
 
   it('malformed JSON on disk yields just the local entry (defensive)', async () => {
     await fs.writeFile(path.join(tmpDir, 'backend-connections.json'), 'not json', 'utf8');
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const list = await store.list();
     expect(list).toHaveLength(1);
     expect(list[0].id).toBe(store.LOCAL_CONNECTION_ID);
@@ -1408,14 +1408,14 @@ describe('connections-store', () => {
   });
 
   it('new records default to a single-host candidate list and detectHosts enabled (#1746)', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     expect(rec.hosts).toEqual(['192.168.1.10']);
     expect(await store.getDetectHosts(rec.id)).toBe(true);
   });
 
   it('pre-#1746 records (no hosts field) migrate to a one-element list', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     await store.__drainWriteChainForTesting();
 
@@ -1428,7 +1428,7 @@ describe('connections-store', () => {
 
     vi.resetModules();
     mockElectron();
-    const reloaded = await import('../connections-store');
+    const reloaded = await import('../desktop-connections-store');
     const remote = (await reloaded.list()).find((c) => c.id === rec.id);
     expect(remote?.hosts).toEqual(['192.168.1.10']);
     // Old records default to detection enabled.
@@ -1436,14 +1436,14 @@ describe('connections-store', () => {
   });
 
   it('setHosts persists deduplicated extras with the primary host first', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     await store.setHosts(rec.id, ['10.0.0.5', '192.168.1.10', ' 10.0.0.5 ', 'fe80::1', '']);
     await store.__drainWriteChainForTesting();
 
     vi.resetModules();
     mockElectron();
-    const reloaded = await import('../connections-store');
+    const reloaded = await import('../desktop-connections-store');
     const remote = (await reloaded.list()).find((c) => c.id === rec.id);
     expect(remote?.hosts).toEqual(['192.168.1.10', '10.0.0.5', 'fe80::1']);
     // The primary host stays untouched.
@@ -1454,7 +1454,7 @@ describe('connections-store', () => {
     // A record published before self-publish filtered loopback out of
     // localIps may still sync a loopback extra — dialing it would connect
     // this machine to its OWN local daemon, so reads must drop it.
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     await store.setHosts(rec.id, [
       '127.0.0.1',
@@ -1474,7 +1474,7 @@ describe('connections-store', () => {
     // Legacy synced records can carry a loopback primary — dialing it from
     // another device races that device's OWN daemon, so reads exclude it
     // whenever a routable candidate exists. The on-disk host is untouched.
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add({ ...sampleConn, host: '127.0.0.1' });
     await store.setHosts(rec.id, ['192.168.1.10']);
     const remote = (await store.list()).find((c) => c.id === rec.id);
@@ -1483,7 +1483,7 @@ describe('connections-store', () => {
   });
 
   it('an all-loopback record keeps the primary as its sole candidate (stays dialable)', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add({ ...sampleConn, host: '127.0.0.1' });
     await store.setHosts(rec.id, ['::1']);
     const remote = (await store.list()).find((c) => c.id === rec.id);
@@ -1492,7 +1492,7 @@ describe('connections-store', () => {
   });
 
   it('setHosts is a no-op for unknown ids and detectHosts=false records', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     await expect(store.setHosts('does-not-exist', ['10.0.0.5'])).resolves.toBe(false);
 
     const optedOut = await store.add({ ...sampleConn, detectHosts: false });
@@ -1503,7 +1503,7 @@ describe('connections-store', () => {
   });
 
   it('getDetectHosts is false for local and unknown ids', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     expect(await store.getDetectHosts(store.LOCAL_CONNECTION_ID)).toBe(false);
     expect(await store.getDetectHosts('does-not-exist')).toBe(false);
   });
@@ -1514,7 +1514,7 @@ describe('connections-store keychain sync surface', () => {
     vi.useFakeTimers();
     try {
       vi.setSystemTime(1_700_000_000_000);
-      const store = await import('../connections-store');
+      const store = await import('../desktop-connections-store');
       const rec = await store.add(sampleConn);
       await store.__drainWriteChainForTesting();
 
@@ -1542,7 +1542,7 @@ describe('connections-store keychain sync surface', () => {
     vi.useFakeTimers();
     try {
       vi.setSystemTime(1_700_000_000_000);
-      const store = await import('../connections-store');
+      const store = await import('../desktop-connections-store');
       const rec = await store.add(sampleConn);
       await store.setHostname(rec.id, 'studio.local');
       await expect(store.setHosts(rec.id, ['10.0.0.5'])).resolves.toBe(true);
@@ -1576,7 +1576,7 @@ describe('connections-store keychain sync surface', () => {
     vi.useFakeTimers();
     try {
       vi.setSystemTime(1_700_000_000_000);
-      const store = await import('../connections-store');
+      const store = await import('../desktop-connections-store');
       const rec = await store.add({ ...sampleConn, label: '192.168.1.10:8443' });
       // The first capture lands in the same millisecond as add: the stamp is
       // forced strictly past the record's clock so reconciliation (which
@@ -1620,7 +1620,7 @@ describe('connections-store keychain sync surface', () => {
     vi.useFakeTimers();
     try {
       vi.setSystemTime(1_700_000_000_000);
-      const store = await import('../connections-store');
+      const store = await import('../desktop-connections-store');
       const rec = await store.add(sampleConn);
       // setTcAddress forced the clock one past add's stamp; a setHosts in the
       // SAME millisecond (the every-connect system.status capture writes
@@ -1652,7 +1652,7 @@ describe('connections-store keychain sync surface', () => {
   });
 
   it('forget writes a tombstone (token-free) and re-adding the target clears it', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     await store.setHostname(rec.id, 'studio.local');
     await store.forget(rec.id);
@@ -1680,7 +1680,7 @@ describe('connections-store keychain sync surface', () => {
   });
 
   it('add dedupes host case-insensitively (no split-brain with accountKeyFor)', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const first = await store.add({ ...sampleConn, host: 'Studio.LOCAL' });
     const second = await store.add({ ...sampleConn, host: 'studio.local', label: 'Re-added' });
     expect(second.id).toBe(first.id);
@@ -1688,7 +1688,7 @@ describe('connections-store keychain sync surface', () => {
   });
 
   it('listSyncRecords lists live records (decrypted token) and tombstones, never the local entry', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     const other = await store.add({
       ...sampleConn,
@@ -1733,14 +1733,14 @@ describe('connections-store keychain sync surface', () => {
       }),
       'utf8',
     );
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const records = await store.listSyncRecords();
     expect(records).toHaveLength(1);
     expect(records[0].updatedAt).toBe(0);
   });
 
   it('applyRemoteSyncRecord upserts a live record verbatim (id preserved, clock not re-stamped)', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
 
     const changed = await store.applyRemoteSyncRecord({
@@ -1773,7 +1773,7 @@ describe('connections-store keychain sync surface', () => {
   });
 
   it('applyRemoteSyncRecord inserts a brand-new backend (fresh pull)', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const changed = await store.applyRemoteSyncRecord({
       label: 'Laptop',
       host: '10.0.0.2',
@@ -1794,7 +1794,7 @@ describe('connections-store keychain sync surface', () => {
   });
 
   it('applyRemoteSyncRecord tombstone removes the backend and falls active back to local', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     await store.setActiveId(rec.id);
 
@@ -1830,7 +1830,7 @@ describe('connections-store keychain sync surface', () => {
   });
 
   it('applyRemoteSyncRecord matches by fingerprint: a record under a NEW host:port collapses into the existing entry', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn); // 192.168.1.10:8443, AA:BB:CC
 
     const changed = await store.applyRemoteSyncRecord({
@@ -1855,7 +1855,7 @@ describe('connections-store keychain sync surface', () => {
   });
 
   it('applyRemoteSyncRecord tombstone matches by fingerprint: a delete under the OLD address removes the moved record', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     // The machine now lives at a new address locally.
     const rec = await store.add({ ...sampleConn, host: '192.168.1.99', port: 9443 });
     await store.setActiveId(rec.id);
@@ -1881,7 +1881,7 @@ describe('connections-store keychain sync surface', () => {
   });
 
   it('re-adding the same machine under a new address clears its old-address tombstone', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn); // 192.168.1.10:8443
     await store.forget(rec.id);
     await store.__drainWriteChainForTesting();
@@ -1900,7 +1900,7 @@ describe('connections-store keychain sync surface', () => {
   });
 
   it('onConnectionsMutated fires on local mutations but never on applyRemoteSyncRecord', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const listener = vi.fn();
     const unsubscribe = store.onConnectionsMutated(listener);
 
@@ -1940,7 +1940,7 @@ describe('connections-store keychain sync surface', () => {
   });
 
   it('activeId is never part of the sync surface', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     await store.setActiveId(rec.id);
     const records = await store.listSyncRecords();
@@ -1949,7 +1949,7 @@ describe('connections-store keychain sync surface', () => {
   });
 
   it('add without syncExcluded stays synced (flag false, listed to sync)', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     expect(rec.syncExcluded).toBe(false);
     expect((await store.list()).find((c) => c.id === rec.id)?.syncExcluded).toBe(false);
@@ -1957,7 +1957,7 @@ describe('connections-store keychain sync surface', () => {
   });
 
   it('add with syncExcluded persists the flag and hides the record from listSyncRecords', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const excluded = await store.add({ ...sampleConn, syncExcluded: true });
     const synced = await store.add({
       ...sampleConn,
@@ -1985,7 +1985,7 @@ describe('connections-store keychain sync surface', () => {
   });
 
   it('re-add flips the exclusion flag on the surviving record (both directions)', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const original = await store.add({ ...sampleConn, syncExcluded: true });
     expect(await store.listSyncRecords()).toHaveLength(0);
 
@@ -2003,7 +2003,7 @@ describe('connections-store keychain sync surface', () => {
   });
 
   it('re-add WITHOUT syncExcluded preserves the survivor exclusion (refresh must not flip consent)', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     // The user explicitly opted this backend out of sync…
     const original = await store.add({ ...sampleConn, syncExcluded: true });
     expect(await store.listSyncRecords()).toHaveLength(0);
@@ -2030,7 +2030,7 @@ describe('connections-store keychain sync surface', () => {
   });
 
   it('forget of an excluded record writes an excluded tombstone that never reaches sync', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add({ ...sampleConn, syncExcluded: true });
     await store.forget(rec.id);
     await store.__drainWriteChainForTesting();
@@ -2047,7 +2047,7 @@ describe('connections-store keychain sync surface', () => {
   });
 
   it('forget of a synced record writes a non-excluded tombstone (still listed to sync)', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     await store.forget(rec.id);
     await store.__drainWriteChainForTesting();
@@ -2060,7 +2060,7 @@ describe('connections-store keychain sync surface', () => {
   });
 
   it('updateMetadata syncExcluded true keeps the local record and writes a synced tombstone for its cloud copy', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     const before = (await store.listSyncRecords())[0].updatedAt;
 
@@ -2093,7 +2093,7 @@ describe('connections-store keychain sync surface', () => {
   });
 
   it('a later plain edit of an excluded record leaves its pending cloud-delete tombstone in place', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     await store.updateMetadata(rec.id, { label: 'Studio Mac', accent: null, syncExcluded: true });
     const [tombstone] = await store.listSyncRecords();
@@ -2109,7 +2109,7 @@ describe('connections-store keychain sync surface', () => {
     vi.useFakeTimers();
     try {
       vi.setSystemTime(1_700_000_005_000);
-      const store = await import('../connections-store');
+      const store = await import('../desktop-connections-store');
       const rec = await store.add(sampleConn);
       await store.updateMetadata(rec.id, { label: 'Studio Mac', accent: null, syncExcluded: true });
       const [pending] = await store.listSyncRecords();
@@ -2149,7 +2149,7 @@ describe('connections-store keychain sync surface', () => {
     vi.useFakeTimers();
     try {
       vi.setSystemTime(1_700_000_005_000);
-      const store = await import('../connections-store');
+      const store = await import('../desktop-connections-store');
       const rec = await store.add(sampleConn);
       await store.updateMetadata(rec.id, { label: 'Studio Mac', accent: null, syncExcluded: true });
       const [pending] = await store.listSyncRecords();
@@ -2177,7 +2177,7 @@ describe('connections-store keychain sync surface', () => {
   });
 
   it('re-pair of an excluded record with a pending cloud delete carries that delete forward', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     await store.updateMetadata(rec.id, { label: 'Studio Mac', accent: null, syncExcluded: true });
     const [pending] = await store.listSyncRecords();
@@ -2203,7 +2203,7 @@ describe('connections-store keychain sync surface', () => {
   });
 
   it('updateMetadata syncExcluded false re-publishes the record strictly past its own tombstone', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     await store.updateMetadata(rec.id, { label: 'Studio Mac', accent: null, syncExcluded: true });
     const [tombstone] = await store.listSyncRecords();
@@ -2227,7 +2227,7 @@ describe('connections-store keychain sync surface', () => {
   });
 
   it('updateMetadata with an unchanged syncExcluded flag is a no-op write', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add({ ...sampleConn, accent: null, syncExcluded: true });
     await store.__drainWriteChainForTesting();
     const file = path.join(tmpDir, 'backend-connections.json');
@@ -2241,7 +2241,7 @@ describe('connections-store keychain sync surface', () => {
   });
 
   it('updateMetadata detectHosts false drops detected extras and stops refreshes; true re-enables them', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     await store.setHosts(rec.id, ['10.0.0.5']);
     expect((await store.list()).find((c) => c.id === rec.id)).toMatchObject({
@@ -2279,7 +2279,7 @@ describe('connections-store keychain sync surface', () => {
     const peerTmp = await fs.mkdtemp(path.join(os.tmpdir(), 'backend-connections-peer-'));
     try {
       vi.setSystemTime(1_700_000_000_000);
-      const store = await import('../connections-store');
+      const store = await import('../desktop-connections-store');
       const rec = await store.add(sampleConn);
       await store.setHosts(rec.id, ['10.0.0.5']);
       const [before] = await store.listSyncRecords();
@@ -2302,7 +2302,7 @@ describe('connections-store keychain sync surface', () => {
       // refreshes, so later pairing-info updates no longer repopulate them.
       tmpDir = peerTmp;
       vi.resetModules();
-      const peer = await import('../connections-store');
+      const peer = await import('../desktop-connections-store');
       await peer.applyRemoteSyncRecord(before);
       const peerRec = (await peer.list()).find((c) => c.host === sampleConn.host)!;
       expect(peerRec.hosts).toEqual([sampleConn.host, '10.0.0.5']);
@@ -2359,7 +2359,7 @@ describe('connections-store keychain sync surface', () => {
       }),
       'utf8',
     );
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const remote = (await store.list()).find((c) => !c.isLocal);
     expect(remote?.syncExcluded).toBe(false);
     // Both the legacy record and the legacy tombstone still sync.
@@ -2369,7 +2369,7 @@ describe('connections-store keychain sync surface', () => {
   });
 
   it('applyRemoteSyncRecord live pull never overwrites an excluded record (same account)', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add({ ...sampleConn, syncExcluded: true });
     await store.__drainWriteChainForTesting();
     const file = path.join(tmpDir, 'backend-connections.json');
@@ -2397,7 +2397,7 @@ describe('connections-store keychain sync surface', () => {
   });
 
   it('applyRemoteSyncRecord live pull for an excluded backend under a NEW address creates no duplicate', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add({ ...sampleConn, syncExcluded: true });
 
     const changed = await store.applyRemoteSyncRecord({
@@ -2425,7 +2425,7 @@ describe('connections-store keychain sync surface', () => {
   });
 
   it('applyRemoteSyncRecord matches an excluded fingerprint-less record by host:port (no update, no duplicate)', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add({ ...sampleConn, fingerprint: '', syncExcluded: true });
 
     const changed = await store.applyRemoteSyncRecord({
@@ -2449,7 +2449,7 @@ describe('connections-store keychain sync surface', () => {
   });
 
   it('applyRemoteSyncRecord tombstone never deletes an excluded record and remembers nothing', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add({ ...sampleConn, syncExcluded: true });
     await store.setActiveId(rec.id);
 
@@ -2482,7 +2482,7 @@ describe('connections-store keychain sync surface', () => {
   });
 
   it('applyRemoteSyncRecord live pull never resurrects a forgotten excluded backend (excluded tombstone shields)', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add({ ...sampleConn, syncExcluded: true });
     await store.forget(rec.id);
 
@@ -2513,7 +2513,7 @@ describe('connections-store keychain sync surface', () => {
   });
 
   it('excluded-tombstone shield matches a fingerprint-less backend by host:port', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add({ ...sampleConn, fingerprint: '', syncExcluded: true });
     await store.forget(rec.id);
 
@@ -2540,7 +2540,7 @@ describe('connections-store keychain sync surface', () => {
   });
 
   it('a NON-excluded tombstone does not shield: a live pull still applies (normal LWW)', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     await store.forget(rec.id);
 
@@ -2572,7 +2572,7 @@ describe('connections-store keychain sync surface', () => {
     // holds its stale synced copy from before the opt-out, forget it — the
     // next reconcile pulls the unpaired stale record and must NOT re-create
     // the backend.
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const sync = await import('../keychain-sync');
 
     const keychain = new Map<string, string>();
@@ -2635,7 +2635,7 @@ describe('connections-store keychain sync surface', () => {
     // Real store + real reconcile against an in-memory keychain: the
     // excluded record must be invisible (push side) and inviolable (pull
     // side) across full reconcile passes.
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const sync = await import('../keychain-sync');
 
     const keychain = new Map<string, string>();
@@ -2743,7 +2743,7 @@ describe('connections-store keychain sync surface', () => {
     // The refresh path re-upserts the self record through store.add (same
     // fingerprint, new port). This drives the REAL store + REAL reconcile
     // against an in-memory keychain to prove no stale duplicate survives.
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const sync = await import('../keychain-sync');
 
     // In-memory keychain client.
@@ -2805,7 +2805,7 @@ describe('connections-store keychain sync surface', () => {
 
 describe('findMatching (pairing identity lookup)', () => {
   it('matches by fingerprint even under a different host:port', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);
     const found = await store.findMatching({
       hosts: ['10.0.0.99'],
@@ -2818,7 +2818,7 @@ describe('findMatching (pairing identity lookup)', () => {
   });
 
   it('falls back to normalized host:port when fingerprints are unusable', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add({ ...sampleConn, fingerprint: '' });
     const found = await store.findMatching({
       hosts: ['  192.168.1.10 '],
@@ -2829,7 +2829,7 @@ describe('findMatching (pairing identity lookup)', () => {
   });
 
   it('tries every candidate host from the pairing URI', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     const rec = await store.add({ ...sampleConn, fingerprint: '' });
     const found = await store.findMatching({
       hosts: ['10.9.9.9', '192.168.1.10'],
@@ -2840,7 +2840,7 @@ describe('findMatching (pairing identity lookup)', () => {
   });
 
   it('returns null when nothing matches', async () => {
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     await store.add(sampleConn);
     const found = await store.findMatching({
       hosts: ['10.0.0.1'],

@@ -48,9 +48,17 @@
     WorkspaceInitializerRemoteSetup,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
   import { faGithub, faGitlab } from '@fortawesome/free-brands-svg-icons';
-  import { faFolder, faXmark, faPlus, faChevronDown } from '@fortawesome/free-solid-svg-icons';
+  import {
+    faFolder,
+    faXmark,
+    faPlus,
+    faChevronDown,
+    faArrowLeft,
+    faArrowUpRightFromSquare,
+  } from '@fortawesome/free-solid-svg-icons';
   import { onDestroy, tick, untrack } from 'svelte';
   import Fa from 'svelte-fa';
+  import { handleLink } from '$features/navigation/link-handler';
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
   import AddRemoteSetupModal from './AddRemoteSetupModal.svelte';
   import GitLabProjectPicker from './GitLabProjectPicker.svelte';
@@ -95,13 +103,20 @@
     getRecentRepoLabel,
     getRecentRepoIdentity,
     getRecentRepoTooltip,
+    getRepoFolderName,
     matchesRecentRepoSearch,
   } from './recent-repo-display';
   import { Tooltip } from '$lib/components/ui/tooltip';
+  import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
+  import { workspacePickerStyles } from './workspace-picker-styles';
+  import { canPlaceBeside } from '$lib/components/ui/overlay-positioning';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 
   const logger = createLogger('RepoSelector');
   const dialogPortalTarget = useDialogPortalTarget();
+  const isMobile = new IsMobile();
+  let formTriggerElement = $state<HTMLButtonElement | HTMLAnchorElement | null>(null);
+  let formMenuBelow = $state(false);
 
   // Effective isolated-checkout mode (worktree vs CoW clone) for creation copy.
   // Re-resolves when workspace items hydrate (cowSupported is read off them).
@@ -182,6 +197,7 @@
     value?: string;
     onchange?: (event: CustomEvent<RepoChangeDetail>) => void;
     triggerClass?: string;
+    rowLabel?: string;
     displayValue?: string;
     /** Dimmed suffix rendered after the repo name, e.g. "owner/repo" */
     triggerSuffix?: string;
@@ -216,6 +232,7 @@
     value = '',
     onchange,
     triggerClass,
+    rowLabel,
     displayValue,
     triggerSuffix,
     triggerValueClass = 'text-subtle',
@@ -260,6 +277,7 @@
       confirmedGithubUrl = '';
     }
     openOnTab = tab;
+    if (rowLabel) formStep = 'add';
     isOpen = true;
   }
 
@@ -275,7 +293,6 @@
   let githubInputElement = $state<HTMLInputElement | null>(null);
   let isOpen = $state(false); // Track dropdown open state
   let openOnTab: 'local' | 'new' | null = null; // One-shot tab for the next open
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let isDialogOpen = $state(false); // Track if a native dialog is open (prevents dropdown from closing)
   const isLoading = $derived(
     !$recentRepoRefresh$ ||
@@ -307,11 +324,22 @@
       appStore.dispatch !== mountedDispatch
     )
       return saved;
-    const merged = new Map(saved.map((repo) => [recentRepoKey(repo), repo]));
-    for (const repo of sourceView.repos) merged.set(recentRepoKey(repo), repo);
-    return [...merged.values()]
-      .filter((repo) => !$dismissedRecentRepoKeys$[recentRepoKey(repo)])
-      .slice(0, 9);
+    const merged = new Map<string, WorkspaceInitializerRecentRepo>();
+    if (rowLabel) {
+      // The admitted source already includes saved entries in usage order.
+      // Keep that order and show every known repository in the form picker.
+      for (const repo of [...sourceView.repos, ...saved]) {
+        const key = recentRepoKey(repo);
+        if (!merged.has(key)) merged.set(key, repo);
+      }
+    } else {
+      for (const repo of saved) merged.set(recentRepoKey(repo), repo);
+      for (const repo of sourceView.repos) merged.set(recentRepoKey(repo), repo);
+    }
+    const visible = [...merged.values()].filter(
+      (repo) => !$dismissedRecentRepoKeys$[recentRepoKey(repo)],
+    );
+    return rowLabel ? visible : visible.slice(0, 9);
   });
 
   async function handleDismissRecentRepo(event: MouseEvent, repo: WorkspaceInitializerRecentRepo) {
@@ -320,11 +348,11 @@
     const button = event.currentTarget as HTMLButtonElement;
     const row = button.closest('[data-recent-repo-row]');
     const nextRow = row?.nextElementSibling ?? row?.previousElementSibling;
+    const dialog = button.closest('[role="dialog"]');
     const nextFocus =
       nextRow?.querySelector<HTMLButtonElement>('[data-remove-recent-repo]') ??
-      button
-        .closest('[role="dialog"]')
-        ?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]');
+      dialog?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]') ??
+      dialog?.querySelector<HTMLElement>('[data-repo-search]');
     appStore.dispatch(dismissWorkspaceInitializerRecentRepo({ path: repo.path, type: repo.type }));
     await tick();
     nextFocus?.focus();
@@ -629,6 +657,141 @@
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // FORM PICKER (rowLabel): one recency-ordered list, plus an Add step
+  // ═══════════════════════════════════════════════════════════════════════════
+  // The default view lists every known repository once, in saved recency order,
+  // across its actual source identity. Linking, local copy, new and remote
+  // flows live behind "Add repository" and reuse the tabbed forms below.
+  let formStep = $state<'browse' | 'add'>('browse');
+  let formQuery = $state('');
+  let formSearchElement = $state<HTMLInputElement | null>(null);
+  let formListElement = $state<HTMLDivElement | undefined>();
+  const formRepositoryChoices = $derived.by(() => {
+    if (recentRepos.some(isCurrentRepo)) return recentRepos;
+    let current: WorkspaceInitializerRecentRepo | undefined;
+    if (gitlabSelected && gitlab?.instanceBaseUrl && gitlab.selectedProjectPath) {
+      const projectPath = gitlab.selectedProjectPath;
+      const url = `${gitlab.instanceBaseUrl}/${projectPath}`;
+      current = {
+        path: url,
+        type: 'github',
+        githubUrl: url,
+        name: projectPath.split('/').at(-1)!,
+        owner: projectPath.split('/').slice(0, -1).join('/'),
+        repositoryIdentity: {
+          provider: 'gitlab',
+          instanceBaseUrl: gitlab.instanceBaseUrl,
+          projectPath,
+        },
+      };
+    } else if (!gitlabSelected && selectedValue) {
+      const github =
+        selectedRepoType === 'github' ? parseGitHubUrl(confirmedGithubUrl || selectedValue) : null;
+      current = github
+        ? {
+            path: `${github.owner}/${github.repo}`,
+            type: 'github',
+            githubUrl: `https://github.com/${github.owner}/${github.repo}`,
+            name: github.repo,
+            owner: github.owner,
+          }
+        : { path: selectedValue, type: 'local', name: getRepoFolderName(selectedValue) };
+    }
+    return current ? [current, ...recentRepos] : recentRepos;
+  });
+  const formRepos = $derived(
+    formQuery.trim() === ''
+      ? formRepositoryChoices
+      : formRepositoryChoices.filter((repo) => matchesRecentRepoSearch(repo, formQuery.trim())),
+  );
+
+  function isFormRepoDisabled(repo: WorkspaceInitializerRecentRepo): boolean {
+    const identity = getRecentRepoIdentity(repo, gitlab?.instanceBaseUrl);
+    return (
+      repo.type !== 'local' &&
+      identity?.provider === 'gitlab' &&
+      (!gitlab?.authenticated ||
+        identity.instanceBaseUrl !== gitlab.instanceBaseUrl ||
+        (!gitlab.scopeKey && !gitlab.onSelectRecent) ||
+        gitlab.page.status === 'unavailable')
+    );
+  }
+
+  /** The row matching the current selection, by source identity. */
+  function isCurrentRepo(repo: WorkspaceInitializerRecentRepo): boolean {
+    const identity = getRecentRepoIdentity(repo, gitlab?.instanceBaseUrl);
+    if (repo.type !== 'local' && identity?.provider === 'gitlab') {
+      return (
+        gitlabSelected &&
+        gitlab?.instanceBaseUrl === identity.instanceBaseUrl &&
+        gitlab.selectedProjectPath === identity.projectPath
+      );
+    }
+    if (gitlabSelected || !selectedValue) return false;
+    if (repo.type === 'github') {
+      return (
+        selectedRepoType === 'github' &&
+        isSameGitHubRepo(repo.githubUrl || repo.path, confirmedGithubUrl || selectedValue)
+      );
+    }
+    return selectedRepoType !== 'github' && repo.path === selectedValue;
+  }
+
+  function formRowButtons(): HTMLButtonElement[] {
+    return [...(formListElement?.querySelectorAll<HTMLElement>('[data-recent-repo-row]') ?? [])]
+      .map((row) => row.querySelector<HTMLButtonElement>('button:not([data-remove-recent-repo])'))
+      .filter((button): button is HTMLButtonElement => !!button && !button.disabled);
+  }
+
+  function handleFormSearchKeydown(event: KeyboardEvent) {
+    if (event.isComposing) return;
+    if (event.key === 'ArrowDown') {
+      const first = formRowButtons()[0];
+      if (!first) return;
+      event.preventDefault();
+      first.focus();
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      event.stopPropagation();
+      const first = formRepos.find((repo) => !isFormRepoDisabled(repo));
+      if (first) handleSelectRepo(first);
+    }
+  }
+
+  function handleFormListKeydown(event: KeyboardEvent) {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    const buttons = formRowButtons();
+    const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    if (index < 0) return;
+    event.preventDefault();
+    if (event.key === 'ArrowUp' && index === 0) formSearchElement?.focus();
+    else {
+      const step = event.key === 'ArrowDown' ? 1 : -1;
+      buttons[Math.min(buttons.length - 1, index + step)]?.focus();
+    }
+  }
+
+  function openAddStep() {
+    formStep = 'add';
+    void tick().then(() => {
+      if (activeTab === 'github') githubInputElement?.focus();
+    });
+  }
+
+  function closeAddStep() {
+    formStep = 'browse';
+    void tick().then(() => formSearchElement?.focus());
+  }
+
+  function selectRepositoryTab(value: string) {
+    const next = value === 'repository' ? repositoryTab : (value as TabId);
+    if (rowLabel && next === 'local' && parseGitHubUrl(inputValue)) {
+      handleInputChange('');
+    }
+    activeTab = next;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // GITHUB AUTOCOMPLETE ("Clone" tab)
   // ═══════════════════════════════════════════════════════════════════════════
   // Mirrors the onboarding GitHubRepoTab: the user's own repos filtered
@@ -791,8 +954,22 @@
 
   // Handle dropdown open - set correct tab when opening
   function handleDropdownOpen() {
+    formMenuBelow = !canPlaceBeside(formTriggerElement, 360);
     // Clear search term when opening so all repos show
     searchTerm = '';
+    if (rowLabel && formStep === 'browse') {
+      formQuery = '';
+      requestAnimationFrame(() => {
+        if (isOpen && formStep === 'browse') formSearchElement?.focus();
+      });
+      // The Add step keeps its last tab; seed it from the current selection below.
+    } else if (rowLabel) {
+      if (openOnTab) {
+        activeTab = openOnTab;
+        openOnTab = null;
+      }
+      return;
+    }
 
     // Set the correct tab based on the selected repo type
     const currentValue = selectedValue || value;
@@ -829,6 +1006,7 @@
     // Focus input - always autofocus for better UX
     // Use requestAnimationFrame for better timing
     requestAnimationFrame(() => {
+      if (rowLabel) return;
       if (isOpen && activeTab !== 'gitlab' && inputElement) {
         inputElement.focus();
         inputElement.select();
@@ -845,6 +1023,15 @@
     if (currentlyOpen && !previousOpenState) {
       // Dropdown just opened
       handleDropdownOpen();
+    } else if (
+      !currentlyOpen &&
+      previousOpenState &&
+      rowLabel &&
+      !isDialogOpen &&
+      !folderPickerOpen
+    ) {
+      // A folder dialog reopens the Add step; any other close returns to the list.
+      formStep = 'browse';
     }
     previousOpenState = currentlyOpen;
   });
@@ -1217,6 +1404,10 @@
   function handleSelectRepo(repo: any) {
     // Any recent pick (GitLab included) supersedes a local entry still being probed.
     recentProbeToken++;
+    if (rowLabel && isCurrentRepo(repo)) {
+      isOpen = false;
+      return;
+    }
     const identity = getRecentRepoIdentity(repo, gitlab?.instanceBaseUrl);
     if (repo.type !== 'local' && identity?.provider === 'gitlab') {
       if (
@@ -1638,7 +1829,110 @@
   );
 </script>
 
-<div class="relative">
+<div class="relative min-w-0">
+  {#snippet recentRepoRows(
+    repos: WorkspaceInitializerRecentRepo[],
+    isSelected: (repo: WorkspaceInitializerRecentRepo, index: number) => boolean,
+  )}
+    {#each repos as repo, index (recentRepoKey(repo))}
+      {@const label = getRecentRepoLabel(repo)}
+      {@const identity = getRecentRepoIdentity(repo, gitlab?.instanceBaseUrl)}
+      {@const owner = identity
+        ? identity.projectPath.split('/').slice(0, -1).join('/')
+        : label.ownerPrefix}
+      {@const tooltip = getRecentRepoTooltip(repo)}
+      {@const avatarUrl =
+        identity?.provider === 'gitlab' &&
+        gitlab?.authenticated &&
+        gitlab.scopeKey &&
+        identity.instanceBaseUrl === gitlab.instanceBaseUrl &&
+        gitlab.page.status === 'ready'
+          ? (
+              gitlab.page.items.find((project) => project.projectPath === identity.projectPath) ??
+              (gitlab.selectedProject?.projectPath === identity.projectPath
+                ? gitlab.selectedProject
+                : undefined)
+            )?.ownerAvatarUrl
+          : undefined}
+      <div
+        class="group/recent-repo flex min-w-0 items-center {rowLabel
+          ? 'rounded-(--radius-row)'
+          : ''} {rowLabel && isSelected(repo, index) ? 'bg-selected' : ''}"
+        data-recent-repo-row
+      >
+        {#snippet repoRow()}
+          <RepositoryPickerRow
+            {owner}
+            name={identity && repo.type !== 'local'
+              ? identity.projectPath.split('/').at(-1)!
+              : label.primary}
+            suffix={label.suffix}
+            provider={identity?.provider}
+            {avatarUrl}
+            showOwner={repo.type !== 'local'}
+            showForge
+            recent
+            selected={isSelected(repo, index)}
+            formStyle={!!rowLabel}
+            class="flex-1"
+            onclick={() => handleSelectRepo(repo)}
+            disabled={repo.type !== 'local' &&
+              identity?.provider === 'gitlab' &&
+              (!gitlab?.authenticated ||
+                identity.instanceBaseUrl !== gitlab.instanceBaseUrl ||
+                (!gitlab.scopeKey && !gitlab.onSelectRecent) ||
+                gitlab.page.status === 'unavailable')}
+          />
+        {/snippet}
+        {#if tooltip}
+          <Tooltip content={tooltip} delayDuration={300} side="bottom" class="flex min-w-0 flex-1">
+            {@render repoRow()}
+          </Tooltip>
+        {:else}
+          {@render repoRow()}
+        {/if}
+        {#if rowLabel && identity}
+          {@const repositoryUrl = `${identity.instanceBaseUrl.replace(/\/$/, '')}/${identity.projectPath}`}
+          <Button
+            variant="ghost"
+            size="icon-compact"
+            iconOnly
+            href={repositoryUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            tooltip={m.browser_embedded_openExternal_tooltip()}
+            aria-label={m.browser_embedded_openExternal_ariaLabel()}
+            class="mr-1 shrink-0 text-subtle"
+            onclick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              void handleLink(repositoryUrl, { event, forceExternal: true });
+            }}
+          >
+            <Fa icon={faArrowUpRightFromSquare} size={12} />
+          </Button>
+        {/if}
+        {#if !rowLabel}
+          <Button
+            variant="ghost"
+            type="button"
+            size="icon-compact"
+            iconOnly
+            data-remove-recent-repo
+            class="mr-2 shrink-0 opacity-0 pointer-events-none group-hover/recent-repo:opacity-100 group-hover/recent-repo:pointer-events-auto group-focus-within/recent-repo:opacity-100 group-focus-within/recent-repo:pointer-events-auto"
+            aria-label={m.workspace_repoSelector_removeRecent_ariaLabel({
+              repository: repo.path,
+            })}
+            title={m.workspace_repoSelector_removeRecent_tooltip()}
+            onclick={(event) => handleDismissRecentRepo(event, repo)}
+          >
+            <Fa icon={faXmark} size={12} />
+          </Button>
+        {/if}
+      </div>
+    {/each}
+  {/snippet}
+
   {#snippet forgePrefix()}
     {#if authenticatedForges.length > 1}
       <Menu.Root>
@@ -1686,12 +1980,24 @@
       {#snippet child({ props })}
         <Button
           {...props}
+          bind:ref={formTriggerElement}
           {variant}
+          wrapContent={!rowLabel}
           class={`w-full ${triggerClass ?? ''}`}
           aria-label={triggerAriaLabel ??
-            `${m.workspace_repoSelector_selectRepository_label()}: ${triggerDisplayValue}`}
+            (rowLabel
+              ? undefined
+              : `${m.workspace_repoSelector_selectRepository_label()}: ${triggerDisplayValue}`)}
+          aria-labelledby={rowLabel && !triggerAriaLabel
+            ? `${pickerId}-field-label ${pickerId}-field-value`
+            : undefined}
         >
-          <div class={`flex w-full items-center truncate ${triggerContentClass}`}>
+          <div class={`flex w-full min-w-0 items-center truncate ${triggerContentClass}`}>
+            {#if rowLabel}
+              <span class={workspacePickerStyles.fieldLabel} id={`${pickerId}-field-label`}
+                >{rowLabel}</span
+              >
+            {/if}
             <!-- {#if isNewRepo}
           <Fa icon={faPlus} size="sm" class="text-ghost" />
         {:else}
@@ -1717,9 +2023,14 @@
                     size={16}
                   />{/snippet}
               </GitHubAvatar>
+            {:else if rowLabel}
+              <GitRepoIcon size={16} class="shrink-0 text-muted-foreground" />
             {/if}
             {#if !triggerIcon && (hasTriggerValue || emptyLabel)}
-              <span class="flex-1 text-left truncate">
+              <span
+                class="min-w-0 flex-1 text-left truncate"
+                id={rowLabel ? `${pickerId}-field-value` : undefined}
+              >
                 {#if hasTriggerValue}
                   <span class={triggerValueClass}>{triggerDisplayValue}</span>
                   {#if isNewRepo && !displayValue && !gitlabSelected}
@@ -1744,498 +2055,518 @@
     </Popover.Trigger>
     <Popover.Content
       role="dialog"
-      aria-label={m.workspace_repoSelector_whichRepo_label()}
-      class="w-[400px] max-w-[calc(100vw-16px)] min-w-0 max-h-[min(600px,var(--bits-popover-content-available-height,100dvh))] overflow-y-auto flex flex-col"
+      aria-label={rowLabel ?? m.workspace_repoSelector_whichRepo_label()}
+      class={rowLabel
+        ? `w-[360px] max-w-[calc(100vw-1rem)] min-w-0 max-h-[min(440px,var(--bits-popover-content-available-height,calc(100dvh-1rem)))] flex flex-col ${formStep === 'browse' ? 'overflow-hidden' : 'overflow-y-auto'}`
+        : 'w-[400px] max-w-[calc(100vw-16px)] min-w-0 max-h-[min(600px,var(--bits-popover-content-available-height,100dvh))] overflow-y-auto flex flex-col'}
+      side={rowLabel ? (isMobile.current || formMenuBelow ? 'bottom' : 'left') : undefined}
+      sideOffset={rowLabel ? (isMobile.current || formMenuBelow ? 4 : 24) : undefined}
+      align={rowLabel ? (isMobile.current || formMenuBelow ? 'end' : 'start') : undefined}
       onkeydown={(event) => {
+        if (
+          rowLabel &&
+          formStep === 'browse' &&
+          event.target instanceof Node &&
+          formListElement?.contains(event.target)
+        )
+          handleFormListKeydown(event);
         if (event.key === 'Enter') event.stopPropagation();
       }}
       portalProps={{ to: dialogPortalTarget() }}
       strategy={dialogPortalTarget() ? 'absolute' : 'fixed'}
       portal
     >
-      <!-- Header -->
-      <div class="shrink-0 px-4 pt-2 pb-3">
-        <h2 class="text-base font-semibold text-foreground">
-          {m.workspace_repoSelector_whichRepo_label()}
-        </h2>
-        <p class="text-sm text-subtle mt-1">
-          {m.workspace_repoSelector_whichRepo_description()}
-        </p>
-      </div>
-
-      <!-- Tab bar -->
-      <Tabs.Root
-        value={repositoryTabActive ? 'repository' : activeTab}
-        onValueChange={(value) =>
-          (activeTab = value === 'repository' ? repositoryTab : (value as TabId))}
-        class="flex min-h-0 flex-col"
-      >
-        <Tabs.List
-          aria-label={m.workspace_repoSelector_whichRepo_label()}
-          class="flex shrink-0 gap-0 mx-3 mb-3 bg-sidebar rounded-lg p-1"
+      {#if rowLabel && formStep === 'browse'}
+        <div class="shrink-0 px-2 pt-1">
+          <Input
+            bind:ref={formSearchElement}
+            variant="search"
+            type="text"
+            role="searchbox"
+            data-repo-search
+            data-testid="repo-form-search"
+            value={formQuery}
+            oninput={(event) => (formQuery = event.currentTarget.value)}
+            onkeydown={handleFormSearchKeydown}
+            placeholder={m.workspace_repoSelector_search_placeholder()}
+            aria-label={m.workspace_repoSelector_search_placeholder()}
+            aria-controls={`${pickerId}-form-repos`}
+          />
+        </div>
+        <div
+          bind:this={formListElement}
+          id={`${pickerId}-form-repos`}
+          class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pt-1"
+          data-testid="recent-repositories"
+          role="group"
+          aria-label={m.workspace_repoSelector_recent_label()}
         >
-          {#if cloneTabVisible}
-            <Tabs.Trigger
-              value="repository"
-              class="flex-1 min-w-0 h-auto min-h-(--control-height-medium) px-2 py-1.5 text-sm whitespace-normal rounded-md cursor-pointer transition-all {repositoryTabActive
-                ? 'bg-background font-medium text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'}"
-            >
-              {m.workspace_repoSelector_clone_tab()}
-            </Tabs.Trigger>
+          {#if isLoading && formRepositoryChoices.length === 0}
+            <div role="status">
+              {#each [1, 2, 3] as { }}
+                <div class="flex min-h-10 items-center gap-2 px-3 py-2">
+                  <div class="w-4 h-4 bg-muted rounded animate-pulse"></div>
+                  <div class="h-4 bg-muted rounded flex-1 animate-pulse"></div>
+                </div>
+              {/each}
+            </div>
+          {:else if formRepos.length === 0}
+            <p class="type-body px-3 py-2 text-muted-foreground" role="status">
+              {m.hud_filter_noRepositories_label()}
+            </p>
+          {:else}
+            {@render recentRepoRows(formRepos, (repo) => isCurrentRepo(repo))}
           {/if}
-          {#each [{ id: 'local' as TabId, label: m.workspace_repoSelector_existingFolder_tab() }, { id: 'new' as TabId, label: m.workspace_repoSelector_new_tab() }, ...($remoteWorkspacesEnabled$ ? [{ id: 'remote' as TabId, label: m.workspace_repoSelector_remoteServer_tab() }] : [])] as tab}
-            <Tabs.Trigger
-              value={tab.id}
-              class="flex-1 min-w-0 h-auto min-h-(--control-height-medium) px-2 py-1.5 text-sm whitespace-normal rounded-md cursor-pointer transition-all {activeTab ===
-              tab.id
-                ? 'bg-background font-medium text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'}"
-            >
-              {tab.label}
-            </Tabs.Trigger>
-          {/each}
-        </Tabs.List>
-        {#if !cloneTabVisible && $canAdministerHost$}
+        </div>
+        <div class="shrink-0 border-t border-border p-2">
           <Button
+            variant="ghost"
             type="button"
-            variant="link"
-            size="sm"
-            class="mx-3 -mt-1 mb-2 h-auto self-start p-0 text-xs"
-            onclick={handleConnectToClone}
+            wrapContent={false}
+            data-testid="repo-form-add"
+            class="{workspacePickerStyles.row} w-full"
+            onclick={openAddStep}
           >
-            {connectToCloneLabel}
+            <Fa icon={faPlus} class="size-4 shrink-0" />
+            <span>{m.workspace_repoSelector_addRepository_label()}</span>
           </Button>
+        </div>
+      {:else}
+        {#if rowLabel}
+          <div class="flex shrink-0 items-center gap-1 px-2 pt-2 pb-2">
+            <Button
+              variant="ghost"
+              type="button"
+              size="icon-sm"
+              iconOnly
+              data-testid="repo-form-back"
+              class="shrink-0 text-muted-foreground"
+              aria-label={m.ui_navButtons_goBack_tooltip()}
+              onclick={closeAddStep}
+            >
+              <Fa icon={faArrowLeft} class="size-3.5!" />
+            </Button>
+            <h2 class="{workspacePickerStyles.title} min-w-0 truncate">
+              {m.workspace_repoSelector_addRepository_label()}
+            </h2>
+          </div>
+        {:else}
+          <!-- Header -->
+          <div class="shrink-0 px-4 pt-2 pb-3">
+            <h2 class="text-base font-semibold text-foreground">
+              {m.workspace_repoSelector_whichRepo_label()}
+            </h2>
+            <p class="text-sm text-subtle mt-1">
+              {m.workspace_repoSelector_whichRepo_description()}
+            </p>
+          </div>
         {/if}
-        <Tabs.Content
+
+        <!-- Tab bar -->
+        <Tabs.Root
           value={repositoryTabActive ? 'repository' : activeTab}
-          class="mt-0 min-h-0 flex flex-col"
+          onValueChange={selectRepositoryTab}
+          class="flex flex-col {rowLabel ? 'shrink-0' : 'min-h-0'}"
         >
-          <!-- Input section - changes based on tab -->
-          <div class="shrink-0 px-3 mb-3">
-            {#if gitChoice && (activeTab === 'local' || activeTab === 'new')}
-              {@const tab = activeTab}
-              {@const folder =
-                tab === 'new'
-                  ? 'new'
-                  : showNonGitFolderPrompt && nonGitFolderPath
-                    ? 'folder'
-                    : (gitChoice.folder ?? null)}
-              <InitializeGitToggle
-                class="mb-3 px-1"
-                {folder}
-                checked={folder === 'git-repo' ? gitChoice.worktree !== false : gitChoice.checked}
-                disabled={gitChoice.disabled}
-                onCheckedChange={(value) => handleGitSwitchChange(value, tab)}
-              />
+          <Tabs.List
+            aria-label={m.workspace_repoSelector_whichRepo_label()}
+            class="flex shrink-0 gap-0 mx-3 mb-3 bg-sidebar rounded-lg p-1"
+          >
+            {#if cloneTabVisible}
+              <Tabs.Trigger
+                value="repository"
+                class="flex-1 min-w-0 h-auto min-h-(--control-height-medium) px-2 py-1.5 text-sm whitespace-normal rounded-md cursor-pointer transition-all {repositoryTabActive
+                  ? 'bg-background font-medium text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'}"
+              >
+                {m.workspace_repoSelector_clone_tab()}
+              </Tabs.Trigger>
             {/if}
-            {#if activeTab === 'gitlab' && gitlab}
-              <GitLabProjectPicker
-                {...gitlab}
-                prefix={forgePrefix}
-                onSelect={(projectPath, scopeKey) => {
-                  recentProbeToken++;
-                  gitlab?.onSelect(projectPath, scopeKey);
-                  isOpen = false;
-                }}
-              />
-            {:else if activeTab === 'local'}
-              <!-- Local repo: folder picker button -->
-              <Button
-                type="button"
-                class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border-0 text-left cursor-pointer"
-                onclick={handleSelectFolder}
+            {#each [{ id: 'local' as TabId, label: m.workspace_repoSelector_existingFolder_tab() }, { id: 'new' as TabId, label: m.workspace_repoSelector_new_tab() }, ...($remoteWorkspacesEnabled$ ? [{ id: 'remote' as TabId, label: m.workspace_repoSelector_remoteServer_tab() }] : [])] as tab}
+              <Tabs.Trigger
+                value={tab.id}
+                class="flex-1 min-w-0 h-auto min-h-(--control-height-medium) px-2 py-1.5 text-sm whitespace-normal rounded-md cursor-pointer transition-all {activeTab ===
+                tab.id
+                  ? 'bg-background font-medium text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'}"
               >
-                <span
-                  class="text-sm truncate {inputValue
-                    ? 'text-foreground'
-                    : 'text-muted-foreground'}"
-                >
-                  {inputValue || m.workspace_repoSelector_selectAFolder_placeholder()}
-                </span>
-                <Fa icon={faFolder} class="text-ghost opacity-50" />
-              </Button>
-            {:else if activeTab === 'github'}
-              <HostExecutionNotice kind="repository" />
-              <HostExecutionNotice />
-              <!-- GitHub: URL input with prefix (path-less pick — no clone destination) -->
-              <div
-                class="flex items-center rounded-lg bg-sidebar focus-within:ring-1 focus-within:ring-ring"
-              >
-                {@render forgePrefix()}
-                <Input
-                  placeholder={/* i18n-ignore (GitHub path format example placeholder) */ 'owner/repo'}
-                  bind:this={inputElement}
-                  bind:ref={githubInputElement}
-                  type="text"
-                  bind:value={githubUrlInput}
-                  oninput={(e) => handleGitHubInputChange(e.currentTarget.value)}
-                  onpaste={handleGitHubPaste}
-                  onkeydown={handleGitHubInputKeydown}
-                  class="min-w-0 bg-sidebar border-none px-1 py-2.5! h-auto text-sm"
-                  noFocusStyle
-                  role="combobox"
-                  aria-label={m.workspace_repoSelector_githubSuggestions_ariaLabel()}
-                  aria-autocomplete="list"
-                  aria-controls={githubSuggestions.length > 0 ? suggestionsId : undefined}
-                  aria-expanded={githubSuggestions.length > 0}
-                  aria-activedescendant={githubSuggestions[suggestionIndex]
-                    ? `${suggestionsId}-${suggestionIndex}`
-                    : undefined}
+                {tab.label}
+              </Tabs.Trigger>
+            {/each}
+          </Tabs.List>
+          {#if !cloneTabVisible && $canAdministerHost$}
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              class="mx-3 -mt-1 mb-2 h-auto self-start p-0 text-xs"
+              onclick={handleConnectToClone}
+            >
+              {connectToCloneLabel}
+            </Button>
+          {/if}
+          <Tabs.Content
+            value={repositoryTabActive ? 'repository' : activeTab}
+            class="mt-0 min-h-0 flex flex-col"
+          >
+            <!-- Input section - changes based on tab -->
+            <div class="shrink-0 px-3 mb-3">
+              {#if gitChoice && (activeTab === 'local' || activeTab === 'new')}
+                {@const tab = activeTab}
+                {@const folder =
+                  tab === 'new'
+                    ? 'new'
+                    : showNonGitFolderPrompt && nonGitFolderPath
+                      ? 'folder'
+                      : (gitChoice.folder ?? null)}
+                <InitializeGitToggle
+                  class="mb-3 px-1"
+                  {folder}
+                  checked={folder === 'git-repo' ? gitChoice.worktree !== false : gitChoice.checked}
+                  disabled={gitChoice.disabled}
+                  onCheckedChange={(value) => handleGitSwitchChange(value, tab)}
                 />
-              </div>
-              <!--
+              {/if}
+              {#if activeTab === 'gitlab' && gitlab}
+                <GitLabProjectPicker
+                  {...gitlab}
+                  scrollable={!rowLabel}
+                  formStyle={!!rowLabel}
+                  prefix={forgePrefix}
+                  onSelect={(projectPath, scopeKey) => {
+                    recentProbeToken++;
+                    gitlab?.onSelect(projectPath, scopeKey);
+                    isOpen = false;
+                  }}
+                />
+              {:else if activeTab === 'local'}
+                <!-- Local repo: folder picker button -->
+                <Button
+                  type="button"
+                  class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border-0 text-left cursor-pointer"
+                  onclick={handleSelectFolder}
+                >
+                  <span
+                    class="text-sm truncate {inputValue
+                      ? 'text-foreground'
+                      : 'text-muted-foreground'}"
+                  >
+                    {inputValue || m.workspace_repoSelector_selectAFolder_placeholder()}
+                  </span>
+                  <Fa icon={faFolder} class="text-ghost opacity-50" />
+                </Button>
+              {:else if activeTab === 'github'}
+                <HostExecutionNotice kind="repository" />
+                <HostExecutionNotice />
+                <!-- GitHub: URL input with prefix (path-less pick — no clone destination) -->
+                <div
+                  class="flex items-center rounded-lg bg-sidebar focus-within:ring-1 focus-within:ring-ring"
+                >
+                  {@render forgePrefix()}
+                  <Input
+                    placeholder={/* i18n-ignore (GitHub path format example placeholder) */ 'owner/repo'}
+                    bind:this={inputElement}
+                    bind:ref={githubInputElement}
+                    type="text"
+                    bind:value={githubUrlInput}
+                    oninput={(e) => handleGitHubInputChange(e.currentTarget.value)}
+                    onpaste={handleGitHubPaste}
+                    onkeydown={handleGitHubInputKeydown}
+                    class="min-w-0 bg-sidebar border-none px-1 py-2.5! h-auto text-sm"
+                    noFocusStyle
+                    role="combobox"
+                    aria-label={m.workspace_repoSelector_githubSuggestions_ariaLabel()}
+                    aria-autocomplete="list"
+                    aria-controls={githubSuggestions.length > 0 ? suggestionsId : undefined}
+                    aria-expanded={githubSuggestions.length > 0}
+                    aria-activedescendant={githubSuggestions[suggestionIndex]
+                      ? `${suggestionsId}-${suggestionIndex}`
+                      : undefined}
+                  />
+                </div>
+                <!--
             Autocomplete suggestions: the user's own repos filtered by the
             typed text, then deduped global search results. Signed-out users
             get a connect hint instead; manual owner/repo entry keeps working.
           -->
-              {#if !canBrowseGithub && $canAdministerHost$}
-                <GitHubAuthBanner
-                  class="mt-2"
-                  message={m.workspace_repoSelector_githubSignIn_description()}
-                />
-              {:else if canBrowseGithub}
-                <RepositoryPickerList
-                  id={suggestionsId}
-                  items={githubSuggestions}
-                  getKey={(repo) => repo.id}
-                  getOwner={(repo) => repo.owner}
-                  getName={(repo) => repo.name}
-                  provider="github"
-                  label={m.workspace_repoSelector_githubSuggestions_ariaLabel()}
-                  loading={!githubSuggestions.length &&
-                    ($githubReposLoading$ || Boolean(githubQuery && $githubSearchLoading$))}
-                  loadingLabel={githubQuery
-                    ? m.workspace_repoSelector_searchingGithub_label({ query: githubQuery })
-                    : m.gitlabCheckout_loading_label()}
-                  emptyLabel={m.hud_filter_noRepositories_label()}
-                  error={$githubReposError$
-                    ? $hostMember$
-                      ? $githubReposError$
-                      : m.workspace_repoSelector_suggestionsUnavailable_label()
-                    : undefined}
-                  retryLabel={m.workspace_repoSelector_retrySuggestions_label()}
-                  onRetry={retryGithubRepos}
-                  bind:activeIndex={suggestionIndex}
-                  onSelect={handleSelectGithubSuggestion}
-                />
-              {/if}
-              <!-- Detected repo + select button (hidden when it would duplicate a
+                {#if !canBrowseGithub && $canAdministerHost$}
+                  <GitHubAuthBanner
+                    class="mt-2"
+                    message={m.workspace_repoSelector_githubSignIn_description()}
+                  />
+                {:else if canBrowseGithub}
+                  <RepositoryPickerList
+                    formStyle={!!rowLabel}
+                    id={suggestionsId}
+                    items={githubSuggestions}
+                    getKey={(repo) => repo.id}
+                    getOwner={(repo) => repo.owner}
+                    getName={(repo) => repo.name}
+                    provider="github"
+                    label={m.workspace_repoSelector_githubSuggestions_ariaLabel()}
+                    loading={!githubSuggestions.length &&
+                      ($githubReposLoading$ || Boolean(githubQuery && $githubSearchLoading$))}
+                    loadingLabel={githubQuery
+                      ? m.workspace_repoSelector_searchingGithub_label({ query: githubQuery })
+                      : m.gitlabCheckout_loading_label()}
+                    emptyLabel={m.hud_filter_noRepositories_label()}
+                    error={$githubReposError$
+                      ? $hostMember$
+                        ? $githubReposError$
+                        : m.workspace_repoSelector_suggestionsUnavailable_label()
+                      : undefined}
+                    retryLabel={m.workspace_repoSelector_retrySuggestions_label()}
+                    onRetry={retryGithubRepos}
+                    bind:activeIndex={suggestionIndex}
+                    onSelect={handleSelectGithubSuggestion}
+                  />
+                {/if}
+                <!-- Detected repo + select button (hidden when it would duplicate a
                suggestion row; Enter-to-confirm still works via handleConfirmGitHubPick) -->
-              {#if detectedGitHub && !detectedGitHubIsDuplicate}
-                <div class="flex items-center justify-between gap-2 mt-2 px-1">
-                  <span class="text-sm text-subtle truncate flex-1">
-                    {detectedGitHub.owner}/{detectedGitHub.repo}
-                  </span>
-                  <Button size="sm" onclick={handleConfirmGitHubPick} class="shrink-0"
-                    >{m.workspace_repoSelector_select_label()}</Button
-                  >
-                </div>
-              {/if}
-            {:else if activeTab === 'new'}
-              <!-- New: parent folder + folder name -->
-              <Button
-                type="button"
-                variant="plain"
-                wrapContent={false}
-                class="w-full flex items-center gap-3 mb-2 text-left cursor-pointer"
-                onclick={handleSelectNewRepoParent}
-              >
-                <span class="text-sm text-subtle shrink-0 w-24 pl-1"
-                  >{m.workspace_repoSelector_parentFolder_label()}</span
-                >
-                <span
-                  class="flex-1 min-w-0 text-sm h-(--control-height-medium) px-3 bg-sidebar rounded-(--radius-medium) flex items-center justify-between {newRepoParentPath
-                    ? 'text-foreground'
-                    : 'text-subtle'} truncate"
-                >
-                  <div class="truncate">
-                    {newRepoParentPath || m.workspace_repoSelector_select_placeholder()}
-                  </div>
-                  <Fa icon={faFolder} class="text-ghost shrink-0 opacity-50" />
-                </span>
-              </Button>
-              <div class="flex items-center gap-3">
-                <span class="text-sm text-subtle shrink-0 w-24 pl-1"
-                  >{m.workspace_repoSelector_folderName_label()}</span
-                >
-                <Input
-                  placeholder={/* i18n-ignore (example folder name placeholder) */ 'new-project'}
-                  type="text"
-                  bind:value={newRepoProjectName}
-                  onkeydown={(e) => {
-                    if (e.key === 'Enter' && !e.isComposing) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      handleConfirmNewRepo();
-                    }
-                  }}
-                  class="bg-sidebar border-none focus-visible:ring-1 focus-visible:ring-ring"
-                  noFocusStyle
-                />
-              </div>
-              <!-- Validation error for project name -->
-              {#if newRepoNameError}
-                <div class="mt-2 px-1">
-                  <span class="text-sm text-danger">{newRepoNameError}</span>
-                </div>
-              {:else if newRepoFullPath}
-                <!-- Full path preview + status message + action button -->
-                <div class="mt-2 px-1">
-                  <!-- Path preview -->
-                  <div class="text-sm text-subtle truncate mb-2">
-                    {newRepoFullPath}
-                  </div>
-                  <!-- Status message and action -->
-                  {#if isCheckingNewRepoPath}
-                    <div class="flex items-center gap-2 text-sm text-subtle">
-                      <IntentMarkLoader size={14} />
-                      <span>{m.workspace_repoSelector_checking_label()}</span>
-                    </div>
-                  {:else if newRepoPathStatus?.exists && newRepoPathStatus?.isGitRepo}
-                    <!-- Existing git repo - will create an isolated checkout -->
-                    <div class="flex items-center justify-between gap-2">
-                      <span class="text-sm text-subtle">
-                        {m.workspace_repoSelector_repoExists_label({ isolationLabel })}
-                      </span>
-                      <Button size="sm" onclick={handleConfirmNewRepo} class="shrink-0"
-                        >{m.workspace_repoSelector_select_label()}</Button
-                      >
-                    </div>
-                  {:else if newRepoPlainFolderKind === 'existing'}
-                    <!-- Plain-folder mode: an existing non-git folder is used as-is -->
-                    <div class="flex items-center justify-between gap-2">
-                      <span class="text-sm text-subtle">
-                        {m.onboarding_localRepoTab_plainFolder_description()}
-                      </span>
-                      <Button size="sm" onclick={handleConfirmNewRepo} class="shrink-0"
-                        >{m.workspace_repoSelector_select_label()}</Button
-                      >
-                    </div>
-                  {:else if newRepoPlainFolderKind === 'new'}
-                    <!-- Plain-folder mode: a new folder without git -->
-                    <div class="flex items-center justify-between gap-2">
-                      <span class="text-sm text-subtle"
-                        >{m.workspace_repoSelector_newFolderWillBeCreated_label()}</span
-                      >
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        onclick={handleConfirmNewRepo}
-                        class="shrink-0">{m.workspace_repoSelector_create_label()}</Button
-                      >
-                    </div>
-                  {:else if newRepoPathStatus?.exists && !newRepoPathStatus?.isGitRepo}
-                    <!-- Existing folder but not a git repo -->
-                    <div class="flex items-center justify-between gap-2">
-                      <span class="text-sm text-warning-ink">
-                        {m.workspace_repoSelector_folderNotGitRepo_label()}
-                      </span>
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        onclick={handleConfirmNewRepo}
-                        class="shrink-0"
-                        disabled>{m.workspace_repoSelector_create_label()}</Button
-                      >
-                    </div>
-                  {:else}
-                    <!-- New folder - will create -->
-                    <div class="flex items-center justify-between gap-2">
-                      <span class="text-sm text-subtle"
-                        >{m.workspace_repoSelector_newRepoWillBeCreated_label()}</span
-                      >
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        onclick={handleConfirmNewRepo}
-                        class="shrink-0">{m.workspace_repoSelector_create_label()}</Button
-                      >
-                    </div>
-                  {/if}
-                </div>
-              {/if}
-            {:else if activeTab === 'remote'}
-              <!-- Remote server: list saved setups -->
-              <div class="space-y-1">
-                {#each remoteSetups as setup (setup.id)}
-                  <div
-                    role="button"
-                    tabindex="0"
-                    class="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-sidebar text-left cursor-pointer hover:bg-muted/50 transition-colors"
-                    onclick={() => handleSelectRemoteSetup(setup)}
-                    onkeydown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        handleSelectRemoteSetup(setup);
-                      }
-                    }}
-                  >
-                    <ServerIcon size={14} class="text-ghost shrink-0" />
-                    <div class="flex-1 min-w-0">
-                      <div class="text-sm">{setup.name}</div>
-                      <div class="text-xs text-subtle">
-                        {setup.transport === 'websocket'
-                          ? setup.wsUrl
-                          : `${setup.username}@${setup.host}:${setup.port}`}
-                      </div>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      type="button"
-                      size="icon-compact"
-                      iconOnly
-                      onclick={(e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        handleRemoveRemoteSetup(setup.id);
-                      }}
-                      class="ml-1 rounded text-muted-foreground hover:text-danger hover:bg-danger-background/10"
-                      title={m.workspace_repoSelector_removeSetup_tooltip()}
+                {#if detectedGitHub && !detectedGitHubIsDuplicate}
+                  <div class="flex items-center justify-between gap-2 mt-2 px-1">
+                    <span class="text-sm text-subtle truncate flex-1">
+                      {detectedGitHub.owner}/{detectedGitHub.repo}
+                    </span>
+                    <Button size="sm" onclick={handleConfirmGitHubPick} class="shrink-0"
+                      >{m.workspace_repoSelector_select_label()}</Button
                     >
-                      <Fa icon={faXmark} size="xs" />
-                    </Button>
-                  </div>
-                {/each}
-                {#if remoteSetups.length === 0}
-                  <div class="text-sm text-subtle px-3 py-2">
-                    {m.workspace_repoSelector_noRemoteSetups_label()}
                   </div>
                 {/if}
+              {:else if activeTab === 'new'}
+                <!-- New repo: parent folder + folder name -->
                 <Button
-                  variant="ghost"
                   type="button"
-                  class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left cursor-pointer hover:bg-muted/50 transition-colors text-sm text-muted-foreground"
-                  onclick={handleAddRemoteSetup}
+                  variant="plain"
+                  wrapContent={false}
+                  class="w-full flex items-center gap-3 mb-2 text-left cursor-pointer"
+                  onclick={handleSelectNewRepoParent}
                 >
-                  <Fa icon={faPlus} size="sm" />
-                  {m.workspace_repoSelector_addRemoteSetup_label()}
-                </Button>
-              </div>
-            {/if}
-          </div>
-
-          <!-- Non-git folder prompt - shows when user selects a folder that isn't a git repo -->
-          {#if activeTab !== 'gitlab' && showNonGitFolderPrompt && nonGitFolderPath}
-            <div class="mx-3 mb-3 p-3 bg-sidebar rounded-lg">
-              <div class="flex items-start gap-3">
-                <Fa icon={faFolder} class="text-ghost shrink-0 mt-0.5" />
-                <div class="flex-1 min-w-0">
-                  <div class="text-sm font-medium truncate mb-1" title={nonGitFolderPath}>
-                    {nonGitFolderPath.split('/').pop() || nonGitFolderPath}
-                  </div>
-                  <div class="text-sm text-subtle mb-2">
-                    {m.workspace_repoSelector_notGitRepository_label()}
-                  </div>
-                  <div class="flex gap-2">
-                    <Button size="sm" variant="secondary" onclick={handleInitializeGitInFolder}
-                      >{m.workspace_repoSelector_initializeGit_label()}</Button
-                    >
-                    <Button size="sm" variant="secondary" onclick={handleChooseDifferentFolder}>
-                      {m.workspace_repoSelector_chooseDifferentFolder_label()}
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          {/if}
-
-          <!-- One shared Recent list; local-copy entries remain separate. -->
-          {#if (activeTab === 'local' || repositoryTabActive) && (isLoading || filteredRepos().length > 0)}
-            <div class="min-h-16 overflow-y-auto flex-1 px-4 pb-3 pt-2">
-              <Header size={5} class="mb-2">{m.workspace_repoSelector_recent_label()}</Header>
-              {#if isLoading && recentRepos.length === 0}
-                <div class="space-y-1">
-                  {#each [1, 2, 3] as { }}
-                    <div class="flex items-center gap-2 py-1.5">
-                      <div class="w-4 h-4 bg-muted rounded animate-pulse"></div>
-                      <div class="h-4 bg-muted rounded flex-1 animate-pulse"></div>
+                  <span class="text-sm text-subtle shrink-0 w-24 pl-1"
+                    >{m.workspace_repoSelector_parentFolder_label()}</span
+                  >
+                  <span
+                    class="flex-1 min-w-0 text-sm h-(--control-height-medium) px-3 bg-sidebar rounded-(--radius-medium) flex items-center justify-between {newRepoParentPath
+                      ? 'text-foreground'
+                      : 'text-subtle'} truncate"
+                  >
+                    <div class="truncate">
+                      {newRepoParentPath || m.workspace_repoSelector_select_placeholder()}
                     </div>
-                  {/each}
+                    <Fa icon={faFolder} class="text-ghost shrink-0 opacity-50" />
+                  </span>
+                </Button>
+                <div class="flex items-center gap-3">
+                  <span class="text-sm text-subtle shrink-0 w-24 pl-1"
+                    >{m.workspace_repoSelector_folderName_label()}</span
+                  >
+                  <Input
+                    placeholder={/* i18n-ignore (example folder name placeholder) */ 'new-project'}
+                    type="text"
+                    bind:value={newRepoProjectName}
+                    onkeydown={(e) => {
+                      if (e.key === 'Enter' && !e.isComposing) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleConfirmNewRepo();
+                      }
+                    }}
+                    class="bg-sidebar border-none"
+                    noFocusStyle
+                  />
                 </div>
-              {:else}
-                <div class="-mx-2" data-testid="recent-repositories">
-                  {#each filteredRepos() as repo, index (recentRepoKey(repo))}
-                    {@const label = getRecentRepoLabel(repo)}
-                    {@const identity = getRecentRepoIdentity(repo, gitlab?.instanceBaseUrl)}
-                    {@const owner = identity
-                      ? identity.projectPath.split('/').slice(0, -1).join('/')
-                      : label.ownerPrefix}
-                    {@const tooltip = getRecentRepoTooltip(repo)}
-                    {@const avatarUrl =
-                      identity?.provider === 'gitlab' &&
-                      gitlab?.authenticated &&
-                      gitlab.scopeKey &&
-                      identity.instanceBaseUrl === gitlab.instanceBaseUrl &&
-                      gitlab.page.status === 'ready'
-                        ? (
-                            gitlab.page.items.find(
-                              (project) => project.projectPath === identity.projectPath,
-                            ) ??
-                            (gitlab.selectedProject?.projectPath === identity.projectPath
-                              ? gitlab.selectedProject
-                              : undefined)
-                          )?.ownerAvatarUrl
-                        : undefined}
-                    <div class="group/recent-repo flex min-w-0 items-center" data-recent-repo-row>
-                      {#snippet repoRow()}
-                        <RepositoryPickerRow
-                          {owner}
-                          name={identity && repo.type !== 'local'
-                            ? identity.projectPath.split('/').at(-1)!
-                            : label.primary}
-                          suffix={label.suffix}
-                          provider={identity?.provider}
-                          {avatarUrl}
-                          showOwner={repo.type !== 'local'}
-                          showForge
-                          recent
-                          selected={index === highlightedIndex}
-                          class="flex-1"
-                          onclick={() => handleSelectRepo(repo)}
-                          disabled={repo.type !== 'local' &&
-                            identity?.provider === 'gitlab' &&
-                            (!gitlab?.authenticated ||
-                              identity.instanceBaseUrl !== gitlab.instanceBaseUrl ||
-                              (!gitlab.scopeKey && !gitlab.onSelectRecent) ||
-                              gitlab.page.status === 'unavailable')}
-                        />
-                      {/snippet}
-                      {#if tooltip}
-                        <Tooltip
-                          content={tooltip}
-                          delayDuration={300}
-                          side="bottom"
-                          class="flex min-w-0 flex-1"
+                <!-- Validation error for project name -->
+                {#if newRepoNameError}
+                  <div class="mt-2 px-1">
+                    <span class="text-sm text-danger">{newRepoNameError}</span>
+                  </div>
+                {:else if newRepoFullPath}
+                  <!-- Full path preview + status message + action button -->
+                  <div class="mt-2 px-1">
+                    <!-- Path preview -->
+                    <div class="text-sm text-subtle truncate mb-2">
+                      {newRepoFullPath}
+                    </div>
+                    <!-- Status message and action -->
+                    {#if isCheckingNewRepoPath}
+                      <div class="flex items-center gap-2 text-sm text-subtle">
+                        <IntentMarkLoader size={14} />
+                        <span>{m.workspace_repoSelector_checking_label()}</span>
+                      </div>
+                    {:else if newRepoPathStatus?.exists && newRepoPathStatus?.isGitRepo}
+                      <!-- Existing git repo - will create an isolated checkout -->
+                      <div class="flex items-center justify-between gap-2">
+                        <span class="text-sm text-subtle">
+                          {m.workspace_repoSelector_repoExists_label({ isolationLabel })}
+                        </span>
+                        <Button size="sm" onclick={handleConfirmNewRepo} class="shrink-0"
+                          >{m.workspace_repoSelector_select_label()}</Button
                         >
-                          {@render repoRow()}
-                        </Tooltip>
-                      {:else}
-                        {@render repoRow()}
-                      {/if}
+                      </div>
+                    {:else if newRepoPlainFolderKind === 'existing'}
+                      <!-- Plain-folder mode: an existing non-git folder is used as-is -->
+                      <div class="flex items-center justify-between gap-2">
+                        <span class="text-sm text-subtle">
+                          {m.onboarding_localRepoTab_plainFolder_description()}
+                        </span>
+                        <Button size="sm" onclick={handleConfirmNewRepo} class="shrink-0"
+                          >{m.workspace_repoSelector_select_label()}</Button
+                        >
+                      </div>
+                    {:else if newRepoPlainFolderKind === 'new'}
+                      <!-- Plain-folder mode: a new folder without git -->
+                      <div class="flex items-center justify-between gap-2">
+                        <span class="text-sm text-subtle"
+                          >{m.workspace_repoSelector_newFolderWillBeCreated_label()}</span
+                        >
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          onclick={handleConfirmNewRepo}
+                          class="shrink-0">{m.workspace_repoSelector_create_label()}</Button
+                        >
+                      </div>
+                    {:else if newRepoPathStatus?.exists && !newRepoPathStatus?.isGitRepo}
+                      <!-- Existing folder but not a git repo -->
+                      <div class="flex items-center justify-between gap-2">
+                        <span class="text-sm text-warning-ink">
+                          {m.workspace_repoSelector_folderNotGitRepo_label()}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          onclick={handleConfirmNewRepo}
+                          class="shrink-0"
+                          disabled>{m.workspace_repoSelector_create_label()}</Button
+                        >
+                      </div>
+                    {:else}
+                      <!-- New folder - will create -->
+                      <div class="flex items-center justify-between gap-2">
+                        <span class="text-sm text-subtle"
+                          >{m.workspace_repoSelector_newRepoWillBeCreated_label()}</span
+                        >
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          onclick={handleConfirmNewRepo}
+                          class="shrink-0">{m.workspace_repoSelector_create_label()}</Button
+                        >
+                      </div>
+                    {/if}
+                  </div>
+                {/if}
+              {:else if activeTab === 'remote'}
+                <!-- Remote server: list saved setups -->
+                <div class="space-y-1">
+                  {#each remoteSetups as setup (setup.id)}
+                    <div
+                      role="button"
+                      tabindex="0"
+                      class="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-sidebar text-left cursor-pointer hover:bg-muted/50 transition-colors"
+                      onclick={() => handleSelectRemoteSetup(setup)}
+                      onkeydown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleSelectRemoteSetup(setup);
+                        }
+                      }}
+                    >
+                      <ServerIcon size={14} class="text-ghost shrink-0" />
+                      <div class="flex-1 min-w-0">
+                        <div class="text-sm">{setup.name}</div>
+                        <div class="text-xs text-subtle">
+                          {setup.transport === 'websocket'
+                            ? setup.wsUrl
+                            : `${setup.username}@${setup.host}:${setup.port}`}
+                        </div>
+                      </div>
                       <Button
                         variant="ghost"
                         type="button"
                         size="icon-compact"
                         iconOnly
-                        data-remove-recent-repo
-                        class="mr-2 shrink-0 opacity-0 pointer-events-none group-hover/recent-repo:opacity-100 group-hover/recent-repo:pointer-events-auto group-focus-within/recent-repo:opacity-100 group-focus-within/recent-repo:pointer-events-auto"
-                        aria-label={m.workspace_repoSelector_removeRecent_ariaLabel({
-                          repository: repo.path,
-                        })}
-                        title={m.workspace_repoSelector_removeRecent_tooltip()}
-                        onclick={(event) => handleDismissRecentRepo(event, repo)}
+                        onclick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          handleRemoveRemoteSetup(setup.id);
+                        }}
+                        class="ml-1 rounded text-muted-foreground hover:text-danger hover:bg-danger-background/10"
+                        title={m.workspace_repoSelector_removeSetup_tooltip()}
                       >
-                        <Fa icon={faXmark} size={12} />
+                        <Fa icon={faXmark} size="xs" />
                       </Button>
                     </div>
                   {/each}
+                  {#if remoteSetups.length === 0}
+                    <div class="text-sm text-subtle px-3 py-2">
+                      {m.workspace_repoSelector_noRemoteSetups_label()}
+                    </div>
+                  {/if}
+                  <Button
+                    variant="ghost"
+                    type="button"
+                    class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left cursor-pointer hover:bg-muted/50 transition-colors text-sm text-muted-foreground"
+                    onclick={handleAddRemoteSetup}
+                  >
+                    <Fa icon={faPlus} size="sm" />
+                    {m.workspace_repoSelector_addRemoteSetup_label()}
+                  </Button>
                 </div>
               {/if}
             </div>
-          {/if}
-        </Tabs.Content>
-      </Tabs.Root>
+
+            <!-- Non-git folder prompt - shows when user selects a folder that isn't a git repo -->
+            {#if activeTab !== 'gitlab' && showNonGitFolderPrompt && nonGitFolderPath}
+              <div class="mx-3 mb-3 p-3 bg-sidebar rounded-lg">
+                <div class="flex items-start gap-3">
+                  <Fa icon={faFolder} class="text-ghost shrink-0 mt-0.5" />
+                  <div class="flex-1 min-w-0">
+                    <div class="text-sm font-medium truncate mb-1" title={nonGitFolderPath}>
+                      {nonGitFolderPath.split('/').pop() || nonGitFolderPath}
+                    </div>
+                    <div class="text-sm text-subtle mb-2">
+                      {m.workspace_repoSelector_notGitRepository_label()}
+                    </div>
+                    <div class="flex gap-2">
+                      <Button size="sm" variant="secondary" onclick={handleInitializeGitInFolder}
+                        >{m.workspace_repoSelector_initializeGit_label()}</Button
+                      >
+                      <Button size="sm" variant="secondary" onclick={handleChooseDifferentFolder}>
+                        {m.workspace_repoSelector_chooseDifferentFolder_label()}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            {/if}
+
+            <!-- One shared Recent list; local-copy entries remain separate. -->
+            {#if !rowLabel && (activeTab === 'local' || repositoryTabActive) && (isLoading || filteredRepos().length > 0)}
+              <div class="min-h-16 overflow-y-auto flex-1 px-4 pb-3 pt-2">
+                <Header size={5} class="mb-2">{m.workspace_repoSelector_recent_label()}</Header>
+                {#if isLoading && recentRepos.length === 0}
+                  <div class="space-y-1">
+                    {#each [1, 2, 3] as { }}
+                      <div class="flex items-center gap-2 py-1.5">
+                        <div class="w-4 h-4 bg-muted rounded animate-pulse"></div>
+                        <div class="h-4 bg-muted rounded flex-1 animate-pulse"></div>
+                      </div>
+                    {/each}
+                  </div>
+                {:else}
+                  <div class="-mx-2" data-testid="recent-repositories">
+                    {@render recentRepoRows(
+                      filteredRepos(),
+                      (_repo, index) => index === highlightedIndex,
+                    )}
+                  </div>
+                {/if}
+              </div>
+            {/if}
+          </Tabs.Content>
+        </Tabs.Root>
+      {/if}
     </Popover.Content>
   </Popover.Root>
 </div>

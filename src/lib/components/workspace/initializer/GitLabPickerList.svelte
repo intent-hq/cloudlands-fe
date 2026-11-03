@@ -24,7 +24,10 @@
     getText,
     onSelect,
     row,
+    compact = false,
   }: GitLabPickerProps<T> & {
+    /** Form popover: one scroll area (the results), instance shown by the host header. */
+    compact?: boolean;
     selectedKey?: string;
     getKey: (item: T) => string;
     getText: (item: T) => string;
@@ -44,8 +47,14 @@
   }
 </script>
 
-<div bind:this={panel} class="min-w-0 space-y-3" data-testid="gitlab-picker-list">
-  {#if instanceBaseUrl && !prefix}
+<div
+  bind:this={panel}
+  class={compact
+    ? 'flex min-h-0 min-w-0 flex-1 flex-col gap-1 px-2 pt-1 pb-2'
+    : 'min-w-0 space-y-3'}
+  data-testid="gitlab-picker-list"
+>
+  {#if instanceBaseUrl && !prefix && !compact}
     <p class="break-all type-caption text-muted-foreground" data-testid="gitlab-picker-instance">
       {instanceBaseUrl}
     </p>
@@ -64,35 +73,50 @@
       {/snippet}
     </ErrorState>
   {:else}
-    <FormField label={copy.searchLabel}>
-      {#snippet control(controlProps)}
-        <div
-          class={prefix
-            ? 'flex items-center rounded-lg bg-sidebar focus-within:ring-1 focus-within:ring-ring'
-            : undefined}
-        >
-          {#if prefix}{@render prefix()}{/if}
-          <Input
-            {...controlProps}
-            type="search"
-            value={query}
-            disabled={!scopeKey}
-            placeholder={copy.searchPlaceholder}
-            oninput={(event) => onSearch(event.currentTarget.value, scopeKey)}
-            onkeydown={focusResults}
+    {#if compact}
+      <Input
+        variant="search"
+        type="text"
+        role="searchbox"
+        aria-label={copy.searchLabel}
+        value={query}
+        disabled={!scopeKey}
+        placeholder={copy.searchPlaceholder}
+        oninput={(event) => onSearch(event.currentTarget.value, scopeKey)}
+        onkeydown={focusResults}
+        class="shrink-0"
+      />
+    {:else}
+      <FormField label={copy.searchLabel}>
+        {#snippet control(controlProps)}
+          <div
             class={prefix
-              ? 'min-w-0 bg-sidebar border-none px-1 py-2.5! h-auto text-sm'
+              ? 'flex items-center rounded-lg bg-sidebar focus-within:ring-1 focus-within:ring-ring'
               : undefined}
-          />
-        </div>
-      {/snippet}
-    </FormField>
+          >
+            {#if prefix}{@render prefix()}{/if}
+            <Input
+              {...controlProps}
+              type="search"
+              value={query}
+              disabled={!scopeKey}
+              placeholder={copy.searchPlaceholder}
+              oninput={(event) => onSearch(event.currentTarget.value, scopeKey)}
+              onkeydown={focusResults}
+              class={prefix
+                ? 'min-w-0 bg-sidebar border-none px-1 py-2.5! h-auto text-sm'
+                : undefined}
+            />
+          </div>
+        {/snippet}
+      </FormField>
+    {/if}
 
     {#if onSubmit && submitLabel}
       <Button
         type="button"
         variant="secondary"
-        class="w-full"
+        class="w-full shrink-0"
         disabled={!query.trim() || page.status === 'loading' || page.loadingMore}
         onclick={() => onSubmit?.(query, scopeKey)}
       >
@@ -112,7 +136,8 @@
           selectedKeys={selectedKey ? [selectedKey] : []}
           onActivate={(item) => onSelect(item, scopeKey)}
           ariaLabel={copy.listLabel}
-          class="max-h-56"
+          class={compact ? 'min-h-0 flex-1' : 'max-h-56'}
+          rowHeight={compact ? 40 : undefined}
           {row}
         >
           {#snippet empty()}
@@ -127,7 +152,7 @@
         <Button
           type="button"
           variant="ghost"
-          class="w-full"
+          class="w-full shrink-0"
           disabled={page.loadingMore}
           onclick={() => onMore(scopeKey)}
         >

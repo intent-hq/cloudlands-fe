@@ -35,13 +35,7 @@ for (const width of [420, 1000]) {
       const branch = form.getByRole('button', { name: /trunk/ });
       const createBounds = (await create.boundingBox())!;
       const branchBounds = (await branch.boundingBox())!;
-      if (width === 420) expect(createBounds.y).toBeGreaterThan(branchBounds.y);
-      else
-        expect(
-          Math.abs(
-            createBounds.y + createBounds.height / 2 - branchBounds.y - branchBounds.height / 2,
-          ),
-        ).toBeLessThanOrEqual(1);
+      expect(createBounds.y).toBeGreaterThan(branchBounds.y);
       await page.screenshot({ path: testInfo.outputPath(`${provider}-${width}-ready.png`) });
       await branch.focus();
       await page.keyboard.press('Enter');
@@ -76,6 +70,15 @@ test('a failed GitLab config read keeps its warning and selected fallback usable
   await expect(trigger).not.toContainText('From repo config');
   await trigger.focus();
   await expect(trigger).toBeFocused();
+  await trigger.press('Enter');
+  const picker = page.getByRole('dialog', { name: 'Setup script', exact: true });
+  await picker.getByRole('button', { name: 'Edit commands', exact: true }).click();
+  const editor = page.getByRole('dialog', { name: 'Setup Script', exact: true });
+  await expect(editor.getByRole('textbox', { name: 'Editor content', exact: true })).toBeVisible();
+  await editor.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(editor).toBeHidden();
+  await expect(trigger).toBeFocused();
+  await expect(form.getByText(/Could not read the repository setup script/)).toBeVisible();
   await expect(form.getByRole('button', { name: /Create workspace/ })).toBeEnabled();
   await expect.poll(() => form.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('gitlab-420-config-unavailable.png') });

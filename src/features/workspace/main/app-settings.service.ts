@@ -59,7 +59,7 @@ import {
   onBackendReconnected,
   onBackendStatus,
 } from '../../backend/main/backend.ipc';
-import { LOCAL_CONNECTION_ID } from '../../backend/main/connections-store';
+import { LOCAL_CONNECTION_ID } from '../../backend/main/desktop-connections-store';
 import type { ConnectionStatus, JsonRpcNotification } from '../../backend/main/json-rpc-client';
 
 const logger = new Logger({ category: 'AppSettingsService' });

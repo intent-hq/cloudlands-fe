@@ -53,7 +53,7 @@ async function run() {
   });
   await app.whenReady();
   const backend = await import('../../../src/features/backend/main/backend.ipc');
-  const connections = await import('../../../src/features/backend/main/connections-store');
+  const connections = await import('../../../src/features/backend/main/desktop-connections-store');
   backend.registerBackendHandlers();
   const remote = await connections.add({
     label: 'Disposable host A',

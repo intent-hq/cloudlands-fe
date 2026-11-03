@@ -25,10 +25,13 @@ export interface ProviderCliWarning {
 
 /**
  * Provider CLIs with a self-update command that needs no package-manager
- * knowledge (`codex update` detects npm, Homebrew, or standalone installs).
+ * knowledge (`codex update` detects npm, Homebrew, or standalone installs;
+ * `claude update` also covers Homebrew and winget, and prints the upgrade
+ * command for package managers it cannot drive).
  */
 export const PROVIDER_CLI_UPDATE_COMMANDS: Readonly<Record<string, string>> = {
   codex: 'codex update',
+  'claude-code': 'claude update',
 };
 
 /**

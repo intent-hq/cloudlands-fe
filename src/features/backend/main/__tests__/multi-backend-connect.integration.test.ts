@@ -303,7 +303,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  const store = await import('../connections-store');
+  const store = await import('../desktop-connections-store');
   await store.__drainWriteChainForTesting();
   await fs.rm(tmpDir, { recursive: true, force: true });
   vi.doUnmock('../backend.ipc');
@@ -360,7 +360,7 @@ describe('multi-backend connect — end-to-end journey', () => {
     await expect(
       invoke('connections:add', { ...REMOTE_INPUT, fingerprint: FINGERPRINT }),
     ).rejects.toThrow('Personal credential identity unavailable');
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     expect((await store.list()).filter((record) => !record.isLocal)).toEqual([]);
     expect(openOrFocus).not.toHaveBeenCalled();
   });

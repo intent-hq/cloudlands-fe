@@ -411,13 +411,12 @@
       isPlainFolderWorkspace(workspace) ||
       (!!hubWorkspaceId &&
         selectIsPlainFolderWorkspace.select(appStore.state, String(hubWorkspaceId)));
-    if ($agent$?.effectiveIsolation === 'isolated' && !plainFolder) {
+    const isolated = $agent$?.effectiveIsolation === 'isolated';
+    if ($nodeCapabilities$.agentNodes && isolated && !plainFolder) {
       items.push({
         id: 'hub-merge',
-        label: $nodeCapabilities$.agentNodes
-          ? m.agent_hub_merge()
-          : m.agent_placement_unavailable(),
-        disabled: !$nodeCapabilities$.agentNodes || $hubBusy$ || !$agent$?.checkpoint?.id,
+        label: m.agent_hub_merge(),
+        disabled: $hubBusy$ || !$agent$?.checkpoint?.id,
         onClick: () => {
           void manageHub('merge');
         },
@@ -425,7 +424,7 @@
       items.push({
         id: 'hub-discard',
         label: m.agent_hub_discard(),
-        disabled: !$nodeCapabilities$.agentNodes || $hubBusy$,
+        disabled: $hubBusy$,
         onClick: () => {
           void manageHub('discard');
         },

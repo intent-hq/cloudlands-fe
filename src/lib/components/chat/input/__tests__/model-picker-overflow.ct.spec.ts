@@ -176,6 +176,10 @@ test('provider rail, immediately visible search and bottom-footer effort remain 
   await expect(effort).toBeVisible();
   expect(await section.boundingBox()).toEqual(sectionBox);
   await page.keyboard.press('Tab');
+  await expect(outer.getByRole('button', { name: 'Clear search' })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.getByTestId('model-provider-refresh-button')).toBeFocused();
+  await page.keyboard.press('Tab');
   await expect(list.getByRole('option')).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(effort).toBeFocused();
@@ -264,31 +268,8 @@ for (const { opening, width } of [
     const box = (await search.boundingBox())!;
     expect(box.x).toBeGreaterThanOrEqual(listBox.x);
     expect(box.x + box.width).toBeLessThanOrEqual(refreshBox.x);
-    const presentation = await search.evaluate((el) => ({
-      placeholder: (el as HTMLInputElement).placeholder,
-      caret: getComputedStyle(el).caretColor,
-      color: getComputedStyle(el).color,
-      border: getComputedStyle(el).borderTopWidth,
-      outline: getComputedStyle(el).outlineStyle,
-      background: getComputedStyle(el.parentElement!).backgroundColor,
-      fieldBackground: getComputedStyle(el).backgroundColor,
-      visibleLeadingIcons: Array.from(el.parentElement!.querySelectorAll('svg')).filter(
-        (icon) => icon.getClientRects().length > 0,
-      ).length,
-      resizing: el
-        .parentElement!.getAnimations()
-        .some((animation) =>
-          (animation.effect as KeyframeEffect).getKeyframes().some((frame) => 'width' in frame),
-        ),
-    }));
-    expect(presentation.placeholder.length).toBeGreaterThan(0);
-    expect(presentation.caret).toBe(presentation.color);
-    expect(presentation.caret).not.toBe('rgba(0, 0, 0, 0)');
-    expect(presentation.outline).toBe('none');
-    expect(presentation.background).toBe('rgba(0, 0, 0, 0)');
-    expect(presentation.fieldBackground).toBe('rgba(0, 0, 0, 0)');
-    expect(presentation.visibleLeadingIcons).toBe(0);
-    expect(presentation.resizing).toBe(false);
+    await expect(search).toHaveAccessibleName('Search models...');
+    await expect(search).toHaveAttribute('placeholder', 'Search models...');
     await expectHitTarget(search);
     await expectHitTarget(refresh);
     // No search click/fill: the first keystroke after either open must filter.
@@ -298,10 +279,6 @@ for (const { opening, width } of [
     expect((await search.boundingBox())!.width).toBe(box.width);
     await search.press('Tab');
     await expect(search).not.toBeFocused();
-    await expect(search).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
-    expect(await search.evaluate((el) => getComputedStyle(el.parentElement!).backgroundColor)).toBe(
-      'rgba(0, 0, 0, 0)',
-    );
     const clear = page.getByRole('button', { name: 'Clear search' });
     await expectHitTarget(clear);
     await clear.click();

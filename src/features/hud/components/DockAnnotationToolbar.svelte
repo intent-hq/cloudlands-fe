@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { fade } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
   import {
@@ -10,6 +10,7 @@
   } from '$shared/dock-annotation';
   import type { DockMarkTool } from '$shared/dock-evidence';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import DockComposerIcon from './DockComposerIcon.svelte';
   import { formatDockElapsed } from '$features/hud/composer/dock-annotation-bar-media';
   import { formatInteger } from '$lib/i18n/format';
@@ -41,8 +42,8 @@
   const TOOL_SIZE = 38;
   let height = $state(0);
 
-  // Next to the dock (below a notch or top pill, beside an edge rail, below or above
-  // a floating dock), inside the work area; it follows the dock as it moves or resizes.
+  // Notch feedback stays at the bottom, away from the dock's hover expansion.
+  // Edge and floating toolbars follow their dock, inside the work area.
   // Record widens into its recording pill: the bar must not re-centre (jump) while
   // it does. It is placed by its width without that growth, so it grows to the right
   // (an edge rail on the right grows to the left by itself), and is kept inside the
@@ -85,14 +86,9 @@
     event.stopPropagation();
   }
 
-  // Tooltips go below the bar when there is no room above it (always under a notch or
-  // top pill, where the dock and the screen edge are above), and stay inside the work area.
+  // Tooltips go below only when there is no room above the toolbar.
   const TIP_ROOM = 40;
-  const tipsBelow = $derived(
-    overlay.dock?.shape === 'notch' ||
-      overlay.dock?.shape === 'top-pill' ||
-      position.y - overlay.workArea.y < TIP_ROOM,
-  );
+  const tipsBelow = $derived(position.y - overlay.workArea.y < TIP_ROOM);
   /** Shift a tooltip sideways so it stays inside the work area (overlay = client coords). */
   function clampTip(node: HTMLElement, area: DockAnnotationRect) {
     let current = area;
@@ -117,6 +113,54 @@
   }
   // Screenshot and Record: the composer's own buttons (state sent by the dock).
   const media = $derived(overlay.media);
+  // An existing image on mount is not a new capture. Only the accepted revision
+  // acknowledges success; a pending -> idle transition can also mean failure.
+  let captureRevision: number | null = untrack(() => overlay.media?.capture.revision ?? null);
+  let feedbackSession = untrack(() => overlay.sessionId);
+  let captureRequested = false;
+  let captureComplete = $state(false);
+  let captureFeedbackTimer: ReturnType<typeof setTimeout> | undefined;
+  const CAPTURE_FEEDBACK_MS = 1600;
+  function clearCaptureFeedback() {
+    clearTimeout(captureFeedbackTimer);
+    captureFeedbackTimer = undefined;
+    captureComplete = false;
+  }
+  onDestroy(clearCaptureFeedback);
+  $effect(() => {
+    const capture = media?.capture;
+    if (overlay.sessionId !== feedbackSession) {
+      feedbackSession = overlay.sessionId;
+      captureRequested = false;
+      captureRevision = capture?.revision ?? null;
+      clearCaptureFeedback();
+      return;
+    }
+    if (!capture || capture.alert) captureRequested = false;
+    if (capture?.pending) captureRequested = true;
+    if (!capture || capture.pending || capture.alert) clearCaptureFeedback();
+    if (
+      capture &&
+      captureRevision !== null &&
+      capture.revision > captureRevision &&
+      captureRequested &&
+      !capture.pending &&
+      !capture.alert
+    ) {
+      clearCaptureFeedback();
+      captureComplete = true;
+      captureFeedbackTimer = setTimeout(clearCaptureFeedback, CAPTURE_FEEDBACK_MS);
+    }
+    if (!capture?.pending) captureRequested = false;
+    captureRevision = capture?.revision ?? null;
+  });
+  const captureFeedback = $derived(
+    media?.capture.pending
+      ? m.dock_composer_capturePending_label()
+      : captureComplete
+        ? m.dock_composer_captureComplete_label()
+        : null,
+  );
   const recording = $derived(!!media?.record.recording);
   let now = $state(Date.now());
   $effect(() => {
@@ -135,6 +179,7 @@
   const attachLabel = m.dock_annotationToolbar_save_label();
   // What Attach will put in the composer: the marks on screen now.
   const attachCount = $derived(overlay.marks.length);
+  const primaryLabel = $derived(attachCount > 0 ? attachLabel : m.dock_composer_done_label());
   const clearLabel = m.dock_annotationToolbar_clear_label();
   const endLabel = m.dock_composer_endAnnotation_label();
 </script>
@@ -196,22 +241,36 @@
     <span class="divider" aria-hidden="true"></span>
     <!-- Screenshot: the composer's capture (the overlay and this bar are never in it). -->
     <Button
-      variant="ghost-light"
+      variant={captureComplete ? 'default' : 'ghost-light'}
       size="icon-sm"
       class="dock-annotation-tool tile"
       data-media="capture"
+      data-capture-state={media.capture.pending ? 'pending' : captureComplete ? 'complete' : 'idle'}
       data-alert={media.capture.alert ? '' : undefined}
       aria-label={media.capture.label}
       aria-disabled={inert(media.capture) || undefined}
       aria-busy={media.capture.pending || undefined}
       onclick={() => {
-        if (!inert(media.capture)) send({ sessionId: overlay.sessionId, action: 'capture' });
+        if (!inert(media.capture)) {
+          clearCaptureFeedback();
+          captureRequested = true;
+          send({ sessionId: overlay.sessionId, action: 'capture' });
+        }
       }}
     >
-      <DockComposerIcon glyph="viewfinder" size={18} />
+      {#if media.capture.pending}
+        <IntentMarkLoader size={18} />
+      {:else}
+        <DockComposerIcon glyph={captureComplete ? 'check' : 'viewfinder'} size={18} />
+      {/if}
       {#if media.capture.alert}<span class="alert-dot" aria-hidden="true"></span>{/if}
-      <span class="tip" role="tooltip" use:clampTip={overlay.workArea}>{media.capture.tooltip}</span
+      <span
+        class="tip"
+        data-feedback={captureFeedback ? '' : undefined}
+        role="tooltip"
+        use:clampTip={overlay.workArea}>{captureFeedback ?? media.capture.tooltip}</span
       >
+      <span class="sr-only" role="status" aria-live="polite">{captureFeedback ?? ''}</span>
     </Button>
     <!-- Record: starts another recording, or stops the live one (the composer's look). -->
     <Button
@@ -244,18 +303,19 @@
   <span class="divider" aria-hidden="true"></span>
   <!-- Attach: the current marks become one image in the composer; the screen is
        cleared and the bar switches to Mouse. The badge counts what will be attached. -->
-  <!-- Attach | Clear: one pill. Clear (only with marks) drops them, nothing attached. -->
+  <!-- With no marks, Done ends feedback without claiming to attach anything. -->
   <div class="attach-split" data-split={attachCount > 0 || undefined}>
     <Button
       variant="ghost-light"
       size="sm"
       class="dock-annotation-attach"
       data-commit
-      aria-label={attachLabel}
-      onclick={() => send({ sessionId: overlay.sessionId, action: 'commit' })}
+      aria-label={primaryLabel}
+      onclick={() =>
+        send({ sessionId: overlay.sessionId, action: attachCount > 0 ? 'commit' : 'end' })}
     >
-      <DockComposerIcon glyph="paperclip" size={16} />
-      <span class="attach-label" aria-hidden="true">{attachLabel}</span>
+      <DockComposerIcon glyph={attachCount > 0 ? 'paperclip' : 'check'} size={16} />
+      <span class="attach-label" aria-hidden="true">{primaryLabel}</span>
       {#if attachCount > 0}<span class="attach-count" data-attach-count aria-hidden="true"
           >{formatInteger(attachCount)}</span
         >{/if}
@@ -337,11 +397,26 @@
   .dock-annotation-toolbar :global(.dock-annotation-tool.tile) {
     background: hsl(var(--toolbar-tile));
   }
+  .dock-annotation-toolbar :global(.dock-annotation-tool[data-media='capture']:active),
+  .dock-annotation-toolbar :global(.dock-annotation-tool[data-capture-state='pending']) {
+    background: hsl(var(--primary) / 0.2);
+    color: hsl(var(--primary));
+  }
+  .dock-annotation-toolbar :global(.dock-annotation-tool[data-capture-state='complete']) {
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+    transition: background-color var(--motion-fast) var(--spring-fast-ease);
+  }
+  .dock-annotation-toolbar :global(.dock-annotation-tool[data-media='capture'][aria-busy='true']) {
+    opacity: 1;
+  }
   .dock-annotation-toolbar
     :global(
-      .dock-annotation-tool:hover:not(:disabled):not([aria-disabled='true']):not([data-active]):not(
-          [data-recording]
-        ):not([data-clear])
+      .dock-annotation-tool:hover:not(:active):not(:disabled):not([aria-disabled='true']):not(
+          [data-active]
+        ):not([data-recording]):not([data-clear]):not([data-capture-state='pending']):not(
+          [data-capture-state='complete']
+        )
     ) {
     color: hsl(var(--theme-dark-foreground));
     background: var(--theme-dark-active);
@@ -486,8 +561,13 @@
     opacity: 1;
     transition-delay: 300ms;
   }
+  .tip[data-feedback] {
+    opacity: 1;
+    transition-delay: 0ms;
+  }
   @container style(--motion-reduced: 1) {
     .tip,
+    .dock-annotation-toolbar :global(.dock-annotation-tool[data-media='capture']),
     .dock-annotation-toolbar[data-placed] {
       transition: none;
     }

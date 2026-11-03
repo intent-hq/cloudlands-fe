@@ -358,7 +358,10 @@ import { registerWorkspaceImportHandlers } from '../features/backend/main/worksp
 import { registerRemoteMachinesHandlers } from '../features/backend/main/remote-machines.ipc';
 import { getConnectionMode, getDaemonVersionInfo } from '../features/backend/main/connection-mode';
 import { list as listGuestSessions } from '../features/backend/main/guest-sessions-store';
-import { getActiveId, list as listConnections } from '../features/backend/main/connections-store';
+import {
+  getActiveId,
+  list as listConnections,
+} from '../features/backend/main/desktop-connections-store';
 import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
 import {
   probeDaemonVersion,

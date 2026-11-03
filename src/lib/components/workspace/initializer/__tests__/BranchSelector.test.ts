@@ -506,6 +506,47 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
     expect(document.activeElement).toBe(toggle);
   });
 
+  it('local repo: turning isolation off works in the folder on its current branch without switching', async () => {
+    mockGetBranches.mockResolvedValue({
+      branches: ['main', 'feature/x'],
+      remoteBranches: [],
+      defaultBranch: 'main',
+      currentBranch: 'feature/x',
+    });
+    const onSkipIsolationChange = vi.fn();
+    const onchange = vi.fn();
+    const { container, rerender } = render(BranchSelector, {
+      props: {
+        repoPath: '/tmp/repo',
+        repoType: 'local',
+        value: 'main',
+        skipIsolation: false,
+        rowLabel: 'Branch',
+        onSkipIsolationChange,
+        onchange,
+      },
+    });
+
+    await waitFor(() => expect(mockGetBranches).toHaveBeenCalledWith('/tmp/repo', true));
+    await fireEvent.click(container.querySelector('button')!);
+    const toggle = await screen.findByRole('switch', {
+      name: m.workspace_branchSelector_isolation_label({ isolationLabel: 'worktree' }),
+    });
+    expect((toggle as HTMLButtonElement).getAttribute('aria-checked')).toBe('true');
+
+    await fireEvent.click(toggle);
+    await waitFor(() => expect(onSkipIsolationChange).toHaveBeenLastCalledWith(true));
+    // Direct mode takes the folder's checked-out branch as-is; the git client
+    // exposes no checkout here, so any branch switch would throw.
+    await waitFor(() =>
+      expect(onchange.mock.calls.at(-1)?.[0].detail).toEqual({ branch: 'feature/x' }),
+    );
+    await rerender({ skipIsolation: true, value: 'feature/x' });
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(await screen.findByText(m.workspace_branchSelector_folderBranch_label())).toBeTruthy();
+    expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false');
+  });
+
   // Isolation off works in the folder on its current branch, whichever control
   // turned it off (the folder-picker git switch or this selector).
   it('local repo: isolation turned off elsewhere selects the folder’s current branch', async () => {

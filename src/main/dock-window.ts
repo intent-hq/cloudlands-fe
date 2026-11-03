@@ -4,7 +4,10 @@ import type { Rectangle } from 'electron';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { Logger } from '../shared/logger';
-import { getActiveId, list as listConnections } from '../features/backend/main/connections-store';
+import {
+  getActiveId,
+  list as listConnections,
+} from '../features/backend/main/desktop-connections-store';
 import {
   DOCK_WINDOW_WIDTH,
   isPointInDockPointerRegions,

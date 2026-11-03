@@ -23,6 +23,7 @@
     hasProviderIcon,
   } from '$features/agent/components/AgentProviderIcon.svelte';
   import { faSettings } from '$lib/icons/phosphor-icons';
+  import { workspacePickerStyles } from '$lib/components/workspace/initializer/workspace-picker-styles';
   import ModelPickerEmptyState from './ModelPickerEmptyState.svelte';
   import EffortGauge from './EffortGauge.svelte';
   import EffortPicker from './EffortPicker.svelte';
@@ -34,6 +35,7 @@
   } from './ModelPickerProviderNotice.svelte';
   import ModelProviderErrorItem from './ModelProviderErrorItem.svelte';
   import { ContentDialog } from '$lib/components/patterns/confirm';
+  import { useDialogPortalTarget } from '$lib/components/ui/dialog';
   import { createAgentModelMutator } from './agent-model-mutator';
   import {
     selectAgentModelMutationPending,
@@ -329,6 +331,20 @@
     deferUpdate?: boolean;
     variant?: 'ghost' | 'ghost-light' | 'underline' | 'outline' | 'default';
     size?: 'xs' | 'sm' | 'icon';
+    /** Stretch the trigger to its container. */
+    fullWidth?: boolean;
+    /** Field label rendered inside a full-width trigger, before the value. */
+    rowLabel?: string;
+    /** Keep the field label accessible without showing it in a compact trigger. */
+    showRowLabel?: boolean;
+    /** Show decorative provider and reasoning icons inside the trigger. */
+    showTriggerIcons?: boolean;
+    /** Preferred side for the open menu; `left` falls back to vertical without room. */
+    menuSide?: 'bottom' | 'left';
+    /** Gap between the trigger and a `left`-side menu. */
+    menuSideOffset?: number;
+    /** Open menu height in pixels; the panel still shrinks to the available space. */
+    menuMaxHeight?: 360 | 440;
     workspaceId?: string;
     agentId?: string;
     showManageLink?: boolean;
@@ -386,6 +402,13 @@
     deferUpdate = false,
     variant = 'ghost-light',
     size = 'sm',
+    fullWidth = false,
+    rowLabel,
+    showRowLabel = true,
+    showTriggerIcons = true,
+    menuSide = 'bottom',
+    menuSideOffset,
+    menuMaxHeight = 360,
     workspaceId,
     agentId,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -412,6 +435,7 @@
     reasoningDisabled = false,
   }: Props = $props();
 
+  const dialogPortalTarget = useDialogPortalTarget();
   const workspaceIdStore = writable(untrack(() => workspaceId) ?? '');
   const defaultProviderId$ = selectContextDefaultProvider(workspaceIdStore);
   const directActiveProviderId$ = selectActiveProviderId();
@@ -2586,13 +2610,9 @@
         </div>
       {/if}
     {:else if group.key !== 'default' && baseHasProfiles(group.parentKey ?? group.key)}
-      <!-- Tabs show icons only; name the configuration being browsed (§5.54). -->
-      <div
-        class="truncate px-2 pt-1.5 pb-0.5 text-xs text-subtle"
-        data-testid="model-picker-profile-group"
-      >
+      <span class="sr-only" data-testid="model-picker-profile-group">
         {group.label}
-      </div>
+      </span>
       {#if isProfileSignedOut(group.key)}
         <!-- Same cue as a provider's sign-in failure; the models stay selectable. -->
         <div
@@ -2706,23 +2726,31 @@
     variant={variant === 'outline' ? 'outline' : variant === 'default' ? 'default' : 'ghost'}
     size={size === 'xs' ? 'xs' : 'sm'}
     searchable={!hasNoAvailableProvider}
-    searchChrome
-    placeholder={m.ui_dropdown_search_ariaLabel()}
-    class="min-w-0 max-w-full"
-    headerClass={cn('model-picker-header border-b-0!', !hasNoAvailableProvider && 'pt-9')}
+    placeholder={m.chat_modelPicker_searchModels_placeholder()}
+    searchAriaLabel={m.chat_modelPicker_searchModels_placeholder()}
+    class={cn('min-w-0 max-w-full', fullWidth && 'w-full')}
+    headerClass="model-picker-header border-b-0!"
     triggerClass={cn(
-      'max-w-full px-2!',
+      'px-2!',
+      rowLabel && showRowLabel ? 'max-w-none' : 'max-w-full',
       (variant === 'outline' || variant === 'default') && 'w-full justify-between border-border!',
+      fullWidth && 'w-full justify-between',
       triggerClass,
     )}
     contentClass={cn(
-      'model-picker-panel max-w-[calc(100vw-16px)] bg-popover! text-foreground! w-96 h-[360px] min-h-0 flex flex-col rounded-xl pl-12',
+      'model-picker-panel max-w-[calc(100vw-16px)] bg-popover! text-foreground! w-96 min-h-0 flex flex-col rounded-xl pl-12',
+      rowLabel && '[&>[data-scroll-container]]:px-2',
+      menuMaxHeight === 440 ? 'h-[440px]' : 'h-[360px]',
       pointerInteraction && 'model-picker-pointer',
     )}
-    contentMaxHeight={360}
+    rowClass={rowLabel ? workspacePickerStyles.row : undefined}
+    contentMaxHeight={menuMaxHeight}
+    side={menuSide}
+    sideOffset={menuSideOffset}
     fillContentHeight
     animate={false}
     {portal}
+    portalTarget={modalAware ? dialogPortalTarget() : undefined}
     {collisionBoundary}
     {groupHeader}
     footer={showDropdownFooter ? dropdownFooter : undefined}
@@ -2735,10 +2763,13 @@
       open: boolean;
       value: string | string[] | undefined;
     })}
+      {#if rowLabel}
+        <span class={showRowLabel ? workspacePickerStyles.fieldLabel : 'sr-only'}>{rowLabel}</span>
+      {/if}
       <span
         class={cn(
           'inline-flex items-center gap-2 truncate min-w-0',
-          (variant === 'outline' || variant === 'default') && 'flex-1',
+          (variant === 'outline' || variant === 'default' || fullWidth) && 'flex-1',
         )}
         title={isTriggerLabelResolved ? triggerTitle : ''}
         aria-label={isTriggerLabelResolved ? triggerAccessibleLabel : undefined}
@@ -2751,7 +2782,7 @@
           {:else if usingEarlierProfileSettings}
             <Fa icon={faCircleInfo} class="h-3 w-3 text-muted-foreground shrink-0" />
           {/if}
-          {#if hasProviderIcon(triggerProviderId)}
+          {#if (showTriggerIcons || variant === 'ghost-light') && hasProviderIcon(triggerProviderId)}
             <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
           {/if}
           <span class="truncate" use:truncatedTitle={triggerTitle ? undefined : triggerLabel}
@@ -2773,7 +2804,7 @@
               data-testid="model-picker-profile">{triggerProfileName}</span
             >
           {/if}
-          {#if showTriggerReasoningGauge}
+          {#if showTriggerIcons && showTriggerReasoningGauge}
             <EffortGauge
               value={currentReasoningLevelIndex}
               max={Math.max(1, reasoningLevels.length - 1)}
@@ -2786,8 +2817,61 @@
           <div class="h-3.5 w-24 bg-muted/50 rounded-sm animate-pulse"></div>
         {/if}
       </span>
-      {#if variant === 'outline' || variant === 'default'}
-        <Fa icon={faChevronDown} class="h-2 w-2 opacity-50 shrink-0" />
+      {#if !rowLabel && (variant === 'outline' || variant === 'default' || fullWidth)}
+        <Fa
+          icon={faChevronDown}
+          class={fullWidth
+            ? 'size-3 shrink-0 text-muted-foreground'
+            : 'h-2 w-2 opacity-50 shrink-0'}
+        />
+      {/if}
+    {/snippet}
+
+    {#snippet searchAction()}
+      <span class="inline-flex size-(--control-height-compact) shrink-0">
+        {#if modelSearchValue}
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            iconOnly
+            class="shrink-0"
+            aria-label={m.chat_modelPicker_clearSearch_ariaLabel()}
+            onclick={clearModelSearch}
+          >
+            <Fa icon={faXmark} class="size-3" />
+          </Button>
+        {/if}
+      </span>
+      {#if refreshProviderId && !remoteScoped}
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          iconOnly={true}
+          title={m.chat_modelPicker_refreshGroup_title({
+            group: providerDisplayName(refreshProviderId),
+          })}
+          aria-label={m.chat_modelPicker_refreshGroup_title({
+            group: providerDisplayName(refreshProviderId),
+          })}
+          class={cn(
+            'shrink-0 text-subtle hover:bg-muted/40',
+            refreshingProviders.has(refreshProviderId) && 'opacity-50!',
+          )}
+          data-testid="model-provider-refresh-button"
+          aria-busy={refreshingProviders.has(refreshProviderId)}
+          disabled={refreshingProviders.has(refreshProviderId)}
+          onclick={() => void handleRefreshProvider(refreshProviderId)}
+        >
+          {#if refreshingProviders.has(refreshProviderId)}
+            <IntentMarkLoader size={12} />
+          {:else}
+            <Fa
+              icon={faArrowsRotate}
+              size={10}
+              class="text-subtle transition-transform duration-spring-slow ease-spring-slow motion-reduce:transition-none"
+            />
+          {/if}
+        </Button>
       {/if}
     {/snippet}
 
@@ -2853,49 +2937,6 @@
           </Button>
         {/if}
       </div>
-      {#if modelSearchValue}
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          iconOnly
-          class="absolute right-10 top-1.5 z-20"
-          aria-label={m.chat_modelPicker_clearSearch_ariaLabel()}
-          onclick={clearModelSearch}
-        >
-          <Fa icon={faXmark} class="size-3" />
-        </Button>
-      {/if}
-      {#if refreshProviderId && !remoteScoped}
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          iconOnly={true}
-          title={m.chat_modelPicker_refreshGroup_title({
-            group: providerDisplayName(refreshProviderId),
-          })}
-          aria-label={m.chat_modelPicker_refreshGroup_title({
-            group: providerDisplayName(refreshProviderId),
-          })}
-          class={cn(
-            'absolute right-2 top-1.5 text-subtle hover:bg-muted/40',
-            refreshingProviders.has(refreshProviderId) && 'opacity-50!',
-          )}
-          data-testid="model-provider-refresh-button"
-          aria-busy={refreshingProviders.has(refreshProviderId)}
-          disabled={refreshingProviders.has(refreshProviderId)}
-          onclick={() => void handleRefreshProvider(refreshProviderId)}
-        >
-          {#if refreshingProviders.has(refreshProviderId)}
-            <IntentMarkLoader size={12} />
-          {:else}
-            <Fa
-              icon={faArrowsRotate}
-              size={10}
-              class="text-subtle transition-transform duration-spring-slow ease-spring-slow motion-reduce:transition-none"
-            />
-          {/if}
-        </Button>
-      {/if}
       {#if remoteScoped && remoteLocation}
         <!-- The machine whose models these are, and how recent its report is. -->
         <div
@@ -2999,9 +3040,9 @@
       {@const providerLoadError = option.data?.providerLoadError as ProviderLoadError | undefined}
       {@const providerLoading = option.data?.providerLoading as boolean | undefined}
 
-      <div class="flex items-center gap-2.5 w-full min-w-0 py-1">
+      <div class={cn('flex items-center w-full min-w-0', rowLabel ? 'gap-2' : 'gap-2.5 py-1')}>
         {#if providerLoading}
-          <div class="flex items-center gap-2 text-muted-foreground text-sm">
+          <div class={cn('flex items-center gap-2 text-muted-foreground', !rowLabel && 'text-sm')}>
             <IntentMarkLoader size={12} />
             <span>{option.label}</span>
           </div>
@@ -3016,7 +3057,8 @@
           <div class="flex-1 min-w-0">
             <span
               class={cn(
-                'block truncate text-sm font-normal',
+                'block truncate font-normal',
+                !rowLabel && 'text-sm',
                 option.value === USE_DEFAULT_VALUE && 'text-muted-foreground',
               )}
             >
@@ -3024,7 +3066,10 @@
             </span>
             {#if option.description}
               <div
-                class="text-xs text-subtle truncate mt-0.5"
+                class={cn(
+                  'truncate mt-0.5',
+                  rowLabel ? 'type-caption text-muted-foreground' : 'text-xs text-subtle',
+                )}
                 use:truncatedTitle={option.description}
               >
                 {option.description}
@@ -3090,30 +3135,6 @@
 </ContentDialog>
 
 <style>
-  :global(.model-picker-panel > div:has(> input[role='searchbox'])) {
-    position: absolute;
-    top: 0.25rem;
-    left: 3.5rem;
-    right: 2.5rem;
-    width: auto;
-    padding: 0;
-    z-index: 10;
-    background: transparent;
-    border-radius: var(--radius-medium);
-  }
-  :global(.model-picker-panel > div:has(> input[role='searchbox']) > svg) {
-    display: none;
-  }
-  :global(.model-picker-panel input[role='searchbox']) {
-    height: 2rem;
-    padding: 0 1.75rem 0 0.25rem;
-    border: 0;
-    background: transparent;
-    box-shadow: none;
-    outline: none;
-    border-radius: var(--radius-medium);
-    caret-color: var(--color-foreground);
-  }
   :global(.model-picker-panel.model-picker-pointer) {
     transition: opacity var(--spring-fast) var(--spring-fast-ease);
     @starting-style {

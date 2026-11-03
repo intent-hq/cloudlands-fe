@@ -36,7 +36,15 @@
   }
 
   interface Props {
-    state?: 'populated' | 'empty' | 'compact' | 'welcome' | 'crowded' | 'builtin';
+    state?:
+      | 'populated'
+      | 'orchestration'
+      | 'sidebar'
+      | 'empty'
+      | 'compact'
+      | 'welcome'
+      | 'crowded'
+      | 'builtin';
   }
   export const preview = definePreview<Props>({
     id: 'initial-agent-picker',
@@ -45,6 +53,8 @@
     states: {
       builtin: { props: { state: 'builtin' } },
       populated: { props: { state: 'populated' } },
+      orchestration: { props: { state: 'orchestration' } },
+      sidebar: { props: { state: 'sidebar' } },
       empty: { props: { state: 'empty' } },
       compact: { props: { state: 'compact' } },
       welcome: { props: { state: 'welcome' } },
@@ -76,6 +86,7 @@
   let selected = $state<string | null>(
     untrack(() => (scenario === 'welcome' ? 'fixture-developer' : null)),
   );
+  let teamMode = $state(untrack(() => scenario === 'orchestration'));
   const welcomeSession = $derived({
     id: 'fixture-welcome-agent',
     backendSessionId: null,
@@ -136,6 +147,18 @@
                   source: 'user',
                   icon: 'reviewer',
                 },
+                {
+                  id: 'fixture-coordinator',
+                  name: 'Coordinator',
+                  description: 'Plans the work and delegates it.',
+                  model: 'fixture-model',
+                  codingAgent: 'codex',
+                  behaviorPrompt: '',
+                  filePath: '/fixture/coordinator.md',
+                  source: 'user',
+                  icon: 'coordinator',
+                  role: 'orchestrator',
+                },
                 ...(scenario === 'crowded' ? crowdedSpecialists() : []),
               ],
       ),
@@ -150,7 +173,10 @@
   });
 </script>
 
-<section class="w-full min-w-0 p-4" data-testid="specialist-fixture">
+<section
+  class="w-full min-w-0 p-4 {scenario === 'sidebar' ? 'max-w-[300px]' : ''}"
+  data-testid="specialist-fixture"
+>
   {#if scenario === 'compact'}
     <SpecialistDropdown value={selected} onchange={(value) => (selected = value)} />
   {:else if scenario === 'welcome'}
@@ -159,7 +185,13 @@
       onSpecialistChange={(value) => (selected = value)}
     />
   {:else}
-    <InitialAgentPicker bind:selectedSpecialist={selected} selectedProvider="codex" />
+    <InitialAgentPicker
+      bind:selectedSpecialist={selected}
+      bind:isTeamMode={teamMode}
+      selectedProvider="codex"
+    />
   {/if}
-  <output class="sr-only" data-testid="specialist-selection">{selected ?? 'general'}</output>
+  <output class="sr-only" data-testid="specialist-selection"
+    >{teamMode ? 'orchestration' : (selected ?? 'general')}</output
+  >
 </section>

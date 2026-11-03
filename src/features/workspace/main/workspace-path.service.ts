@@ -35,7 +35,7 @@ import {
   onBackendReconnected,
 } from '../../backend/main/backend.ipc';
 import type { JsonRpcNotification } from '../../backend/main/json-rpc-client';
-import { LOCAL_CONNECTION_ID } from '../../backend/main/connections-store';
+import { LOCAL_CONNECTION_ID } from '../../backend/main/desktop-connections-store';
 
 const logger = new Logger('WorkspacePathService');
 
