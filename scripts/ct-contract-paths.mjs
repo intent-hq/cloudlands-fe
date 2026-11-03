@@ -40,6 +40,8 @@ export const CT_CONTRACT_FILES = Object.freeze([
   'pnpm-lock.yaml',
 ]);
 export const CT_CONTRACT_DIRECTORIES = Object.freeze(['src/lib/styles/', 'playwright/']);
+// Glob form of the list above. `isCtContractPath` additionally subtracts the
+// Vitest suites under `playwright/` (see isPlaywrightUnitTest).
 export const CT_CONTRACT_PATHS = Object.freeze([
   ...CT_CONTRACT_FILES,
   ...CT_CONTRACT_DIRECTORIES.map((directory) => `${directory}**`),
@@ -47,12 +49,26 @@ export const CT_CONTRACT_PATHS = Object.freeze([
 
 const OUTPUT_KEY = 'ct_required';
 
+// Vitest suites colocated with the harness (`playwright/ct-port.test.ts`, …)
+// are not harness inputs: Playwright discovers only `.ct.spec.ts` files and no
+// CT run loads a `.test.*` module unless something imports it. cloudlands-fe#4060
+// added a comment to `playwright/root-harness-import-guard.test.ts` and paid a
+// 1.4-hour local component run plus about 1.5 hours of test-ct shards in the
+// merge queue. A suite the CT graph does reach (an import from
+// `playwright/index.ts`, a spec or a preview) still requires CT in CI through
+// `ctRequired`'s dependency set. Matching is case-sensitive like Vitest's
+// include glob, and `.spec.*`/snapshot files stay contract paths.
+const PLAYWRIGHT_UNIT_TEST = /^playwright\/.*\.test\.[cm]?[jt]sx?$/;
+
+export function isPlaywrightUnitTest(file) {
+  return PLAYWRIGHT_UNIT_TEST.test(normalizeCtPath(file));
+}
+
 export function isCtContractPath(file) {
   const path = normalizeCtPath(file);
-  return (
-    CT_CONTRACT_FILES.includes(path) ||
-    CT_CONTRACT_DIRECTORIES.some((directory) => path.startsWith(directory))
-  );
+  if (CT_CONTRACT_FILES.includes(path)) return true;
+  if (isPlaywrightUnitTest(path)) return false;
+  return CT_CONTRACT_DIRECTORIES.some((directory) => path.startsWith(directory));
 }
 
 export function ctRequired(files, dependencies = new Set()) {
