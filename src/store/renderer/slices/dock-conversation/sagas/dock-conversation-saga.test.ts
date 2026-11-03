@@ -62,6 +62,7 @@ import {
   dockConversationContextItemsChanged,
   sendDockConversationRequested,
   retryDockConversationSendRequested,
+  dockEvidenceMediaPasted,
 } from '../dock-conversation-slice';
 import {
   selectDockConversationView,
@@ -1956,6 +1957,91 @@ describe('dock annotate start feedback, refusals and dictation', () => {
     await vi.waitFor(() => expect(evidenceView().annotating).toBe(false));
     await vi.waitFor(() => expect(evidenceView().clips).toEqual([]));
     expect(native.calls.stopped).toEqual([clipId]);
+  });
+
+  it('pasting a copied screenshot recreates it here with its marks editable, under new ids', async () => {
+    const native = scriptedNative();
+    configureDockEvidenceNative(native.service);
+    await open();
+    const marks = [
+      {
+        tool: 'box' as const,
+        geometry: { kind: 'rect' as const, x: 10, y: 10, w: 50, h: 40 },
+        bounds: { x: 10, y: 10, w: 50, h: 40 },
+        element: null,
+      },
+      {
+        tool: 'arrow' as const,
+        geometry: { kind: 'arrow' as const, from: { x: 1, y: 1 }, to: { x: 20, y: 20 } },
+        bounds: { x: 1, y: 1, w: 19, h: 19 },
+        element: null,
+      },
+    ];
+    appStore.dispatch(
+      dockEvidenceMediaPasted(workspaceA, mainA, {
+        kind: 'image',
+        pixels: {
+          base64: 'iVBORw0KGgo=',
+          mimeType: 'image/png',
+          width: 800,
+          height: 600,
+          displayScale: 2,
+          capturedAt: '2026-11-03T12:00:00.000Z',
+        },
+        marks,
+      }),
+    );
+    await vi.waitFor(() => expect(evidenceView().tiles).toHaveLength(1));
+    const tile = evidenceView().tiles[0]!;
+    expect(tile.marks.map(({ n, mark }) => [n, mark.tool, mark.geometry])).toEqual([
+      [1, 'box', marks[0]!.geometry],
+      [2, 'arrow', marks[1]!.geometry],
+    ]);
+    // Fresh identities: the image and every mark are new to this draft.
+    expect(new Set(tile.marks.map(({ mark }) => mark.id)).size).toBe(2);
+    expect(tile.marks.every(({ mark }) => mark.imageId === tile.image.id)).toBe(true);
+  });
+
+  it('pasting a copied recording places the clipboard file into this workspace as a new clip', async () => {
+    const native = scriptedNative({ record: true });
+    configureDockEvidenceNative(native.service);
+    const placed: { fileName: string; sourcePath?: string; mimeType?: string }[] = [];
+    backend.onRequest('file.placeAttachment', (params) => {
+      const row = params as { fileName: string; sourcePath?: string; mimeType?: string };
+      placed.push(row);
+      return {
+        ok: true,
+        path: `.intent/attachments/${row.fileName}`,
+        fileName: row.fileName,
+        size: 4096,
+        attachmentId: `pasted-clip-${placed.length}`,
+        mimeType: row.mimeType ?? 'video/mp4',
+        uploadedAt: '2026-11-03T12:00:00.000Z',
+      };
+    });
+    await open();
+    await vi.waitFor(() => expect(evidenceView().capabilities.record).toBe(true));
+    appStore.dispatch(
+      dockEvidenceMediaPasted(workspaceA, mainA, {
+        kind: 'clip',
+        name: 'clip-1234abcd.mp4',
+        mimeType: 'video/mp4',
+        sourcePath: '/userData/dock-clipboard/entry/clip-1234abcd.mp4',
+        size: 4096,
+        durationMs: 42_000,
+        hasMicAudio: true,
+      }),
+    );
+    await vi.waitFor(() => expect(evidenceView().clips[0]?.status).toBe('ready'));
+    const clip = evidenceView().clips[0]!;
+    expect(clip).toMatchObject({ durationMs: 42_000, hasMicAudio: true });
+    expect(placed).toHaveLength(1);
+    expect(placed[0]).toMatchObject({
+      sourcePath: '/userData/dock-clipboard/entry/clip-1234abcd.mp4',
+      mimeType: 'video/mp4',
+    });
+    // Nothing was recorded natively: the clip came from the clipboard's own file.
+    expect(native.calls.clips).toEqual([]);
   });
 
   it('dictating leaves the screen usable: annotate is explicit and ending it opens nothing', async () => {

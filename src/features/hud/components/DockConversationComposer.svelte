@@ -62,6 +62,7 @@
   import SimpleRichInput from '$lib/components/chat/input/SimpleRichInput.svelte';
   import DockComposerMediaFooter from './DockComposerMediaFooter.svelte';
   import DockComposerAttachments from './DockComposerAttachments.svelte';
+  import { showDockMediaMenu } from '$features/hud/composer/dock-media-clipboard';
   import AuroraBackground from '$lib/components/chat/AuroraBackground.svelte';
   import { COMPOSER_INSET_CLASS } from '$lib/components/chat/composer-inset';
   import { selectChatAuroraEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
@@ -328,6 +329,25 @@
     else media?.onRemove(id);
   }
 
+  /** Copy, or cut: a cut removes the unsent tile only after the clipboard write succeeded. */
+  async function copyMediaAttachment(id: string, cut: boolean): Promise<void> {
+    if (!media?.onCopy || disposed) return;
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- writes the system clipboard; nothing is loaded
+    const copied = await media.onCopy(id);
+    if (!copied) {
+      if (!disposed) notify.error(m.dock_mediaClipboard_copyFailed_error());
+      return;
+    }
+    if (cut) removeMediaAttachment(id);
+  }
+
+  async function showMediaMenu(id: string): Promise<void> {
+    const locked = disabled || pending || inputLocked || preparingSubmission;
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- a native Copy/Cut menu; nothing is loaded
+    const action = await showDockMediaMenu(!locked);
+    if (action) await copyMediaAttachment(id, action === 'cut');
+  }
+
   function retryMediaAttachment(id: string): void {
     const item = media?.attachments.find((candidate) => candidate.id === id);
     if (!item || disposed || disabled || pending || inputLocked || preparingSubmission) return;
@@ -354,6 +374,7 @@
   role="group"
   aria-label={m.chat_richInput_editor_ariaLabel()}
   onfocus={forwardFocus}
+  onpastecapture={(event) => media?.onPaste?.(event)}
 >
   {#if (popupOwner?.active() ?? true) && $chatAuroraEnabled$ && (isStreaming || auroraWarm)}
     <!-- Warmed paused while idle; streaming only unpauses and fades it (no mount cost). -->
@@ -462,6 +483,8 @@
         onMarkUp={media.onMarkUp}
         onRemove={removeMediaAttachment}
         onRetry={retryMediaAttachment}
+        onCopy={media.onCopy ? (id, cut) => void copyMediaAttachment(id, cut) : undefined}
+        onMenu={media.onCopy ? (id) => void showMediaMenu(id) : undefined}
       />
     </div>
   {/if}

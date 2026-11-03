@@ -8320,5 +8320,9 @@
   "dock_recordingToolbar_discarded_label": "Aufnahme verworfen",
   "dock_recordingToolbar_undo_label": "Rückgängig",
   "dock_recordingToolbar_space_key": "Leertaste",
-  "dock_recordingToolbar_enter_key": "Eingabe"
+  "dock_recordingToolbar_enter_key": "Eingabe",
+  "dock_mediaClipboard_copy_label": "Kopieren",
+  "dock_mediaClipboard_cut_label": "Ausschneiden",
+  "dock_mediaClipboard_copyFailed_error": "Kopieren in die Zwischenablage fehlgeschlagen",
+  "dock_mediaClipboard_pasteFailed_error": "Einfügen aus der Zwischenablage fehlgeschlagen"
 }

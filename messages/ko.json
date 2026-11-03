@@ -8320,5 +8320,9 @@
   "dock_recordingToolbar_discarded_label": "녹화가 삭제됨",
   "dock_recordingToolbar_undo_label": "실행 취소",
   "dock_recordingToolbar_space_key": "Space",
-  "dock_recordingToolbar_enter_key": "Enter"
+  "dock_recordingToolbar_enter_key": "Enter",
+  "dock_mediaClipboard_copy_label": "복사",
+  "dock_mediaClipboard_cut_label": "잘라내기",
+  "dock_mediaClipboard_copyFailed_error": "클립보드에 복사할 수 없습니다",
+  "dock_mediaClipboard_pasteFailed_error": "클립보드에서 붙여넣을 수 없습니다"
 }

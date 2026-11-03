@@ -8320,5 +8320,9 @@
   "dock_recordingToolbar_discarded_label": "已放弃录制",
   "dock_recordingToolbar_undo_label": "撤销",
   "dock_recordingToolbar_space_key": "空格",
-  "dock_recordingToolbar_enter_key": "回车"
+  "dock_recordingToolbar_enter_key": "回车",
+  "dock_mediaClipboard_copy_label": "复制",
+  "dock_mediaClipboard_cut_label": "剪切",
+  "dock_mediaClipboard_copyFailed_error": "无法复制到剪贴板",
+  "dock_mediaClipboard_pasteFailed_error": "无法从剪贴板粘贴"
 }

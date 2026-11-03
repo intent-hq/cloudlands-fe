@@ -1,3 +1,4 @@
+import type { DockMediaClipboardContent } from '$shared/dock-media-clipboard';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
@@ -129,6 +130,10 @@ export const dockEvidenceRecordToggleRequested = createAction<Pair>(
 export const dockEvidenceBarMediaChanged = createAction<
   [workspaceId: string, agentId: string, media: DockAnnotationMediaState]
 >('dockConversation/evidenceBarMediaChanged');
+/** Intent media pasted into this draft: an editable screenshot or a recording, with fresh ids. */
+export const dockEvidenceMediaPasted = createAction<
+  [workspaceId: string, agentId: string, content: DockMediaClipboardContent]
+>('dockConversation/evidenceMediaPasted');
 export const dockEvidenceImageRemoveRequested = createAction<
   [workspaceId: string, agentId: string, imageId: string]
 >('dockConversation/evidenceImageRemoveRequested');

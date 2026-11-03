@@ -7,6 +7,7 @@
   import DockComposerIcon from './DockComposerIcon.svelte';
   import AttachmentPreview from '$lib/components/chat/AttachmentPreview.svelte';
   import { springIn, crispOut } from '$lib/motion';
+  import { isMacPlatform } from '$lib/utils/shortcuts';
   import type {
     DockComposerAttachment,
     DockComposerAttachmentsProps,
@@ -19,6 +20,8 @@
     onMarkUp,
     onRemove,
     onRetry,
+    onCopy,
+    onMenu,
   }: DockComposerAttachmentsProps = $props();
   // Screenshots, then the clip, then attached files (pasted or dropped images included).
   const rank = (item: DockComposerAttachment) =>
@@ -80,6 +83,34 @@
     event.stopPropagation();
     void remove(id);
   }
+  /** A finished screenshot, recording or pasted image (never a live or placing one). */
+  function copyable(item: DockComposerAttachment): boolean {
+    if (item.status === 'placing' || item.status === 'failed') return false;
+    if (item.kind === 'image') return !!item.file || imageReady(item);
+    return item.kind === 'clip' && !item.recording && !!item.url;
+  }
+  /**
+   * On a focused tile only (never in the text field): Cmd/Ctrl+C copies it and
+   * Cmd/Ctrl+X cuts it (removed only once it is on the clipboard); Delete removes it.
+   */
+  function tileKey(event: KeyboardEvent, item: DockComposerAttachment): void {
+    const mod = isMacPlatform() ? event.metaKey : event.ctrlKey;
+    const key = event.key.toLowerCase();
+    if (mod && !event.shiftKey && !event.altKey && (key === 'c' || key === 'x')) {
+      if (!onCopy || !copyable(item)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (key === 'x' && disabled) return;
+      onCopy(item.id, key === 'x');
+      return;
+    }
+    deleteKey(event, item.id);
+  }
+  function tileMenu(event: MouseEvent, item: DockComposerAttachment): void {
+    if (!onMenu || !copyable(item)) return;
+    event.preventDefault();
+    onMenu(item.id);
+  }
 </script>
 
 {#if ordered.length}
@@ -92,10 +123,13 @@
   >
     {#each ordered as item (item.id)}
       {#if item.kind === 'image' && item.file}
+        <!-- svelte-ignore a11y_no_static_element_interactions (keys and the menu act on the focused preview inside) -->
         <div
           class="file-image"
           data-kind="file"
           data-attachment-id={item.id}
+          onkeydown={(event) => tileKey(event, item)}
+          oncontextmenu={(event) => tileMenu(event, item)}
           in:springIn={{ tier: 'fast', y: 3, scale: 0.98 }}
           out:crispOut={{ tier: 'fast' }}
         >
@@ -115,10 +149,12 @@
       {:else}
         {@const previewPending =
           item.kind === 'image' && !imageReady(item) && item.status !== 'failed'}
+        <!-- svelte-ignore a11y_no_static_element_interactions (the menu acts on the tile's button) -->
         <div
           class="tile"
           data-kind={item.kind}
           data-attachment-id={item.id}
+          oncontextmenu={(event) => tileMenu(event, item)}
           aria-busy={previewPending || undefined}
           in:springIn={{ tier: 'fast', y: 3, scale: 0.98 }}
           out:crispOut={{ tier: 'fast' }}
@@ -144,7 +180,7 @@
               class="open-tile"
               aria-label={label(item)}
               disabled={disabled || (item.kind === 'clip' && (item.recording || !item.url))}
-              onkeydown={(event) => deleteKey(event, item.id)}
+              onkeydown={(event) => tileKey(event, item)}
               onclick={(event) => {
                 if (event.currentTarget instanceof HTMLElement) show(item, event.currentTarget);
               }}

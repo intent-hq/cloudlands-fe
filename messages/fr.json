@@ -8320,5 +8320,9 @@
   "dock_recordingToolbar_discarded_label": "Enregistrement supprimé",
   "dock_recordingToolbar_undo_label": "Annuler",
   "dock_recordingToolbar_space_key": "Espace",
-  "dock_recordingToolbar_enter_key": "Entrée"
+  "dock_recordingToolbar_enter_key": "Entrée",
+  "dock_mediaClipboard_copy_label": "Copier",
+  "dock_mediaClipboard_cut_label": "Couper",
+  "dock_mediaClipboard_copyFailed_error": "Impossible de copier dans le presse-papiers",
+  "dock_mediaClipboard_pasteFailed_error": "Impossible de coller depuis le presse-papiers"
 }

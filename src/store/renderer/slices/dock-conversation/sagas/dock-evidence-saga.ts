@@ -93,6 +93,7 @@ import {
   dockEvidenceSessionRetired,
   dockEvidenceClipChanged,
   dockEvidenceClipRemoveRequested,
+  dockEvidenceMediaPasted,
   dockEvidenceDictationChanged,
   dockEvidenceDictationFinished,
   dockEvidenceImageCaptured,
@@ -1213,6 +1214,60 @@ function* barMediaAction(
     yield* put(dockEvidenceRecordToggleRequested(workspaceId, agentId));
 }
 
+/**
+ * Intent media pasted into this dock draft (copied from any draft, possibly another
+ * workspace's, possibly since closed). A screenshot comes back as a new screenshot
+ * with its marks still editable; a recording is placed into this workspace from the
+ * clipboard's own file copy. Everything gets fresh ids; the source is never touched.
+ */
+function* pasteMedia({
+  payload: [workspaceId, agentId, content],
+}: ReturnType<typeof dockEvidenceMediaPasted>): SagaGenerator<void> {
+  if (!activePair(workspaceId, agentId)) return;
+  if (content.kind === 'image') {
+    const image = yield* addCapturedImage(workspaceId, agentId, content.pixels, 'capture');
+    if (!image) return;
+    for (const mark of content.marks)
+      yield* put(
+        dockEvidenceMarkAdded(workspaceId, agentId, {
+          id: crypto.randomUUID(),
+          imageId: image.id,
+          tool: mark.tool,
+          geometry: mark.geometry,
+          bounds: mark.bounds,
+          element: mark.element,
+          createdAt: Date.now(),
+        }),
+      );
+    return;
+  }
+  const evidence = evidenceOf(workspaceId, agentId);
+  if ((evidence?.clips.length ?? 0) >= DOCK_EVIDENCE_LIMITS.clips) {
+    yield* put(dockEvidenceCaptureFailed(workspaceId, agentId, 'limit'));
+    return;
+  }
+  const id = crypto.randomUUID();
+  yield* put(
+    dockEvidenceClipChanged(workspaceId, agentId, id, {
+      id,
+      status: 'placing',
+      startedAt: Date.now(),
+      durationMs: content.durationMs,
+      hasMicAudio: content.hasMicAudio,
+    }),
+  );
+  yield* placeFinishedClip(workspaceId, agentId, id, {
+    ok: true,
+    value: {
+      sourcePath: content.sourcePath,
+      mimeType: content.mimeType,
+      size: content.size,
+      durationMs: content.durationMs,
+      hasMicAudio: content.hasMicAudio,
+    },
+  });
+}
+
 const DOCK_ANNOTATION_MEDIA_ACTIONS: readonly DockAnnotationMediaAction[] = [
   'capture',
   'record',
@@ -1436,6 +1491,7 @@ export function* dockEvidenceSaga(): SagaGenerator<void> {
   });
   yield* takeEvery(dockEvidenceImageRemoveRequested, removeImage);
   yield* takeEvery(dockEvidenceClipRemoveRequested, removeClip);
+  yield* takeEvery(dockEvidenceMediaPasted, pasteMedia);
   yield* takeEvery(dockEvidenceRecordToggleRequested, toggleRecording);
   yield* takeLatest(dockEvidenceBarMediaChanged, function* ({ payload: [ws, agent, media] }) {
     if (!activePair(ws, agent)) return;

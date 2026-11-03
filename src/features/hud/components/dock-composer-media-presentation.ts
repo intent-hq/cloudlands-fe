@@ -122,6 +122,10 @@ export interface DockComposerAttachmentsProps {
   /** Removal and renumbering are one operation owned by the draft controller. */
   onRemove: (id: string) => void;
   onRetry?: (id: string) => void;
+  /** Cmd/Ctrl+C or X on a focused tile; the owner removes it on cut only once copied. */
+  onCopy?: (id: string, cut: boolean) => void;
+  /** Right-click on a tile: its Copy/Cut menu. */
+  onMenu?: (id: string) => void;
 }
 
 /** One controlled view from the connected dock/evidence owner. */
@@ -136,4 +140,8 @@ export interface DockComposerMediaBinding extends DockComposerMediaActions {
   onMarkUp: (id: string) => void;
   onRemove: (id: string) => void;
   onRetry?: (id: string) => void;
+  /** Put one tile on the system clipboard; true once it is there. */
+  onCopy?: (id: string) => Promise<boolean>;
+  /** Capture-phase paste on the composer; true when it took the event. */
+  onPaste?: (event: ClipboardEvent) => boolean;
 }

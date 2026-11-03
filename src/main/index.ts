@@ -331,6 +331,7 @@ import {
 import { createDockMenuController } from './dock-menu-controller';
 import { getDockEnabledLocalPref, setDockEnabledLocalPref } from './local-prefs';
 import { isDockLabEnabled, loadDockLabEnabled, registerDockLabHandlers } from './dock-lab';
+import { registerDockMediaClipboardIPC } from '../features/hud/main/dock-media-clipboard';
 import {
   setupBrowserAccess,
   shutdownBrowserAccess,
@@ -1588,6 +1589,8 @@ const bootFlow = app.whenReady().then(async () => {
   setupFileIPC();
   setupSystemIPC();
   setupDockEvidenceIPC();
+  // Copy/cut/paste of dock composer screenshots and recordings (dock window only).
+  registerDockMediaClipboardIPC(getDockWindow);
   setupDevConsoleIPC(
     createDaemonLinks((backendId) => {
       try {

@@ -30,6 +30,7 @@ import {
   dockEvidenceCaptureRequested,
   dockEvidenceClipRemoveRequested,
   dockEvidenceImageRemoveRequested,
+  dockEvidenceMediaPasted,
   dockEvidenceInsertionCommitted,
   dockEvidenceMarkUndone,
   dockEvidenceAnnotationUndoRequested,
@@ -47,6 +48,12 @@ import {
 import type { DockComposerMediaLabels } from '$features/hud/components/dock-composer-media-presentation';
 import type { DockSettingsPane } from './dock-composer-presentation';
 import { createDockEvidencePreviewUrl } from './dock-evidence-render';
+import {
+  dockMediaCopyRequest,
+  interceptDockMediaPaste,
+  writeDockMediaClipboard,
+} from './dock-media-clipboard';
+import { selectComposerContextItems } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
 import { isMacPlatform } from '$lib/utils/shortcuts';
 import { matchesShortcut } from '$lib/utils/shortcut-bindings';
 import { getPrincipalActionContext } from '$store/renderer/slices/principal/principal-context';
@@ -87,6 +94,9 @@ export interface DockComposerControllerDeps {
   sendStopMs: number;
   /** Platform modifier: ⌘ on macOS, Ctrl elsewhere. */
   mac: () => boolean;
+  /** Bytes of a preview or playback URL (copy). */
+  fetchBytes: (url: string) => Promise<Uint8Array>;
+  writeClipboard: typeof writeDockMediaClipboard;
 }
 
 const defaultDeps: DockComposerControllerDeps = {
@@ -98,6 +108,8 @@ const defaultDeps: DockComposerControllerDeps = {
   stopTimeoutMs: 20_000,
   sendStopMs: 2_500,
   mac: isMacPlatform,
+  fetchBytes: async (url) => new Uint8Array(await (await fetch(url)).arrayBuffer()),
+  writeClipboard: writeDockMediaClipboard,
 };
 
 const TOOL_KEYS: Record<string, DockMarkTool> = {
@@ -339,6 +351,31 @@ export function createDockComposerController(
       if (image) dispatch(dockEvidenceImageRemoveRequested(workspaceId, agentId, image.id));
       else if (clip) dispatch(dockEvidenceClipRemoveRequested(workspaceId, agentId, clip.id));
     },
+    /**
+     * Copy one tile to the system clipboard (true once it is there). Cut is the
+     * caller's: it removes the tile only after this resolves true.
+     */
+    onCopy: async (id: string): Promise<boolean> => {
+      if (!current()) return false;
+      try {
+        const request = await dockMediaCopyRequest(id, {
+          workspaceId,
+          view: evidence(),
+          items: selectComposerContextItems.select(appStore.state, workspaceId, agentId),
+          previews: get(local).previews,
+          fetchBytes: deps.fetchBytes,
+        });
+        return !!request && current() && (await deps.writeClipboard(request));
+      } catch {
+        return false;
+      }
+    },
+    /** Capture-phase paste: Intent media goes to the saga; anything else is untouched. */
+    onPaste: (event: ClipboardEvent): boolean =>
+      current() &&
+      interceptDockMediaPaste(event, (content) =>
+        dispatch(dockEvidenceMediaPasted(workspaceId, agentId, content)),
+      ),
   };
 
   function imageFor(id: string) {

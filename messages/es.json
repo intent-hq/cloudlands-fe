@@ -8320,5 +8320,9 @@
   "dock_recordingToolbar_discarded_label": "Grabación descartada",
   "dock_recordingToolbar_undo_label": "Deshacer",
   "dock_recordingToolbar_space_key": "Espacio",
-  "dock_recordingToolbar_enter_key": "Intro"
+  "dock_recordingToolbar_enter_key": "Intro",
+  "dock_mediaClipboard_copy_label": "Copiar",
+  "dock_mediaClipboard_cut_label": "Cortar",
+  "dock_mediaClipboard_copyFailed_error": "No se pudo copiar al portapapeles",
+  "dock_mediaClipboard_pasteFailed_error": "No se pudo pegar desde el portapapeles"
 }

@@ -450,6 +450,12 @@ export const IPC_CHANNELS = {
     SIGNAL: 'dock-annotation:signal',
   },
 
+  DOCK_MEDIA: {
+    CLIPBOARD_WRITE: 'dock-media:clipboard-write',
+    CLIPBOARD_READ: 'dock-media:clipboard-read',
+    MENU: 'dock-media:menu',
+  },
+
   // Power (Electron powerMonitor → renderer)
   POWER: {
     // Renderer → main invoke: current battery state → { onBattery: boolean }
