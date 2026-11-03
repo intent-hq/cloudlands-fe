@@ -5,7 +5,6 @@
  * default and is sent as an omitted placement; another machine is sent as the
  * closed `{ target: "remote", checkout: "isolated", nodeId }` object.
  */
-import type { DropdownGroup } from '$lib/components/ui/dropdown';
 import { m } from '$shared/paraglide/messages.js';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import type { RemoteMachine, RemoteMachineState } from '$shared/types/remote-machines';
@@ -102,6 +101,12 @@ export function initialAgentPlacement(
   return machineId ? { target: 'remote', checkout: 'isolated', nodeId: machineId } : undefined;
 }
 
+/** The parts of a machine-scoped model-picker group the fallback reads. */
+interface MachineModelGroup {
+  key: string;
+  options: readonly { value: string; disabled?: boolean }[];
+}
+
 /**
  * A model the chosen machine can run when the current choice can't run there
  * (the machine lacks the model or provider, or the configuration is greyed
@@ -114,11 +119,11 @@ export function machineModelFallback({
   providerRef,
   model,
 }: {
-  groups: readonly DropdownGroup[];
+  groups: readonly MachineModelGroup[];
   providerRef: string;
   model: string | undefined;
 }): { providerId: string; modelId: string } | null {
-  const runnable = (group: DropdownGroup) => group.options.filter((option) => !option.disabled);
+  const runnable = (group: MachineModelGroup) => group.options.filter((option) => !option.disabled);
   const current = groups.find((group) => group.key === providerRef);
   const currentRunnable = current ? runnable(current) : [];
   if (model) {
