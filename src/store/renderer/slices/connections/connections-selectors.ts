@@ -175,9 +175,6 @@ export const selectKeychainSyncState = store.createSelector(
   (state) => state.connections.keychainSync,
 );
 
-/** The Browser access host serving this tab, or null in the desktop app / a plain web build. */
-export const selectBrowserHost = store.createSelector((state) => state.connections.browserHost);
-
 /** True when the page host edits connections itself (intent-web): Machines works without Electron. */
 export const selectHostManagesConnections = store.createSelector(
   (state) => state.connections.browserHost?.manageConnections === true,

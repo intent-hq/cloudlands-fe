@@ -33,10 +33,10 @@ import { expectsElectronPreloadBridge, isElectronPlatform } from '$lib/utils/pla
 const CONNECTION_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
 
 /** Host capability that enables the HTTP connection-management calls below. */
-export const MANAGE_CONNECTIONS_CAPABILITY = 'connections.manage';
+const MANAGE_CONNECTIONS_CAPABILITY = 'connections.manage';
 
 /** `windowBackendId` of a tab the host serves with no backend bound yet. */
-export const NO_BACKEND_ID = '';
+const NO_BACKEND_ID = '';
 
 export interface BrowserAccessHost {
   /**
