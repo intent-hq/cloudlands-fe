@@ -917,7 +917,8 @@ jobs:
         # exactly as on a developer machine: outgrowing it fails here. Fix by
         # raising DEFAULT_HEAP_FLAG with headroom, never by exporting a cap.
         # build:web above already generated the i18n messages this needs.
-        timeout-minutes: 10
+        # ~3-4 min on an idle 32-core host; 15 leaves room for a loaded one.
+        timeout-minutes: 15
         env:
           NODE_OPTIONS: ''
         run: pnpm run build:renderer
