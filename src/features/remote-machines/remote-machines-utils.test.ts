@@ -8,6 +8,7 @@ import {
   canOfferExpose,
   connectionForMachine,
   machineForConnection,
+  machineNeedsUpdateForScripts,
 } from './remote-machines-utils';
 
 const machine = (id: string, fingerprint: string, state: RemoteMachine['state'] = 'connected') =>
@@ -56,7 +57,39 @@ describe('fingerprintKey', () => {
   });
 });
 
+describe('machineNeedsUpdateForScripts', () => {
+  it('flags a machine bound below link version 8 when the backend runs remote scripts', () => {
+    const old = { ...machine('d-old', 'AA'), nodeProtocol: 7 };
+    expect(machineNeedsUpdateForScripts(old, true)).toBe(true);
+    expect(machineNeedsUpdateForScripts(old, false)).toBe(false);
+  });
+
+  it('is quiet for current machines and machines with no reported version', () => {
+    expect(machineNeedsUpdateForScripts({ ...machine('d-new', 'AA'), nodeProtocol: 8 }, true)).toBe(
+      false,
+    );
+    expect(machineNeedsUpdateForScripts(machine('d-unbound', 'AA'), true)).toBe(false);
+  });
+});
+
 describe('parseRemoteMachine', () => {
+  it('keeps the link version negotiated at the last bind (nodeProtocol)', () => {
+    const row = {
+      id: 'd-mac',
+      name: 'Mac',
+      hosts: [],
+      port: 5179,
+      fingerprint: 'AA:BB',
+      state: 'disconnected',
+      runningAgents: 0,
+      addedAt: '2026-11-01T00:00:00Z',
+    };
+    expect(parseRemoteMachine({ ...row, nodeProtocol: 7 })?.nodeProtocol).toBe(7);
+    expect(parseRemoteMachine(row)).not.toHaveProperty('nodeProtocol');
+    expect(parseRemoteMachine({ ...row, nodeProtocol: '7' })).not.toHaveProperty('nodeProtocol');
+    expect(parseRemoteMachine({ ...row, nodeProtocol: -1 })).not.toHaveProperty('nodeProtocol');
+  });
+
   it('keeps a tailcat-only machine (no LAN hosts)', () => {
     expect(
       parseRemoteMachine({

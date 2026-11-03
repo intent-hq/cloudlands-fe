@@ -21,7 +21,8 @@ vi.mock('$features/scripts/script-definition-transport', () => ({
   scriptDefinitionTransport: transport,
 }));
 vi.mock('./scripts-output-saga', () => ({ scriptsOutputSaga: function* () {} }));
-vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: vi.fn() } }));
+const notify = vi.hoisted(() => ({ error: vi.fn() }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify }));
 
 import {
   appendScriptOutput,
@@ -36,6 +37,7 @@ import {
   stopScriptRequested,
   restartScriptRequested,
   getScriptDefinitionRequested,
+  machineRunOperationRequested,
   scriptWorkflowReleased,
   scriptsReducer,
   setScriptsData,
@@ -91,6 +93,57 @@ afterEach(() => {
 
 beforeEach(() => {
   transport.detectCandidates.mockResolvedValue(emptyDetection);
+});
+
+describe('scriptsOperationSaga machine runs', () => {
+  it.each(['stop', 'restart'] as const)(
+    "%s addresses the remote agent's machine run, not the backend run",
+    async (operation) => {
+      transport[operation].mockResolvedValueOnce({ success: true });
+      const run = start();
+      run.dispatch(setScriptsData(WS, [definition]));
+      run.channel.put(
+        machineRunOperationRequested(WS, definition.id, 'agent-remote', operation, 'Failed'),
+      );
+
+      await vi.waitFor(() =>
+        expect(transport[operation]).toHaveBeenCalledWith(WS, definition.id, {
+          remoteAgentId: 'agent-remote',
+        }),
+      );
+      expect(notify.error).not.toHaveBeenCalled();
+      await stop(run.task);
+    },
+  );
+
+  it('reports a refused machine-run restart with the backend reason', async () => {
+    transport.restart.mockResolvedValueOnce({
+      success: false,
+      error: 'machine-update-required: update the machine',
+    });
+    const run = start();
+    run.dispatch(setScriptsData(WS, [definition]));
+    run.channel.put(
+      machineRunOperationRequested(WS, definition.id, 'agent-remote', 'restart', 'Failed'),
+    );
+
+    await vi.waitFor(() =>
+      expect(notify.error).toHaveBeenCalledWith('machine-update-required: update the machine'),
+    );
+    await stop(run.task);
+  });
+
+  it('falls back to the caller message when the transport throws', async () => {
+    transport.stop.mockRejectedValueOnce(new Error(''));
+    const run = start();
+    run.dispatch(setScriptsData(WS, [definition]));
+    run.channel.put(
+      machineRunOperationRequested(WS, definition.id, 'agent-remote', 'stop', 'Stop failed'),
+    );
+
+    await vi.waitFor(() => expect(notify.error).toHaveBeenCalledWith('Stop failed'));
+    await stop(run.task);
+  });
 });
 
 describe('scriptsOperationSaga definition ownership', () => {

@@ -44,6 +44,7 @@ import {
   removeScriptDefinitionRequested,
   removeScriptDefinitionsRequested,
   restartScriptRequested,
+  machineRunOperationRequested,
   saveScriptDefinitionsToRepoRequested,
   scriptDetectionFinished,
   scriptDetectionRequested,
@@ -294,6 +295,33 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
     }
     if (stoppedRead) yield* put(scriptReadFinished(workspaceId, stoppedRead.requestId));
   }
+}
+
+/**
+ * Stop or restart a remote agent's machine run. Its state arrives as
+ * `script:changed`, so nothing is applied locally; a refusal (for example
+ * `machine-update-required`) is shown as the backend reported it.
+ */
+function* runMachineRunOperation(
+  action: ReturnType<typeof machineRunOperationRequested>,
+): SagaGenerator<void> {
+  const [workspaceId, scriptId, remoteAgentId, operation, failureMessage] = action.payload;
+  const authority = yield* selectWorkspaceSavedScriptContext.effect(workspaceId);
+  if (!authority) return;
+  const run = { remoteAgentId };
+  let message: string | undefined;
+  try {
+    const result = yield* call(() =>
+      operation === 'stop'
+        ? scriptDefinitionTransport.stop(workspaceId, scriptId, run)
+        : scriptDefinitionTransport.restart(workspaceId, scriptId, run),
+    );
+    if (!result?.success) message = result?.error || failureMessage;
+  } catch (error) {
+    message = errorMessage(error) || failureMessage;
+  }
+  if (authority !== (yield* selectWorkspaceSavedScriptContext.effect(workspaceId))) return;
+  if (message) yield* call([notify, notify.error], message);
 }
 
 function* readDefinition(workspaceId: string, scriptId: string): SagaGenerator<ScriptWithState> {
@@ -946,6 +974,11 @@ export function* scriptsOperationSaga(): SagaGenerator<void> {
       [startScriptRequested, stopScriptRequested, restartScriptRequested, deleteScriptRequested],
       operationContext,
       runScriptOperation,
+    ),
+    takeLeadingInContext(
+      machineRunOperationRequested,
+      (action) => `${action.payload[0]}:${action.payload[1]}:${action.payload[2]}`,
+      runMachineRunOperation,
     ),
     takeEvery(createScriptDefinitionRequested, createDefinition),
     takeEvery(updateScriptDefinitionRequested, updateDefinition),

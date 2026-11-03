@@ -4,6 +4,7 @@
     selectScriptWorkflowOutcome,
     selectWorkspaceScriptsInitialized,
     selectScriptDetectionOperation,
+    selectRemoteScriptsSupported,
   } from '$store/renderer/slices/scripts/scripts-selectors';
   import { loadMoreScripts, refreshScripts } from '$store/renderer/slices/scripts/scripts-slice';
   import { Input } from '$lib/components/ui/input';
@@ -11,6 +12,8 @@
   import { prefersReducedMotion, spring } from '$lib/motion';
   import type { ScriptMode, ScriptListEntry } from '$features/scripts/types';
   import { getScriptStatusKind, isLiveScriptStatus } from '$features/scripts/utils/script-status';
+  import { scriptMachineRuns } from '$features/scripts/utils/script-location';
+  import MachineRunRow from '$features/scripts/components/MachineRunRow.svelte';
 
   import { selectScriptEntries } from '$store/renderer/slices/scripts/scripts-selectors';
   import {
@@ -55,10 +58,23 @@
     workspaceId: string;
     selectedScriptId?: string | null;
     onSelectScript?: (scriptId: string | null) => void;
+    /** The selected remote agent's run of `selectedScriptId` (`remoteScripts: 1`). */
+    selectedRemoteAgentId?: string | null;
+    onSelectMachineRun?: (scriptId: string, remoteAgentId: string) => void;
     class?: string;
   }
 
-  let { workspaceId, selectedScriptId = null, onSelectScript, class: className }: Props = $props();
+  let {
+    workspaceId,
+    selectedScriptId = null,
+    onSelectScript,
+    selectedRemoteAgentId = null,
+    onSelectMachineRun,
+    class: className,
+  }: Props = $props();
+
+  // Remote agents' runs on their machines, listed under each script.
+  const remoteScriptsSupported$ = selectRemoteScriptsSupported();
 
   const workspaceIdStore = writable('');
   $effect(() => workspaceIdStore.set(workspaceId));
@@ -796,7 +812,7 @@
                     selectedScriptIds.has(script.id) && 'bg-accent/50! hover:bg-accent/60!',
                   )}
                   title={editingScriptId === script.id ? '' : script.name}
-                  active={selectedScriptId === script.id}
+                  active={selectedScriptId === script.id && !selectedRemoteAgentId}
                   onclick={(e) => handleSelectScript(script.id, e as MouseEvent)}
                   ondblclick={() => startEditingScript(script.id, script.name)}
                   oncontextmenu={(e) => handleScriptContextMenu(script.id, e as MouseEvent)}
@@ -844,6 +860,18 @@
                     </div>
                   {/snippet}
                 </ListItem>
+                {#if $remoteScriptsSupported$}
+                  {#each scriptMachineRuns(script) as run (run.remoteAgentId)}
+                    <MachineRunRow
+                      {workspaceId}
+                      scriptId={script.id}
+                      {run}
+                      active={selectedScriptId === script.id &&
+                        selectedRemoteAgentId === run.remoteAgentId}
+                      onSelect={() => onSelectMachineRun?.(script.id, run.remoteAgentId)}
+                    />
+                  {/each}
+                {/if}
               </div>
             {/each}
             {#if showScriptListToggle}

@@ -9,6 +9,7 @@ import {
   type SagaGenerator,
 } from 'typed-redux-saga';
 import { appClient } from '$lib/client';
+import { scriptMachineRuns } from '$features/scripts/utils/script-location';
 import { beginScriptRead, isScriptReadCurrent } from '../utils/script-read-context';
 import {
   workspaceDeleted,
@@ -58,7 +59,7 @@ function* takeOutputStreamReady(workspaceId: string): SagaGenerator<true> {
 }
 
 function* readOutput(action: ReturnType<typeof scriptOutputRequested>): SagaGenerator<void> {
-  const [workspaceId, scriptId, viewerId] = action.payload;
+  const [workspaceId, scriptId, viewerId, remoteAgentId] = action.payload;
   let context = yield* beginScriptRead(workspaceId);
   const script = yield* selectScriptById.effect(workspaceId, scriptId);
   let viewer = yield* selectScriptRetainedOutput.effect(workspaceId, scriptId, viewerId);
@@ -66,7 +67,14 @@ function* readOutput(action: ReturnType<typeof scriptOutputRequested>): SagaGene
     yield* put(scriptReadFinished(workspaceId, context.requestId));
     return;
   }
-  const runtimeKey = (value: typeof script) => JSON.stringify(value?.runtime);
+  // A machine run is read (and invalidated) by its own runtime, not the home run's.
+  const runtimeKey = (value: typeof script) =>
+    JSON.stringify(
+      remoteAgentId
+        ? scriptMachineRuns(value ?? {}).find((entry) => entry.remoteAgentId === remoteAgentId)
+            ?.runtime
+        : value?.runtime,
+    );
   const run = runtimeKey(script);
   const cleanup = (event: { type: string; payload?: unknown }) => {
     const payload = event.payload;
@@ -95,6 +103,7 @@ function* readOutput(action: ReturnType<typeof scriptOutputRequested>): SagaGene
       workspaceId,
       scriptId,
       10_000,
+      ...(remoteAgentId ? [{ remoteAgentId }] : []),
     );
     if (!(yield* isCurrent())) return;
     yield* put(scriptOutputSnapshotReceived(workspaceId, scriptId, viewerId, output));
@@ -104,6 +113,12 @@ function* readOutput(action: ReturnType<typeof scriptOutputRequested>): SagaGene
   }
   function* hydrate(): SagaGenerator<void> {
     if (!(yield* isCurrent())) return;
+    // Machine-run output is never streamed as script:output, so there is no
+    // live lease to wait for: the snapshot is the whole read.
+    if (remoteAgentId) {
+      yield* call(readSnapshot);
+      return;
+    }
     const streamed = yield* call(waitForLiveOutputStream, workspaceId);
     if (!(yield* isCurrent())) return;
     yield* call(readSnapshot);

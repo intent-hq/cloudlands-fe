@@ -1,5 +1,10 @@
 import { appClient } from '$lib/client';
-import type { MutationResult, ScriptCreateInput, ScriptCreateResult } from '$lib/client';
+import type {
+  MutationResult,
+  ScriptCreateInput,
+  ScriptCreateResult,
+  ScriptRunTarget,
+} from '$lib/client';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { runMutation } from '$lib/client/live/live-support';
 import type { ScriptArchiveFilter } from './types';
@@ -61,12 +66,16 @@ export const scriptDefinitionTransport = {
     return appClient.scripts.start(workspaceId, scriptId);
   },
 
-  stop(workspaceId: string, scriptId: string): Promise<MutationResult> {
-    return appClient.scripts.stop(workspaceId, scriptId);
+  stop(workspaceId: string, scriptId: string, run?: ScriptRunTarget): Promise<MutationResult> {
+    return run
+      ? appClient.scripts.stop(workspaceId, scriptId, run)
+      : appClient.scripts.stop(workspaceId, scriptId);
   },
 
-  restart(workspaceId: string, scriptId: string): Promise<MutationResult> {
-    return appClient.scripts.restart(workspaceId, scriptId);
+  restart(workspaceId: string, scriptId: string, run?: ScriptRunTarget): Promise<MutationResult> {
+    return run
+      ? appClient.scripts.restart(workspaceId, scriptId, run)
+      : appClient.scripts.restart(workspaceId, scriptId);
   },
 
   status(workspaceId: string, scriptId: string): Promise<ScriptRuntimeState | null> {

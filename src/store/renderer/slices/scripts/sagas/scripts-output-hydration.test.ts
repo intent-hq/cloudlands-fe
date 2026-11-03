@@ -100,6 +100,23 @@ afterEach(async () => {
   store.dispose();
 });
 describe('retained script output hydration', () => {
+  it("reads a remote agent's machine run with remoteAgentId (remoteScripts: 1)", async () => {
+    transport.request.mockResolvedValue('machine output');
+    const run = start();
+    run.dispatch({
+      type: 'scripts/outputRequested',
+      payload: [WS, ID, 'viewer-machine', 'agent-remote'],
+    });
+    await settle();
+    expect(transport.request).toHaveBeenCalledExactlyOnceWith('script.output', {
+      workspaceId: WS,
+      scriptId: ID,
+      maxLines: 10_000,
+      remoteAgentId: 'agent-remote',
+    });
+    expect(run.retained('viewer-machine')?.text).toBe('machine output');
+  });
+
   it('keeps an in-flight selected output read when a page omits its definition', async () => {
     const pending = deferred<string>();
     transport.request.mockReturnValue(pending.promise);

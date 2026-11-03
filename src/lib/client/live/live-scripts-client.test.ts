@@ -397,6 +397,40 @@ describe('LiveScriptsClient (fake transport)', () => {
     },
   );
 
+  it.each([
+    ['stop', 'script.stop'],
+    ['restart', 'script.restart'],
+  ] as const)(
+    '%s addresses a machine run with remoteAgentId (remoteScripts: 1)',
+    async (method, wireMethod) => {
+      mockedRequest.mockResolvedValueOnce({ ok: true, scriptId: 's-1' });
+      const client = new LiveScriptsClient();
+
+      await client[method]('ws-1', 's-1', { remoteAgentId: 'agent-remote' });
+
+      expect(mockedRequest).toHaveBeenCalledWith(wireMethod, {
+        workspaceId: 'ws-1',
+        scriptId: 's-1',
+        remoteAgentId: 'agent-remote',
+      });
+    },
+  );
+
+  it("output reads a machine run's buffer with remoteAgentId", async () => {
+    mockedRequest.mockResolvedValueOnce('remote line');
+    const client = new LiveScriptsClient();
+
+    const output = await client.output('ws-1', 's-1', 200, { remoteAgentId: 'agent-remote' });
+
+    expect(mockedRequest).toHaveBeenCalledWith('script.output', {
+      workspaceId: 'ws-1',
+      scriptId: 's-1',
+      maxLines: 200,
+      remoteAgentId: 'agent-remote',
+    });
+    expect(output).toBe('remote line');
+  });
+
   it('output forwards workspaceId + maxLines and returns the bare output-buffer string', async () => {
     mockedRequest.mockResolvedValueOnce('[2 lines]\nready\nlistening');
     const client = new LiveScriptsClient();
