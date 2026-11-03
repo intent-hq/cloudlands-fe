@@ -13,6 +13,7 @@ import { EventEmitter } from 'node:events';
 import type { Duplex } from 'node:stream';
 import { StringDecoder } from 'node:string_decoder';
 import { parseProtocolVersion, type ProtocolVersion } from '$shared/protocol-version';
+import { pickNodeCapabilities, type NodeCapabilitySnapshot } from '$shared/node-capabilities';
 import {
   classifyStartupReply,
   type DaemonStartupState,
@@ -270,7 +271,7 @@ export class JsonRpcClient extends EventEmitter {
   private readonly repositoryObservers = new Set<(event: RepositoryConnectionEvent) => void>();
   private helloAttempt: object | null = null;
   private acknowledgedHello: unknown = null;
-  private nodeCapabilities: Readonly<Record<string, number>> | null = null;
+  private nodeCapabilities: NodeCapabilitySnapshot | null = null;
   // How the current connection's winning candidate reached the daemon
   // (multi-host race only; null for a single-host dial and whenever no socket
   // is connected).
@@ -614,7 +615,7 @@ export class JsonRpcClient extends EventEmitter {
   }
 
   /** Observe only the current acknowledged identity; never send or renew hello. */
-  getNodeCapabilities(): Readonly<Record<string, number>> | null {
+  getNodeCapabilities(): NodeCapabilitySnapshot | null {
     return this.getRepositoryConnection() ? this.nodeCapabilities : null;
   }
 
@@ -698,21 +699,7 @@ export class JsonRpcClient extends EventEmitter {
     const capabilities = (result as { server?: { capabilities?: Record<string, unknown> } }).server
       ?.capabilities;
     this.acknowledgedHello = structuredClone(result);
-    this.nodeCapabilities = Object.freeze({
-      agentNodes: capabilities?.agentNodes === 1 ? 1 : 0,
-      localNodeIsolation: capabilities?.localNodeIsolation === 1 ? 1 : 0,
-      agentPlatformRouting: capabilities?.agentPlatformRouting === 1 ? 1 : 0,
-      workspaceMembershipEvents: capabilities?.workspaceMembershipEvents === 1 ? 1 : 0,
-      // Dock evidence placement (strict integer advertisement; anything else is absent).
-      rawScreenshotRetention: capabilities?.rawScreenshotRetention === 1 ? 1 : 0,
-      chiefAttachments: capabilities?.chiefAttachments === 1 ? 1 : 0,
-      // Truncated note reads (§5.2): gates maxContentBytes / baseContentBytes.
-      noteTruncatedRead: capabilities?.noteTruncatedRead === 1 ? 1 : 0,
-      // Daemon-to-daemon remote machines: gates "Make available to <backend>".
-      remoteMachines: capabilities?.remoteMachines === 1 ? 1 : 0,
-      // Owner-only daemon-link traffic capture: gates the Dev Console "Daemon links" view.
-      remoteLinkTraffic: capabilities?.remoteLinkTraffic === 1 ? 1 : 0,
-    });
+    this.nodeCapabilities = pickNodeCapabilities(capabilities);
     this.acknowledgedHelloIdentity = Object.freeze({
       clientId: result.clientId,
       connectionRole: (result as { connectionRole?: unknown }).connectionRole,
