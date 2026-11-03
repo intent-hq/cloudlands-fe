@@ -53,6 +53,8 @@
   } = $props();
 </script>
 
+<!-- A hover menu never locks the page: the body lock would outlive a close that lands
+     while the dock is hidden for a window or region selection, swallowing every click. -->
 <Menu.Root bind:open>
   <Menu.Content
     bind:ref
@@ -61,6 +63,7 @@
     align="center"
     {sideOffset}
     {portal}
+    preventScroll={false}
     class="dock-media-tool-popover min-w-0 rounded-[10px] p-[3px] shadow-none"
     data-dock-palette="notch"
     aria-label={label}

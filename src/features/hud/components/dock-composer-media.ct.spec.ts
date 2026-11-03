@@ -2,6 +2,7 @@ import type { Locator } from '@playwright/test';
 import { expect, test } from '../../../test/ct-test';
 import ComposerMediaPreview from './dock-composer-media.preview.svelte';
 import { readDictationIndicators } from './dock-composer-ct-helpers';
+import { expectDismissibleLayerArmed } from '../../../test/dismissible-layer';
 import type { DockComposerAttachment } from './dock-composer-media-presentation';
 
 async function actions(component: Locator): Promise<string[]> {
@@ -170,6 +171,17 @@ test('screenshot modes open on hover, capture once with the chosen mode and keep
   await expect(region.locator('[data-dock-glyph="region"]')).toBeVisible();
   await region.click();
   expect(await actions(component)).toEqual(['capture:region', 'capture']);
+});
+
+test('the open screenshot menu never locks the rest of the dock', async ({ mount, page }) => {
+  const component = await mount(ComposerMediaPreview);
+  await component.getByRole('button', { name: 'Capture the screen', exact: true }).hover();
+  const menu = page.getByRole('menu', { name: 'Screenshot options' });
+  await expect(menu).toBeVisible();
+  await expectDismissibleLayerArmed(menu);
+  // Another dock control takes the click directly while the hover menu is open.
+  await component.getByRole('button', { name: 'Record the screen', exact: true }).click();
+  expect(await actions(component)).toEqual(['record']);
 });
 
 test('screenshot modes support keyboard choice and return focus to the capture button', async ({
