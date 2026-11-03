@@ -130,10 +130,7 @@ const controlSchema = z.discriminatedUnion('action', [
         media: z
           .object({
             capture: z
-              .object({
-                ...button,
-                revision: z.number().int().nonnegative().safe(),
-              })
+              .object({ ...button, revision: z.number().int().nonnegative().safe() })
               .strict(),
             record: z
               .object({
