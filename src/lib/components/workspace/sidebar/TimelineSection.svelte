@@ -4,9 +4,7 @@
    * Shows a colored dot node and title, with content in a slot
    */
   import { Button } from '$lib/components/ui/button';
-  import { faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
-  import Fa from 'svelte-fa';
-  import Header from '$lib/components/ui/Header.svelte';
+  import DisclosureIcon from '$lib/components/icons/DisclosureIcon.svelte';
   import type { Snippet } from 'svelte';
 
   interface Props {
@@ -33,15 +31,15 @@
 </script>
 
 <div class="relative min-w-0 pb-1">
-  <div class="flex h-8 min-w-0 items-center justify-between gap-2 px-2">
-    <Header size={5} class="type-caption min-w-0 flex-1 font-normal text-muted-foreground">
+  <div class="flex h-8 min-w-0 items-center justify-between gap-2">
+    <h3 class="type-caption min-w-0 flex-1 font-medium text-foreground {collapsible ? '' : 'px-2'}">
       {#if collapsible}
         <Button
           variant="ghost"
           size="compact"
           truncateLabel
           labelClass="text-left"
-          class="h-8 min-w-0 max-w-full justify-start gap-1 rounded-md px-2 -mx-2 type-caption font-normal text-muted-foreground"
+          class="h-8 min-w-0 max-w-full justify-start gap-1 rounded-md px-2 type-caption font-medium text-foreground"
           aria-expanded={expanded}
           onclick={onToggle}
           onkeydown={(event) => event.stopPropagation()}
@@ -51,10 +49,7 @@
             <span class="inline-block ml-0.5 font-normal text-muted-foreground">/ {subtitle}</span>
           {/if}
           {#snippet trailingIcon()}
-            <Fa
-              icon={expanded ? faChevronDown : faChevronRight}
-              class="size-2.5 text-muted-foreground"
-            />
+            <DisclosureIcon {expanded} />
           {/snippet}
         </Button>
       {:else}
@@ -63,7 +58,7 @@
           <span class="inline-block ml-0.5 font-normal text-muted-foreground">/ {subtitle}</span>
         {/if}
       {/if}
-    </Header>
+    </h3>
     {#if action}
       {@render action()}
     {/if}

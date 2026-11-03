@@ -2,6 +2,7 @@
   import { definePreview } from '$lib/component-catalog/preview-definition';
 
   type Scene =
+    | 'long-machine-name'
     | 'local'
     | 'remote-running'
     | 'remote-starting'
@@ -25,6 +26,7 @@
     defaultState: 'remote-running',
     states: {
       local: sceneState('local'),
+      'long-machine-name': sceneState('long-machine-name'),
       'remote-running': sceneState('remote-running'),
       'remote-starting': sceneState('remote-starting'),
       'remote-failed': sceneState('remote-failed'),
@@ -179,7 +181,12 @@
   const agentsFor = (s: Scene): AgentSession[] => [
     agent('ral-local', 'Spec writer', { updatedAt: '2026-11-02T08:30:00.000Z' }),
     agent('ral-mac', 'iOS build fixer', {
-      ...remote(MAC, 'Mac mini', 'macos', 'aarch64'),
+      ...remote(
+        MAC,
+        s === 'long-machine-name' ? "Clement's Mac Studio in the upstairs office" : 'Mac mini',
+        'macos',
+        'aarch64',
+      ),
       effectiveIsolation: s === 'remote-starting' ? 'pending' : 'isolated',
       ...(s === 'remote-failed'
         ? {
@@ -193,7 +200,12 @@
       updatedAt: '2026-11-02T08:24:00.000Z',
     }),
     agent('ral-mac-2', 'Xcode test runner', {
-      ...remote(MAC, 'Mac mini', 'macos', 'aarch64'),
+      ...remote(
+        MAC,
+        s === 'long-machine-name' ? "Clement's Mac Studio in the upstairs office" : 'Mac mini',
+        'macos',
+        'aarch64',
+      ),
       effectiveIsolation: 'isolated',
       updatedAt: '2026-11-02T07:58:00.000Z',
     }),

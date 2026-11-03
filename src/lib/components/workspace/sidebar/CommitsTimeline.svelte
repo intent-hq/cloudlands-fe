@@ -1,4 +1,7 @@
 <script lang="ts">
+  import DisclosureIcon from '$lib/components/icons/DisclosureIcon.svelte';
+  import HistoryBoundary from './HistoryBoundary.svelte';
+
   import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { Input } from '$lib/components/ui/input';
   /**
@@ -57,9 +60,7 @@
   import {
     faArrowUpFromBracket,
     faArrowUpRightFromSquare,
-    faChevronDown,
     faCloud,
-    faCodeCommit,
     faFlag,
     faRotateLeft,
   } from '@fortawesome/free-solid-svg-icons';
@@ -474,7 +475,7 @@
       {#each allCommits as commit, index (commit.hash)}
         <!-- Divider between local and pushed commits (only when remote exists) -->
         {#if hasRemote && commit.isPushed && index > 0 && !allCommits[index - 1].isPushed && commits.length > 0}
-          <div class="flex items-center gap-2 px-1 py-1.5">
+          <div class="flex items-center gap-2 px-2 py-1.5">
             <div class="flex-1 h-px bg-border"></div>
             <span class="text-xs text-subtle"
               >{m.workspace_commitsTimeline_pushedToRemote_label()}</span
@@ -496,45 +497,29 @@
           <!-- Commit header -->
           <div
             role="group"
-            class="relative flex h-8 min-w-0 items-center gap-2 group w-full rounded-md px-2 hover:bg-muted"
+            class="relative flex h-7 min-w-0 items-center gap-1 group w-full rounded-md px-2 hover:bg-muted"
             oncontextmenu={(e) => handleCommitContextMenu(e, commit.hash)}
             onkeydown={(e) => handleCommitContextMenu(e, commit.hash)}
           >
             <Button
-              variant="ghost-light"
-              size="icon-xs"
-              class="absolute left-0.75 bg-sidebar {commit.agentId
-                ? 'opacity-0 group-hover:opacity-100'
-                : 'opacity-0 group-hover:opacity-100'} hover:text-foreground! -ml-1"
+              variant="ghost"
+              size="icon-compact"
+              class="shrink-0 text-muted-foreground hover:text-foreground"
               onclick={(e: MouseEvent) => {
                 e.stopPropagation();
                 toggleCommitExpanded(commit);
               }}
+              aria-expanded={isExpanded}
+              aria-label={m.workspace_prSection_toggleFileList_tooltip()}
               title={m.workspace_prSection_toggleFileList_tooltip()}
             >
-              <Fa
-                icon={faChevronDown}
-                size={12}
-                class="text-subtle shrink-0 transition-transform {isExpanded
-                  ? 'rotate-0'
-                  : 'rotate-90'}"
-              />
-              {#if commitFiles.length > 0}
-                <LineChangesBadge
-                  additions={commitFiles.reduce((sum, f) => sum + (f.additions || 0), 0)}
-                  deletions={commitFiles.reduce((sum, f) => sum + (f.deletions || 0), 0)}
-                  size="xs"
-                />
-              {/if}
+              <DisclosureIcon expanded={isExpanded} />
             </Button>
 
-            <!-- Show auggie avatar instead of commit icon when made by an agent - hides on hover to show chevron -->
             {#if commit.agentId}
-              <span class="shrink-0 group-hover:opacity-0 transition-opacity pointer-events-none">
+              <span class="shrink-0 pointer-events-none">
                 <AgentAvatar agentId={commit.agentId} size={14} class="mr-[-2px]" />
               </span>
-            {:else}
-              <Fa icon={faCodeCommit} size="xs" class="text-ghost shrink-0" />
             {/if}
             <div class="relative flex min-w-0 flex-1 items-center">
               {#if commitEdit.hash === commit.hash}
@@ -546,24 +531,19 @@
                   onblur={saveCommitEdit}
                   onkeydown={handleCommitEditKeydown}
                   noFocusStyle
-                  class="inline-edit-input relative z-10 min-w-0 flex-1 border-none bg-transparent hover:bg-transparent text-ui text-subtle outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
+                  class="inline-edit-input relative z-10 h-7 min-w-0 flex-1 border-none bg-transparent hover:bg-transparent type-caption text-subtle outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
                   onclick={(e) => e.stopPropagation()}
                 />
               {:else}
                 <Button
                   variant="ghost"
                   type="button"
-                  class="relative z-10 flex h-8 min-w-0 flex-1 cursor-text items-center gap-2 px-0 font-normal text-left {commit.isPushed &&
-                  !commit.agentId
-                    ? 'pr-5'
-                    : ''}"
+                  class="relative z-10 flex h-7 min-w-0 flex-1 cursor-text items-center gap-2 px-0 font-normal text-left"
                   onclick={() => handleOpenCommitChangeset(commit.hash, commit.message)}
                   ondblclick={(e) => handleCommitMessageDoubleClick(e, commit, index)}
                 >
                   <span
-                    class="flex-1 truncate type-caption text-subtle {canAmendCommit(index)
-                      ? ''
-                      : ''}"
+                    class="flex-1 truncate type-caption text-muted-foreground"
                     use:truncatedTitle={commit.message}
                   >
                     {commit.message}
@@ -579,15 +559,23 @@
               ></span>
             </div>
 
+            {#if commitFiles.length > 0}
+              <LineChangesBadge
+                additions={commitFiles.reduce((sum, f) => sum + (f.additions || 0), 0)}
+                deletions={commitFiles.reduce((sum, f) => sum + (f.deletions || 0), 0)}
+                size="xs"
+              />
+            {/if}
+
             <!-- Right side: Cloud icon for pushed commits (fades on hover, only when remote exists) -->
             {#if hasRemote && commit.isPushed && !commit.agentId}
-              <span class="absolute right-0 shrink-0 group-hover:opacity-0 transition-opacity">
+              <span class="shrink-0 group-hover:opacity-0 transition-opacity">
                 <Fa icon={faCloud} class="text-ghost p-0.5" size={15} />
               </span>
             {/if}
 
             <div
-              class="absolute -right-1 pl-1 bg-sidebar flex items-center {isOperatingOnThis
+              class="absolute right-1 pl-1 bg-sidebar flex items-center {isOperatingOnThis
                 ? ''
                 : 'opacity-0 group-hover:opacity-100'} transition-opacity"
             >
@@ -673,13 +661,11 @@
 
           <!-- Expanded panel content -->
           {#if isExpanded}
-            <div
-              class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px"
-              transition:slide={{ tier: 'moderate' }}
-            >
+            <div class="pl-8 space-y-px" transition:slide={{ tier: 'moderate' }}>
               <!-- Files list -->
               {#each files as file (file.path)}
                 <FileRow
+                  compact
                   contextKey={`${workspaceId}:${commit.hash}`}
                   {file}
                   muted={true}
@@ -697,17 +683,10 @@
 
   <!-- Workspace start boundary marker + show previous toggle -->
   {#if $ftBoundarySha$}
-    <Button
-      variant="ghost"
-      size="compact"
-      wrapContent={false}
-      class="group/boundary relative h-auto min-h-8 w-full justify-start gap-2 px-1 py-2 {allCommits.length >
-      0
-        ? 'mt-2'
-        : ''}"
-      disabled={$ftLoadingOlderCommits$}
-      aria-expanded={olderCommits.length > 0}
-      aria-busy={$ftLoadingOlderCommits$}
+    <HistoryBoundary
+      label={m.workspace_commitsTimeline_workspaceStart_label()}
+      expanded={olderCommits.length > 0}
+      loading={$ftLoadingOlderCommits$}
       onclick={() => {
         if (olderCommits.length > 0) {
           appStore.dispatch(ftClearOlderCommits(workspaceId));
@@ -715,28 +694,7 @@
           appStore.dispatch(loadOlderCommitsRequested(workspaceId, $ftBoundarySha$));
         }
       }}
-    >
-      <span
-        class="relative flex shrink-0 items-center gap-1.5 text-ui text-subtle select-none"
-        data-commit-boundary-label
-      >
-        {m.workspace_commitsTimeline_workspaceStart_label()}
-        {#if $ftLoadingOlderCommits$}
-          <IntentMarkLoader size={12} class="opacity-50" />
-        {:else}
-          <Fa
-            icon={faChevronDown}
-            size="xs"
-            class="opacity-50 transition-transform {olderCommits.length > 0 ? '' : 'rotate-90'}"
-          />
-        {/if}
-      </span>
-      <span
-        class="relative h-px min-w-0 flex-1 bg-border"
-        aria-hidden="true"
-        data-commit-boundary-divider
-      ></span>
-    </Button>
+    />
   {/if}
 
   <!-- Older commits (dimmed, below boundary) -->
@@ -754,41 +712,29 @@
         <div>
           <div
             role="group"
-            class="relative flex h-8 min-w-0 items-center gap-2 group w-full rounded-md px-2 hover:bg-muted"
+            class="relative flex h-7 min-w-0 items-center gap-1 group w-full rounded-md px-2 hover:bg-muted"
             oncontextmenu={(e) => handleCommitContextMenu(e, commit.hash)}
             onkeydown={(e) => handleCommitContextMenu(e, commit.hash)}
           >
             <Button
-              variant="ghost-light"
-              size="icon-xs"
-              class="absolute left-0.75 bg-sidebar opacity-0 group-hover:opacity-100 hover:text-foreground! -ml-1"
+              variant="ghost"
+              size="icon-compact"
+              class="shrink-0 text-muted-foreground hover:text-foreground"
               onclick={(e: MouseEvent) => {
                 e.stopPropagation();
                 toggleCommitExpanded(commit);
               }}
+              aria-expanded={isExpanded}
+              aria-label={m.workspace_prSection_toggleFileList_tooltip()}
               title={m.workspace_prSection_toggleFileList_tooltip()}
             >
-              <Fa
-                icon={faChevronDown}
-                size={12}
-                class="text-subtle shrink-0 transition-transform {isExpanded
-                  ? 'rotate-0'
-                  : 'rotate-90'}"
-              />
-              {#if commitFiles.length > 0}
-                <LineChangesBadge
-                  additions={commitFiles.reduce((sum, f) => sum + (f.additions || 0), 0)}
-                  deletions={commitFiles.reduce((sum, f) => sum + (f.deletions || 0), 0)}
-                  size="xs"
-                />
-              {/if}
+              <DisclosureIcon expanded={isExpanded} />
             </Button>
 
-            <Fa icon={faCodeCommit} size="xs" class="text-ghost shrink-0" />
             <Button
               variant="ghost"
               type="button"
-              class="flex h-8 items-center gap-2 flex-1 min-w-0 px-0 font-normal text-left cursor-pointer"
+              class="flex h-7 items-center gap-2 flex-1 min-w-0 px-0 font-normal text-left cursor-pointer"
               onclick={() => handleOpenCommitChangeset(commit.hash, commit.message)}
             >
               <span
@@ -798,15 +744,20 @@
                 {commit.message}
               </span>
             </Button>
+            {#if commitFiles.length > 0}
+              <LineChangesBadge
+                additions={commitFiles.reduce((sum, f) => sum + (f.additions || 0), 0)}
+                deletions={commitFiles.reduce((sum, f) => sum + (f.deletions || 0), 0)}
+                size="xs"
+              />
+            {/if}
           </div>
 
           {#if isExpanded}
-            <div
-              class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px"
-              transition:slide={{ tier: 'moderate' }}
-            >
+            <div class="pl-8 space-y-px" transition:slide={{ tier: 'moderate' }}>
               {#each files as file (file.path)}
                 <FileRow
+                  compact
                   contextKey={`${workspaceId}:${commit.hash}`}
                   {file}
                   muted={true}
@@ -826,17 +777,24 @@
   {#if olderCommits.length > 0}
     <Button
       variant="ghost"
-      class="w-full text-ui text-ghost hover:text-muted-foreground py-1 transition-colors cursor-pointer"
+      class="h-7 w-full justify-start gap-1 px-2 type-caption font-normal text-muted-foreground hover:text-foreground"
+      wrapContent={false}
+      aria-label={m.workspace_commitsTimeline_showMorePrevious_label()}
       disabled={$ftLoadingOlderCommits$}
       onclick={() => {
         const lastOlder = olderCommits[olderCommits.length - 1];
         if (lastOlder) appStore.dispatch(loadOlderCommitsRequested(workspaceId, lastOlder.hash));
       }}
     >
-      {#if $ftLoadingOlderCommits$}
-        <IntentMarkLoader size={12} class="mr-1" />
-      {/if}
-      {m.workspace_commitsTimeline_showMorePrevious_label()}
+      <span
+        class="flex size-(--control-height-compact) shrink-0 items-center justify-center"
+        aria-hidden="true"
+      >
+        {#if $ftLoadingOlderCommits$}
+          <IntentMarkLoader size={12} />
+        {/if}
+      </span>
+      {m.workspace_sidebarChanges_rootShowMoreCommits_label()}
     </Button>
   {/if}
 </TimelineSection>

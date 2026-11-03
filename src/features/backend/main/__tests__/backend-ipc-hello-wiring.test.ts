@@ -144,8 +144,8 @@ vi.mock('../../../browser/main/browser-exec-reverse', () => ({
   registerBrowserExecReverseHandler: vi.fn(),
 }));
 
-vi.mock('../connections-store', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../connections-store')>()),
+vi.mock('../desktop-connections-store', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../desktop-connections-store')>()),
   list: vi.fn(async () => [
     {
       id: 'conn-remote',

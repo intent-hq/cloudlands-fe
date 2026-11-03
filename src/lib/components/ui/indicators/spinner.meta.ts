@@ -92,6 +92,7 @@ export const spinnerMetadata = parseUiComponentMetadata({
     'src/lib/components/workspace/sidebar/CommitsTimeline.svelte',
     'src/lib/components/workspace/sidebar/DividerButton.svelte',
     'src/lib/components/workspace/sidebar/FileChangesSection.svelte',
+    'src/lib/components/workspace/sidebar/HistoryBoundary.svelte',
     'src/lib/components/workspace/sidebar/MergePanel.svelte',
     'src/lib/components/workspace/sidebar/PRSection.svelte',
     'src/lib/components/workspace/sidebar/PostMergeActions.svelte',

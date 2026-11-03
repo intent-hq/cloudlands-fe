@@ -1,5 +1,5 @@
 // @vitest-environment node
-// @verify-changed-triggers: vite.config.mjs, scripts/build-i18n-bundle.mjs, messages/*.json, src/**/*.svelte, src/**/*.ts
+// @verify-changed-triggers: vite.config.mjs, scripts/build-i18n-bundle.mjs, scripts/i18n-used-message-keys.mjs, messages/*.json, src/**/*.svelte, src/**/*.ts
 import { execFileSync } from 'node:child_process';
 import {
   copyFileSync,
@@ -30,6 +30,10 @@ beforeAll(async () => {
   mkdirSync(join(root, 'build-script'));
   const bundler = join(root, 'build-script/build-i18n-bundle.mjs');
   copyFileSync(resolve('scripts/build-i18n-bundle.mjs'), bundler);
+  copyFileSync(
+    resolve('scripts/i18n-used-message-keys.mjs'),
+    join(root, 'build-script/i18n-used-message-keys.mjs'),
+  );
   execFileSync(process.execPath, [bundler], { cwd: root, stdio: 'pipe' });
   bundledMessages = readFileSync(join(root, 'static/generated/paraglide.js'), 'utf8');
 

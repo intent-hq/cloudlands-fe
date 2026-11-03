@@ -19,7 +19,7 @@ test('Manager sees saved scripts and read-only output, with run and stop but no 
   await expect(page.getByRole('menuitem')).toHaveCount(0);
   await page.keyboard.press('Escape');
   const service = shell.locator('[data-sidebar-shell-script="manager-saved-service"]');
-  await service.getByRole('button', { name: 'Open in...' }).click();
+  await service.getByRole('button', { name: 'Actions', exact: true }).click();
   await expect(page.getByRole('menuitem', { name: 'Show in a panel' })).toBeVisible();
   await expect(page.getByRole('menuitem', { name: 'Show in bottom bar' })).toHaveCount(0);
   await page.keyboard.press('Escape');

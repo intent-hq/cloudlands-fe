@@ -426,6 +426,38 @@ describe('provider CLI startup warnings', () => {
       ]);
     });
 
+    it('offers an Update button that runs `claude update` for a bundled Claude Code', async () => {
+      mocks.request.mockResolvedValue({
+        providers: [
+          {
+            ...oldCodex,
+            id: 'claude-code',
+            displayName: 'Claude Code',
+            command: 'claude-agent-acp',
+            cliCommand: 'claude',
+            cliResolvedPath: '/remote/bin/claude',
+            cliVersion: '2.0.5 (Claude Code)',
+            cliRequirement: 'Claude Code CLI 2.1.0+',
+            cliVersionRange: '>=2.1.0',
+            cliMinimumVersion: '2.1.0',
+            cliBundledVersion: '2.1.309',
+          },
+        ],
+      });
+      render(ProviderCliVersionToast);
+      await settle();
+      const action = toastAction();
+      expect(action?.label).toBe('Update');
+      action!.onClick();
+      await settle();
+      expect(mocks.invoke.mock.calls).toEqual([
+        [
+          'terminal:createWithCommand',
+          { workspaceId: '__root__', command: 'claude update', interactive: true },
+        ],
+      ]);
+    });
+
     it('keeps the plain warning for a provider without a known update command', async () => {
       mocks.request.mockResolvedValue({
         providers: [{ ...oldCodex, id: 'other-cli', displayName: 'Other' }],

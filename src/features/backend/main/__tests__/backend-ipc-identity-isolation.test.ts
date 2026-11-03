@@ -68,8 +68,8 @@ vi.mock('../intentd-version-pin', () => ({ readPinnedVersion: () => '0.1.0' }));
 vi.mock('../../../browser/main/browser-exec-reverse', () => ({
   registerBrowserExecReverseHandler: vi.fn(),
 }));
-vi.mock('../connections-store', async (original) => ({
-  ...(await original<typeof import('../connections-store')>()),
+vi.mock('../desktop-connections-store', async (original) => ({
+  ...(await original<typeof import('../desktop-connections-store')>()),
   list: vi.fn(async () =>
     ['backend-a', 'backend-b'].map((id) => ({
       id,
@@ -121,7 +121,7 @@ beforeEach(async () => {
   vi.resetModules();
   vi.clearAllMocks();
   fixture.options = [];
-  vi.mocked((await import('../connections-store')).getDecryptedToken).mockResolvedValue(
+  vi.mocked((await import('../desktop-connections-store')).getDecryptedToken).mockResolvedValue(
     'test-only-token',
   );
   fixture.userData = await mkdtemp(join(tmpdir(), 'identity-isolation-'));
@@ -209,7 +209,7 @@ describe('pooled canonical client identity isolation', () => {
   it('starts a fresh identity context when the same backend changes credentials', async () => {
     const { mod, a } = await pool();
     await a.onHelloResult(helloResult(A));
-    const store = await import('../connections-store');
+    const store = await import('../desktop-connections-store');
     vi.mocked(store.getDecryptedToken).mockResolvedValue('different-principal-token');
     mod.disconnectBackendClient('backend-a');
     await mod.openBackendWindow('backend-a');

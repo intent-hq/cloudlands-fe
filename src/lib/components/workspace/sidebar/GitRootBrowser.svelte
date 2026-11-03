@@ -20,6 +20,8 @@
   } from '$store/renderer/slices/git-roots/git-roots-selectors';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { Select } from '$lib/components/ui/select';
+  import { Button } from '$lib/components/ui/button';
+  import DisclosureIcon from '$lib/components/icons/DisclosureIcon.svelte';
   import SecondaryRootChangesView from './SecondaryRootChangesView.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -109,14 +111,25 @@
       }}
     >
       <Select.Trigger
-        class="h-8 type-caption"
+        class="h-8 border-transparent bg-transparent px-0 type-caption shadow-none hover:bg-muted"
         aria-label={m.workspace_sidebarChanges_rootSelector_ariaLabel()}
       >
-        <span class="truncate">
-          {selectedRootEntry
-            ? rootDisplayLabel(selectedRootEntry)
-            : m.workspace_sidebarChanges_rootPrimary_label()}
-        </span>
+        {#snippet child({ props })}
+          <Button
+            {...props}
+            variant="ghost"
+            active={props['data-state'] === 'open'}
+            wrapContent={false}
+            class="h-8 w-full min-w-0 justify-between gap-2 px-0 type-caption font-normal"
+          >
+            <span class="truncate">
+              {selectedRootEntry
+                ? rootDisplayLabel(selectedRootEntry)
+                : m.workspace_sidebarChanges_rootPrimary_label()}
+            </span>
+            <DisclosureIcon expanded />
+          </Button>
+        {/snippet}
       </Select.Trigger>
       <Select.Content portal class="max-h-72">
         {#each $gitRootEntries$ ?? [] as entry (entry.key)}
