@@ -612,6 +612,37 @@ describe('owner host membership wire and authority', () => {
       }
     },
   );
+  it('explains a forge-required refusal of a host invitation without the server text', async () => {
+    const h = harness();
+    try {
+      h.dispatch(hostMembershipOpened(h.target));
+      await settle();
+      h.dispatch(
+        hostMembershipRequested(h.target, {
+          kind: 'create',
+          input: { pinLogin: 'sam', pinProvider: 'github' },
+        }),
+      );
+      mocks.request.mockRejectedValueOnce({ message: secret, data: { code: 'forge-required' } });
+      await settle();
+      const forgeError = h.state().hostMembership.error;
+      expect(forgeError).toBeTruthy();
+      expect(forgeError).not.toContain(secret);
+      mocks.request.mockRejectedValueOnce({ message: secret });
+      h.dispatch(
+        hostMembershipRequested(h.target, {
+          kind: 'create',
+          input: { pinLogin: 'sam', pinProvider: 'github' },
+        }),
+      );
+      await settle();
+      expect(h.state().hostMembership.error).toBeTruthy();
+      expect(h.state().hostMembership.error).not.toBe(forgeError);
+    } finally {
+      h.dispatch(hostMembershipClosed(h.target));
+      h.task.cancel();
+    }
+  });
   it('withholds forbidden host administration and never exposes the server error text', async () => {
     const h = harness();
     try {

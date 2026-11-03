@@ -951,6 +951,42 @@ describe('workspaceShareSaga', () => {
     generic.task.cancel();
   });
 
+  // The host has no connected owner forge (intentd refuses invite creation
+  // with `forge-required`): the inline error names the missing connection,
+  // never the daemon text, and the forge status is re-read so the dialog
+  // swaps to its connect box.
+  it('maps the forge-required daemon code onto its own error and re-reads the forge status', async () => {
+    const noForge = Object.assign(new Error(LEAK_MARKER), {
+      rpcCode: -32602,
+      data: { code: 'forge-required' },
+    });
+    replyByMethod({ 'workspace.invite.create': noForge });
+    const h = harness(opened());
+    const before = h.dispatched.length;
+
+    h.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
+    await settle();
+
+    expect(h.state().creating).toBe(false);
+    const forgeError = h.state().createError;
+    expect(forgeError).toEqual(expect.any(String));
+    expect(forgeError).not.toContain(LEAK_MARKER);
+    expect(h.state().createdLink).toBeNull();
+    expect(
+      h.dispatched
+        .slice(before)
+        .filter((action) => (action as { type: string }).type === shareIntegrationAuthRequested.type),
+    ).toHaveLength(1);
+    h.task.cancel();
+
+    replyByMethod({ 'workspace.invite.create': new Error('boom') });
+    const generic = harness(opened());
+    generic.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
+    await settle();
+    expect(generic.state().createError).not.toBe(forgeError);
+    generic.task.cancel();
+  });
+
   it.each(['listener-down', 'tunnel-down'])(
     'refreshes sharing prerequisites after %s without settings navigation guidance',
     async (code) => {
