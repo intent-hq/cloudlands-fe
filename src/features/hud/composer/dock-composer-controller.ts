@@ -427,8 +427,6 @@ export function createDockComposerController(
       return caps.capture && !view.captureDisabled && !view.capturePending
         ? act(actions.onCapture)
         : false;
-    if (matchesShortcut(event, 'mod+shift+r', mac))
-      return caps.record || view.recording ? act(actions.onRecordToggle) : false;
     if (matchesShortcut(event, 'mod+shift+a', mac))
       return caps.annotate || view.annotating ? act(actions.onAnnotationToggle) : false;
     if (matchesShortcut(event, 'mod+shift+m', mac))

@@ -797,12 +797,15 @@ export function setDockHiddenForCapture(
   }
 }
 
-export function focusDockWindow(): void {
+export function focusDockWindow(
+  context?: import('../shared/dock-shortcuts').DockShortcutContext,
+): void {
   const window = getDockWindow();
   if (!window || captureHiddenWindows.has(window) || sessionPaused) return;
   window.show();
   window.focus();
-  if (!window.webContents.isDestroyed()) window.webContents.send(WINDOW_CHANNELS.FOCUS_DOCK);
+  if (!window.webContents.isDestroyed())
+    window.webContents.send(WINDOW_CHANNELS.FOCUS_DOCK, context);
 }
 
 export function closeDockWindow(): void {

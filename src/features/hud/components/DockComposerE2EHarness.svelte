@@ -1,4 +1,7 @@
 <script lang="ts">
+  import DockShortcutChooser from './DockShortcutChooser.svelte';
+  import { selectDockShortcut } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
+  import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { onMount } from 'svelte';
   import '$lib/styles/dock-tokens.css';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
@@ -32,6 +35,7 @@
     height?: number;
     shell?: DockRailPreviewProps;
   } = $props();
+  const shortcut$ = selectDockShortcut();
   let ready = $state(false);
   let caption = $state('');
 
@@ -79,6 +83,12 @@
     }) as typeof api.invoke;
     (window as unknown as Record<string, unknown>).__dockComposerE2E = {
       native,
+      shortcut(context: import('$shared/dock-shortcuts').DockShortcutContext) {
+        fixture.emit('window:focus-dock', context);
+      },
+      seedWorkspace(workspace: import('$shared/types').Workspace) {
+        store.dispatch(setWorkspaceEntity(workspace));
+      },
       holdPlacements(value: boolean) {
         holdPlacements = value;
         if (!value) for (const resolve of heldPlacements.splice(0)) resolve();
@@ -115,7 +125,10 @@
     >
       {#if ready}
         <DockConversationSurface workspaceId={conversationWireWorkspace} resizable={false}>
-          <DockConversation onOpenWorkspace={() => {}} />
+          <DockShortcutChooser />
+          {#if !$shortcut$ || $shortcut$.destination}<DockConversation
+              onOpenWorkspace={() => {}}
+            />{/if}
         </DockConversationSurface>
       {/if}
     </div>

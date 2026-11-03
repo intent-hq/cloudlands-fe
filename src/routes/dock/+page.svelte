@@ -10,6 +10,8 @@
   import { Screen } from '$lib/components/patterns/screen';
   import '$store/renderer/seeders';
   import DockRail from '$features/hud/components/DockRail.svelte';
+  import DockShortcutChooser from '$features/hud/components/DockShortcutChooser.svelte';
+  import { selectDockShortcut } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
   import DockConversation from '$features/hud/components/DockConversation.svelte';
   import { openDockConversation } from '$features/hud/dock-navigation';
   import { showDockContextMenu } from '$features/hud/dock-context-menu';
@@ -62,6 +64,7 @@
   const placementError$ = selectDockPlacementError();
   const dragStartResult$ = selectDockDragStartResult();
   const resizeStartResult$ = selectDockResizeStartResult();
+  const shortcut$ = selectDockShortcut();
   const conversationWorkspaceId$ = selectDockConversationWorkspaceId();
 
   onMount(() => {
@@ -87,7 +90,10 @@
 </script>
 
 {#snippet conversation()}
-  <DockConversation onOpenWorkspace={openDockConversation} />
+  <DockShortcutChooser />
+  {#if !$shortcut$ || $shortcut$.destination}
+    <DockConversation onOpenWorkspace={openDockConversation} />
+  {/if}
 {/snippet}
 
 <!-- Right-click anywhere on the dock opens its native menu (move, hide); text fields

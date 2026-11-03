@@ -448,6 +448,9 @@ export function setupConversationWire(
     ...(options.dockAppearance ? [themeSaga] : []),
   ].map((saga) => store.runSaga(saga));
   return {
+    emit(channel: string, payload: unknown) {
+      for (const entry of listeners.values()) if (entry.channel === channel) entry.handler(payload);
+    },
     askQuestions(recover = false) {
       pendingQuestion = true;
       dismissedQuestion = false;

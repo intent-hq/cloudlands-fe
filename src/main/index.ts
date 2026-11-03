@@ -1,3 +1,8 @@
+import {
+  syncDockGlobalShortcuts,
+  requestDockShortcut,
+  dockShortcutAvailable,
+} from './dock-global-shortcuts';
 /**
  * Main Process Entry Point
  *
@@ -1026,7 +1031,10 @@ const bootFlow = app.whenReady().then(async () => {
     readEnabledPreference: getDockEnabledLocalPref,
     writeEnabledPreference: (enabled) =>
       isShuttingDown ? Promise.resolve() : setDockEnabledLocalPref(enabled),
-    onStateChange: () => app.emit('dock-window-state-changed'),
+    onStateChange: () => {
+      syncDockGlobalShortcuts(isDockLabEnabled() && getDockWindow() !== null);
+      app.emit('dock-window-state-changed');
+    },
   });
 
   // Function to rebuild and set the application menu. Callers fire-and-forget
@@ -1052,9 +1060,20 @@ const bootFlow = app.whenReady().then(async () => {
             },
             {
               label: m.menu_focus_intent_dock(),
-              accelerator: 'CmdOrCtrl+Shift+D',
+              // Registered globally; a menu accelerator would dispatch twice.
+              sublabel: dockShortcutAvailable('focus')
+                ? 'Cmd/Ctrl+Shift+D'
+                : m.dock_shortcut_unavailable(),
               enabled: dockMenuController.isEnabled(),
-              click: () => dockMenuController.focus(),
+              click: () => void requestDockShortcut('focus'),
+            },
+            {
+              label: m.dock_shortcut_record_menu(),
+              sublabel: dockShortcutAvailable('record')
+                ? 'Cmd/Ctrl+Shift+R'
+                : m.dock_shortcut_unavailable(),
+              enabled: dockMenuController.isEnabled(),
+              click: () => void requestDockShortcut('record'),
             },
             { type: 'separator' },
           ] satisfies Electron.MenuItemConstructorOptions[])
@@ -1663,11 +1682,15 @@ const bootFlow = app.whenReady().then(async () => {
   registerDockLabHandlers({
     show: () => dockMenuController.setEnabled(true),
     hide: () => dockMenuController.dismiss(),
-    onChange: () => void rebuildMenu(),
+    onChange: () => {
+      syncDockGlobalShortcuts(isDockLabEnabled() && getDockWindow() !== null);
+      void rebuildMenu();
+    },
     isDock: (sender) => getDockWindow()?.webContents === sender,
   });
   markRendererWindowsAllowed();
   if (isDockLabEnabled()) await dockMenuController.restore();
+  syncDockGlobalShortcuts(isDockLabEnabled() && getDockWindow() !== null);
   void rebuildMenu();
 
   startupMetrics.end('criticalIPC');

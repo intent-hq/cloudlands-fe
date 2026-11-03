@@ -1,3 +1,4 @@
+import { dockCandidateScore } from '$shared/dock-shortcuts';
 import {
   deriveWizardPendingQuestions,
   deriveMarkedQuestionRecoveryState,
@@ -439,3 +440,17 @@ export const selectCurrentDockComposerEvidence = store.createSelector((state) =>
     ? { workspaceId, agentId, view: selectDockComposerEvidence.select(state, workspaceId, agentId) }
     : null;
 });
+
+export const selectDockShortcut = store.createSelector(
+  (state) => state.dockConversation.shortcut ?? null,
+);
+
+export const selectDockShortcutWorkspaces = store.createSelector((state) =>
+  getItems(state.workspace.workspaces)
+    .filter((row) => !['archived', 'retired', 'deleted'].includes(row.status))
+    .sort(
+      (a, b) =>
+        dockCandidateScore(state.dockConversation.shortcut?.context, b) -
+        dockCandidateScore(state.dockConversation.shortcut?.context, a),
+    ),
+);

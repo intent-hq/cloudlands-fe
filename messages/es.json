@@ -8324,5 +8324,20 @@
   "dock_mediaClipboard_copy_label": "Copiar",
   "dock_mediaClipboard_cut_label": "Cortar",
   "dock_mediaClipboard_copyFailed_error": "No se pudo copiar al portapapeles",
-  "dock_mediaClipboard_pasteFailed_error": "No se pudo pegar desde el portapapeles"
+  "dock_mediaClipboard_pasteFailed_error": "No se pudo pegar desde el portapapeles",
+  "dock_shortcut_focus_title": "¿Qué espacio de trabajo abrir?",
+  "dock_shortcut_record_title": "¿En qué espacio grabar?",
+  "dock_shortcut_focus_destination": "Destino del mensaje: {workspace}",
+  "dock_shortcut_record_destination": "Destino de la grabación: {workspace}",
+  "dock_shortcut_change": "Cambiar",
+  "dock_shortcut_app_unknown": "Aplicación en primer plano no disponible",
+  "dock_shortcut_once": "Solo una vez",
+  "dock_shortcut_page": "Esta página",
+  "dock_shortcut_project": "Este proyecto",
+  "dock_shortcut_app": "Esta aplicación",
+  "dock_shortcut_remember_aria": "Recordar destino para",
+  "dock_shortcut_destination_aria": "Espacio de destino",
+  "dock_shortcut_unavailable": "Atajo no disponible",
+  "dock_shortcut_record_menu": "Grabar en un espacio…",
+  "dock_shortcut_open_error": "No se pudo abrir el espacio. Elige de nuevo."
 }

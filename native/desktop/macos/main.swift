@@ -278,6 +278,32 @@ actor Desktop {
         }
         // Lock-free and pid-only (no titles): read at session end, after release,
         // to tell whether the user switched apps during the session.
+        if op == "foregroundContext" {
+            return await MainActor.run {
+                guard let application = NSWorkspace.shared.frontmostApplication else { return [String: Any]() }
+                var result: [String: Any] = ["pid": Int(application.processIdentifier)]
+                result["appId"] = application.bundleIdentifier
+                result["appName"] = application.localizedName
+                // A missing grant is unknown, never a permission request.
+                if AXIsProcessTrusted() {
+                    let element = AXUIElementCreateApplication(application.processIdentifier)
+                    var window: CFTypeRef?
+                    if AXUIElementCopyAttributeValue(element, kAXFocusedWindowAttribute as CFString, &window) == .success,
+                       let window = window {
+                        let focused = unsafeBitCast(window, to: AXUIElement.self)
+                        var title: CFTypeRef?
+                        if AXUIElementCopyAttributeValue(focused, kAXTitleAttribute as CFString, &title) == .success {
+                            result["title"] = title as? String
+                        }
+                        var document: CFTypeRef?
+                        if AXUIElementCopyAttributeValue(focused, kAXDocumentAttribute as CFString, &document) == .success {
+                            result["url"] = document as? String
+                        }
+                    }
+                }
+                return result
+            }
+        }
         if op == "frontmost" {
             guard let pid = await frontmostPid() else { return [String: Any]() }
             return ["pid": Int(pid)]
