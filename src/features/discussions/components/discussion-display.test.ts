@@ -31,9 +31,10 @@ const activity = (
   state: DiscussionAgentActivity['state'],
   minute: number,
   agentId = 'agent-a',
+  attempt = 1,
 ): DiscussionAgentActivity => ({
   agentId,
-  attempt: 1,
+  attempt,
   version: 2,
   state,
   updatedAt: at(minute),
@@ -52,6 +53,20 @@ describe('discussion agent activity rows', () => {
     expect(answered(request, activity('working', 1))).toBe(true);
     expect(answered(request, activity('queued', 1))).toBe(true);
     expect(answered(request, activity('working', 1, 'agent-b'))).toBe(false);
+  });
+  it('ignores a linked reply from an earlier attempt once the request is retried', () => {
+    const request = msg(1, { recipientAgentIds: ['agent-a'] });
+    const reply = msg(2, { author: agent('agent-a'), replyToMessageId: request.id });
+    const answered = discussionActivityAnswered([request, reply]);
+    expect(answered(request, activity('queued', 7, 'agent-a', 2))).toBe(false);
+    expect(answered(request, activity('working', 8, 'agent-a', 2))).toBe(false);
+    const retryReply = msg(9, { author: agent('agent-a'), replyToMessageId: request.id });
+    expect(
+      discussionActivityAnswered([request, reply, retryReply])(
+        request,
+        activity('working', 8, 'agent-a', 2),
+      ),
+    ).toBe(true);
   });
   it('keeps failed and stopped rows visible after a reply', () => {
     const request = msg(1);

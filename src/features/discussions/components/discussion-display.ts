@@ -36,20 +36,29 @@ export function discussionActivityAnswered(
   request: Pick<DiscussionMessage, 'id' | 'sequence'>,
   activity: DiscussionAgentActivity,
 ) => boolean {
-  const linked = new Set<string>();
+  const linked = new Map<string, number>();
   const lastUnlinked = new Map<string, Pick<DiscussionMessage, 'sequence' | 'createdAt'>>();
   for (const message of messages) {
     const agentId = message.author.agentId;
     if (!agentId) continue;
-    if (message.replyToMessageId) linked.add(JSON.stringify([message.replyToMessageId, agentId]));
-    else {
+    if (message.replyToMessageId) {
+      const key = JSON.stringify([message.replyToMessageId, agentId]);
+      linked.set(key, Math.max(linked.get(key) ?? -Infinity, Date.parse(message.createdAt)));
+    } else {
       const last = lastUnlinked.get(agentId);
       if (!last || message.sequence > last.sequence) lastUnlinked.set(agentId, message);
     }
   }
   return (request, activity) => {
     if (activity.state !== 'queued' && activity.state !== 'working') return false;
-    if (linked.has(JSON.stringify([request.id, activity.agentId]))) return true;
+    const linkedAt = linked.get(JSON.stringify([request.id, activity.agentId]));
+    // A retry must not count a reply from an earlier attempt. Activity timestamps change
+    // only on state transitions, so a reply from the retry is newer than its last one.
+    if (
+      linkedAt !== undefined &&
+      (activity.attempt <= 1 || linkedAt >= Date.parse(activity.updatedAt))
+    )
+      return true;
     // Without a reply link, only a message posted after this request started counts.
     const last = lastUnlinked.get(activity.agentId);
     return (
