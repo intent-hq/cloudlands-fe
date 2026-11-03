@@ -114,15 +114,15 @@ describe('workspace list pagination across read ownership changes', () => {
 
   it('collects every page while retaining archive and retired scope', async () => {
     mockedRequest
-      .mockResolvedValueOnce({ workspaces: [row('first')], nextToken: 'second-page' })
-      .mockResolvedValueOnce({ workspaces: [row('second')], nextToken: null });
+      .mockResolvedValueOnce({ workspaces: [row('first-workspace')], nextToken: 'second-page' })
+      .mockResolvedValueOnce({ workspaces: [row('second-workspace')], nextToken: null });
 
     const rows = await new LiveWorkspacesClient().list({
       includeArchived: true,
       includeRetired: true,
     });
 
-    expect(rows.map(({ id }) => id)).toEqual(['first', 'second']);
+    expect(rows.map(({ id }) => id)).toEqual(['first-workspace', 'second-workspace']);
     expect(mockedRequest.mock.calls).toEqual([
       ['workspace.list', { includeArchived: true, includeRetired: true }],
       ['workspace.list', { includeArchived: true, includeRetired: true, nextToken: 'second-page' }],
