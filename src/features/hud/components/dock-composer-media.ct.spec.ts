@@ -189,6 +189,8 @@ test('a capture click whose press spans the menu opening still captures once', a
   await page.mouse.up();
   await expect.poll(() => actions(component)).toEqual(['capture']);
   await expect(menu).toBeHidden();
+  // Once: the closed menu left no second capture behind.
+  expect(await actions(component)).toEqual(['capture']);
 });
 
 test('the open screenshot menu never locks the rest of the dock', async ({ mount, page }) => {
