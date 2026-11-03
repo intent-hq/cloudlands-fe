@@ -114,11 +114,14 @@ describe('gitConsumerReadSaga', () => {
     owner.dispatch(gitReadRequested('other', 'primary', 'e', request));
     await vi.waitFor(() => expect(owner.read('other', 'primary')?.loading).toBe(false));
     expect(vi.mocked(backendRequest).mock.calls).toEqual([
-      ['git.showFile', { workspaceId: 'ws', filePath: 'a.ts', ref: 'HEAD' }],
-      ['git.showFile', { workspaceId: 'ws', filePath: 'a.ts', ref: 'HEAD', gitRootId: 'root' }],
-      ['git.showFile', { workspaceId: 'ws', filePath: 'a.ts', ref: ':0' }],
-      ['git.showFile', { workspaceId: 'ws', filePath: 'b.ts', ref: 'HEAD' }],
-      ['git.showFile', { workspaceId: 'other', filePath: 'a.ts', ref: 'HEAD' }],
+      ['git.showFile', { workspaceId: 'ws', filePath: 'a.ts', ref: 'HEAD', maxBytes: 480_000 }],
+      [
+        'git.showFile',
+        { workspaceId: 'ws', filePath: 'a.ts', ref: 'HEAD', gitRootId: 'root', maxBytes: 480_000 },
+      ],
+      ['git.showFile', { workspaceId: 'ws', filePath: 'a.ts', ref: ':0', maxBytes: 480_000 }],
+      ['git.showFile', { workspaceId: 'ws', filePath: 'b.ts', ref: 'HEAD', maxBytes: 480_000 }],
+      ['git.showFile', { workspaceId: 'other', filePath: 'a.ts', ref: 'HEAD', maxBytes: 480_000 }],
     ]);
     expect(owner.read('ws', 'root')?.result).toEqual({
       kind: 'showFile',
@@ -127,6 +130,7 @@ describe('gitConsumerReadSaga', () => {
         filePath: 'a.ts',
         ref: 'HEAD',
         gitRootId: 'root',
+        maxBytes: 480_000,
       }),
     });
   });
@@ -209,8 +213,8 @@ describe('gitConsumerReadSaga', () => {
     owner.dispatch(releaseGitRead('ws', 'tab', 'old'));
     expect(owner.read('ws', 'tab')).toMatchObject({ requestId: 'new', loading: true, error: null });
     expect(vi.mocked(backendRequest).mock.calls).toEqual([
-      ['git.showFile', { workspaceId: 'ws', filePath: 'retry.ts', ref: 'HEAD' }],
-      ['git.showFile', { workspaceId: 'ws', filePath: 'retry.ts', ref: 'HEAD' }],
+      ['git.showFile', { workspaceId: 'ws', filePath: 'retry.ts', ref: 'HEAD', maxBytes: 480_000 }],
+      ['git.showFile', { workspaceId: 'ws', filePath: 'retry.ts', ref: 'HEAD', maxBytes: 480_000 }],
     ]);
     response.resolve({ content: 'recovered' });
     await vi.waitFor(() =>

@@ -41,6 +41,7 @@ describe('file-bridge-seeder', () => {
       expect(mockedRequest).toHaveBeenCalledWith('file.read', {
         workspaceId: 'ws-1',
         path: '/ws/src/x.ts',
+        maxBytes: 480_000,
       });
       expect(result).toEqual({
         success: true,
@@ -151,6 +152,7 @@ describe('file-bridge-seeder', () => {
       expect(mockedRequest).toHaveBeenCalledWith('file.read', {
         workspaceId: 'ws-1',
         path: '/ws/src/x.ts',
+        maxBytes: 480_000,
       });
       expect(invokeSpy).not.toHaveBeenCalled();
     });
@@ -213,6 +215,7 @@ describe('file-bridge-seeder', () => {
       expect(mockedRequest).toHaveBeenCalledWith('file.read', {
         workspaceId: 'ws-1',
         path: '/ws/readme.md',
+        maxBytes: 480_000,
       });
       expect(result).toEqual({ success: true, content: 'file body' });
     });
@@ -347,6 +350,7 @@ describe('file-bridge-seeder', () => {
       expect(mockedRequest).toHaveBeenNthCalledWith(1, 'file.read', {
         workspaceId: 'ws-1',
         path: '/ws/a.txt',
+        maxBytes: 480_000,
       });
       expect(mockedRequest).toHaveBeenNthCalledWith(2, 'file.write', {
         workspaceId: 'ws-1',
