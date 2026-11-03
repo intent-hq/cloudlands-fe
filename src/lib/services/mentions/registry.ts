@@ -17,6 +17,9 @@
  *   earliest match wins; at the same position the entry listed first wins.
  * - `mentionElement(parsed)`: the chip element (attributes, class, text) both
  *   injectors emit; `mentionPreviewText(parsed)`: the `@<label>` previews use.
+ * - `pickedMentionsMetadata` / `readPickedMentionTokens` / `scanChatMentions`:
+ *   the file and folder chips a message was sent with, recorded in its
+ *   metadata so the chat bubble chips only those (see "Picked mentions").
  *
  * Surfaces:
  * - `chat`: chat bubbles. `@` must not follow an email-local-part character,
@@ -270,6 +273,23 @@ function pathMention(
   return { kind: 'path', path, target, metaKey, ...(line !== undefined ? { line } : {}) };
 }
 
+/**
+ * `name@1.2.3`, `name@^1.2`, `name@latest`: a package spec, not a file. Used
+ * where `@`-paths are guessed from text alone, so a pasted
+ * `npm i @scope/pkg@1.2.3` stays text; an `@` inside a real file name
+ * (`icon@2x.png`) does not match.
+ */
+const PACKAGE_SPEC_RE =
+  /[^\s/@]@(?:[\^~]?v?\d+\.\d+|(?:latest|next|canary|beta|alpha|rc|stable)(?![\w.-]))/i;
+
+/** A guessed path mention, or null for a package spec. */
+function guessedPathMention(
+  target: string,
+  metaKey: 'fullPath' | 'filename',
+): (ParsedMention & { kind: 'path' }) | null {
+  return PACKAGE_SPEC_RE.test(target) ? null : pathMention(target, metaKey);
+}
+
 const CONTEXT_ITEM_TYPES: Record<string, string> = {
   linear: 'linear-issue',
   github: 'github-issue',
@@ -439,7 +459,7 @@ export const MENTION_TOKEN_ENTRIES: readonly MentionTokenEntry[] = [
     source: String.raw`\/[^\s<>()'"]+`,
     at: true,
     surfaces: MARKDOWN,
-    parse: (text) => pathMention(text.slice(1), 'fullPath'),
+    parse: (text) => guessedPathMention(text.slice(1), 'fullPath'),
   },
   {
     name: 'relative-path',
@@ -448,7 +468,7 @@ export const MENTION_TOKEN_ENTRIES: readonly MentionTokenEntry[] = [
     surfaces: MARKDOWN,
     // Drop stray `@` at segment starts (left by an old double-`@` bug).
     parse: (text) =>
-      pathMention(
+      guessedPathMention(
         text
           .slice(1)
           .split('/')
@@ -511,7 +531,7 @@ export const MENTION_TOKEN_ENTRIES: readonly MentionTokenEntry[] = [
     source: String.raw`[^\s@]+\.[a-zA-Z]+${PATH_SUFFIX_SOURCE}?`,
     at: true,
     surfaces: CHAT,
-    parse: (text) => pathMention(text.slice(1), 'fullPath'),
+    parse: (text) => guessedPathMention(text.slice(1), 'fullPath'),
   },
   {
     // ...and any `@`-led token with a `/` (folders, extensionless files).
@@ -519,7 +539,7 @@ export const MENTION_TOKEN_ENTRIES: readonly MentionTokenEntry[] = [
     source: String.raw`[^\s@]*\/[^\s]+`,
     at: true,
     surfaces: CHAT,
-    parse: (text) => pathMention(text.slice(1), 'fullPath'),
+    parse: (text) => guessedPathMention(text.slice(1), 'fullPath'),
   },
 ];
 
@@ -597,6 +617,143 @@ export function hasMentionToken(text: string, surface: MentionSurface): boolean 
   const found = regex.test(text);
   regex.lastIndex = 0;
   return found;
+}
+
+// ---------------------------------------------------------------------------
+// Picked mentions
+// ---------------------------------------------------------------------------
+//
+// From text alone, `@src/lib` (a folder picked from the @ menu) and
+// `@types/node` (a pasted package name) look the same. So the composer records
+// the tokens of the file and folder chips a message is sent with in its
+// `messageMetadata`, and the chat bubble chips exactly those. Typed or pasted
+// `@text` stays text. Tokens with their own syntax (notes, members,
+// terminals, context) are unambiguous and chip either way. Messages without a
+// record (sent before the record existed, edited, or sent by an agent) keep
+// the `chat` surface guesses.
+
+/** The `messageMetadata` key holding the picked tokens. */
+export const PICKED_MENTIONS_METADATA_KEY = 'mentionTokens';
+
+/** Chip types the chat bubble shows as file or folder chips. */
+const PICKED_MENTION_TYPES: ReadonlySet<string> = new Set<MentionType>([
+  'file',
+  'file-range',
+  'folder',
+  'source-folder',
+  'rule',
+]);
+
+/** Keeps the record small; a message rarely has more than a few chips. */
+const MAX_PICKED_TOKENS = 200;
+const MAX_PICKED_TOKEN_LENGTH = 2048;
+
+/**
+ * The record for a message sent with `mentions` (the composer's chips):
+ * the token each file or folder chip is saved as, deduped. An empty list is
+ * a record too: nothing in the message was picked.
+ */
+export function pickedMentionsMetadata(
+  mentions: ReadonlyArray<Omit<SerializableMention, 'type'> & { type: string }>,
+): { [PICKED_MENTIONS_METADATA_KEY]: string[] } {
+  const tokens = new Set<string>();
+  for (const mention of mentions) {
+    if (!PICKED_MENTION_TYPES.has(mention.type)) continue;
+    const token = toPromptToken(mention as SerializableMention);
+    if (token.length > 1 && token.length <= MAX_PICKED_TOKEN_LENGTH) tokens.add(token);
+    if (tokens.size >= MAX_PICKED_TOKENS) break;
+  }
+  return { [PICKED_MENTIONS_METADATA_KEY]: [...tokens] };
+}
+
+function tokensOf(metadata: unknown): string[] | null {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const tokens = (metadata as Record<string, unknown>)[PICKED_MENTIONS_METADATA_KEY];
+  if (!Array.isArray(tokens)) return null;
+  return tokens.filter(
+    (token): token is string =>
+      typeof token === 'string' && token.length > 1 && token.startsWith('@'),
+  );
+}
+
+/**
+ * The picked tokens a message's metadata records, or null when it has no
+ * record. Queued messages the daemon merged list each part's metadata in
+ * `mergedMessageMetadata`: their tokens are joined, and if any part has no
+ * record the whole message falls back to guessing.
+ */
+export function readPickedMentionTokens(metadata: unknown): string[] | null {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const merged = (metadata as Record<string, unknown>).mergedMessageMetadata;
+  const parts = Array.isArray(merged) && merged.length > 0 ? merged : [metadata];
+  const tokens = new Set<string>();
+  for (const part of parts) {
+    const partTokens = tokensOf(part);
+    if (!partTokens) return null;
+    for (const token of partTokens) tokens.add(token);
+  }
+  return [...tokens];
+}
+
+/** `@` must not follow these (as for chat guesses: emails, URL userinfo). */
+const PICKED_BEFORE_RE = /[A-Za-z0-9._%+-]/;
+/** A recorded token must not run on into more path characters. */
+const PICKED_AFTER_RE = /[\w\-/@]/;
+
+function pickedBoundaryAfter(text: string, end: number): boolean {
+  const next = text[end];
+  if (next === undefined) return true;
+  if (PICKED_AFTER_RE.test(next)) return false;
+  // `@a.ts.bak` and `@a.ts:L3` continue the path; `@a.ts.` and `@a.ts:` end it.
+  if ((next === '.' || next === ':') && /\w/.test(text[end + 1] ?? '')) return false;
+  return true;
+}
+
+/** A recorded token as the chip it was picked as: `@<path>/` is a folder. */
+function parsePickedToken(token: string): ParsedMention {
+  const target = token.slice(1);
+  if (target.endsWith('/') && target.length > 1)
+    return { kind: 'folder', path: target.replace(/\/+$/, ''), target };
+  return pathMention(target, 'fullPath');
+}
+
+const PICKED_ENTRY: MentionTokenEntry = {
+  name: 'picked',
+  // Never compiled into a scanner: picked tokens are found literally.
+  source: String.raw`(?!)`,
+  at: true,
+  surfaces: [],
+  parse: parsePickedToken,
+};
+
+/** Chat entries that guess a file or folder from text alone. */
+const CHAT_GUESS_ENTRIES: ReadonlySet<string> = new Set(['folder', 'chat-file', 'chat-path']);
+
+/**
+ * The mentions a chat bubble shows. With a record (`picked`, from
+ * `readPickedMentionTokens`), file and folder chips come only from the
+ * recorded tokens, found literally; without one (`null`), the `chat` surface
+ * guesses as before.
+ */
+export function scanChatMentions(text: string, picked: readonly string[] | null): MentionMatch[] {
+  const scanned = scanMentions(text, 'chat');
+  if (picked === null) return scanned;
+  const kept = scanned.filter((match) => !CHAT_GUESS_ENTRIES.has(match.entry.name));
+  const claimed = kept.map((match) => [match.index, match.index + match.text.length]);
+  const overlaps = (start: number, end: number) =>
+    claimed.some(([from, to]) => start < to && from < end);
+  const found: MentionMatch[] = [];
+  // Longest first, so `@src/lib/a.ts` wins over `@src/lib/` at the same `@`.
+  for (const token of [...new Set(picked)].sort((a, b) => b.length - a.length)) {
+    for (let index = text.indexOf(token); index !== -1; index = text.indexOf(token, index + 1)) {
+      const end = index + token.length;
+      if (index > 0 && PICKED_BEFORE_RE.test(text[index - 1])) continue;
+      if (!pickedBoundaryAfter(text, end) || overlaps(index, end)) continue;
+      claimed.push([index, end]);
+      found.push({ index, text: token, entry: PICKED_ENTRY, parsed: parsePickedToken(token) });
+    }
+  }
+  return [...kept, ...found].sort((a, b) => a.index - b.index);
 }
 
 // ---------------------------------------------------------------------------

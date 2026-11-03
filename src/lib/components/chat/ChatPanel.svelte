@@ -5792,6 +5792,7 @@
     // shared/domain cleanup, and send side effects live in sagas.
     const inlineImageItems = inputComponent?.getInlineImageContextItems?.() ?? [];
     const mentionContextItems = inputComponent?.getMentionContextItems?.() ?? [];
+    const pickedMentions = inputComponent?.getPickedMentionsMetadata?.();
     if (!workspace || !isActive) {
       logger.warn('[ChatPanel] Dropping send: panel has no workspace or is inactive', {
         agentId,
@@ -5825,6 +5826,7 @@
         noteIds,
         ...(imageBlocks.length > 0 ? { imageBlocks } : {}),
         ...(fileBlocks.length > 0 ? { fileBlocks } : {}),
+        ...(pickedMentions ? { messageMetadata: pickedMentions } : {}),
         agentName,
         agentModel,
         isInitialWorkspaceAgent,
@@ -6043,6 +6045,7 @@
     // Gather DOM state only; validation and stop/send orchestration live in sagas.
     const inlineImageItems = inputComponent?.getInlineImageContextItems?.() ?? [];
     const mentionContextItems = inputComponent?.getMentionContextItems?.() ?? [];
+    const pickedMentions = inputComponent?.getPickedMentionsMetadata?.();
     if (!workspace || !isActive) return;
     flushPendingDraftWrite();
 
@@ -6069,6 +6072,7 @@
         noteIds,
         ...(imageBlocks.length > 0 ? { imageBlocks } : {}),
         ...(fileBlocks.length > 0 ? { fileBlocks } : {}),
+        ...(pickedMentions ? { messageMetadata: pickedMentions } : {}),
         forceSubmit: true,
         agentName,
         agentModel,

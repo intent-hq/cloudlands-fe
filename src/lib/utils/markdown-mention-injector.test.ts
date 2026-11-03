@@ -36,6 +36,15 @@ describe('injectMentionSpans without a DOM', () => {
     }
   });
 
+  it('keeps a pasted package@version spec as text (regression)', () => {
+    for (const html of [
+      '<p>npm dist-tag add @intent-hq/web@2.277.0 latest</p>',
+      '<p>npm i @scope/pkg@latest</p>',
+    ]) {
+      expect(injectMentionSpans(html)).toBe(html);
+    }
+  });
+
   it('keeps malformed tokens and non-note links as text', () => {
     const html = '<p>@member[bm90LWpzb24=] intent://local/workspace/w1</p>';
     expect(injectMentionSpans(html)).toBe(html);
