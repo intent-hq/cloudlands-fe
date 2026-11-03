@@ -15,6 +15,7 @@
   } from '$shared/dock-annotation';
   import type { DockMarkTool } from '$shared/dock-evidence';
   import { Button } from '$lib/components/ui/button';
+  import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import DockComposerIcon, { type DockComposerGlyph } from './DockComposerIcon.svelte';
   import { formatDockElapsed } from '$features/hud/composer/dock-annotation-bar-media';
   import {
@@ -186,14 +187,13 @@
     pen: 'pen',
     arrow: 'arrow',
   };
-  const tip = (label: string, key?: string) => (key ? `${label} (${key})` : label);
+  // Bar-local keys (only while the bar has focus), shown on the shared tooltip.
   const chipTip = $derived(
     noMic
       ? m.dock_recordingToolbar_noMic_tooltip()
-      : tip(
-          paused ? m.dock_recordingToolbar_resume_label() : m.dock_recordingToolbar_pause_label(),
-          m.dock_recordingToolbar_space_key(),
-        ),
+      : paused
+        ? m.dock_recordingToolbar_resume_label()
+        : m.dock_recordingToolbar_pause_label(),
   );
 
   function onKeyDown(event: KeyboardEvent) {
@@ -243,15 +243,21 @@
   transition:fade={{ tier: 'fast' }}
 >
   <!-- Grip: the visible handle for dragging the bar (its whole surface drags too). -->
-  <span class="grip" title={m.dock_annotationToolbar_drag_label()} aria-hidden="true">
-    <DotsSixVerticalIcon size={16} weight="bold" aria-hidden="true" focusable="false" />
-  </span>
+  <TooltipShortcut label={m.dock_annotationToolbar_drag_label()} delayDuration={200}>
+    <span class="grip" data-grip aria-hidden="true">
+      <DotsSixVerticalIcon size={16} weight="bold" aria-hidden="true" focusable="false" />
+    </span>
+  </TooltipShortcut>
   {#if discarding}
     <div class="discarded" role="status" data-testid="recording-discarded">
       <span>{m.dock_recordingToolbar_discarded_label()}</span>
       <span class="dot-sep" aria-hidden="true">·</span>
-      <Button variant="ghost-light" size="sm" class="rt-text rt-undo" onclick={undoDiscard}
-        >{m.dock_recordingToolbar_undo_label()}</Button
+      <Button
+        variant="ghost-light"
+        size="sm"
+        class="rt-text rt-undo"
+        tooltip={m.dock_recordingToolbar_undo_label()}
+        onclick={undoDiscard}>{m.dock_recordingToolbar_undo_label()}</Button
       >
     </div>
   {:else}
@@ -264,8 +270,13 @@
       </div>
       {#if marked}
         <div class="clear-slot" transition:slide={{ tier: 'fast', axis: 'x' }}>
-          <Button variant="ghost-light" size="sm" class="rt-text" data-clear onclick={clear}
-            >{m.dock_recordingToolbar_clear_label()}</Button
+          <Button
+            variant="ghost-light"
+            size="sm"
+            class="rt-text"
+            data-clear
+            tooltip={m.dock_recordingToolbar_clear_label()}
+            onclick={clear}>{m.dock_recordingToolbar_clear_label()}</Button
           >
         </div>
       {/if}
@@ -279,6 +290,8 @@
         data-testid="recording-chip"
         data-no-mic={noMic || undefined}
         aria-pressed={paused}
+        tooltip={chipTip}
+        tooltipShortcut={noMic ? undefined : 'space'}
         aria-label={paused
           ? m.dock_recordingToolbar_resume_ariaLabel({ time: elapsed })
           : m.dock_recordingToolbar_pause_ariaLabel({ time: elapsed })}
@@ -298,7 +311,6 @@
             <span class="bar" style:--level={flat ? 0 : level}></span>
           {/each}
         </span>
-        <span class="tip" role="tooltip">{chipTip}</span>
       </Button>
       <Button
         variant="ghost-light"
@@ -306,10 +318,10 @@
         class="rt-icon rt-discard"
         data-discard
         aria-label={m.dock_recordingToolbar_discard_label()}
+        tooltip={m.dock_recordingToolbar_discard_label()}
         onclick={discard}
       >
         <DockComposerIcon glyph="x" size={18} />
-        <span class="tip" role="tooltip">{m.dock_recordingToolbar_discard_label()}</span>
       </Button>
       <Button
         variant="ghost-light"
@@ -317,12 +329,11 @@
         class="rt-done"
         data-done
         aria-label={m.dock_composer_done_label()}
+        tooltip={m.dock_composer_done_label()}
+        tooltipShortcut="enter"
         onclick={done}
       >
         <DockComposerIcon glyph="check" size={18} />
-        <span class="tip" role="tooltip"
-          >{tip(m.dock_composer_done_label(), m.dock_recordingToolbar_enter_key())}</span
-        >
       </Button>
     </section>
   {/if}
@@ -340,16 +351,13 @@
     data-tool={tool}
     aria-checked={selected}
     aria-label={toolLabels[tool]}
+    tooltip={blocked ? m.dock_composer_accessibilityPermission_tooltip() : toolLabels[tool]}
+    tooltipShortcut={blocked ? undefined : DOCK_RECORDING_TOOL_KEYS[tool]}
     disabled={tool === 'pick' && !!overlay.still}
     onclick={() => choose(tool)}
   >
     <DockComposerIcon glyph={glyphs[tool]} size={18} />
     {#if blocked}<span class="alert-dot" aria-hidden="true"></span>{/if}
-    <span class="tip" role="tooltip"
-      >{blocked
-        ? m.dock_composer_accessibilityPermission_tooltip()
-        : tip(toolLabels[tool], DOCK_RECORDING_TOOL_KEYS[tool])}</span
-    >
   </Button>
 {/snippet}
 
@@ -594,28 +602,6 @@
     border-radius: 50%;
     background: var(--rt-rec);
   }
-  /* Tooltips: above the bar after 400 ms, with the shortcut. */
-  .tip {
-    position: absolute;
-    bottom: calc(100% + 16px);
-    left: 50%;
-    translate: -50% 0;
-    padding: 4px 8px;
-    border-radius: 6px;
-    background: var(--rt-done);
-    color: var(--rt-done-ink);
-    font-size: 12px;
-    font-weight: 400;
-    line-height: 16px;
-    white-space: nowrap;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity var(--motion-fast) ease-out;
-  }
-  .recording-toolbar :global(button:hover > .tip) {
-    opacity: 1;
-    transition-delay: 400ms;
-  }
   .sr-only {
     position: absolute;
     width: 1px;
@@ -625,8 +611,7 @@
     white-space: nowrap;
   }
   @container style(--motion-reduced: 1) {
-    .bar,
-    .tip {
+    .bar {
       transition: none;
     }
   }

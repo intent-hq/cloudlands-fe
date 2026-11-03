@@ -8325,7 +8325,5 @@
   "dock_recordingToolbar_noMic_tooltip": "No mic input",
   "dock_recordingToolbar_discard_label": "Discard recording",
   "dock_recordingToolbar_discarded_label": "Recording discarded",
-  "dock_recordingToolbar_undo_label": "Undo",
-  "dock_recordingToolbar_space_key": "Space",
-  "dock_recordingToolbar_enter_key": "Enter"
+  "dock_recordingToolbar_undo_label": "Undo"
 }
