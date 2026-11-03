@@ -412,6 +412,9 @@ export const IPC_CHANNELS = {
     UPDATE_DOCK_PLACEMENT: 'window:update-dock-placement',
     // Dock right-click: main pops a native menu (move, hide) over the dock window.
     SHOW_DOCK_MENU: 'window:show-dock-menu',
+    // Dock header double-click: main brings Intent forward as it was, like a click
+    // on the app icon (focus the last window, or restore the saved session) → { activated }.
+    ACTIVATE_APP: 'window:activate-app',
     SWITCH_DOCK_BACKEND: 'window:switch-dock-backend',
     DOCK_BACKEND_SWITCH_FAILED: 'window:dock-backend-switch-failed',
     DOCK_PLACEMENT_CHANGED: 'window:dock-placement-changed',

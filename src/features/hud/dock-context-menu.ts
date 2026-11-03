@@ -13,3 +13,13 @@ export function showDockContextMenu(): void {
   const bridge = (globalThis as { electronAPI?: DockMenuBridge }).electronAPI;
   void bridge?.invoke(WINDOW_CHANNELS.SHOW_DOCK_MENU, {}).catch(() => {});
 }
+
+/**
+ * Double-click on the dock header: ask main to bring Intent forward as it was,
+ * like a click on the app icon, without navigating it. Without a bridge it does
+ * nothing.
+ */
+export function activateIntentFromDock(): void {
+  const bridge = (globalThis as { electronAPI?: DockMenuBridge }).electronAPI;
+  void bridge?.invoke(WINDOW_CHANNELS.ACTIVATE_APP, {}).catch(() => {});
+}

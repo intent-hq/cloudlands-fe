@@ -61,6 +61,7 @@
   import { MessageComposer } from '$lib/components/ui/message-composer';
   import { InputMessage } from '$lib/components/ui/input-message';
   import { ScreenHeader, EmptyState, LoadingState } from '$lib/components/patterns/screen';
+  import { activateIntentFromDock } from '../dock-context-menu';
   import ScrollToBottomButton from '$lib/components/chat/ScrollToBottomButton.svelte';
   import ChatMessage from '$lib/components/chat/ChatMessage.svelte';
   import ChatContentLane from '$lib/components/chat/ChatContentLane.svelte';
@@ -256,6 +257,16 @@
   function submit(): void {
     if (canSend) onSend();
   }
+
+  // Double-click on the header (not its back or open buttons) brings Intent
+  // forward as it was, like a click on the app icon; it does not navigate it.
+  function openIntent(event: MouseEvent): void {
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest('[data-dock-conversation-back], [data-slot="screen-header-actions"]'))
+      return;
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- fire-and-forget request for main to show its own window; nothing is loaded
+    activateIntentFromDock();
+  }
 </script>
 
 <section
@@ -264,8 +275,9 @@
   data-dock-conversation
 >
   <ScreenHeader
-    class="items-center gap-1 px-2 py-1 border-b border-border bg-background"
+    class="items-center gap-1 px-2 py-1 border-b border-border bg-background select-none"
     data-dock-chrome
+    ondblclick={openIntent}
   >
     {#snippet leading()}
       <Button

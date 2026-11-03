@@ -507,6 +507,10 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
   'dock-media:clipboard-write',
   'dock-media:clipboard-read',
   'dock-media:menu',
+  // Dock header double-click asks main to bring Intent forward
+  // (src/features/hud/dock-context-menu.ts). Without a bridge it does nothing;
+  // a mock bridge would pretend a window came forward.
+  'window:activate-app',
   // Browser access (Settings > Machines): main owns the setting, the access key
   // and the loopback server (src/lib/browser-access-ipc.ts). The section only
   // renders when the real preload bridge exists, and the IPC functions reject
