@@ -1648,6 +1648,7 @@
   "deeplink_inviteError_generic": "ホストに接続できないか、招待が拒否されました。",
   "deeplink_inviteError_githubRateLimited": "GitHub がこのアカウントのリクエストを一時的に制限しているため、現在は本人確認を作成できません。しばらく待ってから、リンクをもう一度開いてください。",
   "deeplink_inviteError_gitlabRateLimited": "GitLab がこのアカウントのリクエストを一時的に制限しているため、現在は本人確認を作成できません。しばらく待ってから、リンクをもう一度開いてください。",
+  "deeplink_inviteError_hostForgeRequired": "このホストのオーナーが GitHub と GitLab のどちらも接続していないため、この招待はまだ使用できません。アカウントを接続してリンクを再送するよう依頼してください。",
   "deeplink_inviteError_hostGithubUnreachable": "ホストは本人確認のために GitHub に接続できませんでした。しばらくしてからもう一度お試しください。",
   "deeplink_inviteError_hostRefused": "ホストが接続を拒否しました。ホストで Intent が実行されていること、およびリンクのポートが正しいことを確認してください。",
   "deeplink_inviteError_hostUnreachable": "ホストから応答がありませんでした。ホストがオンラインで、このネットワークから到達できることを確認してから再試行してください。",

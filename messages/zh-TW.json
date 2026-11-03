@@ -1648,6 +1648,7 @@
   "deeplink_inviteError_generic": "無法連線主機，或主機拒絕了邀請。",
   "deeplink_inviteError_githubRateLimited": "GitHub 正在暫時限制此帳戶的請求，目前無法建立身分證明。請稍候片刻，然後重新開啟連結。",
   "deeplink_inviteError_gitlabRateLimited": "GitLab 正在暫時限制此帳戶的請求，目前無法建立身分證明。請稍候片刻，然後重新開啟連結。",
+  "deeplink_inviteError_hostForgeRequired": "此主機的擁有者尚未連接 GitHub 或 GitLab，因此暫時無法使用此邀請。請對方連接帳戶後重新傳送連結。",
   "deeplink_inviteError_hostGithubUnreachable": "主機無法連線 GitHub 以驗證你的身分。請稍後重試。",
   "deeplink_inviteError_hostRefused": "主機拒絕了連線。請確認主機上正在執行 Intent，且連結中的連接埠正確。",
   "deeplink_inviteError_hostUnreachable": "主機沒有回應。請確認主機在線上且可從此網路連線，然後再試一次。",

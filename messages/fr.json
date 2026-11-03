@@ -1648,6 +1648,7 @@
   "deeplink_inviteError_generic": "L’hôte est injoignable ou a refusé l’invitation.",
   "deeplink_inviteError_githubRateLimited": "GitHub limite temporairement les requêtes de ce compte : la preuve d'identité ne peut pas être créée pour le moment. Patientez un peu, puis rouvrez le lien.",
   "deeplink_inviteError_gitlabRateLimited": "GitLab limite temporairement les requêtes de ce compte : la preuve d'identité ne peut pas être créée pour le moment. Patientez un peu, puis rouvrez le lien.",
+  "deeplink_inviteError_hostForgeRequired": "Le propriétaire de cet hôte n’a connecté ni GitHub ni GitLab : l’invitation n’est pas encore utilisable. Demandez-lui de connecter un compte et de renvoyer le lien.",
   "deeplink_inviteError_hostGithubUnreachable": "L'hôte n'a pas pu joindre GitHub pour vérifier votre identité. Réessayez dans un instant.",
   "deeplink_inviteError_hostRefused": "L’hôte a refusé la connexion. Vérifiez qu’Intent est en cours d’exécution sur l’hôte et que le port du lien est correct.",
   "deeplink_inviteError_hostUnreachable": "L’hôte n’a pas répondu. Vérifiez qu’il est en ligne et joignable depuis ce réseau, puis réessayez.",

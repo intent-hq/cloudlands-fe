@@ -1648,6 +1648,7 @@
   "deeplink_inviteError_generic": "No se pudo contactar con el host o rechazó la invitación.",
   "deeplink_inviteError_githubRateLimited": "GitHub está limitando temporalmente las solicitudes de esta cuenta, así que la prueba de identidad no se puede crear ahora mismo. Espera un momento y abre el enlace de nuevo.",
   "deeplink_inviteError_gitlabRateLimited": "GitLab está limitando temporalmente las solicitudes de esta cuenta, así que la prueba de identidad no se puede crear ahora mismo. Espera un momento y abre el enlace de nuevo.",
+  "deeplink_inviteError_hostForgeRequired": "El propietario de este host no ha conectado GitHub ni GitLab, así que la invitación aún no se puede usar. Pídele que conecte una cuenta y vuelva a enviar el enlace.",
   "deeplink_inviteError_hostGithubUnreachable": "El host no pudo conectar con GitHub para verificar tu identidad. Inténtalo de nuevo en un momento.",
   "deeplink_inviteError_hostRefused": "El host rechazó la conexión. Comprueba que Intent se esté ejecutando en el host y que el puerto del enlace sea correcto.",
   "deeplink_inviteError_hostUnreachable": "El host no respondió. Comprueba que esté en línea y accesible desde esta red, y vuelve a intentarlo.",

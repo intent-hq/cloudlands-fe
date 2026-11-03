@@ -1648,6 +1648,7 @@
   "deeplink_inviteError_generic": "无法连接主机，或主机拒绝了邀请。",
   "deeplink_inviteError_githubRateLimited": "GitHub 正在暂时限制此账户的请求，目前无法创建身份证明。请稍等片刻，然后重新打开链接。",
   "deeplink_inviteError_gitlabRateLimited": "GitLab 正在暂时限制此账户的请求，目前无法创建身份证明。请稍等片刻，然后重新打开链接。",
+  "deeplink_inviteError_hostForgeRequired": "此主机的所有者尚未连接 GitHub 或 GitLab，因此暂时无法使用该邀请。请让其连接账户后重新发送链接。",
   "deeplink_inviteError_hostGithubUnreachable": "主机无法连接 GitHub 以验证你的身份。请稍后重试。",
   "deeplink_inviteError_hostRefused": "主机拒绝了连接。请确认主机上正在运行 Intent，且链接中的端口正确。",
   "deeplink_inviteError_hostUnreachable": "主机没有响应。请确认主机在线且可从此网络访问，然后重试。",

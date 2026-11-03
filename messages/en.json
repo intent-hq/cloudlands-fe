@@ -1648,6 +1648,7 @@
   "deeplink_inviteError_generic": "The host could not be reached or refused the invite.",
   "deeplink_inviteError_githubRateLimited": "GitHub is temporarily rate limiting requests for this account, so the identity proof cannot be made right now. Wait a while, then open the link again.",
   "deeplink_inviteError_gitlabRateLimited": "GitLab is temporarily rate limiting requests for this account, so the identity proof cannot be made right now. Wait a while, then open the link again.",
+  "deeplink_inviteError_hostForgeRequired": "This host's owner hasn't connected GitHub or GitLab, so the invite can't be used yet. Ask them to connect an account and send the link again.",
   "deeplink_inviteError_hostGithubUnreachable": "The host could not reach GitHub to verify your identity. Try again in a moment.",
   "deeplink_inviteError_hostRefused": "The host refused the connection. Check that Intent is running on the host and that the link's port is correct.",
   "deeplink_inviteError_hostUnreachable": "The host did not answer. Check that it is online and reachable from this network, then try again.",

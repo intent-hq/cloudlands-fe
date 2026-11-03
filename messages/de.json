@@ -1648,6 +1648,7 @@
   "deeplink_inviteError_generic": "Der Host war nicht erreichbar oder hat die Einladung abgelehnt.",
   "deeplink_inviteError_githubRateLimited": "GitHub begrenzt die Anfragen für dieses Konto vorübergehend, daher kann der Identitätsnachweis gerade nicht erstellt werden. Warte eine Weile und öffne den Link dann erneut.",
   "deeplink_inviteError_gitlabRateLimited": "GitLab begrenzt die Anfragen für dieses Konto vorübergehend, daher kann der Identitätsnachweis gerade nicht erstellt werden. Warte eine Weile und öffne den Link dann erneut.",
+  "deeplink_inviteError_hostForgeRequired": "Der Besitzer dieses Hosts hat weder GitHub noch GitLab verbunden, daher kann die Einladung noch nicht verwendet werden. Bitte ihn, ein Konto zu verbinden und den Link erneut zu senden.",
   "deeplink_inviteError_hostGithubUnreachable": "Der Host konnte GitHub nicht erreichen, um deine Identität zu prüfen. Versuche es gleich noch einmal.",
   "deeplink_inviteError_hostRefused": "Der Host hat die Verbindung abgelehnt. Prüfe, ob Intent auf dem Host läuft und der Port im Link stimmt.",
   "deeplink_inviteError_hostUnreachable": "Der Host hat nicht geantwortet. Prüfe, ob er online und aus diesem Netzwerk erreichbar ist, und versuche es dann erneut.",
