@@ -94,7 +94,7 @@ jobs:
           SLOT_JOBS: >-
             [
             {"key":"test","label":"gh-linux-8x","minutes":13,"shards":4},
-            {"key":"build-web","label":"gh-linux-8x","minutes":4,"events":["merge_group"]},
+            {"key":"build-web","label":"gh-linux-8x","minutes":8,"events":["merge_group"]},
             {"key":"ct","label":"gh-linux-8x","minutes":36,"shards":4,"events":["merge_group"]}
             ]
         run: |
@@ -515,6 +515,7 @@ jobs:
       root_playwright_required: ${{ steps.root-playwright.outputs.root_playwright_required }}
       electron_required: ${{ steps.electron.outputs.electron_required }}
       portable_fixtures_required: ${{ steps.portable-fixtures.outputs.portable_fixtures_required }}
+      intent_web_package_required: ${{ steps.intent-web-package.outputs.intent_web_package_required }}
       ct_changed_specs: ${{ steps.ct-changed.outputs.ct_changed_specs }}
       ct_affected_specs: ${{ steps.ct-affected.outputs.ct_affected_specs }}
       ct_affected_over_budget: ${{ steps.ct-affected.outputs.ct_affected_over_budget }}
@@ -679,6 +680,35 @@ jobs:
             *)
               echo "relevance grep exited $match_status — requiring portable fixture tests (fail-safe)"
               echo "portable_fixtures_required=true" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+      - name: Evaluate @intent-hq/web package relevance
+        id: intent-web-package
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        run: |
+          set -euo pipefail
+          # Everything the package build reads: the bundled server's source
+          # dirs, the npm README (scripts/intent-web-package.test.ts checks
+          # this covers every bundled and copied file), the packaging
+          # scripts, the web build config, the shipped legal files,
+          # dependencies and the workflows that run
+          # it. Fail-safe like the suites above: an error requires the job.
+          changed_paths=$(mktemp)
+          trap 'rm -f "$changed_paths"' EXIT
+          if ! git diff --name-only -z --no-renames --diff-filter=ACMD "$BASE_SHA" HEAD > "$changed_paths"; then
+            echo "intent_web_package_required=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          match_status=0
+          grep -z -E '^(src/(features/[^/]+/(main|utils)/|features/intent-web/package/|main/|shared/)|scripts/(build-intent-web-package|smoke-intent-web-package|intent-web-publish-plan)\.mjs$|scripts/fetch-tailcat\.cjs$|vite\.config\.mjs$|svelte\.config\.js$|LICENSE$|NOTICE$|package\.json$|pnpm-lock\.yaml$|\.github/workflows/(intent-pr|intent-web-package|publish-intent-web)\.yml$)' "$changed_paths" >/dev/null || match_status=$?
+          case "$match_status" in
+            0) echo "intent_web_package_required=true" | tee -a "$GITHUB_OUTPUT" ;;
+            1) echo "intent_web_package_required=false" | tee -a "$GITHUB_OUTPUT" ;;
+            *)
+              echo "relevance grep exited $match_status — requiring the @intent-hq/web package job (fail-safe)"
+              echo "intent_web_package_required=true" | tee -a "$GITHUB_OUTPUT"
               ;;
           esac
 
@@ -908,6 +938,20 @@ jobs:
             exit 1
           }
           echo "✓ dist/web/index.html present."
+      - name: Build desktop renderer at the local heap default
+        # Local `pnpm run build:renderer` gets scripts/vite-build.mjs's
+        # DEFAULT_HEAP_FLAG, while every other CI and release build exports
+        # a 12-16 GB cap, so the bundle outgrew the local default unnoticed
+        # (it OOMed at 4608 MB while CI stayed green). An empty NODE_OPTIONS
+        # overrides the job's 16384 and makes the wrapper apply its default,
+        # exactly as on a developer machine: outgrowing it fails here. Fix by
+        # raising DEFAULT_HEAP_FLAG with headroom, never by exporting a cap.
+        # build:web above already generated the i18n messages this needs.
+        # ~3-4 min on an idle 32-core host; 15 leaves room for a loaded one.
+        timeout-minutes: 15
+        env:
+          NODE_OPTIONS: ''
+        run: pnpm run build:renderer
 
   test:
     # Four-way Vitest shard matrix (two-way since intent-hq/monorepo#4260;
@@ -1469,6 +1513,23 @@ jobs:
       component: cloudlands-fe
       head-sha: ${{ github.event.pull_request.head.sha || github.sha }}
 
+  # Builds @intent-hq/web and runs its npm pack smoke test on PRs and queue
+  # entries whose diff the package build reads (release-fast-path's
+  # intent_web_package_required), so a broken package cannot merge. The
+  # build itself lives in intent-web-package.yml, shared with the publish
+  # workflow.
+  intent-web-package:
+    needs: [route, release-fast-path]
+    if: ${{ !cancelled() && needs.route.result == 'success' && needs.release-fast-path.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' && needs.release-fast-path.outputs.intent_web_package_required != 'false' }}
+    permissions:
+      contents: read
+      actions: read
+    secrets:
+      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
+    uses: ./.github/workflows/intent-web-package.yml
+    with:
+      ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
   # CI Gate is the required context on both events. PRs require metadata,
   # static consumer contracts and routing policy. Queue entries require builds,
   # tests and every relevant browser/native suite. Only validated release-only
@@ -1508,12 +1569,14 @@ jobs:
         test-playwright,
         test-electron,
         monorepo-consumer-checks,
+        intent-web-package,
       ]
     steps:
       - name: Check results
         env:
           FAST_PATH: ${{ needs.release-fast-path.outputs.fast_path }}
           PORTABLE_FIXTURES_REQUIRED: ${{ needs.release-fast-path.outputs.portable_fixtures_required }}
+          INTENT_WEB_PACKAGE_REQUIRED: ${{ needs.release-fast-path.outputs.intent_web_package_required }}
           CT_REQUIRED: ${{ needs.release-fast-path.outputs.ct_required }}
           ROOT_PLAYWRIGHT_REQUIRED: ${{ needs.release-fast-path.outputs.root_playwright_required }}
           ELECTRON_REQUIRED: ${{ needs.release-fast-path.outputs.electron_required }}
@@ -1566,6 +1629,20 @@ jobs:
             echo "$1 result '$2' not acceptable on ${{ github.event_name }} (fast_path='$FAST_PATH')"
             exit 1
           }
+          # The @intent-hq/web package job runs on both events when the diff
+          # reaches the package: success, or skipped only via the release fast
+          # path or an explicit irrelevant-path classification.
+          if [ "$INTENT_WEB_PACKAGE_REQUIRED" != "true" ] && [ "$INTENT_WEB_PACKAGE_REQUIRED" != "false" ]; then
+            echo "intent-web-package relevance output '$INTENT_WEB_PACKAGE_REQUIRED' is missing or invalid"
+            exit 1
+          fi
+          intent_web_result="${{ needs.intent-web-package.result }}"
+          if [ "$intent_web_result" != "success" ]; then
+            if [ "$intent_web_result" != "skipped" ] || { [ "$FAST_PATH" != "true" ] && [ "$INTENT_WEB_PACKAGE_REQUIRED" != "false" ]; }; then
+              echo "intent-web-package result '$intent_web_result' not acceptable (required='$INTENT_WEB_PACKAGE_REQUIRED', fast_path='$FAST_PATH')"
+              exit 1
+            fi
+          fi
           # PRs run the Linux policy job, static consumer contracts, type/lint
           # and unit tests before queueing. Type/lint and unit tests may skip
           # only via the release-PR fast path; the remaining heavy jobs are

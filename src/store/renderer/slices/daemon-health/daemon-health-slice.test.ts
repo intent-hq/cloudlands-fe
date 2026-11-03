@@ -702,6 +702,23 @@ describe('daemonHealthReducer', () => {
       expect(next.hostLocality).toBe('local');
     });
 
+    it('copies remoteLinks when present and leaves it absent for an older daemon', () => {
+      const poll = (extra: Partial<SystemStatusWirePayload>) =>
+        daemonHealthReducer(
+          { ...initialState, polling: true },
+          systemStatusSuccess(
+            { ...collaboratorSystemStatusProjection, ...extra } as SystemStatusWirePayload,
+            '2026-11-03T07:00:00.000Z',
+            0,
+          ),
+        ).stats;
+      expect(poll({ remoteLinks: { backends: 1, machines: 2 } })?.remoteLinks).toEqual({
+        backends: 1,
+        machines: 2,
+      });
+      expect(poll({})?.remoteLinks).toBeUndefined();
+    });
+
     it('parses protocolVersion once, keeping only the wire text of a malformed one', () => {
       const poll = (protocolVersion: unknown) =>
         daemonHealthReducer(
@@ -1372,6 +1389,30 @@ describe('daemonHealthReducer', () => {
       expect(next.agentMemoryUsageFetching).toBe(false);
       expect(next.agentMemoryUsageError).toBe(false);
       expect(next.agentMemoryUsage).toEqual(usage);
+    });
+
+    it('agentMemoryUsageSucceeded stores rows run for another backend with their owner tag', () => {
+      const remote: AgentMemoryUsageWirePayload = {
+        sampledAt: '2026-11-03T07:00:00.000Z',
+        totalBytes: 10,
+        agents: [
+          {
+            agentId: 'remote-1',
+            workspaceId: 'backend-ws-1',
+            provider: 'claude-code',
+            remoteOwner: { backendId: 'backend-1', backendName: 'Studio' },
+            rootPid: 1,
+            processCount: 1,
+            memoryBytes: 10,
+            processes: [],
+          },
+        ],
+      };
+      const next = daemonHealthReducer(
+        { ...initialState, agentMemoryUsageFetching: true },
+        agentMemoryUsageSucceeded(remote),
+      );
+      expect(next.agentMemoryUsage).toEqual(remote);
     });
 
     it('agentMemoryUsageSucceeded is ignored when no fetch is in flight (late resolve after close)', () => {

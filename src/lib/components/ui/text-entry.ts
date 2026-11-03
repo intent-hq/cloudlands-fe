@@ -16,3 +16,12 @@ export const textEntryCaretFocusClasses = 'focus-visible:outline-none focus-visi
 export function textEntryHeight(size: UiSize): string {
   return size === 'compact' ? 'h-(--control-height-small)' : 'h-(--control-height-medium)';
 }
+
+/**
+ * Menu and picker search: one flat, body-sized field on the popover surface.
+ * Transparent surface, light placeholder, and caret focus without an outer box.
+ */
+export const textEntrySearchClasses =
+  'type-body h-9 w-full min-w-0 rounded-(--radius-medium) border-0 bg-transparent px-3 text-foreground placeholder:text-muted-foreground/60! shadow-none outline-none ring-0 hover:bg-transparent focus-visible:bg-transparent focus-visible:shadow-none focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-60 aria-invalid:ring-1 aria-invalid:ring-danger';
+
+export type TextEntryVariant = 'default' | 'search';

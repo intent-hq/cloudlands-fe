@@ -1,3 +1,5 @@
+// @verify-changed-triggers: scripts/dev-launcher.mjs, scripts/dev-electron.js,
+//   scripts/dev-electron-lib.mjs, package.json
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { describe, expect, it } from 'vitest';

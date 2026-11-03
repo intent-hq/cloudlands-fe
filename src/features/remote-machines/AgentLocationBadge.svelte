@@ -1,6 +1,6 @@
 <!--
-  Where agent `agentId` runs: the machine badge for a remote agent, nothing for
-  a local one. `icon` for agent rows, `pill` for the panel header chip.
+  Where agent `agentId` runs, for agent rows: the machine badge for a remote
+  agent, nothing for a local one.
 -->
 <script lang="ts">
   import { writable } from 'svelte/store';
@@ -11,11 +11,10 @@
 
   interface Props {
     agentId: string;
-    variant?: 'icon' | 'pill';
     hidden?: boolean;
   }
 
-  let { agentId, variant = 'icon', hidden = false }: Props = $props();
+  let { agentId, hidden = false }: Props = $props();
 
   const agentIdStore = writable<string | undefined>(undefined);
   const machineIdStore = writable<string | undefined>(undefined);
@@ -31,5 +30,5 @@
 </script>
 
 {#if location && !hidden}
-  <AgentMachineBadge {location} {variant} />
+  <AgentMachineBadge {location} />
 {/if}

@@ -18,6 +18,8 @@
     submitLabel,
     onMore,
     onRecover,
+    scrollable = true,
+    formStyle = false,
   }: GitLabProjectPickerProps = $props();
 
   let panel: HTMLDivElement | undefined = $state();
@@ -70,6 +72,8 @@
       getName={(project) => project.projectPath.split('/').at(-1) ?? project.name}
       getAvatarUrl={(project) => project.ownerAvatarUrl}
       provider="gitlab"
+      {scrollable}
+      {formStyle}
       label={copy.listLabel}
       loading={page.status === 'loading'}
       loadingLabel={copy.loadingLabel}

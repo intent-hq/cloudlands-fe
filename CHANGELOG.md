@@ -4,6 +4,76 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.276.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.276.0...v2.276.1) (2026-11-03)
+
+
+### 🐛 Bug Fixes
+
+* **build:** raise the local renderer build heap default to 8 GB and gate it in CI ([#4081](https://github.com/intent-hq/cloudlands-fe/issues/4081)) ([cb5e9c7](https://github.com/intent-hq/cloudlands-fe/commit/cb5e9c76cd83fed8473f7f33a974cb916d67e3a9))
+* bump intentd sidecar to v0.11.113 ([#4089](https://github.com/intent-hq/cloudlands-fe/issues/4089)) ([cfc8826](https://github.com/intent-hq/cloudlands-fe/commit/cfc8826b7ffa4f32a84073dd4c41d4876cfba8dd))
+* **ci:** skip the full CT suite for Vitest suites under playwright/ ([#4074](https://github.com/intent-hq/cloudlands-fe/issues/4074)) ([c1d4277](https://github.com/intent-hq/cloudlands-fe/commit/c1d42773b591759dd9d749fb5d227c63186017ac))
+* **remote-machines:** remove the machine pill from the chat panel header ([#4075](https://github.com/intent-hq/cloudlands-fe/issues/4075)) ([9bf9ef2](https://github.com/intent-hq/cloudlands-fe/commit/9bf9ef27defeafb741d5177c684b112ba37e77e3))
+* show the model profile only on hover in the new workspace modal ([#4077](https://github.com/intent-hq/cloudlands-fe/issues/4077)) ([2e1787a](https://github.com/intent-hq/cloudlands-fe/commit/2e1787a5fb0c7363fe9d866a6de64b3eea087408))
+* **verify:** run tests related to changed test helpers and lint rules ([#4076](https://github.com/intent-hq/cloudlands-fe/issues/4076)) ([a348791](https://github.com/intent-hq/cloudlands-fe/commit/a3487919e53a21983d5f26ca45c2239eacaf525e))
+
+## [2.276.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.275.1...v2.276.0) (2026-11-03)
+
+
+### 🚀 Features
+
+* **intent-web:** manage machines from the browser and add a no-machine screen ([#4065](https://github.com/intent-hq/cloudlands-fe/issues/4065)) ([a59b82f](https://github.com/intent-hq/cloudlands-fe/commit/a59b82fae64b5833aa3577c8d3ba3725bb93b2a0))
+
+
+### 🐛 Bug Fixes
+
+* **check:** stop svelte-check silently skipping the project over its size limit ([#4063](https://github.com/intent-hq/cloudlands-fe/issues/4063)) ([ea9f8b0](https://github.com/intent-hq/cloudlands-fe/commit/ea9f8b0501c741bea0f85b05c548e7ea02118fb8))
+
+## [2.275.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.275.0...v2.275.1) (2026-11-03)
+
+
+### 🐛 Bug Fixes
+
+* **i18n:** fail release builds when the i18n bundle lacks a used message ([#4057](https://github.com/intent-hq/cloudlands-fe/issues/4057)) ([2fd7f2e](https://github.com/intent-hq/cloudlands-fe/commit/2fd7f2e4e91e6133dddc8d00e1517679859c41f1))
+
+## [2.275.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.274.0...v2.275.0) (2026-11-03)
+
+
+### 🚀 Features
+
+* **intent-web:** standalone browser server for cloud machines ([#4062](https://github.com/intent-hq/cloudlands-fe/issues/4062)) ([a9c0dd1](https://github.com/intent-hq/cloudlands-fe/commit/a9c0dd1c4b4ecb164d451427d783768f92226ac5))
+
+
+### 🐛 Bug Fixes
+
+* **scripts:** discover verify:changed suites the way Vitest does ([#4060](https://github.com/intent-hq/cloudlands-fe/issues/4060)) ([09d827f](https://github.com/intent-hq/cloudlands-fe/commit/09d827f02dfde95579dc3c2c2d3b57d9559f3a10))
+
+## [2.274.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.273.0...v2.274.0) (2026-11-03)
+
+
+### 🚀 Features
+
+* redesign the new workspace form ([#4056](https://github.com/intent-hq/cloudlands-fe/issues/4056)) ([c5199d7](https://github.com/intent-hq/cloudlands-fe/commit/c5199d74b878a00d79dd36aa2b46ca25e8eaec82))
+
+## [2.273.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.272.2...v2.273.0) (2026-11-03)
+
+
+### 🚀 Features
+
+* **providers:** add Update button for outdated Claude Code CLI ([#4054](https://github.com/intent-hq/cloudlands-fe/issues/4054)) ([fa5069c](https://github.com/intent-hq/cloudlands-fe/commit/fa5069c8a1bea89d1f9770411e0d8d6a4df6bf47))
+
+
+### 🐛 Bug Fixes
+
+* align chat loading icons with message avatars ([#4000](https://github.com/intent-hq/cloudlands-fe/issues/4000)) ([b83bb2c](https://github.com/intent-hq/cloudlands-fe/commit/b83bb2cc8c257e8303dc86baabb717cf8e0dabea))
+* bump intentd sidecar to v0.11.112 ([#4059](https://github.com/intent-hq/cloudlands-fe/issues/4059)) ([93ef2cf](https://github.com/intent-hq/cloudlands-fe/commit/93ef2cff8c382072363d607ad4b58c4f26959187))
+* **chat:** keep a same-provider Retry on the usage-limit banner ([#4032](https://github.com/intent-hq/cloudlands-fe/issues/4032)) ([913e63d](https://github.com/intent-hq/cloudlands-fe/commit/913e63de593e1a81de2bcedfe95c4fbab410e69c))
+* clarify feedback toolbar placement and capture state ([#4045](https://github.com/intent-hq/cloudlands-fe/issues/4045)) ([5a30a41](https://github.com/intent-hq/cloudlands-fe/commit/5a30a419129dac5e3be081c36a1d42af165bc08e))
+* hide unsupported hub actions on agent cards ([#4051](https://github.com/intent-hq/cloudlands-fe/issues/4051)) ([9b2cd8e](https://github.com/intent-hq/cloudlands-fe/commit/9b2cd8ead0e9ddb809accfe8b96685dbf7eb5969))
+* **i18n:** ship message keys whose m. access spans lines ([#4034](https://github.com/intent-hq/cloudlands-fe/issues/4034)) ([95d70f3](https://github.com/intent-hq/cloudlands-fe/commit/95d70f3961acf61109908b9f384cb287a7e0c7e1))
+* move machine pill beside the header agent switcher ([#4052](https://github.com/intent-hq/cloudlands-fe/issues/4052)) ([5a0239d](https://github.com/intent-hq/cloudlands-fe/commit/5a0239da959e6cab84804a2208c46c990b8f1504))
+* **onboarding:** keep the clone repo highlight aligned with its row ([#4037](https://github.com/intent-hq/cloudlands-fe/issues/4037)) ([a33f7a7](https://github.com/intent-hq/cloudlands-fe/commit/a33f7a786e197977191586b926d4b9efaa05ea25))
+* unify workspace sidebar hierarchy and typography ([#4046](https://github.com/intent-hq/cloudlands-fe/issues/4046)) ([e993b41](https://github.com/intent-hq/cloudlands-fe/commit/e993b41c38cb74560f237a9887bb9c486343f8b8))
+
 ## [2.272.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.272.1...v2.272.2) (2026-11-02)
 
 

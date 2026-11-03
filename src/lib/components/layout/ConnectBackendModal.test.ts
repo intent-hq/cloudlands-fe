@@ -25,6 +25,14 @@ const mocks = vi.hoisted(() => ({
   syncState: {
     value: null as { supported: boolean; enabled: boolean; status: null } | null,
   },
+  // The page host (intent-web) the mocked slice reports; null = desktop app.
+  browserHost: {
+    value: null as {
+      manageConnections: boolean;
+      backendBound: boolean;
+      tailcatAvailable: boolean;
+    } | null,
+  },
 }));
 
 vi.mock('svelte-fa', () => ({
@@ -35,7 +43,7 @@ vi.mock('$store/renderer/store', async () => {
   const { createConnectionsHarness } =
     await import('$store/renderer/slices/connections/test-harness');
   const harness = createConnectionsHarness(
-    () => ({ keychainSync: mocks.syncState.value }),
+    () => ({ keychainSync: mocks.syncState.value, browserHost: mocks.browserHost.value }),
     mocks.dispatch,
   );
   mocks.start = harness.start;
@@ -64,6 +72,7 @@ describe('ConnectBackendModal', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     mocks.syncState.value = null;
+    mocks.browserHost.value = null;
     mocks.captureFingerprintRequested.mockImplementation((params) => ({
       payload: [params],
       promise: Promise.resolve({ fingerprint: 'AA:BB:CC:DD', tokenValid: true }),
@@ -691,6 +700,36 @@ describe('ConnectBackendModal', () => {
         render(ConnectBackendModal, { props: { open: true } });
 
         expect(screen.getByRole('switch', { name: 'Save to iCloud' })).toBeTruthy();
+      } finally {
+        delete (window as any).electronAPI.platform;
+      }
+    });
+
+    it('never offers iCloud in a browser served by intent-web, even on a Mac', async () => {
+      // The web shim reports the client's platform (darwin on a Mac) and the
+      // keychain state never loads there, but intent-web stores machines on
+      // the server: there is no keychain to sync to.
+      mocks.browserHost.value = {
+        manageConnections: true,
+        backendBound: true,
+        tailcatAvailable: false,
+      };
+      (window as any).electronAPI = { ...(window as any).electronAPI, platform: 'darwin' };
+      try {
+        const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
+        render(ConnectBackendModal, { props: { open: true } });
+        await fillDetails();
+        expect(screen.queryByRole('switch', { name: 'Save to iCloud' })).toBeNull();
+        await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+        await screen.findByText('AA:BB:CC:DD');
+        await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
+        await waitFor(() => expect(mocks.addConnectionRequested).toHaveBeenCalled());
+        expect(screen.queryByRole('button', { name: 'Add without iCloud' })).toBeNull();
+        expect(mocks.setKeychainSyncEnabledRequested).not.toHaveBeenCalled();
+        expect(mocks.addConnectionRequested.mock.calls[0][0]).not.toHaveProperty(
+          'syncExcluded',
+          true,
+        );
       } finally {
         delete (window as any).electronAPI.platform;
       }

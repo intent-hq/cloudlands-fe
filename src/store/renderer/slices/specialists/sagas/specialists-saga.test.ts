@@ -594,6 +594,41 @@ describe('specialistsSaga', () => {
     await task.toPromise();
   });
 
+  it('refuses to save a specialist whose prompt was never loaded', async () => {
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga(
+      {
+        channel,
+        dispatch,
+        getState: () =>
+          sagaState({
+            huge: { ...mappedFileDef('huge'), behaviorPrompt: '', behaviorPromptOmitted: true },
+          }),
+      },
+      specialistsSaga,
+    );
+    const action = saveFileSpecialist({
+      id: 'huge',
+      name: 'Huge',
+      description: 'Desc',
+      model: 'opus',
+      behaviorPrompt: '',
+      scope: 'user',
+    });
+    channel.put(action);
+    await settle();
+
+    await expect(action.promise).rejects.toThrow(
+      "This specialist's prompt is too large to load, so it can't be saved here.",
+    );
+    expect(mocks.edit).not.toHaveBeenCalled();
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(dispatch.mock.calls.map(([dispatched]) => dispatched)).toEqual([failureAction(action)]);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('rejects the save action promise when the daemon write fails (monorepo review PR#1947)', async () => {
     mocks.create.mockRejectedValue(new Error('daemon write failed'));
     const channel = stdChannel();

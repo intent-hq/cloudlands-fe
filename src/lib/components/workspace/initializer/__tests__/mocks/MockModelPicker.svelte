@@ -8,6 +8,7 @@
     onReasoningChange,
     portal,
     collisionBoundary,
+    machineId,
   }: {
     selectedModel?: string;
     defaultModelId?: string;
@@ -20,6 +21,7 @@
     onReasoningChange?: (effort: string | null) => boolean | void | Promise<boolean | void>;
     portal?: boolean;
     collisionBoundary?: string;
+    machineId?: string;
   } = $props();
 </script>
 
@@ -29,6 +31,7 @@
   data-collision-boundary={collisionBoundary}
 >
   <span data-testid="picker-selected">{selectedModel ?? ''}</span>
+  <span data-testid="picker-machine">{machineId ?? ''}</span>
   <span data-testid="picker-default">{defaultModelId ?? ''}</span>
   <span data-testid="picker-show-reasoning">{showReasoning ? 'true' : 'false'}</span>
   <span data-testid="picker-reasoning">{reasoningEffort ?? ''}</span>

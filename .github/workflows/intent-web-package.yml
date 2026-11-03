@@ -1,0 +1,96 @@
+# Intent Web package — builds @intent-hq/web (web UI + bundled server/CLI) and
+# runs the `npm pack` smoke test (scripts/smoke-intent-web-package.mjs):
+# tarball contents and size, `npx <tarball> --help`, `intent-web key`, and a
+# short `intent-web serve --no-local` with sign-in, UI, runtime config, the
+# connections API, add/test/relay against a fake TLS daemon, and a key reset
+# that revokes the session.
+#
+# Called (workflow_call) by intent-pr.yml's intent-web-package job, which the
+# CI Gate requires on PRs and queue entries whose diff the package reads, so
+# packaging breakage cannot merge; and by publish-intent-web.yml to build the
+# exact tarball it publishes. The tarball is uploaded as the
+# `intent-web-package` artifact. workflow_dispatch builds any ref by hand.
+name: Intent Web package
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Git ref to build (a release tag when publishing)'
+        type: string
+        required: true
+    secrets:
+      # Optional: runner-route.yml reads the CI queue with it, else github.token.
+      CI_QUEUE_READ_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  # The web UI build needs an 8-core / 32 GB runner (it OOMs 16 GB ones,
+  # monorepo#1340); see runner-route.yml.
+  runner-route:
+    uses: ./.github/workflows/runner-route.yml
+    permissions:
+      contents: read
+      actions: read
+    secrets:
+      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
+
+  package:
+    name: Build and smoke-test @intent-hq/web
+    needs: runner-route
+    # A failed route job must not block this job: it runs on its fallback label.
+    if: ${{ !cancelled() }}
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.cloud || '{}')['gh-linux-8x'] || fromJSON('["warp-ubuntu-2404-x64-8x"]') }}
+    timeout-minutes: 30
+    env:
+      CI: 'true'
+      GIT_TERMINAL_PROMPT: '0'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || '' }}
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: Cache pnpm store
+        # WarpBuild's cache on WarpBuild Linux/macOS runners, GitHub's elsewhere.
+        uses: ./.github/actions/pnpm-store-cache
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Same heap cap as the release Linux leg (monorepo#1340); build:web
+      # already disables sourcemaps.
+      - name: Build web UI
+        run: pnpm run build:web
+        env:
+          NODE_OPTIONS: '--max-old-space-size=12288'
+
+      - name: Build package
+        run: pnpm run build:intent-web-package
+
+      - name: Pack and smoke-test
+        run: node scripts/smoke-intent-web-package.mjs --pack-destination "$RUNNER_TEMP/intent-web-package"
+
+      - name: Upload tarball
+        uses: actions/upload-artifact@v7
+        with:
+          name: intent-web-package
+          path: ${{ runner.temp }}/intent-web-package/*.tgz
+          if-no-files-found: error
+          retention-days: 7

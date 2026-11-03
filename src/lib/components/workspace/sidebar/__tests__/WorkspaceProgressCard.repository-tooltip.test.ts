@@ -75,6 +75,23 @@ vi.mock('$store/renderer/store', async () => {
   });
 });
 
+vi.mock('$store/renderer/slices/guest-sessions/guest-sessions-selectors', () => ({
+  selectCanLeaveWorkspace: mocks.selector(() => false),
+  selectIsLeavingWorkspace: mocks.selector(() => false),
+  selectWindowGuestSession: mocks.selector(() => null),
+}));
+
+vi.mock('$store/renderer/slices/guest-sessions/guest-sessions-slice', () => ({
+  guestLeaveConfirmed: vi.fn((confirmation: unknown) => ({
+    type: 'guestSessions/leaveConfirmed',
+    payload: [confirmation],
+  })),
+  leaveGuestWorkspaceRequested: vi.fn((id: string, workspaceId: string) => ({
+    type: 'guestSessions/leaveWorkspaceRequested',
+    payload: [id, workspaceId],
+  })),
+}));
+
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectCanSetWorkspacePrimaryClient: mocks.selector(() => true),
   selectCanShareWorkspace: mocks.selector(() => false),

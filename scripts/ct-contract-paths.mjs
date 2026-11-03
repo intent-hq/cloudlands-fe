@@ -39,20 +39,36 @@ export const CT_CONTRACT_FILES = Object.freeze([
   'package.json',
   'pnpm-lock.yaml',
 ]);
+// Directory prefixes; `isCtContractPath` subtracts the Vitest suites under
+// `playwright/` (see isPlaywrightUnitTest).
 export const CT_CONTRACT_DIRECTORIES = Object.freeze(['src/lib/styles/', 'playwright/']);
-export const CT_CONTRACT_PATHS = Object.freeze([
-  ...CT_CONTRACT_FILES,
-  ...CT_CONTRACT_DIRECTORIES.map((directory) => `${directory}**`),
-]);
 
 const OUTPUT_KEY = 'ct_required';
 
+// Vitest suites colocated with the harness (`playwright/ct-port.test.ts`, …)
+// are not harness inputs: Playwright discovers only `.ct.spec.ts` files and no
+// CT run loads a `.test.*` module unless something imports it. cloudlands-fe#4060
+// added a comment to `playwright/root-harness-import-guard.test.ts` and paid a
+// 1.4-hour local component run plus about 1.5 hours of test-ct shards in the
+// merge queue. A suite the CT graph does reach (an import from
+// `playwright/index.ts`, a spec or a preview) still requires CT in CI through
+// `ctRequired`'s dependency set. That guarantee is CI-only: `verify:changed`
+// has no import graph, and a harness-imported suite would select no CT lane
+// locally (as for `src/**/*.test.ts`). The "this repository" test in
+// ct-contract-paths.test.ts fails if any tracked suite becomes reachable.
+// Matching is case-sensitive like Vitest's include glob, and `.spec.*` and
+// snapshot files stay contract paths.
+const PLAYWRIGHT_UNIT_TEST = /^playwright\/.*\.test\.[cm]?[jt]sx?$/;
+
+export function isPlaywrightUnitTest(file) {
+  return PLAYWRIGHT_UNIT_TEST.test(normalizeCtPath(file));
+}
+
 export function isCtContractPath(file) {
   const path = normalizeCtPath(file);
-  return (
-    CT_CONTRACT_FILES.includes(path) ||
-    CT_CONTRACT_DIRECTORIES.some((directory) => path.startsWith(directory))
-  );
+  if (CT_CONTRACT_FILES.includes(path)) return true;
+  if (isPlaywrightUnitTest(path)) return false;
+  return CT_CONTRACT_DIRECTORIES.some((directory) => path.startsWith(directory));
 }
 
 export function ctRequired(files, dependencies = new Set()) {

@@ -12,6 +12,7 @@
   import GitLabBranchPicker from './GitLabBranchPicker.svelte';
   import type { GitLabProjectPickerProps, GitLabBranchPickerProps } from './gitlab-picker-types';
   import { m } from '$shared/paraglide/messages.js';
+  import { workspacePickerStyles } from './workspace-picker-styles';
 
   type RepoSelectorHandle = {
     focusInput: () => void;
@@ -74,7 +75,7 @@
     /** Callback when the branch list has been fetched successfully */
     onBranchesLoaded?: (info: BranchListInfo) => void;
     /** Visual presentation for embedding in quiet metadata rows */
-    presentation?: 'default' | 'metadata';
+    presentation?: 'default' | 'metadata' | 'form';
     /** Which picker field to render */
     field?: 'both' | 'repo' | 'branch';
     /** Shows a quiet branch metadata loading affordance */
@@ -121,6 +122,7 @@
   }: Props = $props();
 
   const isMetadataPresentation = $derived(presentation === 'metadata');
+  const isFormPresentation = $derived(presentation === 'form');
 
   // Whole-sentence messages split around the widget slots ('\u0000') so
   // translators control word order; chunks render in the existing spans
@@ -283,8 +285,86 @@
   }
 </script>
 
-<div class={pickerClass}>
-  {#if field === 'repo'}
+<div class={isFormPresentation ? 'grid min-w-0 gap-1' : pickerClass}>
+  {#if isFormPresentation}
+    <RepoSelector
+      {gitlab}
+      {plainFolderMode}
+      {gitChoice}
+      bind:this={repoSelector}
+      variant="ghost"
+      gitlabSelected={repoType === 'gitlab'}
+      value={repoOnlyValue}
+      onchange={handleRepoChange}
+      rowLabel={m.workspace_compactInitializer_repository_label()}
+      emptyLabel={m.workspace_repoSelector_addRepository_label()}
+      triggerClass={workspacePickerStyles.fieldTrigger}
+      displayValue={metadataRepoName || undefined}
+      triggerValueClass="text-foreground"
+      triggerContentClass="gap-1"
+    />
+    {#if !isNewRepo && hasRepo && !(plainFolder && repoType === 'local')}
+      <div class="min-w-0">
+        {#if repoType === 'gitlab'}
+          {#if gitlabBranch}
+            <GitLabBranchPicker
+              {...gitlabBranch}
+              rowLabel={m.workspace_compactInitializer_branch_label()}
+              triggerClass={workspacePickerStyles.fieldTrigger}
+              showTriggerChevron={false}
+            />
+          {/if}
+        {:else if repoType === 'remote' && remoteSetup}
+          <div class="flex min-h-10 min-w-0 items-center gap-2 pl-0 pr-2 py-2 text-sm leading-5">
+            <span class={workspacePickerStyles.fieldLabel}
+              >{m.workspace_compactInitializer_branch_label()}</span
+            >
+            <span class="min-w-0 truncate"
+              >{remoteSetup.branch || 'main'}<!-- i18n-ignore (git branch name) --></span
+            >
+          </div>
+        {:else}
+          <BranchSelector
+            variant="ghost"
+            rowLabel={m.workspace_compactInitializer_branch_label()}
+            triggerClass={workspacePickerStyles.fieldTrigger}
+            value={branch}
+            repoPath={branchRepoPath}
+            repoType={repoType as 'local' | 'github'}
+            {githubUrl}
+            {skipIsolation}
+            {suggestedBranch}
+            hasTriggerIcon={false}
+            disabled={!hasRepo}
+            showUncommittedIndicator
+            triggerContentClass="w-full gap-2"
+            onSkipIsolationChange={(value) => onSkipIsolationChange?.(value)}
+            onGitHubAuthNeededChange={(value) => onGitHubAuthNeededChange?.(value)}
+            {onBranchStatusChange}
+            {onBranchesLoaded}
+            onchange={handleBranchChange}
+          />
+        {/if}
+      </div>
+    {/if}
+    {#if repoType === 'remote' && remoteSetup}
+      <p
+        class="min-w-0 truncate text-sm text-muted-foreground"
+        use:truncatedTitle={remoteDisplayPath}
+      >
+        {remoteDisplayPath}
+      </p>
+      {#if typeof onSkipIsolationChange === 'function'}
+        <label class="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+          <Checkbox
+            checked={skipIsolation}
+            onCheckedChange={(value) => onSkipIsolationChange?.(value)}
+          />
+          {m.workspace_repoAndBranchPicker_workDirectly_label()}
+        </label>
+      {/if}
+    {/if}
+  {:else if field === 'repo'}
     <RepoSelector
       {gitlab}
       {plainFolderMode}

@@ -1,4 +1,9 @@
-import { selectPrincipalActionContext } from '../../principal/principal-selectors';
+import {
+  selectPrincipalActionContext,
+  selectPrincipalConnectionContext,
+} from '../../principal/principal-selectors';
+import type { HostExecutionContext } from '$shared/types/host-execution';
+import { HOST_EXECUTION_FIXTURE } from '../../../../../test/fixtures/host-execution-state';
 import {
   withHostPrincipal,
   withLegacyPrincipal,
@@ -81,6 +86,8 @@ import {
 import { __resetSettingsReadCacheForTests } from '$lib/client/live/live-settings-client';
 import { initializeIdentity } from '../../identity/identity-slice';
 import { workspaceShareSaga } from './workspace-share-saga';
+import { checkGitHubAuthStatus } from '../../github-auth/github-auth-slice';
+import { checkGitLabAuthStatus } from '../../gitlab-auth/gitlab-auth-slice';
 
 /** Rides inside every mocked invite url (the capability); must never reach a sink. */
 const SECRET_MARKER = 'tok-SECRET-MARKER-9f3a';
@@ -339,6 +346,77 @@ describe('workspaceShareSaga', () => {
       h.task.cancel();
       await h.task.toPromise();
     }
+  });
+
+  /** A workspace manager on someone else's host, with or without the §5.49 projection. */
+  function managerProject(role: 'member' | 'guest', execution: HostExecutionContext | null) {
+    return (root: StoreState) => {
+      const state = withHostPrincipal(root, role);
+      state.workspace = {
+        ...state.workspace,
+        hasLoaded: true,
+        loadedBackendId: state.connections.windowBackendId,
+        workspaces: createCollection(
+          'id',
+          getItems(state.workspace.workspaces).map((ws) => ({ ...ws, canManage: true })),
+        ),
+        capabilityContext: selectPrincipalActionContext.select(state),
+      };
+      const connection = selectPrincipalConnectionContext.select(state);
+      return {
+        ...state,
+        hostExecution: { ...(state.hostExecution ?? {}), connection, context: execution },
+      } as StoreState;
+    };
+  }
+
+  // A member reads the owner's repository connections from the host
+  // execution projection (PROTOCOL §5.49), GitLab included.
+  it.each([
+    [[], { github: false, gitlab: false }],
+    [
+      [{ provider: 'gitlab' as const, host: 'gitlab.com', configured: true }],
+      { github: false, gitlab: true },
+    ],
+    [
+      [{ provider: 'github' as const, host: 'github.com', configured: true }],
+      { github: true, gitlab: false },
+    ],
+  ])(
+    "reads a member's owner forge status from the execution projection (%j)",
+    async (connections, auth) => {
+      const h = harness(
+        opened(),
+        { 'ws-1': 'collaborator' },
+        managerProject('member', { ...HOST_EXECUTION_FIXTURE, repositoryConnections: connections }),
+      );
+      h.dispatch(shareIntegrationAuthRequested('ws-1'));
+      await settle();
+      expect(h.state().integrationAuth).toEqual(auth);
+      h.task.cancel();
+    },
+  );
+
+  it('marks the owner forge status unknown for a manager without the execution projection', async () => {
+    const h = harness(opened(), { 'ws-1': 'collaborator' }, managerProject('guest', null));
+    h.dispatch(shareIntegrationAuthRequested('ws-1'));
+    await settle();
+    expect(h.state().integrationAuth).toMatchObject({ known: false });
+    h.task.cancel();
+  });
+
+  it('latches "owner has no forge" when an invite is refused with github-identity-required', async () => {
+    replyByMethod({
+      'workspace.invite.create': Object.assign(new Error('x'), {
+        data: { code: 'github-identity-required' },
+      }),
+    });
+    const h = harness(opened(), { 'ws-1': 'collaborator' }, managerProject('guest', null));
+    expect(h.state().ownerForgeMissing).toBe(false);
+    h.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
+    await settle();
+    expect(h.state().ownerForgeMissing).toBe(true);
+    h.task.cancel();
   });
 
   it('uses admission-owned status without warming either provider from Share', async () => {
@@ -951,6 +1029,76 @@ describe('workspaceShareSaga', () => {
     generic.task.cancel();
   });
 
+  // The host has no connected owner forge: intentd refuses invite creation
+  // with `github-identity-required` (provider-neutral despite its name): the inline error names the missing connection,
+  // never the daemon text, and the forge status is re-read so the dialog
+  // swaps to its connect box.
+  it('maps the github-identity-required (no forge) daemon code onto its own error and re-reads the forge status', async () => {
+    const noForge = Object.assign(new Error(LEAK_MARKER), {
+      rpcCode: -32602,
+      data: { code: 'github-identity-required' },
+    });
+    replyByMethod({ 'workspace.invite.create': noForge });
+    const h = harness(opened());
+    const before = h.dispatched.length;
+
+    h.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
+    await settle();
+
+    expect(h.state().creating).toBe(false);
+    const forgeError = h.state().createError;
+    expect(forgeError).toEqual(expect.any(String));
+    expect(forgeError).not.toContain(LEAK_MARKER);
+    expect(h.state().createdLink).toBeNull();
+    // The daemon disagrees with the cached status: ask it again for both forges.
+    const types = h.dispatched.slice(before).map((action) => (action as { type: string }).type);
+    expect(types).toContain(checkGitHubAuthStatus.type);
+    expect(types).toContain(checkGitLabAuthStatus.type);
+    h.task.cancel();
+
+    replyByMethod({ 'workspace.invite.create': new Error('boom') });
+    const generic = harness(opened());
+    generic.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
+    await settle();
+    expect(generic.state().createError).not.toBe(forgeError);
+    generic.task.cancel();
+  });
+
+  // A forge outage is retryable (intentd answers `github-unreachable` when no
+  // forge could be confirmed only because one was unreachable): say so, and
+  // don't send the owner to reconnect an account that is connected.
+  it('maps github-unreachable onto a retry message, distinct from the no-forge one, without re-checking auth', async () => {
+    const outage = Object.assign(new Error(LEAK_MARKER), {
+      rpcCode: -32603,
+      data: { code: 'github-unreachable' },
+    });
+    replyByMethod({ 'workspace.invite.create': outage });
+    const h = harness(opened());
+    const before = h.dispatched.length;
+    h.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
+    await settle();
+    const outageError = h.state().createError;
+    expect(outageError).toEqual(expect.any(String));
+    expect(outageError).not.toContain(LEAK_MARKER);
+    const types = h.dispatched.slice(before).map((action) => (action as { type: string }).type);
+    expect(types).not.toContain(checkGitHubAuthStatus.type);
+    h.task.cancel();
+
+    const others: (string | null | undefined)[] = [];
+    for (const reply of [
+      Object.assign(new Error('x'), { data: { code: 'github-identity-required' } }),
+      new Error('boom'),
+    ]) {
+      replyByMethod({ 'workspace.invite.create': reply });
+      const other = harness(opened());
+      other.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
+      await settle();
+      others.push(other.state().createError);
+      other.task.cancel();
+    }
+    expect(others).not.toContain(outageError);
+  });
+
   it.each(['listener-down', 'tunnel-down'])(
     'refreshes sharing prerequisites after %s without settings navigation guidance',
     async (code) => {
@@ -1532,6 +1680,38 @@ describe('inline sharing prerequisites', () => {
   });
   afterEach(() => {
     mocks.request.mockReset();
+  });
+
+  // Regression (cloudlands-fe#4084 review): a check that bailed after it
+  // started left `sharingChecking` set, so every later request returned early
+  // and the dialog stayed on its loading placeholder for good.
+  it('lets a later request recheck after a check abandoned mid-read', async () => {
+    const read = deferred<ReturnType<typeof settingReply>>();
+    let first = true;
+    replyByMethod({
+      'settings.get': ({ path }: { path: string }) => {
+        if (first) {
+          first = false;
+          return read.promise;
+        }
+        return settingReply(path, true);
+      },
+    });
+    const roles: Record<string, WorkspaceRole | undefined> = { 'ws-1': 'owner' };
+    const h = harness(loaded(), roles);
+    try {
+      h.dispatch(sharePrerequisitesRequested());
+      expect(h.state().sharingChecking).toBe(true);
+      roles['ws-1'] = 'collaborator';
+      read.resolve(settingReply('server.wsApi.enabled', true));
+      await vi.waitFor(() => expect(h.state().sharingChecking).toBe(false));
+      roles['ws-1'] = 'owner';
+      h.dispatch(sharePrerequisitesRequested());
+      await vi.waitFor(() => expect(h.state().sharingEnabled).toBe(true));
+      expect(h.state().sharingChecking).toBe(false);
+    } finally {
+      h.task.cancel();
+    }
   });
 
   it.each([

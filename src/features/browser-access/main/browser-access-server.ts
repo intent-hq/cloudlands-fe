@@ -109,6 +109,14 @@ export interface BrowserAccessServerDeps {
   readonly loginText: () => LoginPageText;
   readonly log?: Pick<Console, 'info' | 'warn'>;
   readonly rateLimiter?: LoginRateLimiter;
+  /** Runs only after Host and session validation. The host validates mutations. */
+  readonly handleAuthenticatedRequest?: (
+    request: http.IncomingMessage,
+    response: http.ServerResponse,
+  ) => Promise<boolean>;
+  readonly runtimeConfig?: () => string | Promise<string>;
+  /** Called after a browser bridge opens or closes (see `bridgedBackendIds`). */
+  readonly onBridgesChanged?: () => void;
 }
 
 export interface BrowserAccessServer {
@@ -116,6 +124,10 @@ export interface BrowserAccessServer {
   listen(port: number): Promise<number>;
   /** Drop every bridged browser (used when the access key is reset). */
   disconnectAll(): void;
+  disconnectBackend?(connectionId: string): void;
+  /** Backends with at least one live browser bridge. */
+  bridgedBackendIds?(): Set<string>;
+  listenSocket?(socketPath: string): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -303,7 +315,7 @@ export function createBrowserAccessServer(deps: BrowserAccessServerDeps): Browse
   const gzipCache = new Map<string, { key: string; data: Promise<Buffer> }>();
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE_BYTES });
   /** Live bridges, revoked synchronously on key reset and shutdown. */
-  const bridges = new Set<(code: number, reason: string) => void>();
+  const bridges = new Map<(code: number, reason: string) => void, string>();
 
   const gzipped = (file: string, stat: fs.Stats): Promise<Buffer> => {
     const key = `${stat.mtimeMs}:${stat.size}`;
@@ -430,14 +442,7 @@ export function createBrowserAccessServer(deps: BrowserAccessServerDeps): Browse
       return sendLogin(response, 200, null);
     }
 
-    if (request.method !== 'GET' && request.method !== 'HEAD') {
-      response.statusCode = 405;
-      response.setHeader('Allow', 'GET, HEAD');
-      response.end();
-      return;
-    }
-
-    const keyParam = url.searchParams.get('key');
+    const keyParam = request.method === 'GET' ? url.searchParams.get('key') : null;
     if (keyParam !== null) {
       const result = tryLogin(request, keyParam);
       if ('error' in result) return sendLogin(response, result.status, result.error);
@@ -455,10 +460,23 @@ export function createBrowserAccessServer(deps: BrowserAccessServerDeps): Browse
       return;
     }
 
+    if (await deps.handleAuthenticatedRequest?.(request, response)) return;
+
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
+      response.statusCode = 405;
+      response.setHeader('Allow', 'GET, HEAD');
+      response.end();
+      return;
+    }
+
     if (pathname === RUNTIME_CONFIG_PATH) {
       response.setHeader('Content-Type', 'text/javascript; charset=utf-8');
       response.setHeader('Cache-Control', 'no-store');
-      response.end(request.method === 'HEAD' ? undefined : runtimeConfigSource());
+      response.end(
+        request.method === 'HEAD'
+          ? undefined
+          : await (deps.runtimeConfig?.() ?? runtimeConfigSource()),
+      );
       return;
     }
     if (pathname === CONNECTIONS_PATH) {
@@ -537,8 +555,12 @@ export function createBrowserAccessServer(deps: BrowserAccessServerDeps): Browse
     wss.handleUpgrade(request, socket, head, (ws) => {
       log.info(`[BrowserAccess] bridging a browser to backend ${connectionId}`);
       const revoke = bridgeWebSocket(ws, deps.openUpstream(connectionId));
-      bridges.add(revoke);
-      ws.once('close', () => bridges.delete(revoke));
+      bridges.set(revoke, connectionId);
+      deps.onBridgesChanged?.();
+      ws.once('close', () => {
+        bridges.delete(revoke);
+        deps.onBridgesChanged?.();
+      });
     });
   });
 
@@ -553,12 +575,46 @@ export function createBrowserAccessServer(deps: BrowserAccessServerDeps): Browse
         });
       });
     },
+    listenSocket(socketPath: string): Promise<void> {
+      if (process.platform === 'win32')
+        return Promise.reject(new Error('Windows supports loopback TCP only'));
+      return new Promise((resolve, reject) => {
+        server.once('error', reject);
+        // Create with private permissions from the outset, before accepting requests.
+        const mask = process.umask(0o177);
+        try {
+          server.listen(socketPath, () => {
+            server.off('error', reject);
+            try {
+              fs.chmodSync(socketPath, 0o600);
+              resolve();
+            } catch (error) {
+              server.close();
+              reject(error);
+            }
+          });
+        } finally {
+          process.umask(mask);
+        }
+      });
+    },
+    bridgedBackendIds(): Set<string> {
+      return new Set(bridges.values());
+    },
+    disconnectBackend(connectionId: string): void {
+      for (const [revoke, id] of bridges) {
+        if (id === connectionId) {
+          revoke(4401, 'connection removed');
+          bridges.delete(revoke);
+        }
+      }
+    },
     disconnectAll(): void {
-      for (const revoke of [...bridges]) revoke(4401, 'access key reset');
+      for (const revoke of [...bridges.keys()]) revoke(4401, 'access key reset');
       bridges.clear();
     },
     close(): Promise<void> {
-      for (const revoke of [...bridges]) revoke(1001, 'browser access stopped');
+      for (const revoke of [...bridges.keys()]) revoke(1001, 'browser access stopped');
       bridges.clear();
       for (const client of wss.clients) client.terminate();
       return new Promise((resolve) => {

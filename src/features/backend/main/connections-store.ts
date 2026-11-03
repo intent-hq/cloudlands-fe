@@ -224,6 +224,7 @@ export const plaintextTokenCodec: TokenCodec = {
 export function createConnectionsStore(options: {
   dataDir: string | (() => string);
   tokenCodec: TokenCodec;
+  fileName?: string;
 }) {
   /** In-flight write chain so concurrent writers serialize. */
   let writeChain: Promise<void> = Promise.resolve();
@@ -231,7 +232,7 @@ export function createConnectionsStore(options: {
   function filePath(): string {
     return path.join(
       typeof options.dataDir === 'function' ? options.dataDir() : options.dataDir,
-      FILE_NAME,
+      options.fileName ?? FILE_NAME,
     );
   }
 

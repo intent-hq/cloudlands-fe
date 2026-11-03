@@ -1712,6 +1712,8 @@ function classifyInviteFailure(error: unknown): InviteFailureReason {
       return 'workspace-full';
     case 'owner-self-join':
       return 'owner-self-join';
+    case 'github-identity-required':
+      return 'host-forge-required';
     default:
       return 'generic';
   }

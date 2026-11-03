@@ -28,6 +28,7 @@
   import { onDestroy, untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import DeviceIconPicker from '$lib/components/DeviceIconPicker.svelte';
+  import TailcatUnavailableNote from '$features/devices/TailcatUnavailableNote.svelte';
   import { Input } from '$lib/components/ui/input';
   import {
     SettingsFieldRow,
@@ -43,6 +44,7 @@
     loadKeychainSyncStateRequested,
   } from '$store/renderer/slices/connections/connections-slice';
   import {
+    selectHostManagesConnections,
     selectKeychainSyncState,
     selectConnectionWorkflow,
   } from '$store/renderer/slices/connections/connections-selectors';
@@ -152,7 +154,12 @@
     typeof window !== 'undefined' &&
     (window as { electronAPI?: { platform?: string } }).electronAPI?.platform === 'darwin';
   const syncState$ = selectKeychainSyncState();
-  const syncSupported = $derived($syncState$?.supported ?? platformIsMac);
+  // intent-web keeps machines on its server, so a browser there has no
+  // keychain, even on a Mac (the web shim reports the client's platform).
+  const hostManagesConnections$ = selectHostManagesConnections();
+  const syncSupported = $derived(
+    !$hostManagesConnections$ && ($syncState$?.supported ?? platformIsMac),
+  );
   const syncEnabled = $derived($syncState$?.enabled ?? false);
 
   const detectHostsEntry = $derived<SwitchSetting>({
@@ -453,6 +460,7 @@
             onpaste={handleHostPaste}
             oninput={handleHostInput}
           />
+          <TailcatUnavailableNote relevant={tcAddress !== null} />
         </div>
 
         <div class="space-y-1">

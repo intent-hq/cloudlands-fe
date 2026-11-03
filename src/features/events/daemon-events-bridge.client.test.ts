@@ -142,15 +142,18 @@ const {
   showAgentAttentionToastSpy,
   dismissAgentAttentionToastSpy,
   showWorkspaceAutoUnarchiveToastSpy,
+  showWorkspaceAccessRemovedToastSpy,
 } = vi.hoisted(() => ({
   showAgentAttentionToastSpy: vi.fn(() => Promise.resolve()),
   dismissAgentAttentionToastSpy: vi.fn(() => Promise.resolve()),
   showWorkspaceAutoUnarchiveToastSpy: vi.fn(() => Promise.resolve()),
+  showWorkspaceAccessRemovedToastSpy: vi.fn((_notice: unknown) => Promise.resolve()),
 }));
 vi.mock('$features/agent/agent-attention-toast-service', () => ({
   showAgentAttentionToast: showAgentAttentionToastSpy,
   dismissAgentAttentionToast: dismissAgentAttentionToastSpy,
   showWorkspaceAutoUnarchiveToast: showWorkspaceAutoUnarchiveToastSpy,
+  showWorkspaceAccessRemovedToast: showWorkspaceAccessRemovedToastSpy,
 }));
 
 // Fake the terminal manager (dynamically imported by the bridge) so the
@@ -10057,6 +10060,84 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
   // (`workspace.get`, single-flight + trailing coalesce), and the production
   // warning path is driven end-to-end with no manual row re-seed or list
   // refresh in between.
+  describe('this guest window removed from the workspace (members.remove / members.leave)', () => {
+    // The window's backend id is the guest session id; the default local id
+    // stands in for it so the real connections state binds the session.
+    const SESSION_ID = 'local';
+    const PRINCIPAL = 'p-guest';
+
+    async function bindGuestSession(): Promise<void> {
+      const { guestSessionsListReceived } =
+        await import('$store/renderer/slices/guest-sessions/guest-sessions-slice');
+      appStore.dispatch(
+        guestSessionsListReceived({
+          sessions: [
+            {
+              id: SESSION_ID,
+              label: 'studio.local',
+              host: '10.0.0.7',
+              hosts: ['10.0.0.7'],
+              port: 8443,
+              fingerprint: 'AB:CD',
+              tcAddress: null,
+              hostname: 'studio.local',
+              principalId: PRINCIPAL,
+              login: 'octocat',
+              tokenEncrypted: true,
+              workspaces: [{ id: WS_UPD, title: 'Original' }],
+              updatedAt: 1,
+            },
+          ],
+          openIds: [SESSION_ID],
+          connectedIds: [SESSION_ID],
+        }),
+      );
+    }
+
+    afterEach(async () => {
+      const { guestSessionsListReceived } =
+        await import('$store/renderer/slices/guest-sessions/guest-sessions-slice');
+      appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
+    });
+
+    it('says "you left" for this window\'s own leave and consumes the marker, even after the leave settled', async () => {
+      const { leaveWorkspaceOperationSettled, leaveWorkspaceOperationStarted } =
+        await import('$store/renderer/slices/guest-sessions/guest-sessions-slice');
+      await seedWorkspace();
+      await bindGuestSession();
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+      appStore.dispatch(leaveWorkspaceOperationStarted(SESSION_ID, WS_UPD));
+      // The host's reply can overtake its asynchronously delivered delta.
+      appStore.dispatch(leaveWorkspaceOperationSettled(SESSION_ID, WS_UPD));
+
+      handler(
+        updatedNotification({ members: true, removedPrincipalId: PRINCIPAL, memberCount: 1 }),
+      );
+
+      expect(showWorkspaceAccessRemovedToastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ workspaceId: WS_UPD, title: 'Original', selfInitiated: true }),
+      );
+      const state = appStore.state as { guestSessions: { selfLeaveWorkspaceKeys: string[] } };
+      expect(state.guestSessions.selfLeaveWorkspaceKeys).toEqual([]);
+    });
+
+    it('says "you were removed" when the owner removed this guest', async () => {
+      await seedWorkspace();
+      await bindGuestSession();
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(
+        updatedNotification({ members: true, removedPrincipalId: PRINCIPAL, memberCount: 1 }),
+      );
+
+      expect(showWorkspaceAccessRemovedToastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ workspaceId: WS_UPD, selfInitiated: false }),
+      );
+    });
+  });
+
   describe('membership summary convergence → archive / delete warning gating', () => {
     let daemonRow: { memberCount: number; openInviteCount: number };
     let stopOperationsSaga: (() => void) | undefined;

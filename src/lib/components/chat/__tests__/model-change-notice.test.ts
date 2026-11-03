@@ -8,6 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { formatModelChangeLabel, getModelChangeNotice } from '../model-change-notice';
 import { formatProviderRehomedLabel } from '../rehome-notice';
+import { withWorkspaceViewer } from '../../../../test/fixtures/principal-state';
 
 let mockStoreState: Record<string, unknown> = {};
 
@@ -312,7 +313,7 @@ describe('formatModelChangeLabel — named provider profiles', () => {
   });
 
   it('waits for the workspace catalog before calling a profile removed', () => {
-    mockStoreState = profileState();
+    mockStoreState = withWorkspaceViewer(profileState(), 'ws-1', 'owner');
     const pending = formatModelChangeLabel(
       {
         from: null,
@@ -325,7 +326,40 @@ describe('formatModelChangeLabel — named provider profiles', () => {
     );
     expect(pending).toBe('Switched from Claude Code default model to Claude Code default model');
     expect(pending).not.toContain('Removed profile');
-    mockStoreState = {
+    mockStoreState = withWorkspaceViewer(workspaceProfileState(), 'ws-1', 'owner');
+    const loaded = formatModelChangeLabel(
+      {
+        from: null,
+        to: null,
+        fromProvider: 'claude-code@ppersonal',
+        toProvider: 'claude-code@pwork',
+      },
+      FALLBACK,
+      'ws-1',
+    );
+    expect(loaded).toBe(
+      'Switched from Claude Code · Removed profile default model to Claude Code · Work default model',
+    );
+  });
+
+  it("never shows a guest the host's profile names, nor a removed profile", () => {
+    mockStoreState = withWorkspaceViewer(workspaceProfileState(), 'ws-1', 'guest');
+    const label = formatModelChangeLabel(
+      {
+        from: 'opus',
+        to: null,
+        fromProvider: 'claude-code@ppersonal',
+        toProvider: 'claude-code@pwork',
+      },
+      FALLBACK,
+      'ws-1',
+    );
+    expect(label).toBe('Switched from opus (Claude Code) to Claude Code default model');
+    expect(label).not.toMatch(/Removed profile|Work|Personal|Default/);
+  });
+
+  function workspaceProfileState(): Record<string, unknown> {
+    return {
       ...profileState(),
       providerCatalog: {
         ...(profileState().providerCatalog as object),
@@ -346,20 +380,7 @@ describe('formatModelChangeLabel — named provider profiles', () => {
         },
       },
     };
-    const loaded = formatModelChangeLabel(
-      {
-        from: null,
-        to: null,
-        fromProvider: 'claude-code@ppersonal',
-        toProvider: 'claude-code@pwork',
-      },
-      FALLBACK,
-      'ws-1',
-    );
-    expect(loaded).toBe(
-      'Switched from Claude Code · Removed profile default model to Claude Code · Work default model',
-    );
-  });
+  }
 
   it('describes a profile default-model side without the reference', () => {
     mockStoreState = profileState();

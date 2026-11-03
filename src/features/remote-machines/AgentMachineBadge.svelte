@@ -1,23 +1,20 @@
 <!--
-  Where a remote agent runs. `icon` (agent rows): a monitor icon with the
-  machine and platform in its tooltip. `pill` (panel header chip): the icon and
-  the machine name. An amber dot means the machine can't be reached, a red dot
-  that it revoked access; the state is also named in the tooltip and label.
-  It sits inside the row / chip button, so it uses a native title (like the
+  Where a remote agent runs, for agent rows: a monitor icon with the machine and
+  platform in its tooltip. An amber dot means the machine can't be reached, a
+  red dot that it revoked access; the state is also named in the tooltip and
+  label. It sits inside the row button, so it uses a native title (like the
   muted-notifications indicator) rather than an interactive tooltip trigger.
 -->
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import { Badge } from '$lib/components/ui/badge';
   import { faDesktop } from '$lib/icons/phosphor-icons';
   import { agentMachineTooltip, type AgentMachineLocation } from './agent-location';
 
   interface Props {
     location: AgentMachineLocation;
-    variant?: 'icon' | 'pill';
   }
 
-  let { location, variant = 'icon' }: Props = $props();
+  let { location }: Props = $props();
 
   const tooltip = $derived(agentMachineTooltip(location));
   const dotClass = $derived(
@@ -29,48 +26,19 @@
   );
 </script>
 
-{#if variant === 'pill'}
-  <span
-    class="inline-flex min-w-0 shrink"
-    role="img"
-    aria-label={tooltip}
-    title={tooltip}
-    data-agent-machine-badge="pill"
-    data-agent-machine-state={location.state}
-  >
-    <Badge
-      size="compact"
-      class="h-5 min-w-0 max-w-32 shrink justify-start gap-1 [&>span:last-child]:min-w-0 [&>span:last-child]:truncate bg-muted! font-normal text-muted-foreground"
-    >
-      {#snippet leadingIcon()}
-        <span class="relative inline-flex">
-          <Fa icon={faDesktop} class="size-3!" />
-          {#if dotClass}
-            <span
-              class="absolute -right-0.5 -top-0.5 size-1.5 rounded-full ring-1 ring-muted {dotClass}"
-              aria-hidden="true"
-            ></span>
-          {/if}
-        </span>
-      {/snippet}
-      {location.name}
-    </Badge>
-  </span>
-{:else}
-  <span
-    class="relative inline-flex size-4 shrink-0 items-center justify-center text-subtle"
-    role="img"
-    aria-label={tooltip}
-    title={tooltip}
-    data-agent-machine-badge="icon"
-    data-agent-machine-state={location.state}
-  >
-    <Fa icon={faDesktop} class="size-3.5!" />
-    {#if dotClass}
-      <span
-        class="absolute -right-0.5 -top-0.5 size-1.5 rounded-full ring-1 ring-background {dotClass}"
-        aria-hidden="true"
-      ></span>
-    {/if}
-  </span>
-{/if}
+<span
+  class="relative inline-flex size-4 shrink-0 items-center justify-center text-subtle"
+  role="img"
+  aria-label={tooltip}
+  title={tooltip}
+  data-agent-machine-badge="icon"
+  data-agent-machine-state={location.state}
+>
+  <Fa icon={faDesktop} class="size-3.5!" />
+  {#if dotClass}
+    <span
+      class="absolute -right-0.5 -top-0.5 size-1.5 rounded-full ring-1 ring-background {dotClass}"
+      aria-hidden="true"
+    ></span>
+  {/if}
+</span>

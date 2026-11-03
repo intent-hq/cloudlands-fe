@@ -47,7 +47,41 @@ async function startSampler(page: Page, selector: string): Promise<void> {
     };
     const frames: Sample[] = [];
     const longTasks: { start: number; duration: number }[] = [];
-    const sampler = { frames, longTasks, running: true };
+    // Opacity animations created on the sampled element (CSS transitions and Svelte's
+    // `element.animate`), captured when they are created so load cannot miss them. Their
+    // curves are copied at once: Svelte detaches an animation's effect when it ends.
+    const captured = new Set<Animation>();
+    const fades: { type: string; keyframes: Keyframe[]; timing: EffectTiming }[] = [];
+    const capture = (animation: Animation) => {
+      const effect = animation.effect;
+      if (captured.has(animation) || !(effect instanceof KeyframeEffect)) return;
+      if (effect.pseudoElement || !effect.target?.matches(sel)) return;
+      const keyframes = effect
+        .getKeyframes()
+        .filter((frame) => 'opacity' in frame)
+        .map(({ offset, easing, opacity }) => ({ offset, easing, opacity }) as Keyframe);
+      if (keyframes.length === 0) return;
+      captured.add(animation);
+      fades.push({ type: animation.constructor.name, keyframes, timing: effect.getTiming() });
+    };
+    const onTransitionRun = (event: TransitionEvent) => {
+      if (event.propertyName !== 'opacity' || !(event.target instanceof Element)) return;
+      for (const animation of event.target.getAnimations())
+        if (animation instanceof CSSTransition && animation.transitionProperty === 'opacity')
+          capture(animation);
+    };
+    document.addEventListener('transitionrun', onTransitionRun, true);
+    const animate = Element.prototype.animate;
+    Element.prototype.animate = function (this: Element, ...args) {
+      const animation = animate.apply(this, args);
+      capture(animation);
+      return animation;
+    };
+    const release = () => {
+      document.removeEventListener('transitionrun', onTransitionRun, true);
+      Element.prototype.animate = animate;
+    };
+    const sampler = { frames, longTasks, fades, release, running: true };
     const observer = new PerformanceObserver((list) => {
       for (const entry of list.getEntries())
         sampler.longTasks.push({ start: entry.startTime, duration: entry.duration });
@@ -88,14 +122,62 @@ async function startSampler(page: Page, selector: string): Promise<void> {
   }, selector);
 }
 
+/** A captured opacity animation, judged from its own keyframes and timing. */
+interface FadeCurve {
+  type: string;
+  durationMs: number;
+  from: number;
+  to: number;
+  /** Largest opacity change between two 60 Hz frames anywhere on the curve. */
+  maxFrameStep: number;
+}
+
 async function stopSampler(page: Page) {
   return page.evaluate(() => {
     const state = (window as any).__motionAudit;
     state.running = false;
+    state.release();
+    // Replay each captured fade's own keyframes and timing on a paused probe, so the
+    // largest opacity change any 60 Hz frame can show comes from the curve itself. Live
+    // computed opacity is the main thread's view of a compositor animation: it jumps
+    // when the compositor reports the real start time, and dropped frames under load
+    // widen its steps, so sampling it mid-flight is not a deterministic contract.
+    const FRAME_MS = 1000 / 60;
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;pointer-events:none';
+    document.body.append(probe);
+    const captured = state.fades as { type: string; keyframes: Keyframe[]; timing: EffectTiming }[];
+    const fades = captured.map(({ type, keyframes, timing }): FadeCurve => {
+      const duration = Number(timing.duration) || 0;
+      const replay = probe.animate(keyframes, {
+        duration,
+        easing: timing.easing,
+        fill: 'both',
+      });
+      replay.pause();
+      const at = (t: number) => {
+        replay.currentTime = Math.min(Math.max(t, 0), duration);
+        return Number(getComputedStyle(probe).opacity);
+      };
+      // Every 1 ms phase, so the worst frame-to-frame step is found wherever frames land.
+      let maxFrameStep = 0;
+      for (let t = -FRAME_MS; t <= duration; t += 1)
+        maxFrameStep = Math.max(maxFrameStep, Math.abs(at(t + FRAME_MS) - at(t)));
+      replay.cancel();
+      return {
+        type,
+        durationMs: duration,
+        from: at(0),
+        to: at(duration),
+        maxFrameStep: Math.round(maxFrameStep * 100) / 100,
+      };
+    });
+    probe.remove();
     return {
       frames: state.frames as Frame[],
       longTasks: state.longTasks as unknown[],
       reopeningStart: state.reopeningStart as number | undefined,
+      fades,
     };
   });
 }
@@ -243,6 +325,7 @@ async function audit(
 ): Promise<
   ReturnType<typeof summarize> & {
     reopening: ReturnType<typeof summarize> | null;
+    fades: FadeCurve[];
   } & Record<string, unknown>
 > {
   const browser = page.context().browser()!;
@@ -258,7 +341,7 @@ async function audit(
   await run();
   await page.waitForTimeout(400);
   const trace = await browser.stopTracing();
-  const { frames, longTasks, reopeningStart } = await stopSampler(page);
+  const { frames, longTasks, reopeningStart, fades } = await stopSampler(page);
   const durations = (longTasks as { duration: number }[]).map((task) => task.duration);
   const raw = summarize(frames);
   // A closing shell unmounts at its endpoint, so the final visible-to-visible step
@@ -287,6 +370,7 @@ async function audit(
     longTaskMaxMs: Math.round(Math.max(0, ...durations)),
     layouts: layoutsInFrames(trace),
     slowTasks: slowTasks(trace),
+    fades,
   };
   const info = test.info();
   const path = info.outputPath(`motion-${PHASE}-${name}.json`);
@@ -608,9 +692,19 @@ test('motion audit: question overlay and aurora', async ({ mount, page }) => {
     if (stats.endGapMs <= 20) expect(stats.endStepPx, `${stats.name} end`).toBeLessThanOrEqual(2);
     expectNoRailReflow(stats);
   }
-  // Fades never pop: no single frame changes opacity by more than half.
-  for (const stats of [auroraIn, auroraOut, question])
-    expect(stats.maxOpacityStep, stats.name).toBeLessThanOrEqual(0.5);
+  // Fades never pop: each motion runs a real fade (it takes time and spans most of the
+  // opacity range, from start to end state), and no 60 Hz frame of any captured curve
+  // changes opacity by more than half (judged from the animation, not mid-flight). A
+  // zero-length animation does not count: Svelte starts every intro with one that holds
+  // the first keyframe, so its presence proves nothing about a fade.
+  for (const stats of [auroraIn, auroraOut, question]) {
+    const realFades = stats.fades.filter(
+      (fade) => fade.durationMs > 0 && Math.abs(fade.to - fade.from) >= 0.9,
+    );
+    expect(realFades.length, `${stats.name} fades`).toBeGreaterThan(0);
+    for (const fade of stats.fades)
+      expect(fade.maxFrameStep, `${stats.name} ${fade.type}`).toBeLessThanOrEqual(0.5);
+  }
 });
 
 test('motion audit: overview row hover', async ({ mount, page }) => {

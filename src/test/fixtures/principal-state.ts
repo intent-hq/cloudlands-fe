@@ -1,4 +1,4 @@
-import { getItems } from '@themislib/themis/utils/collections/collection-utils';
+import { createCollection, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { store } from '$store/renderer/store';
 import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
@@ -6,6 +6,7 @@ import { daemonEventsSubscribed } from '$store/renderer/slices/workspace-events/
 import type { StoreState } from '$store/renderer/types';
 import { initialState as userPreferences } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { repositoryCheckoutReducer } from '$store/renderer/slices/repository-checkout/repository-checkout-slice';
+import { initialState as workspaceInitialState } from '$store/renderer/slices/workspace/workspace-slice';
 import {
   principalContextChanged,
   principalReceived,
@@ -82,4 +83,31 @@ export function withHostPrincipal(
       },
     },
   };
+}
+
+/**
+ * A settled window viewing workspace `wsId`: its owner on their own host, or
+ * a guest it was shared with (a `collaborator` row on a guest principal).
+ * The workspace list holds only `wsId`; any rows in `input` are replaced.
+ */
+export function withWorkspaceViewer(
+  input: object,
+  wsId: string,
+  viewer: 'owner' | 'guest',
+): StoreState {
+  const state = input as Partial<StoreState>;
+  return withLegacyPrincipal(
+    {
+      ...state,
+      workspace: {
+        ...workspaceInitialState,
+        ...state.workspace,
+        hasLoaded: true,
+        workspaces: createCollection('id', [
+          { id: wsId, myRole: viewer === 'owner' ? 'owner' : 'collaborator' },
+        ]),
+      },
+    },
+    viewer,
+  );
 }

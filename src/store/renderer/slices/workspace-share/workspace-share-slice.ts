@@ -93,8 +93,30 @@ export const initialRosterState: WorkspaceRosterState = {
   inviteReceivedAt: 0,
 };
 
+/**
+ * The host owner's forge connections as Share can see them. `known: false`
+ * marks a manager without the execution projection (PROTOCOL §5.49), whose
+ * owner status is unknown until the daemon answers an invite.
+ */
+export interface ShareIntegrationAuth {
+  github: boolean;
+  gitlab: boolean;
+  known?: false;
+}
+
 export interface WorkspaceShareState {
-  integrationAuth: { github: boolean; gitlab: boolean };
+  integrationAuth: ShareIntegrationAuth;
+  /**
+   * `integrationAuth` was read for this dialog session. Until then its
+   * `false` flags are unknown, not "disconnected": the dialog shows a loading
+   * placeholder instead of the connect-a-forge card.
+   */
+  integrationAuthLoaded: boolean;
+  /**
+   * The daemon refused an invite with `github-identity-required` this
+   * session: the owner has no forge, whatever the cached status says.
+   */
+  ownerForgeMissing: boolean;
   /** Prerequisites belong to one admitted host identity and dialog session. */
   sharingContext: string | null;
   sharingEnabled: boolean | null;
@@ -162,6 +184,8 @@ export interface WorkspaceShareState {
 
 export const initialState: WorkspaceShareState = {
   integrationAuth: { github: false, gitlab: false },
+  integrationAuthLoaded: false,
+  ownerForgeMissing: false,
   sharingContext: null,
   sharingEnabled: null,
   sharingChecking: false,
@@ -207,6 +231,10 @@ export const sharePrerequisitesStarted = createAction<
 export const sharePrerequisitesSettled = createAction<
   [payload: { target: WorkspaceShareTarget; enabled: boolean | null; error: string | null }]
 >('workspaceShare/prerequisitesSettled');
+/** A started check stopped without an answer (target or authority moved mid-read). */
+export const sharePrerequisitesAbandoned = createAction<
+  [payload: { target: WorkspaceShareTarget }]
+>('workspaceShare/prerequisitesAbandoned');
 
 /** Close the dialog, retaining workspace invite metadata for People. */
 export const closeShareDialog = createAction('workspaceShare/closeDialog');
@@ -402,14 +430,18 @@ workspaceShareReducer.with(
   sharePrerequisitesStarted,
   (state, { payload: [{ target, enabling }] }) => {
     if (!targets(state, target) || state.withheld || !target.authority) return state;
+    // A passive recheck for the same host keeps the settled answer (or error)
+    // on screen, so ready controls or the error do not flash back to the
+    // loading placeholder; a new host or an explicit enable starts unknown.
+    const recheck = !enabling && state.sharingContext === target.authority;
     return {
       ...state,
       sharingContext: target.authority,
       createError: enabling ? null : state.createError,
-      sharingEnabled: null,
+      sharingEnabled: recheck ? state.sharingEnabled : null,
       sharingChecking: !enabling,
       sharingEnabling: enabling,
-      sharingError: null,
+      sharingError: recheck ? state.sharingError : null,
     };
   },
 );
@@ -428,6 +460,10 @@ workspaceShareReducer.with(
     };
   },
 );
+workspaceShareReducer.with(sharePrerequisitesAbandoned, (state, { payload: [{ target }] }) => {
+  if (!targets(state, target) || state.sharingContext !== target.authority) return state;
+  return { ...state, sharingChecking: false, sharingEnabling: false };
+});
 workspaceShareReducer.with(shareRosterRequested, (state, { payload: [{ workspaceId }] }) => {
   const roster = getRosterState(state, workspaceId);
   if (roster.withheld) return state;
@@ -649,15 +685,33 @@ export const shareIntegrationAuthRequested = createAction<
   [workspaceId: string, gitlabHost?: string]
 >('workspaceShare/integrationAuthRequested');
 export const shareIntegrationAuthLoaded = createAction<
-  [target: WorkspaceShareTarget, auth: { github: boolean; gitlab: boolean }]
+  [target: WorkspaceShareTarget, auth: ShareIntegrationAuth]
 >('workspaceShare/integrationAuthLoaded');
-workspaceShareReducer.with(shareIntegrationAuthRequested, (state) => ({
-  ...state,
-  integrationAuth: { github: false, gitlab: false },
-}));
-workspaceShareReducer.with(shareIntegrationAuthLoaded, (state, { payload: [target, auth] }) =>
-  targets(state, target) ? { ...state, integrationAuth: auth } : state,
+/** The daemon refused an invite because the host owner has no forge connected. */
+export const shareOwnerForgeMissing = createAction<[target: WorkspaceShareTarget]>(
+  'workspaceShare/ownerForgeMissing',
 );
+workspaceShareReducer.with(shareOwnerForgeMissing, (state, { payload: [target] }) =>
+  targets(state, target) ? { ...state, ownerForgeMissing: true } : state,
+);
+// A re-read keeps the last answer: resetting it would flash the connect card.
+workspaceShareReducer.with(shareIntegrationAuthLoaded, (state, { payload: [target, auth] }) => {
+  if (!targets(state, target)) return state;
+  if (auth.known === false) {
+    return { ...state, integrationAuth: auth, integrationAuthLoaded: true };
+  }
+  // No forge hides the link form, and a connected one clears a latched
+  // refusal: either way a create error from before must not reappear.
+  const forgeless = !auth.github && !auth.gitlab;
+  const clear = forgeless || state.ownerForgeMissing;
+  return {
+    ...state,
+    integrationAuth: auth,
+    integrationAuthLoaded: true,
+    ownerForgeMissing: forgeless && state.ownerForgeMissing,
+    ...(clear ? { createError: null } : {}),
+  };
+});
 
 export const shareMemberRoleRequested = createAction<
   [payload: { principalId: string; role: WorkspaceGuestRole }]

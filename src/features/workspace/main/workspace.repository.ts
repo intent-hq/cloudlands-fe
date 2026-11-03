@@ -5,6 +5,7 @@
  * (PROTOCOL.md §5.1) — no local filesystem probing of workspace roots.
  */
 
+import { collectListPages } from '$shared/paged-list';
 import { type Workspace, type WorkspaceId, WorkspaceStatus } from '../../../shared/types';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
 import { WorkspaceConfig } from '../../../shared/main/config';
@@ -95,7 +96,13 @@ export class DaemonWorkspaceRepository implements WorkspaceRepository {
   async findAll(): Promise<Workspace[]> {
     try {
       const { getBackendClient } = await import('../../backend/main/backend.ipc');
-      const response = (await getBackendClient().request('workspace.list')) as
+      const client = getBackendClient();
+      const response = (await collectListPages(
+        (params) =>
+          client.request('workspace.list', params) as Promise<{ workspaces?: Workspace[] }>,
+        undefined,
+        'workspaces',
+      )) as
         | {
             workspaces?: Workspace[];
           }

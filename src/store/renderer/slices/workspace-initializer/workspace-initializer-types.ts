@@ -96,6 +96,11 @@ export interface WorkspaceInitializerAgentSettings {
   isTeamMode?: boolean;
   /** Provider the persisted `selectedModel` belongs to. */
   selectedProvider?: string;
+  /**
+   * New Workspace → Start On: the machine the first agent starts on; absent or
+   * blank for the current backend. Sent as `initialAgent.placement`.
+   */
+  startOnMachineId?: string;
 }
 
 export interface CompactWorkspaceInitializerFormState extends WorkspaceInitializerAgentSettings {
@@ -256,7 +261,16 @@ export interface WorkspaceInitializationRequest {
   entrypoint: 'compact' | 'onboarding';
   admission: string;
   createRequest?: CreateWorkspaceRequest;
-  resume?: { workspaceId: string; agentId?: string; workspacePath?: string };
+  resume?: {
+    workspaceId: string;
+    agentId?: string;
+    workspacePath?: string;
+    /**
+     * The workspace was created but never installed (its follow-up read failed
+     * after a remote `launch-failed`): read and install it before continuing.
+     */
+    install?: boolean;
+  };
   pull?: { repositoryPath: string; branch: string };
   agentTitle: string;
   coordinator: boolean;

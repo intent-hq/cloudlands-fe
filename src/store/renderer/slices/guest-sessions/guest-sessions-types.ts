@@ -180,6 +180,14 @@ export interface GuestSessionsState {
   leavingIds: string[];
   /** `${sessionId}:${workspaceId}` keys with a per-workspace *Leave* in flight. */
   leavingWorkspaceKeys: string[];
+  /**
+   * Keys this window asked to leave whose host removal delta has not been
+   * announced yet. The host publishes the delta asynchronously, so it can land
+   * before or after the leave settles; the removal toast consumes the key to
+   * say "you left" instead of "you were removed". Dropped on a failed or
+   * no-op leave, and when the session record lists the workspace again.
+   */
+  selfLeaveWorkspaceKeys: string[];
   /** Retryable failures of confirmed operations; confirmation dialogs never retarget these. */
   failedLeaveIds: string[];
   failedLeaveWorkspaceKeys: string[];

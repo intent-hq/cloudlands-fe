@@ -250,3 +250,55 @@ export const selectGuestLeaveConfirmations = store.createSelector(
 export const selectGuestSessionLifetime = store.createSelector((state, id: string) =>
   guestSessionLifetime(getItem(state.guestSessions.sessions, id)),
 );
+
+/**
+ * Whether this window can offer *Leave* for one workspace from the workspace
+ * menu: a guest window (saved invite session, not an instance membership)
+ * whose record lists the workspace as directly joined, the caller is not its
+ * owner, and the host has not already refused the leave because access is
+ * inherited through host membership. Mirrors the per-workspace *Leave* row in
+ * Settings → Collaboration, which runs the same `leaveGuestWorkspaceRequested`.
+ */
+export const selectCanLeaveWorkspace = store.createSelector(
+  (state, workspaceId: string): boolean => {
+    if (!workspaceId || !selectCollaborationReady.select(state)) return false;
+    const session = selectWindowGuestSession.select(state);
+    if (!session || !(session.workspaces ?? []).some((ws) => ws.id === workspaceId)) return false;
+    if (selectJoinedInstanceSessions.select(state).some((joined) => joined.id === session.id))
+      return false;
+    if (
+      state.guestSessions.inheritedWorkspaceKeys.includes(
+        guestWorkspaceKey(session.id, workspaceId),
+      )
+    )
+      return false;
+    return getItem(state.workspace.workspaces, WorkspaceId(workspaceId))?.myRole !== 'owner';
+  },
+);
+
+/**
+ * Whether this window asked to leave one workspace and the host's removal
+ * delta has not been announced yet (see `selfLeaveWorkspaceKeys`).
+ */
+export const selectIsSelfLeftWorkspace = store.createSelector(
+  (state, workspaceId: string): boolean => {
+    const session = selectWindowGuestSession.select(state);
+    return (
+      !!session &&
+      state.guestSessions.selfLeaveWorkspaceKeys.includes(
+        guestWorkspaceKey(session.id, workspaceId),
+      )
+    );
+  },
+);
+
+/** Whether this window's guest session has a *Leave* in flight for one workspace. */
+export const selectIsLeavingWorkspace = store.createSelector(
+  (state, workspaceId: string): boolean => {
+    const session = selectWindowGuestSession.select(state);
+    return (
+      !!session &&
+      state.guestSessions.leavingWorkspaceKeys.includes(guestWorkspaceKey(session.id, workspaceId))
+    );
+  },
+);

@@ -85,7 +85,7 @@ test('worktree toggle keeps its pointer target in the workspace dialog', async (
   await parent.getByRole('button', { name: /^Select a branch:/ }).click();
   const chooser = page.getByRole('dialog', { name: 'What branch should we start from?' });
   await expect(chooser.getByRole('combobox')).toHaveAttribute('aria-busy', 'false');
-  const isolation = chooser.getByRole('switch', { name: /Isolated/ });
+  const isolation = chooser.getByRole('switch', { name: /use an isolated/i });
   await expectReachable(isolation);
   const origin = (await chooser.boundingBox())!;
   const control = (await isolation.boundingBox())!;

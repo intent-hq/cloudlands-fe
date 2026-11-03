@@ -385,6 +385,41 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
     expect(result.error).not.toBe('Internal error');
   });
 
+  it('create surfaces the created workspace and agent of a remote launch-failed error', async () => {
+    // PROTOCOL nodes.md "Placement subset": the workspace and its initial
+    // agent were committed, only the remote start failed.
+    const error = Object.assign(new Error('initial agent launch failed'), {
+      data: {
+        code: 'launch-failed',
+        retryable: false,
+        workspaceId: 'ws-9',
+        launch: { agentId: 'agent-9', state: 'failed' },
+        cause: { code: 'provider-exited', message: 'provider exited' },
+      },
+    });
+    mockedRequest.mockRejectedValueOnce(error);
+    const client = new LiveWorkspacesClient();
+
+    const result = await client.create({ title: 'Remote' } as CreateWorkspaceRequest);
+
+    expect(result).toEqual({
+      success: false,
+      error: 'initial agent launch failed',
+      errorCode: 'launch-failed',
+      launchFailure: { workspaceId: 'ws-9', agentId: 'agent-9', cause: 'provider exited' },
+    });
+  });
+
+  it('create omits launchFailure when a launch-failed error names no workspace', async () => {
+    const error = Object.assign(new Error('launch failed'), { data: { code: 'launch-failed' } });
+    mockedRequest.mockRejectedValueOnce(error);
+    const client = new LiveWorkspacesClient();
+
+    const result = await client.create({ title: 'Remote' } as CreateWorkspaceRequest);
+
+    expect(result).toEqual({ success: false, error: 'launch failed', errorCode: 'launch-failed' });
+  });
+
   it('create omits errorCode when the daemon error carries no string data.code', async () => {
     const error = Object.assign(new Error('boom'), { data: { detail: 'no code here' } });
     mockedRequest.mockRejectedValueOnce(error);

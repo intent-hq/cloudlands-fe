@@ -24,6 +24,26 @@ export function needsPlacementPolicy(method: string, params: unknown): boolean {
   );
 }
 
+/**
+ * Daemon-to-daemon placement subset (PROTOCOL `methods/nodes.md`): a backend
+ * advertising `remoteInitialAgent: 1` (with `remoteMachines: 1`, without
+ * `agentNodes`) accepts `workspace.create.initialAgent.placement` as the
+ * closed remote object, validated by the daemon. True when that applies;
+ * a placement outside the closed object throws.
+ */
+async function remoteInitialAgentPlacement(
+  placement: unknown,
+  observeCapabilities: () => Promise<unknown>,
+): Promise<boolean> {
+  const hello = object(await observeCapabilities());
+  const caps = object(object(hello.server).capabilities);
+  if (caps.agentNodes === 1 || caps.remoteMachines !== 1 || caps.remoteInitialAgent !== 1)
+    return false;
+  const checked = AgentPlacementRequestSchema.parse(placement);
+  if (checked.exclusive === true) throw new Error(m.agent_placement_unavailable());
+  return true;
+}
+
 /** Whole-object precedence: task > call > selected specialist > workspace. */
 export async function prepareNodeRequest(
   method: string,
@@ -66,6 +86,20 @@ export async function prepareNodeRequest(
   if (creation.isolation === 'cow') throw new Error(m.agent_placement_retiredIsolation());
   if (creation.placement !== undefined && creation.isolation !== undefined)
     throw new Error(m.agent_placement_incompatibleIsolation());
+  if (
+    key === 'initialAgent' &&
+    creation.placement != null &&
+    object(creation.placement).target !== 'local'
+  ) {
+    const remoteInitial = await remoteInitialAgentPlacement(
+      creation.placement,
+      observeCapabilities,
+    );
+    if (remoteInitial) {
+      if (!remoteEnabled()) throw new Error(m.agent_placement_labsRequired());
+      return input;
+    }
+  }
   let placement = creation.placement;
   let capabilities = await client.capabilities();
   let readDefaults = false;

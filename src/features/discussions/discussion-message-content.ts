@@ -1,5 +1,9 @@
 import { Lexer, type Token } from 'marked';
-import type { DiscussionAgentMention } from './discussion-agent-mentions';
+import {
+  discussionAgentMentionLabel,
+  type DiscussionAgentMention,
+  type DiscussionAgentNames,
+} from './discussion-agent-mentions';
 import { parseDiscussionReference, type DiscussionReference } from './discussion-references';
 
 export type DiscussionMessagePart =
@@ -63,12 +67,16 @@ function textMentions(body: string, names: readonly string[]) {
   return mentions;
 }
 
-/** Only validated immutable metadata can turn a highlighted label into an agent link. */
+/**
+ * Only validated immutable metadata can turn a highlighted label into an agent link.
+ * Spans validate against their saved name and display the agent's current name.
+ */
 export function discussionMessageParts(
   body: string,
   workspaceId: string,
   mentions: readonly DiscussionAgentMention[] = [],
   mentionNames: readonly string[] = [],
+  agentNames: DiscussionAgentNames = {},
 ): DiscussionMessagePart[] {
   const ranges: { start: number; end: number; part: Exclude<DiscussionMessagePart, string> }[] = [];
   const literals = literalRanges(body);
@@ -100,7 +108,11 @@ export function discussionMessageParts(
       )
     )
       continue;
-    ranges.push({ start: mention.start, end: mention.end, part: { ...mention, kind: 'mention' } });
+    ranges.push({
+      start: mention.start,
+      end: mention.end,
+      part: { ...mention, name: discussionAgentMentionLabel(mention, agentNames), kind: 'mention' },
+    });
   }
   for (const mention of textMentions(body, mentionNames)) {
     if (ranges.some((range) => mention.start < range.end && mention.end > range.start)) continue;

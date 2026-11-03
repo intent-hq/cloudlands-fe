@@ -13,8 +13,20 @@ import {
   selectSettingsFormRequestCurrent,
 } from '../../settings-events/settings-events-selectors';
 import { takeEveryByContextFIFO } from '../../../utils/context-saga-effects';
+import {
+  getHostConnectionTunnel,
+  getManagingHost,
+  setHostConnectionTunnel,
+} from '$lib/client/live/browser-access-host';
 
 async function requestTunnel(intent: ConnectionTunnelIntent): Promise<ConnectionTunnelResult> {
+  // intent-web reads and writes the remote's tunnel setting itself.
+  const host = getManagingHost();
+  if (host) {
+    return intent.kind === 'load'
+      ? getHostConnectionTunnel(host, intent.id)
+      : setHostConnectionTunnel(host, { id: intent.id, enabled: intent.enabled });
+  }
   if (!window.electronAPI?.invoke) throw new Error(m.settings_devices_connectFailed_error());
   return window.electronAPI.invoke(
     intent.kind === 'load'

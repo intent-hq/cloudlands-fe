@@ -604,6 +604,13 @@ describe('ModelPicker guest / collaborator lock', () => {
 
   const hostCatalog = [{ value: 'auggie:sonnet4.6', label: 'Sonnet 4.6', description: 'Smart' }];
 
+  const HOST_PROFILE = {
+    id: 'phost0000001',
+    providerRef: 'codex@phost0000001',
+    baseProviderId: 'codex',
+    name: 'Host work',
+  };
+
   const asGuestWindow = () => {
     mockRoleState.current.connections = { windowBackendId: 'host-1', hasReceivedList: true };
     mockRoleState.current.guestSessions.sessions = {
@@ -697,6 +704,43 @@ describe('ModelPicker guest / collaborator lock', () => {
     expect(vi.mocked(notify.error)).not.toHaveBeenCalled();
     expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
     expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+  });
+
+  // The host's profiles (§5.54) are its administrator's private configuration:
+  // whether or not the guest's catalog can resolve the agent's profile, the
+  // locked chip names only the model, never the profile or "Removed profile".
+  it.each([
+    ['unknown to the guest', []],
+    ['listed in the catalog', [{ ...HOST_PROFILE }]],
+  ])("guest window: never shows the host's profile name when it is %s", async (_, profiles) => {
+    asGuestWindow();
+    availableProviderOverride$.set([]);
+    mockCatalogProfiles.current = profiles;
+    mockAgentSession$.set({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: HOST_PROFILE.providerRef,
+    });
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) =>
+      providerId.startsWith('codex')
+        ? { models: [{ value: 'gpt-5', label: 'GPT-5', description: '' }] }
+        : { models: [] },
+    );
+
+    renderAgentPicker('gpt-5');
+
+    const button = screen.getByRole('button');
+    expect(button.hasAttribute('disabled')).toBe(true);
+    await waitFor(() => expect(button.textContent).toContain('GPT-5'));
+    const labels = [
+      button.textContent ?? '',
+      button.getAttribute('title') ?? '',
+      ...[...button.querySelectorAll('[aria-label], [title]')].flatMap((el) => [
+        el.getAttribute('aria-label') ?? '',
+        el.getAttribute('title') ?? '',
+      ]),
+    ].join(' | ');
+    expect(labels).not.toMatch(/Removed profile|Host work|Default/);
   });
 
   it('guest window: a model missing from the host catalog shows its bare id without auto-fallback', async () => {
@@ -1381,7 +1425,7 @@ describe('ModelPicker legacy Auggie models', () => {
 
     await fireEvent.click(screen.getByRole('button'));
     const legacyToggle = await screen.findByRole('button', { name: 'Toggle legacy models' });
-    const search = screen.getByRole('searchbox', { name: 'Search options' });
+    const search = screen.getByRole('searchbox', { name: 'Search models...' });
     expect(screen.queryByRole('option', { name: /Opus 4.1/ })).toBeNull();
 
     await fireEvent.input(search, { target: { value: 'Legacy' } });
@@ -1418,7 +1462,7 @@ describe('ModelPicker legacy Auggie models', () => {
 
     await fireEvent.click(screen.getByRole('button'));
     const legacyToggle = await screen.findByRole('button', { name: 'Toggle legacy models' });
-    const search = screen.getByRole('searchbox', { name: 'Search options' });
+    const search = screen.getByRole('searchbox', { name: 'Search models...' });
     await fireEvent.click(legacyToggle);
     expect(legacyToggle.getAttribute('aria-expanded')).toBe('true');
 
@@ -1475,7 +1519,7 @@ describe('ModelPicker default pseudo-row filtering', () => {
 
     await fireEvent.click(screen.getByRole('button'));
     await screen.findByRole('option', { name: /Sonnet 4.6/ });
-    const search = screen.getByRole('searchbox', { name: 'Search options' });
+    const search = screen.getByRole('searchbox', { name: 'Search models...' });
     await fireEvent.input(search, { target: { value: 'Default' } });
 
     await waitFor(() =>
@@ -1794,7 +1838,9 @@ describe('ModelPicker combined reasoning mode', () => {
     const listbox = screen.getByRole('listbox');
     const popover = listbox.closest('[data-slot="dropdown-content"]') as HTMLElement;
     expect(popover).toBeTruthy();
-    expect(popover.contains(screen.getByRole('searchbox', { name: 'Search options' }))).toBe(true);
+    expect(popover.contains(screen.getByRole('searchbox', { name: 'Search models...' }))).toBe(
+      true,
+    );
     const modelOption = await screen.findByRole('option', { name: /GPT-5\.6-Sol/ });
     expect(modelOption.textContent).toContain('Codex model');
     expect(modelOption.textContent).not.toContain('Effort:');
@@ -2802,7 +2848,7 @@ describe('ModelPicker multi-provider mode', () => {
       await waitFor(() => expect(getModelsForProviderForLoadingState).toHaveBeenCalledTimes(3));
       const trigger = screen.getByRole('button');
       await fireEvent.click(trigger);
-      let search = screen.getByRole('searchbox', { name: 'Search options' });
+      let search = screen.getByRole('searchbox', { name: 'Search models...' });
       // The silent attempt must not replace the last actionable error with
       // a loading skeleton or remove the inheritance option while in flight.
       expect(screen.getByRole('option', { name: /Default model/ })).toBeTruthy();
@@ -2824,7 +2870,7 @@ describe('ModelPicker multi-provider mode', () => {
       await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
       expect(trigger.getAttribute('aria-expanded')).toBe('false');
       await fireEvent.click(trigger);
-      search = screen.getByRole('searchbox', { name: 'Search options' });
+      search = screen.getByRole('searchbox', { name: 'Search models...' });
       await waitFor(() => expect(document.activeElement).toBe(search));
       expect((await screen.findByRole('button', { name: 'Retry' })).hasAttribute('disabled')).toBe(
         false,
@@ -2893,7 +2939,7 @@ describe('ModelPicker multi-provider mode', () => {
     const { notify } = await import('$lib/components/patterns/notify');
     await waitFor(() => expect(notify.warning).toHaveBeenCalledOnce());
     expect(screen.getByRole('option', { name: /Default model/ })).toBeTruthy();
-    const search = screen.getByRole('searchbox', { name: 'Search options' });
+    const search = screen.getByRole('searchbox', { name: 'Search models...' });
     await fireEvent.input(search, { target: { value: 'unmatched-model' } });
     expect(await screen.findByText(/No results for/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
@@ -5614,7 +5660,7 @@ describe('ModelPicker specialist inherit state (default-option plumbing)', () =>
       const inherited = await screen.findByRole('option', { name: /Default model/ });
       expect(inherited.getAttribute('aria-selected')).toBe('true');
       expect(onModelChange).not.toHaveBeenCalled();
-      await fireEvent.input(screen.getByRole('searchbox', { name: 'Search options' }), {
+      await fireEvent.input(screen.getByRole('searchbox', { name: 'Search models...' }), {
         target: { value: label },
       });
       await fireEvent.click(await screen.findByRole('option', { name: label }));
@@ -6426,6 +6472,25 @@ describe('ModelPicker named provider profiles (§5.54)', () => {
     expect(vi.mocked(getModelsForProviderForLoadingState)).not.toHaveBeenCalledWith(
       expect.stringMatching(/Client A/),
     );
+  });
+
+  it('moves the profile name into the hover tooltip when the trigger hides it', async () => {
+    mockCatalogProfiles.current = [WORK];
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'gpt-5-work',
+        providerId: WORK.providerRef,
+        portal: false,
+        showProfileName: false,
+      },
+    });
+    const trigger = screen.getByRole('button');
+    await waitFor(() => {
+      const value = trigger.querySelector('[aria-label]');
+      expect(value?.getAttribute('aria-label') ?? '').toMatch(/GPT-5 Work row.*Codex.*Work/);
+      expect(value?.getAttribute('title') ?? '').toMatch(/GPT-5 Work row.*Codex.*Work/);
+    });
+    expect(screen.queryByTestId('model-picker-profile')).toBeNull();
   });
 
   it('labels the original configuration Default once its provider has profiles', async () => {

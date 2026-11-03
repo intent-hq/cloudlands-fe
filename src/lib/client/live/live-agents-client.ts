@@ -43,6 +43,7 @@ import type {
   UserMessageIndexPageOptions,
   UserMessageIndexResult,
 } from '../app-client';
+import { collectListPages } from '$shared/paged-list';
 import { backendRequest } from './backend-transport';
 import {
   parseSecretListing,
@@ -269,12 +270,14 @@ export class LiveAgentsClient implements AgentsClient {
     // only when true (the daemon rejects it on any other scope or with
     // `parentAgentId`; older daemons ignore it).
     if (options?.orphanedOnly) params.orphanedOnly = true;
-    const result = await backendRequest<{
+    // Follows `nextToken` on a paging daemon (§5.5 Paged agent lists); the
+    // counts come from the first page and cover the whole workspace.
+    const result = await collectListPages<{
       agents?: unknown[];
       retiredCount?: number;
       scopeCounts?: unknown;
       delegatedCounts?: unknown;
-    }>('agent.list', params);
+    }>((pageParams) => backendRequest('agent.list', pageParams), params, 'agents');
     const agents = Array.isArray(result?.agents) ? result.agents : [];
     const scopeCounts = readScopeCounts(result?.scopeCounts);
     const delegatedCounts = readDelegatedCounts(result?.delegatedCounts);
@@ -784,10 +787,13 @@ export class LiveAgentsClient implements AgentsClient {
     // `agent.getQueue` (§5.5/§6.6) returns `{ success, queue }`; hand the
     // daemon's queue array through verbatim (incl. optional `messageMetadata`).
     // Errors propagate as rejections, like the other reads.
-    const result = await backendRequest<{ queue?: QueuedMessage[] }>('agent.getQueue', {
-      agentId,
-      ...(workspaceId !== undefined ? { workspaceId } : {}),
-    });
+    // Follows `nextToken` on a paging daemon (§5.5 Paged agent lists and
+    // queues), so the whole queue is still returned.
+    const result = await collectListPages<{ queue?: QueuedMessage[] }>(
+      (pageParams) => backendRequest('agent.getQueue', pageParams),
+      { agentId, ...(workspaceId !== undefined ? { workspaceId } : {}) },
+      'queue',
+    );
     return Array.isArray(result?.queue) ? result.queue : [];
   }
   async removeQueued(
@@ -1283,6 +1289,12 @@ export class LiveAgentsClient implements AgentsClient {
         dynamic: {
           subscribeIds: subscribeWorkspaceIds,
           paramsForId: (id) => ({ workspaceId: id }),
+        },
+        // Paged snapshot (§6.9): the rest comes from `agent.list`.
+        continuation: {
+          method: 'agent.list',
+          key: 'agents',
+          params: (scope) => ({ workspaceId: scope.workspaceId }),
         },
       },
       getId: (raw) => String(raw.id ?? ''),
