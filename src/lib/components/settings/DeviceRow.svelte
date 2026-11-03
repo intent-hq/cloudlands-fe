@@ -858,22 +858,24 @@
               ariaLabelledby={`device-${device.id}-detect-hosts-field-label`}
             />
           </SettingsFieldRow>
-          <SettingsFieldRow
-            id={`device-${device.id}-push-to-cloud-field`}
-            compact
-            label={m.settings_devices_pushToCloud_label()}
-            description={syncSupported
-              ? m.settings_devices_pushToCloud_description()
-              : m.settings_backendSync_unsupported_description()}
-          >
-            <Switch
-              id={`device-${device.id}-push-to-cloud`}
-              size="sm"
-              bind:checked={() => pushToCloud, setPushToCloud}
-              disabled={busy !== null || !syncSupported}
-              ariaLabelledby={`device-${device.id}-push-to-cloud-field-label`}
-            />
-          </SettingsFieldRow>
+          {#if !$hostManagesConnections$}
+            <SettingsFieldRow
+              id={`device-${device.id}-push-to-cloud-field`}
+              compact
+              label={m.settings_devices_pushToCloud_label()}
+              description={syncSupported
+                ? m.settings_devices_pushToCloud_description()
+                : m.settings_backendSync_unsupported_description()}
+            >
+              <Switch
+                id={`device-${device.id}-push-to-cloud`}
+                size="sm"
+                bind:checked={() => pushToCloud, setPushToCloud}
+                disabled={busy !== null || !syncSupported}
+                ariaLabelledby={`device-${device.id}-push-to-cloud-field-label`}
+              />
+            </SettingsFieldRow>
+          {/if}
         </div>
       </div>
 

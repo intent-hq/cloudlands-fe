@@ -90,6 +90,10 @@ describe('DevicesSettings on an intent-web host', () => {
     expect(screen.getByRole('note').textContent).toContain(
       m.settings_devices_tailcatUnavailable_note(),
     );
+    // The host has no keychain, so the row offers no iCloud push.
+    expect(
+      screen.queryByRole('switch', { name: m.settings_devices_pushToCloud_label() }),
+    ).toBeNull();
     // No live connection is needed: the switch becomes usable once the host answers.
     await waitFor(() =>
       expect(

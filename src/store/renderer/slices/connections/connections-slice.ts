@@ -100,8 +100,11 @@ export const connectionsListReceived = createAction<[result: ConnectionsListResu
   'connections/listReceived',
 );
 
-/** The Browser access host serving this tab, read once from its runtime config. */
-export const browserHostDetected = createAction<[host: ConnectionsBrowserHost]>(
+/**
+ * The Browser access host serving this tab, read once from its runtime config
+ * (null: no page host, as in the desktop app).
+ */
+export const browserHostDetected = createAction<[host: ConnectionsBrowserHost | null]>(
   'connections/browserHostDetected',
 );
 

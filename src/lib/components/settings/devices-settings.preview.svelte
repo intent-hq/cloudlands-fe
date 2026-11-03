@@ -2,7 +2,10 @@
   // protocol-version-ok-file: fixture versions exercise behind-pin rendering, not protocol capability gates.
   import { definePreview } from '$lib/component-catalog/preview-definition';
   import { store as appStore } from '$store/renderer/store';
-  import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
+  import {
+    browserHostDetected,
+    connectionsListReceived,
+  } from '$store/renderer/slices/connections/connections-slice';
   import { selectConnections } from '$store/renderer/slices/connections/connections-selectors';
   import type { ConnectionsListResult } from '$shared/types/connections';
   import { setupUnavailablePublicationPreview } from '../../../test/connection-publication-preview';
@@ -154,6 +157,31 @@
     };
   }
 
+  /** Settings → Machines on an intent-web host without tailcat or a local daemon. */
+  function setupIntentWeb(empty: boolean) {
+    const stop = setup();
+    const previous = selectConnections.select(appStore.state);
+    appStore.dispatch(
+      browserHostDetected({
+        manageConnections: true,
+        backendBound: true,
+        tailcatAvailable: false,
+        localAvailable: false,
+      }),
+    );
+    appStore.dispatch(
+      connectionsListReceived({
+        activeId: 'studio',
+        windowBackendId: 'studio',
+        connections: empty ? [] : previous.filter((connection) => !connection.isLocal),
+      }),
+    );
+    return () => {
+      appStore.dispatch(browserHostDetected(null));
+      stop();
+    };
+  }
+
   export const preview = definePreview({
     id: 'devices-settings',
     title: 'Device settings',
@@ -177,6 +205,8 @@
         setup: () => setup(),
       },
       'mobile-remote': { props: { mobilePage: true }, setup: () => setup(true) },
+      'intent-web': { props: { editedMachine: 'studio' }, setup: () => setupIntentWeb(false) },
+      'intent-web-empty': { props: {}, setup: () => setupIntentWeb(true) },
     },
   });
 </script>
