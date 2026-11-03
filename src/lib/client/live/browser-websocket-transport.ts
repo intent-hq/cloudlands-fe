@@ -22,6 +22,7 @@ import { supportsReviewMonitoring, type PrMonitorSession } from '$shared/types/p
  */
 import type { PrincipalDiscovery } from '$shared/types/principal';
 import { parseProtocolVersion, type ProtocolVersion } from '$shared/protocol-version';
+import { pickNodeCapabilities } from '$shared/node-capabilities';
 import { assertScopedFileReadSupport } from '$shared/root-file-read-support';
 import {
   classifyStartupReply,
@@ -631,19 +632,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
                 this.ordinaryHello =
                   (result as { connectionRole?: unknown }).connectionRole === undefined;
                 this.acknowledgedHello = structuredClone(result);
-                this.nodeCapabilities = Object.freeze({
-                  agentNodes: capabilities?.agentNodes === 1 ? 1 : 0,
-                  localNodeIsolation: capabilities?.localNodeIsolation === 1 ? 1 : 0,
-                  agentPlatformRouting: capabilities?.agentPlatformRouting === 1 ? 1 : 0,
-                  workspaceMembershipEvents: capabilities?.workspaceMembershipEvents === 1 ? 1 : 0,
-                  // Dock evidence placement (strict integer advertisement).
-                  rawScreenshotRetention: capabilities?.rawScreenshotRetention === 1 ? 1 : 0,
-                  chiefAttachments: capabilities?.chiefAttachments === 1 ? 1 : 0,
-                  // Truncated note reads (§5.2): gates maxContentBytes / baseContentBytes.
-                  noteTruncatedRead: capabilities?.noteTruncatedRead === 1 ? 1 : 0,
-                  // Daemon-to-daemon remote machines: gates "Make available to <backend>".
-                  remoteMachines: capabilities?.remoteMachines === 1 ? 1 : 0,
-                });
+                this.nodeCapabilities = pickNodeCapabilities(capabilities);
                 this.protocolVersion = parseProtocolVersion(
                   (result as { protocolVersion?: unknown }).protocolVersion,
                 );
