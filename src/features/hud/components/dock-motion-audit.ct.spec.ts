@@ -568,7 +568,7 @@ test('motion audit: tool popover, tile removal and waveform', async ({ mount, pa
   expect(waveform.droppedFrames, waveform.name).toBeLessThanOrEqual(2);
 });
 
-test('motion audit: banner, question overlay and aurora', async ({ mount, page }) => {
+test('motion audit: question overlay and aurora', async ({ mount, page }) => {
   await page.setViewportSize({ width: 720, height: 680 });
   const component = await mount(ConversationWireHarness, {
     props: { width: 420, height: 560, failPlacementOnce: true },
@@ -597,31 +597,19 @@ test('motion audit: banner, question overlay and aurora', async ({ mount, page }
     ),
     auroraIn.name,
   ).toEqual([]);
-  // A failed attachment placement raises the notice banner over the transcript edge.
-  const NOTICE = '[data-dock-conversation-notifications] [data-dock-notice]';
-  const banner = await audit(page, 'banner-enter', NOTICE, async () => {
-    await editor.evaluate((element) => {
-      const transfer = new DataTransfer();
-      transfer.items.add(new File(['notes'], 'notes.txt', { type: 'text/plain' }));
-      element.dispatchEvent(
-        new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true }),
-      );
-    });
-    await expect(component.locator(NOTICE).first()).toBeVisible();
-  });
   const question = await audit(page, 'question-open', '[data-dock-questions]', async () => {
     await component
       .getByRole('button', { name: 'Publish synthetic questions', exact: true })
       .click();
     await expect(component.getByTestId('question-wizard-card')).toBeVisible();
   });
-  for (const stats of [auroraIn, auroraOut, banner, question]) {
+  for (const stats of [auroraIn, auroraOut, question]) {
     // No snap at the end, unless the last step came right after a dropped frame.
     if (stats.endGapMs <= 20) expect(stats.endStepPx, `${stats.name} end`).toBeLessThanOrEqual(2);
     expectNoRailReflow(stats);
   }
   // Fades never pop: no single frame changes opacity by more than half.
-  for (const stats of [auroraIn, auroraOut, banner, question])
+  for (const stats of [auroraIn, auroraOut, question])
     expect(stats.maxOpacityStep, stats.name).toBeLessThanOrEqual(0.5);
 });
 

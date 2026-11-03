@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  *
- * No routine toasts in the notch: the conversation's inline banner shows only
+ * No toasts in the notch: the conversation's composer status line shows only
  * failures (error, warning) and notices whose button is the only way to act
  * (e.g. Undo). Plain info and success notices never appear there and are
  * cleared instead of lingering in the store.

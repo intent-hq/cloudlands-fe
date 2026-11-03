@@ -38,6 +38,7 @@
     controlledPlacement = false,
     manualResizeAcknowledgements = false,
     conversationFixture = false,
+    conversationContent: conversationOverride,
     machineFixture = false,
     failMachineOnce = false,
     resizeAcknowledgement = 'accept',
@@ -503,7 +504,7 @@
       {machineError}
       onMachine={machineFixture ? switchMachine : undefined}
       {workspaces}
-      conversation={conversationFixture ? conversationContent : undefined}
+      conversation={conversationFixture ? (conversationOverride ?? conversationContent) : undefined}
       {conversationWorkspaceId}
       onOpenConversation={conversationFixture ? openConversation : undefined}
       onCloseConversation={conversationFixture ? closeConversation : undefined}
