@@ -551,11 +551,6 @@
       ? plainFolderPick.kind
       : null,
   );
-  // Start On: a remote agent starts from the workspace's last commit, which a
-  // new repository or a plain folder lacks, so its first agent stays here.
-  const startOnBackendOnly = $derived<'new-repo' | 'plain-folder' | null>(
-    plainFolder !== null ? 'plain-folder' : isNewRepo ? 'new-repo' : null,
-  );
   // What the picker's git switch acts on in the Existing folder tab.
   const gitSwitchFolder = $derived<'git-repo' | 'folder' | null>(
     repoType !== 'local' || !repoPath
@@ -714,6 +709,18 @@
   // Context items for attachments: images (thumbnail pills) and staged
   // non-image files (path-only until placed at workspace.create redemption)
   let contextItems = $state<ContextItem[]>([]);
+  // Start On: a remote agent starts from the workspace's last commit, which a
+  // new repository or a plain folder lacks, and takes no image or file
+  // attachments, so in those cases the first agent stays here.
+  const startOnBackendOnly = $derived<'new-repo' | 'plain-folder' | 'attachments' | null>(
+    plainFolder !== null
+      ? 'plain-folder'
+      : isNewRepo
+        ? 'new-repo'
+        : contextItems.some((item) => item.type !== 'folder' && isPreviewableAttachment(item))
+          ? 'attachments'
+          : null,
+  );
   // Use saved state first, then fall back to last submitted values, then defaults
   // NOTE: selectedSpecialist can be null (meaning "General / no specialist").
   // We check !== undefined instead of using ?? because null is a valid value

@@ -164,10 +164,11 @@
     onStartOnChange?: (machineId: string) => void;
     /**
      * Only the current backend can take the first agent, and why: a new
-     * repository has no commit for a remote agent to start from, and a plain
-     * folder has no git at all. Null when any machine can.
+     * repository has no commit for a remote agent to start from, a plain
+     * folder has no git at all, and a remote agent takes no image or file
+     * attachments. Null when any machine can.
      */
-    startOnBackendOnly?: 'new-repo' | 'plain-folder' | null;
+    startOnBackendOnly?: 'new-repo' | 'plain-folder' | 'attachments' | null;
     /** Callback when reasoning effort changes */
     onReasoningEffortChange?: (effort: string | undefined) => void;
     /** Callback when team mode changes */
@@ -1117,7 +1118,11 @@
           ? m.workspace_initialAgentPicker_startOnNewRepo_description({
               backend: $startOnOptions$[0]?.label ?? '',
             })
-          : undefined}
+          : startOnBackendOnly === 'attachments'
+            ? m.workspace_initialAgentPicker_startOnAttachments_description({
+                backend: $startOnOptions$[0]?.label ?? '',
+              })
+            : undefined}
     />
   {/if}
 </div>

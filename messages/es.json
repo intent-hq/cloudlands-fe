@@ -6933,6 +6933,7 @@
   "workspace_initialAgentPicker_manageSpecialists_label": "Crear o administrar especialistas",
   "workspace_initialAgentPicker_model_label": "Modelo",
   "workspace_initialAgentPicker_startOn_label": "Iniciar en",
+  "workspace_initialAgentPicker_startOnAttachments_description": "Con archivos adjuntos se inicia en {backend}",
   "workspace_initialAgentPicker_startOnNewRepo_description": "Los repositorios nuevos se inician en {backend}",
   "workspace_initialAgentPicker_startOnPlainFolder_description": "Las carpetas sin git se inician en {backend}",
   "workspace_initialAgentPicker_teamMode_label": "Orquestación de agentes",
