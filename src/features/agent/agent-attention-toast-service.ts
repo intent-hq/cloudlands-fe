@@ -438,7 +438,7 @@ export interface WorkspaceAccessRemovedNotice {
   title: string | undefined;
   /** Display label of the guest session's host. */
   hostLabel: string;
-  /** This window asked to leave (workspace menu or Settings), so say "you left", not "removed". */
+  /** A leave started in this window, so say "you left", not "removed". */
   selfInitiated?: boolean;
 }
 

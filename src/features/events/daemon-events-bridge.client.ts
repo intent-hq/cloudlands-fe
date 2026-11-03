@@ -2998,7 +2998,8 @@ function handleWorkspaceMembershipRemoved(
   };
   // Resolved BEFORE the purge drops the entity.
   const title = state.workspace?.workspaces.map[workspaceId]?.title;
-  // This window's own leave (menu or Settings) reads as "you left", not a removal.
+  // A leave started in this window reads as "you left", not a removal. A leave
+  // started from another window (e.g. Settings in the main window) is not tracked here.
   const selfInitiated = selectIsSelfLeftWorkspace.select(appStore.state, workspaceId);
   if (selfInitiated) appStore.dispatch(guestWorkspaceLeaveAnnounced(session.id, workspaceId));
   const agentIds = state.agentSessions?.agentIdsByWorkspace[workspaceId] ?? [];
