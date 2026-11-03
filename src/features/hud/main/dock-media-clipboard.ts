@@ -13,7 +13,7 @@ import { app, BrowserWindow, clipboard, ClipboardItem, ipcMain, Menu } from 'ele
 import { execFile } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { m } from '../../../shared/paraglide/messages.js';
 import { Logger } from '../../../shared/logger';
@@ -232,26 +232,29 @@ export function createDockMediaClipboard(overrides: Partial<DockMediaClipboardDe
     }
     if (path.join(dir, meta.file) !== file) return null;
     try {
+      // The digest of the file on the clipboard right now: a paste uses the entry only
+      // if its own file has exactly these bytes (name and size are not identity).
+      const exported = await fs.readFile(file);
+      if (exported.byteLength <= 0) return null;
+      const sha256 = createHash('sha256').update(exported).digest('hex');
       if (meta.kind === 'clip') {
-        const stat = await fs.stat(file);
-        if (!stat.isFile() || stat.size <= 0) return null;
         return {
           kind: 'clip',
           name: meta.file,
           mimeType: meta.mimeType,
           sourcePath: file,
-          size: stat.size,
+          size: exported.byteLength,
+          sha256,
           durationMs: meta.durationMs,
           hasMicAudio: meta.hasMicAudio,
         };
       }
-      const stat = await fs.stat(file);
-      if (!stat.isFile() || stat.size <= 0) return null;
       const raw = await fs.readFile(path.join(dir, path.basename(meta.raw)));
       return {
         kind: 'image',
         name: meta.file,
-        size: stat.size,
+        size: exported.byteLength,
+        sha256,
         pixels: { ...meta.pixels, base64: raw.toString('base64') },
         marks: meta.marks as unknown as DockMediaClipboardMark[],
       };

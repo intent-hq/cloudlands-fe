@@ -63,22 +63,27 @@ const files = (page: Page) => page.locator('[data-kind="file"][data-attachment-i
  */
 async function paste(
   page: Page,
-  { own = false, text, file = true }: { own?: boolean; text?: string; file?: boolean } = {},
+  {
+    own = false,
+    text,
+    file = true,
+    extra = false,
+  }: { own?: boolean; text?: string; file?: boolean; extra?: boolean } = {},
 ) {
   const base64 = !file ? null : own ? await clipboard(page, 'lastBytes') : FOREIGN_PNG;
   await editor(page).evaluate(
-    (element, { base64, text }) => {
+    (element, { base64, text, extra, foreign }) => {
       const transfer = new DataTransfer();
-      if (base64) {
-        const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
-        transfer.items.add(new File([bytes], 'pasted.png', { type: 'image/png' }));
-      }
+      const png = (data: string) => Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
+      if (base64) transfer.items.add(new File([png(base64)], 'pasted.png', { type: 'image/png' }));
+      // A second file in the same paste (another app's image alongside).
+      if (extra) transfer.items.add(new File([png(foreign)], 'other.png', { type: 'image/png' }));
       if (text) transfer.setData('text/plain', text);
       element.dispatchEvent(
         new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true }),
       );
     },
-    { base64, text },
+    { base64, text, extra, foreign: FOREIGN_PNG },
   );
 }
 
@@ -223,7 +228,7 @@ test('a slow paste lands only in its own draft and connection, and only for its 
   await expect(files(page)).toHaveCount(0);
 });
 
-test('a paste whose clipboard changed during the read pastes its own file, not the new copy', async ({
+test('a paste is Intent media only for its own single file: a same-name, same-size copy or extra files are not', async ({
   mount,
   page,
 }) => {
@@ -240,7 +245,8 @@ test('a paste whose clipboard changed during the read pastes its own file, not t
   await expect.poll(() => reads(page)).toBe(1);
   await clipboard(page, 'replace');
   await clipboard(page, 'holdReads', false);
-  // A's own file goes the editor's ordinary way; B is not recreated as a screenshot.
+  // B has A's name and size but other bytes: A's own file goes the editor's ordinary
+  // way; B is not recreated as a screenshot.
   await expect(files(page)).toHaveCount(1);
   await expect(screenshots(page)).toHaveCount(1);
 
@@ -251,5 +257,12 @@ test('a paste whose clipboard changed during the read pastes its own file, not t
   await page.keyboard.press('ControlOrMeta+c');
   await expect.poll(async () => (await writes(page)).length).toBe(before + 1);
   await paste(page, { own: true });
+  await expect(screenshots(page)).toHaveCount(2);
+
+  // The copied file with another file in the same paste is not one Intent copy: both
+  // files reach the editor's own paste, nothing is recreated from the clipboard.
+  const filesBefore = await files(page).count();
+  await paste(page, { own: true, extra: true });
+  await expect(files(page)).toHaveCount(filesBefore + 2);
   await expect(screenshots(page)).toHaveCount(2);
 });

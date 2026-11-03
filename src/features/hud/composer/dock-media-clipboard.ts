@@ -158,6 +158,25 @@ export async function showDockMediaMenu(canCut: boolean): Promise<'copy' | 'cut'
 
 const replayed = new WeakSet<Event>();
 
+/**
+ * Whether this paste is exactly the clipboard entry main describes: a single file
+ * (several files, or extra file items, are never one Intent copy) whose bytes have
+ * the entry's size and SHA-256. Name and size alone are not identity.
+ */
+async function isSameFile(files: readonly File[], content: DockMediaClipboardContent) {
+  const [file] = files;
+  if (files.length !== 1 || !file || file.size !== content.size) return false;
+  try {
+    const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+    const hex = Array.from(new Uint8Array(digest), (byte) =>
+      byte.toString(16).padStart(2, '0'),
+    ).join('');
+    return hex === content.sha256;
+  } catch {
+    return false;
+  }
+}
+
 export interface DockMediaPasteHandlers {
   /** Places Intent media in the draft the paste was made in. */
   onIntentMedia: (content: DockMediaClipboardContent) => void;
@@ -169,9 +188,9 @@ export interface DockMediaPasteHandlers {
 /**
  * Capture-phase paste on the composer. Text-only pastes are never touched. With
  * files on the clipboard the event is held while main says whether they are Intent
- * media. The answer is used only if it is about this event's own file (same byte
- * size: the clipboard may have changed during the read) and the draft it was
- * pasted in is still the open one; otherwise this event's own files and text are
+ * media. The answer is used only if it is about this event's own, single file
+ * (same SHA-256: the clipboard may have changed during the read) and the draft it
+ * was pasted in is still the open one; otherwise this event's own files and text are
  * replayed to the original target for the editor's own paste path, provided that
  * target is still in the same, current draft. A stale paste does nothing.
  */
@@ -190,11 +209,13 @@ export function interceptDockMediaPaste(
   event.stopImmediatePropagation();
   void read()
     .catch(() => null)
-    .then((content) => {
+    .then(async (content) => {
       if (!isCurrent()) return;
-      if (content && files.some((file) => file.size === content.size))
-        return onIntentMedia(content);
-      if (!(target instanceof Node) || !target.isConnected) return;
+      if (content && (await isSameFile(files, content))) {
+        if (isCurrent()) onIntentMedia(content);
+        return;
+      }
+      if (!isCurrent() || !(target instanceof Node) || !target.isConnected) return;
       const transfer = new DataTransfer();
       for (const file of files) transfer.items.add(file);
       for (const [type, value] of strings) transfer.setData(type, value);

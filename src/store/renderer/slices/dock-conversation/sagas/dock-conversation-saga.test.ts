@@ -1988,6 +1988,7 @@ describe('dock annotate start feedback, refusals and dictation', () => {
           kind: 'image',
           name: 'screenshot.png',
           size: 8,
+          sha256: '0'.repeat(64),
           pixels: {
             base64: 'iVBORw0KGgo=',
             mimeType: 'image/png',
@@ -2041,6 +2042,7 @@ describe('dock annotate start feedback, refusals and dictation', () => {
           mimeType: 'video/mp4',
           sourcePath: '/userData/dock-clipboard/entry/clip-1234abcd.mp4',
           size: 4096,
+          sha256: '0'.repeat(64),
           durationMs: 42_000,
           hasMicAudio: true,
         },
