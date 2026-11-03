@@ -6,7 +6,11 @@ export const preview = definePreview<ComponentProps<typeof SidebarActionIconsHar
   id: 'sidebar-action-icons',
   title: 'Sidebar action icons',
   defaultState: 'default',
-  states: { default: { props: {} } },
+  states: {
+    default: { props: {} },
+    'active-filter': { props: { filterSelected: true } },
+    refreshing: { props: { refreshDisabled: true } },
+  },
 });
 
 export default SidebarActionIconsHarness;

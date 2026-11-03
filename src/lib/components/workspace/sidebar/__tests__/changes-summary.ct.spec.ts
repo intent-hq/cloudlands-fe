@@ -178,3 +178,28 @@ test('secondary file buttons retain native and modifier activation inside the Ch
   await tracked.click({ modifiers: ['ControlOrMeta'] });
   await expect.poll(() => actions.length).toBe(5);
 });
+
+test('commit file disclosure keeps its native keyboard action inside Changes', async ({
+  mount,
+  page,
+}, testInfo) => {
+  const component = await mount(Preview, {
+    hooksConfig: { previewScene: { scene: 'changes-summary', state: 'disclosures' } },
+  });
+  const toggle = component.getByRole('button', { name: 'Toggle file list', exact: true });
+  await expect(toggle).toHaveCount(1);
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await toggle.focus();
+  await page.keyboard.press('Enter');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(toggle).toBeFocused();
+  await expect(component.getByText('control.ts', { exact: true })).toHaveCount(1);
+  await testInfo.attach('expanded-commit-files', {
+    body: await component.screenshot(),
+    contentType: 'image/png',
+  });
+  await toggle.focus();
+  await page.keyboard.press('Space');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(component.getByText('control.ts', { exact: true })).toHaveCount(0);
+});

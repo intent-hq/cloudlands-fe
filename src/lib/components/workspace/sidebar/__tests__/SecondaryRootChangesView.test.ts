@@ -351,7 +351,7 @@ describe('SecondaryRootChangesView', () => {
     const { getByTestId } = await renderView(makeEntry('main', 'root-9', 'bound111'));
 
     const summary = await waitFor(() => getByTestId('secondary-root-all-changes'));
-    expect(summary.textContent).toContain('4 files changed in Workspace');
+    expect(summary.textContent).toContain('4 files');
     await fireEvent.click(summary);
     expect(mocks.dispatch).toHaveBeenCalledWith({
       type: 'workspaceNavigation/openWorkspaceLocalChanges',
@@ -391,7 +391,7 @@ describe('SecondaryRootChangesView', () => {
     });
 
     const summary = await waitFor(() => getByTestId('secondary-root-all-changes'));
-    expect(summary.textContent).toContain('2 files changed in Workspace');
+    expect(summary.textContent).toContain('2 files');
   });
 
   it('shows the summary for working-tree-only changes', async () => {
@@ -402,7 +402,7 @@ describe('SecondaryRootChangesView', () => {
     const { getByTestId } = await renderView(makeEntry('main', 'root-9', 'bound111'));
 
     const summary = await waitFor(() => getByTestId('secondary-root-all-changes'));
-    expect(summary.textContent).toContain('1 file changed in Workspace');
+    expect(summary.textContent).toContain('1 file');
     expect(mocks.commitDetails).not.toHaveBeenCalled();
   });
 
@@ -454,7 +454,7 @@ describe('SecondaryRootChangesView', () => {
     const { getByTestId } = await renderView(makeEntry('main', 'root-9', 'bound111'));
 
     const summary = await waitFor(() => getByTestId('secondary-root-all-changes'));
-    expect(summary.textContent).toContain('2 files changed in Workspace');
+    expect(summary.textContent).toContain('2 files');
   });
 
   it('treats a transient null commit detail as settled while keeping its retry path', async () => {
@@ -476,9 +476,7 @@ describe('SecondaryRootChangesView', () => {
 
     const { getByTestId } = await renderView(makeEntry('main', 'root-9', 'bound111'));
     await waitFor(() =>
-      expect(getByTestId('secondary-root-all-changes').textContent).toContain(
-        '1 file changed in Workspace',
-      ),
+      expect(getByTestId('secondary-root-all-changes').textContent).toContain('1 file'),
     );
   });
 
@@ -742,17 +740,13 @@ describe('SecondaryRootChangesView', () => {
     mocks.getStatus.mockResolvedValueOnce({ ok: true, data: refreshed });
     const { getByTestId, getByRole } = await renderView(makeEntry('main', 'root-9', 'bound111'));
     await waitFor(() =>
-      expect(getByTestId('secondary-root-all-changes').textContent).toContain(
-        '1 file changed in Workspace',
-      ),
+      expect(getByTestId('secondary-root-all-changes').textContent).toContain('1 file'),
     );
 
     await fireEvent.click(getByRole('button', { name: 'Refresh git status' }));
 
     await waitFor(() =>
-      expect(getByTestId('secondary-root-all-changes').textContent).toContain(
-        '2 files changed in Workspace',
-      ),
+      expect(getByTestId('secondary-root-all-changes').textContent).toContain('2 files'),
     );
   });
 
@@ -976,7 +970,7 @@ describe('SecondaryRootChangesView', () => {
     expect(matches).toHaveLength(1);
   });
 
-  it('renders the commit icon for human commits and the agent avatar for agent commits', async () => {
+  it('keeps agent attribution on agent commit rows', async () => {
     mocks.getStatus.mockResolvedValue({ ok: true, data: makeStatus('main') });
     mocks.getHistory.mockResolvedValue({
       ok: true,
@@ -992,9 +986,9 @@ describe('SecondaryRootChangesView', () => {
     const { container, queryAllByTestId } = await renderView(makeEntry('main'));
     await waitFor(() => expect(container.textContent).toContain('feat: human commit'));
 
-    // Exactly one AgentAvatar (the agent commit); the human commit gets faCodeCommit.
+    // Exactly one attributed avatar, with both commit messages still available.
     expect(queryAllByTestId('mock-component')).toHaveLength(1);
-    expect(container.querySelectorAll('[data-icon="code-commit"]')).toHaveLength(1);
+    expect(container.textContent).toContain('feat: agent commit');
   });
 
   it('opens the gitRootId-scoped commit changeset when the message is clicked', async () => {

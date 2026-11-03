@@ -251,7 +251,7 @@
     size={compact ? 'compact' : undefined}
     wrapContent={!compact}
     aria-current={activeInPanel ? 'page' : undefined}
-    class="flex-1 min-w-0 pr-2 py-0.5 flex items-center gap-1.5 rounded transition-colors cursor-pointer focus:ring-0 focus:outline-0 {compact
+    class="flex-1 min-w-0 pr-2 py-0.5 flex items-center gap-1.5 text-left rounded transition-colors cursor-pointer focus:ring-0 focus:outline-0 {compact
       ? 'h-full px-2 py-0 justify-start'
       : ''}"
     onclick={(e: MouseEvent) => {
@@ -276,14 +276,16 @@
         <Fa icon={faFileAlt} class="h-3! w-3! text-ghost shrink-0" />
       {/if}
       <span
-        class="{compact ? 'type-caption' : 'text-ui'} max-w-full shrink-0 truncate {muted
+        class="{compact ? 'type-caption' : 'text-ui'} min-w-0 shrink truncate {muted
           ? 'text-muted-foreground'
           : 'text-foreground'} {changeType === 'deleted' ? 'file-deleted' : ''}"
       >
         {fileName}
       </span>
       {#if dirPath}
-        <span class="{compact ? 'type-caption' : 'text-ui'} text-subtle truncate">{dirPath}</span>
+        <span class="{compact ? 'type-caption' : 'text-ui'} min-w-0 flex-1 text-subtle truncate"
+          >{dirPath}</span
+        >
       {/if}
     </div>
   </Button>

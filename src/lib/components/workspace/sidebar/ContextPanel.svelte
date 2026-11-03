@@ -336,6 +336,7 @@
       onCreateNote={undefined}
       {loading}
       flush
+      defaultCollapsed={!hasActiveSearch}
     />
 
     {#if !hasActiveSearch}

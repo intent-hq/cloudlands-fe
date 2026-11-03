@@ -219,7 +219,6 @@ describe('ui invariant suite markers', () => {
         'scripts/ui-component-integration.test.ts',
         'scripts/neutral-border-audit.test.ts',
         'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.test.ts',
-        'src/lib/components/__tests__/disclosure-chevron-inventory.test.ts',
         'src/lib/components/ui/__tests__/ProductCompatibilityInventory.test.ts',
         'src/lib/components/ui/toggle/toggle-caller-regression.test.ts',
         'src/lib/components/ui/dropdown/Dropdown.test.ts',

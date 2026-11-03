@@ -1,4 +1,6 @@
 <script lang="ts">
+  import DisclosureIcon from '$lib/components/icons/DisclosureIcon.svelte';
+
   import { Input } from '$lib/components/ui/input';
   import { Button } from '$lib/components/ui/button';
   import type { Note, TaskStatus } from '$shared/types';
@@ -16,7 +18,6 @@
     parseTaskStats,
   } from './utils';
   import {
-    faChevronDown,
     faPlus,
     faArrowUpRightFromSquare,
     faPencil,
@@ -24,6 +25,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
   import { selectUnreadNoteIds } from '$store/renderer/slices/note-read-tracking/note-read-tracking-selectors';
   import TaskStatusIcon from '$lib/components/tiptap/TaskStatusIcon.svelte';
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
@@ -37,10 +39,11 @@
   import { writable } from 'svelte/store';
   import {
     setWorkspaceNoteOrder,
-    toggleWorkspaceCollapsedNote,
+    setWorkspaceNoteExpanded,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
     selectWorkspaceCollapsedNoteIds,
+    selectWorkspaceExpandedNoteIds,
     selectWorkspaceNoteOrder,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { tick } from 'svelte';
@@ -81,6 +84,7 @@
     class?: string;
     indentSize?: number; // Size of each indent level in px (default: 22)
     flush?: boolean;
+    defaultCollapsed?: boolean;
   }
 
   let {
@@ -95,6 +99,7 @@
     class: className,
     indentSize = 22,
     flush = false,
+    defaultCollapsed = true,
   }: Props = $props();
 
   const workspaceIdStore = writable('');
@@ -267,13 +272,23 @@
 
   const noteOrderStore = selectWorkspaceNoteOrder(workspaceIdStore);
   const collapsedNoteIdStore = selectWorkspaceCollapsedNoteIds(workspaceIdStore);
+  const expandedNoteIdStore = selectWorkspaceExpandedNoteIds(workspaceIdStore);
   const customNoteOrder = $derived($noteOrderStore);
-  const collapsedNoteIds = $derived(new Set($collapsedNoteIdStore));
+  const collapsedNoteIds = $derived.by(() => {
+    const collapsed = new Set($collapsedNoteIdStore);
+    const expanded = new Set($expandedNoteIdStore);
+    if (defaultCollapsed) {
+      for (const note of notes) {
+        if (!expanded.has(note.id as string)) collapsed.add(note.id as string);
+      }
+    }
+    return collapsed;
+  });
 
   // Helper to toggle collapse state
   function toggleCollapse(noteId: string, e: MouseEvent) {
     e.stopPropagation();
-    appStore.dispatch(toggleWorkspaceCollapsedNote(workspaceId, noteId));
+    appStore.dispatch(setWorkspaceNoteExpanded(workspaceId, noteId, collapsedNoteIds.has(noteId)));
   }
 
   // Check if a note should be hidden (any ancestor is collapsed)
@@ -588,8 +603,6 @@
                   active={selectedNoteId === note.id}
                   indent={depth}
                   {indentSize}
-                  badge={isCollapsed && hasChildren ? childNotes.length : undefined}
-                  badgeClass="type-caption font-normal tabular-nums text-muted-foreground px-1 py-0"
                   onclick={(event) => onOpenNote?.(note.id, event)}
                   onkeydown={(event) =>
                     handleModifiedEnter(event, (keyEvent) => onOpenNote?.(note.id, keyEvent))}
@@ -602,7 +615,7 @@
                     />
                     {#if isUnread}
                       <span
-                        class="absolute top-0 right-0 w-1.5 h-1.5 bg-background border border-muted-foreground/50 rounded-full"
+                        class="note-unread-dot"
                         title={m.workspace_notesPanel_unreadChanges_tooltip()}
                       ></span>
                     {/if}
@@ -654,8 +667,6 @@
                   active={selectedNoteId === note.id}
                   indent={depth}
                   {indentSize}
-                  badge={isCollapsed && hasChildren ? childNotes.length : undefined}
-                  badgeClass="type-caption font-normal tabular-nums text-muted-foreground px-1 py-0"
                   onclick={(event) => onOpenNote?.(note.id, event)}
                   onkeydown={(event) =>
                     handleModifiedEnter(event, (keyEvent) => onOpenNote?.(note.id, keyEvent))}
@@ -721,7 +732,7 @@
                     </div>
                     {#if isUnread}
                       <span
-                        class="absolute top-0 right-0 w-1.5 h-1.5 bg-background border border-muted-foreground/50 rounded-full"
+                        class="note-unread-dot"
                         title={m.workspace_notesPanel_unreadChanges_tooltip()}
                       ></span>
                     {/if}
@@ -739,8 +750,6 @@
                   active={selectedNoteId === note.id}
                   indent={depth}
                   {indentSize}
-                  badge={isCollapsed && hasChildren ? childNotes.length : undefined}
-                  badgeClass="type-caption font-normal tabular-nums text-muted-foreground px-1 py-0"
                   onclick={(event) => onOpenNote?.(note.id, event)}
                   onkeydown={(event) =>
                     handleModifiedEnter(event, (keyEvent) => onOpenNote?.(note.id, keyEvent))}
@@ -750,7 +759,7 @@
                     <ResourceIconTile kind="note" />
                     {#if isUnread}
                       <span
-                        class="absolute top-0 right-0 w-1.5 h-1.5 bg-background border border-muted-foreground/50 rounded-full"
+                        class="note-unread-dot"
                         title={m.workspace_notesPanel_unreadChanges_tooltip()}
                       ></span>
                     {/if}
@@ -792,21 +801,23 @@
                 : 'inset-0 border-transparent bg-transparent'}"
             ></span>
             {#if hasChildren}
+              <span
+                class="min-w-4 shrink-0 text-center type-caption font-normal leading-none tabular-nums text-muted-foreground"
+              >
+                {formatInteger(childNotes.length)}
+              </span>
               <Button
                 variant="ghost"
                 type="button"
-                class="size-6 shrink-0 p-0 mr-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer opacity-0 group-hover/note:opacity-100 group-focus-within/note:opacity-100"
+                size="icon-compact"
+                class="size-6 shrink-0 mr-1 text-muted-foreground hover:text-foreground transition-colors"
+                aria-expanded={!isCollapsed}
                 onclick={(e) => toggleCollapse(note.id as string, e)}
                 aria-label={isCollapsed
                   ? m.workspace_notesPanel_expand_ariaLabel()
                   : m.workspace_notesPanel_collapse_ariaLabel()}
               >
-                <div
-                  class="transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
-                  class:rotate-90={isCollapsed}
-                >
-                  <Fa icon={faChevronDown} size="10" />
-                </div>
+                <DisclosureIcon expanded={!isCollapsed} />
               </Button>
             {/if}
           </div>
@@ -828,6 +839,22 @@
 {/if}
 
 <style>
+  .note-unread-dot {
+    position: absolute;
+    inset-inline-end: 0;
+    inset-block-start: 0;
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background-color: hsl(var(--workspace-status-unread));
+  }
+
+  @media (forced-colors: active) {
+    .note-unread-dot {
+      background-color: CanvasText;
+    }
+  }
+
   input.inline-edit-input::selection {
     background: hsl(var(--ring) / 0.3);
   }

@@ -208,11 +208,12 @@
       style:width={`${cardWidth}px`}
       data-row-card={card}
     >
-      <h6 class="px-4 pb-1 pt-4 text-ui font-semibold text-foreground" data-card-heading>{card}</h6>
+      <h6 class="px-5 pb-1 pt-4 text-ui font-semibold text-foreground" data-card-heading>{card}</h6>
       {#if card === 'Context'}
-        <div class="px-4">
+        <div class="px-3">
           <NotesPanel
             {notes}
+            defaultCollapsed={false}
             workspaceId={LIST_LABELS_WORKSPACE}
             flush
             selectedNoteId={openedNote}
@@ -236,7 +237,7 @@
           <div data-context-mcp><McpServersSection workspaceId={LIST_LABELS_WORKSPACE} /></div>
         </div>
       {:else if card === 'Agents'}
-        <div class="px-4">
+        <div class="px-3">
           <WorkspaceAgentsList
             {agents}
             {selectedAgentId}
@@ -255,7 +256,7 @@
           />
         </div>
       {:else if card === 'Files'}
-        <div class="h-32 px-4">
+        <div class="h-32 px-2">
           <VirtualizedFileTree
             {flattenedNodes}
             {selectedFile}
@@ -264,7 +265,7 @@
           />
         </div>
       {:else if card === 'Browsers'}
-        <div class="px-2">
+        <div class="px-3">
           <SidebarBrowserGroup
             group={{
               ownerAgentId: null,
@@ -300,7 +301,7 @@
           />
         </div>
       {:else}
-        <WorkspaceShellList workspaceId={LIST_LABELS_WORKSPACE} />
+        <div class="px-3"><WorkspaceShellList workspaceId={LIST_LABELS_WORKSPACE} /></div>
       {/if}
     </section>
   {/each}

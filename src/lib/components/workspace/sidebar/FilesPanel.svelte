@@ -423,7 +423,12 @@
   }
 </script>
 
-<div class={cn('flex h-full min-h-0 flex-col pb-3', className)}>
+<div
+  class={cn(
+    'flex h-full min-h-0 flex-col pb-3 [--file-tree-state-inset:var(--space-3)]',
+    className,
+  )}
+>
   {#if $fileExplorerWorkspacePath}
     <div class="min-h-0 flex-1 overflow-hidden">
       <FileTreeView
@@ -440,7 +445,7 @@
       />
     </div>
   {:else}
-    <p class="px-2 py-2 type-caption text-muted-foreground">
+    <p class="px-3 py-2 type-caption text-muted-foreground">
       {m.workspace_filesPanel_noFolderLinked_label()}
     </p>
   {/if}

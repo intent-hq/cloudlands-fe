@@ -11,8 +11,7 @@
     FlattenedFileNode,
   } from '$store/renderer/slices/file-explorer/file-explorer-types';
   import { ListItem } from '$lib/components/ui/list';
-  import CaretDownIcon from 'phosphor-svelte/lib/CaretDownIcon';
-  import CaretRightIcon from 'phosphor-svelte/lib/CaretRightIcon';
+  import DisclosureIcon from '$lib/components/icons/DisclosureIcon.svelte';
   import {
     faPlus,
     faArrowUpRightFromSquare,
@@ -1214,7 +1213,6 @@
           {@const absoluteIndex = startIndex + i}
           {@const node = flatNode.node}
           {@const depth = flatNode.depth}
-          {@const DisclosureIcon = flatNode.isExpanded ? CaretDownIcon : CaretRightIcon}
 
           {#if node.path === CREATING_SENTINEL_PATH}
             <!-- Inline file creation input -->
@@ -1290,12 +1288,7 @@
                     class={`w-4 h-4 shrink-0 flex items-center justify-center ${node.type === 'directory' ? `opacity-50 ${gitColor}` : `[&>svg]:w-full [&>svg]:h-full`}`}
                   >
                     {#if node.type === 'directory'}
-                      <DisclosureIcon
-                        size={12}
-                        weight="regular"
-                        mirrored={false}
-                        aria-hidden="true"
-                      />
+                      <DisclosureIcon expanded={flatNode.isExpanded} />
                     {:else}
                       {@html getFileTypeIconSvg(node.name)}
                     {/if}
@@ -1342,11 +1335,8 @@
                 >
                   {#snippet iconSnippet()}
                     <DisclosureIcon
-                      size={12}
-                      weight="regular"
-                      mirrored={false}
+                      expanded={flatNode.isExpanded}
                       class="shrink-0"
-                      aria-hidden="true"
                       data-file-tree-disclosure
                     />
                   {/snippet}

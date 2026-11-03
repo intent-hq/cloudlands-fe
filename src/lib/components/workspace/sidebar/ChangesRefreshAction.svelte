@@ -1,24 +1,15 @@
 <script lang="ts">
-  import { Button } from '$lib/components/ui/button';
-  import ArrowClockwise from 'phosphor-svelte/lib/ArrowClockwiseIcon';
+  import SidebarHeaderAction from './SidebarHeaderAction.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
   let { disabled, onclick }: { disabled: boolean; onclick: () => void } = $props();
 </script>
 
-<Button
-  iconOnly
-  variant="plain"
-  size="icon-compact"
-  class="expanded-card-action rounded-md text-foreground hover:bg-muted/50 focus-visible:bg-muted"
+<SidebarHeaderAction
+  icon="refresh"
   {onclick}
   {disabled}
-  aria-busy={disabled}
-  aria-label={m.workspace_sidebarChanges_refreshGitStatus_tooltip()}
-  tooltip={m.workspace_sidebarChanges_refreshGitStatus_tooltip()}
-  tooltipSide="top"
-  tooltipDelayDuration={300}
+  busy={disabled}
+  label={m.workspace_sidebarChanges_refreshGitStatus_tooltip()}
   data-changes-refresh
->
-  <ArrowClockwise size={14} weight="regular" />
-</Button>
+/>

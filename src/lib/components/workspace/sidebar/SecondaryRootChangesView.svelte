@@ -1,4 +1,7 @@
 <script lang="ts">
+  import DisclosureIcon from '$lib/components/icons/DisclosureIcon.svelte';
+  import HistoryBoundary from './HistoryBoundary.svelte';
+
   import { truncatedTitle } from '$lib/actions/observe-overflow';
   /**
    * SecondaryRootChangesView - Read-only per-root changes browser
@@ -45,8 +48,6 @@
   import { writeTextToClipboard } from '$lib/utils/clipboard';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-  import { faChevronDown, faCodeCommit } from '@fortawesome/free-solid-svg-icons';
-  import Fa from 'svelte-fa';
   import type { Snippet } from 'svelte';
   import ChangesRefreshAction from './ChangesRefreshAction.svelte';
   import { formatHiddenChangesNotice, limitDisplayedChanges } from './sidebar-changes-utils';
@@ -261,22 +262,22 @@
   <ChangesRefreshAction disabled={loading} onclick={load} />
 {/snippet}
 
-<div class="flex flex-col gap-3" data-testid="secondary-root-changes-view">
+<div class="flex flex-col gap-2" data-testid="secondary-root-changes-view">
   <!-- Root branch line + refresh -->
-  <div class="flex items-center gap-1.5 text-subtle text-xs -ml-0.5">
+  <div class="flex h-8 items-center gap-2 px-2 type-caption text-muted-foreground">
     <GitBranchIcon size={12} class="shrink-0 text-ghost" />
     {#if branchName}
       <Button
         type="button"
         variant="plain"
-        class="text-ui h-auto min-w-0 cursor-pointer justify-start truncate text-left font-inherit hover:text-foreground"
+        class="h-8 min-w-0 cursor-pointer justify-start truncate px-0 type-caption font-normal text-left hover:text-foreground"
         onclick={copyBranch}
         title={m.workspace_sidebarChanges_copyBranch_tooltip()}
         aria-label={m.workspace_sidebarChanges_copyBranch_ariaLabel({ branch: branchName })}
         data-testid="secondary-root-branch-copy">{branchLabel}</Button
       >
     {:else}
-      <span class="text-ui truncate min-w-0">{branchLabel}</span>
+      <span class="type-caption truncate min-w-0">{branchLabel}</span>
     {/if}
     {#if !onRefreshActionChange}
       <span class="ml-auto">{@render refreshAction()}</span>
@@ -298,66 +299,71 @@
       <Button
         type="button"
         variant="plain"
-        class="h-auto w-full cursor-pointer justify-start rounded-sm border border-transparent px-2 py-1.5 text-left text-subtle"
+        class="h-8 w-full cursor-pointer justify-start rounded-md px-2 type-caption font-normal text-left text-muted-foreground hover:bg-muted"
         onclick={openAllChanges}
         data-testid="secondary-root-all-changes"
       >
         {changedFileCount === 1
-          ? m.workspace_sidebarChanges_filesChangedInSpace_one()
-          : m.workspace_sidebarChanges_filesChangedInSpace_many({
+          ? m.shared_fileChangesList_fileCount_one({ count: formatInteger(changedFileCount) })
+          : m.shared_fileChangesList_fileCount_many({
               count: formatInteger(changedFileCount),
             })}
       </Button>
     {/if}
     <!-- Changed files (read-only) -->
-    <div>
-      <p class="text-ui text-subtle mb-1">
-        {m.workspace_sidebarChanges_rootChangedFiles_label()}
-      </p>
-      {#if status && status.files.length > 0}
-        <ul class="flex flex-col">
-          {#each displayedFiles.visible as file (`${file.staged}:${file.path}`)}
-            <li class="min-w-0">
-              <Button
-                type="button"
-                variant="plain"
-                class="flex h-auto w-full min-w-0 cursor-pointer items-center justify-start gap-1.5 rounded !px-1 -mx-1 py-0.5 text-left text-xs font-inherit hover:bg-muted focus-visible:bg-muted"
-                data-testid="secondary-root-file-open"
-                onclick={(event: MouseEvent) => openFile(file, event)}
-                onkeydown={(event: KeyboardEvent) => {
-                  if (event.key !== 'Enter' || !isCmdClickModifier({ event })) return;
-                  event.preventDefault();
-                  openFile(file, event);
-                }}
-              >
-                <span class="shrink-0 w-3 text-center font-mono {statusColor(file.status)}"
-                  >{file.status}</span
+    {#if status?.files.length || commits.length === 0}
+      <div>
+        <p class="flex h-8 items-center px-2 type-caption font-medium text-foreground">
+          {m.workspace_sidebarChanges_rootChangedFiles_label()}
+        </p>
+        {#if status && status.files.length > 0}
+          <ul class="flex flex-col">
+            {#each displayedFiles.visible as file (`${file.staged}:${file.path}`)}
+              <li class="min-w-0">
+                <Button
+                  type="button"
+                  variant="plain"
+                  class="flex h-8 w-full min-w-0 cursor-pointer items-center justify-start gap-2 rounded-md px-2 type-caption font-normal text-left hover:bg-muted focus-visible:bg-muted"
+                  data-testid="secondary-root-file-open"
+                  onclick={(event: MouseEvent) => openFile(file, event)}
+                  onkeydown={(event: KeyboardEvent) => {
+                    if (event.key !== 'Enter' || !isCmdClickModifier({ event })) return;
+                    event.preventDefault();
+                    openFile(file, event);
+                  }}
                 >
-                <span class="truncate min-w-0 text-foreground" use:truncatedTitle={file.path}
-                  >{file.path}</span
-                >
-                {#if file.staged}
-                  <span class="shrink-0 px-1 py-px rounded bg-muted text-muted-foreground text-xs"
-                    >{m.workspace_fileChanges_staged_label()}</span
+                  <span class="shrink-0 w-3 text-center font-mono {statusColor(file.status)}"
+                    >{file.status}</span
                   >
-                {/if}
-              </Button>
-            </li>
-          {/each}
-        </ul>
-        {#if hiddenFilesNotice}
-          <p class="mt-1 text-xs text-muted-foreground" data-testid="secondary-root-hidden-files">
-            {hiddenFilesNotice}
+                  <span class="truncate min-w-0 text-foreground" use:truncatedTitle={file.path}
+                    >{file.path}</span
+                  >
+                  {#if file.staged}
+                    <span class="shrink-0 px-1 py-px rounded bg-muted text-muted-foreground text-xs"
+                      >{m.workspace_fileChanges_staged_label()}</span
+                    >
+                  {/if}
+                </Button>
+              </li>
+            {/each}
+          </ul>
+          {#if hiddenFilesNotice}
+            <p class="mt-1 text-xs text-muted-foreground" data-testid="secondary-root-hidden-files">
+              {hiddenFilesNotice}
+            </p>
+          {/if}
+        {:else}
+          <p class="px-2 py-1 type-caption text-muted-foreground">
+            {m.workspace_sidebarChanges_rootNoChanges_label()}
           </p>
         {/if}
-      {:else}
-        <p class="text-xs text-ghost">{m.workspace_sidebarChanges_rootNoChanges_label()}</p>
-      {/if}
-    </div>
-
+      </div>
+    {/if}
     <!-- Commit history (read-only) -->
     <div>
-      <p class="text-ui text-subtle mb-1">{m.workspace_commitsTimeline_commits_label()}</p>
+      <p class="flex h-8 items-center px-2 type-caption font-medium text-foreground">
+        {m.workspace_commitsTimeline_commits_label()}
+      </p>
       {#if commits.length > 0}
         {#if recentCommits.length > 0}
           <ul class="flex flex-col">
@@ -369,27 +375,13 @@
 
         {#if olderCommits.length > 0}
           <!-- Registration boundary divider + older-commits expander -->
-          <Button
-            type="button"
-            variant="plain"
-            class="group/boundary relative h-auto w-full cursor-pointer justify-start text-left"
-            data-testid="secondary-root-boundary-toggle"
-            aria-expanded={olderExpanded}
-            aria-label={m.workspace_sidebarChanges_rootShowOlder_ariaLabel()}
+          <HistoryBoundary
+            label={m.workspace_sidebarChanges_rootRegistered_label()}
+            ariaLabel={m.workspace_sidebarChanges_rootShowOlder_ariaLabel()}
+            expanded={olderExpanded}
             onclick={() => (olderExpanded = !olderExpanded)}
-          >
-            <div class="relative z-10 mr-auto flex w-fit items-center gap-2 bg-sidebar py-1.5 pr-3">
-              <span class="flex items-center gap-1.5 text-ui text-subtle bg-sidebar select-none">
-                {m.workspace_sidebarChanges_rootRegistered_label()}
-                <Fa
-                  icon={faChevronDown}
-                  size="xs"
-                  class="opacity-50 transition-transform {olderExpanded ? '' : 'rotate-90'}"
-                />
-              </span>
-            </div>
-            <div class="absolute top-3.5 left-0 right-0 flex-1 border-t border-border"></div>
-          </Button>
+            data-testid="secondary-root-boundary-toggle"
+          />
 
           {#if olderExpanded}
             <!-- Older commits (dimmed, at/below the registration boundary) -->
@@ -404,28 +396,33 @@
           <Button
             type="button"
             variant="plain"
-            class="h-auto w-full !py-1 text-ui text-ghost hover:text-muted-foreground"
+            class="h-7 w-full justify-start gap-1 px-2 type-caption font-normal text-muted-foreground hover:text-foreground"
             data-testid="secondary-root-show-more"
+            wrapContent={false}
             disabled={loading}
             onclick={load}
           >
-            {#if loading}
-              <IntentMarkLoader size={12} class="mr-1" />
-            {/if}
+            <span
+              class="flex size-(--control-height-compact) shrink-0 items-center justify-center"
+              aria-hidden="true"
+            >
+              {#if loading}
+                <IntentMarkLoader size={12} />
+              {/if}
+            </span>
             {m.workspace_sidebarChanges_rootShowMoreCommits_label()}
           </Button>
         {/if}
       {:else}
-        <p class="text-xs text-ghost">{m.workspace_sidebarChanges_rootNoCommits_label()}</p>
+        <p class="px-2 py-1 type-caption text-muted-foreground">
+          {m.workspace_sidebarChanges_rootNoCommits_label()}
+        </p>
       {/if}
     </div>
   {/if}
 </div>
 
-<!-- Read-only commit row matching the primary CommitsTimeline rows: expand
-  chevron + line-changes badge, agent avatar / commit icon, clickable message
-  opening the gitRootId-scoped changeset, relative time. NO push/undo/amend
-  actions and no cloud/pushed indicators — secondary roots are read-only. -->
+<!-- Secondary history opens changesets scoped to this git root. -->
 {#snippet commitRow(commit: CommitInfo)}
   {@const isExpanded = expandedCommits.has(commit.hash)}
   {@const commitFiles = commitFileCache[commit.hash] ?? []}
@@ -436,11 +433,13 @@
     staged: false,
   })) as UIFileChange[]}
   <li class="min-w-0">
-    <div class="relative flex items-center gap-1.5 py-0.5 group w-full rounded px-1 -mx-1">
+    <div
+      class="relative flex h-7 min-w-0 items-center gap-1 group w-full rounded-md px-2 hover:bg-muted"
+    >
       <Button
-        variant="ghost-light"
-        size="icon-xs"
-        class="absolute left-0.75 bg-sidebar opacity-0 group-hover:opacity-100 hover:text-foreground! -ml-1"
+        variant="ghost"
+        size="icon-compact"
+        class="shrink-0 text-muted-foreground hover:text-foreground"
         onclick={(e: MouseEvent) => {
           e.stopPropagation();
           toggleCommitExpanded(commit);
@@ -450,49 +449,45 @@
         aria-label={m.workspace_prSection_toggleFileList_tooltip()}
         data-testid="secondary-root-commit-toggle"
       >
-        <Fa
-          icon={faChevronDown}
-          size={12}
-          class="text-subtle shrink-0 transition-transform {isExpanded ? 'rotate-0' : 'rotate-90'}"
-        />
-        {#if commitFiles.length > 0}
-          <LineChangesBadge
-            additions={commitFiles.reduce((sum, f) => sum + (f.additions || 0), 0)}
-            deletions={commitFiles.reduce((sum, f) => sum + (f.deletions || 0), 0)}
-            size="xs"
-          />
-        {/if}
+        <DisclosureIcon expanded={isExpanded} />
       </Button>
 
-      <!-- Auggie avatar instead of commit icon when made by an agent - hides on hover to show chevron -->
       {#if commit.agentId}
-        <span class="shrink-0 group-hover:opacity-0 transition-opacity pointer-events-none">
+        <span class="shrink-0 pointer-events-none">
           <AgentAvatar agentId={commit.agentId} size={14} class="mr-[-2px]" />
         </span>
-      {:else}
-        <Fa icon={faCodeCommit} size="xs" class="text-ghost shrink-0" />
       {/if}
       <Button
         type="button"
         variant="plain"
-        class="flex h-auto items-center gap-2 flex-1 min-w-0 cursor-pointer justify-start text-left font-inherit"
+        class="flex h-7 items-center gap-2 flex-1 min-w-0 cursor-pointer justify-start px-0 type-caption font-normal text-left"
         onclick={() => openCommitChangeset(commit)}
         data-testid="secondary-root-commit-open"
       >
-        <span class="text-ui text-subtle truncate flex-1" use:truncatedTitle={commit.message}
-          >{commit.message.split('\n')[0]}</span
+        <span
+          class="type-caption text-muted-foreground truncate flex-1"
+          use:truncatedTitle={commit.message}>{commit.message.split('\n')[0]}</span
         >
       </Button>
-      <span class="shrink-0 ml-auto text-ghost text-xs">
+
+      {#if commitFiles.length > 0}
+        <LineChangesBadge
+          additions={commitFiles.reduce((sum, f) => sum + (f.additions || 0), 0)}
+          deletions={commitFiles.reduce((sum, f) => sum + (f.deletions || 0), 0)}
+          size="xs"
+        />
+      {/if}
+      <span class="shrink-0 type-caption tabular-nums text-muted-foreground">
         <RelativeTime date={commit.date} compact />
       </span>
     </div>
 
     <!-- Expanded lazy file list (read-only; clicking a file opens the same changeset) -->
     {#if isExpanded}
-      <div class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px" transition:slide={{ tier: 'moderate' }}>
+      <div class="pl-8 space-y-px" transition:slide={{ tier: 'moderate' }}>
         {#each files as file (file.path)}
           <FileRow
+            compact
             contextKey={`${workspaceId}:${gitRootId}:${commit.hash}`}
             {file}
             muted={true}

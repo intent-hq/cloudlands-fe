@@ -27,6 +27,10 @@ test('unread indicators remain inside clipped rows and disappear when notes are 
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(ContextRowsPreview);
+  await component
+    .locator('[data-note-id="context-plan"]')
+    .getByRole('button', { name: 'Expand', exact: true })
+    .click();
   for (const id of ['context-plan', 'context-task', 'context-reference']) {
     const row = component.locator(`[data-note-id="${id}"]`);
     const indicator = row.locator('[title="Has unread changes"]');
@@ -74,4 +78,39 @@ test('expanding skills renders full-sized, unclipped glyphs for both scopes', as
   await skills.getByRole('button', { name: /Skills/ }).focus();
   await page.keyboard.press('Enter');
   await expect(skills.getByRole('button', { name: 'Interface craft', exact: true })).toHaveCount(0);
+});
+
+test('Spec and notes start collapsed and disclosure preserves note opening and workspace choices', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 320, height: 800 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(ContextRowsPreview, { props: { hierarchy: true } });
+  const spec = component.locator('[data-note-id="spec"]');
+  const expand = spec.getByRole('button', { name: 'Expand', exact: true });
+  await expect(expand).toBeVisible();
+  await expect(expand).toHaveAttribute('aria-expanded', 'false');
+  await expect(component.locator('[data-note-id="spec-task-0"]')).toHaveCount(0);
+  await expect(component.locator('[data-note-id="context-task"]')).toHaveCount(0);
+  await expand.focus();
+  await page.keyboard.press('Enter');
+  await expect(component.locator('[data-note-id="spec-task-0"]')).toBeVisible();
+  await expect(component.getByTestId('opened-note')).toHaveText('');
+  await spec.locator('[data-slot="list-item"]').click();
+  await expect(component.getByTestId('opened-note')).toHaveText('spec');
+  await expect(spec.getByRole('button', { name: 'Collapse', exact: true })).toHaveAttribute(
+    'aria-expanded',
+    'true',
+  );
+  await component.update({ props: { hierarchy: true, workspaceId: 'context-other-workspace' } });
+  await expect(component.locator('[data-note-id="spec-task-0"]')).toHaveCount(0);
+  await component.update({ props: { hierarchy: true, workspaceId: 'context-rows-preview' } });
+  await expect(component.locator('[data-note-id="spec-task-0"]')).toBeVisible();
+  await spec.getByRole('button', { name: 'Collapse', exact: true }).click();
+  await expect(component.locator('[data-note-id="spec-task-0"]')).toHaveCount(0);
+  await testInfo.attach('context-default-disclosures', {
+    body: await component.screenshot(),
+    contentType: 'image/png',
+  });
 });
