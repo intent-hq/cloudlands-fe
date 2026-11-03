@@ -1289,7 +1289,6 @@ jobs:
           set -euo pipefail
           node scripts/ct-changed-specs.mjs --filters "$CT_CHANGED_SPECS" > /dev/null
           echo "Changed component test specs: $CT_CHANGED_SPECS"
-          echo "Repetitions per test: $(node scripts/ct-changed-specs.mjs --repeat-each "$CT_CHANGED_SPECS")"
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -1339,6 +1338,9 @@ jobs:
         # --fail-on-flaky-tests as a backstop. Two workers, like a queue
         # shard. Quarantined tests are excluded as in the required lane; a
         # spec whose tests are all quarantined fails with "No tests found".
+        # The repetitions are sized by the tests Playwright discovers in the
+        # changed specs (--list: no browser, no bundle build), so a few large
+        # specs cannot overrun the job; a discovery error or zero tests fails.
         env:
           NODE_OPTIONS: '--max-old-space-size=4096'
           PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-report/results.json
@@ -1347,7 +1349,9 @@ jobs:
           # A file, not process substitution, so a failing helper stops the step.
           node scripts/ct-changed-specs.mjs --filters "$CT_CHANGED_SPECS" > "$RUNNER_TEMP/ct-filters"
           mapfile -d '' filters < "$RUNNER_TEMP/ct-filters"
-          repeat=$(node scripts/ct-changed-specs.mjs --repeat-each "$CT_CHANGED_SPECS")
+          PLAYWRIGHT_JSON_OUTPUT_FILE="$RUNNER_TEMP/ct-changed-list.json" node scripts/run-ct-tests.mjs \
+            "${filters[@]}" --list --grep-invert '@quarantine\b' --reporter=json > /dev/null
+          repeat=$(node scripts/ct-changed-specs.mjs --repeat-each-listed "$RUNNER_TEMP/ct-changed-list.json")
           node scripts/run-ct-tests.mjs "${filters[@]}" --repeat-each="$repeat" --retries=0 \
             --fail-on-flaky-tests --workers=2 --grep-invert '@quarantine\b' --reporter=list,html,json
       - name: Upload playwright report
