@@ -382,3 +382,44 @@ describe('creation boundary policy', () => {
     expect(request.mock.calls.filter(([method]) => method === 'workspace.get')).toHaveLength(1);
   });
 });
+describe('remote initial agent (daemon-to-daemon placement subset)', () => {
+  const remote = { target: 'remote', nodeId: 'node-mac' };
+  const input = { title: '', initialAgent: { specialist: 'builder', placement: remote } };
+  function d2d(caps: Record<string, unknown>) {
+    return vi.fn(async (method: string): Promise<unknown> => {
+      if (method === 'client.hello') return { server: { capabilities: caps } };
+      throw new Error(`Unexpected ${method}`);
+    });
+  }
+  it('passes workspace.create through unchanged on a backend advertising remoteInitialAgent', async () => {
+    const request = d2d({ remoteMachines: 1, remoteInitialAgent: 1 });
+    expect(await prepareNodeRequest('workspace.create', input, request, () => true)).toEqual(input);
+    expect(request.mock.calls.every(([method]) => method === 'client.hello')).toBe(true);
+  });
+  it('requires the Labs flag', async () => {
+    await expect(
+      prepareNodeRequest(
+        'workspace.create',
+        input,
+        d2d({ remoteMachines: 1, remoteInitialAgent: 1 }),
+        () => false,
+      ),
+    ).rejects.toThrow('Enable Remote agents in Labs');
+  });
+  it('refuses a backend that would ignore the placement', async () => {
+    await expect(
+      prepareNodeRequest('workspace.create', input, d2d({ remoteMachines: 1 }), () => true),
+    ).rejects.toThrow('unavailable');
+  });
+  it('refuses placements outside the closed remote object', async () => {
+    const request = d2d({ remoteMachines: 1, remoteInitialAgent: 1 });
+    for (const placement of [
+      { target: 'local' },
+      { target: 'remote', exclusive: true },
+      { target: 'remote', checkout: 'shared' },
+    ])
+      await expect(
+        prepareNodeRequest('workspace.create', { initialAgent: { placement } }, request, () => true),
+      ).rejects.toThrow();
+  });
+});
