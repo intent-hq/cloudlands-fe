@@ -25,6 +25,8 @@ let emptyNextSubscribes = 0;
 // a pending entry holds its reply until the test resolves it.
 const listPages = new Map<string, unknown>();
 const pendingListPages = new Map<string, () => void>();
+// Reject the next N `ws.list` reads of a token before serving its reply.
+const failListPages = new Map<string, number>();
 
 vi.mock('./backend-transport', () => ({
   backendRequest: vi.fn((method: string, params?: unknown) => {
@@ -49,6 +51,11 @@ vi.mock('./backend-transport', () => ({
     }
     if (method === 'ws.list') {
       const token = String((params as { nextToken?: unknown } | undefined)?.nextToken ?? '');
+      const failures = failListPages.get(token) ?? 0;
+      if (failures > 0) {
+        failListPages.set(token, failures - 1);
+        return Promise.reject(new Error('page read failed'));
+      }
       const reply = listPages.get(token);
       if (reply === 'pending') {
         return new Promise((resolve) => {
@@ -107,6 +114,8 @@ afterEach(() => {
   failNextSubscribes = 0;
   listPages.clear();
   pendingListPages.clear();
+  failListPages.clear();
+  vi.useRealTimers();
   vi.clearAllMocks();
 });
 
@@ -850,20 +859,67 @@ describe('paged snapshots (§6.9 boundedReads)', () => {
     dispose();
   });
 
-  it('keeps the rows seen so far when a page read fails', async () => {
+  const listReadTokens = () =>
+    requestCalls
+      .filter((c) => c.method === 'ws.list')
+      .map((c) => (c.params as { nextToken?: unknown }).nextToken);
+
+  it('retries a failed middle page from the same token and completes the list', async () => {
+    vi.useFakeTimers();
+    listPages.set('n1', { rows: [{ id: 'b' }], nextToken: 'n2' });
+    listPages.set('n2', { rows: [{ id: 'c' }], nextToken: null });
+    failListPages.set('n2', 2);
     const handler = vi.fn();
     const dispose = createDeltaSubscription<Row>({ channel: PAGED, getId, normalize, handler });
-    await flush();
+    await vi.advanceTimersByTimeAsync(0);
     push('subscription.push', {
       subscriptionId: 'chan-1',
       kind: 'snapshot',
       seq: 0,
       snapshot: [{ id: 'a' }],
-      nextToken: 'missing',
+      nextToken: 'n1',
     });
-    await flush();
-    await flush();
-    expect(lastValues(handler)).toEqual(['a']);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(listReadTokens()).toEqual(['n1', 'n2', 'n2', 'n2']);
+    expect(lastValues(handler)).toEqual(['a', 'b', 'c']);
+    expect(requestCalls.filter((c) => c.method === 'ws.subscribe')).toHaveLength(1);
+    dispose();
+  });
+
+  it('resubscribes for a fresh snapshot when a middle page keeps failing', async () => {
+    vi.useFakeTimers();
+    listPages.set('n1', { rows: [{ id: 'b' }], nextToken: 'n2' });
+    failListPages.set('n2', 3);
+    const handler = vi.fn();
+    const dispose = createDeltaSubscription<Row>({ channel: PAGED, getId, normalize, handler });
+    await vi.advanceTimersByTimeAsync(0);
+    push('subscription.push', {
+      subscriptionId: 'chan-1',
+      kind: 'snapshot',
+      seq: 0,
+      snapshot: [{ id: 'a' }],
+      nextToken: 'n1',
+    });
+    // Three tries of `n2` (250 ms + 500 ms apart): the rows seen so far stay.
+    await vi.advanceTimersByTimeAsync(800);
+    expect(listReadTokens()).toEqual(['n1', 'n2', 'n2', 'n2']);
+    expect(lastValues(handler)).toEqual(['a', 'b']);
+    expect(requestCalls.filter((c) => c.method === 'ws.subscribe')).toHaveLength(1);
+    // After the registration backoff the channel is redone for a fresh
+    // snapshot, which pages the whole list again.
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(requestCalls.filter((c) => c.method === 'ws.unsubscribe')).toHaveLength(1);
+    expect(requestCalls.filter((c) => c.method === 'ws.subscribe')).toHaveLength(2);
+    listPages.set('n2', { rows: [{ id: 'c' }], nextToken: null });
+    push('subscription.push', {
+      subscriptionId: 'chan-2',
+      kind: 'snapshot',
+      seq: 0,
+      snapshot: [{ id: 'a' }],
+      nextToken: 'n1',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(lastValues(handler)).toEqual(['a', 'b', 'c']);
     dispose();
   });
 });

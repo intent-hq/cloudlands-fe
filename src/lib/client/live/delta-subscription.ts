@@ -35,7 +35,10 @@
  * precedent) instead of dropped.
  */
 import type { SubscriptionHandler, Unsubscribe } from '../app-client';
+import { createLogger } from '$lib/utils/client-logger';
 import { backendRequest, onBackendNotification, onBackendReconnected } from './backend-transport';
+
+const logger = createLogger('DeltaSubscription');
 
 /** Incremental change set carried by a `kind:"delta"` push. */
 export interface DeltaPayload {
@@ -254,6 +257,8 @@ interface DynamicChannelState<T> {
   reconciler: DeltaReconciler<T>;
   /** True once a snapshot seeded this channel (its push-confirmation). */
   seeded: boolean;
+  /** Paged-snapshot continuations given up in a row (resubscribe backoff). */
+  continuationFailures: number;
   /** Gap seen: deltas are ignored until the recovery snapshot lands. */
   awaitingResnapshot: boolean;
   /** Consecutive registration failures, feeding the backoff delay. */
@@ -272,6 +277,12 @@ const MAX_BUFFERED_PUSHES = 32;
 
 /** Safety stop for a paged snapshot's continuation chain. */
 const MAX_SNAPSHOT_PAGES = 1000;
+
+/** Tries per continuation page (same token) before the snapshot is redone. */
+const CONTINUATION_PAGE_ATTEMPTS = 3;
+
+/** Base delay between tries of one continuation page (doubles each try). */
+const CONTINUATION_RETRY_BASE_MS = 250;
 
 /** Base delay for channel-registration retry backoff. */
 const RETRY_BASE_MS = 1000;
@@ -318,6 +329,8 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
   // daemon-side subscription — the stale id is best-effort unsubscribed.
   let channelGeneration = 0;
   let retryAttempt = 0;
+  /** Paged-snapshot continuations given up in a row (resubscribe backoff). */
+  let continuationFailures = 0;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   // Dynamic form: one channel per desired id, keyed by id.
   const dynamicChannels = new Map<string, DynamicChannelState<T>>();
@@ -547,6 +560,7 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
         seeded: false,
         awaitingResnapshot: false,
         retryAttempt: 0,
+        continuationFailures: 0,
       };
       dynamicChannels.set(id, state);
       registerDynamicChannel(id, state);
@@ -568,30 +582,57 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
 
   // Paged snapshot (§6.9): fetch the rows after `nextToken` through the
   // channel's list read and fill them in, page by page. Stops when a newer
-  // snapshot, reset or teardown replaces this one; a failed page read leaves
-  // the rows seen so far (the next snapshot retries).
+  // snapshot, reset or teardown replaces this one. A page that fails is tried
+  // again from the same token (CONTINUATION_PAGE_ATTEMPTS tries, with
+  // backoff); if it still fails, the rows after it would be missing until the
+  // next snapshot, so `recovery.resubscribe` forces one — delayed by the
+  // registration backoff for repeated give-ups, so a page that keeps failing
+  // cannot spin. A chain that completes resets that backoff.
   const continueSnapshot = (
     target: DeltaReconciler<T>,
     scope: Record<string, unknown>,
     firstToken: string,
+    recovery: { failures: () => number; setFailures: (n: number) => void; resubscribe: () => void },
   ) => {
     const continuation = channel.continuation;
     if (!continuation) return;
     const epoch = target.epoch;
+    const stale = () => disposed || target.epoch !== epoch;
     void (async () => {
       let token: string | null = firstToken;
       for (let pages = 0; token && pages < MAX_SNAPSHOT_PAGES; pages += 1) {
-        const reply: Record<string, unknown> | undefined = await backendRequest<
-          Record<string, unknown>
-        >(continuation.method, { ...continuation.params(scope), nextToken: token }).catch(
-          () => undefined,
-        );
-        if (disposed || target.epoch !== epoch || !reply) return;
+        let reply: Record<string, unknown> | undefined;
+        for (let attempt = 0; attempt < CONTINUATION_PAGE_ATTEMPTS; attempt += 1) {
+          if (attempt > 0) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, CONTINUATION_RETRY_BASE_MS * 2 ** (attempt - 1)),
+            );
+            if (stale()) return;
+          }
+          reply = await backendRequest<Record<string, unknown>>(continuation.method, {
+            ...continuation.params(scope),
+            nextToken: token,
+          }).catch(() => undefined);
+          if (stale()) return;
+          if (reply) break;
+        }
+        if (!reply) {
+          const failures = recovery.failures();
+          logger.warn(
+            `${continuation.method} continuation page failed ${CONTINUATION_PAGE_ATTEMPTS} times; resubscribing ${channel.subscribeMethod} for a fresh snapshot`,
+          );
+          recovery.setFailures(failures + 1);
+          setTimeout(() => {
+            if (!stale()) recovery.resubscribe();
+          }, retryDelayMs(failures));
+          return;
+        }
         const rows = reply[continuation.key];
         target.fillFromPage(Array.isArray(rows) ? rows : []);
         emit();
         token = typeof reply.nextToken === 'string' && reply.nextToken ? reply.nextToken : null;
       }
+      recovery.setFailures(0);
     })();
   };
 
@@ -609,7 +650,17 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
           state.seeded = true;
           state.reconciler.applySnapshot(push.seq, push.snapshot ?? []);
           emit();
-          if (push.nextToken) continueSnapshot(state.reconciler, state.params, push.nextToken);
+          if (push.nextToken) {
+            continueSnapshot(state.reconciler, state.params, push.nextToken, {
+              failures: () => state.continuationFailures,
+              setFailures: (n) => {
+                state.continuationFailures = n;
+              },
+              resubscribe: () => {
+                if (dynamicChannels.get(id) === state) resnapshotDynamicChannel(id, state);
+              },
+            });
+          }
         } else if (!state.awaitingResnapshot) {
           if (state.reconciler.applyDelta(push.seq, push.delta ?? {})) {
             emit();
@@ -631,7 +682,15 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
     if (push.kind === 'snapshot') {
       reconciler.applySnapshot(push.seq, push.snapshot ?? []);
       emit();
-      if (push.nextToken) continueSnapshot(reconciler, params, push.nextToken);
+      if (push.nextToken) {
+        continueSnapshot(reconciler, params, push.nextToken, {
+          failures: () => continuationFailures,
+          setFailures: (n) => {
+            continuationFailures = n;
+          },
+          resubscribe: resnapshot,
+        });
+      }
     } else if (reconciler.applyDelta(push.seq, push.delta ?? {})) {
       emit();
     } else {
