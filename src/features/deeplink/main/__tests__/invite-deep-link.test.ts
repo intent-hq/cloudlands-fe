@@ -644,6 +644,29 @@ describe('handleInviteDeepLink', () => {
     expect(logLines.join('\n')).toContain('invite-expired');
   });
 
+  // The host owner has no GitHub or GitLab connected: intentd refuses
+  // redemption with `github-identity-required` (provider-neutral). The guest
+  // gets its own sentence naming the cause, not the generic one; no gist.
+  it('github-identity-required challenge refusal: distinct failure dialog, code logged, no gist', async () => {
+    challenge.mockRejectedValue(
+      new InviteRpcError(-32603, { code: 'github-identity-required', detail: SECRET }),
+    );
+    await expect(handleInviteDeepLink(LINK)).resolves.toBeUndefined();
+    const forgeDialog = showMessageBox.mock.calls.at(-1)?.[0] as { type: string; message: string };
+    expect(forgeDialog).toMatchObject({ type: 'error' });
+    expect(localCalls('github.identityProof.create')).toEqual([]);
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(openBackendWindow).not.toHaveBeenCalled();
+    const allLogs = logLines.join('\n');
+    expect(allLogs).toContain('"inviteCode":"github-identity-required"');
+    expect(allLogs).not.toContain(SECRET);
+
+    challenge.mockRejectedValue(new InviteRpcError(-32603, { code: 'some-unknown-code' }));
+    await expect(handleInviteDeepLink(LINK)).resolves.toBeUndefined();
+    const genericDialog = showMessageBox.mock.calls.at(-1)?.[0] as { message: string };
+    expect(genericDialog.message).not.toBe(forgeDialog.message);
+  });
+
   // Multiplayer guest caps (intent-hq/intentd#1917): the guest cap is spent
   // at join time — on `invite.prove`, after the gist is verified — so the
   // daemon refuses it with `-32602` / `workspace-full`. It is a documented
@@ -1687,6 +1710,25 @@ describe('handleInviteDeepLink — returning guest', () => {
     const dialog = showMessageBox.mock.calls.at(-1)?.[0] as { type: string; message: string };
     expect(dialog).toMatchObject({ type: 'error' });
     expect(logLines.join('\n')).toContain('"inviteCode":"owner-self-join"');
+  });
+
+  // A returning guest's stored credential is refused because the host owner
+  // has no forge: the proof would be refused the same way, so no proof runs.
+  it('github-identity-required on accept: the confirm prompt fails, no proof runs, distinct failure dialog', async () => {
+    const confirmPrompt = fakeConsent('open').prompt;
+    showInviteConsent.mockReturnValueOnce(confirmPrompt);
+    accept.mockRejectedValue(new InviteRpcError(-32603, { code: 'github-identity-required' }));
+
+    await handleInviteDeepLink(LINK);
+
+    expect(confirmPrompt.dismiss).toHaveBeenCalledExactlyOnceWith('failed');
+    expect(challenge).not.toHaveBeenCalled();
+    expect(prove).not.toHaveBeenCalled();
+    expectNoProof();
+    expect(guestAdd).not.toHaveBeenCalled();
+    const dialog = showMessageBox.mock.calls.at(-1)?.[0] as { type: string; message: string };
+    expect(dialog).toMatchObject({ type: 'error' });
+    expect(logLines.join('\n')).toContain('"inviteCode":"github-identity-required"');
   });
 
   it.each([
