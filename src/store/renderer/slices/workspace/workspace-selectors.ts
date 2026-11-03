@@ -943,3 +943,17 @@ export const selectWorkspaceScriptReadContext = store.createSelector<[wsId: stri
 export const selectHidesAgentCreationActions = store.createSelector<[wsId: string], boolean>(
   (state, wsId) => selectWorkspaceAgentManagementContext.select(state, wsId) === null,
 );
+
+/**
+ * Named provider profiles (§5.54) are the host administrator's private
+ * configuration. A guest — a guest window, or a seat that cannot manage the
+ * workspace's agents — never sees their names: profile labels read as the
+ * bare provider instead (a guest's catalog cannot resolve them anyway, so
+ * they would otherwise read "Removed profile"). Fails closed, like the agent
+ * management gate, while the window's identity is still settling.
+ */
+export const selectHidesProviderProfileNames = store.createSelector<[wsId: string], boolean>(
+  (state, wsId) =>
+    selectHostRole.select(state) === 'guest' ||
+    (!!wsId && selectHidesAgentCreationActions.select(state, wsId)),
+);
