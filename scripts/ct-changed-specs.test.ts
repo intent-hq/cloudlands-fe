@@ -372,6 +372,72 @@ describe('--affected against a real repository', () => {
   });
 });
 
+// A PR branch and a main that moved ahead after it branched. main edits a spec
+// and a component another spec loads; the branch edits its own spec only.
+function divergedRepo() {
+  const repo = initRepo();
+  write(repo, 'src/pr/own.ct.spec.ts', 'v1');
+  write(repo, 'src/main/edited-on-main.ct.spec.ts', 'v1');
+  write(repo, 'src/main/Widget.svelte', '<p>v1</p>\n');
+  write(
+    repo,
+    'src/main/widget.ct.spec.ts',
+    "import Widget from './Widget.svelte';\nexport { Widget };\n",
+  );
+  const branched = commitAll(repo, 'branch point');
+  git(repo, 'checkout', '-q', '-b', 'pr');
+  write(repo, 'src/pr/own.ct.spec.ts', 'v2');
+  const prHead = commitAll(repo, 'pr change');
+  git(repo, 'checkout', '-q', 'main');
+  write(repo, 'src/main/edited-on-main.ct.spec.ts', 'v2');
+  write(repo, 'src/main/Widget.svelte', '<p>v2</p>\n');
+  const mainTip = commitAll(repo, 'main moves ahead');
+  return { repo, branched, prHead, mainTip };
+}
+
+function cli(repo: string, ...argv: string[]) {
+  const result = spawnSync(process.execPath, [SCRIPT, ...argv], {
+    cwd: repo,
+    encoding: 'utf8',
+    env: { ...process.env, NODE_OPTIONS: '' },
+  });
+  expect(result.status, result.stderr).toBe(0);
+  return result.stdout.trim().split('\n');
+}
+
+// cloudlands-fe#4114 (job 126070303811) repeated seven specs, six of them
+// changed only on main, and was cancelled at its time limit: the diff ran
+// from a base that main had since moved past. Both modes diff from the
+// merge-base of base and head, so only the branch's own changes count.
+describe('a base that moved ahead of the branch', () => {
+  it('--diff lists only the branch’s own specs', () => {
+    const { repo, prHead, mainTip } = divergedRepo();
+    expect(cli(repo, '--diff', mainTip, prHead).at(-1)).toBe(
+      'ct_changed_specs=["src/pr/own.ct.spec.ts"]',
+    );
+  });
+
+  it('--affected leaves out specs that load files only main changed', () => {
+    const { repo, prHead, mainTip } = divergedRepo();
+    expect(cli(repo, '--affected', mainTip, prHead).slice(-2)).toEqual([
+      'ct_affected_specs=[]',
+      'ct_affected_over_budget=[]',
+    ]);
+  });
+
+  it('falls back to the base itself when no merge-base is reachable', () => {
+    const { repo, branched, prHead } = divergedRepo();
+    const shallow = tempDir();
+    git(shallow, 'init', '-q');
+    git(shallow, 'fetch', '-q', '--depth=1', `file://${repo}`, prHead);
+    git(shallow, 'fetch', '-q', '--depth=1', `file://${repo}`, branched);
+    git(shallow, 'checkout', '-q', prHead);
+    expect(cli(shallow, '--diff', branched, 'HEAD').at(-1)).toBe(
+      'ct_changed_specs=["src/pr/own.ct.spec.ts"]',
+    );
+  });
+});
+
 // cloudlands-fe#4029's first ChatPanel commit (180340be9) changed these files;
 // the queue then failed chat-panel-composer-geometry.ct.spec.ts. Replayed
 // against this checkout's committed tree, which a shallow CI clone has, so the
@@ -580,6 +646,75 @@ function stepRun(lines: string[], stepName: string): string {
   }
   return body.join('\n');
 }
+
+// The release-fast-path step that picks $BASE_SHA for every relevance step,
+// under bash against the checkout shape of cloudlands-fe#4114: HEAD is
+// GitHub's merge commit of the PR head onto the current main tip, while
+// pull_request.base.sha still names the older main the PR was pushed against.
+describe('release-fast-path diff base', () => {
+  function resolveBase(cwd: string, env: Record<string, string>) {
+    const githubEnv = join(tempDir(), 'env');
+    writeFileSync(githubEnv, '');
+    const result = spawnSync(
+      'bash',
+      ['-e', '-o', 'pipefail', '-c', stepRun(jobLines('release-fast-path'), 'Resolve diff base')],
+      {
+        cwd,
+        encoding: 'utf8',
+        env: { ...process.env, PR_HEAD_SHA: '', ...env, GITHUB_ENV: githubEnv },
+      },
+    );
+    expect(result.status, result.stderr).toBe(0);
+    return readFileSync(githubEnv, 'utf8');
+  }
+
+  function prMergeCheckout() {
+    const { repo, branched, prHead, mainTip } = divergedRepo();
+    git(repo, 'checkout', '-q', '--detach', mainTip);
+    git(repo, 'merge', '-q', '--no-ff', '-m', `Merge ${prHead} into ${mainTip}`, prHead);
+    return { repo, branched, prHead, mainTip };
+  }
+
+  it('checks out the merge commit and its parents', () => {
+    const job = jobLines('release-fast-path');
+    const checkout = job.indexOf('      - uses: actions/checkout@v7');
+    expect(job.slice(checkout, checkout + 4)).toContain('          fetch-depth: 2');
+    expect(job.filter((line) => line.includes('BASE_SHA: ${{'))).toEqual([
+      '          EVENT_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}',
+    ]);
+  });
+
+  it('uses the merge commit’s first parent, not a lagging pull_request.base.sha', () => {
+    const { repo, branched, prHead, mainTip } = prMergeCheckout();
+    expect(resolveBase(repo, { EVENT_BASE_SHA: branched, PR_HEAD_SHA: prHead })).toBe(
+      `BASE_SHA=${mainTip}\n`,
+    );
+    // The lagging base reproduces the incident; the resolved one does not.
+    expect(cli(repo, '--diff', branched, 'HEAD').at(-1)).toBe(
+      'ct_changed_specs=["src/main/edited-on-main.ct.spec.ts","src/pr/own.ct.spec.ts"]',
+    );
+    expect(cli(repo, '--diff', mainTip, 'HEAD').at(-1)).toBe(
+      'ct_changed_specs=["src/pr/own.ct.spec.ts"]',
+    );
+  });
+
+  it('keeps the event base, fetched, when HEAD is not a merge of the PR head', () => {
+    const { repo, branched, prHead } = divergedRepo();
+    git(repo, 'config', 'uploadpack.allowAnySHA1InWant', 'true');
+    const checkout = tempDir();
+    git(checkout, 'init', '-q');
+    git(checkout, 'remote', 'add', 'origin', `file://${repo}`);
+    git(checkout, 'fetch', '-q', '--depth=2', 'origin', prHead);
+    git(checkout, 'checkout', '-q', prHead);
+    // Queue entries have no PR head; a PR checked out at its head keeps it too.
+    for (const env of [
+      { EVENT_BASE_SHA: branched },
+      { EVENT_BASE_SHA: branched, PR_HEAD_SHA: prHead },
+    ])
+      expect(resolveBase(checkout, env)).toBe(`BASE_SHA=${branched}\n`);
+    expect(git(checkout, 'cat-file', '-t', branched)).toBe('commit');
+  });
+});
 
 describe('test-ct-changed workflow job', () => {
   const job = jobLines('test-ct-changed');
