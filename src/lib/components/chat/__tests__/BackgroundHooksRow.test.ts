@@ -15,8 +15,9 @@ import {
   runBackgroundHookRequested,
 } from '$store/renderer/slices/background-hooks/background-hooks-slice';
 
-const { dispatchMock, hooksState, snapshotState, openHookTabMock } = vi.hoisted(() => ({
+const { dispatchMock, hooksState, snapshotState, openHookTabMock, authority } = vi.hoisted(() => ({
   dispatchMock: vi.fn(),
+  authority: { hidesManagerActions: false },
   hooksState: { hooks: [] as unknown[] },
   snapshotState: { status: 'ready' as 'loading' | 'ready' | 'failed' },
   openHookTabMock: vi.fn(),
@@ -58,6 +59,15 @@ vi.mock('$store/renderer/slices/background-hooks/background-hooks-selectors', ()
   }),
 }));
 
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectHidesOwnerWorkspaceActions: () => ({
+    subscribe: (run: (value: boolean) => void) => {
+      run(authority.hidesManagerActions);
+      return () => {};
+    },
+  }),
+}));
+
 import BackgroundHooksRow from '../BackgroundHooksRow.svelte';
 
 function makeHook(overrides: Partial<BackgroundHook> = {}): BackgroundHook {
@@ -84,6 +94,7 @@ describe('BackgroundHooksRow', () => {
     vi.setSystemTime(new Date('2026-07-31T10:03:00Z'));
     snapshotState.status = 'ready';
     hooksState.hooks = [];
+    authority.hidesManagerActions = false;
   });
 
   afterEach(() => {
@@ -275,6 +286,26 @@ describe('BackgroundHooksRow', () => {
 
     expect(dispatchMock).toHaveBeenCalledWith(runBackgroundHookRequested('ws-1', 'hook-1'));
     expect(dispatchMock).toHaveBeenCalledWith(cancelBackgroundHookRequested('ws-1', 'hook-1'));
+  });
+
+  it('withholds the manager-only Run now and Cancel actions from a guest', async () => {
+    authority.hidesManagerActions = true;
+    hooksState.hooks = [makeHook()];
+    render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    await fireEvent.click(screen.getByTestId('background-hook-summary'));
+    expect(screen.queryByTestId('background-hook-run-now-action')).toBeNull();
+    expect(screen.queryByTestId('background-hook-cancel-action')).toBeNull();
+
+    await fireEvent.click(screen.getByTestId('background-hook-chip'));
+    const viewScript = await waitFor(() => screen.getByTestId('background-hook-view-script-item'));
+    expect(screen.queryByRole('menuitem', { name: /Run now/ })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: /Cancel/ })).toBeNull();
+
+    dispatchMock.mockClear();
+    await fireEvent.click(viewScript);
+    expect(openHookTabMock).toHaveBeenCalledOnce();
+    expect(dispatchMock).not.toHaveBeenCalled();
   });
 
   it('hover card shows the TTL as an expires-in duration when expiresAt is set', async () => {

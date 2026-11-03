@@ -45,6 +45,7 @@ const {
     listeners: new Set<(value: 'loading' | 'stale' | 'ready' | 'failed') => void>(),
   },
   workspaceState: {
+    hidesManagerActions: false,
     workspace: {
       id: 'ws-1',
       repositoryOwner: 'acme',
@@ -105,6 +106,12 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: () => ({
     subscribe: (run: (value: unknown) => void) => {
       run(workspaceState.workspace);
+      return () => {};
+    },
+  }),
+  selectHidesOwnerWorkspaceActions: () => ({
+    subscribe: (run: (value: boolean) => void) => {
+      run(workspaceState.hidesManagerActions);
       return () => {};
     },
   }),
@@ -1101,6 +1108,28 @@ describe('MonitoredPrsRow', () => {
     expect(dispatchMock).toHaveBeenCalledWith(
       cancelPrMonitorRequested('ws-1', 'mon-1', makeMonitor().origin),
     );
+  });
+
+  it('withholds the manager-only Check and Flush and Cancel items from a guest', async () => {
+    workspaceState.hidesManagerActions = true;
+    try {
+      monitorsState.monitors = [makeMonitor()];
+      render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+      await fireEvent.click(screen.getByTestId('monitored-pr-chip'));
+      const openInAppItem = await waitFor(() =>
+        screen.getByTestId('monitored-pr-open-in-app-item'),
+      );
+      expect(screen.getByTestId('monitored-pr-open-external-item')).toBeTruthy();
+      expect(screen.queryByTestId('monitored-pr-check-flush-item')).toBeNull();
+      expect(screen.queryByTestId('monitored-pr-cancel-item')).toBeNull();
+
+      await fireEvent.click(openInAppItem);
+      expect(openLinkInAppMock).toHaveBeenCalledOnce();
+      expect(dispatchMock).not.toHaveBeenCalled();
+    } finally {
+      workspaceState.hidesManagerActions = false;
+    }
   });
 
   it('chip menu Open in App opens the PR URL in the embedded browser panel', async () => {

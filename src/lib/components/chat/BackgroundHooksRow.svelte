@@ -46,6 +46,7 @@
     runBackgroundHookRequested,
   } from '$store/renderer/slices/background-hooks/background-hooks-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { selectHidesOwnerWorkspaceActions } from '$store/renderer/slices/workspace/workspace-selectors';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import {
     safeSubscriptionRowTransition,
@@ -86,6 +87,8 @@
 
   const hooks$ = selectBackgroundHooks(workspaceIdStore);
   const snapshotStatus$ = selectBackgroundHooksSnapshotStatus(workspaceIdStore);
+  // `hook.runNow` and `hook.cancel` are manager-only; a guest keeps "View script".
+  const hidesManagerActions$ = selectHidesOwnerWorkspaceActions(workspaceIdStore);
 
   // Refcounted live subscription: the read middleware opens the `hook:*`
   // events.subscribe on the first subscriber and disposes on the last.
@@ -294,10 +297,15 @@
                 class="w-36"
                 aria-label={m.chat_backgroundHooks_row_ariaLabel()}
               >
-                <Menu.Item disabled={hook.state === 'running'} onSelect={() => handleRunNow(hook)}>
-                  <Fa icon={faPlay} class="h-2.5 w-2.5" />
-                  {m.chat_backgroundHooks_runNow_label()}
-                </Menu.Item>
+                {#if !$hidesManagerActions$}
+                  <Menu.Item
+                    disabled={hook.state === 'running'}
+                    onSelect={() => handleRunNow(hook)}
+                  >
+                    <Fa icon={faPlay} class="h-2.5 w-2.5" />
+                    {m.chat_backgroundHooks_runNow_label()}
+                  </Menu.Item>
+                {/if}
                 <Menu.Item
                   data-testid="background-hook-view-script-item"
                   onSelect={() => handleViewScript(hook)}
@@ -305,11 +313,13 @@
                   <Fa icon={faCode} class="h-2.5 w-2.5" />
                   {m.chat_backgroundHooks_viewScript_label()}
                 </Menu.Item>
-                <Menu.Separator />
-                <Menu.Item onSelect={() => handleCancel(hook)}>
-                  <Fa icon={faXmark} class="h-2.5 w-2.5" />
-                  {m.chat_backgroundHooks_cancel_label()}
-                </Menu.Item>
+                {#if !$hidesManagerActions$}
+                  <Menu.Separator />
+                  <Menu.Item onSelect={() => handleCancel(hook)}>
+                    <Fa icon={faXmark} class="h-2.5 w-2.5" />
+                    {m.chat_backgroundHooks_cancel_label()}
+                  </Menu.Item>
+                {/if}
               </Menu.Content>
             </Menu.Root>
             <Button
@@ -404,16 +414,18 @@
             <div
               class="flex min-w-0 flex-wrap items-center justify-end gap-1 border-t border-border px-2 py-1.5"
             >
-              <Button
-                variant="ghost-light"
-                size="xs"
-                disabled={hook.state === 'running'}
-                data-testid="background-hook-run-now-action"
-                onclick={() => handleRunNow(hook)}
-              >
-                <Fa icon={faPlay} class="h-2.5 w-2.5" />
-                {m.chat_backgroundHooks_runNow_label()}
-              </Button>
+              {#if !$hidesManagerActions$}
+                <Button
+                  variant="ghost-light"
+                  size="xs"
+                  disabled={hook.state === 'running'}
+                  data-testid="background-hook-run-now-action"
+                  onclick={() => handleRunNow(hook)}
+                >
+                  <Fa icon={faPlay} class="h-2.5 w-2.5" />
+                  {m.chat_backgroundHooks_runNow_label()}
+                </Button>
+              {/if}
               <Button
                 variant="ghost-light"
                 size="xs"
@@ -423,15 +435,17 @@
                 <Fa icon={faCode} class="h-2.5 w-2.5" />
                 {m.chat_backgroundHooks_viewScript_label()}
               </Button>
-              <Button
-                variant="ghost-light"
-                size="xs"
-                data-testid="background-hook-cancel-action"
-                onclick={() => handleCancel(hook)}
-              >
-                <Fa icon={faXmark} class="h-2.5 w-2.5" />
-                {m.chat_backgroundHooks_cancel_label()}
-              </Button>
+              {#if !$hidesManagerActions$}
+                <Button
+                  variant="ghost-light"
+                  size="xs"
+                  data-testid="background-hook-cancel-action"
+                  onclick={() => handleCancel(hook)}
+                >
+                  <Fa icon={faXmark} class="h-2.5 w-2.5" />
+                  {m.chat_backgroundHooks_cancel_label()}
+                </Button>
+              {/if}
             </div>
           </div>
         {/if}
