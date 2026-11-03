@@ -8,12 +8,12 @@ test('ordinary open clears the visible recovery filter without disrupting typing
   await page.setViewportSize({ width: 360, height: 600 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(CommandPalettePreview, {
-    props: { initialQuery: 'GitLab', withoutWorkspace: true },
-    hooksConfig: { previewScene: { scene: 'command-palette', state: 'no-workspace' } },
+    props: { initialQuery: 'provider profiles', withoutWorkspace: true },
+    hooksConfig: { previewScene: { scene: 'command-palette', state: 'provider-profiles' } },
   });
   const dialog = page.getByRole('dialog');
   const input = dialog.getByRole('textbox');
-  await expect(input).toHaveValue('GitLab');
+  await expect(input).toHaveValue('provider profiles');
   await component.update({ props: { initialQuery: '', withoutWorkspace: true } });
   await expect(input).toHaveValue('');
   await expect(input).toBeFocused();
