@@ -350,8 +350,9 @@ describe('RepoSelector form row label', () => {
     await waitFor(() => expect(rowLabel(container)).toBe('Codebase'));
 
     mocks.forgeState = 'none';
+    mocks.state.recentRepos = [];
     notify();
-    await waitFor(() => expect(container.textContent).not.toContain('Codebase/Project'));
-    expect(rowLabel(container)).toBe('Codebase');
+    await waitFor(() => expect(rowLabel(container)).toBe('Project'));
+    expect(container.textContent).not.toContain('Codebase/Project');
   });
 });
