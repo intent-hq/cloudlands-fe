@@ -47,6 +47,7 @@ import type {
   Unsubscribe,
   WorkspaceCancelDeleteResult,
   WorkspaceRetireResult,
+  WorkspaceCreateLaunchFailure,
   WorkspaceCreateResult,
   WorkspaceDeleteResult,
   WorkspaceDiskUsageResult,
@@ -136,6 +137,32 @@ function extractErrorCode(error: unknown): string | undefined {
   if (!data || typeof data !== 'object') return undefined;
   const code = (data as { code?: unknown }).code;
   return typeof code === 'string' && code.length > 0 ? code : undefined;
+}
+
+/**
+ * The committed workspace of a `launch-failed` create (PROTOCOL nodes.md
+ * "Placement subset"): the workspace and its initial agent exist, only the
+ * remote start failed. Undefined unless `data.workspaceId` is a string.
+ */
+function extractLaunchFailure(error: unknown): WorkspaceCreateLaunchFailure | undefined {
+  if (!error || typeof error !== 'object') return undefined;
+  const data = (error as { data?: unknown }).data;
+  if (!data || typeof data !== 'object') return undefined;
+  const record = data as {
+    code?: unknown;
+    workspaceId?: unknown;
+    launch?: { agentId?: unknown } | null;
+    cause?: { message?: unknown } | null;
+  };
+  if (record.code !== 'launch-failed') return undefined;
+  if (typeof record.workspaceId !== 'string' || record.workspaceId.length === 0) return undefined;
+  const agentId = record.launch?.agentId;
+  const cause = record.cause?.message;
+  return {
+    workspaceId: record.workspaceId,
+    ...(typeof agentId === 'string' && agentId.length > 0 ? { agentId } : {}),
+    ...(typeof cause === 'string' && cause.length > 0 ? { cause } : {}),
+  };
 }
 
 /**
@@ -356,8 +383,9 @@ export class LiveWorkspacesClient implements WorkspacesClient {
       const conflict = extractConflict(error);
       if (conflict) return { success: false, error: message, conflict };
       const errorCode = extractErrorCode(error);
+      const launchFailure = extractLaunchFailure(error);
       return errorCode
-        ? { success: false, error: message, errorCode }
+        ? { success: false, error: message, errorCode, ...(launchFailure ? { launchFailure } : {}) }
         : { success: false, error: message };
     }
   }

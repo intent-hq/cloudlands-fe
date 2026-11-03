@@ -111,6 +111,22 @@ describe('remote machines saga — refresh', () => {
     ]);
   });
 
+  it('records remoteInitialAgent: 1 only alongside remoteMachines: 1', async () => {
+    backend({ remoteMachines: 1, remoteInitialAgent: 1 });
+    start();
+    dispatch(remoteMachinesRefreshRequested());
+    await vi.waitFor(() => expect(store.state.remoteMachines.supported).toBe(true));
+    expect(store.state.remoteMachines.initialAgentPlacement).toBe(true);
+  });
+
+  it('treats a backend without remoteInitialAgent as unable to place the initial agent', async () => {
+    backend({ remoteMachines: 1, remoteInitialAgent: true });
+    start();
+    dispatch(remoteMachinesRefreshRequested());
+    await vi.waitFor(() => expect(store.state.remoteMachines.supported).toBe(true));
+    expect(store.state.remoteMachines.initialAgentPlacement).toBe(false);
+  });
+
   it('ignores a non-string fingerprint from a bridge without the channel (web build)', async () => {
     backend();
     invoke.mockResolvedValue({ success: false, error: 'Browser mock: channel not implemented' });
