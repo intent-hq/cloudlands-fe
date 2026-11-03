@@ -186,7 +186,7 @@ export function createDockEvidenceNative(
         capture: result.value.capture,
         annotate: result.value.annotate,
         record: result.value.record,
-        captureModes: result.value.captureModes === true,
+        ...(result.value.captureModes ? { captureModes: true } : {}),
       });
     return result;
   }

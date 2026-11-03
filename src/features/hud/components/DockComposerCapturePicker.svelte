@@ -51,7 +51,8 @@
   let content = $state<HTMLElement | null>(null);
   let keyboardOpen = false;
   // Hovering moves focus into the menu; closing returns it to where the person was typing.
-  let returnFocus: HTMLElement | null = null;
+  // The button itself is named, not kept: its element is re-created while the menu is open.
+  let returnFocus: HTMLElement | 'trigger' | null = null;
   let hoverTimer: ReturnType<typeof setTimeout> | undefined;
   let closeTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -67,11 +68,26 @@
     }
   });
 
+  // Every close (choice, Escape, pointer leaving) returns focus to where it was.
+  let wasOpen = false;
+  $effect(() => {
+    if (open) {
+      wasOpen = true;
+      return;
+    }
+    if (!wasOpen) return;
+    wasOpen = false;
+    const target = returnFocus === 'trigger' ? trigger : returnFocus;
+    returnFocus = null;
+    keyboardOpen = false;
+    if (target?.isConnected) void tick().then(() => target.focus({ preventScroll: true }));
+  });
+
   function show(fromKeyboard: boolean): void {
     cancelTimers();
     keyboardOpen = fromKeyboard;
     const active = document.activeElement;
-    returnFocus = fromKeyboard ? trigger : active instanceof HTMLElement ? active : null;
+    returnFocus = fromKeyboard ? 'trigger' : active instanceof HTMLElement ? active : null;
     open = true;
   }
   function enter(event: PointerEvent): void {
@@ -157,12 +173,7 @@
               ?.focus(),
           );
       }}
-      onCloseAutoFocus={(event) => {
-        event.preventDefault();
-        returnFocus?.focus({ preventScroll: true });
-        returnFocus = null;
-        keyboardOpen = false;
-      }}
+      onCloseAutoFocus={(event) => event.preventDefault()}
     >
       <Menu.RadioGroup value={mode}>
         {#each modes as option (option)}
