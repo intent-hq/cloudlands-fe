@@ -102,9 +102,17 @@
                  cache when the bar has any, else fresh input. -->
             {#if bar.cachePct > 0}
               <span class="bar-in" class:seg-min={bar.inPct > 0} style:height="{bar.inPct}%"></span>
-              <span class="bar-cache bar-base" class:bar-base-peak={bar.peak}></span>
+              <span
+                class="bar-cache bar-base"
+                class:bar-base-peak={bar.peak}
+                class:seg-min={bar.cachePct > 0}
+              ></span>
             {:else}
-              <span class="bar-in bar-base" class:bar-base-peak={bar.peak}></span>
+              <span
+                class="bar-in bar-base"
+                class:bar-base-peak={bar.peak}
+                class:seg-min={bar.inPct > 0}
+              ></span>
             {/if}
           </span>
         {/each}
@@ -337,8 +345,9 @@
     background: hsl(var(--foreground));
   }
 
-  /* Cache reads dwarf the other counters; keep any non-zero segment visible
-     without letting the floors (max 25% each) swallow a short bar. */
+  /* Keep every non-zero segment visible, including the base that fills the
+     bar (cache, or input when there is none), whichever counter dominates;
+     the floors (max 25% each) never swallow a short bar. */
   .seg-min {
     min-height: min(2px, 25%);
   }

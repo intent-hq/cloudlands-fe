@@ -104,3 +104,64 @@ test('by-hour still highlights the peak bar when no cache was reported', async (
       });
   expect(await baseColor(10)).not.toBe(await baseColor(9));
 });
+
+// Mixes where a non-cache counter dominates: the base segment (the one that
+// fills the bar) must keep its own floor, or a reported category vanishes
+// while its legend entry still shows (review on cloudlands-fe#4113).
+const dominatedMixes = {
+  'input-dominated with a tiny cache': {
+    counters: {
+      ...empty,
+      inputTokens: 100_000_000,
+      outputTokens: 1,
+      thoughtTokens: 1,
+      cacheReadTokens: 1,
+    },
+    reported: ['.bar-thought', '.bar-out', '.bar-in', '.bar-cache'],
+  },
+  'output-dominated without cache': {
+    counters: { ...empty, inputTokens: 1, outputTokens: 100_000_000 },
+    reported: ['.bar-out', '.bar-in'],
+  },
+} as const;
+
+async function expectReportedVisible(card: Locator, index: number, reported: readonly string[]) {
+  const devicePixel = await card.evaluate(() => 1 / window.devicePixelRatio);
+  const heights = await card
+    .locator('.bar')
+    .nth(index)
+    .evaluate(
+      (node, selectors) =>
+        selectors.map((sel) => [sel, node.querySelector(sel)?.getBoundingClientRect().height ?? 0]),
+      [...reported],
+    );
+  for (const [sel, height] of heights) {
+    expect(height as number, `${sel} is visible`).toBeGreaterThanOrEqual(devicePixel);
+  }
+}
+
+for (const [name, mix] of Object.entries(dominatedMixes)) {
+  const mixData: UsageStatsResult = {
+    ...data,
+    byHourOfDay: Array.from({ length: 24 }, (_, hour) => ({
+      hour,
+      ...(hour === 7 ? mix.counters : empty),
+    })),
+    byMonth: Array.from({ length: 12 }, (_, i) => ({
+      month: i + 1,
+      ...(i === 9 ? mix.counters : empty),
+    })),
+  };
+
+  test(`by-hour shows every reported category when ${name}`, async ({ mount }) => {
+    const card = await mount(TokensByHourCard, {
+      props: { data: mixData, mode: 'month', label: 'NOV 2026' },
+    });
+    await expectReportedVisible(card, 7, mix.reported);
+  });
+
+  test(`by-month shows every reported category when ${name}`, async ({ mount }) => {
+    const card = await mount(TokensByMonthCard, { props: { data: mixData, yearKey: '2025' } });
+    await expectReportedVisible(card, 9, mix.reported);
+  });
+}
