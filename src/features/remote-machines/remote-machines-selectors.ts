@@ -10,6 +10,13 @@ import {
   selectProviderCatalogProfiles,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { remoteModelSwitchSupport, type RemoteModelSwitchSupport } from './remote-model-picker';
+import {
+  resolveStartOn,
+  START_ON_BACKEND,
+  startOnOptions,
+  startOnVisible,
+  type StartOnOption,
+} from './start-on';
 
 /**
  * Every remote-machine surface shows only while the Labs "Remote agents" flag
@@ -17,12 +24,13 @@ import { remoteModelSwitchSupport, type RemoteModelSwitchSupport } from './remot
  * flag off hides them; it revokes nothing.
  */
 export const selectRemoteMachinesVisible = store.createSelector(
-  (state) => selectLabsRemoteAgentsEnabled.select(state) && state.remoteMachines.supported === true,
+  (state) =>
+    selectLabsRemoteAgentsEnabled.select(state) && state.remoteMachines?.supported === true,
 );
 
 /** The current backend's exposed machines, by name. */
 export const selectRemoteMachines = store.createSelector((state): RemoteMachine[] =>
-  Object.values(state.remoteMachines.machines).sort((a, b) => a.name.localeCompare(b.name)),
+  Object.values(state.remoteMachines?.machines ?? {}).sort((a, b) => a.name.localeCompare(b.name)),
 );
 
 /** This computer's own daemon certificate fingerprint (matches the local row). */
@@ -96,4 +104,37 @@ export const selectDefaultHasOverrides = store.createSelector((state): Record<st
       config.env.length > 0,
     ]),
   ),
+);
+
+/**
+ * New Workspace → Start On shows: remote surfaces on, the backend accepts an
+ * initial-agent placement (`remoteInitialAgent: 1`), and another machine is
+ * usable.
+ */
+export const selectStartOnVisible = store.createSelector((state) =>
+  startOnVisible({
+    remoteMachinesVisible: selectRemoteMachinesVisible.select(state),
+    supported: state.remoteMachines?.initialAgentPlacement === true,
+    machines: selectRemoteMachines.select(state),
+  }),
+);
+
+/** The backend first (by its label), then each machine available to it; empty while hidden. */
+export const selectStartOnOptions = store.createSelector((state): StartOnOption[] =>
+  selectStartOnVisible.select(state)
+    ? startOnOptions({
+        backendLabel: selectCurrentBackendLabel.select(state),
+        machines: selectRemoteMachines.select(state),
+      })
+    : [],
+);
+
+/**
+ * The machine the first agent starts on for a remembered choice: that
+ * machine while the row shows and it is usable, else the backend ('').
+ */
+export const selectEffectiveStartOn = store.createSelector((state, remembered?: string): string =>
+  selectStartOnVisible.select(state)
+    ? resolveStartOn(remembered, selectRemoteMachines.select(state))
+    : START_ON_BACKEND,
 );

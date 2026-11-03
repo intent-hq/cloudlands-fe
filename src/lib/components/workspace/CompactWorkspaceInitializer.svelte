@@ -127,6 +127,7 @@
   import Button from '../ui/button/button.svelte';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import CreateButtonProgress from './initializer/CreateButtonProgress.svelte';
+  import { selectEffectiveStartOn } from '$features/remote-machines/remote-machines-selectors';
   import InitialAgentPicker from './initializer/InitialAgentPicker.svelte';
   import IssueSuggestions, {
     preloadIssues,
@@ -753,6 +754,9 @@
   // Track if team mode is selected (the orchestrator specialist coordinates).
   // Defaults to single-agent mode on first launch; a remembered choice wins.
   let isTeamMode = $state<boolean>(savedAgentSettings?.isTeamMode ?? false);
+  // Start On: remembered machine id ('' = the current backend). The row
+  // resolves it against the machines available now (selectEffectiveStartOn).
+  let startOnMachineId = $state<string>(savedAgentSettings?.startOnMachineId ?? '');
 
   function resetUnavailableSpecialist(): void {
     selectedSpecialist = isTeamMode
@@ -897,6 +901,7 @@
     if (!settings || agentSetupPinned()) return;
     if (settings.selectedSpecialist !== undefined) selectedSpecialist = settings.selectedSpecialist;
     if (settings.isTeamMode !== undefined) isTeamMode = settings.isTeamMode;
+    if (settings.startOnMachineId !== undefined) startOnMachineId = settings.startOnMachineId;
     selectedProvider = settings.selectedProvider ?? selectedProvider;
     const model = settings.selectedModel;
     // A persisted bare model id belongs to the provider persisted with it;
@@ -1013,6 +1018,7 @@
         settings.selectedProvider ??
         $defaultProviderId$) === provider;
     isTeamMode = settings.isTeamMode ?? false;
+    startOnMachineId = settings.startOnMachineId ?? '';
     selectedSpecialist =
       settings.selectedSpecialist !== undefined
         ? settings.selectedSpecialist
@@ -2460,6 +2466,7 @@
           selectedReasoningEffort,
           isTeamMode,
           selectedProvider,
+          startOnMachineId: selectEffectiveStartOn.select(appStore.state, startOnMachineId),
         },
         rememberAgentRepoKey,
         setupScriptExplicit,
@@ -2681,6 +2688,7 @@
       selectedReasoningEffort,
       isTeamMode,
       selectedProvider,
+      startOnMachineId: selectEffectiveStartOn.select(appStore.state, startOnMachineId),
       skipIsolation,
       remoteSetup, // null at this point
       // Repo selection — preserved so the next form re-opens on the same repo.
@@ -3639,12 +3647,14 @@
             {onNavigateAway}
             bind:selectedSpecialist
             {selectedModel}
-            onModelChange={(model) => {
+            onModelChange={(model, automatic) => {
               selectedModel = model;
               // An explicit pick pins the model for this form session so late
-              // hydration cannot overwrite it (intent-hq/monorepo#2678).
-              if (model) modelPickedThisSession = true;
+              // hydration cannot overwrite it (intent-hq/monorepo#2678). A
+              // model chosen for the Start On machine is not a user pick.
+              if (model && !automatic) modelPickedThisSession = true;
             }}
+            bind:startOnMachineId
             bind:selectedReasoningEffort
             onReasoningEffortChange={() => (effortPickedThisSession = true)}
             onSetupPick={() => (setupPickedThisSession = true)}

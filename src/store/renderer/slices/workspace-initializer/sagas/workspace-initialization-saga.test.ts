@@ -30,6 +30,9 @@ vi.mock('$lib/components/patterns/notify', () => ({
 }));
 
 import { appClient } from '$lib/client';
+import { notify } from '$lib/components/patterns/notify';
+import { m } from '$shared/paraglide/messages.js';
+import { remoteMachinesLoaded } from '$features/remote-machines/remote-machines-slice';
 import { registerWorkspaceInitializationPreparation } from '$lib/components/workspace/initializer/workspace-initialization-preparation';
 import {
   chooseDefaultSetupScript,
@@ -500,6 +503,92 @@ describe('workspaceInitializerSaga (registered production owner, reducer-backed 
       entrypoint: 'compact',
       status: 'success',
       prepared: { pull: false },
+    });
+  });
+
+  describe('Start On (remote initial agent)', () => {
+    const remoteAgent = () => ({ ...compactSubmission().agent, startOnMachineId: 'node-mac' });
+    beforeEach(() => {
+      appStore.dispatch(
+        remoteMachinesLoaded({
+          supported: true,
+          initialAgentPlacement: true,
+          machines: [
+            {
+              id: 'node-mac',
+              name: 'Mac mini',
+              hosts: [],
+              port: 7443,
+              fingerprint: 'fp',
+              state: 'connected',
+              runningAgents: 0,
+              addedAt: '2026-11-01T00:00:00Z',
+            },
+          ],
+          localFingerprint: null,
+          executorBackends: null,
+        }),
+      );
+    });
+
+    it('sends the placement and stays quiet when the agent runs on the machine', async () => {
+      create.mockResolvedValue({
+        ok: true,
+        data: {
+          workspace,
+          initialAgent: {
+            id: 'agent-1',
+            nodeId: 'node-mac',
+            placement: { target: 'remote', checkout: 'isolated' },
+          },
+        },
+      } as never);
+      const action = workspaceInitializationSubmitted(
+        compactSubmission({ agent: remoteAgent() }),
+        consumer,
+      );
+      appStore.dispatch(action);
+      await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+      expect(create.mock.calls[0][0]).toMatchObject({
+        initialAgent: { placement: { target: 'remote', checkout: 'isolated', nodeId: 'node-mac' } },
+      });
+      expect(notify.warning).not.toHaveBeenCalled();
+    });
+
+    it('warns when the backend started the agent somewhere else', async () => {
+      const action = workspaceInitializationSubmitted(
+        compactSubmission({ agent: remoteAgent() }),
+        consumer,
+      );
+      appStore.dispatch(action);
+      await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+      expect(notify.warning).toHaveBeenCalledWith(
+        m.workspace_startOn_notOnMachine_warning({ machine: 'Mac mini' }),
+      );
+    });
+
+    it('reports a start failure on the machine after the workspace was created', async () => {
+      create.mockResolvedValue({
+        ok: false,
+        error: 'provider exited',
+        errorCode: 'launch-failed',
+      } as never);
+      const action = workspaceInitializationSubmitted(
+        compactSubmission({ agent: remoteAgent() }),
+        consumer,
+      );
+      appStore.dispatch(action);
+      await expect(action.promise).rejects.toThrow(
+        m.workspace_startOn_launchFailed_error({ machine: 'Mac mini', cause: 'provider exited' }),
+      );
+    });
+
+    it('sends no placement for the backend', async () => {
+      const action = workspaceInitializationSubmitted(compactSubmission(), consumer);
+      appStore.dispatch(action);
+      await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+      expect(create.mock.calls[0][0].initialAgent).not.toHaveProperty('placement');
+      expect(notify.warning).not.toHaveBeenCalled();
     });
   });
 

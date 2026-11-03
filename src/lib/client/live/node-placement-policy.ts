@@ -91,7 +91,10 @@ export async function prepareNodeRequest(
     creation.placement != null &&
     object(creation.placement).target !== 'local'
   ) {
-    const remoteInitial = await remoteInitialAgentPlacement(creation.placement, observeCapabilities);
+    const remoteInitial = await remoteInitialAgentPlacement(
+      creation.placement,
+      observeCapabilities,
+    );
     if (remoteInitial) {
       if (!remoteEnabled()) throw new Error(m.agent_placement_labsRequired());
       return input;

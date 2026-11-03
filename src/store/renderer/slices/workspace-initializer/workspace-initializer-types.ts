@@ -96,6 +96,11 @@ export interface WorkspaceInitializerAgentSettings {
   isTeamMode?: boolean;
   /** Provider the persisted `selectedModel` belongs to. */
   selectedProvider?: string;
+  /**
+   * New Workspace → Start On: the machine the first agent starts on; absent or
+   * blank for the current backend. Sent as `initialAgent.placement`.
+   */
+  startOnMachineId?: string;
 }
 
 export interface CompactWorkspaceInitializerFormState extends WorkspaceInitializerAgentSettings {

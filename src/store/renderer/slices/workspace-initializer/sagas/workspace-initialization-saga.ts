@@ -10,6 +10,8 @@ import {
 } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
+import { notify } from '$lib/components/patterns/notify';
+import { m } from '$shared/paraglide/messages.js';
 import type { ContextItem } from '$lib/components/chat/input/context-api';
 import {
   redeemStagedAttachments,
@@ -345,10 +347,27 @@ function* initialize(action: InitializationRun): SagaGenerator<void> {
         progressId,
       });
       if (!current(action, dispatch)) throw new Error('initialization-cancelled');
+      const startOnNodeId = startOnPlacementNodeId(request.createRequest);
       if (!result.ok) {
-        const failure = Object.assign(new Error(result.error), { errorCode: result.errorCode });
+        // A remote start failure after the workspace committed (PROTOCOL
+        // nodes.md "Placement subset"): the workspace exists, the agent didn't start.
+        const message =
+          startOnNodeId && result.errorCode === 'launch-failed'
+            ? m.workspace_startOn_launchFailed_error({
+                machine: startOnMachineName(startOnNodeId),
+                cause: result.error,
+              })
+            : result.error;
+        const failure = Object.assign(new Error(message), { errorCode: result.errorCode });
         throw failure;
       }
+      if (startOnNodeId && !isOnMachine(result.data.initialAgent, startOnNodeId))
+        yield* call(
+          notify.warning,
+          m.workspace_startOn_notOnMachine_warning({
+            machine: startOnMachineName(startOnNodeId),
+          }),
+        );
       const workspace = result.data.workspace;
       workspaceId = workspace.id;
       agentId = result.data.initialAgent?.id;
@@ -571,6 +590,30 @@ function* resume(action: ResumeAction): SagaGenerator<void> {
     success: (result: WorkspaceInitializationResult) => action.success(result),
     failure: (error: Error) => action.failure(error),
   });
+}
+
+/** Start On: the machine `initialAgent.placement` names, if any. */
+function startOnPlacementNodeId(createRequest: unknown): string | undefined {
+  const placement = (createRequest as { initialAgent?: { placement?: { nodeId?: unknown } } })
+    ?.initialAgent?.placement;
+  return typeof placement?.nodeId === 'string' ? placement.nodeId : undefined;
+}
+
+function startOnMachineName(nodeId: string): string {
+  return (
+    appStore.state.remoteMachines?.machines[nodeId]?.name ?? m.remoteAgent_location_unknownMachine()
+  );
+}
+
+/** The created initial agent runs on `nodeId` (an older backend may ignore the placement). */
+function isOnMachine(initialAgent: unknown, nodeId: string): boolean {
+  const agent = (initialAgent ?? {}) as {
+    nodeId?: unknown;
+    placement?: { target?: unknown; nodeId?: unknown };
+  };
+  return (
+    agent.placement?.target === 'remote' && (agent.nodeId ?? agent.placement?.nodeId) === nodeId
+  );
 }
 
 export function* workspaceInitializationSaga(): SagaGenerator<void> {

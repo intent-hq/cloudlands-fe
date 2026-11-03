@@ -121,7 +121,10 @@ function generation(): number {
  * another `client.hello` is in flight, and reports no snapshot until that
  * reply lands.
  */
-async function readSupported(): Promise<{ supported: boolean; initialAgentPlacement: boolean } | null> {
+async function readSupported(): Promise<{
+  supported: boolean;
+  initialAgentPlacement: boolean;
+} | null> {
   try {
     const hello = (await observeBackendNodeCapabilities()) as {
       server?: {

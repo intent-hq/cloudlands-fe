@@ -152,7 +152,7 @@
     faCircleInfo,
   } from '@fortawesome/free-solid-svg-icons';
   import { faDesktop } from '$lib/icons/phosphor-icons';
-  import { agentMachineLocation } from '$features/remote-machines/agent-location';
+  import { agentMachineLocation, machineLocation } from '$features/remote-machines/agent-location';
   import {
     selectCurrentBackendLabel,
     selectDefaultHasOverrides,
@@ -356,6 +356,12 @@
     menuMaxHeight?: 360 | 440;
     workspaceId?: string;
     agentId?: string;
+    /**
+     * Machine an agent that is not created yet will start on (New Workspace →
+     * Start On): the picker lists that machine's models like a remote agent's.
+     * Ignored with `agentId`, whose own placement decides.
+     */
+    machineId?: string;
     showManageLink?: boolean;
     portal?: boolean;
     modalAware?: boolean;
@@ -421,6 +427,7 @@
     menuMaxHeight = 360,
     workspaceId,
     agentId,
+    machineId,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     showManageLink = true,
     portal = true,
@@ -579,9 +586,11 @@
   const remoteMachinesPending$ = selectRemoteMachineOperations();
   const defaultHasOverrides$ = selectDefaultHasOverrides();
   const remoteLocation = $derived(
-    agentId && !isGuestLocked && $agentSession$?.id === agentId
-      ? agentMachineLocation($agentSession$, $remoteMachine$)
-      : null,
+    agentId
+      ? !isGuestLocked && $agentSession$?.id === agentId
+        ? agentMachineLocation($agentSession$, $remoteMachine$)
+        : null
+      : machineLocation(machineId ?? '', $remoteMachine$),
   );
   $effect(() => {
     remoteNodeId$.set(remoteLocation?.nodeId ?? '');

@@ -419,7 +419,12 @@ describe('remote initial agent (daemon-to-daemon placement subset)', () => {
       { target: 'remote', checkout: 'shared' },
     ])
       await expect(
-        prepareNodeRequest('workspace.create', { initialAgent: { placement } }, request, () => true),
+        prepareNodeRequest(
+          'workspace.create',
+          { initialAgent: { placement } },
+          request,
+          () => true,
+        ),
       ).rejects.toThrow();
   });
 });

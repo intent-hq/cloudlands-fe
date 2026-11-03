@@ -3,9 +3,11 @@
  * runs on (PROTOCOL `methods/nodes.md` → "Placement subset",
  * `workspace.create.initialAgent.placement`). The current backend is the
  * default and is sent as an omitted placement; another machine is sent as the
- * closed `{ target: "remote", nodeId }` object.
+ * closed `{ target: "remote", checkout: "isolated", nodeId }` object.
  */
+import type { DropdownGroup } from '$lib/components/ui/dropdown';
 import { m } from '$shared/paraglide/messages.js';
+import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import type { RemoteMachine, RemoteMachineState } from '$shared/types/remote-machines';
 import { machinePlatformLabel } from './agent-location';
 
@@ -96,6 +98,41 @@ export function resolveStartOn(
 /** `workspace.create.initialAgent.placement` for a choice; absent for the backend. */
 export function initialAgentPlacement(
   machineId: string | undefined,
-): { target: 'remote'; nodeId: string } | undefined {
-  return machineId ? { target: 'remote', nodeId: machineId } : undefined;
+): { target: 'remote'; checkout: 'isolated'; nodeId: string } | undefined {
+  return machineId ? { target: 'remote', checkout: 'isolated', nodeId: machineId } : undefined;
+}
+
+/**
+ * A model the chosen machine can run when the current choice can't run there
+ * (the machine lacks the model or provider, or the configuration is greyed
+ * out), or null to keep it. `groups` are the machine-scoped picker groups
+ * (`buildMachineModelGroups`): group keys are provider refs, disabled rows
+ * can't run on the machine. Prefers the same provider.
+ */
+export function machineModelFallback({
+  groups,
+  providerRef,
+  model,
+}: {
+  groups: readonly DropdownGroup[];
+  providerRef: string;
+  model: string | undefined;
+}): { providerId: string; modelId: string } | null {
+  const runnable = (group: DropdownGroup) => group.options.filter((option) => !option.disabled);
+  const current = groups.find((group) => group.key === providerRef);
+  const currentRunnable = current ? runnable(current) : [];
+  if (model) {
+    const modelId = splitLegacyCompoundId(model).modelId;
+    if (currentRunnable.some((option) => option.value === modelId)) return null;
+  } else if (currentRunnable.length > 0) {
+    return null;
+  }
+  if (current && currentRunnable.length > 0)
+    return { providerId: current.key, modelId: currentRunnable[0].value };
+  for (const group of groups) {
+    if (group.key === 'default') continue;
+    const options = runnable(group);
+    if (options.length > 0) return { providerId: group.key, modelId: options[0].value };
+  }
+  return null;
 }

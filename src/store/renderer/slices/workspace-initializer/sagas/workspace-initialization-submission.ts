@@ -1,5 +1,6 @@
 import { call, put, type SagaGenerator } from 'typed-redux-saga';
 
+import { initialAgentPlacement } from '$features/remote-machines/start-on';
 import type { ContextItem } from '$lib/components/chat/input/context-api';
 import { buildContextLinks } from '$lib/components/workspace/initializer/context-links';
 import {
@@ -313,6 +314,7 @@ export function* prepareCompactWorkspaceInitialization(
   const hasStagedFiles =
     hasStagedFileItems(s.stagedItems as ContextItem[]) || imageBlocks.length > 0;
   const prompt = s.prompt.trim();
+  const startOnPlacement = initialAgentPlacement(s.agent.startOnMachineId);
   const initialAgent = {
     // General uses the daemon placeholder so naming does not depend on UI locale.
     ...(specialistId !== undefined ? { name: agentName } : {}),
@@ -325,6 +327,8 @@ export function* prepareCompactWorkspaceInitialization(
     prompt: hasStagedFiles ? undefined : prompt || undefined,
     agentType: createAgentTypeId('workspace'),
     provider: submitProvider,
+    // Start On: only a remote machine is sent; the backend is an omitted placement.
+    ...(startOnPlacement ? { placement: startOnPlacement } : {}),
     contextReferences:
       !hasStagedFiles && contextReferences.length > 0 ? contextReferences : undefined,
     imageBlocks: !hasStagedFiles && imageBlocks.length > 0 ? imageBlocks : undefined,

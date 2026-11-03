@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { RemoteMachine } from '$shared/types/remote-machines';
 import {
   initialAgentPlacement,
+  machineModelFallback,
   resolveStartOn,
   startOnOptions,
   startOnVisible,
@@ -89,8 +90,55 @@ describe('resolveStartOn', () => {
 
 describe('initialAgentPlacement', () => {
   it('is the closed remote placement for a machine and absent for the backend', () => {
-    expect(initialAgentPlacement('mac')).toEqual({ target: 'remote', nodeId: 'mac' });
+    expect(initialAgentPlacement('mac')).toEqual({
+      target: 'remote',
+      checkout: 'isolated',
+      nodeId: 'mac',
+    });
     expect(initialAgentPlacement(START_ON_BACKEND)).toBeUndefined();
     expect(initialAgentPlacement(undefined)).toBeUndefined();
+  });
+});
+
+describe('machineModelFallback', () => {
+  const groups = [
+    {
+      key: 'claude-code',
+      label: 'Claude',
+      options: [
+        { value: 'opus', label: 'Opus' },
+        { value: 'sonnet', label: 'Sonnet' },
+      ],
+    },
+    {
+      key: 'claude-code@p-work',
+      label: 'Claude · Work',
+      options: [{ value: 'opus', label: 'Opus', disabled: true }],
+    },
+    { key: 'codex', label: 'Codex', options: [{ value: 'gpt-6', label: 'GPT-6' }] },
+  ];
+  it('keeps a model the machine can run, or a default whose provider it runs', () => {
+    expect(machineModelFallback({ groups, providerRef: 'claude-code', model: 'sonnet' })).toBe(
+      null,
+    );
+    expect(machineModelFallback({ groups, providerRef: 'codex', model: undefined })).toBe(null);
+  });
+  it('falls back within the provider when the machine lacks the model', () => {
+    expect(machineModelFallback({ groups, providerRef: 'claude-code', model: 'haiku' })).toEqual({
+      providerId: 'claude-code',
+      modelId: 'opus',
+    });
+  });
+  it('moves off a greyed-out account-folder profile or a provider the machine lacks', () => {
+    expect(
+      machineModelFallback({ groups, providerRef: 'claude-code@p-work', model: 'opus' }),
+    ).toEqual({ providerId: 'claude-code', modelId: 'opus' });
+    expect(machineModelFallback({ groups, providerRef: 'gemini', model: undefined })).toEqual({
+      providerId: 'claude-code',
+      modelId: 'opus',
+    });
+  });
+  it('leaves the choice alone when the machine offers nothing', () => {
+    expect(machineModelFallback({ groups: [], providerRef: 'gemini', model: 'x' })).toBe(null);
   });
 });
