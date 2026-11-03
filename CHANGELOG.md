@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.278.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.278.0...v2.278.1) (2026-11-03)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.116 ([#4118](https://github.com/intent-hq/cloudlands-fe/issues/4118)) ([85382e9](https://github.com/intent-hq/cloudlands-fe/commit/85382e97379e5a96270cfc900f7a108433dddf81))
+* bump intentd sidecar to v0.11.117 ([#4119](https://github.com/intent-hq/cloudlands-fe/issues/4119)) ([a5003a4](https://github.com/intent-hq/cloudlands-fe/commit/a5003a43c18e202aa9ee3a187da57b0f419a77d2))
+* page note and comment reads under the 500 KiB budget ([#4099](https://github.com/intent-hq/cloudlands-fe/issues/4099)) ([2601fe8](https://github.com/intent-hq/cloudlands-fe/commit/2601fe80ebd1b1b7b8ff850f920baa337c0310dc))
+* read large files, blobs and assets off the main connection ([#4098](https://github.com/intent-hq/cloudlands-fe/issues/4098)) ([e10afb5](https://github.com/intent-hq/cloudlands-fe/commit/e10afb5e8b9a6f37130393a609a0da584f00da55))
+* **scripts:** subscribe to script output only while a viewer is open ([#4102](https://github.com/intent-hq/cloudlands-fe/issues/4102)) ([db5c461](https://github.com/intent-hq/cloudlands-fe/commit/db5c461c92640f2ff721312f29018d13a7ef3d06))
+* **stats:** show cache, input, output and thoughts in token charts ([#4113](https://github.com/intent-hq/cloudlands-fe/issues/4113)) ([8ac6ea1](https://github.com/intent-hq/cloudlands-fe/commit/8ac6ea1b28f37c3e4a4c948998f0caaa40f3d8b6))
+
 ## [2.278.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.277.0...v2.278.0) (2026-11-03)
 
 
