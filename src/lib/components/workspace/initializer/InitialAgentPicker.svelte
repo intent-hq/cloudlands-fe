@@ -162,6 +162,11 @@
     startOnMachineId?: string;
     /** The user picked a Start On option. */
     onStartOnChange?: (machineId: string) => void;
+    /**
+     * Only the current backend can take the first agent: a new repository has
+     * no commit for a remote agent to start from.
+     */
+    startOnBackendOnly?: boolean;
     /** Callback when reasoning effort changes */
     onReasoningEffortChange?: (effort: string | undefined) => void;
     /** Callback when team mode changes */
@@ -192,6 +197,7 @@
     onSetupPick,
     startOnMachineId = $bindable<string>(''),
     onStartOnChange,
+    startOnBackendOnly = false,
   }: Props = $props();
 
   // Start On (PROTOCOL nodes.md "Placement subset"): the machine the first
@@ -200,7 +206,9 @@
   const startOnOptions$ = selectStartOnOptions();
   const startOnMachines$ = selectRemoteMachines();
   const effectiveStartOn = $derived(
-    $startOnVisible$ ? resolveStartOn(startOnMachineId, $startOnMachines$) : START_ON_BACKEND,
+    $startOnVisible$ && !startOnBackendOnly
+      ? resolveStartOn(startOnMachineId, $startOnMachines$)
+      : START_ON_BACKEND,
   );
   const startOnMachine = $derived(
     $startOnMachines$.find((machine) => machine.id === effectiveStartOn) ?? null,
@@ -1100,6 +1108,11 @@
       value={effectiveStartOn}
       options={$startOnOptions$}
       onChange={handleStartOnChange}
+      lockedReason={startOnBackendOnly
+        ? m.workspace_initialAgentPicker_startOnNewRepo_description({
+            backend: $startOnOptions$[0]?.label ?? '',
+          })
+        : undefined}
     />
   {/if}
 </div>

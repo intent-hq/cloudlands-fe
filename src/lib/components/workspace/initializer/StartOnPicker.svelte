@@ -18,9 +18,11 @@
     value: string;
     options: StartOnOption[];
     onChange: (machineId: string) => void;
+    /** Why only the current backend can be used (shown under the value; the row is disabled). */
+    lockedReason?: string;
   }
 
-  let { presentation = 'form', value, options, onChange }: Props = $props();
+  let { presentation = 'form', value, options, onChange, lockedReason }: Props = $props();
 
   const uid = $props.id();
   const labelId = `${uid}-start-on-label`;
@@ -39,6 +41,7 @@
           size="sm"
           type="button"
           wrapContent={false}
+          disabled={!!lockedReason}
           aria-labelledby="{labelId} {valueId}"
           class={presentation === 'footer'
             ? 'h-9 min-w-0 max-w-36 gap-1 px-2 text-sm font-normal'
@@ -48,7 +51,14 @@
             class={presentation === 'footer' ? 'sr-only' : workspacePickerStyles.fieldLabel}
             id={labelId}>{m.workspace_initialAgentPicker_startOn_label()}</span
           >
-          <span class="min-w-0 flex-1 truncate text-left" id={valueId}>{selected?.label}</span>
+          <span class="min-w-0 flex-1 text-left" id={valueId}>
+            <span class="block truncate">{selected?.label}</span>
+            {#if lockedReason}
+              <span class="block truncate text-xs text-subtle" data-testid="start-on-locked-reason"
+                >{lockedReason}</span
+              >
+            {/if}
+          </span>
         </Button>
       {/snippet}
     </Menu.Trigger>

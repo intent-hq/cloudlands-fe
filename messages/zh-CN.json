@@ -6933,6 +6933,7 @@
   "workspace_initialAgentPicker_manageSpecialists_label": "创建或管理专家",
   "workspace_initialAgentPicker_model_label": "模型",
   "workspace_initialAgentPicker_startOn_label": "启动位置",
+  "workspace_initialAgentPicker_startOnNewRepo_description": "新仓库在 {backend} 上启动",
   "workspace_initialAgentPicker_teamMode_label": "智能体编排",
   "workspace_isolationMode_cowCheckout_label": "CoW 检出",
   "workspace_isolationMode_worktree_label": "工作树",

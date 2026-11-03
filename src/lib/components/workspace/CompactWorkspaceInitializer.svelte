@@ -2466,7 +2466,10 @@
           selectedReasoningEffort,
           isTeamMode,
           selectedProvider,
-          startOnMachineId: selectEffectiveStartOn.select(appStore.state, startOnMachineId),
+          // A new repository has no commit for a remote agent to start from.
+          startOnMachineId: isNewRepo
+            ? ''
+            : selectEffectiveStartOn.select(appStore.state, startOnMachineId),
         },
         rememberAgentRepoKey,
         setupScriptExplicit,
@@ -2688,7 +2691,10 @@
       selectedReasoningEffort,
       isTeamMode,
       selectedProvider,
-      startOnMachineId: selectEffectiveStartOn.select(appStore.state, startOnMachineId),
+      // A new repository has no commit for a remote agent to start from.
+      startOnMachineId: isNewRepo
+        ? ''
+        : selectEffectiveStartOn.select(appStore.state, startOnMachineId),
       skipIsolation,
       remoteSetup, // null at this point
       // Repo selection — preserved so the next form re-opens on the same repo.
@@ -3655,6 +3661,7 @@
               if (model && !automatic) modelPickedThisSession = true;
             }}
             bind:startOnMachineId
+            startOnBackendOnly={isNewRepo}
             bind:selectedReasoningEffort
             onReasoningEffortChange={() => (effortPickedThisSession = true)}
             onSetupPick={() => (setupPickedThisSession = true)}

@@ -540,6 +540,25 @@ describe('New Workspace → Start On', () => {
     });
   });
 
+  it('keeps a new repository on the backend: a remote agent needs a commit', async () => {
+    mocks.agentByRepo['local:/tmp/new-repo'] = { ...AGENT, startOnMachineId: MACHINE.id };
+    mocks.compactFormState$.set({
+      ...AGENT,
+      repoPath: '/tmp/new-repo',
+      isNewRepo: true,
+      isValidPath: true,
+      startOnMachineId: MACHINE.id,
+    });
+    mocks.hydrated$.set(true);
+    render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+    const row = await screen.findByTestId('start-on-picker');
+    await waitFor(() =>
+      expect(row.querySelector('[data-testid="start-on-locked-reason"]')).not.toBeNull(),
+    );
+    expect(row.querySelector('button')?.disabled).toBe(true);
+    expect(screen.getByTestId('picker-machine').textContent).toBe('');
+  });
+
   it('lists unreachable and revoked machines disabled with a reason', async () => {
     mocks.remote.machines = {
       [MACHINE.id]: MACHINE,

@@ -6933,6 +6933,7 @@
   "workspace_initialAgentPicker_manageSpecialists_label": "スペシャリストを新規作成または管理",
   "workspace_initialAgentPicker_model_label": "モデル",
   "workspace_initialAgentPicker_startOn_label": "開始するマシン",
+  "workspace_initialAgentPicker_startOnNewRepo_description": "新しいリポジトリは {backend} で開始します",
   "workspace_initialAgentPicker_teamMode_label": "エージェントオーケストレーション",
   "workspace_isolationMode_cowCheckout_label": "CoW チェックアウト",
   "workspace_isolationMode_worktree_label": "worktree",

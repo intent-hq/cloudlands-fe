@@ -6933,6 +6933,7 @@
   "workspace_initialAgentPicker_manageSpecialists_label": "Create new or manage specialists",
   "workspace_initialAgentPicker_model_label": "Model",
   "workspace_initialAgentPicker_startOn_label": "Start On",
+  "workspace_initialAgentPicker_startOnNewRepo_description": "New repositories start on {backend}",
   "workspace_initialAgentPicker_teamMode_label": "Agent orchestration",
   "workspace_isolationMode_cowCheckout_label": "CoW checkout",
   "workspace_isolationMode_worktree_label": "worktree",
