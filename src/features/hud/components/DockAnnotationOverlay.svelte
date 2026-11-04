@@ -14,7 +14,6 @@
     type DockAnnotationPointerRequest,
   } from '$shared/dock-annotation';
   import type { DockImagePoint, DockMarkGeometry, DockMarkTool } from '$shared/dock-evidence';
-  import DockAnnotationToolbar from './DockAnnotationToolbar.svelte';
   import DockRecordingToolbar from './DockRecordingToolbar.svelte';
   import type { DockAnnotationSignal, DockBarAnchor } from '$shared/dock-annotation';
 
@@ -440,21 +439,13 @@
 
     <!-- Annotate sessions only: dictation clicks need no tools. -->
     {#if overlay.mode !== 'dictation' && transport.toolbar && overlay.workArea}
-      <!-- While a recording is live, the recording tool bar replaces the annotate one. -->
-      {#if overlay.media?.record.recording}
-        <DockRecordingToolbar
-          {overlay}
-          {signal}
-          bind:anchor={toolbarAnchor}
-          send={(request) => void transport.toolbar?.(request).catch(() => false)}
-        />
-      {:else}
-        <DockAnnotationToolbar
-          {overlay}
-          bind:anchor={toolbarAnchor}
-          send={(request) => void transport.toolbar?.(request).catch(() => false)}
-        />
-      {/if}
+      <!-- One tool bar: annotating, and while a recording is live (its chip appears). -->
+      <DockRecordingToolbar
+        {overlay}
+        {signal}
+        bind:anchor={toolbarAnchor}
+        send={(request) => void transport.toolbar?.(request).catch(() => false)}
+      />
     {/if}
   {/if}
 </div>
