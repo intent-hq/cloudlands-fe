@@ -45,7 +45,9 @@ export function nextWorkspaceTabFinishFlashes(
 }
 
 /** Earliest pending expiry, or `null` when nothing is flashing. */
-export function nextWorkspaceTabFinishFlashExpiry(flashes: WorkspaceTabFinishFlashes): number | null {
+export function nextWorkspaceTabFinishFlashExpiry(
+  flashes: WorkspaceTabFinishFlashes,
+): number | null {
   let earliest: number | null = null;
   for (const at of flashes.expiresAt.values()) {
     if (earliest === null || at < earliest) earliest = at;

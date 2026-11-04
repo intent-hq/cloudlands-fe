@@ -5,7 +5,7 @@
   import { goto } from '$app/navigation';
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { flushSync, onMount, untrack } from 'svelte';
+  import { flushSync, onMount } from 'svelte';
   import { flip } from 'svelte/animate';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { TooltipRich } from '$lib/components/ui/tooltip';
@@ -60,11 +60,7 @@
     type SidebarMenuEntry,
   } from '$lib/components/ui/sidebar-context-menu/types';
   import WorkspaceTabFlare from './WorkspaceTabFlare.svelte';
-  import {
-    EMPTY_WORKSPACE_TAB_FINISH_FLASHES,
-    nextWorkspaceTabFinishFlashExpiry,
-    nextWorkspaceTabFinishFlashes,
-  } from './workspace-tab-finish-flash';
+  import { TabFinishFlash } from './workspace-tab-finish-flash-tracker.svelte';
   import { buildWorkspaceTabContextMenu } from './workspace-tab-context-actions';
   import { prepareTabOutros, workspaceTabLifecycleMotion } from './workspace-tab-lifecycle-motion';
   import {
@@ -143,34 +139,7 @@
     activeWorkspaceId === undefined ? $currentWorkspaceTabId$ : activeWorkspaceId,
   );
   const visualActiveWorkspaceId = $derived(selectedWorkspaceId);
-  let finishFlashes = $state(EMPTY_WORKSPACE_TAB_FINISH_FLASHES);
-  let finishFlashTick = $state(0);
-  $effect(() => {
-    void finishFlashTick;
-    const observations = visibleTabIds.flatMap((workspaceId) => {
-      const workspace = workspaceById.get(workspaceId);
-      return workspace
-        ? [
-            {
-              workspaceId,
-              state: resolveWorkspaceStatusState(workspace),
-              isCurrent: workspaceId === selectedWorkspaceId,
-            },
-          ]
-        : [];
-    });
-    const now = Date.now();
-    const next = nextWorkspaceTabFinishFlashes(
-      untrack(() => finishFlashes),
-      observations,
-      now,
-    );
-    finishFlashes = next;
-    const expiry = nextWorkspaceTabFinishFlashExpiry(next);
-    if (expiry === null) return;
-    const timer = setTimeout(() => finishFlashTick++, Math.max(0, expiry - now));
-    return () => clearTimeout(timer);
-  });
+  const finishFlash = new TabFinishFlash(() => [visibleTabIds, workspaceById, selectedWorkspaceId]);
   const workspaceTabMotionDuration = $derived(
     reducedMotion.current ? 0 : WORKSPACE_TAB_MOTION_DURATION_MS,
   );
@@ -1087,8 +1056,7 @@
                     >
                       <WorkspaceStatusIcon
                         status={workspaceStatusState}
-                        justFinished={finishFlashes.expiresAt.has(workspaceId)}
-                        size={14}
+                        justFinished={finishFlash.has(workspaceId)}
                         decorative
                       />
                     </span>
