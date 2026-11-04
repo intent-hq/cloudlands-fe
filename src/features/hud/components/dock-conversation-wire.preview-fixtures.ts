@@ -1,5 +1,5 @@
 import type { AgentMessage, ContentBlock, QueuedMessage } from '$shared/types';
-import { AgentId } from '$shared/types/branded-ids';
+import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 import type { ResourceBlockContents } from '$shared/types/resource-block-identity';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import { updateSession } from '$store/renderer/slices/agent-session/agent-session-slice';
@@ -292,7 +292,7 @@ export function setupConversationWire(
             title:
               getItem(
                 store.state.workspace.workspaces,
-                String(params.workspaceId ?? conversationWireWorkspace),
+                WorkspaceId(String(params.workspaceId ?? conversationWireWorkspace)),
               )?.title ?? 'Connected companion fixture',
             status: 'active',
             myRole: 'owner',

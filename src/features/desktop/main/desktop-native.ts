@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { app } from 'electron';
 import { z } from 'zod';
 import type {
@@ -31,15 +31,15 @@ export type NativeRequest = (
 
 function desktopHelperPath(): string {
   const name = process.platform === 'win32' ? 'intent-desktop-helper.exe' : 'intent-desktop-helper';
-  return app.isPackaged
-    ? join(process.resourcesPath, 'desktop-helper', name)
-    : join(
-        app.getAppPath(),
-        'resources',
-        'desktop-helper',
-        `${process.platform}-${process.arch}`,
-        name,
-      );
+  if (app.isPackaged) return join(process.resourcesPath, 'desktop-helper', name);
+  const roots = [
+    join(app.getAppPath(), 'resources'),
+    resolve(app.getAppPath(), '..', '..', 'resources'),
+  ];
+  const candidates = roots.map((root) =>
+    join(root, 'desktop-helper', `${process.platform}-${process.arch}`, name),
+  );
+  return candidates.find((path) => existsSync(path)) ?? candidates[0];
 }
 export function desktopNativeAvailable(): boolean {
   return (

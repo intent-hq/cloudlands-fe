@@ -1,6 +1,6 @@
 /** Cold native foreground identity and real Electron guest provenance; no Intent profile or daemon. */
 import { _electron as electron, expect, test } from '@playwright/test';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createServer } from 'node:http';
@@ -9,6 +9,11 @@ import { build } from 'vite';
 test('cold shortcut context preserves native identity and first-use guest ownership', async ({}, info) => {
   test.setTimeout(60000);
   const root = await mkdtemp(join(tmpdir(), 'intent-shortcut-context-'));
+  await symlink(
+    resolve('node_modules'),
+    join(root, 'node_modules'),
+    process.platform === 'win32' ? 'junction' : 'dir',
+  );
   const server = createServer((_req, res) => {
     res.setHeader('Content-Type', 'text/html');
     res.end('<title>Synthetic preview</title><p>Only fixture content</p>');
@@ -66,7 +71,7 @@ test('cold shortcut context preserves native identity and first-use guest owners
       `
    const {app,BrowserWindow}=require('electron');
    app.setPath('userData',${JSON.stringify(join(root, 'profile'))});
-   app.setAppPath(${JSON.stringify(process.cwd())});
+   app.setAppPath(${JSON.stringify(resolve('dist/main'))});
    app.whenReady().then(async()=>{ const window=new BrowserWindow({show:false,webPreferences:{webviewTag:true,nodeIntegration:true,contextIsolation:false,sandbox:false}});globalThis.shortcutWindow=window;await window.loadURL('data:text/html,'+encodeURIComponent('<webview id="guest" src="${url}" style="width:400px;height:200px"></webview>'));globalThis.shortcutContext=require('./context.cjs');globalThis.shortcutContext.stampWindowWithBackend(window,'fixture-backend');}).catch(error=>{globalThis.shortcutStartupError=String(error.stack||error);});
   `,
     );
@@ -78,7 +83,7 @@ test('cold shortcut context preserves native identity and first-use guest owners
     );
     application = await electron.launch({
       args: [join(root, 'main.cjs')],
-      env: { ...env, NODE_PATH: resolve('node_modules'), DD_TRACE_ENABLED: 'false' },
+      env: { ...env, DD_TRACE_ENABLED: 'false' },
     });
     await expect
       .poll(() =>
@@ -109,51 +114,65 @@ test('cold shortcut context preserves native identity and first-use guest owners
         application!.evaluate(({ webContents }, id) => webContents.fromId(id)?.getURL(), guestId),
       )
       .toBe(url);
-    const evidence = await application.evaluate(async ({ webContents }, guestId) => {
-      const {
-        embeddedBrowserCdp: service,
-        stampWindowWithBackend,
-        sampleDockForeground,
-        getDesktopNativeAdapter,
-        desktopNativeAvailable,
-      } = (globalThis as any).shortcutContext;
-      const window = (globalThis as any).shortcutWindow;
-      const cold = await sampleDockForeground(getDesktopNativeAdapter());
-      const nativeIdentity = {
-        available: desktopNativeAvailable(),
-        identityOutcome: cold.identityOutcome,
-        urlOutcome: cold.urlOutcome,
-        elapsedMs: cold.elapsedMs,
-        pidPresent: !!cold.snapshot.pid,
-        appNamePresent: !!cold.snapshot.appName,
-        appIdPresent: !!cold.snapshot.appId,
-      };
-      const degraded = await sampleDockForeground({
-        foregroundApp: () => getDesktopNativeAdapter().foregroundApp(),
-        foregroundContext: () => Promise.reject(new Error('Synthetic unavailable URL seam')),
-      });
-      const before = service.focusedTabOwner(guestId);
-      service.registerTab('fixture-tab', guestId, 'fixture-workspace');
-      const owned = service.focusedTabOwner(guestId);
-      stampWindowWithBackend(window, 'fixture-backend');
-      const afterRestamp = service.focusedTabOwner(guestId);
-      service.registerTab('fixture-tab', guestId, 'fixture-workspace');
-      const rebound = service.focusedTabOwner(guestId);
-      stampWindowWithBackend(window, 'foreign-backend');
-      const afterBackendChange = service.focusedTabOwner(guestId);
-      return {
-        boundary:
-          'Real Electron webview, production native adapter/helper/sampler and tab registry. Workspace-window membership is an explicit fixture seam; no daemon, hotkeys or user profile.',
-        nativeIdentity,
-        degradedIdentityPreserved: !!degraded.snapshot.pid && !!degraded.snapshot.appName,
-        before,
-        owned,
-        afterRestamp,
-        rebound,
-        afterBackendChange,
-        guestType: webContents.fromId(guestId)?.getType(),
-      };
-    }, guestId);
+    const evidence = await application.evaluate(
+      async ({ webContents, app }, { guestId, projectRoot }) => {
+        const {
+          embeddedBrowserCdp: service,
+          stampWindowWithBackend,
+          sampleDockForeground,
+          getDesktopNativeAdapter,
+          desktopNativeAvailable,
+        } = (globalThis as any).shortcutContext;
+        const window = (globalThis as any).shortcutWindow;
+        const compiledAppPath = app.getAppPath();
+        const distMainAvailable = desktopNativeAvailable();
+        app.setAppPath(projectRoot);
+        const projectRootAvailable = desktopNativeAvailable();
+        app.setAppPath(compiledAppPath);
+        const cold = await sampleDockForeground(getDesktopNativeAdapter());
+        const nativeIdentity = {
+          available: desktopNativeAvailable(),
+          appLayout: compiledAppPath.endsWith('/dist/main') ? 'dist/main' : 'unexpected',
+          distMainAvailable,
+          projectRootAvailable,
+          identityOutcome: cold.identityOutcome,
+          urlOutcome: cold.urlOutcome,
+          elapsedMs: cold.elapsedMs,
+          pidPresent: !!cold.snapshot.pid,
+          appNamePresent: !!cold.snapshot.appName,
+          appIdPresent: !!cold.snapshot.appId,
+        };
+        const degraded = await sampleDockForeground({
+          foregroundApp: () => getDesktopNativeAdapter().foregroundApp(),
+          foregroundContext: () => Promise.reject(new Error('Synthetic unavailable URL seam')),
+        });
+        const before = service.focusedTabOwner(guestId);
+        service.registerTab('fixture-tab', guestId, 'fixture-workspace');
+        const owned = service.focusedTabOwner(guestId);
+        stampWindowWithBackend(window, 'fixture-backend');
+        const afterRestamp = service.focusedTabOwner(guestId);
+        service.registerTab('fixture-tab', guestId, 'fixture-workspace');
+        const rebound = service.focusedTabOwner(guestId);
+        stampWindowWithBackend(window, 'foreign-backend');
+        const afterBackendChange = service.focusedTabOwner(guestId);
+        return {
+          boundary:
+            'Real Electron webview, production native adapter/helper/sampler and tab registry. Workspace-window membership is an explicit fixture seam; no daemon, hotkeys or user profile.',
+          nativeIdentity,
+          degradedIdentityPreserved: !!degraded.snapshot.pid && !!degraded.snapshot.appName,
+          before,
+          owned,
+          afterRestamp,
+          rebound,
+          afterBackendChange,
+          guestType: webContents.fromId(guestId)?.getType(),
+        };
+      },
+      { guestId, projectRoot: resolve('.') },
+    );
+    expect(evidence.nativeIdentity.distMainAvailable).toBe(true);
+    expect(evidence.nativeIdentity.projectRootAvailable).toBe(true);
+    expect(evidence.nativeIdentity.appLayout).toBe('dist/main');
     expect(evidence.nativeIdentity.available).toBe(true);
     expect(evidence.nativeIdentity.identityOutcome).toBe('ok');
     expect(evidence.nativeIdentity.pidPresent).toBe(true);

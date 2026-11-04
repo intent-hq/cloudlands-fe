@@ -321,7 +321,26 @@ test('settled notch hover focuses the real editor once and preserves keyboard ed
   const editor = page.locator('[data-testid="message-input"] [contenteditable="true"]');
   await page.getByTestId('dock-drag-handle').hover();
   await expect(editor).toBeVisible();
-  await editor.fill('Keep this draft');
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.store.state
+            .dockConversation.loading,
+      ),
+    )
+    .toBe(false);
+  await editor.click();
+  await page.keyboard.type('Keep this draft');
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        JSON.stringify(
+          (window as any).__dockComposerE2E.store.state.dockConversation.drafts,
+        ).includes('Keep this draft'),
+      ),
+    )
+    .toBe(true);
   await page.getByRole('region', { name: 'Messages', exact: true }).click();
   await page.mouse.move(850, 650);
   await expect(page.getByTestId('dock-shell')).toHaveAttribute('data-reveal', '0');
