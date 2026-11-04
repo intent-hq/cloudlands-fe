@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.283.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.282.0...v2.283.0) (2026-11-04)
+
+
+### 🚀 Features
+
+* **intent-web:** single-use sign-in codes and sessions that survive closing the browser ([#4145](https://github.com/intent-hq/cloudlands-fe/issues/4145)) ([7cb5a17](https://github.com/intent-hq/cloudlands-fe/commit/7cb5a171013000799af8b2c5521ae418b8bd977b))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.124 ([#4154](https://github.com/intent-hq/cloudlands-fe/issues/4154)) ([d2bd8de](https://github.com/intent-hq/cloudlands-fe/commit/d2bd8de64cb5a876774033f75f95723c8e53afc0))
+
 ## [2.282.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.281.0...v2.282.0) (2026-11-04)
 
 
