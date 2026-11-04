@@ -27,7 +27,7 @@
 
 <span
   class={cn(
-    'workspace-status-icon relative inline-flex shrink-0 items-center justify-center forced-colors:text-[CanvasText]',
+    'workspace-status-icon inline-flex shrink-0 items-center justify-center forced-colors:text-[CanvasText]',
     presentation.className,
     className,
   )}
@@ -64,6 +64,10 @@
 
   :global(.workspace-status-color-unread) {
     color: hsl(var(--workspace-status-unread));
+  }
+
+  .workspace-status-icon {
+    position: relative;
   }
 
   .workspace-status-dot {
