@@ -16,7 +16,11 @@ import {
 import { selectAgentSessionWorkspaceId } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import { selectMessageBlockPagesSupported } from '$store/renderer/slices/principal/principal-selectors';
 import type { MessageBlockPage } from '$lib/client/app-client';
-import type { HydratedBlockTruncation } from '../chat-state-types';
+import {
+  captureWorkspaceReadContext,
+  type WorkspaceReadContext,
+} from '$lib/client/live/workspace-read-context';
+import type { HydratedBlockEntry, HydratedBlockTruncation } from '../chat-state-types';
 /**
  * Chat read saga — SINGLE-TRANSFER hydration. Opening a chat transfers the
  * conversation once: the standing `chat.subscribe` subscription's seq-0
@@ -96,6 +100,7 @@ import {
 } from '../chat-state-slice';
 import {
   selectHydratedBlock,
+  selectChatAgentState,
   selectTranscriptHydration,
   selectTranscriptSnapshotMeta,
 } from '../chat-state-selectors';
@@ -414,22 +419,50 @@ function isPagedTextBody(page: MessageBlockPage): boolean {
   );
 }
 
+interface BlockHydrationFlight {
+  entry: HydratedBlockEntry;
+  context: WorkspaceReadContext;
+  workspaceId: string | undefined;
+  discardEpoch: number;
+}
+
 function* hydrateMessageBlockWorker(
-  inFlightBlocks: Set<string>,
+  inFlightBlocks: Map<string, BlockHydrationFlight>,
   action: ReturnType<typeof messageBlockHydrationRequested>,
 ) {
   const [agentId, messageId, blockId] = action.payload;
   if (!agentId || !messageId || !blockId) return;
   const key = `${agentId}|${messageId}|${blockId}`;
-  if (inFlightBlocks.has(key)) return;
   const entry = yield* selectHydratedBlock.effect(agentId, messageId, blockId);
   if (entry?.status !== 'loading') return;
-  inFlightBlocks.add(key);
+  const workspaceId = yield* selectAgentSessionWorkspaceId.effect(agentId);
+  const discardEpoch = (yield* selectChatAgentState.effect(agentId)).scrollbackDiscardEpoch;
+  const context = captureWorkspaceReadContext(workspaceId);
+  const previous = inFlightBlocks.get(key);
+  if (
+    previous?.entry === entry &&
+    previous.workspaceId === workspaceId &&
+    previous.discardEpoch === discardEpoch &&
+    previous.context.isAdmitted()
+  )
+    return;
+  const flight: BlockHydrationFlight = { entry, context, workspaceId, discardEpoch };
+  inFlightBlocks.set(key, flight);
+  // Loading entries are immutable identities: reset/reopen may reuse their seq.
+  // Admission binds transport and principal, without tying body reads to reminders.
+  function* isCurrent(): SagaGenerator<boolean> {
+    if (inFlightBlocks.get(key) !== flight || !context.isAdmitted()) return false;
+    const current = yield* selectHydratedBlock.effect(agentId, messageId, blockId);
+    const currentWorkspace = yield* selectAgentSessionWorkspaceId.effect(agentId);
+    const currentEpoch = (yield* selectChatAgentState.effect(agentId)).scrollbackDiscardEpoch;
+    return current === entry && currentWorkspace === workspaceId && currentEpoch === discardEpoch;
+  }
   try {
-    const workspaceId = yield* selectAgentSessionWorkspaceId.effect(agentId);
+    if (!(yield* isCurrent())) return;
     // Capped reads (`messageBlockPages: 1`) can serve the block cut; older
     // daemons serve it whole through the original call.
     if (yield* selectMessageBlockPagesSupported.effect()) {
+      if (!(yield* isCurrent())) return;
       let page = yield* call(
         [appClient.agents, appClient.agents.getMessageBlockPage],
         agentId,
@@ -437,12 +470,14 @@ function* hydrateMessageBlockWorker(
         blockId,
         workspaceId,
       );
+      if (!(yield* isCurrent())) return;
       // A long text/thinking body (the single-message bound's "Show full
       // message", §5.5) pages by offset: follow nextOffset and join the
       // slices, up to a bounded number of reads.
       if (isPagedTextBody(page)) {
         let text = page.block.text as string;
         for (let reads = 1; page.nextOffset !== null && reads < MAX_TEXT_BODY_PAGES; reads += 1) {
+          if (!(yield* isCurrent())) return;
           page = yield* call(
             [appClient.agents, appClient.agents.getMessageBlockPage],
             agentId,
@@ -451,6 +486,7 @@ function* hydrateMessageBlockWorker(
             workspaceId,
             page.nextOffset,
           );
+          if (!(yield* isCurrent())) return;
           if (!isPagedTextBody(page)) break;
           text += page.block.text as string;
         }
@@ -464,14 +500,17 @@ function* hydrateMessageBlockWorker(
               shownBytes: new TextEncoder().encode(text).length,
               totalBytes: page.totalBytes,
             };
+        if (!(yield* isCurrent())) return;
         yield* put(messageBlockHydrated(agentId, messageId, blockId, block, truncation));
         return;
       }
+      if (!(yield* isCurrent())) return;
       yield* put(
         messageBlockHydrated(agentId, messageId, blockId, page.block, pageTruncation(page)),
       );
       return;
     }
+    if (!(yield* isCurrent())) return;
     const block = yield* call(
       [appClient.agents, appClient.agents.getMessageBlock],
       agentId,
@@ -479,13 +518,15 @@ function* hydrateMessageBlockWorker(
       blockId,
       workspaceId,
     );
+    if (!(yield* isCurrent())) return;
     yield* put(messageBlockHydrated(agentId, messageId, blockId, block));
   } catch (error) {
+    if (!(yield* isCurrent())) return;
     const message = error instanceof Error ? error.message : String(error);
     logger.warn('message block hydration failed', { agentId, messageId, blockId, message });
     yield* put(messageBlockHydrationFailed(agentId, messageId, blockId, message));
   } finally {
-    inFlightBlocks.delete(key);
+    if (inFlightBlocks.get(key) === flight) inFlightBlocks.delete(key);
   }
 }
 
@@ -515,7 +556,7 @@ function* reconcileQueueSubmissionDisplay(action: QueueReconciliationAction): Sa
 
 export function* chatReadSaga() {
   const hydrationTails: HydrationTails = new Map();
-  const inFlightBlocks = new Set<string>();
+  const inFlightBlocks = new Map<string, BlockHydrationFlight>();
   try {
     yield* all([
       takeSingleFlightInContext(
