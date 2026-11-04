@@ -13,8 +13,8 @@ interface FixtureState {
   transports: FixtureDraftsTransport[];
   /** Stops the draft saga serving the innermost transport. */
   stopDrafts: () => void;
-  /** Set while this module itself stops the draft saga. */
-  switching: boolean;
+  /** The draft saga run currently serving; cleared before this module stops it. */
+  serving: object | null;
 }
 
 // One draft fixture per store. The store's saga manager refuses a second
@@ -25,27 +25,26 @@ const running = new WeakMap<FixtureStore, FixtureState>();
 
 function runDrafts(appStore: FixtureStore, state: FixtureState) {
   const transport = state.transports[state.transports.length - 1];
+  const run = {};
+  state.serving = run;
   const stop = appStore.runSaga(function* fixtureChatDraftsSaga() {
     try {
       // chatDraftsSaga returns once its watchers fork; join them so the
       // cleanup below sees the saga's cancellation.
       yield* join(yield* fork(chatDraftsSaga, transport));
     } finally {
-      // A store disposed without its stops cancels the saga from outside;
-      // forget it so the next init starts a fresh fixture. A crash restarts
-      // the same function, so it keeps the registration.
-      if ((yield* cancelled()) && !state.switching && running.get(appStore) === state) {
+      // A store disposed without its stops cancels the serving run from
+      // outside; forget it so the next init starts a fresh fixture. This
+      // module clears `serving` before its own stops, and a crash restarts
+      // the same function, so both keep the registration.
+      if ((yield* cancelled()) && state.serving === run && running.get(appStore) === state) {
         running.delete(appStore);
       }
     }
   });
   state.stopDrafts = () => {
-    state.switching = true;
-    try {
-      stop();
-    } finally {
-      state.switching = false;
-    }
+    if (state.serving === run) state.serving = null;
+    stop();
   };
 }
 
@@ -60,7 +59,9 @@ function runDrafts(appStore: FixtureStore, state: FixtureState) {
  * `transport` until its stop runs: the stop cancels that draft saga, dropping
  * its pending restores and writes as a host-owned saga always did, and starts
  * a fresh one for the transport underneath. Only the innermost transport
- * serves, so two nested hosts mounted together share the later one.
+ * serves, so two nested hosts mounted together share the later one, and each
+ * switch also drops the replaced saga's in-flight work: a composer still
+ * mounted from before the switch waits for its restore fallback.
  */
 export function startChatFixtureSagas(
   appStore: FixtureStore,
@@ -86,7 +87,7 @@ export function startChatFixtureSagas(
     ];
   }
 
-  const state: FixtureState = { transports: [transport], stopDrafts: () => {}, switching: false };
+  const state: FixtureState = { transports: [transport], stopDrafts: () => {}, serving: null };
   running.set(appStore, state);
   try {
     runDrafts(appStore, state);
