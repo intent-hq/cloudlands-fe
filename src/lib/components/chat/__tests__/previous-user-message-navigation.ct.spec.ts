@@ -744,6 +744,12 @@ test('previous-message actions remain available at unloaded history boundaries',
     },
   });
   await expect(component.getByTestId('chat-history-gap')).toHaveCount(1);
+  const scroll = component.getByTestId('chat-transcript-scroll-viewport');
+  // Follow-bottom keeps the transcript pinned, so each hover's scroll into view is pulled
+  // back and its hit test retries until the test times out under load. Wheel up as a
+  // reader would to release it, so the rows stay still while they are hovered.
+  await wheelUntilScrolled(scroll, { deltaY: -2000 });
+  await expectMotionToSettle(scroll);
   for (const id of ['history-orphan', 'live-orphan']) {
     const row = component.locator(`[data-message-id="${id}"]`);
     await row.hover();
@@ -754,7 +760,6 @@ test('previous-message actions remain available at unloaded history boundaries',
     await row.hover();
     await expect(row.getByRole('button', { name: 'Scroll to previous message' })).toBeVisible();
   }
-  const scroll = component.getByTestId('chat-transcript-scroll-viewport');
   for (const segment of ['history', 'live']) {
     const row = component.locator(`[data-message-id="${segment}-reply"]`);
     await pressPreviousUserMessage(component, row);
