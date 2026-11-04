@@ -91,7 +91,11 @@ import DevicesSettings from './DevicesSettings.svelte';
 import MobileSettings from '$features/settings/MobileSettings.svelte';
 import { websocketApiSaga } from '$store/renderer/slices/websocket-api/sagas/websocket-api-saga';
 import { principalReceived } from '$store/renderer/slices/principal/principal-slice';
-import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import {
+  setLabsMultiplayerEnabled,
+  setLabsRemoteAgentsEnabled,
+} from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { remoteMachinesLoaded } from '$features/remote-machines/remote-machines-slice';
 import { selectCollaborationCapabilities } from '$store/renderer/slices/principal/principal-selectors';
 
 function enablePersonalDevices() {
@@ -1356,5 +1360,104 @@ describe('DevicesSettings', () => {
     }));
     await fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     await waitFor(() => expect(mocks.forget).toHaveBeenCalledTimes(2));
+  });
+  describe('platform, providers and the connected backend', () => {
+    const intent1: ConnectionRecord = {
+      ...remote,
+      id: 'intent1',
+      label: 'intent1',
+      host: '10.0.0.9',
+      fingerprint: 'CC:DD',
+      status: 'connected',
+      intentdVersion: '0.11.120',
+      hostOs: 'linux',
+      providers: [
+        { id: 'claude-code', displayName: 'Claude Code' },
+        { id: 'codex', displayName: 'Codex' },
+      ],
+    };
+    const rowNames = () =>
+      screen.getAllByRole('article').map((row) => row.getAttribute('aria-labelledby'));
+
+    it('labels the backend this window uses and lists it right after the local row', () => {
+      mocks.connections = [local, remote, intent1];
+      mocks.currentConnectionId = 'intent1';
+      render(DevicesSettings);
+
+      expect(rowNames()).toEqual(['device-local-name', 'device-intent1-name', 'device-remote-1-name']);
+      expect(screen.getByRole('article', { name: 'intent1 (connected backend)' })).toBeTruthy();
+      expect(screen.getByRole('article', { name: 'Studio Mac' })).toBeTruthy();
+    });
+
+    it('keeps the saved order and plain names when the window uses the local machine', () => {
+      mocks.connections = [local, remote, intent1];
+      render(DevicesSettings);
+
+      expect(rowNames()).toEqual(['device-local-name', 'device-remote-1-name', 'device-intent1-name']);
+      expect(screen.getByRole('article', { name: 'intent1' })).toBeTruthy();
+    });
+
+    it("shows a connected machine's platform and its providers as named icons", () => {
+      mocks.connections = [local, intent1];
+      render(DevicesSettings);
+
+      const row = within(screen.getByRole('article', { name: 'intent1' }));
+      expect(row.getByRole('img', { name: 'Linux' })).toBeTruthy();
+      const providers = row.getByRole('list', { name: m.settings_devices_providers_ariaLabel() });
+      expect(
+        within(providers)
+          .getAllByRole('img')
+          .map((icon) => icon.getAttribute('aria-label')),
+      ).toEqual(['Claude Code', 'Codex']);
+      expect(within(providers).queryByText('Claude Code')).toBeNull();
+    });
+
+    it('shows no platform or providers for an offline machine', () => {
+      mocks.connections = [local, { ...remote, status: 'disconnected' }];
+      render(DevicesSettings);
+
+      const row = within(screen.getByRole('article', { name: 'Studio Mac' }));
+      expect(row.queryByRole('img', { name: /macOS|Windows|Linux/ })).toBeNull();
+      expect(row.queryByRole('list', { name: m.settings_devices_providers_ariaLabel() })).toBeNull();
+    });
+
+    it("reads a machine made available to the backend from the backend's machine report", () => {
+      store.dispatch(setLabsRemoteAgentsEnabled(true));
+      store.dispatch(
+        remoteMachinesLoaded({
+          supported: true,
+          localFingerprint: null,
+          executorBackends: [],
+          machines: [
+            {
+              id: 'm-studio',
+              name: 'Mac Studio',
+              platform: { os: 'windows', arch: 'x86_64' },
+              hosts: ['10.0.0.2'],
+              port: 5181,
+              fingerprint: remote.fingerprint!,
+              state: 'connected',
+              runningAgents: 0,
+              capabilities: {
+                providers: [
+                  { id: 'claude-code', status: 'signed-in', models: [] },
+                  { id: 'grok', status: 'cli-missing', models: [] },
+                ],
+              },
+              addedAt: '2026-11-01T00:00:00Z',
+            },
+          ],
+        }),
+      );
+      mocks.connections = [local, intent1, remote];
+      mocks.currentConnectionId = 'intent1';
+      render(DevicesSettings);
+
+      const row = within(screen.getByRole('article', { name: 'Studio Mac' }));
+      expect(row.getByRole('img', { name: 'Windows' })).toBeTruthy();
+      const providers = row.getByRole('list', { name: m.settings_devices_providers_ariaLabel() });
+      expect(within(providers).getAllByRole('img')).toHaveLength(1);
+      expect(within(providers).getByRole('img', { name: 'claude-code' })).toBeTruthy();
+    });
   });
 });

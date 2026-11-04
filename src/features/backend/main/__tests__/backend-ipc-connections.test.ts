@@ -2791,7 +2791,10 @@ describe('connections:* IPC handlers', () => {
     expect(
       rpc.calls.every(
         (method) =>
-          method === 'server.pairingInfo' || method === 'host.status' || method === 'system.status',
+          method === 'server.pairingInfo' ||
+          method === 'host.status' ||
+          method === 'system.status' ||
+          method === 'host.providerDiscovery',
       ),
     ).toBe(true);
     expect(mockCaptureFingerprint).not.toHaveBeenCalled();
@@ -2804,6 +2807,49 @@ describe('connections:* IPC handlers', () => {
       expect(record).toMatchObject({ status: 'disconnected' });
       expect(record).not.toHaveProperty('intentdVersion');
     });
+  });
+
+  it("carries a connected remote's host OS and installed providers only while it is connected", async () => {
+    const send = installWindow();
+    rpc.handler = async (method) => {
+      if (method === 'host.status') return { os: 'linux', arch: 'x86_64', hostname: 'intent1' };
+      if (method === 'host.providerDiscovery')
+        return {
+          providers: [
+            { id: 'claude-code', displayName: 'Claude Code', installed: true },
+            { id: 'pi', displayName: 'Pi', installed: false },
+          ],
+        };
+      return {};
+    };
+    const { mod } = await loadModule();
+    mod.getBackendClient();
+    const remote = (await mod.connectBackendClient(REMOTE.id)) as unknown as {
+      emit(event: string, arg: unknown): void;
+      hello(result: unknown): void;
+    };
+    mod.registerBackendHandlers();
+    const remoteRecord = () => {
+      const changed = send.mock.calls.filter(([channel]) => channel === 'connections:changed');
+      const payload = changed.at(-1)?.[1] as ConnectionsListResult | undefined;
+      return payload?.connections.find((connection) => connection.id === REMOTE.id);
+    };
+
+    remote.hello({ server: { version: '6.8.0' } });
+    remote.emit('status', 'connected');
+    await vi.waitFor(() =>
+      expect(remoteRecord()).toMatchObject({
+        status: 'connected',
+        hostOs: 'linux',
+        providers: [{ id: 'claude-code', displayName: 'Claude Code' }],
+      }),
+    );
+    expect(rpc.payloads).toContainEqual(['host.providerDiscovery', {}]);
+
+    remote.emit('status', 'disconnected');
+    await vi.waitFor(() => expect(remoteRecord()).toMatchObject({ status: 'disconnected' }));
+    expect(remoteRecord()).not.toHaveProperty('hostOs');
+    expect(remoteRecord()).not.toHaveProperty('providers');
   });
 
   it('connections:add upserting a NON-active connection does not reconnect', async () => {
