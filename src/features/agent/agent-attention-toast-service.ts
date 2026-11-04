@@ -22,7 +22,7 @@
  * focuses) the agent's conversation tab in that workspace's panel layout.
  *
  * Also hosts the other agent "Switch To" toasts that share these loaders:
- * the transient agent-finished toast ({@link showAgentIdleToast}, the
+ * the transient Assistant-finished toast ({@link showAgentIdleToast}, the
  * in-app replacement for the OS banner main skips while the app is
  * frontmost), workspace auto-unarchive, and guest access removal.
  *
@@ -259,121 +259,67 @@ function isChiefTarget(target: NotificationNavigatePayload): boolean {
   return target.chief === true || target.workspaceId === CHIEF_WORKSPACE_ID;
 }
 
-/** Stable toast id: one per workspace, one per Assistant chat. */
+/** Stable toast id: one per Assistant chat. */
 export function agentIdleToastId(target: NotificationNavigatePayload): string {
-  return isChiefTarget(target)
-    ? `agent-idle:${target.workspaceId}:${target.agentId ?? ''}`
-    : `agent-idle:${target.workspaceId}`;
+  return `agent-idle:${target.workspaceId}:${target.agentId ?? ''}`;
 }
 
 /**
- * True when this window is on `workspaceId`'s page and it is the current tab.
- * The tab alone is not enough: going to the home page (or another app route)
- * keeps the last workspace tab selected while it is off screen.
- */
-function isViewingWorkspace(workspaceId: string): boolean {
-  if (typeof window === 'undefined' || !isCurrentWorkspace(workspaceId)) return false;
-  const path = window.location.pathname;
-  const route = `/workspace/${workspaceId}`;
-  return path === route || path.startsWith(`${route}/`);
-}
-
-/**
- * True when this window's home page shows the Assistant panel open on
- * `agentId` — the chat a chief completion would switch to. Read straight off
- * `appStore.state` (dependency-light, like {@link isViewingWorkspace}).
+ * True when this focused window's home page shows the Assistant panel open on
+ * `agentId` — the chat the toast would switch to. Read straight off
+ * `appStore.state` (dependency-light, like {@link isCurrentWorkspace}).
  */
 function isViewingAssistantChat(agentId: string | undefined): boolean {
   if (!agentId || typeof window === 'undefined' || window.location.pathname !== '/') return false;
+  if (typeof document === 'undefined' || !document.hasFocus()) return false;
   const nav = appStore.state.sidebarNav;
   return nav?.panelItem === 'chief' && nav.chiefActiveAgentId === agentId;
-}
-
-/**
- * True when the toast would only point at what this focused window already
- * shows: the workspace's page, or — for an Assistant completion —
- * that chat is open in the home page's Assistant panel. Matches the
- * attention/failure toasts: the "Only when unfocused" preference governs
- * sound only, never this skip. Main already skips a workspace it sees as
- * viewed; this late check covers the Assistant (which main cannot see) and
- * the user switching to the workspace after main decided.
- */
-function isIdleToastRedundant(payload: AgentIdleToastPayload): boolean {
-  const target = payload.navigateTarget;
-  if (!target?.workspaceId) return false;
-  if (typeof document === 'undefined' || !document.hasFocus()) return false;
-  return isChiefTarget(target)
-    ? isViewingAssistantChat(target.agentId)
-    : isViewingWorkspace(target.workspaceId);
 }
 
 /** Only the latest pending show for a toast id may render after lazy loading. */
 const pendingIdleToasts = new Map<string, symbol>();
 
 /**
- * Transient (auto-dismissing) "<agent> finished" toast for a frontmost
- * `notification:show` payload: who finished, in which workspace, on which
- * task, with "Switch To". The id is stable per workspace so a burst of idles
- * updates one toast in place. No-op without a `navigateTarget` (sound-only
- * delivery) or when {@link isIdleToastRedundant}. Never rejects.
+ * Transient "finished" toast for a frontmost `notification:show` payload from
+ * an Assistant chat, with "Switch To". Workspace completions show on their
+ * tab's status dot instead, so they never toast. No-op without a
+ * `navigateTarget` (sound-only delivery) or when that chat is already open.
+ * Never rejects.
  */
 export async function showAgentIdleToast(payload: AgentIdleToastPayload): Promise<void> {
   const target = payload.navigateTarget;
-  const workspaceId = target?.workspaceId;
-  if (!target || !workspaceId || isIdleToastRedundant(payload)) return;
+  if (!target?.workspaceId || !isChiefTarget(target)) return;
+  if (isViewingAssistantChat(target.agentId)) return;
   const id = agentIdleToastId(target);
   const operation = Symbol();
   pendingIdleToasts.set(id, operation);
   try {
-    const chief = isChiefTarget(target);
-    const [notify, { AgentIdleToast }, resolveConnectedWorkspaceKeySlot] = await Promise.all([
-      getToast(),
-      getToastComponents(),
-      getKeySlotResolver(),
-    ]);
-    if (pendingIdleToasts.get(id) !== operation || isIdleToastRedundant(payload)) return;
-    const structured = payload.structured;
-    const name = structured?.agentName || structured?.specialistDisplayName;
-    const agentId = structured?.agentId ?? target.agentId;
+    const [notify, { AgentIdleToast }] = await Promise.all([getToast(), getToastComponents()]);
+    if (pendingIdleToasts.get(id) !== operation || isViewingAssistantChat(target.agentId)) return;
     notify.custom(AgentIdleToast, {
       id,
       componentProps: {
-        title:
-          !chief && name
-            ? m.notifications_idleToast_title({ name })
-            : (payload.title ?? payload.body ?? ''),
-        workspaceTitle: chief ? undefined : structured?.workspaceTitle,
-        description: structured?.taskTitle ?? (payload.title ? payload.body : undefined),
+        title: payload.title ?? payload.body ?? '',
+        description: payload.title ? payload.body : undefined,
         timestamp: payload.timestamp,
-        keySlot: chief ? null : resolveConnectedWorkspaceKeySlot(workspaceId),
+        keySlot: null,
         onSwitchTo: () => {
           notify.dismiss(id);
-          void switchToIdleTarget(target, chief ? undefined : agentId);
+          void switchToIdleTarget(target);
         },
         onClose: () => notify.dismiss(id),
       },
     });
   } catch (error) {
-    logger.warn('Failed to show agent idle toast', { workspaceId, error });
+    logger.warn('Failed to show agent idle toast', { target, error });
   } finally {
     if (pendingIdleToasts.get(id) === operation) pendingIdleToasts.delete(id);
   }
 }
 
-/**
- * Idle-toast "Switch To": open the agent's conversation in its workspace
- * (without touching any pending attention toast), or route like a native
- * notification click when the agent is unknown or it is the Assistant.
- */
-async function switchToIdleTarget(
-  target: NotificationNavigatePayload,
-  agentId: string | undefined,
-): Promise<void> {
+/** Idle-toast "Switch To": route like a native notification click. */
+async function switchToIdleTarget(target: NotificationNavigatePayload): Promise<void> {
   try {
-    if (target.workspaceId && agentId) {
-      await openAgentConversation(target.workspaceId, agentId);
-      return;
-    }
     const { handleNotificationNavigate } =
       await import('$features/notifications/notification-navigation');
     await handleNotificationNavigate(target);
