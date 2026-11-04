@@ -1,3 +1,4 @@
+import { readDockSavedLinks } from './dock-context-links-saga';
 import { hudDeactivated, dockPlacementCommandRequested } from '../../hud/hud-slice';
 import { selectPrincipalActionContext } from '../../principal/principal-selectors';
 import { takeLatestFromSelector } from '@themislib/themis/saga';
@@ -9,15 +10,10 @@ import { m } from '$shared/paraglide/messages.js';
 import { call, put, race, take, takeLatest, delay, type SagaGenerator } from 'typed-redux-saga';
 import { WINDOW_CHANNELS } from '$shared/ipc/channels';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
-import {
-  dockLinkKey,
-  resolveDockDestination,
-  type DockShortcutContext,
-} from '$shared/dock-shortcuts';
+import { resolveDockDestination, type DockShortcutContext } from '$shared/dock-shortcuts';
 import { store as appStore } from '../../../store';
 import { selectDockShortcutWorkspaces } from '../dock-conversation-selectors';
 import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
-import { getLocalStorageJSON, setLocalStorageJSON } from '../../../utils/safe-local-storage-saga';
 import {
   dockShortcutChanged,
   dockShortcutSelectionChanged,
@@ -33,9 +29,6 @@ import {
 } from '../dock-conversation-slice';
 import { getPrincipalActionContext } from '../../principal/principal-context';
 
-function key(backend: string) {
-  return `dock-context-links:${backend}`;
-}
 function valid(context: DockShortcutContext): boolean {
   return context.backendId === appStore.state.connections.windowBackendId;
 }
@@ -84,8 +77,7 @@ function* receive(context?: DockShortcutContext): SagaGenerator<void> {
       return;
     }
   }
-  const stored = yield* call(getLocalStorageJSON<Record<string, string>>, key(context.backendId));
-  const links = stored && typeof stored === 'object' ? stored : {};
+  const links = yield* call(readDockSavedLinks);
   const ids = selectDockShortcutWorkspaces.select(appStore.state).map((row) => String(row.id));
   const selection = appStore.state.dockConversation.shortcutSelection;
   const selectionValid =
@@ -103,7 +95,9 @@ function* receive(context?: DockShortcutContext): SagaGenerator<void> {
   const resolved = resolveDockDestination(context, ids, links);
   const owned =
     context.workspaceId && ids.includes(context.workspaceId) ? context.workspaceId : null;
-  const destination = owned ?? (context.url && retained ? null : (retained ?? resolved));
+  const explicit = resolveDockDestination({ ...context, workspaceId: undefined }, ids, links);
+  const destination =
+    explicit ?? owned ?? (context.url && retained ? null : (retained ?? resolved));
   yield* put(
     dockShortcutChanged({
       context,
@@ -143,7 +137,7 @@ function* receive(context?: DockShortcutContext): SagaGenerator<void> {
 }
 
 function* choose({
-  payload: [workspaceId, scope],
+  payload: [workspaceId],
 }: ReturnType<typeof dockShortcutChosen>): SagaGenerator<void> {
   const shortcut = appStore.state.dockConversation.shortcut;
   if (
@@ -165,14 +159,6 @@ function* choose({
     if (appStore.state.dockConversation.shortcut?.context.id === context.id)
       yield* put(dockShortcutChanged({ ...shortcut, service: undefined, destination: null }));
     return;
-  }
-  if (scope) {
-    const link = dockLinkKey(context, scope);
-    if (link) {
-      const links =
-        (yield* call(getLocalStorageJSON<Record<string, string>>, key(context.backendId))) ?? {};
-      yield* call(setLocalStorageJSON, key(context.backendId), { ...links, [link]: workspaceId });
-    }
   }
   if (!valid(context) || appStore.state.dockConversation.shortcut?.context.id !== context.id)
     return;

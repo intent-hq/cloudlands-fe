@@ -1,5 +1,20 @@
+<script context="module" lang="ts">
+  import type { DockForegroundObservation } from '$shared/dock-context-links';
+</script>
+
 <script lang="ts">
   import { choosePendingDockShortcut } from '$features/hud/dock-navigation';
+  import {
+    dockContextLinkRequested,
+    dockContextUnlinkRequested,
+    dockContextFollowed,
+    dockContextDismissed,
+    dockContextAutoDecisionRequested,
+  } from '$store/renderer/slices/dock-conversation/dock-conversation-slice';
+  import { selectDockLinkedContext } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
+  import { getPrincipalActionContext } from '$store/renderer/slices/principal/principal-context';
+  import { principalReceived } from '$store/renderer/slices/principal/principal-slice';
+  import { setWorkspaceHasLoaded } from '$store/renderer/slices/workspace/workspace-slice';
   import { dockShortcutChanged } from '$store/renderer/slices/dock-conversation/dock-conversation-slice';
   import { selectDockConversationWorkspaceId } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
   import { dockRailPreview } from './dock-rail.preview-fixtures';
@@ -100,6 +115,55 @@
     }) as typeof api.invoke;
     (window as unknown as Record<string, unknown>).__dockComposerE2E = {
       native,
+      context(value: DockForegroundObservation) {
+        fixture.emit(IPC_CHANNELS.DOCK_CONTEXT.CHANGED, value);
+      },
+      contextSnapshot: () => selectDockLinkedContext.select(store.state),
+      contextReady() {
+        store.dispatch(
+          setWorkspaceHasLoaded(
+            true,
+            store.state.connections.windowBackendId,
+            getPrincipalActionContext(store.state),
+          ),
+        );
+      },
+      contextPrincipal(id: string) {
+        const current = store.state.principal;
+        if (!current.context || !current.snapshot) return;
+        store.dispatch(
+          principalReceived(
+            {
+              context: current.context,
+              invalidation: current.invalidation,
+              presentationVersion: current.presentationVersion,
+            },
+            { ...current.snapshot, principal: { ...current.snapshot.principal, id } },
+          ),
+        );
+        store.dispatch(
+          setWorkspaceHasLoaded(
+            true,
+            store.state.connections.windowBackendId,
+            getPrincipalActionContext(store.state),
+          ),
+        );
+      },
+      contextAction(
+        action: 'link' | 'unlink' | 'follow' | 'dismiss' | 'yes' | 'no',
+        workspaceId?: string,
+        basedOn?: string,
+      ) {
+        const version = basedOn ?? selectDockLinkedContext.select(store.state)?.contextVersion;
+        if (!version) return;
+        if (action === 'link' && workspaceId)
+          store.dispatch(dockContextLinkRequested(version, workspaceId));
+        else if (action === 'unlink') store.dispatch(dockContextUnlinkRequested(version));
+        else if (action === 'follow') store.dispatch(dockContextFollowed(version));
+        else if (action === 'dismiss') store.dispatch(dockContextDismissed(version));
+        else if (action === 'yes' || action === 'no')
+          store.dispatch(dockContextAutoDecisionRequested(version, action));
+      },
       archiveWorkspace(id: string) {
         const workspace = selectDockShortcutWorkspaces
           .select(store.state)

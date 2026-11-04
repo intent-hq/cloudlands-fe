@@ -774,7 +774,7 @@ class EmbeddedBrowserCdpService {
 
   focusedTabOwner(
     webContentsId: number,
-  ): { workspaceId: string; backendId: string; url: string } | null {
+  ): { workspaceId: string; backendId: string; url: string; tabId: string } | null {
     const tab = this.listTabs().find((row) => row.webContentsId === webContentsId);
     const contents = webContents.fromId(webContentsId);
     if (!tab || !contents || contents.isDestroyed()) return null;
@@ -794,6 +794,7 @@ class EmbeddedBrowserCdpService {
     )
       return null;
     return {
+      tabId: tab.tabId,
       workspaceId: owner.workspaceId,
       backendId: owner.binding.backendId,
       url: contents.getURL(),

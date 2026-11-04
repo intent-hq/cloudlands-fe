@@ -498,6 +498,7 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
   // changes to every window (src/lib/dock-lab.ts). Without a bridge the lab
   // stays off; a mock bridge would create a second source of truth.
   // Native-owned global shortcut settings/capture lease; no browser-side authority.
+  'dock-context:get',
   'dock-shortcuts:get',
   'dock-shortcuts:set',
   'dock-shortcuts:capture',

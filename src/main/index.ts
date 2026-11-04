@@ -6,6 +6,7 @@
 
 // The isolated package establishes private paths before any application dependency.
 import './isolated-test-bootstrap.js';
+import { initializeDockContextFeed } from './dock-context-ipc';
 import {
   syncDockGlobalShortcuts,
   initializeDockShortcutSettings,
@@ -1696,6 +1697,7 @@ const bootFlow = app.whenReady().then(async () => {
   // window creators in ./window.ts proceed (they all await this gate).
   // The dock lab is main-owned and off by default; the dock restores only while it is on.
   await initializeDockShortcutSettings();
+  initializeDockContextFeed();
   await loadDockLabEnabled();
   registerDockLabHandlers({
     show: () => dockMenuController.setEnabled(true),
