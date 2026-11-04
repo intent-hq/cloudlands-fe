@@ -747,6 +747,12 @@ export function createDockWindow(): BrowserWindow {
   });
 
   dockWindowRef = window;
+  // A hidden dock (a capture or system selection) can change while hidden, e.g.
+  // collapse as the pointer leaves. macOS then reveals its last frame, an open dock
+  // that is not there: clicks fall through it. Repaint on every reveal.
+  window.on('show', () => {
+    if (!window.isDestroyed()) window.webContents.invalidate();
+  });
   fixWebContentsZoom(window.webContents);
   attachLifecycleListeners(window);
   configurePlatformBehavior(window);
