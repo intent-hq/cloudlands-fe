@@ -78,7 +78,7 @@ test('cold shortcut context preserves native identity and first-use guest owners
     );
     application = await electron.launch({
       args: [join(root, 'main.cjs')],
-      env: { ...env, DD_TRACE_ENABLED: 'false' },
+      env: { ...env, NODE_PATH: resolve('node_modules'), DD_TRACE_ENABLED: 'false' },
     });
     await expect
       .poll(() =>

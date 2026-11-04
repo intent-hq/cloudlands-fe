@@ -45,8 +45,8 @@
   const workspaces$ = selectDockShortcutWorkspaces();
   const workspaceId$ = selectDockConversationWorkspaceId();
   const home = $derived(!!$shortcut$ && $shortcut$.destination === null && !$shortcut$.resolving);
-  // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous intent selection and store dispatch only
   function openHome(id: string) {
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous intent selection and store dispatch only
     if (!choosePendingDockShortcut(id)) store.dispatch(openDockConversationRequested(id));
   }
   function dismissHome() {

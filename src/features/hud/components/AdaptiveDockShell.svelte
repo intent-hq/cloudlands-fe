@@ -107,7 +107,6 @@
   const conversationVisible = $derived(pinned && conversationPresence.open);
   let conversationRegions: DockPointerRect[] = [];
   let edgeState = $state({ held: false, reveal: 0, shell: null as DockPointerRect | null });
-  // Screen-space card and rail-relative anchor survive native window expansion.
   let edgeOrigin = $state<{
     workspaceId: string;
     card: DockPointerRect;
@@ -364,9 +363,7 @@
   $effect(() => {
     placement.surface.height;
     untrack(() => {
-      // A partial native grant must not become the final morph target: native can
-      // grow further before it finishes, leaving a stale clip over the composer.
-      // Layout already clamps the requested target to available native bounds.
+      // Keep a partial native grant from becoming the final morph target.
       if (growGate.pending) growGate.release();
       else if (!heightLoop.active && heldHeight === null && openHeight !== null) openHeight = null;
     });
@@ -690,7 +687,6 @@
         ? { action: 'cancel-drag' }
         : { action: 'end-drag', releasePoint: { x: event.screenX, y: event.screenY } };
     if (awaitingDragStart !== null) {
-      // Preserve a normal release and its endpoint while the bridge acknowledges startup.
       finishDrag = finish;
     } else if (activeDragToken) {
       sendDragEnd(activeDragToken, finish);
@@ -858,8 +854,7 @@
         if (performance.now() - lastUserInput > 1000) return;
         expandedByUser = true;
         const target = event.target as HTMLElement;
-        // Text entry always matches :focus-visible, including after a click; typing in
-        // a workspace conversation is not a keyboard disclosure and keeps motion.
+        // Text entry keeps motion even when it matches :focus-visible after a click.
         if (
           !conversationFocus.returning &&
           !target.isContentEditable &&
@@ -890,8 +885,7 @@
             if (!(event.target as HTMLElement).closest('button')) pointerDown(event);
           }}
           onclick={(event) => {
-            // Clicking the notch itself (not a drag, menu or status control) is the
-            // user's request to type into the pinned conversation.
+            // A notch click requests typing in the pinned conversation.
             const control = (event.target as HTMLElement).closest('button');
             const grip = !!control && control === gripElement;
             if (event.defaultPrevented || suppressClick || (control && !grip)) {
@@ -1039,7 +1033,6 @@
         if (open) hoverComposerFocus.cancel();
       }}
       onStateChange={(next) => {
-        // Closed for good: the next open (a click or the keyboard) sets its own anchor.
         if (edgeState.shell && !next.shell && !conversationVisible) edgeOrigin = null;
         edgeState = next;
         measure();

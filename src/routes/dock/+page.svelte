@@ -72,8 +72,8 @@
   function cancelPendingShortcut() {
     if ($shortcut$?.destination === null) appStore.dispatch(dockShortcutChanged(null));
   }
-  // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous intent selection and store dispatch only
   function openHomeConversation(workspaceId: string) {
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous intent selection and store dispatch only
     if (!choosePendingDockShortcut(workspaceId))
       appStore.dispatch(openDockConversationRequested(workspaceId));
   }

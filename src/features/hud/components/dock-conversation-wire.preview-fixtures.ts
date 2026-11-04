@@ -8,6 +8,7 @@ import { chatScrollbackSaga } from '$store/renderer/slices/chat-state/sagas/chat
 import { ThemeManager, type Theme } from '$lib/utils/theme';
 import { themeSaga } from '$store/renderer/slices/theme/sagas/theme-saga';
 import { store } from '$store/renderer/store';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { mockInvoke, overrideMockIpcHandler } from '$shared/ipc-mock-router';
 import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
@@ -167,23 +168,29 @@ export function setupConversationWire(
   }
   /** Session fields accepted through `agent.update` (provider choice only). */
   const agentChanges = new Map<string, Record<string, unknown>>();
-  function agent(id: string) {
+  function agent(id: string, workspaceId = conversationWireWorkspace) {
+    const main = id === 'wire-main' || id.endsWith(':wire-main');
     return {
       id,
-      workspaceId: conversationWireWorkspace,
-      name: id === 'wire-main' ? 'Wire coordinator' : 'Wire specialist',
+      workspaceId,
+      name: main ? 'Wire coordinator' : 'Wire specialist',
       status: 'runtime_idle',
       provider: 'auggie',
       model: 'opus4.7',
       acpSessionId: id,
-      isInitialAgent: id === 'wire-main',
+      isInitialAgent: main,
       metadata: {
-        isInitialAgent: id === 'wire-main',
-        ...(id === 'wire-main' && pendingQuestion
+        isInitialAgent: main,
+        ...(main && pendingQuestion
           ? { pendingQuestionsMessageId: dismissedQuestion ? '' : conversationWireQuestionId }
           : {}),
       },
-      ...(id === 'wire-sub' ? { parentAgentId: 'wire-main' } : {}),
+      ...(!main
+        ? {
+            parentAgentId:
+              workspaceId === conversationWireWorkspace ? 'wire-main' : `${workspaceId}:wire-main`,
+          }
+        : {}),
       createdAt: timestamp,
       updatedAt: timestamp,
       ...agentChanges.get(id),
@@ -281,8 +288,12 @@ export function setupConversationWire(
       case 'workspace.get':
         return {
           workspace: {
-            id: conversationWireWorkspace,
-            title: 'Connected companion fixture',
+            id: String(params.workspaceId ?? conversationWireWorkspace),
+            title:
+              getItem(
+                store.state.workspace.workspaces,
+                String(params.workspaceId ?? conversationWireWorkspace),
+              )?.title ?? 'Connected companion fixture',
             status: 'active',
             myRole: 'owner',
             canManage: true,
@@ -297,11 +308,25 @@ export function setupConversationWire(
             params.scope === 'background'
               ? []
               : params.scope === 'delegated'
-                ? [agent('wire-sub')]
-                : [agent('wire-sub'), agent('wire-main')],
+                ? [
+                    agent(
+                      params.workspaceId === conversationWireWorkspace
+                        ? 'wire-sub'
+                        : `${params.workspaceId}:wire-sub`,
+                      String(params.workspaceId),
+                    ),
+                  ]
+                : ['wire-sub', 'wire-main'].map((id) =>
+                    agent(
+                      params.workspaceId === conversationWireWorkspace
+                        ? id
+                        : `${params.workspaceId}:${id}`,
+                      String(params.workspaceId),
+                    ),
+                  ),
         };
       case 'agent.get':
-        return { agent: agent(agentId) };
+        return { agent: agent(agentId, String(params.workspaceId ?? conversationWireWorkspace)) };
       case 'agent.update':
       case 'agent.setModel': {
         if (!options.providerChoice)

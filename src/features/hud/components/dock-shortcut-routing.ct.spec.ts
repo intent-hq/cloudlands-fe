@@ -327,6 +327,7 @@ test('settled notch hover focuses the real editor once and preserves keyboard ed
   await expect(page.getByTestId('dock-shell')).toHaveAttribute('data-reveal', '0');
   const commandsBefore = await page
     .locator('[data-preview-commands]')
+    .first()
     .getAttribute('data-preview-commands');
   await page.getByTestId('dock-drag-handle').hover();
   await expect(page.getByTestId('dock-shell')).toHaveAttribute('data-reveal', '1');
@@ -339,7 +340,8 @@ test('settled notch hover focuses the real editor once and preserves keyboard ed
   await model.hover();
   await expect(model).toBeFocused();
   const commands = JSON.parse(
-    (await page.locator('[data-preview-commands]').getAttribute('data-preview-commands')) ?? '[]',
+    (await page.locator('[data-preview-commands]').first().getAttribute('data-preview-commands')) ??
+      '[]',
   ) as { action: string }[];
   const before = JSON.parse(commandsBefore ?? '[]') as { action: string }[];
   expect(
