@@ -21,6 +21,7 @@ import {
   LOGIN_PATH,
   PENDING_COOKIE,
   createBrowserAccessServer,
+  qrDestinations,
   type DeviceLoginText,
   runtimeConfigSource,
   type BrowserAccessServerDeps,
@@ -754,5 +755,66 @@ describe('Browser access server: QR sign-in and one-time links', () => {
     const good = mintLinkToken(ACCESS_KEY, 5).token;
     expect((await request(port, { path: `${LINK_PATH}?t=${good}x` })).status).toBe(401);
     expect((await request(port, { path: `${LINK_PATH}?t=${good}` })).status).toBe(303);
+  });
+
+  it('sends QR recovery from a rejected link page to the app, not back to the link', async () => {
+    const { port } = await startDevice();
+    const { token } = mintLinkToken(ACCESS_KEY, 5);
+    await request(port, { path: `${LINK_PATH}?t=${token}` });
+    const rejected = await request(port, { path: `${LINK_PATH}?t=${token}` });
+    expect(rejected.status).toBe(401);
+    const html = String(rejected.body);
+    expect(html).toContain('const home = "/";');
+    expect(html).toContain(`const fresh = "${LOGIN_PATH}";`);
+    const pending = pendingCookieOf(rejected);
+    await request(port, {
+      path: APPROVE_PATH,
+      ...form({ code: approveCodeOf(), key: ACCESS_KEY }),
+    });
+    const poll = await request(port, { path: DEVICE_POLL_PATH, headers: { cookie: pending } });
+    expect(JSON.parse(String(poll.body))).toEqual({ status: 'approved' });
+    const home = await request(port, {
+      path: '/',
+      headers: { cookie: COOKIE, accept: 'text/html' },
+    });
+    expect(String(home.body)).toContain('<title>app</title>');
+  });
+});
+
+describe('qrDestinations', () => {
+  it('sends sign-in routes to the app root and a fresh sign-in page', () => {
+    expect(qrDestinations(`${LINK_PATH}?t=v1.1.x.y`)).toEqual({ home: '/', fresh: LOGIN_PATH });
+    expect(qrDestinations(LOGIN_PATH)).toEqual({ home: '/', fresh: LOGIN_PATH });
+    expect(qrDestinations(`${APPROVE_PATH}?code=x`)).toEqual({ home: '/', fresh: LOGIN_PATH });
+  });
+
+  it('keeps app deep links but drops a rejected key', () => {
+    expect(qrDestinations('/workspace/abc?backend=b1')).toEqual({
+      home: '/workspace/abc?backend=b1',
+      fresh: '/workspace/abc?backend=b1',
+    });
+    expect(qrDestinations('/workspace/abc?key=wrong&backend=b1').home).toBe(
+      '/workspace/abc?backend=b1',
+    );
+    expect(qrDestinations('/?key=wrong').home).toBe('/');
+  });
+
+  it('never leaves the site', () => {
+    for (const path of ['//evil.example/x', '/\\evil.example', '/%2F%2Fevil.example']) {
+      const { home, fresh } = qrDestinations(path);
+      for (const target of [home, fresh]) expect(target).toMatch(/^\/(?![/\\])/);
+    }
+  });
+
+  it('escapes the destination inside the inline script', async () => {
+    const { port } = await start({
+      deviceLogin: { text: () => DEVICE_TEXT, renderQr: async () => '<svg></svg>' },
+    });
+    const reply = await request(port, {
+      path: '/a%3C/script%3E%3Cb',
+      headers: { accept: 'text/html' },
+    });
+    const html = String(reply.body);
+    expect(html.match(/<\/script>/g)?.length).toBe(1);
   });
 });

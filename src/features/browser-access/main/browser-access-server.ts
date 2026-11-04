@@ -195,6 +195,7 @@ interface QrPanel {
   readonly text: DeviceLoginText;
   readonly svg: string;
   readonly matchCode: string;
+  readonly destinations: { home: string; fresh: string };
 }
 
 const PAGE_STYLE = `  :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
@@ -212,14 +213,39 @@ const PAGE_STYLE = `  :root { color-scheme: light dark; font-family: system-ui, 
   .match { font: 600 1.5rem ui-monospace, monospace; letter-spacing: 0.15em; opacity: 1; }
   hr { width: 100%; border: 0; border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent); }`;
 
+/**
+ * Where the QR page goes after approval (`home`) and to get a fresh QR (`fresh`).
+ * Sign-in routes such as a rejected one-time link go to the app root, and a rejected
+ * `?key=` is dropped, so neither is retried; app deep links are kept.
+ */
+export function qrDestinations(requestUrl: string | undefined): { home: string; fresh: string } {
+  let url: URL;
+  try {
+    url = new URL(requestUrl ?? '/', 'http://localhost');
+  } catch {
+    return { home: '/', fresh: LOGIN_PATH };
+  }
+  if (url.pathname.startsWith('/__browser-access/')) return { home: '/', fresh: LOGIN_PATH };
+  url.searchParams.delete('key');
+  // Never leave the site: `//host` and `/\host` are protocol-relative to browsers.
+  const target = /^\/[/\\]/.test(url.pathname) ? '/' : `${url.pathname}${url.search}`;
+  return { home: target, fresh: target };
+}
+
+/** JSON for an inline script, safe against `</script>` in the value. */
+function scriptJson(value: unknown): string {
+  return JSON.stringify(value).replace(/</g, '\\u003c');
+}
+
 /** Polls for approval; reloads for a fresh QR when the request expires. */
-const POLL_SCRIPT = `<script>
+function pollScript(destinations: { home: string; fresh: string }): string {
+  return `<script>
 (() => {
-  const home = location.pathname === ${JSON.stringify(LOGIN_PATH)} ? '/' : location.href;
-  const fresh = location.pathname === ${JSON.stringify(LOGIN_PATH)} ? ${JSON.stringify(LOGIN_PATH)} : location.href;
+  const home = ${scriptJson(destinations.home)};
+  const fresh = ${scriptJson(destinations.fresh)};
   const poll = async () => {
     try {
-      const response = await fetch(${JSON.stringify(DEVICE_POLL_PATH)}, { cache: 'no-store', credentials: 'same-origin' });
+      const response = await fetch(${scriptJson(DEVICE_POLL_PATH)}, { cache: 'no-store', credentials: 'same-origin' });
       const { status } = await response.json();
       if (status === 'approved') return location.replace(home);
       if (status === 'expired') return location.replace(fresh);
@@ -229,6 +255,7 @@ const POLL_SCRIPT = `<script>
   setTimeout(poll, 2000);
 })();
 </script>`;
+}
 
 function qrPanelHtml(panel: QrPanel): string {
   return `<section class="qr" aria-labelledby="qr-title">
@@ -325,7 +352,7 @@ ${PAGE_STYLE}
   <input id="key" name="key" type="password" autocomplete="current-password" required>
   <button type="submit">${escapeHtml(text.submit)}</button>
 </form>
-${POLL_SCRIPT}
+${pollScript(qr.destinations)}
 </body>
 </html>
 `;
@@ -586,7 +613,12 @@ export function createBrowserAccessServer(deps: BrowserAccessServerDeps): Browse
       Math.min(DEVICE_LOGIN_TTL_MS, Math.max(1000, pending.expiresAt - Date.now())) / 1000,
     );
     response.setHeader('Set-Cookie', pendingCookie(pending.secret, isSecure(request), maxAge));
-    return { text: device.text(), svg, matchCode: pending.matchCode };
+    return {
+      text: device.text(),
+      svg,
+      matchCode: pending.matchCode,
+      destinations: qrDestinations(request.url),
+    };
   };
 
   const sendLogin = async (
