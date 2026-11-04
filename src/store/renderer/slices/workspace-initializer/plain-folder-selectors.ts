@@ -10,6 +10,7 @@ import {
   supportsPlainFolderCreate,
 } from '$lib/components/workspace/initializer/plain-folder-create';
 import { resolveCloneSourceVisible } from '$lib/components/workspace/initializer/clone-source-visibility';
+import { resolveForgeConnectionState } from '$lib/components/workspace/initializer/repository-row-label';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import type { Workspace } from '$shared/types';
 import { store } from '../../store';
@@ -63,6 +64,22 @@ export const selectInitializeGitDefaultState = store.createSelector(
 export const selectCloneSourceVisible = store.createSelector((state) => {
   const gitlabFailed = state.gitlabAuth?.statusFailed === true;
   return resolveCloneSourceVisible({
+    githubConnected: state.githubAuth?.isAuthenticated === true,
+    githubSettled: state.githubAuth?.statusSettled === true,
+    githubFailed: state.githubAuth?.statusFailed === true,
+    gitlabConnected: state.gitlabAuth?.isConfigured === true,
+    gitlabSettled: state.gitlabAuth?.statusReady === true || gitlabFailed,
+    gitlabFailed,
+  });
+});
+
+/**
+ * Forge connection for the New Workspace picker label (GitHub or GitLab); a
+ * pending or failed status read is `'unknown'`.
+ */
+export const selectForgeConnectionState = store.createSelector((state) => {
+  const gitlabFailed = state.gitlabAuth?.statusFailed === true;
+  return resolveForgeConnectionState({
     githubConnected: state.githubAuth?.isAuthenticated === true,
     githubSettled: state.githubAuth?.statusSettled === true,
     githubFailed: state.githubAuth?.statusFailed === true,

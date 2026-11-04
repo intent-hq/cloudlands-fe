@@ -69,6 +69,7 @@ in a monorepo checkout, where this repo mounts at `packages/cloudlands-fe/`.
 | state/store                                                             | ../../docs/fe/STATE_MANAGEMENT.md, src/store/renderer/docs/                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | component design                                                        | ../../docs/fe/COMPONENTS_DESIGN.md                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | UI invariant gates                                                      | `pnpm run test:ui-invariants` — ratchets + catalog `*.meta.ts` ledgers, see below                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Electron test helpers (`test/electron*.ts`, `test/fixtures/**/*.ts`)    | `pnpm run lint:electron-test-paths` (in `lint:architecture`) — `tsconfig.electron-tests.json` type-checks them and `scripts/check-electron-test-paths.mjs` checks their `src/` path strings and Vite `resolveId` stubs; they otherwise run only in the merge queue (cloudlands-fe#4050)                                                                                                                                                                                                                      |
 | adding a ratcheted lint rule                                            | `eslint-rules/lib/baseline-ratchet.js` — `lintRuleFromRepoConfig` derives scope from `eslint.config.js` (same rule entries and global ignores as `pnpm lint`); the baseline is one entry file per tolerated source file, `eslint-rules/baselines/<rule>/<source path>.json` (`loadBaseline`), so parallel debt-reduction PRs delete disjoint files instead of conflicting on one document; per-file counts only shrink vs `LINT_BASELINE_BASE_REF` (CI sets it to the PR / queue base; falls back to `HEAD`) |
 | deps freshness                                                          | `pnpm run deps:check` — gates refuse to run on a stale node_modules install                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Node version                                                            | `pnpm install` and gates refuse to run on a Node outside `engines.node` (the one range)                                                                                                                                                                                                                                                                                                                                                                                                                      |
@@ -384,7 +385,8 @@ combine it with `--resolved-plan` for a budgeted preview, then raise or omit the
 Each run prints `record: <path>` for its attempt under `.dev/verify-changed/attempts/`
 and passes only when every check and resolved unit file is satisfied. To continue after a
 failure or interruption, rerun with `--resume` (`--resolved-plan --resume` previews it);
-never hand-pick stages. Receipt files and resume-credit rules:
+never hand-pick stages. A run stops at its first failed check; `--keep-going` still runs and
+records every remaining check, then fails listing them all (prerequisites still stop it). Receipt files and resume-credit rules:
 [Changed-file verification receipts](../../docs/fe/DEVELOPER_GUIDE.md#changed-file-verification-receipts).
 
 It runs scoped Prettier and ESLint, related Vitest tests, colocated component tests one
@@ -700,6 +702,16 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   same after another trigger. Lint (`intent/no-wait-for-timeout-in-ct`) caps each spec's
   sleeps at its baseline (`eslint-rules/baselines/`, shrink-only); keep a sleep, disabled
   on the line with the reason, only to observe a quiet period.
+- Activate a hover-only action (a row toolbar that takes pointer events only while its row
+  is hovered) with `activateHoverAction(action, region)` (`src/test/ct-test.ts`), never
+  `row.hover()` then a click: Playwright checks the hit target before it moves the
+  pointer, so a row that moves after the hover leaves every retry hitting the row text
+  until the timeout (cloudlands-fe#4112; ejected cloudlands-fe#4078 from the queue). The
+  helper waits for `region` to settle, presses Enter on the action, then waits for
+  `region` to change and settle (`requireChange: false` when it may not). Lint
+  (`intent/no-hover-then-click-in-ct`) caps each spec's sites at its shrink-only baseline;
+  keep a pointer click, disabled on the line with the reason, only to cover the pointer
+  path on a row that cannot move.
 - **Every CT spec imports `test` / `expect` from `src/test/ct-test.ts`** — lint-enforced
   (`no-restricted-imports`; only type imports may come from
   `@playwright/experimental-ct-svelte`). The module gives every test a fresh browser

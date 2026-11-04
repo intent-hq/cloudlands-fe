@@ -11,6 +11,8 @@
   import { m } from '$shared/paraglide/messages.js';
   import type { DockWorkspaceView } from '$store/renderer/slices/hud/hud-selectors';
   import { keepDockFocusVisible, revealDockItem } from '$features/hud/utils/dock-scroll';
+  import DockIntroCard from '$features/hud/intro/DockIntroCard.svelte';
+  import { dockIntro, releaseDockIntroHold } from '$features/hud/intro/dock-intro.svelte';
 
   let {
     workspaces,
@@ -21,6 +23,11 @@
     pending?: boolean;
     onOpen: (id: string) => void;
   } = $props();
+  // Opening a workspace or the Assistant ends the intro's hold on the open notch.
+  function openRow(id: string): void {
+    releaseDockIntroHold();
+    onOpen(id);
+  }
   // The list fades at its bottom edge only while more rows sit below it.
   let moreBelow = $state(false);
   function trackOverflow(node: HTMLElement, _rows: number) {
@@ -64,8 +71,10 @@
   aria-label={m.dock_workspaces_ariaLabel()}
   onkeydown={navigate}
   onfocusin={(event) => revealDockItem(event.target as HTMLElement)}
+  onpointerleave={releaseDockIntroHold}
   data-testid="dock-overview"
 >
+  {#if dockIntro.open}<DockIntroCard />{/if}
   <div
     class="overview-rows"
     class:more-below={moreBelow}
@@ -90,7 +99,7 @@
           data-dock-row
           data-workspace-id={id}
           aria-describedby="dock-status-{id}"
-          onclick={() => onOpen(id)}
+          onclick={() => openRow(id)}
         >
           <DockWorkspaceAvatar {item} variant="emphasized" />
           <span class="row-copy">
@@ -124,7 +133,7 @@
       disabled={pending}
       data-dock-row
       data-workspace-id="dock:assistant"
-      onclick={() => onOpen('dock:assistant')}
+      onclick={() => openRow('dock:assistant')}
     >
       <AgentAvatar specialist="chief-of-staff" variant="emphasized" />
       <span class="row-copy"

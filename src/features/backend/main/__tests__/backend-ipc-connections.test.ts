@@ -2791,7 +2791,10 @@ describe('connections:* IPC handlers', () => {
     expect(
       rpc.calls.every(
         (method) =>
-          method === 'server.pairingInfo' || method === 'host.status' || method === 'system.status',
+          method === 'server.pairingInfo' ||
+          method === 'host.status' ||
+          method === 'system.status' ||
+          method === 'host.providerDiscovery',
       ),
     ).toBe(true);
     expect(mockCaptureFingerprint).not.toHaveBeenCalled();
@@ -2804,6 +2807,71 @@ describe('connections:* IPC handlers', () => {
       expect(record).toMatchObject({ status: 'disconnected' });
       expect(record).not.toHaveProperty('intentdVersion');
     });
+  });
+
+  it("carries a connected remote's host OS and installed providers only while it is connected", async () => {
+    const send = installWindow();
+    rpc.handler = async (method) => {
+      if (method === 'host.status') return { os: 'linux', arch: 'x86_64', hostname: 'intent1' };
+      if (method === 'host.providerDiscovery')
+        return {
+          providers: [
+            { id: 'claude-code', displayName: 'Claude Code', installed: true },
+            { id: 'pi', displayName: 'Pi', installed: false },
+          ],
+        };
+      return {};
+    };
+    const { mod } = await loadModule();
+    mod.getBackendClient();
+    const remote = (await mod.connectBackendClient(REMOTE.id)) as unknown as {
+      emit(event: string, arg: unknown): void;
+      hello(result: unknown): void;
+    };
+    mod.registerBackendHandlers();
+    const remoteRecord = () => {
+      const changed = send.mock.calls.filter(([channel]) => channel === 'connections:changed');
+      const payload = changed.at(-1)?.[1] as ConnectionsListResult | undefined;
+      return payload?.connections.find((connection) => connection.id === REMOTE.id);
+    };
+
+    remote.hello({ server: { version: '6.8.0' } });
+    remote.emit('status', 'connected');
+    await vi.waitFor(() =>
+      expect(remoteRecord()).toMatchObject({
+        status: 'connected',
+        hostOs: 'linux',
+        hostArch: 'x86_64',
+        providers: [{ id: 'claude-code', displayName: 'Claude Code' }],
+      }),
+    );
+    expect(rpc.payloads).toContainEqual(['host.providerDiscovery', {}]);
+
+    remote.emit('status', 'disconnected');
+    await vi.waitFor(() => expect(remoteRecord()).toMatchObject({ status: 'disconnected' }));
+    expect(remoteRecord()).not.toHaveProperty('hostOs');
+    expect(remoteRecord()).not.toHaveProperty('hostArch');
+    expect(remoteRecord()).not.toHaveProperty('providers');
+  });
+
+  it('does not ask a guest session for its installed providers', async () => {
+    guestStore.findById.mockImplementation(async (id: string) =>
+      id === REMOTE.id ? { id } : null,
+    );
+    installWindow();
+    const { mod } = await loadModule();
+    mod.getBackendClient();
+    const remote = (await mod.connectBackendClient(REMOTE.id)) as unknown as {
+      emit(event: string, arg: unknown): void;
+      hello(result: unknown): void;
+    };
+    mod.registerBackendHandlers();
+
+    remote.hello({ server: { version: '6.8.0' } });
+    remote.emit('status', 'connected');
+    await vi.waitFor(() => expect(guestStore.findById).toHaveBeenCalledWith(REMOTE.id));
+    for (let tick = 0; tick < 5; tick++) await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(rpc.calls).not.toContain('host.providerDiscovery');
   });
 
   it('connections:add upserting a NON-active connection does not reconnect', async () => {
@@ -6450,7 +6518,7 @@ it('reopens a saved instance through IPC after navigation policy is republished 
   const publish = findHandler(COLLABORATION_AUTH.POLICY)!;
   const open = findHandler('connections:open')!;
   try {
-    await publish(event, { multiplayer: true, gitlab: false });
+    await publish(event, { multiplayer: true });
     await expect(open(event, { id: member.id })).resolves.toEqual({
       status: 'opened',
       id: member.id,
@@ -6459,7 +6527,7 @@ it('reopens a saved instance through IPC after navigation policy is republished 
     sender.emit('did-navigate-in-page');
     await expect(open(event, { id: member.id })).rejects.toThrow(/Multiplayer is unavailable/);
     mod.disconnectBackendClient(member.id);
-    await publish(event, { multiplayer: true, gitlab: false });
+    await publish(event, { multiplayer: true });
     await expect(open(event, { id: member.id })).resolves.toEqual({
       status: 'opened',
       id: member.id,
@@ -6468,7 +6536,7 @@ it('reopens a saved instance through IPC after navigation policy is republished 
     expect(openOrFocus).toHaveBeenNthCalledWith(1, member.id);
     expect(openOrFocus).toHaveBeenNthCalledWith(2, member.id);
     expect(store.setActiveId).not.toHaveBeenCalled();
-    await publish(event, { multiplayer: false, gitlab: false });
+    await publish(event, { multiplayer: false });
     await expect(open(event, { id: member.id })).rejects.toThrow(/Multiplayer is unavailable/);
     expect(openOrFocus).toHaveBeenCalledTimes(2);
   } finally {

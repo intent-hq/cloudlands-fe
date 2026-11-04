@@ -55,6 +55,11 @@
   export function getMentionContextItems(): ContextItem[] {
     return [];
   }
+
+  /** A fixed record, so tests can tell composer sends from other sends. */
+  export function getPickedMentionsMetadata(): Record<string, unknown> {
+    return { mentionTokens: ['@src/picked.ts'] };
+  }
 </script>
 
 <div

@@ -3529,7 +3529,7 @@ describe('handleInviteDeepLink — collaboration-only continuation', () => {
         openBrowser: async () => {},
         isLatest: () => true,
       });
-      await flow.action({ type: 'policy', policy: { multiplayer: true, gitlab: true } });
+      await flow.action({ type: 'policy', policy: { multiplayer: true } });
       expect(flow.snapshot()).toMatchObject({
         phase: 'account',
         user: { id: '42', login: 'octocat' },

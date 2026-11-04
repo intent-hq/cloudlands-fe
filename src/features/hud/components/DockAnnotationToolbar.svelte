@@ -42,24 +42,21 @@
   const TOOL_SIZE = 38;
   let height = $state(0);
 
-  // Notch feedback stays at the bottom, away from the dock's hover expansion.
-  // Edge and floating toolbars follow their dock, inside the work area.
+  // The bar starts at the bottom centre of the screen, wherever the dock is, and the
+  // user can drag it anywhere inside the work area (kept for this overlay's life).
   // Record widens into its recording pill: the bar must not re-centre (jump) while
-  // it does. It is placed by its width without that growth, so it grows to the right
-  // (an edge rail on the right grows to the left by itself), and is kept inside the
-  // work area with its real width.
+  // it does. It is placed by its width without that growth, so it grows to the right,
+  // and is kept inside the work area with its real width.
   let recordButton = $state<HTMLElement | null>(null);
+  let dragged = $state<{ x: number; y: number } | null>(null);
+  let drag: { pointerId: number; dx: number; dy: number } | null = null;
   const position = $derived.by(() => {
     const area = overlay.workArea;
     const growth = width && recordButton ? Math.max(0, recordButton.offsetWidth - TOOL_SIZE) : 0;
-    const rightRail = overlay.dock?.shape === 'edge' && overlay.dock.side === 'right';
-    const placed = dockToolbarPosition(
-      overlay.dock,
-      { width: rightRail ? width : width - growth, height },
-      area,
-    );
-    const x = Math.max(area.x, Math.min(placed.x, area.x + area.width - width));
-    return { x: Math.round(x), y: placed.y };
+    const start = dragged ?? dockToolbarPosition({ width: width - growth, height }, area);
+    const x = Math.max(area.x, Math.min(start.x, area.x + area.width - width));
+    const y = Math.max(area.y, Math.min(start.y, area.y + area.height - height));
+    return { x: Math.round(x), y: Math.round(y) };
   });
   const rect = $derived<DockAnnotationRect | null>(
     width && height ? { x: position.x, y: position.y, width, height } : null,
@@ -84,6 +81,24 @@
   function onPointerDown(event: PointerEvent) {
     // Never a gesture origin: the overlay root must not see this pointer.
     event.stopPropagation();
+    // The bar's own surface and grip move it; its buttons stay buttons.
+    if (event.button !== 0 || (event.target as Element).closest('button')) return;
+    event.preventDefault();
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    drag = {
+      pointerId: event.pointerId,
+      dx: event.clientX - position.x,
+      dy: event.clientY - position.y,
+    };
+  }
+  function onPointerMove(event: PointerEvent) {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    // A release outside the clickable bar can be missed: no buttons held ends it.
+    if (event.buttons === 0) return endDrag();
+    dragged = { x: event.clientX - drag.dx, y: event.clientY - drag.dy };
+  }
+  function endDrag() {
+    drag = null;
   }
 
   // Tooltips go below only when there is no room above the toolbar.
@@ -191,14 +206,27 @@
   data-testid="dock-annotation-toolbar"
   data-dock-palette="notch"
   data-placed={placed || undefined}
+  data-dragged={dragged ? '' : undefined}
   data-dock-shape={overlay.dock?.shape ?? 'none'}
   data-tips={tipsBelow ? 'below' : 'above'}
   style:transform="translate({position.x}px, {position.y}px)"
   bind:offsetWidth={width}
   bind:offsetHeight={height}
   onpointerdown={onPointerDown}
+  onpointermove={onPointerMove}
+  onpointerup={endDrag}
+  onpointercancel={endDrag}
+  onlostpointercapture={endDrag}
   transition:fade={{ tier: 'fast' }}
 >
+  <!-- Grip: the visible handle for dragging the bar (its whole surface drags too). -->
+  <span class="toolbar-grip" title={m.dock_annotationToolbar_drag_label()} aria-hidden="true">
+    <svg width="8" height="16" viewBox="0 0 8 16" fill="currentColor">
+      <circle cx="2" cy="3" r="1.25" /><circle cx="6" cy="3" r="1.25" />
+      <circle cx="2" cy="8" r="1.25" /><circle cx="6" cy="8" r="1.25" />
+      <circle cx="2" cy="13" r="1.25" /><circle cx="6" cy="13" r="1.25" />
+    </svg>
+  </span>
   <!-- Tools: one group, Mouse first (a mode like the tools); the current one is tinted. -->
   <div class="tool-group" role="group">
     <!-- Mouse mode: use the screen normally; the session and its marks stay. -->
@@ -366,13 +394,23 @@
     border: 1px solid hsl(var(--toolbar-edge));
     background: hsl(var(--toolbar-card));
     box-shadow: 0 8px 24px var(--theme-dark-shadow-drop);
-    cursor: default;
+    cursor: grab;
     pointer-events: auto;
     touch-action: none;
   }
-  /* Follows the dock with the dock's moderate spring; reduced motion moves at once. */
-  .dock-annotation-toolbar[data-placed] {
+  /* Settles with the moderate spring; reduced motion moves at once. Once the user
+     has dragged it, it follows the pointer exactly. */
+  .dock-annotation-toolbar[data-placed]:not([data-dragged]) {
     transition: transform var(--spring-moderate) var(--spring-moderate-ease);
+  }
+  .toolbar-grip {
+    display: flex;
+    align-items: center;
+    padding: 0 2px 0 4px;
+    color: hsl(var(--theme-dark-muted-foreground));
+  }
+  .dock-annotation-toolbar:active:not(:has(button:active)) {
+    cursor: grabbing;
   }
   .tool-group {
     display: flex;

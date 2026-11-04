@@ -232,6 +232,7 @@ test('keeps assigned and unassigned status and title columns aligned through hov
 
   await rows.nth(1).hover();
   expect(await positions()).toEqual(initial);
+  // eslint-disable-next-line intent/no-hover-then-click-in-ct -- the title is not hover-only, and the rows are asserted still above
   await rows.nth(1).locator('[data-workspace-card-title]').click();
   await expect.poll(() => selected.length).toBe(1);
   const trigger = rows.nth(2).locator('[data-workspace-card-trigger]');

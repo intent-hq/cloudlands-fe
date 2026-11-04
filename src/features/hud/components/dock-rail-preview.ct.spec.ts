@@ -62,8 +62,9 @@ test('Assistant and every workspace remain reachable in the bounded legacy rail'
     'data-preview-action',
     `workspace:${await workspace.getAttribute('data-workspace-id')}`,
   );
+  // The Assistant is the last entry, below every workspace.
   await workspace.press('End');
-  const last = component.locator('button[data-workspace-id]').last();
+  const last = assistant;
   await expect(last).toBeFocused();
   const scroller = component.locator('[data-dock-scroll]');
   await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
@@ -80,16 +81,13 @@ test('Assistant and every workspace remain reachable in the bounded legacy rail'
     .toBe(true);
   await expect(component.getByTestId('dock-overflow')).toHaveCount(0);
   await page.keyboard.press('Enter');
-  await expect(component).toHaveAttribute(
-    'data-preview-action',
-    `workspace:${await last.getAttribute('data-workspace-id')}`,
-  );
+  await expect(component).toHaveAttribute('data-preview-action', 'assistant');
   await last.press('Home');
-  await expect(assistant).toBeFocused();
+  await expect(workspace).toBeFocused();
   await scroller.hover();
   await wheelUntilScrolled(scroller, { deltaY: 1000 });
   await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
-  await expect(assistant).toBeFocused();
+  await expect(workspace).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(component.getByTestId('dock-rail-target')).toHaveAttribute('data-expanded', 'false');
   // A queued wheel scroll can move another row beneath the stationary pointer.

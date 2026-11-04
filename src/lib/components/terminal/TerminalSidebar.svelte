@@ -4,6 +4,7 @@
     selectScriptWorkflowOutcome,
     selectWorkspaceScriptsInitialized,
     selectScriptDetectionOperation,
+    selectRemoteScriptsSupported,
   } from '$store/renderer/slices/scripts/scripts-selectors';
   import { loadMoreScripts, refreshScripts } from '$store/renderer/slices/scripts/scripts-slice';
   import { Input } from '$lib/components/ui/input';
@@ -11,6 +12,8 @@
   import { prefersReducedMotion, spring } from '$lib/motion';
   import type { ScriptMode, ScriptListEntry } from '$features/scripts/types';
   import { getScriptStatusKind, isLiveScriptStatus } from '$features/scripts/utils/script-status';
+  import { isLostRun, scriptMachineRuns } from '$features/scripts/utils/script-location';
+  import MachineRunRow from '$features/scripts/components/MachineRunRow.svelte';
 
   import { selectScriptEntries } from '$store/renderer/slices/scripts/scripts-selectors';
   import {
@@ -55,10 +58,23 @@
     workspaceId: string;
     selectedScriptId?: string | null;
     onSelectScript?: (scriptId: string | null) => void;
+    /** The selected remote agent's run of `selectedScriptId` (`remoteScripts: 1`). */
+    selectedRemoteAgentId?: string | null;
+    onSelectMachineRun?: (scriptId: string, remoteAgentId: string) => void;
     class?: string;
   }
 
-  let { workspaceId, selectedScriptId = null, onSelectScript, class: className }: Props = $props();
+  let {
+    workspaceId,
+    selectedScriptId = null,
+    onSelectScript,
+    selectedRemoteAgentId = null,
+    onSelectMachineRun,
+    class: className,
+  }: Props = $props();
+
+  // Remote agents' runs on their machines, listed under each script.
+  const remoteScriptsSupported$ = selectRemoteScriptsSupported();
 
   const workspaceIdStore = writable('');
   $effect(() => workspaceIdStore.set(workspaceId));
@@ -236,6 +252,8 @@
     completeWorkflow(createConsumerId, outcome);
     if (outcome.status !== 'success' || !outcome.result || Array.isArray(outcome.result)) {
       logger.error('Script creation failed', outcome.error);
+      // Keep the form open so the user can fix the field the daemon named.
+      notify.error(outcome.error ?? m.terminal_sidebar_createScriptFailed_error());
       return;
     }
     const script = outcome.result as { id: string };
@@ -288,7 +306,10 @@
       return;
     pendingUpdate = null;
     completeWorkflow(updateConsumerId, outcome);
-    if (outcome.status !== 'success') logger.error('Script update failed', outcome.error);
+    if (outcome.status !== 'success') {
+      logger.error('Script update failed', outcome.error);
+      notify.error(outcome.error ?? m.terminal_quakeOverlay_renameScriptFailed_error());
+    }
   });
 
   // ---- Sort function ----
@@ -307,7 +328,7 @@
   }
 
   // ---- Status dot helpers ----
-  function getStatusColor(script: ScriptListEntry): string {
+  function getStatusColor(script: Pick<ScriptListEntry, 'runtime'>): string {
     const kind = getScriptStatusKind(script.runtime);
     if (kind === 'running' || kind === 'succeeded') return 'bg-green-500';
     if (kind === 'restarting') return 'bg-warning';
@@ -791,7 +812,7 @@
                     selectedScriptIds.has(script.id) && 'bg-accent/50! hover:bg-accent/60!',
                   )}
                   title={editingScriptId === script.id ? '' : script.name}
-                  active={selectedScriptId === script.id}
+                  active={selectedScriptId === script.id && !selectedRemoteAgentId}
                   onclick={(e) => handleSelectScript(script.id, e as MouseEvent)}
                   ondblclick={() => startEditingScript(script.id, script.name)}
                   oncontextmenu={(e) => handleScriptContextMenu(script.id, e as MouseEvent)}
@@ -839,6 +860,19 @@
                     </div>
                   {/snippet}
                 </ListItem>
+                {#if $remoteScriptsSupported$}
+                  {#each scriptMachineRuns(script) as run (run.remoteAgentId)}
+                    <MachineRunRow
+                      {workspaceId}
+                      scriptId={script.id}
+                      {run}
+                      dotClass={isLostRun(run.runtime) ? 'bg-warning' : getStatusColor(run)}
+                      active={selectedScriptId === script.id &&
+                        selectedRemoteAgentId === run.remoteAgentId}
+                      onSelect={() => onSelectMachineRun?.(script.id, run.remoteAgentId)}
+                    />
+                  {/each}
+                {/if}
               </div>
             {/each}
             {#if showScriptListToggle}

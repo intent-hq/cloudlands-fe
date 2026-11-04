@@ -20,7 +20,10 @@ import {
   removeScript,
   updateRuntimeState,
   scriptOutputSnapshotReceived,
+  scriptOutputStreamInterrupted,
+  scriptOutputStreamReady,
 } from '../scripts-slice';
+import { SCRIPT_OUTPUT_STREAM_WAIT_MS } from './scripts-output-saga';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { createDefaultRuntimeState } from '$features/scripts/types';
 const WS = 'history-ws';
@@ -42,7 +45,7 @@ function deferred<T>() {
   const promise = new Promise<T>((r) => (resolve = r));
   return { promise, resolve };
 }
-function start(seedDefinition = true, includeLifecycle = false) {
+function start(seedDefinition = true, includeLifecycle = false, streamReady = true) {
   const channel = stdChannel();
   const state = withLegacyPrincipal({
     tabState: { currentTabId: WS },
@@ -66,6 +69,9 @@ function start(seedDefinition = true, includeLifecycle = false) {
     ]),
   );
   if (!seedDefinition) state.scripts = scriptsReducer(undefined, { type: '@@init' });
+  // The daemon-events saga marks a workspace ready once its live output lease
+  // is routable; most cases start from that steady state.
+  if (streamReady) state.scripts = scriptsReducer(state.scripts, scriptOutputStreamReady(WS));
   const actions: any[] = [];
   const dispatch = (a: any) => {
     state.scripts = scriptsReducer(state.scripts, a);
@@ -94,6 +100,23 @@ afterEach(async () => {
   store.dispose();
 });
 describe('retained script output hydration', () => {
+  it("reads a remote agent's machine run with remoteAgentId (remoteScripts: 1)", async () => {
+    transport.request.mockResolvedValue('machine output');
+    const run = start();
+    run.dispatch({
+      type: 'scripts/outputRequested',
+      payload: [WS, ID, 'viewer-machine', 'agent-remote'],
+    });
+    await settle();
+    expect(transport.request).toHaveBeenCalledExactlyOnceWith('script.output', {
+      workspaceId: WS,
+      scriptId: ID,
+      maxLines: 10_000,
+      remoteAgentId: 'agent-remote',
+    });
+    expect(run.retained('viewer-machine')?.text).toBe('machine output');
+  });
+
   it('keeps an in-flight selected output read when a page omits its definition', async () => {
     const pending = deferred<string>();
     transport.request.mockReturnValue(pending.promise);
@@ -280,5 +303,180 @@ describe('retained script output hydration', () => {
     run.dispatch(request());
     await settle();
     expect(transport.request).not.toHaveBeenCalled();
+  });
+
+  describe('live output stream readiness', () => {
+    const outputReads = () =>
+      transport.request.mock.calls.filter(([method]) => method === 'script.output');
+
+    it('reads the snapshot only after the workspace output lease is routable', async () => {
+      transport.request.mockResolvedValue('retained output');
+      const run = start(true, false, false);
+      run.dispatch(request());
+      await settle();
+      expect(outputReads()).toEqual([]);
+      expect(run.retained()?.status).toBe('loading');
+
+      run.dispatch(scriptOutputStreamReady('another-workspace'));
+      await settle();
+      expect(outputReads()).toEqual([]);
+
+      run.dispatch(scriptOutputStreamReady(WS));
+      await settle();
+      expect(outputReads()).toHaveLength(1);
+      expect(run.retained()?.text).toBe('retained output');
+    });
+
+    it('reads a machine run at once: its output is never streamed, so there is no lease to wait for', async () => {
+      transport.request.mockResolvedValue('machine output');
+      const run = start(true, false, false);
+      run.dispatch({
+        type: 'scripts/outputRequested',
+        payload: [WS, ID, 'viewer-machine', 'agent-remote'],
+      });
+      await settle();
+      expect(outputReads()).toHaveLength(1);
+      expect(run.retained('viewer-machine')?.text).toBe('machine output');
+
+      run.dispatch(scriptOutputStreamReady(WS));
+      await settle();
+      expect(outputReads()).toHaveLength(1);
+    });
+
+    it('waits again for a new viewer after the stream was interrupted by a reconnect', async () => {
+      transport.request.mockResolvedValue('retained output');
+      const run = start();
+      run.dispatch(scriptOutputStreamInterrupted(WS));
+      run.dispatch(request('viewer-2'));
+      await settle();
+      expect(outputReads()).toEqual([]);
+
+      run.dispatch(scriptOutputStreamReady(WS));
+      await settle();
+      expect(outputReads()).toHaveLength(1);
+      expect(run.retained('viewer-2')?.text).toBe('retained output');
+    });
+
+    it('still reads the snapshot when the lease never becomes ready', async () => {
+      vi.useFakeTimers();
+      try {
+        transport.request.mockResolvedValue('retained output');
+        const run = start(true, false, false);
+        run.dispatch(request());
+        await vi.advanceTimersByTimeAsync(SCRIPT_OUTPUT_STREAM_WAIT_MS - 1);
+        expect(outputReads()).toEqual([]);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(outputReads()).toHaveLength(1);
+        expect(run.retained()?.text).toBe('retained output');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('refreshes a timed-out fallback snapshot once the lease becomes routable', async () => {
+      vi.useFakeTimers();
+      try {
+        transport.request.mockResolvedValueOnce('before timeout');
+        const run = start(true, false, false);
+        run.dispatch(request());
+        await vi.advanceTimersByTimeAsync(SCRIPT_OUTPUT_STREAM_WAIT_MS);
+        expect(outputReads()).toHaveLength(1);
+        expect(run.retained()?.text).toBe('before timeout');
+        // The open-ended wait must not keep journaling script changes.
+        expect(run.state.scripts.byWorkspaceId[WS]?.pendingReads).toEqual({});
+
+        // Output produced now reaches neither the fallback snapshot nor the
+        // (not yet subscribed) live buffer.
+        transport.request.mockResolvedValueOnce('before timeout\nduring the gap');
+        run.dispatch(scriptOutputStreamReady('another-workspace'));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(outputReads()).toHaveLength(1);
+
+        run.dispatch(scriptOutputStreamReady(WS));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(outputReads()).toHaveLength(2);
+        expect(run.retained()?.text).toBe('before timeout\nduring the gap');
+
+        run.dispatch(scriptOutputStreamInterrupted(WS));
+        run.dispatch(scriptOutputStreamReady(WS));
+        await vi.advanceTimersByTimeAsync(SCRIPT_OUTPUT_STREAM_WAIT_MS);
+        expect(outputReads()).toHaveLength(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('refreshes when the lease becomes routable while the fallback read is in flight', async () => {
+      vi.useFakeTimers();
+      try {
+        const fallback = deferred<string>();
+        transport.request.mockReturnValueOnce(fallback.promise);
+        const run = start(true, false, false);
+        run.dispatch(request());
+        await vi.advanceTimersByTimeAsync(SCRIPT_OUTPUT_STREAM_WAIT_MS);
+        expect(outputReads()).toHaveLength(1);
+
+        transport.request.mockResolvedValueOnce('before timeout\nduring the gap');
+        run.dispatch(scriptOutputStreamReady(WS));
+        await vi.advanceTimersByTimeAsync(0);
+        fallback.resolve('before timeout');
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(outputReads()).toHaveLength(2);
+        expect(run.retained()?.text).toBe('before timeout\nduring the gap');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not refresh a timed-out fallback after its viewer is released', async () => {
+      vi.useFakeTimers();
+      try {
+        transport.request.mockResolvedValue('before timeout');
+        const run = start(true, false, false);
+        run.dispatch(request());
+        await vi.advanceTimersByTimeAsync(SCRIPT_OUTPUT_STREAM_WAIT_MS);
+        expect(outputReads()).toHaveLength(1);
+
+        run.dispatch(release());
+        run.dispatch(scriptOutputStreamReady(WS));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(outputReads()).toHaveLength(1);
+        expect(run.retained()).toBeUndefined();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('lets a re-requested viewer replace a pending fallback refresh', async () => {
+      vi.useFakeTimers();
+      try {
+        transport.request.mockResolvedValue('before timeout');
+        const run = start(true, false, false);
+        run.dispatch(request());
+        await vi.advanceTimersByTimeAsync(SCRIPT_OUTPUT_STREAM_WAIT_MS);
+        run.dispatch(request());
+        await vi.advanceTimersByTimeAsync(0);
+
+        transport.request.mockResolvedValue('after ready');
+        run.dispatch(scriptOutputStreamReady(WS));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(outputReads()).toHaveLength(2);
+        expect(run.retained()?.text).toBe('after ready');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('drops a waiting read when its viewer is released', async () => {
+      transport.request.mockResolvedValue('retained output');
+      const run = start(true, false, false);
+      run.dispatch(request());
+      await settle();
+      run.dispatch(release());
+      run.dispatch(scriptOutputStreamReady(WS));
+      await settle();
+      expect(outputReads()).toEqual([]);
+    });
   });
 });

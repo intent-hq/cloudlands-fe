@@ -137,8 +137,8 @@ describe('chat changes production owners against mock transport', () => {
     send(value);
     await vi.runAllTimersAsync();
     expect(calls('git.diffs')).toEqual([
-      ['git.diffs', { workspaceId: 'ws', paths: ['a.ts', 'b.ts'] }],
-      ['git.diffs', { workspaceId: 'ws', staged: true, paths: ['c.ts'] }],
+      ['git.diffs', { workspaceId: 'ws', paths: ['a.ts', 'b.ts'], maxBytes: 480_000 }],
+      ['git.diffs', { workspaceId: 'ws', staged: true, paths: ['c.ts'], maxBytes: 480_000 }],
     ]);
     expect(rows()[0]).toMatchObject({
       oldContent: 'old\n',
@@ -149,8 +149,8 @@ describe('chat changes production owners against mock transport', () => {
       deletions: 2,
     });
     expect(calls('file.read')).toEqual([
-      ['file.read', { workspaceId: 'ws', path: 'a.ts' }],
-      ['file.read', { workspaceId: 'ws', path: 'b.ts' }],
+      ['file.read', { workspaceId: 'ws', path: 'a.ts', maxBytes: 480_000 }],
+      ['file.read', { workspaceId: 'ws', path: 'b.ts', maxBytes: 480_000 }],
     ]);
     expect(consumer()?.status).toBe('ready');
     send(input(value.changes.map((row) => ({ ...row, additions: 99 }))));
@@ -170,7 +170,9 @@ describe('chat changes production owners against mock transport', () => {
     expect(rows()[0].newContent).toBe('updated snippet');
     send(input([snippet], { showStagingControls: false, isAggregate: true }));
     await vi.runAllTimersAsync();
-    expect(calls('git.diffs')).toEqual([['git.diffs', { workspaceId: 'ws', paths: ['a.ts'] }]]);
+    expect(calls('git.diffs')).toEqual([
+      ['git.diffs', { workspaceId: 'ws', paths: ['a.ts'], maxBytes: 480_000 }],
+    ]);
     expect(rows()[0].newContent).toBe('new\n');
   });
 
@@ -187,11 +189,13 @@ describe('chat changes production owners against mock transport', () => {
     expect(calls('git.diffs')[0][1]).toEqual({
       workspaceId: 'ws',
       paths: [...singles.slice(0, 20).map((row) => row.filePath), 'merged.ts'].sort(),
+      maxBytes: 480_000,
     });
     expect(calls('git.diffs')[1][1]).toEqual({
       workspaceId: 'ws',
       staged: true,
       paths: ['merged.ts'],
+      maxBytes: 480_000,
     });
     expect(
       rows()
@@ -218,7 +222,7 @@ describe('chat changes production owners against mock transport', () => {
     await vi.runAllTimersAsync();
     expect(calls('git.showFile')).toContainEqual([
       'git.showFile',
-      { workspaceId: 'ws', filePath: 'a.ts', ref: 'new', gitRootId: 'root' },
+      { workspaceId: 'ws', filePath: 'a.ts', ref: 'new', gitRootId: 'root', maxBytes: 480_000 },
     ]);
     expect(rows()[0]).toMatchObject({ commitHash: 'new', newContent: 'current' });
     old.resolve({ content: 'stale' });
@@ -268,10 +272,10 @@ describe('chat changes production owners against mock transport', () => {
     await vi.runAllTimersAsync();
     expect(rows().map((row) => row.commitHash)).toEqual(['first', 'second']);
     expect(calls('git.showFile')).toEqual([
-      ['git.showFile', { workspaceId: 'ws', filePath: 'a.ts', ref: 'first' }],
-      ['git.showFile', { workspaceId: 'ws', filePath: 'a.ts', ref: 'first^' }],
-      ['git.showFile', { workspaceId: 'ws', filePath: 'a.ts', ref: 'second' }],
-      ['git.showFile', { workspaceId: 'ws', filePath: 'a.ts', ref: 'second^' }],
+      ['git.showFile', { workspaceId: 'ws', filePath: 'a.ts', ref: 'first', maxBytes: 480_000 }],
+      ['git.showFile', { workspaceId: 'ws', filePath: 'a.ts', ref: 'first^', maxBytes: 480_000 }],
+      ['git.showFile', { workspaceId: 'ws', filePath: 'a.ts', ref: 'second', maxBytes: 480_000 }],
+      ['git.showFile', { workspaceId: 'ws', filePath: 'a.ts', ref: 'second^', maxBytes: 480_000 }],
     ]);
   });
 
@@ -289,7 +293,9 @@ describe('chat changes production owners against mock transport', () => {
     expect(consumer()).toBeUndefined();
     expect(consumer('other')).toBeUndefined();
     expect(rows('ws', 'peer')[0].newContent).toBe('new\n');
-    expect(calls('file.read')).toEqual([['file.read', { workspaceId: 'ws', path: 'a.ts' }]]);
+    expect(calls('file.read')).toEqual([
+      ['file.read', { workspaceId: 'ws', path: 'a.ts', maxBytes: 480_000 }],
+    ]);
   });
 
   it('coalesces event bursts to one trailing refresh and keeps fresh results during parent refresh', async () => {
@@ -308,7 +314,7 @@ describe('chat changes production owners against mock transport', () => {
     send(input([change(), change('b.ts')]));
     await vi.runAllTimersAsync();
     expect(calls('git.diffs').slice(4)).toEqual([
-      ['git.diffs', { workspaceId: 'ws', paths: ['b.ts'] }],
+      ['git.diffs', { workspaceId: 'ws', paths: ['b.ts'], maxBytes: 480_000 }],
     ]);
     expect(rows().filter((row) => row.filePath === 'a.ts')).toHaveLength(2);
   });

@@ -59,6 +59,7 @@ describe('getWorkspaceTasks', () => {
     expect(mocks.request).toHaveBeenCalledWith('note.list', {
       workspaceId: WORKSPACE_ID,
       projection: 'slim',
+      limit: 500,
     });
     expect(mocks.request).toHaveBeenCalledWith('note.get', {
       workspaceId: WORKSPACE_ID,

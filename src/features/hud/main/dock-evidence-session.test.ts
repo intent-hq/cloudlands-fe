@@ -57,6 +57,10 @@ function fixture() {
     if (value) visible = false;
     else if (restore) visible = true;
   });
+  const selectionVisibility = vi.fn((_window: BrowserWindow, value: boolean, restore: boolean) => {
+    if (value) visible = false;
+    else if (restore) visible = true;
+  });
   const deps: DockEvidenceDependencies = {
     dock: () => dock,
     binding: () => currentBinding,
@@ -71,6 +75,7 @@ function fixture() {
     displays: () => [display],
     permissionDenied: () => false,
     hidden: visibility,
+    hiddenForSelection: selectionVisibility,
     settle: () => settle.promise,
     capture,
     id: vi.fn().mockReturnValueOnce('session').mockReturnValue('image'),
@@ -91,6 +96,7 @@ function fixture() {
     pixels,
     capture,
     visibility,
+    selectionVisibility,
     settle,
     window,
     display,
@@ -361,5 +367,105 @@ describe('dock evidence capture ownership', () => {
       expect(f.visibility).not.toHaveBeenCalled();
       expect(f.capture).not.toHaveBeenCalled();
     }
+  });
+});
+
+describe('dock evidence window and region capture', () => {
+  it('hides the dock while the person selects, then restores it and keeps the selection pixels', async () => {
+    const f = fixture();
+    f.settle.resolve();
+    const selected = { png: Buffer.from('window PNG'), width: 1200, height: 800, displayScale: 2 };
+    let visibleDuringSelection: boolean | undefined;
+    f.deps.captureSelection = vi.fn(async () => {
+      visibleDuringSelection = f.window.isVisible();
+      return { ok: true as const, value: selected };
+    });
+    f.deps.captureVisible = vi.fn();
+    const result = await f.manager.capture(f.owner, {
+      ...f.scope,
+      requestId: 'window',
+      mode: 'window',
+    });
+    expect(f.deps.captureSelection).toHaveBeenCalledExactlyOnceWith('window');
+    expect(visibleDuringSelection).toBe(false);
+    expect(f.window.isVisible()).toBe(true);
+    // A selection never uses the capture hide, which unmounts the dock's draft and chips.
+    expect(f.visibility).not.toHaveBeenCalled();
+    expect(f.selectionVisibility.mock.calls.map(([, hidden]) => hidden)).toEqual([true, false]);
+    expect(f.deps.captureVisible).not.toHaveBeenCalled();
+    expect(f.capture).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        requestId: 'window',
+        image: { width: 1200, height: 800, displayScale: 2, source: 'capture' },
+        pixels: { base64: selected.png.toString('base64'), width: 1200, height: 800 },
+      },
+    });
+  });
+
+  it('reports a dismissed selection as cancelled without a full-screen fallback', async () => {
+    const f = fixture();
+    f.settle.resolve();
+    f.deps.captureSelection = vi.fn(async () => ({
+      ok: false as const,
+      error: 'unavailable' as const,
+      detail: 'cancelled',
+    }));
+    const result = await f.manager.capture(f.owner, {
+      ...f.scope,
+      requestId: 'region',
+      mode: 'region',
+    });
+    expect(result).toEqual({ ok: false, error: 'unavailable', detail: 'cancelled' });
+    expect(f.capture).not.toHaveBeenCalled();
+    expect(f.window.isVisible()).toBe(true);
+  });
+
+  it('a recording exclusion does not block a selection (the system picker takes the screen)', async () => {
+    const f = fixture();
+    f.settle.resolve();
+    f.manager.setCaptureExclusionIds(() => [99]);
+    f.deps.captureSelection = vi.fn(async () => ({
+      ok: true as const,
+      value: { png: Buffer.from('region PNG'), width: 400, height: 300, displayScale: 2 },
+    }));
+    const result = await f.manager.capture(f.owner, {
+      ...f.scope,
+      requestId: 'region',
+      mode: 'region',
+    });
+    expect(f.deps.captureSelection).toHaveBeenCalledExactlyOnceWith('region');
+    expect(result).toMatchObject({ ok: true, value: { image: { width: 400, height: 300 } } });
+    expect(f.window.isVisible()).toBe(true);
+  });
+
+  it('reports Screen Recording turned off during the selection as a permission failure', async () => {
+    const f = fixture();
+    f.settle.resolve();
+    let denied = false;
+    f.deps.permissionDenied = () => denied;
+    f.deps.captureSelection = vi.fn(async () => {
+      denied = true;
+      return { ok: false as const, error: 'unavailable' as const, detail: 'cancelled' };
+    });
+    const result = await f.manager.capture(f.owner, {
+      ...f.scope,
+      requestId: 'region',
+      mode: 'region',
+    });
+    expect(result).toEqual({ ok: false, error: 'permission' });
+    expect(f.window.isVisible()).toBe(true);
+  });
+
+  it('refuses window and region capture where no selection UI exists', async () => {
+    const f = fixture();
+    const result = await f.manager.capture(f.owner, {
+      ...f.scope,
+      requestId: 'region',
+      mode: 'region',
+    });
+    expect(result).toEqual({ ok: false, error: 'unavailable' });
+    expect(f.selectionVisibility).not.toHaveBeenCalled();
   });
 });

@@ -352,7 +352,9 @@ import {
   disconnectBackendClient,
   disposeAllBackendClients,
   isSameHostBackendActive,
+  getBackendClientForId,
 } from '../features/backend/main/backend.ipc';
+import { createDaemonLinks } from '../features/dev-console/main/daemon-links';
 import { registerWorkspaceTransferHandlers } from '../features/backend/main/workspace-transfer.ipc';
 import { registerWorkspaceImportHandlers } from '../features/backend/main/workspace-import.ipc';
 import { registerRemoteMachinesHandlers } from '../features/backend/main/remote-machines.ipc';
@@ -1586,7 +1588,15 @@ const bootFlow = app.whenReady().then(async () => {
   setupFileIPC();
   setupSystemIPC();
   setupDockEvidenceIPC();
-  setupDevConsoleIPC();
+  setupDevConsoleIPC(
+    createDaemonLinks((backendId) => {
+      try {
+        return getBackendClientForId(backendId);
+      } catch {
+        return undefined;
+      }
+    }),
+  );
   setupPowerStateIPC();
   await setupConfigIPC();
   registerExternalEditorsHandlers(); // Needed for the native "Open with…" chooser
@@ -1650,6 +1660,7 @@ const bootFlow = app.whenReady().then(async () => {
     show: () => dockMenuController.setEnabled(true),
     hide: () => dockMenuController.dismiss(),
     onChange: () => void rebuildMenu(),
+    isDock: (sender) => getDockWindow()?.webContents === sender,
   });
   markRendererWindowsAllowed();
   if (isDockLabEnabled()) await dockMenuController.restore();

@@ -176,6 +176,7 @@ describe('LiveFilesClient.read', () => {
     expect(mockedRequest).toHaveBeenCalledExactlyOnceWith('file.read', {
       workspaceId: 'remote-workspace',
       path,
+      maxBytes: 480_000,
     });
   });
 

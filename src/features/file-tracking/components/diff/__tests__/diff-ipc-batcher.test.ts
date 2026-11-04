@@ -133,8 +133,11 @@ describe('diff-ipc-batcher (daemon wire)', () => {
       await expect(peer).resolves.toMatchObject({ oldContent: 'LOCAL', newContent: 'LOCAL' });
       const livePath = samePath ? 'a.ts' : 'b.ts';
       expect(mockedRequest.mock.calls.filter(([method]) => method !== 'git.diffs')).toEqual([
-        ['git.showFile', { workspaceId: 'cancel-peer', filePath: livePath, ref: ':0' }],
-        ['file.read', { workspaceId: 'cancel-peer', path: livePath }],
+        [
+          'git.showFile',
+          { workspaceId: 'cancel-peer', filePath: livePath, ref: ':0', maxBytes: 480_000 },
+        ],
+        ['file.read', { workspaceId: 'cancel-peer', path: livePath, maxBytes: 480_000 }],
       ]);
     },
   );
@@ -178,13 +181,67 @@ describe('diff-ipc-batcher (daemon wire)', () => {
     ]);
 
     const diffCalls = mockedRequest.mock.calls.filter(([method]) => method === 'git.diffs');
-    expect(diffCalls).toEqual([['git.diffs', { workspaceId: 'ws-1', paths: ['a.ts', 'b.ts'] }]]);
+    expect(diffCalls).toEqual([
+      ['git.diffs', { workspaceId: 'ws-1', paths: ['a.ts', 'b.ts'], maxBytes: 480_000 }],
+    ]);
     expect(mockedRequest).toHaveBeenCalledWith('git.showFile', {
       workspaceId: 'ws-1',
       filePath: 'a.ts',
       ref: ':0',
+      maxBytes: 480_000,
     });
-    expect(mockedRequest).toHaveBeenCalledWith('file.read', { workspaceId: 'ws-1', path: 'a.ts' });
+    expect(mockedRequest).toHaveBeenCalledWith('file.read', {
+      workspaceId: 'ws-1',
+      path: 'a.ts',
+      maxBytes: 480_000,
+    });
+  });
+
+  it('fetches pageBudget files of a bounded git.diffs read and keeps fileTooLarge flagged (§5.6)', async () => {
+    const truncated = (path: string, truncatedReason: string) => ({
+      path,
+      hunks: [],
+      truncated: true,
+      truncatedReason,
+    });
+    mockedRequest.mockImplementation(async (method: string, params?: unknown) => {
+      const p = (params ?? {}) as Record<string, unknown>;
+      if (method === 'git.diffs') {
+        const paths = p.paths as string[];
+        // The first page serves a.ts only; a follow-up serves b.ts.
+        if (paths.length === 1 && paths[0] === 'b.ts') return [{ path: 'b.ts', hunks: [HUNK] }];
+        return [
+          { path: 'a.ts', hunks: [HUNK] },
+          truncated('b.ts', 'pageBudget'),
+          truncated('big.ts', 'fileTooLarge'),
+        ];
+      }
+      if (method === 'git.showFile') return { content: `old ${p.filePath}` };
+      if (method === 'file.read') return { content: `new ${p.path}` };
+      throw new Error(`unexpected method: ${method}`);
+    });
+
+    const results = Promise.all(
+      ['a.ts', 'b.ts', 'big.ts'].map((path) => batchedGitDiff('ws-1', false, path)),
+    );
+    await vi.runAllTimersAsync();
+
+    await expect(results).resolves.toEqual([
+      { file: 'a.ts', chunks: [HUNK], oldContent: 'old a.ts', newContent: 'new a.ts' },
+      { file: 'b.ts', chunks: [HUNK], oldContent: 'old b.ts', newContent: 'new b.ts' },
+      {
+        file: 'big.ts',
+        chunks: [],
+        truncatedReason: 'fileTooLarge',
+        oldContent: 'old big.ts',
+        newContent: 'new big.ts',
+      },
+    ]);
+    const diffCalls = mockedRequest.mock.calls.filter(([method]) => method === 'git.diffs');
+    expect(diffCalls).toEqual([
+      ['git.diffs', { workspaceId: 'ws-1', paths: ['a.ts', 'b.ts', 'big.ts'], maxBytes: 480_000 }],
+      ['git.diffs', { workspaceId: 'ws-1', paths: ['b.ts'], maxBytes: 480_000 }],
+    ]);
   });
 
   it('sends staged: true for the staged group and composes HEAD + ":0" contents', async () => {
@@ -206,16 +263,19 @@ describe('diff-ipc-batcher (daemon wire)', () => {
       workspaceId: 'ws-2',
       staged: true,
       paths: ['a.ts'],
+      maxBytes: 480_000,
     });
     expect(mockedRequest).toHaveBeenCalledWith('git.showFile', {
       workspaceId: 'ws-2',
       filePath: 'a.ts',
       ref: 'HEAD',
+      maxBytes: 480_000,
     });
     expect(mockedRequest).toHaveBeenCalledWith('git.showFile', {
       workspaceId: 'ws-2',
       filePath: 'a.ts',
       ref: ':0',
+      maxBytes: 480_000,
     });
     expect(mockedRequest.mock.calls.some(([method]) => method === 'file.read')).toBe(false);
   });
@@ -238,17 +298,20 @@ describe('diff-ipc-batcher (daemon wire)', () => {
       workspaceId: 'ws-1',
       gitRootId: 'root-9',
       paths: ['src/a.ts'],
+      maxBytes: 480_000,
     });
     expect(mockedRequest).toHaveBeenCalledWith('git.showFile', {
       workspaceId: 'ws-1',
       filePath: 'src/a.ts',
       ref: ':0',
       gitRootId: 'root-9',
+      maxBytes: 480_000,
     });
     expect(mockedRequest).toHaveBeenCalledWith('file.read', {
       workspaceId: 'ws-1',
       path: 'src/a.ts',
       gitRootId: 'root-9',
+      maxBytes: 480_000,
     });
   });
 
@@ -278,6 +341,7 @@ describe('diff-ipc-batcher (daemon wire)', () => {
         workspaceId: 'external-diff',
         path: 'tracked.txt',
         gitRootId: 'external-root',
+        maxBytes: 480_000,
       });
     else expect(mockedRequest.mock.calls.some(([method]) => method === 'file.read')).toBe(false);
   });
@@ -350,15 +414,18 @@ describe('diff-ipc-batcher (daemon wire)', () => {
     expect(mockedRequest).toHaveBeenCalledWith('git.diffs', {
       workspaceId: 'ws-b',
       paths: ['b.ts'],
+      maxBytes: 480_000,
     });
     expect(mockedRequest).toHaveBeenCalledWith('git.showFile', {
       workspaceId: 'ws-b',
       filePath: 'b.ts',
       ref: ':0',
+      maxBytes: 480_000,
     });
     expect(mockedRequest).toHaveBeenCalledWith('file.read', {
       workspaceId: 'ws-b',
       path: 'b.ts',
+      maxBytes: 480_000,
     });
   });
 
@@ -507,8 +574,8 @@ describe('diff-ipc-batcher (daemon wire)', () => {
     // Content reads ran only for the regular file, never for the gitlink.
     const contentReads = mockedRequest.mock.calls.filter(([method]) => method !== 'git.diffs');
     expect(contentReads).toEqual([
-      ['git.showFile', { workspaceId: 'ws-10', filePath: 'a.ts', ref: ':0' }],
-      ['file.read', { workspaceId: 'ws-10', path: 'a.ts' }],
+      ['git.showFile', { workspaceId: 'ws-10', filePath: 'a.ts', ref: ':0', maxBytes: 480_000 }],
+      ['file.read', { workspaceId: 'ws-10', path: 'a.ts', maxBytes: 480_000 }],
     ]);
   });
 
@@ -640,6 +707,7 @@ describe('diff-ipc-batcher (daemon wire)', () => {
       workspaceId: 'ws-7',
       filePath: 'a.ts',
       ref: 'HEAD',
+      maxBytes: 480_000,
     });
   });
 
@@ -661,11 +729,13 @@ describe('diff-ipc-batcher (daemon wire)', () => {
       filePath: 'a.ts',
       ref: 'HEAD',
       gitRootId: 'root-1',
+      maxBytes: 480_000,
     });
     expect(mockedRequest).toHaveBeenCalledWith('git.showFile', {
       workspaceId: 'ws-7',
       filePath: 'a.ts',
       ref: 'HEAD',
+      maxBytes: 480_000,
     });
   });
 
@@ -728,7 +798,9 @@ describe('diff-ipc-batcher (daemon wire)', () => {
       // Exactly one narrowed read carrying the worktree-relative path — no
       // full-tree recovery read.
       const diffCalls = mockedRequest.mock.calls.filter(([method]) => method === 'git.diffs');
-      expect(diffCalls).toEqual([['git.diffs', { workspaceId: 'ws-n1', paths: ['src/a.ts'] }]]);
+      expect(diffCalls).toEqual([
+        ['git.diffs', { workspaceId: 'ws-n1', paths: ['src/a.ts'], maxBytes: 480_000 }],
+      ]);
     });
 
     it('merges an absolute request with its already-relative duplicate into one wire path', async () => {
@@ -742,7 +814,9 @@ describe('diff-ipc-batcher (daemon wire)', () => {
       await expect(absPromise).resolves.toMatchObject({ file: 'src/a.ts', chunks: [HUNK] });
       await expect(relPromise).resolves.toMatchObject({ file: 'src/a.ts', chunks: [HUNK] });
       const diffCalls = mockedRequest.mock.calls.filter(([method]) => method === 'git.diffs');
-      expect(diffCalls).toEqual([['git.diffs', { workspaceId: 'ws-n2', paths: ['src/a.ts'] }]]);
+      expect(diffCalls).toEqual([
+        ['git.diffs', { workspaceId: 'ws-n2', paths: ['src/a.ts'], maxBytes: 480_000 }],
+      ]);
     });
 
     it('normalizes a ~-prefixed path whose components match a suffix of the worktree root', async () => {
@@ -754,7 +828,9 @@ describe('diff-ipc-batcher (daemon wire)', () => {
 
       await expect(promise).resolves.toMatchObject({ file: 'src/a.ts', chunks: [HUNK] });
       const diffCalls = mockedRequest.mock.calls.filter(([method]) => method === 'git.diffs');
-      expect(diffCalls).toEqual([['git.diffs', { workspaceId: 'ws-n3', paths: ['src/a.ts'] }]]);
+      expect(diffCalls).toEqual([
+        ['git.diffs', { workspaceId: 'ws-n3', paths: ['src/a.ts'], maxBytes: 480_000 }],
+      ]);
     });
 
     it('does not emit an empty wire path when a ~-prefixed request points at the root itself', async () => {
@@ -768,8 +844,8 @@ describe('diff-ipc-batcher (daemon wire)', () => {
       await expect(promise).resolves.toBeUndefined();
       const diffCalls = mockedRequest.mock.calls.filter(([method]) => method === 'git.diffs');
       expect(diffCalls).toEqual([
-        ['git.diffs', { workspaceId: 'ws-n5', paths: ['~/root/ws/'] }],
-        ['git.diffs', { workspaceId: 'ws-n5' }],
+        ['git.diffs', { workspaceId: 'ws-n5', paths: ['~/root/ws/'], maxBytes: 480_000 }],
+        ['git.diffs', { workspaceId: 'ws-n5', maxBytes: 480_000 }],
       ]);
       vi.mocked(console.warn).mockRestore();
     });
@@ -784,7 +860,10 @@ describe('diff-ipc-batcher (daemon wire)', () => {
       await expect(promise).resolves.toMatchObject({ file: 'src/a.ts', chunks: [HUNK] });
       const diffCalls = mockedRequest.mock.calls.filter(([method]) => method === 'git.diffs');
       expect(diffCalls).toEqual([
-        ['git.diffs', { workspaceId: 'ws-n4', staged: true, paths: ['src/a.ts'] }],
+        [
+          'git.diffs',
+          { workspaceId: 'ws-n4', staged: true, paths: ['src/a.ts'], maxBytes: 480_000 },
+        ],
       ]);
     });
   });
@@ -805,8 +884,8 @@ describe('diff-ipc-batcher (daemon wire)', () => {
       });
       const diffCalls = mockedRequest.mock.calls.filter(([method]) => method === 'git.diffs');
       expect(diffCalls).toEqual([
-        ['git.diffs', { workspaceId: 'ws-r1', paths: ['/repo/src/a.ts'] }],
-        ['git.diffs', { workspaceId: 'ws-r1' }],
+        ['git.diffs', { workspaceId: 'ws-r1', paths: ['/repo/src/a.ts'], maxBytes: 480_000 }],
+        ['git.diffs', { workspaceId: 'ws-r1', maxBytes: 480_000 }],
       ]);
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining('/repo/src/a.ts'),
@@ -825,8 +904,11 @@ describe('diff-ipc-batcher (daemon wire)', () => {
       await expect(promise).resolves.toMatchObject({ file: 'src/a.ts', chunks: [HUNK] });
       const diffCalls = mockedRequest.mock.calls.filter(([method]) => method === 'git.diffs');
       expect(diffCalls).toEqual([
-        ['git.diffs', { workspaceId: 'ws-r2', staged: true, paths: ['/repo/src/a.ts'] }],
-        ['git.diffs', { workspaceId: 'ws-r2', staged: true }],
+        [
+          'git.diffs',
+          { workspaceId: 'ws-r2', staged: true, paths: ['/repo/src/a.ts'], maxBytes: 480_000 },
+        ],
+        ['git.diffs', { workspaceId: 'ws-r2', staged: true, maxBytes: 480_000 }],
       ]);
       vi.mocked(console.warn).mockRestore();
     });
@@ -856,8 +938,11 @@ describe('diff-ipc-batcher (daemon wire)', () => {
       });
       const diffCalls = mockedRequest.mock.calls.filter(([method]) => method === 'git.diffs');
       expect(diffCalls).toEqual([
-        ['git.diffs', { workspaceId: 'ws-r3', paths: ['/repo/src/a.ts', 'b.ts'] }],
-        ['git.diffs', { workspaceId: 'ws-r3' }],
+        [
+          'git.diffs',
+          { workspaceId: 'ws-r3', paths: ['/repo/src/a.ts', 'b.ts'], maxBytes: 480_000 },
+        ],
+        ['git.diffs', { workspaceId: 'ws-r3', maxBytes: 480_000 }],
       ]);
       // The matched chunk is enriched exactly once (no double-enrich from recovery).
       expect(
@@ -951,9 +1036,9 @@ describe('diff-ipc-batcher (daemon wire)', () => {
       expect(fullTreeCalls).toBe(1);
       const diffCalls = mockedRequest.mock.calls.filter(([method]) => method === 'git.diffs');
       expect(diffCalls).toEqual([
-        ['git.diffs', { workspaceId: 'ws-sf', paths: ['/elsewhere/a.ts'] }],
-        ['git.diffs', { workspaceId: 'ws-sf' }],
-        ['git.diffs', { workspaceId: 'ws-sf', paths: ['/elsewhere/b.ts'] }],
+        ['git.diffs', { workspaceId: 'ws-sf', paths: ['/elsewhere/a.ts'], maxBytes: 480_000 }],
+        ['git.diffs', { workspaceId: 'ws-sf', maxBytes: 480_000 }],
+        ['git.diffs', { workspaceId: 'ws-sf', paths: ['/elsewhere/b.ts'], maxBytes: 480_000 }],
       ]);
       warnSpy.mockRestore();
     });

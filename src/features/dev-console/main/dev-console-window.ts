@@ -6,6 +6,7 @@ import { DEV_CONSOLE_ROUTE } from '../../../shared/dev-console-route';
 import { devConsoleRequests } from '../../../shared/ipc/dev-console-contract';
 import { devConsoleCapture } from './dev-console-service';
 import type { DevConsoleCaptureService } from './dev-console-capture';
+import type { DaemonLinks } from './daemon-links';
 
 interface ConsoleWindow {
   window: BrowserWindow;
@@ -164,6 +165,7 @@ export class DevConsoleWindows {
 export function registerDevConsoleIPC(
   windows: DevConsoleWindows,
   capture: DevConsoleCaptureService,
+  links?: DaemonLinks,
 ): () => void {
   // Deliberately bypass the general IPC debug tracker: responses can contain private payloads.
   ipcMain.handle('dev-console:open', (event, data) => {
@@ -193,11 +195,75 @@ export function registerDevConsoleIPC(
     const { backendId } = windows.authorize(event, request.sessionId);
     return capture.setFullCapture(backendId, request.sessionId, request.selection, request.enabled);
   });
-  const dispose = () => windows.dispose();
+  // Daemon links: the backend is the console window's native backend, never renderer-supplied.
+  // One link-traffic event watch per console session; a reload, close or lost support releases it.
+  const watches = new Map<string, { sessionId: string; dispose: () => void }>();
+  const unwatch = (backendId: string) => {
+    watches.get(backendId)?.dispose();
+    watches.delete(backendId);
+  };
+  ipcMain.handle('dev-console:links-status', (event, data) => {
+    const request = devConsoleRequests['dev-console:links-status'].parse(data);
+    const { backendId, sessionId } = windows.authorize(event, request.sessionId);
+    const status = links ? links.status(backendId) : { supported: false };
+    if (!links || !status.supported) unwatch(backendId);
+    else if (watches.get(backendId)?.sessionId !== sessionId) {
+      unwatch(backendId);
+      const sender = event.sender;
+      const stopWatch = links.watch(backendId, () => {
+        if (sender.isDestroyed() || watches.get(backendId)?.sessionId !== sessionId) return;
+        try {
+          sender.send('dev-console:links-changed', { sessionId });
+        } catch {
+          unwatch(backendId);
+        }
+      });
+      const onDestroyed = () => {
+        if (watches.get(backendId)?.sessionId === sessionId) unwatch(backendId);
+      };
+      sender.once('destroyed', onDestroyed);
+      watches.set(backendId, {
+        sessionId,
+        dispose: () => {
+          stopWatch();
+          sender.off('destroyed', onDestroyed);
+        },
+      });
+    }
+    return status;
+  });
+  const linksOrThrow = () => {
+    if (!links) throw new Error('Daemon link capture is unavailable'); // i18n-ignore (IPC error)
+    return links;
+  };
+  ipcMain.handle('dev-console:links-start', (event, data) => {
+    const request = devConsoleRequests['dev-console:links-start'].parse(data);
+    const { backendId } = windows.authorize(event, request.sessionId);
+    return linksOrThrow().start(backendId);
+  });
+  ipcMain.handle('dev-console:links-stop', (event, data) => {
+    const request = devConsoleRequests['dev-console:links-stop'].parse(data);
+    const { backendId } = windows.authorize(event, request.sessionId);
+    return linksOrThrow().stop(backendId);
+  });
+  ipcMain.handle('dev-console:links-read', (event, data) => {
+    const request = devConsoleRequests['dev-console:links-read'].parse(data);
+    const { backendId } = windows.authorize(event, request.sessionId);
+    return linksOrThrow().read(backendId, request.afterSeq);
+  });
+  ipcMain.handle('dev-console:links-record', (event, data) => {
+    const request = devConsoleRequests['dev-console:links-record'].parse(data);
+    const { backendId } = windows.authorize(event, request.sessionId);
+    return linksOrThrow().record(backendId, request.seq, request.startedAt);
+  });
+  const dispose = () => {
+    for (const backendId of [...watches.keys()]) unwatch(backendId);
+    windows.dispose();
+  };
   app.on('will-quit', dispose);
   return () => {
     app.off('will-quit', dispose);
-    windows.dispose();
+    dispose();
     for (const channel of Object.keys(devConsoleRequests)) ipcMain.removeHandler(channel);
   };
 }
@@ -208,7 +274,7 @@ export function disposeDevConsole(): void {
   stopProduction = undefined;
 }
 
-export function setupDevConsoleIPC(): void {
+export function setupDevConsoleIPC(links?: DaemonLinks): void {
   const url =
     process.env.NODE_ENV === 'development'
       ? `http://127.0.0.1:${process.env.DEV_PORT || '5190'}${DEV_CONSOLE_ROUTE}`
@@ -222,5 +288,6 @@ export function setupDevConsoleIPC(): void {
       url,
     }),
     devConsoleCapture,
+    links,
   );
 }

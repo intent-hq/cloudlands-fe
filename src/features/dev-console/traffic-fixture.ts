@@ -6,6 +6,7 @@ import type {
   DevConsoleUpdate,
 } from '$shared/types/dev-console';
 import type { connectDevConsole } from '$store/renderer/dev-console/dev-console-bridge';
+import { createLinksFixture, type LinksScenario } from './daemon-links-fixture';
 function payload(value: unknown, truncate = false): DevConsolePayload {
   const text = JSON.stringify(value);
   return {
@@ -23,7 +24,12 @@ export const nestedRequestText =
 export const nestedResponseText =
   '{ "object": {"needle":"response first"}, "array": [{"needle":"response second"}], "tail": false }';
 
-export function createTrafficFixture(count = 240, scenario: PayloadScenario = 'traffic') {
+export function createTrafficFixture(
+  count = 240,
+  scenario: PayloadScenario = 'traffic',
+  linksScenario: LinksScenario = 'unsupported',
+) {
+  const links = createLinksFixture(linksScenario);
   let sequence = 0;
   let records: DevConsoleRecord[] = [];
   let publish: ((update: DevConsoleUpdate) => void) | undefined;
@@ -307,6 +313,7 @@ export function createTrafficFixture(count = 240, scenario: PayloadScenario = 't
     publish = onUpdate;
     queueMicrotask(update);
     return {
+      links: links.api,
       record: async (id) => records.find((r) => r.id === id) ?? null,
       clear: async () => {
         records = [];
@@ -331,5 +338,5 @@ export function createTrafficFixture(count = 240, scenario: PayloadScenario = 't
       },
     };
   };
-  return { connect, append, reply, stream };
+  return { connect, append, reply, stream, appendLinks: links.append };
 }

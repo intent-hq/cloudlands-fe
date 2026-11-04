@@ -3,7 +3,7 @@
  *
  * Safe to import from any process (renderer, main, shared, preload).
  */
-import type { BrowserAccessState } from '$shared/types/browser-access';
+import type { BrowserAccessSignInCode, BrowserAccessState } from '$shared/types/browser-access';
 
 export type BrowserAccessSliceState = {
   /** Main's state, or null until the first read succeeds. */
@@ -12,4 +12,8 @@ export type BrowserAccessSliceState = {
   pending: number;
   /** The last read or change failed. */
   failed: boolean;
+  /** The latest sign-in code created here; cleared when the key resets or access turns off. */
+  signInCode: BrowserAccessSignInCode | null;
+  /** Creating a sign-in code failed. */
+  signInCodeFailed: boolean;
 };

@@ -16,6 +16,11 @@ export const IPC_CHANNELS = {
     RECORD: 'dev-console:record',
     CLEAR: 'dev-console:clear',
     SELECT: 'dev-console:select',
+    LINKS_STATUS: 'dev-console:links-status',
+    LINKS_START: 'dev-console:links-start',
+    LINKS_STOP: 'dev-console:links-stop',
+    LINKS_READ: 'dev-console:links-read',
+    LINKS_RECORD: 'dev-console:links-record',
   },
   // Workspace Management
   WORKSPACE: {
@@ -405,6 +410,8 @@ export const IPC_CHANNELS = {
     FOCUS_DOCK: 'window:focus-dock',
     GET_DOCK_PLACEMENT: 'window:get-dock-placement',
     UPDATE_DOCK_PLACEMENT: 'window:update-dock-placement',
+    // Dock right-click: main pops a native menu (move, hide) over the dock window.
+    SHOW_DOCK_MENU: 'window:show-dock-menu',
     SWITCH_DOCK_BACKEND: 'window:switch-dock-backend',
     DOCK_BACKEND_SWITCH_FAILED: 'window:dock-backend-switch-failed',
     DOCK_PLACEMENT_CHANGED: 'window:dock-placement-changed',
@@ -959,11 +966,13 @@ export const IPC_CHANNELS = {
   // Browser access: main serves the web build to a browser behind a front-end
   // such as `tailscale serve`. get-state → BrowserAccessState; set-enabled
   // ({ enabled }), set-port ({ port }) and reset-key ({}) also return it.
+  // create-sign-in-code ({}) → BrowserAccessSignInCode.
   BROWSER_ACCESS: {
     GET_STATE: 'browser-access:get-state',
     SET_ENABLED: 'browser-access:set-enabled',
     SET_PORT: 'browser-access:set-port',
     RESET_KEY: 'browser-access:reset-key',
+    CREATE_SIGN_IN_CODE: 'browser-access:create-sign-in-code',
   },
 
   // WebSocket API
@@ -1360,6 +1369,8 @@ export const EVENT_CHANNELS = [
   // Live backend transport (main → renderer): daemon JSON-RPC notifications
   // and connection-status changes pushed from the main-process client.
   'dev-console:changed',
+  // Daemon-link capture changed (start, stop or new records) for one console session.
+  'dev-console:links-changed',
   'backend:notification',
   'backend:status',
   // Hardware console shutdown handshake (main → renderer)

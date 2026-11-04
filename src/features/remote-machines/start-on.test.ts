@@ -44,6 +44,29 @@ describe('startOnOptions', () => {
   });
 });
 
+describe('startOnOptions backend platform', () => {
+  it("subtitles the backend's own row with its platform, formatted like the machines'", () => {
+    const [backend, mac] = startOnOptions({
+      backendLabel: 'intent1',
+      backendPlatform: { os: 'linux', arch: 'x86_64' },
+      machines: [machine('mac', { name: 'Mac', platform: { os: 'macos', arch: 'aarch64' } })],
+    });
+    expect(backend).toMatchObject({ id: START_ON_BACKEND, platform: 'Linux x64' });
+    expect(mac).toMatchObject({ platform: 'macOS arm64' });
+  });
+
+  it('leaves the backend row without a subtitle when its platform is unknown', () => {
+    const [backend] = startOnOptions({ backendLabel: 'intent1', machines: [machine('mac')] });
+    expect(backend.platform).toBeNull();
+    const [partial] = startOnOptions({
+      backendLabel: 'intent1',
+      backendPlatform: {},
+      machines: [machine('mac')],
+    });
+    expect(partial.platform).toBeNull();
+  });
+});
+
 describe('startOnVisible', () => {
   const usable = [machine('mac')];
   it('shows with the remote surfaces on, support for the placement and a usable machine', () => {

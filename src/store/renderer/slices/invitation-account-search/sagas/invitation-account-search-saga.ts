@@ -3,7 +3,6 @@ import { searchInvitationAccounts } from '$features/host-membership/invitation-a
 import { canonicalInviteHost } from '$features/workspace-sharing/utils/invite-pin';
 import { m } from '$shared/paraglide/messages.js';
 import { selectHostMembershipContext } from '../../host-membership/host-membership-selectors';
-import { selectLabsGitLabEnabled } from '../../user-preferences/user-preferences-selectors';
 import {
   selectInvitationAccountSearch,
   selectInvitationAccountSearchSupported,
@@ -38,8 +37,7 @@ function* search(
       latest.revision === revision &&
       !!context &&
       (yield* selectHostMembershipContext.effect()) === context &&
-      (yield* selectInvitationAccountSearchSupported.effect()) &&
-      (request?.provider !== 'gitlab' || (yield* selectLabsGitLabEnabled.effect()))
+      (yield* selectInvitationAccountSearchSupported.effect())
     );
   }
   if (!(yield* current())) return;

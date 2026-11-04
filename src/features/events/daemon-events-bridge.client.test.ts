@@ -229,6 +229,10 @@ import {
 } from '$features/agent/utils/chat-subscription-registry';
 import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
 import { selectAgentIsResponding } from '$store/renderer/slices/agent-session/agent-session-selectors';
+import {
+  selectChatIsInterrupting,
+  selectChatLastTurnInterrupted,
+} from '$store/renderer/slices/chat-state/chat-state-selectors';
 import { selectEnabledProviderIds } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 import {
   DAEMON_EVENTS_SUBSCRIBE_TYPES,
@@ -2923,6 +2927,26 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
     expect(shouldShowStoppedIndicator({ message: assistantMessages[0], isStreaming: false })).toBe(
       false,
     );
+  });
+
+  it('records a startup-window interrupt (§7.2 stream:end WITHOUT messageId) as an interrupted turn, and the next normal terminal clears it', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    // A Stop from another client during turn startup persists no assistant
+    // row, so the transcript cannot tell the queue-drain prediction that
+    // this turn was stopped; the turn-scoped flag must.
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        stopReason: 'interrupted',
+        interruptReason: 'user_stop',
+      }),
+    );
+    expect(selectChatLastTurnInterrupted.select(appStore.state, AGENT)).toBe(true);
+    expect(selectChatIsInterrupting.select(appStore.state, AGENT)).toBe(false);
+
+    handler(notification('agent:stream:end', { agentId: AGENT, messageId: MESSAGE_ID }));
+    expect(selectChatLastTurnInterrupted.select(appStore.state, AGENT)).toBe(false);
   });
 
   it('agent preemption mid-stream (§7.2 interruptedBy agent): the reason-specific label resolves LIVE without a reload', async () => {
@@ -12517,11 +12541,13 @@ describe('daemonEventsBridge (persisted message pushes)', () => {
         agentId: AGENT,
         pendingProposals: [],
         proposalResolutions: { p1: 'applied' },
+        proposalCreatedWorkspaces: { p1: 'ws-created' },
       }),
     );
     expect(appStore.state.agentSessions.byAgentId[AGENT]?.metadata).toMatchObject({
       pendingProposals: [],
       proposalResolutions: { p1: 'applied' },
+      proposalCreatedWorkspaces: { p1: 'ws-created' },
     });
     expect(refreshAgentSessionAfterEventSpy).not.toHaveBeenCalled();
     handler(notification('agent:updated', { agentId: AGENT, modelId: 'new-provider-model' }));

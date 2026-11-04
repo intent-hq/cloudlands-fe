@@ -119,6 +119,21 @@ export const restartScriptRequested = createAction<
   [wsId: string, scriptId: string, failureMessage?: string]
 >('scripts/restartScriptRequested');
 
+/**
+ * Stop or restart one remote agent's run of a script on its machine
+ * (`remoteAgentId`, `remoteScripts: 1`); restart reruns it on that machine.
+ * The row's `machineRuns` update arrives as `script:changed`.
+ */
+export const machineRunOperationRequested = createAction<
+  [
+    wsId: string,
+    scriptId: string,
+    remoteAgentId: string,
+    operation: 'stop' | 'restart',
+    failureMessage?: string,
+  ]
+>('scripts/machineRunOperationRequested');
+
 export const deleteScriptRequested = createAction<
   [wsId: string, scriptId: string, failureMessage: string]
 >('scripts/deleteScriptRequested');
@@ -261,9 +276,14 @@ export const updateRuntimeState = createAction(
   }),
 );
 
-/** Viewer-owned historical read; releasing it cancels late snapshot publication. */
+/**
+ * Viewer-owned historical read; releasing it cancels late snapshot publication.
+ * `remoteAgentId` reads that remote agent's machine run (`remoteScripts: 1`).
+ */
 export const scriptOutputRequested =
-  createAction<[wsId: string, scriptId: string, viewerId: string]>('scripts/outputRequested');
+  createAction<[wsId: string, scriptId: string, viewerId: string, remoteAgentId?: string]>(
+    'scripts/outputRequested',
+  );
 export const scriptOutputReleased =
   createAction<[wsId: string, scriptId: string, viewerId: string]>('scripts/outputReleased');
 export const scriptOutputSnapshotReceived = createAction<
@@ -273,6 +293,18 @@ export const scriptOutputSnapshotReceived = createAction<
 /** Append one raw output chunk for a script */
 export const appendScriptOutput =
   createAction<[wsId: string, scriptId: string, chunk: ScriptOutputChunk]>('scripts/appendOutput');
+
+/**
+ * The workspace's live `script:output` stream stopped (its scoped
+ * subscription closed). Buffered chunks would join later output across a gap,
+ * so they are discarded while `dropped` keeps stream positions monotonic.
+ */
+export const scriptOutputStreamInterrupted = createAction<[wsId: string]>(
+  'scripts/outputStreamInterrupted',
+);
+
+/** The workspace's live `script:output` lease is subscribed and routable. */
+export const scriptOutputStreamReady = createAction<[wsId: string]>('scripts/outputStreamReady');
 
 // ============================================================================
 // Reducer
@@ -652,6 +684,12 @@ scriptsReducer.with(
     });
   },
 );
+function discardBufferedChunks(buffer: ScriptOutputBuffer): ScriptOutputBuffer {
+  return buffer.chunks.length === 0
+    ? buffer
+    : { chunks: [], dropped: buffer.dropped + buffer.chunks.length };
+}
+
 scriptsReducer.with(appendScriptOutput, (state, { payload: [wsId, scriptId, chunk] }) => {
   const ws = getWorkspaceState(state, wsId);
   const current = ws.outputBuffers[scriptId] ?? emptyOutputBuffer;
@@ -664,6 +702,22 @@ scriptsReducer.with(appendScriptOutput, (state, { payload: [wsId, scriptId, chun
     ...ws,
     outputBuffers: { ...ws.outputBuffers, [scriptId]: combined },
   });
+});
+
+scriptsReducer.with(scriptOutputStreamInterrupted, (state, { payload: [wsId] }) => {
+  const ws = state.byWorkspaceId[wsId];
+  if (!ws) return state;
+  const outputBuffers = Object.fromEntries(
+    Object.entries(ws.outputBuffers).map(([id, buffer]) => [id, discardBufferedChunks(buffer)]),
+  );
+  return setWorkspaceState(state, wsId, { ...ws, outputBuffers, outputStreamReady: false });
+});
+
+scriptsReducer.with(scriptOutputStreamReady, (state, { payload: [wsId] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  return ws.outputStreamReady
+    ? state
+    : setWorkspaceState(state, wsId, { ...ws, outputStreamReady: true });
 });
 
 scriptsReducer.with(

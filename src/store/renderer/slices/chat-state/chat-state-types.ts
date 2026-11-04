@@ -245,6 +245,12 @@ export interface ChatAgentState {
   // NOTE: isStreaming and isProcessing have been moved to agent-session slice.
   // Read them from AgentSession via canonical agent-session selectors.
   isInterrupting: boolean;
+  /**
+   * The most recent `agent:stream:end` carried `stopReason: "interrupted"`
+   * (Stop from any client, or a preempting message), including a startup
+   * interrupt that persisted no assistant row. Reset by the next terminal.
+   */
+  lastTurnInterrupted?: boolean;
   error: string | null;
   failureCorrelation?: StreamFailureCorrelation;
   lastChunkTime: number | null;

@@ -62,6 +62,19 @@ export const selectProviderCatalogProfiles = store.createSelector(
 const NO_DEFAULT_NAMES: ProviderDefaultNames = {};
 
 /**
+ * True once the catalog that `selectProviderCatalogProfiles` reads for the
+ * same `workspaceId` has loaded: the workspace snapshot when scoped, the
+ * shared catalog otherwise. Until then an unmatched profile reference is
+ * unknown, not removed, so labels must not call it "Removed profile".
+ */
+export const selectProviderCatalogProfilesLoaded = store.createSelector(
+  (state, workspaceId?: string): boolean =>
+    workspaceId
+      ? state.providerCatalog?.byWorkspaceId?.[workspaceId] !== undefined
+      : (state.providerCatalog?.loaded ?? false),
+);
+
+/**
  * Renamed Default configurations (§5.54 catalog `defaultNames`) by base
  * provider id. Empty on older daemons, before hydration and when no Default
  * is renamed; labels then read `Default`.
@@ -196,11 +209,35 @@ export const selectProviderDisplayName = store.createSelector(
         providerId,
         baseName,
         selectProviderCatalogProfiles.select(state, workspaceId),
+        baseId,
+        undefined,
+        selectProviderCatalogProfilesLoaded.select(state, workspaceId),
       );
     }
     return (
       selectResolvedProviderCatalogEntry.select(state, providerId, workspaceId)?.displayName ??
       providerId
+    );
+  },
+);
+
+/**
+ * Label that tells a provider's configurations apart (§5.54): the bare name
+ * while the base has no profiles, then `<Provider> · Default` (or its renamed
+ * Default) for the base id and `<Provider> · <Profile>` for a profile ref.
+ * Unlike `selectProviderDisplayName`, the base id is qualified too, so a
+ * recovery action never reads the same as the configuration that failed.
+ */
+export const selectProviderConfigurationLabel = store.createSelector(
+  (state, providerRef: string, workspaceId?: string): string => {
+    const baseId = providerRefBaseId(providerRef);
+    return formatProviderRefLabel(
+      providerRef,
+      selectProviderDisplayName.select(state, baseId, workspaceId),
+      selectProviderCatalogProfiles.select(state, workspaceId),
+      baseId,
+      selectProviderCatalogDefaultNames.select(state, workspaceId),
+      selectProviderCatalogProfilesLoaded.select(state, workspaceId),
     );
   },
 );

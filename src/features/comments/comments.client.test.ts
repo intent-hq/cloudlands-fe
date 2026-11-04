@@ -62,6 +62,7 @@ describe('commentsClient (daemon comment.* seam, fake transport)', () => {
       workspaceId: 'ws-1',
       noteId: 'note-1',
       includeComments: true,
+      limit: 500,
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -90,6 +91,7 @@ describe('commentsClient (daemon comment.* seam, fake transport)', () => {
       workspaceId: 'ws-1',
       noteId: 'note-1',
       includeComments: true,
+      limit: 500,
       status: 'open',
     });
     expect(result.ok).toBe(true);

@@ -49,6 +49,11 @@ export interface RemoteMachine {
   state: RemoteMachineState;
   runningAgents: number;
   capabilities?: RemoteMachineCapabilities;
+  /**
+   * Executor-link version negotiated at the machine's last bind, kept while it
+   * is disconnected; absent before the first bind (`remoteScripts: 1` backends).
+   */
+  nodeProtocol?: number;
   observedAt?: string;
   addedAt: string;
   lastConnectedAt?: string;
@@ -174,6 +179,10 @@ export function parseRemoteMachine(value: unknown): RemoteMachine | null {
   const tcAddress = optionalText(value.tcAddress);
   const observedAt = optionalText(value.observedAt);
   const lastConnectedAt = optionalText(value.lastConnectedAt);
+  const nodeProtocol =
+    Number.isInteger(value.nodeProtocol) && (value.nodeProtocol as number) >= 0
+      ? (value.nodeProtocol as number)
+      : undefined;
   return {
     id: value.id,
     name: value.name,
@@ -187,6 +196,7 @@ export function parseRemoteMachine(value: unknown): RemoteMachine | null {
     state: value.state as RemoteMachineState,
     runningAgents: count(value.runningAgents),
     ...(capabilities ? { capabilities } : {}),
+    ...(nodeProtocol !== undefined ? { nodeProtocol } : {}),
     ...(observedAt ? { observedAt } : {}),
     addedAt: value.addedAt,
     ...(lastConnectedAt ? { lastConnectedAt } : {}),

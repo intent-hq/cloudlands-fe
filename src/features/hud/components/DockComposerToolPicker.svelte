@@ -124,6 +124,9 @@
 </script>
 
 <Popover.Root bind:open>
+  <!-- Disable, never drop, the tooltip while open: dropping it re-creates the button,
+       so a press that spans the hover opening would release on a new element and
+       lose its click. -->
   <Button
     bind:ref={trigger}
     variant="ghost-light"
@@ -137,7 +140,8 @@
     aria-haspopup="dialog"
     aria-expanded={open}
     aria-controls={open ? popupId : undefined}
-    tooltip={open ? undefined : (alert ?? notice ?? labels.annotate)}
+    tooltip={alert ?? notice ?? labels.annotate}
+    tooltipDisabled={open}
     onpointerenter={enter}
     onpointerleave={leave}
     onpointerdown={(event) => {
@@ -256,15 +260,6 @@
 </Popover.Root>
 
 <style>
-  :global(.dock-media-tool-popover[data-dock-palette='notch']) {
-    /* Portals may sit under a light app body. This dock control keeps its own
-       dark palette: the spec's #2A2A2A card is the dark surface-4 step, including
-       the caret; the 1px edge is the dark border (#3D3D3C). */
-    --popover: var(--theme-dark-surface-4);
-    --color-popover: hsl(var(--theme-dark-surface-4));
-    --border: var(--theme-dark-border);
-    --color-border: hsl(var(--theme-dark-border));
-  }
   .tool-caret {
     width: 12px;
     height: 6px;

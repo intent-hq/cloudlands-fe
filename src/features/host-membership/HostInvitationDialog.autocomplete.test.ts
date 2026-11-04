@@ -58,7 +58,7 @@ it('dismisses suggestions with Escape before dismissing the dialog and rejects a
 
 it('never displays GitHub hits for GitLab or a different custom host', async () => {
   const callbacks = props();
-  const view = render(HostInvitationDialog, { ...callbacks, gitlabEnabled: true });
+  const view = render(HostInvitationDialog, { ...callbacks });
   await fireEvent.click(screen.getByRole('combobox', { name: 'Identity provider' }));
   await fireEvent.pointerUp(await screen.findByRole('option', { name: /GitLab/ }), {
     pointerType: 'mouse',
@@ -79,7 +79,6 @@ it('never displays GitHub hits for GitLab or a different custom host', async () 
   };
   await view.rerender({
     ...callbacks,
-    gitlabEnabled: true,
     search: {
       request: { provider: 'gitlab', host: 'forge.example:8443', query: 'sa' },
       users: [gitlabUser],

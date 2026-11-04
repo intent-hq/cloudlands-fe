@@ -697,7 +697,11 @@ const DETAIL_ONLY_SESSION_FIELDS: readonly string[] = [
   'contextReferences',
   'fileBlocks',
 ];
-const DETAIL_ONLY_METADATA_FIELDS = ['pendingProposals', 'proposalResolutions'] as const;
+const DETAIL_ONLY_METADATA_FIELDS = [
+  'pendingProposals',
+  'proposalResolutions',
+  'proposalCreatedWorkspaces',
+] as const;
 
 function carryForwardDetailFields(
   target: StoredAgentSession,

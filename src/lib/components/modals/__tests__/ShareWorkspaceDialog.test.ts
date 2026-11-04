@@ -142,7 +142,6 @@ it('lets a capable workspace manager pin a different canonical GitLab instance (
   renderDialog({
     githubConnected: false,
     gitlabConnected: true,
-    gitlabEnabled: true,
     gitlabHost: 'repository.example',
     gitlabStatusReady: false,
     canAdministerHost: false,
@@ -188,30 +187,28 @@ beforeEach(() => {
 afterEach(() => vi.clearAllMocks());
 
 describe('ShareWorkspaceDialog — owner gate', () => {
-  it('keeps new GitLab choices hidden by default and lets the host connect GitHub', async () => {
+  it('offers GitLab setup by default and lets the host connect GitHub', async () => {
     const onConnectGitHub = vi.fn();
     renderDialog({ githubConnected: false, onConnectGitHub });
-    expect(screen.queryByRole('button', { name: 'Open Connections' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Open Connections' })).toBeTruthy();
     await fireEvent.click(screen.getByRole('button', { name: 'Connect GitHub' }));
     expect(onConnectGitHub).toHaveBeenCalledOnce();
   });
 
-  it('does not rewrite a selected GitLab pin when Labs is disabled', async () => {
+  it('sends the saved GitLab identity as the pin', async () => {
     const onCreateInvite = vi.fn();
     const props = {
       ...baseProps,
       gitlabConnected: true,
-      gitlabEnabled: true,
       gitlabHost: 'gitlab.example.com',
       identitySeamSupported: true,
       identityProvider: 'gitlab' as const,
       onCreateInvite,
     };
-    const { rerender } = render(ShareWorkspaceDialog, { props });
+    render(ShareWorkspaceDialog, { props });
     await fireEvent.input(await recipientField('gitlab'), {
       target: { value: 'mara' },
     });
-    await rerender({ ...props, gitlabEnabled: false });
     await fireEvent.submit((await recipientField('gitlab')).closest('form')!);
     expect(onCreateInvite).toHaveBeenCalledExactlyOnceWith('mara', {
       provider: 'gitlab',
@@ -295,7 +292,6 @@ describe('ShareWorkspaceDialog — forge gate', () => {
     renderDialog({
       githubConnected: false,
       gitlabConnected: true,
-      gitlabEnabled: true,
       identitySeamSupported: true,
       gitlabHost: '',
       gitlabStatusReady: false,
@@ -328,7 +324,6 @@ describe('ShareWorkspaceDialog — forge gate', () => {
     const onCreateInvite = vi.fn();
     renderDialog({
       githubConnected: false,
-      gitlabEnabled: true,
       invites: [],
       onConnectGitHub,
       onOpenConnections,
@@ -440,7 +435,6 @@ describe('ShareWorkspaceDialog — forge gate', () => {
     renderDialog({
       githubConnected: false,
       gitlabConnected: true,
-      gitlabEnabled: true,
       gitlabHost: 'gitlab.example.com',
       identitySeamSupported: false,
     });
@@ -455,7 +449,6 @@ describe('ShareWorkspaceDialog — forge gate', () => {
     renderDialog({
       githubConnected: false,
       gitlabConnected: true,
-      gitlabEnabled: true,
       gitlabHost: 'gitlab.example.com',
       identitySeamSupported: true,
       onCreateInvite,
@@ -482,7 +475,6 @@ describe('ShareWorkspaceDialog — pin forge (both forges connected)', () => {
   const both = {
     githubConnected: true,
     gitlabConnected: true,
-    gitlabEnabled: true,
     gitlabHost: 'gitlab.example.com',
     identitySeamSupported: true,
   };
@@ -579,15 +571,14 @@ describe('ShareWorkspaceDialog — pin forge (both forges connected)', () => {
     });
   });
 
-  it('keeps a user-picked GitLab pin after Labs is turned off while editing', async () => {
+  it('sends a user-picked GitLab pin', async () => {
     const onCreateInvite = vi.fn();
     const props = { ...baseProps, ...both, identityProvider: 'github' as const, onCreateInvite };
-    const { rerender } = render(ShareWorkspaceDialog, { props });
+    render(ShareWorkspaceDialog, { props });
     await pickForge();
     await fireEvent.input(await recipientField('gitlab'), {
       target: { value: 'invited-user' },
     });
-    await rerender({ ...props, gitlabEnabled: false });
     await fireEvent.click(screen.getByRole('button', { name: /^(Copy|Create) link$/ }));
     expect(onCreateInvite).toHaveBeenCalledExactlyOnceWith('invited-user', {
       provider: 'gitlab',
@@ -595,9 +586,9 @@ describe('ShareWorkspaceDialog — pin forge (both forges connected)', () => {
     });
   });
 
-  it('does not offer a new GitLab pin while off and still sends the explicit GitHub pin', async () => {
+  it('sends the explicit GitHub pin when both forges are connected', async () => {
     const onCreateInvite = vi.fn();
-    renderDialog({ ...both, gitlabEnabled: false, identityProvider: 'github', onCreateInvite });
+    renderDialog({ ...both, identityProvider: 'github', onCreateInvite });
     expect(screen.queryByTestId('share-audience-trigger')).toBeTruthy();
     await fireEvent.input(await recipientField('github'), {
       target: { value: 'dave' },

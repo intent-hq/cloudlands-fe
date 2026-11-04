@@ -2,7 +2,7 @@ import { call, type SagaGenerator } from 'typed-redux-saga';
 import { appClient } from '$lib/client';
 import { invoke } from '$lib/electron-bridge';
 import { isMissingWorkingTreeFile } from '$features/file-tracking/components/diff/is-missing-working-tree-file';
-import { backendRequest } from '$lib/client/live/backend-transport';
+import { readFileText } from '$lib/client/live/bounded-object-read';
 import {
   batchedGitBranchBaseDiff,
   batchedGitDiff,
@@ -70,7 +70,23 @@ export function* readTrackedDiff(
       path: filePath,
       ...(gitRootId ? { gitRootId } : {}),
     });
-    return { ...result, chunk: chunks.find((chunk) => chunk.file === filePath) ?? chunks[0] };
+    const chunk = chunks.find((entry) => entry.file === filePath) ?? chunks[0];
+    if (chunk?.truncatedReason) {
+      // Too large for the bounded `git.diffs` read (§5.6): render from the
+      // commit's two sides instead of hunks. A root commit has no parent, so
+      // its old side reads as empty.
+      const options = gitRootId ? { gitRootId } : undefined;
+      const [before, after] = [
+        yield* call(dedupedShowFile, workspaceId, `${request.commitHash}^`, filePath, options),
+        yield* call(dedupedShowFile, workspaceId, request.commitHash, filePath, options),
+      ];
+      return {
+        ...result,
+        oldContent: before.success ? (before.data ?? '') : '',
+        newContent: after.success ? (after.data ?? '') : '',
+      };
+    }
+    return { ...result, chunk };
   }
   for (const staged of [request.stage === 'staged', request.stage !== 'staged']) {
     if (!allowed()) return result;
@@ -105,13 +121,9 @@ export function* readTrackedDiff(
     } else if (gitRootId || request.workspacePath || filePath.startsWith('/')) {
       try {
         if (gitRootId) {
-          const content = yield* call(backendRequest<string | { content?: string }>, 'file.read', {
-            workspaceId,
-            path: filePath,
-            gitRootId,
-          });
+          const content = yield* call(readFileText, { workspaceId, path: filePath, gitRootId });
           if (!allowed()) return result;
-          result.newContent = typeof content === 'string' ? content : (content?.content ?? '');
+          result.newContent = content ?? '';
           return result;
         }
         const response = yield* call(invoke<FileReadResponse>, 'file:read', {

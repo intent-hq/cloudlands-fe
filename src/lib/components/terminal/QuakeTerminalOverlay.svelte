@@ -79,6 +79,9 @@
     isLiveScriptStatus,
     type ScriptStatusKind,
   } from '$features/scripts/utils/script-status';
+  import { machineRunStatus, scriptMachineRuns } from '$features/scripts/utils/script-location';
+  import ScriptMachineLabel from '$features/scripts/components/ScriptMachineLabel.svelte';
+  import MachineRunOutput from '$features/scripts/components/MachineRunOutput.svelte';
   import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { rewriteBrowserLinkForDisplay } from '$lib/utils/browser-url-resolution';
@@ -89,12 +92,14 @@
     selectAllWorkspaceScriptEntries,
     selectWorkspaceScriptsInitialized,
     selectScriptWorkflowOutcome,
+    selectRemoteScriptsSupported,
   } from '$store/renderer/slices/scripts/scripts-selectors';
   import {
     detectScriptDefinitionsRequested,
     startScriptRequested,
     restartScriptRequested,
     stopScriptRequested,
+    machineRunOperationRequested,
     getScriptDefinitionRequested,
     scriptWorkflowConsumed,
     scriptWorkflowReleased,
@@ -600,6 +605,43 @@
   const canDeleteScript$ = selectCanDeleteScript(workspaceIdStore, selectedScriptIdStore);
 
   const selectedScriptRuntime = $derived(selectedScript?.runtime ?? null);
+
+  // A remote agent's run of the selected script on its machine (`remoteScripts: 1`):
+  // the header and output then show that run instead of the backend's own.
+  const remoteScriptsSupported$ = selectRemoteScriptsSupported();
+  let machineRunSelection = $state<{ scriptId: string; remoteAgentId: string } | null>(null);
+  const selectedMachineRun = $derived(
+    $remoteScriptsSupported$ &&
+      selectedScript &&
+      machineRunSelection?.scriptId === selectedScript.id
+      ? (scriptMachineRuns(selectedScript).find(
+          (run) => run.remoteAgentId === machineRunSelection?.remoteAgentId,
+        ) ?? null)
+      : null,
+  );
+  const selectedMachineRunStatus = $derived(
+    selectedMachineRun ? machineRunStatus(selectedMachineRun.runtime) : null,
+  );
+
+  function selectMachineRun(scriptId: string, remoteAgentId: string): void {
+    machineRunSelection = { scriptId, remoteAgentId };
+    setSelectedScript(scriptId);
+  }
+
+  function handleMachineRunAction(operation: 'stop' | 'restart'): void {
+    if (!workspaceId || !selectedScriptId || !selectedMachineRun) return;
+    appStore.dispatch(
+      machineRunOperationRequested(
+        workspaceId,
+        selectedScriptId,
+        selectedMachineRun.remoteAgentId,
+        operation,
+        operation === 'stop'
+          ? m.terminal_quakeOverlay_stopScriptFailed_error()
+          : m.terminal_quakeOverlay_restartScriptFailed_error(),
+      ),
+    );
+  }
 
   // Display form of the selected script's detected URL: the loopback rewrite
   // only (daemon host in remote mode), NO probe and NO tunnel, so the chip
@@ -1281,15 +1323,31 @@
               </div>
 
               <!-- Status badge -->
-              <span
-                class="{selectedScriptStatusInfo.textClass} flex items-center gap-1 text-xs whitespace-nowrap flex-shrink-0"
-              >
-                <Fa icon={faCircle} size="0.45em" />
-                {selectedScriptStatusInfo.label}
-              </span>
+              {#if selectedMachineRun && selectedMachineRunStatus}
+                <!-- A machine run: its status and machine; its ports are not tunnelled, so no Open link -->
+                <span
+                  class="{selectedMachineRunStatus.kind === 'lost'
+                    ? 'text-warning-ink'
+                    : STATUS_CONFIG[selectedMachineRunStatus.kind]
+                        .textClass} flex items-center gap-1 text-xs whitespace-nowrap flex-shrink-0"
+                  data-machine-run-header-status={selectedMachineRunStatus.kind}
+                >
+                  <Fa icon={faCircle} size="0.45em" />
+                  {selectedMachineRunStatus.label}
+                </span>
+                <ScriptMachineLabel run={selectedMachineRun} variant="label" />
+              {:else}
+                <span
+                  class="{selectedScriptStatusInfo.textClass} flex items-center gap-1 text-xs whitespace-nowrap flex-shrink-0"
+                  data-script-header-status
+                >
+                  <Fa icon={faCircle} size="0.45em" />
+                  {selectedScriptStatusInfo.label}
+                </span>
+              {/if}
 
               <!-- Detected URL (display shows the rewrite-only form) -->
-              {#if selectedScriptRuntime.detectedUrl}
+              {#if !selectedMachineRun && selectedScriptRuntime.detectedUrl}
                 {@const shownUrl = displayedDetectedUrl ?? selectedScriptRuntime.detectedUrl}
                 <Button
                   variant="plain"
@@ -1316,7 +1374,28 @@
               >
                 <Fa icon={faTableColumns} size="xs" />
               </Button>
-              {#if isLiveScriptStatus(selectedScriptRuntime.status)}
+              {#if selectedMachineRun}
+                {#if isLiveScriptStatus(selectedMachineRun.runtime.status)}
+                  <Button
+                    variant="ghost-light"
+                    size="icon-xs"
+                    onclick={() => handleMachineRunAction('stop')}
+                    tooltip={m.terminal_quakeOverlay_stop_label()}
+                    aria-label={m.terminal_quakeOverlay_stopScript_ariaLabel()}
+                  >
+                    <Fa icon={faStop} size="xs" />
+                  </Button>
+                {/if}
+                <Button
+                  variant="ghost-light"
+                  size="icon-xs"
+                  onclick={() => handleMachineRunAction('restart')}
+                  tooltip={m.terminal_quakeOverlay_restart_label()}
+                  aria-label={m.terminal_quakeOverlay_restartScript_ariaLabel()}
+                >
+                  <Fa icon={faRotateRight} size="xs" />
+                </Button>
+              {:else if isLiveScriptStatus(selectedScriptRuntime.status)}
                 <Button
                   variant="ghost-light"
                   size="icon-xs"
@@ -1505,8 +1584,17 @@
             {/if}
 
             {#if selectedScriptId}
-              {#key `${workspaceId}:${selectedScriptId}`}
-                <ScriptOutputViewer scriptId={selectedScriptId} {workspaceId} class="flex-1" />
+              {#key `${workspaceId}:${selectedScriptId}:${selectedMachineRun?.remoteAgentId ?? ''}`}
+                {#if selectedMachineRun}
+                  <MachineRunOutput
+                    {workspaceId}
+                    scriptId={selectedScriptId}
+                    run={selectedMachineRun}
+                    class="flex-1"
+                  />
+                {:else}
+                  <ScriptOutputViewer scriptId={selectedScriptId} {workspaceId} class="flex-1" />
+                {/if}
               {/key}
             {/if}
 
@@ -1522,7 +1610,12 @@
               <TerminalSidebar
                 {workspaceId}
                 {selectedScriptId}
-                onSelectScript={(id) => setSelectedScript(id)}
+                onSelectScript={(id) => {
+                  machineRunSelection = null;
+                  setSelectedScript(id);
+                }}
+                selectedRemoteAgentId={selectedMachineRun?.remoteAgentId ?? null}
+                onSelectMachineRun={selectMachineRun}
               />
             {/key}
           {/if}

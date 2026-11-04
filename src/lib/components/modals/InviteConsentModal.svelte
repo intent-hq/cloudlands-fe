@@ -24,7 +24,7 @@
    * the dialog up in a brief joining state until main dismisses it.
    *
    * The `sign-in-required` state runs the GitHub device flow inline; a guest
-   * who enabled GitLab Labs and prefers that account is pointed at Settings →
+   * who prefers a GitLab account is pointed at Settings →
    * Connections (the link cancels the join, which the user reopens after
    * connecting).
    *
@@ -40,9 +40,6 @@
   import GitHubDeviceCodeCard from '$lib/components/GitHubDeviceCodeCard.svelte';
   import type { InviteConsentAction, InviteConsentShowPayload } from '$shared/ipc/invite-consent';
   import { m } from '$shared/paraglide/messages.js';
-  import { selectLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-  import { store as appStore } from '$store/renderer/store';
-  import { openPalette } from '$store/renderer/slices/palette/palette-slice';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
 
   interface Props {
@@ -54,7 +51,6 @@
 
   let { open = $bindable(false), payload = null, onRespond }: Props = $props();
 
-  const gitlabEnabled$ = selectLabsGitLabEnabled();
   const dialogTitleId = 'invite-consent-dialog-title';
   // The request that has been sent `open`; keyed by id so a new payload resets it.
   let openedRequestId = $state<string | null>(null);
@@ -84,10 +80,6 @@
 
   function openConnectionsSettings() {
     cancel();
-    if (!selectLabsGitLabEnabled.select(appStore.state)) {
-      appStore.dispatch(openPalette('GitLab')); // i18n-ignore (brand search matches every locale)
-      return;
-    }
     void navigateToSettings({ tab: 'connections', hash: 'integrations' }).catch(() => {});
   }
 </script>
@@ -114,27 +106,21 @@
     {#if payload.mode === 'connect-forge'}
       <section class="space-y-1" data-testid="invite-consent-connect-forge">
         <h3 class="text-sm font-medium text-foreground">
-          {$gitlabEnabled$
-            ? m.inviteConsent_modal_connectForge_title()
-            : m.inviteConsent_modal_signInRequired_title()}
+          {m.inviteConsent_modal_connectForge_title()}
         </h3>
         <p class="text-xs text-subtle">
-          {$gitlabEnabled$
-            ? m.inviteConsent_modal_connectForge_description()
-            : m.inviteConsent_modal_signInNotConnected_description()}
+          {m.inviteConsent_modal_connectForge_description()}
         </p>
-        {#if $gitlabEnabled$}
-          <p class="text-xs text-subtle">
-            {m.inviteConsent_modal_connectForgeGitLab_before()}<Button
-              type="button"
-              variant="link"
-              class="h-auto p-0 text-xs underline underline-offset-2"
-              data-testid="invite-consent-open-connections"
-              onclick={openConnectionsSettings}
-              >{m.inviteConsent_modal_signInGitLabInstead_link()}</Button
-            >{m.inviteConsent_modal_connectForgeGitLab_after()}
-          </p>
-        {/if}
+        <p class="text-xs text-subtle">
+          {m.inviteConsent_modal_connectForgeGitLab_before()}<Button
+            type="button"
+            variant="link"
+            class="h-auto p-0 text-xs underline underline-offset-2"
+            data-testid="invite-consent-open-connections"
+            onclick={openConnectionsSettings}
+            >{m.inviteConsent_modal_signInGitLabInstead_link()}</Button
+          >{m.inviteConsent_modal_connectForgeGitLab_after()}
+        </p>
       </section>
     {:else if payload.mode !== 'sign-in-required'}
       <div class="flex items-start gap-2 text-sm text-foreground">
@@ -161,7 +147,7 @@
     <p class="text-xs text-subtle">
       {#if payload.mode === 'confirm'}
         {m.inviteConsent_returning_description()}
-      {:else if connectMode && $gitlabEnabled$}
+      {:else if connectMode}
         {m.inviteConsent_modal_hostLearnsForge_description()}
       {:else if gitlabIdentity}
         {m.inviteConsent_modal_hostLearnsGitLab_description({ host: gitlabIdentity.host })}
@@ -180,7 +166,7 @@
               ? m.inviteConsent_modal_signInScopeMissing_description()
               : m.inviteConsent_modal_signInNotConnected_description()}
           </p>
-          {#if payload.reason === 'not-connected' && $gitlabEnabled$}
+          {#if payload.reason === 'not-connected'}
             <p class="text-xs text-subtle">
               {m.inviteConsent_modal_signInGitLabInstead_before()}<Button
                 type="button"

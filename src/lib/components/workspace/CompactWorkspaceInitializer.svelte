@@ -170,10 +170,10 @@
     selectCheckoutSelection,
     selectCheckoutCanCreate,
   } from '$store/renderer/slices/repository-checkout/repository-checkout-selectors';
-  import { selectLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
     selectGitLabAuthInstanceBaseUrl,
     selectGitLabAuthIsConfigured,
+    selectGitLabInstanceSetupSupported,
     selectGitLabStatusReady,
   } from '$store/renderer/slices/gitlab-auth/gitlab-auth-selectors';
   import SetupScriptModal from '../modals/SetupScriptModal.svelte';
@@ -565,10 +565,11 @@
   );
   const plainFolderWorkspaces$ = selectPlainFolderWorkspaceItems();
   const checkoutFormId = uuidv4();
-  const labsGitLab$ = selectLabsGitLabEnabled();
   const gitlabInstance$ = selectGitLabAuthInstanceBaseUrl();
   const gitlabConfigured$ = selectGitLabAuthIsConfigured();
   const gitlabStatusReady$ = selectGitLabStatusReady();
+  // GitLab projects need the host's checkout contract; main refuses capture without it.
+  const gitlabCheckoutSupported$ = selectGitLabInstanceSetupSupported();
   const checkoutForm$ = selectCheckoutForm(checkoutFormId);
   const checkoutSelection$ = selectCheckoutSelection(checkoutFormId);
   const checkoutProjects$ = selectCheckoutProjects(checkoutFormId);
@@ -620,13 +621,7 @@
     appStore.dispatch(projectSelected(checkoutFormId, scopeKey, path));
   }
   function pickRecentCheckoutProject(projectPath: string, instanceBaseUrl: string) {
-    if (
-      !$labsGitLab$ ||
-      !$gitlabStatusReady$ ||
-      !$gitlabConfigured$ ||
-      instanceBaseUrl !== $gitlabInstance$
-    )
-      return;
+    if (!$gitlabStatusReady$ || !$gitlabConfigured$ || instanceBaseUrl !== $gitlabInstance$) return;
     const form = selectCheckoutForm.select(appStore.state, checkoutFormId);
     if (form?.status === 'unavailable') return;
     if (form?.scopeKey) {
@@ -2351,17 +2346,21 @@
 
             if (mention.type === 'script') {
               try {
-                const { selectScriptOutput, selectScriptById, selectScriptRuntime } =
+                const { selectScriptById, selectScriptRuntime } =
                   await import('$store/renderer/slices/scripts/scripts-selectors');
                 if (!preparationCurrent()) return null;
-                const { scriptOutputToLines } = await import('$lib/utils/script-output-text');
+                const { readScriptContextOutputLines } =
+                  await import('$features/scripts/utils/script-context-output');
                 if (!current()) return null;
                 const scriptId = mention.id;
                 const wsId = (mention.meta?.workspaceId as string) || null;
-                const state = appStore.state;
-                const outputLines = scriptOutputToLines(
-                  selectScriptOutput.select(state, wsId, scriptId),
+                const outputLines = await readScriptContextOutputLines(
+                  appStore.state,
+                  wsId,
+                  scriptId,
                 );
+                if (!preparationCurrent()) return null;
+                const state = appStore.state;
                 const script = selectScriptById.select(state, wsId, scriptId);
                 const runtime = selectScriptRuntime.select(state, wsId, scriptId);
 
@@ -3584,7 +3583,7 @@
               ? ($checkoutForm$?.project?.projectPath ?? '')
               : repoPath}
             branch={repoType === 'gitlab' ? ($checkoutForm$?.branch?.name ?? '') : branch}
-            gitlab={$labsGitLab$ || repoType === 'gitlab' ? gitlabPicker : undefined}
+            gitlab={$gitlabCheckoutSupported$ || repoType === 'gitlab' ? gitlabPicker : undefined}
             gitlabBranch={gitlabBranchPicker}
             {repoType}
             {githubUrl}

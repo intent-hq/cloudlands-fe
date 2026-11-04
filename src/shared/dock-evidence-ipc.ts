@@ -1,6 +1,7 @@
 import { IPC_CHANNELS } from './ipc-registry';
 import type {
   DockCapturedPixels,
+  DockCaptureMode,
   DockEvidenceImage,
   DockNativeResult,
   DockEvidenceNativeService,
@@ -24,6 +25,8 @@ export interface DockEvidenceSession extends DockEvidenceBeginRequest {
 export interface DockEvidenceCaptureRequest extends DockEvidenceSession {
   requestId: string;
   source?: DockEvidenceImage['source'];
+  /** Absent means full screen. */
+  mode?: DockCaptureMode;
 }
 
 interface DockEvidenceCaptureResult extends DockEvidenceSession {

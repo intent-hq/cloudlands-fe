@@ -353,17 +353,12 @@
     {/snippet}
   </ScreenHeader>
 
-  {#snippet noticeRail()}
+  {#snippet noticeLine()}
     {#if notices?.register}
       {@const register = notices.register}
-      <!-- Zero-height rail at the composer's top edge, in the composer lane. -->
-      <div class="notice-rail">
-        <ChatContentLane class="relative h-0">
-          {#key notices.key}
-            <DockConversationNotifications {register} />
-          {/key}
-        </ChatContentLane>
-      </div>
+      {#key notices.key}
+        <DockConversationNotifications {register} />
+      {/key}
     {/if}
   {/snippet}
 
@@ -536,7 +531,6 @@
     {/if}
   </div>
 
-  {@render noticeRail()}
   <footer class="conversation-footer" bind:clientHeight={footerHeight}>
     <ChatContentLane composer>
       <QuestionComposer
@@ -583,6 +577,7 @@
               >{m.dock_conversation_openFull_ariaLabel()}</Button
             >
           </div>{/if}
+        {@render noticeLine()}
         {#if composer}
           {@render composer()}
         {:else}
@@ -686,13 +681,6 @@
   }
   .new-activity :global(button) {
     pointer-events: auto;
-  }
-  /* Banners overlay the transcript's bottom edge; the rail never takes layout space. */
-  .notice-rail {
-    position: relative;
-    flex: none;
-    height: 0;
-    z-index: 2;
   }
   /* The card sits in the composer lane like the composer itself: no extra layer
      inset, bottom-aligned to the composer it covers, and only as tall as its content. */

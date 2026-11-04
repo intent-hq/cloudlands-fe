@@ -96,10 +96,6 @@ export const selectNativeReviewEnabled = store.createSelector((state) => {
   return state.userPreferences?.nativeReviewEnabled === true;
 });
 
-export const selectLabsGitLabEnabled = store.createSelector((state) => {
-  return state.userPreferences?.labsGitLabEnabled === true;
-});
-
 /**
  * Entry-point policy for NEW remote setup and placement, not runtime capability.
  * Subscribe for visibility; re-read `.select(appStore.state)` at submission (and

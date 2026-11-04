@@ -50,11 +50,9 @@ import {
   providerSetupHydrated,
   setLabsMultiplayerEnabled,
   userPreferencesHydrated,
-  setLabsGitLabEnabled,
   setLabsRemoteAgentsEnabled,
   setLabsPlainFolderWorkspacesEnabled,
   setLabsBrowserAccessEnabled,
-  toggleLabsGitLab,
   toggleLabsRemoteAgents,
   toggleLabsPlainFolderWorkspaces,
   setLabsSettingsVisible,
@@ -221,7 +219,6 @@ describe('userPreferencesPersistenceSaga', () => {
       'appearance:reduceMotionOnBattery': false,
       'appearance:pauseAnimationsWhenUnfocused': true,
       'labs:settingsVisible': true,
-      'labs:gitlabEnabled': true,
       'labs:remoteAgentsEnabled': true,
       'labs:plainFolderWorkspacesEnabled': true,
       'labs:browserAccessEnabled': true,
@@ -253,7 +250,6 @@ describe('userPreferencesPersistenceSaga', () => {
       [setReduceMotionOnBattery(false)],
       [setPauseAnimationsWhenUnfocused(true)],
       [setLabsSettingsVisible(true)],
-      [setLabsGitLabEnabled(true)],
       [setLabsRemoteAgentsEnabled(true)],
       [setLabsPlainFolderWorkspacesEnabled(true)],
       [setLabsBrowserAccessEnabled(true)],
@@ -313,69 +309,22 @@ describe('userPreferencesPersistenceSaga', () => {
     },
   );
 
-  it.each([undefined, null, 'true', 'false', 1, 0, {}, []])(
-    'keeps the GitLab lab off for missing or invalid storage: %j',
+  it.each([true, false])(
+    'ignores (and keeps for older builds) a retired labs:gitlabEnabled = %s: GitLab is always on',
     async (stored) => {
       mocks.getJSON.mockImplementation((key: string) =>
         key === 'labs:gitlabEnabled' ? stored : undefined,
       );
-      const run = startPreferenceStore();
-      await settle();
-      expect(run.getUserPreferences().labsGitLabEnabled).toBe(false);
-      expect(mocks.setJSON.mock.calls.filter(([key]) => key === 'labs:gitlabEnabled')).toEqual([]);
-      await run.stop();
+      const dispatch = vi.fn();
+      await runSaga({ dispatch, getState: () => ({}) }, hydrateUserPreferencesWorker).toPromise();
+      expect(mocks.getJSON.mock.calls.map(([key]) => key)).not.toContain('labs:gitlabEnabled');
+      expect(mocks.removeItem).not.toHaveBeenCalled();
+      expect(dispatch.mock.calls).toEqual([
+        [providerSetupHydrated('local', false)],
+        [userPreferencesHydrated()],
+      ]);
     },
   );
-
-  it.each([true, false])(
-    'persists GitLab %s across onboarding reruns and restart',
-    async (enabled) => {
-      const storage: Record<string, unknown> = {};
-      mocks.getJSON.mockImplementation((key: string) => storage[key]);
-      mocks.setJSON.mockImplementation((key: string, value: unknown) => {
-        storage[key] = value;
-      });
-      const first = startPreferenceStore();
-      await settle();
-      first.dispatch(setLabsGitLabEnabled(!enabled));
-      first.dispatch(toggleLabsGitLab());
-      first.dispatch(setOnboardingFullFlowRequested(true));
-      first.dispatch(resetOnboarding());
-      first.dispatch(goToStep('forge'));
-      await settle();
-      expect(first.getUserPreferences().labsGitLabEnabled).toBe(enabled);
-      expect(storage['labs:gitlabEnabled']).toBe(enabled);
-      expect(first.getUserPreferences().labsMultiplayerEnabled).toBe(true);
-      await first.stop();
-      const restarted = startPreferenceStore();
-      await settle();
-      expect(restarted.getUserPreferences().labsGitLabEnabled).toBe(enabled);
-      restarted.dispatch(resetOnboarding());
-      expect(restarted.getUserPreferences().labsGitLabEnabled).toBe(enabled);
-      await restarted.stop();
-    },
-  );
-
-  it('keeps GitLab off until delayed preference hydration finishes without resetting it on rerun', async () => {
-    let finish!: (enabled: boolean) => void;
-    mocks.getJSON.mockImplementation((key: string) =>
-      key === 'labs:gitlabEnabled'
-        ? new Promise<boolean>((resolve) => {
-            finish = resolve;
-          })
-        : undefined,
-    );
-    const run = startPreferenceStore();
-    expect(run.getUserPreferences().labsGitLabEnabled).toBe(false);
-    run.dispatch(resetOnboarding());
-    finish(true);
-    await settle();
-    expect(run.getUserPreferences().labsGitLabEnabled).toBe(true);
-    run.dispatch(setOnboardingFullFlowRequested(true));
-    run.dispatch(resetOnboarding());
-    expect(run.getUserPreferences().labsGitLabEnabled).toBe(true);
-    await run.stop();
-  });
 
   it.each([undefined, null, 'true', 'false', 1, 0, {}, []])(
     'keeps the RemoteAgents lab off for missing or invalid storage: %j',
@@ -518,7 +467,7 @@ describe('userPreferencesPersistenceSaga', () => {
 
   it('restores both visibility choices across launches without changing experiments', async () => {
     const stored: Record<string, unknown> = {
-      'labs:gitlabEnabled': true,
+      'labs:remoteAgentsEnabled': true,
     };
     mocks.getJSON.mockImplementation((key: string) => stored[key]);
     mocks.setJSON.mockImplementation((key: string, value: unknown) => {
@@ -536,7 +485,7 @@ describe('userPreferencesPersistenceSaga', () => {
     await settle();
     expect(second.getUserPreferences().labsSettingsVisible).toBe(true);
     expect(second.getUserPreferences().labsMultiplayerEnabled).toBe(true);
-    expect(second.getUserPreferences().labsGitLabEnabled).toBe(true);
+    expect(second.getUserPreferences().labsRemoteAgentsEnabled).toBe(true);
     second.dispatch(toggleLabsSettingsVisibility());
     await settle();
     expect(stored['labs:settingsVisible']).toBe(false);
@@ -546,8 +495,8 @@ describe('userPreferencesPersistenceSaga', () => {
     await settle();
     expect(third.getUserPreferences().labsSettingsVisible).toBe(false);
     expect(third.getUserPreferences().labsMultiplayerEnabled).toBe(true);
-    expect(third.getUserPreferences().labsGitLabEnabled).toBe(true);
-    expect(stored['labs:gitlabEnabled']).toBe(true);
+    expect(third.getUserPreferences().labsRemoteAgentsEnabled).toBe(true);
+    expect(stored['labs:remoteAgentsEnabled']).toBe(true);
     await third.stop();
   });
 

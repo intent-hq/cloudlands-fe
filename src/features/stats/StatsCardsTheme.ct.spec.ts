@@ -63,7 +63,9 @@ for (const cardName of ['passport', 'models', 'providers', 'by-hour', 'by-month'
           color: rgb(getComputedStyle(node).backgroundColor),
           bg: background(node.parentElement!),
         }));
-        const segments = Array.from(root.querySelectorAll('.bar-in, .bar-out, .bar-thought'))
+        const segments = Array.from(
+          root.querySelectorAll('.bar-cache, .bar-in, .bar-out, .bar-thought'),
+        )
           .filter(
             (node) =>
               node.getBoundingClientRect().height > 0 && !node.classList.contains('seg-stub'),

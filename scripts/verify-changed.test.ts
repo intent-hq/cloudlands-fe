@@ -173,6 +173,7 @@ describe('verify-changed arguments and paths', () => {
       base: null,
       dryRun: true,
       help: false,
+      keepGoing: false,
       paths: ['src/a.ts'],
       resume: false,
     });
@@ -189,6 +190,15 @@ describe('verify-changed arguments and paths', () => {
       resume: true,
     });
     expect(() => parseArgs(['--dry-run', '--resume'])).toThrow(/--resolved-plan --resume/);
+  });
+
+  it('parses --keep-going, off by default and combinable with --resume', () => {
+    expect(parseArgs([])).toMatchObject({ keepGoing: false });
+    expect(parseArgs(['--keep-going', '--resume', 'src/a.ts'])).toMatchObject({
+      keepGoing: true,
+      resume: true,
+      paths: ['src/a.ts'],
+    });
   });
 
   it('parses --base in both spellings and requires a value', () => {
@@ -299,8 +309,8 @@ describe('verification planning', () => {
         'eslint',
         'architecture',
         'knip',
-        'vitest-direct',
         'tsc-renderer',
+        'vitest-direct',
       ]);
     });
 
@@ -328,13 +338,13 @@ describe('verification planning', () => {
         'eslint',
         'architecture',
         'knip',
+        'svelte-check',
+        'tsc-renderer',
         'vitest-direct',
         'vitest-related',
         'vitest-declared',
         'vitest-ui-invariants',
         'ct-related',
-        'svelte-check',
-        'tsc-renderer',
       ]);
       expect(plan.checks.find((check) => check.id === 'vitest-direct')?.args).toEqual([
         'exec',
@@ -358,13 +368,13 @@ describe('verification planning', () => {
       expect(plan.fallbackReasons).toEqual(['native/tool.bin']);
       expect(plan.checks.map((check) => check.id)).toEqual([
         'architecture',
-        'vitest-full',
         'svelte-check',
         'tsc-renderer',
         'generate-build-config',
         'tsc-main',
         'generate-ipc-channels',
         'tsc-preload',
+        'vitest-full',
       ]);
     });
 
@@ -588,9 +598,9 @@ describe('verification planning', () => {
       'eslint',
       'architecture',
       'knip',
+      'tsc-renderer',
       'vitest-related',
       'vitest-ui-invariants',
-      'tsc-renderer',
     ]);
   });
 
@@ -1320,6 +1330,27 @@ describe('verification planning', () => {
     expect(otherScript.checks.map((check) => check.id)).not.toContain('architecture');
   });
 
+  it('runs the architecture gates when an Electron helper or its tsconfig changes', () => {
+    const changed = [
+      'test/electron-browser-capture.fixture.ts',
+      'test/fixtures/dock-placement-native/harness.ts',
+      'tsconfig.electron-tests.json',
+    ];
+    const root = fixtureRoot({
+      ...Object.fromEntries(changed.map((file) => [file, ''])),
+      'test/catalog-shell.spec.ts': '',
+    });
+    for (const file of changed) {
+      const plan = createVerificationPlan([file], { root, ctTests: [] });
+      expect(
+        plan.checks.map((check) => check.id),
+        file,
+      ).toContain('architecture');
+    }
+    const spec = createVerificationPlan(['test/catalog-shell.spec.ts'], { root, ctTests: [] });
+    expect(spec.checks.map((check) => check.id)).not.toContain('architecture');
+  });
+
   it('runs the architecture gates (actionlint) when a workflow or its lint config changes', () => {
     const changed = [
       '.github/workflows/promote-beta.yml',
@@ -1852,6 +1883,44 @@ describe('verification planning', () => {
     expect(rendererPlan.checks.map((check) => check.id)).not.toContain('generate-build-config');
   });
 
+  // A load-sensitive Vitest timeout must not hide a real type error behind it: the
+  // run stops at the first failure, and a Mobile-tab type error surfaced only after
+  // three ~17-minute runs when the type checks ran last (cloudlands-fe#4115).
+  it.each([
+    ['a selective plan', ['src/lib/Widget.svelte', 'src/shared/protocol.ts'], ['ct-related']],
+    [
+      'a plan with integration, full CT and full Playwright lanes',
+      [
+        'src/lib/Widget.svelte',
+        'src/shared/protocol.ts',
+        'src/app.css',
+        'playwright.config.ts',
+        'tests/integration/example.test.ts',
+      ],
+      ['vitest-integration', 'ct-full', 'playwright-full'],
+    ],
+    ['the safe fallback', ['native/tool.bin'], ['vitest-full']],
+  ])('runs every static type check before any test lane in %s', (_name, files, lanes) => {
+    const root = fixtureRoot({
+      'src/lib/Widget.svelte': '<button />',
+      'src/lib/Widget.ct.spec.ts': "import Widget from './Widget.svelte';",
+      'src/shared/protocol.ts': '',
+      'src/app.css': '',
+      'playwright.config.ts': '',
+      'tests/integration/example.test.ts': '',
+      'native/tool.bin': 'data',
+    });
+    const ids = createVerificationPlan(files, {
+      root,
+      ctTests: ['src/lib/Widget.ct.spec.ts'],
+    }).checks.map((check) => check.id);
+    const staticChecks = ['svelte-check', 'tsc-renderer', 'tsc-main', 'tsc-preload'];
+    const isTestLane = (id: string) => /^(?:vitest|ct|playwright)-/.test(id);
+    expect(ids).toEqual(expect.arrayContaining([...staticChecks, ...lanes]));
+    const lastStatic = Math.max(...staticChecks.map((id) => ids.indexOf(id)));
+    expect(lastStatic).toBeLessThan(ids.findIndex(isTestLane));
+  });
+
   it('checks all process boundaries for shared source', () => {
     const root = fixtureRoot({ 'src/shared/protocol.ts': '' });
     const plan = createVerificationPlan(['src/shared/protocol.ts'], { root, ctTests: [] });
@@ -1865,13 +1934,13 @@ describe('verification planning', () => {
     expect(plan.fallbackReasons).toEqual(['native/tool.bin']);
     expect(plan.checks.map((check) => check.id)).toEqual([
       'architecture',
-      'vitest-full',
       'svelte-check',
       'tsc-renderer',
       'generate-build-config',
       'tsc-main',
       'generate-ipc-channels',
       'tsc-preload',
+      'vitest-full',
     ]);
     expect(plan.checks.find((check) => check.id === 'vitest-full')?.lockKind).toBe('vitest-full');
     expect(plan.checks.find((check) => check.id === 'vitest-full')?.args).toEqual([
@@ -2776,6 +2845,139 @@ describe('expensive-check coordination', () => {
     expect(started).toEqual(expect.arrayContaining(['vitest', 'ct']));
     gate.resolve();
     await Promise.all(runs);
+  });
+});
+
+// A slow or flaky lane must not hide later checks: with --keep-going one run
+// reports every failure (an i18n timeout hid a real type error for three runs
+// on cloudlands-fe#4115).
+describe('keep-going runs', () => {
+  function failing(ids: string[]) {
+    const ran: string[] = [];
+    const runCheck = async (check: ReturnType<typeof testCheck>) => {
+      ran.push(check.id);
+      if (ids.includes(check.id))
+        throw Object.assign(new Error(`${check.label} failed with exit code 1\ndetails`), {
+          exitCode: 1,
+        });
+    };
+    return { ran, runCheck };
+  }
+  const plan = () =>
+    testPlan(
+      testCheck('vitest-related', null),
+      testCheck('tsc-renderer', null),
+      testCheck('ct-related', null),
+      testCheck('playwright-related', null),
+    );
+
+  it('stops at the first failing check by default', async () => {
+    const { ran, runCheck } = failing(['vitest-related']);
+    await expect(
+      runVerificationPlan(plan(), temporaryDirectory(), { runCheck, log: () => {} }),
+    ).rejects.toThrow(/^vitest-related failed with exit code 1/);
+    expect(ran).toEqual(['vitest-related']);
+  });
+
+  it('runs every selected check after a failure, then lists all failures', async () => {
+    const { ran, runCheck } = failing(['vitest-related', 'ct-related']);
+    const lines: string[] = [];
+    const run = runVerificationPlan(plan(), temporaryDirectory(), {
+      runCheck,
+      keepGoing: true,
+      log: (line: string) => lines.push(line),
+    });
+    await expect(run).rejects.toThrow(
+      /2 of 4 check\(s\) failed:\n {2}- vitest-related failed with exit code 1\n {2}- ct-related failed with exit code 1\n/,
+    );
+    expect(ran).toEqual(['vitest-related', 'tsc-renderer', 'ct-related', 'playwright-related']);
+    // Each failure's full message is logged when it happens, before later checks start.
+    expect(lines).toContain(
+      '[verify:changed] vitest-related failed with exit code 1\ndetails\n[verify:changed] --keep-going: continuing with the remaining checks',
+    );
+  });
+
+  // Ctrl+C reaches the running check and the parent together; the child's exit can
+  // be handled before the parent's own signal handler runs, so the loop must not
+  // treat an interrupted check as an ordinary failure and start the next one.
+  it.each([
+    ['killed by SIGINT', { signal: 'SIGINT', exitCode: null }],
+    ['killed by SIGTERM', { signal: 'SIGTERM', exitCode: null }],
+    ['exiting 130 after Ctrl+C', { signal: null, exitCode: 130 }],
+    ['exiting 143 after SIGTERM', { signal: null, exitCode: 143 }],
+  ])('stops instead of continuing when a check was %s', async (_name, fields) => {
+    const ran: string[] = [];
+    const runCheck = async (check: ReturnType<typeof testCheck>) => {
+      ran.push(check.id);
+      if (check.id === 'tsc-renderer')
+        throw Object.assign(new Error(`${check.label} interrupted`), fields);
+    };
+    await expect(
+      runVerificationPlan(plan(), temporaryDirectory(), {
+        runCheck,
+        keepGoing: true,
+        log: () => {},
+      }),
+    ).rejects.toThrow(/^tsc-renderer interrupted/);
+    expect(ran).toEqual(['vitest-related', 'tsc-renderer']);
+  });
+
+  it('names the check when its failure message does not, as for a lock timeout', async () => {
+    const runCheck = async (check: ReturnType<typeof testCheck>) => {
+      if (check.id === 'ct-related')
+        throw new Error('verification lock /tmp/ct-3100.lock: held by pid 1; waited 5ms');
+    };
+    await expect(
+      runVerificationPlan(plan(), temporaryDirectory(), {
+        runCheck,
+        keepGoing: true,
+        log: () => {},
+      }),
+    ).rejects.toThrow(
+      /1 of 4 check\(s\) failed:\n {2}- ct-related: verification lock \/tmp\/ct-3100\.lock: held by pid 1; waited 5ms\n/,
+    );
+  });
+
+  it('passes when every check passes', async () => {
+    const { ran, runCheck } = failing([]);
+    await runVerificationPlan(plan(), temporaryDirectory(), {
+      runCheck,
+      keepGoing: true,
+      log: () => {},
+    });
+    expect(ran).toHaveLength(4);
+  });
+
+  it('still stops on a failed prerequisite, which every dependent lane needs', async () => {
+    const { ran, runCheck } = failing(['generated-build-config']);
+    const withPrerequisite = {
+      ...plan(),
+      prerequisites: [testCheck('generated-build-config', null)],
+      checks: plan().checks.map((check) => ({ ...check, dependsOn: ['generated-build-config'] })),
+    };
+    await expect(
+      runVerificationPlan(withPrerequisite, temporaryDirectory(), {
+        runCheck,
+        keepGoing: true,
+        log: () => {},
+      }),
+    ).rejects.toThrow(/^generated-build-config failed/);
+    expect(ran).toEqual(['generated-build-config']);
+  });
+
+  it('forwards --keep-going from the command line to the plan runner', async () => {
+    const root = fixtureRoot({ 'src/lib/utils.ts': '' });
+    const seen: Array<Record<string, unknown>> = [];
+    await runCli(['--keep-going', 'src/lib/utils.ts'], root, {
+      log: () => {},
+      checkNode: () => ({ ok: true }),
+      checkDeps: () => ({ ok: true }),
+      ensureI18n: async () => ({ ok: true }),
+      runPlan: async (_plan: unknown, _root: string, options: Record<string, unknown>) => {
+        seen.push(options);
+      },
+    });
+    expect(seen).toEqual([expect.objectContaining({ keepGoing: true })]);
   });
 });
 

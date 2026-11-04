@@ -710,6 +710,12 @@ export interface DiffChunk {
   isBinary?: boolean;
   /** Whether this file was too large to diff */
   isTooLarge?: boolean;
+  /**
+   * Set when the daemon's bounded `git.diffs` read (PROTOCOL §5.6) served
+   * this file without hunks: `fileTooLarge` means no diff read serves it, so
+   * read its sides with `git.showFile` / `file.read`.
+   */
+  truncatedReason?: 'fileTooLarge' | 'pageBudget';
 }
 
 export const CURRENT_DIFF_SUMMARY_VERSION = 1 as const;
@@ -1285,6 +1291,12 @@ export interface AgentMetadata {
   // rendering so state agrees across reloads and clients. Absent on legacy
   // daemons and while nothing has been resolved.
   proposalResolutions?: Record<string, 'applied' | 'dismissed'>;
+  // Workspaces created by applied workspace-create proposals (PROTOCOL §5.5):
+  // proposalId → workspaceId, recorded by the daemon when it resolves a card
+  // for a create it ran (card Apply with `origin`, `ws.workspace.applyProposal`).
+  // Lets an applied card open its workspace whoever applied it. Detail-only;
+  // absent on older daemons.
+  proposalCreatedWorkspaces?: Record<string, string>;
   // Per-conversation seen marker (PROTOCOL §5.5, `agent.markSeen`): id of the
   // newest message the user had seen. Persisted by the daemon in session
   // metadata, served on AgentLite / agent.getSession, converged via
@@ -1318,7 +1330,8 @@ export interface AgentMetadata {
     | undefined
     | any[]
     | ContextReference[]
-    | Record<string, 'applied' | 'dismissed'>;
+    | Record<string, 'applied' | 'dismissed'>
+    | Record<string, string>;
 }
 
 /**

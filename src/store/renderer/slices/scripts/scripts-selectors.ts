@@ -31,6 +31,15 @@ export const selectUsesGuestScriptScope = store.createSelector((state, workspace
   );
 });
 
+/**
+ * The backend lists remote agents' runs of a saved script on their machines
+ * in `machineRuns` (`client.hello` capability `remoteScripts: 1`). Without it
+ * the panel shows every script as before.
+ */
+export const selectRemoteScriptsSupported = store.createSelector(
+  (state): boolean => state.principal?.snapshot?.capabilities.remoteScripts === 1,
+);
+
 export const selectCanReadScriptDefinition = store.createSelector(
   (state, workspaceId: string, script: { purpose?: string } | null | undefined): boolean =>
     !selectUsesGuestScriptScope.select(state, workspaceId) ||
@@ -117,6 +126,22 @@ export const selectScriptRetainedOutput = store.createSelector(
       ? output
       : undefined;
   },
+);
+
+/**
+ * Workspaces with at least one mounted script output viewer, sorted. The live
+ * `script:output` stream is subscribed only for these workspaces.
+ */
+export const selectScriptOutputViewerWorkspaceIds = store.createSelector((state): string[] =>
+  Object.entries(state.scripts?.byWorkspaceId ?? {})
+    .filter(([, ws]) => Object.keys(ws.retainedOutputs ?? {}).length > 0)
+    .map(([wsId]) => wsId)
+    .sort(),
+);
+
+/** Whether the workspace's live `script:output` lease is subscribed and routable. */
+export const selectScriptOutputStreamReady = store.createSelector(
+  (state, wsId: string): boolean => !!state.scripts?.byWorkspaceId[wsId]?.outputStreamReady,
 );
 
 /** Scripts data for a specific workspace (parameterized). */

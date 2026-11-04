@@ -18,7 +18,8 @@ Requires Node.js `^22.22.2 || ^24.15.0 || >=26`.
    run, the access key. Later runs keep the key; `intent-web key` shows it.
 2. Put an HTTPS front-end in front of it, for example
    `tailscale serve --bg 47120`, or Caddy or nginx with a real certificate.
-3. Open the front-end's address, enter the access key, then add your machines
+3. Open the front-end's address, enter the access key (or a code from
+   `intent-web link`), then add your machines
    in **Settings → Machines** (host, port, token, pinned certificate and an
    optional tunnel address). If this machine runs `intentd`, it appears as
    **This machine (local)**.
@@ -37,6 +38,7 @@ troubleshooting.
 | `--tailcat <path>`                     | tailcat binary for tunnel routes                                                                                                                 |
 | `--local-socket <path>` / `--no-local` | Use this local `intentd` socket, or ignore the local daemon                                                                                      |
 | `intent-web key [--reset]`             | Show the access key, or replace it (signs out every browser)                                                                                     |
+| `intent-web link [--url <origin>]`     | Create a single-use sign-in code (and link) that expires after 10 minutes; works while the server runs                                           |
 
 Environment: `INTENT_WEB_PORT`, `INTENT_WEB_DATA_DIR` and `TAILCAT_BIN` work like
 the flags; flags win.
@@ -45,6 +47,10 @@ the flags; flags win.
 
 - The server listens only on loopback or a unix socket. **Never expose its port
   directly**; use an HTTPS front-end.
+- Sessions survive closing the browser and last 400 days from the last visit.
+  Sign-in codes work once, expire after 10 minutes, and are stored only as
+  hashes in `sign-in.json` (mode 0600). Resetting the key revokes every session
+  and code.
 - One access key means one owner. There are no accounts or per-user permissions:
   anyone with the key has full control of every saved machine, and can make the
   server connect to any host and port.

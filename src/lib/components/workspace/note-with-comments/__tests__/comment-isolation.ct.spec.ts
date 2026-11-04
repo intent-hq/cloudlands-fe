@@ -25,11 +25,13 @@ test('a live foreign-note event cannot appear in the current note sidebar', asyn
     workspaceId: 'isolation-b',
     noteId: 'task',
     includeComments: true,
+    limit: 500,
   });
   expect(requests).toContainEqual({
     workspaceId: 'isolation-b',
     noteId: 'spec',
     includeComments: true,
+    limit: 500,
   });
 });
 
@@ -83,6 +85,11 @@ test('refresh rehydrates the owner after its live update and a foreign event', a
   await expect(note.locator('[role="button"][data-comment-id="isolation-a-spec"]')).toBeVisible();
   await expect(note.locator('[role="button"][data-comment-id="isolation-b-task"]')).toHaveCount(0);
   expect(JSON.parse(await page.getByTestId('requests').innerText())).toEqual([
-    { workspaceId: 'isolation-a', noteId: 'spec', includeComments: true },
+    {
+      workspaceId: 'isolation-a',
+      noteId: 'spec',
+      includeComments: true,
+      limit: 500,
+    },
   ]);
 });

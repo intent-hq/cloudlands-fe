@@ -2070,6 +2070,11 @@ export interface ScriptRunResult {
   warning?: string;
 }
 
+/** A remote agent's run of a saved script on its machine (`remoteAgentId`, PROTOCOL `methods/scripts.md`). */
+export interface ScriptRunTarget {
+  remoteAgentId: string;
+}
+
 export interface ScriptsClient {
   supportsLifecycle?(): Promise<boolean>;
   /** capabilityVerified is only for a caller that just negotiated and revalidated its connection/authority. */
@@ -2097,12 +2102,17 @@ export interface ScriptsClient {
   create(workspaceId: string, input: ScriptCreateInput): Promise<ScriptCreateResult>;
   /** `script.start`. */
   start(workspaceId: string, scriptId: string): Promise<MutationResult>;
-  /** `script.stop`. */
-  stop(workspaceId: string, scriptId: string): Promise<MutationResult>;
-  /** `script.restart`. */
-  restart(workspaceId: string, scriptId: string): Promise<MutationResult>;
-  /** `script.output` — historical output-buffer text. */
-  output(workspaceId: string, scriptId: string, maxLines?: number): Promise<string>;
+  /** `script.stop`; `run` addresses a remote agent's machine run (`remoteScripts: 1`). */
+  stop(workspaceId: string, scriptId: string, run?: ScriptRunTarget): Promise<MutationResult>;
+  /** `script.restart`; `run` restarts a machine run on its machine. */
+  restart(workspaceId: string, scriptId: string, run?: ScriptRunTarget): Promise<MutationResult>;
+  /** `script.output` — historical output-buffer text; `run` reads a machine run's buffer. */
+  output(
+    workspaceId: string,
+    scriptId: string,
+    maxLines?: number,
+    run?: ScriptRunTarget,
+  ): Promise<string>;
   /** `script.status` — the script's runtime state, or null when unavailable. */
   status(workspaceId: string, scriptId: string): Promise<ScriptRuntimeState | null>;
   /** `script.run` — run a command-mode script to completion. */

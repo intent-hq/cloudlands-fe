@@ -1,18 +1,27 @@
-import { render, fireEvent, screen, waitFor } from '@testing-library/svelte';
+import { render, fireEvent, screen, waitFor, within } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockDispatch, scriptEntries, selectorWorkspaceArgs, asyncActionHandlers, notify } =
-  vi.hoisted(() => ({
-    mockDispatch: vi.fn(),
-    scriptEntries: { value: [] as any[], byWorkspaceId: {} as Record<string, any[]> },
-    selectorWorkspaceArgs: [] as unknown[],
-    asyncActionHandlers: {
-      reset: () => {},
-      detect: null as ((action: any) => void) | null,
-      remove: null as ((action: any) => void) | null,
-    },
-    notify: { success: vi.fn(), info: vi.fn(), error: vi.fn(), warning: vi.fn() },
-  }));
+const {
+  mockDispatch,
+  scriptEntries,
+  selectorWorkspaceArgs,
+  asyncActionHandlers,
+  notify,
+  remoteScripts,
+} = vi.hoisted(() => ({
+  mockDispatch: vi.fn(),
+  scriptEntries: { value: [] as any[], byWorkspaceId: {} as Record<string, any[]> },
+  selectorWorkspaceArgs: [] as unknown[],
+  asyncActionHandlers: {
+    reset: () => {},
+    detect: null as ((action: any) => void) | null,
+    remove: null as ((action: any) => void) | null,
+    /** When set, create/update definitions fail with this daemon message. */
+    refuse: null as string | null,
+  },
+  notify: { success: vi.fn(), info: vi.fn(), error: vi.fn(), warning: vi.fn() },
+  remoteScripts: { supported: false },
+}));
 
 vi.mock('$store/renderer/slices/scripts/scripts-selectors', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$store/renderer/slices/scripts/scripts-selectors')>()),
@@ -78,6 +87,12 @@ vi.mock('$store/renderer/store', async () => {
   };
   module = createAppStoreMockModule({
     state: () => ({
+      principal: {
+        snapshot: remoteScripts.supported ? { capabilities: { remoteScripts: 1 } } : null,
+      },
+      remoteMachines: {
+        machines: { 'node-mac': { id: 'node-mac', name: 'Mac Studio', state: 'connected' } },
+      },
       scripts: {
         byWorkspaceId: Object.fromEntries(
           [
@@ -125,6 +140,12 @@ vi.mock('$store/renderer/store', async () => {
         asyncActionHandlers.detect
       ) {
         asyncActionHandlers.detect(action);
+      } else if (
+        asyncActionHandlers.refuse &&
+        (action.type === 'scripts/createScriptDefinitionRequested' ||
+          action.type === 'scripts/updateScriptDefinitionRequested')
+      ) {
+        finishWorkflow(action, 'failure', undefined, asyncActionHandlers.refuse);
       } else if (action.type === 'scripts/createScriptDefinitionRequested') {
         const [workspaceId, input] = action.payload;
         action.success({ id: 'new-command', workspaceId, ...input });
@@ -189,7 +210,144 @@ beforeEach(() => {
   scriptEntries.byWorkspaceId = {};
   asyncActionHandlers.detect = null;
   asyncActionHandlers.remove = null;
+  asyncActionHandlers.refuse = null;
   selectorWorkspaceArgs.length = 0;
+  remoteScripts.supported = false;
+});
+
+describe('TerminalSidebar remote scripts', () => {
+  const withMachineRuns = {
+    id: 'dev',
+    workspaceId: 'ws-1',
+    name: 'dev',
+    command: 'pnpm dev',
+    mode: 'service',
+    source: 'user',
+    createdAt: '2026-11-03T00:00:00Z',
+    runtime: { status: 'idle', restartCount: 0 },
+    machineRuns: [
+      {
+        remoteAgentId: 'agent-remote',
+        nodeId: 'node-mac',
+        runtime: { status: 'running', restartCount: 0, detectedUrl: 'http://localhost:5173' },
+      },
+      {
+        remoteAgentId: 'agent-lost',
+        nodeId: 'node-mac',
+        runtime: {
+          status: 'exited',
+          exitCode: -1,
+          restartCount: 0,
+          error: 'remote-script-lost: the machine disconnected',
+        },
+      },
+    ],
+  };
+  const machineRun = (container: HTMLElement, agentId: string) =>
+    container.querySelector<HTMLElement>(`[data-machine-run="${agentId}"]`);
+
+  it('lists each machine run under its script with its machine and status', () => {
+    remoteScripts.supported = true;
+    scriptEntries.value = [withMachineRuns];
+    const { container } = render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+    const running = machineRun(container, 'agent-remote')!;
+    expect(running.textContent).toContain('Mac Studio');
+    expect(running.textContent).not.toContain('On Mac Studio');
+    expect(running.getAttribute('data-machine-run-status')).toBe('running');
+    const lost = machineRun(container, 'agent-lost')!;
+    expect(lost.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe(
+      'Lost: The machine disconnected',
+    );
+  });
+
+  it('colours each machine run dot like a script row in the same state; lost is amber', () => {
+    remoteScripts.supported = true;
+    const runtimes = {
+      running: { status: 'running', restartCount: 0 },
+      succeeded: { status: 'exited', exitCode: 0, restartCount: 0 },
+      failed: { status: 'exited', exitCode: 2, restartCount: 0 },
+      stopped: { status: 'exited', exitCode: 143, restartCount: 0 },
+    };
+    scriptEntries.value = [
+      ...Object.entries(runtimes).map(([kind, runtime]) => ({
+        ...withMachineRuns,
+        id: `home-${kind}`,
+        name: `home-${kind}`,
+        runtime,
+        machineRuns: undefined,
+      })),
+      {
+        ...withMachineRuns,
+        machineRuns: [
+          ...Object.entries(runtimes).map(([kind, runtime]) => ({
+            remoteAgentId: `agent-${kind}`,
+            nodeId: 'node-mac',
+            runtime,
+          })),
+          withMachineRuns.machineRuns[1],
+        ],
+      },
+    ];
+    const { container } = render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+    const dotClass = (row: Element | null) =>
+      row?.querySelector('[role="img"]')?.getAttribute('class') ?? '';
+    for (const kind of Object.keys(runtimes)) {
+      const home = container.querySelector(`[data-script-id="home-${kind}"]`);
+      expect(dotClass(home), kind).not.toBe('');
+      expect(dotClass(machineRun(container, `agent-${kind}`)), kind).toBe(dotClass(home));
+    }
+    expect(dotClass(machineRun(container, 'agent-lost'))).toContain('bg-warning');
+  });
+
+  it('stops and restarts a machine run by its remote agent', async () => {
+    remoteScripts.supported = true;
+    scriptEntries.value = [withMachineRuns];
+    const { container } = render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+    const running = machineRun(container, 'agent-remote')!;
+    await fireEvent.click(within(running).getByRole('button', { name: 'Stop' }));
+    await fireEvent.click(within(running).getByRole('button', { name: 'Restart' }));
+    const operations = mockDispatch.mock.calls
+      .map(([action]) => action)
+      .filter((action) => action.type === 'scripts/machineRunOperationRequested')
+      .map((action) => action.payload.slice(0, 4));
+    expect(operations).toEqual([
+      ['ws-1', 'dev', 'agent-remote', 'stop'],
+      ['ws-1', 'dev', 'agent-remote', 'restart'],
+    ]);
+  });
+
+  it('removes a stopped machine run with script.stop and offers no Start', async () => {
+    remoteScripts.supported = true;
+    scriptEntries.value = [withMachineRuns];
+    const { container } = render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+    const lost = machineRun(container, 'agent-lost')!;
+    expect(within(lost).queryByRole('button', { name: 'Start' })).toBeNull();
+    await fireEvent.click(within(lost).getByRole('button', { name: 'Remove run' }));
+    expect(mockDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'scripts/machineRunOperationRequested',
+        payload: expect.arrayContaining(['ws-1', 'dev', 'agent-lost', 'stop']),
+      }),
+    );
+  });
+
+  it('selects a machine run through onSelectMachineRun', async () => {
+    remoteScripts.supported = true;
+    scriptEntries.value = [withMachineRuns];
+    const onSelectMachineRun = vi.fn();
+    const { container } = render(TerminalSidebar, {
+      props: { workspaceId: 'ws-1', onSelectMachineRun },
+    });
+    const running = machineRun(container, 'agent-remote')!;
+    await fireEvent.click(running.querySelector<HTMLElement>('[data-slot="list-item"]')!);
+    expect(onSelectMachineRun).toHaveBeenCalledWith('dev', 'agent-remote');
+  });
+
+  it('lists no machine runs on older backends', () => {
+    scriptEntries.value = [withMachineRuns];
+    const { container } = render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+    expect(container.querySelector('[data-machine-run]')).toBeNull();
+  });
 });
 
 describe('TerminalSidebar detection flow', () => {
@@ -272,6 +430,26 @@ describe('TerminalSidebar detection flow', () => {
         ],
       }),
     );
+  });
+
+  it('shows the daemon refusal when adding a script fails and keeps the form open', async () => {
+    asyncActionHandlers.refuse =
+      'script.create: `name` is 4097 bytes; the limit is 4096 bytes (UTF-8)';
+    render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+    await fireEvent.click(screen.getByTitle('Add script'));
+    await fireEvent.input(screen.getByPlaceholderText('Name'), {
+      target: { value: 'n'.repeat(4097) },
+    });
+    await fireEvent.input(screen.getByPlaceholderText('Command, e.g. npm run dev'), {
+      target: { value: 'pnpm test' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Add', exact: true }));
+    await waitFor(() =>
+      expect(notify.error).toHaveBeenCalledWith(
+        'script.create: `name` is 4097 bytes; the limit is 4096 bytes (UTF-8)',
+      ),
+    );
+    expect(screen.getByPlaceholderText('Name')).toBeTruthy();
   });
 
   it.each([false, true])('detects local scripts with existing scripts: %s', async (populated) => {
@@ -681,6 +859,21 @@ describe('TerminalSidebar script inline rename', () => {
       ),
     );
     expect(container.querySelector('[data-edit-script="script-1"]')).toBeNull();
+  });
+
+  it('shows the daemon refusal when a rename fails', async () => {
+    asyncActionHandlers.refuse =
+      'script.create: `name` is 5000 bytes; the limit is 4096 bytes (UTF-8)';
+    const { container } = render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+    await fireEvent.doubleClick(screen.getByRole('button', { name: /^build/ }));
+    const input = container.querySelector<HTMLInputElement>('[data-edit-script="script-1"]');
+    await fireEvent.input(input!, { target: { value: 'x'.repeat(5000) } });
+    await fireEvent.keyDown(input!, { key: 'Enter' });
+    await waitFor(() =>
+      expect(notify.error).toHaveBeenCalledWith(
+        'script.create: `name` is 5000 bytes; the limit is 4096 bytes (UTF-8)',
+      ),
+    );
   });
 
   it('commits a non-empty rename on blur', async () => {

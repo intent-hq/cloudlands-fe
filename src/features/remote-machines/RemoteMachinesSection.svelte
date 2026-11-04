@@ -21,7 +21,8 @@
     selectRemoteMachinesVisible,
   } from './remote-machines-selectors';
   import { remoteMachineUnexposeRequested } from './remote-machines-slice';
-  import { connectionForMachine } from './remote-machines-utils';
+  import { connectionForMachine, machineNeedsUpdateForScripts } from './remote-machines-utils';
+  import { selectRemoteScriptsSupported } from '$store/renderer/slices/scripts/scripts-selectors';
   import { runningAgentsLabel } from './remote-machines-messages';
 
   const supported$ = selectRemoteMachinesVisible();
@@ -31,6 +32,7 @@
   const operations$ = selectRemoteMachineOperations();
   const failures$ = selectRemoteMachineFailures();
   const backendLabel$ = selectCurrentBackendLabel();
+  const remoteScriptsSupported$ = selectRemoteScriptsSupported();
 
   function actions(machine: RemoteMachine): ActionDefinition[] {
     return [
@@ -85,6 +87,11 @@
               {#if platformLabel(machine)}<span>{platformLabel(machine)}</span>{/if}
               {#if machine.runningAgents > 0}<span>{runningAgentsLabel(machine.runningAgents)}</span
                 >{/if}
+              {#if machineNeedsUpdateForScripts(machine, $remoteScriptsSupported$)}
+                <span class="text-warning-ink" data-machine-scripts-update
+                  >{m.remoteMachines_scriptsUpdate_label()}</span
+                >
+              {/if}
             {/snippet}
             {#snippet trailing()}
               <RowActions

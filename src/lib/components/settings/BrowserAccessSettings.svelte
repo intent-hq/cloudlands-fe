@@ -7,6 +7,7 @@
    */
   import { onMount } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
+  import { formatCompactDuration } from '$lib/i18n/format';
   import {
     SettingsForm,
     defineSettings,
@@ -19,8 +20,11 @@
     selectBrowserAccess,
     selectBrowserAccessBusy,
     selectBrowserAccessFailed,
+    selectBrowserAccessSignInCode,
+    selectBrowserAccessSignInCodeFailed,
   } from '$store/renderer/slices/browser-access/browser-access-selectors';
   import {
+    createBrowserAccessSignInCodeRequested,
     loadBrowserAccessRequested,
     resetBrowserAccessKeyRequested,
     setBrowserAccessEnabledRequested,
@@ -35,6 +39,22 @@
   const access$ = selectBrowserAccess();
   const busy$ = selectBrowserAccessBusy();
   const failed$ = selectBrowserAccessFailed();
+  const signInCode$ = selectBrowserAccessSignInCode();
+  const signInCodeFailed$ = selectBrowserAccessSignInCodeFailed();
+
+  // Ticks once a second while a sign-in code is shown, for its countdown.
+  let now = $state(Date.now());
+  $effect(() => {
+    if (!$signInCode$) return;
+    now = Date.now();
+    const timer = setInterval(() => {
+      now = Date.now();
+    }, 1000);
+    return () => clearInterval(timer);
+  });
+  const signInCodeRemainingMs = $derived(
+    $signInCode$ ? Math.max(0, $signInCode$.expiresAt - now) : 0,
+  );
 
   // Bound to the Switch rather than derived: the Switch owns its checked state
   // once clicked, so a rejected change must be pushed back into it explicitly.
@@ -124,6 +144,34 @@
           description: m.settings_browserAccess_accessKey_description(),
           layout: 'full-width',
         },
+        ...(current.running
+          ? [
+              {
+                kind: 'action',
+                id: 'browser-access-sign-in-link',
+                label: m.settings_browserAccess_signInLink_label(),
+                description: m.settings_browserAccess_signInLink_description(),
+                actionLabel: m.settings_browserAccess_createSignInLink_label(),
+                variant: 'outline',
+                disabled: () => busy,
+                error: () =>
+                  $signInCodeFailed$ ? m.settings_browserAccess_signInCode_error() : undefined,
+                action: () => {
+                  appStore.dispatch(createBrowserAccessSignInCodeRequested());
+                },
+              } satisfies SettingEntry,
+            ]
+          : []),
+        ...($signInCode$ && current.running
+          ? [
+              {
+                kind: 'custom',
+                id: 'browser-access-sign-in-code',
+                label: m.settings_browserAccess_signInCode_label(),
+                layout: 'full-width',
+              } satisfies SettingEntry,
+            ]
+          : []),
         {
           kind: 'action',
           id: 'browser-access-reset-key',
@@ -169,6 +217,40 @@
   {/if}
 {/snippet}
 
+{#snippet signInCodeControl()}
+  {#if $signInCode$}
+    <div class="flex flex-col gap-2" data-testid="browser-access-sign-in-code">
+      <CopyInput
+        value={$signInCode$.code}
+        label={m.settings_browserAccess_signInCode_label()}
+        data-testid="browser-access-sign-in-code-value"
+      />
+      {#if $signInCode$.link}
+        <CopyInput
+          value={$signInCode$.link}
+          label={m.settings_browserAccess_signInLink_label()}
+          data-testid="browser-access-sign-in-link"
+        />
+      {:else}
+        <span class="type-body text-muted-foreground">
+          {m.settings_browserAccess_signInCodeNoLink_description()}
+        </span>
+      {/if}
+      <span
+        class="type-body text-muted-foreground"
+        role="status"
+        data-testid="browser-access-sign-in-code-expiry"
+      >
+        {signInCodeRemainingMs > 0
+          ? m.settings_browserAccess_signInCodeExpires_description({
+              time: formatCompactDuration(signInCodeRemainingMs),
+            })
+          : m.settings_browserAccess_signInCodeExpired_description()}
+      </span>
+    </div>
+  {/if}
+{/snippet}
+
 <SettingsForm
   {schema}
   embedded
@@ -176,5 +258,6 @@
   descriptions={{ 'browser-access-enabled': toggleDescription }}
   custom={defineSettingsCustomControls({
     'browser-access-key': keyControl,
+    'browser-access-sign-in-code': signInCodeControl,
   })}
 />

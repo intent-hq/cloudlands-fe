@@ -47,6 +47,7 @@ import type {
   PrRefreshResult,
 } from '../app-client';
 import { backendRequest } from './backend-transport';
+import { gitDiffTruncatedReason, requestAllDiffPages } from './git-diff-pages';
 import { runMutation } from './live-support';
 import { store } from '$store/renderer/store';
 import { getPrincipalActionContext } from '$store/renderer/slices/principal/principal-context';
@@ -192,7 +193,10 @@ function toDiffChunks(result: unknown): DiffChunk[] {
         lines: Array.isArray(hunk.lines) ? hunk.lines.map(toDiffLine) : [],
       };
     });
-    chunks.push({ file, chunks: mapped });
+    const truncatedReason = gitDiffTruncatedReason(entry);
+    chunks.push(
+      truncatedReason ? { file, chunks: mapped, truncatedReason } : { file, chunks: mapped },
+    );
   }
   return chunks;
 }
@@ -415,7 +419,9 @@ export class LiveGitClient implements GitClient {
     if (options?.commitHash) params.commitHash = options.commitHash;
     if (options?.gitRootId) params.gitRootId = options.gitRootId;
     try {
-      const result = await backendRequest<unknown>('git.diffs', params);
+      // Bounded read (§5.6): `pageBudget` entries are fetched by follow-up
+      // requests; `fileTooLarge` entries keep `truncatedReason` for callers.
+      const result = await requestAllDiffPages(backendRequest, 'git.diffs', params, 'path');
       return toDiffChunks(result);
     } catch {
       return [];

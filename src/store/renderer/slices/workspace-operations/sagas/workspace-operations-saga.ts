@@ -842,7 +842,7 @@ function* failProposal(proposalId: string, error: string, errorCode?: string): S
 function* applyCreateProposal(payload: WorkspaceProposalApplyPayload): SagaGenerator<void> {
   const { proposal, editedFields, origin } = payload;
   if (!isWorkspaceCreateProposal(proposal)) return;
-  const proposalId = getProposalId(proposal);
+  const proposalId = payload.lifecycleId ?? getProposalId(proposal);
   const lifecycle = yield* selectProposalLifecycleEntry.effect(proposalId);
   if (lifecycle?.status === 'applying' || lifecycle?.status === 'applied') return;
   yield* put(proposalApplyStarted({ proposalId, startedAt: Date.now() }));

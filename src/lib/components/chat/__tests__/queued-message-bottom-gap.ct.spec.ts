@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/experimental-ct-svelte';
-import { expect, test } from '../../../../test/ct-test';
+import { activateHoverAction, expect, test } from '../../../../test/ct-test';
 import QueuedMessageBottomGapHost from './QueuedMessageBottomGapHost.svelte';
 
 test.describe.configure({ mode: 'serial' });
@@ -52,12 +52,13 @@ test('preserves edit, selection, reorder, save, cancel, removal, and scroll owne
   await textarea.press('Escape');
   await expect(textarea).toHaveCount(0);
 
-  await rows.first().hover();
-  await rows
-    .first()
-    .getByTestId('queued-message-actions')
-    .getByRole('button', { name: 'Remove' })
-    .click();
+  // Closing the editor resizes the bottom-anchored list, which can move the row after a
+  // hover; activate the hover-only action without the pointer.
+  await activateHoverAction(
+    rows.first().getByTestId('queued-message-actions').getByRole('button', { name: 'Remove' }),
+    component,
+    { requireChange: false },
+  );
   await settle(component, page);
   await expect(rows).toHaveCount(2);
   await expect(component.getByTestId('queued-gap-bottom-state')).toContainText('locked:0');

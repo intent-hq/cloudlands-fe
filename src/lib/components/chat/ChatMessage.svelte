@@ -62,6 +62,7 @@
   import { shouldShowStoppedIndicator as resolveShouldShowStoppedIndicator } from './message-display-utils';
   import { splitTextByUrls } from './message-link-utils';
   import { decodeInlineMention, findInlineMentions } from './mention-match-utils';
+  import { readPickedMentionTokens } from '$lib/services/mentions/registry';
   import { noteUrl } from '$shared/constants/intent-links';
   import { USER_MESSAGE_SURFACE_CLASS, USER_MESSAGE_TEXT_CLASS } from './user-message-surface';
   import {
@@ -675,13 +676,15 @@
   function parseInlineMentions(
     text: string,
     refsByIdentifier?: Map<string, any>,
+    picked: readonly string[] | null = null,
   ): MessageSegment[] {
     const segments: MessageSegment[] = [];
 
     let lastIndex = 0;
 
-    // Matching (shared with StickyMessageHeader) lives in mention-match-utils
-    for (const match of findInlineMentions(text)) {
+    // Matching lives in mention-match-utils; `picked` limits file and folder
+    // chips to the ones the sender picked from the @ menu.
+    for (const match of findInlineMentions(text, picked)) {
       // Add text before the match
       if (match.index > lastIndex) {
         const textBefore = text.slice(lastIndex, match.index);
@@ -1235,7 +1238,11 @@
 
       // Parse inline mentions first to collect which identifiers are in the text
       // (we'll skip adding metadata pills for these since they're already shown inline)
-      const mentionSegments = parseInlineMentions(parsed.cleanText, refsByIdentifier);
+      const mentionSegments = parseInlineMentions(
+        parsed.cleanText,
+        refsByIdentifier,
+        readPickedMentionTokens(message?.metadata),
+      );
       // Evidence messages show their reference tokens as the composer's chips.
       const segments: MessageSegment[] =
         parsed.evidence || isDockEvidenceMessage(message?.metadata)

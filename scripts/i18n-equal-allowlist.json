@@ -276,6 +276,7 @@
   "settings_wsApi_port_label": ["de", "fr"],
   "shared_agentAttribution_agent_fallback": ["de", "fr"],
   "specialists_builtin_chiefOfStaff_name": "*",
+  "stats_card_legendCache_label": ["fr"],
   "stats_monthCard_bestMonthValue_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
   "terminal_adapter_errorLine_label": ["es"],
   "terminal_quakeOverlay_name_placeholder": ["de"],

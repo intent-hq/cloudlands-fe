@@ -21,7 +21,8 @@ vi.mock('$features/scripts/script-definition-transport', () => ({
   scriptDefinitionTransport: transport,
 }));
 vi.mock('./scripts-output-saga', () => ({ scriptsOutputSaga: function* () {} }));
-vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: vi.fn() } }));
+const notify = vi.hoisted(() => ({ error: vi.fn() }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify }));
 
 import {
   appendScriptOutput,
@@ -36,6 +37,7 @@ import {
   stopScriptRequested,
   restartScriptRequested,
   getScriptDefinitionRequested,
+  machineRunOperationRequested,
   scriptWorkflowReleased,
   scriptsReducer,
   setScriptsData,
@@ -45,6 +47,9 @@ import { scriptsOperationSaga } from './scripts-operation-saga';
 import { selectScriptWorkflowOutcome } from '../scripts-selectors';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { createAgentFromConfigRequested } from '../../workspace-agents/workspace-agents-slice';
+import { remoteMachineFailureMessage } from '$features/remote-machines/remote-machines-messages';
+import { m } from '$shared/paraglide/messages.js';
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 
 const WS = 'ws-1';
 const definition = {
@@ -91,6 +96,126 @@ afterEach(() => {
 
 beforeEach(() => {
   transport.detectCandidates.mockResolvedValue(emptyDetection);
+});
+
+describe('scriptsOperationSaga machine runs', () => {
+  it.each(['stop', 'restart'] as const)(
+    "%s addresses the remote agent's machine run, not the backend run",
+    async (operation) => {
+      transport[operation].mockResolvedValueOnce({ success: true });
+      const run = start();
+      run.dispatch(setScriptsData(WS, [definition]));
+      run.channel.put(
+        machineRunOperationRequested(WS, definition.id, 'agent-remote', operation, 'Failed'),
+      );
+
+      await vi.waitFor(() =>
+        expect(transport[operation]).toHaveBeenCalledWith(WS, definition.id, {
+          remoteAgentId: 'agent-remote',
+        }),
+      );
+      expect(notify.error).not.toHaveBeenCalled();
+      await stop(run.task);
+    },
+  );
+
+  it('reports a refused machine-run restart with the backend reason', async () => {
+    transport.restart.mockResolvedValueOnce({
+      success: false,
+      error: 'machine-update-required: update the machine',
+    });
+    const run = start();
+    run.dispatch(setScriptsData(WS, [definition]));
+    run.channel.put(
+      machineRunOperationRequested(WS, definition.id, 'agent-remote', 'restart', 'Failed'),
+    );
+
+    await vi.waitFor(() =>
+      expect(notify.error).toHaveBeenCalledWith('machine-update-required: update the machine'),
+    );
+    await stop(run.task);
+  });
+
+  it('shows a machine refusal of a restart in the app wording, naming the machine', async () => {
+    const failure = {
+      success: false as const,
+      code: 'machine-update-required' as const,
+      update: 'machine' as const,
+      message: 'machine-update-required: the machine links with nodeProtocol 7',
+    };
+    transport.restart.mockResolvedValueOnce({
+      success: false,
+      error: failure.message,
+      machineFailure: failure,
+    });
+    const run = start();
+    Object.assign(run.state, {
+      remoteMachines: { machines: { 'node-mac': { id: 'node-mac', name: 'Mac Studio' } } },
+      connections: {
+        ...(run.state as { connections?: object }).connections,
+        windowBackendId: LOCAL_CONNECTION_ID,
+        connections: createCollection('id', []),
+      },
+    });
+    run.dispatch(
+      setScriptsData(WS, [
+        {
+          ...definition,
+          machineRuns: [
+            {
+              remoteAgentId: 'agent-remote',
+              nodeId: 'node-mac',
+              runtime: { status: 'exited', exitCode: 1, restartCount: 0 },
+            },
+          ],
+        },
+      ]),
+    );
+    run.channel.put(
+      machineRunOperationRequested(WS, definition.id, 'agent-remote', 'restart', 'Failed'),
+    );
+
+    const expected = remoteMachineFailureMessage(failure, {
+      machine: 'Mac Studio',
+      backend: m.layout_daemonStatus_localConnection_label(),
+    });
+    await vi.waitFor(() => expect(notify.error).toHaveBeenCalledWith(expected));
+    expect(expected).toContain('Mac Studio');
+    expect(expected).not.toContain('nodeProtocol');
+    await stop(run.task);
+  });
+
+  it.each(['stop', 'restart'] as const)(
+    'shows a refused %s while the agent is being stopped for good in the app wording',
+    async (operation) => {
+      const wire =
+        'remote-script-agent-ending: agent agent-remote is being stopped for good; its scripts cannot start';
+      transport[operation].mockResolvedValueOnce({ success: false, error: wire });
+      const run = start();
+      run.dispatch(setScriptsData(WS, [definition]));
+      run.channel.put(
+        machineRunOperationRequested(WS, definition.id, 'agent-remote', operation, 'Failed'),
+      );
+
+      await vi.waitFor(() =>
+        expect(notify.error).toHaveBeenCalledWith(m.scripts_remote_agentEnding_error()),
+      );
+      expect(notify.error).not.toHaveBeenCalledWith(wire);
+      await stop(run.task);
+    },
+  );
+
+  it('falls back to the caller message when the transport throws', async () => {
+    transport.stop.mockRejectedValueOnce(new Error(''));
+    const run = start();
+    run.dispatch(setScriptsData(WS, [definition]));
+    run.channel.put(
+      machineRunOperationRequested(WS, definition.id, 'agent-remote', 'stop', 'Stop failed'),
+    );
+
+    await vi.waitFor(() => expect(notify.error).toHaveBeenCalledWith('Stop failed'));
+    await stop(run.task);
+  });
 });
 
 describe('scriptsOperationSaga definition ownership', () => {
@@ -346,7 +471,7 @@ describe('scriptsOperationSaga definition ownership', () => {
     await stop(run.task);
   });
 
-  it('prepares a fix agent from the full definition and live output tail', async () => {
+  it('prepares a fix agent from the retained daemon output when the live tail is short', async () => {
     store.init();
     transport.get.mockResolvedValueOnce({
       ...definition,
@@ -360,7 +485,9 @@ describe('scriptsOperationSaga definition ownership', () => {
         timestamp: '2026-10-15T00:00:00Z',
       }),
     );
-    run.channel.put(createScriptFixAgentRequested(WS, definition.id, 'retained failure'));
+    run.channel.put(
+      createScriptFixAgentRequested(WS, definition.id, '[2 lines]\nearlier\nretained failure\n'),
+    );
 
     await vi.waitFor(() =>
       expect(
@@ -380,8 +507,40 @@ describe('scriptsOperationSaga definition ownership', () => {
       { openAgent: true },
     ]);
     expect(create?.payload[1].initialMessage).toContain('failed with exit code 2');
-    expect(create?.payload[1].initialMessage).toContain('live failure');
-    expect(create?.payload[1].initialMessage).not.toContain('retained failure');
+    // Live output streams only while a viewer is open, so one live line is
+    // just the tail since it opened; the daemon snapshot is complete.
+    expect(create?.payload[1].initialMessage).toContain('earlier\nretained failure\n```');
+    expect(create?.payload[1].initialMessage).not.toContain('[2 lines]');
+    expect(create?.payload[1].initialMessage).not.toContain('live failure');
+    await stop(run.task);
+  });
+
+  it('prepares a fix agent from the live tail once it fills the 100-line window', async () => {
+    store.init();
+    transport.get.mockResolvedValueOnce({
+      ...definition,
+      runtime: { status: 'exited', exitCode: 1, restartCount: 0 },
+    });
+    const run = start();
+    const live = Array.from({ length: 120 }, (_, i) => `live ${i}`).join('\n') + '\n';
+    run.dispatch(
+      appendScriptOutput(WS, definition.id, { text: live, timestamp: '2026-10-15T00:00:00Z' }),
+    );
+    run.channel.put(createScriptFixAgentRequested(WS, definition.id, '[1 lines]\nstale\n'));
+
+    await vi.waitFor(() =>
+      expect(
+        run.actions.some((action) => action.type === createAgentFromConfigRequested.type),
+      ).toBe(true),
+    );
+    const create = run.actions.find(
+      (action) => action.type === createAgentFromConfigRequested.type,
+    ) as ReturnType<typeof createAgentFromConfigRequested> | undefined;
+    const message = create?.payload[1].initialMessage ?? '';
+    expect(message).toContain('live 20\n');
+    expect(message).toContain('live 119');
+    expect(message).not.toContain('live 19\n');
+    expect(message).not.toContain('stale');
     await stop(run.task);
   });
 

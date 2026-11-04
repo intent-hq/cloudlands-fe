@@ -1,8 +1,9 @@
 # Run Intent Web on a cloud machine
 
-> **Experimental.** `@intent-hq/web` is unreleased until its first npm publish
-> (see [Publishing @intent-hq/web](./intent-web-package.md)). Commands and
-> options may still change.
+> **New.** `@intent-hq/web` is published on npm with each Intent release
+> (`npx @intent-hq/web@alpha` for the newest alpha; see
+> [Publishing @intent-hq/web](./intent-web-package.md)). Commands and options
+> may still change.
 
 `@intent-hq/web` (command `intent-web`) is a small Node server that serves the
 Intent web app without the desktop app. Run it on a VPS or dev box, put an
@@ -93,21 +94,50 @@ new releases on restart.
 ## The access key
 
 The access key is a random 256-bit secret. Entering it once sets an
-HttpOnly session cookie (Secure behind HTTPS) that lasts 30 days.
+HttpOnly session cookie (Secure behind HTTPS). The session survives closing the
+browser and lasts 400 days from the last visit: each day you use Intent, the
+server renews it. Each server gets its own cookie name, so several servers on
+one host name (different ports, or the desktop app's Browser access) keep
+separate sessions.
 
-| Task            | Command                          |
-| --------------- | -------------------------------- |
-| Show the key    | `npx @intent-hq/web key`         |
-| Replace the key | `npx @intent-hq/web key --reset` |
+| Task                       | Command                          |
+| -------------------------- | -------------------------------- |
+| Show the key               | `npx @intent-hq/web key`         |
+| Replace the key            | `npx @intent-hq/web key --reset` |
+| Create a sign-in code/link | `npx @intent-hq/web link`        |
 
 `key --reset` prints the new key and signs out every browser at once: the
 running server notices the change, rejects old session cookies and closes
 their live connections. Saved machines are kept. Use it whenever the key may
 have leaked, and after removing someone's access.
 
-Pass the same `--data-dir` to `key` that the server uses, or the command reads
-a different key. Too many wrong keys in a short time lock sign-in for everyone
-for a while.
+Pass the same `--data-dir` to `key` and `link` that the server uses, or the
+command reads a different key. Too many wrong keys or codes in a short time
+lock sign-in for everyone for a while.
+
+### Sign-in codes and links
+
+To sign in a new browser (a phone, say) without typing the long key, run:
+
+```sh
+npx @intent-hq/web link [--url https://box.tailnet.ts.net] [--data-dir <dir>]
+```
+
+It prints a 6-character code such as `ABC-DEF` and, when it knows the address,
+a link like `https://box.tailnet.ts.net/__browser-access/login?code=ABCDEF`.
+Enter the code in the sign-in field (any case; spaces and hyphens are ignored),
+or open the link and select **Sign in**.
+
+- A code works **once** and expires after **10 minutes**. At most five unused
+  codes exist at a time; a sixth replaces the oldest.
+- Opening the link only fills in the code. It is spent when you select
+  **Sign in**, so chat apps and link previews that fetch the link cannot use it
+  up.
+- The link uses `--url`, else the address of the last browser that loaded
+  Intent while signed in. Without either, `link` prints only the code.
+- `link` works while the server runs in another process. Codes are shared
+  through `sign-in.json` in the data directory, which stores only a hash of each
+  code keyed by the access key. Resetting the key invalidates every code.
 
 ## The data directory
 
@@ -123,6 +153,7 @@ created with mode `0700` and holds:
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `config.json` (`0600`)      | The access key and the port. `--port` / `INTENT_WEB_PORT` is saved here, so later runs reuse it.                                                  |
 | `connections.json` (`0600`) | Saved machines: host, port, pinned certificate fingerprint, tunnel address and the machine **token in plain text** (marked `"encrypted": false`). |
+| `sign-in.json` (`0600`)     | Hashes of pending sign-in codes and the last signed-in page address, shared by the server and `intent-web link`.                                  |
 
 Treat the directory like an SSH key: anyone who can read it can use every
 saved machine. Back it up only to places you would put a private key. Deleting
@@ -130,17 +161,18 @@ it resets everything (a new key on the next start, no saved machines).
 
 ## Commands and options
 
-| Command / flag                    | Purpose                                                            |
-| --------------------------------- | ------------------------------------------------------------------ |
-| `intent-web` / `intent-web serve` | Start the server                                                   |
-| `--port <n>`                      | Loopback TCP port (default 47120)                                  |
-| `--socket <path>`                 | Listen on a `0600` unix socket instead of TCP (for Caddy or nginx) |
-| `--data-dir <dir>`                | Data directory (see above)                                         |
-| `--tailcat <path>`                | tailcat binary for tunnel routes                                   |
-| `--local-socket <path>`           | Use this local `intentd` socket                                    |
-| `--no-local`                      | Ignore any local `intentd`                                         |
-| `intent-web key [--reset]`        | Show or replace the access key                                     |
-| `intent-web --help`               | Print usage                                                        |
+| Command / flag                     | Purpose                                                            |
+| ---------------------------------- | ------------------------------------------------------------------ |
+| `intent-web` / `intent-web serve`  | Start the server                                                   |
+| `--port <n>`                       | Loopback TCP port (default 47120)                                  |
+| `--socket <path>`                  | Listen on a `0600` unix socket instead of TCP (for Caddy or nginx) |
+| `--data-dir <dir>`                 | Data directory (see above)                                         |
+| `--tailcat <path>`                 | tailcat binary for tunnel routes                                   |
+| `--local-socket <path>`            | Use this local `intentd` socket                                    |
+| `--no-local`                       | Ignore any local `intentd`                                         |
+| `intent-web key [--reset]`         | Show or replace the access key                                     |
+| `intent-web link [--url <origin>]` | Create a single-use sign-in code and link (10 minutes)             |
+| `intent-web --help`                | Print usage                                                        |
 
 Environment variables `INTENT_WEB_PORT`, `INTENT_WEB_DATA_DIR` and
 `TAILCAT_BIN` work like the flags; flags win. There is no option to listen on
@@ -239,10 +271,11 @@ direct host and port routes keep working.
 
 ## Troubleshooting
 
-| Symptom                                        | Fix                                                                                                                                     |
-| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `Web build missing; run pnpm build:web first.` | The package is incomplete; reinstall it (`npx --yes @intent-hq/web@latest`).                                                            |
-| `EADDRINUSE` on start                          | Another process uses the port; pass `--port <n>` (it is saved for later runs).                                                          |
-| Sign-in page keeps coming back                 | The key was reset; run `intent-web key` with the server's `--data-dir`.                                                                 |
-| A machine shows a certificate mismatch         | The daemon's certificate changed. Confirm the new fingerprint with `intentd pair` on that machine before accepting it.                  |
-| **This machine (local)** is missing            | `intentd` was not running when `intent-web` started, or it uses another data directory; restart `intent-web`, or pass `--local-socket`. |
+| Symptom                                             | Fix                                                                                                                                                             |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Web build missing; run pnpm build:web first.`      | The package is incomplete; reinstall it (`npx --yes @intent-hq/web@latest`).                                                                                    |
+| `EADDRINUSE` on start                               | Another process uses the port; pass `--port <n>` (it is saved for later runs).                                                                                  |
+| Sign-in page keeps coming back                      | The key was reset; run `intent-web key` with the server's `--data-dir`. In Docker, keep the data directory on a volume, or every new container makes a new key. |
+| "That sign-in code has expired or was already used" | Codes work once, for 10 minutes. Run `intent-web link` again.                                                                                                   |
+| A machine shows a certificate mismatch              | The daemon's certificate changed. Confirm the new fingerprint with `intentd pair` on that machine before accepting it.                                          |
+| **This machine (local)** is missing                 | `intentd` was not running when `intent-web` started, or it uses another data directory; restart `intent-web`, or pass `--local-socket`.                         |

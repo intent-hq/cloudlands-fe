@@ -923,3 +923,108 @@ describe('paged snapshots (§6.9 boundedReads)', () => {
     dispose();
   });
 });
+
+describe('cut snapshot rows (config.complete)', () => {
+  const channel = {
+    subscribeMethod: 'comment.subscribe',
+    unsubscribeMethod: 'comment.unsubscribe',
+    params: { workspaceId: 'w', noteId: 'n', limit: 100 },
+  };
+  const sorted = (rows: Row[]) => [...rows].sort((x, y) => x.id.localeCompare(y.id));
+
+  it('replaces a cut snapshot row with its completed row', async () => {
+    const handler = vi.fn();
+    const complete = vi.fn((raw: Record<string, unknown>) =>
+      raw.cut ? Promise.resolve({ id: raw.id, v: 9 }) : null,
+    );
+    const off = createDeltaSubscription<Row>({ channel, getId, normalize, handler, complete });
+    await flush();
+    push('subscription.push', {
+      subscriptionId: 'chan-1',
+      kind: 'snapshot',
+      seq: 0,
+      snapshot: [
+        { id: 'a', v: 1, cut: true },
+        { id: 'b', v: 1 },
+      ],
+    });
+    await flush();
+    await flush();
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(sorted(handler.mock.calls.at(-1)?.[0] as Row[])).toEqual([
+      { id: 'a', v: 9 },
+      { id: 'b', v: 1 },
+    ]);
+    off();
+  });
+
+  it('completes a cut row that arrives on a continuation page', async () => {
+    listPages.set('n1', { rows: [{ id: 'b', v: 1, cut: true }], nextToken: 'n2' });
+    listPages.set('n2', { rows: [{ id: 'c', v: 1 }], nextToken: null });
+    const handler = vi.fn();
+    const complete = vi.fn((raw: Record<string, unknown>) =>
+      raw.cut ? Promise.resolve({ id: raw.id, v: 9 }) : null,
+    );
+    const off = createDeltaSubscription<Row>({
+      channel: {
+        ...channel,
+        continuation: {
+          method: 'ws.list',
+          key: 'rows',
+          params: (scope: Record<string, unknown>) => ({ ...scope }),
+        },
+      },
+      getId,
+      normalize,
+      handler,
+      complete,
+    });
+    await flush();
+    push('subscription.push', {
+      subscriptionId: 'chan-1',
+      kind: 'snapshot',
+      seq: 0,
+      snapshot: [{ id: 'a', v: 1 }],
+      nextToken: 'n1',
+    });
+    for (let i = 0; i < 4; i++) await flush();
+    expect(complete.mock.calls.map(([raw]) => raw.id)).toEqual(['a', 'b', 'c']);
+    expect(sorted(handler.mock.calls.at(-1)?.[0] as Row[])).toEqual([
+      { id: 'a', v: 1 },
+      { id: 'b', v: 9 },
+      { id: 'c', v: 1 },
+    ]);
+    off();
+  });
+
+  it('keeps a delta over a completion that lands later', async () => {
+    let resolveWhole!: (row: Record<string, unknown>) => void;
+    const whole = new Promise<Record<string, unknown>>((r) => (resolveWhole = r));
+    const handler = vi.fn();
+    const off = createDeltaSubscription<Row>({
+      channel,
+      getId,
+      normalize,
+      handler,
+      complete: (raw) => (raw.cut ? whole : null),
+    });
+    await flush();
+    push('subscription.push', {
+      subscriptionId: 'chan-1',
+      kind: 'snapshot',
+      seq: 0,
+      snapshot: [{ id: 'a', v: 1, cut: true }],
+    });
+    push('subscription.push', {
+      subscriptionId: 'chan-1',
+      kind: 'delta',
+      seq: 1,
+      delta: { updated: [{ id: 'a', v: 2 }] },
+    });
+    resolveWhole({ id: 'a', v: 9 });
+    await flush();
+    await flush();
+    expect(handler.mock.calls.at(-1)?.[0]).toEqual([{ id: 'a', v: 2 }]);
+    off();
+  });
+});

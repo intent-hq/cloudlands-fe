@@ -154,6 +154,7 @@ describe('LiveCommentsClient mutations (fake transport)', () => {
       expect(mockedRequest).toHaveBeenCalledWith('comment.subscribe', {
         workspaceId: 'comment-add',
         noteId: 'spec',
+        limit: 500,
       });
     });
     expect(mockedResolve).not.toHaveBeenCalled();
@@ -172,6 +173,7 @@ describe('LiveCommentsClient mutations (fake transport)', () => {
       expect(mockedRequest).toHaveBeenCalledWith('comment.subscribe', {
         workspaceId: 'ws-1',
         noteId: 'note-1',
+        limit: 500,
       });
     });
     unsubscribe();
@@ -801,7 +803,9 @@ describe('LiveCommentsClient.subscribe typed comment channel (PROTOCOL §6.9)', 
     const unsubscribe = client.subscribe('note-1', () => {}, 'ws-A');
 
     await vi.waitFor(() => {
-      expect(requestsFor('comment.subscribe')).toEqual([{ workspaceId: 'ws-A', noteId: 'note-1' }]);
+      expect(requestsFor('comment.subscribe')).toEqual([
+        { workspaceId: 'ws-A', noteId: 'note-1', limit: 500 },
+      ]);
     });
     expect(mockedResolve).not.toHaveBeenCalled();
     unsubscribe();
@@ -813,7 +817,9 @@ describe('LiveCommentsClient.subscribe typed comment channel (PROTOCOL §6.9)', 
     const unsubscribe = client.subscribe('note-1', handler);
 
     await vi.waitFor(() => {
-      expect(requestsFor('comment.subscribe')).toEqual([{ workspaceId: 'ws-1', noteId: 'note-1' }]);
+      expect(requestsFor('comment.subscribe')).toEqual([
+        { workspaceId: 'ws-1', noteId: 'note-1', limit: 500 },
+      ]);
     });
     expect(mockedResolve).toHaveBeenCalledWith('note-1');
 
@@ -885,6 +891,7 @@ describe('LiveCommentsClient.subscribe typed comment channel (PROTOCOL §6.9)', 
       expect(requestsFor('comment.subscribe')[1]).toEqual({
         workspaceId: 'ws-A',
         noteId: 'note-1',
+        limit: 500,
       });
     } finally {
       unsubscribe();
@@ -932,6 +939,7 @@ describe('LiveCommentsClient.subscribe typed comment channel (PROTOCOL §6.9)', 
     expect(requestsFor('comment.subscribe')[1]).toEqual({
       workspaceId: 'ws-A',
       noteId: 'note-1',
+      limit: 500,
     });
 
     const beforeOldFrame = handler.mock.calls.length;

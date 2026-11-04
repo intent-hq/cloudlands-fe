@@ -47,7 +47,18 @@ import {
   daemonEventsSaga,
   FILE_EVENTS_REPLACE_GROUP,
   FILE_EVENTS_SUBSCRIBE_TYPES,
+  SCRIPT_OUTPUT_LEASE_GRACE_MS,
+  SCRIPT_OUTPUT_LEASE_RETRY_MS,
+  SCRIPT_OUTPUT_SUBSCRIBE_TYPES,
+  scriptOutputReplaceGroup,
 } from './daemon-events-saga';
+import {
+  scriptOutputReleased,
+  scriptOutputRequested,
+  scriptOutputStreamInterrupted,
+  scriptOutputStreamReady,
+  scriptsReducer,
+} from '$store/renderer/slices/scripts/scripts-slice';
 import { DAEMON_EVENTS_SUBSCRIBE_TYPES } from '$features/events/daemon-events-bridge.client';
 import { settingsChangesReceived } from '$store/renderer/slices/settings-events/settings-events-slice';
 import { installInterruptedAgentsService } from '$features/agent/interrupted-agents-service';
@@ -81,6 +92,7 @@ const scopedFileParams = (workspaceId: string) => ({
 function startSaga(currentTabId: string | null = null, dispatch = vi.fn()) {
   const input = stdChannel();
   let state = {
+    scripts: scriptsReducer(undefined, { type: '@@INIT' }),
     workspaceEvents: workspaceEventsReducer(undefined, { type: '@@INIT' }),
     tabState:
       currentTabId === null
@@ -90,6 +102,7 @@ function startSaga(currentTabId: string | null = null, dispatch = vi.fn()) {
   const listeners = new Set<() => void>();
   const dispatchAction = (action: Parameters<typeof tabStateReducer>[1]) => {
     state = {
+      scripts: scriptsReducer(state.scripts, action as Parameters<typeof scriptsReducer>[1]),
       tabState: tabStateReducer(state.tabState, action),
       workspaceEvents: workspaceEventsReducer(state.workspaceEvents, action),
     };
@@ -127,7 +140,7 @@ function startSaga(currentTabId: string | null = null, dispatch = vi.fn()) {
     },
     daemonEventsSaga,
   );
-  return { input, task, setActive };
+  return { input, task, setActive, dispatchAction };
 }
 
 describe('daemonEventsSaga', () => {
@@ -335,6 +348,9 @@ describe('daemonEventsSaga', () => {
 
   it('uses the complete reviewed firehose filter, without file:* (carried by the scoped lease)', () => {
     expect(DAEMON_EVENTS_SUBSCRIBE_TYPES).not.toContain('file:*');
+    expect(DAEMON_EVENTS_SUBSCRIBE_TYPES).not.toContain('script:*');
+    expect(DAEMON_EVENTS_SUBSCRIBE_TYPES).not.toContain('script:output');
+    expect(SCRIPT_OUTPUT_SUBSCRIBE_TYPES).toEqual(['script:output']);
     expect(FILE_EVENTS_SUBSCRIBE_TYPES).toEqual(['file:*']);
     expect(DAEMON_EVENTS_SUBSCRIBE_TYPES).toEqual([
       'desktop:*',
@@ -342,7 +358,8 @@ describe('daemonEventsSaga', () => {
       'hub:checkpoint',
       'note:*',
       'comment:*',
-      'script:*',
+      'script:changed',
+      'script:state',
       'terminal:exit',
       'settings:changed',
       'providers:profiles-changed',
@@ -814,5 +831,240 @@ describe('daemonEventsSaga', () => {
     );
     task.cancel();
     await task.toPromise();
+  });
+
+  describe('script output leases', () => {
+    const scriptOutputParams = (workspaceId: string) => ({
+      eventTypes: [...SCRIPT_OUTPUT_SUBSCRIBE_TYPES],
+      workspaceId,
+      replaceGroup: scriptOutputReplaceGroup(workspaceId),
+    });
+    const outputSubscribes = () =>
+      mocks.subscribe.mock.calls.filter(
+        ([params]) => (params as { eventTypes: string[] }).eventTypes[0] === 'script:output',
+      );
+    const tick = () => vi.advanceTimersByTimeAsync(0);
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('does not subscribe to script output until a viewer is mounted', async () => {
+      const { task, dispatchAction } = startSaga();
+      await tick();
+      expect(outputSubscribes()).toEqual([]);
+
+      mocks.subscribe.mockResolvedValueOnce({ subscriptionId: 'sub-out-ws1' });
+      dispatchAction(scriptOutputRequested('ws-1', 'script-a', 'viewer-1') as never);
+      await tick();
+
+      expect(outputSubscribes()).toEqual([[scriptOutputParams('ws-1')]]);
+      mocks.notificationHandler!({ method: 'events.event', params: { sequence: 1 } });
+      await tick();
+      expect(mocks.route).toHaveBeenLastCalledWith(
+        'events.event',
+        { sequence: 1 },
+        ['sub-1', 'sub-out-ws1'],
+        expect.anything(),
+      );
+      task.cancel();
+      await task.toPromise();
+      expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-out-ws1', 'ws-1');
+    });
+
+    it('keeps one lease per viewed workspace across multiple viewers', async () => {
+      const { task, dispatchAction } = startSaga();
+      await tick();
+      dispatchAction(scriptOutputRequested('ws-1', 'script-a', 'viewer-1') as never);
+      dispatchAction(scriptOutputRequested('ws-1', 'script-b', 'viewer-2') as never);
+      dispatchAction(scriptOutputRequested('ws-2', 'script-c', 'viewer-3') as never);
+      await tick();
+
+      expect(outputSubscribes()).toEqual([
+        [scriptOutputParams('ws-1')],
+        [scriptOutputParams('ws-2')],
+      ]);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('closes the lease and interrupts buffers once the last viewer has been gone for the grace period', async () => {
+      const dispatch = vi.fn();
+      const { task, dispatchAction } = startSaga(null, dispatch);
+      await tick();
+      mocks.subscribe.mockResolvedValueOnce({ subscriptionId: 'sub-out-ws1' });
+      dispatchAction(scriptOutputRequested('ws-1', 'script-a', 'viewer-1') as never);
+      await tick();
+      dispatchAction(scriptOutputReleased('ws-1', 'script-a', 'viewer-1') as never);
+      await tick();
+
+      await vi.advanceTimersByTimeAsync(SCRIPT_OUTPUT_LEASE_GRACE_MS - 1);
+      expect(mocks.unsubscribe).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-out-ws1', 'ws-1');
+      expect(dispatch).toHaveBeenCalledWith(scriptOutputStreamInterrupted('ws-1'));
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('keeps the lease when a viewer remounts within the grace period', async () => {
+      const { task, dispatchAction } = startSaga();
+      await tick();
+      dispatchAction(scriptOutputRequested('ws-1', 'script-a', 'viewer-1') as never);
+      await tick();
+      // Viewers release and re-request on every runtime transition.
+      dispatchAction(scriptOutputReleased('ws-1', 'script-a', 'viewer-1') as never);
+      dispatchAction(scriptOutputRequested('ws-1', 'script-a', 'viewer-2') as never);
+      await vi.advanceTimersByTimeAsync(SCRIPT_OUTPUT_LEASE_GRACE_MS * 2);
+
+      expect(outputSubscribes()).toHaveLength(1);
+      expect(mocks.unsubscribe).not.toHaveBeenCalled();
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('closes an idle lease on schedule even while other workspaces keep changing', async () => {
+      const { task, dispatchAction } = startSaga();
+      await tick();
+      mocks.subscribe
+        .mockResolvedValueOnce({ subscriptionId: 'sub-out-ws1' })
+        .mockResolvedValueOnce({ subscriptionId: 'sub-out-ws2' });
+      dispatchAction(scriptOutputRequested('ws-1', 'script-a', 'viewer-1') as never);
+      dispatchAction(scriptOutputRequested('ws-2', 'script-b', 'viewer-2') as never);
+      await tick();
+      dispatchAction(scriptOutputReleased('ws-1', 'script-a', 'viewer-1') as never);
+      await tick();
+      for (let i = 0; i < 4; i += 1) {
+        await vi.advanceTimersByTimeAsync(SCRIPT_OUTPUT_LEASE_GRACE_MS / 2);
+        dispatchAction(scriptOutputReleased('ws-2', 'script-b', 'viewer-2') as never);
+        dispatchAction(scriptOutputRequested('ws-2', 'script-b', 'viewer-2') as never);
+      }
+      await tick();
+
+      expect(mocks.unsubscribe.mock.calls).toEqual([['sub-out-ws1', 'ws-1']]);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('replays viewed workspace leases and interrupts their buffers on reconnect', async () => {
+      const dispatch = vi.fn();
+      const { task, dispatchAction } = startSaga(null, dispatch);
+      await tick();
+      mocks.subscribe.mockResolvedValueOnce({ subscriptionId: 'sub-out-old' });
+      dispatchAction(scriptOutputRequested('ws-1', 'script-a', 'viewer-1') as never);
+      await tick();
+
+      mocks.subscribe.mockImplementation(async (params: { eventTypes: string[] }) => ({
+        subscriptionId: params.eventTypes[0] === 'script:output' ? 'sub-out-new' : 'sub-fire-new',
+      }));
+      mocks.reconnectHandler!();
+      await tick();
+      await tick();
+
+      // The daemon dropped it with the connection; a restarted daemon reuses
+      // ids, so unsubscribing the stale one could retire a new subscription.
+      expect(mocks.unsubscribe).not.toHaveBeenCalledWith('sub-out-old', expect.anything());
+      expect(dispatch).toHaveBeenCalledWith(scriptOutputStreamInterrupted('ws-1'));
+      expect(outputSubscribes()).toEqual([
+        [scriptOutputParams('ws-1')],
+        [scriptOutputParams('ws-1')],
+      ]);
+      task.cancel();
+      await task.toPromise();
+      expect(mocks.unsubscribe).toHaveBeenLastCalledWith('sub-out-new', 'ws-1');
+    });
+
+    it.each([
+      ['rejects', () => mocks.subscribe.mockRejectedValueOnce(new Error('timeout'))],
+      ['returns no id', () => mocks.subscribe.mockResolvedValueOnce({})],
+    ])('retries a viewed workspace whose output subscribe %s', async (_name, fail) => {
+      const { task, dispatchAction } = startSaga();
+      await tick();
+      fail();
+      mocks.subscribe.mockResolvedValueOnce({ subscriptionId: 'sub-out-retry' });
+      dispatchAction(scriptOutputRequested('ws-1', 'script-a', 'viewer-1') as never);
+      await tick();
+      expect(outputSubscribes()).toHaveLength(1);
+
+      await vi.advanceTimersByTimeAsync(SCRIPT_OUTPUT_LEASE_RETRY_MS);
+
+      expect(outputSubscribes()).toEqual([
+        [scriptOutputParams('ws-1')],
+        [scriptOutputParams('ws-1')],
+      ]);
+      mocks.notificationHandler!({ method: 'events.event', params: { sequence: 1 } });
+      await tick();
+      expect(mocks.route).toHaveBeenLastCalledWith(
+        'events.event',
+        { sequence: 1 },
+        ['sub-1', 'sub-out-retry'],
+        expect.anything(),
+      );
+      await vi.advanceTimersByTimeAsync(SCRIPT_OUTPUT_LEASE_RETRY_MS * 2);
+      expect(outputSubscribes()).toHaveLength(2);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('unsubscribes a lease whose subscribe resolves after cancellation', async () => {
+      let resolveSubscribe!: (value: { subscriptionId: string }) => void;
+      const { task, dispatchAction } = startSaga();
+      await tick();
+      mocks.subscribe.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveSubscribe = resolve;
+        }),
+      );
+      dispatchAction(scriptOutputRequested('ws-1', 'script-a', 'viewer-1') as never);
+      await tick();
+
+      task.cancel();
+      await tick();
+      resolveSubscribe({ subscriptionId: 'sub-out-late' });
+      await tick();
+
+      expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-out-late', 'ws-1');
+    });
+
+    it('marks each workspace ready only once its own lease is routable', async () => {
+      const dispatch = vi.fn();
+      const pending: Array<(value: { subscriptionId: string }) => void> = [];
+      const { task, dispatchAction } = startSaga(null, dispatch);
+      await tick();
+      mocks.subscribe.mockImplementation(() => new Promise((resolve) => pending.push(resolve)));
+      dispatchAction(scriptOutputRequested('ws-A', 'script-a', 'viewer-1') as never);
+      await tick();
+      dispatchAction(scriptOutputRequested('ws-B', 'script-b', 'viewer-2') as never);
+      await tick();
+      expect(dispatch).not.toHaveBeenCalledWith(scriptOutputStreamReady('ws-A'));
+      expect(dispatch).not.toHaveBeenCalledWith(scriptOutputStreamReady('ws-B'));
+
+      pending.shift()!({ subscriptionId: 'sub-out-A' });
+      await tick();
+      expect(dispatch).toHaveBeenCalledWith(scriptOutputStreamReady('ws-A'));
+      expect(dispatch).not.toHaveBeenCalledWith(scriptOutputStreamReady('ws-B'));
+
+      pending.shift()!({ subscriptionId: 'sub-out-B' });
+      await tick();
+      expect(dispatch).toHaveBeenCalledWith(scriptOutputStreamReady('ws-B'));
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('does not mark a workspace ready when its subscribe fails', async () => {
+      const dispatch = vi.fn();
+      const { task, dispatchAction } = startSaga(null, dispatch);
+      await tick();
+      mocks.subscribe.mockResolvedValueOnce({});
+      dispatchAction(scriptOutputRequested('ws-1', 'script-a', 'viewer-1') as never);
+      await tick();
+      expect(dispatch).not.toHaveBeenCalledWith(scriptOutputStreamReady('ws-1'));
+      task.cancel();
+      await task.toPromise();
+    });
   });
 });

@@ -152,7 +152,12 @@ describe('browser-mock DEV gate', () => {
     });
     expect(invokeSpy).toHaveBeenNthCalledWith(5, 'backend:request', {
       method: 'comment.list',
-      params: { workspaceId: 'mock-ws-1', noteId: 'mock-note', includeComments: true },
+      params: {
+        workspaceId: 'mock-ws-1',
+        noteId: 'mock-note',
+        includeComments: true,
+        limit: 500,
+      },
     });
     await expect(invokeSpy.mock.results[4].value).resolves.toEqual({
       ok: true,

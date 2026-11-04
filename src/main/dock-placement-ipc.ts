@@ -15,6 +15,7 @@ import {
   setDockPointerRegions,
   switchDockBackend,
 } from './dock-window';
+import { showDockContextMenu } from './dock-context-menu';
 
 /** Shared production registration used by the system feature and native E2E harness. */
 export function registerDockPlacementHandlers(): void {
@@ -82,6 +83,21 @@ export function registerDockPlacementHandlers(): void {
         return updateDockPlacement(window, command);
       },
       WINDOW_CHANNELS.UPDATE_DOCK_PLACEMENT,
+    ),
+  );
+  ipcMain.handle(
+    WINDOW_CHANNELS.SHOW_DOCK_MENU,
+    createSafeValidatedHandler(
+      EmptySchema,
+      async (event) => {
+        const window = BrowserWindow.fromWebContents(event.sender);
+        // Only the dock's own top-level document can open its menu.
+        if (!window || window !== getDockWindow() || event.senderFrame !== event.sender.mainFrame)
+          return { shown: false };
+        showDockContextMenu(window);
+        return { shown: true };
+      },
+      WINDOW_CHANNELS.SHOW_DOCK_MENU,
     ),
   );
 }

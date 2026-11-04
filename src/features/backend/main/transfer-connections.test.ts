@@ -20,6 +20,7 @@ import {
   isTransferMethod,
   MAX_TRANSFER_CONNECTIONS,
   requestOverTransferConnection,
+  requestRouted,
   SESSION_LEASE_IDLE_TTL_MS,
   shouldUseTransferConnection,
   TRANSFER_REQUEST_TIMEOUT_MS,
@@ -99,7 +100,7 @@ afterEach(() => {
 });
 
 describe('isTransferMethod', () => {
-  it('matches exactly the attachment placement + chunked upload/download calls', () => {
+  it('matches exactly the attachment placement, chunked upload/download and export calls', () => {
     for (const method of [
       'file.placeAttachment',
       'file.attachmentUpload.begin',
@@ -107,14 +108,22 @@ describe('isTransferMethod', () => {
       'file.attachmentUpload.commit',
       'file.attachmentUpload.abort',
       'file.readChunk',
+      'git.showFileChunk',
+      'note.readAssetChunk',
+      'workspace.export.read',
     ]) {
       expect(isTransferMethod(method)).toBe(true);
     }
+    // The whole-object reads are capped under the read budget and stay on
+    // the main channel (PROTOCOL §5.9 "Bounded object reads").
     for (const method of [
       'host.status',
       'file.read',
+      'git.showFile',
+      'note.readAsset',
       'events.subscribe',
       'file.getAttachmentInfo',
+      'workspace.export.start',
     ]) {
       expect(isTransferMethod(method)).toBe(false);
     }
@@ -129,6 +138,41 @@ describe('shouldUseTransferConnection', () => {
     expect(shouldUseTransferConnection('file.placeAttachment', udsConfig)).toBe(false);
     expect(shouldUseTransferConnection('file.attachmentUpload.chunk', udsConfig)).toBe(false);
     expect(shouldUseTransferConnection('host.status', wssConfig)).toBe(false);
+  });
+});
+
+describe('requestRouted', () => {
+  it('sends a transfer method on its own connection and everything else on the main client', async () => {
+    const { sockets } = installFakeFactory();
+    const main = {
+      getConfig: () => wssConfig,
+      request: vi.fn(async (method: string) => ({ via: 'main', method })),
+    };
+    const routed = requestRouted(main as never, 'workspace.export.read', { exportId: 'e', seq: 0 });
+    await flush();
+    expect(sockets).toHaveLength(1);
+    expect(JSON.parse(sockets[0].writes[0]).method).toBe('workspace.export.read');
+    respondLast(sockets[0], { data: 'AA==' });
+    await expect(routed).resolves.toEqual({ data: 'AA==' });
+    await flush();
+    expect(sockets[0].destroyed).toBe(true);
+    expect(main.request).not.toHaveBeenCalled();
+
+    await expect(requestRouted(main as never, 'workspace.export.start', {})).resolves.toEqual({
+      via: 'main',
+      method: 'workspace.export.start',
+    });
+    expect(sockets).toHaveLength(1);
+  });
+
+  it('keeps every request on the local socket', async () => {
+    const { sockets } = installFakeFactory();
+    const main = {
+      getConfig: (): BackendConnectionConfig => ({ transport: 'uds', socketPath: '/tmp/i.sock' }),
+      request: vi.fn(async () => 'local'),
+    };
+    await expect(requestRouted(main as never, 'note.readAssetChunk', {})).resolves.toBe('local');
+    expect(sockets).toHaveLength(0);
   });
 });
 

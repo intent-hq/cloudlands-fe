@@ -29,3 +29,13 @@ export const selectHasShownGitCredentialsModalForWorkspace = store.createSelecto
     return !!selectGitCredentialsModal.select(state).shownForWorkspaceIds[workspaceId];
   },
 );
+
+/**
+ * Show the experimental notice: this page is the web build served to a
+ * browser by a Browser access host (intent-web or the desktop's Browser
+ * access; never Electron), and it has not been dismissed in this page load.
+ */
+export const selectShowsWebExperimentalNotice = store.createSelector(
+  (state) =>
+    state.connections.browserHost != null && !state.globalModals.webExperimentalNoticeDismissed,
+);

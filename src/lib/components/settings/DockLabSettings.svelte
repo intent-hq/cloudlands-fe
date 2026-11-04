@@ -2,6 +2,8 @@
   import { SettingsForm, defineSettings } from '$lib/components/patterns/settings';
   import { m } from '$shared/paraglide/messages.js';
   import { dockLabEnabled, setDockLabEnabled } from '$lib/dock-lab';
+  import { highlightTarget } from '$lib/components/patterns/settings/highlight-target';
+  import { isElectronPlatform } from '$lib/utils/platform-capabilities';
   import DockLabIllustration from './DockLabIllustration.svelte';
 
   const schema = $derived(
@@ -9,7 +11,7 @@
       sections: [
         {
           id: 'dock-lab',
-          title: m.settings_section_labs(),
+          title: m.settings_dockLab_label(),
           entries: [
             {
               kind: 'switch',
@@ -27,12 +29,20 @@
   );
 </script>
 
-<div>
-  <h2 class="type-title mb-3 text-foreground">{m.settings_section_labs()}</h2>
-  <div class="flex items-center gap-4 rounded-xl bg-card px-6 py-1">
-    <DockLabIllustration />
-    <div class="min-w-0 flex-1">
-      <SettingsForm {schema} embedded compact={false} />
+<!-- A row of the Appearance card (Settings › Display); the dock is desktop-only. -->
+{#if isElectronPlatform()}
+  <section
+    id="notch-dock"
+    data-highlight-id="notch-dock"
+    use:highlightTarget
+    data-slot="settings-section-body"
+    class="px-6 py-4"
+  >
+    <div class="flex items-center gap-4">
+      <DockLabIllustration />
+      <div class="min-w-0 flex-1">
+        <SettingsForm {schema} embedded compact={false} />
+      </div>
     </div>
-  </div>
-</div>
+  </section>
+{/if}

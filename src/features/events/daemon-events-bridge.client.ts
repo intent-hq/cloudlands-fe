@@ -236,6 +236,7 @@ import {
   chatModelUnavailableCleared,
   chatQueueProcessingReceived,
   chatSendFailed,
+  chatTurnEnded,
   chatSendStarted,
   streamActivityReceived,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
@@ -1141,6 +1142,10 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
   // terminal `agent:stream:end` with `stopReason: "interrupted"` (+ the turn's
   // `messageId`); absence means a normal turn end.
   const stopReason = typeof data?.stopReason === 'string' ? data.stopReason : undefined;
+  // Record the turn's interruption before any busy flag clears, and whether
+  // or not a row was persisted: the queue-drain prediction must not treat a
+  // stopped turn (which leaves the queue untouched) as a drain.
+  appStore.dispatch(chatTurnEnded(agentId, stopReason === 'interrupted'));
   // Optional abnormal finish reason (PROTOCOL §7.3): the turn-worker terminal
   // emit carries `finishReason` when the turn completed with a non-`end_turn`
   // ACP stop reason (`refusal` | `max_tokens` | `max_turn_requests`, or
@@ -1572,6 +1577,19 @@ function projectAgentMetadata(
       value: resolutions as Record<string, 'applied' | 'dismissed'>,
     };
     consumed.add('proposalResolutions');
+  }
+  const createdWorkspaces = data.proposalCreatedWorkspaces;
+  if (
+    createdWorkspaces &&
+    typeof createdWorkspaces === 'object' &&
+    !Array.isArray(createdWorkspaces) &&
+    Object.values(createdWorkspaces).every((value) => typeof value === 'string')
+  ) {
+    metadataPatch.proposalCreatedWorkspaces = {
+      op: 'set',
+      value: createdWorkspaces as Record<string, string>,
+    };
+    consumed.add('proposalCreatedWorkspaces');
   }
   if (data.completionReportCleared === true) {
     metadataPatch.completionReport = { op: 'clear' };
@@ -4862,7 +4880,11 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // workspace (`workspaceId` + `replaceGroup`, §6.1 — monorepo#1853).
   'note:*',
   'comment:*',
-  'script:*',
+  // `script:output` is deliberately ABSENT: one event per PTY read from every
+  // running script would reach every window. The daemon-events-saga carries it
+  // on per-workspace leases opened only while an output viewer is mounted.
+  'script:changed',
+  'script:state',
   // Narrowed to `terminal:exit` only (not the full `terminal:*` firehose):
   // `terminal:data` fires on every byte of terminal output and would flood
   // the 100-entry activity-timeline buffer (workspace-events-slice.ts),
@@ -5093,6 +5115,18 @@ async function reconcileAgentFailureRegistry(): Promise<void> {
 const seenNoteTaskEventIds = new Set<string>();
 const seenScriptEventIds = new Set<string>();
 const seenChangesEventIds = new Set<string>();
+
+/**
+ * Forget the streaming UTF-8 decoders of one workspace's scripts after its
+ * live `script:output` stream stopped, so a later chunk never joins a
+ * partial character from before the gap.
+ */
+export function resetScriptOutputDecoders(workspaceId: string): void {
+  const prefix = `${workspaceId}:`;
+  for (const key of [...scriptOutputDecoders.keys()]) {
+    if (key.startsWith(prefix)) scriptOutputDecoders.delete(key);
+  }
+}
 
 export function disposeDaemonEventsRoutingState(): void {
   seenNoteTaskEventIds.clear();
