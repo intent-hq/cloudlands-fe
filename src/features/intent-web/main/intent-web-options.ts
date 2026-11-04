@@ -1,9 +1,13 @@
 import os from 'node:os';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
+import {
+  LINK_DEFAULT_TTL_MINUTES,
+  LINK_MAX_TTL_MINUTES,
+} from '../../browser-access/main/device-login';
 
 export interface IntentWebOptions {
-  command: 'serve' | 'key';
+  command: 'serve' | 'key' | 'link';
   port: number;
   portExplicit: boolean;
   dataDir: string;
@@ -13,6 +17,32 @@ export interface IntentWebOptions {
   local: boolean;
   reset: boolean;
   help: boolean;
+  /** `link`: the origin the browser opens (no trailing slash), when given. */
+  publicUrl?: string;
+  /** `link`: lifetime in minutes. */
+  ttlMinutes: number;
+}
+
+/** An http(s) origin such as `https://box.tailnet.ts.net:8443`, without a trailing slash. */
+function parseOrigin(text: string): string {
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    throw new Error('--url must be an http(s) address such as https://box.example.ts.net');
+  }
+  if (
+    (url.protocol !== 'https:' && url.protocol !== 'http:') ||
+    url.username ||
+    url.password ||
+    url.pathname !== '/' ||
+    url.search ||
+    url.hash
+  )
+    throw new Error(
+      '--url must be an http(s) address with no path, such as https://box.example.ts.net',
+    );
+  return url.origin;
 }
 
 export function parseIntentWebOptions(
@@ -35,13 +65,17 @@ export function parseIntentWebOptions(
       'local-socket': { type: 'string' },
       'no-local': { type: 'boolean' },
       reset: { type: 'boolean' },
+      url: { type: 'string' },
+      ttl: { type: 'string' },
       help: { type: 'boolean', short: 'h' },
     },
   });
   const command = positionals[0] ?? 'serve';
-  if (positionals.length > 1 || (command !== 'serve' && command !== 'key'))
-    throw new Error('Expected serve or key');
+  if (positionals.length > 1 || (command !== 'serve' && command !== 'key' && command !== 'link'))
+    throw new Error('Expected serve, key or link');
   if (values.reset && command !== 'key') throw new Error('--reset requires key');
+  if ((values.url !== undefined || values.ttl !== undefined) && command !== 'link')
+    throw new Error('--url and --ttl require link');
   if (values.socket && context.platform === 'win32')
     throw new Error('Windows supports loopback TCP only');
   if (values.socket && values.port !== undefined) throw new Error('Choose --socket or --port');
@@ -54,6 +88,13 @@ export function parseIntentWebOptions(
   const port = Number(portText);
   if (!/^\d+$/.test(portText) || !Number.isInteger(port) || port < 1 || port > 65535)
     throw new Error('Port must be between 1 and 65535');
+  const ttlText = values.ttl ?? String(LINK_DEFAULT_TTL_MINUTES);
+  const ttlMinutes = Number(ttlText);
+  if (!/^\d+$/.test(ttlText) || ttlMinutes < 1 || ttlMinutes > LINK_MAX_TTL_MINUTES)
+    throw new Error(`--ttl must be 1 to ${LINK_MAX_TTL_MINUTES} minutes`);
+  const urlText =
+    values.url ?? (command === 'link' ? context.env.INTENT_WEB_PUBLIC_URL : undefined);
+  const publicUrl = urlText?.trim() ? parseOrigin(urlText.trim()) : undefined;
   const paths = context.platform === 'win32' ? path.win32 : path.posix;
   const stateHome =
     context.platform === 'win32'
@@ -71,5 +112,7 @@ export function parseIntentWebOptions(
     local: !values['no-local'],
     reset: !!values.reset,
     help: !!values.help,
+    publicUrl,
+    ttlMinutes,
   };
 }

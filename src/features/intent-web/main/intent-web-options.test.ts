@@ -86,4 +86,37 @@ describe('standalone web CLI options', () => {
       }),
     ).toThrow(/Windows/);
   });
+
+  it('parses link with its lifetime and public address', () => {
+    expect(parseIntentWebOptions(['link'], environment)).toMatchObject({
+      command: 'link',
+      ttlMinutes: 5,
+      publicUrl: undefined,
+    });
+    expect(
+      parseIntentWebOptions(
+        ['link', '--ttl', '15', '--url', 'https://box.tailnet.ts.net:8443/'],
+        environment,
+      ),
+    ).toMatchObject({ ttlMinutes: 15, publicUrl: 'https://box.tailnet.ts.net:8443' });
+    expect(
+      parseIntentWebOptions(['link'], {
+        ...environment,
+        env: { INTENT_WEB_PUBLIC_URL: 'https://box.example' },
+      }),
+    ).toMatchObject({ publicUrl: 'https://box.example' });
+  });
+
+  it('rejects bad link options', () => {
+    for (const ttl of ['0', '16', '2.5', 'x'])
+      expect(() => parseIntentWebOptions(['link', '--ttl', ttl], environment)).toThrow('--ttl');
+    for (const url of ['ftp://box', 'https://box/path', 'https://u:p@box', 'not a url'])
+      expect(() => parseIntentWebOptions(['link', '--url', url], environment)).toThrow('--url');
+    expect(() => parseIntentWebOptions(['serve', '--ttl', '5'], environment)).toThrow(
+      'require link',
+    );
+    expect(() => parseIntentWebOptions(['key', '--url', 'https://box'], environment)).toThrow(
+      'require link',
+    );
+  });
 });

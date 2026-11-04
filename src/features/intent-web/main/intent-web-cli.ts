@@ -1,10 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import QRCode from 'qrcode';
 import { defaultSocketPath } from '../../backend/main/backend-connection';
 import { parseIntentWebOptions } from './intent-web-options';
 import { loadWebConfig, resetWebKey } from './intent-web-config';
 import { findWebTailcat, checkTailcatVersion } from './intent-web-tailcat';
 import { createIntentWebServer } from './intent-web-server';
+import { mintLinkToken } from '../../browser-access/main/device-login';
+import { LINK_PATH } from '../../browser-access/main/browser-access-server';
 
 export async function runIntentWeb(
   args: string[],
@@ -18,13 +21,28 @@ export async function runIntentWeb(
   const options = parseIntentWebOptions(args);
   if (options.help) {
     log(
-      'intent-web [serve | key [--reset]] [--port <n> | --socket <path>] [--data-dir <dir>] [--tailcat <path>] [--local-socket <path> | --no-local]',
+      'intent-web [serve | key [--reset] | link [--url <origin>] [--ttl <minutes>]] [--port <n> | --socket <path>] [--data-dir <dir>] [--tailcat <path>] [--local-socket <path> | --no-local]',
     );
     return;
   }
   const config = loadWebConfig(options.dataDir, options.portExplicit ? options.port : undefined);
   if (options.command === 'key') {
     log(options.reset ? resetWebKey(options.dataDir) : config.accessKey);
+    return;
+  }
+  if (options.command === 'link') {
+    const { token, expiresAt } = mintLinkToken(config.accessKey, options.ttlMinutes);
+    const origin = options.publicUrl ?? `http://127.0.0.1:${config.port}`;
+    const url = `${origin}${LINK_PATH}?t=${token}`;
+    log(
+      `One-time sign-in link (signs in one browser, expires at ${new Date(expiresAt).toLocaleTimeString()}):`,
+    );
+    log(url);
+    log(await QRCode.toString(url, { type: 'terminal', small: true }));
+    if (!options.publicUrl)
+      log(
+        'This link uses the loopback address. Pass --url <your https address> (or set INTENT_WEB_PUBLIC_URL) to open it from another device.',
+      );
     return;
   }
   const webRoot = dependencies.webRoot ?? path.resolve('dist/web');
