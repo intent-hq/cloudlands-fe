@@ -711,6 +711,12 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   (`intent/no-hover-then-click-in-ct`) caps each spec's sites at its shrink-only baseline;
   keep a pointer click, disabled on the line with the reason, only to cover the pointer
   path on a row that cannot move.
+- Pause the fake clock: `page.clock.install()` alone keeps time moving with real time, so
+  a slow step lets frame loops run past the frame a test samples (cloudlands-fe#4148:
+  56 of 80 loaded runs failed). Use `installPausedClock(page, beforePause?)` or
+  `pauseClock(page)` (`src/test/ct-test.ts`), then step with `page.clock.runFor`. Lint
+  (`intent/no-unpaused-clock-in-ct`) rejects an install whose test never pauses; keep
+  one, disabled on the line with the reason, only to skip a delay and check settled state.
 - **Every CT spec imports `test` / `expect` from `src/test/ct-test.ts`** — lint-enforced
   (`no-restricted-imports`; only type imports may come from
   `@playwright/experimental-ct-svelte`). The module gives every test a fresh browser
