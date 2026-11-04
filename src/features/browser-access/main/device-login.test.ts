@@ -104,7 +104,7 @@ describe('one-time link tokens', () => {
     const now = 1_800_000_000_000;
     const verifier = new LinkTokenVerifier(() => now);
     const { token, expiresAt } = mintLinkToken(KEY, 5, now);
-    expect(token).toMatch(/^v1\.[0-9]+\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}$/);
+    expect(token).toMatch(/^v1\.[0-9]+\.[0-9]+\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}$/);
     expect(expiresAt).toBe(now + 5 * 60_000);
     expect(verifier.redeem(token, KEY)).toBe(true);
     expect(verifier.redeem(token, KEY)).toBe(false);
@@ -118,14 +118,42 @@ describe('one-time link tokens', () => {
   it('rejects tampered tokens', () => {
     const verifier = new LinkTokenVerifier();
     const { token } = mintLinkToken(KEY, 1);
-    const [version, expiry, nonce, mac] = token.split('.');
-    const later = `${version}.${Number(expiry) + 600}.${nonce}.${mac}`;
-    const flipped = `${version}.${expiry}.${nonce}.${mac.slice(0, -1)}${mac.endsWith('A') ? 'B' : 'A'}`;
+    const [version, issued, expiry, nonce, mac] = token.split('.');
+    const later = [version, issued, Number(expiry) + 600_000, nonce, mac].join('.');
+    const earlier = [version, Number(issued) - 1, expiry, nonce, mac].join('.');
+    const flipped = [
+      version,
+      issued,
+      expiry,
+      nonce,
+      `${mac.slice(0, -1)}${mac.endsWith('A') ? 'B' : 'A'}`,
+    ].join('.');
     expect(verifier.redeem(later, KEY)).toBe(false);
+    expect(verifier.redeem(earlier, KEY)).toBe(false);
     expect(verifier.redeem(flipped, KEY)).toBe(false);
     expect(verifier.redeem('garbage', KEY)).toBe(false);
     expect(verifier.redeem(undefined, KEY)).toBe(false);
     expect(verifier.redeem(token, KEY)).toBe(true);
+  });
+
+  it('rejects a used token after a restart (a new verifier with the same key)', () => {
+    const time = clock(1_800_000_000_000);
+    const before = new LinkTokenVerifier(time.now);
+    const { token } = mintLinkToken(KEY, 5, time.now());
+    time.advance(1000);
+    expect(before.redeem(token, KEY)).toBe(true);
+    time.advance(1000);
+    const after = new LinkTokenVerifier(time.now);
+    expect(after.redeem(token, KEY)).toBe(false);
+  });
+
+  it('rejects unused tokens issued before the verifier started', () => {
+    const time = clock(1_800_000_000_000);
+    const { token } = mintLinkToken(KEY, 5, time.now());
+    time.advance(1);
+    expect(new LinkTokenVerifier(time.now).redeem(token, KEY)).toBe(false);
+    const fresh = mintLinkToken(KEY, 5, time.now()).token;
+    expect(new LinkTokenVerifier(time.now).redeem(fresh, KEY)).toBe(true);
   });
 
   it('rejects expired tokens', () => {
@@ -136,7 +164,7 @@ describe('one-time link tokens', () => {
     expect(verifier.redeem(token, KEY)).toBe(false);
   });
 
-  it('rejects tokens that live longer than the maximum', () => {
+  it('rejects tokens issued in the future', () => {
     const time = clock(Date.now());
     const verifier = new LinkTokenVerifier(time.now);
     const { token } = mintLinkToken(KEY, 15, time.now() + 10 * 60_000);

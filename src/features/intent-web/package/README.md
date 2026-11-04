@@ -26,7 +26,8 @@ Requires Node.js `^22.22.2 || ^24.15.0 || >=26`.
 To sign in another browser without typing the key, scan the QR code on its
 sign-in page with your phone, check that the match codes are the same, and enter
 the key on your phone. `intent-web link --url <https address>` prints a
-one-time sign-in link and QR code instead.
+one-time sign-in link and QR code instead; start the server first, because a
+restart cancels every link.
 
 The [full guide](https://github.com/intent-hq/cloudlands-fe/blob/main/docs/intent-web.md)
 covers `tailscale serve`, running it as a service, local daemon mode and

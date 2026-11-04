@@ -141,8 +141,9 @@ This prints a link and a QR code in the terminal. The link signs in one browser
 once and expires after 5 minutes (`--ttl <minutes>`, 1 to 15). Pass the
 address of your HTTPS front-end with `--url` (or set `INTENT_WEB_PUBLIC_URL`);
 without it, the link uses `http://127.0.0.1:<port>`, which only works on this
-machine. Pass the same `--data-dir` that the server uses. Treat the link like
-the key until it is used or expires.
+machine. Pass the same `--data-dir` that the server uses. Start the server
+first: it rejects links made before it started, so restarting it cancels every
+link, used or not. Treat the link like the key until it is used or expires.
 
 ## The data directory
 
@@ -273,7 +274,8 @@ direct host and port routes keep working.
   WebSocket and mutating requests from other origins, and non-JSON mutating
   requests.
 - **QR sign-in and links.** A QR code or link is useless without the key or
-  after it is used, and it expires in minutes. Approve a QR sign-in only when
+  after it is used, and it expires in minutes. A server restart cancels all
+  links and pending QR codes, so a used link never works again. Approve a QR sign-in only when
   the match codes are the same. A one-time link signs in whoever opens it
   first, so send it only to yourself.
 - **Resetting the key** signs out every browser and closes their live

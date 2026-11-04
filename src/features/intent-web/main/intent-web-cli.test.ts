@@ -102,7 +102,7 @@ it.skipIf(process.platform === 'win32')(
   },
 );
 it.skipIf(process.platform === 'win32')(
-  'prints a one-time link and QR that the running server accepts once',
+  'prints a one-time link and QR that the running server accepts once, even after a restart',
   async () => {
     const { default: http } = await import('node:http');
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'web-link-'));
@@ -113,7 +113,7 @@ it.skipIf(process.platform === 'win32')(
     const state = path.join(dir, 'state');
     const socket = path.join(dir, 'web.sock');
     const log = vi.fn();
-    const running = await runIntentWeb(['--data-dir', state, '--socket', socket, '--no-local'], {
+    let running = await runIntentWeb(['--data-dir', state, '--socket', socket, '--no-local'], {
       log: () => {},
       webRoot,
     });
@@ -141,6 +141,12 @@ it.skipIf(process.platform === 'win32')(
             .on('error', reject);
         });
       expect(await open()).toBe(303);
+      expect(await open()).toBe(401);
+      await running!.close();
+      running = await runIntentWeb(['--data-dir', state, '--socket', socket, '--no-local'], {
+        log: () => {},
+        webRoot,
+      });
       expect(await open()).toBe(401);
     } finally {
       await running!.close();

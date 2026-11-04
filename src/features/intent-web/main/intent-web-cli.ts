@@ -35,7 +35,7 @@ export async function runIntentWeb(
     const origin = options.publicUrl ?? `http://127.0.0.1:${config.port}`;
     const url = `${origin}${LINK_PATH}?t=${token}`;
     log(
-      `One-time sign-in link (signs in one browser, expires at ${new Date(expiresAt).toLocaleTimeString()}):`,
+      `One-time sign-in link (signs in one browser, expires at ${new Date(expiresAt).toLocaleTimeString()}; restarting the server cancels it):`,
     );
     log(url);
     log(await QRCode.toString(url, { type: 'terminal', small: true }));
