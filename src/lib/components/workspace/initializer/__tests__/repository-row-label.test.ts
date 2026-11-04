@@ -10,71 +10,79 @@ import {
 import { resetPlainFolderState, settleForgeAuth } from './plain-folder-test-state';
 
 describe('resolveRepositoryRowLabelKind', () => {
-  it('is Project with plain folders offered and no forge connected', () => {
-    expect(
-      resolveRepositoryRowLabelKind({
-        plainFoldersOffered: true,
-        forgeState: 'none',
-        hasPlainFolderEntry: false,
-      }),
-    ).toBe('project');
-    expect(
-      resolveRepositoryRowLabelKind({
-        plainFoldersOffered: true,
-        forgeState: 'none',
-        hasPlainFolderEntry: true,
-      }),
-    ).toBe('project');
-  });
-
-  it('is Codebase/Project with a forge connected and a plain-folder entry listed', () => {
-    expect(
-      resolveRepositoryRowLabelKind({
-        plainFoldersOffered: true,
-        forgeState: 'connected',
-        hasPlainFolderEntry: true,
-      }),
-    ).toBe('codebaseOrProject');
-  });
-
-  it('is Codebase with a forge connected and no plain-folder entry', () => {
-    expect(
-      resolveRepositoryRowLabelKind({
-        plainFoldersOffered: true,
-        forgeState: 'connected',
-        hasPlainFolderEntry: false,
-      }),
-    ).toBe('codebase');
-  });
-
-  it('never claims "no forge" while forge status is unknown', () => {
-    expect(
-      resolveRepositoryRowLabelKind({
-        plainFoldersOffered: true,
-        forgeState: 'unknown',
-        hasPlainFolderEntry: false,
-      }),
-    ).toBe('codebase');
-    expect(
-      resolveRepositoryRowLabelKind({
-        plainFoldersOffered: true,
-        forgeState: 'unknown',
-        hasPlainFolderEntry: true,
-      }),
-    ).toBe('codebaseOrProject');
-  });
+  const offered = { plainFoldersOffered: true };
 
   it.each(['none', 'connected', 'unknown'] as const)(
-    'stays Codebase with plain folders not offered (forge %s)',
+    'is Codebase whenever a git repository is listed (forge %s)',
     (forgeState) => {
       for (const hasPlainFolderEntry of [false, true]) {
         expect(
           resolveRepositoryRowLabelKind({
-            plainFoldersOffered: false,
+            ...offered,
             forgeState,
+            hasGitRepositoryEntry: true,
             hasPlainFolderEntry,
           }),
         ).toBe('codebase');
+      }
+    },
+  );
+
+  it('is Project with no git repository listed and no forge connected', () => {
+    for (const hasPlainFolderEntry of [false, true]) {
+      expect(
+        resolveRepositoryRowLabelKind({
+          ...offered,
+          forgeState: 'none',
+          hasGitRepositoryEntry: false,
+          hasPlainFolderEntry,
+        }),
+      ).toBe('project');
+    }
+  });
+
+  it.each(['connected', 'unknown'] as const)(
+    'is Project with only plain folders listed (forge %s)',
+    (forgeState) => {
+      expect(
+        resolveRepositoryRowLabelKind({
+          ...offered,
+          forgeState,
+          hasGitRepositoryEntry: false,
+          hasPlainFolderEntry: true,
+        }),
+      ).toBe('project');
+    },
+  );
+
+  it.each(['connected', 'unknown'] as const)(
+    'is Codebase with an empty list and forge %s',
+    (forgeState) => {
+      expect(
+        resolveRepositoryRowLabelKind({
+          ...offered,
+          forgeState,
+          hasGitRepositoryEntry: false,
+          hasPlainFolderEntry: false,
+        }),
+      ).toBe('codebase');
+    },
+  );
+
+  it.each(['none', 'connected', 'unknown'] as const)(
+    'stays Codebase with plain folders not offered (forge %s)',
+    (forgeState) => {
+      for (const hasGitRepositoryEntry of [false, true]) {
+        for (const hasPlainFolderEntry of [false, true]) {
+          expect(
+            resolveRepositoryRowLabelKind({
+              plainFoldersOffered: false,
+              forgeState,
+              hasGitRepositoryEntry,
+              hasPlainFolderEntry,
+            }),
+          ).toBe('codebase');
+        }
       }
     },
   );

@@ -6771,7 +6771,6 @@
   "workspace_compactInitializer_progressWorktree_label": "Creando el árbol de trabajo…",
   "workspace_compactInitializer_promptEnhanced_toast": "Prompt mejorado",
   "workspace_compactInitializer_repository_label": "Base de código",
-  "workspace_compactInitializer_codebaseOrProject_label": "Base de código/Proyecto",
   "workspace_compactInitializer_project_label": "Proyecto",
   "workspace_compactInitializer_branch_label": "Rama",
   "workspace_compactInitializer_setup_label": "Script de configuración",

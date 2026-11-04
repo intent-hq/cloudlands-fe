@@ -6771,7 +6771,6 @@
   "workspace_compactInitializer_progressWorktree_label": "正在创建工作树…",
   "workspace_compactInitializer_promptEnhanced_toast": "提示词已增强",
   "workspace_compactInitializer_repository_label": "代码库",
-  "workspace_compactInitializer_codebaseOrProject_label": "代码库/项目",
   "workspace_compactInitializer_project_label": "项目",
   "workspace_compactInitializer_branch_label": "分支",
   "workspace_compactInitializer_setup_label": "安装脚本",
