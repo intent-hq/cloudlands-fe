@@ -3,6 +3,7 @@ import {
   selectAllCatalogProviderIds,
   selectNormalizedProviderId,
   selectProviderCatalogDefaultNames,
+  selectProviderCatalogProfilesLoaded,
   selectProviderDisplayName,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { store as appStore } from '$store/renderer/store';
@@ -114,6 +115,7 @@ export function buildGroupedModelOptions({
       normalizedEffectiveProviderId;
 
   const defaultNames = selectProviderCatalogDefaultNames.select(state, workspaceId);
+  const profilesLoaded = selectProviderCatalogProfilesLoaded.select(state, workspaceId);
   const groupLabel = (pid: string) =>
     formatProviderRefLabel(
       pid,
@@ -121,6 +123,7 @@ export function buildGroupedModelOptions({
       profiles,
       providerRefBaseId(pid),
       defaultNames,
+      profilesLoaded,
     );
 
   for (const pid of expandProviderIdsWithProfiles(

@@ -25,6 +25,7 @@ import {
   selectProviderCatalogLoaded,
   selectProviderEnabledFromCatalog,
   selectProviderCatalogProfiles,
+  selectProviderCatalogProfilesLoaded,
   selectProviderCatalogDefaultRemoteIncompatibility,
 } from './provider-catalog-selectors';
 import {
@@ -337,6 +338,41 @@ describe('selectProviderConfigurationLabel', () => {
     expect(
       selectProviderConfigurationLabel.select(withProfiles({ auggie: 'Personal' }), 'auggie'),
     ).toBe('Augment Auggie · Personal');
+  });
+  it('reads the bare provider, not "Removed profile", until the profiles load', () => {
+    // Shared catalog not hydrated yet: the reference is unknown, not removed.
+    const pending = storeWith(initialState);
+    expect(selectProviderCatalogProfilesLoaded.select(pending)).toBe(false);
+    expect(selectProviderConfigurationLabel.select(pending, 'auggie@work')).toBe('auggie');
+    expect(selectProviderDisplayName.select(pending, 'auggie@work')).toBe('auggie');
+
+    // Shared catalog loaded but the workspace snapshot still pending.
+    const loaded = withProfiles();
+    expect(selectProviderCatalogProfilesLoaded.select(loaded, 'ws-1')).toBe(false);
+    expect(selectProviderConfigurationLabel.select(loaded, 'auggie@work', 'ws-1')).not.toMatch(
+      /Removed profile/,
+    );
+    expect(selectProviderDisplayName.select(loaded, 'auggie@work', 'ws-1')).not.toMatch(
+      /Removed profile/,
+    );
+  });
+
+  it('reports a removed profile once the profiles have loaded', () => {
+    const state = storeWith(providerCatalogReducer(initialState, providerCatalogLoaded(CATALOG)));
+    expect(selectProviderCatalogProfilesLoaded.select(state)).toBe(true);
+    expect(selectProviderConfigurationLabel.select(state, 'auggie@gone')).toBe(
+      'Augment Auggie · Removed profile',
+    );
+    const workspace = storeWith({
+      ...initialState,
+      byWorkspaceId: {
+        'ws-1': { catalog: CATALOG, settings: [], specialists: [], readiness: {} },
+      },
+    } as ProviderCatalogState);
+    expect(selectProviderCatalogProfilesLoaded.select(workspace, 'ws-1')).toBe(true);
+    expect(selectProviderDisplayName.select(workspace, 'auggie@gone', 'ws-1')).toBe(
+      'Augment Auggie · Removed profile',
+    );
   });
 });
 

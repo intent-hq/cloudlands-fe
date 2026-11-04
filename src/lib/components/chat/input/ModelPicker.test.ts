@@ -38,6 +38,8 @@ const mockProviderModelsState = vi.hoisted((): ProviderModelsState => ({
   observers: { idField: 'id', ids: [], map: {}, refsCount: {} },
 }));
 
+// Workspace ids whose catalog snapshot has not loaded yet (profiles pending).
+const mockPendingWorkspaceCatalogs = vi.hoisted(() => ({ current: [] as string[] }));
 // Named profile summaries served by `providers.catalog` (§5.54). Empty by
 // default so every existing test keeps the profile-free picker.
 const mockCatalogProfiles = vi.hoisted(() => ({
@@ -138,17 +140,19 @@ vi.mock('$store/renderer/store', async () => {
         ...providerCatalog,
         profiles: createCollection('id', mockCatalogProfiles.current),
         byWorkspaceId: Object.fromEntries(
-          ['ws-1', 'A', 'B'].map((workspaceId) => [
-            workspaceId,
-            {
-              catalog: { ...MOCK_PROVIDER_CATALOG, profiles: mockCatalogProfiles.current },
-              settings: [
-                { path: 'model.defaultProvider', value: mockModelState.defaultProviderId },
-              ],
-              specialists: [],
-              readiness: {},
-            },
-          ]),
+          ['ws-1', 'A', 'B']
+            .filter((workspaceId) => !mockPendingWorkspaceCatalogs.current.includes(workspaceId))
+            .map((workspaceId) => [
+              workspaceId,
+              {
+                catalog: { ...MOCK_PROVIDER_CATALOG, profiles: mockCatalogProfiles.current },
+                settings: [
+                  { path: 'model.defaultProvider', value: mockModelState.defaultProviderId },
+                ],
+                specialists: [],
+                readiness: {},
+              },
+            ]),
         ),
       },
       // The effective default provider is settings-derived (never the first
@@ -6491,6 +6495,50 @@ describe('ModelPicker named provider profiles (§5.54)', () => {
       expect(value?.getAttribute('title') ?? '').toMatch(/GPT-5 Work row.*Codex.*Work/);
     });
     expect(screen.queryByTestId('model-picker-profile')).toBeNull();
+  });
+
+  it('shows a placeholder, not "Removed profile", while the workspace profiles load', async () => {
+    mockCatalogProfiles.current = [WORK];
+    mockPendingWorkspaceCatalogs.current = ['ws-1'];
+    try {
+      render(ModelPicker, {
+        props: {
+          selectedModel: 'gpt-5-work',
+          providerId: WORK.providerRef,
+          workspaceId: 'ws-1',
+          portal: false,
+        },
+      });
+      await waitFor(() => expect(screen.getByTestId('model-picker-profile-loading')).toBeTruthy());
+      expect(screen.queryByTestId('model-picker-profile')).toBeNull();
+      expect(screen.getByRole('button').textContent).not.toMatch(/Removed profile/);
+
+      // The snapshot lands: the placeholder becomes the profile's name.
+      mockPendingWorkspaceCatalogs.current = [];
+      (mockAppStore as unknown as { emitState: () => void }).emitState();
+      await waitFor(() =>
+        expect(screen.getByTestId('model-picker-profile').textContent).toBe('Work'),
+      );
+      expect(screen.queryByTestId('model-picker-profile-loading')).toBeNull();
+    } finally {
+      mockPendingWorkspaceCatalogs.current = [];
+    }
+  });
+
+  it('still reports a removed profile once the workspace profiles have loaded', async () => {
+    mockCatalogProfiles.current = [];
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'gpt-5-work',
+        providerId: WORK.providerRef,
+        workspaceId: 'ws-1',
+        portal: false,
+      },
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId('model-picker-profile').textContent).toBe('Removed profile'),
+    );
+    expect(screen.queryByTestId('model-picker-profile-loading')).toBeNull();
   });
 
   it('labels the original configuration Default once its provider has profiles', async () => {

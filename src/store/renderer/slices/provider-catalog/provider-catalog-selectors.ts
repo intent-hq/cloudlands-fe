@@ -62,6 +62,19 @@ export const selectProviderCatalogProfiles = store.createSelector(
 const NO_DEFAULT_NAMES: ProviderDefaultNames = {};
 
 /**
+ * True once the catalog that `selectProviderCatalogProfiles` reads for the
+ * same `workspaceId` has loaded: the workspace snapshot when scoped, the
+ * shared catalog otherwise. Until then an unmatched profile reference is
+ * unknown, not removed, so labels must not call it "Removed profile".
+ */
+export const selectProviderCatalogProfilesLoaded = store.createSelector(
+  (state, workspaceId?: string): boolean =>
+    workspaceId
+      ? state.providerCatalog?.byWorkspaceId?.[workspaceId] !== undefined
+      : (state.providerCatalog?.loaded ?? false),
+);
+
+/**
  * Renamed Default configurations (§5.54 catalog `defaultNames`) by base
  * provider id. Empty on older daemons, before hydration and when no Default
  * is renamed; labels then read `Default`.
@@ -196,6 +209,9 @@ export const selectProviderDisplayName = store.createSelector(
         providerId,
         baseName,
         selectProviderCatalogProfiles.select(state, workspaceId),
+        baseId,
+        undefined,
+        selectProviderCatalogProfilesLoaded.select(state, workspaceId),
       );
     }
     return (
@@ -221,6 +237,7 @@ export const selectProviderConfigurationLabel = store.createSelector(
       selectProviderCatalogProfiles.select(state, workspaceId),
       baseId,
       selectProviderCatalogDefaultNames.select(state, workspaceId),
+      selectProviderCatalogProfilesLoaded.select(state, workspaceId),
     );
   },
 );

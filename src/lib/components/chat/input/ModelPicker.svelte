@@ -89,6 +89,7 @@
   import {
     selectProviderCatalogDefaultNames,
     selectProviderCatalogProfiles,
+    selectProviderCatalogProfilesLoaded,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { selectProfileSignInStatuses } from '$store/renderer/slices/provider-settings/provider-profile-status-selectors';
   import { providerProfileSummaryStatusesEnsured } from '$store/renderer/slices/provider-settings/provider-settings-slice';
@@ -212,6 +213,7 @@
       $providerProfiles$,
       baseId,
       $providerDefaultNames$,
+      $providerProfilesLoaded$,
     );
   }
   function baseProviderDisplayName(providerId: string): string {
@@ -465,6 +467,8 @@
   // available base is followed by its profile references, which the picker
   // then treats as providers of their own (catalog fetch, group, tab).
   const providerProfiles$ = selectProviderCatalogProfiles(workspaceIdStore);
+  // Until the profiles load, an unmatched reference is unknown, not removed.
+  const providerProfilesLoaded$ = selectProviderCatalogProfilesLoaded(workspaceIdStore);
   const providerDefaultNames$ = selectProviderCatalogDefaultNames(workspaceIdStore);
   const baseModelFetchProviderIds$ = selectContextModelProviderIds(workspaceIdStore);
   const baseAvailableEnabledProviderIds$ = selectContextAvailableProviderIds(workspaceIdStore);
@@ -1947,20 +1951,28 @@
   const triggerLabel = $derived(currentModelLabel);
   // The selection's configuration (§5.54): its profile name next to the model
   // once its base provider has profiles (`Default` for the original one).
-  const triggerProfileName = $derived.by(() => {
+  const triggerProfileParts = $derived.by(() => {
     const ref = triggerProviderId;
     if (!ref || $hidesProfileNames$) return undefined;
     const baseId = normalizeProviderId(providerRefBaseId(ref));
     const isProfile = isProviderProfileRef(ref);
-    return providerRefProfileName(
-      providerRefLabelParts(
-        isProfile ? ref : baseId,
-        $providerProfiles$,
-        baseId,
-        $providerDefaultNames$,
-      ),
+    return providerRefLabelParts(
+      isProfile ? ref : baseId,
+      $providerProfiles$,
+      baseId,
+      $providerDefaultNames$,
     );
   });
+  // A profile reference the catalog can't name yet is still loading: show a
+  // placeholder rather than briefly calling it "Removed profile".
+  const triggerProfileLoading = $derived(
+    triggerProfileParts?.kind === 'missing' && !$providerProfilesLoaded$,
+  );
+  const triggerProfileName = $derived(
+    triggerProfileParts && !triggerProfileLoading
+      ? providerRefProfileName(triggerProfileParts)
+      : undefined,
+  );
   const modelAccessibleLabel = $derived(
     remoteLocation
       ? m.chat_modelPicker_remoteMachine_ariaLabel({
@@ -2527,6 +2539,12 @@
           <Fa icon={faDesktop} class="size-3!" />
           <span class="truncate">{remoteLocation.name}</span>
         </span>
+      {:else if triggerProfileLoading}
+        <span
+          class="h-3 w-12 shrink rounded-sm bg-muted/50 animate-pulse"
+          aria-hidden="true"
+          data-testid="model-picker-profile-loading"
+        ></span>
       {:else if triggerProfileName}
         <span class="min-w-0 max-w-24 shrink truncate text-subtle" aria-hidden="true"
           >{triggerProfileName}</span
@@ -2559,6 +2577,12 @@
             <Fa icon={faDesktop} class="size-3!" />
             <span class="truncate">{remoteLocation.name}</span>
           </span>
+        {:else if triggerProfileLoading}
+          <span
+            class="h-3 w-12 shrink rounded-sm bg-muted/50 animate-pulse"
+            aria-hidden="true"
+            data-testid="model-picker-profile-loading"
+          ></span>
         {:else if triggerProfileName}
           <span class="text-xs min-w-0 max-w-24 shrink truncate text-subtle" aria-hidden="true"
             >{triggerProfileName}</span
@@ -2819,6 +2843,12 @@
               <Fa icon={faDesktop} class="size-3!" />
               <span class="truncate">{remoteLocation.name}</span>
             </span>
+          {:else if triggerProfileLoading && showProfileName}
+            <span
+              class="h-3 w-12 shrink rounded-sm bg-muted/50 animate-pulse"
+              aria-hidden="true"
+              data-testid="model-picker-profile-loading"
+            ></span>
           {:else if triggerProfileName && showProfileName}
             <span
               class="min-w-0 max-w-24 shrink truncate text-subtle"
