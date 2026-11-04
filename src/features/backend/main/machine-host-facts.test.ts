@@ -42,6 +42,17 @@ describe('extractInstalledProviders', () => {
     ).toEqual([]);
   });
 
+  it('treats a provider gated off by the daemon (gatedOff) as not available', () => {
+    expect(
+      extractInstalledProviders({
+        providers: [
+          { id: 'cortex', displayName: 'Cortex', installed: true, gatedOff: 'disabled' },
+          { id: 'codex', displayName: 'Codex', installed: true },
+        ],
+      }),
+    ).toEqual([{ id: 'codex', displayName: 'Codex' }]);
+  });
+
   it('falls back to the id when a row has no display name and skips rows without an id', () => {
     expect(
       extractInstalledProviders({

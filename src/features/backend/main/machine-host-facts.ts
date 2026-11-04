@@ -11,7 +11,8 @@ export function extractHostOs(result: unknown): string | null {
 
 /**
  * The providers a `host.providerDiscovery` result reports as usable on the
- * daemon host: `installed` and not gated by `unavailableReason`, in registry
+ * daemon host: `installed`, not `gatedOff` and not gated by `unavailableReason`
+ * (the same rule as the provider status seeder), in registry
  * order. Null when the result is not that shape, so callers keep "unknown"
  * apart from "nothing installed".
  */
@@ -19,7 +20,8 @@ export function extractInstalledProviders(result: unknown): ConnectionProviderSu
   if (!record(result) || !Array.isArray(result.providers)) return null;
   return result.providers.flatMap((row): ConnectionProviderSummary[] => {
     if (!record(row) || typeof row.id !== 'string' || row.id.length === 0) return [];
-    if (row.installed !== true || typeof row.unavailableReason === 'string') return [];
+    if (row.installed !== true || row.gatedOff || typeof row.unavailableReason === 'string')
+      return [];
     const displayName =
       typeof row.displayName === 'string' && row.displayName.trim() ? row.displayName : row.id;
     return [{ id: row.id, displayName }];
