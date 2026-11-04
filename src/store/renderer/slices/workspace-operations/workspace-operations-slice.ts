@@ -1,3 +1,4 @@
+import type { AttentionReminderReason } from '$shared/types';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
@@ -12,6 +13,7 @@ import type {
 } from './workspace-operations-types';
 
 export type WorkspaceOperationsState = {
+  attentionDismissalResult: { workspaceId: string; requestId: string } | null;
   showDeleteWarning: boolean;
   pendingDeleteWorkspaceId: string | null;
   runningAgentNamesForDelete: string[];
@@ -52,6 +54,7 @@ export type WorkspaceOperationsState = {
 const emptyOpenPrs = () => createCollection<OpenPrWarningItem, 'number'>('number');
 
 export const initialState: WorkspaceOperationsState = {
+  attentionDismissalResult: null,
   showDeleteWarning: false,
   pendingDeleteWorkspaceId: null,
   runningAgentNamesForDelete: [],
@@ -94,6 +97,19 @@ export const confirmDeleteWorkspace = createAction('workspaceOperations/confirmD
 export const requestArchiveWorkspace = createAction<[workspaceId: string]>(
   'workspaceOperations/requestArchiveWorkspace',
 );
+
+export const requestDismissWorkspaceAttention = createAction<
+  [
+    workspaceId: string,
+    reasons: AttentionReminderReason[],
+    principalContext: string,
+    requestId?: string,
+  ]
+>('workspaceOperations/requestDismissWorkspaceAttention');
+
+export const workspaceAttentionDismissalSettled = createAction<
+  [workspaceId: string, requestId: string]
+>('workspaceOperations/workspaceAttentionDismissalSettled');
 
 export const requestUnarchiveWorkspace = createAction<[workspaceId: string]>(
   'workspaceOperations/requestUnarchiveWorkspace',
@@ -356,6 +372,15 @@ workspaceOperationsReducer.with(closeRemoveRepoConfirm, (state) => ({
   showRemoveRepoConfirm: false,
   pendingRemoveRepoPath: null,
 }));
+
+workspaceOperationsReducer.with(
+  workspaceAttentionDismissalSettled,
+  (state, { payload: [workspaceId, requestId] }) => ({
+    ...state,
+    attentionDismissalResult: { workspaceId, requestId },
+  }),
+);
+
 workspaceOperationsReducer.with(requestRetireWorkspace, (state, { payload: [workspaceId] }) => ({
   ...state,
   showRetireConfirm: true,

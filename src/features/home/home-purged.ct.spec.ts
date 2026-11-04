@@ -20,7 +20,7 @@ test('Home shows purged workspaces under Archived, with no Retired chip', async 
 
   await expect(component.locator('[data-home-workspace]').first()).toBeVisible();
   await expect(purged).toHaveCount(0);
-  for (const name of ['Needs you', 'Running']) {
+  for (const name of ['Needs you', 'PR ready', 'Running']) {
     await filters.getByRole('button', { name, exact: false }).first().click();
     await expect(purged).toHaveCount(0);
   }

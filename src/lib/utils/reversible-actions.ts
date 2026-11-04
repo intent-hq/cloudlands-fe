@@ -17,6 +17,8 @@ interface ReversibleAction {
   onExpire?: () => Promise<void> | void; // Called when undo duration expires without undo
   duration?: number; // Duration in seconds for undo availability
   immediate?: boolean; // If true, execute immediately and allow undo (default: true)
+  /** For immediate actions, suppress result notifications after their caller retires. */
+  isCurrent?: () => boolean;
   showCountdown?: boolean; // If true, show countdown before executing (default: false)
 }
 
@@ -38,7 +40,7 @@ class ReversibleActionManager {
     if (immediate && !showCountdown) {
       // Execute immediately and show undo option
       try {
-        if ((await config.action()) === false) return false;
+        if ((await config.action()) === false || config.isCurrent?.() === false) return false;
         this.completedActions.set(actionId, config);
 
         let undoExecuted = false;
@@ -60,6 +62,11 @@ class ReversibleActionManager {
                       // Just dismiss the toast, don't show a new one
                       notify.dismiss(toastId);
                     } catch (error) {
+                      if (config.isCurrent?.() === false) {
+                        this.completedActions.delete(actionId);
+                        notify.dismiss(toastId);
+                        return;
+                      }
                       logger.error(
                         // i18n-ignore (developer log message)
                         'Failed to undo action:',
@@ -95,6 +102,7 @@ class ReversibleActionManager {
 
         return true;
       } catch (error) {
+        if (config.isCurrent?.() === false) return false;
         logger.error(
           // i18n-ignore (developer log message)
           'Failed to execute action:',

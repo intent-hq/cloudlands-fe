@@ -8,6 +8,7 @@ import {
   type HomeFilter,
 } from './home-model';
 import { groupHomeWorkspacesByStatus } from './home-workspace-status-groups';
+import { dismissibleWorkspaceReasons } from '$shared/utils/workspace-attention-reminder';
 
 // An archived workspace whose folder was purged (`Retired`, PROTOCOL §5.1) is
 // presented as archived: it appears only under the Archived chip and in the
@@ -23,6 +24,11 @@ const purged = workspace('purged', {
   displayStatus: 'needs_attention',
   activity: 'agent_running',
   attention: 'unread',
+  attentionReminder: {
+    reasons: [{ id: 'review:before-retirement', revision: 'review-1' }],
+    dismissed: false,
+    displayStatus: 'needs_attention',
+  },
 });
 const archived = workspace('archived', { status: WorkspaceStatusEnum.Archived, archived: true });
 
@@ -35,6 +41,16 @@ describe('Home Archived chip with purged workspaces', () => {
   );
 
   it('shows archived and purged workspaces under Archived', () => {
+    expect(matchesHomeFilter(purged, 'pr-ready')).toBe(false);
+    expect(dismissibleWorkspaceReasons(purged)).toEqual([]);
+    expect(
+      dismissibleWorkspaceReasons({
+        ...purged,
+        status: WorkspaceStatusEnum.Active,
+        archived: false,
+        retiredAt: undefined,
+      }),
+    ).toEqual([{ id: 'review:before-retirement', revision: 'review-1' }]);
     expect(matchesHomeFilter(purged, 'archived')).toBe(true);
     expect(matchesHomeFilter(archived, 'archived')).toBe(true);
     expect(matchesHomeFilter(workspace('active'), 'archived')).toBe(false);

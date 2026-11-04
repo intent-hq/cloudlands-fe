@@ -1,8 +1,13 @@
+import {
+  workspaceReminderStatus,
+  workspaceReminderDismissed,
+} from '$shared/utils/workspace-attention-reminder';
 import type { Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
+import type { RepositoryGroup } from '$lib/components/workspace/utils/workspace-grouping';
 
 export type HomeFilter =
-  'all' | 'attention' | 'running' | 'waiting' | 'blocked' | 'unread' | 'archived';
+  'all' | 'attention' | 'pr-ready' | 'running' | 'waiting' | 'blocked' | 'unread' | 'archived';
 export interface HomeRepository {
   key: string;
   name: string;
@@ -10,8 +15,50 @@ export interface HomeRepository {
   path?: string;
 }
 
-export type HomeTriageGroup = 'needs-you' | 'running' | 'waiting' | 'blocked' | 'done' | 'idle';
-export type HomeTriageInput = Pick<Workspace, 'displayStatus' | 'activity' | 'attention'> &
+/** Local repositories participate in the same sidebar ordering as organizations. */
+export function groupHomeRepositoriesForSidebar(
+  repositoryGroups: RepositoryGroup[],
+  labels: { unknownRepository: string; localFolder: string },
+) {
+  const groups: { key: string; owner?: string; label: string; items: RepositoryGroup[] }[] = [];
+  const unassigned: RepositoryGroup[] = [];
+  for (const repo of repositoryGroups) {
+    if (repo.key === labels.unknownRepository) {
+      unassigned.push(repo);
+      continue;
+    }
+    const key = repo.owner ? `org:${repo.owner.toLowerCase()}` : 'local';
+    let group = groups.find((candidate) => candidate.key === key);
+    if (!group) {
+      group = {
+        key,
+        owner: repo.owner,
+        label: repo.owner || labels.localFolder,
+        items: [],
+      };
+      groups.push(group);
+    }
+    group.items.push(repo);
+  }
+  const count = (items: RepositoryGroup[]) =>
+    items.reduce(
+      (total, repo) =>
+        total + repo.workspaces.filter((workspace) => matchesHomeFilter(workspace, 'all')).length,
+      0,
+    );
+  groups.sort((a, b) => count(b.items) - count(a.items) || a.label.localeCompare(b.label));
+  for (const group of groups) {
+    group.items.sort((a, b) => count([b]) - count([a]) || a.label.localeCompare(b.label));
+  }
+  return { groups, unassigned };
+}
+
+export type HomeTriageGroup =
+  'needs-you' | 'pr-ready' | 'running' | 'waiting' | 'blocked' | 'done' | 'idle';
+export type HomeTriageInput = Pick<
+  Workspace,
+  'displayStatus' | 'activity' | 'attention' | 'attentionReminder'
+> &
   Partial<Pick<Workspace, 'waiting' | 'scriptsRunning' | 'backgroundTasksRunning'>>;
 
 /** An agent turn, a command-mode script run, or an agent's background task
@@ -28,11 +75,15 @@ function isHomeRunning(workspace: HomeTriageInput): boolean {
 /** Watching something external: the daemon's waiting flag (hooks, PR and
  *  script monitors, delegated agents) or a PR sitting in the merge queue. */
 function isHomeWaiting(workspace: HomeTriageInput): boolean {
-  return workspace.waiting === true || workspace.displayStatus === 'pr_queued';
+  return (
+    workspaceReminderStatus(workspace) === 'waiting' ||
+    workspace.waiting === true ||
+    workspace.displayStatus === 'pr_queued'
+  );
 }
 
 /** Mutually exclusive Home groups based only on daemon-owned structured signals.
- *  Precedence: blocked > needs you > running > waiting > done > idle. */
+ *  Precedence: blocked > needs you > PR ready > running > waiting > done > idle. */
 export function getHomeTriageGroup(workspace: HomeTriageInput): HomeTriageGroup {
   const group = getHomeBaseTriageGroup(workspace);
   return (group === 'done' || group === 'idle') && isHomeWaiting(workspace) ? 'waiting' : group;
@@ -43,20 +94,21 @@ export function getHomeTriageGroup(workspace: HomeTriageInput): HomeTriageGroup 
 export function getHomeBaseTriageGroup(
   workspace: HomeTriageInput,
 ): Exclude<HomeTriageGroup, 'waiting'> {
+  const status = workspaceReminderStatus(workspace);
   if (workspace.displayStatus === 'blocked' || workspace.displayStatus === 'failed') {
     return 'blocked';
   }
   if (
-    workspace.attention === 'review_required' ||
-    workspace.displayStatus === 'needs_attention' ||
-    workspace.displayStatus === 'pr_ready'
+    (!workspaceReminderDismissed(workspace) && workspace.attention === 'review_required') ||
+    status === 'needs_attention'
   ) {
     return 'needs-you';
   }
+  if (status === 'pr_ready') return 'pr-ready';
   if (isHomeRunning(workspace)) {
     return 'running';
   }
-  if (workspace.displayStatus === 'complete' || workspace.displayStatus === 'pr_merged') {
+  if (status === 'complete' || status === 'pr_merged') {
     return 'done';
   }
   return 'idle';
@@ -81,6 +133,8 @@ export function matchesHomeFilter(workspace: Workspace, filter: HomeFilter): boo
   switch (filter) {
     case 'attention':
       return needsAttention(workspace);
+    case 'pr-ready':
+      return getHomeTriageGroup(workspace) === 'pr-ready';
     case 'running':
       return getHomeTriageGroup(workspace) === 'running';
     case 'waiting':

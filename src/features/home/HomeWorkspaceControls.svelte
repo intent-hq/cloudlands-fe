@@ -41,6 +41,7 @@
 <div
   class="home-choice-group home-workspace-filters-wide ml-auto shrink-0"
   role="group"
+  data-home-status-filters
   aria-label={m.layout_allCard_status_label()}
 >
   {#each filters as item (item.id)}
@@ -64,7 +65,7 @@
     onclick={() => onfilter('archived')}>{m.home_filter_archived()}</Button
   >
 </div>
-<div class="home-workspace-filters-compact ml-auto min-w-0">
+<div data-home-status-filter class="home-workspace-filters-compact ml-auto min-w-0">
   <HomeFilterSelect
     value={filter}
     label={m.layout_allCard_status_label()}

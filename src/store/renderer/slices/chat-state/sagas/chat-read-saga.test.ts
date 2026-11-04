@@ -1,14 +1,32 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 
-const mocks = vi.hoisted(() => ({
-  get: vi.fn(),
-  getConversation: vi.fn(),
-  getMessageBlock: vi.fn(),
-  getMessageBlockPage: vi.fn(),
-  messageBlockPages: false,
-  invoke: vi.fn(() => Promise.resolve()),
-}));
+const mocks = vi.hoisted(() => {
+  const createTransport = () => {
+    const reconnectHandlers = new Set<() => void>();
+    return {
+      onReconnected(handler: () => void): () => void {
+        reconnectHandlers.add(handler);
+        return () => {
+          reconnectHandlers.delete(handler);
+        };
+      },
+      reconnect() {
+        for (const handler of [...reconnectHandlers]) handler();
+      },
+    };
+  };
+  return {
+    get: vi.fn(),
+    getConversation: vi.fn(),
+    getMessageBlock: vi.fn(),
+    getMessageBlockPage: vi.fn(),
+    messageBlockPages: false,
+    createTransport,
+    transport: createTransport(),
+    invoke: vi.fn(() => Promise.resolve()),
+  };
+});
 vi.mock('$store/renderer/slices/principal/principal-selectors', () => ({
   selectMessageBlockPagesSupported: {
     // eslint-disable-next-line require-yield -- selector effect stand-in
@@ -29,6 +47,16 @@ vi.mock('$lib/client', () => ({
   },
 }));
 vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke }));
+vi.mock('$lib/client/live/backend-transport-factory', () => ({
+  resolveBackendTransport: () => mocks.transport,
+}));
+
+import { createAdmittedLegacyPrincipal } from '../../../../../test/fixtures/admitted-legacy-principal';
+import {
+  initRendererStoreBridge,
+  _resetRendererStoreBridge,
+} from '$store/renderer/renderer-store-bridge';
+import type { StoreState } from '$store/renderer/types';
 
 import type { AgentMessage, AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
@@ -48,6 +76,7 @@ import {
   initializeChatRequested,
   initialState as chatStateInitialState,
   messageBlockHydrationRequested,
+  scrollbackFetchStarted,
   refreshChatTranscriptRequested,
   transcriptHydrationFailed,
   transcriptHydrationSettled,
@@ -130,11 +159,43 @@ function harness() {
     chatState = chatStateReducer(chatState, action);
     channel.put(action);
   });
-  const task = runSaga(
-    { channel, dispatch, getState: () => ({ agentSessions, chatState }) },
-    chatReadSaga,
-  );
-  return { channel, dispatch, task, sessions: () => agentSessions, chat: () => chatState };
+  let scope = createAdmittedLegacyPrincipal();
+  const getState = () => ({ ...scope, agentSessions, chatState });
+  _resetRendererStoreBridge();
+  initRendererStoreBridge({
+    get state() {
+      return getState() as StoreState;
+    },
+    dispatch,
+  });
+  mocks.transport = mocks.createTransport();
+  const task = runSaga({ channel, dispatch, getState }, chatReadSaga);
+  return {
+    channel,
+    dispatch,
+    task,
+    sessions: () => agentSessions,
+    chat: () => chatState,
+    retireBackend() {
+      mocks.transport = mocks.createTransport();
+    },
+    reconnect() {
+      mocks.transport.reconnect();
+      scope = {
+        ...scope,
+        daemonHealth: {
+          ...scope.daemonHealth,
+          connectionGeneration: scope.daemonHealth.connectionGeneration + 1,
+        },
+      };
+    },
+    retirePrincipal() {
+      scope = {
+        ...scope,
+        principal: { ...scope.principal, invalidation: scope.principal.invalidation + 1 },
+      };
+    },
+  };
 }
 
 /** Simulate the chat-subscribe saga applying a seq-0 snapshot to the store. */
@@ -1034,5 +1095,185 @@ describe('chatReadSaga capped block reads (§5.5, messageBlockPages: 1)', () => 
     expect(entry).not.toHaveProperty('truncation');
     run.task.cancel();
     await run.task.toPromise();
+  });
+});
+
+describe('chatReadSaga block retrieval read lifetime', () => {
+  const MSG = 'lifetime-message';
+  const BLOCK = 'lifetime-block';
+  const KEY = hydratedBlockKey(MSG, BLOCK);
+  const slice = (text: string, nextOffset: number | null = null) => ({
+    block: { type: 'text', text },
+    truncated: true,
+    field: 'text',
+    encoding: 'text',
+    totalBytes: 12,
+    nextOffset,
+  });
+  function deferred() {
+    let resolve: (value: ReturnType<typeof slice>) => void = () => {
+      throw new Error('not initialized');
+    };
+    let reject: (reason: Error) => void = () => {
+      throw new Error('not initialized');
+    };
+    const promise = new Promise<ReturnType<typeof slice>>((yes, no) => {
+      resolve = yes;
+      reject = no;
+    });
+    return { promise, resolve, reject };
+  }
+  afterEach(() => {
+    vi.clearAllMocks();
+    mocks.messageBlockPages = false;
+    _resetRendererStoreBridge();
+  });
+
+  it.each(['backend', 'principal', 'reconnect'] as const)(
+    'retires a %s read before following its offset',
+    async (boundary) => {
+      mocks.messageBlockPages = true;
+      const pending = deferred();
+      mocks.getMessageBlockPage.mockReturnValueOnce(pending.promise);
+      const run = harness();
+      try {
+        run.dispatch(bulkUpsertSessions([session()]));
+        run.dispatch(messageBlockHydrationRequested(AGENT, MSG, BLOCK));
+        await settle();
+        if (boundary === 'backend') run.retireBackend();
+        else if (boundary === 'principal') run.retirePrincipal();
+        else {
+          run.reconnect();
+          run.reconnect();
+        }
+        pending.resolve(slice('old ', 4));
+        await settle();
+        expect(mocks.getMessageBlockPage).toHaveBeenCalledTimes(1);
+        expect(run.chat().byAgentId[AGENT]?.hydratedBlocks?.[KEY]).toBeUndefined();
+        expect(run.dispatch.mock.calls.map(([action]) => action.type)).not.toContain(
+          'chatState/messageBlockHydrated',
+        );
+        expect(run.dispatch.mock.calls.map(([action]) => action.type)).not.toContain(
+          'chatState/messageBlockHydrationFailed',
+        );
+        mocks.getMessageBlockPage.mockResolvedValueOnce(slice('fresh'));
+        run.dispatch(messageBlockHydrationRequested(AGENT, MSG, BLOCK));
+        await settle();
+        expect(mocks.getMessageBlockPage).toHaveBeenCalledTimes(2);
+        expect(run.chat().byAgentId[AGENT]?.hydratedBlocks?.[KEY]).toMatchObject({
+          status: 'loaded',
+          block: { text: 'fresh' },
+        });
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
+
+  it.each(['resolve', 'reject'] as const)(
+    'does not refill a reset cache after a late %s',
+    async (outcome) => {
+      mocks.messageBlockPages = true;
+      const pending = deferred();
+      mocks.getMessageBlockPage.mockReturnValueOnce(pending.promise);
+      const run = harness();
+      try {
+        run.dispatch(messageBlockHydrationRequested(AGENT, MSG, BLOCK));
+        await settle();
+        run.dispatch(chatReset(AGENT));
+        if (outcome === 'resolve') pending.resolve(slice('old'));
+        else pending.reject(new Error('old failure'));
+        await settle();
+        expect(run.chat().byAgentId[AGENT]?.hydratedBlocks?.[KEY]).toBeUndefined();
+        expect(mocks.getMessageBlockPage).toHaveBeenCalledTimes(1);
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
+
+  it('stops a continuation when the scrollback window is discarded', async () => {
+    mocks.messageBlockPages = true;
+    const pending = deferred();
+    mocks.getMessageBlockPage.mockReturnValueOnce(pending.promise);
+    const run = harness();
+    try {
+      run.dispatch(messageBlockHydrationRequested(AGENT, MSG, BLOCK));
+      await settle();
+      run.dispatch(scrollbackFetchStarted(AGENT, 'seek'));
+      pending.resolve(slice('old ', 4));
+      await settle();
+      expect(mocks.getMessageBlockPage).toHaveBeenCalledTimes(1);
+      expect(run.chat().byAgentId[AGENT]?.hydratedBlocks?.[KEY]).toBeUndefined();
+      mocks.getMessageBlockPage.mockResolvedValueOnce(slice('fresh'));
+      run.dispatch(messageBlockHydrationRequested(AGENT, MSG, BLOCK));
+      await settle();
+      expect(mocks.getMessageBlockPage).toHaveBeenCalledTimes(2);
+      expect(run.chat().byAgentId[AGENT]?.hydratedBlocks?.[KEY]).toMatchObject({
+        status: 'loaded',
+        block: { text: 'fresh' },
+      });
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
+  it.each(['resolve', 'reject'] as const)(
+    'keeps a replacement flight when the retired flight has a late %s',
+    async (outcome) => {
+      mocks.messageBlockPages = true;
+      const old = deferred();
+      const fresh = deferred();
+      mocks.getMessageBlockPage
+        .mockReturnValueOnce(old.promise)
+        .mockReturnValueOnce(fresh.promise)
+        .mockResolvedValueOnce(slice('body'));
+      const run = harness();
+      try {
+        run.dispatch(messageBlockHydrationRequested(AGENT, MSG, BLOCK));
+        await settle();
+        run.dispatch(chatReset(AGENT));
+        run.dispatch(messageBlockHydrationRequested(AGENT, MSG, BLOCK));
+        await settle();
+        expect(mocks.getMessageBlockPage).toHaveBeenCalledTimes(2);
+        if (outcome === 'resolve') old.resolve(slice('old ', 4));
+        else old.reject(new Error('old failure'));
+        await settle();
+        run.dispatch(messageBlockHydrationRequested(AGENT, MSG, BLOCK));
+        await settle();
+        expect(mocks.getMessageBlockPage).toHaveBeenCalledTimes(2);
+        fresh.resolve(slice('new ', 4));
+        await settle();
+        expect(mocks.getMessageBlockPage).toHaveBeenCalledTimes(3);
+        expect(run.chat().byAgentId[AGENT]?.hydratedBlocks?.[KEY]).toMatchObject({
+          status: 'loaded',
+          block: { text: 'new body' },
+        });
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
+
+  it('retires legacy whole-block reads on reset too', async () => {
+    const pending = deferred();
+    mocks.getMessageBlock.mockReturnValueOnce(pending.promise.then((page) => page.block));
+    const run = harness();
+    try {
+      run.dispatch(messageBlockHydrationRequested(AGENT, MSG, BLOCK));
+      await settle();
+      run.dispatch(chatReset(AGENT));
+      pending.resolve(slice('old'));
+      await settle();
+      expect(run.chat().byAgentId[AGENT]?.hydratedBlocks?.[KEY]).toBeUndefined();
+      expect(mocks.getMessageBlock).toHaveBeenCalledTimes(1);
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
   });
 });

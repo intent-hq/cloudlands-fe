@@ -18,6 +18,8 @@ interface SecretAnswer {
  * card hands a value to the provide saga through `secret-value-handoff`.
  */
 export interface SecretRequestsState {
+  /** Changes whenever caller-relative presentation is retired, including an ABA re-admission. */
+  admissionRevision?: number;
   /** Latest `secret.list` per agent id. */
   listings: Record<string, AgentSecretListing>;
   /** Local answer per request id, until a later listing replaces it. */

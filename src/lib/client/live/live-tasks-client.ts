@@ -106,6 +106,8 @@ function noteToTask(raw: Record<string, unknown>): WorkspaceTask | null {
     ...(typeof raw.rev === 'number' ? { rev: raw.rev } : {}),
     ...relationFields(task as Record<string, unknown>),
     ...specLinkedField(task as Record<string, unknown>),
+    // Both paged and legacy task snapshots stamp linkage on the Note itself.
+    ...specLinkedField(raw),
   };
 }
 

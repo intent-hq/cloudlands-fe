@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { store as appStore } from '$store/renderer/store';
 import {
   secretAnswerRequested,
@@ -11,6 +11,8 @@ import {
 } from '$store/renderer/slices/secret-requests/secret-requests-slice';
 import SecretRequestCard from '../SecretRequestCard.svelte';
 import { takeSecretValue } from '../secret-value-handoff';
+import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+import { principalContextChanged } from '$store/renderer/slices/principal/principal-slice';
 
 const request = {
   requestId: 'sec-card-1',
@@ -31,6 +33,7 @@ function renderCard(state: 'pending' | 'expired' = 'pending', requestId = reques
 }
 
 beforeAll(() => appStore.init());
+beforeEach(() => admitLegacyPrincipal());
 
 describe('SecretRequestCard', () => {
   afterEach(() => vi.restoreAllMocks());
@@ -75,6 +78,15 @@ describe('SecretRequestCard', () => {
     expect(input.value).toBe('tok-123');
     expect(input.disabled).toBe(false);
     expect(JSON.stringify(appStore.state)).not.toContain('tok-123');
+    await fireEvent.click(screen.getByTestId('secret-request-reveal'));
+    expect(input.type).toBe('text');
+    appStore.dispatch(principalContextChanged(null));
+    await waitFor(() => expect(input.value).toBe(''));
+    expect(input.type).toBe('password');
+    expect(input.disabled).toBe(true);
+    admitLegacyPrincipal();
+    await waitFor(() => expect(input.disabled).toBe(false));
+    expect(input.value).toBe('');
   });
 
   it('does not submit when Enter confirms an IME composition', async () => {
@@ -135,6 +147,16 @@ describe('SecretRequestCard', () => {
     renderCard('pending', 'sec-card-cancel');
     await fireEvent.click(screen.getByTestId('secret-request-dismiss'));
     await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(
+      dispatch.mock.calls.some(
+        ([action]) => (action as { type: string }).type === secretAnswerRequested.type,
+      ),
+    ).toBe(false);
+    await fireEvent.click(screen.getByTestId('secret-request-dismiss'));
+    const retiredConfirm = screen.getByRole('button', { name: 'Dismiss request' });
+    appStore.dispatch(principalContextChanged(null));
+    await fireEvent.click(retiredConfirm);
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(
       dispatch.mock.calls.some(

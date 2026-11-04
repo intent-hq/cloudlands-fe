@@ -1,6 +1,7 @@
 import type { Workspace } from '$shared/types';
 import { m } from '$shared/paraglide/messages.js';
 import { store } from '$store/renderer/store';
+import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
 import { reversibleActions } from '$lib/utils/reversible-actions';
 import { notify } from '$lib/components/patterns/notify';
 import { bringBackHomeWorkspace, setHomeWorkspaceAside } from './home-workspaces-slice';
@@ -15,19 +16,49 @@ export const HOME_SET_ASIDE_GROUP = 'home:set-aside';
 
 const UNDO_SECONDS = 8;
 
+/** Capture the admitted caller, renderer store and personal persistence scope. */
+export function captureHomeSetAsideContext(): () => boolean {
+  try {
+    const dispatch = store.dispatch;
+    const context = selectPrincipalActionContext.select(store.state);
+    const scope = selectHomePersistenceScope.select(store.state);
+    return () => {
+      try {
+        return (
+          store.dispatch === dispatch &&
+          context !== null &&
+          context === selectPrincipalActionContext.select(store.state) &&
+          scope !== null &&
+          scope === selectHomePersistenceScope.select(store.state) &&
+          scope === store.state.homeWorkspaces.persistenceScope
+        );
+      } catch {
+        return false;
+      }
+    };
+  } catch {
+    return () => false;
+  }
+}
+
 /**
  * Move a workspace into the personal Set aside shelf with an Undo toast.
  * This only changes Home organization: agents, hooks and watches keep running.
  */
 export function setHomeWorkspaceAsideWithUndo(workspace: Workspace): void {
+  const isCurrent = captureHomeSetAsideContext();
+  if (!isCurrent()) return;
   const title = workspace.title.trim() || m.workspace_links_untitled_label();
   const scope = selectHomePersistenceScope.select(store.state);
   const at = Date.now();
   void reversibleActions.execute({
     id: `home-set-aside:${workspace.id}:${globalThis.crypto.randomUUID()}`,
     message: m.home_setAside_toast_message({ title }),
+    isCurrent,
     action: () => {
+      if (!isCurrent()) return false;
       store.dispatch(setHomeWorkspaceAside(workspace.id, at));
+      if (!isCurrent()) return false;
       if (selectHomeWorkspaceIsSetAside.select(store.state, workspace.id)) return true;
       // The bounded record set refused it; the row stays active, so offer no Undo.
       notify.warning(m.home_setAside_full_error());
@@ -35,6 +66,7 @@ export function setHomeWorkspaceAsideWithUndo(workspace: Workspace): void {
     },
     onUndo: () => {
       if (
+        !isCurrent() ||
         selectHomePersistenceScope.select(store.state) !== scope ||
         selectHomeSetAsideRecords.select(store.state)[workspace.id]?.at !== at
       )
@@ -76,9 +108,11 @@ export function restoreHomeFocusAfterMove(
   getHomeElement: () => HTMLElement | null,
   neighborId: string | null,
   workspaceId: string,
+  isCurrent: () => boolean = captureHomeSetAsideContext(),
 ): void {
   requestAnimationFrame(() =>
     requestAnimationFrame(() => {
+      if (!isCurrent()) return;
       const active = document.activeElement;
       if (active && active !== document.body && active.isConnected) return;
       const home = getHomeElement();

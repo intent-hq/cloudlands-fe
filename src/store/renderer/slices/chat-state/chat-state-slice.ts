@@ -1102,6 +1102,11 @@ export const messageBlockHydrationFailed = createAction<
   [agentId: string, messageId: string, blockId: string, error: string]
 >('chatState/messageBlockHydrationFailed');
 
+/** Release only the loading entry owned by a retired read, without an error. */
+export const messageBlockHydrationRetired = createAction<
+  [agentId: string, messageId: string, blockId: string, expected: HydratedBlockEntry]
+>('chatState/messageBlockHydrationRetired');
+
 // --- Send message saga trigger (no reducer state change) ---
 
 /** Trigger the send-message saga. Dispatched from ChatPanel after DOM serialization. */
@@ -1527,6 +1532,17 @@ chatStateReducer.with(
       agentId,
       hydratedBlocks: setHydratedBlock(agent, key, { status: 'error', error }),
     });
+  },
+);
+chatStateReducer.with(
+  messageBlockHydrationRetired,
+  (state, { payload: [agentId, messageId, blockId, expected] }) => {
+    const agent = state.byAgentId[agentId];
+    const key = hydratedBlockKey(messageId, blockId);
+    if (expected.status !== 'loading' || agent?.hydratedBlocks?.[key] !== expected) return state;
+    const hydratedBlocks = { ...agent.hydratedBlocks };
+    delete hydratedBlocks[key];
+    return updateAgent(state, agentId, { hydratedBlocks });
   },
 );
 chatStateReducer.with(chatLiveStreamPhaseChanged, (state, { payload: [agentId, phase] }) => {

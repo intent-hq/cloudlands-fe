@@ -44,6 +44,7 @@
     showRepository,
     showRepositoryOwner,
     menu,
+    onoverflowchange,
     onopen,
     onmenu,
     onselect,
@@ -62,6 +63,7 @@
     showRepository: boolean;
     showRepositoryOwner: boolean;
     menu: (workspace: Workspace) => SidebarMenuEntry[];
+    onoverflowchange?: (workspace: Workspace, open: boolean) => void;
     /** Click or keyboard activation; opens only for modified events. */
     onopen: (event: MouseEvent | KeyboardEvent, id: string) => void;
     /** Context menu request; `option` anchors the keyboard (ContextMenu, Shift+F10) case. */
@@ -247,6 +249,7 @@
         </span>
         <SidebarOverflowMenu
           items={menu(item)}
+          onOpenChange={(open) => onoverflowchange?.(item, open)}
           ariaLabel={m.workspace_sidebarHeader_actions_ariaLabel()}
         />
       </span>{/snippet}

@@ -142,6 +142,10 @@ export const selectRunningAgentsForArchive = store.createSelector((state) => {
   });
 });
 
+export const selectAttentionDismissalResult = store.createSelector(
+  (state) => state.workspaceOperations.attentionDismissalResult,
+);
+
 export const selectShowRetireConfirm = store.createSelector((state) => {
   return state.workspaceOperations.showRetireConfirm;
 });

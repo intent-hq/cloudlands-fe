@@ -1278,20 +1278,25 @@ jobs:
   # dock-composer-spec.ct.spec.ts ejected #4002 and failed 12 of 40 runs
   # under load). The full suite stays queue-only (#3930: cost); this job runs
   # only when a spec changed. scripts/ct-changed-specs.mjs lists the specs and
-  # sets the repetition count (20, scaled down for PRs touching many specs).
+  # sizes repetitions from full discovery before dividing work across four shards.
   test-ct-changed:
-    name: Changed Component Tests (repeated)
+    name: Changed Component Tests (repeated, shard ${{ matrix.shard }}/4)
     needs: [route, release-fast-path]
     if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' && needs.release-fast-path.outputs.ct_changed_specs != '[]' }}
     # The same 8-core burst runner as the queue's CT shards, without a slot:
     # the bundle build below needs their 12 GiB heap.
     runs-on: ${{ fromJSON(needs.route.outputs.cloud || '{}')['gh-linux-8x'] || fromJSON('["warp-ubuntu-2404-x64-8x"]') }}
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     permissions:
       contents: read
     env:
       GIT_TERMINAL_PROMPT: '0'
       CT_CHANGED_SPECS: ${{ needs.release-fast-path.outputs.ct_changed_specs }}
+      CT_SHARD: ${{ matrix.shard }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -1365,12 +1370,12 @@ jobs:
             "${filters[@]}" --list --grep-invert '@quarantine\b' --reporter=json > /dev/null
           repeat=$(node scripts/ct-changed-specs.mjs --repeat-each-listed "$RUNNER_TEMP/ct-changed-list.json")
           node scripts/run-ct-tests.mjs "${filters[@]}" --repeat-each="$repeat" --retries=0 \
-            --fail-on-flaky-tests --workers=2 --grep-invert '@quarantine\b' --reporter=list,html,json
+            --shard="$CT_SHARD"/4 --fail-on-flaky-tests --workers=2 --grep-invert '@quarantine\b' --reporter=list,html,json
       - name: Upload playwright report
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-ct-changed-report
+          name: playwright-ct-changed-report-${{ matrix.shard }}
           path: |
             playwright-report/
             test-results/

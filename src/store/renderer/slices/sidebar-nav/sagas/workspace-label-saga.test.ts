@@ -22,15 +22,18 @@ vi.mock('../../../utils/safe-local-storage-saga', () => ({
 }));
 
 import type { StoreState } from '../../../types';
+import { store } from '../../../store';
 import {
   labelWorkspace,
   reduceWorkspaceLabelsState,
   workspaceLabelsState,
 } from '../../../../../test/fixtures/workspace-labels-state';
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
+import { selectPrincipalActionContext } from '../../principal/principal-selectors';
 import {
   bulkUpdateWorkspaceEntities,
   setWorkspaceHasLoaded,
+  setWorkspaceEntity,
   updateWorkspaceEntity,
 } from '../../workspace/workspace-slice';
 import { selectPinnedWorkspaceIds, selectWorkspaceLabelsInUse } from '../sidebar-nav-selectors';
@@ -59,6 +62,7 @@ function served(id: string, label: string | null) {
 }
 
 function start(initial: StoreState, saga: Saga = sidebarNavSaga) {
+  const dispose = store.init(initial);
   let state = initial;
   const channel = stdChannel();
   const dispatched: Array<{ type: string }> = [];
@@ -93,8 +97,19 @@ function start(initial: StoreState, saga: Saga = sidebarNavSaga) {
     async stop() {
       task.cancel();
       await task.toPromise();
+      dispose();
     },
   };
+}
+
+function readmitted(state: StoreState, label: string | undefined): StoreState {
+  const next = workspaceLabelsState({ workspaces: [labelWorkspace('ws-1', { label })] });
+  next.principal = { ...next.principal, invalidation: state.principal.invalidation + 1 };
+  next.workspace = {
+    ...next.workspace,
+    capabilityContext: selectPrincipalActionContext.select(next),
+  };
+  return next;
 }
 
 beforeEach(() => {
@@ -150,6 +165,34 @@ describe('setWorkspaceLabel', () => {
     await settle();
     expect(run.label('ws-1')).toBe('Old');
     expect(mocks.notifyError).toHaveBeenCalledWith('forbidden');
+
+    // The old reply cannot roll back a fresh projection with the same label.
+    const retired = deferred<unknown>();
+    mocks.update.mockReturnValueOnce(retired.promise);
+    run.put(setWorkspaceLabel('ws-1', 'pinned'));
+    await settle();
+    run.state = readmitted(run.state, 'pinned');
+    retired.resolve({ ok: false, error: 'access changed' });
+    await settle();
+    expect(run.label('ws-1')).toBe('pinned');
+    expect(mocks.notifyError).toHaveBeenCalledTimes(1);
+
+    // A retired success cannot rebase the replacement owner's rollback.
+    const oldReply = deferred<unknown>();
+    const currentReply = deferred<unknown>();
+    mocks.update.mockReturnValueOnce(oldReply.promise).mockReturnValueOnce(currentReply.promise);
+    run.put(setWorkspaceLabel('ws-1', 'Old intent'));
+    await settle();
+    run.state = readmitted(run.state, 'Fresh projection');
+    run.put(setWorkspaceLabel('ws-1', 'Current intent'));
+    await settle();
+    oldReply.resolve(served('ws-1', 'Old intent'));
+    await settle();
+    expect(run.label('ws-1')).toBe('Current intent');
+    currentReply.resolve({ ok: false, error: 'current refusal' });
+    await settle();
+    expect(run.label('ws-1')).toBe('Fresh projection');
+    expect(mocks.notifyError).toHaveBeenCalledTimes(2);
     await run.stop();
   });
 
@@ -354,6 +397,32 @@ describe('pin label migration', () => {
     await settle();
     expect(mocks.update).toHaveBeenCalledTimes(1);
     await run.stop();
+
+    // The next admission is ready while the old migration's real write is held.
+    // It must be evaluated after that write retires, without a second ready event.
+    mocks.update.mockClear();
+    mocks.storage.delete(PINNED_WORKSPACES_LABEL_MIGRATION_KEY);
+    const oldWrite = deferred<unknown>();
+    mocks.update
+      .mockReturnValueOnce(oldWrite.promise)
+      .mockResolvedValueOnce(served('ws-current', 'pinned'));
+    const switching = start(loaded);
+    await settle();
+    expect(mocks.update.mock.calls).toEqual([[{ id: 'ws-1', label: 'pinned' }]]);
+    switching.state = readmitted(switching.state, undefined);
+    switching.put(setWorkspaceEntity(labelWorkspace('ws-current')));
+    mocks.storage.set(PINNED_WORKSPACES_KEY, ['ws-current']);
+    switching.put(setWorkspaceHasLoaded(true, switching.state.connections.windowBackendId));
+    oldWrite.resolve(served('ws-1', 'pinned'));
+    await settle();
+    expect(mocks.update.mock.calls).toEqual([
+      [{ id: 'ws-1', label: 'pinned' }],
+      [{ id: 'ws-current', label: 'pinned' }],
+    ]);
+    expect(switching.label('ws-1')).toBeUndefined();
+    expect(switching.label('ws-current')).toBe('pinned');
+    expect(mocks.storage.get(PINNED_WORKSPACES_LABEL_MIGRATION_KEY)).toBe(true);
+    await switching.stop();
   });
 
   it('does not mark the migration done when a write fails', async () => {

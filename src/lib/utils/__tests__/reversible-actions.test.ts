@@ -23,6 +23,40 @@ import {
   confirmAction,
 } from '../reversible-actions';
 import { notify } from '$lib/components/patterns/notify';
+import { store } from '$store/renderer/store';
+import {
+  labelWorkspace,
+  workspaceLabelsState,
+} from '../../../test/fixtures/workspace-labels-state';
+import {
+  principalIdentityChanged,
+  principalReceived,
+} from '$store/renderer/slices/principal/principal-slice';
+import {
+  selectHomePersistenceScope,
+  selectHomeWorkspaceIsSetAside,
+} from '$features/home/home-workspaces-selectors';
+import { hydrateHomeWorkspaceSettings } from '$features/home/home-workspaces-slice';
+import { readHomePersistence } from '$features/home/home-workspaces-persistence';
+import {
+  restoreHomeFocusAfterMove,
+  setHomeWorkspaceAsideWithUndo,
+} from '$features/home/home-set-aside';
+
+function readmitSamePrincipal() {
+  const before = store.state.principal;
+  store.dispatch(principalIdentityChanged(before.boundPrincipalId!));
+  store.dispatch(
+    principalReceived(
+      {
+        context: before.context!,
+        invalidation: before.invalidation + 1,
+        presentationVersion: before.presentationVersion,
+      },
+      before.snapshot!,
+    ),
+  );
+}
 
 describe('reversible-actions', () => {
   beforeEach(() => {
@@ -64,6 +98,23 @@ describe('reversible-actions', () => {
       expect(notify.success).not.toHaveBeenCalled();
       expect(notify.error).not.toHaveBeenCalled();
       expect(onUndo).not.toHaveBeenCalled();
+
+      let current = true;
+      let complete!: () => void;
+      const action = new Promise<void>((resolve) => (complete = resolve));
+      const pending = reversibleActions.execute({
+        id: 'test-retired-result',
+        message: 'Old caller result',
+        action: () => action,
+        onUndo,
+        isCurrent: () => current,
+      });
+      current = false;
+      complete();
+      expect(await pending).toBe(false);
+      expect(notify.warning).not.toHaveBeenCalled();
+      expect(notify.success).not.toHaveBeenCalled();
+      expect(notify.error).not.toHaveBeenCalled();
     });
 
     it('should show undo option when onUndo is provided', async () => {
@@ -83,6 +134,43 @@ describe('reversible-actions', () => {
           action: expect.objectContaining({ label: 'Undo' }),
         }),
       );
+
+      const workspace = labelWorkspace('ws-target');
+      const dispose = store.init(workspaceLabelsState({ workspaces: [workspace] }));
+      const element = document.createElement('div');
+      try {
+        const scope = selectHomePersistenceScope.select(store.state)!;
+        store.dispatch(hydrateHomeWorkspaceSettings(scope, readHomePersistence(undefined)));
+        vi.mocked(notify.warning).mockClear();
+        setHomeWorkspaceAsideWithUndo(workspace);
+        await Promise.resolve();
+        expect(selectHomeWorkspaceIsSetAside.select(store.state, workspace.id)).toBe(true);
+        const options = vi.mocked(notify.warning).mock.calls.at(-1)![1]!;
+        const action = options.action;
+        expect(action && typeof action === 'object' && 'onClick' in action).toBe(true);
+        readmitSamePrincipal();
+        if (action && typeof action === 'object' && 'onClick' in action)
+          await action.onClick(new MouseEvent('click') as never);
+        expect(selectHomeWorkspaceIsSetAside.select(store.state, workspace.id)).toBe(true);
+
+        const button = document.createElement('button');
+        button.dataset.homeWorkspace = workspace.id;
+        element.append(button);
+        document.body.append(element);
+        const focus = vi.spyOn(button, 'focus');
+        restoreHomeFocusAfterMove(() => element, null, workspace.id);
+        await vi.advanceTimersByTimeAsync(40);
+        expect(focus).toHaveBeenCalledOnce();
+        button.blur();
+        focus.mockClear();
+        restoreHomeFocusAfterMove(() => element, null, workspace.id);
+        readmitSamePrincipal();
+        await vi.advanceTimersByTimeAsync(40);
+        expect(focus).not.toHaveBeenCalled();
+      } finally {
+        element.remove();
+        dispose();
+      }
     });
 
     it('opts the undo toast into the countdown bar with the toast duration', async () => {

@@ -4,6 +4,10 @@ import { runSaga, stdChannel } from 'redux-saga';
 const mocks = vi.hoisted(() => ({
   update: vi.fn(),
   notifyError: vi.fn(),
+  transport: {},
+}));
+vi.mock('$lib/client/live/backend-transport-factory', () => ({
+  resolveBackendTransport: () => mocks.transport,
 }));
 vi.mock('../../workspace/utils/workspace.client', () => ({
   workspaceClient: { update: mocks.update },
@@ -14,6 +18,8 @@ vi.mock('$lib/components/patterns/notify', () => ({
 
 import { fork, takeEvery } from 'typed-redux-saga';
 import type { StoreState } from '../../../types';
+import { store } from '../../../store';
+import { selectPrincipalActionContext } from '../../principal/principal-selectors';
 import {
   labelWorkspace,
   reduceWorkspaceLabelsState,
@@ -37,8 +43,12 @@ const settle = async () => {
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((r) => (resolve = r));
-  return { promise, resolve };
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((r, j) => {
+    resolve = r;
+    reject = j;
+  });
+  return { promise, resolve, reject };
 }
 
 function served(id: string, disabled: boolean) {
@@ -55,7 +65,9 @@ const remote = (id: string, autoArchiveDisabled: boolean | undefined) =>
   bulkUpdateWorkspaceEntities([updateWorkspaceEntity(id, { autoArchiveDisabled })]);
 
 function start(initial: StoreState) {
+  const dispose = store.init(initial);
   let state = initial;
+  let afterDispatch: (() => void) | undefined;
   const channel = stdChannel();
   const task = runSaga(
     {
@@ -63,12 +75,22 @@ function start(initial: StoreState) {
       dispatch: (action: { type: string }) => {
         state = reduceWorkspaceLabelsState(state, action);
         channel.put(action);
+        afterDispatch?.();
       },
       getState: () => state,
     },
     root,
   );
   return {
+    get state() {
+      return state;
+    },
+    set state(next: StoreState) {
+      state = next;
+    },
+    set afterDispatch(callback: (() => void) | undefined) {
+      afterDispatch = callback;
+    },
     put(action: { type: string }) {
       state = reduceWorkspaceLabelsState(state, action);
       channel.put(action);
@@ -79,6 +101,7 @@ function start(initial: StoreState) {
     async stop() {
       task.cancel();
       await task.toPromise();
+      dispose();
     },
   };
 }
@@ -86,8 +109,19 @@ function start(initial: StoreState) {
 const ownerState = (workspace = labelWorkspace('ws-1')) =>
   workspaceLabelsState({ workspaces: [workspace], autoArchiveOptOut: true });
 
+function readmitted(state: StoreState, disabled: boolean): StoreState {
+  const next = ownerState(labelWorkspace('ws-1', { autoArchiveDisabled: disabled || undefined }));
+  next.principal = { ...next.principal, invalidation: state.principal.invalidation + 1 };
+  next.workspace = {
+    ...next.workspace,
+    capabilityContext: selectPrincipalActionContext.select(next),
+  };
+  return next;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.transport = {};
   resetWorkspaceAutoArchiveWritesForTest();
 });
 
@@ -110,6 +144,18 @@ describe('setWorkspaceAutoArchiveDisabled', () => {
       [{ id: 'ws-1', autoArchiveDisabled: true }],
       [{ id: 'ws-1', autoArchiveDisabled: false }],
     ]);
+    expect(mocks.notifyError).not.toHaveBeenCalled();
+
+    // Retiring admission during the optimistic put must prevent the actual RPC.
+    mocks.update.mockClear();
+    run.afterDispatch = () => {
+      run.afterDispatch = undefined;
+      run.state = readmitted(run.state, true);
+    };
+    run.put(setWorkspaceAutoArchiveDisabled('ws-1', true));
+    await settle();
+    expect(mocks.update).not.toHaveBeenCalled();
+    expect(run.flag('ws-1')).toBe(true);
     expect(mocks.notifyError).not.toHaveBeenCalled();
     await run.stop();
   });
@@ -135,6 +181,34 @@ describe('setWorkspaceAutoArchiveDisabled', () => {
     await settle();
     expect(run.flag('ws-1')).toBeUndefined();
     expect(mocks.notifyError).toHaveBeenCalledWith('forbidden');
+
+    // A retired failure cannot roll back a fresh row showing the same value.
+    const retired = deferred<unknown>();
+    mocks.update.mockReturnValueOnce(retired.promise);
+    run.put(setWorkspaceAutoArchiveDisabled('ws-1', true));
+    await settle();
+    run.state = readmitted(run.state, true);
+    retired.resolve({ ok: false, error: 'access changed' });
+    await settle();
+    expect(run.flag('ws-1')).toBe(true);
+    expect(mocks.notifyError).toHaveBeenCalledTimes(1);
+
+    // A retired success must not change the replacement owner's rollback target.
+    const oldReply = deferred<unknown>();
+    const currentReply = deferred<unknown>();
+    mocks.update.mockReturnValueOnce(oldReply.promise).mockReturnValueOnce(currentReply.promise);
+    run.put(setWorkspaceAutoArchiveDisabled('ws-1', false));
+    await settle();
+    run.state = readmitted(run.state, true);
+    run.put(setWorkspaceAutoArchiveDisabled('ws-1', false));
+    await settle();
+    oldReply.resolve(served('ws-1', false));
+    await settle();
+    expect(run.flag('ws-1')).toBeUndefined();
+    currentReply.resolve({ ok: false, error: 'current refusal' });
+    await settle();
+    expect(run.flag('ws-1')).toBe(true);
+    expect(mocks.notifyError).toHaveBeenCalledTimes(2);
     await run.stop();
   });
 
@@ -146,6 +220,17 @@ describe('setWorkspaceAutoArchiveDisabled', () => {
     await settle();
 
     expect(run.flag('ws-1')).toBe(true);
+    expect(mocks.notifyError).toHaveBeenCalledTimes(1);
+
+    const retired = deferred<unknown>();
+    mocks.update.mockReturnValueOnce(retired.promise);
+    run.put(setWorkspaceAutoArchiveDisabled('ws-1', false));
+    await settle();
+    // Replacing the transport retires a write even before a new admission is published.
+    mocks.transport = {};
+    retired.reject(new Error('old transport disconnected'));
+    await settle();
+    expect(run.flag('ws-1')).toBeUndefined();
     expect(mocks.notifyError).toHaveBeenCalledTimes(1);
     await run.stop();
   });

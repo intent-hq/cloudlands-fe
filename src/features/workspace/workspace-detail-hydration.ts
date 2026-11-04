@@ -7,7 +7,7 @@
  * detail-only, and the `pullRequests` pool is capped (with
  * `pullRequestsTotal` announcing the full size when truncated). Readers that
  * need one of those fields call the helpers here instead of trusting the
- * stored row: the read is single-flighted per workspace — here across the
+ * stored row: the read is single-flighted per workspace and admission — here across the
  * helper's callers, and at the `LiveWorkspacesClient.get` seam across every
  * `workspace.get` entry point (`open`, the load saga, this module) — and
  * applied through `setWorkspaceEntity(..., { detailRead: true })`, which
@@ -22,6 +22,10 @@
 
 import type { Workspace } from '$shared/types';
 import {
+  captureWorkspaceReadContext,
+  type WorkspaceReadContext,
+} from '$lib/client/live/workspace-read-context';
+import {
   isWorkspacePullRequestPoolTruncated,
   selectWorkspaceById,
   selectWorkspaceDetailHydrated,
@@ -29,7 +33,10 @@ import {
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 import { store as appStore } from '$store/renderer/store';
 
-const inFlightByWorkspace = new Map<string, Promise<Workspace | null>>();
+const inFlightByWorkspace = new Map<
+  string,
+  { read: WorkspaceReadContext; promise: Promise<Workspace | null> }
+>();
 
 /**
  * Read `workspace.get` for one workspace, single-flighted: concurrent callers
@@ -38,17 +45,27 @@ const inFlightByWorkspace = new Map<string, Promise<Workspace | null>>();
  * unless you own the dispatch (sagas).
  */
 export function fetchWorkspaceDetail(workspaceId: string): Promise<Workspace | null> {
-  const pending = inFlightByWorkspace.get(workspaceId);
-  if (pending) return pending;
+  const read = captureWorkspaceReadContext(workspaceId);
+  const key = JSON.stringify([read.key, workspaceId]);
+  const pending = inFlightByWorkspace.get(key);
+  if (pending?.read.isCurrent()) return pending.promise;
   const request = import('$lib/client')
-    .then(({ appClient }) => appClient.workspaces.get(workspaceId))
+    .then(({ appClient }) => {
+      read.assertCurrent();
+      return appClient.workspaces.get(workspaceId);
+    })
+    .then((workspace) => {
+      read.assertCurrent();
+      return workspace;
+    })
     .catch(() => null)
     .finally(() => {
-      if (inFlightByWorkspace.get(workspaceId) === request) {
-        inFlightByWorkspace.delete(workspaceId);
+      if (inFlightByWorkspace.get(key) === entry) {
+        inFlightByWorkspace.delete(key);
       }
     });
-  inFlightByWorkspace.set(workspaceId, request);
+  const entry = { read, promise: request };
+  inFlightByWorkspace.set(key, entry);
   return request;
 }
 
@@ -57,8 +74,9 @@ function storedWorkspace(workspaceId: string): Workspace | undefined {
 }
 
 async function hydrateIntoStore(workspaceId: string): Promise<Workspace | undefined> {
+  const read = captureWorkspaceReadContext(workspaceId);
   const workspace = await fetchWorkspaceDetail(workspaceId);
-  if (workspace) {
+  if (workspace && read.isCurrent() && !appStore.state.workspace.pendingDeletions[workspaceId]) {
     appStore.dispatch(setWorkspaceEntity(workspace, { detailRead: true }));
   }
   return storedWorkspace(workspaceId);

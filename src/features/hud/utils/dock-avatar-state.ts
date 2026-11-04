@@ -5,6 +5,7 @@ import {
 } from '$features/agent/components/agent-avatar/avatar-state';
 import { resolveWorkspaceStatusState } from '$lib/components/workspace/utils/workspace-status-presentation';
 import type { AgentSession, Workspace } from '$shared/types';
+import { workspaceReminderStatus } from '$shared/utils/workspace-attention-reminder';
 import type { DockWorkspaceView } from '$store/renderer/slices/hud/hud-selectors';
 
 const QUIET_STATES: ReadonlySet<AvatarState> = new Set(['idle', 'completed', 'unread']);
@@ -25,7 +26,7 @@ export function dockWorkspaceAvatarState(
 ): AvatarState {
   const hasQuestion = item.badgeKind === 'question';
   const workspace: Workspace = item.workspace;
-  const status = workspace.displayStatus;
+  const status = workspaceReminderStatus(workspace);
   // The same resolver as the header's status count, so a yellow header dot always has a row.
   const workspaceRunning =
     !!item.isRunning || resolveWorkspaceStatusState(workspace) === 'in_progress';
@@ -40,7 +41,10 @@ export function dockWorkspaceAvatarState(
   return getAvatarState(
     {
       isStreaming: workspaceRunning,
-      status: (item.isWaiting ?? workspace.waiting === true) ? 'waiting' : undefined,
+      status:
+        status === 'waiting' || (item.isWaiting ?? workspace.waiting === true)
+          ? 'waiting'
+          : undefined,
     },
     {
       isFailed: status === 'failed',

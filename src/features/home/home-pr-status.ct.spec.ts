@@ -5,7 +5,7 @@ for (const scenario of ['pr-status-list', 'board-pr-status'] as const) {
   test(`Home ${scenario} exposes PR state on hover and preserves attention filtering`, async ({
     mount,
     page,
-  }) => {
+  }, testInfo) => {
     await page.setViewportSize({ width: 1440, height: 1000 });
     const component = await mount(Preview, { props: { scenario, height: 940 } });
     const row = (id: string) => component.locator(`[data-home-workspace="${id}"]`);
@@ -62,13 +62,25 @@ for (const scenario of ['pr-status-list', 'board-pr-status'] as const) {
       .getByRole('group', { name: 'Status', exact: true })
       .getByRole('button', { name: /^Needs you/ })
       .click();
-    await expect(row('home-pr_ready')).toBeVisible();
-    await expect(row('home-pr_ready-running')).toBeVisible();
+    await expect(row('home-pr_ready')).toHaveCount(0);
+    await expect(row('home-pr_ready-running')).toHaveCount(0);
     await expect(row('home-pr_open')).toHaveCount(0);
     await expect(row('home-pr_queued')).toHaveCount(0);
     await expect(row('home-pr-review')).toBeVisible();
     await expect(row('home-pr-question')).toBeVisible();
     await expect(row('home-pr-failed')).toBeVisible();
     await expect(row('home-pr-blocked')).toBeVisible();
+    await component
+      .getByRole('group', { name: 'Status', exact: true })
+      .getByRole('button', { name: /^PR ready/ })
+      .click();
+    await expect(row('home-pr_ready')).toBeVisible();
+    await expect(row('home-pr_ready-running')).toBeVisible();
+    await expect(component.locator('[data-home-workspace]')).toHaveCount(2);
+    await expect(row('home-pr-review')).toHaveCount(0);
+    await testInfo.attach(`${scenario}-pr-ready-filter`, {
+      body: await page.screenshot({ path: testInfo.outputPath(`${scenario}-pr-ready-filter.png`) }),
+      contentType: 'image/png',
+    });
   });
 }

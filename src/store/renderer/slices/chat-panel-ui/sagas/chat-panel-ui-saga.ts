@@ -4,7 +4,7 @@ import { appClient } from '$lib/client';
 import type {
   AgentsClient,
   UserMessageIndexItem,
-  UserMessageIndexResult,
+  UserMessageIndexPageOptions,
 } from '$lib/client/app-client';
 import { notify } from '$lib/components/patterns/notify';
 import { m } from '$shared/paraglide/messages.js';
@@ -33,69 +33,95 @@ function errorMessage(error: unknown): string {
 }
 
 function* indexIsCurrent(action: IndexAction): SagaGenerator<boolean> {
-  const [workspaceId, consumerId, requestId] = action.payload;
+  const [workspaceId, consumerId, requestId, agentId, epoch] = action.payload;
   const current = yield* selectUserMessageIndexUi.effect(workspaceId, consumerId);
-  return current?.requestId === requestId && current.status === 'pending';
+  return (
+    current?.requestId === requestId &&
+    current.status === 'pending' &&
+    current.agentId === agentId &&
+    current.epoch === epoch
+  );
 }
 
-/** Rows per index page: the daemon maximum, so long histories take few reads. */
+function* indexCanContinue(action: IndexAction): SagaGenerator<boolean> {
+  if (!(yield* indexIsCurrent(action))) return false;
+  const [workspaceId, consumerId, requestId, agentId, epoch] = action.payload;
+  if ((yield* selectChatAgentState.effect(agentId)).scrollbackDiscardEpoch !== epoch) {
+    yield* put(userMessageIndexFinished(workspaceId, consumerId, requestId, 'cancelled'));
+    return false;
+  }
+  return true;
+}
+
+/** Inherited main bounds: fail rather than publish an incomplete index at exhaustion. */
 const INDEX_PAGE_LIMIT = 500;
-/** Upper bound on index pages per load (500,000 rows at the page limit). */
 const INDEX_MAX_PAGES = 1_000;
 
-/**
- * Read the whole user-message index (`agent.listUserMessages`, §5.5): the
- * daemon serves the newest page first, so each `nextToken` page is older
- * and goes in front. `null` when the request was superseded mid-walk.
- */
-function* readFullUserMessageIndex(
-  client: Client,
-  action: IndexAction,
-): SagaGenerator<UserMessageIndexResult | null> {
-  const [workspaceId, , , agentId] = action.payload;
-  const pages: UserMessageIndexItem[][] = [];
-  let nextToken: string | undefined;
-  for (let page = 0; page < INDEX_MAX_PAGES; page++) {
-    const result = yield* call(
-      [client, client.listUserMessages],
-      agentId,
-      undefined,
-      workspaceId,
-      nextToken === undefined
-        ? { limit: INDEX_PAGE_LIMIT }
-        : { limit: INDEX_PAGE_LIMIT, nextToken },
-    );
-    if (!result.ok) return result;
-    pages.unshift(result.items);
-    if (typeof result.nextToken !== 'string' || result.nextToken === nextToken) break;
-    if (!(yield* indexIsCurrent(action))) return null;
-    nextToken = result.nextToken;
-  }
-  const items = pages.flat();
-  return { ok: true, items, total: items.length, nextToken: null };
-}
-
 function* loadUserMessageIndex(client: Client, action: IndexAction): SagaGenerator<void> {
-  const [workspaceId, consumerId, requestId, agentId, epoch] = action.payload;
+  const [workspaceId, consumerId, requestId, agentId] = action.payload;
+  const itemsById = new Map<string, UserMessageIndexItem>();
+  const pages: UserMessageIndexItem[][] = [];
+  const seenTokens = new Set<string>();
+  let page: UserMessageIndexPageOptions = { limit: INDEX_PAGE_LIMIT };
   try {
-    const result = yield* call(readFullUserMessageIndex, client, action);
-    if (result === null || !(yield* indexIsCurrent(action))) return;
-    if ((yield* selectChatAgentState.effect(agentId)).scrollbackDiscardEpoch !== epoch) {
-      yield* put(userMessageIndexFinished(workspaceId, consumerId, requestId, 'cancelled'));
-      return;
-    }
-    yield* put(
-      userMessageIndexFinished(
+    for (let pageNumber = 0; pageNumber < INDEX_MAX_PAGES; pageNumber++) {
+      if (!(yield* indexCanContinue(action))) return;
+      const result = yield* call(
+        [client, client.listUserMessages],
+        agentId,
+        undefined,
         workspaceId,
-        consumerId,
-        requestId,
-        result.ok || result.unsupported ? 'succeeded' : 'failed',
-        result,
-        result.ok ? undefined : result.error,
-      ),
-    );
+        page,
+      );
+      if (!(yield* indexCanContinue(action))) return;
+      if (!result.ok) {
+        yield* put(
+          userMessageIndexFinished(
+            workspaceId,
+            consumerId,
+            requestId,
+            pageNumber === 0 && result.unsupported ? 'succeeded' : 'failed',
+            result,
+            result.error,
+          ),
+        );
+        return;
+      }
+      pages.push(result.items);
+      for (const item of result.items) itemsById.set(item.id, item);
+      const nextToken = result.nextToken;
+      if (!nextToken) {
+        // Each page is chronological, but continuation pages precede the first.
+        const items: UserMessageIndexItem[] = [];
+        const emitted = new Set<string>();
+        for (const olderPage of pages.reverse()) {
+          for (const { id } of olderPage) {
+            const item = itemsById.get(id);
+            if (item && !emitted.has(id)) {
+              emitted.add(id);
+              items.push(item);
+            }
+          }
+        }
+        yield* put(
+          userMessageIndexFinished(workspaceId, consumerId, requestId, 'succeeded', {
+            ok: true,
+            items,
+            total: items.length,
+            nextToken: null,
+          }),
+        );
+        return;
+      }
+      if (seenTokens.has(nextToken)) {
+        throw new Error('User-message index paging made no progress');
+      }
+      seenTokens.add(nextToken);
+      page = { limit: INDEX_PAGE_LIMIT, nextToken };
+    }
+    throw new Error('User-message index page limit exceeded');
   } catch (error) {
-    if (yield* indexIsCurrent(action))
+    if (yield* indexCanContinue(action))
       yield* put(
         userMessageIndexFinished(
           workspaceId,

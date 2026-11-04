@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { AgentStatus, type AgentMessage } from '$shared/types';
+import { AgentStatus, type AgentMessage, type Workspace } from '$shared/types';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
+import { dockWorkspaceAvatarState } from '$features/hud/utils/dock-avatar-state';
 
 const { getStateMock, selectAgentSessionMock, selectAgentIsRespondingMock } = vi.hoisted(() => ({
   getStateMock: vi.fn(() => ({ marker: 'state' })),
@@ -131,6 +132,46 @@ describe('getAvatarState attention-request states', () => {
     expect(getAvatarState({ status: AgentStatus.Waiting }, { attentionKind: 'discussion' })).toBe(
       'attention-discussion',
     );
+
+    const workspace = {
+      displayStatus: 'needs_attention',
+      activity: 'idle',
+      attention: 'none',
+      waiting: false,
+      attentionReminder: {
+        displayStatus: 'waiting',
+        dismissed: true,
+        reasons: [{ id: 'review:opaque', revision: 'opaque-revision' }],
+      },
+    } as Workspace;
+    // A Dock row without a loaded session uses the viewer's acknowledgement,
+    // including when its old row flags still say that it is not waiting.
+    expect(dockWorkspaceAvatarState({ workspace, isWaiting: false })).toBe('waiting');
+    expect(
+      dockWorkspaceAvatarState({ workspace: { ...workspace, activity: 'agent_running' } }),
+    ).toBe('running');
+    expect(
+      dockWorkspaceAvatarState({
+        workspace: {
+          ...workspace,
+          attentionReminder: { ...workspace.attentionReminder!, dismissed: false },
+        },
+      }),
+    ).toBe('attention-discussion');
+    expect(dockWorkspaceAvatarState({ workspace: { ...workspace, displayStatus: 'failed' } })).toBe(
+      'failed',
+    );
+    expect(
+      dockWorkspaceAvatarState({ workspace: { ...workspace, displayStatus: 'blocked' } }),
+    ).toBe('attention-blocker');
+    expect(
+      dockWorkspaceAvatarState({ workspace: { ...workspace, attentionReminder: undefined } }),
+    ).toBe('attention-discussion');
+    expect(
+      dockWorkspaceAvatarState({
+        workspace: { ...workspace, displayStatus: 'idle', attentionReminder: undefined },
+      }),
+    ).toBe('idle');
   });
 
   it('falls through unchanged when no attention request is pending', () => {

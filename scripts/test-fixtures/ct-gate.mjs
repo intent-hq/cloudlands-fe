@@ -27,6 +27,8 @@ test('first pass control', async () => { expect(2 + 2).toBe(4); });
   writeFileSync(
     config,
     `const fs = require('node:fs');
+// Keep this control's report local when an enclosing verifier exports its own path.
+process.env.PLAYWRIGHT_HTML_OUTPUT_DIR = ${JSON.stringify(join(root, 'html'))};
 if (!process.env.TEST_WORKER_INDEX) fs.writeFileSync(${JSON.stringify(join(root, 'argv.json'))}, JSON.stringify(process.argv));
 module.exports = {
   testDir: './src', testMatch: ${JSON.stringify(CT_TEST_MATCH)}, retries: 1, workers: 1,

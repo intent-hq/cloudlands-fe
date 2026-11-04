@@ -34,6 +34,7 @@ import {
   selectWorkspaceCreationVisible,
 } from '../../principal/principal-selectors';
 import { selectWorkspaceActionContext, selectWorkspaceUpdateContext } from '../workspace-selectors';
+import { captureWorkspaceReadContext } from '$lib/client/live/workspace-read-context';
 
 function captureMutation(workspaceId?: string, fields?: string[]) {
   const context = () =>
@@ -147,17 +148,14 @@ export class WorkspaceClient {
    * @returns Result containing response data or error
    */
   private async invoke<T>(channel: string, data?: any): Promise<Result<T, string>> {
+    const read =
+      channel === WORKSPACE_CHANNELS.LIST || channel === WORKSPACE_CHANNELS.OPEN
+        ? captureWorkspaceReadContext(channel === WORKSPACE_CHANNELS.OPEN ? data?.id : undefined)
+        : null;
     try {
       const requestMutationCounter = this.mutationCounter;
       // Check for pending request (deduplication)
-      const cacheKey =
-        this.getCacheKey(channel, data) +
-        (channel === WORKSPACE_CHANNELS.LIST
-          ? JSON.stringify([
-              store.state.connections.windowBackendId,
-              selectPrincipalActionContext.select(store.state),
-            ])
-          : '');
+      const cacheKey = JSON.stringify([this.getCacheKey(channel, data), read?.key ?? null]);
       this.pruneExpiredCacheEntries();
       const pending = this.pendingRequests.get(cacheKey);
       if (pending) {
@@ -213,6 +211,11 @@ export class WorkspaceClient {
           }
 
           const response = await invokeIpc(channel, serializedData);
+          if (read && !read.isCurrent()) {
+            if (channel === WORKSPACE_CHANNELS.LIST && read.isAdmitted())
+              return this.invoke<T>(channel, data);
+            return authorityFailure();
+          }
           // Handle both Result and CommandResponse formats
           const result = this.normalizeResponse<T>(response);
 
@@ -236,9 +239,15 @@ export class WorkspaceClient {
         return result;
       } finally {
         // Clean up pending request
-        this.pendingRequests.delete(cacheKey);
+        if (this.pendingRequests.get(cacheKey) === requestPromise)
+          this.pendingRequests.delete(cacheKey);
       }
     } catch (error) {
+      if (read && !read.isCurrent()) {
+        if (channel === WORKSPACE_CHANNELS.LIST && read.isAdmitted())
+          return this.invoke<T>(channel, data);
+        return authorityFailure();
+      }
       logger.error(`[WorkspaceClient] IPC error for ${channel}:`, error);
       return {
         ok: false,
