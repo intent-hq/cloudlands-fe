@@ -1264,8 +1264,7 @@ export function setupSystemIPC() {
       minHeight: 600,
       show: false, // Don't show until ready to prevent white flash
       webPreferences: {
-        // Path from dist/features/system/main/ to dist/preload/
-        preload: path.join(__dirname, '../../../preload/index.js'),
+        preload: path.join(__dirname, '../../../preload-build/preload/index.js'),
         contextIsolation: true,
         nodeIntegration: false,
         webviewTag: true,

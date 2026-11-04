@@ -283,7 +283,7 @@ export function setupDevConsoleIPC(links?: DaemonLinks): void {
     new DevConsoleWindows(devConsoleCapture, {
       preload: path.resolve(
         path.dirname(fileURLToPath(import.meta.url)),
-        '../../../preload/index.js',
+        '../../../preload-build/preload/index.js',
       ),
       url,
     }),

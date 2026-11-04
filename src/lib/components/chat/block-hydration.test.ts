@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { ContentBlock } from '$shared/types';
 import type { HydratedBlockEntry } from '$store/renderer/slices/chat-state/chat-state-types';
 import { hydratedBlockKey } from '$store/renderer/slices/chat-state/chat-state-types';
-import { mergeHydratedContent } from './block-hydration';
+import { cutMessageBlockIds, mergeHydratedContent, withoutOmittedStubs } from './block-hydration';
 
 const MSG = 'msg-1';
 
@@ -104,5 +104,72 @@ describe('mergeHydratedContent capped reads (§5.5, messageBlockPages: 1)', () =
       ...slimImage,
       servedTruncation: { shownBytes: null, totalBytes: 900_000 },
     });
+  });
+});
+
+describe('single-message bound (§5.5): text previews and omitted-block stubs', () => {
+  const preview: ContentBlock = {
+    type: 'text',
+    id: 'msg-1:0',
+    text: 'first 2 KiB',
+    textTruncated: true,
+    textBytes: 600_000,
+  };
+  const stub: ContentBlock = { type: 'tool_result', id: 'msg-1:1', bodyOmitted: true };
+  const whole: ContentBlock = { type: 'text', id: 'msg-1:2', text: 'short' };
+
+  it('lists the unloaded cut blocks of a message', () => {
+    expect(cutMessageBlockIds([preview, stub, whole], MSG, undefined)).toEqual([
+      'msg-1:0',
+      'msg-1:1',
+    ]);
+    expect(cutMessageBlockIds([whole], MSG, undefined)).toEqual([]);
+    expect(cutMessageBlockIds([preview], undefined, undefined)).toEqual([]);
+  });
+
+  it('stops listing a block once it is loaded', () => {
+    const full: ContentBlock = { type: 'text', id: 'msg-1:0', text: 'the whole text' };
+    expect(
+      cutMessageBlockIds([preview, stub], MSG, cache('msg-1:0', { status: 'loaded', block: full })),
+    ).toEqual(['msg-1:1']);
+  });
+
+  it('substitutes the full text and the full block for a stub', () => {
+    const fullText: ContentBlock = { type: 'text', id: 'msg-1:0', text: 'the whole text' };
+    const fullResult: ContentBlock = {
+      type: 'tool_result',
+      id: 'msg-1:1',
+      tool_use_id: 'tc-1',
+      output: 'done',
+    };
+    const merged = mergeHydratedContent([preview, stub, whole], MSG, {
+      ...cache('msg-1:0', { status: 'loaded', block: fullText }),
+      ...cache('msg-1:1', { status: 'loaded', block: fullResult }),
+    });
+    expect(merged).toEqual([fullText, fullResult, whole]);
+  });
+
+  it('shows what a capped read served for a stub', () => {
+    const [merged] = mergeHydratedContent(
+      [stub],
+      MSG,
+      cache('msg-1:1', {
+        status: 'loaded',
+        block: { type: 'tool_result', id: 'msg-1:1', output: '{"rows": [' },
+        truncation: { field: 'output', encoding: 'json', shownBytes: null, totalBytes: 9_000_000 },
+      }),
+    );
+    expect(merged).toEqual({
+      type: 'tool_result',
+      id: 'msg-1:1',
+      output: '{"rows": [',
+      servedTruncation: { shownBytes: null, totalBytes: 9_000_000 },
+    });
+  });
+
+  it('hides unloaded stubs and keeps the array when there are none', () => {
+    expect(withoutOmittedStubs([preview, stub, whole])).toEqual([preview, whole]);
+    const plain = [preview, whole];
+    expect(withoutOmittedStubs(plain)).toBe(plain);
   });
 });

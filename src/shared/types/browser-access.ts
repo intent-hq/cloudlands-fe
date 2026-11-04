@@ -27,6 +27,16 @@ export interface BrowserAccessState {
   readonly accessKey: string;
 }
 
+/** A single-use sign-in code created in Settings (see browser-access-sign-in-codes). */
+export interface BrowserAccessSignInCode {
+  /** Display form, `ABC-DEF`. */
+  readonly code: string;
+  /** Unix milliseconds. */
+  readonly expiresAt: number;
+  /** Link that opens the sign-in page with the code filled in; null until a browser has visited. */
+  readonly link: string | null;
+}
+
 export function isValidBrowserAccessPort(port: unknown): port is number {
   return (
     typeof port === 'number' &&

@@ -13,8 +13,8 @@
     "resolveJsonModule": true,
     "moduleResolution": "bundler",
     "incremental": true,
-    // Invalidate caches from the old shared main/preload output pipeline.
-    "tsBuildInfoFile": "./dist/tsconfig.main.esm.tsbuildinfo",
+    // A fresh cache repairs output overwritten by the former shared preload outDir.
+    "tsBuildInfoFile": "./dist/tsconfig.main-esm.tsbuildinfo",
     "sourceMap": true,
     "declaration": true,
     "declarationMap": true,

@@ -1,4 +1,4 @@
-import { expect, test } from '../../../../../test/ct-test';
+import { expect, pauseClock, test } from '../../../../../test/ct-test';
 import WorkspaceTokenUsageAccessibilityHost from './WorkspaceTokenUsageAccessibilityHost.svelte';
 
 type Rgba = [number, number, number, number];
@@ -1005,7 +1005,7 @@ test('retargets animated values smoothly with final-only accessibility', async (
     .getByTestId('token-usage-by-model')
     .locator('.breakdown-item-control')
     .nth(1);
-  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
+  await pauseClock(page);
   await expect(animatedNumbers).toHaveCount(12);
   expect(
     await animatedNumbers.evaluateAll((numbers) =>

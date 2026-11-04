@@ -53,6 +53,7 @@ test('raw Markdown flushes on close and external updates do not create saves', a
   await expect(editor).toBeVisible();
   await component.getByRole('button', { name: 'External update' }).click();
   await expect(editor.locator('.view-lines')).toContainText('External');
+  // eslint-disable-next-line intent/no-unpaused-clock-in-ct -- checks no save fires within the debounce, then types into Monaco, which needs time to move
   await page.clock.install();
   await page.clock.runFor(2500);
   await expect(component.getByTestId('requests')).toHaveText('[]');

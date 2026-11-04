@@ -1,4 +1,4 @@
-import { expect, test } from '../../../../test/ct-test';
+import { expect, pauseClock, test } from '../../../../test/ct-test';
 import AskUserQuestions from '../ask-user-questions/ask-user-questions.svelte';
 import MenuTestHarness from '../menu/MenuTestHarness.svelte';
 import SidebarHarness from '../sidebar/SidebarHarness.svelte';
@@ -92,7 +92,7 @@ async function freezeMotion(page: Page) {
     // Finish opening CSS/WAAPI animations, not the RAF-driven highlight motion.
     for (const animation of document.getAnimations()) animation.finish();
   });
-  await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now() + 1000)));
+  await pauseClock(page);
   await page.clock.runFor(32);
 }
 

@@ -8,6 +8,7 @@ test('a live foreign-note event cannot appear in the current note sidebar', asyn
   await mount(Host);
   const note = page.getByTestId('first-note');
   await expect(note.locator('[role="button"][data-comment-id="isolation-a-spec"]')).toBeVisible();
+  // eslint-disable-next-line intent/no-unpaused-clock-in-ct -- drains a debounce before checking absence; extra elapsed time only makes that stricter
   await page.clock.install();
   await page.getByRole('button', { name: 'Foreign event', exact: true }).click();
   await expect(page.getByTestId('cached-comments')).toContainText('isolation-b-task');

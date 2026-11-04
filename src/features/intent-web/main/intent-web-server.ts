@@ -20,8 +20,11 @@ import {
 import {
   CONNECTION_ID_PATTERN,
   isSameOriginUpgrade,
+  preferredPageOrigin,
 } from '../../browser-access/main/browser-access-auth';
 import { createBrowserAccessServer } from '../../browser-access/main/browser-access-server';
+import type { SignInCodes } from '../../browser-access/main/browser-access-sign-in-codes';
+import { m } from '../../../shared/paraglide/messages.js';
 import { extractLocalIps, extractTcAddress } from '../../backend/main/daemon-route-info';
 import { isLoopbackHost } from '../../../shared/loopback-host';
 
@@ -35,6 +38,9 @@ interface WebServerOptions {
   tailcatBinary?: string | null;
   capture?: typeof captureFingerprint;
   rpc?: (id: string, method: string, params?: unknown) => Promise<unknown>;
+  /** Single-use sign-in codes shared with `intent-web link` (see intent-web-sign-in-store). */
+  signIn?: SignInCodes;
+  log?: Pick<Console, 'info' | 'warn'>;
 }
 class ApiError extends Error {
   constructor(readonly status: number) {
@@ -260,20 +266,48 @@ export async function createIntentWebServer(options: WebServerOptions) {
     res.setHeader('Cache-Control', 'no-store');
     res.end(JSON.stringify(value));
   };
+  // The page origin is written only when it changes (see preferredPageOrigin).
+  let knownOrigin: Promise<string | null> = options.signIn
+    ? options.signIn.pageOrigin().catch(() => null)
+    : Promise.resolve(null);
+  const recordPageOrigin = (origin: string) => {
+    const signIn = options.signIn;
+    if (!signIn) return;
+    knownOrigin = knownOrigin.then(async (previous) => {
+      const next = preferredPageOrigin(previous, origin);
+      if (next === previous) return previous;
+      try {
+        await signIn.setPageOrigin(next);
+        return next;
+      } catch {
+        return previous;
+      }
+    });
+  };
+  const signIn = options.signIn;
   const server = createBrowserAccessServer({
     onBridgesChanged: publishList,
+    ...(options.log ? { log: options.log } : {}),
+    ...(signIn
+      ? {
+          consumeSignInCode: (code: string) => signIn.consume(code),
+          onPageOrigin: recordPageOrigin,
+        }
+      : {}),
     webRoot: options.webRoot,
     getAccessKey: options.getAccessKey,
     listConnections,
     openUpstream,
     loginText: () => ({
-      lang: 'en',
-      title: 'Sign in to Intent',
-      prompt: 'Enter the access key',
-      keyLabel: 'Access key',
-      submit: 'Sign in',
-      invalidKey: 'That access key is not correct.',
-      tooManyAttempts: 'Too many attempts.',
+      lang: 'en', // i18n-ignore (language tag)
+      title: m.browserAccess_login_title(),
+      prompt: m.browserAccess_login_webPrompt_description(),
+      keyLabel: m.browserAccess_login_credential_label(),
+      submit: m.browserAccess_login_submit_label(),
+      invalidKey: m.browserAccess_login_invalidCredential_error(),
+      codeUsed: m.browserAccess_login_codeUsed_error(),
+      codeReady: m.browserAccess_login_codeReady_description(),
+      tooManyAttempts: m.browserAccess_login_tooManyAttempts_error(),
     }),
     runtimeConfig: async () => `(() => {
 const ids=${JSON.stringify((await records()).map((r) => r.id))};

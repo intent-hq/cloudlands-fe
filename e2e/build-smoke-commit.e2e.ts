@@ -24,6 +24,7 @@ import {
   getSmokeWorkspace,
   archiveAndGoHome,
   exitPackagedApp,
+  selectSidebarSection,
 } from './build-smoke-helpers';
 
 const TEST_TIMEOUT = 3 * 60 * 1000;
@@ -108,10 +109,7 @@ test.describe('Build Smoke — Local Commit', () => {
       console.log('✅ Agent completed');
 
       // 3. Navigate to Changes tab and stage all files
-      const changesTab = page.locator('[data-sidebar-launcher="changes"]');
-      await changesTab.waitFor({ state: 'visible', timeout: 10_000 });
-      await changesTab.click();
-      await page.waitForTimeout(1_000);
+      await selectSidebarSection(page, 'changes');
 
       const stageAllButton = page.getByTestId('stage-all-button');
       await stageAllButton.waitFor({ state: 'visible', timeout: 15_000 });

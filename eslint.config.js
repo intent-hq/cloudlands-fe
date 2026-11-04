@@ -42,6 +42,7 @@ import noUnarmedOutsideClickInCtRule from './eslint-rules/no-unarmed-outside-cli
 import noRawMouseWheelInCtRule from './eslint-rules/no-raw-mouse-wheel-in-ct.js';
 import noWaitForTimeoutInCtRule from './eslint-rules/no-wait-for-timeout-in-ct.js';
 import noHoverThenClickInCtRule from './eslint-rules/no-hover-then-click-in-ct.js';
+import noUnpausedClockInCtRule from './eslint-rules/no-unpaused-clock-in-ct.js';
 import noHandWrittenTypingCheckRule from './eslint-rules/no-hand-written-typing-check.js';
 import noScrollIntoViewPrototypeStubRule from './eslint-rules/no-scroll-into-view-prototype-stub.js';
 import noFixedWaitTimeoutInTestsRule from './eslint-rules/no-fixed-wait-timeout-in-tests.js';
@@ -68,6 +69,7 @@ const componentTestReasonedDisableRules = [
   'intent/no-raw-mouse-wheel-in-ct',
   'intent/no-wait-for-timeout-in-ct',
   'intent/no-hover-then-click-in-ct',
+  'intent/no-unpaused-clock-in-ct',
 ];
 
 const intentPlugin = {
@@ -88,6 +90,7 @@ const intentPlugin = {
     'no-raw-mouse-wheel-in-ct': noRawMouseWheelInCtRule,
     'no-wait-for-timeout-in-ct': noWaitForTimeoutInCtRule,
     'no-hover-then-click-in-ct': noHoverThenClickInCtRule,
+    'no-unpaused-clock-in-ct': noUnpausedClockInCtRule,
     'no-direct-reduced-motion-query': noDirectReducedMotionQueryRule,
     'no-raw-workspace-navigation': noRawWorkspaceNavigationRule,
     'no-hand-written-typing-check': noHandWrittenTypingCheckRule,
@@ -752,6 +755,11 @@ export default [
   // src/test/ct-test.ts. The baseline maps today's specs to their hover-then-click counts
   // and may only shrink.
   //
+  // page.clock.install() alone keeps the fake clock moving with real time, so on a busy
+  // runner frame loops run past the frames a test samples (cloudlands-fe#4148: 56 of 80
+  // loaded runs failed until the clock was paused). Use installPausedClock / pauseClock
+  // from src/test/ct-test.ts. No baseline.
+  //
   // Each of these rules accepts a single-line eslint-disable with a reason as its escape
   // hatch; intent/require-disable-reason checks that the directive gives one.
   {
@@ -765,6 +773,7 @@ export default [
       'intent/no-raw-mouse-wheel-in-ct': 'error',
       'intent/no-wait-for-timeout-in-ct': ['error', { baseline: waitForTimeoutInCtBaseline }],
       'intent/no-hover-then-click-in-ct': ['error', { baseline: hoverThenClickInCtBaseline }],
+      'intent/no-unpaused-clock-in-ct': 'error',
       'intent/require-disable-reason': ['error', { rules: componentTestReasonedDisableRules }],
     },
   },
