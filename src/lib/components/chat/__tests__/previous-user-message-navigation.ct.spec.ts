@@ -4,7 +4,6 @@ import {
   activateHoverAction,
   expect,
   expectMotionToSettle,
-  motionSnapshot,
   test,
   wheelUntilScrolled,
 } from '../../../../test/ct-test';
@@ -17,6 +16,19 @@ test.use({ launchOptions: { ignoreDefaultArgs: ['--hide-scrollbars'] } });
 // than the helper's default so focus, lazy layout and follow-bottom corrections that run a
 // few frames after the scroll animation have also landed.
 const DESTINATION_QUIET_MS = 300;
+
+// Start "Previous user message" navigation from `source` without hovering it. Hover-only
+// actions stay focusable (`message-action-surface.ts`), so Enter reaches them directly.
+// A hover would hit-test the row first and retry until the test times out while
+// follow-bottom or a scroll is still moving it. The helper waits for the transcript to
+// settle before and after the press; the caller asserts where navigation ends up.
+async function pressPreviousUserMessage(component: Locator, source: Locator) {
+  await activateHoverAction(
+    source.getByRole('button', { name: 'Previous user message' }),
+    component.getByTestId('chat-transcript-scroll-viewport'),
+    { requireChange: false },
+  );
+}
 
 function bottomArrow(component: Locator) {
   const command = component.getByTestId('chat-floating-scroll-to-bottom-button');
@@ -522,17 +534,13 @@ for (const sourceRole of ['user', 'assistant'] as const) {
       );
       const sourceId = sourceRole === 'assistant' ? 'response-automated-21' : 'last';
       const source = component.locator(`[data-message-id="${sourceId}"]`);
-      await source.hover();
-      const atBottom = await motionSnapshot(scroll);
-      await source
-        .getByRole('button', {
+      await activateHoverAction(
+        source.getByRole('button', {
           name: sourceRole === 'assistant' ? 'Previous user message' : 'Scroll to previous message',
-        })
-        .press('Enter');
-      await expectMotionToSettle(scroll, {
-        changedFrom: atBottom,
-        quietMs: DESTINATION_QUIET_MS,
-      });
+        }),
+        scroll,
+        { quietMs: DESTINATION_QUIET_MS },
+      );
       await expect(first).toContainText('First authored prompt');
       const offset = await first.evaluate(
         (node, container) =>
@@ -697,8 +705,7 @@ test('history-only assistant navigates to its loaded human prompt', async ({ mou
   });
   const scroll = component.getByTestId('chat-transcript-scroll-viewport');
   const source = component.locator('[data-message-id="history-reply"]');
-  await source.hover();
-  await source.getByRole('button', { name: 'Previous user message' }).press('Enter');
+  await pressPreviousUserMessage(component, source);
   const target = component.locator('[data-message-id="history-human"]');
   await expect
     .poll(async () =>
@@ -737,6 +744,15 @@ test('previous-message actions remain available at unloaded history boundaries',
     },
   });
   await expect(component.getByTestId('chat-history-gap')).toHaveCount(1);
+  const scroll = component.getByTestId('chat-transcript-scroll-viewport');
+  // Follow-bottom keeps the transcript pinned, so each hover's scroll into view is pulled
+  // back and its hit test retries until the test times out under load. Wheel up as a
+  // reader would to release it, so the rows stay still while they are hovered.
+  await wheelUntilScrolled(scroll, { deltaY: -2000 });
+  await expectMotionToSettle(scroll);
+  // A wheel that scrolled and was pulled back still counts as scrolled, so check the
+  // release itself; otherwise a regression would resurface as the hover hang above.
+  await bottomArrow(component).expectAtBottom(false);
   for (const id of ['history-orphan', 'live-orphan']) {
     const row = component.locator(`[data-message-id="${id}"]`);
     await row.hover();
@@ -747,11 +763,9 @@ test('previous-message actions remain available at unloaded history boundaries',
     await row.hover();
     await expect(row.getByRole('button', { name: 'Scroll to previous message' })).toBeVisible();
   }
-  const scroll = component.getByTestId('chat-transcript-scroll-viewport');
   for (const segment of ['history', 'live']) {
     const row = component.locator(`[data-message-id="${segment}-reply"]`);
-    await row.hover();
-    await row.getByRole('button', { name: 'Previous user message' }).press('Enter');
+    await pressPreviousUserMessage(component, row);
     const target = component.locator(`[data-message-id="${segment}-human"]`);
     await expect
       .poll(async () =>
@@ -868,8 +882,7 @@ for (const retired of [false, true]) {
       },
     });
     const source = component.locator('[data-message-id="reply-tail"]');
-    await source.hover();
-    await source.getByRole('button', { name: 'Previous user message' }).press('Enter');
+    await pressPreviousUserMessage(component, source);
     const busy = source.getByRole('button', { name: 'Finding previous user message…' });
     await expect(busy).toBeDisabled();
     await busy.evaluate((node: HTMLButtonElement) => node.click());
@@ -935,7 +948,8 @@ for (const motion of ['reduce', 'no-preference'] as const) {
       },
     });
     const source = component.locator('[data-message-id="reply-tail"]');
-    await source.hover();
+    // The wheel below scrolls under the current pointer, so park it on the viewport. The
+    // action needs no hover: Enter reaches it while the clock is paused.
     const viewport = component.getByTestId('chat-transcript-scroll-viewport');
     await viewport.hover();
     await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
@@ -1014,8 +1028,7 @@ test('unloaded gap resolves the nearer human instead of crossing to the loaded o
     },
   });
   const source = component.locator('[data-message-id="reply-tail"]');
-  await source.hover();
-  await source.getByRole('button', { name: 'Previous user message' }).press('Enter');
+  await pressPreviousUserMessage(component, source);
   await component.getByTestId('settle-gap').evaluate((node: HTMLButtonElement) => node.click());
   await expectAtMessage(component, 'gap-human');
   await expect(component.getByTestId('page-requests')).toHaveText('["reply-tail"]');
@@ -1037,8 +1050,7 @@ test('loading failure leaves transcript intact and the arrow retries', async ({ 
     },
   });
   const source = component.locator('[data-message-id="reply-tail"]');
-  await source.hover();
-  await source.getByRole('button', { name: 'Previous user message' }).press('Enter');
+  await pressPreviousUserMessage(component, source);
   await expect(
     page.getByText('Could not load the previous user message. Please try again.', { exact: true }),
   ).toBeVisible();
@@ -1069,8 +1081,7 @@ test('discard replay preserves pending navigation and the landed reading positio
     },
   });
   const source = component.locator('[data-message-id="reply-tail"]');
-  await source.hover();
-  await source.getByRole('button', { name: 'Previous user message' }).press('Enter');
+  await pressPreviousUserMessage(component, source);
   await expect(component.getByTestId('page-requests')).toHaveText('["reply-tail"]');
   const replay = () =>
     component.getByTestId('replay-discard').evaluate((node: HTMLButtonElement) => node.click());
@@ -1119,8 +1130,7 @@ for (const cancel of ['wheel', 'discard', 'newer-navigation'] as const) {
       },
     });
     const source = component.locator('[data-message-id="reply-tail"]');
-    await source.hover();
-    await source.getByRole('button', { name: 'Previous user message' }).press('Enter');
+    await pressPreviousUserMessage(component, source);
     await expect(component.getByTestId('page-requests')).toHaveText('["reply-tail"]');
     if (cancel === 'wheel')
       await component.getByTestId('chat-transcript-scroll-viewport').dispatchEvent('wheel');
@@ -1188,8 +1198,7 @@ for (const input of ['PageUp', 'PageDown', 'Home', 'End', 'scrollbar'] as const)
     const source = component.locator('[data-message-id="reply-tail"]');
     const arrow = source.getByRole('button', { name: 'Previous user message' });
     const state = component.getByTestId('navigation-state');
-    await source.hover();
-    await arrow.press('Enter');
+    await activateHoverAction(arrow, scroll, { requireChange: false });
     await expect(component.getByTestId('page-requests')).toHaveText('["reply-tail"]');
     await expect(state).toHaveText('{"historyIds":[],"busy":true}');
     // Programmatic positioning is not user intent. Start midway so every key
@@ -1268,8 +1277,7 @@ test('pending unloaded navigation preserves editing, controls, and programmatic 
   const scroll = component.getByTestId('chat-transcript-scroll-viewport');
   const source = component.locator('[data-message-id="reply-tail"]');
   const state = component.getByTestId('navigation-state');
-  await source.hover();
-  await source.getByRole('button', { name: 'Previous user message' }).press('Enter');
+  await pressPreviousUserMessage(component, source);
   await expect(state).toHaveText('{"historyIds":[],"busy":true}');
 
   // Exercise bubbling events from nested editors and interactive content using
@@ -1336,8 +1344,7 @@ test('unloaded walk reaches confirmed conversation start without a human', async
     },
   });
   const source = component.locator('[data-message-id="reply-tail"]');
-  await source.hover();
-  await source.getByRole('button', { name: 'Previous user message' }).press('Enter');
+  await pressPreviousUserMessage(component, source);
   await expect(component.locator('[data-message-id="first-automated"]')).toBeVisible();
   await expect
     .poll(() =>
@@ -1366,15 +1373,13 @@ test('closing the panel cancels a pending page before remounting the conversatio
     },
   });
   const source = component.locator('[data-message-id="reply-tail"]');
-  await source.hover();
-  await source.getByRole('button', { name: 'Previous user message' }).press('Enter');
+  await pressPreviousUserMessage(component, source);
   await expect(component.getByTestId('page-requests')).toHaveText('["reply-tail"]');
   await component.getByTestId('toggle-panel').evaluate((node: HTMLButtonElement) => node.click());
   await expect(component.getByTestId('chat-transcript-scroll-viewport')).toHaveCount(0);
   await releasePage(component);
   await component.getByTestId('toggle-panel').evaluate((node: HTMLButtonElement) => node.click());
   await expect(source).toBeVisible();
-  await source.hover();
   await expect(source.getByRole('button', { name: 'Previous user message' })).toBeEnabled();
   await expect(component.locator('[data-message-id="stale-human"]')).toHaveCount(0);
 });
