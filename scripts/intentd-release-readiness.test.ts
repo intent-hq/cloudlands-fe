@@ -1,6 +1,6 @@
 // @verify-changed-triggers: .github/workflows/auto-cut-alpha.yml, scripts/intentd-release-readiness.mjs, scripts/release-pr-fast-path.mjs, scripts/intentd-pin-advance.sh, scripts/ci-gate-state.mjs, scripts/rolling-pr.mjs
 
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import {
   chmodSync,
   existsSync,
@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { confirmedIntentdNoop } from './intentd-release-readiness.mjs';
+import { spawnWorkflowBash } from './workflow-shell-fixture';
 
 const builderRequire = createRequire(createRequire(import.meta.url).resolve('electron-builder'));
 const { load } = createRequire(builderRequire.resolve('app-builder-lib'))('js-yaml');
@@ -302,7 +303,7 @@ process.stdout.write(String(Math.floor(epoch / 1000)) + '\\n');
       }),
     ]),
   );
-  const result = spawnSync('bash', ['-c', step.run!], {
+  const result = spawnWorkflowBash(['-c', step.run!], {
     cwd: directory,
     encoding: 'utf8',
     timeout: 15_000,
@@ -1329,7 +1330,7 @@ describe('auto-cut decision line', () => {
     const step = steps.find((s) => s.name === 'Check release token')!;
     const directory = mkdtempSync(join(tmpdir(), 'auto-cut-token-'));
     directories.push(directory);
-    const result = spawnSync('bash', ['-e', '-c', step.run!], {
+    const result = spawnWorkflowBash(['-e', '-c', step.run!], {
       encoding: 'utf8',
       env: {
         ...process.env,
