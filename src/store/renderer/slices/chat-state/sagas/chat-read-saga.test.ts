@@ -162,6 +162,15 @@ function harness() {
     retireBackend() {
       mocks.transport = {};
     },
+    reconnect() {
+      scope = {
+        ...scope,
+        daemonHealth: {
+          ...scope.daemonHealth,
+          connectionGeneration: scope.daemonHealth.connectionGeneration + 1,
+        },
+      };
+    },
     retirePrincipal() {
       scope = {
         ...scope,
@@ -1102,7 +1111,7 @@ describe('chatReadSaga block retrieval read lifetime', () => {
     _resetRendererStoreBridge();
   });
 
-  it.each(['backend', 'principal'] as const)(
+  it.each(['backend', 'principal', 'reconnect'] as const)(
     'retires a %s read before following its offset',
     async (boundary) => {
       mocks.messageBlockPages = true;
@@ -1114,19 +1123,29 @@ describe('chatReadSaga block retrieval read lifetime', () => {
         run.dispatch(messageBlockHydrationRequested(AGENT, MSG, BLOCK));
         await settle();
         if (boundary === 'backend') run.retireBackend();
-        else run.retirePrincipal();
+        else if (boundary === 'principal') run.retirePrincipal();
+        else {
+          run.reconnect();
+          run.reconnect();
+        }
         pending.resolve(slice('old ', 4));
         await settle();
         expect(mocks.getMessageBlockPage).toHaveBeenCalledTimes(1);
-        expect(run.chat().byAgentId[AGENT]?.hydratedBlocks?.[KEY]).toMatchObject({
-          status: 'loading',
-        });
+        expect(run.chat().byAgentId[AGENT]?.hydratedBlocks?.[KEY]).toBeUndefined();
         expect(run.dispatch.mock.calls.map(([action]) => action.type)).not.toContain(
           'chatState/messageBlockHydrated',
         );
         expect(run.dispatch.mock.calls.map(([action]) => action.type)).not.toContain(
           'chatState/messageBlockHydrationFailed',
         );
+        mocks.getMessageBlockPage.mockResolvedValueOnce(slice('fresh'));
+        run.dispatch(messageBlockHydrationRequested(AGENT, MSG, BLOCK));
+        await settle();
+        expect(mocks.getMessageBlockPage).toHaveBeenCalledTimes(2);
+        expect(run.chat().byAgentId[AGENT]?.hydratedBlocks?.[KEY]).toMatchObject({
+          status: 'loaded',
+          block: { text: 'fresh' },
+        });
       } finally {
         run.task.cancel();
         await run.task.toPromise();
@@ -1169,8 +1188,14 @@ describe('chatReadSaga block retrieval read lifetime', () => {
       pending.resolve(slice('old ', 4));
       await settle();
       expect(mocks.getMessageBlockPage).toHaveBeenCalledTimes(1);
+      expect(run.chat().byAgentId[AGENT]?.hydratedBlocks?.[KEY]).toBeUndefined();
+      mocks.getMessageBlockPage.mockResolvedValueOnce(slice('fresh'));
+      run.dispatch(messageBlockHydrationRequested(AGENT, MSG, BLOCK));
+      await settle();
+      expect(mocks.getMessageBlockPage).toHaveBeenCalledTimes(2);
       expect(run.chat().byAgentId[AGENT]?.hydratedBlocks?.[KEY]).toMatchObject({
-        status: 'loading',
+        status: 'loaded',
+        block: { text: 'fresh' },
       });
     } finally {
       run.task.cancel();

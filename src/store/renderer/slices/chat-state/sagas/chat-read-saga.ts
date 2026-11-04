@@ -20,6 +20,7 @@ import {
   captureWorkspaceReadContext,
   type WorkspaceReadContext,
 } from '$lib/client/live/workspace-read-context';
+import { getRendererStore } from '$store/renderer/renderer-store-bridge';
 import type { HydratedBlockEntry, HydratedBlockTruncation } from '../chat-state-types';
 /**
  * Chat read saga — SINGLE-TRANSFER hydration. Opening a chat transfers the
@@ -93,6 +94,7 @@ import {
   messageBlockHydrated,
   messageBlockHydrationFailed,
   messageBlockHydrationRequested,
+  messageBlockHydrationRetired,
   refreshChatTranscriptRequested,
   transcriptHydrationFailed,
   transcriptHydrationSettled,
@@ -419,6 +421,14 @@ function isPagedTextBody(page: MessageBlockPage): boolean {
   );
 }
 
+function blockHydrationStore() {
+  try {
+    return getRendererStore();
+  } catch {
+    return undefined;
+  }
+}
+
 interface BlockHydrationFlight {
   entry: HydratedBlockEntry;
   context: WorkspaceReadContext;
@@ -437,6 +447,7 @@ function* hydrateMessageBlockWorker(
   if (entry?.status !== 'loading') return;
   const workspaceId = yield* selectAgentSessionWorkspaceId.effect(agentId);
   const discardEpoch = (yield* selectChatAgentState.effect(agentId)).scrollbackDiscardEpoch;
+  const ownerStore = blockHydrationStore();
   const context = captureWorkspaceReadContext(workspaceId);
   const previous = inFlightBlocks.get(key);
   if (
@@ -526,7 +537,14 @@ function* hydrateMessageBlockWorker(
     logger.warn('message block hydration failed', { agentId, messageId, blockId, message });
     yield* put(messageBlockHydrationFailed(agentId, messageId, blockId, message));
   } finally {
-    if (inFlightBlocks.get(key) === flight) inFlightBlocks.delete(key);
+    if (inFlightBlocks.get(key) === flight) {
+      // Conditional retirement cannot erase a reset/reopened or replacement entry.
+      // A switched caller gets no stale body/error, only its orphaned spinner removed.
+      if (ownerStore && blockHydrationStore() === ownerStore) {
+        yield* put(messageBlockHydrationRetired(agentId, messageId, blockId, entry));
+      }
+      if (inFlightBlocks.get(key) === flight) inFlightBlocks.delete(key);
+    }
   }
 }
 
