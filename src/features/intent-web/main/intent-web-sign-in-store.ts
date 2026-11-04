@@ -81,11 +81,18 @@ export function createFileSignInStore(
    * process is put back.
    */
   const takeOverIfStale = async (): Promise<void> => {
+    // One handle, so the age and the token describe the same file even if
+    // another waiter replaces the lock in between.
     let seen: string;
     try {
-      const { mtimeMs } = await fs.promises.stat(lockFile);
-      if (Date.now() - mtimeMs <= staleLockMs) return;
-      seen = await fs.promises.readFile(lockFile, 'utf8');
+      const handle = await fs.promises.open(lockFile, 'r');
+      try {
+        const { mtimeMs } = await handle.stat();
+        if (Date.now() - mtimeMs <= staleLockMs) return;
+        seen = await handle.readFile('utf8');
+      } finally {
+        await handle.close();
+      }
     } catch {
       return;
     }
@@ -98,7 +105,8 @@ export function createFileSignInStore(
     try {
       if ((await fs.promises.readFile(aside, 'utf8')) !== seen) {
         // Another process took the lock between our checks: restore it.
-        // `link` fails rather than overwrite if a third holder exists.
+        // `link` fails rather than overwrite if a third process created a
+        // lock in this gap; that narrow case can still yield two holders.
         await fs.promises.link(aside, lockFile).catch(() => {});
       }
     } finally {
