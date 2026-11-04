@@ -194,7 +194,7 @@
         activeId: 'intent1',
         windowBackendId: 'intent1',
         pinnedVersion: '0.11.120',
-        connectedIds: ['local', 'mini', 'intent1', 'lab-pc'],
+        connectedIds: ['local', 'mini', 'intent1', 'lab-pc', 'studio'],
         connections: [
           {
             id: 'local',
@@ -244,8 +244,6 @@
           remoteRow('offline', 'Old laptop', { status: 'disconnected', intentdVersion: undefined }),
           remoteRow('studio', 'Clément’s Mac Studio', {
             detectedDeviceKind: 'macStudio',
-            status: 'not-open',
-            intentdVersion: undefined,
           }),
         ],
       }),

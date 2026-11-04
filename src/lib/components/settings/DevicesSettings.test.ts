@@ -1469,9 +1469,53 @@ describe('DevicesSettings', () => {
 
       const row = within(screen.getByRole('article', { name: 'Studio Mac' }));
       expect(row.getByRole('img', { name: 'Windows' })).toBeTruthy();
+      expect(row.queryByText('0.11.120')).toBeNull();
       const providers = row.getByRole('list', { name: m.settings_devices_providers_ariaLabel() });
       expect(within(providers).getAllByRole('img')).toHaveLength(1);
       expect(within(providers).getByRole('img', { name: 'claude-code' })).toBeTruthy();
+    });
+
+    it('keeps the version beside the badge for a connected machine made available to the backend', () => {
+      store.dispatch(setLabsRemoteAgentsEnabled(true));
+      store.dispatch(
+        remoteMachinesLoaded({
+          supported: true,
+          localFingerprint: null,
+          executorBackends: [],
+          machines: [
+            {
+              id: 'm-studio',
+              name: 'Mac Studio',
+              platform: { os: 'macos', arch: 'aarch64' },
+              hosts: ['10.0.0.2'],
+              port: 5181,
+              fingerprint: remote.fingerprint!,
+              state: 'connected',
+              runningAgents: 0,
+              addedAt: '2026-11-01T00:00:00Z',
+            },
+          ],
+        }),
+      );
+      mocks.connections = [
+        local,
+        intent1,
+        {
+          ...remote,
+          status: 'connected',
+          intentdVersion: '0.11.120',
+          hostOs: 'macos',
+          providers: [{ id: 'codex', displayName: 'Codex' }],
+        },
+      ];
+      mocks.currentConnectionId = 'intent1';
+      render(DevicesSettings);
+
+      const row = within(screen.getByRole('article', { name: 'Studio Mac' }));
+      expect(row.getByText('0.11.120')).toBeTruthy();
+      expect(row.getByRole('img', { name: 'macOS' })).toBeTruthy();
+      const providers = row.getByRole('list', { name: m.settings_devices_providers_ariaLabel() });
+      expect(within(providers).getByRole('img', { name: 'Codex' })).toBeTruthy();
     });
   });
 });
