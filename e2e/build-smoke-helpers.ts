@@ -1949,6 +1949,23 @@ export async function findImplementorAgent(
 }
 
 // ---------------------------------------------------------------------------
+// selectSidebarSection
+// ---------------------------------------------------------------------------
+
+/**
+ * Select one workspace sidebar section (`agents`, `changes`, `files`, ...)
+ * through its icon tab (`[data-sidebar-section-tab]`). Clicking an already
+ * selected tab activates the section's main content instead, so only click
+ * when the tab is not selected yet.
+ */
+export async function selectSidebarSection(page: Page, sectionId: string): Promise<void> {
+  const tab = page.locator(`[data-sidebar-section-tab="${sectionId}"]:visible`).first();
+  await tab.waitFor({ state: 'visible', timeout: 10_000 });
+  if ((await tab.getAttribute('aria-selected')) !== 'true') await tab.click();
+  await expect(tab).toHaveAttribute('aria-selected', 'true');
+}
+
+// ---------------------------------------------------------------------------
 // openAgentsSidebarPanel
 // ---------------------------------------------------------------------------
 

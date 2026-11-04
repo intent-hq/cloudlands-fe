@@ -12,6 +12,7 @@ import {
   waitForAgentNotStreaming,
   exitPackagedApp,
   getSmokeWorkspace,
+  selectSidebarSection,
 } from './build-smoke-helpers';
 
 const artifactPhase = process.env.EDITORIAL_ARTIFACT_PHASE ?? 'current';
@@ -85,22 +86,12 @@ async function prepareSidebarFixture() {
   await expect(page.getByRole('button', { name: 'Edit workspace status' })).toContainText(
     longStatus,
   );
-  await setSidebarSections(['overview']);
+  await setSidebarSections(['agents']);
 }
 
 async function setSidebarSections(tabIds: string[]) {
-  const target = tabIds.at(-1) ?? 'overview';
-  const expanded = page.locator('[data-sidebar-launcher] button[aria-expanded="true"]');
-  if (target === 'overview') {
-    if ((await expanded.count()) > 0) await expanded.first().click();
-    await expect(expanded).toHaveCount(0);
-    return;
-  }
-
-  const launcher = page.locator(`[data-sidebar-launcher="${target}"] button[aria-expanded]`);
-  if ((await launcher.getAttribute('aria-expanded')) !== 'true') await launcher.click();
-  await expect(launcher).toHaveAttribute('aria-expanded', 'true');
-  await expect(expanded).toHaveCount(1);
+  // The icon-tab sidebar has no collapsed overview; Agents is its default section.
+  await selectSidebarSection(page, tabIds.at(-1) ?? 'agents');
 }
 
 async function setSidebarSide(side: 'left' | 'right') {
@@ -377,7 +368,7 @@ test.describe('Build Smoke — Editorial Workspace Shell', () => {
     await setTheme('light');
     await setSidebarSections(['changes']);
     await capture('desktop-light-expanded-sidebar-section');
-    await setSidebarSections(['overview']);
+    await setSidebarSections(['agents']);
     await setSidebarSide('right');
     await capture('desktop-light-right-sidebar');
     await setSidebarSide('left');
