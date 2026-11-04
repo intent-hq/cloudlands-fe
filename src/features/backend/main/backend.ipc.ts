@@ -2887,10 +2887,10 @@ async function captureConnectedProvidersOriginal(id: string, owner?: PoolOwner):
   try {
     const client = backendClients.get(id);
     if (!client) return;
+    // Bind this owner to the member before any await, like the hostname capture.
+    poolClient(owner, client);
     if (id !== LOCAL_CONNECTION_ID && (await guestSessionsStore.findById(id))) return;
-    const result = await observeStatus(client, 'captureConnectedProviders', owner, () =>
-      poolRequest(owner, client, 'host.providerDiscovery', {}),
-    );
+    const result = await poolRequest(owner, client, 'host.providerDiscovery', {});
     if (backendClients.get(id) !== client) return;
     const providers = extractInstalledProviders(result);
     const previous = connectedProviders.get(id);
