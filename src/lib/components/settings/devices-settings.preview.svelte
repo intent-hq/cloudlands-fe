@@ -212,6 +212,7 @@
               { id: 'claude-code', displayName: 'Claude Code' },
               { id: 'codex', displayName: 'Codex' },
               { id: 'auggie', displayName: 'Auggie' },
+              { id: 'antigravity', displayName: 'Antigravity' },
             ],
           },
           remoteRow('mini', 'Clément’s Mac mini', {
@@ -235,6 +236,9 @@
             providers: [
               { id: 'codex', displayName: 'Codex' },
               { id: 'grok', displayName: 'Grok' },
+              { id: 'pi', displayName: 'Pi' },
+              { id: 'droid', displayName: 'Droid' },
+              { id: 'cortex', displayName: 'Cortex' },
             ],
           }),
           remoteRow('offline', 'Old laptop', { status: 'disconnected', intentdVersion: undefined }),

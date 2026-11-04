@@ -2871,9 +2871,11 @@ function isGuestWorkspaceRefreshEvent(
 /**
  * Capture the providers a connected daemon (local or a saved remote) reports
  * installed, via `host.providerDiscovery`, for the Settings → Machines row.
- * Runs on every (re)connect hello. Fail-soft: an error or malformed answer
- * leaves the row's providers unknown (nothing shown). A result from a client
- * replaced mid-flight is dropped.
+ * Runs on every (re)connect hello, so a provider installed or removed while
+ * connected shows up after the next reconnect. Guest sessions are skipped
+ * (they never appear in the Machines list). Fail-soft: an error or malformed
+ * answer leaves the row's providers unknown (nothing shown). A result from a
+ * client replaced mid-flight is dropped.
  */
 function captureConnectedProvidersOwned(id: string, parent?: PoolOwner): Promise<void> {
   return poolWork('captureConnectedProviders', parent, (owner) =>
@@ -2885,6 +2887,7 @@ async function captureConnectedProvidersOriginal(id: string, owner?: PoolOwner):
   try {
     const client = backendClients.get(id);
     if (!client) return;
+    if (id !== LOCAL_CONNECTION_ID && (await guestSessionsStore.findById(id))) return;
     const result = await observeStatus(client, 'captureConnectedProviders', owner, () =>
       poolRequest(owner, client, 'host.providerDiscovery', {}),
     );

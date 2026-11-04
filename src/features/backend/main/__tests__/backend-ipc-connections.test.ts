@@ -2852,6 +2852,26 @@ describe('connections:* IPC handlers', () => {
     expect(remoteRecord()).not.toHaveProperty('providers');
   });
 
+  it('does not ask a guest session for its installed providers', async () => {
+    guestStore.findById.mockImplementation(async (id: string) =>
+      id === REMOTE.id ? { id } : null,
+    );
+    installWindow();
+    const { mod } = await loadModule();
+    mod.getBackendClient();
+    const remote = (await mod.connectBackendClient(REMOTE.id)) as unknown as {
+      emit(event: string, arg: unknown): void;
+      hello(result: unknown): void;
+    };
+    mod.registerBackendHandlers();
+
+    remote.hello({ server: { version: '6.8.0' } });
+    remote.emit('status', 'connected');
+    await vi.waitFor(() => expect(guestStore.findById).toHaveBeenCalledWith(REMOTE.id));
+    for (let tick = 0; tick < 5; tick++) await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(rpc.calls).not.toContain('host.providerDiscovery');
+  });
+
   it('connections:add upserting a NON-active connection does not reconnect', async () => {
     store.add.mockResolvedValue(REMOTE);
     store.getActiveId.mockResolvedValue('local');

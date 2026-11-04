@@ -1,4 +1,5 @@
 <script lang="ts">
+  import RobotIcon from 'phosphor-svelte/lib/RobotIcon';
   import AgentProviderIcon, {
     hasProviderIcon,
   } from '$features/agent/components/AgentProviderIcon.svelte';
@@ -10,24 +11,26 @@
 </script>
 
 {#if providers.length > 0}
+  <!-- A thin rule separates the provider group from the platform and version. -->
   <ul
-    class="inline-flex items-center gap-1.5 align-middle"
+    class="ml-1 inline-flex items-center gap-1.5 border-l border-border pl-2 align-middle"
     aria-label={m.settings_devices_providers_ariaLabel()}
   >
     {#each providers as entry (entry.id)}
       <li class="inline-flex">
         <Tooltip content={entry.name} class="inline-flex">
-          <span role="img" aria-label={entry.name} class="inline-flex text-muted-foreground">
-            {#if hasProviderIcon(entry.id)}
-              <span class="inline-flex" aria-hidden="true">
-                <AgentProviderIcon providerId={entry.id} />
-              </span>
-            {:else}
-              <span
-                class="inline-flex size-3.5 items-center justify-center rounded-sm bg-muted type-caption leading-none"
-                aria-hidden="true">{entry.name.charAt(0).toUpperCase()}</span
-              >
-            {/if}
+          <span
+            role="img"
+            aria-label={entry.name}
+            class="inline-flex size-3.5 items-center justify-center text-muted-foreground"
+          >
+            <span class="inline-flex" aria-hidden="true">
+              {#if hasProviderIcon(entry.id)}
+                <AgentProviderIcon providerId={entry.id} size={14} monochrome />
+              {:else}
+                <RobotIcon size={14} />
+              {/if}
+            </span>
           </span>
         </Tooltip>
       </li>

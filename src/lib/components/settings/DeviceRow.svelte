@@ -618,11 +618,11 @@
     {/snippet}
     {#snippet title()}<span id={`device-${device.id}-name`}>{displayName}</span>{/snippet}
     {#snippet meta()}
-      {#if exposedMachine}
-        <RemoteMachineBadge machine={exposedMachine} backendLabel={$backendLabel$} />
-      {/if}
       {#if platform}
         <MachinePlatformIcon {platform} />
+      {/if}
+      {#if exposedMachine}
+        <RemoteMachineBadge machine={exposedMachine} backendLabel={$backendLabel$} />
       {/if}
       {#if openStatus === 'connected' && device.intentdVersion}
         {#if daemonBehindTooltip}
