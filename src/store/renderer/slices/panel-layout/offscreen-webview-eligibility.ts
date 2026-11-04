@@ -4,6 +4,11 @@
  * the registration-timeout dump all read the same decision.
  */
 import { BROWSER_PROTOCOLS } from '$shared/constants';
+import {
+  clampBrowserViewportDimension,
+  isBrowserEmulatedSize,
+  isBrowserTabViewport,
+} from '$shared/ipc/workspace-command-payloads';
 import type { PanelTab, WorkspacePanelLayoutState } from './panel-layout-types';
 
 /** Why a browser tab gets no offscreen guest. */
@@ -89,14 +94,22 @@ export const OFFSCREEN_GUEST_DEFAULT_SIZE = { width: 1280, height: 800 } as cons
  */
 function offscreenGuestSize(tab: PanelTab): { width: number; height: number } {
   const viewport = tab.viewport;
-  if (viewport && viewport.mode !== 'fit') {
-    return { width: viewport.width, height: viewport.height };
+  if (isBrowserTabViewport(viewport) && viewport.mode !== 'fit') {
+    return clampedSize(viewport);
   }
   const owned = typeof tab.ownerAgentId === 'string' && tab.ownerAgentId.length > 0;
-  if (owned && tab.emulatedSize) {
-    return { width: tab.emulatedSize.width, height: tab.emulatedSize.height };
+  if (owned && isBrowserEmulatedSize(tab.emulatedSize)) {
+    return clampedSize(tab.emulatedSize);
   }
   return { ...OFFSCREEN_GUEST_DEFAULT_SIZE };
+}
+
+/** Same clamp+round main applies before emulating, so the element matches. */
+function clampedSize(size: { width: number; height: number }): { width: number; height: number } {
+  return {
+    width: clampBrowserViewportDimension(size.width),
+    height: clampBrowserViewportDimension(size.height),
+  };
 }
 
 export interface OffscreenTabDecision {

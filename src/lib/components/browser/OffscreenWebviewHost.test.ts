@@ -1029,6 +1029,43 @@ describe('OffscreenWebviewHost', () => {
     expect(container.querySelector('[data-offscreen-webview-tab="tab-custom"]')).toBe(guest);
   });
 
+  // Main clamps a replayed size into [320, 3840] and rounds before emulating
+  // it, so the guest element must apply the same clamp: an element smaller
+  // than the emulated viewport would tile again. Malformed sizes fall back to
+  // the default, as in main.
+  it('clamps each hidden guest size the way main clamps its emulation', async () => {
+    layoutsStore.set({
+      'ws-bg': browserLayout([
+        { id: 'tab-tiny', viewport: { mode: 'custom', width: 100, height: 50 } },
+        { id: 'tab-huge', viewport: { mode: 'custom', width: 50000, height: 1000.6 } },
+        {
+          id: 'tab-owned-tiny',
+          ownerAgentId: 'agent-1',
+          viewport: { mode: 'fit' },
+          emulatedSize: { width: 10, height: 99999 },
+        },
+        {
+          id: 'tab-malformed',
+          ownerAgentId: 'agent-1',
+          viewport: { mode: 'custom', width: -5, height: 600 },
+          emulatedSize: { width: Number.NaN, height: 600 },
+        },
+      ]),
+    });
+    const { container } = render(OffscreenWebviewHost, {
+      props: { excludedWorkspaceIds: new Set() },
+    });
+    await waitFor(() => expect(mountedTabIds(container)).toHaveLength(4));
+    const size = (tabId: string) => {
+      const el = container.querySelector(`[data-offscreen-webview-tab="${tabId}"]`) as HTMLElement;
+      return [el.style.width, el.style.height];
+    };
+    expect(size('tab-tiny')).toEqual(['320px', '320px']);
+    expect(size('tab-huge')).toEqual(['3840px', '1001px']);
+    expect(size('tab-owned-tiny')).toEqual(['320px', '3840px']);
+    expect(size('tab-malformed')).toEqual(['1280px', '800px']);
+  });
+
   // An agent acting on a hidden tab needs full frame rate, but Chromium
   // slows a guest under an opacity-0 ancestor (1-57 fps measured on
   // v2.259.0). Main's agent drawing hold (`browser:agent-drawing`) lifts the
