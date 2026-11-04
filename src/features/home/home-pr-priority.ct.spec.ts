@@ -24,7 +24,7 @@ const pulls: PullRequestInfo[] = [
 ];
 
 for (const scenario of ['populated', 'board'] as const) {
-  test(`Home ${scenario} selects unfinished PRs and updates their tooltip and badge`, async ({
+  test(`Home ${scenario} selects unfinished PRs and updates their badge`, async ({
     mount,
     page,
   }, testInfo) => {
@@ -39,12 +39,6 @@ for (const scenario of ['populated', 'board'] as const) {
     await expect(badge).toContainText('Open');
     await expect(badge).toContainText('#3239');
     if (scenario === 'populated') await expect(row.getByText('+11', { exact: true })).toBeVisible();
-    await badge.hover();
-    await expect(page.getByRole('tooltip')).toContainText(
-      'Open · #3239 · Settle queued image preview',
-    );
-    await page.mouse.move(0, 0);
-    await expect(page.getByRole('tooltip')).toBeHidden();
     await testInfo.attach(`home-pr-priority-${scenario}`, {
       body: await page.screenshot(),
       contentType: 'image/png',

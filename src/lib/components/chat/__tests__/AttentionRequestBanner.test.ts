@@ -5,7 +5,7 @@
  * header row, with the reason stacked below it as a separate paragraph.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/svelte';
+import { render, screen, cleanup, waitFor } from '@testing-library/svelte';
 import { writable } from 'svelte/store';
 import type { AgentAttentionRequest } from '$shared/utils/agent-attention';
 import type { AgentMessage } from '$shared/types';
@@ -180,11 +180,6 @@ describe('AttentionRequestBanner', () => {
       'Choose the scope',
     );
     expect(screen.queryByRole('alert')).toBeNull();
-    expect(
-      screen
-        .getByTestId('attention-request-header')
-        .querySelector('[title], [data-tooltip-trigger]'),
-    ).toBeNull();
     attentionRequest.set({
       kind: 'blocker',
       reason: 'Docker daemon is down',
@@ -196,12 +191,6 @@ describe('AttentionRequestBanner', () => {
     expect(screen.getByTestId('attention-request-reason').textContent).toContain(
       'Docker daemon is down',
     );
-    const header = screen.getByTestId('attention-request-header');
-    expect(header.querySelector('[title]')).toBeNull();
-    const timestamp = header.querySelector<HTMLElement>('[data-tooltip-trigger]');
-    expect(timestamp).not.toBeNull();
-    await fireEvent.focus(timestamp!);
-    expect((await screen.findByRole('tooltip', { hidden: true })).textContent).toMatch(/2026/);
     expect(screen.queryByRole('alert')).toBeNull();
     attentionRequest.set({ kind: 'discussion', reason: 'Confirm the next step' });
     await waitFor(() =>
@@ -210,11 +199,6 @@ describe('AttentionRequestBanner', () => {
     expect(screen.getByTestId('attention-request-reason').textContent).toContain(
       'Confirm the next step',
     );
-    expect(
-      screen
-        .getByTestId('attention-request-header')
-        .querySelector('[title], [data-tooltip-trigger]'),
-    ).toBeNull();
     attentionRequest.set(null);
     await waitFor(() => expect(screen.queryByTestId('attention-request-banner')).toBeNull());
   });

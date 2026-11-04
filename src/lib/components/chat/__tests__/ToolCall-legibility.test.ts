@@ -75,7 +75,6 @@ describe('ToolCall conversation legibility', () => {
     });
     expect(disclosure.getAttribute('aria-expanded')).toBe('false');
     expect(disclosure.getAttribute('aria-controls')).toBe('tool-details-tool-1');
-    expect(disclosure.getAttribute('title')).toBe('Technical details');
     expect(container.textContent).not.toContain('Details');
     expect(container.querySelector('#tool-details-tool-1')).toBeNull();
     expect(container.querySelector('[data-operational-chevron]')).toBeNull();

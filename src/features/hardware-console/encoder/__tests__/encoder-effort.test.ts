@@ -1073,7 +1073,7 @@ describe('encoder feedback and existing gauge', () => {
     expect(screen.getByTestId('effort-gauge').getAttribute('data-gauge-value')).toBe('1');
   });
 
-  it('updates the tooltip and gauge on every rapid turn while the first save is delayed', async () => {
+  it('updates the live status and gauge on every rapid turn while the first save is delayed', async () => {
     ready();
     render(EncoderCycleHud);
     render(EffortPicker, { agentId: 'agent-1', workspaceId: 'ws-1' });
@@ -1096,7 +1096,7 @@ describe('encoder feedback and existing gauge', () => {
     expect(mutations()).toHaveLength(2);
   });
 
-  it('rolls the gauge back and removes an unsuccessful tooltip', async () => {
+  it('rolls the gauge back and removes an unsuccessful live status', async () => {
     ready();
     mocks.dispatch(updateSession('agent-1', { reasoningEffort: 'low' }));
     render(EncoderCycleHud);

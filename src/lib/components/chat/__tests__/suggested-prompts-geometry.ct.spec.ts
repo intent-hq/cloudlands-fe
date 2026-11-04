@@ -77,7 +77,6 @@ for (const scenario of scenarios) {
       await row.hover();
       await expect(edit).toHaveCSS('opacity', '1');
       await edit.hover();
-      await expect(page.getByRole('tooltip')).toBeVisible();
       await edit.click();
       await expect(component.getByTestId('edited-prompt')).toHaveText(prompt!);
       await expect(component.getByTestId('edit-count')).toHaveText(String(index * 2 + 1));

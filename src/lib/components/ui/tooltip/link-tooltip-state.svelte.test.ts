@@ -62,13 +62,11 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-function anchorFor(url: string, rect: Partial<DOMRect> = {}): HTMLAnchorElement {
+function anchorFor(url: string): HTMLAnchorElement {
   const anchor = document.createElement('a');
   anchor.href = url;
   anchor.dataset.testHoverAnchor = '';
   document.body.append(anchor);
-  anchor.getBoundingClientRect = () =>
-    ({ left: 100, top: 200, width: 40, height: 16, bottom: 216, right: 140, ...rect }) as DOMRect;
   return anchor;
 }
 
@@ -98,18 +96,13 @@ describe('link tooltip GitHub preview state', () => {
     vi.useRealTimers();
   });
 
-  it('shows the loading card within the hover delay, then the details', async () => {
+  it('loads pull request details through the pull request endpoint', async () => {
     const request = deferred<GitHubPullRequestDetails>();
     integrations.githubPullRequest.mockReturnValue(request.promise);
 
     showLinkTooltip(anchorFor(pr(42).url), pr(42).url);
-    expect(state.visible).toBe(false);
-    expect(state.preview.status).toBe('idle');
-
     vi.advanceTimersByTime(SHOW_DELAY_MS);
-    expect(state.visible).toBe(true);
     expect(state.url).toBe(pr(42).url);
-    expect(state.anchorBottom).toBe(216);
     expect(state.preview.status).toBe('loading');
     await flush();
     expect(integrations.githubPullRequest).toHaveBeenCalledWith('octo', 'intent', 42);
@@ -141,7 +134,6 @@ describe('link tooltip GitHub preview state', () => {
     );
     await flush();
 
-    expect(state.visible).toBe(true);
     expect(state.url).toBe(pr(42).url);
     expect(state.preview).toEqual({ status: 'error', reason: 'rate-limited' });
   });
@@ -152,7 +144,6 @@ describe('link tooltip GitHub preview state', () => {
     vi.advanceTimersByTime(SHOW_DELAY_MS);
     expect(state.preview.status).toBe('loading');
     await flush();
-    expect(state.visible).toBe(true);
     expect(state.preview).toEqual({ status: 'error', reason: 'unavailable' });
   });
 
@@ -172,29 +163,16 @@ describe('link tooltip GitHub preview state', () => {
   it('keeps the issue reference when its details are rate limited', async () => {
     integrations.githubIssue.mockRejectedValue({ data: { code: 'rate-limited' } });
     await hover(ISSUE.url);
-    expect(state.visible).toBe(true);
     expect(state.url).toBe(ISSUE.url);
     expect(state.preview).toEqual({ status: 'error', reason: 'rate-limited' });
   });
 
-  it('leaves non-GitHub links on the plain tooltip without calling the daemon', async () => {
+  it('does not call the daemon for non-GitHub links', async () => {
     await hover('https://example.com/docs');
     await flush();
-    expect(state.visible).toBe(true);
     expect(state.preview).toEqual({ status: 'idle' });
     expect(integrations.githubPullRequest).not.toHaveBeenCalled();
     expect(integrations.githubIssue).not.toHaveBeenCalled();
-  });
-
-  it('resets the preview when the tooltip hides', async () => {
-    integrations.githubPullRequest.mockResolvedValue(pr(42));
-    await hover(pr(42).url);
-    await flush();
-    expect(state.preview.status).toBe('ready');
-
-    hideLinkTooltip();
-    expect(state.visible).toBe(false);
-    expect(state.preview).toEqual({ status: 'idle' });
   });
 
   it('ignores a late response for a previous hover (stale guard)', async () => {
@@ -227,7 +205,6 @@ describe('link tooltip GitHub preview state', () => {
     hideLinkTooltip();
     request.resolve(pr(42));
     await flush();
-    expect(state.visible).toBe(false);
     expect(state.preview).toEqual({ status: 'idle' });
   });
 

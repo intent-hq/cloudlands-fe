@@ -1498,7 +1498,7 @@ function createOverlayWindow(display: Display, backendId: string): BrowserWindow
     fullscreenable: false,
     hasShadow: false,
     webPreferences: {
-      preload: path.join(__dirname, '../../../preload/index.js'),
+      preload: path.join(__dirname, '../../../preload-build/preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
       // The overlay paints its first frame while still hidden (the ready handshake waits

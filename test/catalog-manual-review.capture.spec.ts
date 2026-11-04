@@ -36,7 +36,6 @@ const slugs = [
   'textarea',
   'toggle',
   'toggle-group',
-  'tooltip',
 ] as const;
 
 let server: ViteDevServer;
@@ -125,12 +124,8 @@ test('capture every catalog entry for manual review', async ({ browser }) => {
           await page.locator('[data-sidebar="trigger"]').click({ force: true });
         }
         await expect(page.locator(`[data-catalog-preview="${slug}"]`).first()).toBeVisible();
-        if (slug === 'tooltip') {
-          await expect(page.getByRole('tooltip')).toBeVisible();
-          await page.waitForTimeout(200);
-        }
         const outputPath = path.join(artifactDir, `${slug}--${viewport.name}-${theme}.png`);
-        if (slug === 'menu' || slug === 'dialog' || slug === 'sheet' || slug === 'tooltip') {
+        if (slug === 'menu' || slug === 'dialog' || slug === 'sheet') {
           await page.screenshot({ path: outputPath });
         } else {
           await screenshotDetail(page, outputPath, viewport);

@@ -2,13 +2,11 @@
 // @verify-changed-triggers: ../WorkspaceProgressCard.svelte
 
 /**
- * Repository and branch hover surfaces in WorkspaceProgressCard: compact,
- * borderless hover cards that copy the workspace path / branch name on click,
- * plus the delayed workflow-action tooltip (a mouse pass-over must never open
- * it - Trace-20260831T161502).
+ * Repository and branch actions in WorkspaceProgressCard: copy the workspace
+ * path or branch name and load disk usage on demand.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import type { Note, Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
@@ -293,7 +291,7 @@ warmImport(() => import('./mocks/MockTooltipRich.svelte'));
 warmImport(() => import('./mocks/Fa.svelte'));
 warmImport(() => import('../WorkspaceProgressCard.svelte'));
 
-describe('WorkspaceProgressCard repository tooltip', () => {
+describe('WorkspaceProgressCard repository actions', () => {
   const writeText = vi.fn<(text: string) => Promise<void>>();
 
   beforeEach(() => {
@@ -315,39 +313,7 @@ describe('WorkspaceProgressCard repository tooltip', () => {
     });
   });
 
-  afterEach(() => {
-    delete (globalThis as { __mockTooltipProps?: unknown[] }).__mockTooltipProps;
-  });
-
-  it('uses compact, borderless repository and branch hover surfaces', async () => {
-    const { container } = await renderProgressCard({ checkoutMode: 'cow' });
-
-    const repositoryTrigger = hoverTrigger(container, 'augment/intent');
-    const branchTrigger = hoverTrigger(container, 'feature/pill');
-    for (const trigger of [repositoryTrigger, branchTrigger]) {
-      expect(trigger.getAttribute('data-delay-duration')).toBe('300');
-      expect(trigger.getAttribute('data-disable-close-on-trigger-click')).toBe('true');
-      expect(trigger.getAttribute('data-show-arrow')).toBe('false');
-    }
-
-    const repositoryCard = hoverCard(container, '[data-sidebar-repository-hover-card]');
-    const branchCard = hoverCard(container, '[data-sidebar-branch-hover-card]');
-    for (const card of [repositoryCard, branchCard]) {
-      expect(card.classList.contains('w-56')).toBe(true);
-      expect(card.classList.contains('p-2.5')).toBe(true);
-      const surface = card.closest('[data-testid="mock-tooltip-content"]');
-      expect(surface?.getAttribute('data-content-class')).toBe('border-0!');
-      expect(surface?.getAttribute('data-content-container-class')).toBe('p-0! space-y-0!');
-    }
-
-    expect(screen.queryByText('Click to copy repository path')).toBeNull();
-    expect(screen.queryByText('Click to copy branch name')).toBeNull();
-    expect(container.querySelector('[data-sidebar-branch-icon]')).toBeNull();
-    expect(repositoryCard.querySelector('[data-checkout-mode-details]')).not.toBeNull();
-    expect(
-      container.querySelector('[data-sidebar-repository-branch-metadata] [data-checkout-mode]'),
-    ).toBeNull();
-  });
+  afterEach(() => {});
 
   it('copies the workspace path and branch name from their hover triggers', async () => {
     const { container } = await renderProgressCard();
@@ -390,29 +356,6 @@ describe('WorkspaceProgressCard repository tooltip', () => {
 
     expect(repositorySurface.getAttribute('data-open')).toBe('true');
     await waitFor(() => expect(mocks.pollDiskUsage).toHaveBeenCalledWith('ws-1'));
-  });
-
-  it('delays workflow-action tooltips so a mouse pass-over never opens them', async () => {
-    const tooltipProps: { content?: unknown; delayDuration?: number }[] = [];
-    (globalThis as { __mockTooltipProps?: unknown[] }).__mockTooltipProps = tooltipProps;
-    mocks.progressActions = [
-      {
-        id: 'merge-pr',
-        label: 'Merge PR',
-        iconKey: 'code-branch',
-        tooltip: 'Open the approved pull request',
-        url: 'https://github.com/augment/intent/pull/1',
-      },
-    ];
-
-    const { container } = await renderProgressCard();
-
-    expect(within(container).getByRole('button', { name: /Merge PR/ })).toBeTruthy();
-    const actionTooltips = tooltipProps.filter(
-      (props) => props.content === 'Open the approved pull request',
-    );
-    expect(actionTooltips).toHaveLength(1);
-    expect(actionTooltips[0].delayDuration).toBe(300);
   });
 
   it('renders the hover-card path as a link-styled copy button', async () => {

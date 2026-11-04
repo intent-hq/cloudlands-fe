@@ -279,14 +279,6 @@ test('compact dock header keeps long names and keyboard agent selection usable a
   const back = header.getByRole('button', { name: 'Go back', exact: true });
   const open = header.getByRole('button', { name: 'Open full conversation', exact: true });
   for (const control of [chooser, back, open]) await expect(control).toBeInViewport({ ratio: 1 });
-  await expect(chooser.getByText(workspaceTitle, { exact: true })).toHaveAttribute(
-    'title',
-    workspaceTitle,
-  );
-  await expect(chooser.getByText(agents[0].name, { exact: true })).toHaveAttribute(
-    'title',
-    agents[0].name,
-  );
   const headerBounds = await header.boundingBox();
   if (!headerBounds) throw new Error('Missing conversation header');
   for (const control of [back, chooser, open]) {

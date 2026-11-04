@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
@@ -36,7 +36,7 @@ describe('SlashSkillSuggestionList', () => {
     expect(screen.getByRole('status').textContent).toContain('No matching skills');
   });
 
-  it('renders a compact slash-free list and exposes descriptions as accessible tooltips', async () => {
+  it('renders a compact slash-free list', () => {
     const view = render(SlashSkillSuggestionList, { props: { items, onSelect: vi.fn() } });
     const surface = view.container.querySelector('.slash-skill-suggestion-list');
     expect(surface?.classList.contains('max-w-72')).toBe(true);
@@ -49,15 +49,6 @@ describe('SlashSkillSuggestionList', () => {
     expect(reviewLabel?.className).toContain('type-body');
     expect(reviewLabel?.className).not.toContain('type-code');
     expect(screen.queryByText('Review a change')).toBeNull();
-
-    reviewOption.focus();
-    await fireEvent.focus(reviewOption);
-    const tooltip = await screen.findByRole('tooltip', {
-      name: 'Review a change',
-      hidden: true,
-    });
-    expect(tooltip.className).toContain('type-caption');
-    await waitFor(() => expect(reviewOption.getAttribute('aria-describedby')).toBe(tooltip.id));
   });
 
   it('exposes listbox selection and supports wrapping keyboard navigation', async () => {

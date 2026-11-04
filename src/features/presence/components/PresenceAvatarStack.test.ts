@@ -74,9 +74,8 @@ describe('PresenceAvatarStack person buttons', () => {
   });
 });
 
-describe('PresenceAvatarStack default tooltip triggers', () => {
-  // The avatar tile (image or initial) is decorative, so the trigger's name
-  // must come from persistent text — not the tooltip, which is a description.
+describe('PresenceAvatarStack accessible person controls', () => {
+  // The avatar tile is decorative, so the button needs a persistent accessible name.
   const expectSingleTriggerNamed = (name: string) => {
     expect(screen.getAllByRole('button')).toHaveLength(1);
     expect(screen.getByRole('button', { name })).toBeTruthy();

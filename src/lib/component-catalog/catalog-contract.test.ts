@@ -100,12 +100,6 @@ const cases: ContractCase[] = [
     id: 'modals',
     fixture,
   })) ?? []),
-  ...(getCatalogEntry('popovers')?.fixtures.map((fixture) => ({
-    key: `product:popovers:${fixture.id}`,
-    kind: 'product' as const,
-    id: 'popovers',
-    fixture,
-  })) ?? []),
   ...(getCatalogEntry('rows')?.fixtures.map((fixture) => ({
     key: `product:rows:${fixture.id}`,
     kind: 'product' as const,
