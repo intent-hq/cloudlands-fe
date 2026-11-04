@@ -33,20 +33,22 @@ vi.mock('$lib/components/patterns/notify', () => ({
   notify: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
 }));
 vi.mock('svelte-fa', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
-vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).agentSessionSelectors(),
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).agentSessionSelectors(importOriginal),
 );
-vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).chatStateSelectors(),
+vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).chatStateSelectors(importOriginal),
 );
-vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).unreadTrackingSelectors(),
+vi.mock(
+  '$store/renderer/slices/unread-tracking/unread-tracking-selectors',
+  async (importOriginal) =>
+    (await import('./mocks/chat-panel-render-scaffold')).unreadTrackingSelectors(importOriginal),
 );
-vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', async () => {
+vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', async (importOriginal) => {
   const { writable } = await import('svelte/store');
   const { agentQueueSelectors, scaffold } = await import('./mocks/chat-panel-render-scaffold');
   return {
-    ...agentQueueSelectors(),
+    ...(await agentQueueSelectors(importOriginal)),
     selectAgentQueueMessages: Object.assign(
       () => {
         queueSnapshot.store = writable(scaffold.queuedMessages as QueuedMessage[]);
@@ -56,11 +58,13 @@ vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', async () => 
     ),
   };
 });
-vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).transientUiSelectors(),
+vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).transientUiSelectors(importOriginal),
 );
-vi.mock('$store/renderer/slices/provider-catalog/provider-catalog-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).providerCatalogSelectors(),
+vi.mock(
+  '$store/renderer/slices/provider-catalog/provider-catalog-selectors',
+  async (importOriginal) =>
+    (await import('./mocks/chat-panel-render-scaffold')).providerCatalogSelectors(importOriginal),
 );
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', async (importOriginal) =>
   (await import('./mocks/chat-panel-render-scaffold')).withReal(importOriginal, {

@@ -674,6 +674,18 @@ export default [
       'intent/no-production-dynamic-import': 'error',
     },
   },
+  // The shared ChatPanel render scaffold's selector factories must start from
+  // the real module; a hand-listed one crashed every suite that used it when
+  // ChatPanel read a new selector (cloudlands-fe#4114).
+  {
+    files: ['src/lib/components/chat/__tests__/mocks/chat-panel-render-scaffold.ts'],
+    plugins: {
+      intent: intentPlugin,
+    },
+    rules: {
+      'intent/no-copied-chat-panel-selector-mocks': 'error',
+    },
+  },
   // A dynamic `.svelte` import inside a test body bills the component's whole
   // cold module-graph transform to the first test's timeout, producing
   // load-dependent timeout flakes (intent-hq/intent#1464). Warm the specifier
