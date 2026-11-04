@@ -235,6 +235,9 @@ async function launch(owned: boolean, blank?: { tabId: string; hidden: boolean }
   }
 }
 
+// The snapshot spreads untyped evidence, so its rows are `any`; name what assertions read.
+type LiveGuest = { id: number; url: string; muted: boolean; viewport: any; state: any };
+
 async function guestSnapshot(app: ElectronApplication) {
   return app.evaluate(async ({ webContents }) => {
     const evidence = (globalThis as any).lifetimeEvidence;
@@ -293,7 +296,7 @@ async function ready(app: ElectronApplication, tabId: string) {
     .poll(
       async () =>
         (await guestSnapshot(app)).live.filter(
-          (guest) => guest.url.endsWith(`tab=${tabId}`) && guest.state?.marker,
+          (guest: LiveGuest) => guest.url.endsWith(`tab=${tabId}`) && guest.state?.marker,
         ).length,
     )
     .toBeGreaterThan(0);
@@ -322,7 +325,7 @@ async function readyPanel(app: ElectronApplication, page: Page, tabId: string) {
         }
       });
       return (await guestSnapshot(app)).live.some(
-        (guest) => guest.id === id && guest.state?.marker && !guest.muted,
+        (guest: LiveGuest) => guest.id === id && guest.state?.marker && !guest.muted,
       );
     })
     .toBe(true);
@@ -652,7 +655,9 @@ test('explicit navigation mounts a cap-evicted background tab without focus chan
       .poll(() => page.evaluate(() => (window as any).lifetimeFixture.urls()['B-2']))
       .toBe(url);
     await expect
-      .poll(async () => (await guestSnapshot(app)).live.some((guest) => guest.url === url))
+      .poll(async () =>
+        (await guestSnapshot(app)).live.some((guest: LiveGuest) => guest.url === url),
+      )
       .toBe(true);
     expect(await page.evaluate(() => (window as any).lifetimeFixture.records())).toEqual(initial);
     expect(await page.locator('[data-offscreen-webview-tab]').count()).toBe(1);
@@ -725,7 +730,9 @@ for (const hidden of [false, true]) {
       );
       expect(registered, 'explicit navigation must replace the dead guest').toBe(true);
       await expect
-        .poll(async () => (await guestSnapshot(app)).live.some((guest) => guest.url === url))
+        .poll(async () =>
+          (await guestSnapshot(app)).live.some((guest: LiveGuest) => guest.url === url),
+        )
         .toBe(true);
       await expect
         .poll(() => page.evaluate(() => (window as any).lifetimeFixture.urls()['B-1']))
@@ -761,7 +768,9 @@ for (const hidden of [false, true]) {
         for (const respond of responses) respond();
       }
       await expect
-        .poll(async () => (await guestSnapshot(app)).live.some((guest) => guest.url === nextUrl))
+        .poll(async () =>
+          (await guestSnapshot(app)).live.some((guest: LiveGuest) => guest.url === nextUrl),
+        )
         .toBe(true);
       await expect
         .poll(() => page.evaluate(() => (window as any).lifetimeFixture.urls()['B-1']))
@@ -793,7 +802,7 @@ for (const hidden of [false, true]) {
       await expect
         .poll(async () => {
           const state = (await guestSnapshot(app)).live.find(
-            (guest) => guest.id === recovered.id,
+            (guest: LiveGuest) => guest.id === recovered.id,
           )?.state;
           return Boolean(state?.marker && state.marker !== marker);
         })
@@ -865,7 +874,8 @@ for (const hidden of [false, true]) {
         await expect
           .poll(
             async () =>
-              (await guestSnapshot(app)).live.find((guest) => guest.id === recovered.id)?.url,
+              (await guestSnapshot(app)).live.find((guest: LiveGuest) => guest.id === recovered.id)
+                ?.url,
           )
           .toBe(retryUrl);
         expect(await page.evaluate(() => (window as any).lifetimeFixture.loads())).toEqual(
@@ -879,7 +889,8 @@ for (const hidden of [false, true]) {
       await expect
         .poll(
           async () =>
-            (await guestSnapshot(app)).live.find((guest) => guest.id === recovered.id)?.url,
+            (await guestSnapshot(app)).live.find((guest: LiveGuest) => guest.id === recovered.id)
+              ?.url,
         )
         .toBe(externalUrl);
       expect(await page.evaluate(() => (window as any).lifetimeFixture.loads())).toEqual([
@@ -927,7 +938,7 @@ for (const hidden of [false, true]) {
       await page.evaluate(() => (window as any).lifetimeFixture.archive('B'));
       await expect
         .poll(async () =>
-          (await guestSnapshot(app)).live.some((guest) => guest.url.includes('tab=B-')),
+          (await guestSnapshot(app)).live.some((guest: LiveGuest) => guest.url.includes('tab=B-')),
         )
         .toBe(false);
       expect(await app.evaluate(() => (globalThis as any).lifetimeEvidence.guests.length)).toBe(
@@ -1147,7 +1158,9 @@ for (const owned of [false, true]) {
       await expect
         .poll(
           async () =>
-            (await guestSnapshot(app)).live.some((guest) => guest.url.endsWith('tab=A-1')),
+            (await guestSnapshot(app)).live.some((guest: LiveGuest) =>
+              guest.url.endsWith('tab=A-1'),
+            ),
           { timeout: GUEST_TEARDOWN_TIMEOUT_MS },
         )
         .toBe(false);
@@ -1156,7 +1169,10 @@ for (const owned of [false, true]) {
       await page.evaluate(() => (window as any).lifetimeFixture.archive('A'));
       await expect
         .poll(
-          async () => (await guestSnapshot(app)).live.some((guest) => guest.url.includes('tab=A-')),
+          async () =>
+            (await guestSnapshot(app)).live.some((guest: LiveGuest) =>
+              guest.url.includes('tab=A-'),
+            ),
           { timeout: GUEST_TEARDOWN_TIMEOUT_MS },
         )
         .toBe(false);
