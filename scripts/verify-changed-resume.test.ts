@@ -309,6 +309,53 @@ describe('verify:changed continuation with real fixture graphs', { timeout: 180_
     expect(statuses(again.coverage)['vitest-related src/b.test.ts']).toBe('executed-passed');
   });
 
+  it('with keepGoing records a failure, runs and records every later check, then resumes only the failure', async () => {
+    const { root, bodies, failFlag } = fixture();
+    const changed = ['src/a.ts', 'src/b.ts'];
+    writeFileSync(failFlag, '');
+    const failed = await verify(root, changed, { keepGoing: true });
+    expect(failed.error).toMatch(
+      /1 of \d+ check\(s\) failed:\n {2}- Vitest \(tests related to changed sources\) failed/,
+    );
+    expect(failed.error).toMatch(/--resume/);
+    // The lanes after the failed one still ran, and so did the marker check.
+    expect(bodies()).toEqual([
+      'fixture-check',
+      'src/a.test.ts',
+      'src/b.test.ts',
+      'src/contract.test.ts',
+      'src/ui.test.ts',
+    ]);
+    expect(failed.coverage?.complete).toBe(false);
+    expect(statuses(failed.coverage)).toMatchObject({
+      'vitest-related src/a.test.ts': 'executed-passed',
+      'vitest-related src/b.test.ts': 'failed',
+      'vitest-declared src/contract.test.ts': 'executed-passed',
+      'vitest-ui-invariants src/ui.test.ts': 'executed-passed',
+    });
+    const checkStatus = (id: string) =>
+      failed.coverage?.checks.find((check) => check.id === id)?.status;
+    expect(checkStatus('vitest-related')).toBe('failed');
+    expect(checkStatus('vitest-ui-invariants')).toBe('executed-passed');
+    expect(checkStatus('fixture-check')).toBe('executed-passed');
+    rmSync(failFlag);
+
+    const resumed = await verify(root, changed, { resume: true });
+    expect(resumed.error).toBeUndefined();
+    expect(resumed.coverage?.complete).toBe(true);
+    expect(bodies()).toEqual(['src/b.test.ts']);
+    expect(statuses(resumed.coverage)).toMatchObject({
+      'vitest-related src/a.test.ts': 'resumed-passed',
+      'vitest-related src/b.test.ts': 'executed-passed',
+      'vitest-declared src/contract.test.ts': 'resumed-passed',
+      'vitest-ui-invariants src/ui.test.ts': 'resumed-passed',
+    });
+    expect(resumed.coverage?.checks.find((check) => check.id === 'fixture-check')).toMatchObject({
+      status: 'resumed-passed',
+      source_attempt: failed.attempt,
+    });
+  });
+
   it('reruns everything when earlier evidence is missing, corrupt or from another schema', async () => {
     const { root, bodies } = fixture();
     const changed = ['src/a.ts', 'src/b.ts'];
