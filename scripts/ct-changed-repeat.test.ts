@@ -170,6 +170,19 @@ describe('localChangedSpecs', () => {
     ]);
   });
 
+  it('drops a committed spec deleted locally and marks committed specs edited locally', () => {
+    const dir = repo();
+    write(dir, 'src/b/committed.ct.spec.ts', 'edited after commit\n');
+    write(dir, 'src/d/gone.ct.spec.ts');
+    git(dir, 'add', '.');
+    git(dir, 'commit', '-q', '-m', 'more');
+    write(dir, 'src/b/committed.ct.spec.ts', 'edited again\n');
+    rmSync(join(dir, 'src/d/gone.ct.spec.ts'));
+    const selection = localChangedSpecs('main', { cwd: dir });
+    expect(selection.specs).toEqual(['src/b/committed.ct.spec.ts']);
+    expect(selection.local).toEqual(['src/b/committed.ct.spec.ts']);
+  });
+
   it('diffs from the merge-base, so later base commits are not counted', () => {
     const dir = repo();
     git(dir, 'checkout', '-q', 'main');
@@ -229,7 +242,7 @@ describe('main', () => {
     expect(run.args).toEqual([...ctChangedRunArgs(filters, 20, 2), '--grep', 'menu']);
     expect(run.env.NODE_OPTIONS).toBe('--require ./trace.js --max-old-space-size=4096');
     expect(run.env.PLAYWRIGHT_JSON_OUTPUT_FILE).toBe(CT_CHANGED_JSON_REPORT);
-    expect(h.out.join('\n')).toContain('CI repeats each 20 times (60 runs)');
+    expect(h.out.join('\n')).toContain('repeating each 20 times with the extra Playwright args');
   });
 
   it('dry run prints the filters and repeat count without building or running', () => {
@@ -242,9 +255,17 @@ describe('main', () => {
     expect(h.calls.map((call) => h.kind(call.args))).toEqual(['list']);
     const text = h.out.join('\n');
     expect(text).toContain(playwrightFilter('src/a/one.ct.spec.ts'));
-    expect(text).toContain('src/b/two.ct.spec.ts  (not pushed: CI does not see it yet)');
+    expect(text).toContain('src/b/two.ct.spec.ts  (local changes: CI does not see them yet)');
     expect(text).toContain('repeat-each: 8');
     expect(text).toContain('--repeat-each=8 --retries=0 --fail-on-flaky-tests --workers=4');
+  });
+
+  it('says the extra Playwright args, not CI, sized the repeat count', () => {
+    const h = harness();
+    expect(main(['--', '--', '--grep', 'menu'], h.deps)).toBe(0);
+    const text = h.out.join('\n');
+    expect(text).toContain('repeating each 20 times with the extra Playwright args');
+    expect(text).not.toContain('CI repeats each');
   });
 
   it('honours --repeat-each and --skip-build', () => {

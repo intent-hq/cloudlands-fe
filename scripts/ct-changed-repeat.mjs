@@ -18,7 +18,7 @@
 // Usage: pnpm run test:ct:changed-repeat -- [options] [spec paths...] [-- <playwright args>]
 // (`make fe-ct-changed-repeat` from the monorepo root). See usage() below.
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -168,9 +168,10 @@ function execGit(args, cwd) {
   return result.stdout;
 }
 
-// The specs CI would select for the pushed branch (`committed`, the same
-// three-dot diff as the release-fast-path step) plus the ones only the local
-// tree has (`local`: uncommitted edits and untracked files).
+// The specs to run: CI's selection for the pushed branch (the same three-dot
+// diff as the release-fast-path step) plus uncommitted and untracked ones,
+// minus any deleted from the working tree. `local` marks the specs whose
+// working-tree copy differs from HEAD, i.e. the version CI does not see yet.
 export function localChangedSpecs(base, { cwd = repoRoot } = {}) {
   try {
     execGit(['rev-parse', '--verify', '--quiet', `${base}^{commit}`], cwd);
@@ -178,16 +179,16 @@ export function localChangedSpecs(base, { cwd = repoRoot } = {}) {
     throw new Error(`cannot resolve --base ${base} (fetch it, or pass --base <ref>)`);
   }
   const mergeBase = diffBase(base, 'HEAD', { cwd });
-  const committed = changedCtSpecs(
-    git(['diff', '--name-only', '-z', '--no-renames', '--diff-filter=ACM', mergeBase, 'HEAD'], cwd),
+  const diff = (...refs) =>
+    git(['diff', '--name-only', '-z', '--no-renames', '--diff-filter=ACM', ...refs], cwd);
+  const untracked = git(['ls-files', '-z', '--others', '--exclude-standard'], cwd);
+  const committed = diff(mergeBase, 'HEAD');
+  const uncommitted = changedCtSpecs([...diff('HEAD'), ...untracked]);
+  const specs = changedCtSpecs([...committed, ...uncommitted]).filter((spec) =>
+    existsSync(path.join(cwd, spec)),
   );
-  const tree = [
-    ...git(['diff', '--name-only', '-z', '--no-renames', '--diff-filter=ACM', mergeBase], cwd),
-    ...git(['ls-files', '-z', '--others', '--exclude-standard'], cwd),
-  ];
-  const all = changedCtSpecs([...committed, ...tree]);
-  const pushed = new Set(committed);
-  return { mergeBase, specs: all, local: all.filter((spec) => !pushed.has(spec)) };
+  const changedLocally = new Set(uncommitted);
+  return { mergeBase, specs, local: specs.filter((spec) => changedLocally.has(spec)) };
 }
 
 function quote(arg) {
@@ -251,7 +252,7 @@ export function main(
     );
     const local = new Set(selection.local);
     for (const spec of specs)
-      log(`  ${spec}${local.has(spec) ? '  (not pushed: CI does not see it yet)' : ''}`);
+      log(`  ${spec}${local.has(spec) ? '  (local changes: CI does not see them yet)' : ''}`);
     if (!specs.length) {
       log('  (none) — CI skips the repeated job for this diff; nothing to run.');
       return 0;
@@ -286,7 +287,9 @@ export function main(
     repeat = options.repeatEach ?? computed;
     log(
       `Discovered ${total} test${total === 1 ? '' : 's'} in ${files.length} spec file${files.length === 1 ? '' : 's'}; ` +
-        `CI repeats each ${computed} times` +
+        (options.extra.length
+          ? `repeating each ${computed} times with the extra Playwright args (CI counts without them)`
+          : `CI repeats each ${computed} times`) +
         (options.repeatEach ? `; --repeat-each overrides it to ${repeat}` : '') +
         ` (${total * repeat} runs).`,
     );
