@@ -22,7 +22,7 @@ import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'nod
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isCtSpec, normalizeCtPath } from '../playwright/ct-spec-pattern.mjs';
+import { CT_SPEC_SUFFIX, isCtSpec, normalizeCtPath } from '../playwright/ct-spec-pattern.mjs';
 import {
   changedCtSpecs,
   ctChangedRepeatEach,
@@ -90,7 +90,7 @@ export function usage() {
     'unquarantined tests, size the repetitions from their count (as CI does), then run',
     'them with --retries=0 --fail-on-flaky-tests under a 4 GiB heap.',
     '',
-    `With no spec paths it selects the .ct.spec.ts files changed since`,
+    `With no spec paths it selects the ${CT_SPEC_SUFFIX} files changed since`,
     `\`git merge-base <base> HEAD\`, including uncommitted and untracked ones`,
     '(CI sees only pushed commits; those are marked in the plan).',
     '',
