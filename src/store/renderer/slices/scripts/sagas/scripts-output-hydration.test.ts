@@ -327,6 +327,22 @@ describe('retained script output hydration', () => {
       expect(run.retained()?.text).toBe('retained output');
     });
 
+    it('reads a machine run at once: its output is never streamed, so there is no lease to wait for', async () => {
+      transport.request.mockResolvedValue('machine output');
+      const run = start(true, false, false);
+      run.dispatch({
+        type: 'scripts/outputRequested',
+        payload: [WS, ID, 'viewer-machine', 'agent-remote'],
+      });
+      await settle();
+      expect(outputReads()).toHaveLength(1);
+      expect(run.retained('viewer-machine')?.text).toBe('machine output');
+
+      run.dispatch(scriptOutputStreamReady(WS));
+      await settle();
+      expect(outputReads()).toHaveLength(1);
+    });
+
     it('waits again for a new viewer after the stream was interrupted by a reconnect', async () => {
       transport.request.mockResolvedValue('retained output');
       const run = start();

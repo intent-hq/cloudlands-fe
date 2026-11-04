@@ -83,7 +83,7 @@ export function isLostRun(runtime: Pick<ScriptRuntimeState, 'status' | 'exitCode
 }
 
 /**
- * Why a lost run stopped: the two documented reasons in the app language,
+ * Why a lost run stopped: the known reasons in the app language,
  * any other reported reason as sent (without the code prefix).
  */
 export function scriptLostReason(runtime: Pick<ScriptRuntimeState, 'error'>): string {
@@ -93,6 +93,10 @@ export function scriptLostReason(runtime: Pick<ScriptRuntimeState, 'error'>): st
       return m.scripts_remote_lostDisconnected_label();
     case 'the machine was removed': // i18n-ignore (wire reason, PROTOCOL methods/scripts.md)
       return m.scripts_remote_lostRemoved_label();
+    case 'the agent was deleted': // i18n-ignore (wire reason sent by intentd)
+      return m.scripts_remote_lostAgentDeleted_label();
+    case 'the agent was stopped for good': // i18n-ignore (wire reason sent by intentd)
+      return m.scripts_remote_lostAgentStopped_label();
     default:
       return reason || m.scripts_remote_lostReason_fallback();
   }
@@ -145,6 +149,18 @@ const text = (value: unknown): value is string => typeof value === 'string' && v
  * `methods/nodes.md` "Remote machine errors"), so the panel can show it with
  * the app's own wording. Null for any other error.
  */
+/** Code of the refusal of a machine-run (re)start while its agent is being stopped for good. */
+const AGENT_ENDING_REFUSAL = /\bremote-script-agent-ending:/;
+
+/**
+ * Whether a refused machine-run operation is `remote-script-agent-ending`
+ * (PROTOCOL methods/scripts.md, remoteScripts): its agent is being stopped for
+ * good, so its runs cannot (re)start. The code arrives only in the message.
+ */
+export function isAgentEndingRefusal(message: string | undefined): boolean {
+  return !!message && AGENT_ENDING_REFUSAL.test(message);
+}
+
 export function machineRunFailure(error: unknown): RemoteMachineFailure | null {
   if (!error || typeof error !== 'object') return null;
   const data = (error as { data?: unknown }).data;

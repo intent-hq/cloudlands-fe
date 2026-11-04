@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { AgentSession } from '$shared/types';
 import type { RemoteMachine } from '$shared/types/remote-machines';
 import {
+  isAgentEndingRefusal,
   isLostRun,
   machineRunFailure,
   machineRunStatus,
@@ -121,6 +122,15 @@ describe('scriptLostReason', () => {
     );
   });
 
+  it("names the backend's agent-ending lost reasons in the app language", () => {
+    expect(scriptLostReason({ error: 'remote-script-lost: the agent was deleted' })).toBe(
+      'The agent was deleted',
+    );
+    expect(scriptLostReason({ error: 'remote-script-lost: the agent was stopped for good' })).toBe(
+      'The agent was stopped for good',
+    );
+  });
+
   it('shows any other reported reason without the code prefix', () => {
     expect(scriptLostReason({ error: 'remote-script-lost: link reset by peer' })).toBe(
       'link reset by peer',
@@ -199,5 +209,20 @@ describe('machineRunFailure', () => {
     expect(machineRunFailure(rpcError('remote-script-not-owned', {}))).toBeNull();
     expect(machineRunFailure(new Error('boom'))).toBeNull();
     expect(machineRunFailure(null)).toBeNull();
+  });
+});
+
+describe('isAgentEndingRefusal', () => {
+  it('recognises the remote-script-agent-ending refusal, also inside a wrapped message', () => {
+    const wire =
+      'remote-script-agent-ending: agent agent-remote is being stopped for good; its scripts cannot start';
+    expect(isAgentEndingRefusal(wire)).toBe(true);
+    expect(isAgentEndingRefusal(`Invalid params: ${wire}`)).toBe(true);
+  });
+
+  it('ignores other refusals', () => {
+    expect(isAgentEndingRefusal('remote-script-not-owned: not yours')).toBe(false);
+    expect(isAgentEndingRefusal('')).toBe(false);
+    expect(isAgentEndingRefusal(undefined)).toBe(false);
   });
 });

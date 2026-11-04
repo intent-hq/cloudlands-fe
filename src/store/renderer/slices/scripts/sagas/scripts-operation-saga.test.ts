@@ -185,6 +185,26 @@ describe('scriptsOperationSaga machine runs', () => {
     await stop(run.task);
   });
 
+  it.each(['stop', 'restart'] as const)(
+    'shows a refused %s while the agent is being stopped for good in the app wording',
+    async (operation) => {
+      const wire =
+        'remote-script-agent-ending: agent agent-remote is being stopped for good; its scripts cannot start';
+      transport[operation].mockResolvedValueOnce({ success: false, error: wire });
+      const run = start();
+      run.dispatch(setScriptsData(WS, [definition]));
+      run.channel.put(
+        machineRunOperationRequested(WS, definition.id, 'agent-remote', operation, 'Failed'),
+      );
+
+      await vi.waitFor(() =>
+        expect(notify.error).toHaveBeenCalledWith(m.scripts_remote_agentEnding_error()),
+      );
+      expect(notify.error).not.toHaveBeenCalledWith(wire);
+      await stop(run.task);
+    },
+  );
+
   it('falls back to the caller message when the transport throws', async () => {
     transport.stop.mockRejectedValueOnce(new Error(''));
     const run = start();

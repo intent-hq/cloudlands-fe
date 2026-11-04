@@ -17,7 +17,11 @@ import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
 import { scriptOutputReplyLines, scriptOutputToLines } from '$lib/utils/script-output-text';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { scriptsOutputSaga } from './scripts-output-saga';
-import { machineRunLocation, scriptMachineRuns } from '$features/scripts/utils/script-location';
+import {
+  isAgentEndingRefusal,
+  machineRunLocation,
+  scriptMachineRuns,
+} from '$features/scripts/utils/script-location';
 import { remoteMachineFailureMessage } from '$features/remote-machines/remote-machines-messages';
 import {
   selectCurrentBackendLabel,
@@ -309,7 +313,8 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
  * Stop or restart a remote agent's machine run. Its state arrives as
  * `script:changed`, so nothing is applied locally. A machine refusal
  * (`machine-update-required`, `machine-unreachable`) is shown in the app's
- * wording, naming the machine; any other refusal as the backend reported it.
+ * wording, naming the machine, as is `remote-script-agent-ending`; any other
+ * refusal as the backend reported it.
  */
 function* runMachineRunOperation(
   action: ReturnType<typeof machineRunOperationRequested>,
@@ -337,6 +342,7 @@ function* runMachineRunOperation(
   } catch (error) {
     message = errorMessage(error) || failureMessage;
   }
+  if (isAgentEndingRefusal(message)) message = m.scripts_remote_agentEnding_error();
   if (authority !== (yield* selectWorkspaceSavedScriptContext.effect(workspaceId))) return;
   if (message) yield* call([notify, notify.error], message);
 }
