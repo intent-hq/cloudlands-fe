@@ -83,6 +83,15 @@ describe('ChatMessage single-message bound (§5.5): Show full message', () => {
     };
   }
 
+  it('waits until a streaming message is complete before offering the action', () => {
+    const message = { ...cutAssistantMessage(), isStreaming: true };
+    mockStoreMessage.value = message;
+    render(ChatMessage, {
+      props: { message, agentId: 'agent-1', messageId: 'msg-cut', isStreaming: true },
+    });
+    expect(screen.queryByTestId('chat-message-show-full-message')).toBeNull();
+  });
+
   it('shows no action for a message that was not cut', () => {
     const message: AgentMessage = {
       id: 'msg-plain',

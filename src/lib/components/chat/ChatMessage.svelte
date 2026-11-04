@@ -1327,8 +1327,12 @@
   const mergedContent = $derived(
     mergeHydratedContent(message?.contentBlocks || [], hydrationMessageKey, $hydratedBlocks$),
   );
+  // Offered only once the message is complete: while it streams, the live
+  // preview keeps growing and a loaded copy would go stale.
   const cutBlockIds = $derived(
-    cutMessageBlockIds(message?.contentBlocks || [], hydrationMessageKey, $hydratedBlocks$),
+    isStreaming || message?.isStreaming === true
+      ? []
+      : cutMessageBlockIds(message?.contentBlocks || [], hydrationMessageKey, $hydratedBlocks$),
   );
   const fullMessageLoading = $derived(
     isHydrationPending($hydratedBlocks$, hydrationMessageKey, cutBlockIds),
