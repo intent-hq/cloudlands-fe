@@ -6,6 +6,7 @@
  */
 import type { Locator, Page } from '@playwright/test';
 import { expect, expectAnimationsToSettle, test } from '../../../test/ct-test';
+import { pauseClock } from '../../../test/ct-clock';
 import Harness from './__tests__/DockRecordingToolbarHarness.svelte';
 
 type Request = { action: string; tool?: string; paused?: boolean };
@@ -17,6 +18,7 @@ const tool = (page: Page, name: string) => bar(page).locator(`[data-tool="${name
 
 test.beforeEach(async ({ page }) => {
   await page.setViewportSize({ width: 900, height: 400 });
+  // eslint-disable-next-line intent/no-unpaused-clock-in-ct -- mount and motion need moving time; every test that steps time calls pauseClock first
   await page.clock.install({ time: new Date('2026-11-03T12:00:00Z') });
   // Keep the pointer off the bar: hover changes the chip.
   await page.mouse.move(5, 395);
@@ -56,6 +58,8 @@ test('Clear is absent with no marks, appears with the first mark around a fixed 
 }) => {
   // No live mic level: the waveform's motion would keep the bar animating.
   const harness = await mount(Harness, { props: { signal: null } });
+  // Step time by hand from here: a moving fake clock races the checks.
+  await pauseClock(page);
   await expect(bar(page).locator('[data-clear]')).toHaveCount(0);
   await expectAnimationsToSettle(bar(page));
   const before = (await bar(page).boundingBox())!;
@@ -96,6 +100,8 @@ test('clicking the chip pauses and resumes; paused shows a play icon and a flat 
   page,
 }) => {
   const harness = await mount(Harness);
+  // Step time by hand from here: a moving fake clock races the checks.
+  await pauseClock(page);
   const chip = page.getByTestId('recording-chip');
   await expect(chip).toHaveAttribute('aria-pressed', 'false');
   await expect(chip).toHaveAccessibleName('Pause recording, 0:42 elapsed');
@@ -124,6 +130,8 @@ test('X discards with a 5 s Undo on the bar; Undo restores it, otherwise the rec
   page,
 }) => {
   const harness = await mount(Harness, { props: { marked: true } });
+  // Step time by hand from here: a moving fake clock races the checks.
+  await pauseClock(page);
   await bar(page).locator('[data-discard]').click();
   const pill = page.getByTestId('recording-discarded');
   await expect(pill).toContainText('Recording discarded');
@@ -197,6 +205,8 @@ test('tooltips: every control names itself and its bar key on hover, never takin
   page,
 }, info) => {
   await mount(Harness);
+  // Step time by hand from here: a moving fake clock races the checks.
+  await pauseClock(page);
   // The focused control shows its own tooltip too; each is found by its text.
   const tip = (text: string) =>
     page.getByRole('tooltip').filter({ visible: true }).filter({ hasText: text });
@@ -257,6 +267,8 @@ test('tooltips: every control names itself and its bar key on hover, never takin
 
 test('no microphone: the waveform is flat and the chip says so', async ({ mount, page }) => {
   await mount(Harness, { props: { signal: { level: 0, mic: false } } });
+  // Step time by hand from here: a moving fake clock races the checks.
+  await pauseClock(page);
   const chip = page.getByTestId('recording-chip');
   await expect(chip.locator('.wave')).toHaveAttribute('data-flat');
   await chip.hover();
@@ -293,6 +305,8 @@ for (const scheme of ['light', 'dark'] as const) {
       });
     };
     const empty = await mount(Harness);
+    // Step time by hand from here: a moving fake clock races the checks.
+    await pauseClock(page);
     await page.clock.runFor(500);
     await capture('1-nothing-drawn');
     await page.getByRole('button', { name: 'Draw a mark' }).click();
