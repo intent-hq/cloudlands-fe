@@ -14,7 +14,9 @@
     selectConnectionsLoaded,
     selectRemoteConnections,
     selectConnectionWorkflow,
+    selectCurrentConnectionId,
   } from '$store/renderer/slices/connections/connections-selectors';
+  import { orderMachineRows } from '$lib/utils/machine-row-order';
   import {
     connectionWorkflowRequested,
     connectionWorkflowCleared,
@@ -32,6 +34,9 @@
   const connections$ = selectConnections();
   const devices$ = selectRemoteConnections();
   const loaded$ = selectConnectionsLoaded();
+  const currentConnectionId$ = selectCurrentConnectionId();
+  // The backend this window uses sits right after the local row.
+  const rows = $derived(orderMachineRows($connections$, $currentConnectionId$));
 
   let connectModalOpen = $state(false);
   let activeDeviceId = $state<string | null>(untrack(() => initialEditedMachine ?? null));
@@ -93,7 +98,7 @@
 
   <ListView
     virtualize={false}
-    items={$connections$}
+    items={rows}
     getKey={(device) => device.id}
     getText={(device) => device.label}
     status={$loaded$ ? 'ready' : 'loading'}

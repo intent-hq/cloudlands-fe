@@ -4931,6 +4931,8 @@
   "settings_devices_icon_label": "计算机图标",
   "settings_devices_loading_label": "正在加载计算机…",
   "settings_devices_localMachine_label": "{name}（本地）",
+  "settings_devices_connectedBackend_label": "{name}（已连接的后端）",
+  "settings_devices_providers_ariaLabel": "可用的 AI 提供商",
   "settings_devices_mobileDisabled_description": "在此设备上启用远程访问以连接 Intent Mobile。",
   "settings_devices_mobile_title": "Intent Mobile",
   "settings_devices_nameRequired_error": "请输入计算机名称。",

@@ -4931,6 +4931,8 @@
   "settings_devices_icon_label": "電腦圖示",
   "settings_devices_loading_label": "正在載入電腦…",
   "settings_devices_localMachine_label": "{name}（本機）",
+  "settings_devices_connectedBackend_label": "{name}（已連線的後端）",
+  "settings_devices_providers_ariaLabel": "可用的 AI 供應商",
   "settings_devices_mobileDisabled_description": "在此裝置上啟用遠端存取以連線至 Intent Mobile。",
   "settings_devices_mobile_title": "Intent Mobile",
   "settings_devices_nameRequired_error": "請輸入電腦名稱。",

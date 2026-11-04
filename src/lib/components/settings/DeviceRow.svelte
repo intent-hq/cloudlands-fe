@@ -24,7 +24,7 @@
     CONNECTION_ACCENT_COLORS,
     connectionAccentOptions,
   } from '$lib/utils/connection-accents';
-  import { formatConnectionLabel, formatLocalMachineLabel } from '$lib/utils/connection-label';
+  import { formatMachineRowLabel } from '$lib/utils/connection-label';
   import { canRequestDeviceUpdate, isDaemonBehindPin } from '$lib/utils/device-update-eligibility';
   import { m } from '$shared/paraglide/messages.js';
   import {
@@ -77,6 +77,10 @@
     canOfferExpose,
     machineForConnection,
   } from '$features/remote-machines/remote-machines-utils';
+  import MachinePlatformIcon from '$features/remote-machines/MachinePlatformIcon.svelte';
+  import MachineProviderIcons from '$features/remote-machines/MachineProviderIcons.svelte';
+  import { machineRowPlatform, machineRowProviders } from '$features/remote-machines/machine-facts';
+  import { selectProviderCatalogEntries } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 
   export type DevicePanelMode = 'edit' | null;
 
@@ -102,6 +106,7 @@
   const remoteOperations$ = selectRemoteMachineOperations();
   const remoteFailures$ = selectRemoteMachineFailures();
   const backendLabel$ = selectCurrentBackendLabel();
+  const catalogEntries$ = selectProviderCatalogEntries();
   let name = $state('');
   let host = $state('');
   let port = $state('');
@@ -213,9 +218,7 @@
   );
   const savedDeviceIcon = $derived(device.deviceIcon ?? 'auto');
   const accentOptions = $derived(connectionAccentOptions(savedAccent));
-  const displayName = $derived(
-    device.isLocal ? formatLocalMachineLabel(device) : formatConnectionLabel(device),
-  );
+  const displayName = $derived(formatMachineRowLabel(device, $currentConnectionId$));
   const openStatus = $derived(device.status ?? 'not-open');
   const trimmedName = $derived(name.trim());
   const trimmedHost = $derived(host.trim());
@@ -272,6 +275,17 @@
       openStatus === 'connected' &&
       canOfferExpose(exposedMachine),
   );
+  // The exposed-machine report fills in platform/providers only while the
+  // daemon is not reporting them itself (see machine-facts).
+  const platform = $derived(machineRowPlatform(device, exposedMachine));
+  const providers = $derived.by(() => {
+    const entries = $catalogEntries$;
+    return machineRowProviders(
+      device,
+      exposedMachine,
+      (id) => entries.find((entry) => entry.id === id)?.displayName,
+    );
+  });
   const exposing = $derived($remoteOperations$[device.id] === 'exposing');
   const unexposing = $derived(
     !!exposedMachine && $remoteOperations$[exposedMachine.id] === 'removing',
@@ -607,6 +621,9 @@
       {#if exposedMachine}
         <RemoteMachineBadge machine={exposedMachine} backendLabel={$backendLabel$} />
       {/if}
+      {#if platform}
+        <MachinePlatformIcon {platform} />
+      {/if}
       {#if openStatus === 'connected' && device.intentdVersion}
         {#if daemonBehindTooltip}
           <Tooltip content={daemonBehindTooltip} class="rounded-sm text-warning-ink">
@@ -616,6 +633,7 @@
           <span>{device.intentdVersion}</span>
         {/if}
       {/if}
+      <MachineProviderIcons {providers} />
     {/snippet}
     {#snippet trailing()}
       <RowActions

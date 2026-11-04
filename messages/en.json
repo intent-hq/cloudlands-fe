@@ -4931,6 +4931,8 @@
   "settings_devices_icon_label": "Machine icon",
   "settings_devices_loading_label": "Loading machines…",
   "settings_devices_localMachine_label": "{name} (local)",
+  "settings_devices_connectedBackend_label": "{name} (connected backend)",
+  "settings_devices_providers_ariaLabel": "Available AI providers",
   "settings_devices_mobileDisabled_description": "Enable remote access on this device to connect Intent Mobile.",
   "settings_devices_mobile_title": "Intent Mobile",
   "settings_devices_nameRequired_error": "Enter a machine name.",

@@ -4931,6 +4931,8 @@
   "settings_devices_icon_label": "マシンアイコン",
   "settings_devices_loading_label": "マシンを読み込み中…",
   "settings_devices_localMachine_label": "{name}（ローカル）",
+  "settings_devices_connectedBackend_label": "{name}（接続中のバックエンド）",
+  "settings_devices_providers_ariaLabel": "利用可能な AI プロバイダー",
   "settings_devices_mobileDisabled_description": "Intent Mobile を接続するには、このデバイスでリモートアクセスを有効にしてください。",
   "settings_devices_mobile_title": "Intent Mobile",
   "settings_devices_nameRequired_error": "マシン名を入力してください。",

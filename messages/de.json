@@ -4931,6 +4931,8 @@
   "settings_devices_icon_label": "Rechnersymbol",
   "settings_devices_loading_label": "Rechner werden geladen…",
   "settings_devices_localMachine_label": "{name} (lokal)",
+  "settings_devices_connectedBackend_label": "{name} (verbundenes Backend)",
+  "settings_devices_providers_ariaLabel": "Verfügbare KI-Anbieter",
   "settings_devices_mobileDisabled_description": "Aktiviere den Fernzugriff auf diesem Gerät, um Intent Mobile zu verbinden.",
   "settings_devices_mobile_title": "Intent Mobile",
   "settings_devices_nameRequired_error": "Geben Sie einen Rechnernamen ein.",

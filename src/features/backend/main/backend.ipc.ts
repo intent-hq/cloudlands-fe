@@ -146,9 +146,11 @@ import { registerDesktopExecReverseHandler } from '../../desktop/main/desktop-ex
 import {
   LOCAL_CONNECTION_ID,
   isDetectedDeviceKind,
+  type ConnectionProviderSummary,
   type ConnectionRecord,
   type DetectedDeviceKind,
 } from '../../../shared/types/connections';
+import { extractHostOs, extractInstalledProviders } from './machine-host-facts';
 import type {
   AddConnectionResult,
   CaptureFingerprintResult,
@@ -218,6 +220,26 @@ const PRESENCE = IPC_CHANNELS.PRESENCE;
 // instead of once per reconnect (a daemon upgrade logs again).
 const lastLoggedDaemonBuildKeys = new Map<string, string>();
 const connectedDaemonVersions = new Map<string, string>();
+// Settings → Machines facts about each connected daemon's host: its OS
+// (`host.status.os`) and installed providers (`host.providerDiscovery`).
+// Keyed by connection id, cleared with `connectedDaemonVersions` whenever the
+// connection leaves `connected`, and only surfaced on a connected row.
+const connectedHostOs = new Map<string, string>();
+const connectedProviders = new Map<string, ConnectionProviderSummary[]>();
+
+function clearConnectedHostFacts(connectionId: string): void {
+  connectedHostOs.delete(connectionId);
+  connectedProviders.delete(connectionId);
+}
+
+/** Record a host OS capture; true when the surfaced value changed. */
+function setConnectedHostOs(connectionId: string, result: unknown): boolean {
+  const os = extractHostOs(result);
+  if (os === (connectedHostOs.get(connectionId) ?? null)) return false;
+  if (os) connectedHostOs.set(connectionId, os);
+  else connectedHostOs.delete(connectionId);
+  return true;
+}
 // Each connected daemon's `client.hello` `protocolVersion`, keyed by
 // connection id and cleared whenever that connection leaves `connected`, so
 // feature gates (e.g. the `/tunnel` CREDIT frame) read the live daemon's
@@ -368,6 +390,8 @@ export function __resetDaemonBuildLogForTesting(): void {
   lastLoggedDaemonBuildKeys.clear();
   connectedDaemonVersions.clear();
   connectedProtocolVersions.clear();
+  connectedHostOs.clear();
+  connectedProviders.clear();
   localHelloObserved = false;
 }
 
@@ -839,6 +863,7 @@ function retireOriginalMember(
     }
     connectedDaemonVersions.delete(member.id);
     connectedProtocolVersions.delete(member.id);
+    clearConnectedHostFacts(member.id);
     clearPendingDaemonUpdate(member.id);
     clearBackendFailureState(member.id);
     disposeTransferConnectionsForBackend(member.id);
@@ -1667,6 +1692,7 @@ export function disconnectBackendClient(id: string): void {
   }
   connectedDaemonVersions.delete(id);
   connectedProtocolVersions.delete(id);
+  clearConnectedHostFacts(id);
   // A user-driven dispose ends any update-caused outage as far as the UI is
   // concerned: the rebuilt client's first status must not carry the marker.
   clearPendingDaemonUpdate(id);
@@ -1983,6 +2009,7 @@ function createAdditionalBackendClient(
             } else {
               void captureRemoteHostnameOwned(id, owner);
               void captureRemoteUpdateSupportedOwned(id, owner);
+              void captureConnectedProvidersOwned(id, owner);
             }
           } else {
             // #3448: refresh the adopted external daemon's version info from the
@@ -2010,6 +2037,7 @@ function createAdditionalBackendClient(
             // itself guards on external + UDS and clears otherwise.
             void captureLocalUpdateSupportedOwned(owner);
             void captureLocalDeviceKindOwned(owner);
+            void captureConnectedProvidersOwned(LOCAL_CONNECTION_ID, owner);
           }
         },
         instance,
@@ -2064,6 +2092,7 @@ function createAdditionalBackendClient(
       }
       connectedDaemonVersions.delete(id);
       connectedProtocolVersions.delete(id);
+      clearConnectedHostFacts(id);
       invitedConnectionGuards.delete(id);
       identityRevision++;
       guestWorkspaceEvents.generation += 1;
@@ -2585,9 +2614,10 @@ async function captureRemoteHostnameOriginal(id: string, owner?: PoolOwner): Pro
         await refreshGuestHostname(id, result, guard, owner);
         return;
       }
+      const osChanged = setConnectedHostOs(id, result);
       const kindChanged = await connectionsStore.setDetectedDeviceKind(id, deviceKind);
       if (hostname) await connectionsStore.setHostname(id, hostname);
-      if (hostname || kindChanged) await broadcastConnectionsChangedOwned(owner);
+      if (hostname || kindChanged || osChanged) await broadcastConnectionsChangedOwned(owner);
     }
   } catch (error) {
     recordPoolError(owner, error);
@@ -2838,6 +2868,42 @@ function isGuestWorkspaceRefreshEvent(
  * Remote backends are never re-helloed here — they describe a different host.
  */
 
+/**
+ * Capture the providers a connected daemon (local or a saved remote) reports
+ * installed, via `host.providerDiscovery`, for the Settings → Machines row.
+ * Runs on every (re)connect hello. Fail-soft: an error or malformed answer
+ * leaves the row's providers unknown (nothing shown). A result from a client
+ * replaced mid-flight is dropped.
+ */
+function captureConnectedProvidersOwned(id: string, parent?: PoolOwner): Promise<void> {
+  return poolWork('captureConnectedProviders', parent, (owner) =>
+    captureConnectedProvidersOriginal(id, owner),
+  );
+}
+
+async function captureConnectedProvidersOriginal(id: string, owner?: PoolOwner): Promise<void> {
+  try {
+    const client = backendClients.get(id);
+    if (!client) return;
+    const result = await observeStatus(client, 'captureConnectedProviders', owner, () =>
+      poolRequest(owner, client, 'host.providerDiscovery', {}),
+    );
+    if (backendClients.get(id) !== client) return;
+    const providers = extractInstalledProviders(result);
+    const previous = connectedProviders.get(id);
+    if (JSON.stringify(previous ?? null) === JSON.stringify(providers)) return;
+    if (providers) connectedProviders.set(id, providers);
+    else connectedProviders.delete(id);
+    await broadcastConnectionsChangedOwned(owner);
+  } catch (error) {
+    recordPoolError(owner, error);
+    logger.warn('Failed to capture installed providers for the Machines list', {
+      connectionId: id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 function captureLocalDeviceKindOwned(parent?: PoolOwner): Promise<void> {
   return poolWork('captureLocalDeviceKind', parent, (owner) =>
     captureLocalDeviceKindOriginal(owner),
@@ -2852,13 +2918,14 @@ async function captureLocalDeviceKindOriginal(owner?: PoolOwner): Promise<void> 
       poolRequest(owner, client, 'host.status'),
     );
     if (backendClients.get(LOCAL_CONNECTION_ID) !== client) return;
+    const osChanged = setConnectedHostOs(LOCAL_CONNECTION_ID, result);
     const identityChanged = setLocalHostIdentity(result);
     const kindChanged = await connectionsStore.setDetectedDeviceKind(
       LOCAL_CONNECTION_ID,
       extractDeviceKind(result),
     );
     // A new `prettyHostname` renames the local Machines row (`machineName`).
-    if (kindChanged || identityChanged) {
+    if (kindChanged || identityChanged || osChanged) {
       await broadcastConnectionsChangedOwned(owner);
     }
     if (identityChanged && backendClients.get(LOCAL_CONNECTION_ID) === client) {
@@ -3310,6 +3377,9 @@ async function listConnectionsOriginal(
               ? (localVersionInfo?.daemonVersion ?? undefined)
               : connectedDaemonVersions.get(connection.id)
             : undefined;
+        const hostOs = status === 'connected' ? connectedHostOs.get(connection.id) : undefined;
+        const providers =
+          status === 'connected' ? connectedProviders.get(connection.id) : undefined;
         return {
           ...connection,
           ...(connection.id === LOCAL_CONNECTION_ID
@@ -3323,6 +3393,8 @@ async function listConnectionsOriginal(
             : {}),
           status,
           ...(intentdVersion ? { intentdVersion } : {}),
+          ...(hostOs ? { hostOs } : {}),
+          ...(providers ? { providers } : {}),
         };
       }),
     activeId,

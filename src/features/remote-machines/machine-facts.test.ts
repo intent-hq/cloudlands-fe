@@ -62,9 +62,9 @@ describe('machineRowPlatform', () => {
   });
 
   it('falls back to the machine report for a row made available to the backend', () => {
-    expect(machineRowPlatform(device, machine({ platform: { os: 'windows', arch: 'x86_64' } }))).toBe(
-      'windows',
-    );
+    expect(
+      machineRowPlatform(device, machine({ platform: { os: 'windows', arch: 'x86_64' } })),
+    ).toBe('windows');
   });
 
   it('is unknown with neither source (offline, older daemon)', () => {

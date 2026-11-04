@@ -1119,7 +1119,11 @@ describe('DevicesSettings', () => {
       render(DevicesSettings);
       expect(screen.getByText('Clément’s Mac Studio (local)')).toBeTruthy();
       expect(screen.queryByText(m.layout_daemonStatus_localConnection_label())).toBeNull();
-      expect(screen.getByText('Studio Mac')).toBeTruthy();
+      expect(
+        screen.getByText(
+          currentConnectionId === 'remote-1' ? 'Studio Mac (connected backend)' : 'Studio Mac',
+        ),
+      ).toBeTruthy();
     },
   );
 
@@ -1384,7 +1388,11 @@ describe('DevicesSettings', () => {
       mocks.currentConnectionId = 'intent1';
       render(DevicesSettings);
 
-      expect(rowNames()).toEqual(['device-local-name', 'device-intent1-name', 'device-remote-1-name']);
+      expect(rowNames()).toEqual([
+        'device-local-name',
+        'device-intent1-name',
+        'device-remote-1-name',
+      ]);
       expect(screen.getByRole('article', { name: 'intent1 (connected backend)' })).toBeTruthy();
       expect(screen.getByRole('article', { name: 'Studio Mac' })).toBeTruthy();
     });
@@ -1393,7 +1401,11 @@ describe('DevicesSettings', () => {
       mocks.connections = [local, remote, intent1];
       render(DevicesSettings);
 
-      expect(rowNames()).toEqual(['device-local-name', 'device-remote-1-name', 'device-intent1-name']);
+      expect(rowNames()).toEqual([
+        'device-local-name',
+        'device-remote-1-name',
+        'device-intent1-name',
+      ]);
       expect(screen.getByRole('article', { name: 'intent1' })).toBeTruthy();
     });
 
@@ -1418,7 +1430,9 @@ describe('DevicesSettings', () => {
 
       const row = within(screen.getByRole('article', { name: 'Studio Mac' }));
       expect(row.queryByRole('img', { name: /macOS|Windows|Linux/ })).toBeNull();
-      expect(row.queryByRole('list', { name: m.settings_devices_providers_ariaLabel() })).toBeNull();
+      expect(
+        row.queryByRole('list', { name: m.settings_devices_providers_ariaLabel() }),
+      ).toBeNull();
     });
 
     it("reads a machine made available to the backend from the backend's machine report", () => {
