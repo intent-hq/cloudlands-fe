@@ -74,7 +74,7 @@
     event.stopPropagation();
     if (capturing !== id || ($dockSettings && !$captureToken)) return;
     if (event.key === 'Escape') {
-      capturing = null;
+      cancelCapture(id);
       (event.currentTarget as HTMLInputElement).blur();
       return;
     }
@@ -88,10 +88,10 @@
   }
 
   function cancelCapture(id: ShortcutId) {
+    if (capturing !== id) return;
+    // Saving already ends its lease in main; blur must not enqueue a second release.
     if ($dockSettings) appStore.dispatch(dockShortcutCaptureRequested(false));
-    if (capturing === id) {
-      capturing = null;
-    }
+    capturing = null;
   }
 
   $effect(() => {

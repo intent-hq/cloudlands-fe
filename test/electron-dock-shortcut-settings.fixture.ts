@@ -184,8 +184,8 @@ test('editable global dock keys use the confirmed registrar, persist, reset and 
         .poll(() =>
           page.evaluate(
             () =>
-              (window as any).shortcutFixture.store.state.userPreferences.dockShortcutPending ??
-              false,
+              !!(window as any).shortcutFixture.store.state.userPreferences.dockShortcutPending ||
+              !!(window as any).shortcutFixture.store.state.userPreferences.dockShortcuts.capturing,
           ),
         )
         .toBe(false);
