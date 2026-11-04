@@ -265,6 +265,8 @@ export default {
       if (!variable) return null;
       const result = [];
       for (const reference of variable.references) {
+        // `const setup = async () => {...}` records its own initialising write.
+        if (reference.init) continue;
         const { identifier } = reference;
         const call = identifier.parent;
         if (call?.type !== 'CallExpression' || call.callee !== identifier) return null;
@@ -289,8 +291,10 @@ export default {
           return;
         }
         const kind = runnerKind(node);
-        if (kind === 'test' && callbackOf(node)) tests.push(node);
-        else if (kind?.startsWith('hook:')) hooks.push({ call: node, name: kind.slice(5) });
+        // `test.skip(condition, reason)` takes a condition callback, not a test body.
+        if (kind === 'test' && callbackOf(node) && !isFunction(node.arguments[0])) {
+          tests.push(node);
+        } else if (kind?.startsWith('hook:')) hooks.push({ call: node, name: kind.slice(5) });
       },
       'Program:exit'() {
         for (const install of installs) {

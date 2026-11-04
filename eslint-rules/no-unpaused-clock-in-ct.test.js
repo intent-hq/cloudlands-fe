@@ -159,6 +159,30 @@ test('a', async ({ mount, page }) => {
 });`,
     },
     {
+      name: 'install in a const arrow helper whose callers pause',
+      filename,
+      code: `
+const setup = async (page) => {
+  await page.clock.install();
+};
+test('a', async ({ page }) => {
+  await setup(page);
+  await pauseClock(page);
+});`,
+    },
+    {
+      name: 'a conditional test.skip(condition, reason) is not a test',
+      filename,
+      code: `
+test.beforeEach(async ({ page }) => {
+  await page.clock.install();
+});
+test.skip(({ browserName }) => browserName !== 'chromium', 'chromium only');
+test('a', async ({ page }) => {
+  await pauseClock(page);
+});`,
+    },
+    {
       name: 'install inside a test.step callback of a pausing test',
       filename,
       code: `
