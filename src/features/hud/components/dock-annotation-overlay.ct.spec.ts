@@ -115,7 +115,7 @@ test('still markup letterboxes the frozen image and maps its marks into the same
   expect(height).toBeCloseTo((mark.h / image.height) * frame.height, 1);
 });
 
-test('the on-screen tool bar sits next to the dock and follows it, switches tools, ends the session and never starts a mark', async ({
+test('the on-screen tool bar starts at the bottom of the screen, drags by its grip, switches tools, ends the session and never starts a mark', async ({
   mount,
   page,
 }, testInfo) => {
@@ -127,13 +127,19 @@ test('the on-screen tool bar sits next to the dock and follows it, switches tool
     if (!box) throw new Error('Missing tool bar bounds');
     return box;
   };
-  // The tool bar stays clear of the live dock region.
+  // Wherever the dock is (here an edge rail), the bar starts at the bottom centre.
+  const startArea = JSON.parse(
+    (await page.getByTestId('dock-annotation-harness').getAttribute('data-work-area')) ?? 'null',
+  ) as { x: number; y: number; width: number; height: number };
   await expect
     .poll(async () => {
       const box = await bounds();
-      return box.x + box.width <= 1000;
+      return {
+        centred: Math.abs(box.x + box.width / 2 - (startArea.x + startArea.width / 2)) <= 1,
+        bottom: Math.round(startArea.y + startArea.height - box.y - box.height) === 16,
+      };
     })
-    .toBe(true);
+    .toEqual({ centred: true, bottom: true });
   const side = await bounds();
   // Main learns where the bar is, so it stays clickable and never starts a gesture.
   await expect
@@ -214,7 +220,7 @@ test('the on-screen tool bar sits next to the dock and follows it, switches tool
   // Clicks on the bar are never marks.
   expect(await recorded(page, 'pointers')).toEqual([]);
 
-  // The bar is tied to the dock: dragging it does nothing (no move, no tool change).
+  // Dragging from a tool button does nothing (no move, no tool change).
   const arrow = bar.getByRole('button', { name: 'Arrow' });
   const from = await arrow.boundingBox();
   if (!from) throw new Error('Missing arrow bounds');
@@ -227,6 +233,74 @@ test('the on-screen tool bar sits next to the dock and follows it, switches tool
   expect(Math.round(after.y)).toBe(Math.round(below.y));
   await expect(page.getByTestId('dock-annotation-overlay')).toHaveAttribute('data-tool', 'pen');
   expect(await recorded(page, 'pointers')).toEqual([]);
+
+  // The grip moves the bar: it follows the pointer, stays inside the work area,
+  // reports its new rect (so it stays clickable) and never draws a mark.
+  const reportedRect = async () =>
+    JSON.parse(
+      (await page.getByTestId('dock-annotation-harness').getAttribute('data-toolbar-rect')) ??
+        'null',
+    )?.rect as { x: number; y: number } | undefined;
+  const gesturesBeforeDrag = (await recorded(page, 'gestures')).length;
+  const grip = (await bar.locator('.toolbar-grip').boundingBox())!;
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  // Mid-drag, main already knows where the bar is.
+  await page.mouse.move(grip.x + grip.width / 2 - 100, grip.y + grip.height / 2 - 75, {
+    steps: 4,
+  });
+  const midway = await bounds();
+  expect(Math.round(midway.x)).toBe(Math.round(below.x) - 100);
+  await expect
+    .poll(reportedRect)
+    .toMatchObject({ x: Math.round(midway.x), y: Math.round(midway.y) });
+  await page.mouse.move(grip.x + grip.width / 2 - 200, grip.y + grip.height / 2 - 150, {
+    steps: 4,
+  });
+  await page.mouse.up();
+  const moved = await bounds();
+  expect(Math.round(moved.x)).toBe(Math.round(below.x) - 200);
+  expect(Math.round(moved.y)).toBe(Math.round(below.y) - 150);
+  await expect
+    .poll(async () =>
+      JSON.parse(
+        (await page.getByTestId('dock-annotation-harness').getAttribute('data-toolbar-rect')) ??
+          'null',
+      ),
+    )
+    .toMatchObject({ action: 'rect', rect: { x: Math.round(moved.x), y: Math.round(moved.y) } });
+  // Dragged far past the edge, it stops at the work area.
+  const regrip = (await bar.locator('.toolbar-grip').boundingBox())!;
+  await page.mouse.move(regrip.x + regrip.width / 2, regrip.y + regrip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(-500, -500, { steps: 8 });
+  await page.mouse.up();
+  const clamped = await bounds();
+  expect(Math.round(clamped.x)).toBe(Math.round(workArea.x));
+  expect(Math.round(clamped.y)).toBe(Math.round(workArea.y));
+  // A cancelled or lost pointer ends the drag: later moves with the button still
+  // held do not move the bar.
+  for (const type of ['pointercancel', 'lostpointercapture']) {
+    const handle = (await bar.locator('.toolbar-grip').boundingBox())!;
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(handle.x + handle.width / 2 + 40, handle.y + handle.height / 2 + 30, {
+      steps: 3,
+    });
+    const before = await bounds();
+    await bar.evaluate((node, eventType) => {
+      node.dispatchEvent(new PointerEvent(eventType, { pointerId: 1, bubbles: true }));
+    }, type);
+    await page.mouse.move(handle.x + handle.width / 2 + 160, handle.y + handle.height / 2 + 120, {
+      steps: 4,
+    });
+    const after = await bounds();
+    expect(Math.round(after.x), type).toBe(Math.round(before.x));
+    expect(Math.round(after.y), type).toBe(Math.round(before.y));
+    await page.mouse.up();
+  }
+  expect(await recorded(page, 'pointers')).toEqual([]);
+  expect(await recorded(page, 'gestures')).toHaveLength(gesturesBeforeDrag);
 
   // Attach counts all four authoritative fixture marks, then continues in mouse mode.
   await expect(bar.locator('[data-attach-count]')).toHaveText('4');

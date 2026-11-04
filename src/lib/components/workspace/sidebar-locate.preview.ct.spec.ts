@@ -1,4 +1,4 @@
-import { expect, test } from '../../../test/ct-test';
+import { activateHoverAction, expect, test } from '../../../test/ct-test';
 import SidebarTabsPreview from './sidebar-tabs.preview.svelte';
 
 const note = {
@@ -35,10 +35,20 @@ for (const collapsed of [false, true]) {
     await initialReveal.focus();
     await initialReveal.press('Enter');
     await expect(parent).toBeInViewport();
-    await parent.hover();
-    await parent.getByRole('button', { name: 'Collapse', exact: true }).click();
-    await ancestor.hover();
-    await ancestor.getByRole('button', { name: 'Collapse', exact: true }).click();
+    // The reveal can still be scrolling the tree, so a hovered row may move out from under
+    // the pointer; activate the hover-only actions once each row is still instead.
+    await activateHoverAction(
+      parent.getByRole('button', { name: 'Collapse', exact: true }),
+      parent,
+      {
+        requireChange: false,
+      },
+    );
+    await activateHoverAction(
+      ancestor.getByRole('button', { name: 'Collapse', exact: true }),
+      ancestor,
+      { requireChange: false },
+    );
     const row = component.locator(`[data-note-id="${note.noteId}"]`);
     await expect(row).toHaveCount(0);
     const reveal = component.locator('[data-sidebar-preview-locate]');

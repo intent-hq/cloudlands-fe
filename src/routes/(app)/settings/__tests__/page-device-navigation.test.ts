@@ -7,7 +7,10 @@ import {
   browserHostDetected,
   connectionsListReceived,
 } from '$store/renderer/slices/connections/connections-slice';
+import { selectResolvedLocale } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import { m } from '$shared/paraglide/messages.js';
+import { getPageHost } from '$lib/client/live/browser-access-host';
+import { toConnectionsBrowserHost } from '$store/renderer/slices/connections/connections-browser-host';
 import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 
 const mocks = vi.hoisted(() => ({ page: { url: new URL('http://localhost/settings') } }));
@@ -25,11 +28,46 @@ vi.mock('$lib/client', async (importOriginal) => {
 
 import SettingsPage from '../+page.svelte';
 
+type RuntimeConfigGlobal = typeof globalThis & { __INTENT_RUNTIME_CONFIG__?: object };
+
 let storeContext: ReturnType<typeof initAppStore>;
+let stopShellSubscription: (() => void) | undefined;
 afterEach(() => {
   cleanup();
+  stopShellSubscription?.();
+  stopShellSubscription = undefined;
   storeContext?.dispose();
+  delete (globalThis as RuntimeConfigGlobal).__INTENT_RUNTIME_CONFIG__;
+  vi.unstubAllGlobals();
 });
+
+/**
+ * Boot the store the way the app shell does: `/runtime-config.js` runs before
+ * the bundle, the root providers subscribe to a selector (activating the
+ * store's frame-cadenced state stream), and only then do the startup sagas run.
+ * A selector subscribed after that sees the cadenced snapshot, not the latest
+ * state, until the next animation frame.
+ */
+function bootLikeAppShell(runtimeConfig: object | undefined) {
+  if (runtimeConfig) {
+    // A page host serves a plain browser: no Electron preload bridge.
+    vi.stubGlobal('electronAPI', undefined);
+    (globalThis as RuntimeConfigGlobal).__INTENT_RUNTIME_CONFIG__ = runtimeConfig;
+  }
+  storeContext = initAppStore(appStore);
+  stopShellSubscription = selectResolvedLocale().subscribe(() => undefined);
+  // connectionsSaga's first step, which runs synchronously at app startup.
+  const host = getPageHost();
+  if (host) appStore.dispatch(browserHostDetected(toConnectionsBrowserHost(host)));
+  admitLegacyPrincipal();
+}
+
+function mobileTabOnFirstRender(): HTMLElement | null {
+  renderSettings('/settings?tab=display');
+  // Synchronously after mount: no animation frame has run yet.
+  const navigation = screen.getByRole('navigation', { name: 'Settings' });
+  return within(navigation).queryByRole('button', { name: 'Mobile', exact: true });
+}
 
 function renderSettings(url: string) {
   window.history.pushState({}, '', url);
@@ -104,4 +142,25 @@ it('drops Mobile and Backend Sync when intent-web manages the machines', async (
   await fireEvent.click(within(navigation).getByRole('button', { name: 'Machines', exact: true }));
   await waitFor(() => expect(document.getElementById('devices')).not.toBeNull());
   expect(document.getElementById('backend-sync')).toBeNull();
+});
+
+it('never renders the Mobile tab on intent-web, not even on the first frame', () => {
+  bootLikeAppShell({
+    backendId: 'remote-1',
+    connectionsUrl: '/__intent-web/connections',
+    eventsUrl: '/__intent-web/events',
+    hostCapabilities: ['connections.manage'],
+    tailcatAvailable: false,
+  });
+  expect(mobileTabOnFirstRender()).toBeNull();
+});
+
+it('keeps the Mobile tab in the desktop app', () => {
+  bootLikeAppShell(undefined);
+  expect(mobileTabOnFirstRender()).not.toBeNull();
+});
+
+it('keeps the Mobile tab for desktop Browser access, which does not manage connections', () => {
+  bootLikeAppShell({ backendId: 'local', connectionsUrl: '/__browser-access/connections' });
+  expect(mobileTabOnFirstRender()).not.toBeNull();
 });

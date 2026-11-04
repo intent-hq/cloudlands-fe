@@ -79,6 +79,9 @@
             fingerprint: 'AA:01',
             isLocal: false,
             status: 'connected',
+            // The backend's own host.status platform: its row gets a subtitle too.
+            hostOs: 'linux',
+            hostArch: 'x86_64',
           },
         ],
         activeId: 'intent1',
@@ -135,7 +138,8 @@
       | 'builtin'
       | 'start-on-none'
       | 'start-on-machine'
-      | 'start-on-unreachable';
+      | 'start-on-unreachable'
+      | 'start-on-open';
   }
   export const preview = definePreview<Props>({
     id: 'initial-agent-picker',
@@ -154,6 +158,8 @@
       'start-on-none': { props: { state: 'start-on-none' } },
       'start-on-machine': { props: { state: 'start-on-machine' } },
       'start-on-unreachable': { props: { state: 'start-on-unreachable' } },
+      // The open machine list: backend and machine rows both show their platform.
+      'start-on-open': { props: { state: 'start-on-open' } },
     },
   });
 </script>
@@ -161,6 +167,8 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
   import { SPECIALISTS } from '$lib/constants/specialists';
+  import StartOnPicker from './StartOnPicker.svelte';
+  import { selectStartOnOptions } from '$features/remote-machines/remote-machines-selectors';
   import InitialAgentPicker from './InitialAgentPicker.svelte';
   import SpecialistDropdown from '$lib/components/chat/SpecialistDropdown.svelte';
   import RegularAgentWelcome from '$lib/components/chat/RegularAgentWelcome.svelte';
@@ -190,6 +198,7 @@
   const startOn = untrack(() => scenario.startsWith('start-on-'));
   let startOnMachineId = $state(untrack(() => (scenario === 'start-on-machine' ? 'd-mac' : '')));
   if (startOn) onDestroy(setupStartOnFixture(untrack(() => scenario)));
+  const startOnOptions$ = selectStartOnOptions();
   // Enough rows to overflow the specialist menu's height cap.
   const crowdedSpecialists = () =>
     Array.from({ length: 8 }, (_, index) => ({
@@ -271,7 +280,10 @@
 </script>
 
 <section
-  class="w-full min-w-0 p-4 {scenario === 'sidebar' ? 'max-w-[300px]' : ''}"
+  class="w-full min-w-0 p-4 {scenario === 'sidebar' ? 'max-w-[300px]' : ''} {scenario ===
+  'start-on-open'
+    ? 'min-h-[420px]'
+    : ''}"
   data-testid="specialist-fixture"
 >
   {#if scenario === 'compact'}
@@ -280,6 +292,13 @@
     <RegularAgentWelcome
       session={welcomeSession}
       onSpecialistChange={(value) => (selected = value)}
+    />
+  {:else if scenario === 'start-on-open'}
+    <StartOnPicker
+      open
+      value={startOnMachineId}
+      options={$startOnOptions$}
+      onChange={(id) => (startOnMachineId = id)}
     />
   {:else}
     <InitialAgentPicker

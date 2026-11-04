@@ -154,7 +154,7 @@ export function sanitizeDockAnnotationMedia(value: unknown): DockAnnotationMedia
   };
 }
 
-/** The dock's painted shell and its form, for placing the annotate tool bar beside it. */
+/** The dock's painted shell and its form, as seen by the annotate overlay. */
 export interface DockToolbarAnchor {
   rect: DockAnnotationRect;
   shape: 'notch' | 'top-pill' | 'edge' | 'floating';
@@ -162,40 +162,21 @@ export interface DockToolbarAnchor {
   side?: 'left' | 'right';
 }
 
-/** Gap between the dock and its annotate tool bar. */
-const DOCK_TOOLBAR_GAP = 8;
-
 /**
- * Keep notch feedback at the bottom of the work area, away from hover expansion.
- * Other toolbars sit beside an edge rail on the screen-inner side or below a
- * floating dock when it fits, else above. Always inside the work area. With no
- * dock bounds, bottom centre of the work area.
+ * Where the annotate tool bar starts by default: the bottom centre of the work
+ * area, whatever the dock's placement. The user can drag it from there. Always
+ * inside the work area.
  */
 export function dockToolbarPosition(
-  dock: DockToolbarAnchor | null,
   size: { width: number; height: number },
   area: DockAnnotationRect,
-  gap = DOCK_TOOLBAR_GAP,
 ): { x: number; y: number } {
   const clamp = (value: number, min: number, max: number) =>
     Math.round(Math.min(Math.max(min, value), Math.max(min, max)));
-  const place = (x: number, y: number) => ({
-    x: clamp(x, area.x, area.x + area.width - size.width),
-    y: clamp(y, area.y, area.y + area.height - size.height),
-  });
-  if (!dock || dock.shape === 'notch' || dock.shape === 'top-pill')
-    return place(area.x + (area.width - size.width) / 2, area.y + area.height - size.height - 16);
-  const { rect } = dock;
-  const centreX = rect.x + (rect.width - size.width) / 2;
-  const centreY = rect.y + (rect.height - size.height) / 2;
-  if (dock.shape === 'edge') {
-    const x = dock.side === 'right' ? rect.x - gap - size.width : rect.x + rect.width + gap;
-    return place(x, centreY);
-  }
-  const below = rect.y + rect.height + gap;
-  if (dock.shape === 'floating' && below + size.height > area.y + area.height)
-    return place(centreX, rect.y - gap - size.height);
-  return place(centreX, below);
+  return {
+    x: clamp(area.x + (area.width - size.width) / 2, area.x, area.x + area.width - size.width),
+    y: clamp(area.y + area.height - size.height - 16, area.y, area.y + area.height - size.height),
+  };
 }
 
 /**

@@ -10,6 +10,7 @@ import {
   chatSendFailed,
   chatInterrupted,
   chatStopInitiated,
+  chatTurnEnded,
   chatStopCompleted,
   chatReset,
   chatStreamingReconciled,
@@ -335,6 +336,14 @@ describe('chatStateReducer', () => {
     const agent = s3.byAgentId[AGENT];
     expect(agent.isInterrupting).toBe(false);
     expect(agent.streamingStartTime).toBeNull();
+  });
+
+  it('chatTurnEnded records whether the latest turn was interrupted', () => {
+    const s1 = chatStateReducer(initialState, chatTurnEnded(AGENT, true));
+    expect(s1.byAgentId[AGENT].lastTurnInterrupted).toBe(true);
+    expect(chatStateReducer(s1, chatTurnEnded(AGENT, true))).toBe(s1);
+    const s2 = chatStateReducer(s1, chatTurnEnded(AGENT, false));
+    expect(s2.byAgentId[AGENT].lastTurnInterrupted).toBe(false);
   });
 
   it('chatReset returns to empty state', () => {

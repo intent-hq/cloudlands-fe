@@ -100,6 +100,23 @@ afterEach(async () => {
   store.dispose();
 });
 describe('retained script output hydration', () => {
+  it("reads a remote agent's machine run with remoteAgentId (remoteScripts: 1)", async () => {
+    transport.request.mockResolvedValue('machine output');
+    const run = start();
+    run.dispatch({
+      type: 'scripts/outputRequested',
+      payload: [WS, ID, 'viewer-machine', 'agent-remote'],
+    });
+    await settle();
+    expect(transport.request).toHaveBeenCalledExactlyOnceWith('script.output', {
+      workspaceId: WS,
+      scriptId: ID,
+      maxLines: 10_000,
+      remoteAgentId: 'agent-remote',
+    });
+    expect(run.retained('viewer-machine')?.text).toBe('machine output');
+  });
+
   it('keeps an in-flight selected output read when a page omits its definition', async () => {
     const pending = deferred<string>();
     transport.request.mockReturnValue(pending.promise);
@@ -308,6 +325,22 @@ describe('retained script output hydration', () => {
       await settle();
       expect(outputReads()).toHaveLength(1);
       expect(run.retained()?.text).toBe('retained output');
+    });
+
+    it('reads a machine run at once: its output is never streamed, so there is no lease to wait for', async () => {
+      transport.request.mockResolvedValue('machine output');
+      const run = start(true, false, false);
+      run.dispatch({
+        type: 'scripts/outputRequested',
+        payload: [WS, ID, 'viewer-machine', 'agent-remote'],
+      });
+      await settle();
+      expect(outputReads()).toHaveLength(1);
+      expect(run.retained('viewer-machine')?.text).toBe('machine output');
+
+      run.dispatch(scriptOutputStreamReady(WS));
+      await settle();
+      expect(outputReads()).toHaveLength(1);
     });
 
     it('waits again for a new viewer after the stream was interrupted by a reconnect', async () => {

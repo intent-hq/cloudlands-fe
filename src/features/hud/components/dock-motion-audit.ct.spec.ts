@@ -527,7 +527,7 @@ test('motion audit: edge conversation open, close and interrupted close', async 
   const side = await mountSide(mount, page);
   const shellBox = side.getByTestId('dock-edge-shell');
   const SHELL = '[data-testid="dock-edge-shell"]';
-  const entry = side.locator('[data-dock-entry]').first();
+  const entry = side.locator('[data-dock-entry="dock:assistant"]');
   const preview = side.getByTestId('dock-preview');
   const warmOrigin = async () => {
     await entry.hover();
@@ -580,7 +580,10 @@ test('motion audit: edge conversation open, close and interrupted close', async 
         const reveal = Number(shell?.getAttribute('data-reveal') ?? 0);
         if (reveal <= 0.2) throw new Error('Missed the mid-flight reversal window');
         if (reveal < 0.7) {
-          const button = document.querySelector<HTMLButtonElement>('[data-dock-entry]');
+          // The same entry the shell opened from (the Assistant).
+          const button = document.querySelector<HTMLButtonElement>(
+            '[data-dock-entry="dock:assistant"]',
+          );
           if (!button || button.disabled) throw new Error('Side entry is unavailable');
           const sampler = (window as any).__motionAudit;
           if (!sampler.frames.length) throw new Error('Missing pre-reversal motion sample');
@@ -649,7 +652,7 @@ test('motion audit: tool popover, tile removal and waveform', async ({ mount, pa
   expect(waveform.droppedFrames, waveform.name).toBeLessThanOrEqual(2);
 });
 
-test('motion audit: banner, question overlay and aurora', async ({ mount, page }) => {
+test('motion audit: question overlay and aurora', async ({ mount, page }) => {
   await page.setViewportSize({ width: 720, height: 680 });
   const component = await mount(ConversationWireHarness, {
     props: { width: 420, height: 560, failPlacementOnce: true },
@@ -678,25 +681,13 @@ test('motion audit: banner, question overlay and aurora', async ({ mount, page }
     ),
     auroraIn.name,
   ).toEqual([]);
-  // A failed attachment placement raises the notice banner over the transcript edge.
-  const NOTICE = '[data-dock-conversation-notifications] [data-dock-notice]';
-  const banner = await audit(page, 'banner-enter', NOTICE, async () => {
-    await editor.evaluate((element) => {
-      const transfer = new DataTransfer();
-      transfer.items.add(new File(['notes'], 'notes.txt', { type: 'text/plain' }));
-      element.dispatchEvent(
-        new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true }),
-      );
-    });
-    await expect(component.locator(NOTICE).first()).toBeVisible();
-  });
   const question = await audit(page, 'question-open', '[data-dock-questions]', async () => {
     await component
       .getByRole('button', { name: 'Publish synthetic questions', exact: true })
       .click();
     await expect(component.getByTestId('question-wizard-card')).toBeVisible();
   });
-  for (const stats of [auroraIn, auroraOut, banner, question]) {
+  for (const stats of [auroraIn, auroraOut, question]) {
     // No snap at the end, unless the last step came right after a dropped frame.
     if (stats.endGapMs <= 20) expect(stats.endStepPx, `${stats.name} end`).toBeLessThanOrEqual(2);
     expectNoRailReflow(stats);
@@ -706,7 +697,7 @@ test('motion audit: banner, question overlay and aurora', async ({ mount, page }
   // changes opacity by more than half (judged from the animation, not mid-flight). A
   // zero-length animation does not count: Svelte starts every intro with one that holds
   // the first keyframe, so its presence proves nothing about a fade.
-  for (const stats of [auroraIn, auroraOut, banner, question]) {
+  for (const stats of [auroraIn, auroraOut, question]) {
     const realFades = stats.fades.filter(
       (fade) => fade.durationMs > 0 && Math.abs(fade.to - fade.from) >= 0.9,
     );

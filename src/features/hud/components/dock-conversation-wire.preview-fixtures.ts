@@ -69,6 +69,8 @@ export function setupConversationWire(
     dockAppearance?: boolean;
     /** Seed the main agent with this many assistant turns of operational (thinking) rows. */
     operationalHistory?: number;
+    /** A second ready provider (Claude Code), and effort levels on Auggie's models. */
+    providerChoice?: boolean;
   } = {},
 ) {
   const root = document.documentElement;
@@ -93,14 +95,51 @@ export function setupConversationWire(
   let releaseEnhancement: (() => void) | undefined;
   const restoreModels = overrideMockIpcHandler('auggie:get-models', (params) => {
     record({ method: 'auggie:get-models', params: (params ?? {}) as Record<string, unknown> });
+    const effortLevels = options.providerChoice ? { effortLevels: ['low', 'medium', 'high'] } : {};
     return {
       success: true,
       data: [
-        { value: 'opus4.7', label: 'Opus 4.7', isDefault: true },
-        { value: 'sonnet4.5', label: 'Sonnet 4.5' },
+        { value: 'opus4.7', label: 'Opus 4.7', isDefault: true, ...effortLevels },
+        { value: 'sonnet4.5', label: 'Sonnet 4.5', ...effortLevels },
       ],
     };
   });
+  const restoreClaudeModels = options.providerChoice
+    ? overrideMockIpcHandler('claude-code:get-models', (params) => {
+        record({
+          method: 'claude-code:get-models',
+          params: (params ?? {}) as Record<string, unknown>,
+        });
+        return {
+          success: true,
+          data: [{ value: 'claude-fixture', label: 'Claude fixture', isDefault: true }],
+        };
+      })
+    : () => {};
+  const providerEntries = [
+    {
+      id: 'auggie',
+      displayName: 'Augment Auggie',
+      shortName: 'Auggie',
+      command: 'auggie',
+      canBeDisabled: true,
+      visible: true,
+    },
+    ...(options.providerChoice
+      ? [
+          {
+            id: 'claude-code',
+            displayName: 'Claude Code',
+            shortName: 'Claude',
+            command: 'claude',
+            // Always on: no workspace enabled-providers setting is needed.
+            canBeDisabled: false,
+            visible: true,
+          },
+        ]
+      : []),
+  ];
+  const providerIds = providerEntries.map((entry) => entry.id);
   const messages = new Map<string, ConversationWireMessage[]>();
   const queues = new Map<string, QueuedMessage[]>();
   let pendingQuestion = false;
@@ -126,6 +165,8 @@ export function setupConversationWire(
       contentBlocks: [{ type: 'text', text }],
     };
   }
+  /** Session fields accepted through `agent.update` (provider choice only). */
+  const agentChanges = new Map<string, Record<string, unknown>>();
   function agent(id: string) {
     return {
       id,
@@ -145,6 +186,7 @@ export function setupConversationWire(
       ...(id === 'wire-sub' ? { parentAgentId: 'wire-main' } : {}),
       createdAt: timestamp,
       updatedAt: timestamp,
+      ...agentChanges.get(id),
     };
   }
   function history(agentId: string): ConversationWireMessage[] {
@@ -201,21 +243,12 @@ export function setupConversationWire(
     switch (method) {
       case 'providers.catalog':
         return {
-          providers: [
-            {
-              id: 'auggie',
-              displayName: 'Augment Auggie',
-              shortName: 'Auggie',
-              command: 'auggie',
-              canBeDisabled: true,
-              visible: true,
-            },
-          ],
+          providers: providerEntries,
         };
       case 'host.providerDiscovery':
-        return { providers: [{ id: 'auggie', installed: true }] };
+        return { providers: providerIds.map((id) => ({ id, installed: true })) };
       case 'host.providerAuthStatus':
-        return { providers: [{ id: 'auggie', authenticated: true }] };
+        return { providers: providerIds.map((id) => ({ id, authenticated: true })) };
       case 'settings.list':
         return { settings: [{ path: 'model.defaultProvider', value: 'auggie' }], revision: 1 };
       case 'specialist.list':
@@ -248,6 +281,27 @@ export function setupConversationWire(
         };
       case 'agent.get':
         return { agent: agent(agentId) };
+      case 'agent.update':
+      case 'agent.setModel': {
+        if (!options.providerChoice)
+          throw new Error(`Unscripted conversation wire method: ${method}`);
+        const changes =
+          method === 'agent.update'
+            ? (params.changes as Record<string, unknown>)
+            : { model: params.modelId, provider: params.providerId ?? 'auggie' };
+        agentChanges.set(agentId, { ...agentChanges.get(agentId), ...changes });
+        // The daemon's agent:updated push, which moves the session to the new model.
+        if (method === 'agent.setModel')
+          setTimeout(() =>
+            store.dispatch(
+              updateSession(agentId, {
+                model: String(params.modelId),
+                provider: String(params.providerId ?? 'auggie'),
+              }),
+            ),
+          );
+        return { agent: agent(agentId), modelId: params.modelId };
+      }
       case 'agent.getQueue':
         return { queue: queues.get(agentId) ?? [] };
       case 'agent.getConversation':
@@ -465,6 +519,7 @@ export function setupConversationWire(
       listeners.clear();
       subscriptions.clear();
       restoreModels();
+      restoreClaudeModels();
       window.electronAPI = previous;
     },
   };

@@ -120,13 +120,14 @@
   const layout = $derived(getDockHorizontalLayout(rendererWidth));
   const visibleWorkspaces = $derived(workspaces);
   const assistantId = 'dock:assistant';
+  // The Assistant always sits last, below the workspaces (as in the overview).
   const visibleEntries = $derived([
-    { id: assistantId, title: m.dock_assistant_label(), item: null },
     ...visibleWorkspaces.map((item) => ({
       id: String(item.workspace.id),
       title: item.workspace.title?.trim() || m.workspace_links_untitled_label(),
       item,
     })),
+    { id: assistantId, title: m.dock_assistant_label(), item: null },
   ]);
   const navigationCount = $derived(visibleEntries.length);
   let buttonElements = $state<Record<string, HTMLButtonElement | null>>({});

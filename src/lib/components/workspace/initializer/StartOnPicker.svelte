@@ -20,9 +20,18 @@
     onChange: (machineId: string) => void;
     /** Why only the current backend can be used (shown under the value; the row is disabled). */
     lockedReason?: string;
+    /** Whether the machine list is open (bindable; previews open it directly). */
+    open?: boolean;
   }
 
-  let { presentation = 'form', value, options, onChange, lockedReason }: Props = $props();
+  let {
+    presentation = 'form',
+    value,
+    options,
+    onChange,
+    lockedReason,
+    open = $bindable(false),
+  }: Props = $props();
 
   const uid = $props.id();
   const labelId = `${uid}-start-on-label`;
@@ -32,7 +41,7 @@
 </script>
 
 <div class={presentation === 'footer' ? 'min-w-0' : 'w-full'} data-testid="start-on-picker">
-  <Menu.Root>
+  <Menu.Root bind:open>
     <Menu.Trigger>
       {#snippet child({ props })}
         <Button

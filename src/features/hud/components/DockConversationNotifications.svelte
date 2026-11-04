@@ -24,9 +24,10 @@
 
 <script lang="ts">
   import { onDestroy } from 'svelte';
+  import Fa from 'svelte-fa';
+  import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
-  import { ToastCloseButton, ToastGlyph, toast, type ToastT } from '$lib/components/ui/toast';
-  import { fly } from '$lib/motion';
+  import { toast, type ToastT } from '$lib/components/ui/toast';
   import { m } from '$shared/paraglide/messages.js';
 
   type ToastId = ToastT['id'];
@@ -39,17 +40,25 @@
   const DEFAULT_DURATION = 10_000;
   const shown = new Set<ToastId>();
 
+  // No toasts in the dock: notifications raised here render as an ordinary status
+  // line in the composer (text plus plain buttons), never a floating banner. Only
+  // failures (error, warning) and notices whose button is the only way to act
+  // (e.g. Undo) are kept. Plain info, success and progress notices are cleared.
+  const bannerWorthy = (item: ToastT): boolean =>
+    item.type === 'error' ||
+    item.type === 'warning' ||
+    isButton(item.action) ||
+    isButton(item.cancel);
   // Only unaddressed notifications belong to this window's single host; the
   // store keeps newest first, so the first one is the one the banner shows.
-  const unaddressed = $derived(toast.getActiveToasts().filter((item) => !item.toasterId));
-  const current = $derived(unaddressed[0]);
-  const glyph = $derived.by(() => {
-    const type = current?.type;
-    if (type === 'success' || type === 'error' || type === 'warning' || type === 'loading')
-      return type;
-    return 'info';
+  const unaddressed = $derived(
+    toast.getActiveToasts().filter((item) => !item.toasterId && bannerWorthy(item)),
+  );
+  $effect(() => {
+    for (const item of toast.getActiveToasts())
+      if (!item.toasterId && !bannerWorthy(item)) toast.dismiss(item.id);
   });
-
+  const current = $derived(unaddressed[0]);
   function isButton(control: ToastT['action']): control is ToastButton {
     return !!control && typeof control === 'object' && 'label' in control && 'onClick' in control;
   }
@@ -76,7 +85,7 @@
   let hovered = $state<ToastId | null>(null);
 
   // Success and info keep their configured lifetimes; errors and progress wait
-  // for the person (or a replacement). Hovering the banner pauses the countdown.
+  // for the person (or a replacement). Hovering the status pauses the countdown.
   $effect(() => {
     const item = current;
     if (!item || item.type === 'error' || item.type === 'loading') return;
@@ -95,7 +104,7 @@
     };
   });
 
-  function registerBanner(element: HTMLElement) {
+  function registerNotice(element: HTMLElement) {
     return register(element);
   }
 
@@ -117,16 +126,14 @@
     {@const item = current}
     {#key item.id}
       <div
-        class="banner"
+        class="notice"
         class:error={item.type === 'error'}
         data-dock-notice
         data-type={item.type}
         role={item.type === 'error' ? 'alert' : 'status'}
         onpointerenter={() => (hovered = item.id)}
         onpointerleave={() => (hovered = null)}
-        in:fly|global={{ tier: 'moderate', distance: 6 }}
-        out:fly|global={{ tier: 'fast', distance: 6 }}
-        {@attach registerBanner}
+        {@attach registerNotice}
       >
         {#if item.component}
           {@const Custom = item.component}
@@ -134,8 +141,7 @@
             <Custom {...item.componentProps} closeToast={() => close(item)} />
           </div>
         {:else}
-          <ToastGlyph variant={glyph} />
-          <p class="message">
+          <p class="message type-caption">
             {#if typeof item.title === 'string'}
               <span data-dock-notice-title>{item.title}</span>
             {:else if item.title}
@@ -152,9 +158,8 @@
           {#if isButton(item.cancel)}
             {@const cancel = item.cancel}
             <Button
-              variant="ghost"
-              size="compact"
-              class="notice-action"
+              variant="outline"
+              size="sm"
               onclick={(event: MouseEvent) => runControl(item, cancel, event)}
               >{cancel.label}</Button
             >
@@ -162,19 +167,20 @@
           {#if isButton(item.action)}
             {@const action = item.action}
             <Button
-              variant="ghost"
-              size="compact"
-              class="notice-action"
+              variant="outline"
+              size="sm"
               onclick={(event: MouseEvent) => runControl(item, action, event)}
               >{action.label}</Button
             >
           {/if}
           {#if item.dismissible !== false}
-            <ToastCloseButton
-              inline
+            <Button
+              variant="ghost"
+              size="icon-sm"
               onclick={() => close(item)}
-              ariaLabel={m.ui_toast_close_ariaLabel()}
-            />
+              aria-label={m.ui_toast_close_ariaLabel()}
+              title={m.ui_toast_close_ariaLabel()}><Fa icon={faXmark} /></Button
+            >
           {/if}
         {/if}
       </div>
@@ -183,51 +189,30 @@
 </div>
 
 <style>
-  /* A zero-height rail at the composer's top edge: banners grow upward over the
-     transcript, so the transcript never reflows when one appears or leaves. */
-  .conversation-notifications {
-    position: absolute;
-    /* Inherits the composer lane's inset from the ChatContentLane that hosts it. */
-    inset-inline: var(--chat-content-inset, 1rem);
-    bottom: 0;
-    height: 0;
-    pointer-events: none;
-    /* Above message hover actions (z-10), which otherwise cover the banner's action. */
-    z-index: var(--layer-chrome);
-  }
-  .banner {
-    position: absolute;
-    inset-inline: 0;
-    bottom: 0;
+  /* An ordinary status line in the composer lane, in layout like the send error:
+     no surface, glyph or motion of its own. */
+  .notice {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: var(--space-2);
     min-width: 0;
-    min-height: var(--control-height-medium);
-    padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
-    border-radius: var(--radius-large);
-    background: hsl(var(--muted));
-    color: hsl(var(--foreground));
-    font-size: var(--text-body-size);
-    line-height: var(--text-body-line-height);
-    pointer-events: auto;
-  }
-  .banner.error .message {
-    color: hsl(var(--danger));
+    margin-bottom: var(--space-2);
   }
   .message {
     flex: 1;
     min-width: 0;
     margin: 0;
+    padding-block: var(--space-1);
+    color: hsl(var(--muted-foreground));
     display: -webkit-box;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
     overflow: hidden;
     overflow-wrap: anywhere;
   }
-  .description {
-    color: hsl(var(--muted-foreground));
+  .notice.error .message {
+    color: hsl(var(--danger));
   }
   .description::before {
     content: ' ';
@@ -235,10 +220,5 @@
   .custom {
     flex: 1;
     min-width: 0;
-  }
-  .banner :global(.notice-action) {
-    flex: none;
-    padding-inline: var(--space-2);
-    font-weight: 500;
   }
 </style>

@@ -1660,6 +1660,7 @@ const bootFlow = app.whenReady().then(async () => {
     show: () => dockMenuController.setEnabled(true),
     hide: () => dockMenuController.dismiss(),
     onChange: () => void rebuildMenu(),
+    isDock: (sender) => getDockWindow()?.webContents === sender,
   });
   markRendererWindowsAllowed();
   if (isDockLabEnabled()) await dockMenuController.restore();

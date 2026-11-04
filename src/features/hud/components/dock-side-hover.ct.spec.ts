@@ -61,7 +61,7 @@ for (const side of ['left', 'right'] as const) {
         .toBe(true);
     };
     await expect(entries).toHaveCount(3);
-    await expect(entries.first().locator('[data-dock-workspace-avatar]')).toHaveCount(0);
+    await expect(entries.last().locator('[data-dock-workspace-avatar]')).toHaveCount(0);
     // The workspace's state shows on its avatar, as in the app (no separate status dot).
     for (const [index, [status, avatarState]] of [
       ['failed', 'failed'],
@@ -69,18 +69,18 @@ for (const side of ['left', 'right'] as const) {
     ].entries()) {
       await expect(
         entries
-          .nth(index + 1)
+          .nth(index)
           .locator(
             `[data-dock-workspace-avatar][data-workspace-status="${status}"] [data-agent-avatar-with-state]`,
           ),
       ).toHaveAttribute('data-avatar-state', avatarState);
-      await expect(entries.nth(index + 1)).toHaveAccessibleDescription(
+      await expect(entries.nth(index)).toHaveAccessibleDescription(
         index === 0 ? 'Failed' : 'Blocked',
       );
     }
     await expect(component.getByTestId('dock-overview')).toHaveCount(0);
     await expect(component.getByTestId('dock-dismiss')).toHaveCount(0);
-    await entries.nth(1).hover();
+    await entries.nth(0).hover();
     await expect(card).toHaveAttribute(
       'data-preview-workspace-id',
       String(workspaces[0].workspace.id),
@@ -95,7 +95,7 @@ for (const side of ['left', 'right'] as const) {
       })),
     );
     evidence.push({ normalMotion: scaleRects });
-    const hovered = await entries.nth(1).boundingBox();
+    const hovered = await entries.nth(0).boundingBox();
     const cardBox = await card.boundingBox();
     if (!hovered || !cardBox) throw new Error('Missing hovercard or hovered icon');
     const cardX = side === 'left' ? cardBox.x + 6 : cardBox.x + cardBox.width - 6;
@@ -107,42 +107,42 @@ for (const side of ['left', 'right'] as const) {
     await expect(card).toContainText(workspaces[0].workspace.title ?? '');
     // The card is a preview only: no feedback action of its own.
     await expect(card.getByRole('button')).toHaveCount(0);
-    await entries.nth(2).hover();
+    await entries.nth(1).hover();
     await expect(card).toHaveAttribute(
       'data-preview-workspace-id',
       String(workspaces[1].workspace.id),
     );
-    await entries.first().hover();
+    await entries.last().hover();
     await expect(card).toHaveAttribute('data-preview-workspace-id', 'dock:assistant');
     await expect(card).toContainText('Assistant');
     await page.mouse.move(700, 690);
     await expect(card).toHaveCount(0);
     const closedPng = testInfo.outputPath(`side-${side}-pointer-mouseout.png`);
     await component.screenshot({ path: closedPng });
-    await entries.nth(1).click();
+    await entries.nth(0).click();
     await expect(component).toHaveAttribute(
       'data-preview-action',
       `workspace:${workspaces[0].workspace.id}`,
     );
-    await entries.nth(1).hover();
+    await entries.nth(0).hover();
     await page.mouse.down();
-    await expect(entries.nth(1)).toBeFocused();
+    await expect(entries.nth(0)).toBeFocused();
     await page.mouse.move(700, 690);
     await expect(card).toHaveCount(0);
-    await expect(entries.nth(1)).not.toBeFocused();
+    await expect(entries.nth(0)).not.toBeFocused();
     await page.mouse.up();
     evidence.push({
       pointerIconMouseout:
         'pointer-down focus released on mouseout; ordinary navigation target passed',
     });
     await page.keyboard.press('Tab');
-    await entries.nth(2).focus();
+    await entries.nth(1).focus();
     await expect(card).toHaveAttribute(
       'data-preview-workspace-id',
       String(workspaces[1].workspace.id),
     );
     await expect(card).toBeVisible();
-    await expect(entries.nth(2)).toBeFocused();
+    await expect(entries.nth(1)).toBeFocused();
     evidence.push({
       beforeKeyboardEscape: await card.evaluate((el) => ({
         visibility: getComputedStyle(el).visibility,
@@ -157,9 +157,9 @@ for (const side of ['left', 'right'] as const) {
     await page.keyboard.press('Escape');
     await expect(card).toHaveCount(0);
     await expect(component.getByTestId('dock-shell')).toBeVisible();
-    await entries.first().focus();
-    await entries.first().press('ArrowDown');
-    await expect(entries.nth(1)).toBeFocused();
+    await entries.last().focus();
+    await entries.last().press('ArrowDown');
+    await expect(entries.nth(0)).toBeFocused();
     await expect(card).toHaveAttribute(
       'data-preview-workspace-id',
       String(workspaces[0].workspace.id),
@@ -169,7 +169,7 @@ for (const side of ['left', 'right'] as const) {
     await component.screenshot({ path: png });
     await testInfo.attach(`${side} workspace card`, { path: png, contentType: 'image/png' });
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    await entries.nth(1).hover();
+    await entries.nth(0).hover();
     await expect
       .poll(async () =>
         entries.evaluateAll((els) => els.map((el) => Number(el.getAttribute('data-dock-scale')))),
@@ -321,7 +321,7 @@ test('tall side cards fit production envelope at offset display boundaries', asy
       });
       await host
         .locator('[data-dock-entry]')
-        .nth(edge === 'top' ? 1 : 2)
+        .nth(edge === 'top' ? 0 : 1)
         .hover();
       const card = host.getByTestId('dock-preview');
       await expect(card).toBeVisible();

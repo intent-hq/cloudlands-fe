@@ -59,6 +59,7 @@ import { m } from '$shared/paraglide/messages.js';
 export const emptyChatAgentState: ChatAgentState = {
   agentId: '',
   isInterrupting: false,
+  lastTurnInterrupted: false,
   error: null,
   lastChunkTime: null,
   receivedFirstChunk: false,
@@ -800,6 +801,14 @@ export const streamTimedOut = createAction<[agentId: string]>('chatState/streamT
 /** Clear error */
 export const chatErrorCleared = createAction<[agentId: string]>('chatState/errorCleared');
 
+/**
+ * A turn's terminal `agent:stream:end` arrived. Records whether it was
+ * interrupted independently of transcript rows: a startup interrupt has no
+ * `messageId` and persists no assistant row (PROTOCOL §7.2).
+ */
+export const chatTurnEnded =
+  createAction<[agentId: string, interrupted: boolean]>('chatState/turnEnded');
+
 /** Set isInterrupting flag (stop chat in progress) */
 export const chatStopInitiated = createAction<[agentId: string]>('chatState/stopInitiated');
 
@@ -1334,6 +1343,11 @@ chatStateReducer.with(chatModelUnavailableCleared, (state, { payload: [agentId] 
 // still survives a reload/reconcile like `modelUnavailable` does.
 chatStateReducer.with(chatErrorCleared, (state, { payload: [agentId] }) =>
   updateAgent(state, agentId, { error: null, failureCorrelation: undefined, quotaExceeded: null }),
+);
+chatStateReducer.with(chatTurnEnded, (state, { payload: [agentId, interrupted] }) =>
+  (state.byAgentId[agentId]?.lastTurnInterrupted ?? false) === interrupted
+    ? state
+    : updateAgent(state, agentId, { lastTurnInterrupted: interrupted }),
 );
 chatStateReducer.with(chatStopInitiated, (state, { payload: [agentId] }) =>
   updateAgent(state, agentId, { isInterrupting: true }),

@@ -13,6 +13,10 @@
 // edited ChatPanel.svelte with green PR checks and was ejected from the queue
 // by chat-panel-composer-geometry.ct.spec.ts (a 24px shift, failed 3 of 3).
 //
+// Both list modes diff <head> against the merge-base of <base> and <head> (a
+// three-dot diff; see diffBase in ct-contract-paths.mjs), so files <base>
+// changed after the branch point are not counted as the PR's.
+//
 // Modes:
 //   --diff <base> <head>   prints one `ct_changed_specs=<JSON array>` line for
 //                          $GITHUB_OUTPUT. Any error prints
@@ -45,7 +49,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { isCtSpec, normalizeCtPath } from '../playwright/ct-spec-pattern.mjs';
-import { ctImportGraph } from './ct-contract-paths.mjs';
+import { ctImportGraph, diffBase } from './ct-contract-paths.mjs';
 
 export const OUTPUT_KEY = 'ct_changed_specs';
 export const ERROR_VALUE = 'error';
@@ -246,6 +250,7 @@ export function main(
   {
     diff = changedFiles,
     graph = ctImportGraph,
+    resolveBase = diffBase,
     log = console.log,
     warn = console.error,
     write,
@@ -257,8 +262,9 @@ export function main(
     let selected = ERROR_VALUE;
     let overBudget = '[]';
     try {
-      const [base, head, ...rest] = argv.slice(1);
-      if (!base || !head || rest.length) throw new Error(usage());
+      const [given, head, ...rest] = argv.slice(1);
+      if (!given || !head || rest.length) throw new Error(usage());
+      const base = resolveBase(given, head);
       const affected = affectedCtSpecs(graph(base, head), diff(base, head, 'ACMD'));
       affected.forEach(({ spec, via, distance }, index) => {
         const mark = index < CT_AFFECTED_BUDGET ? 'run' : 'over budget';
@@ -286,9 +292,9 @@ export function main(
   if (argv[0] === '--diff') {
     let value = ERROR_VALUE;
     try {
-      const [base, head, ...rest] = argv.slice(1);
-      if (!base || !head || rest.length) throw new Error(usage());
-      value = JSON.stringify(changedCtSpecs(diff(base, head)));
+      const [given, head, ...rest] = argv.slice(1);
+      if (!given || !head || rest.length) throw new Error(usage());
+      value = JSON.stringify(changedCtSpecs(diff(resolveBase(given, head), head)));
     } catch (error) {
       warn(`ct-changed-specs: ${error instanceof Error ? error.message : error}`);
     }

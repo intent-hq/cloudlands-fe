@@ -157,6 +157,23 @@ test('clicks while the tool popover opens, is open and is closing still toggle',
   await expectOff(page, button);
 });
 
+test('a click whose press spans the popover opening still toggles', async ({ mount: m, page }) => {
+  const button = await mount(m, page);
+  const tools = page.getByRole('toolbar', { name: 'Annotation tools' });
+  const box = (await button.boundingBox())!;
+  // The hover delay ends between press and release: the button must stay the same
+  // element, or the browser sends the click to an ancestor and it is lost
+  // (cloudlands-fe Actions run 41648611586).
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await expect(tools).toBeVisible();
+  await page.mouse.up();
+  await expectOn(page, button);
+  await expect(tools).toHaveCount(0);
+  await press(page, button);
+  await expectOff(page, button);
+});
+
 test('a click right after choosing a tool ends that session', async ({ mount: m, page }) => {
   const button = await mount(m, page);
   const tools = page.getByRole('toolbar', { name: 'Annotation tools' });

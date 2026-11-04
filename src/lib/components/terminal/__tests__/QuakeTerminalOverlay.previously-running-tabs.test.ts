@@ -85,6 +85,12 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
+  selectRemoteScriptsSupported: () => ({
+    subscribe: (listener: (value: boolean) => void) => {
+      listener(false);
+      return () => {};
+    },
+  }),
   selectScriptWorkflowOutcome: () => ({
     subscribe: (listener: (value: undefined) => void) => {
       listener(undefined);

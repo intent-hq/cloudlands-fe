@@ -6,6 +6,7 @@ import type {
   DockNativeResult,
   DockEvidenceCapabilities,
   DockClipFile,
+  DockCaptureMode,
 } from '$shared/dock-evidence';
 import type { DockSpeechCapability, DockSpeechEvent } from '$shared/dock-speech';
 import {
@@ -109,6 +110,7 @@ export function createDockEvidenceNative(
 
   async function capture(
     requestId: string = crypto.randomUUID(),
+    mode: DockCaptureMode = 'fullscreen',
   ): Promise<DockEvidencePixelsResult> {
     const started = await begin();
     if (!started.ok) return started;
@@ -118,6 +120,7 @@ export function createDockEvidenceNative(
         ...started.value,
         requestId,
         source: 'capture',
+        ...(mode === 'fullscreen' ? {} : { mode }),
       })) as DockEvidencePixelsResult;
       if (disposed || session !== started.value) return { ok: false, error: 'unavailable' };
       if (
@@ -183,6 +186,7 @@ export function createDockEvidenceNative(
         capture: result.value.capture,
         annotate: result.value.annotate,
         record: result.value.record,
+        ...(result.value.captureModes ? { captureModes: true } : {}),
       });
     return result;
   }
@@ -196,8 +200,8 @@ export function createDockEvidenceNative(
     ): Promise<DockNativeResult<void>>;
   } = {
     capabilities,
-    captureDisplay: async () => {
-      const result = await capture();
+    captureDisplay: async (mode) => {
+      const result = await capture(undefined, mode);
       return result.ok
         ? { ok: true, value: { ...result.value.pixels, image: result.value.image } }
         : result;

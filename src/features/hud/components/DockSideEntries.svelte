@@ -59,13 +59,14 @@
   } = $props();
 
   const assistantId = 'dock:assistant';
+  // The Assistant always sits last, below the workspaces (as in the overview).
   const entries = $derived([
-    { id: assistantId, title: m.dock_assistant_label(), item: null },
     ...workspaces.map((item) => ({
       id: String(item.workspace.id),
       title: item.workspace.title?.trim() || m.workspace_links_untitled_label(),
       item,
     })),
+    { id: assistantId, title: m.dock_assistant_label(), item: null },
   ]);
   let root = $state<HTMLDivElement>();
   let rail = $state<HTMLElement>();

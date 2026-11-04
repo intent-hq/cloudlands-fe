@@ -13,6 +13,16 @@ export type DockComposerLabels = DockComposerMediaLabels & {
 export function createDockComposerLabels(): DockComposerLabels {
   return {
     capture: m.dock_composer_capture_tooltip({ shortcut: formatShortcut('mod+shift+s') }),
+    captureMode: {
+      window: m.dock_composer_captureWindow_tooltip({ shortcut: formatShortcut('mod+shift+s') }),
+      region: m.dock_composer_captureRegion_tooltip({ shortcut: formatShortcut('mod+shift+s') }),
+    },
+    captureModes: {
+      fullscreen: m.dock_composer_captureFullscreen_label(),
+      window: m.dock_composer_captureWindow_label(),
+      region: m.dock_composer_captureRegion_label(),
+    },
+    captureOptions: m.dock_composer_captureModes_ariaLabel(),
     captureLimit: m.dock_composer_captureLimit_tooltip(),
     clipLimit: m.dock_composer_clipLimit_tooltip({
       limit: formatInteger(DOCK_EVIDENCE_LIMITS.clips),

@@ -40,6 +40,7 @@
     chatLastAttemptedMessageSet,
     chatSendFailed,
     chatSendStarted,
+    chatTurnEnded,
   } from '$store/renderer/slices/chat-state/chat-state-slice';
   import { setChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-slice';
   import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queue-slice';
@@ -64,6 +65,7 @@
     height = 640,
     chief = false,
     streaming = false,
+    interruptedTurnEnd = false,
     draft = '',
     restoredDraft,
     holdDraftRestore = false,
@@ -95,6 +97,8 @@
     height?: number;
     chief?: boolean;
     streaming?: boolean;
+    /** When `streaming` turns off, end the turn with a §7.2 interrupt terminal that names no row. */
+    interruptedTurnEnd?: boolean;
     draft?: string;
     restoredDraft?: string;
     holdDraftRestore?: boolean;
@@ -395,6 +399,13 @@
     const nextStreaming = streaming;
     if (nextStreaming === appliedStreaming) return;
     appliedStreaming = nextStreaming;
+    if (!nextStreaming)
+      store.dispatch(
+        chatTurnEnded(
+          agentId,
+          untrack(() => interruptedTurnEnd),
+        ),
+      );
     store.dispatch(
       updateSession(agentId, {
         status: nextStreaming ? AgentStatus.Active : AgentStatus.RuntimeIdle,

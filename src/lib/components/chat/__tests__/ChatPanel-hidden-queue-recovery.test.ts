@@ -109,20 +109,26 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', async (imp
     selectHiddenTabs: testState.selector([] as unknown[]),
   }),
 );
-vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', async () => ({
-  ...(await import('./mocks/chat-panel-render-scaffold')).agentSessionSelectors(),
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', async (importOriginal) => ({
+  ...(await (
+    await import('./mocks/chat-panel-render-scaffold')
+  ).agentSessionSelectors(importOriginal)),
   selectAgentSession: testState.selectorFrom(() => testState.agentSession),
   selectAgentSessionsById: testState.selector({}),
   selectAgentMessages: testState.selectorFrom(() => testState.agentMessages),
   selectAgentHistoryMessages: testState.selectorFrom(() => testState.agentHistoryMessages),
 }));
-vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', async () => ({
-  ...(await import('./mocks/chat-panel-render-scaffold')).chatStateSelectors(),
+vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', async (importOriginal) => ({
+  ...(await (
+    await import('./mocks/chat-panel-render-scaffold')
+  ).chatStateSelectors(importOriginal)),
   selectTranscriptHydration: testState.selectorFrom(() => testState.transcriptHydration),
   selectTranscriptHydratedOnce: testState.selectorFrom(() => testState.transcriptHydratedOnce),
 }));
-vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', async () => ({
-  ...(await import('./mocks/chat-panel-render-scaffold')).agentQueueSelectors(),
+vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', async (importOriginal) => ({
+  ...(await (
+    await import('./mocks/chat-panel-render-scaffold')
+  ).agentQueueSelectors(importOriginal)),
   selectAgentQueueMessages: testState.selectorFrom(() => testState.queue),
 }));
 vi.mock(
@@ -178,8 +184,8 @@ vi.mock(
       selectWorkspaceNavigationMainPanel: testState.selector({ type: 'empty' }),
     }),
 );
-vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).transientUiSelectors(),
+vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).transientUiSelectors(importOriginal),
 );
 vi.mock(
   '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors',
@@ -193,8 +199,10 @@ vi.mock('$store/renderer/slices/permission/permission-selectors', async (importO
     selectPermissionRequests: testState.selector([]),
   }),
 );
-vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).unreadTrackingSelectors(),
+vi.mock(
+  '$store/renderer/slices/unread-tracking/unread-tracking-selectors',
+  async (importOriginal) =>
+    (await import('./mocks/chat-panel-render-scaffold')).unreadTrackingSelectors(importOriginal),
 );
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', async (importOriginal) =>
   (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
@@ -203,8 +211,10 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', async (impor
     selectEffectiveModel: testState.selector(''),
   }),
 );
-vi.mock('$store/renderer/slices/provider-catalog/provider-catalog-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).providerCatalogSelectors(),
+vi.mock(
+  '$store/renderer/slices/provider-catalog/provider-catalog-selectors',
+  async (importOriginal) =>
+    (await import('./mocks/chat-panel-render-scaffold')).providerCatalogSelectors(importOriginal),
 );
 
 vi.mock('../input/SimpleRichInput.svelte', async () => ({

@@ -609,6 +609,28 @@ export function ctSpecDependencies(base, head) {
   return ctImportGraph(base, head).dependencies;
 }
 
+// The commit to diff `head` against: the merge-base of `base` and `head`, so
+// the diff holds only what `head` changed since it branched (a three-dot
+// diff), never the files `base` changed after that point. cloudlands-fe#4114
+// (job 126070303811) repeated six specs only main had changed and hit its
+// time limit. When no merge-base is reachable (a shallow clone with the two
+// commits fetched at depth 1), `base` itself is the closest answer: the diff
+// can only be wider, never miss a change of `head`. An unknown revision still
+// fails in the diff that follows.
+export function diffBase(base, head, { cwd = process.cwd() } = {}) {
+  try {
+    return (
+      execFileSync('git', ['merge-base', base, head], {
+        cwd,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim() || base
+    );
+  } catch {
+    return base;
+  }
+}
+
 // `-z` keeps paths verbatim (no `core.quotePath` escaping of non-ASCII names) and
 // `--no-renames` reports a rename as delete + add, so a contract file moved out of
 // the list still surfaces on its old path.
@@ -642,13 +664,16 @@ export function main(
   {
     diff = changedFiles,
     dependencies = ctSpecDependencies,
+    resolveBase = diffBase,
     log = console.log,
     warn = console.error,
   } = {},
 ) {
   let required = true;
   try {
-    const { base, head } = parseArgs(argv);
+    const args = parseArgs(argv);
+    const { head } = args;
+    const base = resolveBase(args.base, head);
     const files = diff(base, head);
     required =
       ctRequired(files) || (files.length > 0 && ctRequired(files, dependencies(base, head)));

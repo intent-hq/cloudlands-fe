@@ -490,9 +490,9 @@ for (const mode of ['side-left', 'side-right', 'floating', 'notch'] as const) {
       },
     });
     if (mode.startsWith('side-')) {
-      await component.locator('[data-dock-entry]').nth(1).hover();
+      await component.locator('[data-dock-entry]').nth(0).hover();
       await expect(component.getByTestId('dock-preview')).toBeVisible();
-      await component.locator('[data-dock-entry]').nth(1).click();
+      await component.locator('[data-dock-entry]').nth(0).click();
     } else {
       await component.getByTestId('dock-drag-handle').hover();
       await expect(component.getByTestId('dock-shell')).toHaveAttribute('data-reveal', '1');

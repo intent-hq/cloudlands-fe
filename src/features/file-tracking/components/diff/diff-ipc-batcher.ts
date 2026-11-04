@@ -31,6 +31,13 @@ import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import type { Workspace } from '$shared/types';
 import { isMissingWorkingTreeFile } from './is-missing-working-tree-file';
 import { gitlinkSidesFromHunks, gitlinkSidesFromShas, isGitlinkDiffChunk } from './gitlink';
+import {
+  GIT_DIFF_MAX_BYTES,
+  gitDiffTruncatedReason,
+  readFileList,
+  requestAllDiffPages,
+  type GitDiffTruncatedReason,
+} from '$lib/client/live/git-diff-pages';
 
 const logger = createLogger('diff-ipc-batcher');
 
@@ -39,6 +46,8 @@ interface DiffChunk {
   oldContent?: string;
   newContent?: string;
   chunks?: unknown[];
+  /** Bounded `git.diffs` read (§5.6): set when the hunks were not served. */
+  truncatedReason?: GitDiffTruncatedReason;
 }
 
 interface GitDiffResponse {
@@ -223,7 +232,12 @@ function toDaemonDiffChunks(result: unknown): DiffChunk[] {
     if (!entry || typeof entry !== 'object') continue;
     const e = entry as { path?: unknown; hunks?: unknown };
     if (typeof e.path !== 'string' || !e.path) continue;
-    chunks.push({ file: e.path, chunks: Array.isArray(e.hunks) ? e.hunks : [] });
+    const truncatedReason = gitDiffTruncatedReason(entry);
+    chunks.push({
+      file: e.path,
+      chunks: Array.isArray(e.hunks) ? e.hunks : [],
+      ...(truncatedReason ? { truncatedReason } : {}),
+    });
   }
   return chunks;
 }
@@ -350,11 +364,21 @@ function sharedFullTreeDiffRead(
   const existing = pendingFullTreeReads.get(key);
   if (existing) return existing;
 
-  const promise = backendRequest<unknown>(
+  // Follows `nextToken` so files on later pages of a paged file list match.
+  const promise = readFileList(
+    backendRequest,
     'git.diffs',
+    // Opts in to the bounded result (§5.6); recovery only matches paths, and
+    // matched chunks get their full sides from the enrichment reads.
     staged
-      ? { workspaceId, staged: true, ...(gitRootId ? { gitRootId } : {}) }
-      : { workspaceId, ...(gitRootId ? { gitRootId } : {}) },
+      ? {
+          workspaceId,
+          staged: true,
+          maxBytes: GIT_DIFF_MAX_BYTES,
+          ...(gitRootId ? { gitRootId } : {}),
+        }
+      : { workspaceId, maxBytes: GIT_DIFF_MAX_BYTES, ...(gitRootId ? { gitRootId } : {}) },
+    'path',
   )
     .then(toDaemonDiffChunks)
     .finally(() => pendingFullTreeReads.delete(key));
@@ -390,11 +414,16 @@ async function flushDiffGroup(key: string) {
       resolveAbortedGroup(pending);
       return;
     }
-    const result = await backendRequest<unknown>(
+    // Bounded read (§5.6): files left out of a full page (`pageBudget`) are
+    // fetched by follow-up requests; `fileTooLarge` files come back without
+    // hunks and are composed from the full sides read below.
+    const result = await requestAllDiffPages(
+      backendRequest,
       'git.diffs',
       staged
         ? { workspaceId: wsId, staged: true, paths, ...(gitRootId ? { gitRootId } : {}) }
         : { workspaceId: wsId, paths, ...(gitRootId ? { gitRootId } : {}) },
+      'path',
     );
     const chunks = toDaemonDiffChunks(result);
 

@@ -1,5 +1,5 @@
 import type { Locator } from '@playwright/test';
-import { expect, test } from '../../../test/ct-test';
+import { expect, expectNoAnimations, test } from '../../../test/ct-test';
 import ConversationWireHarness from './DockConversationWireHarness.svelte';
 import ConversationPreview from './dock-conversation.preview.svelte';
 import { conversationAgents } from './dock-conversation.preview-fixtures';
@@ -7,30 +7,46 @@ import { conversationAgents } from './dock-conversation.preview-fixtures';
 const png =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aL1sAAAAASUVORK5CYII=';
 const visibleNotices = '[data-dock-conversation-notifications] [data-dock-notice]';
-// Reviewable banner captures land in the workspace artifact folder (monorepo root).
 
 type Rect = { x: number; y: number; width: number; height: number };
 
-async function expectBannerPlacement(component: Locator, banner: Locator) {
-  const [box, composer, lane] = await Promise.all([
-    banner.boundingBox(),
-    component.locator('.conversation-footer').boundingBox(),
+/** No toasts in the dock: a notice is an ordinary status line in the composer lane, in
+ * layout above the composer, with no surface of its own, and still natively clickable. */
+async function expectInlineStatus(component: Locator, notice: Locator) {
+  const [box, lane, look] = await Promise.all([
+    notice.boundingBox(),
     component.locator('.conversation-footer .composer-prompt-lane').evaluate((element) => {
       const rect = element.getBoundingClientRect();
       const style = getComputedStyle(element);
+      const input = element.querySelector('[data-testid="message-input"]')!;
       return {
+        top: input.getBoundingClientRect().top,
         left: rect.left + Number.parseFloat(style.paddingLeft),
         right: rect.right - Number.parseFloat(style.paddingRight),
       };
     }),
+    notice.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        inFooter: !!element.closest('.conversation-footer'),
+        position: style.position,
+        background: style.backgroundColor,
+      };
+    }),
   ]);
-  if (!box || !composer) throw new Error('Missing banner or composer bounds');
-  // Directly above the composer, in the composer lane, never covering the composer.
-  expect(box.y + box.height).toBeLessThanOrEqual(composer.y + 1);
-  expect(composer.y - (box.y + box.height)).toBeLessThan(2);
+  if (!box) throw new Error('Missing notice bounds');
+  expect(look).toEqual({
+    inFooter: true,
+    position: 'static',
+    background: 'rgba(0, 0, 0, 0)',
+  });
+  // No motion of its own (the old banner flew in).
+  await expectNoAnimations(notice);
+  // Above the message input, in the composer lane, never covering it.
+  expect(box.y + box.height).toBeLessThanOrEqual(lane.top + 1);
   expect(Math.abs(box.x - lane.left)).toBeLessThan(1);
   expect(Math.abs(box.x + box.width - lane.right)).toBeLessThan(1);
-  // Native click-through: the banner is a registered pointer region.
+  // Native click-through: the status line is inside a registered pointer region.
   await expect
     .poll(async () => {
       const regions = JSON.parse((await component.getAttribute('data-regions')) ?? '[]') as Rect[];
@@ -148,10 +164,10 @@ test('dock failed image read shows an error and accepts a later paste without lo
   await expect(error).toContainText('Failed to add image: retry.png');
   await expect(error).toBeInViewport({ ratio: 1 });
   await expect(error).toHaveAttribute('role', 'alert');
-  await expectBannerPlacement(component, error);
-  await component.screenshot({ path: test.info().outputPath('dock-banner-error.png') });
-  await test.info().attach('dock-banner-error.png', {
-    path: test.info().outputPath('dock-banner-error.png'),
+  await expectInlineStatus(component, error);
+  await component.screenshot({ path: test.info().outputPath('dock-notice-error.png') });
+  await test.info().attach('dock-notice-error.png', {
+    path: test.info().outputPath('dock-notice-error.png'),
     contentType: 'image/png',
   });
   await expect(
@@ -298,7 +314,7 @@ test('compact dock header keeps long names and keyboard agent selection usable a
   await component.screenshot({ path: info.outputPath('compact-conversation-header.png') });
 });
 
-test('dock banner shows one notice at a time with an inline action and keeps the transcript still', async ({
+test('dock notice is one inline status line with a plain action, below the transcript', async ({
   mount,
   page,
 }) => {
@@ -319,27 +335,29 @@ test('dock banner shows one notice at a time with an inline action and keeps the
     .toBe(true);
   await component.getByRole('button', { name: 'Resolve synthetic enhancement' }).click();
   await expect(editor).toHaveText('Enhanced: Original enhancement draft');
-  const banner = component.locator(visibleNotices);
-  await expect(banner).toHaveCount(1);
-  await expect(banner).toContainText('Prompt enhanced');
-  const undo = banner.getByRole('button', { name: 'Undo enhance', exact: true });
+  const notice = component.locator(visibleNotices);
+  await expect(notice).toHaveCount(1);
+  await expect(notice).toContainText('Prompt enhanced');
+  const undo = notice.getByRole('button', { name: 'Undo enhance', exact: true });
   await expect(undo).toBeVisible();
   await expect(
-    banner.getByRole('button', { name: 'Close notification', exact: true }),
+    notice.getByRole('button', { name: 'Close notification', exact: true }),
   ).toBeVisible();
-  await expectBannerPlacement(component, banner);
-  // The banner overlays the transcript instead of resizing it.
-  expect(await transcript.boundingBox()).toEqual(before);
-  await component.screenshot({ path: test.info().outputPath('dock-banner-action.png') });
-  await test.info().attach('dock-banner-action.png', {
-    path: test.info().outputPath('dock-banner-action.png'),
+  await expectInlineStatus(component, notice);
+  // The status takes its own line above the composer: the transcript ends above it.
+  const after = (await transcript.boundingBox())!;
+  expect(after.y + after.height).toBeLessThanOrEqual((await notice.boundingBox())!.y + 1);
+  expect(after.height).toBeLessThan(before!.height);
+  await component.screenshot({ path: test.info().outputPath('dock-notice-action.png') });
+  await test.info().attach('dock-notice-action.png', {
+    path: test.info().outputPath('dock-notice-action.png'),
     contentType: 'image/png',
   });
 
   // Success notices keep their auto-dismiss lifetime; Undo still works while shown.
   await undo.click();
   await expect(editor).toHaveText('Original enhancement draft');
-  await expect(banner).toHaveCount(0);
+  await expect(notice).toHaveCount(0);
 
   // A newer notice replaces the previous one rather than stacking behind it.
   await page.evaluate(() => {
@@ -351,13 +369,18 @@ test('dock banner shows one notice at a time with an inline action and keeps the
     };
   });
   await pasteImage(editor, 'broken-one.png', true);
-  await expect(banner).toContainText('broken-one.png');
+  await expect(notice).toContainText('broken-one.png');
   await pasteImage(editor, 'broken-two.png', true);
-  await expect(banner).toHaveCount(1);
-  await expect(banner).toContainText('broken-two.png');
-  await expect(banner).not.toContainText('broken-one.png');
+  await expect(notice).toHaveCount(1);
+  await expect(notice).toContainText('broken-two.png');
+  await expect(notice).not.toContainText('broken-one.png');
   // Errors have no auto-dismiss; it is still shown past the 2s success lifetime.
   await page.waitForTimeout(2_500);
-  await expect(banner).toHaveCount(1);
-  expect(await transcript.boundingBox()).toEqual(before);
+  await expect(notice).toHaveCount(1);
+  const shown = (await transcript.boundingBox())!;
+  expect(shown.y + shown.height).toBeLessThanOrEqual((await notice.boundingBox())!.y + 1);
+  // Closing the status line gives its space back to the transcript.
+  await notice.getByRole('button', { name: 'Close notification', exact: true }).click();
+  await expect(notice).toHaveCount(0);
+  await expect.poll(() => transcript.boundingBox()).toEqual(before);
 });

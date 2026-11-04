@@ -18,6 +18,7 @@ export const listMetadata = parseUiComponentMetadata({
   category: 'pattern',
   owner: '012-E',
   callers: [
+    'src/features/scripts/components/MachineRunRow.svelte',
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
     'src/lib/components/file-explorer/VirtualizedFileTree.svelte',
     'src/lib/components/file-explorer/file-tree-view.svelte',

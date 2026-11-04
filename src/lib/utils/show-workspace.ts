@@ -139,6 +139,25 @@ function* showAtSaga(
 }
 
 /**
+ * Claim the window for a jump that must wait on async work (such as a lookup)
+ * before it can call {@link openAndShowWorkspace}. Call it when the user acts;
+ * the returned check says whether the claim still owns the window — no later
+ * navigation started through this module or `navigateToRoute`, the selected
+ * workspace tab is unchanged, and the window is still on the same route.
+ * Claiming counts as a navigation, so a newer claim supersedes an older one.
+ */
+export function claimNavigation(): () => boolean {
+  bumpNavigationEpoch();
+  const epoch = navigationEpoch();
+  const tabId = tabIdOf(appStore.state as TabStateLike);
+  const pathname = currentRoutePath();
+  return () =>
+    navigationEpoch() === epoch &&
+    tabIdOf(appStore.state as TabStateLike) === tabId &&
+    currentRoutePath() === pathname;
+}
+
+/**
  * Navigate to `workspaceId` and open its tab. Resolves `true` once the
  * navigation resolved and the tab is focused; `false` when no tab opened
  * (empty id, the HUD window, or another navigation overtook this one).

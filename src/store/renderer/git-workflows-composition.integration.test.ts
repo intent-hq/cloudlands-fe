@@ -437,7 +437,7 @@ describe('Git workflow production composition and reload smoke', () => {
     const context = await prepareContext(workspace, 'commit');
     expect(calls('git.status')).toEqual([['git.status', { workspaceId: workspace.id }]]);
     expect(calls('git.diffs')).toEqual([
-      ['git.diffs', { workspaceId: workspace.id, path: 'a.ts', staged: true }],
+      ['git.diffs', { workspaceId: workspace.id, path: 'a.ts', staged: true, maxBytes: 480_000 }],
     ]);
     expect(calls('git.commits')).toEqual([
       ['git.commits', { workspaceId: workspace.id, limit: 5 }],
