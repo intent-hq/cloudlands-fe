@@ -1,8 +1,12 @@
 // @vitest-environment node
+// The config guard loads eslint.config.js and every rule through `new ESLint()`.
+// @verify-changed-triggers: eslint.config.js, eslint-rules/**/*.js
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { ESLint, Linter, RuleTester } from 'eslint';
 import { describe, expect, it } from 'vitest';
+import { matchesTrigger, readTriggerHeader } from '../scripts/verify-changed-triggers.mjs';
 import { disableDirectives, suppressedLines } from './lib/disable-directives.js';
 import rule from './require-disable-reason.js';
 
@@ -155,6 +159,19 @@ function isOn(setting) {
 
 describe('repository config', () => {
   const eslint = new ESLint();
+
+  // `new ESLint()` loads the config at runtime, so `vitest related` never links this suite
+  // to the config or the rules; its trigger header must (cloudlands-fe#4158).
+  it.each([
+    'eslint.config.js',
+    'eslint-rules/no-unpaused-clock-in-ct.js',
+    'eslint-rules/lib/disable-directives.js',
+  ])('is selected by verify:changed when %s changes', (changed) => {
+    const self = 'eslint-rules/require-disable-reason.test.js';
+    const header = readTriggerHeader(readFileSync(self, 'utf8'), self);
+    expect(header.kind).toBe('triggers');
+    expect(header.triggers.some((trigger) => matchesTrigger(trigger, changed))).toBe(true);
+  });
 
   // A later config block's options for a rule replace an earlier block's for the same
   // file, so a block that lists only its own rule would silently drop the others.
