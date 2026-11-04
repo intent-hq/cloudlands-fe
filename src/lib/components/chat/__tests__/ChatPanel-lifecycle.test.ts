@@ -200,8 +200,10 @@ vi.mock('$lib/client', () => ({
     agents: { retry: vi.fn(), listUserMessages: mocks.listUserMessages },
   },
 }));
-vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', async () => ({
-  ...(await import('./mocks/chat-panel-render-scaffold')).agentSessionSelectors(),
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', async (importOriginal) => ({
+  ...(await (
+    await import('./mocks/chat-panel-render-scaffold')
+  ).agentSessionSelectors(importOriginal)),
   selectAgentAttentionRequest: mocks.selector(null),
   selectAgentSession: Object.assign(() => mocks.agentSession, { select: () => null }),
   selectAgentSessionsById: mocks.selector({}),
@@ -211,8 +213,8 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', async ()
   selectAgentMessages: Object.assign(() => mocks.agentMessages, { select: () => [] }),
   selectAgentHistoryMessages: Object.assign(() => mocks.agentHistoryMessages, { select: () => [] }),
 }));
-vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).agentQueueSelectors(),
+vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).agentQueueSelectors(importOriginal),
 );
 vi.mock(
   '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors',
@@ -229,8 +231,10 @@ vi.mock(
       selectWorkspaceTasksInitialized: mocks.selector(false),
     }),
 );
-vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', async () => ({
-  ...(await import('./mocks/chat-panel-render-scaffold')).chatStateSelectors(),
+vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', async (importOriginal) => ({
+  ...(await (
+    await import('./mocks/chat-panel-render-scaffold')
+  ).chatStateSelectors(importOriginal)),
   selectChatAgentState: mocks.selector({
     scrollbackOlderBlocked: false,
     scrollbackGapBlocked: false,
@@ -284,18 +288,23 @@ vi.mock('$store/renderer/slices/permission/permission-selectors', async (importO
     selectPermissionRequests: mocks.selector([]),
   }),
 );
-vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', async () => ({
-  ...(await import('./mocks/chat-panel-render-scaffold')).unreadTrackingSelectors(),
-  selectDividerSession: Object.assign(
-    () => ({
-      subscribe(run: (value: unknown) => void) {
-        run(mocks.dividerSessionValue);
-        return () => {};
-      },
-    }),
-    { select: () => mocks.dividerSessionValue },
-  ),
-}));
+vi.mock(
+  '$store/renderer/slices/unread-tracking/unread-tracking-selectors',
+  async (importOriginal) => ({
+    ...(await (
+      await import('./mocks/chat-panel-render-scaffold')
+    ).unreadTrackingSelectors(importOriginal)),
+    selectDividerSession: Object.assign(
+      () => ({
+        subscribe(run: (value: unknown) => void) {
+          run(mocks.dividerSessionValue);
+          return () => {};
+        },
+      }),
+      { select: () => mocks.dividerSessionValue },
+    ),
+  }),
+);
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', async (importOriginal) =>
   (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
     selectActiveTab: { select: () => mocks.focusedActiveTab },

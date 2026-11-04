@@ -2,9 +2,10 @@
  * @vitest-environment jsdom
  *
  * The New Workspace form picker's row label follows what the list can hold:
- * "Project" with no forge connected, "Codebase/Project" with a forge connected
- * and a plain-folder entry listed, otherwise "Codebase". Plain folders not
- * offered (Labs off) keep "Codebase". The label updates live.
+ * "Codebase" whenever a git repository is listed; otherwise "Folder" with no
+ * forge connected or a plain folder listed; otherwise (forge connected, empty
+ * list) "Codebase". Plain folders not offered (Labs off) keep "Codebase". The
+ * label never reads "Codebase/Project" or "Codebase/Folder" and updates live.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
@@ -191,6 +192,13 @@ warmImport(() => import('../../../ui/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('./mocks/MockComponent.svelte'));
 
 const gitRepo = { path: '/repos/alpha', type: 'local' as const, name: 'alpha' };
+const forgeRepo = {
+  path: 'https://github.com/acme/widgets',
+  type: 'github' as const,
+  githubUrl: 'https://github.com/acme/widgets',
+  name: 'widgets',
+  owner: 'acme',
+};
 const plainFolder = {
   path: '/notes/journal',
   type: 'local' as const,
@@ -224,30 +232,51 @@ beforeEach(() => {
 describe('RepoSelector form row label', () => {
   afterEach(() => cleanup());
 
-  it('reads Project with no forge connected', () => {
+  it('reads Codebase with a git repository listed and no forge connected', () => {
     mocks.forgeState = 'none';
-    mocks.state.recentRepos = [gitRepo];
-    const { container } = renderForm();
-    expect(rowLabel(container)).toBe('Project');
-  });
-
-  it('reads Codebase/Project with a forge connected and a plain folder listed', () => {
-    mocks.forgeState = 'connected';
-    mocks.state.recentRepos = [gitRepo, plainFolder];
-    const { container } = renderForm();
-    expect(rowLabel(container)).toBe('Codebase/Project');
-  });
-
-  it('reads Codebase with a forge connected and only git entries', () => {
-    mocks.forgeState = 'connected';
     mocks.state.recentRepos = [gitRepo];
     const { container } = renderForm();
     expect(rowLabel(container)).toBe('Codebase');
   });
 
-  it('reads Codebase while forge status is unknown and no plain folder is listed', () => {
+  it('reads Codebase with git repositories and plain folders listed', () => {
+    for (const forgeState of ['none', 'connected', 'unknown'] as const) {
+      mocks.forgeState = forgeState;
+      mocks.state.recentRepos = [gitRepo, plainFolder];
+      const { container } = renderForm();
+      expect(rowLabel(container)).toBe('Codebase');
+      cleanup();
+    }
+  });
+
+  it('counts a forge repository as a git repository', () => {
+    mocks.forgeState = 'none';
+    mocks.state.recentRepos = [forgeRepo, plainFolder];
+    const { container } = renderForm();
+    expect(rowLabel(container)).toBe('Codebase');
+  });
+
+  it('reads Folder with an empty list and no forge connected', () => {
+    mocks.forgeState = 'none';
+    const { container } = renderForm();
+    expect(rowLabel(container)).toBe('Folder');
+  });
+
+  it('reads Folder with only plain folders listed and a forge connected', () => {
+    mocks.forgeState = 'connected';
+    mocks.state.recentRepos = [plainFolder];
+    const { container } = renderForm();
+    expect(rowLabel(container)).toBe('Folder');
+  });
+
+  it('reads Codebase with an empty list and a forge connected', () => {
+    mocks.forgeState = 'connected';
+    const { container } = renderForm();
+    expect(rowLabel(container)).toBe('Codebase');
+  });
+
+  it('reads Codebase with an empty list while forge status is unknown', () => {
     mocks.forgeState = 'unknown';
-    mocks.state.recentRepos = [gitRepo];
     const { container } = renderForm();
     expect(rowLabel(container)).toBe('Codebase');
   });
@@ -262,14 +291,12 @@ describe('RepoSelector form row label', () => {
   it('treats a host member as having a forge', () => {
     mocks.forgeState = 'none';
     mocks.hostMember = true;
-    mocks.state.recentRepos = [plainFolder];
     const { container } = renderForm();
-    expect(rowLabel(container)).toBe('Codebase/Project');
+    expect(rowLabel(container)).toBe('Codebase');
   });
 
-  it('reads Codebase/Project when the selected plain folder is not in recents yet', () => {
+  it('reads Folder when the selected plain folder is the only entry', () => {
     mocks.forgeState = 'connected';
-    mocks.state.recentRepos = [gitRepo];
     const { container } = render(RepoSelector, {
       props: {
         rowLabel: 'Codebase',
@@ -278,12 +305,12 @@ describe('RepoSelector form row label', () => {
         plainFolderSelected: true,
       },
     });
-    expect(rowLabel(container)).toBe('Codebase/Project');
+    expect(rowLabel(container)).toBe('Folder');
   });
 
   it('keeps Codebase for a selected git folder not in recents yet', () => {
-    mocks.forgeState = 'connected';
-    mocks.state.recentRepos = [gitRepo];
+    mocks.forgeState = 'none';
+    mocks.state.recentRepos = [plainFolder];
     const { container } = render(RepoSelector, {
       props: { rowLabel: 'Codebase', emptyLabel: 'Add repository', value: '/repos/fresh' },
     });
@@ -302,25 +329,31 @@ describe('RepoSelector form row label', () => {
     mocks.forgeState = 'none';
     const { container } = renderForm();
     await fireEvent.click(container.querySelector('button')!);
-    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Project' })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Folder' })).toBeTruthy());
   });
 
   it('updates live as forge connection and the list change', async () => {
     mocks.forgeState = 'none';
-    mocks.state.recentRepos = [gitRepo];
     const { container } = renderForm();
-    expect(rowLabel(container)).toBe('Project');
+    expect(rowLabel(container)).toBe('Folder');
 
     mocks.forgeState = 'connected';
     notify();
     await waitFor(() => expect(rowLabel(container)).toBe('Codebase'));
 
+    mocks.state.recentRepos = [plainFolder];
+    notify();
+    await waitFor(() => expect(rowLabel(container)).toBe('Folder'));
+
     mocks.state.recentRepos = [gitRepo, plainFolder];
     notify();
-    await waitFor(() => expect(rowLabel(container)).toBe('Codebase/Project'));
+    await waitFor(() => expect(rowLabel(container)).toBe('Codebase'));
 
     mocks.forgeState = 'none';
+    mocks.state.recentRepos = [];
     notify();
-    await waitFor(() => expect(rowLabel(container)).toBe('Project'));
+    await waitFor(() => expect(rowLabel(container)).toBe('Folder'));
+    expect(container.textContent).not.toContain('Codebase/Project');
+    expect(container.textContent).not.toContain('Codebase/Folder');
   });
 });

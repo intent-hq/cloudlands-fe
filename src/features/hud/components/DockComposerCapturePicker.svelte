@@ -92,7 +92,8 @@
     aria-busy={media.capturePending || undefined}
     data-alert={media.alerts?.capture ? '' : undefined}
     data-capture-mode={mode}
-    tooltip={open ? undefined : tooltip}
+    {tooltip}
+    tooltipDisabled={open}
     onpointerdown={(event) => {
       if (event.pointerType === 'mouse') event.preventDefault();
     }}
@@ -121,7 +122,8 @@
       aria-label={labels.captureOptions}
       aria-haspopup="menu"
       aria-expanded={open}
-      tooltip={open ? undefined : labels.captureOptions}
+      tooltip={labels.captureOptions}
+      tooltipDisabled={open}
       onpointerdown={(event) => {
         if (event.pointerType === 'mouse') event.preventDefault();
       }}

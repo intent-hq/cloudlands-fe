@@ -283,6 +283,7 @@ test('opens the compact pencil action by keyboard without changing row geometry'
       return button.contains(document.elementFromPoint(x + width / 2, y + height / 2));
     }),
   ).toBe(true);
+  // eslint-disable-next-line intent/no-hover-then-click-in-ct -- covers the pointer path; the row's box is asserted unchanged above
   await edit.click();
   await expect(editor).toBeFocused();
   await expect(editor).toHaveValue('Message 2');

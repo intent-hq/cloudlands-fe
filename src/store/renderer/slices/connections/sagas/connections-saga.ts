@@ -129,6 +129,7 @@ import {
   selfPublicationReceived,
   selfPublicationBusyChanged,
 } from '../connections-slice';
+import { toConnectionsBrowserHost } from '../connections-browser-host';
 
 const CONNECTIONS = IPC_CHANNELS.CONNECTIONS;
 
@@ -1231,13 +1232,9 @@ function* pumpUpdateActions(updateActions: Channel<UpdateBackendAction>): SagaGe
 export function* connectionsSaga(): SagaGenerator<void> {
   const pageHost = getPageHost();
   if (pageHost) {
-    yield* put(
-      browserHostDetected({
-        manageConnections: pageHost.canManageConnections,
-        backendBound: pageHost.backendId !== null,
-        tailcatAvailable: pageHost.tailcatAvailable,
-      }),
-    );
+    // Normally already seeded at store creation (withPageBrowserHost); this
+    // keeps the record current when sagas restart on a live store (HMR).
+    yield* put(browserHostDetected(toConnectionsBrowserHost(pageHost)));
   }
   yield* fork(connectionTunnelSaga);
   const events = createConnectionsEventChannel();

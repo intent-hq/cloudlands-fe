@@ -1,6 +1,7 @@
 import type { Locator } from '@playwright/experimental-ct-svelte';
 import type { AgentMessage } from '$shared/types';
 import {
+  activateHoverAction,
   expect,
   expectMotionToSettle,
   motionSnapshot,
@@ -548,10 +549,14 @@ for (const sourceRole of ['user', 'assistant'] as const) {
         await page.waitForTimeout(700);
         expect(await scroll.evaluate((node) => node.scrollTop)).toBeCloseTo(readingPosition, 0);
       }
-      await first.hover();
-      await first.getByRole('button', { name: 'Scroll to previous message' }).click();
-      // The transcript may already be at the top, so wait for the end state rather than a
-      // change, then for it to stay there.
+      // The appended streaming message can still move the row, so do not click through a
+      // hover. The transcript may already be at the top, so wait for the end state rather
+      // than a change, then for it to stay there.
+      await activateHoverAction(
+        first.getByRole('button', { name: 'Scroll to previous message' }),
+        scroll,
+        { requireChange: false, quietMs: DESTINATION_QUIET_MS },
+      );
       await expect.poll(() => scroll.evaluate((node) => node.scrollTop)).toBe(0);
       await expectMotionToSettle(scroll, { quietMs: DESTINATION_QUIET_MS });
       const fallbackPosition = await scroll.evaluate((node) => node.scrollTop);
