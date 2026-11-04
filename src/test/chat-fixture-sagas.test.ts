@@ -189,3 +189,75 @@ it('starts question persistence alongside an injected draft owner and cancels he
   expect(transport.set).not.toHaveBeenCalled();
   expect(transport.clear).not.toHaveBeenCalled();
 });
+
+function draftTransport(text: string | null = 'nested draft') {
+  const transport: DraftsClient = {
+    get: vi.fn(async () => (text ? { text, updatedAt: '2026-08-23T12:00:00.000Z' } : null)),
+    set: vi.fn(async () => ({ ok: true, updatedAt: '2026-08-23T12:00:00.000Z' })),
+    clear: vi.fn(async () => ({ ok: true })),
+  };
+  return transport;
+}
+
+it('serves drafts from a nested start and returns to the outer transport when it stops', async () => {
+  const outer = draftTransport('outer draft');
+  stops.forEach((stop) => stop());
+  stops = startChatFixtureSagas(store, outer);
+  const nested = draftTransport();
+  const start = vi.spyOn(store, 'runSaga');
+  const nestedStops = startChatFixtureSagas(store, nested);
+  expect(start).toHaveBeenCalledOnce();
+  store.dispatch(chatDraftOwnerOpened('composer'));
+  store.dispatch(chatDraftRestoreRequested('composer', 'nested', 'workspace', 'agent'));
+  await settle();
+  expect(nested.get).toHaveBeenCalledExactlyOnceWith('workspace', 'agent');
+  expect(outer.get).not.toHaveBeenCalled();
+  expect(draft()?.restore).toMatchObject({ status: 'restored', draft: { text: 'nested draft' } });
+
+  nestedStops.forEach((stop) => stop());
+  store.dispatch(chatDraftRestoreRequested('composer', 'outer', 'workspace', 'agent'));
+  await settle();
+  expect(nested.get).toHaveBeenCalledOnce();
+  expect(outer.get).toHaveBeenCalledExactlyOnceWith('workspace', 'agent');
+  expect(draft()?.restore).toMatchObject({
+    status: 'restored',
+    requestId: 'outer',
+    draft: { text: 'outer draft' },
+  });
+});
+
+it('drops the pending save of a nested start when it stops instead of sending it elsewhere', async () => {
+  const outer = draftTransport(null);
+  stops.forEach((stop) => stop());
+  stops = startChatFixtureSagas(store, outer);
+  const nested = draftTransport();
+  const nestedStops = startChatFixtureSagas(store, nested);
+  store.dispatch(chatDraftOwnerOpened('composer'));
+  store.dispatch(
+    chatDraftSaveScheduled('composer', 'debounced', {
+      workspaceId: 'workspace',
+      agentId: 'agent',
+      text: 'typed in the nested host',
+      attachments: [],
+      rollback: null,
+    }),
+  );
+  nestedStops.forEach((stop) => stop());
+  await vi.runAllTimersAsync();
+  expect(nested.set).not.toHaveBeenCalled();
+  expect(outer.set).not.toHaveBeenCalled();
+});
+
+it('starts a fresh fixture after the store is disposed without its stops', async () => {
+  stopRoot();
+  stopRoot = startRootStoreLifecycle(store, { startSagas: () => [] });
+  const transport = draftTransport();
+  const start = vi.spyOn(store, 'runSaga');
+  stops = startChatFixtureSagas(store, transport);
+  expect(start).toHaveBeenCalledTimes(2);
+  store.dispatch(chatDraftOwnerOpened('composer'));
+  store.dispatch(chatDraftRestoreRequested('composer', 'fresh', 'workspace', 'agent'));
+  await settle();
+  expect(transport.get).toHaveBeenCalledExactlyOnceWith('workspace', 'agent');
+  expect(draft()?.restore).toMatchObject({ status: 'restored', draft: { text: 'nested draft' } });
+});
