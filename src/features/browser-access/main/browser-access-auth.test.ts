@@ -5,7 +5,9 @@ import {
   CONNECTION_ID_PATTERN,
   LoginRateLimiter,
   SESSION_COOKIE,
+  SESSION_MAX_AGE_SECONDS,
   accessKeyMatches,
+  checkSession,
   deriveSessionToken,
   generateAccessKey,
   hasValidSession,
@@ -14,7 +16,10 @@ import {
   isSameOriginUpgrade,
   pageOrigin,
   parseCookies,
+  preferredPageOrigin,
   sessionCookieHeader,
+  sessionCookieName,
+  sessionCookieValue,
 } from './browser-access-auth';
 
 describe('access keys and sessions', () => {
@@ -55,13 +60,82 @@ describe('access keys and sessions', () => {
     expect(cookies.size).toBe(2);
   });
 
-  it('sets an HttpOnly Lax cookie and adds Secure only for https pages', () => {
+  it('sets an HttpOnly Lax cookie lasting 400 days, Secure only for https pages', () => {
     const plain = sessionCookieHeader('k', false);
-    expect(plain).toContain(`${SESSION_COOKIE}=${deriveSessionToken('k')}`);
+    expect(plain.startsWith(`${sessionCookieName('k')}=`)).toBe(true);
     expect(plain).toContain('HttpOnly');
     expect(plain).toContain('SameSite=Lax');
+    expect(plain).toContain('Path=/');
+    expect(plain).toContain('Max-Age=34560000');
     expect(plain).not.toContain('Secure');
     expect(sessionCookieHeader('k', true)).toContain('Secure');
+  });
+
+  it('names the cookie per access key so servers on one host never collide', () => {
+    expect(sessionCookieName('k1')).toBe(sessionCookieName('k1'));
+    expect(sessionCookieName('k1')).not.toBe(sessionCookieName('k2'));
+    expect(sessionCookieName('k1')).toMatch(/^[A-Za-z0-9_]+$/);
+    expect(sessionCookieName('k1')).not.toBe(SESSION_COOKIE);
+  });
+});
+
+describe('checkSession', () => {
+  const DAY = 24 * 60 * 60;
+  const issuedAt = 1_800_000_000;
+  const at = (seconds: number) => seconds * 1000;
+  const cookieFor = (key: string, time: number) => ({
+    cookie: `${sessionCookieName(key)}=${sessionCookieValue(key, time)}`,
+  });
+
+  it('accepts a fresh session without renewing it', () => {
+    expect(checkSession(cookieFor('k', issuedAt), 'k', at(issuedAt + 60))).toEqual({
+      valid: true,
+      renew: false,
+    });
+  });
+
+  it('asks to renew a session issued more than a day ago', () => {
+    expect(checkSession(cookieFor('k', issuedAt), 'k', at(issuedAt + DAY))).toEqual({
+      valid: true,
+      renew: true,
+    });
+  });
+
+  it('expires a session after 400 idle days', () => {
+    const headers = cookieFor('k', issuedAt);
+    expect(checkSession(headers, 'k', at(issuedAt + SESSION_MAX_AGE_SECONDS - 1)).valid).toBe(true);
+    expect(checkSession(headers, 'k', at(issuedAt + SESSION_MAX_AGE_SECONDS)).valid).toBe(false);
+  });
+
+  it('rejects another key, a forged issue time and a far-future issue time', () => {
+    expect(checkSession(cookieFor('k', issuedAt), 'other', at(issuedAt)).valid).toBe(false);
+    const [, mac] = sessionCookieValue('k', issuedAt).split('.');
+    const forged = { cookie: `${sessionCookieName('k')}=${(issuedAt + DAY).toString(36)}.${mac}` };
+    expect(checkSession(forged, 'k', at(issuedAt + DAY)).valid).toBe(false);
+    expect(checkSession(cookieFor('k', issuedAt + DAY), 'k', at(issuedAt)).valid).toBe(false);
+    expect(checkSession({ cookie: `${sessionCookieName('k')}=junk` }, 'k').valid).toBe(false);
+  });
+
+  it('accepts the cookie older versions issued and asks to replace it', () => {
+    const legacy = { cookie: `${SESSION_COOKIE}=${deriveSessionToken('k')}` };
+    expect(checkSession(legacy, 'k')).toEqual({ valid: true, renew: true });
+    expect(checkSession(legacy, 'other').valid).toBe(false);
+  });
+});
+
+describe('preferredPageOrigin', () => {
+  it('keeps the latest origin, but never replaces a front-end with loopback', () => {
+    expect(preferredPageOrigin(null, 'http://127.0.0.1:47120')).toBe('http://127.0.0.1:47120');
+    expect(preferredPageOrigin('http://127.0.0.1:47120', 'https://box.ts.net')).toBe(
+      'https://box.ts.net',
+    );
+    expect(preferredPageOrigin('https://box.ts.net', 'http://localhost:47120')).toBe(
+      'https://box.ts.net',
+    );
+    expect(preferredPageOrigin('https://old.ts.net', 'https://new.ts.net')).toBe(
+      'https://new.ts.net',
+    );
+    expect(preferredPageOrigin('https://box.ts.net', null)).toBe('https://box.ts.net');
   });
 });
 
@@ -146,6 +220,17 @@ describe('LoginRateLimiter', () => {
     }
     expect(limiter.allow()).toBe(false);
     now = 1001;
+    expect(limiter.allow()).toBe(true);
+  });
+
+  it('reserves budget before a check and refunds it on success', () => {
+    const limiter = new LoginRateLimiter(2, 1000, () => 0);
+    const first = limiter.reserve();
+    const second = limiter.reserve();
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+    expect(limiter.reserve()).toBeNull();
+    first?.();
     expect(limiter.allow()).toBe(true);
   });
 });
