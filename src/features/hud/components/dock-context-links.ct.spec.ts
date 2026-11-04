@@ -178,7 +178,7 @@ test('one shared context API owns links, policy, stale actions and principal iso
   );
 });
 
-test('service ownership refresh ignores noise and invalidates an exited run', async ({
+test('held metadata preserves service ownership, noise is bounded and contradictory entries invalidate it', async ({
   mount,
   page,
 }, info) => {
@@ -214,6 +214,8 @@ test('service ownership refresh ignores noise and invalidates an exited run', as
       h.seedChoices(2);
       h.contextReady();
       h.fixture.setServices([script]);
+      h.contextScript(script);
+      h.fixture.holdServiceList(true);
       h.context({
         sequence: 1,
         contextVersion: 'service-entry',
@@ -231,13 +233,33 @@ test('service ownership refresh ignores noise and invalidates an exited run', as
     { script },
   );
   const snapshot = () => page.evaluate(() => (window as any).__dockComposerE2E.contextSnapshot());
-  await expect.poll(() => snapshot().then((row) => row?.linkedWorkspaceId)).toBe('choice-0');
   const count = () =>
     page.evaluate(
       () =>
         (window as any).__dockComposerE2E.calls.filter((call: any) => call.method === 'script.list')
           .length,
     );
+  await expect.poll(count).toBeGreaterThan(0);
+  const heldCount = await count();
+  await page.evaluate(() => {
+    const h = (window as any).__dockComposerE2E;
+    h.context({
+      sequence: 2,
+      contextVersion: 'service-entry',
+      backendId: h.store.state.connections.windowBackendId,
+      identityKey: 'url:synthetic-service',
+      identityKind: 'url',
+      self: false,
+      appId: 'company.thebrowser.dia',
+      appName: 'Synthetic Dia metadata update',
+      url: 'http://127.0.0.1:61999/project/page',
+      serviceAddress: 'http://localhost:5173/project/page',
+      icon: null,
+    });
+    h.fixture.holdServiceList(false);
+  });
+  await expect.poll(() => snapshot().then((row) => row?.linkedWorkspaceId)).toBe('choice-0');
+  expect(await count()).toBe(heldCount);
   const before = await count();
   await page.evaluate(() => {
     const h = (window as any).__dockComposerE2E;
@@ -260,12 +282,66 @@ test('service ownership refresh ignores noise and invalidates an exited run', as
   await expect.poll(count).toBeGreaterThan(before);
   const after = await count();
   expect(after - before).toBeLessThanOrEqual(3);
+  // A contradictory URL during a second held read must retire its old result.
+  await page.evaluate(
+    ({ script }) => {
+      const h = (window as any).__dockComposerE2E;
+      h.fixture.setServices([script]);
+      h.contextScript(script);
+      h.fixture.holdServiceList(true);
+      h.context({
+        sequence: 3,
+        contextVersion: 'held-again',
+        backendId: h.store.state.connections.windowBackendId,
+        identityKey: 'url:synthetic-service',
+        identityKind: 'url',
+        self: false,
+        appId: 'company.thebrowser.dia',
+        appName: 'Synthetic Dia',
+        url: 'http://127.0.0.1:61999/project/page',
+        serviceAddress: 'http://localhost:5173/project/page',
+        icon: null,
+      });
+    },
+    { script },
+  );
+  await expect.poll(count).toBeGreaterThan(after);
+  await page.evaluate(() => {
+    const h = (window as any).__dockComposerE2E;
+    h.context({
+      sequence: 4,
+      contextVersion: 'moved-entry',
+      backendId: h.store.state.connections.windowBackendId,
+      identityKey: 'url:elsewhere',
+      identityKind: 'url',
+      self: false,
+      appId: 'company.thebrowser.dia',
+      appName: 'Synthetic Dia',
+      url: 'https://elsewhere.example/project/',
+      icon: null,
+    });
+    h.fixture.holdServiceList(false);
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        Object.values((window as any).__dockComposerE2E.store.state.scripts.byWorkspaceId).reduce(
+          (count: number, row: any) => count + Object.keys(row.pendingReads ?? {}).length,
+          0,
+        ),
+      ),
+    )
+    .toBe(0);
+  await expect
+    .poll(() => snapshot().then((row) => [row?.url, row?.linkedWorkspaceId]))
+    .toEqual(['https://elsewhere.example/project/', null]);
   await writeFile(
     info.outputPath('bounded-service-refresh.json'),
     JSON.stringify(
       {
         boundary:
           'Production context saga, scripts state and run recheck; synthetic daemon/service observations, no actual service or capture.',
+        heldCount,
         before,
         after,
         snapshot: await snapshot(),

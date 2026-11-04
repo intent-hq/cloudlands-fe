@@ -172,6 +172,18 @@ export function* dockContextLinksSaga(): SagaGenerator<void> {
       authority === getPrincipalActionContext(appStore.state)
     );
   }
+  function routingFingerprint(value: DockForegroundObservation | null): string | null {
+    return value
+      ? JSON.stringify([
+          value.contextVersion,
+          value.backendId,
+          value.identityKey,
+          value.url,
+          value.workspaceId,
+          value.serviceAddress,
+        ])
+      : null;
+  }
   function version(value: DockForegroundObservation) {
     return JSON.stringify([authority, value.contextVersion]);
   }
@@ -186,13 +198,7 @@ export function* dockContextLinksSaga(): SagaGenerator<void> {
       return;
     observation = value;
     yield* put(dockContextObservationReceived(value));
-    const key = JSON.stringify([
-      value.contextVersion,
-      value.backendId,
-      value.url,
-      value.workspaceId,
-      value.serviceAddress,
-    ]);
+    const key = routingFingerprint(value) ?? '';
     if (key !== observationRoutingKey) {
       observationRoutingKey = key;
       yield* put(dockContextRefreshRequested('context'));
@@ -218,14 +224,23 @@ export function* dockContextLinksSaga(): SagaGenerator<void> {
       !selectWorkspaceListLoadedForBackend.select(appStore.state, value.backendId)
     )
       return;
+    const routing = routingFingerprint(value);
     const service = yield* call(
       findDockService,
       contextAsShortcut(value),
       selectDockShortcutWorkspaces.select(appStore.state).map((row) => String(row.id)),
     );
-    if (observation !== value || context !== getPrincipalActionContext(appStore.state)) return;
+    if (
+      routingFingerprint(currentObservation()) !== routing ||
+      context !== getPrincipalActionContext(appStore.state)
+    )
+      return;
     if (service && !(yield* call(isDockServiceCurrent, service))) return;
-    if (observation !== value || context !== getPrincipalActionContext(appStore.state)) return;
+    if (
+      routingFingerprint(currentObservation()) !== routing ||
+      context !== getPrincipalActionContext(appStore.state)
+    )
+      return;
     yield* put(dockContextServiceReceived(value.contextVersion, context, service));
   }
   function* save(next: DockContextLinkPreferences): SagaGenerator<boolean> {
@@ -304,19 +319,22 @@ export function* dockContextLinksSaga(): SagaGenerator<void> {
     yield* refresh('workspaces');
   });
   let previousServices = '';
-  yield* takeLatestFromSelector(selectContextServiceFingerprint, function* (fingerprint: string) {
-    if (!fingerprint) {
-      previousServices = '';
-      return;
-    }
-    const parsed = JSON.parse(fingerprint) as [string, string, string, unknown[][]];
-    const previous = previousServices;
-    previousServices = fingerprint;
-    if (!previous || JSON.parse(previous)[0] !== parsed[0] || fingerprint === previous) return;
-    yield* refresh('service-invalidated');
-    yield* delay(200);
-    yield* refresh('services');
-  });
+  yield* takeLatestFromSelector(
+    selectContextServiceFingerprint,
+    function* ({ payload: fingerprint }) {
+      if (!fingerprint) {
+        previousServices = '';
+        return;
+      }
+      const parsed = JSON.parse(fingerprint) as [string, string, string, unknown[][]];
+      const previous = previousServices;
+      previousServices = fingerprint;
+      if (!previous || JSON.parse(previous)[0] !== parsed[0] || fingerprint === previous) return;
+      yield* refresh('service-invalidated');
+      yield* delay(200);
+      yield* refresh('services');
+    },
+  );
   yield* takeLatest(dockContextRefreshRequested, enrich);
   yield* fork(function* (): SagaGenerator<void> {
     if (typeof window === 'undefined' || !window.electronAPI) return;

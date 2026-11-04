@@ -13,7 +13,11 @@
   } from '$store/renderer/slices/dock-conversation/dock-conversation-slice';
   import { selectDockLinkedContext } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
   import { getPrincipalActionContext } from '$store/renderer/slices/principal/principal-context';
-  import { updateRuntimeState } from '$store/renderer/slices/scripts/scripts-slice';
+  import { scriptCommandLabel } from '$features/scripts/types';
+  import {
+    scriptSnapshotReceived,
+    updateRuntimeState,
+  } from '$store/renderer/slices/scripts/scripts-slice';
   import { daemonEventsSubscribed } from '$store/renderer/slices/workspace-events/workspace-events-slice';
   import { getPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-context';
   import {
@@ -125,6 +129,14 @@
         fixture.emit(IPC_CHANNELS.DOCK_CONTEXT.CHANGED, value);
       },
       contextSnapshot: () => selectDockLinkedContext.select(store.state),
+      contextScript(script: import('$features/scripts/types').ScriptListEntry) {
+        store.dispatch(
+          scriptSnapshotReceived(script.workspaceId, {
+            ...script,
+            command: scriptCommandLabel(script),
+          }),
+        );
+      },
       contextRuntimeNoise(workspaceId: string, scriptId: string) {
         for (let index = 0; index < 100; index++)
           store.dispatch(
