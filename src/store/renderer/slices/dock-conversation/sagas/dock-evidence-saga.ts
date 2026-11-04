@@ -584,6 +584,20 @@ function* toggleAnnotation({
   if (!activePair(workspaceId, agentId)) return;
   const session = evidenceOf(workspaceId, agentId)?.annotation;
   if (session && session.mode !== 'dictation' && !stillImageId) {
+    // While recording, annotating means "draw now" in the recording's own session:
+    // the same clip, timer, mic and pause carry on, and its tool bar stays.
+    if (recordingDockClip(evidenceOf(workspaceId, agentId))) {
+      const tool = toolFor(workspaceId);
+      yield* put(dockEvidenceToolSet(workspaceId, tool));
+      const service = nativeService;
+      if (service)
+        try {
+          yield* call([service, service.setAnnotationTool], session.id, tool);
+        } catch {
+          // The session already ended natively; the recording itself is unaffected.
+        }
+      return;
+    }
     yield* endSession(workspaceId, agentId);
     return;
   }
