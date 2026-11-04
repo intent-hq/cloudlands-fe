@@ -1330,6 +1330,27 @@ describe('verification planning', () => {
     expect(otherScript.checks.map((check) => check.id)).not.toContain('architecture');
   });
 
+  it('runs the architecture gates when an Electron helper or its tsconfig changes', () => {
+    const changed = [
+      'test/electron-browser-capture.fixture.ts',
+      'test/fixtures/dock-placement-native/harness.ts',
+      'tsconfig.electron-tests.json',
+    ];
+    const root = fixtureRoot({
+      ...Object.fromEntries(changed.map((file) => [file, ''])),
+      'test/catalog-shell.spec.ts': '',
+    });
+    for (const file of changed) {
+      const plan = createVerificationPlan([file], { root, ctTests: [] });
+      expect(
+        plan.checks.map((check) => check.id),
+        file,
+      ).toContain('architecture');
+    }
+    const spec = createVerificationPlan(['test/catalog-shell.spec.ts'], { root, ctTests: [] });
+    expect(spec.checks.map((check) => check.id)).not.toContain('architecture');
+  });
+
   it('runs the architecture gates (actionlint) when a workflow or its lint config changes', () => {
     const changed = [
       '.github/workflows/promote-beta.yml',
