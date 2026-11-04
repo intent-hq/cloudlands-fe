@@ -400,6 +400,20 @@ function pageTruncation(page: MessageBlockPage): HydratedBlockTruncation | undef
   };
 }
 
+/** Reads one text/thinking body may take (480,000 bytes each, about 7.6 MB). */
+const MAX_TEXT_BODY_PAGES = 16;
+
+/** A capped page that is a text slice of a `text` / `thinking` block body. */
+function isPagedTextBody(page: MessageBlockPage): boolean {
+  return (
+    page.truncated &&
+    page.field === 'text' &&
+    page.encoding === 'text' &&
+    (page.block.type === 'text' || page.block.type === 'thinking') &&
+    typeof page.block.text === 'string'
+  );
+}
+
 function* hydrateMessageBlockWorker(
   inFlightBlocks: Set<string>,
   action: ReturnType<typeof messageBlockHydrationRequested>,
@@ -416,13 +430,43 @@ function* hydrateMessageBlockWorker(
     // Capped reads (`messageBlockPages: 1`) can serve the block cut; older
     // daemons serve it whole through the original call.
     if (yield* selectMessageBlockPagesSupported.effect()) {
-      const page = yield* call(
+      let page = yield* call(
         [appClient.agents, appClient.agents.getMessageBlockPage],
         agentId,
         messageId,
         blockId,
         workspaceId,
       );
+      // A long text/thinking body (the single-message bound's "Show full
+      // message", §5.5) pages by offset: follow nextOffset and join the
+      // slices, up to a bounded number of reads.
+      if (isPagedTextBody(page)) {
+        let text = page.block.text as string;
+        for (let reads = 1; page.nextOffset !== null && reads < MAX_TEXT_BODY_PAGES; reads += 1) {
+          page = yield* call(
+            [appClient.agents, appClient.agents.getMessageBlockPage],
+            agentId,
+            messageId,
+            blockId,
+            workspaceId,
+            page.nextOffset,
+          );
+          if (!isPagedTextBody(page)) break;
+          text += page.block.text as string;
+        }
+        const block = { ...page.block, text };
+        const complete = page.nextOffset === null && isPagedTextBody(page);
+        const truncation = complete
+          ? undefined
+          : {
+              field: 'text',
+              encoding: 'text' as const,
+              shownBytes: new TextEncoder().encode(text).length,
+              totalBytes: page.totalBytes,
+            };
+        yield* put(messageBlockHydrated(agentId, messageId, blockId, block, truncation));
+        return;
+      }
       yield* put(
         messageBlockHydrated(agentId, messageId, blockId, page.block, pageTruncation(page)),
       );

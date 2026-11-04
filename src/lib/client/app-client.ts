@@ -811,15 +811,17 @@ export interface AgentsClient {
   /**
    * The capped `agent.getMessageBlock` read with its page fields (PROTOCOL
    * §5.5 "Capped and paged block reads"). Call only when the daemon
-   * advertises `server.capabilities.messageBlockPages === 1`; the first page
-   * (offset 0, default 480,000-byte cap) is all the app reads. Errors
-   * propagate as rejections.
+   * advertises `server.capabilities.messageBlockPages === 1`. Without
+   * `offset` it reads the first page (default 480,000-byte cap); `offset`
+   * (a previous page's `nextOffset`) reads the next slice of a paged text
+   * body. Errors propagate as rejections.
    */
   getMessageBlockPage(
     agentId: string,
     messageId: string,
     blockId: string,
     workspaceId?: string,
+    offset?: number,
   ): Promise<MessageBlockPage>;
   /**
    * The user-message index of one agent (`agent.listUserMessages`, §5.5):
