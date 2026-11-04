@@ -771,6 +771,87 @@ describe('LiveTasksClient.subscribe typed per-workspace task channel (PROTOCOL ย
     unsubscribe();
   });
 
+  // ยง6.9 paged snapshots: a snapshot with `nextToken` is completed through
+  // the paged `task.list` (`WorkspaceTask` rows plus `workspaceId`); a delta
+  // that lands before the page wins over the page's older row.
+  it('fills a paged snapshot from task.list pages, deltas taking precedence', async () => {
+    let releaseFirstPage: () => void = () => {};
+    const firstPageGate = new Promise<void>((resolve) => {
+      releaseFirstPage = resolve;
+    });
+    mockedRequest.mockImplementation((method: string, params?: unknown) => {
+      if (method === 'workspace.list') {
+        return Promise.resolve({ workspaces: [{ id: 'ws-1' }] });
+      }
+      if (method === 'task.subscribe') return Promise.resolve({ subscriptionId: 'chan-1' });
+      if (method === 'task.list') {
+        const token = (params as { nextToken?: string }).nextToken;
+        if (token === 'p2') {
+          return firstPageGate.then(() => ({
+            tasks: [
+              { id: 'b', workspaceId: 'ws-1', title: 'B', status: 'not_started', specLinked: true },
+              {
+                id: 'c',
+                workspaceId: 'ws-1',
+                title: 'C',
+                status: 'not_started',
+                specLinked: false,
+              },
+            ],
+            stats: { total: 3, completed: 0, inProgress: 0 },
+            nextToken: 'p3',
+          }));
+        }
+        return Promise.resolve({
+          tasks: [
+            { id: 'd', workspaceId: 'ws-1', title: 'D', status: 'waiting', specLinked: false },
+          ],
+          stats: { total: 3, completed: 0, inProgress: 0 },
+          nextToken: null,
+        });
+      }
+      return Promise.resolve({ success: true });
+    });
+    const handler = vi.fn();
+    const client = new LiveTasksClient();
+    const unsubscribe = client.subscribe(handler);
+    await vi.waitFor(() => expect(requestsFor('task.subscribe')).toHaveLength(1));
+    await flush();
+
+    notify({
+      method: 'subscription.push',
+      params: {
+        subscriptionId: 'chan-1',
+        kind: 'snapshot',
+        seq: 0,
+        snapshot: [wireTaskNote('a', 'ws-1', 'A')],
+        nextToken: 'p2',
+      },
+    });
+    await vi.waitFor(() =>
+      expect(requestsFor('task.list')).toEqual([{ workspaceId: 'ws-1', nextToken: 'p2' }]),
+    );
+    pushDelta('chan-1', 1, { updated: [wireTaskNote('c', 'ws-1', 'C', 'in_progress')] });
+    releaseFirstPage();
+
+    await vi.waitFor(() => {
+      const tasks = handler.mock.calls.at(-1)?.[0] as Array<Record<string, unknown>>;
+      expect(tasks.map((t) => t.id).sort()).toEqual(['a', 'b', 'c', 'd']);
+    });
+    expect(requestsFor('task.list')).toEqual([
+      { workspaceId: 'ws-1', nextToken: 'p2' },
+      { workspaceId: 'ws-1', nextToken: 'p3' },
+    ]);
+    const tasks = handler.mock.calls.at(-1)?.[0] as Array<Record<string, unknown>>;
+    expect(tasks.find((t) => t.id === 'b')).toMatchObject({
+      status: 'not_started',
+      specLinked: true,
+    });
+    expect(tasks.find((t) => t.id === 'c')).toMatchObject({ status: 'in_progress' });
+    expect(tasks.find((t) => t.id === 'd')).toMatchObject({ status: 'waiting' });
+    unsubscribe();
+  });
+
   it('a created workspace registers a new channel and merges its snapshot', async () => {
     workspaceIds = ['ws-1'];
     const handler = vi.fn();
