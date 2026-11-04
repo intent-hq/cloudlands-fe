@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractHostOs, extractInstalledProviders } from './machine-host-facts';
+import { extractHostArch, extractHostOs, extractInstalledProviders } from './machine-host-facts';
 
 describe('extractHostOs', () => {
   it('reads the host.status os field', () => {
@@ -12,6 +12,15 @@ describe('extractHostOs', () => {
     expect(extractHostOs({ os: 7 })).toBeNull();
     expect(extractHostOs(null)).toBeNull();
     expect(extractHostOs('linux')).toBeNull();
+  });
+});
+
+describe('extractHostArch', () => {
+  it('reads the host.status arch field and is null when absent', () => {
+    expect(extractHostArch({ os: 'linux', arch: 'x86_64' })).toBe('x86_64');
+    expect(extractHostArch({ os: 'linux' })).toBeNull();
+    expect(extractHostArch({ arch: '' })).toBeNull();
+    expect(extractHostArch(null)).toBeNull();
   });
 });
 

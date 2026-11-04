@@ -2841,6 +2841,7 @@ describe('connections:* IPC handlers', () => {
       expect(remoteRecord()).toMatchObject({
         status: 'connected',
         hostOs: 'linux',
+        hostArch: 'x86_64',
         providers: [{ id: 'claude-code', displayName: 'Claude Code' }],
       }),
     );
@@ -2849,6 +2850,7 @@ describe('connections:* IPC handlers', () => {
     remote.emit('status', 'disconnected');
     await vi.waitFor(() => expect(remoteRecord()).toMatchObject({ status: 'disconnected' }));
     expect(remoteRecord()).not.toHaveProperty('hostOs');
+    expect(remoteRecord()).not.toHaveProperty('hostArch');
     expect(remoteRecord()).not.toHaveProperty('providers');
   });
 
