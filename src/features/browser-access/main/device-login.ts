@@ -210,20 +210,25 @@ export function mintLinkToken(
   };
 }
 
+/** Most links one server start can redeem; later links fail until a restart. */
+const MAX_REDEEMED_LINKS = 4096;
+
 /**
- * Checks one-time link tokens and remembers used ones until they expire.
+ * Checks one-time link tokens.
  *
- * Used tokens are remembered only in memory, so the verifier accepts only
- * tokens minted for its own epoch. A restarted server has a new epoch, so no
- * token from before the restart (used or not) can sign in, even if the clock
- * moved backwards.
+ * Accepts only tokens minted for its own epoch, so a restarted server (new
+ * epoch) rejects every earlier token, even if the clock moved backwards. Used
+ * nonces are never forgotten while the server runs, so moving the clock back
+ * past a used token's expiry cannot make it valid again either. The set is
+ * capped: when it is full, further links fail closed until the next restart.
  */
 export class LinkTokenVerifier {
-  private readonly used = new Map<string, number>();
+  private readonly used = new Set<string>();
 
   constructor(
     readonly epoch: string = newLinkEpoch(),
     private readonly now: () => number = Date.now,
+    private readonly maxRedeemed = MAX_REDEEMED_LINKS,
   ) {
     if (!LINK_EPOCH_PATTERN.test(epoch)) throw new Error('Invalid link epoch');
   }
@@ -236,13 +241,12 @@ export class LinkTokenVerifier {
     const [, epoch, expiryText, nonce, mac] = match;
     const expiresAt = Number(expiryText);
     const now = this.now();
-    for (const [used, expiry] of this.used) if (expiry <= now) this.used.delete(used);
     if (!sameText(mac, linkMac(accessKey, epoch, expiresAt, nonce))) return false;
     if (!sameText(epoch, this.epoch)) return false;
     // Expired, or longer-lived than any link the CLI makes (clock skew aside).
     if (expiresAt <= now || expiresAt > now + LINK_MAX_TTL_MINUTES * 60_000 + 60_000) return false;
-    if (this.used.has(nonce)) return false;
-    this.used.set(nonce, expiresAt);
+    if (this.used.has(nonce) || this.used.size >= this.maxRedeemed) return false;
+    this.used.add(nonce);
     return true;
   }
 }

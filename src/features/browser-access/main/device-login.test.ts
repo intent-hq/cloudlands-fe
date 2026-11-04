@@ -164,6 +164,25 @@ describe('one-time link tokens', () => {
     expect(second.redeem(mintLinkToken(KEY, second.epoch, 5).token, KEY)).toBe(true);
   });
 
+  it('rejects a used token after its expiry passes and the clock moves back', () => {
+    const time = clock(1_800_000_000_000);
+    const verifier = new LinkTokenVerifier(EPOCH, time.now);
+    const { token } = mintLinkToken(KEY, EPOCH, 5, time.now());
+    time.advance(1000);
+    expect(verifier.redeem(token, KEY)).toBe(true);
+    time.advance(300_000);
+    expect(verifier.redeem(token, KEY)).toBe(false);
+    time.advance(-201_000);
+    expect(verifier.redeem(token, KEY)).toBe(false);
+  });
+
+  it('fails closed when the redeemed-link limit is reached', () => {
+    const verifier = new LinkTokenVerifier(EPOCH, Date.now, 2);
+    expect(verifier.redeem(mintLinkToken(KEY, EPOCH).token, KEY)).toBe(true);
+    expect(verifier.redeem(mintLinkToken(KEY, EPOCH).token, KEY)).toBe(true);
+    expect(verifier.redeem(mintLinkToken(KEY, EPOCH).token, KEY)).toBe(false);
+  });
+
   it('rejects expired tokens', () => {
     const time = clock(Date.now());
     const verifier = new LinkTokenVerifier(EPOCH, time.now);

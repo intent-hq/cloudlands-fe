@@ -144,7 +144,7 @@ without it, the link uses `http://127.0.0.1:<port>`, which only works on this
 machine. Pass the same `--data-dir` that the server uses. Start the server
 first: each start saves a new random link ID in the data directory, and the
 server accepts only links that carry its current ID, so restarting it cancels
-every link, used or not. Without a running server, `link` stops with an error. Treat the link like the key until it is used or expires.
+every link, used or not. Without a running server, `link` stops with an error. One server run accepts at most 4096 links; after that, restart it to make new ones. Treat the link like the key until it is used or expires.
 
 ## The data directory
 
