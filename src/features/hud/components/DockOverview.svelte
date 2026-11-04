@@ -199,6 +199,15 @@
   .overview-row:has(:global(.overview-open:active:not(:disabled))) {
     background-color: hsl(var(--active));
   }
+  /* Keyboard focus on a row is the row's own quiet highlight, not the app-wide
+     focus box: rows are the dock's list items, and a pointer never shows it. */
+  .dock-overview :global(.overview-open:focus-visible) {
+    outline: none;
+  }
+  .overview-row:has(:global(.overview-open:focus-visible)) {
+    background-color: hsl(var(--dock-hover));
+    box-shadow: inset 0 0 0 1px hsl(var(--dock-border));
+  }
   :global(.overview-open) {
     width: 100%;
     min-width: 0;
