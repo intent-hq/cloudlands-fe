@@ -90,12 +90,57 @@ describe('chatPanelUiSaga', () => {
     h.dispatch(userMessageIndexRequested(WS, PANEL, 'request-1', AGENT, 0));
     await settle();
 
-    expect(h.client.listUserMessages).toHaveBeenCalledWith(AGENT, undefined, WS);
+    expect(h.client.listUserMessages).toHaveBeenCalledWith(AGENT, undefined, WS, { limit: 500 });
     expect(h.index()).toMatchObject({
       requestId: 'request-1',
       status: 'succeeded',
       result: { ok: true, total: 1 },
     });
+  });
+
+  it('walks every index page and assembles the history oldest first', async () => {
+    const h = harness();
+    tasks.push(h.task);
+    const item = (id: string) => ({ id, preview: id, createdAt: '2026-01-01T00:00:00.000Z' });
+    h.client.listUserMessages
+      .mockResolvedValueOnce({
+        ok: true,
+        items: [item('m3'), item('m4')],
+        total: 2,
+        nextToken: 't1',
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        items: [item('m1'), item('m2')],
+        total: 2,
+        nextToken: 't2',
+      })
+      .mockResolvedValueOnce({ ok: true, items: [item('m0')], total: 1, nextToken: null });
+
+    h.dispatch(userMessageIndexRequested(WS, PANEL, 'request-1', AGENT, 0));
+    await settle();
+
+    expect(h.client.listUserMessages.mock.calls).toEqual([
+      [AGENT, undefined, WS, { limit: 500 }],
+      [AGENT, undefined, WS, { limit: 500, nextToken: 't1' }],
+      [AGENT, undefined, WS, { limit: 500, nextToken: 't2' }],
+    ]);
+    const result = h.index()?.result;
+    expect(result).toMatchObject({ ok: true, total: 5, nextToken: null });
+    expect(result?.ok && result.items.map(({ id }) => id)).toEqual(['m0', 'm1', 'm2', 'm3', 'm4']);
+  });
+
+  it('reports a failed later page instead of a partial history', async () => {
+    const h = harness();
+    tasks.push(h.task);
+    h.client.listUserMessages
+      .mockResolvedValueOnce({ ok: true, items: [], total: 0, nextToken: 't1' })
+      .mockResolvedValueOnce({ ok: false, unsupported: false, error: 'boom' });
+
+    h.dispatch(userMessageIndexRequested(WS, PANEL, 'request-1', AGENT, 0));
+    await settle();
+
+    expect(h.index()).toMatchObject({ requestId: 'request-1', status: 'failed', error: 'boom' });
   });
 
   it('ignores a superseded response and retains the newest correlated result', async () => {
