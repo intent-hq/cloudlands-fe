@@ -4,6 +4,16 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.285.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.285.0...v2.285.1) (2026-11-04)
+
+
+### 🐛 Bug Fixes
+
+* **browser:** size offscreen guests to their emulated viewport ([#4168](https://github.com/intent-hq/cloudlands-fe/issues/4168)) ([e0a00eb](https://github.com/intent-hq/cloudlands-fe/commit/e0a00ebf3e765058dafd91650433b8f1ca283ebf))
+* bump intentd sidecar to v0.11.128 ([#4175](https://github.com/intent-hq/cloudlands-fe/issues/4175)) ([ba7f93f](https://github.com/intent-hq/cloudlands-fe/commit/ba7f93f43e8f54f3d5f58b03795fca268381d9b0))
+* **hud:** keep side preview bridge input region in step under reduced motion ([#4173](https://github.com/intent-hq/cloudlands-fe/issues/4173)) ([adf1b91](https://github.com/intent-hq/cloudlands-fe/commit/adf1b91b841d5c7bb5eca869f87506f2f9e2392b))
+* **hud:** stop dock-mode-visual recovery-region and hover flakes ([#4172](https://github.com/intent-hq/cloudlands-fe/issues/4172)) ([e93e36e](https://github.com/intent-hq/cloudlands-fe/commit/e93e36eb16e4cb774b68d7e1edad61f2e5d4e98c))
+
 ## [2.285.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.284.0...v2.285.0) (2026-11-04)
 
 
