@@ -8338,5 +8338,15 @@
   "dock_shortcut_unavailable": "Shortcut unavailable",
   "dock_shortcut_record_menu": "Record in workspace…",
   "dock_shortcut_open_error": "Workspace could not open. Choose again.",
-  "dock_shortcut_dictate_label": "Dictate"
+  "dock_shortcut_dictate_label": "Dictate",
+  "settings_keyboardShortcuts_dockGlobal_description": "These shortcuts work while other apps are in front.",
+  "settings_keyboardShortcuts_dockSaving_status": "Saving shortcut…",
+  "settings_keyboardShortcuts_dockInvalid_error": "Use Control, Command, or Option with one key, or a function key.",
+  "settings_keyboardShortcuts_dockConflict_error": "That shortcut is already used by another command.",
+  "settings_keyboardShortcuts_dockUnavailable_error": "This shortcut is unavailable. Your previous shortcut is unchanged.",
+  "settings_keyboardShortcuts_dockSave_error": "The shortcut could not be saved. Your previous shortcut is unchanged.",
+  "settings_keyboardShortcuts_dockStale_error": "Shortcuts changed in another window. Try again.",
+  "settings_keyboardShortcuts_dockLoad_error": "Global shortcuts could not be loaded.",
+  "settings_keyboardShortcuts_dockPreparing_status": "Getting ready…",
+  "settings_keyboardShortcuts_dockOff_description": "Turn on the dock to use these global shortcuts."
 }

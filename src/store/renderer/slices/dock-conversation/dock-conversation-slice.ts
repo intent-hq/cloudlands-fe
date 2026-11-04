@@ -55,6 +55,42 @@ import type {
   DockNativeSpeechState,
 } from './dock-conversation-types';
 
+export const dockLinkedContextChanged = createAction<
+  [
+    snapshot: import('$shared/dock-context-links').DockLinkedContextSnapshot | null,
+    authority: string | null,
+    serviceAddress?: string | null,
+  ]
+>('dockConversation/linkedContextChanged');
+export const dockContextObservationReceived = createAction<
+  [observation: import('$shared/dock-context-links').DockForegroundObservation]
+>('dockConversation/contextObservationReceived');
+export const dockContextRefreshRequested = createAction<
+  [reason: 'authority' | 'workspaces' | 'services' | 'service-invalidated' | 'context']
+>('dockConversation/contextRefreshRequested');
+export const dockContextServiceReceived = createAction<
+  [
+    version: string,
+    authority: string,
+    service: import('$shared/dock-shortcuts').DockServiceOwner | null,
+  ]
+>('dockConversation/contextServiceReceived');
+export const dockContextLinkRequested = createAction<[version: string, workspaceId: string]>(
+  'dockConversation/contextLinkRequested',
+);
+export const dockContextUnlinkRequested = createAction<[version: string]>(
+  'dockConversation/contextUnlinkRequested',
+);
+export const dockContextFollowed = createAction<[version: string]>(
+  'dockConversation/contextFollowed',
+);
+export const dockContextDismissed = createAction<[version: string]>(
+  'dockConversation/contextDismissed',
+);
+export const dockContextAutoDecisionRequested = createAction<
+  [version: string, decision: 'yes' | 'no']
+>('dockConversation/contextAutoDecisionRequested');
+
 export const dockShortcutSelectionChanged = createAction<
   [selection: import('$shared/dock-shortcuts').DockShortcutSelection | null]
 >('dockConversation/shortcutSelectionChanged');
@@ -947,5 +983,18 @@ dockConversationReducer.with(
       rawRetention: capabilities.rawRetention === true,
       chiefAttachments: capabilities.chiefAttachments === true,
     },
+  }),
+);
+
+dockConversationReducer.with(
+  dockLinkedContextChanged,
+  (
+    state,
+    { payload: [linkedContext, linkedContextAuthority, linkedContextServiceAddress = null] },
+  ) => ({
+    ...state,
+    linkedContext,
+    linkedContextAuthority,
+    linkedContextServiceAddress,
   }),
 );

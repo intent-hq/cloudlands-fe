@@ -1020,35 +1020,35 @@ export const SHORTCUT_CATEGORIES: Record<
     },
     shortcuts: [
       {
-        key: 'mod+shift+d',
+        key: SHORTCUT_DEFAULTS['dock.focus'],
         get label() {
           return m.ui_shortcuts_dockFocus_label();
         },
         contexts: ['global'],
       },
       {
-        key: 'mod+shift+s',
+        key: SHORTCUT_DEFAULTS['dock.capture'],
         get label() {
           return m.ui_shortcuts_dockCapture_label();
         },
         contexts: ['global'],
       },
       {
-        key: 'mod+shift+r',
+        key: SHORTCUT_DEFAULTS['dock.record'],
         get label() {
           return m.ui_shortcuts_dockRecord_label();
         },
         contexts: ['global'],
       },
       {
-        key: 'mod+shift+a',
+        key: SHORTCUT_DEFAULTS['dock.annotate'],
         get label() {
           return m.ui_shortcuts_dockAnnotate_label();
         },
         contexts: ['global'],
       },
       {
-        key: 'mod+shift+m',
+        key: SHORTCUT_DEFAULTS['dock.dictate'],
         get label() {
           return m.ui_shortcuts_dockDictate_label();
         },

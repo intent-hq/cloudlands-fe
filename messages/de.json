@@ -8338,5 +8338,15 @@
   "dock_shortcut_unavailable": "Tastenkürzel nicht verfügbar",
   "dock_shortcut_record_menu": "In Arbeitsbereich aufnehmen…",
   "dock_shortcut_open_error": "Arbeitsbereich konnte nicht geöffnet werden. Erneut wählen.",
-  "dock_shortcut_dictate_label": "Diktieren"
+  "dock_shortcut_dictate_label": "Diktieren",
+  "settings_keyboardShortcuts_dockGlobal_description": "Diese Tastenkürzel funktionieren auch, wenn andere Apps im Vordergrund sind.",
+  "settings_keyboardShortcuts_dockSaving_status": "Tastenkürzel wird gespeichert…",
+  "settings_keyboardShortcuts_dockInvalid_error": "Verwende Control, Command oder Option mit einer Taste oder eine Funktionstaste.",
+  "settings_keyboardShortcuts_dockConflict_error": "Dieses Tastenkürzel wird bereits von einem anderen Befehl verwendet.",
+  "settings_keyboardShortcuts_dockUnavailable_error": "Dieses Tastenkürzel ist nicht verfügbar. Dein bisheriges Tastenkürzel bleibt erhalten.",
+  "settings_keyboardShortcuts_dockSave_error": "Das Tastenkürzel konnte nicht gespeichert werden. Dein bisheriges Tastenkürzel bleibt erhalten.",
+  "settings_keyboardShortcuts_dockStale_error": "Die Tastenkürzel wurden in einem anderen Fenster geändert. Versuche es erneut.",
+  "settings_keyboardShortcuts_dockLoad_error": "Globale Tastenkürzel konnten nicht geladen werden.",
+  "settings_keyboardShortcuts_dockPreparing_status": "Wird vorbereitet…",
+  "settings_keyboardShortcuts_dockOff_description": "Aktiviere das Dock, um diese globalen Tastenkürzel zu verwenden."
 }

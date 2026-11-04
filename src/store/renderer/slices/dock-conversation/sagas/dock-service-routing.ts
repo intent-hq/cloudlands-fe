@@ -38,7 +38,7 @@ function live(runtime: ScriptRuntimeState): runtime is ScriptRuntimeState & {
     typeof runtime.detectedUrl === 'string'
   );
 }
-function address(context: DockShortcutContext): string | undefined {
+export function dockServiceContextAddress(context: DockShortcutContext): string | undefined {
   if (context.serviceAddress) return context.serviceAddress;
   try {
     const url = new URL(context.url ?? '');
@@ -77,7 +77,7 @@ export function* findDockService(
   context: DockShortcutContext,
   workspaceIds: string[],
 ): SagaGenerator<DockServiceOwner | null> {
-  const url = address(context);
+  const url = dockServiceContextAddress(context);
   const binding = captureDockPlacementBinding();
   const connection = getPrincipalConnectionContext(appStore.state);
   if (!url || !connection || binding.backendId !== context.backendId) return null;

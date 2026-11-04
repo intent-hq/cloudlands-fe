@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { selectShortcutOverrides } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { untrack } from 'svelte';
   import DockConversationQuestions from './DockConversationQuestions.svelte';
   import { pendingQuestionRecoveryRequested } from '$store/renderer/slices/chat-state/chat-state-slice';
@@ -53,7 +54,8 @@
   const composer$ = selectDockConversationComposer();
   const scope$ = selectDockConversationScope();
   const currentEvidence$ = selectCurrentDockComposerEvidence();
-  const labels = createDockComposerLabels();
+  const shortcutOverrides$ = selectShortcutOverrides();
+  const labels = createDockComposerLabels(() => $shortcutOverrides$);
 
   // One UI-only composer controller per open pair and authority; retired with it.
   // The native session and speech belong to the root native-session saga.

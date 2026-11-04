@@ -435,6 +435,18 @@ export const IPC_CHANNELS = {
     CYCLE_FOCUS: 'window:cycle-focus',
   },
 
+  DOCK_CONTEXT: {
+    GET: 'dock-context:get',
+    CHANGED: 'dock-context:changed',
+  },
+
+  DOCK_SHORTCUTS: {
+    GET: 'dock-shortcuts:get',
+    SET: 'dock-shortcuts:set',
+    CAPTURE: 'dock-shortcuts:capture',
+    CHANGED: 'dock-shortcuts:changed',
+  },
+
   DOCK_EVIDENCE: {
     BEGIN: 'dock-evidence:begin',
     CAPTURE: 'dock-evidence:capture',
@@ -1185,6 +1197,8 @@ export const IPC_CHANNELS = {
 
 // Event channels that are sent from main to renderer
 export const EVENT_CHANNELS = [
+  IPC_CHANNELS.DOCK_CONTEXT.CHANGED,
+  IPC_CHANNELS.DOCK_SHORTCUTS.CHANGED,
   IPC_CHANNELS.DOCK_EVIDENCE.EVENT,
   IPC_CHANNELS.DOCK_ANNOTATION.STATE,
   IPC_CHANNELS.DOCK_ANNOTATION.SIGNAL,

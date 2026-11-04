@@ -1,3 +1,4 @@
+import { resolveShortcut, type ShortcutOverrides } from '$shared/keyboard-shortcut-bindings';
 import { m } from '$shared/paraglide/messages.js';
 import { formatShortcut } from '$lib/utils/shortcuts';
 import { formatInteger } from '$lib/i18n/format';
@@ -10,12 +11,22 @@ export type DockComposerLabels = DockComposerMediaLabels & {
 };
 
 /** Keep platform shortcut formatting and locale lookup at the presentation boundary. */
-export function createDockComposerLabels(): DockComposerLabels {
+export function createDockComposerLabels(
+  overrides: ShortcutOverrides | (() => ShortcutOverrides) = {},
+): DockComposerLabels {
+  const key = (id: 'dock.capture' | 'dock.record' | 'dock.annotate' | 'dock.dictate') =>
+    formatShortcut(resolveShortcut(id, typeof overrides === 'function' ? overrides() : overrides));
   return {
-    capture: m.dock_composer_capture_tooltip({ shortcut: formatShortcut('mod+shift+s') }),
+    get capture() {
+      return m.dock_composer_capture_tooltip({ shortcut: key('dock.capture') });
+    },
     captureMode: {
-      window: m.dock_composer_captureWindow_tooltip({ shortcut: formatShortcut('mod+shift+s') }),
-      region: m.dock_composer_captureRegion_tooltip({ shortcut: formatShortcut('mod+shift+s') }),
+      get window() {
+        return m.dock_composer_captureWindow_tooltip({ shortcut: key('dock.capture') });
+      },
+      get region() {
+        return m.dock_composer_captureRegion_tooltip({ shortcut: key('dock.capture') });
+      },
     },
     captureModes: {
       fullscreen: m.dock_composer_captureFullscreen_label(),
@@ -27,9 +38,13 @@ export function createDockComposerLabels(): DockComposerLabels {
     clipLimit: m.dock_composer_clipLimit_tooltip({
       limit: formatInteger(DOCK_EVIDENCE_LIMITS.clips),
     }),
-    record: m.dock_composer_record_tooltip({ shortcut: formatShortcut('mod+shift+r') }),
+    get record() {
+      return m.dock_composer_record_tooltip({ shortcut: key('dock.record') });
+    },
     stopRecording: m.dock_composer_stopRecording_tooltip(),
-    annotate: m.dock_composer_annotate_tooltip({ shortcut: formatShortcut('mod+shift+a') }),
+    get annotate() {
+      return m.dock_composer_annotate_tooltip({ shortcut: key('dock.annotate') });
+    },
     annotationTools: m.annotation_toolbar_ariaLabel(),
     annotateCurrent: (tool) => m.dock_composer_annotate_ariaLabel({ tool }),
     tools: {
@@ -38,7 +53,9 @@ export function createDockComposerLabels(): DockComposerLabels {
       pen: m.dock_composer_pen_label(),
       arrow: m.annotation_arrow_label(),
     },
-    dictate: m.dock_composer_dictate_tooltip({ shortcut: formatShortcut('mod+shift+m') }),
+    get dictate() {
+      return m.dock_composer_dictate_tooltip({ shortcut: key('dock.dictate') });
+    },
     stopDictating: m.dock_composer_stopDictating_tooltip(),
     annotating: m.dock_composer_annotating_status(),
     listening: m.dock_composer_listening_status(),

@@ -8338,5 +8338,15 @@
   "dock_shortcut_unavailable": "Atajo no disponible",
   "dock_shortcut_record_menu": "Grabar en un espacio…",
   "dock_shortcut_open_error": "No se pudo abrir el espacio. Elige de nuevo.",
-  "dock_shortcut_dictate_label": "Dictar"
+  "dock_shortcut_dictate_label": "Dictar",
+  "settings_keyboardShortcuts_dockGlobal_description": "Estos atajos funcionan aunque otra app esté en primer plano.",
+  "settings_keyboardShortcuts_dockSaving_status": "Guardando atajo…",
+  "settings_keyboardShortcuts_dockInvalid_error": "Usa Control, Comando u Opción con una tecla, o una tecla de función.",
+  "settings_keyboardShortcuts_dockConflict_error": "Este atajo ya lo utiliza otro comando.",
+  "settings_keyboardShortcuts_dockUnavailable_error": "Este atajo no está disponible. Tu atajo anterior no ha cambiado.",
+  "settings_keyboardShortcuts_dockSave_error": "No se pudo guardar el atajo. Tu atajo anterior no ha cambiado.",
+  "settings_keyboardShortcuts_dockStale_error": "Los atajos cambiaron en otra ventana. Vuelve a intentarlo.",
+  "settings_keyboardShortcuts_dockLoad_error": "No se pudieron cargar los atajos globales.",
+  "settings_keyboardShortcuts_dockPreparing_status": "Preparando…",
+  "settings_keyboardShortcuts_dockOff_description": "Activa el dock para usar estos atajos globales."
 }

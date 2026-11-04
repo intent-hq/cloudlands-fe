@@ -31,6 +31,7 @@ test('cold shortcut context preserves native identity and first-use guest owners
         `export { embeddedBrowserCdp } from ${JSON.stringify(resolve('src/features/browser/main/embedded-browser-cdp-service.ts'))};`,
         `export { stampWindowWithBackend } from ${JSON.stringify(resolve('src/main/window-backend.ts'))};`,
         `export { getDesktopNativeAdapter, desktopNativeAvailable } from ${JSON.stringify(resolve('src/features/desktop/main/desktop-native.ts'))};`,
+        `export { createDockContextFeed } from ${JSON.stringify(resolve('src/main/dock-context-feed.ts'))};`,
         `export { sampleDockForeground } from ${JSON.stringify(resolve('src/main/dock-shortcut-foreground.ts'))};`,
       ].join('\n'),
     );
@@ -122,6 +123,7 @@ test('cold shortcut context preserves native identity and first-use guest owners
           sampleDockForeground,
           getDesktopNativeAdapter,
           desktopNativeAvailable,
+          createDockContextFeed,
         } = (globalThis as any).shortcutContext;
         const window = (globalThis as any).shortcutWindow;
         const compiledAppPath = app.getAppPath();
@@ -146,6 +148,73 @@ test('cold shortcut context preserves native identity and first-use guest owners
           foregroundApp: () => getDesktopNativeAdapter().foregroundApp(),
           foregroundContext: () => Promise.reject(new Error('Synthetic unavailable URL seam')),
         });
+        // The first feed observation comes from the real cold native sample above.
+        let scope = {},
+          visible = true,
+          reads = 0,
+          revision = 0;
+        let next = {
+          backendId: 'fixture-backend',
+          self: false,
+          identityKey: `app:${cold.snapshot.appId ?? 'unknown'}`,
+          identityKind: 'app',
+          appId: cold.snapshot.appId ?? null,
+          appName: cold.snapshot.appName ?? null,
+          url: null,
+          icon: null,
+        };
+        let held: (() => void) | null = null;
+        let hold = false;
+        const changes: any[] = [];
+        const feed = createDockContextFeed({
+          scope: () => scope,
+          visible: () => visible,
+          version: () => `entry-${++revision}`,
+          intervalMs: 60000,
+          async read() {
+            reads++;
+            if (hold) await new Promise<void>((resolve) => (held = resolve));
+            return structuredClone(next);
+          },
+          changed(value: any) {
+            changes.push(value);
+          },
+        });
+        feed.start();
+        const first = await feed.read();
+        const stable = await feed.read();
+        next = { ...next, appName: 'Synthetic metadata update' };
+        const metadata = await feed.read();
+        next = { ...next, self: true };
+        const selfPreserved = await feed.read();
+        visible = false;
+        const hiddenReads = reads;
+        await feed.read();
+        const didNotReadHidden = reads === hiddenReads;
+        visible = true;
+        next = { ...next, self: false };
+        hold = true;
+        const pending = feed.read();
+        const coalesced = feed.read();
+        const oneInFlight = pending === coalesced;
+        scope = {};
+        hold = false;
+        held?.();
+        const stale = await pending;
+        next = { ...next, identityKey: 'app:synthetic-next', appId: 'synthetic-next' };
+        const entered = await feed.read();
+        feed.stop();
+        const feedEvidence = {
+          first,
+          stable,
+          metadata,
+          selfPreserved,
+          didNotReadHidden,
+          oneInFlight,
+          stale,
+          entered,
+          changes: changes.length,
+        };
         const before = service.focusedTabOwner(guestId);
         service.registerTab('fixture-tab', guestId, 'fixture-workspace');
         const owned = service.focusedTabOwner(guestId);
@@ -159,6 +228,7 @@ test('cold shortcut context preserves native identity and first-use guest owners
           boundary:
             'Real Electron webview, production native adapter/helper/sampler and tab registry. Workspace-window membership is an explicit fixture seam; no daemon, hotkeys or user profile.',
           nativeIdentity,
+          feedEvidence,
           degradedIdentityPreserved: !!degraded.snapshot.pid && !!degraded.snapshot.appName,
           before,
           owned,
@@ -179,7 +249,23 @@ test('cold shortcut context preserves native identity and first-use guest owners
     expect(evidence.nativeIdentity.appNamePresent).toBe(true);
     expect(evidence.degradedIdentityPreserved).toBe(true);
     expect(evidence.before).toBeNull();
+    expect(evidence.feedEvidence.first.appName).toBeTruthy();
+    expect(evidence.feedEvidence.stable).toEqual(evidence.feedEvidence.first);
+    expect(evidence.feedEvidence.metadata.contextVersion).toBe(
+      evidence.feedEvidence.first.contextVersion,
+    );
+    expect(evidence.feedEvidence.metadata.sequence).toBeGreaterThan(
+      evidence.feedEvidence.first.sequence,
+    );
+    expect(evidence.feedEvidence.selfPreserved).toEqual(evidence.feedEvidence.metadata);
+    expect(evidence.feedEvidence.didNotReadHidden).toBe(true);
+    expect(evidence.feedEvidence.oneInFlight).toBe(true);
+    expect(evidence.feedEvidence.stale).toBeNull();
+    expect(evidence.feedEvidence.entered.contextVersion).not.toBe(
+      evidence.feedEvidence.first.contextVersion,
+    );
     expect(evidence.owned).toEqual({
+      tabId: 'fixture-tab',
       workspaceId: 'fixture-workspace',
       backendId: 'fixture-backend',
       url,

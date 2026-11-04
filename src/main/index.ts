@@ -6,8 +6,11 @@
 
 // The isolated package establishes private paths before any application dependency.
 import './isolated-test-bootstrap.js';
+import { initializeDockContextFeed } from './dock-context-ipc';
 import {
   syncDockGlobalShortcuts,
+  initializeDockShortcutSettings,
+  dockShortcutMenuKey,
   requestDockShortcut,
   dockShortcutAvailable,
 } from './dock-global-shortcuts';
@@ -1063,7 +1066,7 @@ const bootFlow = app.whenReady().then(async () => {
               label: m.menu_focus_intent_dock(),
               // Registered globally; a menu accelerator would dispatch twice.
               sublabel: dockShortcutAvailable('focus')
-                ? 'Cmd/Ctrl+Shift+D'
+                ? dockShortcutMenuKey('focus')
                 : m.dock_shortcut_unavailable(),
               enabled: dockMenuController.isEnabled(),
               click: () => void requestDockShortcut('focus'),
@@ -1071,21 +1074,21 @@ const bootFlow = app.whenReady().then(async () => {
             {
               label: m.dock_shortcut_record_menu(),
               sublabel: dockShortcutAvailable('record')
-                ? 'Cmd/Ctrl+Shift+R'
+                ? dockShortcutMenuKey('record')
                 : m.dock_shortcut_unavailable(),
               enabled: dockMenuController.isEnabled(),
               click: () => void requestDockShortcut('record'),
             },
             ...(
               [
-                ['capture', m.browser_overflow_screenshot_label(), 'S'],
-                ['annotate', m.dock_annotate_label(), 'A'],
-                ['dictate', m.dock_shortcut_dictate_label(), 'M'],
+                ['capture', m.browser_overflow_screenshot_label()],
+                ['annotate', m.dock_annotate_label()],
+                ['dictate', m.dock_shortcut_dictate_label()],
               ] as const
-            ).map(([action, label, key]) => ({
+            ).map(([action, label]) => ({
               label,
               sublabel: dockShortcutAvailable(action)
-                ? `Cmd/Ctrl+Shift+${key}`
+                ? dockShortcutMenuKey(action)
                 : m.dock_shortcut_unavailable(),
               enabled: dockMenuController.isEnabled(),
               click: () => void requestDockShortcut(action),
@@ -1693,6 +1696,8 @@ const bootFlow = app.whenReady().then(async () => {
   // Every critical handler a renderer invokes on boot now exists: let the
   // window creators in ./window.ts proceed (they all await this gate).
   // The dock lab is main-owned and off by default; the dock restores only while it is on.
+  await initializeDockShortcutSettings();
+  initializeDockContextFeed();
   await loadDockLabEnabled();
   registerDockLabHandlers({
     show: () => dockMenuController.setEnabled(true),

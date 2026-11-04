@@ -461,3 +461,25 @@ export const selectDockShortcutWorkspaces = store.createSelector((state) =>
         dockCandidateScore(state.dockConversation.shortcut?.context, a),
     ),
 );
+
+/** The UI reads one admitted snapshot; archived/deleted targets are never presented as linked. */
+export const selectDockLinkedContext = store.createSelector((state) => {
+  const snapshot = state.dockConversation.linkedContext;
+  if (
+    !snapshot ||
+    state.dockConversation.linkedContextAuthority !== getPrincipalActionContext(state)
+  )
+    return null;
+  if (
+    !snapshot.linkedWorkspaceId ||
+    selectDockShortcutWorkspaces.select(state).some((row) => row.id === snapshot.linkedWorkspaceId)
+  )
+    return snapshot;
+  return {
+    ...snapshot,
+    linkedWorkspaceId: null,
+    linkKey: null,
+    policy: { follows: 0, decision: 'unasked' as const },
+    autoSwitchEligible: false,
+  };
+});

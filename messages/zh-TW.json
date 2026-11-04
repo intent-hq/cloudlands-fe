@@ -8338,5 +8338,15 @@
   "dock_shortcut_unavailable": "快捷鍵無法使用",
   "dock_shortcut_record_menu": "錄製到工作區…",
   "dock_shortcut_open_error": "無法開啟工作區。請重新選擇。",
-  "dock_shortcut_dictate_label": "聽寫"
+  "dock_shortcut_dictate_label": "聽寫",
+  "settings_keyboardShortcuts_dockGlobal_description": "即使其他 App 在前景，這些快捷鍵仍可使用。",
+  "settings_keyboardShortcuts_dockSaving_status": "正在儲存快捷鍵…",
+  "settings_keyboardShortcuts_dockInvalid_error": "請使用 Control、Command 或 Option 加上一個按鍵，或使用功能鍵。",
+  "settings_keyboardShortcuts_dockConflict_error": "此快捷鍵已由其他指令使用。",
+  "settings_keyboardShortcuts_dockUnavailable_error": "此快捷鍵無法使用。原快捷鍵維持不變。",
+  "settings_keyboardShortcuts_dockSave_error": "無法儲存快捷鍵。原快捷鍵維持不變。",
+  "settings_keyboardShortcuts_dockStale_error": "快捷鍵已在其他視窗中變更。請再試一次。",
+  "settings_keyboardShortcuts_dockLoad_error": "無法載入全域快捷鍵。",
+  "settings_keyboardShortcuts_dockPreparing_status": "正在準備…",
+  "settings_keyboardShortcuts_dockOff_description": "開啟 Dock 以使用這些全域快捷鍵。"
 }
