@@ -1,4 +1,4 @@
-import { expect, test } from '../../../../test/ct-test';
+import { expect, installPausedClock, test } from '../../../../test/ct-test';
 import MarkdownViewer from '../MarkdownViewer.svelte';
 
 const source = 'https://image.test/recover.png?signature=keep%2Fthis';
@@ -59,6 +59,7 @@ test('bounds persistent failures and lets the reader retry without reattaching',
   const retry = component.getByRole('button', { name: /retry/i });
   await expect(retry).toBeVisible();
   expect(requests).toHaveLength(3);
+  // eslint-disable-next-line intent/no-unpaused-clock-in-ct -- checks no retry fires within 10 s; extra elapsed time only makes that stricter
   await page.clock.install();
   await page.clock.fastForward(10_000);
   expect(requests).toHaveLength(3);
@@ -93,8 +94,7 @@ for (const removal of ['content', 'unmount'] as const) {
     });
     const component = await mount(MarkdownViewer, { props: { content: `![chart](${source})` } });
     await expect.poll(() => requests).toBe(1);
-    await page.clock.install();
-    await page.clock.pauseAt(new Date());
+    await installPausedClock(page);
     release();
     await expect(component.locator('img')).toHaveJSProperty('complete', true);
     if (removal === 'content') await component.update({ props: { content: 'New message.' } });
@@ -119,6 +119,7 @@ test('revoking file authority removes a failed workspace image and its retry', a
   await component.update({ props: { allowFileMedia: false } });
   await expect(component.getByRole('button', { name: /retry/i })).toHaveCount(0);
   await expect(component.locator('img[src]')).toHaveCount(0);
+  // eslint-disable-next-line intent/no-unpaused-clock-in-ct -- checks no retry fires within 10 s; extra elapsed time only makes that stricter
   await page.clock.install();
   await page.clock.fastForward(10_000);
   await expect(component.locator('img[src]')).toHaveCount(0);

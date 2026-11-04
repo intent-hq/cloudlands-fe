@@ -12,7 +12,9 @@ import {
 import { store } from '../src/store/renderer/configured-store';
 import { guestSessionsListUnavailable } from '../src/store/renderer/slices/guest-sessions/guest-sessions-slice';
 import { registerMockIpcHandler } from '../src/shared/ipc-mock-router';
+import { startChatFixtureSagas } from '../src/test/chat-fixture-sagas';
 import { installMockElectronBridge } from '../src/test/ct-mock-electron-bridge';
+import { createChatDraftFixture } from '../src/test/fixtures/chat-drafts';
 
 // CT-safe store bootstrap (intent-hq/monorepo#2224): components read Redux
 // selectors at mount, which throws before Store.init(). Initialize the real
@@ -28,6 +30,15 @@ store.init();
 // fail-closed owner-only surfaces (intent-hq/cloudlands-fe#2652) render in
 // previews as they do in the product instead of staying withheld forever.
 store.dispatch(guestSessionsListUnavailable());
+// Answer every composer's draft restore, as the app's root sagas do. A ChatPanel
+// whose `drafts.get` goes unanswered shows the draft loading gate until its 5 s
+// fallback, and removing the gate then shifts every message row (cloudlands-fe#4160).
+// Starting it here covers every host and preview: a host's own
+// startRootStoreLifecycle re-runs store.init(), which keeps this store and its
+// sagas. A host that needs its own transport calls startChatFixtureSagas with it,
+// which routes requests there until the host stops it.
+const chatDrafts = createChatDraftFixture();
+startChatFixtureSagas(store, chatDrafts.client);
 
 const previewDefinitionLoaders = import.meta.glob<PreviewDefinition<Record<string, unknown>>>(
   '../src/**/*.preview.{ts,svelte}',
@@ -53,6 +64,8 @@ interface MockHooksConfig {
   mockBackend?: Record<string, unknown>;
   /** Static legacy renderer→main IPC answers by invoke channel. */
   mockIpc?: Record<string, unknown>;
+  /** Saved composer drafts the default `drafts.get` fixture restores. */
+  chatDrafts?: Array<{ workspaceId: string; agentId: string; text: string }>;
 }
 
 interface PreviewHooksConfig {
@@ -75,6 +88,9 @@ beforeMount<MockHooksConfig>(async ({ hooksConfig }) => {
   }
   for (const [channel, response] of Object.entries(hooksConfig?.mockIpc ?? {})) {
     registerMockIpcHandler(channel, () => response);
+  }
+  for (const draft of hooksConfig?.chatDrafts ?? []) {
+    chatDrafts.seed(draft.workspaceId, draft.agentId, draft.text);
   }
 });
 

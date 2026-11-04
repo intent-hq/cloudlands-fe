@@ -3,7 +3,6 @@ import { AgentId } from '$shared/types/branded-ids';
 import type { ResourceBlockContents } from '$shared/types/resource-block-identity';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import { updateSession } from '$store/renderer/slices/agent-session/agent-session-slice';
-import { questionUiPersistenceSaga } from '$store/renderer/slices/question-ui/sagas/question-ui-persistence-saga';
 import { chatScrollbackSaga } from '$store/renderer/slices/chat-state/sagas/chat-scrollback-saga';
 import { ThemeManager, type Theme } from '$lib/utils/theme';
 import { themeSaga } from '$store/renderer/slices/theme/sagas/theme-saga';
@@ -14,7 +13,8 @@ import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 import { principalReceived } from '$store/renderer/slices/principal/principal-slice';
 import { initRendererStoreBridge } from '$store/renderer/renderer-store-bridge';
 import { dockConversationSaga } from '$store/renderer/slices/dock-conversation/sagas/dock-conversation-saga';
-import { chatDraftsSaga } from '$store/renderer/slices/chat-drafts/sagas/chat-drafts-saga';
+import { appClient } from '$lib/client';
+import { startChatFixtureSagas } from '../../../test/chat-fixture-sagas';
 import { chatReadSaga } from '$store/renderer/slices/chat-state/sagas/chat-read-saga';
 import { chatSubscribeSaga } from '$store/renderer/slices/chat-state/sagas/chat-subscribe-saga';
 import { chatSendSaga } from '$store/renderer/slices/chat-state/sagas/chat-send-saga';
@@ -437,16 +437,17 @@ export function setupConversationWire(
     providerModelsSaga,
     agentModelSaga,
     lifecycleReadSaga,
-    chatDraftsSaga,
     chatReadSaga,
     chatScrollbackSaga,
-    questionUiPersistenceSaga,
     chatSubscribeSaga,
     chatSendSaga,
     agentMutationSaga,
     dockConversationSaga,
     ...(options.dockAppearance ? [themeSaga] : []),
   ].map((saga) => store.runSaga(saga));
+  // Drafts go through the mock backend. The shared helper replaces the CT
+  // bootstrap's draft saga instead of running a second one beside it.
+  stops.push(...startChatFixtureSagas(store, appClient.drafts));
   return {
     askQuestions(recover = false) {
       pendingQuestion = true;

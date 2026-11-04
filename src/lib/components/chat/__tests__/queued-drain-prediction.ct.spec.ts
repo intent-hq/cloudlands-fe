@@ -1,4 +1,4 @@
-import { expect, test } from '../../../../test/ct-test';
+import { expect, installPausedClock, test } from '../../../../test/ct-test';
 import ChatPanelComposerGeometryHost from './ChatPanelComposerGeometryHost.svelte';
 import { QUEUE_DRAIN_PREDICTION_TIMEOUT_MS } from '../queue-drain-prediction';
 
@@ -47,18 +47,21 @@ test('returns the message to the queue when the daemon never starts the turn', a
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.clock.install();
-  const component = await mount(ChatPanelComposerGeometryHost, {
-    props: { ...props, streaming: true },
-  });
+  // Paused: the row must still be visible before the drain timeout, which a slow runner
+  // could otherwise let run out between the update and the check.
+  const component = await installPausedClock(page, () =>
+    mount(ChatPanelComposerGeometryHost, { props: { ...props, streaming: true } }),
+  );
   const queue = component.getByTestId('queued-messages-container');
   const row = component.locator('[data-message-role="user"]').filter({ hasText: QUEUED_TEXT });
   await expect(queue).toContainText(QUEUED_TEXT);
 
   await component.update({ props: { ...props, streaming: false } });
+  // A few frames for the transcript to render the predicted row, far inside the timeout.
+  await page.clock.runFor(500);
   await expect(row).toBeVisible();
 
-  await page.clock.runFor(QUEUE_DRAIN_PREDICTION_TIMEOUT_MS + 100);
+  await page.clock.runFor(QUEUE_DRAIN_PREDICTION_TIMEOUT_MS);
   await expect(queue).toContainText(QUEUED_TEXT);
   await expect(row).toHaveCount(0);
 });

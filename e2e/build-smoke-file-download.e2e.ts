@@ -24,6 +24,7 @@ import {
   getSmokeWorkspace,
   launchPackagedApp,
   setMockAgentBehavior,
+  selectSidebarSection,
 } from './build-smoke-helpers';
 
 const ARTIFACT_DIR = path.join(process.cwd(), 'e2e-reports', 'file-download');
@@ -88,10 +89,7 @@ async function openFromFilesSidebar(name: string) {
   await expect.poll(() => sidebar.evaluate((element) => element.clientWidth)).toBeGreaterThan(0);
   const tree = page.getByRole('tree', { name: 'File explorer' });
   if (!(await tree.isVisible())) {
-    await page
-      .locator('[data-sidebar-launcher="files"]')
-      .getByRole('button', { name: 'Expand panel' })
-      .click();
+    await selectSidebarSection(page, 'files');
   }
   await tree.locator(`[data-file-path="${name}"], [data-file-path$="/${name}"]`).first().click();
 }

@@ -1,13 +1,11 @@
 import type { Page, TestInfo } from '@playwright/test';
-import { expect, test } from '../../../../../test/ct-test';
+import { expect, installPausedClock, test } from '../../../../../test/ct-test';
 import Harness from './ToastLifetimeHarness.svelte';
 
 test.use({ viewport: { width: 900, height: 640 }, reducedMotion: 'reduce' });
 
 test.beforeEach(async ({ mount, page }) => {
-  await page.clock.install();
-  await mount(Harness);
-  await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now() + 1000)));
+  await installPausedClock(page, () => mount(Harness));
 });
 
 async function evidence(page: Page, info: TestInfo) {

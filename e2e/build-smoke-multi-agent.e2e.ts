@@ -115,7 +115,8 @@ test.describe('Build Smoke — Multi-Agent Orchestration UI', () => {
       expect(childAgentId).not.toBe(parentAgentId);
 
       const delegation = page.locator(`[data-agent-delegation-toggle="${parentAgentId}"]`);
-      await expect(delegation).toContainText('1 delegated', { timeout: 30_000 });
+      // The row shows "Delegated" plus a bare count; the full "1 delegated" lives in its aria-label.
+      await expect(delegation).toHaveAccessibleName('1 delegated', { timeout: 30_000 });
       if ((await delegation.getAttribute('aria-expanded')) !== 'true') await delegation.click();
       await expect(page.locator(`[data-agent-id="${childAgentId}"]`).first()).toBeVisible();
       await openAgentChat(page, childAgentId);

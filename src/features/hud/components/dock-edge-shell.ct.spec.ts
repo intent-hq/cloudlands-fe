@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
-import { expect, test } from '../../../test/ct-test';
+import { expect, installPausedClock, test } from '../../../test/ct-test';
 import DockRailPreview from './dock-rail.preview.svelte';
 import { dockRailPreview, adaptiveDockFixture } from './dock-rail.preview-fixtures';
 import {
@@ -29,19 +29,6 @@ async function laneInsets(component: Locator) {
     const box = surface.getBoundingClientRect();
     return { left: card.left - box.left, right: box.right - card.right };
   });
-}
-
-/**
- * Mounts the side fixture with a fake clock that only the test advances. `install()` alone
- * keeps fake time flowing with real time, so on a loaded runner a slow round trip (a key
- * press, a DOM read) lets the shell's frame loop catch up past the frames a test samples.
- * Paused, time moves only through `page.clock.runFor`, so each step is one known frame.
- */
-async function mountSideOnPausedClock(mount: (...args: any[]) => Promise<Locator>, page: Page) {
-  await page.clock.install();
-  const side = await mountSide(mount, page);
-  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
-  return side;
 }
 
 async function mountSide(mount: (...args: any[]) => Promise<Locator>, page: Page) {
@@ -188,7 +175,7 @@ test.describe('side shell motion', () => {
     page,
   }, testInfo) => {
     await page.emulateMedia({ reducedMotion: 'no-preference', colorScheme: 'dark' });
-    const side = await mountSideOnPausedClock(mount, page);
+    const side = await installPausedClock(page, () => mountSide(mount, page));
     await page.clock.runFor(100);
     await shot(page, 'dock-edge-closed');
     await side.locator('[data-dock-entry="dock:assistant"]').click();
@@ -289,7 +276,7 @@ test.describe('side shell motion', () => {
   }) => {
     await page.emulateMedia({ reducedMotion: 'no-preference', colorScheme: 'dark' });
     // Paused after mount: the test steps every frame, so each read sees one frame.
-    const side = await mountSideOnPausedClock(mount, page);
+    const side = await installPausedClock(page, () => mountSide(mount, page));
     await page.clock.runFor(100);
     const entries = side.locator('[data-dock-entry]');
     const entry = entries.nth(2);

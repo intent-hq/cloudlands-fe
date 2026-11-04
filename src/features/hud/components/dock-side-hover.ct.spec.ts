@@ -353,3 +353,104 @@ test('tall side cards fit production envelope at offset display boundaries', asy
   }
   await writeFile(testInfo.outputPath('tall-envelope.json'), JSON.stringify(evidence, null, 2));
 });
+
+// Under reduced motion the global blanket gives every property a 0.01ms transition. The rail
+// and the preview bridge are positioned by script and feed the native input region, so a
+// region measured at that transition's start (the old position) must not be left published.
+for (const side of ['left', 'right'] as const) {
+  test(`side ${side} rail and bridge regions follow moves under reduced motion`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width: 720, height: 720 });
+    await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'dark' });
+    await page.mouse.move(700, 690);
+    const props = dockRailPreview.states[`side-${side}`].props;
+    if (!props.placement) throw new Error('Missing side placement fixture');
+    const workspaces = props.workspaces.slice(0, 2);
+    const component = await mount(DockRailPreview, {
+      props: { ...props, workspaces, theme: 'dark' },
+    });
+    const entries = component.locator('[data-dock-entry]');
+    await expect(entries).toHaveCount(3);
+    // One snapshot after the page has settled: polling would hide a region that is never
+    // republished, which is exactly the failure (the native region stays stale).
+    const uncovered = async (selector: string) => {
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) => {
+            let frames = 0;
+            const step = () =>
+              ++frames >= 6 ? setTimeout(resolve, 150) : requestAnimationFrame(step);
+            requestAnimationFrame(step);
+          }),
+      );
+      return component.evaluate((host, query) => {
+        const state = JSON.parse(host.getAttribute('data-preview-pointer') ?? '{}') as {
+          regions?: { x: number; y: number; width: number; height: number }[];
+        };
+        return [...host.querySelectorAll<HTMLElement>(query)]
+          .map((el) => ({ el, b: el.getBoundingClientRect() }))
+          .filter(
+            ({ b }) =>
+              !state.regions?.some(
+                (r) =>
+                  r.x <= b.left + 0.5 &&
+                  r.y <= b.top + 0.5 &&
+                  r.x + r.width >= b.right - 0.5 &&
+                  r.y + r.height >= b.bottom - 0.5,
+              ),
+          )
+          .map(({ el, b }) => ({
+            target: el.getAttribute('data-dock-entry') ?? el.className,
+            rect: b.toJSON(),
+            regions: state.regions,
+          }));
+      }, selector);
+    };
+    expect(await uncovered('[data-dock-entry]')).toEqual([]);
+
+    // The surface moves within the same window (a native placement revision).
+    const before = await entries.first().boundingBox();
+    await component.update({
+      props: {
+        ...props,
+        workspaces,
+        theme: 'dark',
+        placement: {
+          ...props.placement,
+          revision: props.placement.revision + 1,
+          surface: { ...props.placement.surface, y: props.placement.surface.y + 48 },
+        },
+      },
+    });
+    await expect
+      .poll(async () => (await entries.first().boundingBox())?.y)
+      .toBeCloseTo((before?.y ?? 0) + 48, 0);
+    expect(await uncovered('[data-dock-entry]'), 'Moved rail entries stay clickable').toEqual([]);
+
+    // Moving the preview between neighbors re-anchors the bridge beside the new entry.
+    await entries.first().focus();
+    const card = component.getByTestId('dock-preview');
+    await expect(card).toBeVisible();
+    await entries.first().press('ArrowDown');
+    await expect(entries.nth(1)).toBeFocused();
+    await expect(card).toHaveAttribute(
+      'data-preview-workspace-id',
+      String(workspaces[1].workspace.id),
+    );
+    const bridge = component.locator('.preview-bridge');
+    await expect
+      .poll(async () => {
+        const [b, e] = await Promise.all([bridge.boundingBox(), entries.nth(1).boundingBox()]);
+        return b && e ? Math.abs(b.y + b.height / 2 - (e.y + e.height / 2)) < 1 : false;
+      })
+      .toBe(true);
+    const stale = await uncovered('.preview-bridge, [data-testid="dock-preview"]');
+    await writeFile(
+      testInfo.outputPath(`side-${side}-reduced-motion-regions.json`),
+      JSON.stringify({ stale }, null, 2),
+    );
+    expect(stale, 'Re-anchored bridge and card stay inside the input region').toEqual([]);
+  });
+}

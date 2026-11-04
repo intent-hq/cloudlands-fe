@@ -151,6 +151,9 @@
     right: 48px;
     bottom: 16px;
     z-index: 10;
+    /* Its JS position feeds the native input region: never interpolate it, even under the
+       motion blanket, or the region is measured at the transition's start and goes stale. */
+    transition-property: none;
     pointer-events: none;
   }
   .dock-feedback {

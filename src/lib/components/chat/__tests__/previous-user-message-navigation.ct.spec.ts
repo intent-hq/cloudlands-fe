@@ -4,7 +4,9 @@ import {
   activateHoverAction,
   expect,
   expectMotionToSettle,
+  installPausedClock,
   motionSnapshot,
+  pauseClock,
   test,
   wheelUntilScrolled,
 } from '../../../../test/ct-test';
@@ -70,9 +72,7 @@ test('newer previous-message navigation wins over a pending return to bottom', a
 
   // Control animation time so the second trusted action always precedes the
   // first animation's completion, even on a slow CI worker.
-  const now = Date.now();
-  await page.clock.install({ time: now });
-  await page.clock.pauseAt(now + 1000);
+  await installPausedClock(page);
   const forwardStartedAt = await page.evaluate(() => Date.now());
   await down.returnToBottom();
   expect(await page.evaluate(() => Date.now())).toBe(forwardStartedAt);
@@ -470,9 +470,7 @@ test('previous-message navigation follows its target while earlier content hydra
   await expect(earlier).toHaveAttribute('data-lazy-visible', 'false');
   const placeholderHeight = await earlier.evaluate((node) => node.getBoundingClientRect().height);
 
-  const now = Date.now();
-  await page.clock.install({ time: now });
-  await page.clock.pauseAt(now + 1000);
+  await installPausedClock(page);
   const action = source.getByRole('button', { name: 'Scroll to previous message' });
   await action.evaluate((node: HTMLButtonElement) => node.focus({ preventScroll: true }));
   await page.keyboard.press('Enter');
@@ -538,9 +536,7 @@ for (const removal of ['truncate-navigation-target', 'discard-transcript'] as co
         return measure();
       };
     });
-    const now = Date.now();
-    await page.clock.install({ time: now });
-    await page.clock.pauseAt(now + 1000);
+    await installPausedClock(page);
     await component
       .locator('[data-message-id="user-24"]')
       .getByRole('button', { name: 'Scroll to previous message' })
@@ -574,9 +570,7 @@ test('previous-message navigation tracks a preceding row collapsing during anima
   const component = await mount(ChatMessageNavigatorIntegrationHost);
   const scroll = component.getByTestId('chat-transcript-scroll-viewport');
   await bottomArrow(component).expectAtBottom(true);
-  const now = Date.now();
-  await page.clock.install({ time: now });
-  await page.clock.pauseAt(now + 1000);
+  await installPausedClock(page);
   const target = component.locator('[data-message-id="user-23"]');
   // Model an overestimated preceding lazy row becoming measured content.
   await target.evaluate((node) => {
@@ -1076,7 +1070,7 @@ for (const motion of ['reduce', 'no-preference'] as const) {
     // action needs no hover: Enter reaches it while the clock is paused.
     const viewport = component.getByTestId('chat-transcript-scroll-viewport');
     await viewport.hover();
-    await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
+    await pauseClock(page);
     await source.getByRole('button', { name: 'Previous user message' }).press('Enter');
     // Finish navigation while the 400ms spacer reconcile remains pending.
     await page.clock.runFor(300);

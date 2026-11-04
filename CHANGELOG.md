@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.285.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.284.0...v2.285.0) (2026-11-04)
+
+
+### 🚀 Features
+
+* **scripts:** run CI's repeated changed-spec job locally ([#4157](https://github.com/intent-hq/cloudlands-fe/issues/4157)) ([24a67f2](https://github.com/intent-hq/cloudlands-fe/commit/24a67f2dfb0d63bbf586b518c86f7feb37f28e8b))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.127 ([#4171](https://github.com/intent-hq/cloudlands-fe/issues/4171)) ([66db080](https://github.com/intent-hq/cloudlands-fe/commit/66db08065aea2d38a2ccdb6d2633c2aa92f20444))
+* show only enabled providers on Settings → Machines rows ([#4163](https://github.com/intent-hq/cloudlands-fe/issues/4163)) ([ef84764](https://github.com/intent-hq/cloudlands-fe/commit/ef847641b1e53ddcb7006f159b66679a989c6e50))
+
 ## [2.284.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.283.1...v2.284.0) (2026-11-04)
 
 

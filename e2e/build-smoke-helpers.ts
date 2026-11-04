@@ -9,6 +9,7 @@ import {
   _electron as electron,
   expect,
   type ElectronApplication,
+  type Locator,
   type Page,
 } from '@playwright/test';
 import { execFileSync, execSync } from 'child_process';
@@ -1949,6 +1950,43 @@ export async function findImplementorAgent(
 }
 
 // ---------------------------------------------------------------------------
+// selectSidebarSection
+// ---------------------------------------------------------------------------
+
+/**
+ * Locate the sidebar icon tab for one section in the strip that is on screen.
+ *
+ * Each tab renders twice: in the expanded sidebar's horizontal strip
+ * (`[data-sidebar-navigation]`, `hidden` while collapsed) and in the collapsed
+ * rail (`[data-workspace-sidebar-rail-shell]`, `aria-hidden="true"` and 0px
+ * wide while expanded). The rail copy still has a box, so `:visible` matches it
+ * behind the expanded sidebar and clicks on it are intercepted. Scope to the
+ * strip that is not hidden instead.
+ */
+function sidebarSectionTab(page: Page, sectionId: string): Locator {
+  const tab = `[data-sidebar-section-tab="${sectionId}"]`;
+  return page
+    .locator(
+      `[data-sidebar-navigation]:not([hidden]) ${tab}, ` +
+        `[data-workspace-sidebar-rail-shell]:not([aria-hidden="true"]) ${tab}`,
+    )
+    .first();
+}
+
+/**
+ * Select one workspace sidebar section (`agents`, `changes`, `files`, ...)
+ * through its icon tab (`[data-sidebar-section-tab]`). Clicking an already
+ * selected tab activates the section's main content instead, so only click
+ * when the tab is not selected yet.
+ */
+export async function selectSidebarSection(page: Page, sectionId: string): Promise<void> {
+  const tab = sidebarSectionTab(page, sectionId);
+  await tab.waitFor({ state: 'visible', timeout: 10_000 });
+  if ((await tab.getAttribute('aria-selected')) !== 'true') await tab.click();
+  await expect(tab).toHaveAttribute('aria-selected', 'true');
+}
+
+// ---------------------------------------------------------------------------
 // openAgentsSidebarPanel
 // ---------------------------------------------------------------------------
 
@@ -1956,21 +1994,21 @@ export async function findImplementorAgent(
  * Expand the Agents section of the workspace sidebar.
  *
  * Agent cards (`[data-testid="agent-list-item"]`, `[data-agent-id]`) render
- * only inside the expanded Agents panel (`[data-testid="agent-panel"]`). A
- * fresh workspace opens on the sidebar's launcher overview, where the section
- * is collapsed behind the `agent-panel-toggle` launcher tile — and the tile
- * itself is unmounted while any section is expanded, so check the panel first.
+ * only inside the Agents panel (`[data-testid="agent-panel"]`), which is
+ * visible only while the sidebar's Agents icon tab
+ * (`[data-sidebar-section-tab="agents"]`) is selected. A fresh workspace may
+ * open on another section, so check the panel first and otherwise select the
+ * tab (see `selectSidebarSection`, which skips the click when the tab is
+ * already selected and the panel is still rendering).
  */
 export async function openAgentsSidebarPanel(page: Page): Promise<void> {
   const agentPanel = page.locator('[data-testid="agent-panel"]');
-  if (await agentPanel.isVisible({ timeout: 1_000 }).catch(() => false)) {
+  if (await agentPanel.isVisible().catch(() => false)) {
     return;
   }
-  const toggle = page.locator('[data-testid="agent-panel-toggle"]');
-  await toggle.waitFor({ state: 'visible', timeout: 15_000 });
-  await toggle.click();
-  await agentPanel.waitFor({ state: 'visible', timeout: 10_000 });
-  console.log('✅ Agents sidebar panel expanded');
+  await selectSidebarSection(page, 'agents');
+  await agentPanel.waitFor({ state: 'visible', timeout: 15_000 });
+  console.log('✅ Agents sidebar panel opened');
 }
 
 // ---------------------------------------------------------------------------
