@@ -790,14 +790,22 @@ describe('LiveTasksClient.subscribe typed per-workspace task channel (PROTOCOL Â
           return firstPageGate.then(() => ({
             tasks: [
               { id: 'b', workspaceId: 'ws-1', title: 'B', status: 'not_started', specLinked: true },
-              { id: 'c', workspaceId: 'ws-1', title: 'C', status: 'not_started', specLinked: false },
+              {
+                id: 'c',
+                workspaceId: 'ws-1',
+                title: 'C',
+                status: 'not_started',
+                specLinked: false,
+              },
             ],
             stats: { total: 3, completed: 0, inProgress: 0 },
             nextToken: 'p3',
           }));
         }
         return Promise.resolve({
-          tasks: [{ id: 'd', workspaceId: 'ws-1', title: 'D', status: 'waiting', specLinked: false }],
+          tasks: [
+            { id: 'd', workspaceId: 'ws-1', title: 'D', status: 'waiting', specLinked: false },
+          ],
           stats: { total: 3, completed: 0, inProgress: 0 },
           nextToken: null,
         });
@@ -835,7 +843,10 @@ describe('LiveTasksClient.subscribe typed per-workspace task channel (PROTOCOL Â
       { workspaceId: 'ws-1', nextToken: 'p3' },
     ]);
     const tasks = handler.mock.calls.at(-1)?.[0] as Array<Record<string, unknown>>;
-    expect(tasks.find((t) => t.id === 'b')).toMatchObject({ status: 'not_started', specLinked: true });
+    expect(tasks.find((t) => t.id === 'b')).toMatchObject({
+      status: 'not_started',
+      specLinked: true,
+    });
     expect(tasks.find((t) => t.id === 'c')).toMatchObject({ status: 'in_progress' });
     expect(tasks.find((t) => t.id === 'd')).toMatchObject({ status: 'waiting' });
     unsubscribe();
