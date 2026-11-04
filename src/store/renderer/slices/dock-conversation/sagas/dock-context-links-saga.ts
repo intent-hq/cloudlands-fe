@@ -3,9 +3,9 @@ import {
   actionChannel,
   call,
   fork,
+  delay,
   put,
   take,
-  takeEvery,
   takeLatest,
   type SagaGenerator,
 } from 'typed-redux-saga';
@@ -23,18 +23,15 @@ import {
   type DockContextLinkPreferences,
   type DockLinkedContextSnapshot,
 } from '$shared/dock-context-links';
+import { dockServiceUrlMatches, type DockShortcutContext } from '$shared/dock-shortcuts';
 import type { DockServiceOwner } from '$shared/dock-shortcuts';
 import {
   getPrincipalActionContext,
   getPrincipalDraftProvenance,
+  getPrincipalConnectionContext,
 } from '../../principal/principal-context';
 import { selectPrincipalActionContext } from '../../principal/principal-selectors';
 import { selectWorkspaceListLoadedForBackend } from '../../workspace/workspace-selectors';
-import {
-  scriptSnapshotReceived,
-  updateRuntimeState,
-  removeScript,
-} from '../../scripts/scripts-slice';
 import { getLocalStorageJSON, setLocalStorageJSON } from '../../../utils/safe-local-storage-saga';
 import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
 import { selectDockShortcutWorkspaces } from '../dock-conversation-selectors';
@@ -49,22 +46,80 @@ import {
   dockContextDismissed,
   dockContextAutoDecisionRequested,
 } from '../dock-conversation-slice';
-import { findDockService, isDockServiceCurrent } from './dock-service-routing';
+import {
+  findDockService,
+  isDockServiceCurrent,
+  dockServiceContextAddress,
+} from './dock-service-routing';
 
 /** One canonical principal-scoped format, also consumed by global shortcut routing. */
-export function* readDockSavedLinks(): SagaGenerator<Record<string, string>> {
+export function* readDockSavedDestination(
+  context: DockShortcutContext,
+  workspaceIds: string[],
+): SagaGenerator<string | null> {
   const authority = getPrincipalActionContext(appStore.state),
     provenance = getPrincipalDraftProvenance(appStore.state);
-  if (!authority || !provenance) return {};
+  if (!authority || !provenance) return null;
   const value = yield* call(getLocalStorageJSON, dockContextStorageKey(provenance));
-  if (authority !== getPrincipalActionContext(appStore.state)) return {};
-  return Object.fromEntries(
-    Object.entries(parseDockContextPreferences(value).links).map(([key, row]) => [
-      key,
-      row.workspaceId,
-    ]),
+  if (authority !== getPrincipalActionContext(appStore.state)) return null;
+  const preferences = parseDockContextPreferences(value);
+  const keys = dockContextLinkKeys(
+    { self: false, url: context.url ?? null, appId: context.appId ?? null },
+    preferences,
   );
+  const key = keys.find((key) => workspaceIds.includes(preferences.links[key].workspaceId));
+  return key ? preferences.links[key].workspaceId : null;
 }
+/** Only ownership-relevant runtime fields on the admitted backend can request a refresh. */
+const selectContextServiceFingerprint = appStore.createSelector((state) => {
+  const snapshot = state.dockConversation.linkedContext;
+  const authority = getPrincipalActionContext(state);
+  if (
+    !snapshot?.url ||
+    !authority ||
+    state.dockConversation.linkedContextAuthority !== authority ||
+    !selectWorkspaceListLoadedForBackend.select(state, state.connections.windowBackendId)
+  )
+    return '';
+  const context: DockShortcutContext = {
+    id: snapshot.contextVersion,
+    backendId: state.connections.windowBackendId,
+    action: 'focus',
+    url: snapshot.url,
+    serviceAddress: state.dockConversation.linkedContextServiceAddress ?? undefined,
+  };
+  const address = dockServiceContextAddress(context);
+  if (!address) return '';
+  const entries = selectDockShortcutWorkspaces
+    .select(state)
+    .flatMap((workspace) => Object.values(state.scripts.byWorkspaceId[workspace.id]?.scripts ?? {}))
+    .filter(
+      (script) =>
+        script.mode === 'service' &&
+        !!script.runtime?.detectedUrl &&
+        dockServiceUrlMatches(address, script.runtime.detectedUrl),
+    )
+    .map((script) => {
+      const r = script.runtime;
+      return [
+        script.workspaceId,
+        script.id,
+        r?.status,
+        r?.runId,
+        r?.pid,
+        r?.startedAt,
+        r?.restartCount,
+        r?.detectedUrl,
+      ];
+    })
+    .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  return JSON.stringify([
+    snapshot.contextVersion,
+    getPrincipalConnectionContext(state),
+    address,
+    entries,
+  ]);
+});
 const selectContextWorkspaces = appStore.createSelector((state) =>
   JSON.stringify([
     selectWorkspaceListLoadedForBackend.select(state, state.connections.windowBackendId),
@@ -105,6 +160,10 @@ export function* dockContextLinksSaga(): SagaGenerator<void> {
     ],
     buffers.expanding(),
   );
+  function currentObservation(): DockForegroundObservation | null {
+    return observation;
+  }
+  let observationRoutingKey = '';
   function admitted(value: DockForegroundObservation | null) {
     return (
       value &&
@@ -127,11 +186,27 @@ export function* dockContextLinksSaga(): SagaGenerator<void> {
       return;
     observation = value;
     yield* put(dockContextObservationReceived(value));
+    const key = JSON.stringify([
+      value.contextVersion,
+      value.backendId,
+      value.url,
+      value.workspaceId,
+      value.serviceAddress,
+    ]);
+    if (key !== observationRoutingKey) {
+      observationRoutingKey = key;
+      yield* put(dockContextRefreshRequested('context'));
+    }
   }
-  function* refresh(reason: 'authority' | 'workspaces' | 'services'): SagaGenerator<void> {
+  function* refresh(
+    reason: 'authority' | 'workspaces' | 'services' | 'service-invalidated' | 'context',
+  ): SagaGenerator<void> {
     yield* put(dockContextRefreshRequested(reason));
   }
-  function* enrich(): SagaGenerator<void> {
+  function* enrich({
+    payload: [reason],
+  }: ReturnType<typeof dockContextRefreshRequested>): SagaGenerator<void> {
+    if (reason === 'service-invalidated') return;
     const value = observation,
       context = getPrincipalActionContext(appStore.state);
     if (
@@ -216,7 +291,7 @@ export function* dockContextLinksSaga(): SagaGenerator<void> {
         !!record && value.identityKind !== 'app' && value.identityKind !== 'unknown',
       error: storageError,
     };
-    yield* put(dockLinkedContextChanged(snapshot, authority));
+    yield* put(dockLinkedContextChanged(snapshot, authority, value.serviceAddress ?? null));
   }
   yield* takeEveryFromElectronChannel<DockForegroundObservation>(
     IPC_CHANNELS.DOCK_CONTEXT.CHANGED,
@@ -228,10 +303,21 @@ export function* dockContextLinksSaga(): SagaGenerator<void> {
   yield* takeLatestFromSelector(selectContextWorkspaces, function* () {
     yield* refresh('workspaces');
   });
-  yield* takeEvery([scriptSnapshotReceived, updateRuntimeState, removeScript], function* () {
+  let previousServices = '';
+  yield* takeLatestFromSelector(selectContextServiceFingerprint, function* (fingerprint: string) {
+    if (!fingerprint) {
+      previousServices = '';
+      return;
+    }
+    const parsed = JSON.parse(fingerprint) as [string, string, string, unknown[][]];
+    const previous = previousServices;
+    previousServices = fingerprint;
+    if (!previous || JSON.parse(previous)[0] !== parsed[0] || fingerprint === previous) return;
+    yield* refresh('service-invalidated');
+    yield* delay(200);
     yield* refresh('services');
   });
-  yield* takeLatest([dockContextObservationReceived, dockContextRefreshRequested], enrich);
+  yield* takeLatest(dockContextRefreshRequested, enrich);
   yield* fork(function* (): SagaGenerator<void> {
     if (typeof window === 'undefined' || !window.electronAPI) return;
     if (document.readyState !== 'complete')
@@ -266,23 +352,27 @@ export function* dockContextLinksSaga(): SagaGenerator<void> {
               )
             : { version: 1, links: {} };
       }
-      if (action.type === dockContextRefreshRequested.type && action.payload[0] === 'services')
+      const activeObservation = currentObservation();
+      if (
+        action.type === dockContextRefreshRequested.type &&
+        ['services', 'service-invalidated'].includes(String(action.payload[0]))
+      )
         owned = null;
       if (action.type === dockContextServiceReceived.type) {
         const [entry, owner, service] = (action as ReturnType<typeof dockContextServiceReceived>)
           .payload;
-        if (service && observation?.contextVersion === entry && authority === owner)
+        if (service && activeObservation?.contextVersion === entry && authority === owner)
           owned = { version: entry, authority: owner, service };
-        else if (observation?.contextVersion === entry && authority === owner) owned = null;
+        else if (activeObservation?.contextVersion === entry && authority === owner) owned = null;
       }
-      if (!admitted(observation) || !observation) {
+      if (!admitted(activeObservation) || !activeObservation) {
         yield* publish();
         continue;
       }
       const ids = selectDockShortcutWorkspaces.select(appStore.state).map((row) => String(row.id));
       const loaded = selectWorkspaceListLoadedForBackend.select(
         appStore.state,
-        observation.backendId,
+        activeObservation.backendId,
       );
       if (loaded) {
         const links = Object.fromEntries(
@@ -300,7 +390,7 @@ export function* dockContextLinksSaga(): SagaGenerator<void> {
           dockContextAutoDecisionRequested.type,
         ].includes(action.type)
       ) {
-        const value = observation,
+        const value = activeObservation,
           basedOn = action.payload[0];
         if (
           !loaded ||
@@ -317,6 +407,7 @@ export function* dockContextLinksSaga(): SagaGenerator<void> {
           action.type === dockContextLinkRequested.type ||
           action.type === dockContextUnlinkRequested.type
         ) {
+          if (action.type === dockContextUnlinkRequested.type && !keys.length) continue;
           const links = { ...preferences.links };
           for (const key of keys) delete links[key];
           if (action.type === dockContextLinkRequested.type) {

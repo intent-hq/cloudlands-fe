@@ -31,7 +31,7 @@ export function createDockContextFeed<Scope extends object>(deps: {
     const next: DockForegroundObservation = {
       ...value,
       sequence,
-      contextVersion: entry ? current.contextVersion : deps.version(),
+      contextVersion: entry && current ? current.contextVersion : deps.version(),
     };
     if (JSON.stringify(current) !== JSON.stringify(next)) {
       next.sequence = ++sequence;

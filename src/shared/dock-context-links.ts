@@ -69,7 +69,7 @@ export function contextAsShortcut(value: DockForegroundObservation): DockShortcu
 function browserApp(appId: string | null): boolean {
   return (
     !!appId &&
-    /(?:^|\.)(?:safari|chrome|chromium|firefox|brave|arc|edge|edgemac|opera|vivaldi|browser)(?:\.|$)/i.test(
+    /(?:^|\.)(?:safari(?:technologypreview)?|chrome|chromium|firefox(?:developeredition|nightly)?|brave|arc|dia|edge|edgemac|opera|vivaldi|browser)(?:\.|$)/i.test(
       appId,
     )
   );
@@ -134,11 +134,17 @@ export function parseDockContextPreferences(value: unknown): DockContextLinkPref
 }
 /** Match origins and complete path segments; a project never owns a similarly named sibling. */
 export function dockContextLinkKeys(
-  value: DockForegroundObservation,
+  value: Pick<DockForegroundObservation, 'self' | 'url' | 'appId'>,
   preferences: DockContextLinkPreferences,
 ): string[] {
   if (value.self) return [];
-  const context = contextAsShortcut(value);
+  const context: DockShortcutContext = {
+    id: 'context-link',
+    backendId: '',
+    action: 'focus',
+    ...(value.appId ? { appId: value.appId } : {}),
+    ...(value.url ? { url: value.url } : {}),
+  };
   const exact = dockLinkKey(context, 'url');
   const keys = Object.keys(preferences.links).filter((key) => {
     if (!safeSavedKey(key)) return false;

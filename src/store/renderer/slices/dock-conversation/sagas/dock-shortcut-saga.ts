@@ -1,4 +1,4 @@
-import { readDockSavedLinks } from './dock-context-links-saga';
+import { readDockSavedDestination } from './dock-context-links-saga';
 import { hudDeactivated, dockPlacementCommandRequested } from '../../hud/hud-slice';
 import { selectPrincipalActionContext } from '../../principal/principal-selectors';
 import { takeLatestFromSelector } from '@themislib/themis/saga';
@@ -77,7 +77,6 @@ function* receive(context?: DockShortcutContext): SagaGenerator<void> {
       return;
     }
   }
-  const links = yield* call(readDockSavedLinks);
   const ids = selectDockShortcutWorkspaces.select(appStore.state).map((row) => String(row.id));
   const selection = appStore.state.dockConversation.shortcutSelection;
   const selectionValid =
@@ -92,10 +91,10 @@ function* receive(context?: DockShortcutContext): SagaGenerator<void> {
     !(context.appId && selection.appId && context.appId !== selection.appId) &&
     !(context.url && selection.url && context.url !== selection.url);
   const retained = sameContext ? (selection?.workspaceId ?? null) : null;
-  const resolved = resolveDockDestination(context, ids, links);
+  const resolved = resolveDockDestination(context, ids, {});
   const owned =
     context.workspaceId && ids.includes(context.workspaceId) ? context.workspaceId : null;
-  const explicit = resolveDockDestination({ ...context, workspaceId: undefined }, ids, links);
+  const explicit = yield* call(readDockSavedDestination, context, ids);
   const destination =
     explicit ?? owned ?? (context.url && retained ? null : (retained ?? resolved));
   yield* put(

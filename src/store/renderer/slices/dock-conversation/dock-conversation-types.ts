@@ -78,6 +78,7 @@ export interface DockConversationDraft {
   };
 }
 export interface DockConversationState {
+  linkedContextServiceAddress?: string | null;
   linkedContextAuthority?: string | null;
   linkedContext?: import('$shared/dock-context-links').DockLinkedContextSnapshot | null;
   shortcutSelection?: import('$shared/dock-shortcuts').DockShortcutSelection | null;

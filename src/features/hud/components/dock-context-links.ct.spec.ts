@@ -58,6 +58,31 @@ test('one shared context API owns links, policy, stale actions and principal iso
       { kind, workspaceId, version },
     );
   const receipts: unknown[] = [];
+  // UI and shortcut consumers must choose the same saved override at a prefix root without slash.
+  await emit('https://shared.example/project/page');
+  await action('link', 'choice-0');
+  await expect.poll(() => read().then((row) => row?.linkedWorkspaceId)).toBe('choice-0');
+  await emit('https://shared.example/project', { workspaceId: 'choice-1' });
+  await expect.poll(() => read().then((row) => row?.linkedWorkspaceId)).toBe('choice-0');
+  await page.evaluate(() => {
+    const h = (window as any).__dockComposerE2E;
+    h.shortcut({
+      id: 'shared-prefix-shortcut',
+      backendId: h.store.state.connections.windowBackendId,
+      action: 'focus',
+      appId: 'company.thebrowser.dia',
+      url: 'https://shared.example/project',
+      workspaceId: 'choice-1',
+    });
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as any).__dockComposerE2E.store.state.dockConversation.shortcut?.destination,
+      ),
+    )
+    .toBe('choice-0');
+  receipts.push({ sharedPrefix: await read(), hotkeyDestination: 'choice-0' });
   await emit('https://github.com/example/linked/issues/1');
   await expect.poll(() => read().then((row) => row?.linkable)).toBe(true);
   await action('link', 'choice-0');
@@ -90,10 +115,22 @@ test('one shared context API owns links, policy, stale actions and principal iso
   // Same-prefix sibling paths and unlinked browser documents cannot inherit an app association.
   await emit('https://github.com/example/linked-extra/issues/1');
   await expect.poll(() => read().then((row) => row?.linkedWorkspaceId)).toBeNull();
-  await emit(null);
-  await expect.poll(() => read().then((row) => row?.linkable)).toBe(false);
-  await emit('http://127.0.0.1:5173/project/');
-  await expect.poll(() => read().then((row) => row?.linkable)).toBe(false);
+  for (const appId of [
+    'com.apple.Safari',
+    'company.thebrowser.dia',
+    'com.apple.SafariTechnologyPreview',
+  ]) {
+    await emit(null, { appId, identityKey: `app:${appId}` });
+    await expect.poll(() => read().then((row) => row?.linkable)).toBe(false);
+    receipts.push({ unavailableBrowser: await read() });
+  }
+  await emit('http://127.0.0.1:5173/project/', { workspaceId: 'choice-1' });
+  await expect
+    .poll(() => read().then((row) => [row?.linkedWorkspaceId, row?.linkKey, row?.linkable]))
+    .toEqual(['choice-1', null, false]);
+  await action('unlink');
+  await expect.poll(() => read().then((row) => row?.linkedWorkspaceId)).toBe('choice-1');
+  receipts.push({ readOnlyInference: await read() });
   await emit('https://github.com/example/linked/issues/1');
   await expect.poll(() => read().then((row) => row?.linkedWorkspaceId)).toBe('choice-1');
   await page.evaluate(() =>
@@ -134,6 +171,104 @@ test('one shared context API owns links, policy, stale actions and principal iso
           'Production Redux/selectors/saga/storage and real dock shell. Foreground, daemon and native actions are synthetic boundaries; no OS input or user data.',
         receipts,
         final,
+      },
+      null,
+      2,
+    ),
+  );
+});
+
+test('service ownership refresh ignores noise and invalidates an exited run', async ({
+  mount,
+  page,
+}, info) => {
+  await mount(Harness);
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as any).__dockComposerE2E?.store.state.dockConversation.loading),
+    )
+    .toBe(false);
+  const runtime = {
+    runId: 'context-run',
+    status: 'running',
+    pid: 1234,
+    startedAt: '2026-11-04T00:00:00Z',
+    restartCount: 0,
+    detectedUrl: 'http://localhost:5173/project/',
+  };
+  const script = {
+    id: 'context-service',
+    workspaceId: 'choice-0',
+    name: 'Synthetic context service',
+    mode: 'service',
+    purpose: 'saved',
+    source: 'manual',
+    createdAt: '2026-11-04T00:00:00Z',
+    commandPreview: 'synthetic',
+    commandTruncated: false,
+    runtime,
+  };
+  await page.evaluate(
+    ({ script }) => {
+      const h = (window as any).__dockComposerE2E;
+      h.seedChoices(2);
+      h.contextReady();
+      h.fixture.setServices([script]);
+      h.context({
+        sequence: 1,
+        contextVersion: 'service-entry',
+        backendId: h.store.state.connections.windowBackendId,
+        identityKey: 'url:synthetic-service',
+        identityKind: 'url',
+        self: false,
+        appId: 'company.thebrowser.dia',
+        appName: 'Synthetic Dia',
+        url: 'http://127.0.0.1:61999/project/page',
+        serviceAddress: 'http://localhost:5173/project/page',
+        icon: null,
+      });
+    },
+    { script },
+  );
+  const snapshot = () => page.evaluate(() => (window as any).__dockComposerE2E.contextSnapshot());
+  await expect.poll(() => snapshot().then((row) => row?.linkedWorkspaceId)).toBe('choice-0');
+  const count = () =>
+    page.evaluate(
+      () =>
+        (window as any).__dockComposerE2E.calls.filter((call: any) => call.method === 'script.list')
+          .length,
+    );
+  const before = await count();
+  await page.evaluate(() => {
+    const h = (window as any).__dockComposerE2E;
+    h.contextRuntimeNoise('choice-0', 'context-service');
+    h.contextRuntimeNoise('foreign-workspace', 'foreign-service');
+    h.contextAction('dismiss');
+  });
+  await expect.poll(() => snapshot().then((row) => row?.dismissed)).toBe(true);
+  expect(await count()).toBe(before);
+  await page.evaluate(
+    ({ script }) => {
+      const h = (window as any).__dockComposerE2E;
+      const stopped = { ...script.runtime, status: 'exited', exitCode: 0 };
+      h.fixture.setServices([{ ...script, runtime: stopped }]);
+      h.contextRuntime(script.workspaceId, script.id, stopped);
+    },
+    { script },
+  );
+  await expect.poll(() => snapshot().then((row) => row?.linkedWorkspaceId)).toBeNull();
+  await expect.poll(count).toBeGreaterThan(before);
+  const after = await count();
+  expect(after - before).toBeLessThanOrEqual(3);
+  await writeFile(
+    info.outputPath('bounded-service-refresh.json'),
+    JSON.stringify(
+      {
+        boundary:
+          'Production context saga, scripts state and run recheck; synthetic daemon/service observations, no actual service or capture.',
+        before,
+        after,
+        snapshot: await snapshot(),
       },
       null,
       2,

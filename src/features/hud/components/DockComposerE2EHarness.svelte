@@ -13,7 +13,13 @@
   } from '$store/renderer/slices/dock-conversation/dock-conversation-slice';
   import { selectDockLinkedContext } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
   import { getPrincipalActionContext } from '$store/renderer/slices/principal/principal-context';
-  import { principalReceived } from '$store/renderer/slices/principal/principal-slice';
+  import { updateRuntimeState } from '$store/renderer/slices/scripts/scripts-slice';
+  import { daemonEventsSubscribed } from '$store/renderer/slices/workspace-events/workspace-events-slice';
+  import { getPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-context';
+  import {
+    principalContextChanged,
+    principalReceived,
+  } from '$store/renderer/slices/principal/principal-slice';
   import { setWorkspaceHasLoaded } from '$store/renderer/slices/workspace/workspace-slice';
   import { dockShortcutChanged } from '$store/renderer/slices/dock-conversation/dock-conversation-slice';
   import { selectDockConversationWorkspaceId } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
@@ -119,6 +125,22 @@
         fixture.emit(IPC_CHANNELS.DOCK_CONTEXT.CHANGED, value);
       },
       contextSnapshot: () => selectDockLinkedContext.select(store.state),
+      contextRuntimeNoise(workspaceId: string, scriptId: string) {
+        for (let index = 0; index < 100; index++)
+          store.dispatch(
+            updateRuntimeState(workspaceId, scriptId, {
+              error: `synthetic-noise-${index}`,
+              previouslyRunning: index % 2 === 0,
+            }),
+          );
+      },
+      contextRuntime(
+        workspaceId: string,
+        scriptId: string,
+        partial: import('$features/scripts/types').ScriptRuntimeState,
+      ) {
+        store.dispatch(updateRuntimeState(workspaceId, scriptId, partial));
+      },
       contextReady() {
         store.dispatch(
           setWorkspaceHasLoaded(
@@ -129,16 +151,21 @@
         );
       },
       contextPrincipal(id: string) {
+        const previous = store.state.principal;
+        if (!previous.snapshot) return;
+        store.dispatch(daemonEventsSubscribed());
+        const context = getPrincipalConnectionContext(store.state);
+        store.dispatch(principalContextChanged(context));
         const current = store.state.principal;
-        if (!current.context || !current.snapshot) return;
+        if (!context) return;
         store.dispatch(
           principalReceived(
             {
-              context: current.context,
+              context,
               invalidation: current.invalidation,
               presentationVersion: current.presentationVersion,
             },
-            { ...current.snapshot, principal: { ...current.snapshot.principal, id } },
+            { ...previous.snapshot, principal: { ...previous.snapshot.principal, id } },
           ),
         );
         store.dispatch(

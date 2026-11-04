@@ -48,7 +48,7 @@ export async function readDockForegroundObservation(
     identityKey: tabId
       ? `tab:${tabId}`
       : url
-        ? `url:${url}`
+        ? `url:${JSON.stringify([sample.appId ?? null, url])}`
         : sample.appId
           ? `app:${sample.appId}`
           : 'unknown',

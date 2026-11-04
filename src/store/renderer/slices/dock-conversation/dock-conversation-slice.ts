@@ -59,13 +59,14 @@ export const dockLinkedContextChanged = createAction<
   [
     snapshot: import('$shared/dock-context-links').DockLinkedContextSnapshot | null,
     authority: string | null,
+    serviceAddress?: string | null,
   ]
 >('dockConversation/linkedContextChanged');
 export const dockContextObservationReceived = createAction<
   [observation: import('$shared/dock-context-links').DockForegroundObservation]
 >('dockConversation/contextObservationReceived');
 export const dockContextRefreshRequested = createAction<
-  [reason: 'authority' | 'workspaces' | 'services']
+  [reason: 'authority' | 'workspaces' | 'services' | 'service-invalidated' | 'context']
 >('dockConversation/contextRefreshRequested');
 export const dockContextServiceReceived = createAction<
   [
@@ -987,9 +988,13 @@ dockConversationReducer.with(
 
 dockConversationReducer.with(
   dockLinkedContextChanged,
-  (state, { payload: [linkedContext, linkedContextAuthority] }) => ({
+  (
+    state,
+    { payload: [linkedContext, linkedContextAuthority, linkedContextServiceAddress = null] },
+  ) => ({
     ...state,
     linkedContext,
     linkedContextAuthority,
+    linkedContextServiceAddress,
   }),
 );
