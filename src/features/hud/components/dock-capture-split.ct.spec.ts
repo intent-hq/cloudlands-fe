@@ -159,3 +159,70 @@ test('touch picker stays discoverable and permission and disabled states preserv
     contentType: 'image/png',
   });
 });
+
+test('capture spacing keeps separate hit regions and keyboard access', async ({
+  mount,
+  page,
+}, info) => {
+  await page.setViewportSize({ width: 452, height: 680 });
+  const component = await mount(ComposerE2EHarness);
+  const primary = component.locator('.capture-button');
+  const picker = component.getByRole('button', { name: 'Screenshot options', exact: true });
+  const record = component.locator('.recording-button');
+  const mic = component.locator('.mic-button');
+  const menu = page.getByRole('menu', { name: 'Screenshot options' });
+  await expect(primary).toBeEnabled();
+  await page.mouse.move(2, 2);
+  await info.attach('capture-spacing-idle', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await primary.hover();
+  await expect(picker).toHaveCSS('opacity', '1');
+  await info.attach('capture-spacing-hover', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  const geometry = [];
+  for (const control of [primary, picker, record, mic]) {
+    const box = await control.boundingBox();
+    if (!box) throw new Error('Missing capture control');
+    geometry.push(box);
+    // Each actual hit region must route to its own control, including the narrow picker.
+    expect(
+      await control.evaluate(
+        (element, point) => element.contains(document.elementFromPoint(point.x, point.y)),
+        {
+          x: box.x + box.width / 2,
+          y: box.y + box.height / 2,
+        },
+      ),
+    ).toBe(true);
+  }
+  // Adjacent controls cannot claim any part of each other's hit regions.
+  expect(geometry[0].x + geometry[0].width).toBeLessThanOrEqual(geometry[1].x);
+  expect(geometry[1].x + geometry[1].width).toBeLessThanOrEqual(geometry[2].x);
+  expect(geometry[2].x + geometry[2].width).toBeLessThanOrEqual(geometry[3].x);
+  // Measurements are review evidence, not ornamental dimension assertions.
+  await info.attach('capture-spacing-geometry', {
+    body: JSON.stringify(geometry, null, 2),
+    contentType: 'application/json',
+  });
+  await picker.click();
+  await expect(menu).toBeVisible();
+  await info.attach('capture-spacing-menu', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await expectDismissibleLayerArmed(menu);
+  await picker.click();
+  await expect(menu).toBeHidden();
+  await primary.focus();
+  await page.keyboard.press('Tab');
+  await expect(picker).toBeFocused();
+  await picker.press('Space');
+  await expect(menu.getByRole('menuitemradio', { name: 'Full screen', exact: true })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(picker).toBeFocused();
+  expect(await page.evaluate(nativeModes)).toEqual([]);
+});

@@ -214,10 +214,17 @@
     white-space: nowrap;
   }
   .controls {
+    --capture-picker-width: 12px;
     display: flex;
     flex: none;
     align-items: center;
-    gap: 2px;
+    /* Equal icon centers: the capture picker fits inside this same gap. */
+    gap: calc(var(--capture-picker-width) + 2px);
+  }
+  @media (hover: none), (pointer: coarse) {
+    .controls {
+      --capture-picker-width: 24px;
+    }
   }
   .send {
     display: flex;

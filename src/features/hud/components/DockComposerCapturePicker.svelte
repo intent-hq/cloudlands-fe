@@ -159,10 +159,15 @@
     flex: none;
     align-items: center;
   }
+  /* The picker occupies the shared inter-control gap, rather than adding a
+     second gap after capture. Its hit region stays separate from both buttons. */
+  .capture-split:has(:global(.capture-picker)) {
+    margin-inline-end: calc(-1 * var(--capture-picker-width, 12px));
+  }
   .capture-split :global(.capture-picker) {
     position: relative;
-    width: 24px;
-    min-width: 24px;
+    width: var(--capture-picker-width, 12px);
+    min-width: var(--capture-picker-width, 12px);
     height: 30px;
     padding: 0;
     border-radius: 8px;
