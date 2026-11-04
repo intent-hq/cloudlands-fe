@@ -1424,6 +1424,29 @@ describe('DevicesSettings', () => {
       expect(within(providers).queryByText('Claude Code')).toBeNull();
     });
 
+    it('keeps arrow-key focus inside the machine row when a provider icon is focused', async () => {
+      mocks.connections = [local, intent1, remote];
+      render(DevicesSettings);
+
+      const article = screen.getByRole('article', { name: 'intent1' });
+      const providers = within(article).getByRole('list', {
+        name: m.settings_devices_providers_ariaLabel(),
+      });
+      const item = within(providers).getAllByRole('listitem')[0]!;
+      const focusTarget =
+        item.querySelector<HTMLElement>('[tabindex="0"]') ?? (item as HTMLElement);
+      focusTarget.focus();
+      await fireEvent.keyDown(focusTarget, { key: 'ArrowDown' });
+      await fireEvent.keyDown(focusTarget, { key: 'End' });
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+      await waitFor(() => expect(article.contains(document.activeElement)).toBe(true));
+      expect(
+        within(providers)
+          .getAllByRole('listitem')
+          .filter((entry) => entry.getAttribute('tabindex') === '0'),
+      ).toHaveLength(0);
+    });
+
     it('shows no platform or providers for an offline machine', () => {
       mocks.connections = [local, { ...remote, status: 'disconnected' }];
       render(DevicesSettings);
