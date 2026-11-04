@@ -214,6 +214,16 @@ test('b', async () => {
   await row.getByRole('button', { name: 'Copy' }).click();`),
     },
     {
+      name: 'a pointer move inside a test.step forgets the outer hover',
+      filename,
+      code: inTest(`
+  await row.hover();
+  await test.step('move away', async () => {
+    await page.mouse.move(0, 0);
+  });
+  await row.getByRole('button', { name: 'Copy' }).click();`),
+    },
+    {
       name: 'files other than component specs',
       filename: path.resolve('src/test/ct-hover-action.ts'),
       code: inTest(`
@@ -248,6 +258,18 @@ test('b', async () => {
   await row.hover();
   await row.getByRole('button', { name: 'Copy' }).click();`),
       errors: [error(5)],
+    },
+    {
+      name: 'a pointer move inside a function that is only defined keeps the outer hover',
+      filename,
+      code: inTest(`
+  await row.hover();
+  const unused = async () => {
+    await page.mouse.move(0, 0);
+    await other.hover();
+  };
+  await row.getByRole('button', { name: 'Copy' }).click();`),
+      errors: [error(9)],
     },
     {
       name: 'a hover inside a test.step carries out to the enclosing test',

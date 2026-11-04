@@ -32,8 +32,9 @@ import { suppressedLines } from './lib/disable-directives.js';
  * clears it.
  * Clicking the hovered element itself is not flagged, nor is a double-click: tests
  * double-click message text to edit it, and text is never hover-only. A selector hover
- * (`page.hover('.row')`) only forgets earlier hovers, and a hover inside a local helper
- * function is not followed to the helper's call sites.
+ * (`page.hover('.row')`) only forgets earlier hovers. Pointer actions inside a local
+ * function do not reach past it (it may never run, and is not followed to its call
+ * sites); only a `test.step(...)` callback, which runs in place, carries them out.
  *
  * Ratchet: the `baseline` option maps each spec that already had such clicks to its
  * count; the first `count` in source order are tolerated and every further one is
@@ -212,11 +213,23 @@ export default {
       context.report({ node: reportNode, messageId: 'hoverThenClick' });
     };
 
-    const enter = () => frames.push({ aliases: new Map(), hovered: new Set() });
-    // A `test.step` callback runs in place, so the pointer is still where it left it.
+    // Traversal visits every function body, called or not, so pointer effects inside one
+    // are undone on exit; only a `test.step` callback runs in place and keeps them.
+    const enter = () =>
+      frames.push({
+        aliases: new Map(),
+        hovered: new Set(),
+        outer: frames.map((frame) => new Set(frame.hovered)),
+      });
     const exit = (node) => {
       const frame = frames.pop();
-      if (isStepCallback(node) && frame.hovered.size > 0) current().hovered = frame.hovered;
+      if (!isStepCallback(node)) {
+        frames.forEach((outer, index) => {
+          outer.hovered = frame.outer[index];
+        });
+      } else if (frame.hovered.size > 0) {
+        current().hovered = frame.hovered;
+      }
     };
     const handlers = {
       VariableDeclarator(node) {
