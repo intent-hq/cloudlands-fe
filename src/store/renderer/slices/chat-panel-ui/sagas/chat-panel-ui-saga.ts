@@ -53,18 +53,26 @@ function* indexCanContinue(action: IndexAction): SagaGenerator<boolean> {
   return true;
 }
 
+/** Inherited main bounds: fail rather than publish an incomplete index at exhaustion. */
+const INDEX_PAGE_LIMIT = 500;
+const INDEX_MAX_PAGES = 1_000;
+
 function* loadUserMessageIndex(client: Client, action: IndexAction): SagaGenerator<void> {
   const [workspaceId, consumerId, requestId, agentId] = action.payload;
   const itemsById = new Map<string, UserMessageIndexItem>();
   const pages: UserMessageIndexItem[][] = [];
   const seenTokens = new Set<string>();
-  let page: UserMessageIndexPageOptions | undefined;
+  let page: UserMessageIndexPageOptions = { limit: INDEX_PAGE_LIMIT };
   try {
-    while (true) {
+    for (let pageNumber = 0; pageNumber < INDEX_MAX_PAGES; pageNumber++) {
       if (!(yield* indexCanContinue(action))) return;
-      const result = page
-        ? yield* call([client, client.listUserMessages], agentId, undefined, workspaceId, page)
-        : yield* call([client, client.listUserMessages], agentId, undefined, workspaceId);
+      const result = yield* call(
+        [client, client.listUserMessages],
+        agentId,
+        undefined,
+        workspaceId,
+        page,
+      );
       if (!(yield* indexCanContinue(action))) return;
       if (!result.ok) {
         yield* put(
@@ -72,7 +80,7 @@ function* loadUserMessageIndex(client: Client, action: IndexAction): SagaGenerat
             workspaceId,
             consumerId,
             requestId,
-            !page && result.unsupported ? 'succeeded' : 'failed',
+            pageNumber === 0 && result.unsupported ? 'succeeded' : 'failed',
             result,
             result.error,
           ),
@@ -100,6 +108,7 @@ function* loadUserMessageIndex(client: Client, action: IndexAction): SagaGenerat
             ok: true,
             items,
             total: items.length,
+            nextToken: null,
           }),
         );
         return;
@@ -108,8 +117,9 @@ function* loadUserMessageIndex(client: Client, action: IndexAction): SagaGenerat
         throw new Error('User-message index paging made no progress');
       }
       seenTokens.add(nextToken);
-      page = { nextToken };
+      page = { limit: INDEX_PAGE_LIMIT, nextToken };
     }
+    throw new Error('User-message index page limit exceeded');
   } catch (error) {
     if (yield* indexCanContinue(action))
       yield* put(

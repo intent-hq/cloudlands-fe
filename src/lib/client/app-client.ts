@@ -328,10 +328,10 @@ export type UserMessageIndexResult =
       items: UserMessageIndexItem[];
       total: number;
       /**
-       * Paged reads only (`limit` / `nextToken` supplied): the opaque cursor
-       * for the next older page, `null` once none remain. Absent on unpaged
-       * reads and from daemons that predate paging (which ignore `limit`
-       * and return the whole index), so absent means "complete".
+       * The opaque cursor for the next older page, `null` once none remain.
+       * Current daemons page every read; absent only from daemons that
+       * predate default paging (which return the whole index unless `limit`
+       * or `nextToken` is sent), so absent means "complete".
        */
       nextToken?: string | null;
     }

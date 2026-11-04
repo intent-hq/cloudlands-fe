@@ -93,12 +93,57 @@ describe('chatPanelUiSaga', () => {
     h.dispatch(userMessageIndexRequested(WS, PANEL, 'request-1', AGENT, 0));
     await settle();
 
-    expect(h.client.listUserMessages).toHaveBeenCalledWith(AGENT, undefined, WS);
+    expect(h.client.listUserMessages).toHaveBeenCalledWith(AGENT, undefined, WS, { limit: 500 });
     expect(h.index()).toMatchObject({
       requestId: 'request-1',
       status: 'succeeded',
       result: { ok: true, total: 1 },
     });
+  });
+
+  it('walks every index page and assembles the history oldest first', async () => {
+    const h = harness();
+    tasks.push(h.task);
+    const item = (id: string) => ({ id, preview: id, createdAt: '2026-01-01T00:00:00.000Z' });
+    h.client.listUserMessages
+      .mockResolvedValueOnce({
+        ok: true,
+        items: [item('m3'), item('m4')],
+        total: 2,
+        nextToken: 't1',
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        items: [item('m1'), item('m2')],
+        total: 2,
+        nextToken: 't2',
+      })
+      .mockResolvedValueOnce({ ok: true, items: [item('m0')], total: 1, nextToken: null });
+
+    h.dispatch(userMessageIndexRequested(WS, PANEL, 'request-1', AGENT, 0));
+    await settle();
+
+    expect(h.client.listUserMessages.mock.calls).toEqual([
+      [AGENT, undefined, WS, { limit: 500 }],
+      [AGENT, undefined, WS, { limit: 500, nextToken: 't1' }],
+      [AGENT, undefined, WS, { limit: 500, nextToken: 't2' }],
+    ]);
+    const result = h.index()?.result;
+    expect(result).toMatchObject({ ok: true, total: 5, nextToken: null });
+    expect(result?.ok && result.items.map(({ id }) => id)).toEqual(['m0', 'm1', 'm2', 'm3', 'm4']);
+  });
+
+  it('reports a failed later page instead of a partial history', async () => {
+    const h = harness();
+    tasks.push(h.task);
+    h.client.listUserMessages
+      .mockResolvedValueOnce({ ok: true, items: [], total: 0, nextToken: 't1' })
+      .mockResolvedValueOnce({ ok: false, unsupported: false, error: 'boom' });
+
+    h.dispatch(userMessageIndexRequested(WS, PANEL, 'request-1', AGENT, 0));
+    await settle();
+
+    expect(h.index()).toMatchObject({ requestId: 'request-1', status: 'failed', error: 'boom' });
   });
 
   it('ignores a superseded response and retains the newest correlated result', async () => {
@@ -186,9 +231,9 @@ describe('chatPanelUiSaga', () => {
       await vi.waitFor(() => expect(h.client.listUserMessages).toHaveBeenCalledTimes(3));
       expect(h.index()?.status).toBe('pending');
       expect(h.client.listUserMessages.mock.calls).toEqual([
-        [AGENT, undefined, WS],
-        [AGENT, undefined, WS, { nextToken: 'older-1' }],
-        [AGENT, undefined, WS, { nextToken: 'older-2' }],
+        [AGENT, undefined, WS, { limit: 500 }],
+        [AGENT, undefined, WS, { limit: 500, nextToken: 'older-1' }],
+        [AGENT, undefined, WS, { limit: 500, nextToken: 'older-2' }],
       ]);
       last.resolve({ ok: true, items: pages[2], total: pages[2].length, nextToken: null });
       await settle();
@@ -227,6 +272,7 @@ describe('chatPanelUiSaga', () => {
     await vi.waitFor(() => expect(h.index()?.status).toBe('succeeded'));
     expect(h.index()?.result).toEqual({
       ok: true,
+      nextToken: null,
       total: 4,
       items: [indexItem(1), indexItem(2), updated, indexItem(4)],
     });
@@ -277,7 +323,12 @@ describe('chatPanelUiSaga', () => {
         expect(completions).toHaveLength(completionsBeforeLatePage + 1);
       } else expect(completions).toHaveLength(completionsBeforeLatePage);
       if (boundary === 'superseded' || boundary === 'agent changed')
-        expect(h.index()?.result).toEqual({ ok: true, items: [indexItem(9)], total: 1 });
+        expect(h.index()?.result).toEqual({
+          ok: true,
+          items: [indexItem(9)],
+          total: 1,
+          nextToken: null,
+        });
       if (boundary === 'consumer released' || boundary === 'workspace removed')
         expect(h.index()).toBeUndefined();
     });
@@ -324,7 +375,7 @@ describe('chatPanelUiSaga', () => {
         });
       h.dispatch(userMessageIndexRequested(WS, PANEL, 'refresh', AGENT, 0));
       await vi.waitFor(() => expect(h.index()?.status).toBe('failed'));
-      expect(h.index()?.result).toEqual(prior);
+      expect(h.index()?.result).toEqual({ ...prior, nextToken: null });
       expect(h.index()?.error).toEqual(expect.any(String));
       expect(h.client.listUserMessages).toHaveBeenCalledTimes(failure === 'cursor cycle' ? 4 : 3);
       expect(h.actions).not.toContainEqual(
@@ -351,11 +402,11 @@ describe('chatPanelUiSaga', () => {
     await vi.waitFor(() => expect(h.client.listUserMessages).toHaveBeenCalledTimes(5));
     expect(h.index()?.status).toBe('pending');
     expect(h.client.listUserMessages.mock.calls).toEqual([
-      [AGENT, undefined, WS],
-      [AGENT, undefined, WS, { nextToken: 'first' }],
-      [AGENT, undefined, WS, { nextToken: 'middle' }],
-      [AGENT, undefined, WS, { nextToken: 'duplicate' }],
-      [AGENT, undefined, WS, { nextToken: 'last' }],
+      [AGENT, undefined, WS, { limit: 500 }],
+      [AGENT, undefined, WS, { limit: 500, nextToken: 'first' }],
+      [AGENT, undefined, WS, { limit: 500, nextToken: 'middle' }],
+      [AGENT, undefined, WS, { limit: 500, nextToken: 'duplicate' }],
+      [AGENT, undefined, WS, { limit: 500, nextToken: 'last' }],
     ]);
     finalPage.resolve({ ok: true, items: [indexItem(1), indexItem(2)], total: 2, nextToken: null });
     await settle();
@@ -372,6 +423,47 @@ describe('chatPanelUiSaga', () => {
     ).toHaveLength(1);
   });
 
+  for (const boundary of ['complete', 'more pages'] as const) {
+    it(`handles the inherited 1000-page boundary with ${boundary} without truncated success`, async () => {
+      const h = harness();
+      tasks.push(h.task);
+      const prior = { ok: true as const, items: [indexItem(8)], total: 1 };
+      h.client.listUserMessages.mockResolvedValueOnce(prior);
+      h.dispatch(userMessageIndexRequested(WS, PANEL, 'prior', AGENT, 0));
+      await settle();
+      let pagesRead = 0;
+      h.client.listUserMessages.mockImplementation(async () => {
+        pagesRead += 1;
+        return boundary === 'complete' && pagesRead === 1000
+          ? { ok: true, items: [indexItem(1)], total: 1, nextToken: null }
+          : { ok: true, items: [], total: 0, nextToken: `advancing-${pagesRead}` };
+      });
+      h.dispatch(userMessageIndexRequested(WS, PANEL, 'boundary', AGENT, 0));
+      await vi.waitFor(() =>
+        expect(h.index()?.status).toBe(boundary === 'complete' ? 'succeeded' : 'failed'),
+      );
+      expect(pagesRead).toBe(1000);
+      expect(h.client.listUserMessages).toHaveBeenCalledTimes(1001);
+      expect(h.client.listUserMessages).toHaveBeenLastCalledWith(AGENT, undefined, WS, {
+        limit: 500,
+        nextToken: 'advancing-999',
+      });
+      expect(h.index()?.result).toEqual(
+        boundary === 'complete'
+          ? { ok: true, items: [indexItem(1)], total: 1, nextToken: null }
+          : { ...prior, nextToken: null },
+      );
+      const finishes = h.actions.filter(
+        (action) =>
+          action.type === userMessageIndexFinished.type &&
+          Array.isArray(action.payload) &&
+          action.payload[2] === 'boundary',
+      );
+      expect(finishes).toHaveLength(1);
+      if (boundary === 'more pages') expect(h.index()?.error).toEqual(expect.any(String));
+    });
+  }
+
   it('retains the unsupported-daemon fallback on an initial no-token request', async () => {
     const h = harness();
     tasks.push(h.task);
@@ -382,7 +474,7 @@ describe('chatPanelUiSaga', () => {
     });
     h.dispatch(userMessageIndexRequested(WS, PANEL, 'legacy', AGENT, 0));
     await settle();
-    expect(h.client.listUserMessages.mock.calls).toEqual([[AGENT, undefined, WS]]);
+    expect(h.client.listUserMessages.mock.calls).toEqual([[AGENT, undefined, WS, { limit: 500 }]]);
     expect(h.index()).toMatchObject({ status: 'succeeded', unsupported: true });
   });
 
