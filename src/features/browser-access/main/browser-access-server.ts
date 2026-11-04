@@ -440,9 +440,10 @@ export function createBrowserAccessServer(deps: BrowserAccessServerDeps): Browse
     const text = deps.loginText();
     if (!limiter.allow()) return { error: text.tooManyAttempts, status: 429 };
     const accessKey = deps.getAccessKey();
-    const code = allowCode && deps.consumeSignInCode ? normalizeSignInCode(candidate) : null;
-    if (code) {
-      const result = await deps.consumeSignInCode!(code);
+    const consume = allowCode ? deps.consumeSignInCode : undefined;
+    const code = consume ? normalizeSignInCode(candidate) : null;
+    if (consume && code) {
+      const result = await consume(code);
       if (result !== 'ok') {
         limiter.recordFailure();
         log.warn('[BrowserAccess] rejected a sign-in code');
