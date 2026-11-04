@@ -1,15 +1,32 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 
-const mocks = vi.hoisted(() => ({
-  get: vi.fn(),
-  getConversation: vi.fn(),
-  getMessageBlock: vi.fn(),
-  getMessageBlockPage: vi.fn(),
-  messageBlockPages: false,
-  transport: {} as object,
-  invoke: vi.fn(() => Promise.resolve()),
-}));
+const mocks = vi.hoisted(() => {
+  const createTransport = () => {
+    const reconnectHandlers = new Set<() => void>();
+    return {
+      onReconnected(handler: () => void): () => void {
+        reconnectHandlers.add(handler);
+        return () => {
+          reconnectHandlers.delete(handler);
+        };
+      },
+      reconnect() {
+        for (const handler of [...reconnectHandlers]) handler();
+      },
+    };
+  };
+  return {
+    get: vi.fn(),
+    getConversation: vi.fn(),
+    getMessageBlock: vi.fn(),
+    getMessageBlockPage: vi.fn(),
+    messageBlockPages: false,
+    createTransport,
+    transport: createTransport(),
+    invoke: vi.fn(() => Promise.resolve()),
+  };
+});
 vi.mock('$store/renderer/slices/principal/principal-selectors', () => ({
   selectMessageBlockPagesSupported: {
     // eslint-disable-next-line require-yield -- selector effect stand-in
@@ -151,7 +168,7 @@ function harness() {
     },
     dispatch,
   });
-  mocks.transport = {};
+  mocks.transport = mocks.createTransport();
   const task = runSaga({ channel, dispatch, getState }, chatReadSaga);
   return {
     channel,
@@ -160,9 +177,10 @@ function harness() {
     sessions: () => agentSessions,
     chat: () => chatState,
     retireBackend() {
-      mocks.transport = {};
+      mocks.transport = mocks.createTransport();
     },
     reconnect() {
+      mocks.transport.reconnect();
       scope = {
         ...scope,
         daemonHealth: {
