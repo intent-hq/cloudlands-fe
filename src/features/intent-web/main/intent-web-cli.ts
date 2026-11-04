@@ -3,10 +3,10 @@ import path from 'node:path';
 import QRCode from 'qrcode';
 import { defaultSocketPath } from '../../backend/main/backend-connection';
 import { parseIntentWebOptions } from './intent-web-options';
-import { loadWebConfig, readLinkEpoch, resetWebKey, startLinkEpoch } from './intent-web-config';
+import { loadWebConfig, readLinkEpoch, resetWebKey, saveLinkEpoch } from './intent-web-config';
 import { findWebTailcat, checkTailcatVersion } from './intent-web-tailcat';
 import { createIntentWebServer } from './intent-web-server';
-import { mintLinkToken } from '../../browser-access/main/device-login';
+import { mintLinkToken, newLinkEpoch } from '../../browser-access/main/device-login';
 import { LINK_PATH } from '../../browser-access/main/browser-access-server';
 
 export async function runIntentWeb(
@@ -62,9 +62,11 @@ export async function runIntentWeb(
   const localSocket =
     options.local && (options.localSocket || fs.existsSync(candidate)) ? candidate : null;
   let accessKey = config.accessKey;
+  // Published only after a successful bind (see saveLinkEpoch).
+  const linkEpoch = newLinkEpoch();
   const server = await createIntentWebServer({
     dataDir: options.dataDir,
-    linkEpoch: startLinkEpoch(options.dataDir),
+    linkEpoch,
     webRoot,
     getAccessKey: () => accessKey,
     localSocket,
@@ -93,6 +95,7 @@ export async function runIntentWeb(
       if (!server.listenSocket) throw new Error('Unix listener unavailable');
       await server.listenSocket(options.socket);
     } else await server.listen(config.port);
+    saveLinkEpoch(options.dataDir, linkEpoch);
   } catch (error) {
     watcher.close();
     await server.close();

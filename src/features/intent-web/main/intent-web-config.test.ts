@@ -4,7 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { loadWebConfig, readLinkEpoch, resetWebKey, startLinkEpoch } from './intent-web-config';
+import { newLinkEpoch } from '../../browser-access/main/device-login';
+import { loadWebConfig, readLinkEpoch, resetWebKey, saveLinkEpoch } from './intent-web-config';
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -46,13 +47,16 @@ describe('web configuration', () => {
     expect(() => loadWebConfig(dir)).toThrow();
     expect(fs.readFileSync(path.join(dir, 'config.json'), 'utf8')).toBe('{broken');
   });
-  it('saves a new private link epoch on each server start', () => {
+  it('saves the running server link epoch privately and replaces it on each start', () => {
     const dir = directory();
     expect(readLinkEpoch(dir)).toBeNull();
-    const first = startLinkEpoch(dir);
+    const first = newLinkEpoch();
+    saveLinkEpoch(dir, first);
     expect(readLinkEpoch(dir)).toBe(first);
-    const second = startLinkEpoch(dir);
-    expect(second).not.toBe(first);
+    const second = newLinkEpoch();
+    saveLinkEpoch(dir, second);
+    expect(readLinkEpoch(dir)).toBe(second);
+    expect(() => saveLinkEpoch(dir, 'bad')).toThrow();
     expect(readLinkEpoch(dir)).toBe(second);
     if (process.platform !== 'win32')
       expect(fs.statSync(path.join(dir, 'link-epoch')).mode & 0o777).toBe(0o600);

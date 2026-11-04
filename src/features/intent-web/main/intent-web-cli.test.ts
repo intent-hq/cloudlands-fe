@@ -160,3 +160,48 @@ it('refuses to print a link before any server has started', async () => {
     runIntentWeb(['link', '--data-dir', path.join(dir, 'state')], { log: () => {} }),
   ).rejects.toThrow('start it first');
 });
+it.skipIf(process.platform === 'win32')(
+  'keeps links working for the running server when a duplicate launch fails',
+  async () => {
+    const { default: http } = await import('node:http');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'web-link-dup-'));
+    dirs.push(dir);
+    const webRoot = path.join(dir, 'web');
+    fs.mkdirSync(webRoot);
+    fs.writeFileSync(path.join(webRoot, 'index.html'), 'app');
+    const state = path.join(dir, 'state');
+    const socket = path.join(dir, 'web.sock');
+    const args = ['--data-dir', state, '--socket', socket, '--no-local'];
+    const running = await runIntentWeb(args, { log: () => {}, webRoot });
+    try {
+      const { readLinkEpoch } = await import('./intent-web-config');
+      const epoch = readLinkEpoch(state);
+      await expect(runIntentWeb(args, { log: () => {}, webRoot })).rejects.toThrow();
+      expect(readLinkEpoch(state)).toBe(epoch);
+      const log = vi.fn();
+      await runIntentWeb(['link', '--data-dir', state, '--url', 'https://box.example'], { log });
+      const link = log.mock.calls
+        .map((call) => String(call[0]))
+        .find((line) => line.startsWith('https://box.example/'));
+      const target = new URL(link!);
+      const status = await new Promise<number>((resolve, reject) => {
+        http
+          .get(
+            {
+              socketPath: socket,
+              path: `${target.pathname}${target.search}`,
+              headers: { Host: 'localhost' },
+            },
+            (res) => {
+              res.resume();
+              resolve(res.statusCode!);
+            },
+          )
+          .on('error', reject);
+      });
+      expect(status).toBe(303);
+    } finally {
+      await running!.close();
+    }
+  },
+);
