@@ -40,8 +40,8 @@
   });
 </script>
 
-<div class="h-[720px] w-full bg-sidebar text-foreground">
+<div class="h-180 w-full bg-sidebar text-foreground">
   {#if sidebar}
-    <div class="w-[248px] p-2"><WorkspaceCard workspace={$workspace$} onClick={() => {}} /></div>
+    <div class="w-62 p-2"><WorkspaceCard workspace={$workspace$} onClick={() => {}} /></div>
   {:else}<HomePage preview />{/if}
 </div>
