@@ -256,9 +256,42 @@ test('floating companion opens on hover and keyboard without a close button', as
   await page.setViewportSize({ width: 720, height: 680 });
   await page.emulateMedia({ reducedMotion: 'no-preference', colorScheme: 'dark' });
   await page.mouse.move(700, 660);
+  // Mirror native floating geometry: without a display the preview falls back to a
+  // re-centred, anchorless surface that jumps the grip out from under the pointer.
+  const display: DockDisplayGeometry = {
+    id: 1,
+    bounds: { x: 0, y: 0, width: 640, height: 600 },
+    workArea: { x: 0, y: 0, width: 640, height: 600 },
+    cutout: null,
+  };
+  const target = { kind: 'floating', displayId: 1, x: 0.5, y: 0.5 } as const;
+  const geometry = resolveFloatingDockGeometry(target, display, DOCK_FLOATING_COMPACT_SIZE);
+  const windowBounds = dockWindowEnvelope(
+    geometry.surface,
+    display,
+    null,
+    null,
+    true,
+    DOCK_FLOATING_SHADOW_MARGIN,
+  );
   const props = dockRailPreview.states.floating.props;
   const component = await mount(DockRailPreview, {
-    props: { ...props, workspaces: props.workspaces.slice(0, 2) },
+    props: {
+      ...props,
+      workspaces: props.workspaces.slice(0, 2),
+      placement: {
+        ...adaptiveDockFixture('floating'),
+        placement: target,
+        windowBounds,
+        surface: dockLocalRect(geometry.surface, windowBounds),
+        workArea: dockLocalRect(display.workArea, windowBounds),
+        floatingAnchor: dockLocalRect(geometry.anchor, windowBounds),
+        expansionDirection: geometry.expansionDirection,
+      },
+      floatingDisplay: display,
+      viewportWidth: 640,
+      viewportHeight: 600,
+    },
   });
   const shell = component.getByTestId('dock-shell');
   const grip = component.getByTestId('dock-drag-handle');
@@ -271,9 +304,41 @@ test('floating companion opens on hover and keyboard without a close button', as
   await component.screenshot({ path: compact });
   await testInfo.attach('Floating compact', { path: compact, contentType: 'image/png' });
 
+  // A hover opens the dock only while the resting pointer stays over the surface: if any
+  // reveal frame leaves it behind, Chromium may deliver a real pointerleave and close it.
+  const gripBox = await grip.boundingBox();
+  if (!gripBox) throw new Error('Floating grip must be laid out before hover');
+  const hoverPoint = { x: gripBox.x + gripBox.width / 2, y: gripBox.y + gripBox.height / 2 };
+  await page.evaluate(({ x, y }) => {
+    const misses: { reveal: string | null }[] = [];
+    const state = { misses, frames: 0, done: false };
+    Object.assign(window, { __hoverCoverage: state });
+    const sample = () => {
+      const shellElement = document.querySelector('[data-testid="dock-shell"]');
+      const hit = document.elementFromPoint(x, y);
+      if (shellElement?.getAttribute('data-expanded') === 'true') {
+        state.frames += 1;
+        if (!hit?.closest('[data-dock-surface]'))
+          misses.push({ reveal: shellElement.getAttribute('data-reveal') });
+        if (shellElement.getAttribute('data-reveal') === '1') state.done = true;
+      }
+      if (!state.done) requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  }, hoverPoint);
   await grip.hover();
   await expect(shell).toHaveAttribute('data-expanded', 'true');
   await expect(shell).toHaveAttribute('data-reveal', '1');
+  const coverage = await page.evaluate(
+    () =>
+      (window as unknown as { __hoverCoverage: { misses: unknown[]; frames: number } })
+        .__hoverCoverage,
+  );
+  expect(coverage.frames).toBeGreaterThan(0);
+  expect(
+    coverage.misses,
+    'Every hover reveal frame must keep the grip point on the surface',
+  ).toEqual([]);
   await expect(component.locator('[data-dock-row]')).toHaveCount(3);
   await expect(component.getByTestId('dock-row-feedback')).toHaveCount(0);
   await expect(component.getByTestId('dock-dismiss')).toHaveCount(0);
