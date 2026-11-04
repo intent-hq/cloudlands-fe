@@ -329,3 +329,5 @@ export { wheelUntilScrolled } from './ct-wheel';
 export { clickAndSettle, expectMotionToSettle, motionSnapshot } from './ct-settle';
 
 export { activateHoverAction } from './ct-hover-action';
+
+export { installPausedClock, pauseClock } from './ct-clock';

@@ -1,4 +1,4 @@
-import { expect, expectNoAnimations, test } from '../../../../../test/ct-test';
+import { expect, expectNoAnimations, installPausedClock, test } from '../../../../../test/ct-test';
 import { intentMarkPoses } from '../intent-mark-poses';
 import IntentMarkLoaderHost from './IntentMarkLoaderHost.svelte';
 
@@ -81,9 +81,8 @@ for (const deviceScaleFactor of [1, 2]) {
       mount,
       page,
     }) => {
-      await page.clock.install();
-      // install() alone keeps time flowing; pause so each sampled pose holds.
-      await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now() + 1000)));
+      // Paused so each sampled pose holds.
+      await installPausedClock(page);
       await mount(IntentMarkLoaderHost, { props: { size: 16 } });
       const loader = page.locator(loaderSelector);
       const layers = await watchLayers(page);
