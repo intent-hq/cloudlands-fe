@@ -750,6 +750,9 @@ test('previous-message actions remain available at unloaded history boundaries',
   // reader would to release it, so the rows stay still while they are hovered.
   await wheelUntilScrolled(scroll, { deltaY: -2000 });
   await expectMotionToSettle(scroll);
+  // A wheel that scrolled and was pulled back still counts as scrolled, so check the
+  // release itself; otherwise a regression would resurface as the hover hang above.
+  await bottomArrow(component).expectAtBottom(false);
   for (const id of ['history-orphan', 'live-orphan']) {
     const row = component.locator(`[data-message-id="${id}"]`);
     await row.hover();
