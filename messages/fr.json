@@ -4941,6 +4941,8 @@
   "settings_devices_icon_label": "Icône de l’ordinateur",
   "settings_devices_loading_label": "Chargement des ordinateurs…",
   "settings_devices_localMachine_label": "{name} (locale)",
+  "settings_devices_connectedBackend_label": "{name} (backend connecté)",
+  "settings_devices_providers_ariaLabel": "Fournisseurs d’IA disponibles",
   "settings_devices_mobileDisabled_description": "Activez l’accès à distance sur cet appareil pour connecter Intent Mobile.",
   "settings_devices_mobile_title": "Intent Mobile",
   "settings_devices_nameRequired_error": "Saisissez un nom d’ordinateur.",

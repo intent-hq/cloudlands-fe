@@ -34,6 +34,28 @@ export function formatLocalMachineLabel(conn: { machineName?: string | null }): 
 }
 
 /**
+ * Settings → Machines row label: the local entry reads "{name} (local)"; the
+ * saved connection this window uses reads "{name} (connected backend)"; any
+ * other saved connection reads its plain name.
+ */
+export function formatMachineRowLabel(
+  conn: {
+    id: string;
+    isLocal: boolean;
+    machineName?: string | null;
+    hostname?: string | null;
+    host: string | null;
+    port: number | null;
+    label: string;
+  },
+  windowBackendId: string,
+): string {
+  if (conn.isLocal) return formatLocalMachineLabel(conn);
+  const name = formatConnectionLabel(conn);
+  return conn.id === windowBackendId ? m.settings_devices_connectedBackend_label({ name }) : name;
+}
+
+/**
  * Primary display label for a guest session: the captured machine name
  * (`hostname`, the pretty hostname when the host reports one) wins; until it
  * arrives the stored join-time `label` (the dialled host) shows. A Tailcat

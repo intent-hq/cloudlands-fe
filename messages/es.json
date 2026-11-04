@@ -4941,6 +4941,8 @@
   "settings_devices_icon_label": "Icono del equipo",
   "settings_devices_loading_label": "Cargando equipos…",
   "settings_devices_localMachine_label": "{name} (local)",
+  "settings_devices_connectedBackend_label": "{name} (backend conectado)",
+  "settings_devices_providers_ariaLabel": "Proveedores de IA disponibles",
   "settings_devices_mobileDisabled_description": "Activa el acceso remoto en este dispositivo para conectar Intent Mobile.",
   "settings_devices_mobile_title": "Intent Mobile",
   "settings_devices_nameRequired_error": "Introduce un nombre para el equipo.",
