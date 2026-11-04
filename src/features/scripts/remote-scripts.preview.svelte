@@ -154,7 +154,7 @@
   });
 </script>
 
-<div class="relative flex h-[560px] w-full gap-6 bg-background p-6 text-foreground">
+<div class="relative flex h-140 w-full gap-6 bg-background p-6 text-foreground">
   <section class="w-64 min-w-0">
     <h2 class="mb-4 px-3 type-caption text-muted-foreground">Bottom-pane scripts</h2>
     <div class="flex h-80">

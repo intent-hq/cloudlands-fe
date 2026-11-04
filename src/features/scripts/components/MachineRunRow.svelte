@@ -95,7 +95,7 @@
     indent={1}
     class="pr-1.5! pl-1.5!"
     title={location.name}
-    titleClass="max-w-[45%]"
+    titleClass="max-w-2/5"
     subtitle={status.label}
     subtitleClass={status.kind === 'lost' ? 'text-warning-ink' : undefined}
     aria-label={m.remoteAgent_location_tooltipWithState({

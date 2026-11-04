@@ -45,7 +45,7 @@
     data-script-machine-state={location.state}
   >
     <Fa icon={faDesktop} size="xs" />
-    <span class="max-w-[200px] truncate"
+    <span class="max-w-50 truncate"
       >{m.scripts_remote_runsOn_label({ machine: location.name })}</span
     >
   </span>
