@@ -441,6 +441,26 @@ function parseHeapFlags(options) {
 }
 
 /**
+ * The option string with every heap-cap flag `parseHeapFlags` recognizes
+ * removed (quoted, aliased, and percentage flags with a separate value
+ * token included); other tokens are kept as written. For callers that set
+ * their own cap, such as scripts/ct-changed-repeat.mjs.
+ */
+export function removeHeapFlags(options) {
+  const tokens = options?.trim().split(/\s+/).filter(Boolean) ?? [];
+  const kept = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const match = HEAP_FLAG_RE.exec(tokens[i].replaceAll('"', ''));
+    if (!match) {
+      kept.push(tokens[i]);
+      continue;
+    }
+    if (match.groups.percentage && match.groups.value === undefined) i++;
+  }
+  return kept.join(' ');
+}
+
+/**
  * The heap cap in effect for the child among the caller's settings, with its
  * `source`, or null: a percentage flag overrides an absolute one wherever
  * either is set, within a kind a CT_NODE_ARGS flag overrides NODE_OPTIONS (CLI

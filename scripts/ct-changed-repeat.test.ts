@@ -125,6 +125,22 @@ describe('nodeOptionsWithHeap', () => {
   });
 });
 
+describe('nodeOptionsWithHeap: every heap flag form the launcher recognizes', () => {
+  // The forms scripts/run-ct-tests.test.ts accepts as an explicit heap choice.
+  it.each([
+    ['canonical flag', '--max-old-space-size-percentage=25'],
+    ['V8 underscore alias', '--max_old_space_size_percentage=25'],
+    ['double-quoted token', '"--max-old-space-size-percentage=25"'],
+    ['space-separated value', '--max-old-space-size-percentage 25'],
+    ['double-quoted space-separated pair', '"--max-old-space-size-percentage" "25"'],
+    ['double-quoted absolute cap', '"--max-old-space-size=8192"'],
+  ])('replaces a %s and keeps the other options', (_label, heap) => {
+    expect(nodeOptionsWithHeap(`--require ./trace.js ${heap} --enable-source-maps`, 4096)).toBe(
+      '--require ./trace.js --enable-source-maps --max-old-space-size=4096',
+    );
+  });
+});
+
 describe('localChangedSpecs', () => {
   const git = (cwd: string, ...args: string[]) =>
     execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();

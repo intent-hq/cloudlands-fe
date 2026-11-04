@@ -30,6 +30,7 @@ import {
   playwrightFilter,
 } from './ct-changed-specs.mjs';
 import { diffBase } from './ct-contract-paths.mjs';
+import { removeHeapFlags } from './run-ct-tests.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -66,15 +67,11 @@ export function ctChangedRunArgs(filters, repeat, workers = CT_CHANGED_WORKERS) 
   ];
 }
 
-const HEAP_FLAG = /^--max[-_]old[-_]space[-_]size(?:[-_]percentage)?(?:=|$)/;
-
 // The caller's NODE_OPTIONS (e.g. a host-injected --require) with CI's heap
-// cap for the step in place of any heap flag it already had.
+// cap for the step in place of any heap flag it already had. The launcher
+// owns heap-flag recognition, so every form it accepts is replaced.
 export function nodeOptionsWithHeap(existing, megabytes) {
-  const kept = String(existing ?? '')
-    .split(/\s+/)
-    .filter((option) => option && !HEAP_FLAG.test(option));
-  return [...kept, `--max-old-space-size=${megabytes}`].join(' ');
+  return [removeHeapFlags(existing), `--max-old-space-size=${megabytes}`].filter(Boolean).join(' ');
 }
 
 // Playwright options this script owns; passing them after `--` would change
