@@ -820,11 +820,37 @@ export function setDockHiddenForSelection(
   if (owner.restore !== false && canRevealDock(window)) window.showInactive();
 }
 
+/** When Intent itself last focused the dock (a shortcut, the dock's own request). */
+let dockFocusedByIntentAt = 0;
+const DOCK_FOCUS_RECEIPT_MS = 1500;
+
+/**
+ * Whether the dock having focus right now is the dock's own doing: the pointer is on
+ * the dock (a click there activates the process) or Intent just focused it. Anything
+ * else, such as reopening Intent from a launcher or its Dock icon while the dock
+ * happened to be the last key window, is a request for the main app.
+ */
+export function isDockFocusOwnDoing(
+  now = Date.now(),
+  cursorPoint = screen.getCursorScreenPoint(),
+): boolean {
+  const window = getDockWindow();
+  if (!window || window.isDestroyed()) return false;
+  if (now - dockFocusedByIntentAt < DOCK_FOCUS_RECEIPT_MS) return true;
+  if (!pointerState.active || !window.isVisible()) return false;
+  const bounds = window.getBounds();
+  return isPointInDockPointerRegions(
+    { x: cursorPoint.x - bounds.x, y: cursorPoint.y - bounds.y },
+    pointerState.regions,
+  );
+}
+
 export function focusDockWindow(
   context?: import('../shared/dock-shortcuts').DockShortcutContext,
 ): void {
   const window = getDockWindow();
   if (!window || captureHiddenWindows.has(window) || sessionPaused) return;
+  dockFocusedByIntentAt = Date.now();
   window.show();
   window.focus();
   if (!window.webContents.isDestroyed())

@@ -331,6 +331,7 @@ import {
   createDockWindow,
   focusDockWindow,
   getDockWindow,
+  isDockFocusOwnDoing,
   isDockWindow,
 } from './dock-window';
 import { createDockMenuController } from './dock-menu-controller';
@@ -2256,9 +2257,10 @@ if (!gotTheLock) {
  * session when none is open. Waits for the boot flow's window creation first, so
  * a first-launch activate becomes a focus of the boot window rather than a
  * duplicate; the IPC-readiness wait lives inside the creators (see
- * ./app-activate.ts). An OS activation is ignored while the dock or capture has
- * focus (focusing them can activate the process); the dock's own request
- * (`fromDock`, a header double-click) is a deliberate ask to show Intent.
+ * ./app-activate.ts). An OS activation is ignored during a capture, and while the
+ * dock has focus by its own doing (pointer on it, or Intent just focused it), since
+ * that can activate the process; a launcher or Dock-icon reopen still shows Intent.
+ * The dock's own request (`fromDock`, a header double-click) always does.
  */
 function activateIntent(fromDock: boolean) {
   return handleActivate<BrowserWindowType>({
@@ -2266,7 +2268,12 @@ function activateIntent(fromDock: boolean) {
     shouldIgnoreActivation: () => {
       if (fromDock) return false;
       const focused = BrowserWindow.getFocusedWindow();
-      return !!focused && (isDockWindow(focused) || isDockAnnotationWindow(focused));
+      if (!focused) return false;
+      // A capture in progress: never reveal a workspace behind it.
+      if (isDockAnnotationWindow(focused)) return true;
+      // The dock: only its own focusing (pointer on it, or Intent just focused it) is
+      // not a request for the main app; a launcher or Dock-icon reopen is.
+      return isDockWindow(focused) && isDockFocusOwnDoing();
     },
     getAllWindows: () =>
       getAppWindows().filter(
