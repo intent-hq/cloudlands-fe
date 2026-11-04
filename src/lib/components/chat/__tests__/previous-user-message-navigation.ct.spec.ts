@@ -259,19 +259,23 @@ async function pointAtPreviousAction(page: Page, source: Locator): Promise<Point
           quietMs: DESTINATION_QUIET_MS,
         });
         last = still;
-        if (!still.still) return 'row is still moving';
+        if (!still.still) return `row is still moving: ${JSON.stringify(still)}`;
         await page.mouse.move(still.centerX, still.centerY);
         const ready = await samplePreviousActionPointer(source, {
           requireHit: true,
           quietMs: 100,
         });
         last = ready;
-        if (!ready.still) return 'action did not stay hovered and hittable';
-        if (ready.top !== still.top) return 'row moved after the pointer was placed';
+        if (!ready.still)
+          return `action did not stay hovered and hittable: ${JSON.stringify(ready)}`;
+        if (ready.top !== still.top) {
+          return `row moved after the pointer was placed: ${JSON.stringify({ still, ready })}`;
+        }
         return 'ready';
       },
       {
-        message: `the pointer should rest on ${String(source)} with its previous-message action hittable (last sample: ${JSON.stringify(last)})`,
+        // The received value carries the last sample, so a timeout reports where it was.
+        message: `the pointer should rest on ${String(source)} with its previous-message action hittable`,
         timeout: LOADED_WAIT_MS,
         intervals: [0],
       },
@@ -372,7 +376,11 @@ for (const shiftAfterHover of [false, true]) {
         `action should still be hittable: ${JSON.stringify({ ready, beforeClickState })}`,
       ).toBe(true);
       const beforeClick = await motionSnapshot(scroll);
-      await source.getByRole('button', { name: 'Scroll to previous message' }).click();
+      // Bounded, so a row that moves after the check above fails here with the click's
+      // own error instead of retrying against the row text until the test times out.
+      await source
+        .getByRole('button', { name: 'Scroll to previous message' })
+        .click({ timeout: LOADED_WAIT_MS });
       // Observe the settled destination, including animation, focus, lazy layout,
       // and follow-bottom observers; a transient crossing is not success.
       await expectMotionToSettle(scroll, {
