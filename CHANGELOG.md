@@ -4,6 +4,21 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.282.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.281.0...v2.282.0) (2026-11-04)
+
+
+### 🚀 Features
+
+* **scripts:** show remote agents' machine runs in the script panel ([#4106](https://github.com/intent-hq/cloudlands-fe/issues/4106)) ([3b2e35e](https://github.com/intent-hq/cloudlands-fe/commit/3b2e35eed751845ad2c1a7e31d44937f72f28cfa))
+* show machine platforms, providers and the connected backend in Machines and Start On ([#4142](https://github.com/intent-hq/cloudlands-fe/issues/4142)) ([b284c30](https://github.com/intent-hq/cloudlands-fe/commit/b284c30e5d03cfaae4dc13802324781a09c91cec))
+* **verify-changed:** add --keep-going to report every failed check in one run ([#4146](https://github.com/intent-hq/cloudlands-fe/issues/4146)) ([b4c475a](https://github.com/intent-hq/cloudlands-fe/commit/b4c475ad51cd05912acfb2f5a8e0dc3be74ad876))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.123 ([#4150](https://github.com/intent-hq/cloudlands-fe/issues/4150)) ([90bae3d](https://github.com/intent-hq/cloudlands-fe/commit/90bae3db7347d046307116816df588bd2c87252e))
+* **chat:** show a placeholder instead of "Removed profile" while profiles load ([#4143](https://github.com/intent-hq/cloudlands-fe/issues/4143)) ([aa3c8ac](https://github.com/intent-hq/cloudlands-fe/commit/aa3c8aca5f2136a3342d8169fb842fda488119d2))
+
 ## [2.281.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.280.2...v2.281.0) (2026-11-04)
 
 
