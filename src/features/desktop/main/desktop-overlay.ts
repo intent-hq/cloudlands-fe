@@ -385,7 +385,7 @@ export function getDesktopOverlay(): DesktopOverlay {
         : `app://workspaces${DESKTOP_OVERLAY_ROUTE}`,
     preload: path.resolve(
       path.dirname(fileURLToPath(import.meta.url)),
-      '../../../preload/desktop-overlay.js',
+      '../../../preload-build/preload/desktop-overlay.js',
     ),
   }));
 }
