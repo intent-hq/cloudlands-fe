@@ -5,7 +5,7 @@
  * "Codebase" whenever a git repository is listed; otherwise "Folder" with no
  * forge connected or a plain folder listed; otherwise (forge connected, empty
  * list) "Codebase". Plain folders not offered (Labs off) keep "Codebase". The
- * label never reads "Codebase/Project" and updates live.
+ * label never reads "Codebase/Project" or "Codebase/Folder" and updates live.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
@@ -354,5 +354,6 @@ describe('RepoSelector form row label', () => {
     notify();
     await waitFor(() => expect(rowLabel(container)).toBe('Folder'));
     expect(container.textContent).not.toContain('Codebase/Project');
+    expect(container.textContent).not.toContain('Codebase/Folder');
   });
 });
