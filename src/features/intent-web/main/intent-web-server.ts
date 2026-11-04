@@ -284,12 +284,13 @@ export async function createIntentWebServer(options: WebServerOptions) {
       }
     });
   };
+  const signIn = options.signIn;
   const server = createBrowserAccessServer({
     onBridgesChanged: publishList,
     ...(options.log ? { log: options.log } : {}),
-    ...(options.signIn
+    ...(signIn
       ? {
-          consumeSignInCode: (code: string) => options.signIn!.consume(code),
+          consumeSignInCode: (code: string) => signIn.consume(code),
           onPageOrigin: recordPageOrigin,
         }
       : {}),
