@@ -293,8 +293,23 @@
     </section>
     <span class="divider" aria-hidden="true"></span>
     {#if !recording}
-      <!-- Annotating: Close ends the session; Attach puts the marks in the composer. -->
+      <!-- Not recording: the same bar, the chip offers Record; Close ends the
+           session; Done attaches the marks (or just ends with none). -->
       <section class="recording" data-annotate-actions>
+        <Button
+          variant="ghost-light"
+          size="sm"
+          class="rt-chip"
+          data-testid="recording-chip"
+          data-idle
+          disabled={!!record?.disabled || !!overlay.still}
+          tooltip={record?.tooltip ?? m.dock_recordingToolbar_record_label()}
+          aria-label={m.dock_recordingToolbar_record_label()}
+          onclick={() => act({ sessionId, action: 'record' })}
+        >
+          <span class="lead" aria-hidden="true"><span class="rec-dot"></span></span>
+          <span class="time">{m.dock_recordingToolbar_record_label()}</span>
+        </Button>
         <Button
           variant="ghost-light"
           size="icon-sm"
@@ -316,10 +331,7 @@
           tooltipShortcut="enter"
           onclick={done}
         >
-          <DockComposerIcon glyph={marked ? 'paperclip' : 'check'} size={18} />
-          {#if marked}<span class="attach-count" data-attach-count aria-hidden="true"
-              >{overlay.marks.length}</span
-            >{/if}
+          <DockComposerIcon glyph="check" size={18} />
         </Button>
       </section>
     {:else}
@@ -643,20 +655,6 @@
     height: 6px;
     border-radius: 50%;
     background: var(--rt-rec);
-  }
-  .attach-count {
-    position: absolute;
-    top: 2px;
-    right: 2px;
-    min-width: 14px;
-    height: 14px;
-    padding: 0 3px;
-    border-radius: 999px;
-    font-size: 10px;
-    line-height: 14px;
-    text-align: center;
-    background: var(--rt-accent-ink);
-    color: var(--rt-done-ink);
   }
   .sr-only {
     position: absolute;

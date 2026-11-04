@@ -8315,6 +8315,7 @@
   "dock_recordingToolbar_ariaLabel": "录制工具",
   "dock_recordingToolbar_tools_label": "标注工具",
   "dock_recordingToolbar_recording_label": "录制",
+  "dock_recordingToolbar_record_label": "录制",
   "dock_recordingToolbar_pointer_label": "指针",
   "dock_recordingToolbar_element_label": "元素选择器",
   "dock_recordingToolbar_rectangle_label": "矩形",

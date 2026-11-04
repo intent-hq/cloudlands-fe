@@ -8315,6 +8315,7 @@
   "dock_recordingToolbar_ariaLabel": "Herramientas de grabación",
   "dock_recordingToolbar_tools_label": "Herramientas de anotación",
   "dock_recordingToolbar_recording_label": "Grabación",
+  "dock_recordingToolbar_record_label": "Grabar",
   "dock_recordingToolbar_pointer_label": "Puntero",
   "dock_recordingToolbar_element_label": "Selector de elementos",
   "dock_recordingToolbar_rectangle_label": "Rectángulo",
