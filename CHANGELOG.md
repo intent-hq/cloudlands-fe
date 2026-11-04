@@ -4,6 +4,22 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.281.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.280.2...v2.281.0) (2026-11-04)
+
+
+### 🚀 Features
+
+* **intent-web:** show an experimental notice at each web build start ([#4140](https://github.com/intent-hq/cloudlands-fe/issues/4140)) ([afdadf6](https://github.com/intent-hq/cloudlands-fe/commit/afdadf6983c87eb25536e2c4e0decef79b0fe72a))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.122 ([#4144](https://github.com/intent-hq/cloudlands-fe/issues/4144)) ([17e650b](https://github.com/intent-hq/cloudlands-fe/commit/17e650b20534bfeaf9e89660b101f90aaed11956))
+* **ci:** diff CT relevance from the PR merge commit's base parent ([#4126](https://github.com/intent-hq/cloudlands-fe/issues/4126)) ([56fd8f9](https://github.com/intent-hq/cloudlands-fe/commit/56fd8f9082940095389304d6a144153d9008e349))
+* **dock:** keep annotate and capture buttons mounted while their popover opens ([#4130](https://github.com/intent-hq/cloudlands-fe/issues/4130)) ([ebe25a1](https://github.com/intent-hq/cloudlands-fe/commit/ebe25a1f6989578db379e3911be1a0f0ba5018f2))
+* **verify-changed:** run static type checks before test lanes ([#4138](https://github.com/intent-hq/cloudlands-fe/issues/4138)) ([64329a8](https://github.com/intent-hq/cloudlands-fe/commit/64329a8d243351a5481b30fb2f556e1da625212a))
+* **workspace:** call the forge-less picker label Folder ([#4137](https://github.com/intent-hq/cloudlands-fe/issues/4137)) ([bf9167e](https://github.com/intent-hq/cloudlands-fe/commit/bf9167e48acafa011010223d4ac046a458f78c6a))
+
 ## [2.280.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.280.1...v2.280.2) (2026-11-04)
 
 
