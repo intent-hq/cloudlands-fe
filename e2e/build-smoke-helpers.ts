@@ -1956,21 +1956,23 @@ export async function findImplementorAgent(
  * Expand the Agents section of the workspace sidebar.
  *
  * Agent cards (`[data-testid="agent-list-item"]`, `[data-agent-id]`) render
- * only inside the expanded Agents panel (`[data-testid="agent-panel"]`). A
- * fresh workspace opens on the sidebar's launcher overview, where the section
- * is collapsed behind the `agent-panel-toggle` launcher tile — and the tile
- * itself is unmounted while any section is expanded, so check the panel first.
+ * only inside the Agents panel (`[data-testid="agent-panel"]`), which is
+ * visible only while the sidebar's Agents icon tab
+ * (`[data-sidebar-section-tab="agents"]`) is selected. A fresh workspace may
+ * open on another section, so check the panel first and otherwise select the
+ * tab. The collapsed rail can mount a second, hidden tab strip, so target the
+ * visible tab.
  */
 export async function openAgentsSidebarPanel(page: Page): Promise<void> {
   const agentPanel = page.locator('[data-testid="agent-panel"]');
   if (await agentPanel.isVisible({ timeout: 1_000 }).catch(() => false)) {
     return;
   }
-  const toggle = page.locator('[data-testid="agent-panel-toggle"]');
+  const toggle = page.locator('[data-sidebar-section-tab="agents"]:visible').first();
   await toggle.waitFor({ state: 'visible', timeout: 15_000 });
   await toggle.click();
   await agentPanel.waitFor({ state: 'visible', timeout: 10_000 });
-  console.log('✅ Agents sidebar panel expanded');
+  console.log('✅ Agents sidebar panel opened');
 }
 
 // ---------------------------------------------------------------------------

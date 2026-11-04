@@ -221,3 +221,20 @@ describe('plain-folder workspaces', () => {
     expect(view.getByRole('tab', { name: 'Changes' }).getAttribute('aria-selected')).toBe('true');
   });
 });
+
+// The packaged-app build smoke opens the Agents panel through this selector
+// (e2e/build-smoke-helpers.ts → openAgentsSidebarPanel). Renaming it without
+// updating that helper broke the nightly Build Smoke from 2026-10-30.
+describe('build-smoke Agents tab selector contract', () => {
+  it('exposes the Agents tab as [data-sidebar-section-tab="agents"] and selects it on click', async () => {
+    live.selected.set(['context']);
+    const view = render(SidebarSectionTabs, { props: { workspaceId: 'workspace' } });
+    const agents = view.container.querySelector<HTMLElement>('[data-sidebar-section-tab="agents"]');
+    expect(agents).toBe(view.getByRole('tab', { name: 'Agents', exact: true }));
+    live.dispatch.mockClear();
+    await fireEvent.click(agents!);
+    expect(live.dispatch.mock.calls).toEqual([
+      [setMultiSelectSidebarSelectedTabs('workspace', ['agents'])],
+    ]);
+  });
+});
