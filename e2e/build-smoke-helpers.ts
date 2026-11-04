@@ -1963,7 +1963,7 @@ export async function findImplementorAgent(
  * behind the expanded sidebar and clicks on it are intercepted. Scope to the
  * strip that is not hidden instead.
  */
-export function sidebarSectionTab(page: Page, sectionId: string): Locator {
+function sidebarSectionTab(page: Page, sectionId: string): Locator {
   const tab = `[data-sidebar-section-tab="${sectionId}"]`;
   return page
     .locator(
