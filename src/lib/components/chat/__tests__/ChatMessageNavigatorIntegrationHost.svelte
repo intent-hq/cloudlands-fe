@@ -10,6 +10,7 @@
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
   import { previousUserMessageLoadSaga } from '$store/renderer/slices/chat-state/sagas/chat-scrollback-saga';
+  import { startChatFixtureSagas } from '../../../../test/chat-fixture-sagas';
   import {
     addMessage,
     updateMessage,
@@ -35,8 +36,14 @@
   const workspaceId = 'message-navigator-integration';
   const agentId = 'message-navigator-agent';
   const timestamp = '2026-08-16T04:00:00.000Z';
+  // The draft saga answers the composer's draft restore. Without it the draft gate
+  // stays up until its 5 s fallback, then the composer shrinks and every row pinned to
+  // the bottom drops by the gate's height, under whatever the test is pointing at.
   const disposeStore = startRootStoreLifecycle(store, {
-    startSagas: (target) => [target.runSaga(previousUserMessageLoadSaga)],
+    startSagas: (target) => [
+      target.runSaga(previousUserMessageLoadSaga),
+      ...startChatFixtureSagas(target),
+    ],
   });
   let {
     theme = 'light',

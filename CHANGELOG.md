@@ -4,6 +4,16 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.283.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.283.0...v2.283.1) (2026-11-04)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.125 ([#4161](https://github.com/intent-hq/cloudlands-fe/issues/4161)) ([be26a0d](https://github.com/intent-hq/cloudlands-fe/commit/be26a0d9f805acc0bcadfec063d3a675ebf55c5a))
+* **chat:** sanitize markdown rendered in tool results ([#4156](https://github.com/intent-hq/cloudlands-fe/issues/4156)) ([e4318f2](https://github.com/intent-hq/cloudlands-fe/commit/e4318f2b0bb68c43df8d296895976a3b9eb2fb24))
+* fill the paged task.subscribe snapshot from task.list ([#4153](https://github.com/intent-hq/cloudlands-fe/issues/4153)) ([b0b8d69](https://github.com/intent-hq/cloudlands-fe/commit/b0b8d69db3d868130b78b8d1402059c052d962be))
+* load every page of the prompt-history index ([#4155](https://github.com/intent-hq/cloudlands-fe/issues/4155)) ([0b2201a](https://github.com/intent-hq/cloudlands-fe/commit/0b2201a796bd1cf5f19c1e17691fb6f4edc218d7))
+
 ## [2.283.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.282.0...v2.283.0) (2026-11-04)
 
 
