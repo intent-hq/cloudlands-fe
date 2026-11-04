@@ -23,20 +23,26 @@ Requires Node.js `^22.22.2 || ^24.15.0 || >=26`.
    optional tunnel address). If this machine runs `intentd`, it appears as
    **This machine (local)**.
 
+To sign in another browser without typing the key, scan the QR code on its
+sign-in page with your phone, check that the match codes are the same, and enter
+the key on your phone. `intent-web link --url <https address>` prints a
+one-time sign-in link and QR code instead.
+
 The [full guide](https://github.com/intent-hq/cloudlands-fe/blob/main/docs/intent-web.md)
 covers `tailscale serve`, running it as a service, local daemon mode and
 troubleshooting.
 
 ## Commands and options
 
-| Command / flag                         | Purpose                                                                                                                                          |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `intent-web` / `intent-web serve`      | Start the server                                                                                                                                 |
-| `--port <n>` / `--socket <path>`       | Listen on loopback TCP (default 47120), or on a 0600 unix socket                                                                                 |
-| `--data-dir <dir>`                     | Where config and saved machines live. Default `$XDG_STATE_HOME/intent-web` (`~/.local/state/intent-web`; `%LOCALAPPDATA%\intent-web` on Windows) |
-| `--tailcat <path>`                     | tailcat binary for tunnel routes                                                                                                                 |
-| `--local-socket <path>` / `--no-local` | Use this local `intentd` socket, or ignore the local daemon                                                                                      |
-| `intent-web key [--reset]`             | Show the access key, or replace it (signs out every browser)                                                                                     |
+| Command / flag                                       | Purpose                                                                                                                                          |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `intent-web` / `intent-web serve`                    | Start the server                                                                                                                                 |
+| `--port <n>` / `--socket <path>`                     | Listen on loopback TCP (default 47120), or on a 0600 unix socket                                                                                 |
+| `--data-dir <dir>`                                   | Where config and saved machines live. Default `$XDG_STATE_HOME/intent-web` (`~/.local/state/intent-web`; `%LOCALAPPDATA%\intent-web` on Windows) |
+| `--tailcat <path>`                                   | tailcat binary for tunnel routes                                                                                                                 |
+| `--local-socket <path>` / `--no-local`               | Use this local `intentd` socket, or ignore the local daemon                                                                                      |
+| `intent-web key [--reset]`                           | Show the access key, or replace it (signs out every browser)                                                                                     |
+| `intent-web link [--url <origin>] [--ttl <minutes>]` | Print a one-time sign-in link and QR code (default 5 minutes, maximum 15)                                                                        |
 
 Environment: `INTENT_WEB_PORT`, `INTENT_WEB_DATA_DIR` and `TAILCAT_BIN` work like
 the flags; flags win.

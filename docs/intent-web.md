@@ -110,6 +110,40 @@ Pass the same `--data-dir` to `key` that the server uses, or the command reads
 a different key. Too many wrong keys in a short time lock sign-in for everyone
 for a while.
 
+## Sign in without typing the key
+
+Two short-lived ways let a browser sign in without typing the access key in
+it. Both work once, and both stop working when the key is reset.
+
+### Scan the QR code with your phone
+
+The sign-in page shows a QR code and a 6-character **match code**.
+
+1. Scan the QR code with your phone. It opens **Sign in another browser** on
+   your phone, with a match code.
+2. Check that the match code on your phone is the same as the code on the
+   sign-in page. If the codes are different, stop: someone else made that
+   QR code.
+3. Enter the access key on your phone and choose **Approve sign-in**.
+
+The browser that shows the QR code signs in within a few seconds. Your phone
+does not sign in. A QR code expires after 2 minutes; the sign-in page then
+shows a new one. Wrong keys on your phone count against the same sign-in
+limit as the key form.
+
+### A one-time link from the command line
+
+```sh
+npx @intent-hq/web link --url https://<machine>.<tailnet>.ts.net
+```
+
+This prints a link and a QR code in the terminal. The link signs in one browser
+once and expires after 5 minutes (`--ttl <minutes>`, 1 to 15). Pass the
+address of your HTTPS front-end with `--url` (or set `INTENT_WEB_PUBLIC_URL`);
+without it, the link uses `http://127.0.0.1:<port>`, which only works on this
+machine. Pass the same `--data-dir` that the server uses. Treat the link like
+the key until it is used or expires.
+
 ## The data directory
 
 | Platform      | Default                                                        |
@@ -141,10 +175,13 @@ it resets everything (a new key on the next start, no saved machines).
 | `--local-socket <path>`           | Use this local `intentd` socket                                    |
 | `--no-local`                      | Ignore any local `intentd`                                         |
 | `intent-web key [--reset]`        | Show or replace the access key                                     |
+| `intent-web link`                 | Print a one-time sign-in link and QR code                          |
+| `--url <origin>`                  | `link`: the HTTPS address the browser opens                        |
+| `--ttl <minutes>`                 | `link`: lifetime, 1 to 15 (default 5)                              |
 | `intent-web --help`               | Print usage                                                        |
 
-Environment variables `INTENT_WEB_PORT`, `INTENT_WEB_DATA_DIR` and
-`TAILCAT_BIN` work like the flags; flags win. There is no option to listen on
+Environment variables `INTENT_WEB_PORT`, `INTENT_WEB_DATA_DIR`,
+`INTENT_WEB_PUBLIC_URL` and `TAILCAT_BIN` work like the flags; flags win. There is no option to listen on
 `0.0.0.0`.
 
 ## Local daemon mode
@@ -235,6 +272,10 @@ direct host and port routes keep working.
   requests whose `Host` is neither loopback nor the front-end's forwarded host,
   WebSocket and mutating requests from other origins, and non-JSON mutating
   requests.
+- **QR sign-in and links.** A QR code or link is useless without the key or
+  after it is used, and it expires in minutes. Approve a QR sign-in only when
+  the match codes are the same. A one-time link signs in whoever opens it
+  first, so send it only to yourself.
 - **Resetting the key** signs out every browser and closes their live
   connections immediately (see [The access key](#the-access-key)).
 
