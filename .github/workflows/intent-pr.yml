@@ -521,14 +521,40 @@ jobs:
       ct_affected_over_budget: ${{ steps.ct-affected.outputs.ct_affected_over_budget }}
     steps:
       - uses: actions/checkout@v7
-      - name: Fetch diff base commit
-        # PR base on pull_request; the queue entry's base on merge_group
-        # (same fallback as LINT_BASELINE_BASE_REF in test).
-        run: git fetch --no-tags --depth=1 origin ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        with:
+          # The checked-out commit and its parents, for Resolve diff base.
+          fetch-depth: 2
+      - name: Resolve diff base
+        # Every step below diffs $BASE_SHA..HEAD. On pull_request HEAD is
+        # GitHub's merge commit of the PR head (second parent) onto the base
+        # tip it was built against (first parent). pull_request.base.sha can
+        # lag that tip, and then the diff also holds every file main changed
+        # in between: cloudlands-fe#4114 (job 126070303811) repeated six specs
+        # only main had changed and was cancelled at its time limit. So the
+        # base is the merge commit's first parent, as in intentd's
+        # coverage-changed (intent-hq/intent#5414). On merge_group it stays
+        # merge_group.base_sha (HEAD is the entry on top of it). Anything
+        # else keeps the event base, fetched as before: a wider diff, never
+        # one that misses a change of the PR.
+        env:
+          EVENT_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          base="$EVENT_BASE_SHA"
+          if [ -n "${PR_HEAD_SHA:-}" ] && [ "$(git rev-parse -q --verify 'HEAD^2' || true)" = "$PR_HEAD_SHA" ]; then
+            base=$(git rev-parse 'HEAD^1')
+            echo "diff base: HEAD^1, the base tip the PR merge commit was built on ($base)"
+            if [ "$base" != "$EVENT_BASE_SHA" ]; then
+              echo "pull_request.base.sha $EVENT_BASE_SHA lags it; using HEAD^1"
+            fi
+          else
+            echo "diff base: the event base ($base)"
+            git fetch --no-tags --depth=1 origin "$base"
+          fi
+          echo "BASE_SHA=$base" >> "$GITHUB_ENV"
       - name: Evaluate diff shape
         id: decide
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
         run: |
           set -euo pipefail
           # Script contract: prints fast_path=true|false; non-zero exit means
@@ -543,8 +569,6 @@ jobs:
           echo "${line:-fast_path=false}" >> "$GITHUB_OUTPUT"
       - name: Evaluate CT relevance
         id: ct
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
         run: |
           set -euo pipefail
           # Script contract: prints exactly one ct_required=true|false line and
@@ -563,8 +587,6 @@ jobs:
         # test-ct-changed. Fail-closed: any error writes `error`, which that
         # job rejects and the CI Gate never accepts as "no specs changed".
         id: ct-changed
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
         run: |
           set -euo pipefail
           out=$(node scripts/ct-changed-specs.mjs --diff "$BASE_SHA" HEAD) || out="ct_changed_specs=error"
@@ -577,8 +599,6 @@ jobs:
         # cap, for test-ct-affected. Fail-closed like the changed list: any
         # error writes `error`, which that job and the CI Gate reject.
         id: ct-affected
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
         run: |
           set -euo pipefail
           out=$(node scripts/ct-changed-specs.mjs --affected "$BASE_SHA" HEAD) || out="ct_affected_specs=error"
@@ -589,8 +609,6 @@ jobs:
           echo "${line:-ct_affected_over_budget=[]}" >> "$GITHUB_OUTPUT"
       - name: Evaluate root Playwright relevance
         id: root-playwright
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
         run: |
           set -euo pipefail
           # The root suite (playwright.config.ts: test/**/*.spec.ts) is
@@ -628,8 +646,6 @@ jobs:
 
       - name: Evaluate Electron relevance
         id: electron
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
         run: |
           set -euo pipefail
           # Include lifetime, checkout, monitor and companion fixtures and transports,
@@ -660,8 +676,6 @@ jobs:
 
       - name: Evaluate portable fixture relevance
         id: portable-fixtures
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
         run: |
           set -euo pipefail
           changed_paths=$(mktemp)
@@ -685,8 +699,6 @@ jobs:
 
       - name: Evaluate @intent-hq/web package relevance
         id: intent-web-package
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
         run: |
           set -euo pipefail
           # Everything the package build reads: the bundled server's source
