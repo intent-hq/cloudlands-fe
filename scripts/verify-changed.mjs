@@ -7,6 +7,7 @@ import { escape as escapeGlob, globSync } from 'glob';
 import { CT_TEST_DIR, hasCtSpecSuffix, isCtSpec } from '../playwright/ct-spec-pattern.mjs';
 import { isIgnoredRootSpec, isRootSpec, ROOT_TEST_DIR } from '../playwright/root-spec-pattern.mjs';
 import { checkDepsFresh, checkNodeSupport, ensureI18nFresh } from './check-deps-fresh.mjs';
+import { isElectronTestPathInput } from './check-electron-test-paths.mjs';
 import { isCtContractPath } from './ct-contract-paths.mjs';
 import { gitignoreDirExcludes } from './gitignore-dir-excludes.mjs';
 import { isEnforcedFile } from './hardcoded-strings-scope.mjs';
@@ -457,6 +458,8 @@ function isArchitectureSource(file) {
     (file.startsWith('src/') && CODE_EXTENSIONS.has(extname(file))) ||
     /^scripts\/check-[^/]+\.mjs$/.test(file) ||
     file === 'scripts/type-check.ts' ||
+    // Electron helpers run only in the merge queue; lint:electron-test-paths checks them.
+    isElectronTestPathInput(file) ||
     isWorkflowLintInput(file) ||
     basename(file) === 'AGENTS.md'
   );
